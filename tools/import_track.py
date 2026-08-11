@@ -18,6 +18,7 @@ track will cost before you commit to it.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -292,8 +293,12 @@ def main() -> int:
         source = source[5:]
     is_url = "://" in source
 
-    tmp = TRACKS / "_incoming"
-    tmp.mkdir(exist_ok=True)
+    # Per-run scratch dir. A shared one races: two imports at once, and the
+    # first to finish deletes the other's half-downloaded file out from under
+    # it. Seen exactly that, as a job that failed for no visible reason.
+    tmp = TRACKS / f"_incoming_{os.getpid()}"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)
     title = (prev or {}).get("title", "")
     if is_url:
         src, title = fetch_url(source, tmp)

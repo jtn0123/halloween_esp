@@ -38,6 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana  # noqa: E402
 import manifest as mf  # noqa: E402
 import studio_media as sm  # noqa: E402
+import studio_jobs as sj  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 TRACKS = ROOT / "tracks"
@@ -46,6 +47,7 @@ HTML = ROOT / "previewer" / "castle-cue-desk.html"
 PY = str(ROOT / ".venv" / "bin" / "python")
 
 _lock = threading.Lock()          # ffmpeg/yt-dlp jobs are serialised
+_runner = sj.JobRunner()          # long imports run in the background
 
 
 def _restart() -> None:
@@ -123,6 +125,15 @@ class Handler(BaseHTTPRequestHandler):
             if not HTML.exists():
                 return self.send_json({"error": "previewer not built"}, 404)
             return self.send_bytes(HTML.read_bytes(), "text/html; charset=utf-8")
+        if path.startswith("/api/job/"):
+            job = _runner.get(Path(path).name)
+            if job is None:
+                return self.send_json({"error": "no such job"}, 404)
+            d = job.as_dict()
+            if d["done"]:
+                TRACKS.mkdir(exist_ok=True)
+                d["tracks"] = [track_info(p) for p in sorted(TRACKS.glob("*.mp3"))]
+            return self.send_json(d)
         if path == "/api/tracks":
             TRACKS.mkdir(exist_ok=True)
             return self.send_json({
@@ -160,6 +171,20 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.body()
         if path == "/api/import":
             return self.do_import(raw)
+        if path == "/api/import/async":
+            req = json.loads(raw or b"{}")
+            src = (req.get("url") or "").strip()
+            if not src.startswith(("http://", "https://")):
+                return self.send_json({"error": "url must be http(s)"}, 400)
+            args = [PY, str(ROOT / "tools" / "import_track.py"), src]
+            for k in ("id", "start", "take", "sensitivity", "bitrate",
+                      "sample_rate", "channels", "gain_db", "notes"):
+                v = req.get(k)
+                if v not in (None, ""):
+                    args += [f"--{k.replace('_', '-')}", str(v)]
+            if req.get("normalize"):
+                args.append("--normalize")
+            return self.send_json(_runner.start(args).as_dict())
         if path == "/api/refresh":
             # Rebuild a track from its remembered source, with any option
             # overridden. This is why the manifest exists.

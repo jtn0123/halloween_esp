@@ -68,6 +68,12 @@ interface ActionResponse { ok: boolean; tracks?: TrackInfo[]; log?: string; erro
 export interface TracksDeps {
   /** The show as loaded, for the capacity readout's "alongside the current show". */
   scenes: readonly Scene[];
+  /**
+   * Called when a track row is picked, so the host can open the clip editor
+   * on it. Optional: the Tracks panel is useful without a waveform, and the
+   * static/artifact build has no server to fetch one from.
+   */
+  onSelect?: (trackId: string) => void;
 }
 
 export function initTracks(deps: TracksDeps): void {
@@ -184,6 +190,15 @@ export function initTracks(deps: TracksDeps): void {
       </div>`;
     }).join("");
   }
+
+  // Clicking anywhere on a row that is not a button opens the clip editor on
+  // it. Picking a track and then looking at it is one intent, not two.
+  T.list.addEventListener("click", e => {
+    const el = e.target as HTMLElement | null;
+    if (el?.closest("button")) return;
+    const id = el?.closest<HTMLElement>(".trk")?.dataset["id"];
+    if (id) deps.onSelect?.(id);
+  });
 
   T.list.addEventListener("click", async e => {
     const btn = (e.target as HTMLElement | null)?.closest("button"); if (!btn) return;

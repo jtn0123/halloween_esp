@@ -358,3 +358,8 @@
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
   }
+
+  /* Clip editor. Empty until a track is selected, so it collapses rather
+     than leaving a hole in the panel. */
+  .trk-wave { margin-bottom: 11px; }
+  .trk-wave:empty { display: none; }

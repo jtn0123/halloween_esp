@@ -17,6 +17,7 @@ import { Stage } from "./stage.js";
 import { Synth } from "./synth.js";
 import { Transport } from "./transport.js";
 import { initTracks } from "./tracks.js";
+import { initWaveform } from "./waveform.js";
 import type { GeneratedData, Scene } from "./types.js";
 
 declare global {
@@ -135,8 +136,20 @@ if (modeEl) {
   audioMode = modeEl.checked ? "rendered" : "synth";
 }
 
-/* ── Tracks panel ── */
-initTracks({ scenes: SCENES });
+/* ── Tracks panel and clip editor ──────────────────────────────────────
+   Auditioning a clip drives the light preview from the track's own position,
+   so you see what the scene will look like before committing to it — which
+   is the actual question when picking 20 seconds out of a song. */
+const wave = initWaveform({
+  onAudition: (playing, positionMs) => {
+    if (!playing) return;
+    // Feed the show engine the clip's position so the cue list and the
+    // audio agree while scrubbing around inside a candidate loop.
+    if (state.running) transport.setPlaying(false);
+    transport.seekTo(positionMs % state.scene.dur);
+  },
+});
+initTracks({ scenes: SCENES, onSelect: (id) => wave.show(id) });
 
 /* ── Frame loop ── */
 function frame(now: number): void {

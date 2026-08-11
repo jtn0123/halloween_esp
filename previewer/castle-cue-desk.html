@@ -360,6 +360,11 @@
   @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
   }
+
+  /* Clip editor. Empty until a track is selected, so it collapses rather
+     than leaving a hole in the panel. */
+  .trk-wave { margin-bottom: 11px; }
+  .trk-wave:empty { display: none; }
 </style>
 
 <div class="desk">
@@ -466,6 +471,8 @@
             <label class="trk-chk"><input type="checkbox" id="trkNorm"> normalise</label>
           </div>
           <p class="trk-cap" id="trkCap"></p>
+          <!-- The clip editor draws itself in here once a track is picked. -->
+          <div class="trk-wave" id="trkWave"></div>
           <div class="trk-drop" id="trkDrop">Drop an audio file here</div>
           <p class="trk-note" id="trkNote"></p>
           <div class="trk-list" id="trkList"></div>
@@ -2182,6 +2189,12 @@
       </div>`;
       }).join("");
     }
+    T.list.addEventListener("click", (e) => {
+      const el = e.target;
+      if (el?.closest("button")) return;
+      const id = el?.closest(".trk")?.dataset["id"];
+      if (id) deps.onSelect?.(id);
+    });
     T.list.addEventListener("click", async (e) => {
       const btn = e.target?.closest("button");
       if (!btn) return;
@@ -2379,6 +2392,416 @@
     }
   }
 
+  // src/waveform_view.ts
+  var BAND_INK = {
+    onset_low: "#ff2a1a",
+    onset_mid: "#a83aff",
+    onset_high: "#4dff8c"
+  };
+  var BAND_ORDER = ["onset_high", "onset_mid", "onset_low"];
+  var LANE = 9;
+  var LANES = LANE * BAND_ORDER.length;
+  var EDGE_SLOP = 7;
+  var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  var readPalette = (el) => {
+    const cs = getComputedStyle(el);
+    const v = (name, fallback) => cs.getPropertyValue(name).trim() || fallback;
+    return {
+      accent: v("--accent", "#ff9d3c"),
+      line: v("--line-2", "#333a52"),
+      panel: v("--panel-2", "#171c2c"),
+      ink: v("--ink-2", "#a9a4bd")
+    };
+  };
+  var WaveView = class {
+    constructor() {
+      this.dpr = 1;
+      this.w = 1;
+      this.h = 1;
+      /** Null until a track has been analysed; `message` is shown instead. */
+      this.data = null;
+      this.clip = null;
+      /** Audition position in seconds, or null when stopped. */
+      this.playhead = null;
+      /** Stands in for the waveform — "no track selected", a failed fetch, etc. */
+      this.message = "";
+      const el = document.createElement("canvas");
+      el.style.cssText = "display:block;width:100%;height:132px;cursor:crosshair;touch-action:none;border-radius:6px";
+      const ctx = el.getContext("2d");
+      if (!ctx) throw new Error("waveform: 2D canvas context unavailable");
+      this.el = el;
+      this.g2 = ctx;
+      this.pal = readPalette(el);
+      this.ro = new ResizeObserver(() => {
+        this.resize();
+        this.draw();
+      });
+      this.ro.observe(el);
+    }
+    /**
+     * Match the backing store to the element's CSS box at device resolution,
+     * capped at 2x — beyond that the fill rate buys nothing visible.
+     */
+    resize() {
+      const r = this.el.getBoundingClientRect();
+      this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      this.w = Math.max(1, Math.round(r.width));
+      this.h = Math.max(1, Math.round(r.height));
+      this.el.width = Math.max(1, Math.round(this.w * this.dpr));
+      this.el.height = Math.max(1, Math.round(this.h * this.dpr));
+      this.pal = readPalette(this.el);
+    }
+    /** Seconds -> CSS x. Shared with the pointer code so both agree exactly. */
+    secToX(s) {
+      const d = this.data?.duration ?? 0;
+      return d > 0 ? s / d * this.w : 0;
+    }
+    /** CSS x -> seconds, clamped to the track. */
+    xToSec(x) {
+      const d = this.data?.duration ?? 0;
+      return d > 0 ? clamp(x / this.w, 0, 1) * d : 0;
+    }
+    /** Where a pointer event landed, in this canvas's own CSS pixels. */
+    eventX(e) {
+      return e.clientX - this.el.getBoundingClientRect().left;
+    }
+    draw() {
+      const g2 = this.g2;
+      g2.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      g2.clearRect(0, 0, this.w, this.h);
+      g2.fillStyle = this.pal.panel;
+      g2.fillRect(0, 0, this.w, this.h);
+      if (!this.data) {
+        g2.fillStyle = this.pal.ink;
+        g2.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
+        g2.textAlign = "center";
+        g2.textBaseline = "middle";
+        g2.fillText(this.message, this.w / 2, this.h / 2, this.w - 16);
+        return;
+      }
+      this.drawWave();
+      this.drawOnsets();
+      this.drawClip();
+      this.drawPlayhead();
+    }
+    /** The peaks, mirrored about the midline as one filled shape. */
+    drawWave() {
+      const d = this.data;
+      if (!d || d.peaks.length === 0) return;
+      const g2 = this.g2, w = this.w, n = d.peaks.length;
+      const mid = (this.h - LANES - 2) / 2;
+      const cols = new Float32Array(w);
+      for (let x = 0; x < w; x++) {
+        const a = Math.floor(x * n / w);
+        const b = Math.max(a + 1, Math.floor((x + 1) * n / w));
+        let p = 0;
+        for (let i = a; i < b && i < n; i++) p = Math.max(p, d.peaks[i] ?? 0);
+        cols[x] = p;
+      }
+      g2.fillStyle = this.pal.line;
+      g2.beginPath();
+      g2.moveTo(0, mid);
+      const amp = (x) => Math.max(0.6, (cols[x] ?? 0) * mid * 0.94);
+      for (let x = 0; x < w; x++) g2.lineTo(x, mid - amp(x));
+      for (let x = w - 1; x >= 0; x--) g2.lineTo(x, mid + amp(x));
+      g2.closePath();
+      g2.fill();
+    }
+    /** Ticks in per-band lanes, plus a wash of each one up over the waveform. */
+    drawOnsets() {
+      const d = this.data;
+      if (!d) return;
+      const g2 = this.g2, waveH = this.h - LANES - 2;
+      BAND_ORDER.forEach((band, row) => {
+        const hits = d.onsets[band];
+        if (!hits) return;
+        const top = waveH + 2 + row * LANE;
+        g2.fillStyle = BAND_INK[band];
+        for (const [sec, vel] of hits) {
+          const x = Math.round(this.secToX(sec));
+          const v = clamp(vel, 0, 1);
+          g2.globalAlpha = 0.1 + 0.3 * v;
+          g2.fillRect(x, 0, 1, waveH);
+          g2.globalAlpha = 1;
+          const tick = 3 + Math.round(v * (LANE - 4));
+          g2.fillRect(x - 1, top + (LANE - 1 - tick), 2, tick);
+        }
+      });
+    }
+    /** The selection: everything outside it knocked back, edges and handles. */
+    drawClip() {
+      const c = this.clip;
+      if (!c) return;
+      const g2 = this.g2, h = this.h;
+      const x0 = this.secToX(c.start), x1 = this.secToX(c.end);
+      g2.fillStyle = this.pal.panel;
+      g2.globalAlpha = 0.62;
+      g2.fillRect(0, 0, x0, h);
+      g2.fillRect(x1, 0, this.w - x1, h);
+      g2.fillStyle = this.pal.accent;
+      g2.globalAlpha = 0.1;
+      g2.fillRect(x0, 0, x1 - x0, h);
+      g2.globalAlpha = 1;
+      for (const x of [x0, x1]) {
+        g2.fillRect(x - 1, 0, 2, h);
+        g2.fillRect(x - EDGE_SLOP / 2, 0, EDGE_SLOP, 16);
+      }
+    }
+    drawPlayhead() {
+      if (this.playhead === null) return;
+      const g2 = this.g2;
+      g2.fillStyle = this.pal.ink;
+      g2.fillRect(Math.round(this.secToX(this.playhead)), 0, 2, this.h);
+    }
+    destroy() {
+      this.ro.disconnect();
+      this.el.remove();
+    }
+  };
+
+  // src/waveform.ts
+  var clamp2 = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  function initWaveform(deps) {
+    const host = document.getElementById(deps.containerId ?? "trkWave");
+    if (!host) {
+      console.warn("waveform: no #trkWave container \u2014 clip editor not mounted.");
+      return { show: () => {
+      }, clip: () => null, stop: () => {
+      }, destroy: () => {
+      } };
+    }
+    const view = new WaveView();
+    const mk = (tag, css, text = "") => {
+      const n = document.createElement(tag);
+      n.style.cssText = css;
+      if (text) n.textContent = text;
+      return n;
+    };
+    const wrap = mk("div", "margin:8px 0");
+    const row = mk("div", "display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px;font:12px/1.6 var(--f-data),ui-monospace,monospace;color:var(--ink-2)");
+    const play = mk("button", "min-width:7em", "Audition");
+    play.type = "button";
+    play.disabled = true;
+    play.title = "Play just the selected region, on a loop";
+    const readout = mk("span", "font-variant-numeric:tabular-nums");
+    const sens = document.createElement("input");
+    sens.type = "range";
+    sens.min = "0.3";
+    sens.max = "3";
+    sens.step = "0.05";
+    sens.value = "1.1";
+    sens.style.cssText = "width:130px;vertical-align:middle";
+    sens.title = "Onset sensitivity \u2014 higher finds more, and more of it is noise";
+    const sensVal = mk("span", "min-width:2.6em;font-variant-numeric:tabular-nums", "1.10");
+    const sensLbl = mk("label", "display:flex;align-items:center;gap:6px", "sens");
+    sensLbl.append(sens, sensVal);
+    const note = mk("p", "margin:4px 0 0;color:var(--ink-2)");
+    row.append(play, readout, sensLbl);
+    wrap.append(view.el, row, note);
+    host.append(wrap);
+    const say = (msg, err = false) => {
+      note.textContent = msg;
+      note.classList.toggle("err", err);
+    };
+    let trackId = null;
+    let clip = null;
+    let token = 0;
+    const clock = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
+    const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+    function pushOpts() {
+      if (!clip) return;
+      const write = (id, value) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.value = value;
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      write("trkStart", mmss(clip.start));
+      write("trkTake", (clip.end - clip.start).toFixed(1));
+    }
+    function sync() {
+      view.clip = clip;
+      view.draw();
+      readout.textContent = clip ? `start ${clock(clip.start)}  \xB7  length ${clock(clip.end - clip.start)}` : "drag across the waveform to pick a clip";
+      play.disabled = !clip || !view.data;
+    }
+    function toWave(id, body) {
+      const b = body;
+      const peaks = b?.peaks, dur = b?.duration;
+      if (!Array.isArray(peaks) || typeof dur !== "number" || !(dur > 0))
+        return `Analysis for \u201C${id}\u201D came back without usable peaks.`;
+      return { id, duration: dur, peaks, onsets: b?.onsets ?? {} };
+    }
+    async function analyse(id) {
+      try {
+        const r = await fetch(
+          `/api/waveform/${encodeURIComponent(id)}?sensitivity=${encodeURIComponent(sens.value)}`
+        );
+        if (r.status === 404) return `No waveform for \u201C${id}\u201D \u2014 the studio has not analysed it.`;
+        if (!r.ok) return `Analysis failed \u2014 HTTP ${r.status}.`;
+        return toWave(id, await r.json());
+      } catch (err) {
+        return `Could not reach the studio \u2014 ${String(err)}`;
+      }
+    }
+    const counts = (d) => Object.entries(d.onsets).map(([k, v]) => `${k.replace("onset_", "")} ${v?.length ?? 0}`).join(" \xB7 ") || "no onsets at this sensitivity";
+    async function load() {
+      const id = trackId;
+      if (!id) {
+        view.data = null;
+        view.message = "No track selected.";
+        say("");
+        sync();
+        return;
+      }
+      const mine = ++token;
+      say(`Analysing ${id}\u2026`);
+      const res = await analyse(id);
+      if (mine !== token) return;
+      if (typeof res === "string") {
+        view.data = null;
+        view.message = res;
+        say(res, true);
+        sync();
+        return;
+      }
+      view.data = res;
+      view.message = "";
+      clip = clip ? { start: clamp2(clip.start, 0, res.duration), end: clamp2(clip.end, 0, res.duration) } : { start: 0, end: res.duration };
+      say(counts(res));
+      sync();
+      pushOpts();
+    }
+    let grabbing = false;
+    let anchor = 0;
+    const nearEdge = (x) => !!clip && (Math.abs(x - view.secToX(clip.start)) <= EDGE_SLOP || Math.abs(x - view.secToX(clip.end)) <= EDGE_SLOP);
+    function drag(t) {
+      const lo = Math.min(anchor, t), hi = Math.max(anchor, t);
+      clip = { start: lo, end: Math.max(hi, lo + 0.02) };
+      sync();
+      pushOpts();
+      if (playing) seekIntoClip();
+    }
+    view.el.addEventListener("pointerdown", (e) => {
+      const c = clip;
+      if (!view.data) return;
+      const x = view.eventX(e);
+      if (c && Math.abs(x - view.secToX(c.start)) <= EDGE_SLOP) anchor = c.end;
+      else if (c && Math.abs(x - view.secToX(c.end)) <= EDGE_SLOP) anchor = c.start;
+      else anchor = view.xToSec(x);
+      grabbing = true;
+      view.el.setPointerCapture(e.pointerId);
+      drag(view.xToSec(x));
+    });
+    view.el.addEventListener("pointermove", (e) => {
+      if (!view.data) return;
+      if (grabbing) {
+        drag(view.xToSec(view.eventX(e)));
+        return;
+      }
+      view.el.style.cursor = nearEdge(view.eventX(e)) ? "ew-resize" : "crosshair";
+    });
+    const release = (e) => {
+      if (!grabbing) return;
+      grabbing = false;
+      if (view.el.hasPointerCapture(e.pointerId)) view.el.releasePointerCapture(e.pointerId);
+      if (clip && clip.end - clip.start < 0.06)
+        clip = { start: 0, end: view.data?.duration ?? 0 };
+      sync();
+      pushOpts();
+    };
+    view.el.addEventListener("pointerup", release);
+    view.el.addEventListener("pointercancel", release);
+    const audio = new Audio();
+    audio.preload = "auto";
+    audio.muted = true;
+    audio.loop = false;
+    let playing = false;
+    let raf = 0;
+    const seekIntoClip = () => {
+      const c = clip;
+      if (!c) return;
+      if (audio.currentTime < c.start || audio.currentTime > c.end) {
+        try {
+          audio.currentTime = c.start;
+        } catch {
+        }
+      }
+    };
+    function frame2() {
+      const c = clip;
+      if (!playing || !c) return;
+      if (audio.currentTime >= c.end - 0.01) audio.currentTime = c.start;
+      view.playhead = audio.currentTime;
+      view.draw();
+      deps.onAudition(true, audio.currentTime * 1e3);
+      raf = requestAnimationFrame(frame2);
+    }
+    function stop(msg) {
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      playing = false;
+      audio.pause();
+      audio.muted = true;
+      play.textContent = "Audition";
+      play.setAttribute("aria-pressed", "false");
+      view.playhead = null;
+      view.draw();
+      deps.onAudition(false, (clip?.start ?? 0) * 1e3);
+      if (msg) say(msg, true);
+    }
+    function start() {
+      if (!clip || !view.data) return;
+      playing = true;
+      audio.muted = false;
+      audio.volume = 0.6;
+      seekIntoClip();
+      void audio.play().catch(() => stop("Could not play that track."));
+      play.textContent = "Stop";
+      play.setAttribute("aria-pressed", "true");
+      raf = requestAnimationFrame(frame2);
+    }
+    play.addEventListener("click", () => {
+      if (playing) stop();
+      else start();
+    });
+    audio.addEventListener("error", () => {
+      if (playing) stop(`Could not load audio for \u201C${trackId ?? ""}\u201D.`);
+    });
+    let sensTimer = 0;
+    sens.addEventListener("input", () => {
+      sensVal.textContent = (+sens.value).toFixed(2);
+      window.clearTimeout(sensTimer);
+      sensTimer = window.setTimeout(() => {
+        void load();
+      }, 300);
+    });
+    view.message = "No track selected.";
+    sync();
+    return {
+      show(id) {
+        if (id === trackId) return;
+        stop();
+        trackId = id;
+        clip = null;
+        if (id) audio.src = `/api/track/${encodeURIComponent(id)}.mp3`;
+        else audio.removeAttribute("src");
+        void load();
+      },
+      clip: () => clip,
+      stop: () => stop(),
+      destroy() {
+        stop();
+        window.clearTimeout(sensTimer);
+        token++;
+        view.destroy();
+        wrap.remove();
+      }
+    };
+  }
+
   // src/main.ts
   var GEN = window.CASTLE_GEN ?? { scenes: [], audio: {} };
   var SCENES = GEN.scenes;
@@ -2482,7 +2905,14 @@
     }
     audioMode = modeEl.checked ? "rendered" : "synth";
   }
-  initTracks({ scenes: SCENES });
+  var wave = initWaveform({
+    onAudition: (playing, positionMs) => {
+      if (!playing) return;
+      if (state.running) transport.setPlaying(false);
+      transport.seekTo(positionMs % state.scene.dur);
+    }
+  });
+  initTracks({ scenes: SCENES, onSelect: (id) => wave.show(id) });
   function frame(now) {
     const f = step(
       state,
