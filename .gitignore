@@ -7,6 +7,7 @@ audio/*.mp3
 # tracked, the files are not.
 tracks/*
 !tracks/README.md
+!tracks/tracks.json
 __pycache__/
 *.pyc
 .DS_Store

@@ -34,6 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana  # noqa: E402
+import manifest as mf  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 TRACKS = ROOT / "tracks"
@@ -50,19 +51,30 @@ def run(cmd: list[str]) -> tuple[bool, str]:
 
 
 def track_info(p: Path) -> dict:
-    try:
-        x = ana.load_audio(p)
-        dur = len(x) / ana.SR
-        marks = ana.analyze(x)
-    except Exception as e:                       # noqa: BLE001
-        return {"id": p.stem, "error": str(e), "kb": p.stat().st_size // 1024}
-    return {
+    """Everything the Tracks panel needs, including where the file came from.
+
+    The manifest is the cheap part — read it even if decoding fails, so a
+    broken file still shows its source and can be re-imported.
+    """
+    meta = mf.get(p.stem) or {}
+    info = {
         "id": p.stem,
         "kb": p.stat().st_size // 1024,
-        "dur": round(dur, 2),
-        "onsets": {k: len(v) for k, v in marks.items()},
-        "markers": {k: [[round(t, 3), v] for t, v in vv] for k, vv in marks.items()},
+        "source": meta.get("source", ""),
+        "title": meta.get("title", ""),
+        "imported": meta.get("imported", ""),
+        "opts": meta.get("opts", {}),
+        "notes": meta.get("notes", ""),
     }
+    try:
+        x = ana.load_audio(p)
+        marks = ana.analyze(x)
+    except Exception as e:                       # noqa: BLE001
+        info["error"] = str(e)
+        return info
+    info["dur"] = round(len(x) / ana.SR, 2)
+    info["onsets"] = {k: len(v) for k, v in marks.items()}
+    return info
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -118,6 +130,7 @@ class Handler(BaseHTTPRequestHandler):
             p = TRACKS / f"{tid}.mp3"
             if p.exists() and p.parent == TRACKS:
                 p.unlink()
+                mf.forget(tid)
                 return self.send_json({"ok": True, "removed": tid})
             return self.send_json({"error": "not found"}, 404)
         self.send_json({"error": "not found"}, 404)
@@ -127,6 +140,26 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.body()
         if path == "/api/import":
             return self.do_import(raw)
+        if path == "/api/refresh":
+            # Rebuild a track from its remembered source, with any option
+            # overridden. This is why the manifest exists.
+            req = json.loads(raw or b"{}")
+            tid = (req.get("id") or "").strip()
+            if not tid:
+                return self.send_json({"error": "no id"}, 400)
+            args = [PY, str(ROOT / "tools" / "import_track.py"), "--refresh", tid]
+            for k in ("start", "take", "sensitivity", "bitrate",
+                      "sample_rate", "channels", "gain_db"):
+                v = req.get(k)
+                if v not in (None, ""):
+                    args += [f"--{k.replace('_', '-')}", str(v)]
+            if req.get("normalize"):
+                args.append("--normalize")
+            with _lock:
+                ok, out = run(args)
+            return self.send_json({"ok": ok, "log": out,
+                                   "tracks": [track_info(p)
+                                              for p in sorted(TRACKS.glob("*.mp3"))]})
         if path == "/api/scene":
             return self.do_scene(json.loads(raw or b"{}"))
         if path == "/api/rebuild":
@@ -163,10 +196,13 @@ class Handler(BaseHTTPRequestHandler):
             args.append(str(src))
             req = json.loads(self.headers.get("X-Import-Opts") or "{}")
 
-        for k in ("id", "start", "take", "sensitivity"):
+        for k in ("id", "start", "take", "sensitivity", "bitrate",
+                  "sample_rate", "channels", "gain_db", "notes"):
             v = req.get(k)
             if v not in (None, ""):
-                args += [f"--{k}", str(v)]
+                args += [f"--{k.replace('_', '-')}", str(v)]
+        if req.get("normalize"):
+            args.append("--normalize")
 
         with _lock:
             ok, out = run(args)

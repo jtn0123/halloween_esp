@@ -223,6 +223,9 @@
     border: 1px solid var(--line-2); color: var(--ink);
     font-family: var(--f-data); font-size: 11px; text-transform: none;
   }
+  .trk-opts .trk-chk input { padding: 0; }
+  .trk__src a { color: var(--cool); text-decoration: none; }
+  .trk__src a:hover { text-decoration: underline; }
   .trk-drop {
     border: 1px dashed var(--line-2); border-radius: 4px; padding: 14px;
     text-align: center; font-size: 12px; color: var(--muted);
@@ -378,10 +381,14 @@
             <button class="btn btn--go" id="trkGet" type="button">Import</button>
           </div>
           <div class="trk-opts">
-            <label>id <input type="text" id="trkId" placeholder="auto" size="10"></label>
+            <label>id <input type="text" id="trkId" placeholder="auto" size="9"></label>
             <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
             <label>take <input type="text" id="trkTake" placeholder="all" size="5"></label>
+            <label>kbps <input type="text" id="trkBitrate" placeholder="96" size="4"></label>
+            <label>rate <input type="text" id="trkRate" placeholder="44100" size="6"></label>
+            <label>ch <input type="text" id="trkCh" placeholder="1" size="2"></label>
             <label>sens <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
+            <label class="trk-chk"><input type="checkbox" id="trkNorm"> normalise</label>
           </div>
           <div class="trk-drop" id="trkDrop">Drop an audio file here</div>
           <p class="trk-note" id="trkNote"></p>
@@ -1603,11 +1610,12 @@
     T.note.textContent = msg;
     T.note.classList.toggle("err", !!err);
   };
+  const val = id => document.getElementById(id).value.trim();
   const opts = () => ({
-    id: document.getElementById("trkId").value.trim(),
-    start: document.getElementById("trkStart").value.trim(),
-    take: document.getElementById("trkTake").value.trim(),
-    sensitivity: document.getElementById("trkSens").value.trim(),
+    id: val("trkId"), start: val("trkStart"), take: val("trkTake"),
+    sensitivity: val("trkSens"), bitrate: val("trkBitrate"),
+    sample_rate: val("trkRate"), channels: val("trkCh"),
+    normalize: document.getElementById("trkNorm").checked,
   });
 
   fetch("/api/tracks").then(r => r.ok ? r.json() : Promise.reject())
@@ -1623,19 +1631,40 @@
         + "For the full thing — importing links, saving tracks, editing scenes.yaml — run: make studio");
     });
 
+  const esc = s => String(s).replace(/[&<>"]/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
   function drawTracks(tracks) {
-    T.list.innerHTML = (tracks || []).map(t => `
-      <div class="trk" data-id="${t.id}">
-        <div class="trk__nm">${t.id}
-          <small>${t.dur ?? "?"}s · ${t.kb} KB · ${
-            Object.entries(t.onsets || {}).map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" · ") || "no onsets"
-          }</small>
+    T.list.innerHTML = (tracks || []).map(t => {
+      const o = t.opts || {};
+      const fmt = [`${o.bitrate || "?"}kbps`,
+                   o.channels === 2 ? "stereo" : "mono",
+                   `${(o.sample_rate || 44100) / 1000}k`,
+                   o.normalize ? "normalised" : null].filter(Boolean).join(" · ");
+      const onsets = Object.entries(t.onsets || {})
+        .map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" · ") || "no onsets";
+      // The remembered source. A link if it came from one, so you can go back
+      // to where it came from without digging through history.
+      const isUrl = /^https?:\/\//.test(t.source || "");
+      const src = !t.source ? ""
+        : isUrl
+          ? `<a href="${esc(t.source)}" target="_blank" rel="noreferrer noopener">${esc(t.title || t.source).slice(0, 64)}</a>`
+          : esc(t.source.replace(/^file:/, "").split("/").pop());
+      return `
+      <div class="trk" data-id="${esc(t.id)}">
+        <div class="trk__nm">${esc(t.id)}
+          <small>${t.dur ?? "?"}s · ${t.kb} KB · ${fmt}</small>
+          <small>${onsets}</small>
+          ${src ? `<small class="trk__src">from ${src}</small>` : ""}
+          ${t.notes ? `<small>${esc(t.notes)}</small>` : ""}
         </div>
         <div class="trk__act">
           <button data-act="scene">Make scene</button>
+          ${t.source ? `<button data-act="refresh" title="Rebuild from the remembered source using the options above">Re-import</button>` : ""}
           <button data-act="del" class="danger">Delete</button>
         </div>
-      </div>`).join("");
+      </div>`;
+    }).join("");
   }
 
   T.list.addEventListener("click", async e => {
@@ -1646,6 +1675,23 @@
       const r = await fetch(`/api/tracks/${id}`, { method: "DELETE" }).then(r => r.json());
       say(r.ok ? `Deleted ${id}.` : `Could not delete ${id}.`, !r.ok);
       refresh();
+    } else if (btn.dataset.act === "refresh") {
+      // Rebuild from the remembered source. Anything left blank in the option
+      // row keeps whatever was used last time.
+      say(`Re-importing ${id} from its remembered source…`);
+      const o = opts();
+      const r = await fetch("/api/refresh", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id, start: o.start, take: o.take, sensitivity: o.sensitivity,
+          bitrate: document.getElementById("trkBitrate").value.trim(),
+          sample_rate: document.getElementById("trkRate").value.trim(),
+          channels: document.getElementById("trkCh").value.trim(),
+          normalize: document.getElementById("trkNorm").checked,
+        })
+      }).then(r => r.json());
+      if (r.ok) { drawTracks(r.tracks); say(`Re-imported ${id}.`); }
+      else say(`Re-import failed — ${(r.log || r.error || "").slice(-400)}`, true);
     } else {
       const r = await fetch("/api/tracks").then(r => r.json());
       const t = (r.tracks || []).find(x => x.id === id);

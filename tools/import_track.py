@@ -23,10 +23,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-import numpy as np
+
 
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana  # noqa: E402
+import manifest as mf  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 TRACKS = ROOT / "tracks"
@@ -43,7 +44,8 @@ def secs(v: str) -> float:
     return out
 
 
-def fetch_url(url: str, dest: Path) -> Path:
+def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
+    """Download audio only. Returns (file, title as the source named it)."""
     if not shutil.which("yt-dlp"):
         raise SystemExit("yt-dlp not installed — `brew install yt-dlp`")
     print(f"fetching {url}")
@@ -55,19 +57,34 @@ def fetch_url(url: str, dest: Path) -> Path:
     got = sorted(dest.glob("*.mp3"), key=lambda p: p.stat().st_mtime)
     if not got:
         raise SystemExit("yt-dlp produced no audio file")
-    return got[-1]
+    return got[-1], got[-1].stem
 
 
-def convert(src: Path, out: Path, start: float, take: float | None,
-            bitrate: int = BITRATE) -> None:
+def convert(src: Path, out: Path, o: dict) -> None:
+    """One ffmpeg pass: trim, filter, downmix, resample, encode."""
     cmd = ["ffmpeg", "-v", "quiet", "-y"]
-    if start:
-        cmd += ["-ss", str(start)]
+    if o["start"]:
+        cmd += ["-ss", str(o["start"])]
     cmd += ["-i", str(src)]
-    if take:
-        cmd += ["-t", str(take)]
-    # Mono, 44.1 kHz. Mono is not a compromise here — there is one speaker.
-    cmd += ["-ac", "1", "-ar", "44100", "-b:a", f"{bitrate}k", str(out)]
+    if o["take"]:
+        cmd += ["-t", str(o["take"])]
+
+    af = []
+    if o["normalize"]:
+        # EBU R128 to -16 LUFS. Scene `volume` still sets relative level; this
+        # just stops one imported track being wildly louder than the rest.
+        af.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+    if o["gain_db"]:
+        af.append(f"volume={o['gain_db']}dB")
+    if o["fade_in"]:
+        af.append(f"afade=t=in:st=0:d={o['fade_in']}")
+    if o["fade_out"] and o["take"]:
+        af.append(f"afade=t=out:st={max(0, o['take'] - o['fade_out'])}:d={o['fade_out']}")
+    if af:
+        cmd += ["-af", ",".join(af)]
+
+    cmd += ["-ac", str(o["channels"]), "-ar", str(o["sample_rate"]),
+            "-b:a", f"{o['bitrate']}k", str(out)]
     subprocess.run(cmd, check=True)
 
 
@@ -109,60 +126,146 @@ def scene_block(tid: str, dur: float, marks: dict) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("source", help="local audio file, or a URL for yt-dlp")
+    ap = argparse.ArgumentParser(
+        description="Import audio into tracks/, remembering where it came from.")
+    ap.add_argument("source", nargs="?",
+                    help="local audio file, or a URL for yt-dlp. Omit with "
+                         "--refresh to reuse the remembered source.")
     ap.add_argument("--id", help="track id (default: sanitised filename)")
-    ap.add_argument("--start", default="0", help="skip in, e.g. 0:12")
-    ap.add_argument("--take", help="seconds to keep, e.g. 24")
-    ap.add_argument("--sensitivity", type=float, default=1.1,
-                    help="onset threshold; lower finds more (default 1.1)")
-    ap.add_argument("--bitrate", type=int, default=BITRATE,
-                    help=f"kbps, mono (default {BITRATE}, matching the flash "
-                         "budget; raise it only if the audio is not going "
-                         "into flash)")
+    ap.add_argument("--refresh", metavar="ID",
+                    help="rebuild an existing track from its remembered "
+                         "source; any option you pass overrides what was "
+                         "used last time")
+    ap.add_argument("--list", action="store_true", help="show imported tracks")
+    ap.add_argument("--notes", default="", help="free-text note on the track")
+
+    g = ap.add_argument_group("trim")
+    g.add_argument("--start", help="skip in, e.g. 0:12")
+    g.add_argument("--take", help="seconds to keep, e.g. 24")
+    g.add_argument("--fade-in", type=float, help="seconds of fade at the head")
+    g.add_argument("--fade-out", type=float, help="seconds of fade at the tail")
+
+    g = ap.add_argument_group("format")
+    g.add_argument("--bitrate", type=int,
+                   help=f"kbps (default {BITRATE}, matching the flash budget)")
+    g.add_argument("--channels", type=int, choices=(1, 2),
+                   help="1 = mono (default). 2 needs a second amp on the "
+                        "hardware; see PROJECT_NOTES §12.10")
+    g.add_argument("--sample-rate", type=int,
+                   help="Hz (default 44100). 22050 halves the data rate and "
+                        "is plenty for atmospheres")
+    g.add_argument("--normalize", action="store_true",
+                   help="EBU R128 loudness match, so imports sit level with "
+                        "the generated scenes")
+    g.add_argument("--gain-db", type=float, help="flat gain adjustment in dB")
+
+    g = ap.add_argument_group("analysis")
+    g.add_argument("--sensitivity", type=float,
+                   help="onset threshold; lower finds more (default 1.1)")
+
     ap.add_argument("--analyze-only", action="store_true",
                     help="just report onsets, don't import")
     args = ap.parse_args()
 
     TRACKS.mkdir(exist_ok=True)
 
+    if args.list:
+        data = mf.load()
+        if not data:
+            print("no tracks imported yet")
+            return 0
+        for tid, e in sorted(data.items()):
+            a = e.get("audio", {})
+            print(f"{tid:<20} {a.get('duration', 0):>6.1f}s "
+                  f"{a.get('bytes', 0)/1024:>7.0f}K  {e.get('source', '')[:60]}")
+        return 0
+
     if args.analyze_only:
         src = Path(args.source)
-        marks = ana.analyze_file(src, sensitivity=args.sensitivity)
+        marks = ana.analyze_file(src, sensitivity=args.sensitivity or 1.1)
         dur = len(ana.load_audio(src)) / ana.SR
         for k, v in marks.items():
             print(f"  {k:<11} {len(v):>4} onsets")
         print(f"\n{scene_block(src.stem, dur, marks)}")
         return 0
 
-    is_url = "://" in args.source
+    # Options: remembered defaults, overridden by whatever was passed now.
+    prev = mf.get(args.refresh) if args.refresh else None
+    if args.refresh and prev is None:
+        raise SystemExit(f"no remembered track {args.refresh!r} "
+                         f"(tools/import_track.py --list)")
+    base = dict(prev.get("opts", {})) if prev else {}
+    o = {
+        "start": base.get("start", "0"),
+        "take": base.get("take"),
+        "fade_in": base.get("fade_in"),
+        "fade_out": base.get("fade_out"),
+        "bitrate": base.get("bitrate", BITRATE),
+        "channels": base.get("channels", 1),
+        "sample_rate": base.get("sample_rate", 44100),
+        "normalize": base.get("normalize", False),
+        "gain_db": base.get("gain_db"),
+        "sensitivity": base.get("sensitivity", 1.1),
+    }
+    for k in list(o):
+        v = getattr(args, k, None)
+        if v not in (None, False):
+            o[k] = v
+
+    source = args.source or (prev or {}).get("source", "")
+    if not source:
+        raise SystemExit("need a source (file or URL)")
+    if source.startswith("file:"):
+        source = source[5:]
+    is_url = "://" in source
+
     tmp = TRACKS / "_incoming"
     tmp.mkdir(exist_ok=True)
-    src = fetch_url(args.source, tmp) if is_url else Path(args.source)
+    title = (prev or {}).get("title", "")
+    if is_url:
+        src, title = fetch_url(source, tmp)
+    else:
+        src = Path(source)
     if not src.exists():
         raise SystemExit(f"no such file: {src}")
 
-    tid = args.id or "".join(
+    tid = args.refresh or args.id or "".join(
         c if c.isalnum() else "_" for c in src.stem.lower()
     ).strip("_")[:32]
+
     out = TRACKS / f"{tid}.mp3"
-    convert(src, out, secs(args.start),
-            secs(args.take) if args.take else None, args.bitrate)
-    if is_url:
-        shutil.rmtree(tmp, ignore_errors=True)
+    conv = dict(o)
+    conv["start"] = secs(o["start"]) if o["start"] else 0
+    conv["take"] = secs(o["take"]) if o["take"] else None
+    convert(src, out, conv)
+    shutil.rmtree(tmp, ignore_errors=True)
 
     x = ana.load_audio(out)
     dur = len(x) / ana.SR
     size = out.stat().st_size
-    marks = ana.analyze(x, sensitivity=args.sensitivity)
+    marks = ana.analyze(x, sensitivity=float(o["sensitivity"]))
 
+    mf.record(
+        tid,
+        source=source if is_url else f"file:{Path(source).resolve()}",
+        title=title, opts=o, notes=args.notes,
+        audio={"duration": round(dur, 2), "bytes": size,
+               "channels": o["channels"], "sample_rate": o["sample_rate"],
+               "bitrate": o["bitrate"]},
+        onsets={k: len(v) for k, v in marks.items()},
+    )
+
+    ch = "mono" if o["channels"] == 1 else "stereo"
     print(f"\nimported  tracks/{tid}.mp3")
-    print(f"  {dur:.1f}s   {size/1024:.0f} KB at {args.bitrate}kbps mono")
-    print(f"  {size/BUDGET*100:.0f}% of the whole device audio budget "
+    print(f"  {dur:.1f}s   {size/1024:.0f} KB at {o['bitrate']}kbps {ch} "
+          f"{o['sample_rate']}Hz")
+    print(f"  source remembered — rebuild any time with: "
+          f"tools/import_track.py --refresh {tid}")
+    print(f"  {size/BUDGET*100:.0f}% of the flash audio budget "
           f"({BUDGET/1024/1024:.1f} MB for ALL scenes)")
     if size > BUDGET * 0.45:
-        print("  ⚠ that is a big share — consider --take to trim it, or a "
-              "shorter loop")
+        print("  ⚠ that is a big share — trim it with --take, or drop "
+              "--bitrate / --sample-rate")
     print()
     for band, hits in marks.items():
         print(f"  {band:<11} {len(hits):>4} onsets ({len(hits)/dur*60:.0f}/min)")
