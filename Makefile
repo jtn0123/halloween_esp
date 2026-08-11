@@ -83,3 +83,4 @@ bench-audio-logs:
 check:
 	@$(PY) tools/check_loc.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"
+	@cd web && npm run --silent test

@@ -2,11 +2,12 @@
   "name": "castle-cue-desk",
   "private": true,
   "version": "1.0.0",
-  "description": "Browser cue desk for the Halloween castle — TypeScript sources",
+  "description": "Browser cue desk for the Halloween castle \u2014 TypeScript sources",
   "scripts": {
     "build": "esbuild src/main.ts --bundle --format=iife --target=es2020 --outfile=dist/bundle.js",
     "watch": "npm run build -- --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "esbuild src/effects.ts --bundle --format=esm --outfile=dist/effects.mjs && node test/effects_equivalence.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
