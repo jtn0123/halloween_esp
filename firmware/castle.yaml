@@ -59,15 +59,21 @@ esp32:
   framework:
     # The speaker media player requires esp-idf, not arduino.
     type: esp-idf
-    sdkconfig_options:
-      # This board has no USB-to-UART bridge chip — the USB socket is the
-      # chip's own USB peripheral. ESP-IDF still sends its console to a
-      # physical UART by default, which here means writing the log to pins
-      # nothing is attached to. Cost us an evening: the firmware ran fine
-      # (the onboard pixel proved it) while every log tool saw silence.
-      CONFIG_ESP_CONSOLE_USB_CDC: "y"
-      CONFIG_ESP_CONSOLE_UART_DEFAULT: "n"
-      CONFIG_ESP_CONSOLE_SECONDARY_NONE: "y"
+    # NO USB CONSOLE OPTIONS HERE — deliberately. See below.
+    #
+    # This board has no USB-to-UART bridge chip; the socket is the chip's own
+    # USB peripheral. The tempting fix is CONFIG_ESP_CONSOLE_USB_CDC, and it
+    # makes things worse: on the ESP32-S2 that console is the TinyUSB CDC
+    # stack, which ESPHome never initialises. The app then runs with its log
+    # pointed at a device that never comes up, and the board enumerates
+    # NOTHING over USB at all — no app port, and no way back in except
+    # holding BOOT while tapping RESET.
+    #
+    # The app has never presented a USB serial port on this board. Every port
+    # we saw was the ROM bootloader's. So `esphome logs --device` cannot work
+    # here: logs come over WiFi via the API, which is how ESPHome is normally
+    # used anyway. For serial you would need a USB-UART adapter on the TX/RX
+    # pins.
   # Embedded audio makes the binary ~2.5 MB. ESPHome's default dual-OTA layout
   # gives two 1.75 MB slots, so it fits in neither. One app partition gives
   # 3.87 MB. Trade-off: no OTA — flash over USB. See partitions_single_app.csv.
@@ -79,9 +85,9 @@ psram:
 
 logger:
   level: INFO
-  # Where the ESPHome logger writes. Pairs with the console sdkconfig above —
-  # both are needed, and neither works alone.
-  hardware_uart: USB_CDC
+  # Left at the default. Routing this to USB_CDC only matters if the USB
+  # console stack is running, which it is not — see the note on the esp32
+  # block above. Logs come over WiFi.
 
 api:
 
