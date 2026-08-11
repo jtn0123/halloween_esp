@@ -27,6 +27,7 @@ import numpy as np
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
+import analyze  # noqa: E402
 import synth  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -65,6 +66,24 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
     # is salted per process, which would re-randomise every render.
     rng = np.random.default_rng(zlib.crc32(scene["id"].encode()))
 
+    # A scene can be built on an imported file instead of (or as well as) the
+    # synths. Nobody tells us where an outside track's beats are, so we detect
+    # them — and the detected onsets are reported under the same marker names
+    # the synths use, so `pulse:` streams work identically either way.
+    track = scene.get("audio_file")
+    if track:
+        path = ROOT / track
+        if not path.exists():
+            raise SystemExit(f"scene {scene['id']}: no such audio_file {track}")
+        x = analyze.load_audio(path, sr)
+        gain = float(scene.get("track_gain", 1.0))
+        synth._place(buf, x * gain, float(scene.get("track_at", 0.0)))
+        for band, hits in analyze.analyze(
+                x, sr, sensitivity=float(scene.get("sensitivity", 1.1))).items():
+            markers.setdefault(band, []).extend(
+                [int((t + scene.get("track_at", 0.0)) * 1000), v]
+                for t, v in hits if t < dur - 0.1)
+
     for ev in scene.get("score") or []:
         name = ev["synth"]
         fn = synth.SYNTHS.get(name)
@@ -85,7 +104,10 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
             [int((ev["t"] + m) * 1000), round(v, 3)] for m, v in marks
             if ev["t"] + m < dur - 0.1)
 
-    buf = synth.apply_reverb(buf, wet=0.42, rng=rng)
+    # Imported tracks arrive already produced — adding the stone hall on top
+    # of someone else's reverb just makes mud. Scenes can override either way.
+    wet = float(scene.get("reverb", 0.0 if track else 0.42))
+    buf = synth.apply_reverb(buf, wet=wet, rng=rng)
 
     if scene.get("loop"):
         # Crossfade the tail into the head so the loop point is inaudible.

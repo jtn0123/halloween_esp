@@ -748,6 +748,58 @@ in the test tab before touching the transport.
 
 ---
 
+## 12.8 Custom tracks (2026-08-10)
+
+Justin wants to bring in his own audio alongside the generated scenes.
+
+**Tooling.** `yt-dlp` installed via brew (2026.07.04); `ffmpeg`, `lame` already
+present. The linked GUI (bytePatrol/YT-DLP-GUI-for-MacOS) is a self-contained
+`.app` with yt-dlp/ffmpeg bundled — fine to use for grabbing files by hand, but
+the pipeline here drives the CLI so imports are scriptable and repeatable.
+
+**`tools/import_track.py`** takes a local file or a URL and: converts to the
+project format (mono / 44.1 kHz / 96 kbps), optionally trims (`--start`,
+`--take`), reports the flash cost against the real budget, runs onset
+detection, and prints a ready-to-paste scene block wired to whatever it found.
+
+**`tools/analyze.py` — the interesting part.** The synths report their own
+event times, so generated scenes are locked to their audio by construction. An
+imported track can't do that, so its onsets are *detected*: spectral flux with
+an adaptive (running-median) threshold, run separately in three bands.
+
+| marker | band | typically | zone |
+|---|---|---|---|
+| `onset_low` | < 200 Hz | kick, heartbeat, pedal | door |
+| `onset_mid` | 200–2000 Hz | voices, piano, melody | towers |
+| `onset_high` | > 2000 Hz | cymbals, bells, sibilance | accents |
+
+Banding matters more than it sounds: one undivided onset track gives every
+zone the same pulse and the castle blinks as a single lamp. Per-band onsets
+give the bass its own zone and let the towers answer the melody.
+
+The detected onsets are emitted under the **same marker names the synths use**,
+so `pulse:` streams work identically for imported and generated audio, and
+`gen_esphome.py` / `gen_previewer.py` needed *no changes at all*.
+
+**Verified against ground truth.** A synthetic file with kicks every 0.5 s and
+hats offset by 0.25 s: 16/16 kicks in `onset_low`, 15/15 hats in `onset_high`,
+all within 10 ms. First run missed the onset at exactly t=0 — frame 0 diffs
+against itself — which would silently drop the downbeat of every loop. Fixed by
+padding the front with silence and subtracting the offset back.
+
+Also: imported audio defaults to **dry** (`reverb: 0.0`). It arrives already
+produced, and stacking the stone hall on someone else's reverb is mud.
+
+**The constraint to keep in view:** ~2.9 MB for *all* scenes combined, of which
+the eight generated ones use 1.8 MB. At 96 kbps mono a minute costs ~700 KB, so
+a full song does not fit alongside the existing show. `--take` a loopable
+20–30 s section instead — which reads better on a porch anyway.
+
+Files in `tracks/` are git-ignored (they're Justin's, and large); the scene
+definitions referencing them are tracked, so the show stays reproducible.
+
+---
+
 ## 13. Decision log
 
 | Date | Decision | Rationale |
@@ -768,3 +820,6 @@ in the test tab before touching the transport.
 | 2026-08-10 | Previewer is muted by default; audio starts only from Play | A preview tool must never make noise you didn't ask for. Unmuting is one click; being ambushed is not recoverable (§12.7) |
 | 2026-08-10 | Mute uses `.muted`, never volume 0 | Volume is also written by the fade-in and master slider, so a volume-based mute is one stray write from being undone (§12.7) |
 | 2026-08-10 | Seeking replays all `set` cues from zero | Scrubbing otherwise keeps whatever effects were on stage when you grabbed the bar (§12.7) |
+| 2026-08-10 | Imported tracks get onset-detected light, not hand-typed cues | Outside audio can't report its own beats; detecting them keeps the "light follows sound" guarantee that generated scenes get for free (§12.8) |
+| 2026-08-10 | Onsets detected per frequency band, not once overall | A single onset track makes all three zones blink together; banding gives the bass the door and the melody the towers (§12.8) |
+| 2026-08-10 | `tracks/` git-ignored, scene definitions tracked | The audio is Justin's and large; the show should still be reproducible from the repo (§12.8) |

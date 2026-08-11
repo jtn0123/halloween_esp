@@ -2,7 +2,7 @@ PY := .venv/bin/python
 ESPHOME := .venv/bin/esphome
 YAML := firmware/castle.yaml
 
-.PHONY: help setup audio generate preview build validate upload logs bench bench-logs clean
+.PHONY: help setup audio generate preview build validate upload logs bench bench-logs track clean
 
 help:
 	@echo "Halloween Castle"
@@ -17,6 +17,7 @@ help:
 	@echo "  make logs       tail device logs"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"
+	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
 	@echo ""
 	@echo "scenes/scenes.yaml is the source of truth for audio, cues AND the previewer."
 
@@ -34,6 +35,11 @@ generate:
 
 preview: audio
 	@$(PY) tools/gen_previewer.py
+
+# make track SRC=~/Music/thing.wav ID=organ_loop [ARGS="--take 24"]
+track:
+	@test -n "$(SRC)" || (echo "usage: make track SRC=<file|url> [ID=<name>] [ARGS=...]"; exit 1)
+	@$(PY) tools/import_track.py "$(SRC)" $(if $(ID),--id $(ID),) $(ARGS)
 
 bench: audio generate
 	$(ESPHOME) run firmware/bench.yaml
