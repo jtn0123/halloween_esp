@@ -2,7 +2,7 @@ PY := .venv/bin/python
 ESPHOME := .venv/bin/esphome
 YAML := firmware/castle.yaml
 
-.PHONY: help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean
+.PHONY: check help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean
 
 help:
 	@echo "Halloween Castle"
@@ -79,3 +79,7 @@ bench-audio: audio generate
 
 bench-audio-logs:
 	$(ESPHOME) logs firmware/bench_audio.yaml
+
+check:
+	@$(PY) tools/check_loc.py
+	@cd web && npx tsc --noEmit && echo "typecheck OK"
