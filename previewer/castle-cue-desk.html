@@ -251,6 +251,33 @@
     background: var(--panel-2); padding: 1px 4px; border-radius: 2px;
   }
   .trk-offline a { color: var(--cool); }
+  .trk-launch {
+    padding: 9px 12px; border-radius: 3px; background: var(--panel-2);
+    border: 1px solid var(--line-2);
+  }
+  .trk-launch b { color: var(--accent); font-family: var(--f-data); font-size: 12px; }
+
+  .trk-server {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 9px 12px; margin-bottom: 12px; border-radius: 4px;
+    background: var(--panel-2); border: 1px solid var(--line-2);
+  }
+  .trk-server[hidden] { display: none; }
+  .trk-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--spirit);
+    box-shadow: 0 0 7px var(--spirit); flex: none;
+  }
+  .trk-srvtxt { font-size: 12px; color: var(--ink-2); flex: 1; }
+  .trk-srvtxt b { font-family: var(--f-data); color: var(--ink); }
+  .trk-srvbtn { display: flex; gap: 6px; }
+  .trk-srvbtn button {
+    font-family: var(--f-data); font-size: 10px; letter-spacing: .08em;
+    text-transform: uppercase; padding: 5px 10px; border-radius: 3px;
+    cursor: pointer; background: var(--panel); color: var(--ink-2);
+    border: 1px solid var(--line-2);
+  }
+  .trk-srvbtn button:hover { border-color: var(--accent); color: var(--accent); }
+  .trk-srvbtn button.danger:hover { border-color: var(--alarm); color: var(--alarm); }
   .trk-cap {
     margin: 0 0 10px; font-family: var(--f-data); font-size: 11px;
     line-height: 1.7; color: var(--muted);
@@ -405,12 +432,23 @@
                yt-dlp and ffmpeg, which a web page cannot run — saying so
                plainly beats an Import button that quietly does nothing. -->
           <div class="trk-offline" id="trkOffline" hidden>
-            <strong>Importing needs the local studio.</strong>
-            <p>This page can't fetch links or write files on its own &mdash; that takes
-               <code>yt-dlp</code> and <code>ffmpeg</code> running on your Mac. Start it with:</p>
-            <pre>make studio</pre>
-            <p>then open <a href="http://127.0.0.1:8765/">127.0.0.1:8765</a>.
-               You can still drop a file below to analyse it here and get a scene to paste.</p>
+            <strong>The studio isn't running.</strong>
+            <p>Importing needs <code>yt-dlp</code> and <code>ffmpeg</code> on your Mac, and a
+               web page can't start a program that isn't running yet &mdash; that one step has
+               to happen outside the browser. It's a double-click, not a command:</p>
+            <p class="trk-launch"><b>Castle&nbsp;Cue&nbsp;Desk.command</b> &mdash; in the project folder</p>
+            <p>It opens the page for you, and from then on the controls are right here.
+               You can still drop a file below to analyse it without the server.</p>
+          </div>
+
+          <!-- Server controls, once we're actually talking to it. -->
+          <div class="trk-server" id="trkServer" hidden>
+            <span class="trk-dot"></span>
+            <span class="trk-srvtxt">Studio running on <b>127.0.0.1:8765</b></span>
+            <div class="trk-srvbtn">
+              <button id="srvRestart" type="button">Restart</button>
+              <button id="srvStop" type="button" class="danger">Stop server</button>
+            </div>
           </div>
           <div class="trk-add">
             <input type="text" id="trkUrl" placeholder="Paste a link, or drop an audio file below"
@@ -1689,6 +1727,7 @@
 
   fetch("/api/tracks").then(r => r.ok ? r.json() : Promise.reject())
     .then(d => { T.mode = "studio"; T.modeEl.textContent = "studio · connected";
+                 document.getElementById("trkServer").hidden = false;
                  drawTracks(d.tracks); say("Import by link or drop a file. Scenes write straight to scenes.yaml."); })
     .catch(() => {
       T.mode = "static";
@@ -1779,6 +1818,49 @@
 
   const refresh = () => T.mode === "studio" &&
     fetch("/api/tracks").then(r => r.json()).then(d => drawTracks(d.tracks));
+
+  /* ── Server controls ──────────────────────────────────────────────
+     Stop and Restart can live here because the server is, by definition,
+     reachable when these are visible. Starting it cannot — see the offline
+     panel for why that one step happens outside the browser. */
+  const goOffline = msg => {
+    T.mode = "static";
+    T.modeEl.textContent = "read-only · studio not running";
+    document.getElementById("trkServer").hidden = true;
+    document.getElementById("trkOffline").hidden = false;
+    document.getElementById("trkUrl").disabled = true;
+    document.getElementById("trkGet").disabled = true;
+    T.list.innerHTML = "";
+    say(msg || "");
+  };
+
+  document.getElementById("srvStop").addEventListener("click", async () => {
+    if (!confirm("Stop the studio server? Importing and scene editing stop "
+               + "until you launch it again with Castle Cue Desk.command.")) return;
+    say("Stopping…");
+    // The server answers before it shuts down, so a failure here is a real
+    // failure rather than the expected disconnect.
+    try { await fetch("/api/server/stop", { method: "POST" }); } catch (_) {}
+    setTimeout(() => goOffline("Studio stopped. Everything on this page still "
+      + "works — you just can't import or write scenes until it's running again."), 600);
+  });
+
+  document.getElementById("srvRestart").addEventListener("click", async () => {
+    say("Restarting…");
+    try { await fetch("/api/server/restart", { method: "POST" }); } catch (_) {}
+    // It re-execs itself, so poll until it answers again rather than guessing
+    // how long that takes.
+    for (let i = 0; i < 30; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      try {
+        const d = await fetch("/api/tracks", { cache: "no-store" }).then(r => r.json());
+        drawTracks(d.tracks);
+        return say("Studio restarted.");
+      } catch (_) { /* still coming up */ }
+    }
+    goOffline("Restart didn't come back within 15 s — relaunch with "
+            + "Castle Cue Desk.command.");
+  });
 
   document.getElementById("trkGet").addEventListener("click", async () => {
     const url = document.getElementById("trkUrl").value.trim();

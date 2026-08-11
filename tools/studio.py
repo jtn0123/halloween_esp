@@ -24,10 +24,12 @@ edits files in the repo; it is not something to expose to a network.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -43,6 +45,16 @@ HTML = ROOT / "previewer" / "castle-cue-desk.html"
 PY = str(ROOT / ".venv" / "bin" / "python")
 
 _lock = threading.Lock()          # ffmpeg/yt-dlp jobs are serialised
+
+
+def _restart() -> None:
+    """Replace this process with a fresh copy of itself.
+
+    os.execv keeps the same PID, so whatever launched us — a double-clicked
+    launcher, or launchd — neither notices nor needs to re-parent anything.
+    """
+    time.sleep(0.4)               # let the HTTP response actually go out
+    os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
 def run(cmd: list[str]) -> tuple[bool, str]:
@@ -160,6 +172,16 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": ok, "log": out,
                                    "tracks": [track_info(p)
                                               for p in sorted(TRACKS.glob("*.mp3"))]})
+        if path == "/api/server/stop":
+            # Answer first, then shut down — otherwise the page sees the
+            # socket die and reports a network error instead of "stopped".
+            self.send_json({"ok": True, "stopping": True})
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            return
+        if path == "/api/server/restart":
+            self.send_json({"ok": True, "restarting": True})
+            threading.Thread(target=_restart, daemon=True).start()
+            return
         if path == "/api/scene":
             return self.do_scene(json.loads(raw or b"{}"))
         if path == "/api/rebuild":

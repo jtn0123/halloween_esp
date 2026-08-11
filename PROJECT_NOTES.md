@@ -1153,3 +1153,38 @@ into the existing block.
 | 2026-08-10 | MP3 stays the codec | Measured on the board: zero underruns, zero decode errors, 32.7 ms average loop. The S2-can't-decode folklore is wrong at 96 kbps mono (§12.13) |
 | 2026-08-10 | Never set CONFIG_ESP_CONSOLE_USB_CDC on this board | It doesn't just fail — it panics. Interrupt watchdog timeout inside `esp_usb_console_flush_internal`, captured from the crash log (§12.14) |
 | 2026-08-10 | Find the device by IP, not mDNS | mDNS does not resolve on this network; the API on port 6053 does. A subnet scan found it immediately (§12.14) |
+
+---
+
+## 14. Roadmap
+
+Agreed order, 2026-08-10. Each step makes the next one easier, which is why
+they are in this order rather than by appetite.
+
+### 1. TypeScript migration — `web/MIGRATION.md`
+The previewer is 1892 lines of HTML wrapping ~1400 lines of untyped inline JS.
+Eight modules, all under 500 lines, split by responsibility. The inline script
+stays authoritative until the final commit flips over, so the page is never
+half-migrated. Doing this first because the bundler it introduces is what makes
+step 3 a build flag instead of a fork.
+
+### 2. SD card streaming — a `media_source::MediaSource`
+The measured decode headroom (§12.13) changed this from a compromise into an
+upgrade: streaming means full-length tracks at proper quality rather than
+trimming to fit PSRAM. ESPHome 2026.x ships the abstract base class and
+`audio_file/media_source` is a working reference that does exactly this from
+flash; the SD version reads a `FILE *` instead of a byte array. Build as a
+third variant, keep the flash scenes as the safety net.
+
+### 3. A cut-down cue desk served off the device
+Flash headroom is ~1.1 MB. The current page is 2.6 MB, almost entirely embedded
+audio — and the device *is* the audio, so that goes. Drop the synth and the
+Tracks panel too; keep the stage, scene buttons and cue sheet. Plausibly under
+100 KB. With step 1 done this is a build target, not a second codebase.
+
+### Standing work
+- Split `tools/synth.py` (395 lines, will pass 500 with the next scene) into
+  `voices.py` and `pieces.py`
+- Verify the remapped pins against hardware with a meter (§12.10 inference flag)
+- Re-run the benchmark with a real idle window, and again with pixels and amp
+  drawing current (§12.13 caveat)
