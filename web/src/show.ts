@@ -93,7 +93,20 @@ export function rebuildLightsAt(st: ShowState, sc: Scene, ms: number): void {
 
   sc.cues.forEach((c, i) => {
     if (c.t > ms) return;
-    st.fired.add(i);                    // don't re-fire history on resume
+
+    // Apply standing state for everything up to and including `ms`, but only
+    // mark cues STRICTLY before `ms` as already fired.
+    //
+    // The difference matters at the seam. Marking `c.t <= ms` as fired meant a
+    // cue sitting exactly on the seek point was swallowed: loading a scene
+    // rebuilds at 0, so any cue at t=0 was retired before the show started.
+    // Three scenes have strikes there — seance, ballroom, and both of crypt's
+    // opening heartbeats — so every one of them lost its downbeat on the first
+    // play-through, and only got it back after the first loop cleared `fired`.
+    //
+    // Same bug as the analyser's dropped t=0 onset, one layer up.
+    if (c.t < ms) st.fired.add(i);
+
     if (c.bus === "LED" && c.op === "set") {
       st.eff[c.zone] = c.eff;
       if (c.level !== undefined) st.level[c.zone] = c.level;
