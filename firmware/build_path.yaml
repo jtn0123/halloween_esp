@@ -1,0 +1,15 @@
+# Where ESPHome puts its build trees.
+#
+# Each variant's build directory is ~300 MB of ESP-IDF objects, and this
+# project has four of them. That is regenerable cache, not source — the
+# tracked source is under 3 MB — so it does not belong on a full internal
+# disk, and it is not worth moving the repo itself to escape it.
+#
+# Point this at roomier storage and the source stays put, git stays sane, and
+# .venv keeps its absolute paths. Included by every firmware variant.
+#
+# IF THE DRIVE IS NOT MOUNTED, builds fail with a path error. To go back to
+# building locally, comment out the build_path line below — ESPHome then
+# defaults to firmware/.esphome/build.
+esphome:
+  build_path: /Volumes/512Flash/esphome-builds/halloween_esp/${name}

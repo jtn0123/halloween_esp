@@ -232,6 +232,13 @@
     transition: border-color .15s, color .15s;
   }
   .trk-drop.over { border-color: var(--accent); color: var(--accent); }
+  .trk-cap {
+    margin: 0 0 10px; font-family: var(--f-data); font-size: 11px;
+    line-height: 1.7; color: var(--muted);
+  }
+  .trk-cap b { color: var(--ink-2); font-weight: 600; }
+  .trk-cap .ok { color: var(--spirit); }
+  .trk-cap .no { color: var(--alarm); }
   .trk-note { margin: 9px 0 0; font-size: 12px; color: var(--ink-2); line-height: 1.6; }
   .trk-note.err { color: var(--alarm); }
   .trk-list { display: grid; gap: 1px; background: var(--line); margin-top: 11px; }
@@ -390,6 +397,7 @@
             <label>sens <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
             <label class="trk-chk"><input type="checkbox" id="trkNorm"> normalise</label>
           </div>
+          <p class="trk-cap" id="trkCap"></p>
           <div class="trk-drop" id="trkDrop">Drop an audio file here</div>
           <p class="trk-note" id="trkNote"></p>
           <div class="trk-list" id="trkList"></div>
@@ -1617,6 +1625,36 @@
     sample_rate: val("trkRate"), channels: val("trkCh"),
     normalize: document.getElementById("trkNorm").checked,
   });
+
+  /* Live capacity readout. The whole SD-versus-flash argument comes down to
+     bytes per second against three ceilings, so show the arithmetic rather
+     than asserting it:
+
+       ~1.5 MB  usable PSRAM, once the player buffer and framebuffer are out
+                — the cap on the whole-file SD load
+       ~2.9 MB  flash left for ALL scenes after the firmware
+       32 GB    the card, i.e. no ceiling worth writing down — but only
+                reachable by streaming, which isn't built yet
+  */
+  const PSRAM_FREE = 1.5 * 1024 * 1024, FLASH_FREE = 2.9 * 1024 * 1024;
+  const mmss = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+  function updateCapacity() {
+    const kbps = +val("trkBitrate") || 96;
+    const ch = +val("trkCh") || 1;
+    const bps = kbps * 1000 / 8 * (ch === 2 ? 1 : 1);   // bitrate already covers channels
+    const psram = PSRAM_FREE / bps, flash = FLASH_FREE / bps;
+    const used = SCENES.reduce((a, s) => a + (s.dur / 1000) * 12000, 0); // ≈96k mono
+    const left = Math.max(0, (FLASH_FREE - used) / bps);
+    document.getElementById("trkCap").innerHTML =
+      `<b>${kbps} kbps ${ch === 2 ? "stereo" : "mono"}</b> = ${(bps / 1024).toFixed(1)} KB/s &nbsp;·&nbsp; `
+      + `flash, alongside the current show: <b>${mmss(left)}</b> &nbsp;·&nbsp; `
+      + `SD loaded into PSRAM: <b>${mmss(psram)}</b> `
+      + `<span class="${psram >= 240 ? "ok" : "no"}">${psram >= 240 ? "(4 min fits)" : "(under 4 min)"}</span>`
+      + ` &nbsp;·&nbsp; streamed from SD: <b class="ok">no limit</b>`;
+  }
+  ["trkBitrate", "trkCh"].forEach(id =>
+    document.getElementById(id).addEventListener("input", updateCapacity));
+  updateCapacity();
 
   fetch("/api/tracks").then(r => r.ok ? r.json() : Promise.reject())
     .then(d => { T.mode = "studio"; T.modeEl.textContent = "studio · connected";

@@ -2,7 +2,7 @@ PY := .venv/bin/python
 ESPHOME := .venv/bin/esphome
 YAML := firmware/castle.yaml
 
-.PHONY: help setup audio generate preview build validate upload logs bench bench-logs track clean
+.PHONY: help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean
 
 help:
 	@echo "Halloween Castle"
@@ -17,6 +17,7 @@ help:
 	@echo "  make logs       tail device logs"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"
+	@echo "  make bench-audio  measure decode load on the bare board (no speakers)"
 	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
 	@echo "  make studio     serve the cue desk with track management (localhost)"
 	@echo ""
@@ -72,3 +73,9 @@ logs:
 
 clean:
 	rm -rf firmware/.esphome audio/*.wav
+
+bench-audio: audio generate
+	$(ESPHOME) run firmware/bench_audio.yaml
+
+bench-audio-logs:
+	$(ESPHOME) logs firmware/bench_audio.yaml

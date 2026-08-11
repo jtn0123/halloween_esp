@@ -1,0 +1,117 @@
+# Audio benchmark — the bare Feather, no speakers, no jewels, no card.
+#
+#   make bench-audio        flash it
+#   make bench-audio-logs   watch the numbers
+#
+# WHY THIS EXISTS: every claim about what an ESP32-S2 can decode is currently
+# folk wisdom. Espressif publish numbers for the ESP32 and S3 and nothing for
+# the S2; both well-known ESP32 audio libraries simply decline to support it.
+# Rather than pick a codec on vibes, measure this board.
+#
+# WHAT IT MEASURES: the pipeline runs in full — MP3 decode, resample, I2S out —
+# with WiFi up and the LED RMT driver running, which is the actual contention
+# that matters on a single core. The I2S pins just have nothing listening, so
+# no amp or speaker is needed.
+#
+#   loop_time   the number that matters. ESPHome's main loop shares the core
+#               with decoding. If this climbs under audio, the decoder is
+#               starving everything else, and light cues will jitter.
+#   free RAM    internal SRAM. The S2 cannot DMA from PSRAM, so I2S buffers
+#               live here and this is the tighter of the two pools.
+#   PSRAM       headroom for a whole-file SD load (see PROJECT_NOTES §12.9).
+#
+# HOW TO READ IT: idle for 30 s, then each scene plays in turn with a banner
+# in the log. Compare loop_time idle vs during playback.
+#   - loop_time stays under ~30 ms      -> comfortable, MP3 is fine
+#   - climbs to 50-100 ms               -> decoding, but cues will drift
+#   - warnings about the component loop -> not keeping up; drop to WAV
+# Any "underrun", "Failed to decode" or "decoder error" line is the pipeline
+# failing outright, and is the answer on its own.
+
+substitutions:
+  name: castle-benchaudio
+  friendly: Castle Audio Bench
+  pin_led_data: "33"    # onboard NeoPixel
+  led_rgbw: "false"
+
+packages:
+  base: !include castle.yaml
+
+# The onboard pixel is dark until its power rail is driven high.
+switch:
+  - platform: gpio
+    id: neopixel_power
+    pin: GPIO21
+    restore_mode: ALWAYS_ON
+    internal: true
+
+logger:
+  level: DEBUG          # the audio pipeline reports underruns at DEBUG
+
+debug:
+  update_interval: 2s
+
+sensor:
+  - platform: debug
+    free:
+      name: "Free internal RAM"
+      id: dbg_free
+    loop_time:
+      name: "Loop time"
+      id: dbg_loop
+    psram:
+      name: "Free PSRAM"
+      id: dbg_psram
+
+text_sensor:
+  - platform: debug
+    device:
+      name: "Device info"
+    reset_reason:
+      name: "Reset reason"
+
+interval:
+  # One greppable line per sample, so a run can be read straight out of the
+  # log without the API or Home Assistant.
+  - interval: 2s
+    then:
+      - lambda: |-
+          ESP_LOGI("bench", "loop_max=%.0fms  int_ram=%.0fB  psram=%.0fB  playing=%s",
+                   id(dbg_loop).state, id(dbg_free).state, id(dbg_psram).state,
+                   id(castle_media)->state == media_player::MEDIA_PLAYER_STATE_ANNOUNCING
+                     ? "yes" : "no");
+
+script:
+  - id: run_benchmark
+    mode: restart
+    then:
+      - logger.log: "=== BENCH: 30 s idle baseline (lights only, no audio) ==="
+      - script.execute: scene_stop
+      - delay: 30s
+      - logger.log: "=== BENCH: vigil — 30 s loop, wind bed, light cue load ==="
+      - script.execute: scene_vigil
+      - delay: 35s
+      - logger.log: "=== BENCH: crypt — 78 beat cues, the heaviest cue load ==="
+      - script.execute: scene_crypt
+      - delay: 30s
+      - logger.log: "=== BENCH: descent — 27 s showpiece, densest audio ==="
+      - script.execute: scene_descent
+      - delay: 30s
+      - logger.log: "=== BENCH: storm — short, loudest transient ==="
+      - script.execute: scene_storm
+      - delay: 10s
+      - logger.log: "=== BENCH: done. Compare loop_max idle vs playing. ==="
+      - script.execute: scene_stop
+
+esphome:
+  on_boot:
+    priority: -300      # after the base config has started its scene
+    then:
+      - delay: 5s
+      - script.execute: run_benchmark
+
+button:
+  - platform: template
+    name: "Run benchmark"
+    on_press:
+      - script.execute: run_benchmark

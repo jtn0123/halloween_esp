@@ -94,9 +94,12 @@ wifi:
 
 captive_portal:
 
-# Pull in the generated scene scripts.
 packages:
+  # The generated scene scripts.
   scenes: !include generated/scenes.yaml
+  # Build trees live off the internal disk — see the file for why, and for
+  # how to go back to building locally.
+  build_path: !include build_path.yaml
 
 globals:
   # Current effect per zone; indices match castle::Effect in castle_effects.h.

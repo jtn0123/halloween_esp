@@ -981,6 +981,64 @@ the data rate allows.
 
 ---
 
+## 12.13 The decode benchmark (2026-08-10)
+
+`firmware/bench_audio.yaml` (`make bench-audio`) — the bare Feather, no
+speakers, no jewels, no card. It exists because every claim about what an
+ESP32-S2 can decode is currently folk wisdom: Espressif publish figures for the
+ESP32 and S3 and none for the S2, and both well-known ESP32 audio libraries
+decline to support the chip. Choosing a codec on vibes is how you find out on
+Halloween night.
+
+The full pipeline runs — MP3 decode, resample, I2S out — with WiFi up and the
+LED RMT driver going, which is the contention that actually matters on one
+core. The I2S pins simply have nothing listening.
+
+It logs one greppable line every 2 s:
+
+    loop_max=..ms  int_ram=..B  psram=..B  playing=yes|no
+
+then runs 30 s idle, then vigil, crypt (78 beat cues, the heaviest cue load),
+descent (densest audio) and storm. Compare `loop_max` idle against playing:
+
+- under ~30 ms — comfortable, MP3 is fine
+- 50–100 ms — decoding, but light cues will visibly drift
+- component-loop warnings, `underrun`, `Failed to decode` — not keeping up
+
+`free internal RAM` is the tighter pool, because the S2 cannot DMA from PSRAM
+so the I2S buffers must live in internal SRAM.
+
+---
+
+## 12.12 Build trees moved off the internal disk (2026-08-10)
+
+A compile died with `No space left on device` — the Mac's data volume had
+143 MB free. Four firmware variants had accumulated ~300 MB of ESP-IDF objects
+each.
+
+Justin asked whether the repo should move to his 512 GB USB-C drive. It should
+not, and the sizes say why:
+
+| | size |
+|---|---|
+| everything git tracks | **2.8 MB** |
+| `.venv` | 344 MB |
+| `firmware/.esphome` build trees | 1.0 GB |
+
+The source is the small part. Moving the repo would break `.venv`'s absolute
+shebang paths and gain almost nothing; the thing worth relocating is the cache.
+
+`firmware/build_path.yaml` sets `esphome: build_path:` to the external drive
+and is included as a package by every variant. Source stays put, git stays
+sane, `.venv` keeps working. If the drive is unmounted, builds fail with a path
+error — comment out the one line to build locally again.
+
+Also worth noting for later: `castle.yaml` already had a `packages:` block, so
+adding a second one is a duplicate-key YAML error. The include had to merge
+into the existing block.
+
+---
+
 ## 13. Decision log
 
 | Date | Decision | Rationale |
@@ -1009,3 +1067,5 @@ the data rate allows.
 | 2026-08-10 | NeoPixel → A0, PIR → A1, I2S DOUT → A3 | The eInk FeatherWing hard-wires D5/D6/D9/D10; NeoPixel data on the SD chip select would have been an intermittent-mount nightmare (§12.10) |
 | 2026-08-10 | eInk and SRAM chip selects parked HIGH at boot | They share the card's SPI bus and we use neither; a floating CS is a device that may answer mid-transaction (§12.10) |
 | 2026-08-10 | Tracks remember their source in tracks.json | An imported MP3 is otherwise a dead end — no way to rebuild it at different settings without hunting for the link again |
+| 2026-08-10 | Build cache moved to external storage, repo stays put | Source is 2.8 MB, cache is 1.3 GB. Moving the repo breaks `.venv` paths to solve nothing (§12.12) |
+| 2026-08-10 | Built a decode benchmark before choosing a codec | Nobody has published an ESP32-S2 MP3 measurement; picking a codec on folk wisdom is how you find out in October (§12.13) |
