@@ -1,0 +1,216 @@
+# Halloween Castle — scene definitions
+#
+# THIS FILE IS THE SOURCE OF TRUTH. Three things are generated from it:
+#   tools/render_audio.py  -> audio/NN_<id>.mp3   (one pre-rendered mix per scene)
+#   tools/gen_esphome.py   -> firmware/generated/ (light cue scripts)
+#   tools/gen_previewer.py -> previewer/          (scene data + audio spliced in)
+#
+# Why pre-rendered audio: the MAX98357A plays one stream, and mixing/ducking on
+# a single-core ESP32-S2 is not worth fighting. Rendering offline means real
+# mixing, reverb and crossfades, and the firmware just plays a file.
+
+hardware:
+  board: adafruit_feather_esp32s2
+  # 3 NeoPixel Jewels, 7 RGBW pixels each, in one chain.
+  # For the 8mm through-hole option instead: pixels_per_zone: 1, rgbw: false
+  pixels_per_zone: 7
+  rgbw: true
+  # Adafruit 8mm through-hole NeoPixels are RGB order, not GRB. Jewels are GRB.
+  rgb_order: GRB
+  audio:
+    sample_rate: 44100
+    # 96 kbps mono keeps the whole scene set near 1.6 MB. The single-app
+    # partition (see firmware/castle.yaml) leaves ~2.9 MB after the firmware;
+    # dropping to 48 kbps would win OTA back at a real cost in music quality.
+    bitrate: 96
+    channels: 1
+
+zones:
+  - {id: towerL, channel: 1, name: "Tower window, stage left"}
+  - {id: towerR, channel: 2, name: "Tower window, stage right"}
+  - {id: door,   channel: 3, name: "Doorway, centre"}
+
+# Palette poles the mansion effects crossfade between.
+palette:
+  violet: [0.66, 0.08, 1.00]
+  green:  [0.14, 1.00, 0.42]
+  flame:  [1.00, 0.42, 0.09]
+
+scenes:
+  - id: vigil
+    name: Vigil
+    kind: ambient
+    volume: 0.45
+    duration_ms: 30000
+    loop: true
+    blurb: >
+      Resting state. Candles breathe in both towers, the doorway holds a low
+      ember, wind runs underneath.
+    base: {towerL: candle, towerR: candle, door: ember}
+    score:
+      - {t: 0, synth: wind, dur: 30.0, gain: 0.9}
+    cues: []
+
+  - id: storm
+    name: Storm
+    kind: triggered
+    volume: 1.0
+    duration_ms: 6500
+    blurb: >
+      Thunder is scheduled first; the strike lands 80 ms behind it. Light beats
+      sound to an observer in the real world, so leading with audio is
+      physically right.
+    base: {towerL: candle, towerR: candle, door: ember}
+    score:
+      - {t: 0.0, synth: wind,    dur: 6.5, gain: 0.6}
+      - {t: 0.0, synth: thunder, gain: 1.0}
+    cues:
+      - {t: 80,   op: strike, ms: 70,  note: "lightning — strike"}
+      - {t: 240,  op: strike, ms: 45,  note: "stutter"}
+      - {t: 355,  op: strike, ms: 120, note: "stutter"}
+      - {t: 1400, op: strike, zone: towerL, ms: 50, note: "roll — left"}
+      - {t: 1490, op: strike, zone: door,   ms: 50, note: "roll — centre"}
+      - {t: 1580, op: strike, zone: towerR, ms: 50, note: "roll — right"}
+      - {t: 2600, op: strike, ms: 55,  note: "distant"}
+      - {t: 4100, op: strike, zone: towerR, ms: 40, note: "far off"}
+
+  - id: seance
+    name: Séance
+    kind: ambient
+    volume: 0.6
+    duration_ms: 35000
+    loop: true
+    blurb: >
+      Four organ chords, 7.5 s each, overlapping so nothing fully releases. The
+      second is the Neapolitan — a major triad a semitone above the tonic.
+    base: {towerL: seance, towerR: seance, door: chill}
+    # Organ chord onsets pulse all zones gently.
+    pulse: {intensity: 0.18}
+    score:
+      - {t: 0.0,  synth: wind,  dur: 35.0, gain: 0.35}
+      - {t: 0.0,  synth: organ, gain: 1.0}
+      - {t: 16.4, synth: toll,  gain: 0.8}
+    cues:
+      - {t: 6600,  op: strike, zone: towerL, ms: 900, note: "Neapolitan"}
+      - {t: 6800,  op: set, zone: towerR, effect: wisp}
+      - {t: 13200, op: set, zone: towerR, effect: seance}
+      - {t: 19800, op: strike, ms: 1100, note: "the flat ninth"}
+      - {t: 20000, op: set, zone: towerL, effect: wisp}
+      - {t: 20200, op: set, zone: door,   effect: throb}
+      - {t: 27500, op: set, zone: towerL, effect: seance}
+      - {t: 28200, op: set, zone: door,   effect: chill}
+
+  - id: ballroom
+    name: Ballroom
+    kind: ambient
+    volume: 0.55
+    duration_ms: 15000
+    loop: true
+    blurb: >
+      The parlour waltz — music box over piano, three-four time. All three zones
+      drift slowly between violet and green.
+    base: {towerL: mansion, towerR: mansion, door: mansion}
+    # Waltz downbeats shimmer all zones.
+    pulse: {intensity: 0.14}
+    score:
+      - {t: 0.0, synth: waltz, gain: 1.0}
+    cues:
+      - {t: 4700, op: set, zone: door, effect: chill}
+      - {t: 9600, op: set, zone: door, effect: mansion}
+
+  - id: descent
+    name: Descent
+    kind: showpiece
+    volume: 0.85
+    duration_ms: 27000
+    blurb: >
+      A 32-foot pedal holds for the whole piece while the upper voices walk down
+      chromatically. One strike per chord change, nothing hurried.
+    base: {towerL: chill, towerR: chill, door: "off"}
+    score:
+      - {t: 0.0, synth: descent, gain: 1.0}
+    cues:
+      - {t: 900,   op: strike, zone: door, ms: 900, note: "pedal enters"}
+      - {t: 1000,  op: set, zone: door,   effect: chill}
+      - {t: 1300,  op: set, zone: towerL, effect: seance}
+      - {t: 7100,  op: strike, zone: towerR, ms: 700, note: "cluster II"}
+      - {t: 7200,  op: set, zone: towerR, effect: seance}
+      - {t: 12900, op: strike, ms: 800, note: "cluster III"}
+      - {t: 13000, op: set, zone: door,   effect: throb}
+      - {t: 18700, op: strike, zone: towerL, ms: 800, note: "cluster IV"}
+      - {t: 18800, op: set, zone: towerL, effect: wisp}
+      - {t: 19100, op: set, zone: towerR, effect: wisp}
+      - {t: 20400, op: strike, ms: 1400, note: "diminished pile-up"}
+      - {t: 20500, op: set, zone: door,   effect: furnace}
+      - {t: 24800, op: set, zone: towerL, effect: chill}
+      - {t: 25200, op: set, zone: towerR, effect: chill}
+      - {t: 25800, op: set, zone: door,   effect: "off"}
+
+  - id: visitation
+    name: Visitation
+    kind: triggered
+    volume: 0.75
+    duration_ms: 11000
+    blurb: >
+      Candles gutter out, both towers drift to a cold breathing green, and
+      something watches from the left window.
+    base: {towerL: candle, towerR: candle, door: ember}
+    score:
+      - {t: 0.0, synth: wind,  dur: 11.0, gain: 0.5}
+      - {t: 0.0, synth: organ, gain: 0.85, take: 11.0}
+      - {t: 4.2, synth: toll,  gain: 0.9}
+    cues:
+      - {t: 400,  op: set, zone: door,   effect: "off"}
+      - {t: 900,  op: set, zone: towerR, effect: spirit}
+      - {t: 1600, op: set, zone: towerL, effect: spirit}
+      - {t: 4600, op: set, zone: towerL, effect: eyes}
+      - {t: 9200, op: set, zone: towerL, effect: spirit}
+
+  - id: approach
+    name: Approach
+    kind: motion
+    volume: 1.0
+    duration_ms: 8000
+    blurb: >
+      What the walkway sensor fires. Total blackout, a beat of nothing, then the
+      door goes up like a furnace.
+    base: {towerL: candle, towerR: candle, door: ember}
+    score:
+      - {t: 1.5, synth: creak,  gain: 1.0}
+      - {t: 3.8, synth: shriek, gain: 1.0}
+      - {t: 3.9, synth: thunder, gain: 0.55}
+    cues:
+      - {t: 0,    op: set, zone: towerL, effect: "off"}
+      - {t: 0,    op: set, zone: towerR, effect: "off"}
+      - {t: 0,    op: set, zone: door,   effect: "off"}
+      - {t: 1900, op: set, zone: door,   effect: furnace}
+      - {t: 3900, op: strike, ms: 90, note: "all zones"}
+      - {t: 5400, op: set, zone: towerL, effect: candle}
+      - {t: 5900, op: set, zone: towerR, effect: candle}
+      - {t: 6400, op: set, zone: door,   effect: ember}
+
+  - id: crypt
+    name: Crypt
+    kind: ambient
+    volume: 0.7
+    duration_ms: 24000
+    loop: true
+    blurb: >
+      Below the castle. A heartbeat at 48 bpm, a tritone drone underneath, and
+      whispers just past intelligibility. The lights barely admit anything is
+      there — near-darkness is the effect.
+    base: {towerL: "off", towerR: "off", door: chill}
+    # Every heartbeat thump becomes a light pulse on the door.
+    pulse: {zone: door, intensity: 0.4}
+    score:
+      - {t: 0.0,  synth: drone,     dur: 24.0, gain: 0.9}
+      - {t: 0.0,  synth: heartbeat, dur: 24.0, gain: 1.0}
+      - {t: 2.0,  synth: whispers,  dur: 20.5, gain: 0.55}
+      - {t: 14.0, synth: toll, gain: 0.3}
+    cues:
+      - {t: 3000,  op: set, zone: towerL, effect: eyes,  note: "something watches"}
+      - {t: 8000,  op: set, zone: door,   effect: throb, note: "the pulse shows"}
+      - {t: 12000, op: set, zone: towerL, effect: "off", note: "eyes close"}
+      - {t: 12600, op: set, zone: towerR, effect: eyes,  note: "…it moved"}
+      - {t: 16000, op: set, zone: door,   effect: chill}
+      - {t: 20000, op: set, zone: towerR, effect: "off", note: "gone"}

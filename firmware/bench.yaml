@@ -1,0 +1,33 @@
+# Bench dry-run — the bare ESP32-S2 Feather, ZERO extra parts.
+#
+#   .venv/bin/esphome run firmware/bench.yaml
+#
+# What this proves before the jewels and amp arrive:
+#   - the open risk from PROJECT_NOTES §12.4: MP3 decode + WiFi + RMT all at
+#     once on a single core. The audio pipeline runs in full; the I2S pins
+#     just have nothing listening. Watch `esphome logs` for buffer underruns.
+#   - the whole scene engine: cue timing, effect switching, PIR debounce
+#     (GPIO6 is pulled down, so it stays quiet unwired).
+#   - the ONBOARD NeoPixel (GPIO33) plays pixel 0 of towerL — you can watch
+#     the candle flicker, strikes and palette changes on the board itself.
+#
+# The onboard pixel is plain RGB, so led_rgbw is overridden; the chain is
+# still driven as 21 pixels and the 20 that don't exist fall off the end of
+# the wire harmlessly.
+
+substitutions:
+  name: castle-bench
+  friendly: Castle Bench
+  pin_led_data: "33"    # onboard NeoPixel
+  led_rgbw: "false"
+
+packages:
+  base: !include castle.yaml
+
+# The onboard pixel is dark until its power rail (GPIO21) is driven high.
+switch:
+  - platform: gpio
+    id: neopixel_power
+    pin: GPIO21
+    restore_mode: ALWAYS_ON
+    internal: true

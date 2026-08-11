@@ -1,0 +1,57 @@
+PY := .venv/bin/python
+ESPHOME := .venv/bin/esphome
+YAML := firmware/castle.yaml
+
+.PHONY: help setup audio generate preview build validate upload logs bench bench-logs clean
+
+help:
+	@echo "Halloween Castle"
+	@echo ""
+	@echo "  make setup      create .venv and install esphome + render deps"
+	@echo "  make audio      render scenes/scenes.yaml -> audio/*.mp3"
+	@echo "  make generate   render scenes.yaml -> firmware/generated/scenes.yaml"
+	@echo "  make preview    splice scenes + rendered audio into the previewer"
+	@echo "  make validate   check the ESPHome config (fast, no toolchain)"
+	@echo "  make build      compile firmware (implies audio + generate)"
+	@echo "  make upload     compile and flash over USB"
+	@echo "  make logs       tail device logs"
+	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
+	@echo "  make bench-logs tail the bench build's logs"
+	@echo ""
+	@echo "scenes/scenes.yaml is the source of truth for audio, cues AND the previewer."
+
+setup:
+	/opt/homebrew/bin/python3.13 -m venv .venv
+	$(PY) -m pip install --quiet --upgrade pip
+	.venv/bin/pip install --quiet numpy scipy pyyaml esphome
+	@echo "ready. 'make build' next."
+
+audio:
+	@$(PY) tools/render_audio.py
+
+generate:
+	@$(PY) tools/gen_esphome.py
+
+preview: audio
+	@$(PY) tools/gen_previewer.py
+
+bench: audio generate
+	$(ESPHOME) run firmware/bench.yaml
+
+bench-logs:
+	$(ESPHOME) logs firmware/bench.yaml
+
+validate: generate
+	@$(ESPHOME) config $(YAML) > /dev/null && echo "config OK"
+
+build: audio generate
+	$(ESPHOME) compile $(YAML)
+
+upload: audio generate
+	$(ESPHOME) run $(YAML)
+
+logs:
+	$(ESPHOME) logs $(YAML)
+
+clean:
+	rm -rf firmware/.esphome audio/*.wav

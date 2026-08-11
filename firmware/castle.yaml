@@ -1,0 +1,259 @@
+# Halloween Castle — ESPHome device config
+#
+# Board:   Adafruit ESP32-S2 Feather (240 MHz, 4 MB flash, 2 MB PSRAM)
+# Audio:   MAX98357A I2S class-D amp -> 4 ohm speaker
+# Light:   3 x NeoPixel Jewel (7 RGBW each) = 21 pixels, one chain
+#
+# Scene scripts and audio files are GENERATED from scenes/scenes.yaml.
+#   make generate    # rebuild firmware/generated/scenes.yaml
+#   make audio       # rebuild audio/*.mp3
+#
+# I2S and RMT are separate peripherals on the ESP32-S2, so audio and pixels
+# do not contend.
+
+substitutions:
+  name: castle
+  friendly: Halloween Castle
+
+  # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
+  pin_led_data: "5"     # D5  -> 74AHCT125 -> 470R -> Jewel DIN
+  pin_pir: "6"          # D6  <- AM312 PIR out (3V3 logic)
+  pin_i2s_dout: "10"    # D10 -> MAX98357A DIN
+  pin_i2s_bclk: "11"    # D11 -> MAX98357A BCLK
+  pin_i2s_lrclk: "12"   # D12 -> MAX98357A LRC
+  # Overridable by bench.yaml so the bare board can dry-run on its onboard pixel.
+  led_rgbw: "true"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly}
+  includes:
+    - castle_effects.h
+  on_boot:
+    priority: -100
+    then:
+      - light.turn_on:
+          id: castle_leds
+          brightness: 100%
+          effect: Show
+      - script.execute: scene_vigil
+
+esp32:
+  board: adafruit_feather_esp32s2
+  framework:
+    # The speaker media player requires esp-idf, not arduino.
+    type: esp-idf
+  # Embedded audio makes the binary ~2.5 MB. ESPHome's default dual-OTA layout
+  # gives two 1.75 MB slots, so it fits in neither. One app partition gives
+  # 3.87 MB. Trade-off: no OTA — flash over USB. See partitions_single_app.csv.
+  partitions: partitions_single_app.csv
+
+psram:
+  mode: quad
+  speed: 80MHz
+
+logger:
+  level: INFO
+
+api:
+
+# OTA is DISABLED — not an oversight.
+#
+# Over-the-air updates need a second app slot to write into while the first
+# keeps running. The embedded audio makes the binary ~2.5 MB, and two slots
+# that size do not fit in 4 MB of flash. So this build uses one 3.87 MB app
+# partition and flashes over USB.
+#
+# To get OTA back, audio must fit in ~800 KB (from 1558 KB today): drop
+# `bitrate` in scenes.yaml to 48 and shorten the looping scenes, then remove
+# the `partitions:` line above and uncomment this block.
+# ota:
+#   - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${friendly} Setup"
+
+captive_portal:
+
+# Pull in the generated scene scripts.
+packages:
+  scenes: !include generated/scenes.yaml
+
+globals:
+  # Current effect per zone; indices match castle::Effect in castle_effects.h.
+  - id: zone_effect
+    type: int[3]
+    restore_value: false
+    initial_value: "{0, 0, 0}"
+  # Lightning strike level per zone, decayed every frame in the render loop.
+  - id: zone_flash
+    type: float[3]
+    restore_value: false
+    initial_value: "{0.0f, 0.0f, 0.0f}"
+
+number:
+  # Live tuning knobs, exposed to Home Assistant. These match the sliders on
+  # the browser previewer so a setting found there can be dialled in here.
+  - platform: template
+    name: "Mansion balance"
+    id: hue_balance
+    optimistic: true
+    min_value: 0
+    max_value: 1
+    step: 0.01
+    initial_value: 0.5
+    restore_value: true
+
+switch:
+  - platform: template
+    name: "Soften lightning"
+    id: soften
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+    # Hard ~7 Hz white strobe is a photosensitivity risk on a public porch.
+    # Default ON; turning it off is a deliberate act.
+
+i2s_audio:
+  - id: i2s_bus
+    i2s_lrclk_pin: GPIO${pin_i2s_lrclk}
+    i2s_bclk_pin: GPIO${pin_i2s_bclk}
+
+speaker:
+  - platform: i2s_audio
+    id: castle_speaker
+    i2s_audio_id: i2s_bus
+    i2s_dout_pin: GPIO${pin_i2s_dout}
+    dac_type: external
+    channel: mono
+    sample_rate: 44100
+    bits_per_sample: 16bit
+
+media_player:
+  - platform: speaker
+    id: castle_media
+    name: "Castle audio"
+    # One pipeline only. ESPHome refuses to let the announcement and media
+    # pipelines share a speaker (it wants a `mixer` for that), and the show
+    # plays exactly one scene at a time — so scenes go out as announcements.
+    # `format: MP3` pulls in the MP3 decoder; the default is FLAC.
+    announcement_pipeline:
+      speaker: castle_speaker
+      format: MP3
+      sample_rate: 44100
+      num_channels: 1
+    # Default is 1 MB, which is half the PSRAM on this board.
+    buffer_size: 250000
+    volume_initial: 70%
+    task_stack_in_psram: true
+    files:
+      - id: snd_vigil
+        file: ../audio/01_vigil.mp3
+      - id: snd_storm
+        file: ../audio/02_storm.mp3
+      - id: snd_seance
+        file: ../audio/03_seance.mp3
+      - id: snd_ballroom
+        file: ../audio/04_ballroom.mp3
+      - id: snd_descent
+        file: ../audio/05_descent.mp3
+      - id: snd_visitation
+        file: ../audio/06_visitation.mp3
+      - id: snd_approach
+        file: ../audio/07_approach.mp3
+      - id: snd_crypt
+        file: ../audio/08_crypt.mp3
+
+light:
+  - platform: esp32_rmt_led_strip
+    id: castle_leds
+    name: "Castle pixels"
+    pin: GPIO${pin_led_data}
+    num_leds: 21
+    chipset: WS2812
+    rgb_order: GRB
+    is_rgbw: ${led_rgbw}
+    use_psram: true
+    default_transition_length: 0s
+    effects:
+      - addressable_lambda:
+          name: "Show"
+          update_interval: 16ms
+          lambda: |-
+            using namespace castle;
+            const int PER = 7;      // pixels per zone
+            const int NZ = 3;
+            float t = millis() / 1000.0f;
+            float hue = id(hue_balance).state;
+            bool soft = id(soften).state;
+
+            for (int z = 0; z < NZ; z++) {
+              // Strike decay. Softened strikes fall slower and peak lower,
+              // turning a strobe into a swell.
+              float d = soft ? 0.965f : 0.90f;
+              id(zone_flash)[z] *= d;
+              if (id(zone_flash)[z] < 0.004f) id(zone_flash)[z] = 0.0f;
+              float f = id(zone_flash)[z] * (soft ? 0.55f : 0.92f);
+
+              for (int p = 0; p < PER; p++) {
+                // Seed varies per pixel so flame moves across the jewel.
+                float seed = z * 4.7f + p * 1.31f;
+                Rgbw c = render(id(zone_effect)[z], t, seed, hue, soft);
+                float r = fminf(1.0f, c.r + f);
+                float g = fminf(1.0f, c.g + f);
+                float b = fminf(1.0f, c.b + f * 0.96f);
+                float w = fminf(1.0f, c.w + f);
+                it[z * PER + p] = Color(uint8_t(r * 255), uint8_t(g * 255),
+                                        uint8_t(b * 255), uint8_t(w * 255));
+              }
+            }
+
+binary_sensor:
+  - platform: gpio
+    id: walkway_pir
+    name: "Walkway motion"
+    pin:
+      number: GPIO${pin_pir}
+      # Pulldown, not bare input: the AM312 drives high actively, and on a
+      # bench board with nothing wired a floating pin would fire the Approach
+      # scene at random.
+      mode:
+        input: true
+        pulldown: true
+    filters:
+      # One trigger per approach, not one per twitch.
+      - delayed_off: 8s
+    on_press:
+      then:
+        - script.execute: scene_approach
+
+button:
+  - platform: template
+    name: "Scene: Vigil"
+    on_press: {script.execute: scene_vigil}
+  - platform: template
+    name: "Scene: Storm"
+    on_press: {script.execute: scene_storm}
+  - platform: template
+    name: "Scene: Seance"
+    on_press: {script.execute: scene_seance}
+  - platform: template
+    name: "Scene: Ballroom"
+    on_press: {script.execute: scene_ballroom}
+  - platform: template
+    name: "Scene: Descent"
+    on_press: {script.execute: scene_descent}
+  - platform: template
+    name: "Scene: Visitation"
+    on_press: {script.execute: scene_visitation}
+  - platform: template
+    name: "Scene: Approach"
+    on_press: {script.execute: scene_approach}
+  - platform: template
+    name: "Scene: Crypt"
+    on_press: {script.execute: scene_crypt}
+  - platform: template
+    name: "Blackout"
+    on_press: {script.execute: scene_stop}
