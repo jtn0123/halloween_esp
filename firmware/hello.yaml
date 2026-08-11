@@ -1,0 +1,38 @@
+# Minimal bring-up. No audio, no LEDs, no PSRAM, no WiFi.
+#
+#   .venv/bin/esphome run firmware/hello.yaml --device /dev/cu.usbmodem01
+#
+# Exists to answer one question when nothing else works: does THIS board run
+# ESPHome at all, and can we see its console? Everything else in this project
+# is layered on top of that assumption and it has never actually been tested —
+# the castle firmware was the very first thing ever flashed here.
+#
+# If this logs, the board and toolchain are fine and the fault is in the
+# castle config. If this is silent too, the problem is lower down: USB console
+# routing, the bootloader, or the flash layout.
+
+esphome:
+  name: hello
+
+esp32:
+  board: adafruit_feather_esp32s2
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      # `hardware_uart: USB_CDC` tells ESPHome's logger where to write, but
+      # ESP-IDF decides where the console actually goes, and its default is a
+      # physical UART. On a board whose only port is the chip's native USB,
+      # that means the log is written to pins nobody is connected to.
+      CONFIG_ESP_CONSOLE_USB_CDC: "y"
+      CONFIG_ESP_CONSOLE_UART_DEFAULT: "n"
+      CONFIG_ESP_CONSOLE_SECONDARY_NONE: "y"
+
+logger:
+  level: DEBUG
+  # No UART bridge chip on this board — the USB socket is the chip's own USB.
+  hardware_uart: USB_CDC
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: 'ESP_LOGI("hello", "alive, uptime %lus", (unsigned long)(millis()/1000));'

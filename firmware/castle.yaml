@@ -59,6 +59,15 @@ esp32:
   framework:
     # The speaker media player requires esp-idf, not arduino.
     type: esp-idf
+    sdkconfig_options:
+      # This board has no USB-to-UART bridge chip — the USB socket is the
+      # chip's own USB peripheral. ESP-IDF still sends its console to a
+      # physical UART by default, which here means writing the log to pins
+      # nothing is attached to. Cost us an evening: the firmware ran fine
+      # (the onboard pixel proved it) while every log tool saw silence.
+      CONFIG_ESP_CONSOLE_USB_CDC: "y"
+      CONFIG_ESP_CONSOLE_UART_DEFAULT: "n"
+      CONFIG_ESP_CONSOLE_SECONDARY_NONE: "y"
   # Embedded audio makes the binary ~2.5 MB. ESPHome's default dual-OTA layout
   # gives two 1.75 MB slots, so it fits in neither. One app partition gives
   # 3.87 MB. Trade-off: no OTA — flash over USB. See partitions_single_app.csv.
@@ -70,6 +79,9 @@ psram:
 
 logger:
   level: INFO
+  # Where the ESPHome logger writes. Pairs with the console sdkconfig above —
+  # both are needed, and neither works alone.
+  hardware_uart: USB_CDC
 
 api:
 

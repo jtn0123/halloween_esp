@@ -47,6 +47,8 @@ switch:
 
 logger:
   level: DEBUG          # the audio pipeline reports underruns at DEBUG
+  # USB console routing lives in castle.yaml — it is needed by every variant,
+  # not just this one.
 
 debug:
   update_interval: 2s
