@@ -232,6 +232,25 @@
     transition: border-color .15s, color .15s;
   }
   .trk-drop.over { border-color: var(--accent); color: var(--accent); }
+  .trk-offline {
+    border: 1px solid var(--line-2); border-left: 3px solid var(--accent);
+    border-radius: 4px; padding: 12px 14px; margin-bottom: 12px;
+    background: color-mix(in srgb, var(--accent) 6%, transparent);
+  }
+  .trk-offline[hidden] { display: none; }
+  .trk-offline strong { display: block; font-size: 13px; margin-bottom: 6px; }
+  .trk-offline p { margin: 0 0 7px; font-size: 12px; color: var(--ink-2); line-height: 1.65; }
+  .trk-offline p:last-child { margin-bottom: 0; }
+  .trk-offline pre {
+    margin: 0 0 8px; padding: 8px 11px; border-radius: 3px; background: var(--panel-2);
+    border: 1px solid var(--line-2); font-family: var(--f-data); font-size: 12px;
+    color: var(--accent); user-select: all;
+  }
+  .trk-offline code {
+    font-family: var(--f-data); font-size: 11px; color: var(--ink);
+    background: var(--panel-2); padding: 1px 4px; border-radius: 2px;
+  }
+  .trk-offline a { color: var(--cool); }
   .trk-cap {
     margin: 0 0 10px; font-family: var(--f-data); font-size: 11px;
     line-height: 1.7; color: var(--muted);
@@ -382,6 +401,17 @@
           <span class="note" id="trkMode">checking…</span>
         </div>
         <div class="panel__bd">
+          <!-- Shown only when no local server is reachable. Importing needs
+               yt-dlp and ffmpeg, which a web page cannot run — saying so
+               plainly beats an Import button that quietly does nothing. -->
+          <div class="trk-offline" id="trkOffline" hidden>
+            <strong>Importing needs the local studio.</strong>
+            <p>This page can't fetch links or write files on its own &mdash; that takes
+               <code>yt-dlp</code> and <code>ffmpeg</code> running on your Mac. Start it with:</p>
+            <pre>make studio</pre>
+            <p>then open <a href="http://127.0.0.1:8765/">127.0.0.1:8765</a>.
+               You can still drop a file below to analyse it here and get a scene to paste.</p>
+          </div>
           <div class="trk-add">
             <input type="text" id="trkUrl" placeholder="Paste a link, or drop an audio file below"
                    autocomplete="off" spellcheck="false">
@@ -1662,12 +1692,13 @@
                  drawTracks(d.tracks); say("Import by link or drop a file. Scenes write straight to scenes.yaml."); })
     .catch(() => {
       T.mode = "static";
-      T.modeEl.textContent = "static · no server";
-      document.getElementById("trkUrl").placeholder = "Links need the local studio — drop a file below instead";
+      T.modeEl.textContent = "read-only · studio not running";
+      document.getElementById("trkOffline").hidden = false;
+      const url = document.getElementById("trkUrl");
+      url.placeholder = "Links need the local studio (see above)";
+      url.disabled = true;
       document.getElementById("trkGet").disabled = true;
-      say("Running without the local server, so links can't be fetched here. "
-        + "Drop an audio file and it'll be analysed in the browser and give you the scene to paste. "
-        + "For the full thing — importing links, saving tracks, editing scenes.yaml — run: make studio");
+      say("");
     });
 
   const esc = s => String(s).replace(/[&<>"]/g, c =>
