@@ -80,8 +80,21 @@ def convert(src: Path, out: Path, o: dict) -> None:
         af.append(f"afade=t=in:st=0:d={o['fade_in']}")
     if o["fade_out"] and o["take"]:
         af.append(f"afade=t=out:st={max(0, o['take'] - o['fade_out'])}:d={o['fade_out']}")
-    if af:
-        cmd += ["-af", ",".join(af)]
+
+    # Final true-peak ceiling, always. Two things make this necessary:
+    #
+    #   - MP3 encoding overshoots its input. A source mastered near 0 dBFS
+    #     decodes ABOVE full scale; measured +2.77 dBFS on a square wave and
+    #     +0.92 on dense material. That eats the margin the scene mixer needs.
+    #   - `loudnorm` alone does not save us. Single-pass, it is a dynamic
+    #     normaliser, and its TP target is a goal rather than a guarantee — a
+    #     real YouTube import still came back at +0.18 dBFS with it enabled.
+    #
+    # 0.89 matches TARGET_PEAK in render_audio.py, so an imported track and a
+    # synthesised scene arrive at the mixer with the same headroom.
+    af.append("alimiter=limit=0.89:level=disabled")
+
+    cmd += ["-af", ",".join(af)]
 
     cmd += ["-ac", str(o["channels"]), "-ar", str(o["sample_rate"]),
             "-b:a", f"{o['bitrate']}k", str(out)]
