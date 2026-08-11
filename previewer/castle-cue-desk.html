@@ -204,6 +204,60 @@
   }
   .btn--mute[aria-pressed="true"] { background: var(--alarm); border-color: var(--alarm); color: var(--panel); }
 
+  /* ─── Tracks ───────────────────────────────────────────────────────── */
+  .trk-add { display: flex; gap: 8px; margin-bottom: 9px; }
+  .trk-add input {
+    flex: 1; min-width: 0; padding: 8px 10px; border-radius: 3px;
+    background: var(--panel-2); border: 1px solid var(--line-2);
+    color: var(--ink); font-size: 12.5px; font-family: var(--f-data);
+  }
+  .trk-add input:focus { outline: none; border-color: var(--accent); }
+  .trk-opts { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .trk-opts label {
+    font-family: var(--f-data); font-size: 10px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--muted);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .trk-opts input {
+    padding: 4px 7px; border-radius: 3px; background: var(--panel-2);
+    border: 1px solid var(--line-2); color: var(--ink);
+    font-family: var(--f-data); font-size: 11px; text-transform: none;
+  }
+  .trk-drop {
+    border: 1px dashed var(--line-2); border-radius: 4px; padding: 14px;
+    text-align: center; font-size: 12px; color: var(--muted);
+    transition: border-color .15s, color .15s;
+  }
+  .trk-drop.over { border-color: var(--accent); color: var(--accent); }
+  .trk-note { margin: 9px 0 0; font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+  .trk-note.err { color: var(--alarm); }
+  .trk-list { display: grid; gap: 1px; background: var(--line); margin-top: 11px; }
+  .trk-list:empty { display: none; }
+  .trk {
+    display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+    padding: 10px 12px; background: var(--panel);
+  }
+  .trk__nm { font-size: 13px; }
+  .trk__nm small {
+    display: block; font-family: var(--f-data); font-size: 10px;
+    letter-spacing: .08em; color: var(--muted); margin-top: 2px;
+  }
+  .trk__act { display: flex; gap: 6px; }
+  .trk__act button {
+    font-family: var(--f-data); font-size: 10px; letter-spacing: .08em;
+    text-transform: uppercase; padding: 5px 9px; border-radius: 3px;
+    cursor: pointer; background: var(--panel-2); color: var(--ink-2);
+    border: 1px solid var(--line-2);
+  }
+  .trk__act button:hover { border-color: var(--accent); color: var(--accent); }
+  .trk__act button.danger:hover { border-color: var(--alarm); color: var(--alarm); }
+  .trk-yaml {
+    margin: 11px 0 0; padding: 11px; border-radius: 4px; background: var(--panel-2);
+    border: 1px solid var(--line-2); font-family: var(--f-data); font-size: 11px;
+    line-height: 1.6; color: var(--ink-2); overflow-x: auto; white-space: pre;
+  }
+  .trk-yaml[hidden] { display: none; }
+
   /* ─── Cue sheet ────────────────────────────────────────────────────── */
   .sheet-wrap { overflow-x: auto; }
   table.sheet { width: 100%; border-collapse: collapse; font-family: var(--f-data); font-size: 11.5px; }
@@ -309,6 +363,31 @@
         </div>
         <div class="scenes" id="scenes"></div>
         <p class="scenes-blurb" id="sceneBlurb"></p>
+      </section>
+
+      <!-- ─── Tracks ─── -->
+      <section class="panel">
+        <div class="panel__hd">
+          <h2>Tracks</h2>
+          <span class="note" id="trkMode">checking…</span>
+        </div>
+        <div class="panel__bd">
+          <div class="trk-add">
+            <input type="text" id="trkUrl" placeholder="Paste a link, or drop an audio file below"
+                   autocomplete="off" spellcheck="false">
+            <button class="btn btn--go" id="trkGet" type="button">Import</button>
+          </div>
+          <div class="trk-opts">
+            <label>id <input type="text" id="trkId" placeholder="auto" size="10"></label>
+            <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
+            <label>take <input type="text" id="trkTake" placeholder="all" size="5"></label>
+            <label>sens <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
+          </div>
+          <div class="trk-drop" id="trkDrop">Drop an audio file here</div>
+          <p class="trk-note" id="trkNote"></p>
+          <div class="trk-list" id="trkList"></div>
+          <pre class="trk-yaml" id="trkYaml" hidden></pre>
+        </div>
       </section>
 
       <section class="panel">
@@ -1502,5 +1581,227 @@
 
   resetScene(SCENES[0]);
   requestAnimationFrame(tick);
+
+  /* ── Tracks panel ───────────────────────────────────────────────────
+     Two modes, decided by whether tools/studio.py is serving this page.
+
+     STUDIO  — the local server is there. Import by link or file, delete,
+               and write scenes straight into scenes.yaml. Real work.
+     STATIC  — opened as a file, or as a published artifact. No server can
+               be reached, so links are impossible (and yt-dlp is a binary,
+               not something a page can run). Dropping a local file still
+               works: it's analysed in the browser and you get the scene
+               block to paste. */
+  const T = {
+    mode: "static",
+    note: document.getElementById("trkNote"),
+    list: document.getElementById("trkList"),
+    yaml: document.getElementById("trkYaml"),
+    modeEl: document.getElementById("trkMode"),
+  };
+  const say = (msg, err) => {
+    T.note.textContent = msg;
+    T.note.classList.toggle("err", !!err);
+  };
+  const opts = () => ({
+    id: document.getElementById("trkId").value.trim(),
+    start: document.getElementById("trkStart").value.trim(),
+    take: document.getElementById("trkTake").value.trim(),
+    sensitivity: document.getElementById("trkSens").value.trim(),
+  });
+
+  fetch("/api/tracks").then(r => r.ok ? r.json() : Promise.reject())
+    .then(d => { T.mode = "studio"; T.modeEl.textContent = "studio · connected";
+                 drawTracks(d.tracks); say("Import by link or drop a file. Scenes write straight to scenes.yaml."); })
+    .catch(() => {
+      T.mode = "static";
+      T.modeEl.textContent = "static · no server";
+      document.getElementById("trkUrl").placeholder = "Links need the local studio — drop a file below instead";
+      document.getElementById("trkGet").disabled = true;
+      say("Running without the local server, so links can't be fetched here. "
+        + "Drop an audio file and it'll be analysed in the browser and give you the scene to paste. "
+        + "For the full thing — importing links, saving tracks, editing scenes.yaml — run: make studio");
+    });
+
+  function drawTracks(tracks) {
+    T.list.innerHTML = (tracks || []).map(t => `
+      <div class="trk" data-id="${t.id}">
+        <div class="trk__nm">${t.id}
+          <small>${t.dur ?? "?"}s · ${t.kb} KB · ${
+            Object.entries(t.onsets || {}).map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" · ") || "no onsets"
+          }</small>
+        </div>
+        <div class="trk__act">
+          <button data-act="scene">Make scene</button>
+          <button data-act="del" class="danger">Delete</button>
+        </div>
+      </div>`).join("");
+  }
+
+  T.list.addEventListener("click", async e => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    const id = e.target.closest(".trk").dataset.id;
+    if (btn.dataset.act === "del") {
+      if (!confirm(`Delete track "${id}"? The file is removed from tracks/.`)) return;
+      const r = await fetch(`/api/tracks/${id}`, { method: "DELETE" }).then(r => r.json());
+      say(r.ok ? `Deleted ${id}.` : `Could not delete ${id}.`, !r.ok);
+      refresh();
+    } else {
+      const r = await fetch("/api/tracks").then(r => r.json());
+      const t = (r.tracks || []).find(x => x.id === id);
+      const block = sceneYaml(id, t.dur, t.onsets || {});
+      T.yaml.hidden = false; T.yaml.textContent = block;
+      say(`Writing scene "${id}" into scenes.yaml and rebuilding…`);
+      const res = await fetch("/api/scene", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, yaml: block })
+      }).then(r => r.json());
+      say(res.ok ? `Scene "${id}" written and rebuilt. Reload to see it in Scenes.`
+                 : `Scene write failed — ${(res.log || "").slice(-300)}`, !res.ok);
+    }
+  });
+
+  const refresh = () => T.mode === "studio" &&
+    fetch("/api/tracks").then(r => r.json()).then(d => drawTracks(d.tracks));
+
+  document.getElementById("trkGet").addEventListener("click", async () => {
+    const url = document.getElementById("trkUrl").value.trim();
+    if (!url) return say("Paste a link first.", true);
+    say("Importing… this runs yt-dlp and ffmpeg locally, so give it a moment.");
+    try {
+      const r = await fetch("/api/import", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.assign({ url }, opts()))
+      }).then(r => r.json());
+      if (r.ok) { drawTracks(r.tracks); say("Imported. Press “Make scene” to wire it into the show.");
+                  document.getElementById("trkUrl").value = ""; }
+      else say(`Import failed — ${(r.log || r.error || "").slice(-400)}`, true);
+    } catch (err) { say(`Import failed — ${err}`, true); }
+  });
+
+  /* ── Drag and drop ── */
+  const drop = document.getElementById("trkDrop");
+  ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.add("over");
+  }));
+  ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => {
+    e.preventDefault(); drop.classList.remove("over");
+  }));
+  drop.addEventListener("click", () => {
+    const inp = document.createElement("input");
+    inp.type = "file"; inp.accept = "audio/*";
+    inp.onchange = () => inp.files[0] && takeFile(inp.files[0]);
+    inp.click();
+  });
+  drop.addEventListener("drop", e => {
+    const f = e.dataTransfer.files[0];
+    if (f) takeFile(f);
+  });
+
+  async function takeFile(file) {
+    if (T.mode === "studio") {
+      say(`Uploading ${file.name}…`);
+      const fd = new FormData(); fd.append("file", file);
+      try {
+        const r = await fetch("/api/import", {
+          method: "POST", headers: { "X-Import-Opts": JSON.stringify(opts()) }, body: fd
+        }).then(r => r.json());
+        if (r.ok) { drawTracks(r.tracks); say("Imported. Press “Make scene” to wire it in."); }
+        else say(`Import failed — ${(r.log || r.error || "").slice(-400)}`, true);
+      } catch (err) { say(`Import failed — ${err}`, true); }
+      return;
+    }
+    // Static mode: analyse right here.
+    say(`Analysing ${file.name} in the browser…`);
+    try {
+      const buf = await file.arrayBuffer();
+      const ctx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, 44100);
+      const audio = await ctx.decodeAudioData(buf);
+      const marks = await detectOnsets(audio);
+      const id = (opts().id || file.name.replace(/\.[^.]+$/, "")
+                 ).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 32);
+      const counts = Object.fromEntries(Object.entries(marks).map(([k, v]) => [k, v.length]));
+      const block = sceneYaml(id, audio.duration, counts);
+      T.yaml.hidden = false; T.yaml.textContent = block;
+      const kb = Math.round(audio.duration * 96 * 1000 / 8 / 1024);
+      say(`${file.name}: ${audio.duration.toFixed(1)}s, ~${kb} KB at 96 kbps. `
+        + Object.entries(counts).map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" · ")
+        + `. Copy the block below, save the file into tracks/${id}.mp3, then run make audio.`);
+    } catch (err) { say(`Could not read that file — ${err}`, true); }
+  }
+
+  /* In-browser onset detection. Same idea as tools/analyze.py — energy rises
+     per frequency band — but built from biquads rendered offline rather than
+     an FFT, since the browser gives us filters for free and no FFT at all. */
+  async function detectOnsets(audio) {
+    const BANDS = [
+      ["onset_low", 20, 200, 0.16], ["onset_mid", 200, 2000, 0.11],
+      ["onset_high", 2000, 16000, 0.09],
+    ];
+    const out = {};
+    for (const [name, lo, hi, gap] of BANDS) {
+      const oc = new OfflineAudioContext(1, audio.length, audio.sampleRate);
+      const src = oc.createBufferSource(); src.buffer = audio;
+      const hp = oc.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = lo;
+      const lp = oc.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = hi;
+      src.connect(hp); hp.connect(lp); lp.connect(oc.destination); src.start();
+      const band = (await oc.startRendering()).getChannelData(0);
+
+      // Short-time RMS envelope, then positive difference = onset strength.
+      const hop = 512, sr = audio.sampleRate, n = Math.floor(band.length / hop);
+      const env = new Float32Array(n);
+      for (let i = 0; i < n; i++) {
+        let s = 0;
+        for (let j = i * hop; j < (i + 1) * hop; j++) s += band[j] * band[j];
+        env[i] = Math.log1p(Math.sqrt(s / hop) * 100);
+      }
+      const flux = new Float32Array(n);
+      for (let i = 1; i < n; i++) flux[i] = Math.max(0, env[i] - env[i - 1]);
+      let mx = 0; for (const v of flux) mx = Math.max(mx, v);
+      if (!mx) continue;
+
+      const hits = [], minGap = gap * sr / hop;
+      const w = Math.max(3, Math.round(0.5 * sr / hop));
+      let last = -1e9;
+      for (let i = 1; i < n - 1; i++) {
+        let sum = 0, c = 0;
+        for (let j = Math.max(0, i - w); j < Math.min(n, i + w); j++) { sum += flux[j]; c++; }
+        const thr = sum / c + 0.12 * mx;
+        if (flux[i] < thr || flux[i] < flux[i - 1] || flux[i] < flux[i + 1]) continue;
+        if (i - last < minGap) continue;
+        hits.push([+(i * hop / sr).toFixed(3), +(flux[i] / mx).toFixed(3)]);
+        last = i;
+      }
+      if (hits.length) out[name] = hits;
+    }
+    return out;
+  }
+
+  function sceneYaml(id, dur, counts) {
+    const zone = { onset_low: "door", onset_mid: "towerL", onset_high: "towerR" };
+    const col = { onset_low: "[1.0, 0.12, 0.02, 0.0]", onset_mid: "[0.66, 0.10, 1.0, 0.05]",
+                  onset_high: "[0.30, 1.0, 0.55, 0.0]" };
+    const dec = { onset_low: 0.86, onset_mid: 0.92, onset_high: 0.94 };
+    const L = [
+      `  - id: ${id}`,
+      `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}`,
+      `    kind: custom`, `    volume: 0.7`,
+      `    duration_ms: ${Math.round(dur * 1000)}`, `    loop: true`,
+      `    blurb: >`,
+      `      Imported track. Light cues are onset-detected from the audio`,
+      `      itself, so they follow whatever the track actually does.`,
+      `    audio_file: tracks/${id}.mp3`,
+      `    base: {towerL: chill, towerR: chill, door: ember}`,
+      `    levels: {towerL: 0.4, towerR: 0.4, door: 0.5}`,
+      `    pulse:`,
+    ];
+    for (const [band, n] of Object.entries(counts)) {
+      if (!n) continue;
+      L.push(`      - {synth: ${band}, zone: ${zone[band]}, intensity: 0.55, `
+           + `decay: ${dec[band]}, color: ${col[band]}}   # ${n} onsets`);
+    }
+    L.push(`    cues: []`);
+    return L.join("\n");
+  }
 })();
 </script>

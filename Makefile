@@ -18,6 +18,7 @@ help:
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"
 	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
+	@echo "  make studio     serve the cue desk with track management (localhost)"
 	@echo ""
 	@echo "scenes/scenes.yaml is the source of truth for audio, cues AND the previewer."
 
@@ -40,6 +41,9 @@ preview: audio
 track:
 	@test -n "$(SRC)" || (echo "usage: make track SRC=<file|url> [ID=<name>] [ARGS=...]"; exit 1)
 	@$(PY) tools/import_track.py "$(SRC)" $(if $(ID),--id $(ID),) $(ARGS)
+
+studio: preview
+	@$(PY) tools/studio.py
 
 bench: audio generate
 	$(ESPHOME) run firmware/bench.yaml
