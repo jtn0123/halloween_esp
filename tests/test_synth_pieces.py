@@ -292,9 +292,8 @@ class TestLimiter(unittest.TestCase):
         self.assertLessEqual(peak(out), 1.0)
         self.assertGreater(rms(out), 0.5 * rms(mix))
 
-    @unittest.expectedFailure
     def test_limit_does_not_fade_the_edges_of_quiet_audio(self) -> None:
-        """BUG (documented, not fixed): the gain curve is smoothed with a
+        """FIXED (regression guard): the gain curve is smoothed with a
         `mode="same"` convolution, which treats off-the-end as zero. So even
         when no limiting is called for, the first and last ~10 ms are faded —
         the very first sample comes out at roughly half gain. Harmless as a

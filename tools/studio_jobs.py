@@ -75,20 +75,22 @@ class JobRunner:
     def _run(self, job: Job, argv: list[str]) -> None:
         job.phase = "fetching"
         try:
-            p = subprocess.Popen(argv, stdout=subprocess.PIPE,
-                                 stderr=subprocess.STDOUT, text=True, bufsize=1)
+            # Context-managed so the child's stdout is closed deterministically.
+            # Leaving it to the collector worked, but raised a ResourceWarning
+            # on every job, which is noise that trains you to ignore warnings.
+            with subprocess.Popen(argv, stdout=subprocess.PIPE,
+                                  stderr=subprocess.STDOUT, text=True,
+                                  bufsize=1) as p:
+                assert p.stdout is not None
+                for raw in p.stdout:
+                    line = raw.rstrip()
+                    if line:
+                        job.log.append(line)
+                    self._interpret(job, line)
+                code = p.wait()
         except OSError as e:
             job.phase, job.error = "failed", str(e)
             return
-
-        assert p.stdout is not None
-        for raw in p.stdout:
-            line = raw.rstrip()
-            if line:
-                job.log.append(line)
-            self._interpret(job, line)
-
-        code = p.wait()
         if code == 0:
             job.phase, job.percent, job.detail = "done", 100.0, ""
         else:

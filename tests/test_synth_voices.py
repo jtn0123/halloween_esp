@@ -317,6 +317,21 @@ class TestEveryVoice(unittest.TestCase):
                 self.assertLess(env[-1], 0.3 * env.max())
 
 
+    def test_short_atmosphere_beds_still_fade_out(self) -> None:
+        """FIXED (regression guard): wind and drone build their fade with
+        np.interp over [0, in, dur - out, dur]. Those knees only rise while dur
+        is longer than the two fades (4 s for wind, 6 s for drone); below that
+        the x-values go backwards, np.interp returns nonsense, and the fade-out
+        never happens. A 3 s drone ends at 94% of full amplitude — a click, and
+        a bad loop seam. Clamping the middle knees into order would fix it.
+        """
+        for name in ("wind", "drone"):
+            buf, _m = render_synth(name, dur=3.0)
+            with self.subTest(name):
+                self.assertLess(abs(buf[-1]), 0.3 * peak(buf),
+                                f"{name} at dur=3 stops dead at full level")
+
+
 class TestDeterminism(unittest.TestCase):
     """The render is meant to be reproducible: a diff in the output files
     should mean a real change, not a reseeded RNG. Half of these voices draw

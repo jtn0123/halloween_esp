@@ -144,12 +144,16 @@ class Handler(BaseHTTPRequestHandler):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             sens = float((q.get("sensitivity") or ["1.1"])[0])
             p = TRACKS / f"{Path(path).name}.mp3"
-            if not (p.exists() and p.parent == TRACKS):
+            if not p.exists():             # name-stripped above
                 return self.send_json({"error": "no such track"}, 404)
             return self.send_json(sm.waveform(p, sensitivity=sens))
         if path.startswith("/api/track/"):
             p = TRACKS / Path(path).name
-            if p.suffix == ".mp3" and p.exists() and p.parent == TRACKS:
+            # Path(...).name strips any directory part, so a traversal
+            # like ../../etc/passwd cannot escape TRACKS. That call IS
+            # the guard — a `p.parent == TRACKS` check here would be
+            # tautological and read as protection it is not providing.
+            if p.suffix == ".mp3" and p.exists():
                 return self.send_bytes(p.read_bytes(), "audio/mpeg")
             return self.send_json({"error": "not found"}, 404)
         self.send_json({"error": "not found"}, 404)
@@ -159,7 +163,7 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/api/tracks/"):
             tid = Path(path).name
             p = TRACKS / f"{tid}.mp3"
-            if p.exists() and p.parent == TRACKS:
+            if p.exists():                 # name-stripped above
                 p.unlink()
                 mf.forget(tid)
                 return self.send_json({"ok": True, "removed": tid})

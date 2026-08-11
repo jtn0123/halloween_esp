@@ -141,7 +141,11 @@ def wind(dur: float, rng: np.random.Generator) -> np.ndarray:
         centre = 420 + 240 * np.sin(2 * np.pi * 0.09 * (a / SR))
         out[a:b] = _bp(src[max(0, a - 512):b], centre, q=0.7)[-(b - a):]
     swell = 1.0 + 0.38 * np.sin(2 * np.pi * 0.06 * t)
-    fade = np.interp(t, [0, 2.5, dur - 1.5, dur], [0.0, 1.0, 1.0, 0.0])
+    # Knees clamped into order: below ~4 s the two fades would overlap and
+    # np.interp's xp goes non-monotonic, which silently returns nonsense —
+    # the tail never fades and a looping bed clicks on every pass.
+    up, down = min(2.5, dur / 2), max(dur - 1.5, dur / 2)
+    fade = np.interp(t, [0, up, down, dur], [0.0, 1.0, 1.0, 0.0])
     return out * swell * fade * 0.10
 
 
@@ -232,7 +236,10 @@ def drone(dur: float) -> np.ndarray:
                    (36.71, 0.30)):                   # D1 under everything
         out += amp * np.sin(2 * np.pi * f * t)
     wander = 0.75 + 0.25 * np.sin(2 * np.pi * 0.045 * t + 1.0)
-    fade = np.interp(t, [0, 3.0, dur - 3.0, dur], [0.0, 1.0, 1.0, 0.0])
+    # Clamp the knees so they stay ordered on short durations; otherwise
+    # np.interp gets a non-monotonic xp and the tail never fades.
+    up, down = min(3.0, dur / 2), max(dur - 3.0, dur / 2)
+    fade = np.interp(t, [0, up, down, dur], [0.0, 1.0, 1.0, 0.0])
     return out * wander * fade * 0.16
 
 
@@ -382,7 +389,13 @@ def limit(x: np.ndarray, ceiling: float = 0.89) -> np.ndarray:
     over = env > ceiling
     gain[over] = ceiling / env[over]
     smooth = max(1, int(0.02 * SR))
-    gain = np.convolve(gain, np.ones(smooth) / smooth, mode="same")
+    # Pad with the edge value rather than letting convolve assume zeros past
+    # the ends. With mode="same" alone the first and last ~10 ms came back at
+    # roughly half gain — inaudible as a de-click on a one-shot, but wind and
+    # drone loop, so the seam dipped on every pass.
+    pad = smooth // 2
+    padded = np.pad(gain, pad, mode="edge")
+    gain = np.convolve(padded, np.ones(smooth) / smooth, mode="same")[pad:pad + len(env)]
     return np.clip(x * gain, -1.0, 1.0)
 
 
