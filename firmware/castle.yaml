@@ -88,11 +88,31 @@ globals:
     type: int[3]
     restore_value: false
     initial_value: "{0, 0, 0}"
-  # Lightning strike level per zone, decayed every frame in the render loop.
+  # Strike level per zone, decayed every frame in the render loop.
   - id: zone_flash
     type: float[3]
     restore_value: false
     initial_value: "{0.0f, 0.0f, 0.0f}"
+  # Strike colour per zone (RGBW, row-major). White lightning is {1,1,1,1};
+  # a heartbeat is blood red with NO white channel. Set by strike cues.
+  - id: zone_flash_col
+    type: float[12]
+    restore_value: false
+    initial_value: "{1,1,1,1, 1,1,1,1, 1,1,1,1}"
+  # Per-zone decay factor per 16 ms frame. 0.90 = lightning snap,
+  # 0.82 = heartbeat thump, 0.97 = bell-toll bloom.
+  - id: zone_flash_decay
+    type: float[3]
+    restore_value: false
+    initial_value: "{0.90f, 0.90f, 0.90f}"
+  # Per-zone brightness for the BASE effect only — strikes are unscaled.
+  # This is what buys a scene contrast: hold the standing effect low and the
+  # audio-driven pulses become the loudest thing in the room, which is the
+  # whole point. 1.0 = as designed.
+  - id: zone_level
+    type: float[3]
+    restore_value: false
+    initial_value: "{1.0f, 1.0f, 1.0f}"
 
 number:
   # Live tuning knobs, exposed to Home Assistant. These match the sliders on
@@ -190,21 +210,25 @@ light:
             bool soft = id(soften).state;
 
             for (int z = 0; z < NZ; z++) {
-              // Strike decay. Softened strikes fall slower and peak lower,
+              // Strike decay, per zone: cues choose it (heartbeat snaps,
+              // toll blooms). Softened strikes fall slower and peak lower,
               // turning a strobe into a swell.
-              float d = soft ? 0.965f : 0.90f;
+              float d0 = id(zone_flash_decay)[z];
+              float d = soft ? (1.0f - (1.0f - d0) * 0.35f) : d0;
               id(zone_flash)[z] *= d;
               if (id(zone_flash)[z] < 0.004f) id(zone_flash)[z] = 0.0f;
               float f = id(zone_flash)[z] * (soft ? 0.55f : 0.92f);
+              const float *fc = &id(zone_flash_col)[z * 4];
+              float lv = id(zone_level)[z];
 
               for (int p = 0; p < PER; p++) {
                 // Seed varies per pixel so flame moves across the jewel.
                 float seed = z * 4.7f + p * 1.31f;
                 Rgbw c = render(id(zone_effect)[z], t, seed, hue, soft);
-                float r = fminf(1.0f, c.r + f);
-                float g = fminf(1.0f, c.g + f);
-                float b = fminf(1.0f, c.b + f * 0.96f);
-                float w = fminf(1.0f, c.w + f);
+                float r = fminf(1.0f, c.r * lv + f * fc[0]);
+                float g = fminf(1.0f, c.g * lv + f * fc[1]);
+                float b = fminf(1.0f, c.b * lv + f * fc[2] * 0.96f);
+                float w = fminf(1.0f, c.w * lv + f * fc[3]);
                 it[z * PER + p] = Color(uint8_t(r * 255), uint8_t(g * 255),
                                         uint8_t(b * 255), uint8_t(w * 255));
               }

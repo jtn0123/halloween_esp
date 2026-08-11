@@ -18,7 +18,7 @@ script:
     mode: restart
     then:
       - logger.log: 'scene vigil'
-      - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f;'
+      - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
       - media_player.volume_set: 0.45
       - media_player.speaker.play_on_device_media_file:
           media_file: snd_vigil
@@ -31,27 +31,27 @@ script:
     mode: restart
     then:
       - logger.log: 'scene storm'
-      - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f;'
+      - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
       - media_player.volume_set: 1.0
       - media_player.speaker.play_on_device_media_file:
           media_file: snd_storm
           announcement: true
       - delay: 80ms
-      - lambda: 'id(zone_flash)[0] = 1.00f; id(zone_flash)[1] = 1.00f; id(zone_flash)[2] = 1.00f;'    # lightning — strike
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f; id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f; id(zone_flash)[2] = 1.000f; id(zone_flash_decay)[2] = 0.9f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 1.00f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 1.00f;'    # lightning — strike
       - delay: 160ms
-      - lambda: 'id(zone_flash)[0] = 1.00f; id(zone_flash)[1] = 1.00f; id(zone_flash)[2] = 1.00f;'    # stutter
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f; id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f; id(zone_flash)[2] = 1.000f; id(zone_flash_decay)[2] = 0.9f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 1.00f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 1.00f;'    # stutter
       - delay: 115ms
-      - lambda: 'id(zone_flash)[0] = 1.00f; id(zone_flash)[1] = 1.00f; id(zone_flash)[2] = 1.00f;'    # stutter
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f; id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f; id(zone_flash)[2] = 1.000f; id(zone_flash_decay)[2] = 0.9f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 1.00f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 1.00f;'    # stutter
       - delay: 1045ms
-      - lambda: 'id(zone_flash)[0] = 1.00f;'    # roll — left
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f;'    # roll — left
       - delay: 90ms
-      - lambda: 'id(zone_flash)[2] = 1.00f;'    # roll — centre
+      - lambda: 'id(zone_flash)[2] = 1.000f; id(zone_flash_decay)[2] = 0.9f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 1.00f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 1.00f;'    # roll — centre
       - delay: 90ms
-      - lambda: 'id(zone_flash)[1] = 1.00f;'    # roll — right
+      - lambda: 'id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f;'    # roll — right
       - delay: 1020ms
-      - lambda: 'id(zone_flash)[0] = 1.00f; id(zone_flash)[1] = 1.00f; id(zone_flash)[2] = 1.00f;'    # distant
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f; id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f; id(zone_flash)[2] = 1.000f; id(zone_flash_decay)[2] = 0.9f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 1.00f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 1.00f;'    # distant
       - delay: 1500ms
-      - lambda: 'id(zone_flash)[1] = 1.00f;'    # far off
+      - lambda: 'id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f;'    # far off
       - delay: 2400ms
 
   # ── Séance (ambient) ────────────────────────────────────
@@ -59,24 +59,24 @@ script:
     mode: restart
     then:
       - logger.log: 'scene seance'
-      - lambda: 'id(zone_effect)[0] = 6; id(zone_flash)[0] = 0.0f; id(zone_effect)[1] = 6; id(zone_flash)[1] = 0.0f; id(zone_effect)[2] = 9; id(zone_flash)[2] = 0.0f;'
+      - lambda: 'id(zone_effect)[0] = 6; id(zone_flash)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 6; id(zone_flash)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 9; id(zone_flash)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
       - media_player.volume_set: 0.6
       - media_player.speaker.play_on_device_media_file:
           media_file: snd_seance
           announcement: true
-      - lambda: 'id(zone_flash)[0] = 0.18f; id(zone_flash)[1] = 0.18f; id(zone_flash)[2] = 0.18f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.180f; id(zone_flash_decay)[0] = 0.955f; id(zone_flash_col)[0] = 0.66f; id(zone_flash_col)[1] = 0.20f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.10f; id(zone_flash)[1] = 0.180f; id(zone_flash_decay)[1] = 0.955f; id(zone_flash_col)[4] = 0.66f; id(zone_flash_col)[5] = 0.20f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.10f; id(zone_flash)[2] = 0.180f; id(zone_flash_decay)[2] = 0.955f; id(zone_flash_col)[8] = 0.66f; id(zone_flash_col)[9] = 0.20f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.10f;'    # organ
       - delay: 6600ms
-      - lambda: 'id(zone_flash)[0] = 1.00f;'    # Neapolitan
-      - lambda: 'id(zone_flash)[0] = 0.18f; id(zone_flash)[1] = 0.18f; id(zone_flash)[2] = 0.18f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f;'    # Neapolitan
+      - lambda: 'id(zone_flash)[0] = 0.180f; id(zone_flash_decay)[0] = 0.955f; id(zone_flash_col)[0] = 0.66f; id(zone_flash_col)[1] = 0.20f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.10f; id(zone_flash)[1] = 0.180f; id(zone_flash_decay)[1] = 0.955f; id(zone_flash_col)[4] = 0.66f; id(zone_flash_col)[5] = 0.20f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.10f; id(zone_flash)[2] = 0.180f; id(zone_flash_decay)[2] = 0.955f; id(zone_flash_col)[8] = 0.66f; id(zone_flash_col)[9] = 0.20f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.10f;'    # organ
       - delay: 200ms
       - lambda: 'id(zone_effect)[1] = 7;'
       - delay: 6400ms
       - lambda: 'id(zone_effect)[1] = 6;'
-      - lambda: 'id(zone_flash)[0] = 0.18f; id(zone_flash)[1] = 0.18f; id(zone_flash)[2] = 0.18f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.180f; id(zone_flash_decay)[0] = 0.955f; id(zone_flash_col)[0] = 0.66f; id(zone_flash_col)[1] = 0.20f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.10f; id(zone_flash)[1] = 0.180f; id(zone_flash_decay)[1] = 0.955f; id(zone_flash_col)[4] = 0.66f; id(zone_flash_col)[5] = 0.20f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.10f; id(zone_flash)[2] = 0.180f; id(zone_flash_decay)[2] = 0.955f; id(zone_flash_col)[8] = 0.66f; id(zone_flash_col)[9] = 0.20f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.10f;'    # organ
       - delay: 6599ms
-      - lambda: 'id(zone_flash)[0] = 0.18f; id(zone_flash)[1] = 0.18f; id(zone_flash)[2] = 0.18f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.180f; id(zone_flash_decay)[0] = 0.955f; id(zone_flash_col)[0] = 0.66f; id(zone_flash_col)[1] = 0.20f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.10f; id(zone_flash)[1] = 0.180f; id(zone_flash_decay)[1] = 0.955f; id(zone_flash_col)[4] = 0.66f; id(zone_flash_col)[5] = 0.20f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.10f; id(zone_flash)[2] = 0.180f; id(zone_flash_decay)[2] = 0.955f; id(zone_flash_col)[8] = 0.66f; id(zone_flash_col)[9] = 0.20f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.10f;'    # organ
       - delay: 1ms
-      - lambda: 'id(zone_flash)[0] = 1.00f; id(zone_flash)[1] = 1.00f; id(zone_flash)[2] = 1.00f;'    # the flat ninth
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f; id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f; id(zone_flash)[2] = 1.000f; id(zone_flash_decay)[2] = 0.9f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 1.00f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 1.00f;'    # the flat ninth
       - delay: 200ms
       - lambda: 'id(zone_effect)[0] = 7;'
       - delay: 200ms
@@ -93,30 +93,30 @@ script:
     mode: restart
     then:
       - logger.log: 'scene ballroom'
-      - lambda: 'id(zone_effect)[0] = 8; id(zone_flash)[0] = 0.0f; id(zone_effect)[1] = 8; id(zone_flash)[1] = 0.0f; id(zone_effect)[2] = 8; id(zone_flash)[2] = 0.0f;'
+      - lambda: 'id(zone_effect)[0] = 8; id(zone_flash)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 8; id(zone_flash)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 8; id(zone_flash)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
       - media_player.volume_set: 0.55
       - media_player.speaker.play_on_device_media_file:
           media_file: snd_ballroom
           announcement: true
-      - lambda: 'id(zone_flash)[0] = 0.14f; id(zone_flash)[1] = 0.14f; id(zone_flash)[2] = 0.14f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.160f; id(zone_flash_decay)[0] = 0.93f; id(zone_flash_col)[0] = 0.90f; id(zone_flash_col)[1] = 0.85f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.25f; id(zone_flash)[1] = 0.160f; id(zone_flash_decay)[1] = 0.93f; id(zone_flash_col)[4] = 0.90f; id(zone_flash_col)[5] = 0.85f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.25f; id(zone_flash)[2] = 0.160f; id(zone_flash_decay)[2] = 0.93f; id(zone_flash_col)[8] = 0.90f; id(zone_flash_col)[9] = 0.85f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.25f;'    # waltz
       - delay: 1560ms
-      - lambda: 'id(zone_flash)[0] = 0.14f; id(zone_flash)[1] = 0.14f; id(zone_flash)[2] = 0.14f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.112f; id(zone_flash_decay)[0] = 0.93f; id(zone_flash_col)[0] = 0.90f; id(zone_flash_col)[1] = 0.85f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.25f; id(zone_flash)[1] = 0.112f; id(zone_flash_decay)[1] = 0.93f; id(zone_flash_col)[4] = 0.90f; id(zone_flash_col)[5] = 0.85f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.25f; id(zone_flash)[2] = 0.112f; id(zone_flash_decay)[2] = 0.93f; id(zone_flash_col)[8] = 0.90f; id(zone_flash_col)[9] = 0.85f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.25f;'    # waltz
       - delay: 1560ms
-      - lambda: 'id(zone_flash)[0] = 0.14f; id(zone_flash)[1] = 0.14f; id(zone_flash)[2] = 0.14f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.112f; id(zone_flash_decay)[0] = 0.93f; id(zone_flash_col)[0] = 0.90f; id(zone_flash_col)[1] = 0.85f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.25f; id(zone_flash)[1] = 0.112f; id(zone_flash_decay)[1] = 0.93f; id(zone_flash_col)[4] = 0.90f; id(zone_flash_col)[5] = 0.85f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.25f; id(zone_flash)[2] = 0.112f; id(zone_flash_decay)[2] = 0.93f; id(zone_flash_col)[8] = 0.90f; id(zone_flash_col)[9] = 0.85f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.25f;'    # waltz
       - delay: 1560ms
-      - lambda: 'id(zone_flash)[0] = 0.14f; id(zone_flash)[1] = 0.14f; id(zone_flash)[2] = 0.14f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.112f; id(zone_flash_decay)[0] = 0.93f; id(zone_flash_col)[0] = 0.90f; id(zone_flash_col)[1] = 0.85f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.25f; id(zone_flash)[1] = 0.112f; id(zone_flash_decay)[1] = 0.93f; id(zone_flash_col)[4] = 0.90f; id(zone_flash_col)[5] = 0.85f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.25f; id(zone_flash)[2] = 0.112f; id(zone_flash_decay)[2] = 0.93f; id(zone_flash_col)[8] = 0.90f; id(zone_flash_col)[9] = 0.85f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.25f;'    # waltz
       - delay: 20ms
       - lambda: 'id(zone_effect)[2] = 9;'
       - delay: 1540ms
-      - lambda: 'id(zone_flash)[0] = 0.14f; id(zone_flash)[1] = 0.14f; id(zone_flash)[2] = 0.14f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.160f; id(zone_flash_decay)[0] = 0.93f; id(zone_flash_col)[0] = 0.90f; id(zone_flash_col)[1] = 0.85f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.25f; id(zone_flash)[1] = 0.160f; id(zone_flash_decay)[1] = 0.93f; id(zone_flash_col)[4] = 0.90f; id(zone_flash_col)[5] = 0.85f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.25f; id(zone_flash)[2] = 0.160f; id(zone_flash_decay)[2] = 0.93f; id(zone_flash_col)[8] = 0.90f; id(zone_flash_col)[9] = 0.85f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.25f;'    # waltz
       - delay: 1560ms
-      - lambda: 'id(zone_flash)[0] = 0.14f; id(zone_flash)[1] = 0.14f; id(zone_flash)[2] = 0.14f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.112f; id(zone_flash_decay)[0] = 0.93f; id(zone_flash_col)[0] = 0.90f; id(zone_flash_col)[1] = 0.85f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.25f; id(zone_flash)[1] = 0.112f; id(zone_flash_decay)[1] = 0.93f; id(zone_flash_col)[4] = 0.90f; id(zone_flash_col)[5] = 0.85f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.25f; id(zone_flash)[2] = 0.112f; id(zone_flash_decay)[2] = 0.93f; id(zone_flash_col)[8] = 0.90f; id(zone_flash_col)[9] = 0.85f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.25f;'    # waltz
       - delay: 1560ms
-      - lambda: 'id(zone_flash)[0] = 0.14f; id(zone_flash)[1] = 0.14f; id(zone_flash)[2] = 0.14f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.112f; id(zone_flash_decay)[0] = 0.93f; id(zone_flash_col)[0] = 0.90f; id(zone_flash_col)[1] = 0.85f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.25f; id(zone_flash)[1] = 0.112f; id(zone_flash_decay)[1] = 0.93f; id(zone_flash_col)[4] = 0.90f; id(zone_flash_col)[5] = 0.85f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.25f; id(zone_flash)[2] = 0.112f; id(zone_flash_decay)[2] = 0.93f; id(zone_flash_col)[8] = 0.90f; id(zone_flash_col)[9] = 0.85f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.25f;'    # waltz
       - delay: 240ms
       - lambda: 'id(zone_effect)[2] = 8;'
       - delay: 1320ms
-      - lambda: 'id(zone_flash)[0] = 0.14f; id(zone_flash)[1] = 0.14f; id(zone_flash)[2] = 0.14f;'    # beat
+      - lambda: 'id(zone_flash)[0] = 0.112f; id(zone_flash_decay)[0] = 0.93f; id(zone_flash_col)[0] = 0.90f; id(zone_flash_col)[1] = 0.85f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.25f; id(zone_flash)[1] = 0.112f; id(zone_flash_decay)[1] = 0.93f; id(zone_flash_col)[4] = 0.90f; id(zone_flash_col)[5] = 0.85f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.25f; id(zone_flash)[2] = 0.112f; id(zone_flash_decay)[2] = 0.93f; id(zone_flash_col)[8] = 0.90f; id(zone_flash_col)[9] = 0.85f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.25f;'    # waltz
       - delay: 4080ms
       - script.execute: scene_ballroom
 
@@ -125,33 +125,33 @@ script:
     mode: restart
     then:
       - logger.log: 'scene descent'
-      - lambda: 'id(zone_effect)[0] = 9; id(zone_flash)[0] = 0.0f; id(zone_effect)[1] = 9; id(zone_flash)[1] = 0.0f; id(zone_effect)[2] = 0; id(zone_flash)[2] = 0.0f;'
+      - lambda: 'id(zone_effect)[0] = 9; id(zone_flash)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 9; id(zone_flash)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 0; id(zone_flash)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
       - media_player.volume_set: 0.85
       - media_player.speaker.play_on_device_media_file:
           media_file: snd_descent
           announcement: true
       - delay: 900ms
-      - lambda: 'id(zone_flash)[2] = 1.00f;'    # pedal enters
+      - lambda: 'id(zone_flash)[2] = 1.000f; id(zone_flash_decay)[2] = 0.9f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 1.00f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 1.00f;'    # pedal enters
       - delay: 100ms
       - lambda: 'id(zone_effect)[2] = 9;'
       - delay: 300ms
       - lambda: 'id(zone_effect)[0] = 6;'
       - delay: 5800ms
-      - lambda: 'id(zone_flash)[1] = 1.00f;'    # cluster II
+      - lambda: 'id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f;'    # cluster II
       - delay: 100ms
       - lambda: 'id(zone_effect)[1] = 6;'
       - delay: 5700ms
-      - lambda: 'id(zone_flash)[0] = 1.00f; id(zone_flash)[1] = 1.00f; id(zone_flash)[2] = 1.00f;'    # cluster III
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f; id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f; id(zone_flash)[2] = 1.000f; id(zone_flash_decay)[2] = 0.9f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 1.00f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 1.00f;'    # cluster III
       - delay: 100ms
       - lambda: 'id(zone_effect)[2] = 10;'
       - delay: 5700ms
-      - lambda: 'id(zone_flash)[0] = 1.00f;'    # cluster IV
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f;'    # cluster IV
       - delay: 100ms
       - lambda: 'id(zone_effect)[0] = 7;'
       - delay: 300ms
       - lambda: 'id(zone_effect)[1] = 7;'
       - delay: 1300ms
-      - lambda: 'id(zone_flash)[0] = 1.00f; id(zone_flash)[1] = 1.00f; id(zone_flash)[2] = 1.00f;'    # diminished pile-up
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f; id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f; id(zone_flash)[2] = 1.000f; id(zone_flash_decay)[2] = 0.9f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 1.00f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 1.00f;'    # diminished pile-up
       - delay: 100ms
       - lambda: 'id(zone_effect)[2] = 3;'
       - delay: 4300ms
@@ -167,7 +167,7 @@ script:
     mode: restart
     then:
       - logger.log: 'scene visitation'
-      - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f;'
+      - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
       - media_player.volume_set: 0.75
       - media_player.speaker.play_on_device_media_file:
           media_file: snd_visitation
@@ -189,7 +189,7 @@ script:
     mode: restart
     then:
       - logger.log: 'scene approach'
-      - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f;'
+      - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
       - media_player.volume_set: 1.0
       - media_player.speaker.play_on_device_media_file:
           media_file: snd_approach
@@ -200,7 +200,7 @@ script:
       - delay: 1900ms
       - lambda: 'id(zone_effect)[2] = 3;'
       - delay: 2000ms
-      - lambda: 'id(zone_flash)[0] = 1.00f; id(zone_flash)[1] = 1.00f; id(zone_flash)[2] = 1.00f;'    # all zones
+      - lambda: 'id(zone_flash)[0] = 1.000f; id(zone_flash_decay)[0] = 0.9f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 1.00f; id(zone_flash)[1] = 1.000f; id(zone_flash_decay)[1] = 0.9f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 1.00f; id(zone_flash)[2] = 1.000f; id(zone_flash_decay)[2] = 0.9f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 1.00f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 1.00f;'    # all zones
       - delay: 1500ms
       - lambda: 'id(zone_effect)[0] = 1;'
       - delay: 500ms
@@ -214,61 +214,166 @@ script:
     mode: restart
     then:
       - logger.log: 'scene crypt'
-      - lambda: 'id(zone_effect)[0] = 0; id(zone_flash)[0] = 0.0f; id(zone_effect)[1] = 0; id(zone_flash)[1] = 0.0f; id(zone_effect)[2] = 9; id(zone_flash)[2] = 0.0f;'
+      - lambda: 'id(zone_effect)[0] = 0; id(zone_flash)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 0; id(zone_flash)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 12; id(zone_flash)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
       - media_player.volume_set: 0.7
       - media_player.speaker.play_on_device_media_file:
           media_file: snd_crypt
           announcement: true
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1253ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1246ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 501ms
-      - lambda: 'id(zone_effect)[0] = 5;'    # something watches
-      - delay: 736ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1252ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1279ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1239ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 494ms
-      - lambda: 'id(zone_effect)[2] = 10;'    # the pulse shows
-      - delay: 776ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1202ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1279ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 743ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 153ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 1100ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 1066ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 101ms
+      - lambda: 'id(zone_flash)[0] = 0.274f; id(zone_flash_decay)[0] = 0.94f; id(zone_flash_col)[0] = 0.24f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 0.38f; id(zone_flash_col)[3] = 0.00f;'    # whispers
+      - delay: 79ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 321ms
+      - lambda: 'id(zone_effect)[0] = 5; id(zone_level)[0] = 0.18f;'    # something watches
+      - delay: 537ms
+      - lambda: 'id(zone_flash)[1] = 0.338f; id(zone_flash_decay)[1] = 0.94f; id(zone_flash_col)[4] = 0.24f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 0.38f; id(zone_flash_col)[7] = 0.00f;'    # whispers
+      - delay: 199ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 853ms
+      - lambda: 'id(zone_flash)[0] = 0.301f; id(zone_flash_decay)[0] = 0.94f; id(zone_flash_col)[0] = 0.24f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 0.38f; id(zone_flash_col)[3] = 0.00f;'    # whispers
+      - delay: 219ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 1099ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 65ms
+      - lambda: 'id(zone_flash)[1] = 0.259f; id(zone_flash_decay)[1] = 0.94f; id(zone_flash_col)[4] = 0.24f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 0.38f; id(zone_flash_col)[7] = 0.00f;'    # whispers
+      - delay: 115ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 1059ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 450ms
+      - lambda: 'id(zone_flash)[0] = 0.337f; id(zone_flash_decay)[0] = 0.94f; id(zone_flash_col)[0] = 0.24f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 0.38f; id(zone_flash_col)[3] = 0.00f;'    # whispers
+      - delay: 640ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 953ms
+      - lambda: 'id(zone_flash)[1] = 0.218f; id(zone_flash_decay)[1] = 0.94f; id(zone_flash_col)[4] = 0.24f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 0.38f; id(zone_flash_col)[7] = 0.00f;'    # whispers
+      - delay: 69ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 766ms
+      - lambda: 'id(zone_flash)[0] = 0.269f; id(zone_flash_decay)[0] = 0.94f; id(zone_flash_col)[0] = 0.24f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 0.38f; id(zone_flash_col)[3] = 0.00f;'    # whispers
+      - delay: 333ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 352ms
+      - lambda: 'id(zone_flash)[1] = 0.268f; id(zone_flash_decay)[1] = 0.94f; id(zone_flash_col)[4] = 0.24f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 0.38f; id(zone_flash_col)[7] = 0.00f;'    # whispers
+      - delay: 211ms
       - lambda: 'id(zone_effect)[0] = 0;'    # eyes close
       - delay: 525ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 75ms
-      - lambda: 'id(zone_effect)[1] = 5;'    # …it moved
-      - delay: 1127ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1273ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 29ms
+      - lambda: 'id(zone_flash)[0] = 0.316f; id(zone_flash_decay)[0] = 0.94f; id(zone_flash_col)[0] = 0.24f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 0.38f; id(zone_flash_col)[3] = 0.00f;'    # whispers
+      - delay: 46ms
+      - lambda: 'id(zone_effect)[1] = 5; id(zone_level)[1] = 0.18f;'    # …it moved
+      - delay: 105ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 1022ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 55ms
+      - lambda: 'id(zone_flash)[1] = 0.336f; id(zone_flash_decay)[1] = 0.94f; id(zone_flash_col)[4] = 0.24f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 0.38f; id(zone_flash_col)[7] = 0.00f;'    # whispers
+      - delay: 125ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 93ms
+      - lambda: 'id(zone_flash)[0] = 0.500f; id(zone_flash_decay)[0] = 0.972f; id(zone_flash_col)[0] = 0.66f; id(zone_flash_col)[1] = 0.08f; id(zone_flash_col)[2] = 1.00f; id(zone_flash_col)[3] = 0.06f; id(zone_flash)[1] = 0.500f; id(zone_flash_decay)[1] = 0.972f; id(zone_flash_col)[4] = 0.66f; id(zone_flash_col)[5] = 0.08f; id(zone_flash_col)[6] = 1.00f; id(zone_flash_col)[7] = 0.06f; id(zone_flash)[2] = 0.500f; id(zone_flash_decay)[2] = 0.972f; id(zone_flash_col)[8] = 0.66f; id(zone_flash_col)[9] = 0.08f; id(zone_flash_col)[10] = 1.00f; id(zone_flash_col)[11] = 0.06f;'    # toll
       - delay: 1000ms
-      - lambda: 'id(zone_effect)[2] = 9;'
-      - delay: 271ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1240ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1231ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1258ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 583ms
+      - lambda: 'id(zone_flash)[0] = 0.332f; id(zone_flash_decay)[0] = 0.94f; id(zone_flash_col)[0] = 0.24f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 0.38f; id(zone_flash_col)[3] = 0.00f;'    # whispers
+      - delay: 508ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 1045ms
+      - lambda: 'id(zone_flash)[1] = 0.282f; id(zone_flash_decay)[1] = 0.94f; id(zone_flash_col)[4] = 0.24f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 0.38f; id(zone_flash_col)[7] = 0.00f;'    # whispers
+      - delay: 15ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 1051ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 13ms
+      - lambda: 'id(zone_flash)[0] = 0.296f; id(zone_flash_decay)[0] = 0.94f; id(zone_flash_col)[0] = 0.24f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 0.38f; id(zone_flash_col)[3] = 0.00f;'    # whispers
+      - delay: 167ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 1078ms
       - lambda: 'id(zone_effect)[1] = 0;'    # gone
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1241ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1242ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
-      - delay: 1293ms
-      - lambda: 'id(zone_flash)[2] = 0.40f;'    # beat
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 204ms
+      - lambda: 'id(zone_flash)[1] = 0.262f; id(zone_flash_decay)[1] = 0.94f; id(zone_flash_col)[4] = 0.24f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 0.38f; id(zone_flash_col)[7] = 0.00f;'    # whispers
+      - delay: 791ms
+      - lambda: 'id(zone_flash)[0] = 0.228f; id(zone_flash_decay)[0] = 0.94f; id(zone_flash_col)[0] = 0.24f; id(zone_flash_col)[1] = 1.00f; id(zone_flash_col)[2] = 0.38f; id(zone_flash_col)[3] = 0.00f;'    # whispers
+      - delay: 66ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 1062ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 180ms
+      - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - delay: 1113ms
+      - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
       - delay: 224ms
       - script.execute: scene_crypt
 

@@ -624,6 +624,79 @@ determinism. Now `zlib.crc32`; verified identical MD5 across runs.
 
 ---
 
+## 12.6 Making audio actually drive the light (2026-08-10)
+
+Justin, bluntly: *"lighting is bad."* Target scene: Crypt.
+
+**Diagnosis, measured not guessed.** Sampled the previewer's own canvas at
+each aperture centre for a full 24 s loop and compared zone statistics:
+
+| | towerL mean | door mean |
+|---|---|---|
+| before | 69 | 25 |
+
+The `eyes` effect was a bright *constant* red flooding the towers, tied to
+nothing in the audio — and in the same colour as the heartbeat, so the one
+thing that should own the scene was buried by the one thing that meant
+nothing. No contrast, no correlation: that is what "bad lighting" was.
+
+**Three changes, in order of importance.**
+
+1. **Per-zone `level`** (`zone_level[3]` global, `level:` on set-cues and an
+   optional scene `levels:` map). Scales the *base effect only* — strikes are
+   unscaled. This is the mechanism that buys contrast: hold the standing
+   effect low and the audio-driven pulses become the loudest thing in the
+   room. Crypt runs `eyes` at `0.18`.
+
+2. **Per-strike colour and decay** (`zone_flash_col[12]`, `zone_flash_decay[3]`).
+   A strike is no longer always white with one global fall time. Lightning
+   stays white and snappy (0.90); a heartbeat is blood red and faster (0.82);
+   a bell toll blooms violet and falls slow (0.972). The previewer's sky/stone
+   wash is tinted by the strike colour too, so a crypt thump breathes red onto
+   the stonework instead of flashing it storm-blue.
+
+3. **Markers became per-synth, with velocity.** `audio/markers.json` went from
+   `{scene: [ms]}` to `{scene: {synth: [[ms, velocity]]}}`. Synths now report
+   *both* heartbeat thumps (the dub at 0.55 of the lub), every whispered word
+   (velocity from word length), and accented waltz phrase-heads. A scene's
+   `pulse:` is now a *list of streams*, one per synth, each with its own zones,
+   colour, intensity and decay — and `alternate: true` round-robins a stream
+   across zones.
+
+**Crypt now has a colour language, and every zone is driven by a sound:**
+
+| colour | sound | zone | feel |
+|---|---|---|---|
+| red | heartbeat (39 thumps) | door, epicentre | snap, 0.82 |
+| red, faint | heartbeat | both towers @ 0.10 | sympathetic throb |
+| green | whispers (15 words) | towers, alternating | flicker, 0.94 |
+| violet | toll (1) | all zones | bloom, 0.972 |
+
+Nothing in the scene is lit by the clock any more except the two `eyes`
+entrances, and those now sit *under* the pulses.
+
+**Measured after:**
+
+| | towerL mean | towerR mean | door mean | door median | door p90 |
+|---|---|---|---|---|---|
+| after | 28.4 | 28.1 | 66 | 27 | 202 |
+
+The door went from the dimmest zone to the brightest, and its median/p90 gap
+(27 → 202) is the dynamic range that makes a pulse read as a pulse. Canvas
+capture confirmed the lub-dub in the pixels: `247 → 87 → 193` then a decay
+tail, repeating at ~1.28 s, and a pure red `[255,15,16]` thump between tolls.
+
+**Also fixed:** the *Arm audio* button was the only way to start sound, and it
+was easy to miss. Browsers only require one user gesture, so the first
+`pointerdown` or `keydown` anywhere on the page now arms everything — audio is
+on by default in practice. The button remains as a visible hint. Verified by
+instrumenting `HTMLMediaElement.play`: one click anywhere → crypt's 24 s file
+playing, looping, clock advancing.
+
+**Cost:** RAM 75.2% → 76.2%, flash 71.4% → 71.5%. Still fits.
+
+---
+
 ## 13. Decision log
 
 | Date | Decision | Rationale |
@@ -637,3 +710,7 @@ determinism. Now `zlib.crc32`; verified identical MD5 across runs.
 | 2026-08-09 | Second palette: Haunted Mansion violet/green | Justin's reference. Coexists with candlelit warm — they're different scenes, not a global mode |
 | 2026-08-09 | Music written original, not sourced | Haunted-parlour idiom (A minor, 3/4, raised 7th). Avoids putting copyrighted material on a public-facing display |
 | 2026-08-09 | Parts sourcing parked to the end | Justin's call — settle the show first, then buy to fit it (§11) |
+| 2026-08-10 | Light cues derive from audio markers, not hand-typed times | Synths report their own event times; a jittered heartbeat can't drift from its light (§12.6) |
+| 2026-08-10 | Base effects get a per-zone `level`; strikes stay unscaled | Contrast is the whole mechanism — a standing effect at full brightness buries the audio-driven pulses (§12.6) |
+| 2026-08-10 | Each strike carries its own colour and decay | One global white snap can't express both a lightning bolt and a heartbeat; colour is how a viewer hears with their eyes (§12.6) |
+| 2026-08-10 | Previewer arms audio on the first gesture anywhere | The Arm button was a discoverability trap; browsers only need one gesture, not that specific one (§12.6) |

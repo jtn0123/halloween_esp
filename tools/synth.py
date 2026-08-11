@@ -207,7 +207,9 @@ def heartbeat(dur: float, rng: np.random.Generator) -> np.ndarray:
         jitter = rng.uniform(-0.03, 0.03)          # a metronome heart is dead
         _place(buf, thump(52, 1.00), t0 + jitter)
         _place(buf, thump(64, 0.55), t0 + 0.18 + jitter)
-        beats.append(max(0.0, t0 + jitter))
+        # BOTH thumps, with their real loudness — the light does lub-dub too.
+        beats.append((max(0.0, t0 + jitter), 1.00))
+        beats.append((t0 + 0.18 + jitter, 0.55))
         t0 += period
     return buf, beats
 
@@ -233,6 +235,7 @@ def whispers(dur: float, rng: np.random.Generator) -> np.ndarray:
     effect; half-heard, the listener's brain writes the words."""
     n = int(dur * SR)
     buf = np.zeros(n)
+    words = []                                      # word onsets, for the lights
     t0 = 0.6
     while t0 < dur - 1.0:
         wlen = rng.uniform(0.25, 0.9)               # one "word"
@@ -248,8 +251,11 @@ def whispers(dur: float, rng: np.random.Generator) -> np.ndarray:
         k = min(wn, n - buf_i)
         if k > 0:
             buf[buf_i:buf_i + k] += seg[:k] * env[:k]
+        # Velocity from word length (no extra rng draws — the audio must not
+        # change because we started reporting markers).
+        words.append((t0, 0.5 + 0.5 * min(1.0, wlen / 0.9)))
         t0 += wlen + rng.uniform(0.15, 1.4)         # ragged pauses
-    return buf * 0.5
+    return buf * 0.5, words
 
 
 def toll() -> np.ndarray:
@@ -259,7 +265,7 @@ def toll() -> np.ndarray:
     out = np.zeros(n)
     for i, m in enumerate((1.0, 2.76, 5.4, 8.9)):
         out += (0.24 / (i + 1)) * np.sin(2 * np.pi * 138 * m * t) * np.exp(-t * (0.9 + i * 0.55))
-    return out
+    return out, [(0.0, 1.0)]
 
 
 # ── pieces ────────────────────────────────────────────────────────────────
@@ -291,7 +297,7 @@ def organ() -> np.ndarray:
         _place(buf, pipe(nt(ped + 12), 7.5, 0.038), bt)
         for s in notes:
             _place(buf, pipe(nt(s - 12), 7.5, 0.030), bt)
-    return buf, [i * 6.6 for i in range(len(chords))]
+    return buf, [(i * 6.6, 1.0) for i in range(len(chords))]
 
 
 def descent() -> np.ndarray:
@@ -325,7 +331,8 @@ def waltz() -> np.ndarray:
     for i, s in enumerate(mel):
         if s is not None:
             _place(buf, box(nt(s), 1.7, 0.15), i * B)
-    return buf, [bar * 3 * B for bar in range(len(prog))]
+    # Downbeats, bar 1 of each 4-bar phrase accented.
+    return buf, [(bar * 3 * B, 1.0 if bar % 4 == 0 else 0.7) for bar in range(len(prog))]
 
 
 def musicbox() -> np.ndarray:

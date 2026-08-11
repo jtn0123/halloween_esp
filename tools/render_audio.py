@@ -45,18 +45,20 @@ def write_wav(path: Path, x: np.ndarray, sr: int) -> None:
         w.writeframes(pcm.tobytes())
 
 
-def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, list[int]]:
+def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
     """Mix one scene's score into a single buffer.
 
-    Also returns beat markers (ms): the ACTUAL musical event times reported by
-    the synths — heartbeat thumps, organ chord onsets, waltz downbeats. The cue
-    generators turn these into light pulses, so light stays locked to sound
-    even when a synth jitters its own timing.
+    Also returns beat markers, keyed by synth name: the ACTUAL musical event
+    times AND loudness reported by the synths — both heartbeat thumps, each
+    whispered word, organ chord onsets, waltz downbeats. Each marker is
+    [ms, velocity]. The cue generators turn these into light pulses, so light
+    stays locked to sound even when a synth jitters its own timing, and a
+    scene can give each sound its own colour and decay.
     """
     sr = cfg["sample_rate"]
     dur = scene["duration_ms"] / 1000.0
     buf = np.zeros(int(dur * sr))
-    markers: list[int] = []
+    markers: dict[str, list] = {}
 
     # Deterministic per scene, so re-rendering is reproducible and a diff in
     # the output means a real change in the score. NOT Python's hash() — that
@@ -70,15 +72,18 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, list[int]]:
             raise SystemExit(f"scene {scene['id']}: unknown synth {name!r}")
         res = fn(rng, dur=ev["dur"]) if "dur" in ev else fn(rng)
         sig, marks = res if isinstance(res, tuple) else (res, [])
+        # A synth may report bare times or (time, velocity) pairs.
+        marks = [m if isinstance(m, tuple) else (m, 1.0) for m in marks]
         if "take" in ev:                      # trim a long piece to fit
             sig = sig[: int(ev["take"] * sr)]
             fade = min(len(sig), int(0.4 * sr))
             if fade:
                 sig[-fade:] *= np.linspace(1.0, 0.0, fade)
-            marks = [m for m in marks if m < ev["take"]]
+            marks = [(m, v) for m, v in marks if m < ev["take"]]
         synth._place(buf, sig * float(ev.get("gain", 1.0)), ev["t"])
-        markers += [int((ev["t"] + m) * 1000) for m in marks
-                    if ev["t"] + m < dur - 0.1]
+        markers.setdefault(name, []).extend(
+            [int((ev["t"] + m) * 1000), round(v, 3)] for m, v in marks
+            if ev["t"] + m < dur - 0.1)
 
     buf = synth.apply_reverb(buf, wet=0.42, rng=rng)
 
@@ -102,7 +107,7 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, list[int]]:
     peak = float(np.max(np.abs(buf)))
     if peak > 1e-6:
         buf *= TARGET_PEAK / peak
-    return buf, sorted(markers)
+    return buf, {k: sorted(v) for k, v in markers.items()}
 
 
 def encode_mp3(wav: Path, mp3: Path, bitrate: int) -> None:
@@ -130,7 +135,7 @@ def main() -> int:
             raise SystemExit(f"no scene with id {args.only!r}")
 
     total = 0
-    all_markers: dict[str, list[int]] = {}
+    all_markers: dict[str, dict[str, list]] = {}
     print(f"{'scene':<12} {'length':>8} {'mp3':>9}   file")
     print("-" * 52)
     for i, scene in enumerate(doc["scenes"], start=1):
@@ -155,7 +160,7 @@ def main() -> int:
     print(f"{'total':<12} {'':>8} {total/1024:>8.0f}K")
     if not args.only:  # partial renders must not clobber other scenes' markers
         (OUT / "markers.json").write_text(json.dumps(all_markers, indent=0))
-        n = sum(len(v) for v in all_markers.values())
+        n = sum(len(m) for v in all_markers.values() for m in v.values())
         print(f"beat markers: {n} across {len(all_markers)} scenes -> audio/markers.json")
     # 3.87 MB single-app partition minus ~0.97 MB of firmware (measured,
     # PROJECT_NOTES §12.2).

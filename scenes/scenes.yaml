@@ -84,8 +84,9 @@ scenes:
       Four organ chords, 7.5 s each, overlapping so nothing fully releases. The
       second is the Neapolitan — a major triad a semitone above the tonic.
     base: {towerL: seance, towerR: seance, door: chill}
-    # Organ chord onsets pulse all zones gently.
-    pulse: {intensity: 0.18}
+    # Organ chord onsets pulse all zones gently, in the room's own violet.
+    pulse:
+      - {synth: organ, intensity: 0.18, color: [0.66, 0.20, 1.0, 0.10], decay: 0.955}
     score:
       - {t: 0.0,  synth: wind,  dur: 35.0, gain: 0.35}
       - {t: 0.0,  synth: organ, gain: 1.0}
@@ -110,8 +111,9 @@ scenes:
       The parlour waltz — music box over piano, three-four time. All three zones
       drift slowly between violet and green.
     base: {towerL: mansion, towerR: mansion, door: mansion}
-    # Waltz downbeats shimmer all zones.
-    pulse: {intensity: 0.14}
+    # Waltz downbeats shimmer all zones; phrase heads land harder (velocity).
+    pulse:
+      - {synth: waltz, intensity: 0.16, color: [0.9, 0.85, 1.0, 0.25], decay: 0.93}
     score:
       - {t: 0.0, synth: waltz, gain: 1.0}
     cues:
@@ -199,18 +201,36 @@ scenes:
       Below the castle. A heartbeat at 48 bpm, a tritone drone underneath, and
       whispers just past intelligibility. The lights barely admit anything is
       there — near-darkness is the effect.
-    base: {towerL: "off", towerR: "off", door: chill}
-    # Every heartbeat thump becomes a light pulse on the door.
-    pulse: {zone: door, intensity: 0.4}
+    base: {towerL: "off", towerR: "off", door: blood}
+    # Nothing in this scene is lit by the clock — every zone is driven by one
+    # sound, and each sound owns a colour:
+    #   red    = the heart      (door, both thumps of the lub-dub, snapping)
+    #   green  = the voices     (towers, one flicker per whispered word,
+    #                            alternating, so the voices move around you)
+    #   violet = the bell       (everything blooms and falls slow)
+    # The heart also throbs faintly through the towers, so the whole crypt
+    # breathes with the door as the epicentre.
+    #
+    # The eyes are held at level 0.18 on purpose. At full brightness they are
+    # a red floodlight tied to nothing in the audio, and they bury the
+    # heartbeat in the same colour — the reason this scene read as flat. Kept
+    # under the pulses, they are a presence you notice rather than a lamp.
+    pulse:
+      - {synth: heartbeat, zone: door, intensity: 0.85, decay: 0.82,
+         color: [1.0, 0.03, 0.01, 0.0]}
+      - {synth: heartbeat, zones: [towerL, towerR], intensity: 0.10,
+         decay: 0.88, color: [1.0, 0.05, 0.02, 0.0]}
+      - {synth: whispers, zones: [towerL, towerR], alternate: true,
+         intensity: 0.34, decay: 0.94, color: [0.24, 1.0, 0.38, 0.0]}
+      - {synth: toll, intensity: 0.5, decay: 0.972,
+         color: [0.66, 0.08, 1.0, 0.06]}
     score:
       - {t: 0.0,  synth: drone,     dur: 24.0, gain: 0.9}
       - {t: 0.0,  synth: heartbeat, dur: 24.0, gain: 1.0}
       - {t: 2.0,  synth: whispers,  dur: 20.5, gain: 0.55}
       - {t: 14.0, synth: toll, gain: 0.3}
     cues:
-      - {t: 3000,  op: set, zone: towerL, effect: eyes,  note: "something watches"}
-      - {t: 8000,  op: set, zone: door,   effect: throb, note: "the pulse shows"}
+      - {t: 3000,  op: set, zone: towerL, effect: eyes, level: 0.18, note: "something watches"}
       - {t: 12000, op: set, zone: towerL, effect: "off", note: "eyes close"}
-      - {t: 12600, op: set, zone: towerR, effect: eyes,  note: "…it moved"}
-      - {t: 16000, op: set, zone: door,   effect: chill}
+      - {t: 12600, op: set, zone: towerR, effect: eyes, level: 0.18, note: "…it moved"}
       - {t: 20000, op: set, zone: towerR, effect: "off", note: "gone"}

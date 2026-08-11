@@ -39,7 +39,7 @@ END = "// @GEN-DATA-END"
 # Must match firmware/castle_effects.h and tools/gen_esphome.py.
 KNOWN_EFFECTS = {
     "off", "candle", "ember", "furnace", "spirit", "eyes",
-    "seance", "wisp", "mansion", "chill", "throb", "strobe",
+    "seance", "wisp", "mansion", "chill", "throb", "strobe", "blood",
 }
 
 
@@ -64,9 +64,12 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         if cue["op"] == "set":
             if cue["effect"] not in KNOWN_EFFECTS:
                 sys.exit(f"scene {sid}: unknown effect {cue['effect']!r}")
-            cues.append({"t": cue["t"], "bus": "LED", "op": "set",
-                         "zone": cue["zone"], "eff": cue["effect"],
-                         "detail": cue.get("note", "")})
+            c = {"t": cue["t"], "bus": "LED", "op": "set",
+                 "zone": cue["zone"], "eff": cue["effect"],
+                 "detail": cue.get("note", "")}
+            if "level" in cue:
+                c["level"] = float(cue["level"])
+            cues.append(c)
         elif cue["op"] == "strike":
             c = {"t": cue["t"], "bus": "LED", "op": "strike",
                  "ms": cue.get("ms", 80), "detail": cue.get("note", "")}
@@ -75,13 +78,23 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
             cues.append(c)
         else:
             sys.exit(f"scene {sid}: unknown cue op {cue['op']!r}")
-    pcfg = scene.get("pulse")
-    for t in (markers.get(sid, []) if pcfg else []):
-        c = {"t": t, "bus": "LED", "op": "strike", "ms": 120,
-             "intensity": pcfg.get("intensity", 0.3), "detail": "beat"}
-        if pcfg.get("zone"):
-            c["zone"] = pcfg["zone"]
-        cues.append(c)
+    # Pulse streams: one per synth, colour/decay per stream, velocity per
+    # marker. Same merge as tools/gen_esphome.py — keep them in lockstep.
+    scene_marks = markers.get(sid, {})
+    for pcfg in scene.get("pulse") or []:
+        beats = scene_marks.get(pcfg["synth"], [])
+        zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
+        for i, (t, vel) in enumerate(beats):
+            c = {"t": t, "bus": "LED", "op": "strike", "ms": 120,
+                 "intensity": round(pcfg.get("intensity", 0.3) * vel, 3),
+                 "color": pcfg.get("color", [1, 1, 1, 1]),
+                 "decay": pcfg.get("decay", 0.90),
+                 "detail": pcfg["synth"]}
+            if zones and pcfg.get("alternate"):
+                c["targets"] = [zones[i % len(zones)]]
+            elif zones:
+                c["targets"] = zones
+            cues.append(c)
     cues.sort(key=lambda c: c["t"])
 
     for eff in scene["base"].values():
@@ -97,6 +110,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         "volume": float(scene.get("volume", 0.8)),
         "blurb": " ".join(str(scene.get("blurb", "")).split()),
         "base": scene["base"],
+        "levels": scene.get("levels") or {},
         "cues": cues,
         "file": f"{idx:02d}_{sid}.mp3",
         "yaml": scene_yaml_slice(raw, sid),

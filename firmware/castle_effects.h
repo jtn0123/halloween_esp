@@ -26,6 +26,7 @@ enum Effect : int {
   EFF_CHILL = 9,
   EFF_THROB = 10,
   EFF_STROBE = 11,
+  EFF_BLOOD = 12,
 };
 
 struct Rgbw {
@@ -125,6 +126,13 @@ inline Rgbw render(int eff, float t, float seed, float hue, bool soft) {
       }
       float on = sinf(t * 44.0f + seed) > 0.0f ? 1.0f : 0.06f;
       return Rgbw{0.12f * on, 0.12f * on, 0.18f * on, 1.00f * on};
+    }
+    case EFF_BLOOD: {
+      // Near-dark deep red smoulder — the floor under the heartbeat pulses
+      // in the crypt. Slow uneven breathing, never bright, no white at all.
+      float n = fbm(t * 0.35f + seed * 1.7f);
+      float l = 0.045f + 0.05f * n;
+      return Rgbw{1.00f * l, 0.02f * l, 0.01f * l, 0.0f};
     }
     case EFF_OFF:
     default:
