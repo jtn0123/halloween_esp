@@ -121,6 +121,47 @@ board seems dead, verify it is dead before changing anything.
 
 ---
 
+## 3b. SD streaming is not available on this stack — verified 2026-08-10
+
+An earlier note in this project said a streaming SD `MediaSource` was
+"genuinely writable". **That was wrong**, and the correction matters because it
+was the basis for planning SD streaming as an upgrade over the whole-file
+approach.
+
+ESPHome 2026.7.4 does ship `media_source::MediaSource` as a pluggable base
+class, which is what that claim rested on. But a source does not decode audio —
+it hands bytes to `micro_decoder::DecoderSource`, and **that decoder pins to
+`esphome/micro-decoder` 0.2.0, which exposes exactly two ways to start
+playback**:
+
+    decoder_->play_buffer(const uint8_t *data, size_t length, type)   // whole file in RAM
+    decoder_->play_url(const std::string &uri)                        // it fetches, over HTTP
+
+Confirmed by enumerating every `decoder_->` call across the whole ESPHome
+component tree — 24 methods, and those are the only two entry points. There is
+no read callback, no pull interface, no way to hand it a `FILE *` or feed it
+chunks. Both shipped sources prove the shape: `audio_file` hands over a flash
+pointer, and `audio_http` hands over a URL and lets the decoder do its own
+fetching.
+
+So an SD source can only take the first door: read the whole file into memory
+and pass a pointer. Which is what `firmware/sd_audio.h` already does.
+
+**What that leaves:**
+
+| Approach | Length limit | Status |
+|---|---|---|
+| Whole file into PSRAM (`sd_audio.h`) | ~1713 KB — 4:52 at 48 kbps, 2:26 at 96 | **Built, compiles** |
+| HTTP from another machine | none | Works today, needs a server running |
+| Loopback HTTP on the device itself | none in theory | Untried. The decoder would fetch over TCP from a server on the same single core — plausible, but a real deadlock and throughput risk, and it buys nothing the card does not already |
+| True streaming | none | Needs micro-decoder to grow a pull API. Not in 0.2.0 |
+
+**The practical read:** SD already did its job. The point of the card was never
+streaming — it was escaping the ~2.9 MB flash budget in which every scene
+competes with every other. The card holds a library; PSRAM is the turntable,
+and it fits about five minutes at a sensible bitrate. For a porch display built
+from 15–35 second loops, that ceiling is not the binding constraint.
+
 ## 4. Flashing
 
 The board drops into ROM download mode for flashing and does not reliably leave

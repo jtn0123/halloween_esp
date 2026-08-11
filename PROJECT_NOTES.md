@@ -1168,13 +1168,17 @@ stays authoritative until the final commit flips over, so the page is never
 half-migrated. Doing this first because the bundler it introduces is what makes
 step 3 a build flag instead of a fork.
 
-### 2. SD card streaming — a `media_source::MediaSource`
-The measured decode headroom (§12.13) changed this from a compromise into an
-upgrade: streaming means full-length tracks at proper quality rather than
-trimming to fit PSRAM. ESPHome 2026.x ships the abstract base class and
-`audio_file/media_source` is a working reference that does exactly this from
-flash; the SD version reads a `FILE *` instead of a byte array. Build as a
-third variant, keep the flash scenes as the safety net.
+### 2. ~~SD card streaming~~ — NOT POSSIBLE, and the whole-file path already ships
+Corrected 2026-08-10 after reading the decoder, not just the base class.
+`media_source::MediaSource` is pluggable, but a source does not decode — it
+feeds `micro_decoder` 0.2.0, whose only two entry points are a whole buffer in
+RAM or a URL it fetches itself. No pull interface exists, so a source cannot
+stream a file from a card. See HARDWARE_FINDINGS §3b.
+
+`firmware/sd_audio.h` already does the reachable thing: whole file into PSRAM,
+which fits ~4:52 at 48 kbps. The card was always about escaping the 2.9 MB
+flash budget rather than about length, and that it does. Remaining work is to
+put a card in the slot and confirm it mounts on the real pins.
 
 ### 3. A cut-down cue desk served off the device
 Flash headroom is ~1.1 MB. The current page is 2.6 MB, almost entirely embedded
