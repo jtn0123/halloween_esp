@@ -1008,6 +1008,87 @@ descent (densest audio) and storm. Compare `loop_max` idle against playing:
 `free internal RAM` is the tighter pool, because the S2 cannot DMA from PSRAM
 so the I2S buffers must live in internal SRAM.
 
+### RESULTS — first run on real hardware, 2026-08-10
+
+105 samples over ~3.5 minutes, with a scene playing throughout:
+
+| | value |
+|---|---|
+| loop time, average | **32.7 ms** |
+| loop time, max | **60 ms** |
+| free internal SRAM | **91 KB** |
+| free PSRAM | **1713 KB** |
+| decode errors / underruns | **0** |
+| blocking-loop warnings | **0** |
+
+**MP3 decode works on this chip.** Not one underrun, not one decode failure,
+not one "components should block" warning, while WiFi was up and the LED RMT
+driver was running. The folk wisdom that the ESP32-S2 cannot do this is, at
+least at 96 kbps mono, wrong.
+
+Loop time sits a little above the 30 ms mark the benchmark's own header calls
+"comfortable" — but with zero underruns and zero blocking warnings, and with
+the light engine updating on a 16 ms tick, that is a paced loop rather than a
+starved one. Worth re-measuring once real pixels and a real amp are drawing
+current.
+
+**Caveat, stated plainly:** every sample came back `playing=yes`, because
+`vigil` loops forever and had already started before the log connection was
+made. So there is no idle baseline to compare against — the "idle vs playing"
+delta the benchmark was designed to show was not actually captured. The
+absolute numbers stand; the comparison does not exist yet.
+
+**1713 KB free PSRAM is more than the 1.5 MB that had been assumed**, which
+moves the whole-file SD numbers in the right direction:
+
+| Format | Fits in the measured 1713 KB |
+|---|---|
+| 96 kbps mono | 2:26 |
+| 64 kbps mono | 3:39 |
+| 48 kbps mono | **4:52** — four minutes with real margin |
+
+The previewer's capacity readout now uses the measured figure rather than the
+estimate.
+
+---
+
+## 12.14 Getting logs off this board (2026-08-10)
+
+Cost most of an evening. Recorded so nobody repeats it.
+
+**There is no USB serial console on this board, and there never was.** The
+ESP32-S2 has no USB Serial/JTAG peripheral — that is an S3/C3 feature, which is
+why serial "just works" on Justin's other ESP32 projects and not here. The S2's
+only USB is the OTG peripheral, and ESPHome does not run a TinyUSB CDC stack.
+Every serial port we saw all evening (`usbmodem101`, `usbmodem01`) was the ROM
+bootloader's, never the application's.
+
+**`CONFIG_ESP_CONSOLE_USB_CDC` is worse than useless here — it panics.** The
+crash log from that boot, read back over the API once we finally had a channel:
+
+    Reason: Interrupt wdt - Interrupt wdt timeout on CPU0
+      esp_usb_console_flush_internal   (usb_console.c:364)
+      esp_usb_console_write_buf        (usb_console.c:416)
+      panic_print_char_usb_cdc         (panic.c:104)
+
+With it set, the board enumerates nothing at all over USB — no app port, and no
+way back in except holding BOOT while tapping RESET. Reverted; the config now
+carries a comment saying why, so it doesn't get "fixed" again.
+
+**mDNS does not resolve on this network.** `castle-benchaudio.local` never
+resolved and `dns-sd -B _esphomelib._tcp` found nothing, which looked exactly
+like "the device isn't connected". It was connected the whole time. A scan of
+the subnet for port 6053 found it in seconds:
+
+    for i in $(seq 1 254); do (nc -G 1 -z 10.27.27.$i 6053 && echo $i) & done
+
+Then `esphome logs <yaml> --device 10.27.27.7` works normally.
+
+**The lesson worth keeping:** two independent "the device is dead" signals —
+silent serial and failed mDNS — were both instrumentation failures, and the
+firmware was fine throughout. The one reliable signal all evening was Justin
+looking at the onboard LED.
+
 ---
 
 ## 12.12 Build trees moved off the internal disk (2026-08-10)
@@ -1069,3 +1150,6 @@ into the existing block.
 | 2026-08-10 | Tracks remember their source in tracks.json | An imported MP3 is otherwise a dead end — no way to rebuild it at different settings without hunting for the link again |
 | 2026-08-10 | Build cache moved to external storage, repo stays put | Source is 2.8 MB, cache is 1.3 GB. Moving the repo breaks `.venv` paths to solve nothing (§12.12) |
 | 2026-08-10 | Built a decode benchmark before choosing a codec | Nobody has published an ESP32-S2 MP3 measurement; picking a codec on folk wisdom is how you find out in October (§12.13) |
+| 2026-08-10 | MP3 stays the codec | Measured on the board: zero underruns, zero decode errors, 32.7 ms average loop. The S2-can't-decode folklore is wrong at 96 kbps mono (§12.13) |
+| 2026-08-10 | Never set CONFIG_ESP_CONSOLE_USB_CDC on this board | It doesn't just fail — it panics. Interrupt watchdog timeout inside `esp_usb_console_flush_internal`, captured from the crash log (§12.14) |
+| 2026-08-10 | Find the device by IP, not mDNS | mDNS does not resolve on this network; the API on port 6053 does. A subnet scan found it immediately (§12.14) |

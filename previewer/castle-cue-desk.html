@@ -1630,13 +1630,14 @@
      bytes per second against three ceilings, so show the arithmetic rather
      than asserting it:
 
-       ~1.5 MB  usable PSRAM, once the player buffer and framebuffer are out
-                — the cap on the whole-file SD load
+       1.67 MB  free PSRAM — MEASURED on the real board while playing, not
+                estimated (bench_audio, 2026-08-10: 1713 KB free with a scene
+                running). This is the cap on the whole-file SD load.
        ~2.9 MB  flash left for ALL scenes after the firmware
        32 GB    the card, i.e. no ceiling worth writing down — but only
                 reachable by streaming, which isn't built yet
   */
-  const PSRAM_FREE = 1.5 * 1024 * 1024, FLASH_FREE = 2.9 * 1024 * 1024;
+  const PSRAM_FREE = 1713 * 1024, FLASH_FREE = 2.9 * 1024 * 1024;
   const mmss = s => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
   function updateCapacity() {
     const kbps = +val("trkBitrate") || 96;
