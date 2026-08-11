@@ -881,6 +881,106 @@ playback, so a single track is capped by free PSRAM — roughly 1.5 MB of the
 
 ---
 
+## 12.10 The eInk FeatherWing takes three of our pins (2026-08-10)
+
+Justin's card slot is on an **Adafruit 2.13" eInk FeatherWing**, stacked on the
+ESP32-S2 Feather. Researched the pinout before wiring anything, and it is worse
+than a single clash.
+
+Adafruit documents one convention for the whole eInk FeatherWing family
+(4128 tri-colour, 4195 mono, 4814 HD) — it does not vary by revision:
+
+| Wing signal | Header | GPIO | Cuttable? |
+|---|---|---|---|
+| SD chip select | D5 | 5 | yes |
+| SRAM chip select | D6 | 6 | yes |
+| eInk chip select | D9 | 9 | **no** |
+| eInk data/command | D10 | 10 | **no** |
+| SCK / MOSI / MISO | — | 36 / 35 / 37 | shared bus |
+| RST | — | tied to Feather RESET | — |
+| BUSY | — | not connected | — |
+
+Against the old pin map, **three of five collided**:
+
+| Signal | Was | Wing wanted it for |
+|---|---|---|
+| NeoPixel data | 5 | SD chip select |
+| PIR input | 6 | SRAM chip select |
+| I2S DOUT | 10 | eInk data/command |
+
+The GPIO5 one was the dangerous one — NeoPixel data would have been driving the
+SD card's active-low chip select at 800 kHz. Not a fault you'd diagnose quickly;
+it would present as "the card sometimes doesn't mount".
+
+**Remapped** (D11/D12/D13 are untouched by the wing, and A0–A3 are free):
+
+    pin_led_data:  18   # A0   was 5
+    pin_pir:       17   # A1   was 6
+    pin_i2s_dout:  15   # A3   was 10
+    pin_i2s_bclk:  11   # D11  unchanged
+    pin_i2s_lrclk: 12   # D12  unchanged
+
+A0/A1/A3 are ADC2, unusable as ADCs while WiFi is on — irrelevant, these are
+plain digital signals. Avoided D13 despite it being free: it also drives the
+onboard red LED, which would then flicker in time with the audio data.
+
+**A second finding worth more than the remap.** The eInk panel and its SRAM sit
+on the same SPI bus as the card, and we use neither — but their chip selects are
+still wired. A floating chip select is a device that may answer while the card
+is being addressed. `castle_sd.yaml` now drives GPIO 9 and GPIO 6 HIGH at boot
+and leaves them there. This is the difference between "the card works" and "the
+card works most of the time", which is the worst kind of bug to chase on a porch
+in October.
+
+**Caught while writing it:** the first version used `inverted: true` on those
+park pins, which would have made `output.turn_on` drive them *low* — actively
+selecting both devices, the exact opposite of the intent.
+
+---
+
+## 12.11 Audio capacity — the numbers behind the 4-minute question
+
+Load-into-PSRAM (§12.9) caps a track by free PSRAM, realistically ~1.5 MB of the
+2 MB once the player buffer and framebuffer have taken theirs:
+
+| Format | Fits in ~1.5 MB |
+|---|---|
+| 96 kbps mono | ~2 min |
+| 64 kbps mono | ~3 min |
+| 48 kbps mono | ~4 min |
+| 96 kbps stereo | ~2 min |
+| 128 kbps stereo | ~1.5 min |
+
+So four minutes is reachable today only by dropping to 48 kbps mono.
+
+**Stereo costs no GPIOs.** The MAX98357A is mono, so stereo means a second amp
+and speaker — but both amps share the same three I2S lines and each picks its
+channel from a resistor on its SD pin. Wiring is soldering the second amp to the
+same three wires. The cost is data rate, not pins.
+
+**The codec trap:** the formats that are kindest to the CPU are the ones too big
+for RAM, and the ones small enough for RAM are the hardest to decode.
+
+| Codec | Decode cost | 4 min mono | Verdict |
+|---|---|---|---|
+| WAV | ~zero (memcpy to I2S) | 21 MB | streaming only |
+| FLAC | moderate | ~10 MB | streaming only |
+| MP3 | ~30% of a core @128k on ESP32 | 2.8 MB @96k | needs 48k to fit |
+| Opus | highest | 0.96 MB @32k | fits, but CPU unproven on S2 |
+
+Load-into-RAM forces the wrong end of that trade in every direction.
+
+**The fix that removes all of it at once: a streaming SD `MediaSource`.**
+ESPHome 2026.x ships `media_source::MediaSource`, an abstract base where a
+source pushes chunks via `write_audio()`, consumed by the `speaker_source`
+media player. `audio_file/media_source` is a working reference implementation
+that does exactly this from flash — an SD version reads from a `FILE *` instead
+of a byte array. That is a tractable component, not a rewrite, and it gives
+unlimited length, free choice of codec (including zero-CPU WAV), and stereo if
+the data rate allows.
+
+---
+
 ## 13. Decision log
 
 | Date | Decision | Rationale |
@@ -906,3 +1006,6 @@ playback, so a single track is capped by free PSRAM — roughly 1.5 MB of the
 | 2026-08-10 | `tracks/` git-ignored, scene definitions tracked | The audio is Justin's and large; the show should still be reproducible from the repo (§12.8) |
 | 2026-08-10 | SD audio built as a separate variant, not folded into castle.yaml | It is unproven on S2; the flash build must keep working with no card in the slot (§12.9) |
 | 2026-08-10 | SD reads whole files into PSRAM rather than streaming | `AudioFile` is {ptr,len,type} and `play_file()` is public, so the decoder needs no changes. Streaming would mean writing a MediaSource nobody has written (§12.9) |
+| 2026-08-10 | NeoPixel → A0, PIR → A1, I2S DOUT → A3 | The eInk FeatherWing hard-wires D5/D6/D9/D10; NeoPixel data on the SD chip select would have been an intermittent-mount nightmare (§12.10) |
+| 2026-08-10 | eInk and SRAM chip selects parked HIGH at boot | They share the card's SPI bus and we use neither; a floating CS is a device that may answer mid-transaction (§12.10) |
+| 2026-08-10 | Tracks remember their source in tracks.json | An imported MP3 is otherwise a dead end — no way to rebuild it at different settings without hunting for the link again |

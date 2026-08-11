@@ -23,19 +23,23 @@ substitutions:
   name: castle-sd
   friendly: Castle SD
 
-  # ── SD pins — SET THESE FOR YOUR BOARD ───────────────────────────────
-  # Defaults are the Adafruit ESP32-S2 Feather's SPI header, from the
-  # arduino-esp32 variant header and the CircuitPython board definition.
-  # SCK/MOSI/MISO are fixed by the header; CS depends on the wing you use.
-  #
-  # The Adalogger FeatherWing and the 2.4"/2.8"/3.5" TFT FeatherWings each
-  # put SD CS on a different pin, and it is usually a cuttable jumper. If the
-  # card refuses to mount, CS is the first thing to check — the logs will say
-  # so explicitly rather than failing silently.
-  sd_cs: "10"
-  sd_sck: "36"
-  sd_mosi: "35"
-  sd_miso: "37"
+  # ── SD pins: Adafruit 2.13" eInk FeatherWing (4128 / 4195 / 4814) ────
+  # Adafruit documents one convention for the whole eInk FeatherWing family —
+  # SD CS on D5, SRAM CS on D6, eInk CS on D9, eInk D/C on D10 — and it does
+  # not vary by revision. SCK/MOSI/MISO are the fixed Feather SPI header.
+  sd_cs: "5"            # D5
+  sd_sck: "36"          # SCK
+  sd_mosi: "35"         # MOSI
+  sd_miso: "37"         # MISO
+
+  # The other two chip selects on the shared SPI bus. We don't use the eInk
+  # panel or its SRAM, but their CS lines still sit on the bus — and a
+  # floating chip select is a device that may answer when the card is being
+  # addressed. Both get driven HIGH (deselected) at boot and left there.
+  # This is the difference between "the card works" and "the card works most
+  # of the time", which is the worst kind of bug to chase on a porch.
+  eink_cs: "9"          # D9
+  sram_cs: "6"          # D6
 
 packages:
   base: !include castle.yaml
@@ -47,8 +51,22 @@ esphome:
     # Later than the base config's -100 so the LEDs and player are up first.
     priority: -200
     then:
+      # Park the eInk and SRAM chip selects HIGH before touching the bus.
+      - output.turn_on: eink_cs_park
+      - output.turn_on: sram_cs_park
       - lambda: |-
           castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso});
+
+# Held deselected for the life of the device — see the note in substitutions.
+# These chip selects are active-low, so deselected means driven HIGH, which is
+# plain `output.turn_on` with no inversion.
+output:
+  - platform: gpio
+    id: eink_cs_park
+    pin: GPIO${eink_cs}
+  - platform: gpio
+    id: sram_cs_park
+    pin: GPIO${sram_cs}
 
 # Play any file from the card:  /sd/<name>
 #

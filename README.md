@@ -48,13 +48,24 @@ contend for hardware.
 
 | Feather pin | GPIO | Goes to |
 |---|---|---|
-| D5 | 5 | 74AHCT125 → 470 Ω → Jewel `DIN` |
-| D6 | 6 | AM312 PIR out |
-| D10 | 10 | MAX98357A `DIN` |
+| A0 | 18 | 74AHCT125 → 470 Ω → Jewel `DIN` |
+| A1 | 17 | AM312 PIR out |
+| A3 | 15 | MAX98357A `DIN` |
 | D11 | 11 | MAX98357A `BCLK` |
 | D12 | 12 | MAX98357A `LRC` |
 | USB | — | 5 V to amp, pixels, level shifter |
 | GND | — | common ground |
+
+**Why not D5/D6/D10, which would be the obvious choices?** The 2.13" eInk
+FeatherWing — the thing that carries the microSD slot — hard-wires exactly
+those: SD chip select on D5, SRAM chip select on D6, eInk chip select on D9,
+eInk data/command on D10. Only the first two are cuttable, and putting
+800 kHz NeoPixel data on the SD card's chip select is not a mistake you find
+quickly. D11/D12/D13 are untouched by the wing, and A0–A3 are free.
+
+If you are **not** stacking the wing, those three signals can move back to
+D5/D6/D10 by editing the substitutions at the top of `firmware/castle.yaml` —
+nothing else refers to them.
 
 Put a 1000 µF capacitor across 5 V/GND at the pixels. With 21 RGBW pixels the
 worst case (a full-white lightning strike) is ~1.5 A, so **split the 5 V supply

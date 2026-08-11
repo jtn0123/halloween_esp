@@ -16,11 +16,27 @@ substitutions:
   friendly: Halloween Castle
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
-  pin_led_data: "5"     # D5  -> 74AHCT125 -> 470R -> Jewel DIN
-  pin_pir: "6"          # D6  <- AM312 PIR out (3V3 logic)
-  pin_i2s_dout: "10"    # D10 -> MAX98357A DIN
-  pin_i2s_bclk: "11"    # D11 -> MAX98357A BCLK
-  pin_i2s_lrclk: "12"   # D12 -> MAX98357A LRC
+  #
+  # These moved off D5/D6/D10 to clear the 2.13" eInk FeatherWing, which is
+  # what carries the microSD slot on this build. The wing hard-wires four
+  # header positions and only two of them are cuttable:
+  #
+  #   D5  (GPIO5)  SD chip select     <- was NeoPixel data
+  #   D6  (GPIO6)  SRAM chip select   <- was PIR
+  #   D9  (GPIO9)  eInk chip select
+  #   D10 (GPIO10) eInk data/command  <- was I2S DOUT
+  #
+  # The GPIO5 clash was the dangerous one: NeoPixel data would have been
+  # hammering the SD card's active-low chip select at 800 kHz.
+  #
+  # A0/A1/A3 are ADC2, which is unusable as an ADC while WiFi is on — but
+  # these are plain digital signals, so that costs nothing. Avoided D13: it
+  # also drives the onboard red LED, which would then flicker with the audio.
+  pin_led_data: "18"    # A0  -> 74AHCT125 -> 470R -> Jewel DIN
+  pin_pir: "17"         # A1  <- AM312 PIR out (3V3 logic)
+  pin_i2s_dout: "15"    # A3  -> MAX98357A DIN
+  pin_i2s_bclk: "11"    # D11 -> MAX98357A BCLK   (clear of the wing)
+  pin_i2s_lrclk: "12"   # D12 -> MAX98357A LRC    (clear of the wing)
   # Overridable by bench.yaml so the bare board can dry-run on its onboard pixel.
   led_rgbw: "true"
 
