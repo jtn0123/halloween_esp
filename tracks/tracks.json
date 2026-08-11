@@ -1,1 +1,32 @@
-{}
+{
+  "wicked_winds": {
+    "audio": {
+      "bitrate": 96,
+      "bytes": 288750,
+      "channels": 1,
+      "duration": 24.0,
+      "sample_rate": 44100
+    },
+    "imported": "2026-08-10T22:19:40",
+    "notes": "",
+    "onsets": {
+      "onset_high": 33,
+      "onset_low": 52,
+      "onset_mid": 85
+    },
+    "opts": {
+      "bitrate": 96,
+      "channels": 1,
+      "fade_in": null,
+      "fade_out": null,
+      "gain_db": null,
+      "normalize": true,
+      "sample_rate": 44100,
+      "sensitivity": 1.1,
+      "start": "0:20",
+      "take": "24"
+    },
+    "source": "https://www.youtube.com/watch?v=tzJ6hzTpejs&list=RDtzJ6hzTpejs&start_radio=1",
+    "title": "Wicked Winds Melody"
+  }
+}

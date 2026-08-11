@@ -374,6 +374,55 @@ class TestSceneBlock(unittest.TestCase):
         self.assertIn("pulse", sc)
 
 
+class TestDensityFitting(unittest.TestCase):
+    """Pulse settings must suit the track, not Crypt's 48 bpm heartbeat.
+
+    A real import fired 212 times a minute. At the built-in decay of 0.92 each
+    flash was still at 28% when the next arrived, so the zone saturated and
+    read as a smear instead of pulses — the exact way an imported track stops
+    looking like it follows the music.
+    """
+
+    @staticmethod
+    def hits(gap: float, n: int = 40) -> list[tuple[float, float]]:
+        return [(i * gap, 1.0) for i in range(n)]
+
+    def residual(self, decay: float, gap: float) -> float:
+        """How much of a flash survives to the next hit."""
+        return decay ** (gap / it.FRAME)
+
+    def test_dense_material_decays_faster(self) -> None:
+        decay, _ = it.fit_to_density(self.hits(0.24), 0.92)
+        self.assertLess(decay, 0.92)
+        self.assertLess(self.residual(decay, 0.24), 0.15,
+                        "a dense band still saturates")
+
+    def test_sparse_material_keeps_its_bloom(self) -> None:
+        """A slow bell toll should not be sped up into a blink."""
+        decay, scale = it.fit_to_density(self.hits(3.0), 0.972)
+        self.assertEqual(decay, 0.972)
+        self.assertEqual(scale, 1.0)
+
+    def test_dense_material_is_eased_back(self) -> None:
+        _, dense = it.fit_to_density(self.hits(0.2), 0.92)
+        _, sparse = it.fit_to_density(self.hits(1.0), 0.92)
+        self.assertLess(dense, sparse)
+        self.assertGreaterEqual(dense, 0.45, "never eased into invisibility")
+
+    def test_decay_has_a_floor(self) -> None:
+        """Faster than ~0.78 per frame is a blink nobody perceives."""
+        decay, _ = it.fit_to_density(self.hits(0.02), 0.92)
+        self.assertGreaterEqual(decay, 0.78)
+
+    def test_too_few_hits_falls_back(self) -> None:
+        self.assertEqual(it.fit_to_density([(0.0, 1.0)], 0.9), (0.9, 1.0))
+        self.assertEqual(it.fit_to_density([], 0.9), (0.9, 1.0))
+
+    def test_identical_timestamps_do_not_divide_by_zero(self) -> None:
+        same = [(1.0, 1.0)] * 5
+        self.assertEqual(it.fit_to_density(same, 0.9), (0.9, 1.0))
+
+
 class TestRenderIntegration(unittest.TestCase):
     """End to end: an imported file becomes a scene with light cues on it."""
 

@@ -101,6 +101,44 @@ def convert(src: Path, out: Path, o: dict) -> None:
     subprocess.run(cmd, check=True)
 
 
+FRAME = 0.016          # the light engine's tick, matching the firmware
+
+
+def fit_to_density(hits: list, fallback: float) -> tuple[float, float]:
+    """Choose a decay and an intensity scale that suit how busy a band is.
+
+    The built-in scenes' decay constants were tuned against Crypt's 48 bpm
+    heartbeat — gaps of 1.25 s. Reuse them on a track that hits every 0.24 s
+    and the flash is still at ~29% when the next one lands: the zone saturates
+    and reads as a continuous smear rather than as pulses. Which is precisely
+    the way an imported track stops "making sense".
+
+    So the decay is solved from the material: fall to ~10% by the time the
+    next hit is due. And dense bands get their intensity pulled down, because
+    a lot of overlapping pulses sum to a floor that never returns to dark.
+
+    Returns (decay_per_frame, intensity_scale).
+    """
+    if len(hits) < 3:
+        return fallback, 1.0
+
+    gaps = sorted(hits[i + 1][0] - hits[i][0] for i in range(len(hits) - 1))
+    median_gap = gaps[len(gaps) // 2]
+    if median_gap <= 0:
+        return fallback, 1.0
+
+    # d^frames = 0.1  ->  d = 0.1 ** (1/frames)
+    frames = max(1.0, median_gap / FRAME)
+    decay = 0.1 ** (1.0 / frames)
+    # Floor at 0.78: faster than that is a single-frame blink nobody sees.
+    # Ceiling at the scene's own value, so sparse material keeps its bloom.
+    decay = max(0.78, min(fallback, decay))
+
+    # Below ~0.5 s between hits, back the level off so they stay distinct.
+    scale = 1.0 if median_gap >= 0.5 else max(0.45, median_gap / 0.5)
+    return round(decay, 3), round(scale, 2)
+
+
 def scene_block(tid: str, dur: float, marks: dict) -> str:
     """A ready-to-paste scene, wired to whatever the analyser actually found."""
     zones = {"onset_low": "door", "onset_mid": "towerL", "onset_high": "towerR"}
@@ -129,10 +167,16 @@ def scene_block(tid: str, dur: float, marks: dict) -> str:
         if not hits:
             continue
         z = zones.get(band, "door")
+        decay, scale = fit_to_density(hits, decays.get(band, 0.9))
+        intensity = round(0.55 * scale, 3)
+        rate = len(hits) / dur * 60 if dur else 0
+        note = f"{len(hits)} onsets, {rate:.0f}/min"
+        if scale < 1.0:
+            note += " — dense, so eased back to stay distinct"
         lines.append(
-            f"      - {{synth: {band}, zone: {z}, intensity: 0.55, "
-            f"decay: {decays.get(band, 0.9)}, color: {colors.get(band, '[1,1,1,1]')}}}"
-            f"   # {len(hits)} onsets"
+            f"      - {{synth: {band}, zone: {z}, intensity: {intensity}, "
+            f"decay: {decay}, color: {colors.get(band, '[1,1,1,1]')}}}"
+            f"   # {note}"
         )
     lines.append("    cues: []")
     return "\n".join(lines)
