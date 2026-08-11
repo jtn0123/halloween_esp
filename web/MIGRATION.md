@@ -1,4 +1,7 @@
-# Moving the cue desk to TypeScript
+# Moving the cue desk to TypeScript — DONE (2026-08-10)
+
+All nine modules landed and the switchover is complete. Kept as a record of
+why it was done this way; the layout table below is now the actual layout.
 
 The previewer works, but it is one 1892-line HTML file with ~1400 lines of
 untyped inline JavaScript. The LOC check exempts it as *generated* — which is
@@ -68,3 +71,32 @@ never a half-migrated page.
 Natural seam: `voices.py` (pipe, piano, box, wind, thunder…) and `pieces.py`
 (organ, waltz, descent, and the room/limiter). Python is typed with annotations
 throughout already; it just needs splitting.
+
+---
+
+## Outcome
+
+| | before | after |
+|---|---|---|
+| authored previewer | 2005-line HTML, ~1400 lines inline untyped JS | 221-line template + 361-line stylesheet + 9 typed modules |
+| largest authored file | 2005 | 440 (`synth.ts`) |
+| type checking | none | `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes` |
+
+The generated `castle-cue-desk.html` is still one self-contained file with no
+external requests — that constraint never moved, because the published artifact
+runs under a strict CSP and the on-device page rules out a CDN too.
+
+**What made it safe:** `test/legacy_effects.mjs` holds the pre-migration effect
+code verbatim, and the equivalence harness compares it against the port across
+13 effects x 3 parameter sets x 9 timestamps x 21 seeds — 7375 comparisons, all
+identical to 1e-12. A type checker cannot catch a transposed digit; that can.
+
+**Verified in the browser after the flip:** scene switching, play/pause, drag
+seek, keyboard, Esc blackout, Stop-then-Play relighting the stage, cue ticks,
+capacity readout, mute defaulting on. Zero console errors.
+
+**One debugging trap worth remembering:** the canvas reads as entirely black and
+`requestAnimationFrame` never fires when the browser pane is not the front tab —
+`document.hidden` is true and the browser throttles rAF to zero. This looks
+exactly like a broken render. Front the tab (a screenshot does it) before
+believing a canvas measurement.

@@ -1,0 +1,347 @@
+/**
+ * The chrome around the stage — everything that is text, table or widget.
+ *
+ * This module owns the DOM and nothing else. It is handed scenes, frames and
+ * timestamps and writes them into the page; it never reads show state and
+ * never touches the audio graph, so the panels can be driven from a live
+ * clock, a scrub, or a fixture in a test. Anything that reaches back out —
+ * seeking, picking a scene, moving a parameter — leaves through a callback.
+ *
+ * Element ids are the contract with the generated HTML. They are spelled out
+ * here rather than passed in, because the page that carries them is generated
+ * from one template and a missing id is a build bug, not a runtime condition.
+ */
+
+import type { ZoneRender } from "./show.js";
+import type { Cue, Scene, ZoneId } from "./types.js";
+
+/** A sound's home on the SD card, and the file the renderer produced.
+ *
+ *  This is presentation metadata: the cue sheet shows the label and the YAML
+ *  export writes the path, and neither is anything the synth needs to know.
+ *  It lives here so there is one copy rather than one per consumer. */
+export interface SoundFile {
+  /** SD card folder/track, as the DFPlayer addresses it. */
+  sd: string;
+  label: string;
+}
+
+export const SOUNDS: Record<string, SoundFile | undefined> = {
+  wind:      { sd: "01/001", label: "wind_bed.mp3" },
+  organ:     { sd: "01/002", label: "organ_procession.mp3" },
+  waltz:     { sd: "01/003", label: "parlour_waltz.mp3" },
+  descent:   { sd: "01/004", label: "descent_dm.mp3" },
+  thunder:   { sd: "02/001", label: "thunder_close.mp3" },
+  creak:     { sd: "03/001", label: "door_creak.mp3" },
+  shriek:    { sd: "03/002", label: "shriek.mp3" },
+  toll:      { sd: "03/003", label: "bell_toll.mp3" },
+  musicbox:  { sd: "03/004", label: "music_box.mp3" },
+  heartbeat: { sd: "04/001", label: "heartbeat.mp3" },
+  drone:     { sd: "04/002", label: "tritone_drone.mp3" },
+  whispers:  { sd: "04/003", label: "whispers.mp3" },
+};
+
+/** How the channel strip names each zone. `ch` is the physical output on the
+ *  controller, which is what you are looking for when a window is dark. */
+export interface Channel {
+  id: ZoneId;
+  ch: number;
+  name: string;
+  sub: string;
+}
+
+export const CHANNELS: readonly Channel[] = [
+  { id: "towerL", ch: 1, name: "Tower window", sub: "stage left" },
+  { id: "towerR", ch: 2, name: "Tower window", sub: "stage right" },
+  { id: "door",   ch: 3, name: "Doorway",      sub: "centre" },
+];
+
+/** Where a parameter goes once the slider has been read. Values arrive
+ *  already converted, so a caller only has to store them. */
+export interface SliderHandlers {
+  /** 0..1 */ depth: (v: number) => void;
+  /** 0..1 */ speed: (v: number) => void;
+  /** 0..1, violet .. green */ hue: (v: number) => void;
+  /** 0..1 */ bright: (v: number) => void;
+  /** 0..1 master level */ vol: (v: number) => void;
+  /** Milliseconds of modelled decode latency. */ lat: (ms: number) => void;
+  /** 0..1 organ stop depth */ stops: (v: number) => void;
+  /** 0..1 reverb wet gain */ hall: (v: number) => void;
+  /** Tremolo gain, already scaled to its 0.14 ceiling. */ trem: (v: number) => void;
+  soft: (on: boolean) => void;
+  /**
+   * Rendered-audio mode. Omit the handler entirely when the page carries no
+   * rendered audio: the checkbox is then unchecked and disabled, so nobody
+   * can select a mode that has no files behind it.
+   */
+  renderedAudio?: (useRendered: boolean) => void;
+}
+
+function must<T extends HTMLElement = HTMLElement>(id: string): T {
+  const el = document.getElementById(id);
+  if (!el) throw new Error(`panels: missing #${id}`);
+  return el as T;
+}
+
+/** One row of the cue sheet. AUD rows name the file that will play; LED rows
+ *  read as "zone → effect", which is the shorthand the scene file uses. */
+function sheetRow(c: Cue, scene: Scene): string {
+  let op: string;
+  let detail: string;
+  let file: string;
+
+  if (c.bus === "AUD") {
+    const snd = SOUNDS[c.snd];
+    op = c.op;
+    detail = snd?.label ?? c.snd;
+    // In rendered mode the whole scene is one file, so that name wins over
+    // the individual sample's — it is what the speaker is actually playing.
+    file = scene.file || (snd?.sd ?? c.snd);
+  } else if (c.op === "strike") {
+    op = c.zone ? `strike · ${c.zone}` : "strike · all";
+    detail = (c.detail ?? "") + (c.ms ? ` · ${c.ms} ms` : "");
+    file = "—";
+  } else {
+    op = `${c.zone} → ${c.eff}`;
+    detail = c.detail ?? "";
+    file = "—";
+  }
+
+  return `<tr data-t="${c.t}" title="Jump to ${(c.t / 1000).toFixed(2)} s">
+    <td class="t">${(c.t / 1000).toFixed(2)}</td>
+    <td><span class="tag ${c.bus === "AUD" ? "tag--aud" : "tag--led"}">${c.bus}</span></td>
+    <td>${op}</td><td>${detail}</td>
+    <td>${file}</td>
+  </tr>`;
+}
+
+/** One tick under the scrub bar. Height carries intensity, so a heartbeat
+ *  pulse reads as a stub and full lightning as a full-height mark. */
+function tickMark(c: Cue, dur: number): string {
+  if (c.bus !== "LED") return "";
+  const pct = (c.t / dur) * 100;
+  const col = c.op === "strike" ? (c.color ?? [1, 1, 1, 1]) : null;
+  const bg = col
+    ? `rgb(${Math.round(col[0] * 235)},${Math.round(col[1] * 235)},${Math.round(col[2] * 235)})`
+    : "var(--line-2)";
+  const h = c.op === "strike" ? Math.max(3, Math.round(7 * (c.intensity ?? 1))) : 7;
+  const title = `${(c.t / 1000).toFixed(2)}s · ${c.op}${c.detail ? " · " + c.detail : ""}`;
+  return `<b style="left:${pct}%;background:${bg};height:${h}px;top:${7 - h}px" title="${title}"></b>`;
+}
+
+/**
+ * The fallback scene serialiser, for scenes that arrived without their
+ * verbatim YAML slice. It is deliberately lossy — enough to paste back into
+ * scenes.yaml and recognise, not a round-trip of every optional field.
+ */
+export function toYaml(sc: Scene): string {
+  const lines = [`scene: ${sc.id}`, `duration_ms: ${sc.dur}`];
+  if (sc.loop) lines.push("loop: true");
+  lines.push("base:");
+  for (const z of CHANNELS) lines.push(`  ${z.id}: ${sc.base[z.id]}`);
+  lines.push("cues:");
+  for (const c of sc.cues) {
+    if (c.bus === "AUD") {
+      const snd = SOUNDS[c.snd];
+      lines.push(`  - { t: ${c.t}, bus: AUD, op: ${c.op}, file: "${snd?.sd ?? c.snd}" }`
+        + `   # ${snd?.label ?? c.snd}`);
+    } else if (c.op === "strike") {
+      lines.push(`  - { t: ${c.t}, bus: LED, op: strike, zone: ${c.zone ?? "all"}, ms: ${c.ms} }`);
+    } else {
+      lines.push(`  - { t: ${c.t}, bus: LED, op: set, zone: ${c.zone}, effect: ${c.eff} }`);
+    }
+  }
+  return lines.join("\n");
+}
+
+interface Meter {
+  sw: HTMLElement;
+  bar: HTMLElement;
+  val: HTMLElement;
+}
+
+export class Panels {
+  private readonly scenesEl = must("scenes");
+  private readonly sceneCount = must("sceneCount");
+  private readonly sceneBlurb = must("sceneBlurb");
+  private readonly sheet = must("sheet");
+  private readonly sheetName = must("sheetName");
+  private readonly yaml = must("yaml");
+  private readonly stageNote = must("stageNote");
+  private readonly ph = must("ph");
+  private readonly tc = must("tc");
+  private readonly ticks = must("ticks");
+  private readonly scrub = must("scrub");
+  private readonly meters: Record<ZoneId, Meter>;
+
+  /** The rows currently in the sheet, cached because the playhead highlight
+   *  touches every one of them on every frame. Refreshed by `renderSheet`. */
+  private rows: HTMLTableRowElement[] = [];
+
+  private sceneList: readonly Scene[] = [];
+  private onPick: ((scene: Scene, index: number) => void) | null = null;
+
+  constructor(private readonly onSeek: (ms: number) => void) {
+    // The channel strip is fixed for the life of the page — zones do not come
+    // and go — so it is built once and only its numbers change after that.
+    must("chans").innerHTML = CHANNELS.map(z => `
+    <div class="chan">
+      <div class="chan__sw" id="sw-${z.id}"></div>
+      <div class="chan__nm">${z.name}<small>ch ${z.ch} · ${z.sub}</small></div>
+      <div class="chan__mtr">
+        <div class="meter"><i id="mt-${z.id}"></i></div>
+        <span class="chan__val" id="vl-${z.id}">—</span>
+      </div>
+    </div>`).join("");
+
+    const meters = {} as Record<ZoneId, Meter>;
+    for (const z of CHANNELS) {
+      meters[z.id] = {
+        sw: must(`sw-${z.id}`),
+        bar: must(`mt-${z.id}`),
+        val: must(`vl-${z.id}`),
+      };
+    }
+    this.meters = meters;
+
+    // Clicking a cue row jumps the show to that cue — the quickest way to
+    // inspect one moment repeatedly while tuning it.
+    this.sheet.addEventListener("click", e => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      const tr = target.closest("tr");
+      const t = tr?.dataset.t;
+      if (t === undefined || t === "") return;
+      this.onSeek(+t);
+    });
+
+    // Delegated once, then re-read on every click, so re-rendering the grid
+    // never leaves a stale listener behind.
+    this.scenesEl.addEventListener("click", e => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      const b = target.closest(".scene");
+      if (!b) return;
+      this.scenesEl.querySelectorAll(".scene")
+        .forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+      const i = Number((b as HTMLElement).dataset.i);
+      const sc = this.sceneList[i];
+      if (sc && this.onPick) this.onPick(sc, i);
+    });
+  }
+
+  /** Build the scene grid. `onPick` fires with the scene that was chosen —
+   *  what the transport does about it (keep playing, stay quiet) is its call. */
+  renderScenes(scenes: readonly Scene[], onPick: (scene: Scene, index: number) => void): void {
+    this.sceneList = scenes;
+    this.onPick = onPick;
+    this.scenesEl.innerHTML = scenes.map((s, i) => `
+    <button class="scene" type="button" data-i="${i}" aria-pressed="${i === 0}" title="${s.blurb}">
+      <strong>${s.name}</strong><span>${s.kind}</span>
+    </button>`).join("");
+    this.sceneCount.textContent = scenes.length + " loaded";
+  }
+
+  /** The cue sheet for one scene, in fire order. */
+  renderSheet(scene: Scene): void {
+    this.sheet.innerHTML = scene.cues.map(c => sheetRow(c, scene)).join("");
+    this.rows = Array.from(this.sheet.querySelectorAll("tr"));
+    this.sheetName.textContent = scene.id;
+  }
+
+  /** The headings and the source panel, which all change together whenever
+   *  the scene does. A scene without a verbatim YAML slice gets a fallback
+   *  rather than an empty panel. */
+  renderSceneInfo(scene: Scene): void {
+    this.stageNote.textContent = scene.name;
+    this.sceneBlurb.textContent = scene.blurb || "";
+    this.yaml.textContent = scene.yaml || toYaml(scene);
+  }
+
+  /* Cue ticks under the scrub bar, in the colour of the strike they mark —
+     the fastest way to see whether the light is following the audio. */
+  renderTicks(scene: Scene): void {
+    this.ticks.innerHTML = scene.cues.map(c => tickMark(c, scene.dur)).join("");
+  }
+
+  /** The channel meters. Level is the strongest channel rather than a
+   *  luminance mix, because that is what actually clips the LED driver. */
+  updateMeters(out: ZoneRender): void {
+    for (const z of CHANNELS) {
+      const m = this.meters[z.id];
+      const c = out[z.id].avg;
+      const r = Math.round(c[0] * 255);
+      const g = Math.round(c[1] * 255);
+      const b = Math.round(c[2] * 255);
+      const lum = Math.max(r, g, b);
+      const css = `rgb(${r},${g},${b})`;
+      m.sw.style.background = css;
+      m.bar.style.width = (lum / 255 * 100).toFixed(1) + "%";
+      m.bar.style.background = css;
+      m.val.textContent = String(lum).padStart(3, " ") + "  "
+        + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+    }
+  }
+
+  /** Playhead, clock and the lit row in the sheet. The 700 ms window is a
+   *  readability choice: a strike is over long before you can look at it. */
+  updateTransport(elapsed: number, scene: Scene): void {
+    const pct = Math.min(100, elapsed / scene.dur * 100);
+    this.ph.style.width = pct.toFixed(1) + "%";
+    this.tc.textContent = (Math.min(elapsed, scene.dur) / 1000).toFixed(2) + " / "
+      + (scene.dur / 1000).toFixed(2) + " s" + (scene.loop ? " ↻" : "");
+    this.scrub.setAttribute("aria-valuenow", String(Math.round(pct)));
+    this.scrub.setAttribute("aria-valuetext", (elapsed / 1000).toFixed(1) + " seconds");
+    scene.cues.forEach((c, i) => {
+      const row = this.rows[i];
+      if (row) row.classList.toggle("on", elapsed >= c.t && elapsed < c.t + 700);
+    });
+  }
+
+  /** Wire one slider to its handler and its readout. */
+  private bind(id: string, fn: (v: number) => void, fmt: (v: number) => string): void {
+    const el = must<HTMLInputElement>(id);
+    const out = must(id + "O");
+    const run = (): void => {
+      const v = +el.value;
+      fn(v);
+      out.textContent = fmt(v);
+    };
+    el.addEventListener("input", run);
+    run();   // the markup carries the starting values; adopt them, don't guess
+  }
+
+  bindSliders(h: SliderHandlers): void {
+    this.bind("depth",  v => h.depth(v / 100),  v => v + " %");
+    this.bind("speed",  v => h.speed(v / 100),  v => (v / 100).toFixed(2) + "×");
+    this.bind("hue",    v => h.hue(v / 100),    v => v < 34 ? "violet" : v > 66 ? "green" : "balanced");
+    this.bind("bright", v => h.bright(v / 100), v => v + " %");
+    this.bind("vol",    v => h.vol(v / 100),    v => v + " %");
+    this.bind("lat",    v => h.lat(v),          v => v + " ms");
+    this.bind("stops",  v => h.stops(v / 100),
+      v => v < 12 ? "16′ only" : v < 40 ? "dark" : v < 72 ? "chorus" : "full organ");
+    this.bind("hall",   v => h.hall(v / 100),
+      v => v < 12 ? "dry" : v < 45 ? "chapel" : v < 78 ? "nave" : "cathedral");
+    // 0.14 is the tremolo's full-scale depth; past it the wobble stops being
+    // a tremulant and starts being a fault.
+    this.bind("trem",   v => h.trem((v / 100) * 0.14), v => v < 5 ? "off" : v + " %");
+
+    const softEl = must<HTMLInputElement>("soft");
+    // A stated motion preference is honoured before the first frame, not
+    // after someone goes looking for the checkbox.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) softEl.checked = true;
+    const applySoft = (): void => h.soft(softEl.checked);
+    softEl.addEventListener("change", applySoft);
+    applySoft();
+
+    const raEl = must<HTMLInputElement>("renderedAudio");
+    const onRendered = h.renderedAudio;
+    if (!onRendered) {
+      raEl.checked = false;
+      raEl.disabled = true;
+      return;
+    }
+    raEl.addEventListener("change", () => onRendered(raEl.checked));
+    onRendered(raEl.checked);   // the mode is whatever the checkbox already says
+  }
+}

@@ -20,6 +20,7 @@ Run after `make audio`:  tools/gen_previewer.py
 from __future__ import annotations
 
 import base64
+import subprocess
 import json
 import re
 import sys
@@ -30,11 +31,17 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "scenes" / "scenes.yaml"
 MARKERS_FILE = ROOT / "audio" / "markers.json"
+TEMPLATE = ROOT / "previewer" / "template.html"
 HTML = ROOT / "previewer" / "castle-cue-desk.html"
 AUDIO = ROOT / "audio"
+WEB = ROOT / "web"
+BUNDLE = WEB / "dist" / "bundle.js"
+STYLES = ROOT / "previewer" / "styles.css"
 
 START = "// @GEN-DATA-START"
 END = "// @GEN-DATA-END"
+BUNDLE_MARK = "/* @BUNDLE"
+STYLE_MARK = "/* @STYLES"
 
 # Must match firmware/castle_effects.h and tools/gen_esphome.py.
 KNOWN_EFFECTS = {
@@ -117,6 +124,51 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
     }
 
 
+def inject_bundle(html: str) -> str:
+    """Build web/src with esbuild and splice the result into the page.
+
+    The output has to stay a single self-contained file with no external
+    requests: the published artifact runs under a strict CSP, and the plan to
+    serve a cut-down copy off the device rules out a CDN as well. So the
+    bundle is inlined rather than referenced.
+    """
+    if not (WEB / "node_modules").exists():
+        sys.exit("web/node_modules missing — run `cd web && npm install` first")
+
+    r = subprocess.run(
+        ["npx", "esbuild", "src/main.ts", "--bundle", "--format=iife",
+         "--target=es2020", "--outfile=dist/bundle.js"],
+        cwd=WEB, capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        sys.exit(f"esbuild failed:\n{r.stdout}\n{r.stderr}")
+
+    js = BUNDLE.read_text()
+    i = html.find(BUNDLE_MARK)
+    if i < 0:
+        sys.exit(f"{BUNDLE_MARK} marker not found in {TEMPLATE}")
+    j = html.index("*/", i) + 2
+    # Nothing in the bundle may contain a literal </script>; esbuild will not
+    # produce one from this source, but check rather than trust.
+    if "</script>" in js:
+        sys.exit("bundle contains a literal </script> — it would close the tag early")
+    return html[:i] + js + html[j:]
+
+
+def inject_styles(html: str) -> str:
+    """Inline previewer/styles.css.
+
+    Split out of the template purely so both files stay inside the 500-line
+    cap — markup and styling are a real seam, and the check caught the
+    combined file honestly rather than being exempted around.
+    """
+    i = html.find(STYLE_MARK)
+    if i < 0:
+        sys.exit(f"{STYLE_MARK} marker not found in {TEMPLATE}")
+    j = html.index("*/", i) + 2
+    return html[:i] + STYLES.read_text().rstrip() + html[j:]
+
+
 def main() -> int:
     raw = SRC.read_text()
     doc = yaml.safe_load(raw)
@@ -140,15 +192,21 @@ def main() -> int:
 
     block = (
         f"{START} (written by tools/gen_previewer.py — do not edit, do not format)\n"
-        f"  const GEN = {json.dumps({'scenes': scenes, 'audio': audio})};\n"
+        f"  window.CASTLE_GEN = {json.dumps({'scenes': scenes, 'audio': audio})};\n"
         f"  {END}"
     )
 
-    html = HTML.read_text()
+    html = TEMPLATE.read_text()
     pattern = re.compile(re.escape(START) + r".*?" + re.escape(END), re.S)
     if not pattern.search(html):
-        sys.exit(f"markers not found in {HTML} — expected {START} ... {END}")
-    HTML.write_text(pattern.sub(lambda _: block, html))
+        sys.exit(f"markers not found in {TEMPLATE} — expected {START} ... {END}")
+    # sub() treats backslashes in the replacement as escapes, and the audio is
+    # base64 so it will contain them eventually. Pass a function instead.
+    html = pattern.sub(lambda _: block, html)
+
+    html = inject_styles(html)
+    html = inject_bundle(html)
+    HTML.write_text(html)
 
     kb = sum(len(v) for v in audio.values()) // 1024
     print(f"wrote {len(scenes)} scenes + {len(audio)} audio files (~{kb} KB base64) "
