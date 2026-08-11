@@ -80,8 +80,23 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         elif cue["op"] == "strike":
             c = {"t": cue["t"], "bus": "LED", "op": "strike",
                  "ms": cue.get("ms", 80), "detail": cue.get("note", "")}
+            # Carry every field gen_esphome.py honours on a hand-written
+            # strike. It has always read targets/intensity/color/decay; this
+            # side used to copy only zone, so a cue aimed at one zone flashed
+            # the whole chain in the browser, in default white, at full
+            # intensity. Latent — today's scenes only set those inside
+            # `pulse:` — but a divergence between preview and device is the
+            # one bug this project cannot afford, latent or not.
+            if cue.get("targets"):
+                c["targets"] = cue["targets"]
             if cue.get("zone"):
                 c["zone"] = cue["zone"]
+            if "intensity" in cue:
+                c["intensity"] = float(cue["intensity"])
+            if "color" in cue:
+                c["color"] = cue["color"]
+            if "decay" in cue:
+                c["decay"] = float(cue["decay"])
             cues.append(c)
         else:
             sys.exit(f"scene {sid}: unknown cue op {cue['op']!r}")

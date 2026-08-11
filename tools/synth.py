@@ -208,8 +208,15 @@ def heartbeat(dur: float, rng: np.random.Generator) -> np.ndarray:
         _place(buf, thump(52, 1.00), t0 + jitter)
         _place(buf, thump(64, 0.55), t0 + 0.18 + jitter)
         # BOTH thumps, with their real loudness — the light does lub-dub too.
+        #
+        # Each is clamped to the buffer. The loop condition only checks the
+        # lub, so when `dur` is not a comfortable multiple of the period the
+        # dub lands past the end: _place drops the sound but the marker used
+        # to survive, leaving a light flash with nothing underneath it.
         beats.append((max(0.0, t0 + jitter), 1.00))
-        beats.append((t0 + 0.18 + jitter, 0.55))
+        dub = t0 + 0.18 + jitter
+        if dub < dur:
+            beats.append((dub, 0.55))
         t0 += period
     return buf, beats
 

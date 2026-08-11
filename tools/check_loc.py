@@ -29,9 +29,28 @@ EXEMPT_PATHS = {
 
 
 def tracked_files() -> list[Path]:
-    out = subprocess.run(["git", "ls-files"], cwd=ROOT,
-                         capture_output=True, text=True).stdout
-    return [ROOT / line for line in out.splitlines() if line]
+    """Everything git would consider part of the project — including files
+    that are not committed yet.
+
+    `git ls-files` alone misses untracked files, which meant the check
+    cheerfully reported "largest 440 lines" while a 555-line file sat
+    uncommitted in the tree. New code is exactly where the risk is, so a guard
+    that only sees committed code catches the problem one commit too late.
+
+    `--others --exclude-standard` adds untracked files while still honouring
+    .gitignore, so build output and node_modules stay out of it.
+    """
+    out = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+        cwd=ROOT, capture_output=True, text=True).stdout
+    # --cached and --others can name the same path; dedupe while keeping order.
+    seen: set[str] = set()
+    files = []
+    for line in out.splitlines():
+        if line and line not in seen:
+            seen.add(line)
+            files.append(ROOT / line)
+    return files
 
 
 def measure() -> list[tuple[int, str, bool]]:

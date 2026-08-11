@@ -1,0 +1,427 @@
+"""Tests for the studio server's HTTP surface.
+
+Drives a real server on an ephemeral port. These are the endpoints the Tracks
+panel depends on, so a break here is a browser UI that silently does nothing.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import sys
+import tempfile
+import threading
+import unittest
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
+from pathlib import Path
+from unittest import mock
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
+
+import import_track as it      # noqa: E402
+import manifest as mf          # noqa: E402
+import studio                  # noqa: E402
+from helpers import make_click_track  # noqa: E402
+
+CONVERT_OPTS = {"start": 0, "take": None, "fade_in": None, "fade_out": None,
+                "bitrate": 96, "channels": 1, "sample_rate": 44100,
+                "normalize": False, "gain_db": None}
+
+
+def make_mp3(dest: Path, seconds: float = 3.0) -> None:
+    """A small real MP3, since the endpoints decode what they are given."""
+    tmp = Path(tempfile.mkdtemp())
+    try:
+        src = tmp / "src.wav"
+        make_click_track(src, seconds=seconds)
+        it.convert(src, dest, dict(CONVERT_OPTS))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+class Quiet(studio.Handler):
+    """The real handler logs every request to stderr; tests do not need that."""
+
+    def log_message(self, fmt, *a):
+        pass
+
+
+class ServerCase(unittest.TestCase):
+    """Base fixture: a server on an ephemeral port, and disposable tracks.
+
+    Port 0 rather than 8765 on purpose — the user may well have a real studio
+    running, and a test that fights it for the port is a test that fails for
+    the wrong reason.
+    """
+
+    # Endpoints read the real tracks/ directory, so the fixtures live there —
+    # tagged with the pid so two runs at once cannot fight over a filename,
+    # and so the cleanup can never touch a track that is not ours.
+    PREFIX = f"_t_studio_{os.getpid()}_"
+    WAVE_ID = PREFIX + "wave"
+    DEL_ID = PREFIX + "delete"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.manifest_before = (mf.PATH.read_bytes() if mf.PATH.exists() else None)
+        cls.tracks_before = {p.name for p in studio.TRACKS.glob("*.mp3")
+                             if not p.name.startswith(cls.PREFIX)}
+        cls.wave = studio.TRACKS / f"{cls.WAVE_ID}.mp3"
+        make_mp3(cls.wave)
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
+        cls.port = cls.srv.server_address[1]
+        cls.thread = threading.Thread(target=cls.srv.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.srv.shutdown()
+        cls.srv.server_close()
+        cls.thread.join(timeout=5)
+        for p in studio.TRACKS.glob(f"{cls.PREFIX}*.mp3"):
+            p.unlink(missing_ok=True)
+        shutil.rmtree(studio.TRACKS / "_upload", ignore_errors=True)
+        if cls.manifest_before is not None:
+            mf.PATH.write_bytes(cls.manifest_before)
+        # The invariant worth guarding: a test run must never cost you a track
+        # you imported. Checked as "nothing went missing" rather than "the
+        # directory is identical", so an unrelated file appearing alongside is
+        # not mistaken for damage.
+        gone = cls.tracks_before - {p.name for p in studio.TRACKS.glob("*.mp3")}
+        assert not gone, f"tests removed pre-existing tracks: {gone}"
+
+    # ── HTTP ──
+    def req(self, method: str, path: str, data: bytes | None = None,
+            headers: dict | None = None) -> tuple[int, bytes]:
+        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}",
+                                   data=data, method=method, headers=headers or {})
+        try:
+            with urllib.request.urlopen(r, timeout=20) as f:
+                return f.status, f.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+
+    def get_json(self, path: str) -> tuple[int, dict]:
+        code, body = self.req("GET", path)
+        return code, json.loads(body)
+
+    def post_json(self, path: str, obj: dict) -> tuple[int, dict]:
+        code, body = self.req("POST", path, json.dumps(obj).encode(),
+                              {"Content-Type": "application/json"})
+        return code, json.loads(body)
+
+
+class TestReads(ServerCase):
+    """Everything the page asks for before the user has done anything."""
+
+    def test_root_serves_the_previewer(self) -> None:
+        code, body = self.req("GET", "/")
+        if code == 404:
+            # An unbuilt checkout is a legitimate state; it must still be a
+            # clean JSON 404 rather than a traceback.
+            self.assertIn("previewer not built", json.loads(body)["error"])
+            return
+        self.assertEqual(code, 200)
+        self.assertIn(b"<", body[:200])
+        self.assertGreater(len(body), 1000)
+
+    def test_index_html_is_the_same_page(self) -> None:
+        self.assertEqual(self.req("GET", "/")[0], self.req("GET", "/index.html")[0])
+
+    def test_tracks_lists_files_and_scene_ids(self) -> None:
+        code, d = self.get_json("/api/tracks")
+        self.assertEqual(code, 200)
+        self.assertEqual(set(d), {"tracks", "scenes"})
+        ids = [t["id"] for t in d["tracks"]]
+        self.assertIn(self.WAVE_ID, ids)
+        self.assertEqual(d["scenes"], studio.scene_ids())
+        self.assertIn("vigil", d["scenes"])
+
+    def test_track_entries_carry_duration_and_onset_counts(self) -> None:
+        """The panel shows both; a track missing them looks broken to the user."""
+        _, d = self.get_json("/api/tracks")
+        mine = next(t for t in d["tracks"] if t["id"] == self.WAVE_ID)
+        self.assertAlmostEqual(mine["dur"], 3.0, delta=0.3)
+        self.assertGreater(mine["kb"], 0)
+        self.assertIn("onset_low", mine["onsets"])
+
+    def test_waveform_returns_a_drawable_envelope(self) -> None:
+        code, d = self.get_json(f"/api/waveform/{self.WAVE_ID}")
+        self.assertEqual(code, 200)
+        self.assertEqual(d["id"], self.WAVE_ID)
+        self.assertAlmostEqual(d["duration"], 3.0, delta=0.3)
+        self.assertGreater(len(d["peaks"]), 100)
+        self.assertLessEqual(max(d["peaks"]), 1.0)
+        self.assertIn("onset_low", d["onsets"])
+
+    def test_waveform_honours_the_sensitivity_query(self) -> None:
+        """The clip editor's slider is only useful if it changes the answer."""
+        _, loose = self.get_json(f"/api/waveform/{self.WAVE_ID}?sensitivity=0.6")
+        _, tight = self.get_json(f"/api/waveform/{self.WAVE_ID}?sensitivity=2.5")
+        self.assertGreaterEqual(len(loose["onsets"]["onset_low"]),
+                                len(tight["onsets"]["onset_low"]))
+
+    def test_waveform_of_an_unknown_track_is_404(self) -> None:
+        code, d = self.get_json("/api/waveform/_t_studio_missing")
+        self.assertEqual(code, 404)
+        self.assertIn("no such track", d["error"])
+
+    def test_track_streams_the_actual_bytes(self) -> None:
+        code, body = self.req("GET", f"/api/track/{self.WAVE_ID}.mp3")
+        self.assertEqual(code, 200)
+        self.assertEqual(body, self.wave.read_bytes())
+
+    def test_track_of_an_unknown_id_is_404(self) -> None:
+        self.assertEqual(self.req("GET", "/api/track/_t_studio_missing.mp3")[0], 404)
+
+    def test_track_refuses_a_non_mp3(self) -> None:
+        """tracks/ holds other things — tracks.json, a README — and none of
+        them should be readable through the audio route."""
+        self.assertEqual(self.req("GET", "/api/track/tracks.json")[0], 404)
+
+    def test_unknown_routes_are_404_on_every_verb(self) -> None:
+        for method, data in (("GET", None), ("POST", b"{}"), ("DELETE", None)):
+            code, body = self.req(method, "/api/nope", data)
+            self.assertEqual(code, 404, method)
+            self.assertEqual(json.loads(body)["error"], "not found")
+
+
+class TestJobs(ServerCase):
+    """The async import surface, without ever starting a real import."""
+
+    def test_unknown_job_is_404(self) -> None:
+        code, d = self.get_json("/api/job/deadbeefdead")
+        self.assertEqual(code, 404)
+        self.assertIn("no such job", d["error"])
+
+    def test_a_finished_job_carries_the_refreshed_track_list(self) -> None:
+        """The page stops polling on `done`, so the fresh list has to ride
+        along with the last response or the new track never appears."""
+        job = studio._runner.start(["true"])
+        for _ in range(400):
+            code, d = self.get_json(f"/api/job/{job.id}")
+            self.assertEqual(code, 200)
+            if d["done"]:
+                break
+            threading.Event().wait(0.01)
+        self.assertTrue(d["done"])
+        self.assertEqual(d["phase"], "done")
+        self.assertIn(self.WAVE_ID, [t["id"] for t in d["tracks"]])
+
+    def test_async_import_rejects_a_non_http_url(self) -> None:
+        code, d = self.post_json("/api/import/async", {"url": "file:///etc/passwd"})
+        self.assertEqual(code, 400)
+        self.assertIn("http(s)", d["error"])
+
+    def test_async_import_rejects_an_empty_body(self) -> None:
+        code, _ = self.req("POST", "/api/import/async", b"",
+                           {"Content-Type": "application/json"})
+        self.assertEqual(code, 400)
+
+    def test_async_import_builds_the_import_command(self) -> None:
+        """The options the panel sends have to survive the trip to argv —
+        this is where a renamed field silently stops taking effect."""
+        with mock.patch.object(studio._runner, "start",
+                               return_value=studio.sj.Job(id="fakejobid123")) as spy:
+            code, d = self.post_json("/api/import/async", {
+                "url": "https://example.invalid/v", "id": "_t_studio_fake",
+                "start": "0:12", "take": 24, "sample_rate": 22050,
+                "gain_db": "", "normalize": True})
+        self.assertEqual(code, 200)
+        self.assertEqual(d["id"], "fakejobid123")
+        argv = spy.call_args[0][0]
+        self.assertEqual(argv[0], studio.PY)
+        self.assertTrue(argv[1].endswith("import_track.py"))
+        self.assertEqual(argv[2], "https://example.invalid/v")
+        self.assertIn("--start", argv)
+        self.assertIn("--sample-rate", argv)      # underscores become dashes
+        self.assertIn("--normalize", argv)
+        self.assertNotIn("--gain-db", argv, "an empty option was passed through")
+
+
+class TestWrites(ServerCase):
+    """Requests that change something. Subprocess work is stubbed out."""
+
+    def test_delete_removes_the_file_and_forgets_the_source(self) -> None:
+        target = studio.TRACKS / f"{self.DEL_ID}.mp3"
+        make_mp3(target, seconds=1.0)
+        mf.record(self.DEL_ID, source="file:/tmp/whatever", title="test")
+        self.assertIsNotNone(mf.get(self.DEL_ID))
+
+        code, d = self.req("DELETE", f"/api/tracks/{self.DEL_ID}")
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(d)["removed"], self.DEL_ID)
+        self.assertFalse(target.exists(), "the file is still on disk")
+        self.assertIsNone(mf.get(self.DEL_ID), "the manifest still remembers it")
+
+    def test_delete_of_an_unknown_track_is_404(self) -> None:
+        code, body = self.req("DELETE", "/api/tracks/_t_studio_never_existed")
+        self.assertEqual(code, 404)
+        self.assertEqual(json.loads(body)["error"], "not found")
+
+    def test_probe_of_a_non_url_answers_without_touching_the_network(self) -> None:
+        """The guard has to come before yt-dlp, not after: a typo in the box
+        should cost nothing and, in particular, must not shell out."""
+        with mock.patch("studio_media.subprocess.run",
+                        side_effect=AssertionError("probe shelled out")):
+            code, d = self.post_json("/api/probe", {"url": "not a link at all"})
+        self.assertEqual(code, 200)
+        self.assertFalse(d["ok"])
+        self.assertIn("link", d["error"])
+
+    def test_probe_of_an_empty_body_is_not_a_crash(self) -> None:
+        with mock.patch("studio_media.subprocess.run",
+                        side_effect=AssertionError("probe shelled out")):
+            code, d = self.req("POST", "/api/probe", b"",
+                               {"Content-Type": "application/json"})
+        self.assertEqual(code, 200)
+        self.assertFalse(json.loads(d)["ok"])
+
+    def test_sync_import_rejects_a_missing_url(self) -> None:
+        code, d = self.post_json("/api/import", {})
+        self.assertEqual(code, 400)
+        self.assertEqual(d["error"], "no url")
+
+    def test_sync_import_rejects_a_non_http_url(self) -> None:
+        code, d = self.post_json("/api/import", {"url": "ftp://example.invalid/x"})
+        self.assertEqual(code, 400)
+        self.assertIn("http(s)", d["error"])
+
+    def test_upload_writes_the_file_and_hands_it_to_the_importer(self) -> None:
+        calls = []
+
+        def fake_run(cmd):
+            calls.append(cmd)
+            # Read the staged upload while it still exists — proving the file
+            # reached disk before the importer was invoked.
+            calls.append(Path(cmd[2]).read_bytes())
+            return True, "pretend log"
+
+        body = (b"--B\r\nContent-Disposition: form-data; name=\"file\"; "
+                b"filename=\"clip.wav\"\r\n\r\nRIFFfake\r\n--B--\r\n")
+        with mock.patch.object(studio, "run", fake_run):
+            code, d = self.req("POST", "/api/import", body, {
+                "Content-Type": "multipart/form-data; boundary=B",
+                "X-Import-Opts": json.dumps({"id": "_t_studio_up", "take": 5})})
+        self.assertEqual(code, 200)
+        d = json.loads(d)
+        self.assertTrue(d["ok"])
+        self.assertEqual(d["log"], "pretend log")
+        self.assertEqual(calls[1], b"RIFFfake")
+        self.assertIn("--take", calls[0])
+        self.assertTrue(calls[0][2].endswith("clip.wav"))
+        self.assertFalse((studio.TRACKS / "_upload").exists(),
+                         "the staging directory was left behind")
+
+    def test_upload_without_a_file_is_400(self) -> None:
+        code, d = self.req("POST", "/api/import", b"--B--\r\n",
+                           {"Content-Type": "multipart/form-data; boundary=B"})
+        self.assertEqual(code, 400)
+        self.assertIn("no file", json.loads(d)["error"])
+
+    def test_refresh_needs_an_id(self) -> None:
+        code, d = self.post_json("/api/refresh", {})
+        self.assertEqual(code, 400)
+        self.assertEqual(d["error"], "no id")
+
+    def test_refresh_reimports_by_id_with_overrides(self) -> None:
+        """--refresh is the reason the manifest exists; the id and the changed
+        option both have to reach import_track."""
+        with mock.patch.object(studio, "run", return_value=(True, "log")) as spy:
+            code, d = self.post_json("/api/refresh",
+                                     {"id": self.WAVE_ID, "take": 12,
+                                      "start": "", "normalize": True})
+        self.assertEqual(code, 200)
+        self.assertTrue(d["ok"])
+        argv = spy.call_args[0][0]
+        self.assertIn("--refresh", argv)
+        self.assertIn(self.WAVE_ID, argv)
+        self.assertIn("--take", argv)
+        self.assertIn("--normalize", argv)
+        self.assertNotIn("--start", argv)
+        self.assertIn(self.WAVE_ID, [t["id"] for t in d["tracks"]])
+
+    def test_rebuild_runs_the_three_generators(self) -> None:
+        with mock.patch.object(studio, "run", return_value=(True, "out")) as spy:
+            code, d = self.post_json("/api/rebuild", {})
+        self.assertEqual(code, 200)
+        self.assertTrue(d["ok"])
+        ran = [Path(c[0][0][1]).name for c in spy.call_args_list]
+        self.assertEqual(ran, ["render_audio.py", "gen_esphome.py",
+                               "gen_previewer.py"])
+
+    def test_rebuild_reports_failure_of_any_step(self) -> None:
+        with mock.patch.object(studio, "run",
+                               side_effect=[(True, "a"), (False, "b"), (True, "c")]):
+            _, d = self.post_json("/api/rebuild", {})
+        self.assertFalse(d["ok"])
+        self.assertIn("b", d["log"])
+
+
+class TestSceneEditing(ServerCase):
+    """scenes.yaml is spliced as text, against a copy — never the real file."""
+
+    ORIGINAL = ("scenes:\n"
+                "  # a comment that must survive\n"
+                "  - id: vigil\n"
+                "    duration_ms: 1000\n"
+                "  - id: storm\n"
+                "    duration_ms: 2000\n")
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.scenes = self.tmp / "scenes.yaml"
+        self.scenes.write_text(self.ORIGINAL)
+        self.p_scenes = mock.patch.object(studio, "SCENES", self.scenes)
+        self.p_run = mock.patch.object(studio, "run", return_value=(True, "ok"))
+        self.p_scenes.start()
+        self.p_run.start()
+
+    def tearDown(self) -> None:
+        self.p_run.stop()
+        self.p_scenes.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_needs_both_an_id_and_a_block(self) -> None:
+        for req in ({}, {"id": "x"}, {"yaml": "  - id: x\n"}):
+            code, d = self.post_json("/api/scene", req)
+            self.assertEqual(code, 400, req)
+            self.assertIn("need id and yaml", d["error"])
+        self.assertEqual(self.scenes.read_text(), self.ORIGINAL,
+                         "a rejected request still edited the file")
+
+    def test_replaces_an_existing_scene_in_place(self) -> None:
+        code, d = self.post_json(
+            "/api/scene",
+            {"id": "storm", "yaml": "  - id: storm\n    duration_ms: 9999\n"})
+        self.assertEqual(code, 200)
+        self.assertEqual(d["id"], "storm")
+        text = self.scenes.read_text()
+        self.assertIn("duration_ms: 9999", text)
+        self.assertNotIn("duration_ms: 2000", text)
+        self.assertEqual(text.count("- id: storm"), 1, "the scene was duplicated")
+
+    def test_leaves_the_surrounding_file_alone(self) -> None:
+        """Comments carry the reasoning behind the show; a YAML round-trip
+        would erase them, which is why this splices text."""
+        self.post_json("/api/scene",
+                       {"id": "storm", "yaml": "  - id: storm\n    duration_ms: 3\n"})
+        text = self.scenes.read_text()
+        self.assertIn("# a comment that must survive", text)
+        self.assertIn("- id: vigil", text)
+
+    def test_appends_a_scene_it_has_not_seen(self) -> None:
+        self.post_json("/api/scene",
+                       {"id": "brand_new", "yaml": "  - id: brand_new\n    x: 1\n"})
+        text = self.scenes.read_text()
+        self.assertIn("- id: brand_new", text)
+        self.assertTrue(text.index("- id: storm") < text.index("- id: brand_new"))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
