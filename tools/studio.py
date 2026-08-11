@@ -37,6 +37,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana  # noqa: E402
 import manifest as mf  # noqa: E402
+import studio_media as sm  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 TRACKS = ROOT / "tracks"
@@ -128,6 +129,13 @@ class Handler(BaseHTTPRequestHandler):
                 "tracks": [track_info(p) for p in sorted(TRACKS.glob("*.mp3"))],
                 "scenes": [s for s in scene_ids()],
             })
+        if path.startswith("/api/waveform/"):
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            sens = float((q.get("sensitivity") or ["1.1"])[0])
+            p = TRACKS / f"{Path(path).name}.mp3"
+            if not (p.exists() and p.parent == TRACKS):
+                return self.send_json({"error": "no such track"}, 404)
+            return self.send_json(sm.waveform(p, sensitivity=sens))
         if path.startswith("/api/track/"):
             p = TRACKS / Path(path).name
             if p.suffix == ".mp3" and p.exists() and p.parent == TRACKS:
@@ -172,6 +180,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": ok, "log": out,
                                    "tracks": [track_info(p)
                                               for p in sorted(TRACKS.glob("*.mp3"))]})
+        if path == "/api/probe":
+            req = json.loads(raw or b"{}")
+            return self.send_json(sm.probe((req.get("url") or "").strip()))
         if path == "/api/server/stop":
             # Answer first, then shut down — otherwise the page sees the
             # socket die and reports a network error instead of "stopped".
@@ -285,11 +296,32 @@ def scene_ids() -> list[str]:
         return []
 
 
+def lan_ip() -> str:
+    """Best guess at this machine's address on the LAN, for the banner."""
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("10.255.255.255", 1))   # no packets sent; just picks a route
+        return str(s.getsockname()[0])
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
 def main() -> int:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
+    # Bound to every interface so the cue desk works from a phone or iPad on
+    # the same WiFi. That is a deliberate choice for a home network: anyone
+    # who can reach this port can drive ffmpeg/yt-dlp and edit files in the
+    # repo. Do not run it on a network you do not control.
+    host = "0.0.0.0" if "--localhost" not in sys.argv else "127.0.0.1"
     TRACKS.mkdir(exist_ok=True)
-    srv = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    srv = ThreadingHTTPServer((host, port), Handler)
     print(f"cue desk studio  ->  http://127.0.0.1:{port}")
+    if host == "0.0.0.0":
+        print(f"  from your phone  ->  http://{lan_ip()}:{port}")
+        print("  (open to your LAN — pass --localhost to restrict to this Mac)")
     print("  serving the previewer with track management enabled")
     print("  ctrl-c to stop")
     try:

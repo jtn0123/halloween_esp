@@ -78,7 +78,7 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
         x = analyze.load_audio(path, sr)
         gain = float(scene.get("track_gain", 1.0))
         synth._place(buf, x * gain, float(scene.get("track_at", 0.0)))
-        for band, hits in analyze.analyze(
+        for band, hits in analyze.analyze_full(
                 x, sr, sensitivity=float(scene.get("sensitivity", 1.1))).items():
             markers.setdefault(band, []).extend(
                 [int((t + scene.get("track_at", 0.0)) * 1000), v]

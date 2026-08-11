@@ -166,7 +166,23 @@ def scene_block(tid: str, dur: float, marks: dict) -> str:
     for band, hits in marks.items():
         if not hits:
             continue
-        z = zones.get(band, "door")
+        base = band.replace("level_", "onset_")
+        z = zones.get(base, "door")
+        col = colors.get(base, "[1,1,1,1]")
+
+        if band.startswith("level_"):
+            # An envelope wants to GLIDE, not pulse. Its samples arrive at a
+            # steady 6 Hz, so a decay that empties between them would chop a
+            # smooth swell into a stutter. 0.90 leaves roughly half the level
+            # standing when the next sample lands, which reads as breathing.
+            lines.append(
+                f"      - {{synth: {band}, zone: {z}, intensity: 0.5, "
+                f"decay: 0.90, color: {col}}}"
+                f"   # {len(hits)} level samples — no beat here, so the zone "
+                f"follows loudness instead"
+            )
+            continue
+
         decay, scale = fit_to_density(hits, decays.get(band, 0.9))
         intensity = round(0.55 * scale, 3)
         rate = len(hits) / dur * 60 if dur else 0
@@ -175,7 +191,7 @@ def scene_block(tid: str, dur: float, marks: dict) -> str:
             note += " — dense, so eased back to stay distinct"
         lines.append(
             f"      - {{synth: {band}, zone: {z}, intensity: {intensity}, "
-            f"decay: {decay}, color: {colors.get(band, '[1,1,1,1]')}}}"
+            f"decay: {decay}, color: {col}}}"
             f"   # {note}"
         )
     lines.append("    cues: []")
@@ -239,7 +255,7 @@ def main() -> int:
 
     if args.analyze_only:
         src = Path(args.source)
-        marks = ana.analyze_file(src, sensitivity=args.sensitivity or 1.1)
+        marks = ana.analyze_full(ana.load_audio(src), sensitivity=args.sensitivity or 1.1)
         dur = len(ana.load_audio(src)) / ana.SR
         for k, v in marks.items():
             print(f"  {k:<11} {len(v):>4} onsets")
@@ -300,7 +316,7 @@ def main() -> int:
     x = ana.load_audio(out)
     dur = len(x) / ana.SR
     size = out.stat().st_size
-    marks = ana.analyze(x, sensitivity=float(o["sensitivity"]))
+    marks = ana.analyze_full(x, sensitivity=float(o["sensitivity"]))
 
     mf.record(
         tid,

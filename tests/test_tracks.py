@@ -498,3 +498,110 @@ class TestExternalTools(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestEnvelopeFallback(unittest.TestCase):
+    """Beatless material must still move the lights.
+
+    Drones, pads and wind never "start", so onset detection correctly finds
+    nothing — and the scene sits on a static base doing nothing. Most of this
+    castle's material is atmospheric, so that gap mattered.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = Path(tempfile.mkdtemp())
+        cls.drone = cls.tmp / "drone.wav"
+        sr = ana.SR
+        t = np.arange(int(12.0 * sr)) / sr
+        tone = (0.5 * np.sin(2 * np.pi * 73.4 * t)
+                + 0.3 * np.sin(2 * np.pi * 110 * t))
+        swell = 0.25 + 0.75 * (0.5 + 0.5 * np.sin(2 * np.pi * 0.12 * t))
+        x = tone * swell * 0.6
+        with wave.open(str(cls.drone), "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+            w.writeframes((np.clip(x, -1, 1) * 32767).astype("<i2").tobytes())
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_a_drone_has_no_usable_onsets(self) -> None:
+        """The premise. If this ever fails, the fallback is not needed."""
+        marks = ana.analyze_file(self.drone)
+        self.assertLess(len(marks.get("onset_low", [])), ana.BEATLESS)
+
+    def test_envelope_is_produced_instead(self) -> None:
+        full = ana.analyze_full(ana.load_audio(self.drone))
+        self.assertIn("level_low", full)
+        self.assertGreater(len(full["level_low"]), 20)
+
+    def test_envelope_follows_the_swell(self) -> None:
+        levels = [v for _t, v in ana.analyze_full(ana.load_audio(self.drone))["level_low"]]
+        self.assertGreater(max(levels) - min(levels), 0.4,
+                           "envelope is flat — it is not tracking anything")
+
+    def test_envelope_is_normalised(self) -> None:
+        for _t, v in ana.analyze_full(ana.load_audio(self.drone))["level_low"]:
+            self.assertGreaterEqual(v, 0.0)
+            self.assertLessEqual(v, 1.0)
+
+    def test_beaty_material_gets_no_envelope(self) -> None:
+        """A track with a clear beat should use onsets, not loudness."""
+        click = self.tmp / "click.wav"
+        make_click_track(click, seconds=8.0, bpm=120.0)
+        full = ana.analyze_full(ana.load_audio(click))
+        self.assertNotIn("level_low", full,
+                         "envelope applied to material that has real onsets")
+
+    def test_scene_block_uses_gliding_decay_for_envelopes(self) -> None:
+        """An envelope must glide. Beat decay would chop a swell into steps."""
+        full = ana.analyze_full(ana.load_audio(self.drone))
+        block = it.scene_block("drone", 12.0, full)
+        line = next(l for l in block.splitlines() if "level_low" in l)
+        self.assertIn("decay: 0.9", line)
+
+    def test_silence_produces_no_envelope(self) -> None:
+        p = self.tmp / "silent.wav"
+        with wave.open(str(p), "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(ana.SR)
+            w.writeframes(np.zeros(ana.SR * 3).astype("<i2").tobytes())
+        self.assertEqual(ana.analyze_full(ana.load_audio(p)), {})
+
+
+class TestStudioMedia(unittest.TestCase):
+    """Probe and waveform, without standing up a server."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        sys.path.insert(0, str(ROOT / "tools"))
+        cls.tmp = Path(tempfile.mkdtemp())
+        cls.wav = cls.tmp / "w.wav"
+        make_click_track(cls.wav, seconds=5.0)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_waveform_shape(self) -> None:
+        import studio_media as sm
+        d = sm.waveform(self.wav, buckets=200)
+        self.assertAlmostEqual(d["duration"], 5.0, delta=0.1)
+        self.assertEqual(len(d["peaks"]), 200)
+        self.assertLessEqual(max(d["peaks"]), 1.0)
+        self.assertAlmostEqual(max(d["peaks"]), 1.0, delta=1e-6,
+                               msg="peaks should be normalised to the loudest")
+
+    def test_waveform_includes_onsets(self) -> None:
+        import studio_media as sm
+        d = sm.waveform(self.wav)
+        self.assertIn("onset_low", d["onsets"])
+        for t, v in d["onsets"]["onset_low"]:
+            self.assertGreaterEqual(t, 0.0)
+            self.assertLessEqual(v, 1.0)
+
+    def test_probe_rejects_non_links_without_touching_the_network(self) -> None:
+        import studio_media as sm
+        r = sm.probe("not a url")
+        self.assertFalse(r["ok"])
+        self.assertIn("link", r["error"])

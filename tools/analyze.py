@@ -146,6 +146,82 @@ def analyze_file(path: Path, **kw) -> dict[str, list[tuple[float, float]]]:
     return analyze(load_audio(path), **kw)
 
 
+# How often the envelope is sampled. 6 Hz is a compromise: fast enough that a
+# swell reads as movement rather than as steps, slow enough that a 30 s scene
+# does not turn into two thousand cues the firmware has to step through.
+ENV_HZ = 6.0
+# Below this many onsets per band, the material has no beat worth following.
+BEATLESS = 8
+
+
+def envelope(x: np.ndarray, sr: int = SR, hz: float = ENV_HZ,
+             bands=BANDS) -> dict[str, list[tuple[float, float]]]:
+    """Band loudness over time, for audio with no beat to detect.
+
+    Onset detection answers "when did something start". Drones, pads, wind and
+    sustained organ never start — they just *are*, and the detector correctly
+    finds nothing, which leaves the lights frozen on a static base.
+
+    This answers the other question: "how loud is this band right now". Fed
+    through the same pulse machinery, the zone tracks the sound's shape and
+    the castle breathes with it instead of ignoring it.
+
+    Returns the same {name: [(seconds, level)]} shape as `analyze`, under
+    `level_*` names so a scene can ask for either behaviour, or both.
+    """
+    if len(x) < WIN * 2:
+        return {}
+    f, t, Z = signal.stft(x, fs=sr, nperseg=WIN, noverlap=WIN - HOP)
+    mag = np.abs(Z)
+    step = max(1, int(round((sr / HOP) / hz)))
+
+    out: dict[str, list[tuple[float, float]]] = {}
+    for name, lo, hi, _gap in bands:
+        sel = (f >= lo) & (f < hi)
+        if not sel.any():
+            continue
+        # RMS across the band, then a light smooth so the level glides rather
+        # than steps between samples.
+        env = np.sqrt((mag[sel] ** 2).mean(axis=0))
+        if env.max() <= 0:
+            continue
+        env = np.convolve(env, np.hanning(9) / np.hanning(9).sum(), mode="same")
+
+        # Perceptual-ish compression, then scale to the band's own range: what
+        # matters is the shape of this material, not its absolute level.
+        env = np.log1p(env * 50.0)
+        lo_v, hi_v = float(env.min()), float(env.max())
+        if hi_v - lo_v < 1e-9:
+            continue                      # dead flat: nothing to follow
+        env = (env - lo_v) / (hi_v - lo_v)
+
+        pts = [(float(t[i]), round(float(env[i]), 3))
+               for i in range(0, len(env), step)]
+        # Drop the near-silent tail of the list; a zero-level pulse is a cue
+        # that costs firmware space and does nothing.
+        pts = [(tt, v) for tt, v in pts if v > 0.02]
+        if pts:
+            out[name.replace("onset_", "level_")] = pts
+    return out
+
+
+def analyze_full(x: np.ndarray, sr: int = SR, sensitivity: float = 1.1,
+                 ) -> dict[str, list[tuple[float, float]]]:
+    """Onsets, plus a level envelope for any band that has no beat.
+
+    This is what the importer uses. A track can be beaty in the bass and
+    beatless up top — a kick under a synth pad — and each band gets whichever
+    treatment actually suits it rather than one verdict for the whole file.
+    """
+    onsets = analyze(x, sr, sensitivity=sensitivity)
+    thin = [name for name, _lo, _hi, _g in BANDS
+            if len(onsets.get(name, [])) < BEATLESS]
+    if not thin:
+        return onsets
+    levels = envelope(x, sr, bands=[b for b in BANDS if b[0] in thin])
+    return {**onsets, **levels}
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         raise SystemExit(f"usage: {sys.argv[0]} <audio-file> [sensitivity]")
