@@ -37,6 +37,8 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <dirent.h>
+#include <sys/stat.h>
 
 namespace castle_sd {
 
@@ -93,6 +95,48 @@ inline bool mount(int cs, int sck, int mosi, int miso, int max_files = 4) {
   ESP_LOGI(TAG, "SD mounted: %s, %lluMB", g_card->cid.name,
            ((uint64_t) g_card->csd.capacity) * g_card->csd.sector_size / (1024 * 1024));
   return true;
+}
+
+/// Log what is actually on the card.
+///
+/// "Did it mount" is only half the question — a card that mounts but shows an
+/// empty root means the files went somewhere else, or the card was formatted
+/// in a way FATFS reads but the writer did not expect. Getting both answers
+/// from one boot matters when each attempt costs a BOOT+RESET by hand.
+inline void list_root(const char *dir = "/sd") {
+  if (!g_mounted) {
+    ESP_LOGW(TAG, "cannot list %s — no card mounted", dir);
+    return;
+  }
+  DIR *d = opendir(dir);
+  if (d == nullptr) {
+    ESP_LOGE(TAG, "mounted, but cannot open %s", dir);
+    return;
+  }
+  int files = 0, playable = 0;
+  struct dirent *e;
+  while ((e = readdir(d)) != nullptr) {
+    if (e->d_name[0] == '.') continue;          // skip . .. and Mac dotfiles
+    char full[300];
+    snprintf(full, sizeof(full), "%s/%s", dir, e->d_name);
+    struct stat st {};
+    long kb = (stat(full, &st) == 0) ? (long) (st.st_size / 1024) : -1;
+    bool is_dir = (e->d_type == DT_DIR);
+    std::string nm(e->d_name);
+    for (auto &c : nm) c = tolower(c);
+    bool audio = !is_dir && (nm.size() > 4) &&
+                 (nm.rfind(".mp3") == nm.size() - 4 ||
+                  nm.rfind(".wav") == nm.size() - 4);
+    if (audio) playable++;
+    files++;
+    ESP_LOGI(TAG, "  %s%s  %ldKB%s", e->d_name, is_dir ? "/" : "", kb,
+             audio ? "   <- playable" : "");
+  }
+  closedir(d);
+  ESP_LOGI(TAG, "%s: %d entries, %d playable audio file(s)", dir, files, playable);
+  if (files == 0) {
+    ESP_LOGW(TAG, "card is mounted but empty — copy .mp3 files to its root");
+  }
 }
 
 // AudioFileType's members are compiled in conditionally — a build only gets

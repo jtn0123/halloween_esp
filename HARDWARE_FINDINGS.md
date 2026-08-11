@@ -171,6 +171,14 @@ the bootloader. **Press RESET physically** after flashing.
 To force download mode (needed if the app doesn't enumerate): hold **BOOT**,
 tap **RESET**, release BOOT.
 
+**Or do it remotely** — `firmware/flash_mode.h` and the "Enter flash mode"
+button. The ROM checks a bit in an always-on RTC register during early boot;
+setting it and restarting brings the chip up in download mode with its USB
+bootloader enumerated, no buttons touched. This matters because neither usual
+escape hatch exists on this board: no USB serial console, and OTA off because
+the embedded audio will not fit two app slots. It is one-way — once pressed,
+the device stays in download mode until something reflashes it.
+
 Identify the state from the USB descriptor — the ROM bootloader enumerates as:
 
     USB Product Name = "ESP32_S2",  idProduct = 2,  USB Serial Number = "0"

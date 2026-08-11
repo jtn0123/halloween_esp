@@ -45,6 +45,8 @@ esphome:
   friendly_name: ${friendly}
   includes:
     - castle_effects.h
+    - flash_mode.h
+
   on_boot:
     priority: -100
     then:
@@ -291,6 +293,25 @@ binary_sensor:
         - script.execute: scene_approach
 
 button:
+  # ── Remote flashing escape hatch ─────────────────────────────────
+  # This board has no USB serial console, and OTA is off because the embedded
+  # audio makes the binary too big for two app slots. So new firmware has
+  # meant physically holding BOOT and tapping RESET — fine at the desk,
+  # useless once the castle is on a porch and you are not.
+  #
+  # The ESP32-S2 ROM checks a bit in an always-on RTC register at boot. Set
+  # it, reboot, and the chip comes up with its USB bootloader enumerated,
+  # ready for esptool over the wire. No buttons.
+  #
+  # A button rather than a service on purpose: pressing it takes the show off
+  # the air until something reflashes the board.
+  - platform: template
+    name: "Enter flash mode"
+    entity_category: config
+    on_press:
+      - logger.log: "rebooting into download mode — reflash over USB to recover"
+      - delay: 300ms          # let the log and the API response get out
+      - lambda: 'castle_sd::reboot_to_download_mode();'
   - platform: template
     name: "Scene: Vigil"
     on_press: {script.execute: scene_vigil}
