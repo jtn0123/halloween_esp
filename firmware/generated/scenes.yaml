@@ -214,7 +214,7 @@ script:
     mode: restart
     then:
       - logger.log: 'scene crypt'
-      - lambda: 'id(zone_effect)[0] = 0; id(zone_flash)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 0; id(zone_flash)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 12; id(zone_flash)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
+      - lambda: 'id(zone_effect)[0] = 9; id(zone_flash)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 0.35f; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 9; id(zone_flash)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 0.35f; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 12; id(zone_flash)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
       - media_player.volume_set: 0.7
       - media_player.speaker.play_on_device_media_file:
           media_file: snd_crypt
@@ -297,7 +297,7 @@ script:
       - delay: 352ms
       - lambda: 'id(zone_flash)[1] = 0.268f; id(zone_flash_decay)[1] = 0.94f; id(zone_flash_col)[4] = 0.24f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 0.38f; id(zone_flash_col)[7] = 0.00f;'    # whispers
       - delay: 211ms
-      - lambda: 'id(zone_effect)[0] = 0;'    # eyes close
+      - lambda: 'id(zone_effect)[0] = 9; id(zone_level)[0] = 0.35f;'    # eyes close
       - delay: 525ms
       - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
@@ -349,7 +349,7 @@ script:
       - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
       - delay: 1078ms
-      - lambda: 'id(zone_effect)[1] = 0;'    # gone
+      - lambda: 'id(zone_effect)[1] = 9; id(zone_level)[1] = 0.35f;'    # gone
       - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_decay)[2] = 0.82f; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_decay)[0] = 0.88f; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_decay)[1] = 0.88f; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
       - delay: 180ms

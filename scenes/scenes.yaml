@@ -201,7 +201,12 @@ scenes:
       Below the castle. A heartbeat at 48 bpm, a tritone drone underneath, and
       whispers just past intelligibility. The lights barely admit anything is
       there — near-darkness is the effect.
-    base: {towerL: "off", towerR: "off", door: blood}
+    base: {towerL: chill, towerR: chill, door: blood}
+    # The towers rest on a cold near-dark instead of true black: between
+    # whispers they were dead pixels for seconds at a time. `chill` held this
+    # low is a held breath — and being cold, it separates the towers (voices)
+    # from the door (heart) even at rest.
+    levels: {towerL: 0.35, towerR: 0.35}
     # Nothing in this scene is lit by the clock — every zone is driven by one
     # sound, and each sound owns a colour:
     #   red    = the heart      (door, both thumps of the lub-dub, snapping)
@@ -231,6 +236,6 @@ scenes:
       - {t: 14.0, synth: toll, gain: 0.3}
     cues:
       - {t: 3000,  op: set, zone: towerL, effect: eyes, level: 0.18, note: "something watches"}
-      - {t: 12000, op: set, zone: towerL, effect: "off", note: "eyes close"}
+      - {t: 12000, op: set, zone: towerL, effect: chill, level: 0.35, note: "eyes close"}
       - {t: 12600, op: set, zone: towerR, effect: eyes, level: 0.18, note: "…it moved"}
-      - {t: 20000, op: set, zone: towerR, effect: "off", note: "gone"}
+      - {t: 20000, op: set, zone: towerR, effect: chill, level: 0.35, note: "gone"}

@@ -697,6 +697,57 @@ playing, looping, clock advancing.
 
 ---
 
+## 12.7 Previewer transport rebuild (2026-08-10)
+
+**Crypt towers came off true black.** Between whispers the towers were dead
+pixels for seconds at a time. They now rest on `chill` at level 0.35 — a cold
+near-dark. Being cold, it also separates the towers (voices) from the door
+(heart) at rest, so the colour language holds even when nothing is firing.
+
+**The audio model was wrong, twice, and the second version was worse.**
+
+First the *Arm audio* overlay was the only way to start sound and was easy to
+miss. The fix — arm on the first gesture anywhere — made the overlay's own text
+("browsers hold audio until you click") a lie, and worse, meant any stray click
+started a scene at full volume. Justin, correctly, called this broken.
+
+The rule now: **muted by default, always, and audio starts only from Play.**
+Nothing about loading the page, picking a scene, toggling a mode or clicking
+anywhere else can put sound out of a speaker.
+
+Mute is enforced with the element's own `muted` property, not by zeroing
+volume. Volume is also written by the fade-in and by the master slider, so a
+mute expressed as "volume 0" is one stray write from being silently undone —
+which is exactly the class of bug being reported. `muted` is independent of
+both and cannot be lost. `armAudio()` also builds the master gain at 0 when
+muted, so the synth path obeys the same rule.
+
+**Real bug found while rebuilding:** Stop forced every zone to `off`, and Play
+resumed without re-deriving the scene, so *Stop → Play ran the whole scene on a
+black stage*. `startPlayback()` now always calls `rebuildLightsAt()` first.
+
+**Transport, rebuilt.**
+- Play/Pause with a frozen clock (`state.held`) rather than a free-running one
+- Scrub bar: drag to seek. Seeking calls `rebuildLightsAt()`, which replays
+  every `set` cue from zero — without it, scrubbing leaves whatever effects
+  happened to be on stage when you grabbed the bar, the classic seek bug.
+  Verified locked: light clock 14.75 s against audio 14.71 s.
+- **Cue ticks painted under the scrub bar in each strike's own colour**, height
+  scaled by intensity. This is the fastest way to see whether light is
+  following audio — the thing this project keeps needing to judge.
+- Clicking a cue row in the sheet jumps to that cue
+- Keyboard: space, ←/→ (shift = 5 s), Home, R, M, Esc, 1–9 for scenes
+- 180 ms fade-in on scene audio: cutting a 44.1 kHz file in at an arbitrary
+  sample is a step discontinuity — a click, and at the top of a loud scene, a
+  blast
+- Stale `DFPlayer DFR0299` chip in the header replaced with `MAX98357A I²S`
+
+**Note to self on testing:** driving the previewer with the browser tools plays
+audio on Justin's actual speakers. Pin `HTMLMediaElement.prototype.volume` to 0
+in the test tab before touching the transport.
+
+---
+
 ## 13. Decision log
 
 | Date | Decision | Rationale |
@@ -713,4 +764,7 @@ playing, looping, clock advancing.
 | 2026-08-10 | Light cues derive from audio markers, not hand-typed times | Synths report their own event times; a jittered heartbeat can't drift from its light (§12.6) |
 | 2026-08-10 | Base effects get a per-zone `level`; strikes stay unscaled | Contrast is the whole mechanism — a standing effect at full brightness buries the audio-driven pulses (§12.6) |
 | 2026-08-10 | Each strike carries its own colour and decay | One global white snap can't express both a lightning bolt and a heartbeat; colour is how a viewer hears with their eyes (§12.6) |
-| 2026-08-10 | Previewer arms audio on the first gesture anywhere | The Arm button was a discoverability trap; browsers only need one gesture, not that specific one (§12.6) |
+| 2026-08-10 | ~~Previewer arms audio on the first gesture anywhere~~ **Reverted** | Made any stray click blast a scene at full volume, and made the overlay's own text a lie (§12.7) |
+| 2026-08-10 | Previewer is muted by default; audio starts only from Play | A preview tool must never make noise you didn't ask for. Unmuting is one click; being ambushed is not recoverable (§12.7) |
+| 2026-08-10 | Mute uses `.muted`, never volume 0 | Volume is also written by the fade-in and master slider, so a volume-based mute is one stray write from being undone (§12.7) |
+| 2026-08-10 | Seeking replays all `set` cues from zero | Scrubbing otherwise keeps whatever effects were on stage when you grabbed the bar (§12.7) |
