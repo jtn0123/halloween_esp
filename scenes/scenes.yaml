@@ -19,10 +19,14 @@ hardware:
   rgb_order: GRB
   audio:
     sample_rate: 44100
-    # 96 kbps mono keeps the whole scene set near 1.6 MB. The single-app
-    # partition (see firmware/castle.yaml) leaves ~2.9 MB after the firmware;
-    # dropping to 48 kbps would win OTA back at a real cost in music quality.
-    bitrate: 96
+    # 32 kbps is TEMPORARY and it is a real quality loss from the 96 kbps
+    # this show was tuned at. It buys OTA: the image has to fit one 1.75 MB
+    # app slot, and audio is the only part big enough to matter.
+    #
+    # The trade is worth making once, because it is the last change that
+    # needs someone standing at the board. Once OTA works, moving the audio
+    # to the SD card frees ~600 KB and 96 kbps comes back — over the air.
+    bitrate: 32
     channels: 1
 
 zones:

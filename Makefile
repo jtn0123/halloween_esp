@@ -84,6 +84,7 @@ test:
 	@$(PY) -m unittest discover -s tests -q
 
 check: test
+	@$(PY) tools/check_image.py castle-sd
 	@$(PY) tools/check_loc.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"
 	@cd web && npm run --silent test

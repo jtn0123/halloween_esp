@@ -76,10 +76,14 @@ esp32:
     # here: logs come over WiFi via the API, which is how ESPHome is normally
     # used anyway. For serial you would need a USB-UART adapter on the TX/RX
     # pins.
-  # Embedded audio makes the binary ~2.5 MB. ESPHome's default dual-OTA layout
-  # gives two 1.75 MB slots, so it fits in neither. One app partition gives
-  # 3.87 MB. Trade-off: no OTA — flash over USB. See partitions_single_app.csv.
-  partitions: partitions_single_app.csv
+    sdkconfig_options:
+      # The bootloader starts a freshly-OTA'd image in PENDING_VERIFY. If it
+      # reboots without confirming itself, the bootloader reverts to the
+      # previous image. That is the whole safety net for flashing a device
+      # that is not in the room — see the api: on_client_connected below.
+      CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE: "y"
+  # Default dual-OTA layout: two 1.75 MB app slots. Audio at 48 kbps keeps the
+  # image inside one, which is what buys OTA back — see the ota: block below.
 
 psram:
   mode: quad
@@ -92,19 +96,20 @@ logger:
   # block above. Logs come over WiFi.
 
 api:
+  # THE image-confirmation step, and the reason rollback is safe.
+  #
+  # An API client connecting proves the things a future OTA depends on: the
+  # chip booted, WiFi associated, and the network stack answers. Confirming
+  # here rather than at boot means an image that breaks any of those never
+  # gets confirmed — it reboots, the bootloader sees an unconfirmed image,
+  # and the previous working firmware comes back on its own.
+  #
+  # Marking valid at boot instead would confirm a brick.
+  on_client_connected:
+    - lambda: 'castle_sd::mark_firmware_healthy();'
 
-# OTA is DISABLED — not an oversight.
-#
-# Over-the-air updates need a second app slot to write into while the first
-# keeps running. The embedded audio makes the binary ~2.5 MB, and two slots
-# that size do not fit in 4 MB of flash. So this build uses one 3.87 MB app
-# partition and flashes over USB.
-#
-# To get OTA back, audio must fit in ~800 KB (from 1558 KB today): drop
-# `bitrate` in scenes.yaml to 48 and shorten the looping scenes, then remove
-# the `partitions:` line above and uncomment this block.
-# ota:
-#   - platform: esphome
+ota:
+  - platform: esphome
 
 wifi:
   ssid: !secret wifi_ssid
@@ -112,7 +117,10 @@ wifi:
   ap:
     ssid: "${friendly} Setup"
 
-captive_portal:
+# captive_portal removed: it embeds a web UI for entering WiFi credentials,
+# and the image has to fit a 1.75 MB OTA slot. The `ap:` fallback above still
+# comes up if WiFi fails, so the device is still recoverable — you just join
+# its network and reflash rather than filling in a form.
 
 packages:
   # The generated scene scripts.
