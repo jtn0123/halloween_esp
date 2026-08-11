@@ -800,6 +800,87 @@ definitions referencing them are tracked, so the show stays reproducible.
 
 ---
 
+## 12.9 microSD audio — what's true, and what it costs (2026-08-10)
+
+Justin wants the audio library on the 32 GB microSD card rather than in flash.
+Researched properly before building, because the answer is mostly "no".
+
+### The blockers, verified
+
+1. **ESPHome has no SD component.** Not in 2026.7.4, not anywhere in
+   `esphome/components/`.
+2. **The audio pipeline has no filesystem source.** `audio/audio_reader.h` has
+   exactly two `start()` overloads: a URL via `esp_http_client`, and an
+   `AudioFile *` in flash. Nothing else.
+3. **No external component bridges SD to audio.** Several SD components exist
+   (n-serrette/esphome_sd_card is the main one at ~79★) but every one is
+   storage-only — read, write, list, serve over HTTP. None can feed `speaker`
+   or `media_player`. Upstream, [media-players#47] was closed *not planned*;
+   [feature-requests#2989] has had no maintainer response since Dec 2024.
+4. **The ESP32-S2 has no SDMMC host controller at all** — Espressif's own docs
+   say so; the S2 can only talk to cards over SPI. This alone disqualifies
+   n-serrette's component, which hard-rejects any variant except ESP32/S3:
+   ```python
+   if variant not in [VARIANT_ESP32, VARIANT_ESP32S3]:
+       raise cv.Invalid(f"Unsupported variant {variant}")
+   ```
+5. **The Adafruit ESP32-S2 Feather (5000) has no microSD slot**, and neither
+   does any S2/S3 Feather variant. A card comes from a stacked wing — the
+   Adalogger (2922), or the 2.4"/2.8"/3.5" TFT FeatherWings, which do carry a
+   microSD socket. Whichever it is, it is SPI, and the CS pin differs per wing
+   (usually a cuttable jumper).
+6. **Both well-known ESP32 audio libraries decline to support the S2.**
+   schreibfaul1/ESP32-audioI2S says verbatim that it does not work on the S2.
+   The ESPHome wrappers around it were last touched in 2023.
+
+### The one path that exists
+
+`audio::AudioFile` is a plain struct — `{const uint8_t *data; size_t length;
+AudioFileType type;}` — and `SpeakerMediaPlayer::play_file()` is **public**. So
+the decoder never needs touching: mount the card over SPI, read a whole file
+into PSRAM, point an `AudioFile` at the buffer, call `play_file()`.
+
+Built as `firmware/sd_audio.h` + `firmware/castle_sd.yaml`, kept as a separate
+variant so the working flash build is untouched.
+
+**What it buys:** the card is the library. Flash holds one show's worth
+(~2.9 MB, all scenes competing); the card holds as many tracks as you like.
+
+**What it does not buy:** streaming. The whole file lands in PSRAM before
+playback, so a single track is capped by free PSRAM — roughly 1.5 MB of the
+2 MB once buffers and the framebuffer have taken theirs. About two minutes at
+96 kbps. Real streaming means writing a custom `AudioReader`, or a
+`media_source::MediaSource` (ESPHome 2026.x added that base class, so it is now
+*writable* as an external component). Nobody has written either.
+
+### Risks worth stating plainly
+
+- **Nobody has published ESPHome SD audio on an ESP32-S2.** This is new ground,
+  not a recipe being followed.
+- **Single core.** WiFi, the ESPHome loop, RMT for the LEDs, I2S feed and MP3
+  decode all share one core with nowhere to park the decoder. There are
+  documented S2 audio failures (esphome/issues#4106: plays half a second then
+  drops frames, same config fine on a plain ESP32). No one has published an
+  actual S2 MP3 benchmark either — "the S2 is too slow" is folk wisdom, not
+  measurement. The bench dry-run (§12.5) is still the thing that settles it.
+- **The S2 cannot DMA from PSRAM** (Espressif docs, stated outright), so I2S
+  buffers must live in internal SRAM and every frame costs a PSRAM→SRAM copy
+  the S3 would avoid.
+
+### The cheaper answers, honestly
+
+- **WAV costs zero decode CPU** — it is a memcpy into the I2S DMA ring. At
+  22 kHz mono that's 44 KB/s, nothing for SPI SD, and it removes the entire
+  decode question. Worth trying first if MP3 stutters.
+- **HTTP already works today.** `start_url()` is supported right now, with no
+  custom code, no card, no length limit. A Mac or Pi serving a folder gets
+  full-length tracks at any bitrate. The cost is that the server must be up
+  during the show.
+- **If this turns into a fight, an ESP32-S3 Feather ends it** — dual core, DMA
+  from PSRAM, and the audio libraries actually support it.
+
+---
+
 ## 13. Decision log
 
 | Date | Decision | Rationale |
@@ -823,3 +904,5 @@ definitions referencing them are tracked, so the show stays reproducible.
 | 2026-08-10 | Imported tracks get onset-detected light, not hand-typed cues | Outside audio can't report its own beats; detecting them keeps the "light follows sound" guarantee that generated scenes get for free (§12.8) |
 | 2026-08-10 | Onsets detected per frequency band, not once overall | A single onset track makes all three zones blink together; banding gives the bass the door and the melody the towers (§12.8) |
 | 2026-08-10 | `tracks/` git-ignored, scene definitions tracked | The audio is Justin's and large; the show should still be reproducible from the repo (§12.8) |
+| 2026-08-10 | SD audio built as a separate variant, not folded into castle.yaml | It is unproven on S2; the flash build must keep working with no card in the slot (§12.9) |
+| 2026-08-10 | SD reads whole files into PSRAM rather than streaming | `AudioFile` is {ptr,len,type} and `play_file()` is public, so the decoder needs no changes. Streaming would mean writing a MediaSource nobody has written (§12.9) |

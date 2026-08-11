@@ -57,6 +57,17 @@ sensitivity: 0.7      # lower finds more; default 1.1
   sensitivity: 1.1     # onset detection threshold
 ```
 
+## Flash or microSD?
+
+By default everything is embedded in flash, which is why the budget below
+exists. There is an **experimental** microSD variant (`make sd-build`) that
+lets the card hold a much bigger library — read PROJECT_NOTES §12.9 first,
+because it comes with real caveats: no ESP32-S2 has ever been shown doing
+this, one track is capped by PSRAM (~1.5 MB, about two minutes), and the
+Feather needs a wing to have a card slot at all.
+
+The flash scenes keep working with no card in the slot. That's deliberate.
+
 ## The flash budget is the real constraint
 
 Everything the device plays is embedded in one 3.87 MB app partition next to

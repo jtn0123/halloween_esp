@@ -45,6 +45,13 @@ track:
 studio: preview
 	@$(PY) tools/studio.py
 
+# EXPERIMENTAL microSD variant — see PROJECT_NOTES §12.9 before relying on it.
+sd-build: audio generate
+	$(ESPHOME) compile firmware/castle_sd.yaml
+
+sd-upload: audio generate
+	$(ESPHOME) run firmware/castle_sd.yaml
+
 bench: audio generate
 	$(ESPHOME) run firmware/bench.yaml
 

@@ -1,0 +1,78 @@
+# Castle + microSD audio (EXPERIMENTAL — see PROJECT_NOTES §12.9)
+#
+# The stock build embeds every scene in flash. This variant adds the ability
+# to play arbitrary files off a microSD card as well, so the card can hold a
+# library far larger than the ~2.9 MB flash budget.
+#
+#   make sd-build      compile this variant
+#   make sd-upload     flash it
+#
+# HOW IT WORKS: ESPHome has no SD component and its audio pipeline cannot read
+# a filesystem. But `audio::AudioFile` is just {pointer, length, type} and
+# `SpeakerMediaPlayer::play_file()` is public — so sd_audio.h mounts the card
+# over SPI, reads a whole file into PSRAM, and hands it to the ordinary
+# decoder. See firmware/sd_audio.h for what that does and does not buy you.
+#
+# THE PART THAT IS NOT PROVEN: nobody has published ESPHome SD audio on an
+# ESP32-S2, and the two well-known ESP32 audio libraries decline to support
+# the S2 at all. This compiles; whether it plays cleanly on your board is an
+# open question that only hardware answers. The flash scenes are untouched
+# and keep working with no card in the slot, which is the safety net.
+
+substitutions:
+  name: castle-sd
+  friendly: Castle SD
+
+  # ── SD pins — SET THESE FOR YOUR BOARD ───────────────────────────────
+  # Defaults are the Adafruit ESP32-S2 Feather's SPI header, from the
+  # arduino-esp32 variant header and the CircuitPython board definition.
+  # SCK/MOSI/MISO are fixed by the header; CS depends on the wing you use.
+  #
+  # The Adalogger FeatherWing and the 2.4"/2.8"/3.5" TFT FeatherWings each
+  # put SD CS on a different pin, and it is usually a cuttable jumper. If the
+  # card refuses to mount, CS is the first thing to check — the logs will say
+  # so explicitly rather than failing silently.
+  sd_cs: "10"
+  sd_sck: "36"
+  sd_mosi: "35"
+  sd_miso: "37"
+
+packages:
+  base: !include castle.yaml
+
+esphome:
+  includes:
+    - sd_audio.h
+  on_boot:
+    # Later than the base config's -100 so the LEDs and player are up first.
+    priority: -200
+    then:
+      - lambda: |-
+          castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso});
+
+# Play any file from the card:  /sd/<name>
+#
+#   - script.execute:
+#       id: play_sd
+#       path: "spooky/organ.mp3"
+script:
+  - id: play_sd
+    mode: restart
+    parameters:
+      path: string
+    then:
+      - lambda: |-
+          auto *f = castle_sd::load(path.c_str());
+          if (f == nullptr) {
+            ESP_LOGW("castle_sd", "nothing to play for '%s'", path.c_str());
+            return;
+          }
+          // announcement:true matches how the generated scene scripts play,
+          // because this device defines only the announcement pipeline.
+          id(castle_media)->play_file(f, true, false);
+
+# A card check you can see in Home Assistant without reading logs.
+binary_sensor:
+  - platform: template
+    name: "SD card present"
+    lambda: "return castle_sd::g_mounted;"
