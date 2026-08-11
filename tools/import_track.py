@@ -58,15 +58,16 @@ def fetch_url(url: str, dest: Path) -> Path:
     return got[-1]
 
 
-def convert(src: Path, out: Path, start: float, take: float | None) -> None:
+def convert(src: Path, out: Path, start: float, take: float | None,
+            bitrate: int = BITRATE) -> None:
     cmd = ["ffmpeg", "-v", "quiet", "-y"]
     if start:
         cmd += ["-ss", str(start)]
     cmd += ["-i", str(src)]
     if take:
         cmd += ["-t", str(take)]
-    # Mono, 44.1 kHz, project bitrate — exactly what ships in flash.
-    cmd += ["-ac", "1", "-ar", "44100", "-b:a", f"{BITRATE}k", str(out)]
+    # Mono, 44.1 kHz. Mono is not a compromise here — there is one speaker.
+    cmd += ["-ac", "1", "-ar", "44100", "-b:a", f"{bitrate}k", str(out)]
     subprocess.run(cmd, check=True)
 
 
@@ -115,6 +116,10 @@ def main() -> int:
     ap.add_argument("--take", help="seconds to keep, e.g. 24")
     ap.add_argument("--sensitivity", type=float, default=1.1,
                     help="onset threshold; lower finds more (default 1.1)")
+    ap.add_argument("--bitrate", type=int, default=BITRATE,
+                    help=f"kbps, mono (default {BITRATE}, matching the flash "
+                         "budget; raise it only if the audio is not going "
+                         "into flash)")
     ap.add_argument("--analyze-only", action="store_true",
                     help="just report onsets, don't import")
     args = ap.parse_args()
@@ -141,7 +146,8 @@ def main() -> int:
         c if c.isalnum() else "_" for c in src.stem.lower()
     ).strip("_")[:32]
     out = TRACKS / f"{tid}.mp3"
-    convert(src, out, secs(args.start), secs(args.take) if args.take else None)
+    convert(src, out, secs(args.start),
+            secs(args.take) if args.take else None, args.bitrate)
     if is_url:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -151,7 +157,7 @@ def main() -> int:
     marks = ana.analyze(x, sensitivity=args.sensitivity)
 
     print(f"\nimported  tracks/{tid}.mp3")
-    print(f"  {dur:.1f}s   {size/1024:.0f} KB at {BITRATE}kbps mono")
+    print(f"  {dur:.1f}s   {size/1024:.0f} KB at {args.bitrate}kbps mono")
     print(f"  {size/BUDGET*100:.0f}% of the whole device audio budget "
           f"({BUDGET/1024/1024:.1f} MB for ALL scenes)")
     if size > BUDGET * 0.45:
