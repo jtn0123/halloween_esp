@@ -182,7 +182,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "url must be http(s)"}, 400)
             args = [PY, str(ROOT / "tools" / "import_track.py"), src]
             for k in ("id", "start", "take", "sensitivity", "bitrate",
-                      "sample_rate", "channels", "gain_db", "notes"):
+                      "sample_rate", "channels", "format", "gain_db", "notes"):
                 v = req.get(k)
                 if v not in (None, ""):
                     args += [f"--{k.replace('_', '-')}", str(v)]
@@ -198,7 +198,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "no id"}, 400)
             args = [PY, str(ROOT / "tools" / "import_track.py"), "--refresh", tid]
             for k in ("start", "take", "sensitivity", "bitrate",
-                      "sample_rate", "channels", "gain_db"):
+                      "sample_rate", "channels", "format", "gain_db"):
                 v = req.get(k)
                 if v not in (None, ""):
                     args += [f"--{k.replace('_', '-')}", str(v)]
@@ -259,7 +259,7 @@ class Handler(BaseHTTPRequestHandler):
             req = json.loads(self.headers.get("X-Import-Opts") or "{}")
 
         for k in ("id", "start", "take", "sensitivity", "bitrate",
-                  "sample_rate", "channels", "gain_db", "notes"):
+                  "sample_rate", "channels", "format", "gain_db", "notes"):
             v = req.get(k)
             if v not in (None, ""):
                 args += [f"--{k.replace('_', '-')}", str(v)]

@@ -96,16 +96,53 @@
                    autocomplete="off" spellcheck="false">
             <button class="btn btn--go" id="trkGet" type="button">Import</button>
           </div>
-          <div class="trk-opts">
-            <label>id <input type="text" id="trkId" placeholder="auto" size="9"></label>
-            <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
-            <label>take <input type="text" id="trkTake" placeholder="all" size="5"></label>
-            <label>kbps <input type="number" id="trkBitrate" placeholder="96" min="32" max="320" step="8" size="4"></label>
-            <label>rate <input type="text" id="trkRate" placeholder="44100" size="6"></label>
-            <label>ch <select id="trkCh"><option value="1">mono</option><option value="2">stereo</option></select></label>
-            <label>sens <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
-            <label class="trk-chk"><input type="checkbox" id="trkNorm"> normalise</label>
-          </div>
+          <!-- Options, grouped by what you are actually deciding: which
+               part of the track, what it is encoded as, and how the lights
+               read it. The flat row of eight boxes gave equal weight to
+               "which 20 seconds" and "onset sensitivity", which are not
+               remotely equal decisions. -->
+          <details class="trk-opts-wrap" id="trkOpts">
+            <summary>Options <span class="trk-opts-hint" id="trkOptsHint"></span></summary>
+            <div class="trk-opts">
+              <fieldset>
+                <legend>Which part</legend>
+                <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
+                <label>length <input type="text" id="trkTake" placeholder="all" size="5"></label>
+                <label>name <input type="text" id="trkId" placeholder="auto" size="9"></label>
+              </fieldset>
+              <fieldset>
+                <legend>Format</legend>
+                <label>container
+                  <select id="trkFormat">
+                    <option value="mp3">MP3</option>
+                    <option value="wav">WAV &mdash; no decode cost</option>
+                    <option value="flac">FLAC</option>
+                    <option value="opus">Opus</option>
+                  </select>
+                </label>
+                <label>kbps <input type="number" id="trkBitrate" placeholder="96"
+                       min="32" max="320" step="8" size="4"></label>
+                <label>rate
+                  <select id="trkRate">
+                    <option value="">44100</option>
+                    <option value="22050">22050 &mdash; half the size</option>
+                  </select>
+                </label>
+                <label>channels
+                  <select id="trkCh">
+                    <option value="1">mono</option>
+                    <option value="2">stereo</option>
+                  </select>
+                </label>
+                <label class="trk-chk"><input type="checkbox" id="trkNorm"> match loudness</label>
+              </fieldset>
+              <fieldset>
+                <legend>Lights</legend>
+                <label>sensitivity <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
+                <span class="trk-hintline">lower finds more beats</span>
+              </fieldset>
+            </div>
+          </details>
           <p class="trk-cap" id="trkCap"></p>
           <!-- The clip editor draws itself in here once a track is picked. -->
           <div class="trk-wave" id="trkWave"></div>

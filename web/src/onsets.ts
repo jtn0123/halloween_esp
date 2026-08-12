@@ -18,6 +18,51 @@ const BANDS: readonly Band[] = [
   ["onset_high", 2000, 16000, 0.09],
 ];
 
+/**
+ * Find onsets in one band of samples.
+ *
+ * Short-time RMS envelope, positive difference for onset strength, then peak
+ * picking against a running local mean. A fixed threshold fails on real music
+ * — a quiet intro and a loud chorus need different bars — so the threshold
+ * tracks the material.
+ *
+ * `minGapSec` is a refractory period: the shortest believable spacing between
+ * two separate hits in this band. Without it a single kick smeared over a few
+ * frames reads as a burst.
+ */
+export function pickOnsets(
+  band: Float32Array, sampleRate: number, minGapSec: number, hop = 512,
+): Onset[] {
+  const n = Math.floor(band.length / hop);
+  if (n < 3) return [];
+
+  const env = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    for (let j = i * hop; j < (i + 1) * hop; j++) s += band[j]! * band[j]!;
+    env[i] = Math.log1p(Math.sqrt(s / hop) * 100);
+  }
+  const flux = new Float32Array(n);
+  for (let i = 1; i < n; i++) flux[i] = Math.max(0, env[i]! - env[i - 1]!);
+  let mx = 0; for (const v of flux) mx = Math.max(mx, v);
+  if (!mx) return [];
+
+  const hits: Onset[] = [];
+  const minGap = minGapSec * sampleRate / hop;
+  const w = Math.max(3, Math.round(0.5 * sampleRate / hop));
+  let last = -1e9;
+  for (let i = 1; i < n - 1; i++) {
+    let sum = 0, c = 0;
+    for (let j = Math.max(0, i - w); j < Math.min(n, i + w); j++) { sum += flux[j]!; c++; }
+    const thr = sum / c + 0.12 * mx;
+    if (flux[i]! < thr || flux[i]! < flux[i - 1]! || flux[i]! < flux[i + 1]!) continue;
+    if (i - last < minGap) continue;
+    hits.push([+(i * hop / sampleRate).toFixed(3), +(flux[i]! / mx).toFixed(3)]);
+    last = i;
+  }
+  return hits;
+}
+
 export async function detectOnsets(audio: AudioBuffer): Promise<Record<string, Onset[]>> {
   const out: Record<string, Onset[]> = {};
   for (const [name, lo, hi, gap] of BANDS) {
@@ -28,34 +73,10 @@ export async function detectOnsets(audio: AudioBuffer): Promise<Record<string, O
     src.connect(hp); hp.connect(lp); lp.connect(oc.destination); src.start();
     const band = (await oc.startRendering()).getChannelData(0);
 
-    // Short-time RMS envelope, then positive difference = onset strength.
-    // Every index below is in range by construction (n is a floor division of
-    // the buffer length), so the `!` is bookkeeping for noUncheckedIndexedAccess
-    // rather than a claim the maths could not make on its own.
-    const hop = 512, sr = audio.sampleRate, n = Math.floor(band.length / hop);
-    const env = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      let s = 0;
-      for (let j = i * hop; j < (i + 1) * hop; j++) s += band[j]! * band[j]!;
-      env[i] = Math.log1p(Math.sqrt(s / hop) * 100);
-    }
-    const flux = new Float32Array(n);
-    for (let i = 1; i < n; i++) flux[i] = Math.max(0, env[i]! - env[i - 1]!);
-    let mx = 0; for (const v of flux) mx = Math.max(mx, v);
-    if (!mx) continue;
-
-    const hits: Onset[] = [], minGap = gap * sr / hop;
-    const w = Math.max(3, Math.round(0.5 * sr / hop));
-    let last = -1e9;
-    for (let i = 1; i < n - 1; i++) {
-      let sum = 0, c = 0;
-      for (let j = Math.max(0, i - w); j < Math.min(n, i + w); j++) { sum += flux[j]!; c++; }
-      const thr = sum / c + 0.12 * mx;
-      if (flux[i]! < thr || flux[i]! < flux[i - 1]! || flux[i]! < flux[i + 1]!) continue;
-      if (i - last < minGap) continue;
-      hits.push([+(i * hop / sr).toFixed(3), +(flux[i]! / mx).toFixed(3)]);
-      last = i;
-    }
+    // The detection itself is pure — no Web Audio, no DOM — so it lives in
+    // its own function and can be tested in node. Everything above this line
+    // is just getting band-filtered samples out of the browser.
+    const hits = pickOnsets(band, audio.sampleRate, gap);
     if (hits.length) out[name] = hits;
   }
   return out;

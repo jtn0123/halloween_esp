@@ -363,3 +363,30 @@
      than leaving a hole in the panel. */
   .trk-wave { margin-bottom: 11px; }
   .trk-wave:empty { display: none; }
+
+  /* Tracks options. Collapsed by default: the common case is paste-a-link
+     and go, and eight fields sitting open made that look like a form to
+     fill in rather than a box to paste into. */
+  .trk-opts-wrap { margin-bottom: 11px; }
+  .trk-opts-wrap > summary {
+    cursor: pointer; font-family: var(--f-data); font-size: 11px;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+    padding: 5px 0; user-select: none;
+  }
+  .trk-opts-wrap > summary:hover { color: var(--ink-2); }
+  .trk-opts-hint { text-transform: none; letter-spacing: 0; margin-left: 8px; }
+  .trk-opts { display: grid; gap: 10px; padding: 10px 0 2px; }
+  .trk-opts fieldset {
+    border: 1px solid var(--line); border-radius: 4px; padding: 9px 12px 11px;
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 0;
+  }
+  .trk-opts legend {
+    font-family: var(--f-data); font-size: 9.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); padding: 0 5px;
+  }
+  .trk-opts select {
+    padding: 4px 7px; border-radius: 3px; background: var(--panel-2);
+    border: 1px solid var(--line-2); color: var(--ink);
+    font-family: var(--f-data); font-size: 11px;
+  }
+  .trk-hintline { font-size: 11px; color: var(--muted); }

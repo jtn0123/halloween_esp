@@ -365,6 +365,33 @@
      than leaving a hole in the panel. */
   .trk-wave { margin-bottom: 11px; }
   .trk-wave:empty { display: none; }
+
+  /* Tracks options. Collapsed by default: the common case is paste-a-link
+     and go, and eight fields sitting open made that look like a form to
+     fill in rather than a box to paste into. */
+  .trk-opts-wrap { margin-bottom: 11px; }
+  .trk-opts-wrap > summary {
+    cursor: pointer; font-family: var(--f-data); font-size: 11px;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+    padding: 5px 0; user-select: none;
+  }
+  .trk-opts-wrap > summary:hover { color: var(--ink-2); }
+  .trk-opts-hint { text-transform: none; letter-spacing: 0; margin-left: 8px; }
+  .trk-opts { display: grid; gap: 10px; padding: 10px 0 2px; }
+  .trk-opts fieldset {
+    border: 1px solid var(--line); border-radius: 4px; padding: 9px 12px 11px;
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 0;
+  }
+  .trk-opts legend {
+    font-family: var(--f-data); font-size: 9.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); padding: 0 5px;
+  }
+  .trk-opts select {
+    padding: 4px 7px; border-radius: 3px; background: var(--panel-2);
+    border: 1px solid var(--line-2); color: var(--ink);
+    font-family: var(--f-data); font-size: 11px;
+  }
+  .trk-hintline { font-size: 11px; color: var(--muted); }
 </style>
 
 <div class="desk">
@@ -460,16 +487,53 @@
                    autocomplete="off" spellcheck="false">
             <button class="btn btn--go" id="trkGet" type="button">Import</button>
           </div>
-          <div class="trk-opts">
-            <label>id <input type="text" id="trkId" placeholder="auto" size="9"></label>
-            <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
-            <label>take <input type="text" id="trkTake" placeholder="all" size="5"></label>
-            <label>kbps <input type="number" id="trkBitrate" placeholder="96" min="32" max="320" step="8" size="4"></label>
-            <label>rate <input type="text" id="trkRate" placeholder="44100" size="6"></label>
-            <label>ch <select id="trkCh"><option value="1">mono</option><option value="2">stereo</option></select></label>
-            <label>sens <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
-            <label class="trk-chk"><input type="checkbox" id="trkNorm"> normalise</label>
-          </div>
+          <!-- Options, grouped by what you are actually deciding: which
+               part of the track, what it is encoded as, and how the lights
+               read it. The flat row of eight boxes gave equal weight to
+               "which 20 seconds" and "onset sensitivity", which are not
+               remotely equal decisions. -->
+          <details class="trk-opts-wrap" id="trkOpts">
+            <summary>Options <span class="trk-opts-hint" id="trkOptsHint"></span></summary>
+            <div class="trk-opts">
+              <fieldset>
+                <legend>Which part</legend>
+                <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
+                <label>length <input type="text" id="trkTake" placeholder="all" size="5"></label>
+                <label>name <input type="text" id="trkId" placeholder="auto" size="9"></label>
+              </fieldset>
+              <fieldset>
+                <legend>Format</legend>
+                <label>container
+                  <select id="trkFormat">
+                    <option value="mp3">MP3</option>
+                    <option value="wav">WAV &mdash; no decode cost</option>
+                    <option value="flac">FLAC</option>
+                    <option value="opus">Opus</option>
+                  </select>
+                </label>
+                <label>kbps <input type="number" id="trkBitrate" placeholder="96"
+                       min="32" max="320" step="8" size="4"></label>
+                <label>rate
+                  <select id="trkRate">
+                    <option value="">44100</option>
+                    <option value="22050">22050 &mdash; half the size</option>
+                  </select>
+                </label>
+                <label>channels
+                  <select id="trkCh">
+                    <option value="1">mono</option>
+                    <option value="2">stereo</option>
+                  </select>
+                </label>
+                <label class="trk-chk"><input type="checkbox" id="trkNorm"> match loudness</label>
+              </fieldset>
+              <fieldset>
+                <legend>Lights</legend>
+                <label>sensitivity <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
+                <span class="trk-hintline">lower finds more beats</span>
+              </fieldset>
+            </div>
+          </details>
           <p class="trk-cap" id="trkCap"></p>
           <!-- The clip editor draws itself in here once a track is picked. -->
           <div class="trk-wave" id="trkWave"></div>
@@ -2055,6 +2119,38 @@
     ["onset_mid", 200, 2e3, 0.11],
     ["onset_high", 2e3, 16e3, 0.09]
   ];
+  function pickOnsets(band, sampleRate, minGapSec, hop = 512) {
+    const n = Math.floor(band.length / hop);
+    if (n < 3) return [];
+    const env2 = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let s = 0;
+      for (let j = i * hop; j < (i + 1) * hop; j++) s += band[j] * band[j];
+      env2[i] = Math.log1p(Math.sqrt(s / hop) * 100);
+    }
+    const flux = new Float32Array(n);
+    for (let i = 1; i < n; i++) flux[i] = Math.max(0, env2[i] - env2[i - 1]);
+    let mx = 0;
+    for (const v of flux) mx = Math.max(mx, v);
+    if (!mx) return [];
+    const hits = [];
+    const minGap = minGapSec * sampleRate / hop;
+    const w = Math.max(3, Math.round(0.5 * sampleRate / hop));
+    let last = -1e9;
+    for (let i = 1; i < n - 1; i++) {
+      let sum = 0, c = 0;
+      for (let j = Math.max(0, i - w); j < Math.min(n, i + w); j++) {
+        sum += flux[j];
+        c++;
+      }
+      const thr = sum / c + 0.12 * mx;
+      if (flux[i] < thr || flux[i] < flux[i - 1] || flux[i] < flux[i + 1]) continue;
+      if (i - last < minGap) continue;
+      hits.push([+(i * hop / sampleRate).toFixed(3), +(flux[i] / mx).toFixed(3)]);
+      last = i;
+    }
+    return hits;
+  }
   async function detectOnsets(audio) {
     const out = {};
     for (const [name, lo, hi, gap] of BANDS) {
@@ -2072,33 +2168,7 @@
       lp.connect(oc.destination);
       src.start();
       const band = (await oc.startRendering()).getChannelData(0);
-      const hop = 512, sr = audio.sampleRate, n = Math.floor(band.length / hop);
-      const env2 = new Float32Array(n);
-      for (let i = 0; i < n; i++) {
-        let s = 0;
-        for (let j = i * hop; j < (i + 1) * hop; j++) s += band[j] * band[j];
-        env2[i] = Math.log1p(Math.sqrt(s / hop) * 100);
-      }
-      const flux = new Float32Array(n);
-      for (let i = 1; i < n; i++) flux[i] = Math.max(0, env2[i] - env2[i - 1]);
-      let mx = 0;
-      for (const v of flux) mx = Math.max(mx, v);
-      if (!mx) continue;
-      const hits = [], minGap = gap * sr / hop;
-      const w = Math.max(3, Math.round(0.5 * sr / hop));
-      let last = -1e9;
-      for (let i = 1; i < n - 1; i++) {
-        let sum = 0, c = 0;
-        for (let j = Math.max(0, i - w); j < Math.min(n, i + w); j++) {
-          sum += flux[j];
-          c++;
-        }
-        const thr = sum / c + 0.12 * mx;
-        if (flux[i] < thr || flux[i] < flux[i - 1] || flux[i] < flux[i + 1]) continue;
-        if (i - last < minGap) continue;
-        hits.push([+(i * hop / sr).toFixed(3), +(flux[i] / mx).toFixed(3)]);
-        last = i;
-      }
+      const hits = pickOnsets(band, audio.sampleRate, gap);
       if (hits.length) out[name] = hits;
     }
     return out;
@@ -2128,14 +2198,18 @@
       bitrate: val("trkBitrate"),
       sample_rate: val("trkRate"),
       channels: val("trkCh"),
+      format: val("trkFormat"),
       normalize: byId("trkNorm").checked
     });
     const PSRAM_FREE = 1713 * 1024, FLASH_FREE = 2.9 * 1024 * 1024;
     const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
     const MIN_KBPS = 32, MAX_KBPS = 320;
+    const clampKbps = (raw) => {
+      const t = +raw;
+      return Number.isFinite(t) && t > 0 ? Math.min(MAX_KBPS, Math.max(MIN_KBPS, t)) : 96;
+    };
     function updateCapacity() {
-      const typed = +val("trkBitrate");
-      const kbps = Number.isFinite(typed) && typed > 0 ? Math.min(MAX_KBPS, Math.max(MIN_KBPS, typed)) : 96;
+      const kbps = clampKbps(val("trkBitrate"));
       const ch = +val("trkCh") === 2 ? 2 : 1;
       const bps = kbps * 1e3 / 8 * (ch === 2 ? 1 : 1);
       const psram = PSRAM_FREE / bps;
@@ -2144,6 +2218,47 @@
       byId("trkCap").innerHTML = `<b>${kbps} kbps ${ch === 2 ? "stereo" : "mono"}</b> = ${(bps / 1024).toFixed(1)} KB/s &nbsp;\xB7&nbsp; flash, alongside the current show: <b>${mmss(left)}</b> &nbsp;\xB7&nbsp; SD loaded into PSRAM: <b>${mmss(psram)}</b> <span class="${psram >= 240 ? "ok" : "no"}">${psram >= 240 ? "(4 min fits)" : "(under 4 min)"}</span> &nbsp;\xB7&nbsp; streamed from SD: <b class="ok">no limit</b>`;
     }
     ["trkBitrate", "trkCh"].forEach((id) => byId(id).addEventListener("input", updateCapacity));
+    function updateOptsHint() {
+      const el = document.getElementById("trkOptsHint");
+      if (!el) return;
+      const bits = [];
+      const take = val("trkTake"), start = val("trkStart");
+      if (take) bits.push(`${take}s${start && start !== "0:00" ? ` from ${start}` : ""}`);
+      const fmt = val("trkFormat") || "mp3";
+      bits.push(fmt === "wav" || fmt === "flac" ? fmt.toUpperCase() : `${fmt.toUpperCase()} ${clampKbps(val("trkBitrate"))}k`);
+      if (val("trkCh") === "2") bits.push("stereo");
+      if (document.getElementById("trkNorm")?.checked) {
+        bits.push("loudness matched");
+      }
+      el.textContent = bits.length ? `\u2014 ${bits.join(", ")}` : "";
+    }
+    for (const id of [
+      "trkStart",
+      "trkTake",
+      "trkBitrate",
+      "trkFormat",
+      "trkCh",
+      "trkRate",
+      "trkNorm"
+    ]) {
+      document.getElementById(id)?.addEventListener("input", updateOptsHint);
+      document.getElementById(id)?.addEventListener("change", updateOptsHint);
+    }
+    function syncFormatUI() {
+      const fmt = val("trkFormat") || "mp3";
+      const br = document.getElementById("trkBitrate");
+      if (br) {
+        br.disabled = fmt === "wav" || fmt === "flac";
+        br.title = br.disabled ? `${fmt.toUpperCase()} has no bitrate to set` : "";
+      }
+    }
+    document.getElementById("trkFormat")?.addEventListener("change", () => {
+      syncFormatUI();
+      updateCapacity();
+      updateOptsHint();
+    });
+    syncFormatUI();
+    updateOptsHint();
     updateCapacity();
     void fetch("/api/tracks").then((r) => r.ok ? r.json() : Promise.reject()).then((d) => {
       T.mode = "studio";

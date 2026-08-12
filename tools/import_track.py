@@ -97,9 +97,34 @@ def convert(src: Path, out: Path, o: dict) -> None:
 
     cmd += ["-af", ",".join(af)]
 
-    cmd += ["-ac", str(o["channels"]), "-ar", str(o["sample_rate"]),
-            "-b:a", f"{o['bitrate']}k", str(out)]
-    subprocess.run(cmd, check=True)
+    fmt = o.get("format", "mp3")
+    rate = o["sample_rate"]
+    if fmt == "opus" and rate not in (8000, 12000, 16000, 24000, 48000):
+        # Opus only encodes at those rates; anything else fails outright
+        # rather than resampling for you. 48k is the nearest sane landing
+        # spot from 44.1k, and the device resamples on playback anyway.
+        print(f"  note: opus cannot encode at {rate} Hz — using 48000")
+        rate = 48000
+    cmd += ["-ac", str(o["channels"]), "-ar", str(rate)]
+
+    # Codec per container. WAV and FLAC have no bitrate to set — passing one
+    # makes ffmpeg complain rather than quietly ignore it.
+    if fmt == "wav":
+        cmd += ["-c:a", "pcm_s16le"]
+    elif fmt == "flac":
+        cmd += ["-c:a", "flac"]
+    elif fmt == "opus":
+        cmd += ["-c:a", "libopus", "-b:a", f"{o['bitrate']}k"]
+    else:
+        cmd += ["-b:a", f"{o['bitrate']}k"]
+
+    cmd.append(str(out))
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        # ffmpeg's own last line names the actual problem; a traceback does not.
+        tail = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
+        raise SystemExit(f"ffmpeg could not write {out.name}: "
+                         f"{tail[-1] if tail else f'exit {r.returncode}'}")
 
 
 FRAME = 0.016          # the light engine's tick, matching the firmware
@@ -140,7 +165,7 @@ def fit_to_density(hits: list, fallback: float) -> tuple[float, float]:
     return round(decay, 3), round(scale, 2)
 
 
-def scene_block(tid: str, dur: float, marks: dict) -> str:
+def scene_block(tid: str, dur: float, marks: dict, ext: str = "mp3") -> str:
     """A ready-to-paste scene, wired to whatever the analyser actually found."""
     zones = {"onset_low": "door", "onset_mid": "towerL", "onset_high": "towerR"}
     colors = {
@@ -159,7 +184,7 @@ def scene_block(tid: str, dur: float, marks: dict) -> str:
         "    blurb: >",
         f"      Imported track {tid}. Light cues are onset-detected from the",
         "      audio itself, so they follow whatever the track actually does.",
-        f"    audio_file: tracks/{tid}.mp3",
+        f"    audio_file: tracks/{tid}.{ext}",
         "    base: {towerL: chill, towerR: chill, door: ember}",
         "    levels: {towerL: 0.4, towerR: 0.4, door: 0.5}",
         "    pulse:",
@@ -222,6 +247,14 @@ def main() -> int:
     g = ap.add_argument_group("format")
     g.add_argument("--bitrate", type=int,
                    help=f"kbps (default {BITRATE}, matching the flash budget)")
+    g.add_argument("--format", choices=("mp3", "wav", "flac", "opus"),
+                   help="container. mp3 is the default and what the firmware "
+                        "decodes today. wav costs the device NO decode CPU at "
+                        "all — it is a memcpy into the I2S buffer — which is "
+                        "the cheapest fix if MP3 ever stutters on the "
+                        "single-core S2, at roughly 9x the size. flac and "
+                        "opus need the matching decoder enabled in the "
+                        "pipeline (see `format:` in castle.yaml)")
     g.add_argument("--channels", type=int, choices=(1, 2),
                    help="1 = mono (default). 2 needs a second amp on the "
                         "hardware; see PROJECT_NOTES §12.10")
@@ -260,7 +293,7 @@ def main() -> int:
         dur = len(ana.load_audio(src)) / ana.SR
         for k, v in marks.items():
             print(f"  {k:<11} {len(v):>4} onsets")
-        print(f"\n{scene_block(src.stem, dur, marks)}")
+        print(f"\n{scene_block(src.stem, dur, marks, src.suffix.lstrip('.') or 'mp3')}")
         return 0
 
     # Options: remembered defaults, overridden by whatever was passed now.
@@ -280,6 +313,7 @@ def main() -> int:
         "normalize": base.get("normalize", False),
         "gain_db": base.get("gain_db"),
         "sensitivity": base.get("sensitivity", 1.1),
+        "format": base.get("format", "mp3"),
     }
     for k in list(o):
         v = getattr(args, k, None)
@@ -311,7 +345,7 @@ def main() -> int:
         c if c.isalnum() else "_" for c in src.stem.lower()
     ).strip("_")[:32]
 
-    out = TRACKS / f"{tid}.mp3"
+    out = TRACKS / f"{tid}.{o['format']}"
     conv = dict(o)
     conv["start"] = secs(o["start"]) if o["start"] else 0
     conv["take"] = secs(o["take"]) if o["take"] else None
@@ -327,7 +361,7 @@ def main() -> int:
         tid,
         source=source if is_url else f"file:{Path(source).resolve()}",
         title=title, opts=o, notes=args.notes,
-        audio={"duration": round(dur, 2), "bytes": size,
+        audio={"duration": round(dur, 2), "bytes": size, "format": o["format"],
                "channels": o["channels"], "sample_rate": o["sample_rate"],
                "bitrate": o["bitrate"]},
         onsets={k: len(v) for k, v in marks.items()},
@@ -335,8 +369,13 @@ def main() -> int:
 
     ch = "mono" if o["channels"] == 1 else "stereo"
     print(f"\nimported  tracks/{tid}.mp3")
-    print(f"  {dur:.1f}s   {size/1024:.0f} KB at {o['bitrate']}kbps {ch} "
-          f"{o['sample_rate']}Hz")
+    lossy = o["format"] in ("mp3", "opus")
+    rate_txt = f"{o['bitrate']}kbps " if lossy else ""
+    print(f"  {dur:.1f}s   {size/1024:.0f} KB   {o['format']} "
+          f"{rate_txt}{ch} {o['sample_rate']}Hz")
+    if o["format"] == "wav":
+        print("  wav costs the device no decode CPU at all — worth it if MP3 "
+              "ever stutters")
     print(f"  source remembered — rebuild any time with: "
           f"tools/import_track.py --refresh {tid}")
     print(f"  {size/BUDGET*100:.0f}% of the flash audio budget "
@@ -351,7 +390,7 @@ def main() -> int:
         print("  no onsets detected — try --sensitivity 0.6")
 
     print("\nPaste into scenes/scenes.yaml under `scenes:` —\n")
-    print(scene_block(tid, dur, marks))
+    print(scene_block(tid, dur, marks, o["format"]))
     print("\nthen:  make audio && make generate && make preview")
     return 0
 

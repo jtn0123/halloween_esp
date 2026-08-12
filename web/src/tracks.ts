@@ -24,6 +24,7 @@ export interface TrackOpts {
   bitrate?: number;
   sample_rate?: number;
   channels?: number;
+  format?: string;
   normalize?: boolean;
 }
 
@@ -58,6 +59,8 @@ interface ImportOpts {
   bitrate: string;
   sample_rate: string;
   channels: string;
+  /** Container: mp3 | wav | flac | opus. Blank keeps whatever was used last. */
+  format: string;
   normalize: boolean;
 }
 
@@ -101,6 +104,7 @@ export function initTracks(deps: TracksDeps): void {
     id: val("trkId"), start: val("trkStart"), take: val("trkTake"),
     sensitivity: val("trkSens"), bitrate: val("trkBitrate"),
     sample_rate: val("trkRate"), channels: val("trkCh"),
+    format: val("trkFormat"),
     normalize: byId<HTMLInputElement>("trkNorm").checked,
   });
 
@@ -122,14 +126,18 @@ export function initTracks(deps: TracksDeps): void {
    *  with the number, so neither should the readout. */
   const MIN_KBPS = 32, MAX_KBPS = 320;
 
+  const clampKbps = (raw: string): number => {
+    const t = +raw;
+    return Number.isFinite(t) && t > 0
+      ? Math.min(MAX_KBPS, Math.max(MIN_KBPS, t))
+      : 96;
+  };
+
   function updateCapacity(): void {
     // `|| 96` alone let negatives through — -5 is truthy — and the readout
     // then formatted negative seconds as "-47:-47". Clamp instead, so every
     // out-of-range value lands somewhere the encoder would actually accept.
-    const typed = +val("trkBitrate");
-    const kbps = Number.isFinite(typed) && typed > 0
-      ? Math.min(MAX_KBPS, Math.max(MIN_KBPS, typed))
-      : 96;
+    const kbps = clampKbps(val("trkBitrate"));
     const ch = +val("trkCh") === 2 ? 2 : 1;
     const bps = kbps * 1000 / 8 * (ch === 2 ? 1 : 1);   // bitrate already covers channels
     // Only the flash figure *after* the current show is worth printing, so the
@@ -146,6 +154,46 @@ export function initTracks(deps: TracksDeps): void {
   }
   ["trkBitrate", "trkCh"].forEach(id =>
     byId(id).addEventListener("input", updateCapacity));
+  /* A collapsed panel must still tell you what it is about to do — otherwise
+     "Options" is a box you have to open to find out whether you care. */
+  function updateOptsHint(): void {
+    const el = document.getElementById("trkOptsHint");
+    if (!el) return;
+    const bits: string[] = [];
+    const take = val("trkTake"), start = val("trkStart");
+    if (take) bits.push(`${take}s${start && start !== "0:00" ? ` from ${start}` : ""}`);
+    const fmt = val("trkFormat") || "mp3";
+    bits.push(fmt === "wav" || fmt === "flac"
+      ? fmt.toUpperCase()
+      : `${fmt.toUpperCase()} ${clampKbps(val("trkBitrate"))}k`);
+    if (val("trkCh") === "2") bits.push("stereo");
+    if ((document.getElementById("trkNorm") as HTMLInputElement | null)?.checked) {
+      bits.push("loudness matched");
+    }
+    el.textContent = bits.length ? `— ${bits.join(", ")}` : "";
+  }
+
+  for (const id of ["trkStart", "trkTake", "trkBitrate", "trkFormat",
+                    "trkCh", "trkRate", "trkNorm"]) {
+    document.getElementById(id)?.addEventListener("input", updateOptsHint);
+    document.getElementById(id)?.addEventListener("change", updateOptsHint);
+  }
+
+  // Bitrate is meaningless for the lossless containers; grey it out rather
+  // than letting someone set a number that gets silently discarded.
+  function syncFormatUI(): void {
+    const fmt = val("trkFormat") || "mp3";
+    const br = document.getElementById("trkBitrate") as HTMLInputElement | null;
+    if (br) {
+      br.disabled = fmt === "wav" || fmt === "flac";
+      br.title = br.disabled ? `${fmt.toUpperCase()} has no bitrate to set` : "";
+    }
+  }
+  document.getElementById("trkFormat")?.addEventListener("change", () => {
+    syncFormatUI(); updateCapacity(); updateOptsHint();
+  });
+  syncFormatUI();
+  updateOptsHint();
   updateCapacity();
 
   void fetch("/api/tracks").then(r => r.ok ? r.json() as Promise<TracksResponse> : Promise.reject())
