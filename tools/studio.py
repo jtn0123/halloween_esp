@@ -68,6 +68,36 @@ def track_files() -> list[Path]:
                   key=lambda p: p.stem)
 
 
+def parse_sensitivity(q: dict) -> float | dict:
+    """Read `?sensitivity=` plus any per-band `?sens_low=` overrides.
+
+    The three bands routinely want different thresholds — a track can have a
+    crisp kick under a wash of cymbals — so the editor sends one per band. A
+    bare `sensitivity` still means "all three", which is what every older
+    caller sends.
+    """
+    base = 1.1
+    try:
+        base = float((q.get("sensitivity") or ["1.1"])[0])
+    except ValueError:
+        pass
+    per = {}
+    for short in ("low", "mid", "high"):
+        raw = (q.get(f"sens_{short}") or [None])[0]
+        if raw is None:
+            continue
+        try:
+            per[f"onset_{short}"] = float(raw)
+        except ValueError:
+            continue
+    if not per:
+        return base
+    # Any band the caller did not name keeps the shared value.
+    for short in ("low", "mid", "high"):
+        per.setdefault(f"onset_{short}", base)
+    return per
+
+
 def track_path(tid: str) -> Path | None:
     """Resolve a bare track id to the file that holds it.
 
@@ -216,7 +246,7 @@ class Handler(BaseHTTPRequestHandler):
             })
         if path.startswith("/api/waveform/"):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            sens = float((q.get("sensitivity") or ["1.1"])[0])
+            sens = parse_sensitivity(q)
             p = track_path(Path(path).name)    # name-stripped: no traversal
             if p is None:
                 return self.send_json({"error": "no such track"}, 404)
@@ -258,7 +288,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "url must be http(s)"}, 400)
             args = [PY, str(ROOT / "tools" / "import_track.py"), src]
             for k in ("id", "start", "take", "sensitivity", "bitrate",
-                      "sample_rate", "channels", "format", "gain_db", "notes"):
+                      "sample_rate", "channels", "format", "gain_db",
+                      "fade_in", "fade_out", "notes"):
                 v = req.get(k)
                 if v not in (None, ""):
                     args += [f"--{k.replace('_', '-')}", str(v)]
@@ -274,7 +305,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"error": "no id"}, 400)
             args = [PY, str(ROOT / "tools" / "import_track.py"), "--refresh", tid]
             for k in ("start", "take", "sensitivity", "bitrate",
-                      "sample_rate", "channels", "format", "gain_db"):
+                      "sample_rate", "channels", "format", "gain_db",
+                      "fade_in", "fade_out"):
                 v = req.get(k)
                 if v not in (None, ""):
                     args += [f"--{k.replace('_', '-')}", str(v)]
@@ -335,7 +367,8 @@ class Handler(BaseHTTPRequestHandler):
             req = json.loads(self.headers.get("X-Import-Opts") or "{}")
 
         for k in ("id", "start", "take", "sensitivity", "bitrate",
-                  "sample_rate", "channels", "format", "gain_db", "notes"):
+                  "sample_rate", "channels", "format", "gain_db",
+                      "fade_in", "fade_out", "notes"):
             v = req.get(k)
             if v not in (None, ""):
                 args += [f"--{k.replace('_', '-')}", str(v)]

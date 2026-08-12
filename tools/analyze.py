@@ -111,9 +111,29 @@ def _pick_peaks(env: np.ndarray, times: np.ndarray, min_gap: float,
     return [(t, round(min(1.0, v / peak), 3)) for t, v in hits]
 
 
-def analyze(x: np.ndarray, sr: int = SR, sensitivity: float = 1.1,
+def band_sensitivity(sensitivity, name: str, default: float = 1.1) -> float:
+    """One band's threshold, from either a scalar or a per-band mapping.
+
+    The three bands want different thresholds far more often than not — a
+    track can have a crisp kick and a wash of cymbals, and one number cannot
+    serve both. A scalar still means "the same for all three", so every
+    existing scene and every existing call keeps its behaviour.
+
+    Keys may be the full band name or its short form: `onset_low` or `low`.
+    """
+    if isinstance(sensitivity, dict):
+        short = name.replace("onset_", "")
+        v = sensitivity.get(name, sensitivity.get(short))
+        return float(default if v is None else v)
+    return float(default if sensitivity is None else sensitivity)
+
+
+def analyze(x: np.ndarray, sr: int = SR, sensitivity=1.1,
             bands=BANDS) -> dict[str, list[tuple[float, float]]]:
-    """Band-split onset detection. Returns {band_name: [(seconds, velocity)]}."""
+    """Band-split onset detection. Returns {band_name: [(seconds, velocity)]}.
+
+    `sensitivity` is a float for all bands, or a {band: float} mapping.
+    """
     if len(x) < WIN * 2:
         return {}
     # Pad the front with silence so a hit at t=0 has something to rise from.
@@ -136,7 +156,7 @@ def analyze(x: np.ndarray, sr: int = SR, sensitivity: float = 1.1,
         env = _flux(mag[sel])
         # Light smoothing kills frame-level jitter without moving the peaks.
         env = np.convolve(env, np.hanning(5) / np.hanning(5).sum(), mode="same")
-        hits = _pick_peaks(env, t, gap, sensitivity)
+        hits = _pick_peaks(env, t, gap, band_sensitivity(sensitivity, name))
         if hits:
             out[name] = hits
     return out
@@ -205,7 +225,7 @@ def envelope(x: np.ndarray, sr: int = SR, hz: float = ENV_HZ,
     return out
 
 
-def analyze_full(x: np.ndarray, sr: int = SR, sensitivity: float = 1.1,
+def analyze_full(x: np.ndarray, sr: int = SR, sensitivity=1.1,
                  ) -> dict[str, list[tuple[float, float]]]:
     """Onsets, plus a level envelope for any band that has no beat.
 

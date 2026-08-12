@@ -79,7 +79,12 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
         gain = float(scene.get("track_gain", 1.0))
         synth._place(buf, x * gain, float(scene.get("track_at", 0.0)))
         for band, hits in analyze.analyze_full(
-                x, sr, sensitivity=float(scene.get("sensitivity", 1.1))).items():
+                # A scalar, or a per-band map ({low: 0.8, mid: 1.1, high: 1.6})
+                # as the clip editor writes it. Coercing to float here would
+                # have thrown on the map and, worse, silently ignored it if it
+                # had not — the render must detect the same onsets the editor
+                # showed, or the tuning was for nothing.
+                x, sr, sensitivity=scene.get("sensitivity", 1.1)).items():
             markers.setdefault(band, []).extend(
                 [int((t + scene.get("track_at", 0.0)) * 1000), v]
                 for t, v in hits if t < dur - 0.1)

@@ -12,6 +12,7 @@
  *           block to paste.
  */
 
+import type { BandEditor } from "./band_editor.js";
 import { BANDS, BAND_HELP, bandSummary } from "./bands.js";
 import { initImportOpts } from "./import_opts.js";
 import { detectOnsets } from "./onsets.js";
@@ -76,6 +77,12 @@ export interface TracksDeps {
    * it has playing. Two audio sources at once is never what was meant.
    */
   onAudioClaim?: () => void;
+  /**
+   * Per-band zones and thresholds, as the clip editor has them. A generated
+   * scene has to carry these or the render would detect different onsets from
+   * the ones you just spent a minute tuning.
+   */
+  bands?: BandEditor;
 }
 
 export interface TracksApi {
@@ -426,6 +433,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
 
   function sceneYaml(id: string, dur: number | undefined,
                      counts: Record<string, number>, ext = "mp3"): string {
+    const cfg = deps.bands;
     const L = [
       `  - id: ${id}`,
       `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}`,
@@ -435,6 +443,13 @@ export function initTracks(deps: TracksDeps): TracksApi {
       `      Imported track. Light cues are onset-detected from the audio`,
       `      itself, so they follow whatever the track actually does.`,
       `    audio_file: tracks/${id}.${ext}`,
+      // Only written when it differs from the defaults. A scene carrying the
+      // default spelled out reads as a decision that was made, and this file
+      // is meant to be read.
+      ...(cfg?.customised()
+        ? [`    sensitivity: {${BANDS.map(b =>
+             `${b.label}: ${cfg.settings().sensitivity[b.name].toFixed(2)}`).join(", ")}}`]
+        : []),
       `    base: {towerL: chill, towerR: chill, door: ember}`,
       `    levels: {towerL: 0.4, towerR: 0.4, door: 0.5}`,
       `    pulse:`,
@@ -442,7 +457,8 @@ export function initTracks(deps: TracksDeps): TracksApi {
     for (const b of BANDS) {
       const n = counts[b.name];
       if (!n) continue;
-      L.push(`      - {synth: ${b.name}, zone: ${b.zone}, intensity: 0.55, `
+      const zone = cfg?.zones()[b.name] ?? b.zone;
+      L.push(`      - {synth: ${b.name}, zone: ${zone}, intensity: 0.55, `
            + `decay: ${b.decay}, color: [${b.rgbw.join(", ")}]}`
            + `   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
     }

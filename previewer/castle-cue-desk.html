@@ -333,6 +333,34 @@
   .trk__act button.danger:hover { border-color: var(--alarm); color: var(--alarm); }
   .trk__act button.on { border-color: var(--spirit); color: var(--spirit); }
   .trk__act button[disabled] { opacity: .55; cursor: default; }
+  /* Per-band zone and threshold, inside the clip editor. One row per band,
+     coloured to match its lane on the waveform above. */
+  .bandcfg {
+    display: grid; gap: 4px; margin-top: 8px; padding: 8px 10px;
+    background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 4px;
+  }
+  .bandcfg__row {
+    display: grid; align-items: center; gap: 9px;
+    grid-template-columns: 9px 2.6em 5.6em 1fr 2.8em 7.5em;
+    font-family: var(--f-data); font-size: 11px; color: var(--ink-2);
+  }
+  .bandcfg__dot { width: 9px; height: 9px; border-radius: 50%; display: block; }
+  .bandcfg__nm { color: var(--ink); text-transform: uppercase; letter-spacing: .08em; }
+  .bandcfg__zone {
+    font-family: var(--f-data); font-size: 11px; padding: 2px 4px;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line-2);
+    border-radius: 3px;
+  }
+  .bandcfg__sens { width: 100%; vertical-align: middle; }
+  .bandcfg__val, .bandcfg__hits {
+    font-variant-numeric: tabular-nums; color: var(--muted);
+  }
+  .bandcfg__hits { text-align: right; }
+  @media (max-width: 620px) {
+    .bandcfg__row { grid-template-columns: 9px 2.6em 5.6em 1fr; }
+    .bandcfg__val, .bandcfg__hits { display: none; }
+  }
+
   .trk-yaml {
     margin: 11px 0 0; padding: 11px; border-radius: 4px; background: var(--panel-2);
     border: 1px solid var(--line-2); font-family: var(--f-data); font-size: 11px;
@@ -549,6 +577,14 @@
                 <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
                 <label>length <input type="text" id="trkTake" placeholder="all" size="5"></label>
                 <label>name <input type="text" id="trkId" placeholder="auto" size="9"></label>
+                <!-- A looping scene that starts and ends at full level clicks
+                     at the seam. These are seconds of ramp at each end. -->
+                <label title="Seconds of fade at the head, so a loop does not start with a click"
+                  >fade in <input type="number" id="trkFadeIn" placeholder="0"
+                       min="0" max="30" step="0.1" size="4"></label>
+                <label title="Seconds of fade at the tail. Needs a length to fade out from."
+                  >fade out <input type="number" id="trkFadeOut" placeholder="0"
+                       min="0" max="30" step="0.1" size="4"></label>
               </fieldset>
               <fieldset>
                 <legend>Format</legend>
@@ -812,112 +848,59 @@
     }
   };
 
-  // src/effects.ts
-  var defaultParams = () => ({
-    depth: 0.55,
-    speed: 1.4,
-    bright: 0.85,
-    hue: 0.5,
-    soft: false,
-    stops: 0.42
-  });
-  function hash(n) {
-    const s = Math.sin(n * 127.1) * 43758.5453;
-    return s - Math.floor(s);
-  }
-  function vnoise(x) {
-    const i = Math.floor(x);
-    const f = x - i;
-    const u = f * f * (3 - 2 * f);
-    return hash(i) * (1 - u) + hash(i + 1) * u;
-  }
-  function fbm(x) {
-    return 0.55 * vnoise(x) + 0.3 * vnoise(x * 2.13 + 11.3) + 0.15 * vnoise(x * 4.31 + 27.7);
-  }
-  var VIOLET = [0.66, 0.08, 1];
-  var GREEN = [0.14, 1, 0.42];
-  var WARM_W = [1, 0.83, 0.62];
-  function mix(a, b, k) {
-    return [
-      (a[0] ?? 0) + ((b[0] ?? 0) - (a[0] ?? 0)) * k,
-      (a[1] ?? 0) + ((b[1] ?? 0) - (a[1] ?? 0)) * k,
-      (a[2] ?? 0) + ((b[2] ?? 0) - (a[2] ?? 0)) * k
-    ];
-  }
-  var scaled = (c, k) => [c[0] * k, c[1] * k, c[2] * k, 0];
-  var EFFECTS = {
-    off: () => [0, 0, 0, 0],
-    candle: (t, s, P2) => {
-      const n = fbm(t * P2.speed + s * 3.7);
-      const l = Math.max(0, 1 - P2.depth * (1 - n));
-      return [0.34 * l, 0.05 * l, 0, 1 * l];
+  // src/bands.ts
+  var BANDS = [
+    {
+      name: "onset_low",
+      label: "low",
+      lo: 20,
+      hi: 200,
+      minGap: 0.16,
+      zone: "door",
+      rgbw: [1, 0.12, 0.02, 0],
+      ink: "#ff2a1a",
+      decay: 0.86
     },
-    ember: (t, s) => {
-      const n = fbm(t * 0.63 + s * 2.2);
-      const l = 0.22 + 0.16 * n;
-      return [0.4 * l, 0.06 * l, 0, 0.85 * l];
+    {
+      name: "onset_mid",
+      label: "mid",
+      lo: 200,
+      hi: 2e3,
+      minGap: 0.11,
+      zone: "towerL",
+      rgbw: [0.66, 0.1, 1, 0.05],
+      ink: "#a83aff",
+      decay: 0.92
     },
-    furnace: (t, s) => {
-      const n = fbm(t * 2.5 + s * 0.9);
-      const l = 0.8 + 0.2 * n;
-      return [1 * l, 0.22 * l, 0.02 * l, 0.55 * l];
-    },
-    spirit: (t, s) => {
-      const b = 0.5 + 0.5 * Math.sin(t * 1.15 + s * 0.8);
-      const l = 0.22 + 0.42 * b;
-      return [0.1 * l, 1 * l, 0.66 * l, 0];
-    },
-    eyes: (t, s) => {
-      const blink = vnoise(t * 1.9 + s * 0.55) > 0.82 ? 0.1 : 1;
-      const l = (0.55 + 0.28 * Math.sin(t * 3.1)) * blink;
-      return [1 * l, 0.05 * l, 0.03 * l, 0];
-    },
-    seance: (t, s) => {
-      const b = 0.5 + 0.5 * Math.sin(t * 0.8 + s * 0.6);
-      return scaled(mix(VIOLET, GREEN, 0), 0.24 + 0.52 * b);
-    },
-    wisp: (t, s) => {
-      const n = fbm(t * 2.1 + s * 5.3);
-      const l = Math.max(0, 0.18 + 0.82 * n - 0.14);
-      return scaled(mix(VIOLET, GREEN, 1), l);
-    },
-    mansion: (t, s, P2) => {
-      const sweep = 0.5 + 0.5 * Math.sin(t * 0.38 + s * 0.7);
-      const k = Math.min(1, Math.max(0, sweep * 0.8 + (P2.hue - 0.5) * 0.9));
-      const shimmer = 0.84 + 0.16 * fbm(t * 1.05 + s * 2.7);
-      return scaled(mix(VIOLET, GREEN, k), 0.62 * shimmer);
-    },
-    throb: (t, s, P2) => {
-      const p = Math.pow(0.5 + 0.5 * Math.sin(t * 7.4 + s * 0.4), 2);
-      return scaled(mix(VIOLET, GREEN, P2.hue * 0.5), 0.2 + 0.8 * p);
-    },
-    strobe: (t, s, P2) => {
-      if (P2.soft) {
-        const l = 0.34 + 0.44 * (0.5 + 0.5 * Math.sin(t * 3.1 + s));
-        return [0.1 * l, 0.1 * l, 0.14 * l, 1 * l];
-      }
-      const on = Math.sin(t * 44 + s) > 0 ? 1 : 0.06;
-      return [0.12 * on, 0.12 * on, 0.18 * on, 1 * on];
-    },
-    chill: (t, s, P2) => {
-      const b = 0.5 + 0.5 * Math.sin(t * 0.5 + s * 1.1);
-      return scaled(mix(VIOLET, GREEN, P2.hue * 0.35), 0.14 + 0.16 * b);
-    },
-    blood: (t, s) => {
-      const n = fbm(t * 0.35 + s * 1.7);
-      const l = 0.045 + 0.05 * n;
-      return [1 * l, 0.02 * l, 0.01 * l, 0];
+    {
+      name: "onset_high",
+      label: "high",
+      lo: 2e3,
+      hi: 16e3,
+      minGap: 0.09,
+      zone: "towerR",
+      rgbw: [0.3, 1, 0.55, 0],
+      ink: "#4dff8c",
+      decay: 0.94
     }
-  };
-  var effect = (name) => EFFECTS[name] ?? EFFECTS.off;
-  function toScreen(c) {
-    return [
-      Math.min(1, c[0] + c[3] * WARM_W[0]),
-      Math.min(1, c[1] + c[3] * WARM_W[1]),
-      Math.min(1, c[2] + c[3] * WARM_W[2])
-    ];
+  ];
+  var BAND_BY_NAME = Object.fromEntries(BANDS.map((b) => [b.name, b]));
+  var BAND_INK = Object.fromEntries(BANDS.map((b) => [b.name, b.ink]));
+  function bandSummary(counts, durationSec, overrides = {}) {
+    const parts = [];
+    for (const b of BANDS) {
+      const n = counts[b.name];
+      if (n === void 0) continue;
+      const zone = overrides[b.name] ?? b.zone;
+      parts.push(durationSec && durationSec > 0 ? `${zone} ${(n / durationSec).toFixed(1)}/s` : `${zone} ${n}`);
+    }
+    const levels = Object.keys(counts).filter((k) => k.startsWith("level_"));
+    if (levels.length) {
+      parts.push(`${levels.map((k) => k.replace("level_", "")).join("+")} follow loudness`);
+    }
+    return parts.join(" \xB7 ") || "no onsets";
   }
-  var pixelSeed = (zoneIndex, pixel) => zoneIndex * 4.7 + pixel * 1.31;
+  var BAND_HELP = "How often each zone pulses. An onset is a jump in level, not loudness \u2014 a kick drum registers, a sustained pad does not, however loud it is. The three bands are not comparable to each other: each has its own minimum spacing (low 0.16s, mid 0.11s, high 0.09s).";
 
   // src/panels.ts
   var SOUNDS = {
@@ -1196,6 +1179,194 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       onRendered(raEl.checked);
     }
   };
+
+  // src/band_editor.ts
+  var MIN_SENS = 0.3;
+  var MAX_SENS = 3;
+  var DEFAULT_SENS = 1.1;
+  var clampSens = (v) => Number.isFinite(v) ? Math.min(MAX_SENS, Math.max(MIN_SENS, v)) : DEFAULT_SENS;
+  function createBandEditor(onChange) {
+    const zone = {};
+    const sens = {};
+    const found = {};
+    const el = document.createElement("div");
+    el.className = "bandcfg";
+    for (const b of BANDS) {
+      zone[b.name] = b.zone;
+      sens[b.name] = DEFAULT_SENS;
+      const row = document.createElement("div");
+      row.className = "bandcfg__row";
+      const swatch = document.createElement("i");
+      swatch.className = "bandcfg__dot";
+      swatch.style.background = b.ink;
+      const name = document.createElement("span");
+      name.className = "bandcfg__nm";
+      name.textContent = b.label;
+      name.title = `${b.lo}\u2013${b.hi} Hz \xB7 hits no closer together than ${b.minGap}s`;
+      const zoneSel = document.createElement("select");
+      zoneSel.className = "bandcfg__zone";
+      zoneSel.title = `Which zone the ${b.label} band lights`;
+      for (const ch of CHANNELS) {
+        const o = document.createElement("option");
+        o.value = ch.id;
+        o.textContent = ch.id;
+        zoneSel.append(o);
+      }
+      zoneSel.value = b.zone;
+      zoneSel.addEventListener("change", () => {
+        zone[b.name] = zoneSel.value;
+        onChange();
+      });
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.className = "bandcfg__sens";
+      slider.min = String(MIN_SENS);
+      slider.max = String(MAX_SENS);
+      slider.step = "0.05";
+      slider.value = String(DEFAULT_SENS);
+      slider.title = `Onset threshold for ${b.label} \u2014 lower finds more, and more of what it finds is noise`;
+      const read = document.createElement("span");
+      read.className = "bandcfg__val";
+      read.textContent = DEFAULT_SENS.toFixed(2);
+      slider.addEventListener("input", () => {
+        sens[b.name] = clampSens(+slider.value);
+        read.textContent = sens[b.name].toFixed(2);
+        onChange();
+      });
+      const hits = document.createElement("span");
+      hits.className = "bandcfg__hits";
+      hits.textContent = "\u2014";
+      found[b.name] = hits;
+      row.append(swatch, name, zoneSel, slider, read, hits);
+      el.append(row);
+    }
+    return {
+      el,
+      settings: () => ({ zone: { ...zone }, sensitivity: { ...sens } }),
+      zones: () => ({ ...zone }),
+      query: () => BANDS.map((b) => `sens_${b.label}=${encodeURIComponent(sens[b.name].toFixed(2))}`).join("&"),
+      customised: () => BANDS.some((b) => zone[b.name] !== b.zone || Math.abs(sens[b.name] - DEFAULT_SENS) > 1e-9),
+      report(counts, durationSec) {
+        for (const b of BANDS) {
+          const n = counts[b.name];
+          const cell = found[b.name];
+          if (!cell) continue;
+          if (n === void 0) {
+            cell.textContent = counts[`level_${b.label}`] !== void 0 ? "follows loudness" : "\u2014";
+            continue;
+          }
+          cell.textContent = durationSec && durationSec > 0 ? `${n} \xB7 ${(n / durationSec).toFixed(1)}/s` : `${n}`;
+        }
+      }
+    };
+  }
+
+  // src/effects.ts
+  var defaultParams = () => ({
+    depth: 0.55,
+    speed: 1.4,
+    bright: 0.85,
+    hue: 0.5,
+    soft: false,
+    stops: 0.42
+  });
+  function hash(n) {
+    const s = Math.sin(n * 127.1) * 43758.5453;
+    return s - Math.floor(s);
+  }
+  function vnoise(x) {
+    const i = Math.floor(x);
+    const f = x - i;
+    const u = f * f * (3 - 2 * f);
+    return hash(i) * (1 - u) + hash(i + 1) * u;
+  }
+  function fbm(x) {
+    return 0.55 * vnoise(x) + 0.3 * vnoise(x * 2.13 + 11.3) + 0.15 * vnoise(x * 4.31 + 27.7);
+  }
+  var VIOLET = [0.66, 0.08, 1];
+  var GREEN = [0.14, 1, 0.42];
+  var WARM_W = [1, 0.83, 0.62];
+  function mix(a, b, k) {
+    return [
+      (a[0] ?? 0) + ((b[0] ?? 0) - (a[0] ?? 0)) * k,
+      (a[1] ?? 0) + ((b[1] ?? 0) - (a[1] ?? 0)) * k,
+      (a[2] ?? 0) + ((b[2] ?? 0) - (a[2] ?? 0)) * k
+    ];
+  }
+  var scaled = (c, k) => [c[0] * k, c[1] * k, c[2] * k, 0];
+  var EFFECTS = {
+    off: () => [0, 0, 0, 0],
+    candle: (t, s, P2) => {
+      const n = fbm(t * P2.speed + s * 3.7);
+      const l = Math.max(0, 1 - P2.depth * (1 - n));
+      return [0.34 * l, 0.05 * l, 0, 1 * l];
+    },
+    ember: (t, s) => {
+      const n = fbm(t * 0.63 + s * 2.2);
+      const l = 0.22 + 0.16 * n;
+      return [0.4 * l, 0.06 * l, 0, 0.85 * l];
+    },
+    furnace: (t, s) => {
+      const n = fbm(t * 2.5 + s * 0.9);
+      const l = 0.8 + 0.2 * n;
+      return [1 * l, 0.22 * l, 0.02 * l, 0.55 * l];
+    },
+    spirit: (t, s) => {
+      const b = 0.5 + 0.5 * Math.sin(t * 1.15 + s * 0.8);
+      const l = 0.22 + 0.42 * b;
+      return [0.1 * l, 1 * l, 0.66 * l, 0];
+    },
+    eyes: (t, s) => {
+      const blink = vnoise(t * 1.9 + s * 0.55) > 0.82 ? 0.1 : 1;
+      const l = (0.55 + 0.28 * Math.sin(t * 3.1)) * blink;
+      return [1 * l, 0.05 * l, 0.03 * l, 0];
+    },
+    seance: (t, s) => {
+      const b = 0.5 + 0.5 * Math.sin(t * 0.8 + s * 0.6);
+      return scaled(mix(VIOLET, GREEN, 0), 0.24 + 0.52 * b);
+    },
+    wisp: (t, s) => {
+      const n = fbm(t * 2.1 + s * 5.3);
+      const l = Math.max(0, 0.18 + 0.82 * n - 0.14);
+      return scaled(mix(VIOLET, GREEN, 1), l);
+    },
+    mansion: (t, s, P2) => {
+      const sweep = 0.5 + 0.5 * Math.sin(t * 0.38 + s * 0.7);
+      const k = Math.min(1, Math.max(0, sweep * 0.8 + (P2.hue - 0.5) * 0.9));
+      const shimmer = 0.84 + 0.16 * fbm(t * 1.05 + s * 2.7);
+      return scaled(mix(VIOLET, GREEN, k), 0.62 * shimmer);
+    },
+    throb: (t, s, P2) => {
+      const p = Math.pow(0.5 + 0.5 * Math.sin(t * 7.4 + s * 0.4), 2);
+      return scaled(mix(VIOLET, GREEN, P2.hue * 0.5), 0.2 + 0.8 * p);
+    },
+    strobe: (t, s, P2) => {
+      if (P2.soft) {
+        const l = 0.34 + 0.44 * (0.5 + 0.5 * Math.sin(t * 3.1 + s));
+        return [0.1 * l, 0.1 * l, 0.14 * l, 1 * l];
+      }
+      const on = Math.sin(t * 44 + s) > 0 ? 1 : 0.06;
+      return [0.12 * on, 0.12 * on, 0.18 * on, 1 * on];
+    },
+    chill: (t, s, P2) => {
+      const b = 0.5 + 0.5 * Math.sin(t * 0.5 + s * 1.1);
+      return scaled(mix(VIOLET, GREEN, P2.hue * 0.35), 0.14 + 0.16 * b);
+    },
+    blood: (t, s) => {
+      const n = fbm(t * 0.35 + s * 1.7);
+      const l = 0.045 + 0.05 * n;
+      return [1 * l, 0.02 * l, 0.01 * l, 0];
+    }
+  };
+  var effect = (name) => EFFECTS[name] ?? EFFECTS.off;
+  function toScreen(c) {
+    return [
+      Math.min(1, c[0] + c[3] * WARM_W[0]),
+      Math.min(1, c[1] + c[3] * WARM_W[1]),
+      Math.min(1, c[2] + c[3] * WARM_W[2])
+    ];
+  }
+  var pixelSeed = (zoneIndex, pixel) => zoneIndex * 4.7 + pixel * 1.31;
 
   // src/show.ts
   var ZONE_IDS = ["towerL", "towerR", "door"];
@@ -2224,60 +2395,6 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     }
   };
 
-  // src/bands.ts
-  var BANDS = [
-    {
-      name: "onset_low",
-      label: "low",
-      lo: 20,
-      hi: 200,
-      minGap: 0.16,
-      zone: "door",
-      rgbw: [1, 0.12, 0.02, 0],
-      ink: "#ff2a1a",
-      decay: 0.86
-    },
-    {
-      name: "onset_mid",
-      label: "mid",
-      lo: 200,
-      hi: 2e3,
-      minGap: 0.11,
-      zone: "towerL",
-      rgbw: [0.66, 0.1, 1, 0.05],
-      ink: "#a83aff",
-      decay: 0.92
-    },
-    {
-      name: "onset_high",
-      label: "high",
-      lo: 2e3,
-      hi: 16e3,
-      minGap: 0.09,
-      zone: "towerR",
-      rgbw: [0.3, 1, 0.55, 0],
-      ink: "#4dff8c",
-      decay: 0.94
-    }
-  ];
-  var BAND_BY_NAME = Object.fromEntries(BANDS.map((b) => [b.name, b]));
-  var BAND_INK = Object.fromEntries(BANDS.map((b) => [b.name, b.ink]));
-  function bandSummary(counts, durationSec, overrides = {}) {
-    const parts = [];
-    for (const b of BANDS) {
-      const n = counts[b.name];
-      if (n === void 0) continue;
-      const zone = overrides[b.name] ?? b.zone;
-      parts.push(durationSec && durationSec > 0 ? `${zone} ${(n / durationSec).toFixed(1)}/s` : `${zone} ${n}`);
-    }
-    const levels = Object.keys(counts).filter((k) => k.startsWith("level_"));
-    if (levels.length) {
-      parts.push(`${levels.map((k) => k.replace("level_", "")).join("+")} follow loudness`);
-    }
-    return parts.join(" \xB7 ") || "no onsets";
-  }
-  var BAND_HELP = "How often each zone pulses. An onset is a jump in level, not loudness \u2014 a kick drum registers, a sustained pad does not, however loud it is. The three bands are not comparable to each other: each has its own minimum spacing (low 0.16s, mid 0.11s, high 0.09s).";
-
   // src/import_opts.ts
   var MIN_KBPS = 32;
   var MAX_KBPS = 320;
@@ -2309,6 +2426,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     bits.push(LOSSLESS.includes(fmt) ? fmt.toUpperCase() : `${fmt.toUpperCase()} ${clampKbps(o.bitrate)}k`);
     if (channelsOf(o.channels) === 2) bits.push("stereo");
     if (o.normalize) bits.push("loudness matched");
+    const fi = +o.fade_in, fo = +o.fade_out;
+    if (fi > 0 || fo > 0) {
+      bits.push(`fade ${fi > 0 ? `${fi}s in` : ""}${fi > 0 && fo > 0 ? "/" : ""}${fo > 0 ? `${fo}s out` : ""}`);
+    }
     return bits.length ? `\u2014 ${bits.join(", ")}` : "";
   }
   var WATCHED = [
@@ -2318,7 +2439,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     "trkFormat",
     "trkCh",
     "trkRate",
-    "trkNorm"
+    "trkNorm",
+    "trkFadeIn",
+    "trkFadeOut"
   ];
   function initImportOpts(flashUsed) {
     const el = (id) => document.getElementById(id);
@@ -2332,7 +2455,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       sample_rate: val("trkRate"),
       channels: val("trkCh"),
       format: val("trkFormat"),
-      normalize: !!el("trkNorm")?.checked
+      normalize: !!el("trkNorm")?.checked,
+      fade_in: val("trkFadeIn"),
+      fade_out: val("trkFadeOut")
     });
     function sync() {
       const o = values();
@@ -2770,6 +2895,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       }
     }
     function sceneYaml(id, dur, counts, ext = "mp3") {
+      const cfg = deps.bands;
       const L = [
         `  - id: ${id}`,
         `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}`,
@@ -2781,6 +2907,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         `      Imported track. Light cues are onset-detected from the audio`,
         `      itself, so they follow whatever the track actually does.`,
         `    audio_file: tracks/${id}.${ext}`,
+        // Only written when it differs from the defaults. A scene carrying the
+        // default spelled out reads as a decision that was made, and this file
+        // is meant to be read.
+        ...cfg?.customised() ? [`    sensitivity: {${BANDS.map((b) => `${b.label}: ${cfg.settings().sensitivity[b.name].toFixed(2)}`).join(", ")}}`] : [],
         `    base: {towerL: chill, towerR: chill, door: ember}`,
         `    levels: {towerL: 0.4, towerR: 0.4, door: 0.5}`,
         `    pulse:`
@@ -2788,7 +2918,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       for (const b of BANDS) {
         const n = counts[b.name];
         if (!n) continue;
-        L.push(`      - {synth: ${b.name}, zone: ${b.zone}, intensity: 0.55, decay: ${b.decay}, color: [${b.rgbw.join(", ")}]}   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
+        const zone = cfg?.zones()[b.name] ?? b.zone;
+        L.push(`      - {synth: ${b.name}, zone: ${zone}, intensity: 0.55, decay: ${b.decay}, color: [${b.rgbw.join(", ")}]}   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
       }
       L.push(`    cues: []`);
       return L.join("\n");
@@ -3012,10 +3143,17 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     const host = document.getElementById(deps.containerId ?? "trkWave");
     if (!host) {
       console.warn("waveform: no #trkWave container \u2014 clip editor not mounted.");
-      return { show: () => {
-      }, clip: () => null, stop: () => {
-      }, destroy: () => {
-      } };
+      return {
+        show: () => {
+        },
+        reanalyse: () => {
+        },
+        clip: () => null,
+        stop: () => {
+        },
+        destroy: () => {
+        }
+      };
     }
     const view = new WaveView();
     const mk = (tag, css, text = "") => {
@@ -3031,21 +3169,14 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     play.disabled = true;
     play.title = "Play just the selected region, on a loop";
     const readout = mk("span", "font-variant-numeric:tabular-nums");
-    const sens = document.createElement("input");
-    sens.type = "range";
-    sens.min = "0.3";
-    sens.max = "3";
-    sens.step = "0.05";
-    sens.value = "1.1";
-    sens.style.cssText = "width:130px;vertical-align:middle";
-    sens.title = "Onset sensitivity \u2014 higher finds more, and more of it is noise";
-    const sensVal = mk("span", "min-width:2.6em;font-variant-numeric:tabular-nums", "1.10");
-    const sensLbl = mk("label", "display:flex;align-items:center;gap:6px", "sens");
-    sensLbl.append(sens, sensVal);
+    const snap = mk("button", "", "Snap to beat");
+    snap.type = "button";
+    snap.disabled = true;
+    snap.title = "Move the in and out points to the nearest detected onsets, so a looping scene does not click at the seam";
     const note = mk("p", "margin:4px 0 0;color:var(--ink-2)");
     note.title = BAND_HELP;
-    row.append(play, readout, sensLbl);
-    wrap.append(view.el, row, note);
+    row.append(play, snap, readout);
+    wrap.append(view.el, row, deps.bands.el, note);
     host.append(wrap);
     const say = (msg, err = false) => {
       note.textContent = msg;
@@ -3072,6 +3203,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       view.draw();
       readout.textContent = clip ? `start ${clock(clip.start)}  \xB7  length ${clock(clip.end - clip.start)}` : "drag across the waveform to pick a clip";
       play.disabled = !clip || !view.data;
+      snap.disabled = play.disabled;
       deps.onClipChange?.(clip, view.data);
     }
     function toWave(id, body) {
@@ -3084,7 +3216,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     async function analyse(id) {
       try {
         const r = await fetch(
-          `/api/waveform/${encodeURIComponent(id)}?sensitivity=${encodeURIComponent(sens.value)}`
+          `/api/waveform/${encodeURIComponent(id)}?${deps.bands.query()}`
         );
         if (r.status === 404) return `No waveform for \u201C${id}\u201D \u2014 the studio has not analysed it.`;
         if (!r.ok) return `Analysis failed \u2014 HTTP ${r.status}.`;
@@ -3095,7 +3227,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     }
     const counts = (d) => {
       const n = Object.fromEntries(Object.entries(d.onsets).map(([k, v]) => [k, v?.length ?? 0]));
-      const s = bandSummary(n, d.duration);
+      deps.bands.report(n, d.duration);
+      const s = bandSummary(n, d.duration, deps.bands.zones());
       return s === "no onsets" ? "no onsets at this sensitivity" : s;
     };
     async function load() {
@@ -3223,14 +3356,46 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     audio.addEventListener("error", () => {
       if (playing) stop(`Could not load audio for \u201C${trackId ?? ""}\u201D.`);
     });
+    const allOnsets = () => {
+      const d = view.data;
+      if (!d) return [];
+      const t = [];
+      for (const b of BANDS) for (const [sec] of d.onsets[b.name] ?? []) t.push(sec);
+      return t.sort((a, z) => a - z);
+    };
+    const nearest = (times, sec, within) => {
+      let best = sec, gap = within;
+      for (const t of times) {
+        const d = Math.abs(t - sec);
+        if (d < gap) {
+          gap = d;
+          best = t;
+        }
+      }
+      return best;
+    };
+    snap.addEventListener("click", () => {
+      const d = view.data;
+      if (!clip || !d) return;
+      const times = allOnsets();
+      if (!times.length) return say("No onsets to snap to at these thresholds.", true);
+      const start2 = nearest(times, clip.start, 0.5);
+      let end = nearest(times, clip.end, 0.5);
+      if (end - start2 < 0.25) end = clip.end;
+      const moved = Math.abs(start2 - clip.start) + Math.abs(end - clip.end);
+      clip = { start: start2, end };
+      sync();
+      pushOpts();
+      if (playing) seekIntoClip();
+      say(moved < 1e-3 ? "Already on a beat at both ends." : `Snapped to the nearest onsets \u2014 moved ${moved.toFixed(2)}s in total.`);
+    });
     let sensTimer = 0;
-    sens.addEventListener("input", () => {
-      sensVal.textContent = (+sens.value).toFixed(2);
+    function reanalyse() {
       window.clearTimeout(sensTimer);
       sensTimer = window.setTimeout(() => {
         void load();
       }, 300);
-    });
+    }
     view.message = "No track selected.";
     sync();
     host.hidden = true;
@@ -3245,6 +3410,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         else audio.removeAttribute("src");
         void load();
       },
+      reanalyse,
       clip: () => clip,
       stop: () => stop(),
       destroy() {
@@ -3362,9 +3528,11 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   }
   var previewScene = null;
   var sceneBeforeAudition = null;
+  var bands = createBandEditor(() => wave.reanalyse());
   var wave = initWaveform({
+    bands,
     onClipChange: (clip, data) => {
-      previewScene = data ? sceneFromTrack(data, clip) : null;
+      previewScene = data ? sceneFromTrack(data, clip, bands.zones()) : null;
       if (sceneBeforeAudition && previewScene) transport.loadScene(previewScene);
     },
     onAudition: (playing, positionMs) => {
@@ -3384,6 +3552,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   });
   var tracks = initTracks({
     scenes: SCENES,
+    bands,
     onSelect: (id) => wave.show(id),
     onAudioClaim: () => wave.stop()
   });

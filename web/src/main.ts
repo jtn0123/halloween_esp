@@ -10,6 +10,7 @@
  */
 
 import { RenderedAudio, type AudioMode } from "./audio.js";
+import { createBandEditor } from "./band_editor.js";
 import { defaultParams } from "./effects.js";
 import { Panels } from "./panels.js";
 import { createState, step } from "./show.js";
@@ -149,9 +150,15 @@ if (modeEl) {
 let previewScene: Scene | null = null;
 let sceneBeforeAudition: Scene | null = null;
 
+/* Which zone each band lights and how hard it has to hit. Created here rather
+   than inside either panel because both read it: the clip editor mounts it and
+   re-analyses on change, and the scene generator writes it out. */
+const bands = createBandEditor(() => wave.reanalyse());
+
 const wave = initWaveform({
+  bands,
   onClipChange: (clip, data) => {
-    previewScene = data ? sceneFromTrack(data, clip) : null;
+    previewScene = data ? sceneFromTrack(data, clip, bands.zones()) : null;
     // Already auditioning: adopt the new selection without stopping.
     if (sceneBeforeAudition && previewScene) transport.loadScene(previewScene);
   },
@@ -176,6 +183,7 @@ const wave = initWaveform({
 });
 const tracks = initTracks({
   scenes: SCENES,
+  bands,
   onSelect: (id) => wave.show(id),
   onAudioClaim: () => wave.stop(),
 });

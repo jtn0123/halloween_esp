@@ -164,3 +164,53 @@ test("Make scene reports what it did, and the row says so afterwards",
     await expect(row(page, MP3).locator(".trk__badge")).toHaveText("in the show");
     await expect(act(page, MP3, "scene")).toHaveText("Update scene");
   });
+
+test("each band gets its own zone and its own threshold", async ({ page }) => {
+  await row(page, MP3).locator(".trk__nm").click();
+  const rows = page.locator(".bandcfg__row");
+  await expect(rows).toHaveCount(3);
+  await expect(page.locator("#trkWave")).toContainText(/start 0:00/);
+
+  // The defaults, spelled out: this mapping is what a generated scene uses.
+  await expect(rows.nth(0).locator(".bandcfg__zone")).toHaveValue("door");
+  await expect(rows.nth(1).locator(".bandcfg__zone")).toHaveValue("towerL");
+  await expect(rows.nth(2).locator(".bandcfg__zone")).toHaveValue("towerR");
+
+  // Loosening one band must not silently re-detect the others. That is the
+  // whole reason the threshold is per band rather than global.
+  const hits = (i: number) => rows.nth(i).locator(".bandcfg__hits");
+  await expect(hits(0)).toHaveText(/\d+ · [\d.]+\/s/);
+  const lowBefore = await hits(0).textContent();
+  const midBefore = await hits(1).textContent();
+
+  await rows.nth(2).locator(".bandcfg__sens").fill("0.4");
+  // Debounced, then a round trip to the analyser.
+  await expect(rows.nth(2).locator(".bandcfg__val")).toHaveText("0.40");
+  await expect(hits(0)).toHaveText(lowBefore ?? "");
+  await expect(hits(1)).toHaveText(midBefore ?? "");
+
+  // Reassigning a zone follows through to the summary line.
+  await rows.nth(0).locator(".bandcfg__zone").selectOption("towerR");
+  await expect(page.locator("#trkWave p")).toContainText("towerR");
+});
+
+test("Snap to beat moves the clip onto detected onsets", async ({ page }) => {
+  await row(page, MP3).locator(".trk__nm").click();
+  const snap = page.locator("#trkWave button", { hasText: "Snap to beat" });
+  await expect(snap).toBeEnabled();
+
+  // Drag out a region that deliberately does not start on a transient.
+  const canvas = page.locator("#trkWave canvas");
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + box.width * 0.31, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width * 0.63, box.y + box.height / 2);
+  await page.mouse.up();
+  await expect(page.locator("#trkStart")).not.toHaveValue("");
+
+  await snap.click();
+  // Either it moved the edit, or both ends were already on a beat. Both are
+  // correct outcomes; silently doing nothing without saying so is not.
+  await expect(page.locator("#trkWave p"))
+    .toHaveText(/Snapped to the nearest onsets|Already on a beat/);
+});

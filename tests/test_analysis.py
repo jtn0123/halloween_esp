@@ -162,6 +162,53 @@ class TestEnvelopeFallback(unittest.TestCase):
         self.assertEqual(ana.analyze_full(ana.load_audio(p)), {})
 
 
+class TestPerBandSensitivity(unittest.TestCase):
+    """One threshold cannot serve three bands.
+
+    Real material routinely has a crisp kick under a wash of cymbals: a value
+    that finds the bass cleanly buries the top end in false hits, and one that
+    cleans up the top throws the bass away. The detector takes a scalar or a
+    per-band map, and a scalar has to keep meaning exactly what it did.
+    """
+
+    def test_a_scalar_applies_to_every_band(self) -> None:
+        for name in ("onset_low", "onset_mid", "onset_high"):
+            self.assertEqual(ana.band_sensitivity(1.7, name), 1.7)
+
+    def test_a_map_is_read_per_band(self) -> None:
+        s = {"onset_low": 0.6, "onset_mid": 1.1, "onset_high": 2.4}
+        self.assertEqual(ana.band_sensitivity(s, "onset_low"), 0.6)
+        self.assertEqual(ana.band_sensitivity(s, "onset_high"), 2.4)
+
+    def test_short_band_names_work_too(self) -> None:
+        """The CLI and the query string both spell them without the prefix."""
+        s = {"low": 0.6, "high": 2.4}
+        self.assertEqual(ana.band_sensitivity(s, "onset_low"), 0.6)
+        self.assertEqual(ana.band_sensitivity(s, "onset_high"), 2.4)
+
+    def test_an_unnamed_band_falls_back_rather_than_failing(self) -> None:
+        self.assertEqual(ana.band_sensitivity({"low": 0.6}, "onset_mid"), 1.1)
+        self.assertEqual(ana.band_sensitivity(None, "onset_mid"), 1.1)
+
+    def test_lowering_one_band_only_moves_that_band(self) -> None:
+        """The point of the feature: tuning the top end must not silently
+        re-detect the bass underneath it."""
+        tmp = Path(tempfile.mkdtemp())
+        try:
+            wav = tmp / "click.wav"
+            make_click_track(wav, seconds=4.0)
+            x = ana.load_audio(wav)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        base = ana.analyze(x, sensitivity=1.1)
+        loosened = ana.analyze(x, sensitivity={"low": 1.1, "mid": 1.1, "high": 0.4})
+        self.assertEqual(len(base.get("onset_low", [])),
+                         len(loosened.get("onset_low", [])),
+                         "the low band moved when only high was changed")
+        self.assertGreaterEqual(len(loosened.get("onset_high", [])),
+                                len(base.get("onset_high", [])))
+
+
 class TestDensityFitting(unittest.TestCase):
     """Pulse settings must suit the track, not Crypt's 48 bpm heartbeat.
 

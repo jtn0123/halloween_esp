@@ -27,6 +27,9 @@ export interface ImportOpts {
   /** Container: mp3 | wav | flac | opus. Blank keeps whatever was used last. */
   format: string;
   normalize: boolean;
+  /** Seconds of ramp at the head and tail. Blank means none. */
+  fade_in: string;
+  fade_out: string;
 }
 
 /** Valid MPEG-1 Layer III range. Outside it the encoder has nothing to do
@@ -107,6 +110,13 @@ export function optsHint(o: ImportOpts): string {
     : `${fmt.toUpperCase()} ${clampKbps(o.bitrate)}k`);
   if (channelsOf(o.channels) === 2) bits.push("stereo");
   if (o.normalize) bits.push("loudness matched");
+  // Fades change what you hear at the seam of a loop, so they belong in a
+  // summary whose job is to say what the import will do.
+  const fi = +o.fade_in, fo = +o.fade_out;
+  if (fi > 0 || fo > 0) {
+    bits.push(`fade ${fi > 0 ? `${fi}s in` : ""}${fi > 0 && fo > 0 ? "/" : ""}`
+            + `${fo > 0 ? `${fo}s out` : ""}`);
+  }
   return bits.length ? `— ${bits.join(", ")}` : "";
 }
 
@@ -119,7 +129,7 @@ export interface OptsForm {
 
 /** Ids of every control that should re-render the readouts when touched. */
 const WATCHED = ["trkStart", "trkTake", "trkBitrate", "trkFormat",
-                 "trkCh", "trkRate", "trkNorm"];
+                 "trkCh", "trkRate", "trkNorm", "trkFadeIn", "trkFadeOut"];
 
 /**
  * Bind the form.
@@ -137,6 +147,7 @@ export function initImportOpts(flashUsed: () => number): OptsForm {
     sample_rate: val("trkRate"), channels: val("trkCh"),
     format: val("trkFormat"),
     normalize: !!el("trkNorm")?.checked,
+    fade_in: val("trkFadeIn"), fade_out: val("trkFadeOut"),
   });
 
   function sync(): void {

@@ -331,6 +331,34 @@
   .trk__act button.danger:hover { border-color: var(--alarm); color: var(--alarm); }
   .trk__act button.on { border-color: var(--spirit); color: var(--spirit); }
   .trk__act button[disabled] { opacity: .55; cursor: default; }
+  /* Per-band zone and threshold, inside the clip editor. One row per band,
+     coloured to match its lane on the waveform above. */
+  .bandcfg {
+    display: grid; gap: 4px; margin-top: 8px; padding: 8px 10px;
+    background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 4px;
+  }
+  .bandcfg__row {
+    display: grid; align-items: center; gap: 9px;
+    grid-template-columns: 9px 2.6em 5.6em 1fr 2.8em 7.5em;
+    font-family: var(--f-data); font-size: 11px; color: var(--ink-2);
+  }
+  .bandcfg__dot { width: 9px; height: 9px; border-radius: 50%; display: block; }
+  .bandcfg__nm { color: var(--ink); text-transform: uppercase; letter-spacing: .08em; }
+  .bandcfg__zone {
+    font-family: var(--f-data); font-size: 11px; padding: 2px 4px;
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line-2);
+    border-radius: 3px;
+  }
+  .bandcfg__sens { width: 100%; vertical-align: middle; }
+  .bandcfg__val, .bandcfg__hits {
+    font-variant-numeric: tabular-nums; color: var(--muted);
+  }
+  .bandcfg__hits { text-align: right; }
+  @media (max-width: 620px) {
+    .bandcfg__row { grid-template-columns: 9px 2.6em 5.6em 1fr; }
+    .bandcfg__val, .bandcfg__hits { display: none; }
+  }
+
   .trk-yaml {
     margin: 11px 0 0; padding: 11px; border-radius: 4px; background: var(--panel-2);
     border: 1px solid var(--line-2); font-family: var(--f-data); font-size: 11px;

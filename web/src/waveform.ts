@@ -13,7 +13,8 @@
  * without knowing this file exists.
  */
 
-import { BAND_HELP, bandSummary } from "./bands.js";
+import { BAND_HELP, BANDS, bandSummary } from "./bands.js";
+import type { BandEditor } from "./band_editor.js";
 import { EDGE_SLOP, WaveView, type WaveClip, type WaveData } from "./waveform_view.js";
 
 export interface WaveformDeps {
@@ -32,6 +33,11 @@ export interface WaveformDeps {
    * is cleared. The host builds its preview scene from this.
    */
   onClipChange?: (clip: WaveClip | null, data: WaveData | null) => void;
+  /**
+   * Per-band zones and thresholds. Mounted into this panel, but owned outside
+   * it because the scene generator reads the same settings.
+   */
+  bands: BandEditor;
   /** Container id, for the rare page that mounts this somewhere else. */
   containerId?: string;
 }
@@ -39,6 +45,8 @@ export interface WaveformDeps {
 export interface WaveformApi {
   /** Draw a track, or pass null to clear the editor. */
   show(trackId: string | null): void;
+  /** Re-run the analysis — after the band settings change. Debounced. */
+  reanalyse(): void;
   /** The current in/out points in seconds, or null when nothing is selected. */
   clip(): WaveClip | null;
   /** Stop the audition. Safe to call when nothing is playing. */
@@ -55,7 +63,8 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     // The editor is optional chrome. A page generated before this panel existed
     // has no #trkWave, and that is not worth taking the whole desk down for.
     console.warn("waveform: no #trkWave container — clip editor not mounted.");
-    return { show: () => {}, clip: () => null, stop: () => {}, destroy: () => {} };
+    return { show: () => {}, reanalyse: () => {}, clip: () => null,
+             stop: () => {}, destroy: () => {} };
   }
 
   const view = new WaveView();
@@ -80,21 +89,15 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   play.disabled = true;
   play.title = "Play just the selected region, on a loop";
   const readout = mk("span", "font-variant-numeric:tabular-nums");
-  const sens = document.createElement("input");
-  sens.type = "range";
-  sens.min = "0.3";
-  sens.max = "3";
-  sens.step = "0.05";
-  sens.value = "1.1";
-  sens.style.cssText = "width:130px;vertical-align:middle";
-  sens.title = "Onset sensitivity — higher finds more, and more of it is noise";
-  const sensVal = mk("span", "min-width:2.6em;font-variant-numeric:tabular-nums", "1.10");
-  const sensLbl = mk("label", "display:flex;align-items:center;gap:6px", "sens");
-  sensLbl.append(sens, sensVal);
+  const snap = mk("button", "", "Snap to beat");
+  snap.type = "button";
+  snap.disabled = true;
+  snap.title = "Move the in and out points to the nearest detected onsets, so "
+             + "a looping scene does not click at the seam";
   const note = mk("p", "margin:4px 0 0;color:var(--ink-2)");
   note.title = BAND_HELP;
-  row.append(play, readout, sensLbl);
-  wrap.append(view.el, row, note);
+  row.append(play, snap, readout);
+  wrap.append(view.el, row, deps.bands.el, note);
   host.append(wrap);
 
   const say = (msg: string, err = false): void => {
@@ -146,6 +149,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       ? `start ${clock(clip.start)}  ·  length ${clock(clip.end - clip.start)}`
       : "drag across the waveform to pick a clip";
     play.disabled = !clip || !view.data;
+    snap.disabled = play.disabled;
     deps.onClipChange?.(clip, view.data);
   }
 
@@ -165,7 +169,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   async function analyse(id: string): Promise<WaveData | string> {
     try {
       const r = await fetch(
-        `/api/waveform/${encodeURIComponent(id)}?sensitivity=${encodeURIComponent(sens.value)}`);
+        `/api/waveform/${encodeURIComponent(id)}?${deps.bands.query()}`);
       // A missing track is an ordinary outcome — the panel can be showing a row
       // the server has since deleted — so it reads as a message, not a throw.
       if (r.status === 404) return `No waveform for “${id}” — the studio has not analysed it.`;
@@ -181,7 +185,8 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   const counts = (d: WaveData): string => {
     const n: Record<string, number> =
       Object.fromEntries(Object.entries(d.onsets).map(([k, v]) => [k, v?.length ?? 0]));
-    const s = bandSummary(n, d.duration);
+    deps.bands.report(n, d.duration);
+    const s = bandSummary(n, d.duration, deps.bands.zones());
     return s === "no onsets" ? "no onsets at this sensitivity" : s;
   };
 
@@ -337,15 +342,59 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     if (playing) stop(`Could not load audio for “${trackId ?? ""}”.`);
   });
 
-  /* ── Sensitivity ── */
+  /* ── Loop points ──────────────────────────────────────────────────────
+     A looping scene whose seam lands mid-note clicks every time round. The
+     fix is to put both ends on a transient, which the detector has already
+     found — so this is a search, not a guess. */
+
+  /** Every onset in the track, in time order, across all bands. */
+  const allOnsets = (): number[] => {
+    const d = view.data;
+    if (!d) return [];
+    const t: number[] = [];
+    for (const b of BANDS) for (const [sec] of d.onsets[b.name] ?? []) t.push(sec);
+    return t.sort((a, z) => a - z);
+  };
+
+  /** Nearest onset to `sec`, or `sec` itself if none is close enough. */
+  const nearest = (times: number[], sec: number, within: number): number => {
+    let best = sec, gap = within;
+    for (const t of times) {
+      const d = Math.abs(t - sec);
+      if (d < gap) { gap = d; best = t; }
+    }
+    return best;
+  };
+
+  snap.addEventListener("click", () => {
+    const d = view.data;
+    if (!clip || !d) return;
+    const times = allOnsets();
+    if (!times.length) return say("No onsets to snap to at these thresholds.", true);
+    // Half a second is about as far as an edit can move before it stops being
+    // the edit you asked for.
+    const start = nearest(times, clip.start, 0.5);
+    let end = nearest(times, clip.end, 0.5);
+    if (end - start < 0.25) end = clip.end;      // refuse to collapse the clip
+    const moved = Math.abs(start - clip.start) + Math.abs(end - clip.end);
+    clip = { start, end };
+    sync();
+    pushOpts();
+    if (playing) seekIntoClip();
+    say(moved < 0.001
+      ? "Already on a beat at both ends."
+      : `Snapped to the nearest onsets — moved ${moved.toFixed(2)}s in total.`);
+  });
+
+  /* ── Bands ── */
   let sensTimer = 0;
-  sens.addEventListener("input", () => {
-    sensVal.textContent = (+sens.value).toFixed(2);
-    // Every change is a fresh analysis on the server; dragging the slider must
+  /** Re-run the analysis at whatever the band editor now says. */
+  function reanalyse(): void {
+    // Every change is a fresh analysis on the server; dragging a slider must
     // not turn into thirty of them.
     window.clearTimeout(sensTimer);
     sensTimer = window.setTimeout(() => { void load(); }, 300);
-  });
+  }
 
   view.message = "No track selected.";
   sync();
@@ -369,6 +418,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       else audio.removeAttribute("src");
       void load();
     },
+    reanalyse,
     clip: () => clip,
     stop: () => stop(),
     destroy(): void {

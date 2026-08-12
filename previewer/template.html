@@ -109,6 +109,14 @@
                 <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
                 <label>length <input type="text" id="trkTake" placeholder="all" size="5"></label>
                 <label>name <input type="text" id="trkId" placeholder="auto" size="9"></label>
+                <!-- A looping scene that starts and ends at full level clicks
+                     at the seam. These are seconds of ramp at each end. -->
+                <label title="Seconds of fade at the head, so a loop does not start with a click"
+                  >fade in <input type="number" id="trkFadeIn" placeholder="0"
+                       min="0" max="30" step="0.1" size="4"></label>
+                <label title="Seconds of fade at the tail. Needs a length to fade out from."
+                  >fade out <input type="number" id="trkFadeOut" placeholder="0"
+                       min="0" max="30" step="0.1" size="4"></label>
               </fieldset>
               <fieldset>
                 <legend>Format</legend>

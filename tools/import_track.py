@@ -61,6 +61,34 @@ def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
     return got[-1], got[-1].stem
 
 
+def sensitivity_arg(raw: str):
+    """`1.1`, or `low=0.8,mid=1.1,high=1.6`.
+
+    One number for all three bands is usually the wrong answer — a crisp kick
+    and a wash of cymbals want different thresholds — but it is the right
+    default, so both spellings are accepted and a bare number still means
+    "the same everywhere".
+    """
+    if "=" not in raw:
+        try:
+            return float(raw)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"not a number: {raw!r}") from None
+    out = {}
+    for part in raw.split(","):
+        k, _, v = part.partition("=")
+        k = k.strip().replace("onset_", "")
+        if k not in ("low", "mid", "high"):
+            raise argparse.ArgumentTypeError(
+                f"unknown band {k!r} — expected low, mid or high")
+        try:
+            out[f"onset_{k}"] = float(v)
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"not a number for {k}: {v!r}") from None
+    return out
+
+
 def convert(src: Path, out: Path, o: dict) -> None:
     """One ffmpeg pass: trim, filter, downmix, resample, encode."""
     cmd = ["ffmpeg", "-v", "quiet", "-y"]
@@ -267,8 +295,9 @@ def main() -> int:
     g.add_argument("--gain-db", type=float, help="flat gain adjustment in dB")
 
     g = ap.add_argument_group("analysis")
-    g.add_argument("--sensitivity", type=float,
-                   help="onset threshold; lower finds more (default 1.1)")
+    g.add_argument("--sensitivity", type=sensitivity_arg,
+                   help="onset threshold; lower finds more (default 1.1). "
+                        "Per band: low=0.8,mid=1.1,high=1.6")
 
     ap.add_argument("--analyze-only", action="store_true",
                     help="just report onsets, don't import")
@@ -289,7 +318,9 @@ def main() -> int:
 
     if args.analyze_only:
         src = Path(args.source)
-        marks = ana.analyze_full(ana.load_audio(src), sensitivity=args.sensitivity or 1.1)
+        marks = ana.analyze_full(ana.load_audio(src),
+                                 sensitivity=args.sensitivity
+                                 if args.sensitivity is not None else 1.1)
         dur = len(ana.load_audio(src)) / ana.SR
         for k, v in marks.items():
             print(f"  {k:<11} {len(v):>4} onsets")
@@ -355,7 +386,7 @@ def main() -> int:
     x = ana.load_audio(out)
     dur = len(x) / ana.SR
     size = out.stat().st_size
-    marks = ana.analyze_full(x, sensitivity=float(o["sensitivity"]))
+    marks = ana.analyze_full(x, sensitivity=o["sensitivity"])
 
     mf.record(
         tid,
