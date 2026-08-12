@@ -2,14 +2,17 @@
   "name": "castle-cue-desk",
   "private": true,
   "version": "1.0.0",
-  "description": "Browser cue desk for the Halloween castle \u2014 TypeScript sources",
+  "description": "Browser cue desk for the Halloween castle — TypeScript sources",
   "scripts": {
     "build": "esbuild src/main.ts --bundle --format=iife --target=es2020 --outfile=dist/bundle.js",
     "watch": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
+    "e2e": "playwright test",
+    "e2e:ui": "playwright test --ui",
     "test": "esbuild src/effects.ts --bundle --format=esm --outfile=dist/effects.mjs && esbuild src/show.ts --bundle --format=esm --outfile=dist/show.mjs && esbuild src/onsets.ts --bundle --format=esm --outfile=dist/onsets.mjs && esbuild src/import_opts.ts --bundle --format=esm --outfile=dist/import_opts.mjs && node test/effects_equivalence.mjs && node test/show_engine.mjs && node test/tracks_logic.mjs"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "esbuild": "^0.25.0",
     "typescript": "^5.7.0"
   }

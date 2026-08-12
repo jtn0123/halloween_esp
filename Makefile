@@ -2,7 +2,7 @@ PY := .venv/bin/python
 ESPHOME := .venv/bin/esphome
 YAML := firmware/castle.yaml
 
-.PHONY: test check help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean
+.PHONY: test check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean
 
 help:
 	@echo "Halloween Castle"
@@ -20,6 +20,8 @@ help:
 	@echo "  make bench-audio  measure decode load on the bare board (no speakers)"
 	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
 	@echo "  make studio     serve the cue desk with track management (localhost)"
+	@echo "  make e2e        browser tests (needs: cd web && npx playwright install chromium)"
+	@echo "  make check-all  every check, including the browser tests"
 	@echo ""
 	@echo "scenes/scenes.yaml is the source of truth for audio, cues AND the previewer."
 
@@ -88,3 +90,12 @@ check: test
 	@$(PY) tools/check_loc.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"
 	@cd web && npm run --silent test
+
+# Browser tests. Separate from `check` because they need a built page and a
+# browser binary, and they take an order of magnitude longer than everything
+# else put together. They drive the real studio server against a scratch
+# tracks directory, and Chromium runs with --mute-audio, so a run is silent.
+e2e: preview
+	@cd web && npx playwright test
+
+check-all: check e2e

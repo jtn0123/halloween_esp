@@ -28,11 +28,15 @@ part that makes an import reproducible, and it costs nothing to keep.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PATH = ROOT / "tracks" / "tracks.json"
+# The manifest lives beside the tracks it describes, so it follows the same
+# override — otherwise a test pointed at a scratch directory would still
+# rewrite the real tracks.json when it deletes something.
+PATH = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks")) / "tracks.json"
 
 
 def load() -> dict:

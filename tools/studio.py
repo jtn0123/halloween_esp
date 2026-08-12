@@ -42,7 +42,10 @@ import studio_media as sm  # noqa: E402
 import studio_jobs as sj  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-TRACKS = ROOT / "tracks"
+# Overridable so a test can drive the real server against a disposable
+# directory instead of the tracks you actually care about. Nothing else reads
+# it; leave it unset and this is the repo's own tracks/.
+TRACKS = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks"))
 SCENES = ROOT / "scenes" / "scenes.yaml"
 HTML = ROOT / "previewer" / "castle-cue-desk.html"
 PY = str(ROOT / ".venv" / "bin" / "python")
