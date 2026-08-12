@@ -22,7 +22,9 @@ substitutions:
   led_rgbw: "false"
 
 packages:
-  base: !include castle.yaml
+  # The flash variant, not the core: the bench needs `sfx` + embedded audio
+  # too, and castle_flash.yaml is exactly "castle with audio in the image".
+  base: !include castle_flash.yaml
 
 # The onboard pixel is dark until its power rail (GPIO21) is driven high.
 switch:

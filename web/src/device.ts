@@ -9,15 +9,21 @@
  * the entire mode switch. No build flag, no second bundle.
  *
  * In device mode:
- *   - a status chip appears (name, firmware version, SD state), polled gently;
+ *   - a status chip appears: version, SD state, what is PLAYING right now,
+ *     a volume slider that starts where the amp actually is, and mute;
  *   - picking a scene in the desk also fires it on the real castle, so the
  *     canvas preview and the porch are looking at the same show;
- *   - a stop button stops the hardware, not just the page.
+ *   - on load the desk ADOPTS the castle's current scene, so the page opens
+ *     showing what the hardware is doing rather than the default;
+ *   - every queued POST answers with a small toast — the pending-action queue
+ *     on the device means "queued", and silence reads as a dead button.
  *
  * Mirroring is fire-and-forget on purpose. The desk must never stall on the
  * radio link, and a lost POST costs one button press, not state: the device
  * runs its own show engine and this page only nudges it.
  */
+
+import { DevicePanel } from "./device_panel.js";
 
 /** What `deviceBridge()` hands back; every call is safe in simulator mode. */
 export interface DeviceLink {
@@ -27,11 +33,12 @@ export interface DeviceLink {
   stop(): void;
 }
 
-import { DevicePanel } from "./device_panel.js";
-
 interface Status {
   version: string;
   sd_mounted: boolean;
+  volume?: number;
+  scene?: string;
+  track?: string;
 }
 
 const PROBE_TIMEOUT_MS = 1500;
@@ -48,17 +55,39 @@ async function probe(): Promise<Status | null> {
   }
 }
 
-/** POST and forget; errors surface on the chip, not as dialogs. */
-function post(path: string, onError: () => void): void {
+/** One small transient message near the chip. The device queues actions, so
+ *  "queued" IS the honest success state — see the interval in castle_sd.yaml. */
+export function toast(msg: string, isError = false): void {
+  const el = document.createElement("div");
+  el.textContent = msg;
+  el.style.cssText =
+    "position:fixed;right:12px;bottom:52px;z-index:41;padding:.4rem .7rem;" +
+    "border-radius:8px;font:12px system-ui;pointer-events:none;" +
+    "transition:opacity .4s;opacity:1;" +
+    (isError ? "background:#5a1a2a;color:#ffd8e0;" : "background:#2a3a1a;color:#e0ffd0;");
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = "0"; }, 1400);
+  setTimeout(() => el.remove(), 1900);
+}
+
+/** POST with a toast on both outcomes. */
+function post(path: string, okMsg: string): void {
   fetch(path, { method: "POST" }).then(
-    (r) => { if (!r.ok) onError(); },
-    onError,
+    (r) => { r.ok ? toast(okMsg) : toast(`${okMsg} failed`, true); },
+    () => toast(`${okMsg} failed`, true),
   );
 }
 
-export function deviceBridge(): DeviceLink {
+export interface BridgeOpts {
+  /** Called once, on first contact, with the scene the castle is running —
+   *  so the desk can open showing reality instead of the default. */
+  adoptScene?: (sceneId: string) => void;
+}
+
+export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   let live = false;
   let mirror = true;
+  let lastVol = 70;
   const panel = new DevicePanel();
 
   const chip = document.createElement("div");
@@ -70,35 +99,63 @@ export function deviceBridge(): DeviceLink {
     "box-shadow:0 4px 16px rgba(0,0,0,.5)";
   document.body.appendChild(chip);
 
-  const render = (s: Status, note = "") => {
+  const render = (s: Status) => {
     chip.style.display = "block";
+    chip.style.opacity = "1";
+    lastVol = s.volume ?? lastVol;
+    const playing = s.scene && s.scene !== "stop"
+      ? `▶ ${s.scene}${s.track ? ` · ${s.track}` : ""}` : "idle";
     chip.innerHTML =
-      `🏰 castle v${s.version} · ${s.sd_mounted ? "SD ok" : "no SD"}` +
-      ` <label style="margin-left:.5rem;cursor:pointer">` +
-      `<input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}>` +
-      ` play on castle</label>` +
-      ` <button id="devStop" style="margin-left:.5rem;cursor:pointer;` +
-      `background:#3a2a55;color:inherit;border:0;border-radius:6px;` +
-      `padding:.2rem .5rem">■ stop</button>` +
-      ` <button id="devMore" title="SD library, volume, boot log" ` +
-      `style="margin-left:.25rem;cursor:pointer;background:#3a2a55;` +
-      `color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">☰</button>` +
-      (note ? `<div style="color:#c9a">${note}</div>` : "");
+      `<div>🏰 castle v${s.version} · ${s.sd_mounted ? "SD ok" : "no SD"} · ` +
+      `<span id="devNow" style="color:#b8a8d8">${playing}</span></div>` +
+      `<div style="margin-top:.25rem;display:flex;align-items:center;gap:.4rem">` +
+      `<button id="devMute" title="Mute the castle speaker" ` +
+      `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
+      `border-radius:6px;padding:.15rem .45rem">${lastVol === 0 ? "🔇" : "🔊"}</button>` +
+      `<input id="devVol" type="range" min="0" max="100" value="${lastVol}" ` +
+      `style="width:90px">` +
+      `<label style="cursor:pointer;white-space:nowrap">` +
+      `<input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}> on castle</label>` +
+      `<button id="devStop" style="cursor:pointer;background:#3a2a55;` +
+      `color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">■</button>` +
+      `<button id="devMore" title="SD library, light, PIR, boot log" ` +
+      `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
+      `border-radius:6px;padding:.2rem .5rem">☰</button>` +
+      `</div>`;
+
     chip.querySelector<HTMLInputElement>("#devMirror")!
       .addEventListener("change", (e) => {
         mirror = (e.target as HTMLInputElement).checked;
       });
     chip.querySelector<HTMLButtonElement>("#devStop")!
-      .addEventListener("click", () => post("/api/stop", () => {}));
+      .addEventListener("click", () => post("/api/stop", "stop"));
     chip.querySelector<HTMLButtonElement>("#devMore")!
       .addEventListener("click", () => panel.toggle());
+
+    let volTimer: number | undefined;
+    const vol = chip.querySelector<HTMLInputElement>("#devVol")!;
+    vol.addEventListener("input", () => {
+      clearTimeout(volTimer);
+      volTimer = window.setTimeout(
+        () => post(`/api/volume?v=${vol.value}`, `volume ${vol.value}`), 150);
+    });
+    chip.querySelector<HTMLButtonElement>("#devMute")!
+      .addEventListener("click", () => {
+        // Mute is volume 0 with memory — the device has no separate flag.
+        const to = Number(vol.value) === 0 ? (lastVol || 70) : 0;
+        if (to === 0) lastVol = Number(vol.value);
+        vol.value = String(to);
+        post(`/api/volume?v=${to}`, to === 0 ? "muted" : `volume ${to}`);
+      });
   };
 
   void probe().then((s) => {
     if (s === null) return;   // simulator mode: the chip never appears
     live = true;
     render(s);
-    // A slow poll keeps the chip honest (version after an OTA, card pulled).
+    if (s.scene && s.scene !== "stop") opts.adoptScene?.(s.scene);
+    // A slow poll keeps the chip honest (version after an OTA, card pulled,
+    // a scene the PIR fired while nobody was looking).
     setInterval(async () => {
       const now = await probe();
       if (now !== null) render(now);
@@ -109,12 +166,11 @@ export function deviceBridge(): DeviceLink {
   return {
     scene(id: string): void {
       if (!live || !mirror) return;
-      post(`/api/scene?s=${encodeURIComponent(id)}`, () =>
-        render({ version: "?", sd_mounted: false }, "scene POST failed"));
+      post(`/api/scene?s=${encodeURIComponent(id)}`, `scene ${id}`);
     },
     stop(): void {
       if (!live) return;
-      post("/api/stop", () => {});
+      post("/api/stop", "stop");
     },
   };
 }

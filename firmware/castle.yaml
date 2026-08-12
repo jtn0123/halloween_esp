@@ -17,7 +17,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.4"
+  version: "5.9"
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
   #
@@ -54,6 +54,7 @@ esphome:
     - castle_effects.h
     - flash_mode.h
     - boot_log.h
+    - castle_health.h
 
   on_boot:
     # Highest priority ESPHome offers, so the ring is catching lines before
@@ -67,6 +68,7 @@ esphome:
             // listener interface to save a vtable per implementer, so a
             // capturing lambda will not bind here.
             castle_log::init();
+            castle_health::init();
             if (esphome::logger::global_logger != nullptr) {
               esphome::logger::global_logger->add_log_callback(
                   nullptr,
@@ -170,6 +172,12 @@ wifi:
 # comes up if WiFi fails, so the device is still recoverable — you just join
 # its network and reflash rather than filling in a form.
 
+# NOTE: this file is the CORE, not a buildable target. It deliberately
+# defines no `sfx` audio dispatch and no media files — every variant composes
+# those (castle_flash.yaml embeds them, castle_sd.yaml streams them off the
+# card). Building this file directly fails with "sfx unknown", by design:
+# ESPHome's !extend appends to lists instead of replacing them, so a variant
+# cannot cleanly swap an implementation the core already provides.
 packages:
   # The generated scene scripts.
   scenes: !include generated/scenes.yaml
@@ -209,6 +217,37 @@ globals:
     restore_value: false
     initial_value: "{1.0f, 1.0f, 1.0f}"
 
+  # ── Per-pixel texture state (mirrors ShowState in web/src/show.ts) ──
+  # Effect for the CENTRE pixel only; -1 = same as the ring.
+  - id: zone_center
+    type: int[3]
+    restore_value: false
+    initial_value: "{-1, -1, -1}"
+  # Overlay index (castle::Overlay) composited over the base effect.
+  - id: zone_overlay
+    type: int[3]
+    restore_value: false
+    initial_value: "{0, 0, 0}"
+  # Palette index (castle::PALETTES) for the crossfade effects.
+  - id: zone_palette
+    type: int[3]
+    restore_value: false
+    initial_value: "{0, 0, 0}"
+  # Seconds added to the zone's clock — anti-phase breathing between towers.
+  - id: zone_phase
+    type: float[3]
+    restore_value: false
+    initial_value: "{0.0f, 0.0f, 0.0f}"
+  # Which pixels strikes hit (castle::flash_gate mode) + the scatter epoch.
+  - id: zone_flash_mode
+    type: int[3]
+    restore_value: false
+    initial_value: "{0, 0, 0}"
+  - id: zone_flash_epoch
+    type: int[3]
+    restore_value: false
+    initial_value: "{0, 0, 0}"
+
 number:
   # Live tuning knobs, exposed to Home Assistant. These match the sliders on
   # the browser previewer so a setting found there can be dialled in here.
@@ -220,6 +259,37 @@ number:
     max_value: 1
     step: 0.01
     initial_value: 0.5
+    restore_value: true
+  # Installation calibration: the door jewel sits closer to the viewer than
+  # the towers, and drywall eats light unevenly. Trim scales EVERYTHING in a
+  # zone (base and strikes), persists across reboots, and belongs to the
+  # install — which is why it is a device setting and not a scene field.
+  - platform: template
+    name: "Trim towerL"
+    id: trim_towerl
+    optimistic: true
+    min_value: 0.1
+    max_value: 1
+    step: 0.05
+    initial_value: 1
+    restore_value: true
+  - platform: template
+    name: "Trim towerR"
+    id: trim_towerr
+    optimistic: true
+    min_value: 0.1
+    max_value: 1
+    step: 0.05
+    initial_value: 1
+    restore_value: true
+  - platform: template
+    name: "Trim door"
+    id: trim_door
+    optimistic: true
+    min_value: 0.1
+    max_value: 1
+    step: 0.05
+    initial_value: 1
     restore_value: true
 
 switch:
@@ -263,9 +333,9 @@ media_player:
     buffer_size: 250000
     volume_initial: 70%
     task_stack_in_psram: true
-    # Generated from scenes.yaml — see tools/gen_esphome.py for why this
-    # is no longer a hand-kept list.
-    files: !include generated/media_files.yaml
+    # NO `files:` here — each variant adds its own via `!extend castle_media`
+    # (extend appends, and appending to nothing is the one case where that
+    # semantics does exactly what we want).
 
 light:
   - platform: esp32_rmt_led_strip
@@ -290,6 +360,10 @@ light:
             float hue = id(hue_balance).state;
             bool soft = id(soften).state;
 
+            const float trims[3] = {(float) id(trim_towerl).state,
+                                    (float) id(trim_towerr).state,
+                                    (float) id(trim_door).state};
+
             for (int z = 0; z < NZ; z++) {
               // Strike decay, per zone: cues choose it (heartbeat snaps,
               // toll blooms). Softened strikes fall slower and peak lower,
@@ -298,18 +372,31 @@ light:
               float d = soft ? (1.0f - (1.0f - d0) * 0.35f) : d0;
               id(zone_flash)[z] *= d;
               if (id(zone_flash)[z] < 0.004f) id(zone_flash)[z] = 0.0f;
-              float f = id(zone_flash)[z] * (soft ? 0.55f : 0.92f);
+              float fbase = id(zone_flash)[z] * (soft ? 0.55f : 0.92f);
               const float *fc = &id(zone_flash_col)[z * 4];
               float lv = id(zone_level)[z];
+              // Per-zone clock offset: the towers can breathe in anti-phase.
+              float tz = t + id(zone_phase)[z];
+              int pal = id(zone_palette)[z];
+              int ov = id(zone_overlay)[z];
+              int ring_eff = id(zone_effect)[z];
+              // Pixel 0 may play its own role (ember core, eyes in a dark
+              // window); -1 keeps the classic one-texture jewel.
+              int center_eff = id(zone_center)[z] >= 0 ? id(zone_center)[z] : ring_eff;
+              float trim = trims[z];
 
               for (int p = 0; p < PER; p++) {
                 // Seed varies per pixel so flame moves across the jewel.
                 float seed = z * 4.7f + p * 1.31f;
-                Rgbw c = render(id(zone_effect)[z], t, seed, hue, soft);
-                float r = fminf(1.0f, c.r * lv + f * fc[0]);
-                float g = fminf(1.0f, c.g * lv + f * fc[1]);
-                float b = fminf(1.0f, c.b * lv + f * fc[2] * 0.96f);
-                float w = fminf(1.0f, c.w * lv + f * fc[3]);
+                Rgbw c = render(p == 0 ? center_eff : ring_eff, tz, seed, hue, soft, pal);
+                c = apply_overlay(ov, c, tz, p, z);
+                // Which pixels this strike lands on — scatter, centre, ring.
+                float f = fbase * flash_gate(id(zone_flash_mode)[z], p, z,
+                                             id(zone_flash_epoch)[z]);
+                float r = fminf(1.0f, c.r * lv + f * fc[0]) * trim;
+                float g = fminf(1.0f, c.g * lv + f * fc[1]) * trim;
+                float b = fminf(1.0f, c.b * lv + f * fc[2] * 0.96f) * trim;
+                float w = fminf(1.0f, c.w * lv + f * fc[3]) * trim;
                 it[z * PER + p] = Color(uint8_t(r * 255), uint8_t(g * 255),
                                         uint8_t(b * 255), uint8_t(w * 255));
               }
@@ -332,7 +419,18 @@ binary_sensor:
       - delayed_off: 8s
     on_press:
       then:
-        - script.execute: scene_approach
+        # Which scene, how often, and whether at all — all runtime settings
+        # (see the generated pir_* entities), not code. The cooldown is the
+        # difference between a haunted castle and a car alarm.
+        - lambda: |-
+            static uint32_t last_ms = 0;
+            if (!id(pir_armed).state) return;
+            const uint32_t now = millis();
+            const uint32_t hold = (uint32_t)(id(pir_cooldown).state * 1000.0f);
+            if (last_ms != 0 && (now - last_ms) < hold) return;
+            last_ms = now;
+            ESP_LOGI("castle", "motion -> scene '%s'", id(pir_scene).current_option().c_str());
+            id(run_scene)->execute(id(pir_scene).current_option().str());
 
 button:
   # ── Diagnostics ──────────────────────────────────────────────────
@@ -365,28 +463,36 @@ button:
       - lambda: 'castle_sd::reboot_to_download_mode();'
   - platform: template
     name: "Scene: Vigil"
-    on_press: {script.execute: scene_vigil}
+    on_press:
+      - script.execute: {id: run_scene, scene: vigil}
   - platform: template
     name: "Scene: Storm"
-    on_press: {script.execute: scene_storm}
+    on_press:
+      - script.execute: {id: run_scene, scene: storm}
   - platform: template
     name: "Scene: Seance"
-    on_press: {script.execute: scene_seance}
+    on_press:
+      - script.execute: {id: run_scene, scene: seance}
   - platform: template
     name: "Scene: Ballroom"
-    on_press: {script.execute: scene_ballroom}
+    on_press:
+      - script.execute: {id: run_scene, scene: ballroom}
   - platform: template
     name: "Scene: Descent"
-    on_press: {script.execute: scene_descent}
+    on_press:
+      - script.execute: {id: run_scene, scene: descent}
   - platform: template
     name: "Scene: Visitation"
-    on_press: {script.execute: scene_visitation}
+    on_press:
+      - script.execute: {id: run_scene, scene: visitation}
   - platform: template
     name: "Scene: Approach"
-    on_press: {script.execute: scene_approach}
+    on_press:
+      - script.execute: {id: run_scene, scene: approach}
   - platform: template
     name: "Scene: Crypt"
-    on_press: {script.execute: scene_crypt}
+    on_press:
+      - script.execute: {id: run_scene, scene: crypt}
   - platform: template
     name: "Blackout"
     on_press: {script.execute: scene_stop}

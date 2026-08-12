@@ -60,6 +60,9 @@ export interface StrikeCue extends CueBase {
   /** 1.0 for lightning; beat pulses come through much smaller. */
   intensity?: number;
   color?: StrikeColor;
+  /** Which pixels the flash hits: "all" (default) | "scatter" | "center" |
+   *  "ring". Scatter picks a fresh random subset per strike. */
+  pixels?: string;
   /** Per-frame multiplier at 16 ms. 0.82 snaps, 0.97 blooms. */
   decay?: number;
 }
@@ -84,6 +87,8 @@ export interface Scene {
   base: Record<ZoneId, EffectName>;
   /** Per-zone base brightness; absent entries are 1.0. */
   levels: Partial<Record<ZoneId, number>>;
+  /** Optional per-zone texture: pixel roles, overlays, palette, phase. */
+  zones?: Partial<Record<ZoneId, ZoneDetail>>;
   cues: Cue[];
   /** The rendered file name, e.g. "08_crypt.mp3". */
   file: string;
@@ -91,6 +96,21 @@ export interface Scene {
   bytes: number;
   /** Verbatim slice of scenes.yaml, for the source panel. */
   yaml: string;
+}
+
+/**
+ * Per-zone texture detail — what makes a jewel more than one lamp. All
+ * optional; an absent field keeps the classic uniform-jewel look.
+ */
+export interface ZoneDetail {
+  /** Effect for the CENTRE pixel only; the base effect keeps the ring. */
+  center?: EffectName;
+  /** "sparkle" | "chase" | "meteor" — composited over the base. */
+  overlay?: string;
+  /** "haunt" | "ember" | "moonlight" | "toxic" — poles for crossfade effects. */
+  palette?: string;
+  /** Seconds added to this zone's clock (anti-phase breathing). */
+  phase?: number;
 }
 
 /** The block spliced in between the @GEN-DATA markers. */

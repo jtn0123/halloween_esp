@@ -12,7 +12,10 @@
  * takes a scene and a timestamp and answers "what colour is every pixel".
  */
 
-import { EFFECTS, effect, toScreen, pixelSeed, type EffectParams } from "./effects.js";
+import {
+  EFFECTS, effect, toScreen, pixelSeed, applyOverlay, flashGate,
+  overlayIndex, paletteIndex, flashModeIndex, type EffectParams,
+} from "./effects.js";
 import type { Cue, EffectName, Rgbw, Scene, StrikeColor, ZoneId } from "./types.js";
 
 export const ZONE_IDS: readonly ZoneId[] = ["towerL", "towerR", "door"];
@@ -59,6 +62,21 @@ export interface ShowState {
   /** Modelled decode spin-up, so screen and speaker agree. */
   latency: number;
   soft: boolean;
+
+  /* Per-pixel texture — the "not all 7 the same" state. Every field mirrors
+     a firmware global; see the zone lambda in castle.yaml. */
+  /** Effect for pixel 0 only; null = same as the ring (the classic look). */
+  centerEff: PerZone<EffectName | null>;
+  /** Overlay index (effects.OVERLAY_NAMES) composited over the base. */
+  overlay: PerZone<number>;
+  /** Palette index (effects.PALETTE_NAMES) for the crossfade effects. */
+  palette: PerZone<number>;
+  /** Seconds added to the clock per zone — anti-phase breathing. */
+  phase: PerZone<number>;
+  /** Which pixels strikes hit (effects.FLASH_MODES index). */
+  flashMode: PerZone<number>;
+  /** Bumped per strike so `scatter` picks a fresh subset each time. */
+  flashEpoch: PerZone<number>;
 }
 
 export function createState(scene: Scene, now: number): ShowState {
@@ -75,7 +93,29 @@ export function createState(scene: Scene, now: number): ShowState {
     level: perZone(() => 1),
     latency: 70,
     soft: false,
+    centerEff: perZone<EffectName | null>(() => null),
+    overlay: perZone(() => 0),
+    palette: perZone(() => 0),
+    phase: perZone(() => 0),
+    flashMode: perZone(() => 0),
+    flashEpoch: perZone(() => 0),
   };
+}
+
+/** Apply a scene's per-zone texture (zones: block in scenes.yaml). */
+function applyZoneDetail(st: ShowState, sc: Scene): void {
+  st.centerEff = perZone<EffectName | null>(() => null);
+  st.overlay = perZone(() => 0);
+  st.palette = perZone(() => 0);
+  st.phase = perZone(() => 0);
+  st.flashMode = perZone(() => 0);
+  for (const [z, d] of Object.entries(sc.zones ?? {})) {
+    const id = z as ZoneId;
+    if (d.center) st.centerEff[id] = d.center;
+    if (d.overlay) st.overlay[id] = overlayIndex(d.overlay);
+    if (d.palette) st.palette[id] = paletteIndex(d.palette);
+    if (d.phase) st.phase[id] = d.phase;
+  }
 }
 
 /**
@@ -89,6 +129,7 @@ export function rebuildLightsAt(st: ShowState, sc: Scene, ms: number): void {
   st.flashDecay = perZone(() => DEFAULT_DECAY);
   st.level = { towerL: 1, towerR: 1, door: 1, ...sc.levels };
   st.eff = { ...perZone<EffectName>(() => "off"), ...sc.base };
+  applyZoneDetail(st, sc);
   st.fired.clear();
 
   sc.cues.forEach((c, i) => {
@@ -149,6 +190,11 @@ export function fireCues(
         st.flash[id] = Math.min(1, st.flash[id] + amt);
         st.flashCol[id] = c.color ?? WHITE;
         st.flashDecay[id] = c.decay ?? DEFAULT_DECAY;
+        // Where the strike lands on the jewel: whole face, a fresh random
+        // scatter, just the centre, or just the ring. The epoch bump is what
+        // makes each scattered strike pick different pixels.
+        st.flashMode[id] = flashModeIndex(c.pixels ?? "all");
+        st.flashEpoch[id] = (st.flashEpoch[id] + 1) % 1000;
       }
     }
   }
@@ -168,15 +214,27 @@ export function renderZones(st: ShowState, ts: number, P: EffectParams): ZoneRen
   const out = {} as ZoneRender;
 
   ZONE_IDS.forEach((id, zi) => {
-    const fn = effect(st.eff[id]) ?? EFFECTS.off;
-    const f = st.flash[id] * (st.soft ? 0.55 : 0.92);
+    const ringFn = effect(st.eff[id]) ?? EFFECTS.off;
+    // Pixel 0 may play a different role than the ring — ember core inside a
+    // candle ring, eyes in a dark window. null means the classic one-texture
+    // jewel.
+    const centerFn = st.centerEff[id] ? effect(st.centerEff[id]!) : ringFn;
+    const fBase = st.flash[id] * (st.soft ? 0.55 : 0.92);
     const fc = st.flashCol[id];
     const lv = st.level[id];
+    const tz = ts + st.phase[id];        // anti-phase breathing between zones
+    const pal = st.palette[id];
+    const ov = st.overlay[id];
     const pix: Array<[number, number, number]> = [];
     const avg: [number, number, number] = [0, 0, 0];
 
+    const savedPal = P.pal;
+    P.pal = pal;
     for (let p = 0; p < PIXELS_PER_ZONE; p++) {
-      const c = fn(ts, pixelSeed(zi, p), P);
+      const fn = p === 0 ? centerFn : ringFn;
+      let c = fn(tz, pixelSeed(zi, p), P);
+      c = applyOverlay(ov, c, tz, p, zi);
+      const f = fBase * flashGate(st.flashMode[id], p, zi, st.flashEpoch[id]);
       const lit: Rgbw = [c[0] * lv, c[1] * lv, c[2] * lv, c[3] * lv + f * fc[3]];
       const [sr, sg, sb] = toScreen(lit);
       const r = Math.min(1, sr * P.bright + f * fc[0]);
@@ -187,6 +245,7 @@ export function renderZones(st: ShowState, ts: number, P: EffectParams): ZoneRen
       avg[1] += g / PIXELS_PER_ZONE;
       avg[2] += b / PIXELS_PER_ZONE;
     }
+    P.pal = savedPal;
     out[id] = { pix, avg };
   });
 

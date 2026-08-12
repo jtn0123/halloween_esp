@@ -45,7 +45,8 @@ def cue_lambdas(lines: list[str]) -> list[str]:
     """The lambdas a scene runs after its audio starts — i.e. the cues."""
     then = parse_script(lines)["then"]
     start = next(i for i, st in enumerate(then)
-                 if "media_player.speaker.play_on_device_media_file" in st)
+                 if isinstance(st.get("script.execute"), dict)
+                 and st["script.execute"].get("id") == "sfx")
     return [st["lambda"] for st in then[start + 1:] if "lambda" in st]
 
 
@@ -166,7 +167,7 @@ class TestEmitScene(unittest.TestCase):
         times, t, started = [], 0, False
         for ln in lines:
             s = ln.strip()
-            if s == "announcement: true":
+            if s == "id: sfx":
                 started = True
             elif started and s.startswith("- delay:"):
                 t += int(s.split()[-1].removesuffix("ms"))
@@ -226,7 +227,7 @@ class TestEmitScene(unittest.TestCase):
         """
         s = scene(levels={"door": 0.4}, base={"towerL": "spirit",
                                               "towerR": "off", "door": "ember"})
-        reset = ge.emit_scene(s, ZONES, 1, {})[5]
+        reset = ge.emit_scene(s, ZONES, 1, {})[8]
         for i, eff in enumerate([4, 0, 2]):
             self.assertIn(f"id(zone_effect)[{i}] = {eff};", reset)
             self.assertIn(f"id(zone_flash)[{i}] = 0.0f;", reset)
@@ -237,7 +238,7 @@ class TestEmitScene(unittest.TestCase):
         self.assertIn("id(zone_level)[0] = 1.00f;", reset)   # unlisted -> full
 
     def test_zone_missing_from_base_falls_back_to_off(self) -> None:
-        reset = ge.emit_scene(scene(base={"door": "candle"}), ZONES, 1, {})[5]
+        reset = ge.emit_scene(scene(base={"door": "candle"}), ZONES, 1, {})[8]
         self.assertIn("id(zone_effect)[0] = 0;", reset)
         self.assertIn("id(zone_effect)[2] = 1;", reset)
 
@@ -248,7 +249,7 @@ class TestEmitScene(unittest.TestCase):
     def test_non_looping_scene_ends(self) -> None:
         """Ambient scenes loop; a triggered scare that looped would never stop."""
         lines = ge.emit_scene(scene(), ZONES, 1, {})
-        self.assertNotIn("script.execute", "\n".join(lines))
+        self.assertNotIn("script.execute: scene_probe", "\n".join(lines))
 
     def test_set_cue_writes_effect_and_optional_level(self) -> None:
         s = scene(cues=[{"t": 10, "op": "set", "zone": "towerR",
@@ -294,7 +295,7 @@ class TestEmitScene(unittest.TestCase):
                                          {"probe": {"h": [[100, 1.0], [200, 0.5]]}}))
         self.assertEqual(got["id"], "scene_probe")
         self.assertEqual(got["mode"], "restart")
-        self.assertEqual(got["then"][2]["media_player.volume_set"], 0.45)
+        self.assertEqual(got["then"][3]["media_player.volume_set"], 0.45)
 class TestGenEsphomeMain(unittest.TestCase):
     """End to end: a scenes.yaml on disk becomes a loadable ESPHome file."""
 
@@ -313,29 +314,33 @@ class TestGenEsphomeMain(unittest.TestCase):
         # forgotten when it was added, and these tests then wrote their two
         # fixture scenes into the real firmware/generated/media_files.yaml —
         # which broke the next firmware build with "cannot find 01_a.mp3".
-        self._saved = (ge.SRC, ge.MARKERS, ge.OUT, ge.MEDIA_OUT, ge.ROOT)
+        self._saved = (ge.SRC, ge.MARKERS, ge.OUT, ge.MEDIA_OUT,
+                       ge.AUDIO_FLASH, ge.AUDIO_SD, ge.ROOT)
         ge.ROOT = self.tmp
         ge.SRC = self.tmp / "scenes.yaml"
         ge.MARKERS = self.tmp / "markers.json"
         ge.OUT = self.tmp / "generated" / "scenes.yaml"
         ge.MEDIA_OUT = self.tmp / "generated" / "media_files.yaml"
+        ge.AUDIO_FLASH = self.tmp / "generated" / "audio_flash.yaml"
+        ge.AUDIO_SD = self.tmp / "generated" / "audio_sd.yaml"
         ge.SRC.write_text(yaml.safe_dump(self.DOC))
 
     def tearDown(self) -> None:
-        ge.SRC, ge.MARKERS, ge.OUT, ge.MEDIA_OUT, ge.ROOT = self._saved
+        (ge.SRC, ge.MARKERS, ge.OUT, ge.MEDIA_OUT,
+         ge.AUDIO_FLASH, ge.AUDIO_SD, ge.ROOT) = self._saved
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_writes_a_parseable_file_with_every_scene_and_a_stop_script(self) -> None:
         self.assertEqual(ge.main(), 0)
         doc = yaml.safe_load(ge.OUT.read_text())
         self.assertEqual([s["id"] for s in doc["script"]],
-                         ["scene_a", "scene_b", "scene_stop"])
+                         ["scene_a", "scene_b", "scene_stop", "run_scene"])
 
     def test_blackout_script_clears_every_zone(self) -> None:
         """One call has to be enough to make the whole castle go dark."""
         ge.main()
         doc = yaml.safe_load(ge.OUT.read_text())
-        lam = doc["script"][-1]["then"][0]["lambda"]
+        lam = doc["script"][-2]["then"][0]["lambda"]
         for i in range(len(ZONES)):
             self.assertIn(f"id(zone_effect)[{i}] = 0;", lam)
             self.assertIn(f"id(zone_flash)[{i}] = 0.0f;", lam)
@@ -350,7 +355,7 @@ class TestGenEsphomeMain(unittest.TestCase):
         """`make generate` must work before `make audio` has ever run."""
         ge.main()
         doc = yaml.safe_load(ge.OUT.read_text())
-        self.assertEqual(len(doc["script"]), 3)
+        self.assertEqual(len(doc["script"]), 4)
 
     def test_markers_file_is_used_when_present(self) -> None:
         ge.MARKERS.write_text('{"b": {"h": [[250, 1.0]]}}')

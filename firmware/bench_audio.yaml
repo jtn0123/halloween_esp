@@ -35,7 +35,8 @@ substitutions:
   led_rgbw: "false"
 
 packages:
-  base: !include castle.yaml
+  # The flash variant, not the core — see the note in bench.yaml.
+  base: !include castle_flash.yaml
 
 # The onboard pixel is dark until its power rail is driven high.
 switch:

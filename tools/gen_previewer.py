@@ -97,6 +97,8 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
                 c["color"] = cue["color"]
             if "decay" in cue:
                 c["decay"] = float(cue["decay"])
+            if "pixels" in cue:
+                c["pixels"] = cue["pixels"]
             cues.append(c)
         else:
             sys.exit(f"scene {sid}: unknown cue op {cue['op']!r}")
@@ -112,6 +114,8 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
                  "color": pcfg.get("color", [1, 1, 1, 1]),
                  "decay": pcfg.get("decay", 0.90),
                  "detail": pcfg["synth"]}
+            if pcfg.get("pixels"):
+                c["pixels"] = pcfg["pixels"]
             if zones and pcfg.get("alternate"):
                 c["targets"] = [zones[i % len(zones)]]
             elif zones:
@@ -133,6 +137,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         "blurb": " ".join(str(scene.get("blurb", "")).split()),
         "base": scene["base"],
         "levels": scene.get("levels") or {},
+        "zones": scene.get("zones") or {},
         "cues": cues,
         "file": f"{idx:02d}_{sid}.mp3",
         # What this scene costs in flash. The budget is the single hardest

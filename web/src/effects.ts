@@ -25,11 +25,35 @@ export interface EffectParams {
   hue: number;
   soft: boolean;
   stops: number;
+  /** Palette index for the crossfade effects — set PER ZONE by the renderer
+   *  before each call, not a user slider. Index into PALETTES. */
+  pal: number;
 }
 
 export const defaultParams = (): EffectParams => ({
   depth: 0.55, speed: 1.4, bright: 0.85, hue: 0.5, soft: false, stops: 0.42,
+  pal: 0,
 });
+
+/* ── Palettes — the pole pairs the crossfade effects sweep between ─────
+   Same table, same order, as firmware/castle_effects.h. A scene names one
+   per zone; index 0 is the classic violet/green the show was built on. */
+
+export const PALETTE_NAMES = ["haunt", "ember", "moonlight", "toxic"] as const;
+export type PaletteName = (typeof PALETTE_NAMES)[number];
+
+type Pole = readonly [number, number, number];
+export const PALETTES: ReadonlyArray<readonly [Pole, Pole]> = [
+  [[0.66, 0.08, 1.00], [0.14, 1.00, 0.42]],   // haunt: violet <-> green
+  [[0.72, 0.08, 0.00], [1.00, 0.55, 0.05]],   // ember: deep red <-> amber
+  [[0.10, 0.22, 0.85], [0.72, 0.85, 1.00]],   // moonlight: indigo <-> pale blue
+  [[0.05, 0.90, 0.10], [0.85, 1.00, 0.05]],   // toxic: green <-> acid yellow
+];
+
+export const paletteIndex = (name: string): number => {
+  const i = (PALETTE_NAMES as readonly string[]).indexOf(name);
+  return i < 0 ? 0 : i;
+};
 
 /* ── Smoothed value noise — the flame's whole personality ──────────────
    A flame flickers coherently; per-frame random reads as a loose connection,
@@ -51,9 +75,9 @@ export function fbm(x: number): number {
   return 0.55 * vnoise(x) + 0.30 * vnoise(x * 2.13 + 11.3) + 0.15 * vnoise(x * 4.31 + 27.7);
 }
 
-/** Mansion palette: the two poles everything crossfades between. */
-const VIOLET: readonly [number, number, number] = [0.66, 0.08, 1.00];
-const GREEN: readonly [number, number, number] = [0.14, 1.00, 0.42];
+/** The zone's palette poles, chosen by P.pal (index 0 = classic haunt). */
+const pole = (P: EffectParams, which: 0 | 1): Pole =>
+  (PALETTES[P.pal] ?? PALETTES[0]!)[which];
 
 /** What the jewel's white die actually looks like, for screen rendering. */
 const WARM_W: readonly [number, number, number] = [1.00, 0.83, 0.62];
@@ -105,27 +129,27 @@ export const EFFECTS: Record<EffectName, EffectFn> = {
     return [1.00 * l, 0.05 * l, 0.03 * l, 0];
   },
 
-  seance: (t, s) => {
+  seance: (t, s, P) => {
     const b = 0.5 + 0.5 * Math.sin(t * 0.80 + s * 0.6);
-    return scaled(mix(VIOLET, GREEN, 0), 0.24 + 0.52 * b);
+    return scaled(mix(pole(P, 0), pole(P, 1), 0), 0.24 + 0.52 * b);
   },
 
-  wisp: (t, s) => {
+  wisp: (t, s, P) => {
     const n = fbm(t * 2.1 + s * 5.3);
     const l = Math.max(0, 0.18 + 0.82 * n - 0.14);
-    return scaled(mix(VIOLET, GREEN, 1), l);
+    return scaled(mix(pole(P, 0), pole(P, 1), 1), l);
   },
 
   mansion: (t, s, P) => {
     const sweep = 0.5 + 0.5 * Math.sin(t * 0.38 + s * 0.7);
     const k = Math.min(1, Math.max(0, sweep * 0.8 + (P.hue - 0.5) * 0.9));
     const shimmer = 0.84 + 0.16 * fbm(t * 1.05 + s * 2.7);
-    return scaled(mix(VIOLET, GREEN, k), 0.62 * shimmer);
+    return scaled(mix(pole(P, 0), pole(P, 1), k), 0.62 * shimmer);
   },
 
   throb: (t, s, P) => {
     const p = Math.pow(0.5 + 0.5 * Math.sin(t * 7.4 + s * 0.4), 2);
-    return scaled(mix(VIOLET, GREEN, P.hue * 0.5), 0.20 + 0.80 * p);
+    return scaled(mix(pole(P, 0), pole(P, 1), P.hue * 0.5), 0.20 + 0.80 * p);
   },
 
   strobe: (t, s, P) => {
@@ -139,7 +163,7 @@ export const EFFECTS: Record<EffectName, EffectFn> = {
 
   chill: (t, s, P) => {
     const b = 0.5 + 0.5 * Math.sin(t * 0.50 + s * 1.1);
-    return scaled(mix(VIOLET, GREEN, P.hue * 0.35), 0.14 + 0.16 * b);
+    return scaled(mix(pole(P, 0), pole(P, 1), P.hue * 0.35), 0.14 + 0.16 * b);
   },
 
   blood: (t, s) => {
@@ -173,3 +197,80 @@ export function toScreen(c: Rgbw): Rgb {
  */
 export const pixelSeed = (zoneIndex: number, pixel: number): number =>
   zoneIndex * 4.7 + pixel * 1.31;
+
+/* ── Overlays — a second voice on top of any base effect ───────────────
+   The base effects light a whole jewel with one texture. Overlays are what
+   give individual pixels ROLES: a glint that lands on one pixel, a point of
+   light orbiting the ring, a drip falling through. Same formulas as
+   firmware/castle_effects.h; a jewel is pixel 0 (centre) + pixels 1-6 (ring).
+
+   Each takes the base colour and returns it modified — compositing, not
+   replacement, so the candle keeps burning under the sparkle. */
+
+export const OVERLAY_NAMES = ["none", "sparkle", "chase", "meteor"] as const;
+export type OverlayName = (typeof OVERLAY_NAMES)[number];
+
+export const overlayIndex = (name: string): number => {
+  const i = (OVERLAY_NAMES as readonly string[]).indexOf(name);
+  return i < 0 ? 0 : i;
+};
+
+/** Shortest way around the 6-pixel ring, in pixel units (0..3). */
+const ringDist = (a: number, pos: number): number => {
+  const d = Math.abs(a - pos);
+  return Math.min(d, 6 - d);
+};
+
+export function applyOverlay(ov: number, c: Rgbw, t: number, p: number, zi: number): Rgbw {
+  if (ov === 1) {           // sparkle: rare single-pixel glints
+    const cell = Math.floor(t * 7);
+    const g = hash(cell * 13.7 + p * 7.77 + zi * 3.1);
+    if (g > 0.93) {
+      const k = (g - 0.93) / 0.07;
+      return [Math.min(1, c[0] + 0.30 * k), Math.min(1, c[1] + 0.30 * k),
+              Math.min(1, c[2] + 0.30 * k), Math.min(1, c[3] + 0.90 * k)];
+    }
+    return c;
+  }
+  if (ov === 2) {           // chase: a point of light orbiting the ring
+    const pos = ((t * 0.45 + zi * 0.37) % 1) * 6;
+    if (p === 0) return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3] * 0.55];
+    const boost = Math.max(0, 1 - ringDist(p - 1, pos) * 0.9);
+    const k = 0.45 + 0.55 * boost;
+    return [c[0] * k, c[1] * k, c[2] * k,
+            Math.min(1, c[3] * k + 0.50 * boost * boost)];
+  }
+  if (ov === 3) {           // meteor: a drip — centre flash, falls through the ring
+    const ph = (t / 2.6 + zi * 0.41) % 1;
+    if (ph < 0.12) {
+      if (p !== 0) return c;
+      const k = (0.12 - ph) / 0.12;
+      return [c[0], c[1], c[2], Math.min(1, c[3] + 0.80 * k)];
+    }
+    if (p === 0) return c;
+    const fall = ((ph - 0.12) / 0.88) * 6;
+    const fade = 1 - ((ph - 0.12) / 0.88) * 0.5;
+    const boost = Math.max(0, 1 - ringDist(p - 1, fall) * 1.2) * fade;
+    return [Math.min(1, c[0] + 0.20 * boost), c[1], Math.min(1, c[2] + 0.25 * boost),
+            Math.min(1, c[3] + 0.60 * boost)];
+  }
+  return c;
+}
+
+/* ── Strike masks — which pixels a flash actually hits ─────────────────
+   Mode 0 hits the whole jewel (the classic look). The others give a strike
+   spatial texture: scatter picks a different random subset each strike
+   (epoch changes per strike cue), centre and ring split the jewel by role. */
+
+export const FLASH_MODES = ["all", "scatter", "center", "ring"] as const;
+export const flashModeIndex = (name: string): number => {
+  const i = (FLASH_MODES as readonly string[]).indexOf(name);
+  return i < 0 ? 0 : i;
+};
+
+export function flashGate(mode: number, p: number, zi: number, epoch: number): number {
+  if (mode === 1) return hash(p * 9.13 + zi * 5.7 + epoch * 17.9) > 0.45 ? 1 : 0.15;
+  if (mode === 2) return p === 0 ? 1 : 0.1;
+  if (mode === 3) return p === 0 ? 0.1 : 1;
+  return 1;
+}

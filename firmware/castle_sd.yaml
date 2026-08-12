@@ -52,6 +52,19 @@ substitutions:
 
 packages:
   base: !include castle.yaml
+  # This build's `sfx`: streams each track from the card over loopback (the
+  # core deliberately defines none — see the note atop castle.yaml).
+  audio_sd: !include generated/audio_sd.yaml
+
+# The SD build embeds ONE file: a chirp that plays when a scene starts with
+# no card in the slot, so a missing card is audible instead of silent. The
+# eight scene tracks stream from /sd/scenes/ instead of living in flash —
+# that is ~600 KB back out of a 1.75 MB OTA slot.
+media_player:
+  - id: !extend castle_media
+    files:
+      - id: snd_chirp
+        file: ../audio/00_chirp.mp3
 
 # ESPHome tunes ESP-IDF for its own filesystem use — a FAT image on a flash
 # partition behind the wear-levelling layer — and both of its defaults are
@@ -82,6 +95,7 @@ esphome:
   includes:
     - sd_audio.h
     - sd_web.h
+    - sd_web_site.h
   on_boot:
     # A LIST, not a mapping, and that matters more than it looks. ESPHome
     # merges a package's lists by appending them, but a mapping written over a
@@ -97,6 +111,8 @@ esphome:
         - lambda: |-
             if (castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso})) {
               castle_sd::list_root();
+              // One line per boot on the card: the season-long paper trail.
+              castle_health::log_boot_to_sd(CASTLE_VERSION);
             }
             // Started whether or not the card mounted: the server is also how
             // you find out the card is missing without walking to the castle.
@@ -123,11 +139,10 @@ output:
     id: sram_cs_park
     pin: GPIO${sram_cs}
 
-# Play any file from the card:  /sd/<name>
-#
-#   - script.execute:
-#       id: play_sd
-#       path: "spooky/organ.mp3"
+# Play a card file the OLD way: whole file into PSRAM, then decode. The
+# normal path is now streaming (see the PLAY action in the interval below and
+# sd_web_site.h) — this stays as the deliberate fallback for the day the
+# loopback stream misbehaves, reachable via the "Play SD file" button.
 script:
   - id: play_sd
     mode: restart
@@ -155,20 +170,25 @@ interval:
   - interval: 200ms
     then:
       - lambda: |-
-          // A finished SD load, if one landed. announcement:true matches how
-          // the generated scene scripts play — this device only defines the
-          // announcement pipeline.
-          auto *f = castle_sd::take_ready();
-          if (f != nullptr) id(castle_media)->play_file(f, true, false);
-
-          // Mirror the real volume out to the web server's status endpoint —
-          // the httpd task must never read ESPHome objects itself.
+          // Mirror live state OUT to the web server (its handlers must never
+          // read ESPHome objects), then execute anything it queued.
           castle_web::g_volume.store((int) (id(castle_media)->volume * 100.0f + 0.5f));
+          castle_web::g_pir_armed.store(id(pir_armed).state);
+          castle_web::g_pir_cooldown.store((int) id(pir_cooldown).state);
+          castle_web::mirror_show_state(id(current_scene).state,
+                                        id(current_track).state,
+                                        id(pir_scene).current_option().str());
 
           auto act = castle_web::take_pending();
           if (act.type == castle_web::NONE) return;
           if (act.type == castle_web::PLAY) {
-            id(play_sd)->execute(act.arg);
+            // STREAMED off the card through our own server over loopback —
+            // no PSRAM cap, start is near-instant. See sd_web_site.h.
+            auto call = id(castle_media)->make_call();
+            call.set_media_url("http://127.0.0.1/sd/" + act.arg);
+            call.set_announcement(true);
+            call.perform();
+            id(current_track).publish_state(act.arg);
           } else if (act.type == castle_web::STOP) {
             id(scene_stop)->execute();
           } else if (act.type == castle_web::VOLUME) {
@@ -195,17 +215,30 @@ interval:
               call.perform();
             }
           } else if (act.type == castle_web::SCENE) {
-            // Generated scene scripts, by bare name. A miss is logged, not
-            // silent — a typo in a URL should say so.
-            if      (act.arg == "vigil")      id(scene_vigil)->execute();
-            else if (act.arg == "storm")      id(scene_storm)->execute();
-            else if (act.arg == "seance")     id(scene_seance)->execute();
-            else if (act.arg == "ballroom")   id(scene_ballroom)->execute();
-            else if (act.arg == "descent")    id(scene_descent)->execute();
-            else if (act.arg == "visitation") id(scene_visitation)->execute();
-            else if (act.arg == "approach")   id(scene_approach)->execute();
-            else if (act.arg == "crypt")      id(scene_crypt)->execute();
-            else ESP_LOGW("castle_web", "unknown scene '%s'", act.arg.c_str());
+            id(run_scene)->execute(act.arg);
+          } else if (act.type == castle_web::PIRCFG) {
+            // "armed|cooldown|scene", empty fields untouched.
+            const size_t p1 = act.arg.find('|');
+            const size_t p2 = act.arg.rfind('|');
+            const std::string a = act.arg.substr(0, p1);
+            const std::string c = act.arg.substr(p1 + 1, p2 - p1 - 1);
+            const std::string s = act.arg.substr(p2 + 1);
+            if (!a.empty()) {
+              if (a == "1") id(pir_armed).turn_on(); else id(pir_armed).turn_off();
+            }
+            if (!c.empty()) {
+              auto call = id(pir_cooldown).make_call();
+              call.set_value(atof(c.c_str()));
+              call.perform();
+            }
+            if (!s.empty()) {
+              auto call = id(pir_scene).make_call();
+              call.set_option(s);
+              call.perform();
+            }
+          } else if (act.type == castle_web::RESTART) {
+            // Queued by the web OTA so its HTTP reply gets out first.
+            esphome::App.safe_reboot();
           }
 
 # A card check you can see in Home Assistant without reading logs.

@@ -97,10 +97,12 @@ async def run(host: str, cmd: str, args: list[str]) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 3:
+    from hosts import maybe_host
+    host, rest = maybe_host(sys.argv[1:])
+    if not rest:
         print(__doc__)
         return 2
-    host, cmd, *args = sys.argv[1:]
+    cmd, *args = rest
     return asyncio.run(run(host, cmd, args))
 
 

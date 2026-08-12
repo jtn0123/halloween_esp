@@ -167,7 +167,8 @@ class TestTimelineParity(unittest.TestCase):
             "script:\n" + "\n".join(ge.emit_scene(scene, ZONES, 1, markers))
         )["script"][0]["then"]
         start = next(i for i, st in enumerate(then)
-                     if "media_player.speaker.play_on_device_media_file" in st)
+                     if isinstance(st.get("script.execute"), dict)
+                     and st["script.execute"].get("id") == "sfx")
         times, t = [], 0
         for st in then[start + 1:]:
             if "delay" in st:

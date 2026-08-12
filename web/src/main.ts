@@ -14,6 +14,8 @@ import { createBandEditor } from "./band_editor.js";
 import { createCodecAb } from "./codec_ab.js";
 import { deviceBridge } from "./device.js";
 import { defaultParams } from "./effects.js";
+import { JewelInsets } from "./insets.js";
+import { createZoneDesigner } from "./zone_designer.js";
 import { Panels } from "./panels.js";
 import { createState, step } from "./show.js";
 import { Stage } from "./stage.js";
@@ -50,6 +52,25 @@ const state = createState(firstScene, performance.now());
 const canvas = document.getElementById("stage") as HTMLCanvasElement | null;
 if (!canvas) throw new Error("no #stage canvas in the page");
 const stage = new Stage(canvas);
+// The 21 real pixels as dots — the honest per-pixel view (see insets.ts).
+const insets = new JewelInsets(canvas);
+// Live per-zone texture editing on the running preview.
+const designer = createZoneDesigner(() => state);
+
+/* ── Kiosk mode ─────────────────────────────────────────────────────────
+   ?kiosk=1 strips the page to the stage alone — a wall tablet on the porch
+   showing the full 21-pixel render in sync with the real castle. */
+if (new URLSearchParams(location.search).has("kiosk")) {
+  const css = document.createElement("style");
+  css.textContent = `
+    body.kiosk section.panel { display: none; }
+    body.kiosk section.panel:has(#stage) { display: block; max-width: none; }
+    body.kiosk section.panel:has(#stage) details,
+    body.kiosk header, body.kiosk .lead, body.kiosk .chips { display: none; }
+  `;
+  document.head.appendChild(css);
+  document.body.classList.add("kiosk");
+}
 
 // Panels wires the cue-sheet row clicks itself, so seeking is a constructor
 // dependency rather than a separate binding.
@@ -70,10 +91,24 @@ const transport = new Transport({
 // Picking a scene while playing keeps playing; while stopped stays quiet.
 // When this page is served from the castle itself, the pick also fires the
 // scene on the hardware — see device.ts for the probe that decides.
-const device = deviceBridge();
+//
+// `adopting` guards the loop: on load the desk ADOPTS the castle's current
+// scene by clicking its button, and that click must not mirror back — the
+// castle is already running it, and a re-fire would restart it audibly.
+let adopting = false;
+const device = deviceBridge({
+  adoptScene: (id) => {
+    const i = SCENES.findIndex((s) => s.id === id);
+    if (i < 0 || SCENES[i] === state.scene) return;
+    adopting = true;
+    document.querySelector<HTMLElement>(`.scene[data-i="${i}"]`)?.click();
+    adopting = false;
+  },
+});
 panels.renderScenes(SCENES, (sc) => {
   transport.loadScene(sc, { play: state.running });
-  device.scene(sc.id);
+  designer.refresh();
+  if (!adopting) device.scene(sc.id);
 });
 
 panels.bindSliders({
@@ -229,6 +264,7 @@ function frame(now: number): void {
   );
 
   stage.draw(f.zones, now / 1000, f.flash, f.flashColor);
+  insets.draw(f.zones);
   panels.updateMeters(f.zones);
   panels.updateTransport(f.elapsed, state.scene);
   requestAnimationFrame(frame);

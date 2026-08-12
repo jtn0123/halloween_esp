@@ -33,7 +33,17 @@ interface DeviceStatus {
   psram_free_kb: number;
   /** 0–100, mirrored from the media player; older firmware omits it. */
   volume?: number;
+  /** Motion-sensor config, mirrored from the pir_* entities. */
+  pir?: { armed: boolean; cooldown_s: number; scene: string };
 }
+
+/** Scene ids for the PIR select — read from the page's own generated data,
+ *  so a new scene shows up here without touching this file. */
+const sceneIds = (): string[] => {
+  const gen = (window as unknown as { CASTLE_GEN?: { scenes?: { id: string }[] } })
+    .CASTLE_GEN;
+  return (gen?.scenes ?? []).map((s) => s.id);
+};
 
 const fmtUptime = (s: number): string =>
   s < 3600 ? `${(s / 60) | 0}m` : `${(s / 3600) | 0}h ${((s % 3600) / 60) | 0}m`;
@@ -55,7 +65,7 @@ export class DevicePanel {
     this.root = document.createElement("div");
     this.root.id = "devicePanel";
     this.root.style.cssText =
-      "position:fixed;right:12px;bottom:56px;z-index:39;width:290px;" +
+      "position:fixed;right:12px;bottom:96px;z-index:39;width:290px;" +
       "background:#1c1428;color:#e8e0f0;border:1px solid #503a75;" +
       "border-radius:12px;font:13px system-ui;display:none;" +
       "box-shadow:0 6px 24px rgba(0,0,0,.55);overflow:hidden";
@@ -120,6 +130,18 @@ export class DevicePanel {
         : `<div style="padding:.5rem .8rem;color:#9a8fb0">` +
           `${st.sd_mounted ? "no tracks on the card — tools/sd_sync.py push" : "no SD card"}</div>`) +
       `</div>` +
+      `<div style="padding:.5rem .8rem;border-top:1px solid #35264f" ` +
+      `title="What the motion sensor triggers">` +
+      `👣 <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
+      `<select id="dpPirScene">` +
+      sceneIds().map((s) =>
+        `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") +
+      `</select> ` +
+      `<input id="dpPirCool" type="number" min="5" max="600" step="5" ` +
+      `value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="cooldown seconds">s` +
+      `</div>` +
+      `<div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed #503a75;` +
+      `color:#9a8fb0;text-align:center">drop audio files here to upload</div>` +
       `<div style="padding:.4rem .8rem;border-top:1px solid #35264f">` +
       `<button id="dpLog" style="cursor:pointer;background:none;border:0;` +
       `color:#9a8fb0">boot log ▸</button>` +
@@ -169,6 +191,41 @@ export class DevicePanel {
         void fetch(`/api/files/${encodeURIComponent(f.name)}`, { method: "DELETE" })
           .then(() => this.render());
       }));
+
+    // PIR settings: each control posts just its own field; the device's
+    // main loop applies them to the persisted entities.
+    this.body.querySelector<HTMLInputElement>("#dpPirArm")!
+      .addEventListener("change", (e) =>
+        void fetch(`/api/pir?armed=${(e.target as HTMLInputElement).checked ? 1 : 0}`,
+                   { method: "POST" }));
+    this.body.querySelector<HTMLSelectElement>("#dpPirScene")!
+      .addEventListener("change", (e) =>
+        void fetch(`/api/pir?scene=${encodeURIComponent((e.target as HTMLSelectElement).value)}`,
+                   { method: "POST" }));
+    this.body.querySelector<HTMLInputElement>("#dpPirCool")!
+      .addEventListener("change", (e) =>
+        void fetch(`/api/pir?cooldown=${(e.target as HTMLInputElement).value}`,
+                   { method: "POST" }));
+
+    // Drag-drop upload: the last terminal-only workflow, gone. Files land in
+    // the card root, same as tools/sd_sync.py push.
+    const drop = this.body.querySelector<HTMLDivElement>("#dpDrop")!;
+    drop.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      drop.style.color = "#e8e0f0";
+    });
+    drop.addEventListener("dragleave", () => { drop.style.color = "#9a8fb0"; });
+    drop.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      drop.style.color = "#9a8fb0";
+      for (const f of Array.from(e.dataTransfer?.files ?? [])) {
+        drop.textContent = `uploading ${f.name} (${(f.size / 1024) | 0} KB)…`;
+        const r = await fetch(`/api/files/${encodeURIComponent(f.name)}`,
+                              { method: "PUT", body: f });
+        drop.textContent = r.ok ? `✓ ${f.name}` : `✗ ${f.name} failed`;
+      }
+      void this.render();
+    });
 
     const logBtn = this.body.querySelector<HTMLButtonElement>("#dpLog")!;
     const logOut = this.body.querySelector<HTMLPreElement>("#dpLogOut")!;

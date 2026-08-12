@@ -1,0 +1,11 @@
+# The castles this repo knows about. Tools resolve a device in this order:
+#   1. an explicit ip/name on the command line
+#   2. the CASTLE_HOST environment variable
+#   3. the first entry in this file
+#
+# mDNS does not work on the ESP32-S2 (see HARDWARE_FINDINGS), so give the
+# device a DHCP reservation in the router and record the address here once.
+
+[castle-sd]
+host = "10.27.27.7"
+# The SD-equipped castle on the porch stack: eInk FeatherWing + 32 GB card.

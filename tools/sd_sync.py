@@ -1,44 +1,39 @@
 #!/usr/bin/env python3
-"""Manage the castle's SD card from the Mac, over WiFi — the card stays in the slot.
+"""Manage the castle's SD card and firmware from the Mac — the card stays put.
 
-    tools/sd_sync.py <ip> status              what firmware, is the card there
-    tools/sd_sync.py <ip> ls                  list the card
-    tools/sd_sync.py <ip> purge               delete every file in the card root
-    tools/sd_sync.py <ip> push [files...]     transcode + upload (default: tracks/*)
-    tools/sd_sync.py <ip> rm <name>           delete one file
-    tools/sd_sync.py <ip> play <name>         play a file on the castle
-    tools/sd_sync.py <ip> bootlog             the device's early-boot log ring
-    tools/sd_sync.py <ip> site                push the cue desk page to the card;
-                                              the device then serves it at /
+    tools/sd_sync.py [ip|name] status        what firmware, card, volume, scene
+    tools/sd_sync.py [ip|name] health        boot/crash counters, last reset
+    tools/sd_sync.py [ip|name] ls            list the card
+    tools/sd_sync.py [ip|name] purge         delete every file in the card root
+    tools/sd_sync.py [ip|name] push [f...]   upload tracks (default: tracks/*)
+    tools/sd_sync.py [ip|name] scenes        upload the 8 scene tracks the SD
+                                             build streams (audio/ -> /sd/scenes)
+    tools/sd_sync.py [ip|name] site          push the cue desk page (gzipped)
+    tools/sd_sync.py [ip|name] ota <bin>     flash firmware over plain HTTP
+    tools/sd_sync.py [ip|name] rm <name>     delete one file
+    tools/sd_sync.py [ip|name] play <name>   stream a file on the castle
+    tools/sd_sync.py [ip|name] bootlog       the device's early-boot log ring
 
-WHY TRANSCODE. Playback is whole-file-into-PSRAM (see firmware/sd_audio.h), so
-a track must fit ~1.5 MB. The library MP3s are 1.8–3 MB. Rather than reject
-them, push re-encodes anything oversized to mono at whatever bitrate makes it
-fit with headroom — computed per track from its duration, capped at 96 kbps.
-A porch speaker through a MAX98357A does not reveal the difference.
-
-`purge` only touches FILES in the root. Directories (config/, logs/, site/)
-are left alone — purge means "clear the music", not "wipe the card".
+The device resolves via tools/hosts.py: explicit arg, then CASTLE_HOST, then
+devices.toml. Tracks upload AS-IS: playback streams off the card now (see
+firmware/sd_web_site.h), so there is no PSRAM ceiling to transcode under.
+`purge` only touches FILES in the root — directories (site/, scenes/, logs/)
+are left alone; purge means "clear the music", not "wipe the card".
 """
 
 from __future__ import annotations
 
+import gzip
 import json
 import subprocess
 import sys
-import tempfile
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+from hosts import maybe_host
 
-# The turntable: PSRAM free at load time, minus headroom for everything else
-# that allocates from it. Conservative on purpose — a track that fits with
-# 300 KB spare always plays; one that fits with 30 KB spare plays until the
-# day something else grows.
-BUDGET_BYTES = 1_200_000
-MAX_KBPS = 96
+ROOT = Path(__file__).resolve().parent.parent
 
 
 def api(ip: str, method: str, path: str, body: bytes | None = None,
@@ -52,40 +47,14 @@ def listing(ip: str) -> list[dict]:
     return json.loads(api(ip, "GET", "/api/files"))
 
 
-def duration_s(path: Path) -> float:
-    out = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "csv=p=0", str(path)],
-        capture_output=True, text=True, check=True)
-    return float(out.stdout.strip())
-
-
-def transcode(src: Path, dst: Path, kbps: int) -> None:
-    subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(src),
-         "-ac", "1", "-codec:a", "libmp3lame", "-b:a", f"{kbps}k", str(dst)],
-        check=True)
-
-
-def fit_for_card(src: Path, tmp: Path) -> Path:
-    """Return a file that fits the PSRAM budget, transcoding only if needed."""
-    size = src.stat().st_size
-    if size <= BUDGET_BYTES:
-        return src
-    dur = duration_s(src)
-    # bitrate that lands the file just under budget, floored to something
-    # that still sounds like music. The 0.92 covers LAME's habit of landing a
-    # few percent over the asked-for rate (frame padding, ID3) — measured, not
-    # guessed: 38 kbps asked, 39.9 kbps delivered on a 246 s track.
-    kbps = min(MAX_KBPS, max(32, int(BUDGET_BYTES * 8 * 0.92 / dur / 1000)))
-    dst = tmp / src.name
-    transcode(src, dst, kbps)
-    print(f"  transcoded {src.name}: {size//1024} KB -> "
-          f"{dst.stat().st_size//1024} KB (mono {kbps} kbps, {dur:.0f}s)")
-    if dst.stat().st_size > BUDGET_BYTES:
-        raise SystemExit(f"  {src.name}: still {dst.stat().st_size//1024} KB "
-                         f"after transcode — track too long for PSRAM")
-    return dst
+def upload(ip: str, route: str, name: str, data: bytes, timeout: float = 600) -> None:
+    print(f"  uploading {name} ({len(data)//1024} KB) ...", end="", flush=True)
+    resp = json.loads(api(ip, "PUT", f"{route}/{urllib.parse.quote(name)}",
+                          data, timeout=timeout))
+    got = resp.get("bytes", -1)
+    if got != len(data):
+        raise SystemExit(f" FAILED ({got} of {len(data)} bytes)")
+    print(" ok")
 
 
 def cmd_push(ip: str, args: list[str]) -> int:
@@ -94,25 +63,83 @@ def cmd_push(ip: str, args: list[str]) -> int:
     if not files:
         print("nothing to push")
         return 1
-    with tempfile.TemporaryDirectory() as td:
-        for src in files:
-            if not src.exists():
-                print(f"  missing: {src}")
-                return 1
-            up = fit_for_card(src, Path(td))
-            data = up.read_bytes()
-            quoted = urllib.parse.quote(src.name)
-            print(f"  uploading {src.name} ({len(data)//1024} KB) ...",
-                  end="", flush=True)
-            resp = json.loads(api(ip, "PUT", f"/api/files/{quoted}", data,
-                                  timeout=300))
-            got = resp.get("bytes", -1)
-            if got != len(data):
-                print(f" FAILED ({got} of {len(data)} bytes)")
-                return 1
-            print(" ok")
+    for src in files:
+        if not src.exists():
+            print(f"  missing: {src}")
+            return 1
+        upload(ip, "/api/files", src.name, src.read_bytes())
     print("\ncard now holds:")
     return cmd_ls(ip)
+
+
+def cmd_scenes(ip: str) -> int:
+    """The show's own audio, to where the streaming sfx expects it."""
+    files = sorted(p for p in ROOT.glob("audio/[0-9][0-9]_*.mp3")
+                   if not p.name.startswith("00_"))
+    if not files:
+        raise SystemExit("no audio/NN_*.mp3 — run `make audio` first")
+    for src in files:
+        upload(ip, "/api/scenes", src.name, src.read_bytes())
+    print(f"  {len(files)} scene tracks in /sd/scenes/")
+    return 0
+
+
+def cmd_site(ip: str) -> int:
+    # ONE self-contained file (see gen_previewer.py) — that constraint is
+    # what makes it servable by a microcontroller. Pushed pre-gzipped: the
+    # firmware serves index.html.gz with Content-Encoding and the first load
+    # drops from ~8 s to ~3 s over the porch WiFi.
+    src = ROOT / "previewer" / "castle-cue-desk.html"
+    if not src.exists():
+        raise SystemExit("previewer/castle-cue-desk.html missing — run `make preview`")
+    plain = src.read_bytes()
+    packed = gzip.compress(plain, 9)
+    upload(ip, "/api/site", "index.html.gz", packed)
+    # The plain copy too, for any client that cannot take gzip — the firmware
+    # prefers .gz but falls back, and a stale pair would be worse than bytes.
+    upload(ip, "/api/site", "index.html", plain)
+    print(f"  http://{ip}/ now serves the cue desk "
+          f"({len(packed)//1024} KB gzipped, {len(plain)//1024} KB plain)")
+    return 0
+
+
+def cmd_ota(ip: str, args: list[str]) -> int:
+    if not args:
+        # The compiled image lives wherever the build put it; find the newest.
+        cands = sorted(ROOT.glob("firmware/.esphome/build/**/firmware.bin"),
+                       key=lambda p: p.stat().st_mtime, reverse=True)
+        if not cands:
+            raise SystemExit("no firmware.bin found — pass a path or build first")
+        args = [str(cands[0])]
+    bin_path = Path(args[0])
+    data = bin_path.read_bytes()
+    if data[:1] != b"\xe9":
+        raise SystemExit(f"{bin_path} does not look like an app image (no 0xE9 magic)")
+    print(f"  flashing {bin_path.name} ({len(data)//1024} KB) over HTTP ...",
+          end="", flush=True)
+    try:
+        resp = json.loads(api(ip, "PUT", "/api/ota", data, timeout=180))
+        print(" ok" if resp.get("flashed") else f" UNEXPECTED: {resp}")
+    except OSError:
+        # The device reboots moments after the last byte lands; losing the
+        # response race is normal, not failure. The status poll below is the
+        # real verdict.
+        print(" (no reply — device likely rebooting)")
+    print("  waiting for the device to come back ...", end="", flush=True)
+    import time
+    for _ in range(30):
+        time.sleep(3)
+        try:
+            st = json.loads(api(ip, "GET", "/api/status", timeout=3))
+            print(f" up — v{st.get('version')} compiled {st.get('compiled')}")
+            print("  now CONFIRM it (connect once with tools/device.py or HA) —"
+                  " an unconfirmed image rolls back on its next reboot")
+            return 0
+        except OSError:
+            print(".", end="", flush=True)
+    print(" no answer after 90 s — if it stays down, the bootloader will"
+          " roll back to the previous image on the next power cycle")
+    return 1
 
 
 def cmd_ls(ip: str) -> int:
@@ -134,12 +161,13 @@ def cmd_purge(ip: str) -> int:
 
 
 def main() -> int:
-    if len(sys.argv) < 3:
+    ip, rest = maybe_host(sys.argv[1:])
+    if not rest:
         print(__doc__)
         return 2
-    ip, cmd, *args = sys.argv[1:]
-    if cmd == "status":
-        print(api(ip, "GET", "/api/status").decode())
+    cmd, *args = rest
+    if cmd in ("status", "health"):
+        print(api(ip, "GET", f"/api/{cmd}").decode())
         return 0
     if cmd == "ls":
         return cmd_ls(ip)
@@ -147,25 +175,19 @@ def main() -> int:
         return cmd_purge(ip)
     if cmd == "push":
         return cmd_push(ip, args)
+    if cmd == "scenes":
+        return cmd_scenes(ip)
+    if cmd == "site":
+        return cmd_site(ip)
+    if cmd == "ota":
+        return cmd_ota(ip, args)
     if cmd == "rm":
         api(ip, "DELETE", f"/api/files/{urllib.parse.quote(args[0])}")
         print(f"deleted {args[0]}")
         return 0
     if cmd == "play":
         api(ip, "POST", f"/api/play?f={urllib.parse.quote(args[0])}")
-        print(f"queued {args[0]} — watch logs for the load")
-        return 0
-    if cmd == "site":
-        # The previewer build is ONE self-contained file (see gen_previewer.py)
-        # — that constraint, chosen for email-ability, is also exactly what
-        # makes it servable by a microcontroller: no asset graph to mirror.
-        src = ROOT / "previewer" / "castle-cue-desk.html"
-        if not src.exists():
-            raise SystemExit("previewer/castle-cue-desk.html missing — run `make preview`")
-        data = src.read_bytes()
-        print(f"  uploading site ({len(data)//1024} KB) ...", end="", flush=True)
-        api(ip, "PUT", "/api/site/index.html", data, timeout=600)
-        print(" ok — http://%s/ now serves the cue desk" % ip)
+        print(f"queued {args[0]} — it streams off the card")
         return 0
     if cmd == "bootlog":
         print(api(ip, "GET", "/api/bootlog").decode())

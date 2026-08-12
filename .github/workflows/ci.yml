@@ -1,0 +1,72 @@
+# CI for the castle: the same three gates `make check` runs locally, plus an
+# ESPHome config validation of every buildable variant.
+#
+# A full firmware COMPILE is deliberately not here: the xtensa toolchain +
+# ESP-IDF fetch is ~10 minutes of runner time per variant and the compile
+# almost never fails when `esphome config` passes — the validation catches
+# the class of bug CI exists for (a generated file referencing a missing id,
+# a package merge gone wrong, the MEDIA_OUT clobber this repo has already
+# lived through once).
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml numpy scipy
+      - name: unit tests
+        run: python -m unittest discover -s tests -q
+      - name: LOC cap
+        run: python tools/check_loc.py
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: npx tsc --noEmit
+        working-directory: web
+      - name: engine unit tests
+        run: npm test
+        working-directory: web
+      - name: browser tests
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test
+        working-directory: web
+
+  esphome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "esphome==2026.7.4" pyyaml
+      - name: generate
+        run: python tools/gen_esphome.py
+      - name: fake secrets            # validation needs names, not real keys
+        run: |
+          printf 'wifi_ssid: "ci"\nwifi_password: "ci-password"\n' \
+            > firmware/secrets.yaml
+      - name: validate every buildable variant
+        run: |
+          esphome config firmware/castle_flash.yaml > /dev/null
+          esphome config firmware/castle_sd.yaml > /dev/null
+          esphome config firmware/bench.yaml > /dev/null

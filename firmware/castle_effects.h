@@ -52,15 +52,23 @@ inline float fbm(float x) {
          0.15f * vnoise(x * 4.31f + 27.7f);
 }
 
-// Mansion palette poles, matching scenes.yaml.
-constexpr float VIOLET[3] = {0.66f, 0.08f, 1.00f};
-constexpr float GREEN[3] = {0.14f, 1.00f, 0.42f};
+// Palettes — pole pairs the crossfade effects sweep between. Same table,
+// same order, as web/src/effects.ts. Index 0 is the classic haunt look.
+constexpr float PALETTES[4][2][3] = {
+    {{0.66f, 0.08f, 1.00f}, {0.14f, 1.00f, 0.42f}},   // haunt
+    {{0.72f, 0.08f, 0.00f}, {1.00f, 0.55f, 0.05f}},   // ember
+    {{0.10f, 0.22f, 0.85f}, {0.72f, 0.85f, 1.00f}},   // moonlight
+    {{0.05f, 0.90f, 0.10f}, {0.85f, 1.00f, 0.05f}},   // toxic
+};
 
-inline Rgbw mix_pal(float k, float level) {
+inline Rgbw mix_pal(float k, float level, int pal = 0) {
+  if (pal < 0 || pal > 3) pal = 0;
+  const float *a = PALETTES[pal][0];
+  const float *b = PALETTES[pal][1];
   k = fminf(1.0f, fmaxf(0.0f, k));
-  return Rgbw{(VIOLET[0] + (GREEN[0] - VIOLET[0]) * k) * level,
-              (VIOLET[1] + (GREEN[1] - VIOLET[1]) * k) * level,
-              (VIOLET[2] + (GREEN[2] - VIOLET[2]) * k) * level, 0.0f};
+  return Rgbw{(a[0] + (b[0] - a[0]) * k) * level,
+              (a[1] + (b[1] - a[1]) * k) * level,
+              (a[2] + (b[2] - a[2]) * k) * level, 0.0f};
 }
 
 // `seed` varies per pixel so a flame moves ACROSS the jewel rather than the
@@ -68,7 +76,7 @@ inline Rgbw mix_pal(float k, float level) {
 //
 // `hue` biases the mansion crossfade violet<->green.
 // `soft` damps hard strobing — ~7 Hz white strobe is a photosensitivity risk.
-inline Rgbw render(int eff, float t, float seed, float hue, bool soft) {
+inline Rgbw render(int eff, float t, float seed, float hue, bool soft, int pal = 0) {
   switch (eff) {
     case EFF_CANDLE: {
       float n = fbm(t * 1.4f + seed * 3.7f);
@@ -98,26 +106,26 @@ inline Rgbw render(int eff, float t, float seed, float hue, bool soft) {
     }
     case EFF_SEANCE: {
       float b = 0.5f + 0.5f * sinf(t * 0.80f + seed * 0.6f);
-      return mix_pal(0.0f, 0.24f + 0.52f * b);
+      return mix_pal(0.0f, 0.24f + 0.52f * b, pal);
     }
     case EFF_WISP: {
       float n = fbm(t * 2.1f + seed * 5.3f);
       float l = fmaxf(0.0f, 0.18f + 0.82f * n - 0.14f);
-      return mix_pal(1.0f, l);
+      return mix_pal(1.0f, l, pal);
     }
     case EFF_MANSION: {
       float sweep = 0.5f + 0.5f * sinf(t * 0.38f + seed * 0.7f);
       float shimmer = 0.84f + 0.16f * fbm(t * 1.05f + seed * 2.7f);
-      return mix_pal(sweep * 0.8f + (hue - 0.5f) * 0.9f, 0.62f * shimmer);
+      return mix_pal(sweep * 0.8f + (hue - 0.5f) * 0.9f, 0.62f * shimmer, pal);
     }
     case EFF_CHILL: {
       float b = 0.5f + 0.5f * sinf(t * 0.50f + seed * 1.1f);
-      return mix_pal(hue * 0.35f, 0.14f + 0.16f * b);
+      return mix_pal(hue * 0.35f, 0.14f + 0.16f * b, pal);
     }
     case EFF_THROB: {
       float p = 0.5f + 0.5f * sinf(t * 7.4f + seed * 0.4f);
       p *= p;
-      return mix_pal(hue * 0.5f, 0.20f + 0.80f * p);
+      return mix_pal(hue * 0.5f, 0.20f + 0.80f * p, pal);
     }
     case EFF_STROBE: {
       if (soft) {
@@ -138,6 +146,65 @@ inline Rgbw render(int eff, float t, float seed, float hue, bool soft) {
     default:
       return Rgbw{0.0f, 0.0f, 0.0f, 0.0f};
   }
+}
+
+// ── Overlays — a second voice on top of any base effect ─────────────────
+// Per-pixel ROLES: a glint landing on one pixel, a point orbiting the ring,
+// a drip falling through. Compositing, not replacement — the candle keeps
+// burning under the sparkle. Formulas mirror web/src/effects.ts exactly;
+// a jewel is pixel 0 (centre) + pixels 1-6 (ring).
+
+enum Overlay : int { OV_NONE = 0, OV_SPARKLE = 1, OV_CHASE = 2, OV_METEOR = 3 };
+
+inline float ring_dist(float a, float pos) {
+  float d = fabsf(a - pos);
+  return fminf(d, 6.0f - d);
+}
+
+inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi) {
+  if (ov == OV_SPARKLE) {
+    float cell = floorf(t * 7.0f);
+    float g = hashf(cell * 13.7f + p * 7.77f + zi * 3.1f);
+    if (g > 0.93f) {
+      float k = (g - 0.93f) / 0.07f;
+      return Rgbw{fminf(1.0f, c.r + 0.30f * k), fminf(1.0f, c.g + 0.30f * k),
+                  fminf(1.0f, c.b + 0.30f * k), fminf(1.0f, c.w + 0.90f * k)};
+    }
+    return c;
+  }
+  if (ov == OV_CHASE) {
+    float pos = fmodf(t * 0.45f + zi * 0.37f, 1.0f) * 6.0f;
+    if (p == 0) return Rgbw{c.r * 0.55f, c.g * 0.55f, c.b * 0.55f, c.w * 0.55f};
+    float boost = fmaxf(0.0f, 1.0f - ring_dist((float) (p - 1), pos) * 0.9f);
+    float k = 0.45f + 0.55f * boost;
+    return Rgbw{c.r * k, c.g * k, c.b * k,
+                fminf(1.0f, c.w * k + 0.50f * boost * boost)};
+  }
+  if (ov == OV_METEOR) {
+    float ph = fmodf(t / 2.6f + zi * 0.41f, 1.0f);
+    if (ph < 0.12f) {
+      if (p != 0) return c;
+      float k = (0.12f - ph) / 0.12f;
+      return Rgbw{c.r, c.g, c.b, fminf(1.0f, c.w + 0.80f * k)};
+    }
+    if (p == 0) return c;
+    float fall = ((ph - 0.12f) / 0.88f) * 6.0f;
+    float fade = 1.0f - ((ph - 0.12f) / 0.88f) * 0.5f;
+    float boost = fmaxf(0.0f, 1.0f - ring_dist((float) (p - 1), fall) * 1.2f) * fade;
+    return Rgbw{fminf(1.0f, c.r + 0.20f * boost), c.g,
+                fminf(1.0f, c.b + 0.25f * boost), fminf(1.0f, c.w + 0.60f * boost)};
+  }
+  return c;
+}
+
+// ── Strike masks — which pixels a flash actually hits ───────────────────
+// 0 = whole jewel, 1 = fresh random scatter per strike (epoch changes),
+// 2 = centre only, 3 = ring only. Mirrors flashGate in effects.ts.
+inline float flash_gate(int mode, int p, int zi, int epoch) {
+  if (mode == 1) return hashf(p * 9.13f + zi * 5.7f + epoch * 17.9f) > 0.45f ? 1.0f : 0.15f;
+  if (mode == 2) return p == 0 ? 1.0f : 0.1f;
+  if (mode == 3) return p == 0 ? 0.1f : 1.0f;
+  return 1.0f;
 }
 
 }  // namespace castle

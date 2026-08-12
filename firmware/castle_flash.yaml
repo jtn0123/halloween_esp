@@ -1,0 +1,21 @@
+# The all-in-flash build — what `castle.yaml` used to be before it became the
+# core. Every scene's audio is embedded in the image; nothing external needed,
+# and nothing but the board required. This is the variant you flash when there
+# is no SD FeatherWing on the stack.
+#
+#   make build / make upload      (see Makefile)
+#
+# The cost of self-containment is the OTA slot: ~600 KB of embedded MP3 in a
+# 1.75 MB partition. castle_sd.yaml escapes that by streaming the same tracks
+# off the card.
+
+packages:
+  base: !include castle.yaml
+  # `sfx` plays the embedded copy of each track.
+  audio: !include generated/audio_flash.yaml
+
+media_player:
+  - id: !extend castle_media
+    # Generated from scenes.yaml — see tools/gen_esphome.py for why this
+    # is no longer a hand-kept list.
+    files: !include generated/media_files.yaml

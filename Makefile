@@ -1,6 +1,6 @@
 PY := .venv/bin/python
 ESPHOME := .venv/bin/esphome
-YAML := firmware/castle.yaml
+YAML := firmware/castle_flash.yaml
 
 .PHONY: test check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean
 
