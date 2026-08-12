@@ -15,7 +15,8 @@ Endpoints (all JSON, all local-only):
     DELETE /api/tracks/<id>         remove a track
     POST   /api/scene               add/replace a scene in scenes.yaml
     POST   /api/rebuild             re-run audio + generators
-    GET    /api/track/<id>.mp3      stream a track for the browser to audition
+    GET    /api/track/<id>          stream a track for the browser to audition
+                                    (extension optional — the server owns it)
 
 Binds to 127.0.0.1 only. This drives ffmpeg and yt-dlp on your machine and
 edits files in the repo; it is not something to expose to a network.
@@ -49,6 +50,34 @@ PY = str(ROOT / ".venv" / "bin" / "python")
 _lock = threading.Lock()          # ffmpeg/yt-dlp jobs are serialised
 _runner = sj.JobRunner()          # long imports run in the background
 
+# Every container import_track.py can write. This list is the reason the format
+# option works at all end to end: globbing "*.mp3" — which is what this file did
+# when only MP3 existed — makes a WAV or FLAC import land on disk and then never
+# appear in the panel, which reads as the import having silently failed.
+AUDIO_EXT = ("mp3", "wav", "flac", "opus")
+MIME = {"mp3": "audio/mpeg", "wav": "audio/wav",
+        "flac": "audio/flac", "opus": "audio/ogg"}
+
+
+def track_files() -> list[Path]:
+    """Every imported track, whatever container it landed in, by id."""
+    return sorted((p for e in AUDIO_EXT for p in TRACKS.glob(f"*.{e}")),
+                  key=lambda p: p.stem)
+
+
+def track_path(tid: str) -> Path | None:
+    """Resolve a bare track id to the file that holds it.
+
+    The id is the contract everywhere else — scenes, the manifest, the panel —
+    and the extension is an import detail. Callers pass the id and get back
+    whichever container it happens to live in, or None.
+    """
+    for e in AUDIO_EXT:
+        p = TRACKS / f"{tid}.{e}"
+        if p.exists():
+            return p
+    return None
+
 
 def _restart() -> None:
     """Replace this process with a fresh copy of itself.
@@ -74,6 +103,10 @@ def track_info(p: Path) -> dict:
     meta = mf.get(p.stem) or {}
     info = {
         "id": p.stem,
+        # The panel needs this to write `audio_file:` into a scene. Without it
+        # it guessed ".mp3", which produced a scene pointing at a file that
+        # does not exist for every non-MP3 import.
+        "ext": p.suffix.lstrip("."),
         "kb": p.stat().st_size // 1024,
         "source": meta.get("source", ""),
         "title": meta.get("title", ""),
@@ -115,6 +148,44 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def send_range(self, p: Path, ctype: str):
+        """Serve an audio file, honouring a single Range request.
+
+        Without this the browser has to pull the whole file before it will let
+        you seek in it. That is invisible on a 20-second clip and very visible
+        on a four-minute import, where "audition from 1:30" means waiting for
+        3 MB first. Only the one-range form is handled — that is all a media
+        element ever asks for — and anything else falls back to the whole file.
+        """
+        data = p.read_bytes()
+        total = len(data)
+        rng = (self.headers.get("Range") or "").strip()
+        lo, hi = 0, total - 1
+        partial = False
+        if rng.startswith("bytes=") and "," not in rng:
+            a, _, b = rng[6:].partition("-")
+            try:
+                if a:
+                    lo, hi = int(a), (int(b) if b else total - 1)
+                elif b:                       # bytes=-500 -> the last 500
+                    lo, hi = max(0, total - int(b)), total - 1
+                partial = True
+            except ValueError:
+                partial = False
+        hi = min(hi, total - 1)
+        if not partial or lo > hi:
+            lo, hi, partial = 0, total - 1, False
+        chunk = data[lo:hi + 1]
+        self.send_response(206 if partial else 200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(len(chunk)))
+        if partial:
+            self.send_header("Content-Range", f"bytes {lo}-{hi}/{total}")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(chunk)
+
     def body(self) -> bytes:
         return self.rfile.read(int(self.headers.get("Content-Length", 0) or 0))
 
@@ -132,38 +203,40 @@ class Handler(BaseHTTPRequestHandler):
             d = job.as_dict()
             if d["done"]:
                 TRACKS.mkdir(exist_ok=True)
-                d["tracks"] = [track_info(p) for p in sorted(TRACKS.glob("*.mp3"))]
+                d["tracks"] = [track_info(p) for p in track_files()]
             return self.send_json(d)
         if path == "/api/tracks":
             TRACKS.mkdir(exist_ok=True)
             return self.send_json({
-                "tracks": [track_info(p) for p in sorted(TRACKS.glob("*.mp3"))],
+                "tracks": [track_info(p) for p in track_files()],
                 "scenes": [s for s in scene_ids()],
             })
         if path.startswith("/api/waveform/"):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             sens = float((q.get("sensitivity") or ["1.1"])[0])
-            p = TRACKS / f"{Path(path).name}.mp3"
-            if not p.exists():             # name-stripped above
+            p = track_path(Path(path).name)    # name-stripped: no traversal
+            if p is None:
                 return self.send_json({"error": "no such track"}, 404)
             return self.send_json(sm.waveform(p, sensitivity=sens))
         if path.startswith("/api/track/"):
-            p = TRACKS / Path(path).name
             # Path(...).name strips any directory part, so a traversal
             # like ../../etc/passwd cannot escape TRACKS. That call IS
             # the guard — a `p.parent == TRACKS` check here would be
             # tautological and read as protection it is not providing.
-            if p.suffix == ".mp3" and p.exists():
-                return self.send_bytes(p.read_bytes(), "audio/mpeg")
-            return self.send_json({"error": "not found"}, 404)
+            name = Path(path).name
+            stem, _, ext = name.rpartition(".")
+            p = track_path(stem if stem and ext in AUDIO_EXT else name)
+            if p is None:
+                return self.send_json({"error": "not found"}, 404)
+            return self.send_range(p, MIME[p.suffix.lstrip(".")])
         self.send_json({"error": "not found"}, 404)
 
     def do_DELETE(self):
         path = urllib.parse.urlparse(self.path).path
         if path.startswith("/api/tracks/"):
             tid = Path(path).name
-            p = TRACKS / f"{tid}.mp3"
-            if p.exists():                 # name-stripped above
+            p = track_path(tid)            # name-stripped above
+            if p is not None:
                 p.unlink()
                 mf.forget(tid)
                 return self.send_json({"ok": True, "removed": tid})
@@ -208,7 +281,7 @@ class Handler(BaseHTTPRequestHandler):
                 ok, out = run(args)
             return self.send_json({"ok": ok, "log": out,
                                    "tracks": [track_info(p)
-                                              for p in sorted(TRACKS.glob("*.mp3"))]})
+                                              for p in track_files()]})
         if path == "/api/probe":
             req = json.loads(raw or b"{}")
             return self.send_json(sm.probe((req.get("url") or "").strip()))
@@ -271,7 +344,7 @@ class Handler(BaseHTTPRequestHandler):
         shutil.rmtree(TRACKS / "_upload", ignore_errors=True)
         return self.send_json({"ok": ok, "log": out,
                                "tracks": [track_info(p)
-                                          for p in sorted(TRACKS.glob("*.mp3"))]}, )
+                                          for p in track_files()]}, )
 
     def do_scene(self, req: dict):
         """Insert or replace a scene block in scenes.yaml.
@@ -287,16 +360,24 @@ class Handler(BaseHTTPRequestHandler):
         raw = SCENES.read_text()
         import re
         pat = re.compile(rf"^  - id: {re.escape(sid)}\n(?:.*\n)*?(?=^  - id: |\Z)", re.M)
-        if pat.search(raw):
+        replaced = bool(pat.search(raw))
+        if replaced:
             raw = pat.sub(block + "\n\n", raw)
         else:
             raw = raw.rstrip() + "\n\n" + block + "\n"
-        SCENES.write_text(raw)
+        # Exactly one trailing newline either way. Replacing the last scene in
+        # the file leaves a blank line behind otherwise — stable rather than
+        # growing, but it shows up as a diff on a write that changed nothing.
+        SCENES.write_text(raw.rstrip() + "\n")
         with _lock:
             ok1, o1 = run([PY, str(ROOT / "tools" / "render_audio.py")])
             ok2, o2 = run([PY, str(ROOT / "tools" / "gen_esphome.py")])
             ok3, o3 = run([PY, str(ROOT / "tools" / "gen_previewer.py")])
+        # `replaced` and `scenes` are what let the panel say what actually
+        # happened instead of "written", which is indistinguishable from
+        # nothing having happened at all.
         return self.send_json({"ok": ok1 and ok2 and ok3, "id": sid,
+                               "replaced": replaced, "scenes": scene_ids(),
                                "log": (o1 + o2 + o3)[-4000:]})
 
 

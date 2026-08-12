@@ -12,7 +12,9 @@
  *           block to paste.
  */
 
+import { initImportOpts } from "./import_opts.js";
 import { detectOnsets } from "./onsets.js";
+import { createPreview } from "./preview.js";
 import type { Scene } from "./types.js";
 
 /** The import options row, as tools/studio.py remembers them per track. */
@@ -31,6 +33,8 @@ export interface TrackOpts {
 /** One entry from `GET /api/tracks`. */
 export interface TrackInfo {
   id: string;
+  /** Container it landed in: mp3 | wav | flac | opus. */
+  ext?: string;
   /** File size on disk, kilobytes. */
   kb: number;
   /** Duration in seconds; missing if ffprobe could not say. */
@@ -46,40 +50,39 @@ export interface TrackInfo {
   error?: string;
 }
 
-/**
- * The option row as it goes *out* to the server. Deliberately strings, not
- * numbers: blank means "leave it as it was", and only a string can carry that
- * distinction — `+""` would arrive as a very definite zero.
- */
-interface ImportOpts {
-  id: string;
-  start: string;
-  take: string;
-  sensitivity: string;
-  bitrate: string;
-  sample_rate: string;
-  channels: string;
-  /** Container: mp3 | wav | flac | opus. Blank keeps whatever was used last. */
-  format: string;
-  normalize: boolean;
-}
-
-interface TracksResponse { tracks?: TrackInfo[] }
+interface TracksResponse { tracks?: TrackInfo[]; scenes?: string[] }
 /** Import, re-import and scene writes all answer with ok plus a tail of log. */
-interface ActionResponse { ok: boolean; tracks?: TrackInfo[]; log?: string; error?: string }
+interface ActionResponse {
+  ok: boolean; tracks?: TrackInfo[]; log?: string; error?: string;
+  /** Scene writes only: whether an existing scene of that id was overwritten. */
+  replaced?: boolean;
+  scenes?: string[];
+}
 
 export interface TracksDeps {
   /** The show as loaded, for the capacity readout's "alongside the current show". */
   scenes: readonly Scene[];
   /**
    * Called when a track row is picked, so the host can open the clip editor
-   * on it. Optional: the Tracks panel is useful without a waveform, and the
+   * on it. Null means "nothing is selected any more" — a deleted row, say —
+   * and the editor should close rather than keep showing a track that is gone.
+   * Optional: the Tracks panel is useful without a waveform, and the
    * static/artifact build has no server to fetch one from.
    */
-  onSelect?: (trackId: string) => void;
+  onSelect?: (trackId: string | null) => void;
+  /**
+   * Fired just before a row preview starts, so the host can stop whatever else
+   * it has playing. Two audio sources at once is never what was meant.
+   */
+  onAudioClaim?: () => void;
 }
 
-export function initTracks(deps: TracksDeps): void {
+export interface TracksApi {
+  /** Silence the row preview — for when something else wants the speakers. */
+  stopPreview: () => void;
+}
+
+export function initTracks(deps: TracksDeps): TracksApi {
   const SCENES = deps.scenes;
 
   /* The ids are the contract with the generated HTML. A missing one is a bug
@@ -94,112 +97,48 @@ export function initTracks(deps: TracksDeps): void {
     list: byId("trkList"),
     yaml: byId("trkYaml"),
     modeEl: byId("trkMode"),
+    /** Scene ids already in scenes.yaml, so a row can say it is in the show. */
+    sceneIds: new Set<string>(),
+    /** The row the clip editor is open on. */
+    selected: null as string | null,
+    /** Last list drawn, so a redraw does not need another round trip. */
+    tracks: [] as TrackInfo[],
   };
   const say = (msg: string, err?: boolean): void => {
     T.note.textContent = msg;
     T.note.classList.toggle("err", !!err);
   };
-  const val = (id: string): string => byId<HTMLInputElement>(id).value.trim();
-  const opts = (): ImportOpts => ({
-    id: val("trkId"), start: val("trkStart"), take: val("trkTake"),
-    sensitivity: val("trkSens"), bitrate: val("trkBitrate"),
-    sample_rate: val("trkRate"), channels: val("trkCh"),
-    format: val("trkFormat"),
-    normalize: byId<HTMLInputElement>("trkNorm").checked,
-  });
-
-  /* Live capacity readout. The whole SD-versus-flash argument comes down to
-     bytes per second against three ceilings, so show the arithmetic rather
-     than asserting it:
-
-       1.67 MB  free PSRAM — MEASURED on the real board while playing, not
-                estimated (bench_audio, 2026-08-10: 1713 KB free with a scene
-                running). This is the cap on the whole-file SD load.
-       ~2.9 MB  flash left for ALL scenes after the firmware
-       32 GB    the card, i.e. no ceiling worth writing down — but only
-                reachable by streaming, which isn't built yet
-  */
-  const PSRAM_FREE = 1713 * 1024, FLASH_FREE = 2.9 * 1024 * 1024;
-  const mmss = (s: number): string =>
-    `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
-  /** Valid MPEG-1 Layer III range. Outside it the encoder has nothing to do
-   *  with the number, so neither should the readout. */
-  const MIN_KBPS = 32, MAX_KBPS = 320;
-
-  const clampKbps = (raw: string): number => {
-    const t = +raw;
-    return Number.isFinite(t) && t > 0
-      ? Math.min(MAX_KBPS, Math.max(MIN_KBPS, t))
-      : 96;
+  /**
+   * A result the page cannot show without being rebuilt, plus the button that
+   * rebuilds it. The scenes and their audio are baked into this HTML by
+   * gen_previewer, so a new scene genuinely is not here until a reload — and
+   * an auto-reload would throw away whatever the user was in the middle of.
+   */
+  const sayReload = (msg: string): void => {
+    say(msg + " ");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "trk-reload";
+    b.textContent = "Reload the desk";
+    b.addEventListener("click", () => location.reload());
+    T.note.append(b);
   };
-
-  function updateCapacity(): void {
-    // `|| 96` alone let negatives through — -5 is truthy — and the readout
-    // then formatted negative seconds as "-47:-47". Clamp instead, so every
-    // out-of-range value lands somewhere the encoder would actually accept.
-    const kbps = clampKbps(val("trkBitrate"));
-    const ch = +val("trkCh") === 2 ? 2 : 1;
-    const bps = kbps * 1000 / 8 * (ch === 2 ? 1 : 1);   // bitrate already covers channels
-    // Only the flash figure *after* the current show is worth printing, so the
-    // empty-flash number the original also computed is not kept.
-    const psram = PSRAM_FREE / bps;
-    const used = SCENES.reduce((a, s) => a + (s.dur / 1000) * 12000, 0); // ≈96k mono
-    const left = Math.max(0, (FLASH_FREE - used) / bps);
-    byId("trkCap").innerHTML =
-      `<b>${kbps} kbps ${ch === 2 ? "stereo" : "mono"}</b> = ${(bps / 1024).toFixed(1)} KB/s &nbsp;·&nbsp; `
-      + `flash, alongside the current show: <b>${mmss(left)}</b> &nbsp;·&nbsp; `
-      + `SD loaded into PSRAM: <b>${mmss(psram)}</b> `
-      + `<span class="${psram >= 240 ? "ok" : "no"}">${psram >= 240 ? "(4 min fits)" : "(under 4 min)"}</span>`
-      + ` &nbsp;·&nbsp; streamed from SD: <b class="ok">no limit</b>`;
-  }
-  ["trkBitrate", "trkCh"].forEach(id =>
-    byId(id).addEventListener("input", updateCapacity));
-  /* A collapsed panel must still tell you what it is about to do — otherwise
-     "Options" is a box you have to open to find out whether you care. */
-  function updateOptsHint(): void {
-    const el = document.getElementById("trkOptsHint");
-    if (!el) return;
-    const bits: string[] = [];
-    const take = val("trkTake"), start = val("trkStart");
-    if (take) bits.push(`${take}s${start && start !== "0:00" ? ` from ${start}` : ""}`);
-    const fmt = val("trkFormat") || "mp3";
-    bits.push(fmt === "wav" || fmt === "flac"
-      ? fmt.toUpperCase()
-      : `${fmt.toUpperCase()} ${clampKbps(val("trkBitrate"))}k`);
-    if (val("trkCh") === "2") bits.push("stereo");
-    if ((document.getElementById("trkNorm") as HTMLInputElement | null)?.checked) {
-      bits.push("loudness matched");
-    }
-    el.textContent = bits.length ? `— ${bits.join(", ")}` : "";
-  }
-
-  for (const id of ["trkStart", "trkTake", "trkBitrate", "trkFormat",
-                    "trkCh", "trkRate", "trkNorm"]) {
-    document.getElementById(id)?.addEventListener("input", updateOptsHint);
-    document.getElementById(id)?.addEventListener("change", updateOptsHint);
-  }
-
-  // Bitrate is meaningless for the lossless containers; grey it out rather
-  // than letting someone set a number that gets silently discarded.
-  function syncFormatUI(): void {
-    const fmt = val("trkFormat") || "mp3";
-    const br = document.getElementById("trkBitrate") as HTMLInputElement | null;
-    if (br) {
-      br.disabled = fmt === "wav" || fmt === "flac";
-      br.title = br.disabled ? `${fmt.toUpperCase()} has no bitrate to set` : "";
-    }
-  }
-  document.getElementById("trkFormat")?.addEventListener("change", () => {
-    syncFormatUI(); updateCapacity(); updateOptsHint();
-  });
-  syncFormatUI();
-  updateOptsHint();
-  updateCapacity();
+  const val = (id: string): string => byId<HTMLInputElement>(id).value.trim();
+  /* Roughly what the scenes already in the show cost in flash, at ≈96k mono.
+     The readout wants "how much room is left", which is that subtracted from
+     the partition. */
+  const flashUsed = (): number =>
+    SCENES.reduce((a, s) => a + (s.dur / 1000) * 12000, 0);
+  const form = initImportOpts(flashUsed);
+  const opts = form.values;
 
   void fetch("/api/tracks").then(r => r.ok ? r.json() as Promise<TracksResponse> : Promise.reject())
     .then(d => { T.mode = "studio"; T.modeEl.textContent = "studio · connected";
                  byId("trkServer").hidden = false;
-                 drawTracks(d.tracks); say("Import by link or drop a file. Scenes write straight to scenes.yaml."); })
+                 T.sceneIds = new Set(d.scenes || []);
+                 drawTracks(d.tracks);
+                 say("Import by link or drop a file. Press Play to hear a track, "
+                   + "or click its row to trim it."); })
     .catch(() => {
       T.mode = "static";
       T.modeEl.textContent = "read-only · studio not running";
@@ -216,13 +155,30 @@ export function initTracks(deps: TracksDeps): void {
   const esc = (s: unknown): string =>
     String(s).replace(/[&<>"]/g, c => ESCAPES[c] as string);
 
+  /* Row audition. The button is the only thing that can make this speak — see
+     preview.ts. Redrawing on every change keeps the label ("Play"/"Stop") and
+     the row highlight from drifting out of step with what is actually on. */
+  const preview = createPreview({
+    onChange: () => drawTracks(undefined),
+    onError: msg => say(msg, true),
+    onClaim: () => deps.onAudioClaim?.(),
+  });
+
   function drawTracks(tracks: TrackInfo[] | undefined): void {
-    T.list.innerHTML = (tracks || []).map(t => {
+    if (tracks) T.tracks = tracks;
+    const playingId = preview.playing();
+    T.list.innerHTML = T.tracks.map(t => {
       const o = t.opts || {};
-      const fmt = [`${o.bitrate || "?"}kbps`,
+      const ext = (t.ext || o.format || "mp3").toLowerCase();
+      // Bitrate is a property of the lossy encoders only; printing "?kbps"
+      // next to a WAV says the import went wrong when it went fine.
+      const lossless = ext === "wav" || ext === "flac";
+      const fmt = [ext.toUpperCase(),
+                   lossless ? null : `${o.bitrate || "?"}kbps`,
                    o.channels === 2 ? "stereo" : "mono",
                    `${(o.sample_rate || 44100) / 1000}k`,
                    o.normalize ? "normalised" : null].filter(Boolean).join(" · ");
+      const sounding = playingId === t.id;
       const onsets = Object.entries(t.onsets || {})
         .map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" · ") || "no onsets";
       // The remembered source. A link if it came from one, so you can go back
@@ -232,16 +188,23 @@ export function initTracks(deps: TracksDeps): void {
         : isUrl
           ? `<a href="${esc(t.source)}" target="_blank" rel="noreferrer noopener">${esc(t.title || t.source).slice(0, 64)}</a>`
           : esc(t.source.replace(/^file:/, "").split("/").pop());
+      const inShow = T.sceneIds.has(t.id);
+      const cls = ["trk", T.selected === t.id ? "sel" : "",
+                   sounding ? "playing" : ""].filter(Boolean).join(" ");
       return `
-      <div class="trk" data-id="${esc(t.id)}">
+      <div class="${cls}" data-id="${esc(t.id)}" title="Click to open the clip editor">
         <div class="trk__nm">${esc(t.id)}
+          ${inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
           <small>${t.dur ?? "?"}s · ${t.kb} KB · ${fmt}</small>
           <small>${onsets}</small>
           ${src ? `<small class="trk__src">from ${src}</small>` : ""}
           ${t.notes ? `<small>${esc(t.notes)}</small>` : ""}
         </div>
         <div class="trk__act">
-          <button data-act="scene">Make scene</button>
+          <button data-act="play" class="${sounding ? "on" : ""}"
+                  title="Listen to the whole imported file">${sounding ? "Stop" : "Play"}</button>
+          <button data-act="scene" title="${inShow ? "Rewrite this scene from the track as it is now" : "Add this track to the show as a new scene"}"
+            >${inShow ? "Update scene" : "Make scene"}</button>
           ${t.source ? `<button data-act="refresh" title="Rebuild from the remembered source using the options above">Re-import</button>` : ""}
           <button data-act="del" class="danger">Delete</button>
         </div>
@@ -255,7 +218,10 @@ export function initTracks(deps: TracksDeps): void {
     const el = e.target as HTMLElement | null;
     if (el?.closest("button")) return;
     const id = el?.closest<HTMLElement>(".trk")?.dataset["id"];
-    if (id) deps.onSelect?.(id);
+    if (!id) return;
+    T.selected = id;
+    drawTracks(undefined);
+    deps.onSelect?.(id);
   });
 
   T.list.addEventListener("click", async e => {
@@ -263,11 +229,15 @@ export function initTracks(deps: TracksDeps): void {
     // Every button is rendered inside a .trk carrying the id, so the row and
     // the attribute are both there or the markup above is broken.
     const id = btn.closest<HTMLElement>(".trk")!.dataset["id"] ?? "";
-    if (btn.dataset["act"] === "del") {
+    if (btn.dataset["act"] === "play") {
+      preview.toggle(id);
+    } else if (btn.dataset["act"] === "del") {
       if (!confirm(`Delete track "${id}"? The file is removed from tracks/.`)) return;
+      if (preview.playing() === id) preview.stop();
       const r = await fetch(`/api/tracks/${id}`, { method: "DELETE" })
         .then(res => res.json() as Promise<ActionResponse>);
       say(r.ok ? `Deleted ${id}.` : `Could not delete ${id}.`, !r.ok);
+      if (T.selected === id) { T.selected = null; deps.onSelect?.(null); }
       refresh();
     } else if (btn.dataset["act"] === "refresh") {
       // Rebuild from the remembered source. Anything left blank in the option
@@ -287,26 +257,45 @@ export function initTracks(deps: TracksDeps): void {
       if (r.ok) { drawTracks(r.tracks); say(`Re-imported ${id}.`); }
       else say(`Re-import failed — ${(r.log || r.error || "").slice(-400)}`, true);
     } else {
-      const r = await fetch("/api/tracks").then(res => res.json() as Promise<TracksResponse>);
-      // The list was just refetched from the same server that drew the row, so
-      // a miss here means the track vanished mid-click — let it throw.
-      const t = (r.tracks || []).find(x => x.id === id)!;
-      const block = sceneYaml(id, t.dur, t.onsets || {});
-      T.yaml.hidden = false; T.yaml.textContent = block;
-      say(`Writing scene "${id}" into scenes.yaml and rebuilding…`);
-      const res = await fetch("/api/scene", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, yaml: block })
-      }).then(x => x.json() as Promise<ActionResponse>);
-      say(res.ok ? `Scene "${id}" written and rebuilt. Reload to see it in Scenes.`
-                 : `Scene write failed — ${(res.log || "").slice(-300)}`, !res.ok);
+      // Re-rendering the whole show takes seconds — longer than anyone waits
+      // before deciding a button is broken. Say so on the button itself.
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Working…";
+      try {
+        const r = await fetch("/api/tracks").then(res => res.json() as Promise<TracksResponse>);
+        // The list was just refetched from the same server that drew the row, so
+        // a miss here means the track vanished mid-click — let it throw.
+        const t = (r.tracks || []).find(x => x.id === id)!;
+        const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext);
+        T.yaml.hidden = false; T.yaml.textContent = block;
+        say(`Writing scene "${id}" into scenes.yaml and re-rendering the show…`);
+        const res = await fetch("/api/scene", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, yaml: block })
+        }).then(x => x.json() as Promise<ActionResponse>);
+        if (!res.ok) {
+          say(`Scene write failed — ${(res.log || res.error || "").slice(-300)}`, true);
+          return;
+        }
+        // The row now says "in the show", which is the visible proof the click
+        // did something. The page's own scene list is baked in at generate
+        // time, so it needs a reload — offered, not forced.
+        T.sceneIds = new Set(res.scenes || [...T.sceneIds, id]);
+        drawTracks(undefined);
+        sayReload(`Scene "${id}" ${res.replaced ? "updated" : "added"} in scenes.yaml `
+                + `and the audio re-rendered.`);
+      } finally {
+        btn.disabled = false;
+        if (label !== null) btn.textContent = label;
+      }
     }
   });
 
   const refresh = (): void => {
     if (T.mode !== "studio") return;
     void fetch("/api/tracks").then(r => r.json() as Promise<TracksResponse>)
-      .then(d => drawTracks(d.tracks));
+      .then(d => { T.sceneIds = new Set(d.scenes || []); drawTracks(d.tracks); });
   };
 
   /* ── Server controls ──────────────────────────────────────────────
@@ -314,7 +303,9 @@ export function initTracks(deps: TracksDeps): void {
      reachable when these are visible. Starting it cannot — see the offline
      panel for why that one step happens outside the browser. */
   const goOffline = (msg: string): void => {
+    preview.stop();                  // the file it was streaming just went away
     T.mode = "static";
+    T.tracks = [];
     T.modeEl.textContent = "read-only · studio not running";
     byId("trkServer").hidden = true;
     byId("trkOffline").hidden = false;
@@ -362,7 +353,8 @@ export function initTracks(deps: TracksDeps): void {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(Object.assign({ url }, opts()))
       }).then(res => res.json() as Promise<ActionResponse>);
-      if (r.ok) { drawTracks(r.tracks); say("Imported. Press “Make scene” to wire it into the show.");
+      if (r.ok) { drawTracks(r.tracks);
+                  say("Imported. Press Play to hear it, or “Make scene” to wire it into the show.");
                   byId<HTMLInputElement>("trkUrl").value = ""; }
       else say(`Import failed — ${(r.log || r.error || "").slice(-400)}`, true);
     } catch (err) { say(`Import failed — ${String(err)}`, true); }
@@ -395,7 +387,8 @@ export function initTracks(deps: TracksDeps): void {
         const r = await fetch("/api/import", {
           method: "POST", headers: { "X-Import-Opts": JSON.stringify(opts()) }, body: fd
         }).then(res => res.json() as Promise<ActionResponse>);
-        if (r.ok) { drawTracks(r.tracks); say("Imported. Press “Make scene” to wire it in."); }
+        if (r.ok) { drawTracks(r.tracks);
+                    say("Imported. Press Play to hear it, or “Make scene” to wire it in."); }
         else say(`Import failed — ${(r.log || r.error || "").slice(-400)}`, true);
       } catch (err) { say(`Import failed — ${String(err)}`, true); }
       return;
@@ -416,16 +409,21 @@ export function initTracks(deps: TracksDeps): void {
                  ).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 32);
       const counts: Record<string, number> =
         Object.fromEntries(Object.entries(marks).map(([k, v]) => [k, v.length]));
-      const block = sceneYaml(id, audio.duration, counts);
+      // Static mode cannot convert anything, so the scene has to point at the
+      // container the file already is — not at the .mp3 the studio would have
+      // made of it.
+      const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || "mp3").toLowerCase();
+      const block = sceneYaml(id, audio.duration, counts, ext);
       T.yaml.hidden = false; T.yaml.textContent = block;
       const kb = Math.round(audio.duration * 96 * 1000 / 8 / 1024);
       say(`${file.name}: ${audio.duration.toFixed(1)}s, ~${kb} KB at 96 kbps. `
         + Object.entries(counts).map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" · ")
-        + `. Copy the block below, save the file into tracks/${id}.mp3, then run make audio.`);
+        + `. Copy the block below, save the file into tracks/${id}.${ext}, then run make audio.`);
     } catch (err) { say(`Could not read that file — ${String(err)}`, true); }
   }
 
-  function sceneYaml(id: string, dur: number | undefined, counts: Record<string, number>): string {
+  function sceneYaml(id: string, dur: number | undefined,
+                     counts: Record<string, number>, ext = "mp3"): string {
     const zone: Record<string, string> = { onset_low: "door", onset_mid: "towerL", onset_high: "towerR" };
     const col: Record<string, string> = { onset_low: "[1.0, 0.12, 0.02, 0.0]", onset_mid: "[0.66, 0.10, 1.0, 0.05]",
                   onset_high: "[0.30, 1.0, 0.55, 0.0]" };
@@ -438,7 +436,7 @@ export function initTracks(deps: TracksDeps): void {
       `    blurb: >`,
       `      Imported track. Light cues are onset-detected from the audio`,
       `      itself, so they follow whatever the track actually does.`,
-      `    audio_file: tracks/${id}.mp3`,
+      `    audio_file: tracks/${id}.${ext}`,
       `    base: {towerL: chill, towerR: chill, door: ember}`,
       `    levels: {towerL: 0.4, towerR: 0.4, door: 0.5}`,
       `    pulse:`,
@@ -451,4 +449,6 @@ export function initTracks(deps: TracksDeps): void {
     L.push(`    cues: []`);
     return L.join("\n");
   }
+
+  return { stopPreview: () => preview.stop() };
 }

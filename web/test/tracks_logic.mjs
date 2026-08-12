@@ -10,28 +10,19 @@
  * that should never have needed a human to find.
  *
  * The DOM-heavy parts of tracks.ts are not covered here; what is covered is the
- * logic underneath them, extracted to match the shipped implementation.
+ * logic underneath them — which now lives in import_opts.ts and is imported
+ * directly, so these assertions test the shipped code rather than a copy of it
+ * that has to be kept in step by hand.
  */
 
 import { pickOnsets } from "../dist/onsets.mjs";
+import {
+  MIN_KBPS, MAX_KBPS, clampKbps, channelsOf, capacityHtml, optsHint,
+} from "../dist/import_opts.mjs";
 
 let pass = 0;
 const fails = [];
 const ok = (c, m) => { if (c) pass++; else fails.push(m); };
-
-/* ── Capacity readout ──────────────────────────────────────────────────
-   Mirrors updateCapacity() in tracks.ts. Kept in step by the assertions
-   below rather than by hope: each one states a property the shipped code
-   must hold, not an implementation detail. */
-
-const MIN_KBPS = 32, MAX_KBPS = 320;
-const clampKbps = (raw) => {
-  const t = +raw;
-  return Number.isFinite(t) && t > 0
-    ? Math.min(MAX_KBPS, Math.max(MIN_KBPS, t))
-    : 96;
-};
-const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
 // The bug: -5 is truthy, so `+raw || 96` let it straight through.
 ok(clampKbps("-5") === 96, "a negative bitrate falls back to the default");
@@ -44,18 +35,55 @@ ok(clampKbps("9999") === MAX_KBPS, "above the ceiling clamps down to 320");
 ok(clampKbps("96") === 96, "a valid value is left alone");
 ok(clampKbps("32") === 32 && clampKbps("320") === 320, "the bounds themselves are valid");
 
-// The symptom that made the bug visible.
+// The symptom that made the bug visible, asserted against the real readout.
 for (const raw of ["-5", "-1", "0", "abc", "", "1", "9999"]) {
-  const bps = clampKbps(raw) * 1000 / 8;
-  const text = `${mmss(1713 * 1024 / bps)} ${mmss(Math.max(0, (2.9 * 1024 * 1024) / bps))}`;
-  ok(!/-/.test(text), `no negative time rendered for input ${JSON.stringify(raw)}`);
+  const html = capacityHtml(raw, "1", 0);
+  ok(!/>-|-\d+:/.test(html),
+     `no negative time in the capacity line for bitrate ${JSON.stringify(raw)}`);
 }
+ok(/no limit/.test(capacityHtml("96", "1", 0)), "the readout still names all three ceilings");
+ok(/stereo/.test(capacityHtml("96", "2", 0)), "channels reach the readout");
+// More of the show on the flash means less room left for the next track.
+{
+  const room = (used) => capacityHtml("96", "1", used).match(/show: <b>(\d+):(\d+)</);
+  const empty = room(0), full = room(2.5 * 1024 * 1024);
+  ok(+empty[1] * 60 + +empty[2] > +full[1] * 60 + +full[2],
+     "a fuller show leaves less flash for the next import");
+}
+ok(/show: <b>0:00</.test(capacityHtml("96", "1", 99 * 1024 * 1024)),
+   "an over-full show reads as 0:00, never as negative time");
 
 // Channels: anything not 2 is mono, and nothing else can be expressed.
-const chOf = (raw) => (+raw === 2 ? 2 : 1);
-ok(chOf("2") === 2, "2 is stereo");
-ok(chOf("1") === 1 && chOf("7") === 1 && chOf("abc") === 1 && chOf("") === 1,
+ok(channelsOf("2") === 2, "2 is stereo");
+ok(channelsOf("1") === 1 && channelsOf("7") === 1
+   && channelsOf("abc") === 1 && channelsOf("") === 1,
    "everything else resolves to mono rather than passing through");
+
+/* ── The collapsed Options summary ─────────────────────────────────────
+   It is the only thing telling you what an import will do before you run
+   it, so a wrong summary is worse than none. */
+
+const hint = (o) => optsHint({
+  id: "", start: "", take: "", sensitivity: "", bitrate: "96",
+  sample_rate: "44100", channels: "1", format: "mp3", normalize: false, ...o,
+});
+ok(hint({}) === "— MP3 96k", "the default summary is the format and its bitrate");
+ok(hint({ take: "24", start: "0:30" }) === "— 24s from 0:30, MP3 96k",
+   "a trim is summarised as length and offset");
+ok(hint({ take: "24", start: "0:00" }) === "— 24s, MP3 96k",
+   "a start of zero is not worth saying");
+ok(hint({ take: "24" }) === "— 24s, MP3 96k", "nor is a blank start");
+for (const fmt of ["wav", "flac"]) {
+  ok(hint({ format: fmt }) === `— ${fmt.toUpperCase()}`,
+     `${fmt} shows no bitrate, because it has none`);
+}
+ok(hint({ format: "opus" }) === "— OPUS 96k", "opus is lossy, so its bitrate shows");
+ok(hint({ bitrate: "-5" }) === "— MP3 96k",
+   "an out-of-range bitrate is summarised as what will actually be used");
+ok(hint({ channels: "2", normalize: true }) === "— MP3 96k, stereo, loudness matched",
+   "stereo and loudness matching are both called out");
+ok(hint({ channels: "7" }) === "— MP3 96k",
+   "a channel count that cannot be expressed is not claimed to be stereo");
 
 /* ── Onset detection ───────────────────────────────────────────────────
    The in-browser fallback used when there is no studio server. It has to

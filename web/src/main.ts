@@ -143,13 +143,20 @@ if (modeEl) {
 const wave = initWaveform({
   onAudition: (playing, positionMs) => {
     if (!playing) return;
+    // The region audition and the row preview are two audio elements; only one
+    // of them should ever be making noise.
+    tracks.stopPreview();
     // Feed the show engine the clip's position so the cue list and the
     // audio agree while scrubbing around inside a candidate loop.
     if (state.running) transport.setPlaying(false);
     transport.seekTo(positionMs % state.scene.dur);
   },
 });
-initTracks({ scenes: SCENES, onSelect: (id) => wave.show(id) });
+const tracks = initTracks({
+  scenes: SCENES,
+  onSelect: (id) => wave.show(id),
+  onAudioClaim: () => wave.stop(),
+});
 
 /* ── Frame loop ── */
 function frame(now: number): void {

@@ -346,7 +346,9 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       host.hidden = id === null;       // nothing selected, nothing to show
       trackId = id;
       clip = null;                     // a new track's in/out points are its own
-      if (id) audio.src = `/api/track/${encodeURIComponent(id)}.mp3`;
+      // No extension — the studio resolves the id to whichever container the
+      // import landed in, so a WAV or FLAC track auditions like any other.
+      if (id) audio.src = `/api/track/${encodeURIComponent(id)}`;
       else audio.removeAttribute("src");
       void load();
     },

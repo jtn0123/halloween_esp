@@ -7,15 +7,12 @@ panel depends on, so a break here is a browser UI that silently does nothing.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import sys
 import tempfile
 import threading
 import unittest
-import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
@@ -23,97 +20,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import import_track as it      # noqa: E402
 import manifest as mf          # noqa: E402
 import studio                  # noqa: E402
 from helpers import make_click_track  # noqa: E402
-
-CONVERT_OPTS = {"start": 0, "take": None, "fade_in": None, "fade_out": None,
-                "bitrate": 96, "channels": 1, "sample_rate": 44100,
-                "normalize": False, "gain_db": None}
-
-
-def make_mp3(dest: Path, seconds: float = 3.0) -> None:
-    """A small real MP3, since the endpoints decode what they are given."""
-    tmp = Path(tempfile.mkdtemp())
-    try:
-        src = tmp / "src.wav"
-        make_click_track(src, seconds=seconds)
-        it.convert(src, dest, dict(CONVERT_OPTS))
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
-
-
-class Quiet(studio.Handler):
-    """The real handler logs every request to stderr; tests do not need that."""
-
-    def log_message(self, fmt, *a):
-        pass
-
-
-class ServerCase(unittest.TestCase):
-    """Base fixture: a server on an ephemeral port, and disposable tracks.
-
-    Port 0 rather than 8765 on purpose — the user may well have a real studio
-    running, and a test that fights it for the port is a test that fails for
-    the wrong reason.
-    """
-
-    # Endpoints read the real tracks/ directory, so the fixtures live there —
-    # tagged with the pid so two runs at once cannot fight over a filename,
-    # and so the cleanup can never touch a track that is not ours.
-    PREFIX = f"_t_studio_{os.getpid()}_"
-    WAVE_ID = PREFIX + "wave"
-    DEL_ID = PREFIX + "delete"
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.manifest_before = (mf.PATH.read_bytes() if mf.PATH.exists() else None)
-        cls.tracks_before = {p.name for p in studio.TRACKS.glob("*.mp3")
-                             if not p.name.startswith(cls.PREFIX)}
-        cls.wave = studio.TRACKS / f"{cls.WAVE_ID}.mp3"
-        make_mp3(cls.wave)
-        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
-        cls.port = cls.srv.server_address[1]
-        cls.thread = threading.Thread(target=cls.srv.serve_forever, daemon=True)
-        cls.thread.start()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.srv.shutdown()
-        cls.srv.server_close()
-        cls.thread.join(timeout=5)
-        for p in studio.TRACKS.glob(f"{cls.PREFIX}*.mp3"):
-            p.unlink(missing_ok=True)
-        shutil.rmtree(studio.TRACKS / "_upload", ignore_errors=True)
-        if cls.manifest_before is not None:
-            mf.PATH.write_bytes(cls.manifest_before)
-        # The invariant worth guarding: a test run must never cost you a track
-        # you imported. Checked as "nothing went missing" rather than "the
-        # directory is identical", so an unrelated file appearing alongside is
-        # not mistaken for damage.
-        gone = cls.tracks_before - {p.name for p in studio.TRACKS.glob("*.mp3")}
-        assert not gone, f"tests removed pre-existing tracks: {gone}"
-
-    # ── HTTP ──
-    def req(self, method: str, path: str, data: bytes | None = None,
-            headers: dict | None = None) -> tuple[int, bytes]:
-        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}",
-                                   data=data, method=method, headers=headers or {})
-        try:
-            with urllib.request.urlopen(r, timeout=20) as f:
-                return f.status, f.read()
-        except urllib.error.HTTPError as e:
-            return e.code, e.read()
-
-    def get_json(self, path: str) -> tuple[int, dict]:
-        code, body = self.req("GET", path)
-        return code, json.loads(body)
-
-    def post_json(self, path: str, obj: dict) -> tuple[int, dict]:
-        code, body = self.req("POST", path, json.dumps(obj).encode(),
-                              {"Content-Type": "application/json"})
-        return code, json.loads(body)
+from studio_case import ServerCase, make_mp3  # noqa: E402
 
 
 class TestReads(ServerCase):
@@ -179,10 +89,59 @@ class TestReads(ServerCase):
     def test_track_of_an_unknown_id_is_404(self) -> None:
         self.assertEqual(self.req("GET", "/api/track/_t_studio_missing.mp3")[0], 404)
 
-    def test_track_refuses_a_non_mp3(self) -> None:
+    def test_track_refuses_a_non_audio_file(self) -> None:
         """tracks/ holds other things — tracks.json, a README — and none of
         them should be readable through the audio route."""
         self.assertEqual(self.req("GET", "/api/track/tracks.json")[0], 404)
+        self.assertEqual(self.req("GET", "/api/track/README.md")[0], 404)
+
+    def test_track_streams_without_being_told_the_extension(self) -> None:
+        """The panel knows the id; only the server knows the container. If it
+        had to guess ".mp3" — which it used to — every non-MP3 import is a row
+        whose Play button does nothing."""
+        code, body = self.req("GET", f"/api/track/{self.WAVE_ID}")
+        self.assertEqual(code, 200)
+        self.assertEqual(body, self.wave.read_bytes())
+
+    def test_a_wav_track_is_listed_playable_and_typed(self) -> None:
+        _, d = self.get_json("/api/tracks")
+        mine = next((t for t in d["tracks"] if t["id"] == self.WAV_ID), None)
+        self.assertIsNotNone(mine, "a WAV import never appeared in the list")
+        self.assertEqual(mine["ext"], "wav")
+        code, body = self.req("GET", f"/api/track/{self.WAV_ID}")
+        self.assertEqual(code, 200)
+        self.assertEqual(body, self.wav.read_bytes())
+
+    def test_a_wav_track_has_a_drawable_waveform(self) -> None:
+        """The clip editor is reached by the same id, so it has to resolve the
+        container too."""
+        code, d = self.get_json(f"/api/waveform/{self.WAV_ID}")
+        self.assertEqual(code, 200)
+        self.assertGreater(len(d["peaks"]), 100)
+
+    def test_track_serves_a_byte_range(self) -> None:
+        """Seeking into a four-minute import without this means downloading the
+        whole thing first."""
+        total = self.wave.stat().st_size
+        r = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/track/{self.WAVE_ID}",
+            headers={"Range": "bytes=10-19"})
+        with urllib.request.urlopen(r, timeout=20) as f:
+            self.assertEqual(f.status, 206)
+            self.assertEqual(f.headers["Content-Range"], f"bytes 10-19/{total}")
+            self.assertEqual(f.read(), self.wave.read_bytes()[10:20])
+
+    def test_a_range_the_file_cannot_satisfy_falls_back_to_all_of_it(self) -> None:
+        """A media element occasionally asks for more than there is. Answering
+        with the whole file is survivable; answering with a truncated 206 that
+        claims to be a range is not."""
+        for bad in ("bytes=99999999-", "bytes=abc-def", "bytes=5-1", "nonsense"):
+            r = urllib.request.Request(
+                f"http://127.0.0.1:{self.port}/api/track/{self.WAVE_ID}",
+                headers={"Range": bad})
+            with urllib.request.urlopen(r, timeout=20) as f:
+                self.assertEqual(f.status, 200, bad)
+                self.assertEqual(f.read(), self.wave.read_bytes(), bad)
 
     def test_unknown_routes_are_404_on_every_verb(self) -> None:
         for method, data in (("GET", None), ("POST", b"{}"), ("DELETE", None)):
@@ -263,6 +222,15 @@ class TestWrites(ServerCase):
         code, body = self.req("DELETE", "/api/tracks/_t_studio_never_existed")
         self.assertEqual(code, 404)
         self.assertEqual(json.loads(body)["error"], "not found")
+
+    def test_delete_removes_a_non_mp3_track_too(self) -> None:
+        """Otherwise Delete reports success on a file that is still there, and
+        the row comes back on the next refresh."""
+        target = studio.TRACKS / f"{self.DEL_ID}_flac.wav"
+        make_click_track(target, seconds=1.0)
+        code, _ = self.req("DELETE", f"/api/tracks/{self.DEL_ID}_flac")
+        self.assertEqual(code, 200)
+        self.assertFalse(target.exists(), "the WAV is still on disk")
 
     def test_probe_of_a_non_url_answers_without_touching_the_network(self) -> None:
         """The guard has to come before yt-dlp, not after: a typo in the box
@@ -421,6 +389,34 @@ class TestSceneEditing(ServerCase):
         text = self.scenes.read_text()
         self.assertIn("- id: brand_new", text)
         self.assertTrue(text.index("- id: storm") < text.index("- id: brand_new"))
+
+    def test_the_answer_says_which_of_the_two_happened(self) -> None:
+        """"Make scene" is a button whose whole effect is in a file you cannot
+        see from the page. Without this the panel can only say "written", which
+        reads exactly like nothing having happened."""
+        _, added = self.post_json(
+            "/api/scene", {"id": "brand_new", "yaml": "  - id: brand_new\n    x: 1\n"})
+        self.assertFalse(added["replaced"])
+        _, again = self.post_json(
+            "/api/scene", {"id": "brand_new", "yaml": "  - id: brand_new\n    x: 2\n"})
+        self.assertTrue(again["replaced"])
+
+    def test_rewriting_the_same_scene_twice_changes_nothing(self) -> None:
+        """"Update scene" on an unchanged track should be a no-op in git, not a
+        whitespace diff that has to be explained."""
+        block = {"id": "storm", "yaml": "  - id: storm\n    duration_ms: 7\n"}
+        self.post_json("/api/scene", block)
+        once = self.scenes.read_text()
+        self.post_json("/api/scene", block)
+        self.assertEqual(self.scenes.read_text(), once)
+
+    def test_the_answer_carries_the_new_scene_list(self) -> None:
+        """The row's "in the show" badge comes from this, so it has to be the
+        list as of after the write, not before it."""
+        _, d = self.post_json(
+            "/api/scene", {"id": "brand_new", "yaml": "  - id: brand_new\n    x: 1\n"})
+        self.assertIn("brand_new", d["scenes"])
+        self.assertIn("vigil", d["scenes"])
 
 
 if __name__ == "__main__":

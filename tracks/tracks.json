@@ -1,30 +1,64 @@
 {
+  "halloween_songs___ghostbusters_t": {
+    "audio": {
+      "bitrate": 96,
+      "bytes": 2956061,
+      "channels": 2,
+      "duration": 246.26,
+      "format": "mp3",
+      "sample_rate": 44100
+    },
+    "imported": "2026-08-11T19:27:53",
+    "notes": "",
+    "onsets": {
+      "onset_high": 892,
+      "onset_low": 678,
+      "onset_mid": 597
+    },
+    "opts": {
+      "bitrate": 96,
+      "channels": 2,
+      "fade_in": null,
+      "fade_out": null,
+      "format": "mp3",
+      "gain_db": null,
+      "normalize": true,
+      "sample_rate": 44100,
+      "sensitivity": 1.1,
+      "start": "0",
+      "take": null
+    },
+    "source": "https://youtu.be/FNvO9etT3Ec?list=PLxA687tYuMWiSFydrFrY21oxq4G9InAWX",
+    "title": "Halloween Songs - Ghostbusters Theme Song (Audio)"
+  },
   "wicked_winds": {
     "audio": {
       "bitrate": 96,
       "bytes": 288750,
       "channels": 1,
       "duration": 24.0,
+      "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-10T22:19:40",
+    "imported": "2026-08-11T19:42:29",
     "notes": "",
     "onsets": {
-      "onset_high": 33,
-      "onset_low": 52,
-      "onset_mid": 85
+      "onset_high": 22,
+      "onset_low": 62,
+      "onset_mid": 80
     },
     "opts": {
       "bitrate": 96,
       "channels": 1,
       "fade_in": null,
       "fade_out": null,
+      "format": "mp3",
       "gain_db": null,
       "normalize": true,
       "sample_rate": 44100,
       "sensitivity": 1.1,
-      "start": "0:20",
-      "take": "24"
+      "start": "0:00",
+      "take": "24.0"
     },
     "source": "https://www.youtube.com/watch?v=tzJ6hzTpejs&list=RDtzJ6hzTpejs&start_radio=1",
     "title": "Wicked Winds Melody"

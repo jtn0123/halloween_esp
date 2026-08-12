@@ -7,7 +7,7 @@
     "build": "esbuild src/main.ts --bundle --format=iife --target=es2020 --outfile=dist/bundle.js",
     "watch": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
-    "test": "esbuild src/effects.ts --bundle --format=esm --outfile=dist/effects.mjs && esbuild src/show.ts --bundle --format=esm --outfile=dist/show.mjs && esbuild src/onsets.ts --bundle --format=esm --outfile=dist/onsets.mjs && node test/effects_equivalence.mjs && node test/show_engine.mjs && node test/tracks_logic.mjs"
+    "test": "esbuild src/effects.ts --bundle --format=esm --outfile=dist/effects.mjs && esbuild src/show.ts --bundle --format=esm --outfile=dist/show.mjs && esbuild src/onsets.ts --bundle --format=esm --outfile=dist/onsets.mjs && esbuild src/import_opts.ts --bundle --format=esm --outfile=dist/import_opts.mjs && node test/effects_equivalence.mjs && node test/show_engine.mjs && node test/tracks_logic.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",
