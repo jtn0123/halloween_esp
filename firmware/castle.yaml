@@ -46,15 +46,35 @@ esphome:
   includes:
     - castle_effects.h
     - flash_mode.h
+    - boot_log.h
 
   on_boot:
-    priority: -100
-    then:
-      - light.turn_on:
-          id: castle_leds
-          brightness: 100%
-          effect: Show
-      - script.execute: scene_vigil
+    # Highest priority ESPHome offers, so the ring is catching lines before
+    # anything else has had a chance to fail. See boot_log.h for why the API
+    # cannot see this window and why the SD card cannot fix it.
+    - priority: 800
+      then:
+        - lambda: |-
+            // The callback is a plain function pointer plus an instance
+            // pointer, not a std::function — ESPHome dropped the virtual
+            // listener interface to save a vtable per implementer, so a
+            // capturing lambda will not bind here.
+            castle_log::init();
+            if (esphome::logger::global_logger != nullptr) {
+              esphome::logger::global_logger->add_log_callback(
+                  nullptr,
+                  [](void *, uint8_t level, const char *tag,
+                     const char *message, size_t) {
+                    castle_log::capture((int) level, tag, message);
+                  });
+            }
+    - priority: -100
+      then:
+        - light.turn_on:
+            id: castle_leds
+            brightness: 100%
+            effect: Show
+        - script.execute: scene_vigil
 
 esp32:
   board: adafruit_feather_esp32s2
@@ -308,6 +328,15 @@ binary_sensor:
         - script.execute: scene_approach
 
 button:
+  # ── Diagnostics ──────────────────────────────────────────────────
+  # Everything the board did before the API came up. This is the only way to
+  # see the boot sequence on a device with no serial console — see boot_log.h.
+  - platform: template
+    name: "Dump boot log"
+    entity_category: diagnostic
+    on_press:
+      - lambda: 'castle_log::dump();'
+
   # ── Remote flashing escape hatch ─────────────────────────────────
   # This board has no USB serial console, and OTA is off because the embedded
   # audio makes the binary too big for two app slots. So new firmware has

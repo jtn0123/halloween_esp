@@ -10,19 +10,7 @@
 # One entry per scene, matching the `snd_<id>` ids the scripts
 # above reference. Generated: do not hand-edit.
 
-- id: snd_vigil
-  file: ../audio/01_vigil.mp3
-- id: snd_storm
-  file: ../audio/02_storm.mp3
-- id: snd_seance
-  file: ../audio/03_seance.mp3
-- id: snd_ballroom
-  file: ../audio/04_ballroom.mp3
-- id: snd_descent
-  file: ../audio/05_descent.mp3
-- id: snd_visitation
-  file: ../audio/06_visitation.mp3
-- id: snd_approach
-  file: ../audio/07_approach.mp3
-- id: snd_crypt
-  file: ../audio/08_crypt.mp3
+- id: snd_a
+  file: ../audio/01_a.mp3
+- id: snd_b
+  file: ../audio/02_b.mp3

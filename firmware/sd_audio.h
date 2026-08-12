@@ -32,6 +32,8 @@
 #include <driver/spi_common.h>
 #include <esp_vfs_fat.h>
 #include <sdmmc_cmd.h>
+#include <cerrno>
+#include <cstring>
 #include <esp_heap_caps.h>
 
 #include <cstdio>
@@ -97,6 +99,22 @@ inline bool mount(int cs, int sck, int mosi, int miso, int max_files = 4) {
   return true;
 }
 
+/// Drop the filesystem and mount it again.
+///
+/// Exists because `opendir` came back EAGAIN — which ESP-IDF's FATFS layer
+/// produces from FR_TIMEOUT, i.e. the volume lock was still held. A lock held
+/// by an operation that never finished cannot be waited out; the mount has to
+/// be torn down. Returns whatever the fresh mount said.
+inline bool remount(int cs, int sck, int mosi, int miso) {
+  if (g_mounted) {
+    esp_err_t err = esp_vfs_fat_sdcard_unmount("/sd", g_card);
+    ESP_LOGI(TAG, "unmount: %s", esp_err_to_name(err));
+    g_mounted = false;
+    g_card = nullptr;
+  }
+  return mount(cs, sck, mosi, miso);
+}
+
 /// Log what is actually on the card.
 ///
 /// "Did it mount" is only half the question — a card that mounts but shows an
@@ -110,7 +128,22 @@ inline void list_root(const char *dir = "/sd") {
   }
   DIR *d = opendir(dir);
   if (d == nullptr) {
-    ESP_LOGE(TAG, "mounted, but cannot open %s", dir);
+    // errno is the whole diagnosis here. "Mounted but cannot open" is a
+    // sentence with several very different causes — ENOENT means the VFS
+    // registered under another path, ENOTDIR means something answered but is
+    // not a directory, EIO means the card stopped talking after the mount —
+    // and without the number they are indistinguishable from each other.
+    ESP_LOGE(TAG, "mounted, but cannot open %s — errno %d (%s)",
+             dir, errno, strerror(errno));
+    // What the card said AT MOUNT TIME. CID and CSD are cached in the struct,
+    // so this identifies the card but proves nothing about the link right now
+    // — do not read it as "the card is still there".
+    if (g_card != nullptr) {
+      ESP_LOGI(TAG, "  card as identified at mount: %s, %lluMB, sector %u",
+               g_card->cid.name,
+               ((uint64_t) g_card->csd.capacity) * g_card->csd.sector_size / (1024 * 1024),
+               (unsigned) g_card->csd.sector_size);
+    }
     return;
   }
   int files = 0, playable = 0;

@@ -44,20 +44,50 @@ substitutions:
 packages:
   base: !include castle.yaml
 
+# ESPHome tunes ESP-IDF for its own filesystem use — a FAT image on a flash
+# partition behind the wear-levelling layer — and both of its defaults are
+# wrong for a real SD card. Neither failure is loud: the card mounts, reports
+# its correct name and size, and then nothing works.
+#
+#   VFS_SUPPORT_DIR=n    ESPHome turns directory support off to save flash,
+#                        because it never lists anything. That removes
+#                        opendir/readdir entirely, so listing the card failed
+#                        with an errno the FATFS layer cannot even produce —
+#                        which is what made it look like a card fault.
+#
+#   FATFS_SECTOR_4096    Correct for wear-levelled flash. An SD card reports
+#                        512-byte sectors (this one does: "sector 512" in the
+#                        mount log), and FATFS built for 4096 misreads it.
+esp32:
+  framework:
+    sdkconfig_options:
+      CONFIG_VFS_SUPPORT_DIR: "y"
+      CONFIG_FATFS_SECTOR_4096: "n"
+      CONFIG_FATFS_SECTOR_512: "y"
+      # Long filenames, so "Halloween Songs - Ghostbusters.mp3" survives
+      # instead of arriving as HALLOW~1.MP3. ESPHome defaults this off too.
+      CONFIG_FATFS_LFN_NONE: "n"
+      CONFIG_FATFS_LFN_HEAP: "y"
+
 esphome:
   includes:
     - sd_audio.h
   on_boot:
-    # Later than the base config's -100 so the LEDs and player are up first.
-    priority: -200
-    then:
-      # Park the eInk and SRAM chip selects HIGH before touching the bus.
-      - output.turn_on: eink_cs_park
-      - output.turn_on: sram_cs_park
-      - lambda: |-
-          if (castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso})) {
-            castle_sd::list_root();
-          }
+    # A LIST, not a mapping, and that matters more than it looks. ESPHome
+    # merges a package's lists by appending them, but a mapping written over a
+    # list REPLACES it — so spelling this `priority: -200` at the top level
+    # silently deleted every on_boot entry castle.yaml had, including the
+    # `light.turn_on` + `scene_vigil` at -100. The SD build booted with its
+    # pixels dark and its opening scene never started, and nothing said so.
+    - priority: -200
+      then:
+        # Park the eInk and SRAM chip selects HIGH before touching the bus.
+        - output.turn_on: eink_cs_park
+        - output.turn_on: sram_cs_park
+        - lambda: |-
+            if (castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso})) {
+              castle_sd::list_root();
+            }
 
 # Held deselected for the life of the device — see the note in substitutions.
 # These chip selects are active-low, so deselected means driven HIGH, which is
@@ -96,3 +126,51 @@ binary_sensor:
   - platform: template
     name: "SD card present"
     lambda: "return castle_sd::g_mounted;"
+
+# ── SD diagnostics, driven remotely ──────────────────────────────────
+# The mount and its listing happen at boot priority -200, before the API is
+# up, so their log lines are gone by the time anything can read them. The boot
+# log ring (boot_log.h) keeps them, and these re-run the checks on demand —
+# which is what you want when the card is swapped without a reboot.
+button:
+  - platform: template
+    name: "List SD card"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          if (!castle_sd::g_mounted) {
+            ESP_LOGW("castle_sd", "not mounted — mounting now");
+            castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso});
+          }
+          castle_sd::list_root();
+
+  # A stuck FATFS lock cannot be waited out — see remount() for why. This is
+  # the recovery, and pressing it is also the experiment that tells us whether
+  # the lock is the fault or the card is.
+  - platform: template
+    name: "Remount SD"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          castle_sd::remount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso});
+          castle_sd::list_root();
+
+  # Plays whatever `SD file` names. Separate from the script so it can be
+  # pressed from anywhere that speaks the API, with no YAML edit.
+  - platform: template
+    name: "Play SD file"
+    entity_category: config
+    on_press:
+      - script.execute:
+          id: play_sd
+          path: !lambda 'return id(sd_path).state;'
+
+text:
+  - platform: template
+    name: "SD file"
+    id: sd_path
+    optimistic: true
+    mode: text
+    # Relative to the card root: sd_audio.h prefixes /sd/.
+    initial_value: "test.mp3"
+    entity_category: config
