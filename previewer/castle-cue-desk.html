@@ -464,9 +464,9 @@
             <label>id <input type="text" id="trkId" placeholder="auto" size="9"></label>
             <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
             <label>take <input type="text" id="trkTake" placeholder="all" size="5"></label>
-            <label>kbps <input type="text" id="trkBitrate" placeholder="96" size="4"></label>
+            <label>kbps <input type="number" id="trkBitrate" placeholder="96" min="32" max="320" step="8" size="4"></label>
             <label>rate <input type="text" id="trkRate" placeholder="44100" size="6"></label>
-            <label>ch <input type="text" id="trkCh" placeholder="1" size="2"></label>
+            <label>ch <select id="trkCh"><option value="1">mono</option><option value="2">stereo</option></select></label>
             <label>sens <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
             <label class="trk-chk"><input type="checkbox" id="trkNorm"> normalise</label>
           </div>
@@ -2132,9 +2132,11 @@
     });
     const PSRAM_FREE = 1713 * 1024, FLASH_FREE = 2.9 * 1024 * 1024;
     const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+    const MIN_KBPS = 32, MAX_KBPS = 320;
     function updateCapacity() {
-      const kbps = +val("trkBitrate") || 96;
-      const ch = +val("trkCh") || 1;
+      const typed = +val("trkBitrate");
+      const kbps = Number.isFinite(typed) && typed > 0 ? Math.min(MAX_KBPS, Math.max(MIN_KBPS, typed)) : 96;
+      const ch = +val("trkCh") === 2 ? 2 : 1;
       const bps = kbps * 1e3 / 8 * (ch === 2 ? 1 : 1);
       const psram = PSRAM_FREE / bps;
       const used = SCENES2.reduce((a, s) => a + s.dur / 1e3 * 12e3, 0);
@@ -2780,10 +2782,12 @@
     });
     view.message = "No track selected.";
     sync();
+    host.hidden = true;
     return {
       show(id) {
         if (id === trackId) return;
         stop();
+        host.hidden = id === null;
         trackId = id;
         clip = null;
         if (id) audio.src = `/api/track/${encodeURIComponent(id)}.mp3`;

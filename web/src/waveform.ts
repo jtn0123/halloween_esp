@@ -333,10 +333,17 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   view.message = "No track selected.";
   sync();
 
+  // Collapsed until a track is picked. `.trk-wave:empty` in the stylesheet was
+  // meant to do this, but it can never match: the editor populates its own
+  // container here, so the container is never empty. Hiding the host directly
+  // is the thing that actually works.
+  host.hidden = true;
+
   return {
     show(id: string | null): void {
       if (id === trackId) return;
       stop();
+      host.hidden = id === null;       // nothing selected, nothing to show
       trackId = id;
       clip = null;                     // a new track's in/out points are its own
       if (id) audio.src = `/api/track/${encodeURIComponent(id)}.mp3`;

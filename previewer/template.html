@@ -100,9 +100,9 @@
             <label>id <input type="text" id="trkId" placeholder="auto" size="9"></label>
             <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
             <label>take <input type="text" id="trkTake" placeholder="all" size="5"></label>
-            <label>kbps <input type="text" id="trkBitrate" placeholder="96" size="4"></label>
+            <label>kbps <input type="number" id="trkBitrate" placeholder="96" min="32" max="320" step="8" size="4"></label>
             <label>rate <input type="text" id="trkRate" placeholder="44100" size="6"></label>
-            <label>ch <input type="text" id="trkCh" placeholder="1" size="2"></label>
+            <label>ch <select id="trkCh"><option value="1">mono</option><option value="2">stereo</option></select></label>
             <label>sens <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
             <label class="trk-chk"><input type="checkbox" id="trkNorm"> normalise</label>
           </div>

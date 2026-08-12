@@ -118,9 +118,19 @@ export function initTracks(deps: TracksDeps): void {
   const PSRAM_FREE = 1713 * 1024, FLASH_FREE = 2.9 * 1024 * 1024;
   const mmss = (s: number): string =>
     `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+  /** Valid MPEG-1 Layer III range. Outside it the encoder has nothing to do
+   *  with the number, so neither should the readout. */
+  const MIN_KBPS = 32, MAX_KBPS = 320;
+
   function updateCapacity(): void {
-    const kbps = +val("trkBitrate") || 96;
-    const ch = +val("trkCh") || 1;
+    // `|| 96` alone let negatives through — -5 is truthy — and the readout
+    // then formatted negative seconds as "-47:-47". Clamp instead, so every
+    // out-of-range value lands somewhere the encoder would actually accept.
+    const typed = +val("trkBitrate");
+    const kbps = Number.isFinite(typed) && typed > 0
+      ? Math.min(MAX_KBPS, Math.max(MIN_KBPS, typed))
+      : 96;
+    const ch = +val("trkCh") === 2 ? 2 : 1;
     const bps = kbps * 1000 / 8 * (ch === 2 ? 1 : 1);   // bitrate already covers channels
     // Only the flash figure *after* the current show is worth printing, so the
     // empty-flash number the original also computed is not kept.
