@@ -309,15 +309,20 @@ class TestGenEsphomeMain(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
-        self._saved = (ge.SRC, ge.MARKERS, ge.OUT, ge.ROOT)
+        # EVERY module-level output path must be redirected here. MEDIA_OUT was
+        # forgotten when it was added, and these tests then wrote their two
+        # fixture scenes into the real firmware/generated/media_files.yaml —
+        # which broke the next firmware build with "cannot find 01_a.mp3".
+        self._saved = (ge.SRC, ge.MARKERS, ge.OUT, ge.MEDIA_OUT, ge.ROOT)
         ge.ROOT = self.tmp
         ge.SRC = self.tmp / "scenes.yaml"
         ge.MARKERS = self.tmp / "markers.json"
         ge.OUT = self.tmp / "generated" / "scenes.yaml"
+        ge.MEDIA_OUT = self.tmp / "generated" / "media_files.yaml"
         ge.SRC.write_text(yaml.safe_dump(self.DOC))
 
     def tearDown(self) -> None:
-        ge.SRC, ge.MARKERS, ge.OUT, ge.ROOT = self._saved
+        ge.SRC, ge.MARKERS, ge.OUT, ge.MEDIA_OUT, ge.ROOT = self._saved
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_writes_a_parseable_file_with_every_scene_and_a_stop_script(self) -> None:

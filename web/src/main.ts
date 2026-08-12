@@ -12,6 +12,7 @@
 import { RenderedAudio, type AudioMode } from "./audio.js";
 import { createBandEditor } from "./band_editor.js";
 import { createCodecAb } from "./codec_ab.js";
+import { deviceBridge } from "./device.js";
 import { defaultParams } from "./effects.js";
 import { Panels } from "./panels.js";
 import { createState, step } from "./show.js";
@@ -67,7 +68,13 @@ const transport = new Transport({
 /* ── Chrome ── */
 
 // Picking a scene while playing keeps playing; while stopped stays quiet.
-panels.renderScenes(SCENES, (sc) => transport.loadScene(sc, { play: state.running }));
+// When this page is served from the castle itself, the pick also fires the
+// scene on the hardware — see device.ts for the probe that decides.
+const device = deviceBridge();
+panels.renderScenes(SCENES, (sc) => {
+  transport.loadScene(sc, { play: state.running });
+  device.scene(sc.id);
+});
 
 panels.bindSliders({
   depth: (v) => { P.depth = v; },

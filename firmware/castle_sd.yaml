@@ -23,6 +23,15 @@ substitutions:
   name: castle-sd
   friendly: Castle SD
 
+  # ── ONBOARD pixel, for now ───────────────────────────────────────────
+  # No external jewels are soldered yet, so drive the Feather's own NeoPixel
+  # (GPIO33, plain RGB) exactly like bench.yaml does: it plays pixel 0 of
+  # towerL and the 20 pixels that don't exist fall off the end of the wire.
+  # WHEN THE JEWELS ARE SOLDERED: wire their DIN (via the 74AHCT125) to A0,
+  # then change these two lines to  pin_led_data: "18"  /  led_rgbw: "true".
+  pin_led_data: "33"
+  led_rgbw: "false"
+
   # ── SD pins: Adafruit 2.13" eInk FeatherWing (4128 / 4195 / 4814) ────
   # Adafruit documents one convention for the whole eInk FeatherWing family —
   # SD CS on D5, SRAM CS on D6, eInk CS on D9, eInk D/C on D10 — and it does
@@ -72,6 +81,7 @@ esp32:
 esphome:
   includes:
     - sd_audio.h
+    - sd_web.h
   on_boot:
     # A LIST, not a mapping, and that matters more than it looks. ESPHome
     # merges a package's lists by appending them, but a mapping written over a
@@ -88,6 +98,19 @@ esphome:
             if (castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso})) {
               castle_sd::list_root();
             }
+            // Started whether or not the card mounted: the server is also how
+            // you find out the card is missing without walking to the castle.
+            castle_web::start();
+
+# The onboard pixel is dark until its power rail (GPIO21) is driven high —
+# same as bench.yaml. Harmless once the real jewels take over: GPIO21 is clear
+# of the eInk wing and everything else on this build.
+switch:
+  - platform: gpio
+    id: neopixel_power
+    pin: GPIO21
+    restore_mode: ALWAYS_ON
+    internal: true
 
 # Held deselected for the life of the device — see the note in substitutions.
 # These chip selects are active-low, so deselected means driven HIGH, which is
@@ -112,14 +135,55 @@ script:
       path: string
     then:
       - lambda: |-
-          auto *f = castle_sd::load(path.c_str());
-          if (f == nullptr) {
-            ESP_LOGW("castle_sd", "nothing to play for '%s'", path.c_str());
-            return;
+          // Stop first: a new load frees the PSRAM buffer the decoder may
+          // still be reading. Stopping before the (100+ ms) load starts gives
+          // the pipeline time to let go of the old buffer.
+          id(castle_media)->make_call()
+              .set_command(esphome::media_player::MEDIA_PLAYER_COMMAND_STOP)
+              .set_announcement(true)
+              .perform();
+          // The read happens on its own task — a megabyte over SPI takes the
+          // better part of a second, and the main loop must keep the lights
+          // moving. The 200 ms interval below picks up the finished file.
+          castle_sd::start_load(path.c_str());
+
+# The bridge between the web server's httpd task and ESPHome's main loop.
+# HTTP handlers only *record* play/scene/stop requests (scripts and the media
+# player are not thread-safe off the loop); this picks them up and runs them.
+# 200 ms of latency on a button press is imperceptible next to an MP3 spin-up.
+interval:
+  - interval: 200ms
+    then:
+      - lambda: |-
+          // A finished SD load, if one landed. announcement:true matches how
+          // the generated scene scripts play — this device only defines the
+          // announcement pipeline.
+          auto *f = castle_sd::take_ready();
+          if (f != nullptr) id(castle_media)->play_file(f, true, false);
+
+          auto act = castle_web::take_pending();
+          if (act.type == castle_web::NONE) return;
+          if (act.type == castle_web::PLAY) {
+            id(play_sd)->execute(act.arg);
+          } else if (act.type == castle_web::STOP) {
+            id(scene_stop)->execute();
+          } else if (act.type == castle_web::VOLUME) {
+            auto call = id(castle_media)->make_call();
+            call.set_volume(atoi(act.arg.c_str()) / 100.0f);
+            call.perform();
+          } else if (act.type == castle_web::SCENE) {
+            // Generated scene scripts, by bare name. A miss is logged, not
+            // silent — a typo in a URL should say so.
+            if      (act.arg == "vigil")      id(scene_vigil)->execute();
+            else if (act.arg == "storm")      id(scene_storm)->execute();
+            else if (act.arg == "seance")     id(scene_seance)->execute();
+            else if (act.arg == "ballroom")   id(scene_ballroom)->execute();
+            else if (act.arg == "descent")    id(scene_descent)->execute();
+            else if (act.arg == "visitation") id(scene_visitation)->execute();
+            else if (act.arg == "approach")   id(scene_approach)->execute();
+            else if (act.arg == "crypt")      id(scene_crypt)->execute();
+            else ESP_LOGW("castle_web", "unknown scene '%s'", act.arg.c_str());
           }
-          // announcement:true matches how the generated scene scripts play,
-          // because this device defines only the announcement pipeline.
-          id(castle_media)->play_file(f, true, false);
 
 # A card check you can see in Home Assistant without reading logs.
 binary_sensor:

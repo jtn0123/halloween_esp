@@ -39,8 +39,11 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <atomic>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 namespace castle_sd {
 
@@ -249,7 +252,28 @@ inline esphome::audio::AudioFile *load(const char *name) {
     return nullptr;
   }
 
-  size_t got = fread(g_buf, 1, len, f);
+  // Read through an INTERNAL-RAM bounce buffer, never straight into PSRAM.
+  // The SDSPI driver moves data by DMA, and on the S2 DMA cannot write to
+  // PSRAM — a single fread(g_buf, ...) with a PSRAM destination is what put
+  // the crash reporter's PC inside sdspi_host.c. 16 KB internal, DMA-capable,
+  // memcpy'd out per chunk: the copy is nothing next to the SPI transfer.
+  uint8_t *bounce = (uint8_t *) heap_caps_malloc(16384, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+  if (bounce == nullptr) {
+    ESP_LOGE(TAG, "load: no internal RAM for the bounce buffer");
+    heap_caps_free(g_buf);
+    g_buf = nullptr;
+    fclose(f);
+    return nullptr;
+  }
+  size_t got = 0;
+  while (got < (size_t) len) {
+    size_t want = ((size_t) len - got) < 16384 ? (size_t) len - got : 16384;
+    size_t n = fread(bounce, 1, want, f);
+    if (n == 0) break;
+    memcpy(g_buf + got, bounce, n);
+    got += n;
+  }
+  heap_caps_free(bounce);
   fclose(f);
   if (got != (size_t) len) {
     ESP_LOGE(TAG, "load: short read on %s (%u of %ld)", path, (unsigned) got, len);
@@ -263,6 +287,50 @@ inline esphome::audio::AudioFile *load(const char *name) {
   g_file.file_type = type_from_name(name);
   ESP_LOGI(TAG, "loaded %s (%ldKB) into PSRAM", path, len / 1024);
   return &g_file;
+}
+
+// ── async loading ───────────────────────────────────────────────────────
+// load() blocks for as long as the SPI transfer takes — the better part of a
+// second per megabyte at 20 MHz. Run on the main loop that freezes every
+// light and trips the loop-time warning; the crash that led here also began
+// life on the loop task's modest stack. So the load gets its own short-lived
+// task with a real stack, and the loop polls take_ready() for the result.
+
+inline std::atomic<bool> g_busy{false};
+inline std::atomic<bool> g_ready{false};
+
+inline void load_worker(void *arg) {
+  char *name = (char *) arg;
+  bool ok = load(name) != nullptr;
+  free(name);
+  if (ok) g_ready.store(true);
+  g_busy.store(false);
+  vTaskDelete(nullptr);
+}
+
+/// Kick off a load. Returns false if one is already running (logged, dropped —
+/// mashing play twice should not queue up two megabyte reads).
+inline bool start_load(const char *name) {
+  if (g_busy.exchange(true)) {
+    ESP_LOGW(TAG, "start_load(%s): a load is already running", name);
+    return false;
+  }
+  g_ready.store(false);
+  char *copy = strdup(name);
+  // 8 KB stack: FATFS + SDSPI + newlib stdio need real room; the crashed
+  // attempt is the measurement of what "not enough" looks like.
+  if (xTaskCreate(load_worker, "sd_load", 8192, copy, 2, nullptr) != pdPASS) {
+    ESP_LOGE(TAG, "start_load: could not create the loader task");
+    free(copy);
+    g_busy.store(false);
+    return false;
+  }
+  return true;
+}
+
+/// The finished file, exactly once, or nullptr. Poll from the main loop.
+inline esphome::audio::AudioFile *take_ready() {
+  return g_ready.exchange(false) ? &g_file : nullptr;
 }
 
 }  // namespace castle_sd
