@@ -41,7 +41,16 @@ for (const raw of ["-5", "-1", "0", "abc", "", "1", "9999"]) {
   ok(!/>-|-\d+:/.test(html),
      `no negative time in the capacity line for bitrate ${JSON.stringify(raw)}`);
 }
-ok(/no limit/.test(capacityHtml("96", "1", 0)), "the readout still names all three ceilings");
+// The readout names the two builds that exist, and must not claim a third.
+// It used to end with "streamed from SD: no limit" in green — a promise the
+// stack cannot keep, since micro-decoder 0.2.0 has no pull API to stream into
+// (HARDWARE_FINDINGS.md §3b). A false ceiling is worse than a missing one,
+// because you plan around it.
+ok(/flash build/.test(capacityHtml("96", "1", 0)), "the flash build's ceiling is named");
+ok(/SD build/.test(capacityHtml("96", "1", 0)), "the SD build's ceiling is named");
+ok(!/stream/i.test(capacityHtml("96", "1", 0)),
+   "the readout must not offer streaming — it does not exist on this decoder");
+ok(!/no limit/.test(capacityHtml("96", "1", 0)), "and must not imply an unbounded ceiling");
 ok(/stereo/.test(capacityHtml("96", "2", 0)), "channels reach the readout");
 // More of the show on the flash means less room left for the next track.
 {

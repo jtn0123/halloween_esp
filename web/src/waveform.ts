@@ -295,6 +295,9 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
 
   let playing = false;
   let raf = 0;
+  /** See preview.ts: a play() rejected by a later pause must not stop the
+   *  playback that replaced it. */
+  let epoch = 0;
 
   const seekIntoClip = (): void => {
     const c = clip;
@@ -320,6 +323,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   }
 
   function stop(msg?: string): void {
+    epoch++;
     if (raf) { cancelAnimationFrame(raf); raf = 0; }
     playing = false;
     audio.pause();
@@ -338,7 +342,10 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     audio.muted = false;               // the button press is the consent
     audio.volume = 0.6;                // modest — this is a check, not a mix
     seekIntoClip();
-    void audio.play().catch(() => stop("Could not play that track."));
+    const mine = ++epoch;
+    void audio.play().catch(() => {
+      if (mine === epoch) stop("Could not play that track.");
+    });
     play.textContent = "Stop";
     play.setAttribute("aria-pressed", "true");
     raf = requestAnimationFrame(frame);

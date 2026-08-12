@@ -79,8 +79,12 @@ export function createCodecAb(deps: CodecAbDeps): CodecAb {
   let rows: CodecRow[] = [];
   let current: string | null = null;
   let busy = false;
+  /** See preview.ts. Switching codecs quickly is the normal way to use this
+   *  panel, so the superseded-play race is not a corner case here. */
+  let epoch = 0;
 
   function stop(): void {
+    epoch++;
     audio.pause();
     audio.muted = true;
     current = null;
@@ -106,6 +110,7 @@ export function createCodecAb(deps: CodecAbDeps): CodecAb {
     if (!row) return;
     if (current === codec) return stop();
     const at = audio.currentTime;
+    const mine = ++epoch;
     deps.onClaim?.();
     current = codec;
     audio.src = row.url;
@@ -120,6 +125,7 @@ export function createCodecAb(deps: CodecAbDeps): CodecAb {
     };
     audio.addEventListener("loadedmetadata", resume);
     void audio.play().catch(() => {
+      if (mine !== epoch) return;      // a newer pick already took over
       stop();
       note.textContent = `Could not play the ${codec} encode.`;
     });

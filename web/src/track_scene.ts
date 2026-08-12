@@ -15,6 +15,7 @@
  */
 
 import { BANDS, type BandName } from "./bands.js";
+import type { BandEditor } from "./band_editor.js";
 import type { WaveClip, WaveData } from "./waveform_view.js";
 import type { Cue, EffectName, Scene, ZoneId } from "./types.js";
 
@@ -26,6 +27,9 @@ const LEVELS: Partial<Record<ZoneId, number>> =
 
 /** The `intensity:` a generated pulse stream carries, before velocity. */
 const PULSE_INTENSITY = 0.55;
+
+/** Playback level for a generated scene. */
+const VOLUME = 0.7;
 
 /** Zone per band, when the caller is not overriding the defaults. */
 export type ZoneMap = Partial<Record<BandName, ZoneId>>;
@@ -69,7 +73,7 @@ export function sceneFromTrack(data: WaveData, clip: WaveClip | null,
     kind: "audition",
     dur,
     loop: true,
-    volume: 0.7,
+    volume: VOLUME,
     blurb: "Live preview of the clip you have selected. The lights are the "
          + "onsets detected in this region — the same ones the scene would use.",
     base: BASE,
@@ -81,4 +85,50 @@ export function sceneFromTrack(data: WaveData, clip: WaveClip | null,
     bytes: 0,
     yaml: "",
   };
+}
+
+/**
+ * The same scene, as the YAML that goes into scenes.yaml.
+ *
+ * Deliberately in this file rather than in tracks.ts. This and
+ * `sceneFromTrack` above are two renderings of one decision — which band
+ * lights which zone, in what colour, decaying how fast — and if they drift
+ * apart the audition stops predicting the show. Side by side, a divergence is
+ * visible; a file apart, it is not.
+ *
+ * @param bands the editor's per-band choices, when there are any.
+ */
+export function sceneYaml(id: string, dur: number | undefined,
+                          counts: Record<string, number>, ext = "mp3",
+                          bands?: BandEditor): string {
+  const L = [
+    `  - id: ${id}`,
+    `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}`,
+    `    kind: custom`, `    volume: ${VOLUME}`,
+    `    duration_ms: ${Math.round((dur ?? NaN) * 1000)}`, `    loop: true`,
+    `    blurb: >`,
+    `      Imported track. Light cues are onset-detected from the audio`,
+    `      itself, so they follow whatever the track actually does.`,
+    `    audio_file: tracks/${id}.${ext}`,
+    // Only written when it differs from the defaults. A scene carrying the
+    // default spelled out reads as a decision that was made, and this file
+    // is meant to be read.
+    ...(bands?.customised()
+      ? [`    sensitivity: {${BANDS.map(b =>
+           `${b.label}: ${bands.settings().sensitivity[b.name].toFixed(2)}`).join(", ")}}`]
+      : []),
+    `    base: {towerL: ${BASE.towerL}, towerR: ${BASE.towerR}, door: ${BASE.door}}`,
+    `    levels: {towerL: ${LEVELS.towerL}, towerR: ${LEVELS.towerR}, door: ${LEVELS.door}}`,
+    `    pulse:`,
+  ];
+  for (const b of BANDS) {
+    const n = counts[b.name];
+    if (!n) continue;
+    const zone = bands?.zones()[b.name] ?? b.zone;
+    L.push(`      - {synth: ${b.name}, zone: ${zone}, intensity: ${PULSE_INTENSITY}, `
+         + `decay: ${b.decay}, color: [${b.rgbw.join(", ")}]}`
+         + `   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
+  }
+  L.push(`    cues: []`);
+  return L.join("\n");
 }

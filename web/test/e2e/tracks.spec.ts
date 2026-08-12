@@ -81,6 +81,33 @@ test("only one track plays at a time", async ({ page }) => {
   await expect(row(page, MP3)).not.toHaveClass(/playing/);
 });
 
+test("switching tracks before the first has started does not silence both",
+  async ({ page }) => {
+    // play() is asynchronous, and pausing an element whose play is still in
+    // flight rejects that promise with AbortError. Handling the rejection
+    // without checking whether it had been superseded meant the *new* track
+    // got stopped and blamed.
+    //
+    // The first track's bytes are held back so that play() is guaranteed to
+    // still be pending when the second click lands. Without this the local
+    // server answers fast enough that the race usually does not open, and the
+    // test passes against the broken code — which is how this arrived as a
+    // one-in-three failure of the test above rather than as a real report.
+    await page.route(`**/api/track/${MP3}`, async route => {
+      await new Promise(r => setTimeout(r, 800));
+      await route.continue();
+    });
+
+    await act(page, MP3, "play").click();
+    await act(page, WAV, "play").click();
+
+    await expect(row(page, WAV)).toHaveClass(/playing/);
+    await expect(row(page, MP3)).not.toHaveClass(/playing/);
+    await expect.poll(() => playing(page, "/api/track/")).toBe(1);
+    // And no spurious failure was reported for the request that lost the race.
+    await expect(page.locator("#trkNote")).not.toHaveClass(/err/);
+  });
+
 test("clicking a row opens the clip editor on it", async ({ page }) => {
   // The editor existed but nothing said the row was clickable, so for
   // practical purposes it did not exist.

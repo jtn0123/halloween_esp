@@ -1089,6 +1089,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       const total = scenes.reduce((a, s) => a + s.bytes, 0);
       const pct = Math.round(total / FLASH_BUDGET * 100);
       this.sceneCount.innerHTML = total ? `${scenes.length} loaded \xB7 <b>${kb(total)}</b> of ${kb(FLASH_BUDGET)} flash <span class="${pct >= 90 ? "no" : "ok"}">(${pct}%)</span>` : `${scenes.length} loaded`;
+      this.sceneCount.title = total ? "The flash build (firmware/castle.yaml) fits every scene into the app partition alongside the firmware. The SD build (castle_sd.yaml) lifts this \u2014 the card holds any number of tracks \u2014 but reads each one whole into PSRAM, so a single track is capped at about 1.5 MB. Neither build streams from the card." : "";
     }
     /** The cue sheet for one scene, in fire order. */
     renderSheet(scene) {
@@ -1317,7 +1318,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     let rows = [];
     let current = null;
     let busy = false;
+    let epoch = 0;
     function stop() {
+      epoch++;
       audio.pause();
       audio.muted = true;
       current = null;
@@ -1335,6 +1338,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       if (!row) return;
       if (current === codec) return stop();
       const at = audio.currentTime;
+      const mine = ++epoch;
       deps.onClaim?.();
       current = codec;
       audio.src = row.url;
@@ -1351,6 +1355,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       };
       audio.addEventListener("loadedmetadata", resume);
       void audio.play().catch(() => {
+        if (mine !== epoch) return;
         stop();
         note.textContent = `Could not play the ${codec} encode.`;
       });
@@ -2574,7 +2579,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     const psram = PSRAM_FREE / bps;
     const left = Math.max(0, (FLASH_FREE - usedBytes) / bps);
     const fits = psram >= WANTED_SEC;
-    return `<b>${kbps} kbps ${ch === 2 ? "stereo" : "mono"}</b> = ${(bps / 1024).toFixed(1)} KB/s &nbsp;\xB7&nbsp; flash, alongside the current show: <b>${mmss(left)}</b> &nbsp;\xB7&nbsp; SD loaded into PSRAM: <b>${mmss(psram)}</b> <span class="${fits ? "ok" : "no"}">${fits ? "(4 min fits)" : "(under 4 min)"}</span> &nbsp;\xB7&nbsp; streamed from SD: <b class="ok">no limit</b>`;
+    return `<b>${kbps} kbps ${ch === 2 ? "stereo" : "mono"}</b> = ${(bps / 1024).toFixed(1)} KB/s &nbsp;\xB7&nbsp; <span title="firmware/castle.yaml \u2014 every scene shares this">flash build, alongside the current show: <b>${mmss(left)}</b></span> &nbsp;\xB7&nbsp; <span title="firmware/castle_sd.yaml \u2014 the card holds any number of tracks, but each one is read whole into PSRAM before it plays">SD build, one track: <b>${mmss(psram)}</b> <span class="${fits ? "ok" : "no"}">${fits ? "(4 min fits)" : "(under 4 min)"}</span></span>`;
   }
   function optsHint(o) {
     const bits = [];
@@ -2708,11 +2713,13 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     audio.preload = "none";
     audio.muted = true;
     let current = null;
+    let epoch = 0;
     const settle = (id) => {
       current = id;
       deps.onChange(id);
     };
     function stop() {
+      epoch++;
       audio.pause();
       audio.muted = true;
       if (current !== null) settle(null);
@@ -2720,6 +2727,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     function toggle(id) {
       if (current === id) return stop();
       stop();
+      const mine = ++epoch;
       deps.onClaim?.();
       audio.src = `/api/track/${encodeURIComponent(id)}`;
       audio.currentTime = 0;
@@ -2727,6 +2735,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       audio.volume = VOLUME;
       settle(id);
       void audio.play().catch(() => {
+        if (mine !== epoch) return;
         stop();
         deps.onError(`Could not play \u201C${id}\u201D.`);
       });
@@ -2748,6 +2757,84 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         audio.load();
       }
     };
+  }
+
+  // src/track_scene.ts
+  var BASE = { towerL: "chill", towerR: "chill", door: "ember" };
+  var LEVELS = { towerL: 0.4, towerR: 0.4, door: 0.5 };
+  var PULSE_INTENSITY = 0.55;
+  var VOLUME2 = 0.7;
+  function sceneFromTrack(data, clip, zones = {}) {
+    const start = clip?.start ?? 0;
+    const end = clip?.end ?? data.duration;
+    const dur = Math.max(1, Math.round((end - start) * 1e3));
+    const cues = [];
+    for (const b of BANDS) {
+      const hits = data.onsets[b.name];
+      if (!hits) continue;
+      const zone = zones[b.name] ?? b.zone;
+      for (const [sec, vel] of hits) {
+        if (sec < start || sec > end) continue;
+        cues.push({
+          t: Math.round((sec - start) * 1e3),
+          bus: "LED",
+          op: "strike",
+          ms: 120,
+          intensity: Math.round(PULSE_INTENSITY * vel * 1e3) / 1e3,
+          color: b.rgbw,
+          decay: b.decay,
+          targets: [zone],
+          detail: b.name
+        });
+      }
+    }
+    cues.sort((a, z) => a.t - z.t);
+    return {
+      id: `preview:${data.id}`,
+      name: data.id,
+      kind: "audition",
+      dur,
+      loop: true,
+      volume: VOLUME2,
+      blurb: "Live preview of the clip you have selected. The lights are the onsets detected in this region \u2014 the same ones the scene would use.",
+      base: BASE,
+      levels: LEVELS,
+      cues,
+      // No rendered file: the audition element is the audio, and giving this a
+      // file name would have the show engine try to play a second copy.
+      file: "",
+      bytes: 0,
+      yaml: ""
+    };
+  }
+  function sceneYaml(id, dur, counts, ext = "mp3", bands2) {
+    const L = [
+      `  - id: ${id}`,
+      `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}`,
+      `    kind: custom`,
+      `    volume: ${VOLUME2}`,
+      `    duration_ms: ${Math.round((dur ?? NaN) * 1e3)}`,
+      `    loop: true`,
+      `    blurb: >`,
+      `      Imported track. Light cues are onset-detected from the audio`,
+      `      itself, so they follow whatever the track actually does.`,
+      `    audio_file: tracks/${id}.${ext}`,
+      // Only written when it differs from the defaults. A scene carrying the
+      // default spelled out reads as a decision that was made, and this file
+      // is meant to be read.
+      ...bands2?.customised() ? [`    sensitivity: {${BANDS.map((b) => `${b.label}: ${bands2.settings().sensitivity[b.name].toFixed(2)}`).join(", ")}}`] : [],
+      `    base: {towerL: ${BASE.towerL}, towerR: ${BASE.towerR}, door: ${BASE.door}}`,
+      `    levels: {towerL: ${LEVELS.towerL}, towerR: ${LEVELS.towerR}, door: ${LEVELS.door}}`,
+      `    pulse:`
+    ];
+    for (const b of BANDS) {
+      const n = counts[b.name];
+      if (!n) continue;
+      const zone = bands2?.zones()[b.name] ?? b.zone;
+      L.push(`      - {synth: ${b.name}, zone: ${zone}, intensity: ${PULSE_INTENSITY}, decay: ${b.decay}, color: [${b.rgbw.join(", ")}]}   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
+    }
+    L.push(`    cues: []`);
+    return L.join("\n");
   }
 
   // src/tracks.ts
@@ -2781,7 +2868,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       T.note.append(b);
     };
     const val = (id) => byId(id).value.trim();
-    const flashUsed = () => SCENES2.reduce((a, s) => a + s.dur / 1e3 * 12e3, 0);
+    const flashUsed = () => SCENES2.reduce((a, s) => a + (s.bytes || s.dur / 1e3 * 12e3), 0);
     const form = initImportOpts(flashUsed);
     const opts = form.values;
     void fetch("/api/tracks").then((r) => r.ok ? r.json() : Promise.reject()).then((d) => {
@@ -2804,10 +2891,22 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     const ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
     const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ESCAPES[c]);
     const preview = createPreview({
-      onChange: () => drawTracks(void 0),
+      onChange: () => syncPlaying(),
       onError: (msg) => say(msg, true),
       onClaim: () => deps.onAudioClaim?.()
     });
+    function syncPlaying() {
+      const id = preview.playing();
+      for (const el of Array.from(T.list.querySelectorAll(".trk"))) {
+        const rowEl = el;
+        const on = rowEl.dataset["id"] === id;
+        rowEl.classList.toggle("playing", on);
+        const b = rowEl.querySelector("button[data-act='play']");
+        if (!b) continue;
+        b.textContent = on ? "Stop" : "Play";
+        b.classList.toggle("on", on);
+      }
+    }
     function drawTracks(tracks2) {
       if (tracks2) T.tracks = tracks2;
       const playingId = preview.playing();
@@ -2905,7 +3004,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         try {
           const r = await fetch("/api/tracks").then((res2) => res2.json());
           const t = (r.tracks || []).find((x) => x.id === id);
-          const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext);
+          const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands);
           T.yaml.hidden = false;
           T.yaml.textContent = block;
           say(`Writing scene "${id}" into scenes.yaml and re-rendering the show\u2026`);
@@ -3044,7 +3143,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         const id = (opts().id || file.name.replace(/\.[^.]+$/, "")).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 32);
         const counts = Object.fromEntries(Object.entries(marks).map(([k, v]) => [k, v.length]));
         const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || "mp3").toLowerCase();
-        const block = sceneYaml(id, audio.duration, counts, ext);
+        const block = sceneYaml(id, audio.duration, counts, ext, deps.bands);
         T.yaml.hidden = false;
         T.yaml.textContent = block;
         const kb3 = Math.round(audio.duration * 96 * 1e3 / 8 / 1024);
@@ -3053,85 +3152,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         say(`Could not read that file \u2014 ${String(err)}`, true);
       }
     }
-    function sceneYaml(id, dur, counts, ext = "mp3") {
-      const cfg = deps.bands;
-      const L = [
-        `  - id: ${id}`,
-        `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}`,
-        `    kind: custom`,
-        `    volume: 0.7`,
-        `    duration_ms: ${Math.round((dur ?? NaN) * 1e3)}`,
-        `    loop: true`,
-        `    blurb: >`,
-        `      Imported track. Light cues are onset-detected from the audio`,
-        `      itself, so they follow whatever the track actually does.`,
-        `    audio_file: tracks/${id}.${ext}`,
-        // Only written when it differs from the defaults. A scene carrying the
-        // default spelled out reads as a decision that was made, and this file
-        // is meant to be read.
-        ...cfg?.customised() ? [`    sensitivity: {${BANDS.map((b) => `${b.label}: ${cfg.settings().sensitivity[b.name].toFixed(2)}`).join(", ")}}`] : [],
-        `    base: {towerL: chill, towerR: chill, door: ember}`,
-        `    levels: {towerL: 0.4, towerR: 0.4, door: 0.5}`,
-        `    pulse:`
-      ];
-      for (const b of BANDS) {
-        const n = counts[b.name];
-        if (!n) continue;
-        const zone = cfg?.zones()[b.name] ?? b.zone;
-        L.push(`      - {synth: ${b.name}, zone: ${zone}, intensity: 0.55, decay: ${b.decay}, color: [${b.rgbw.join(", ")}]}   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
-      }
-      L.push(`    cues: []`);
-      return L.join("\n");
-    }
     return { stopPreview: () => preview.stop() };
-  }
-
-  // src/track_scene.ts
-  var BASE = { towerL: "chill", towerR: "chill", door: "ember" };
-  var LEVELS = { towerL: 0.4, towerR: 0.4, door: 0.5 };
-  var PULSE_INTENSITY = 0.55;
-  function sceneFromTrack(data, clip, zones = {}) {
-    const start = clip?.start ?? 0;
-    const end = clip?.end ?? data.duration;
-    const dur = Math.max(1, Math.round((end - start) * 1e3));
-    const cues = [];
-    for (const b of BANDS) {
-      const hits = data.onsets[b.name];
-      if (!hits) continue;
-      const zone = zones[b.name] ?? b.zone;
-      for (const [sec, vel] of hits) {
-        if (sec < start || sec > end) continue;
-        cues.push({
-          t: Math.round((sec - start) * 1e3),
-          bus: "LED",
-          op: "strike",
-          ms: 120,
-          intensity: Math.round(PULSE_INTENSITY * vel * 1e3) / 1e3,
-          color: b.rgbw,
-          decay: b.decay,
-          targets: [zone],
-          detail: b.name
-        });
-      }
-    }
-    cues.sort((a, z) => a.t - z.t);
-    return {
-      id: `preview:${data.id}`,
-      name: data.id,
-      kind: "audition",
-      dur,
-      loop: true,
-      volume: 0.7,
-      blurb: "Live preview of the clip you have selected. The lights are the onsets detected in this region \u2014 the same ones the scene would use.",
-      base: BASE,
-      levels: LEVELS,
-      cues,
-      // No rendered file: the audition element is the audio, and giving this a
-      // file name would have the show engine try to play a second copy.
-      file: "",
-      bytes: 0,
-      yaml: ""
-    };
   }
 
   // src/waveform_view.ts
@@ -3464,6 +3485,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     audio.loop = false;
     let playing = false;
     let raf = 0;
+    let epoch = 0;
     const seekIntoClip = () => {
       const c = clip;
       if (!c) return;
@@ -3484,6 +3506,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       raf = requestAnimationFrame(frame2);
     }
     function stop(msg) {
+      epoch++;
       if (raf) {
         cancelAnimationFrame(raf);
         raf = 0;
@@ -3504,7 +3527,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       audio.muted = false;
       audio.volume = 0.6;
       seekIntoClip();
-      void audio.play().catch(() => stop("Could not play that track."));
+      const mine = ++epoch;
+      void audio.play().catch(() => {
+        if (mine === epoch) stop("Could not play that track.");
+      });
       play.textContent = "Stop";
       play.setAttribute("aria-pressed", "true");
       raf = requestAnimationFrame(frame2);

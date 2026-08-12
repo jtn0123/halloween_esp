@@ -49,6 +49,19 @@ export function createPreview(deps: PreviewDeps): TrackPreview {
   audio.muted = true;
 
   let current: string | null = null;
+  /**
+   * Bumped on every start and stop, so a `play()` promise that loses the race
+   * cannot speak for the one that replaced it.
+   *
+   * `play()` is asynchronous, and pausing an element whose play is still in
+   * flight rejects that promise with AbortError. Without this counter the
+   * rejection ran the failure path — stopping playback and reporting an error
+   * — for a request that had already been superseded, so clicking one track's
+   * Play straight after another's silenced both and blamed the second. It
+   * showed up as a one-in-three failure of the browser suite's
+   * "only one track plays at a time", which is exactly what it broke.
+   */
+  let epoch = 0;
 
   const settle = (id: string | null): void => {
     current = id;
@@ -56,6 +69,7 @@ export function createPreview(deps: PreviewDeps): TrackPreview {
   };
 
   function stop(): void {
+    epoch++;
     audio.pause();
     audio.muted = true;
     if (current !== null) settle(null);
@@ -64,6 +78,7 @@ export function createPreview(deps: PreviewDeps): TrackPreview {
   function toggle(id: string): void {
     if (current === id) return stop();
     stop();
+    const mine = ++epoch;
     deps.onClaim?.();
     // No extension: the studio owns which container this track landed in, so
     // a WAV or FLAC import plays here without the page knowing the difference.
@@ -73,6 +88,7 @@ export function createPreview(deps: PreviewDeps): TrackPreview {
     audio.volume = VOLUME;
     settle(id);
     void audio.play().catch(() => {
+      if (mine !== epoch) return;      // a newer click already took over
       stop();
       deps.onError(`Could not play “${id}”.`);
     });

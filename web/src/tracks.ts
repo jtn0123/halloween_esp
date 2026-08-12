@@ -13,10 +13,11 @@
  */
 
 import type { BandEditor } from "./band_editor.js";
-import { BANDS, BAND_HELP, bandSummary } from "./bands.js";
+import { BAND_HELP, bandSummary } from "./bands.js";
 import { initImportOpts } from "./import_opts.js";
 import { detectOnsets } from "./onsets.js";
 import { createPreview } from "./preview.js";
+import { sceneYaml } from "./track_scene.js";
 import type { Scene } from "./types.js";
 
 /** The import options row, as tools/studio.py remembers them per track. */
@@ -135,8 +136,16 @@ export function initTracks(deps: TracksDeps): TracksApi {
   /* Roughly what the scenes already in the show cost in flash, at ≈96k mono.
      The readout wants "how much room is left", which is that subtracted from
      the partition. */
+  /* What the scenes already in the show cost in flash.
+     The rendered size, now that scenes carry it. This used to estimate from
+     duration at ≈96k mono, which was both redundant and wrong the moment a
+     scene was rendered at any other bitrate: with ten scenes loaded the
+     estimate overshot the whole partition and the readout reported 0:00 of
+     room left while the scene list, counting real bytes, said 0.62 MB spare.
+     Two numbers for one quantity, and the guess was the one on screen.
+     The estimate survives only for a scene that has not been rendered yet. */
   const flashUsed = (): number =>
-    SCENES.reduce((a, s) => a + (s.dur / 1000) * 12000, 0);
+    SCENES.reduce((a, s) => a + (s.bytes || (s.dur / 1000) * 12000), 0);
   const form = initImportOpts(flashUsed);
   const opts = form.values;
 
@@ -167,10 +176,33 @@ export function initTracks(deps: TracksDeps): TracksApi {
      preview.ts. Redrawing on every change keeps the label ("Play"/"Stop") and
      the row highlight from drifting out of step with what is actually on. */
   const preview = createPreview({
-    onChange: () => drawTracks(undefined),
+    onChange: () => syncPlaying(),
     onError: msg => say(msg, true),
     onClaim: () => deps.onAudioClaim?.(),
   });
+
+  /**
+   * Reflect what is sounding, touching only the controls that say so.
+   *
+   * Redrawing the whole list on every play and stop worked, but it replaced
+   * every row under the pointer for a change to one of them — which drops
+   * focus, and can lose a click that arrives while the rebuild is in flight.
+   * That last one showed up as a one-in-eighty flake in the browser suite,
+   * where clicking one row's Play immediately after another's occasionally
+   * hit a node that no longer existed.
+   */
+  function syncPlaying(): void {
+    const id = preview.playing();
+    for (const el of Array.from(T.list.querySelectorAll(".trk"))) {
+      const rowEl = el as HTMLElement;
+      const on = rowEl.dataset["id"] === id;
+      rowEl.classList.toggle("playing", on);
+      const b = rowEl.querySelector("button[data-act='play']");
+      if (!b) continue;
+      b.textContent = on ? "Stop" : "Play";
+      b.classList.toggle("on", on);
+    }
+  }
 
   function drawTracks(tracks: TrackInfo[] | undefined): void {
     if (tracks) T.tracks = tracks;
@@ -276,7 +308,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
         // The list was just refetched from the same server that drew the row, so
         // a miss here means the track vanished mid-click — let it throw.
         const t = (r.tracks || []).find(x => x.id === id)!;
-        const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext);
+        const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands);
         T.yaml.hidden = false; T.yaml.textContent = block;
         say(`Writing scene "${id}" into scenes.yaml and re-rendering the show…`);
         const res = await fetch("/api/scene", {
@@ -422,48 +454,13 @@ export function initTracks(deps: TracksDeps): TracksApi {
       // container the file already is — not at the .mp3 the studio would have
       // made of it.
       const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || "mp3").toLowerCase();
-      const block = sceneYaml(id, audio.duration, counts, ext);
+      const block = sceneYaml(id, audio.duration, counts, ext, deps.bands);
       T.yaml.hidden = false; T.yaml.textContent = block;
       const kb = Math.round(audio.duration * 96 * 1000 / 8 / 1024);
       say(`${file.name}: ${audio.duration.toFixed(1)}s, ~${kb} KB at 96 kbps. `
         + Object.entries(counts).map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" · ")
         + `. Copy the block below, save the file into tracks/${id}.${ext}, then run make audio.`);
     } catch (err) { say(`Could not read that file — ${String(err)}`, true); }
-  }
-
-  function sceneYaml(id: string, dur: number | undefined,
-                     counts: Record<string, number>, ext = "mp3"): string {
-    const cfg = deps.bands;
-    const L = [
-      `  - id: ${id}`,
-      `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}`,
-      `    kind: custom`, `    volume: 0.7`,
-      `    duration_ms: ${Math.round((dur ?? NaN) * 1000)}`, `    loop: true`,
-      `    blurb: >`,
-      `      Imported track. Light cues are onset-detected from the audio`,
-      `      itself, so they follow whatever the track actually does.`,
-      `    audio_file: tracks/${id}.${ext}`,
-      // Only written when it differs from the defaults. A scene carrying the
-      // default spelled out reads as a decision that was made, and this file
-      // is meant to be read.
-      ...(cfg?.customised()
-        ? [`    sensitivity: {${BANDS.map(b =>
-             `${b.label}: ${cfg.settings().sensitivity[b.name].toFixed(2)}`).join(", ")}}`]
-        : []),
-      `    base: {towerL: chill, towerR: chill, door: ember}`,
-      `    levels: {towerL: 0.4, towerR: 0.4, door: 0.5}`,
-      `    pulse:`,
-    ];
-    for (const b of BANDS) {
-      const n = counts[b.name];
-      if (!n) continue;
-      const zone = cfg?.zones()[b.name] ?? b.zone;
-      L.push(`      - {synth: ${b.name}, zone: ${zone}, intensity: 0.55, `
-           + `decay: ${b.decay}, color: [${b.rgbw.join(", ")}]}`
-           + `   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
-    }
-    L.push(`    cues: []`);
-    return L.join("\n");
   }
 
   return { stopPreview: () => preview.stop() };

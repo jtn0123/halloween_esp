@@ -258,14 +258,24 @@ export class Panels {
       <span class="scene__sz">${(s.dur / 1000).toFixed(0)}s${s.bytes ? ` · ${kb(s.bytes)}` : ""}</span>
     </button>`).join("");
 
-    // The flash budget is the constraint that decides what the show can be,
-    // so the total belongs where the scenes are, not only in the render log.
+    // The constraint that decides what the show can be, so the total belongs
+    // where the scenes are rather than only in the render log. Named as the
+    // *flash build's* budget, because it is not the only build: castle_sd.yaml
+    // reads scenes off the card instead, where the ceiling is per track rather
+    // than for the whole show. Neither of them streams — see capacityHtml.
     const total = scenes.reduce((a, s) => a + s.bytes, 0);
     const pct = Math.round(total / FLASH_BUDGET * 100);
     this.sceneCount.innerHTML = total
       ? `${scenes.length} loaded · <b>${kb(total)}</b> of ${kb(FLASH_BUDGET)} flash `
         + `<span class="${pct >= 90 ? "no" : "ok"}">(${pct}%)</span>`
       : `${scenes.length} loaded`;
+    this.sceneCount.title = total
+      ? "The flash build (firmware/castle.yaml) fits every scene into the app "
+        + "partition alongside the firmware. The SD build (castle_sd.yaml) "
+        + "lifts this — the card holds any number of tracks — but reads each "
+        + "one whole into PSRAM, so a single track is capped at about 1.5 MB. "
+        + "Neither build streams from the card."
+      : "";
   }
 
   /** The cue sheet for one scene, in fire order. */
