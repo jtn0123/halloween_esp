@@ -3,21 +3,21 @@
     "audio": {
       "bitrate": 96,
       "bytes": 2956061,
-      "channels": 2,
+      "channels": 1,
       "duration": 246.26,
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-11T19:27:53",
+    "imported": "2026-08-11T19:51:39",
     "notes": "",
     "onsets": {
-      "onset_high": 892,
-      "onset_low": 678,
-      "onset_mid": 597
+      "onset_high": 899,
+      "onset_low": 679,
+      "onset_mid": 601
     },
     "opts": {
       "bitrate": 96,
-      "channels": 2,
+      "channels": 1,
       "fade_in": null,
       "fade_out": null,
       "format": "mp3",
@@ -25,11 +25,43 @@
       "normalize": true,
       "sample_rate": 44100,
       "sensitivity": 1.1,
-      "start": "0",
-      "take": null
+      "start": "0:00",
+      "take": "246.3"
     },
     "source": "https://youtu.be/FNvO9etT3Ec?list=PLxA687tYuMWiSFydrFrY21oxq4G9InAWX",
     "title": "Halloween Songs - Ghostbusters Theme Song (Audio)"
+  },
+  "the_citizens_of_halloween___this": {
+    "audio": {
+      "bitrate": 96,
+      "bytes": 2321285,
+      "channels": 1,
+      "duration": 193.36,
+      "format": "mp3",
+      "sample_rate": 44100
+    },
+    "imported": "2026-08-11T19:53:20",
+    "notes": "",
+    "onsets": {
+      "onset_high": 299,
+      "onset_low": 473,
+      "onset_mid": 422
+    },
+    "opts": {
+      "bitrate": 96,
+      "channels": 1,
+      "fade_in": null,
+      "fade_out": null,
+      "format": "mp3",
+      "gain_db": null,
+      "normalize": false,
+      "sample_rate": 44100,
+      "sensitivity": 1.1,
+      "start": "0",
+      "take": null
+    },
+    "source": "https://youtu.be/ZVuToMilP0A?list=RDZVuToMilP0A",
+    "title": "The Citizens of Halloween - This Is Halloween (From Tim Burton's \uff02The Nightmare Before Christmas\uff02)"
   },
   "wicked_winds": {
     "audio": {

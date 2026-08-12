@@ -158,14 +158,20 @@
           <h2>Cue sheet</h2>
           <span class="note" id="sheetName">vigil</span>
         </div>
-        <div class="sheet-wrap">
-          <table class="sheet">
-            <thead>
-              <tr><th>Time</th><th>Bus</th><th>Action</th><th>Detail</th><th>File</th></tr>
-            </thead>
-            <tbody id="sheet"></tbody>
-          </table>
-        </div>
+        <!-- Collapsed by default and capped when open. A 4-minute imported
+             track can carry two thousand cues, and rendering all of them
+             pushed the whole console off the screen. -->
+        <details class="sheet-fold" id="sheetFold">
+          <summary>Cue list <span class="sheet-count" id="sheetCount"></span></summary>
+          <div class="sheet-wrap" id="sheetWrap">
+            <table class="sheet">
+              <thead>
+                <tr><th>Time</th><th>Bus</th><th>Action</th><th>Detail</th><th>File</th></tr>
+              </thead>
+              <tbody id="sheet"></tbody>
+            </table>
+          </div>
+        </details>
         <details class="src">
           <summary>Scene source &mdash; feeds both this preview and the ESPHome build</summary>
           <pre id="yaml"></pre>

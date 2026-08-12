@@ -87,6 +87,8 @@ export interface Scene {
   cues: Cue[];
   /** The rendered file name, e.g. "08_crypt.mp3". */
   file: string;
+  /** Size of that file on disk. 0 when it has not been rendered yet. */
+  bytes: number;
   /** Verbatim slice of scenes.yaml, for the source panel. */
   yaml: string;
 }

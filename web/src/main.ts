@@ -17,6 +17,7 @@ import { Stage } from "./stage.js";
 import { Synth } from "./synth.js";
 import { Transport } from "./transport.js";
 import { initTracks } from "./tracks.js";
+import { sceneFromTrack } from "./track_scene.js";
 import { initWaveform } from "./waveform.js";
 import type { GeneratedData, Scene } from "./types.js";
 
@@ -140,16 +141,37 @@ if (modeEl) {
    Auditioning a clip drives the light preview from the track's own position,
    so you see what the scene will look like before committing to it — which
    is the actual question when picking 20 seconds out of a song. */
+/* While a clip is being auditioned the stage shows *that clip's* lights,
+   built from its own onsets, and the scene that was loaded before is put back
+   when the audition stops. Seeking inside the previously loaded scene — which
+   is what this did — showed the old scene's lights against the new track's
+   audio, which reads as the detection being broken. */
+let previewScene: Scene | null = null;
+let sceneBeforeAudition: Scene | null = null;
+
 const wave = initWaveform({
+  onClipChange: (clip, data) => {
+    previewScene = data ? sceneFromTrack(data, clip) : null;
+    // Already auditioning: adopt the new selection without stopping.
+    if (sceneBeforeAudition && previewScene) transport.loadScene(previewScene);
+  },
   onAudition: (playing, positionMs) => {
-    if (!playing) return;
+    if (!playing) {
+      const back = sceneBeforeAudition;
+      sceneBeforeAudition = null;
+      if (back) transport.loadScene(back);
+      return;
+    }
     // The region audition and the row preview are two audio elements; only one
     // of them should ever be making noise.
     tracks.stopPreview();
-    // Feed the show engine the clip's position so the cue list and the
-    // audio agree while scrubbing around inside a candidate loop.
-    if (state.running) transport.setPlaying(false);
-    transport.seekTo(positionMs % state.scene.dur);
+    if (!sceneBeforeAudition && previewScene) {
+      sceneBeforeAudition = state.scene;
+      transport.loadScene(previewScene);
+    }
+    // The audition element is the audio; the show engine only supplies light,
+    // with its clock pulled along by the player.
+    transport.syncTo(positionMs);
   },
 });
 const tracks = initTracks({

@@ -135,6 +135,11 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         "levels": scene.get("levels") or {},
         "cues": cues,
         "file": f"{idx:02d}_{sid}.mp3",
+        # What this scene costs in flash. The budget is the single hardest
+        # constraint on the show — ~2.9 MB for everything — so the number
+        # belongs next to the scene, not only in the render log.
+        "bytes": (AUDIO / f"{idx:02d}_{sid}.mp3").stat().st_size
+                 if (AUDIO / f"{idx:02d}_{sid}.mp3").exists() else 0,
         "yaml": scene_yaml_slice(raw, sid),
     }
 

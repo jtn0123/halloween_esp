@@ -77,6 +77,17 @@ export interface SliderHandlers {
   renderedAudio?: (useRendered: boolean) => void;
 }
 
+/**
+ * Flash left for ALL scene audio after the firmware, on the single-app
+ * partition. The same figure tools/render_audio.py budgets against — if one
+ * moves, both have to.
+ */
+const FLASH_BUDGET = 2.9 * 1024 * 1024;
+
+/** Bytes as the panel prints them: KB under a megabyte, MB above. */
+const kb = (n: number): string =>
+  n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MB` : `${Math.round(n / 1024)} KB`;
+
 function must<T extends HTMLElement = HTMLElement>(id: string): T {
   const el = document.getElementById(id);
   if (!el) throw new Error(`panels: missing #${id}`);
@@ -166,6 +177,11 @@ export class Panels {
   private readonly sceneBlurb = must("sceneBlurb");
   private readonly sheet = must("sheet");
   private readonly sheetName = must("sheetName");
+  private readonly sheetCount = must("sheetCount");
+  private readonly sheetWrap = must("sheetWrap");
+  private readonly sheetFold = must<HTMLDetailsElement>("sheetFold");
+  /** Index of the row last scrolled to, so we only scroll when it changes. */
+  private scrolledTo = -1;
   private readonly yaml = must("yaml");
   private readonly stageNote = must("stageNote");
   private readonly ph = must("ph");
@@ -236,10 +252,20 @@ export class Panels {
     this.sceneList = scenes;
     this.onPick = onPick;
     this.scenesEl.innerHTML = scenes.map((s, i) => `
-    <button class="scene" type="button" data-i="${i}" aria-pressed="${i === 0}" title="${s.blurb}">
+    <button class="scene" type="button" data-i="${i}" aria-pressed="${i === 0}"
+            title="${s.blurb}${s.bytes ? `\n\n${s.file} — ${kb(s.bytes)}` : ""}">
       <strong>${s.name}</strong><span>${s.kind}</span>
+      <span class="scene__sz">${(s.dur / 1000).toFixed(0)}s${s.bytes ? ` · ${kb(s.bytes)}` : ""}</span>
     </button>`).join("");
-    this.sceneCount.textContent = scenes.length + " loaded";
+
+    // The flash budget is the constraint that decides what the show can be,
+    // so the total belongs where the scenes are, not only in the render log.
+    const total = scenes.reduce((a, s) => a + s.bytes, 0);
+    const pct = Math.round(total / FLASH_BUDGET * 100);
+    this.sceneCount.innerHTML = total
+      ? `${scenes.length} loaded · <b>${kb(total)}</b> of ${kb(FLASH_BUDGET)} flash `
+        + `<span class="${pct >= 90 ? "no" : "ok"}">(${pct}%)</span>`
+      : `${scenes.length} loaded`;
   }
 
   /** The cue sheet for one scene, in fire order. */
@@ -247,13 +273,23 @@ export class Panels {
     this.sheet.innerHTML = scene.cues.map(c => sheetRow(c, scene)).join("");
     this.rows = Array.from(this.sheet.querySelectorAll("tr"));
     this.sheetName.textContent = scene.id;
+    this.scrolledTo = -1;
+    // The summary has to answer "is it worth opening this" on its own — a
+    // count of 2238 is itself the reason the panel is collapsed.
+    const n = scene.cues.length;
+    const led = scene.cues.filter(c => c.bus === "LED").length;
+    this.sheetCount.textContent = n === 0
+      ? "— none"
+      : `— ${n} cue${n === 1 ? "" : "s"}, ${led} light`;
   }
 
   /** The headings and the source panel, which all change together whenever
    *  the scene does. A scene without a verbatim YAML slice gets a fallback
    *  rather than an empty panel. */
   renderSceneInfo(scene: Scene): void {
-    this.stageNote.textContent = scene.name;
+    this.stageNote.textContent = scene.bytes
+      ? `${scene.name} · ${kb(scene.bytes)}`
+      : scene.name;
     this.sceneBlurb.textContent = scene.blurb || "";
     this.yaml.textContent = scene.yaml || toYaml(scene);
   }
@@ -292,10 +328,32 @@ export class Panels {
       + (scene.dur / 1000).toFixed(2) + " s" + (scene.loop ? " ↻" : "");
     this.scrub.setAttribute("aria-valuenow", String(Math.round(pct)));
     this.scrub.setAttribute("aria-valuetext", (elapsed / 1000).toFixed(1) + " seconds");
+    let live = -1;
     scene.cues.forEach((c, i) => {
       const row = this.rows[i];
-      if (row) row.classList.toggle("on", elapsed >= c.t && elapsed < c.t + 700);
+      if (!row) return;
+      const on = elapsed >= c.t && elapsed < c.t + 700;
+      row.classList.toggle("on", on);
+      if (on) live = i;
     });
+    this.followCue(live);
+  }
+
+  /**
+   * Keep the lit row inside the capped scroll box.
+   *
+   * Only when it changes, and only when the panel is open — scrolling a
+   * closed `<details>` does nothing but cost work every frame, and calling
+   * scrollTo on every frame fights the user's own scrollbar.
+   */
+  private followCue(index: number): void {
+    if (index < 0 || index === this.scrolledTo || !this.sheetFold.open) return;
+    this.scrolledTo = index;
+    const row = this.rows[index];
+    if (!row) return;
+    const box = this.sheetWrap;
+    const top = row.offsetTop - box.clientHeight / 2 + row.offsetHeight / 2;
+    box.scrollTop = Math.max(0, top);
   }
 
   /** Wire one slider to its handler and its readout. */

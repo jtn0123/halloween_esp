@@ -101,6 +101,28 @@ export class Transport {
     this.d.rendered.seek(st.scene.id, t);
   }
 
+  /**
+   * Slave the show clock to an outside audio source — the clip audition —
+   * so the lights run against audio this module is not playing.
+   *
+   * `seekTo` is the wrong tool for this. It calls `rebuildLightsAt`, which
+   * zeroes every flash: correct for one seek, but called every frame it wipes
+   * each pulse before it can decay and the stage just stays dark. This moves
+   * the clock and nothing else, and lets `step` do the rendering.
+   */
+  syncTo(ms: number): void {
+    const st = this.st;
+    // Running, but never through play() — no audio starts from here.
+    if (!st.running) {
+      st.running = true;
+      this.syncUI();
+    }
+    // The clip looped back to its in point, so the cues are due again. The
+    // tolerance keeps a frame of jitter from counting as a rewind.
+    if (ms + 40 < this.elapsed()) st.fired.clear();
+    st.t0 = performance.now() - ms;
+  }
+
   /** Load a scene. Plays only if explicitly asked, or if already playing. */
   loadScene(sc: Scene, opts: { play?: boolean } = {}): void {
     const st = this.st;

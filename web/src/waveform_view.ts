@@ -11,10 +11,13 @@
  * never has to think about retina.
  */
 
+import { BAND_INK, type BandName } from "./bands.js";
+
+export { BAND_INK };
+export type { BandName };
+
 /** `[time in seconds, strength 0..1]` — the same pair analyze.py emits. */
 export type Onset = readonly [seconds: number, velocity: number];
-
-export type BandName = "onset_low" | "onset_mid" | "onset_high";
 
 /** A band with no hits is simply absent, so every entry is optional. */
 export type WaveOnsets = Partial<Record<BandName, readonly Onset[]>>;
@@ -34,15 +37,6 @@ export interface WaveClip {
   start: number;
   end: number;
 }
-
-/**
- * Band colours are hard-coded rather than themed, because they are not
- * decoration: they are the three colours sceneYaml() gives these bands, so a
- * violet tick here is the violet pulse that ends up in the show.
- */
-export const BAND_INK: Readonly<Record<BandName, string>> = {
-  onset_low: "#ff2a1a", onset_mid: "#a83aff", onset_high: "#4dff8c",
-};
 
 /** Top to bottom, so the lanes read like a spectrum with bass at the floor. */
 const BAND_ORDER: readonly BandName[] = ["onset_high", "onset_mid", "onset_low"];

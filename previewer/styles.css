@@ -196,6 +196,10 @@
     letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  /* What the scene costs in flash, which is the budget you are spending. */
+  .scene__sz { color: var(--ink-2); letter-spacing: .06em; }
+  #sceneCount .ok { color: var(--spirit); }
+  #sceneCount .no { color: var(--alarm); }
   .scenes-blurb {
     margin: 0; padding: 10px 14px; border-top: 1px solid var(--line);
     font-size: 12.5px; color: var(--ink-2); line-height: 1.5; min-height: 2.4em;
@@ -334,8 +338,31 @@
   }
   .trk-yaml[hidden] { display: none; }
 
-  /* ─── Cue sheet ────────────────────────────────────────────────────── */
-  .sheet-wrap { overflow-x: auto; }
+  /* ─── Cue sheet ──────────────────────────────────────────────────────
+     Collapsed and capped. An imported four-minute track generates a couple
+     of thousand cues; rendering them all inline pushed everything below the
+     cue sheet off the bottom of the page. */
+  .sheet-fold > summary {
+    cursor: pointer; font-family: var(--f-data); font-size: 11px;
+    letter-spacing: .09em; text-transform: uppercase; color: var(--ink-2);
+    padding: 7px 0; list-style: none;
+  }
+  .sheet-fold > summary::-webkit-details-marker { display: none; }
+  .sheet-fold > summary::before { content: "▸ "; color: var(--accent); }
+  .sheet-fold[open] > summary::before { content: "▾ "; }
+  .sheet-fold > summary:hover { color: var(--accent); }
+  .sheet-count { color: var(--muted); text-transform: none; letter-spacing: 0; }
+  .sheet-wrap {
+    overflow: auto;
+    /* Deep enough to read a phrase of the show, shallow enough that the
+       panels below it stay on screen. */
+    max-height: 320px;
+    border: 1px solid var(--line); border-radius: 4px;
+  }
+  /* The header has to stay put, or scrolling a long list loses the columns. */
+  table.sheet thead th {
+    position: sticky; top: 0; z-index: 1; background: var(--panel);
+  }
   table.sheet { width: 100%; border-collapse: collapse; font-family: var(--f-data); font-size: 11.5px; }
   table.sheet th {
     text-align: left; font-weight: 600; font-size: 10px; letter-spacing: .13em; text-transform: uppercase;

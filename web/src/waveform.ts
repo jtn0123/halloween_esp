@@ -13,14 +13,25 @@
  * without knowing this file exists.
  */
 
+import { BAND_HELP, bandSummary } from "./bands.js";
 import { EDGE_SLOP, WaveView, type WaveClip, type WaveData } from "./waveform_view.js";
 
 export interface WaveformDeps {
   /**
    * Fired when the audition starts and stops, and on every frame while it
    * plays, so the host can run the light preview from the same position.
+   *
+   * `positionMs` is measured from the start of the selected clip, not the
+   * start of the file — the clip is what loops, so it is the only origin the
+   * lights can share with the audio.
    */
   onAudition: (playing: boolean, positionMs: number) => void;
+  /**
+   * The selection and the analysis behind it, whenever either changes — a new
+   * track, a drag, a re-analysis at a new sensitivity, or null when the editor
+   * is cleared. The host builds its preview scene from this.
+   */
+  onClipChange?: (clip: WaveClip | null, data: WaveData | null) => void;
   /** Container id, for the rare page that mounts this somewhere else. */
   containerId?: string;
 }
@@ -81,6 +92,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   const sensLbl = mk("label", "display:flex;align-items:center;gap:6px", "sens");
   sensLbl.append(sens, sensVal);
   const note = mk("p", "margin:4px 0 0;color:var(--ink-2)");
+  note.title = BAND_HELP;
   row.append(play, readout, sensLbl);
   wrap.append(view.el, row, note);
   host.append(wrap);
@@ -134,6 +146,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       ? `start ${clock(clip.start)}  ·  length ${clock(clip.end - clip.start)}`
       : "drag across the waveform to pick a clip";
     play.disabled = !clip || !view.data;
+    deps.onClipChange?.(clip, view.data);
   }
 
   /* ── Analysis ── */
@@ -164,11 +177,13 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     }
   }
 
-  /** Band hit counts, in the same shape the track list prints them. */
-  const counts = (d: WaveData): string =>
-    Object.entries(d.onsets)
-      .map(([k, v]) => `${k.replace("onset_", "")} ${v?.length ?? 0}`)
-      .join(" · ") || "no onsets at this sensitivity";
+  /** What was found, in the same words the track list uses. */
+  const counts = (d: WaveData): string => {
+    const n: Record<string, number> =
+      Object.fromEntries(Object.entries(d.onsets).map(([k, v]) => [k, v?.length ?? 0]));
+    const s = bandSummary(n, d.duration);
+    return s === "no onsets" ? "no onsets at this sensitivity" : s;
+  };
 
   async function load(): Promise<void> {
     const id = trackId;
@@ -286,7 +301,9 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     if (audio.currentTime >= c.end - 0.01) audio.currentTime = c.start;
     view.playhead = audio.currentTime;
     view.draw();
-    deps.onAudition(true, audio.currentTime * 1000);
+    // Clip-relative: the lights are built for this region, so they start at
+    // its in point, not at the file's.
+    deps.onAudition(true, Math.max(0, (audio.currentTime - c.start) * 1000));
     raf = requestAnimationFrame(frame);
   }
 
@@ -299,7 +316,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     play.setAttribute("aria-pressed", "false");
     view.playhead = null;
     view.draw();
-    deps.onAudition(false, (clip?.start ?? 0) * 1000);
+    deps.onAudition(false, 0);
     if (msg) say(msg, true);
   }
 

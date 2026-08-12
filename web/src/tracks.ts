@@ -12,6 +12,7 @@
  *           block to paste.
  */
 
+import { BANDS, BAND_HELP, bandSummary } from "./bands.js";
 import { initImportOpts } from "./import_opts.js";
 import { detectOnsets } from "./onsets.js";
 import { createPreview } from "./preview.js";
@@ -179,8 +180,9 @@ export function initTracks(deps: TracksDeps): TracksApi {
                    `${(o.sample_rate || 44100) / 1000}k`,
                    o.normalize ? "normalised" : null].filter(Boolean).join(" · ");
       const sounding = playingId === t.id;
-      const onsets = Object.entries(t.onsets || {})
-        .map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" · ") || "no onsets";
+      // Rate per zone, not raw counts — see bandSummary for why the counts are
+      // the wrong number to put in front of someone.
+      const onsets = bandSummary(t.onsets || {}, t.dur);
       // The remembered source. A link if it came from one, so you can go back
       // to where it came from without digging through history.
       const isUrl = /^https?:\/\//.test(t.source || "");
@@ -196,7 +198,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
         <div class="trk__nm">${esc(t.id)}
           ${inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
           <small>${t.dur ?? "?"}s · ${t.kb} KB · ${fmt}</small>
-          <small>${onsets}</small>
+          <small title="${esc(BAND_HELP)}">${esc(onsets)}</small>
           ${src ? `<small class="trk__src">from ${src}</small>` : ""}
           ${t.notes ? `<small>${esc(t.notes)}</small>` : ""}
         </div>
@@ -424,10 +426,6 @@ export function initTracks(deps: TracksDeps): TracksApi {
 
   function sceneYaml(id: string, dur: number | undefined,
                      counts: Record<string, number>, ext = "mp3"): string {
-    const zone: Record<string, string> = { onset_low: "door", onset_mid: "towerL", onset_high: "towerR" };
-    const col: Record<string, string> = { onset_low: "[1.0, 0.12, 0.02, 0.0]", onset_mid: "[0.66, 0.10, 1.0, 0.05]",
-                  onset_high: "[0.30, 1.0, 0.55, 0.0]" };
-    const dec: Record<string, number> = { onset_low: 0.86, onset_mid: 0.92, onset_high: 0.94 };
     const L = [
       `  - id: ${id}`,
       `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}`,
@@ -441,10 +439,12 @@ export function initTracks(deps: TracksDeps): TracksApi {
       `    levels: {towerL: 0.4, towerR: 0.4, door: 0.5}`,
       `    pulse:`,
     ];
-    for (const [band, n] of Object.entries(counts)) {
+    for (const b of BANDS) {
+      const n = counts[b.name];
       if (!n) continue;
-      L.push(`      - {synth: ${band}, zone: ${zone[band]}, intensity: 0.55, `
-           + `decay: ${dec[band]}, color: ${col[band]}}   # ${n} onsets`);
+      L.push(`      - {synth: ${b.name}, zone: ${b.zone}, intensity: 0.55, `
+           + `decay: ${b.decay}, color: [${b.rgbw.join(", ")}]}`
+           + `   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
     }
     L.push(`    cues: []`);
     return L.join("\n");
