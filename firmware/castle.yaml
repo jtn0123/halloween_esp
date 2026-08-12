@@ -91,9 +91,30 @@ psram:
 
 logger:
   level: INFO
-  # Left at the default. Routing this to USB_CDC only matters if the USB
-  # console stack is running, which it is not — see the note on the esp32
-  # block above. Logs come over WiFi.
+  # NOT the default, and this line is load-bearing.
+  #
+  # Left alone, ESPHome resolves the console for a native-USB S2 to
+  # CONFIG_ESP_CONSOLE_USB_CDC — the exact option HARDWARE_FINDINGS §3 records
+  # as chip-killing. The old comment here assumed "we never asked for it" meant
+  # "it is off". It was on, set by ESPHome in
+  # sdkconfig.<name>.esphomeinternal, and it crashed the board:
+  #
+  #     Fault - LoadProhibited
+  #       esp_usb_console_interrupt   (usb_console.c:188)
+  #       _xt_lowint1                 (xtensa_vectors.S)
+  #       sinf                        (newlib)
+  #       castle::hashf(float)        (castle_effects.h:39)
+  #       castle::render(...)
+  #       esphome::Application::loop()
+  #
+  # The USB console's interrupt fired while the LED render loop was inside
+  # sinf() and faulted, which killed the light loop — a board with dark pixels
+  # and no network, indistinguishable from a brick.
+  #
+  # UART0 rather than `baud_rate: 0` because it costs nothing and leaves a real
+  # serial path on the TX/RX header pins for anyone with a USB-UART adapter.
+  # This board has no other way to get a boot log.
+  hardware_uart: UART0
 
 api:
   # THE image-confirmation step, and the reason rollback is safe.
@@ -215,23 +236,9 @@ media_player:
     buffer_size: 250000
     volume_initial: 70%
     task_stack_in_psram: true
-    files:
-      - id: snd_vigil
-        file: ../audio/01_vigil.mp3
-      - id: snd_storm
-        file: ../audio/02_storm.mp3
-      - id: snd_seance
-        file: ../audio/03_seance.mp3
-      - id: snd_ballroom
-        file: ../audio/04_ballroom.mp3
-      - id: snd_descent
-        file: ../audio/05_descent.mp3
-      - id: snd_visitation
-        file: ../audio/06_visitation.mp3
-      - id: snd_approach
-        file: ../audio/07_approach.mp3
-      - id: snd_crypt
-        file: ../audio/08_crypt.mp3
+    # Generated from scenes.yaml — see tools/gen_esphome.py for why this
+    # is no longer a hand-kept list.
+    files: !include generated/media_files.yaml
 
 light:
   - platform: esp32_rmt_led_strip
