@@ -161,6 +161,10 @@ interval:
           auto *f = castle_sd::take_ready();
           if (f != nullptr) id(castle_media)->play_file(f, true, false);
 
+          // Mirror the real volume out to the web server's status endpoint —
+          // the httpd task must never read ESPHome objects itself.
+          castle_web::g_volume.store((int) (id(castle_media)->volume * 100.0f + 0.5f));
+
           auto act = castle_web::take_pending();
           if (act.type == castle_web::NONE) return;
           if (act.type == castle_web::PLAY) {
@@ -171,6 +175,25 @@ interval:
             auto call = id(castle_media)->make_call();
             call.set_volume(atoi(act.arg.c_str()) / 100.0f);
             call.perform();
+          } else if (act.type == castle_web::LIGHT) {
+            // Manual override for the chain — today that is the one onboard
+            // pixel (it plays towerL pixel 0), later all three jewels.
+            if (act.arg == "off") {
+              id(castle_leds).turn_off().perform();
+            } else if (act.arg == "show") {
+              auto call = id(castle_leds).turn_on();
+              call.set_effect("Show");
+              call.perform();
+            } else {
+              long v = strtol(act.arg.c_str(), nullptr, 16);
+              auto call = id(castle_leds).turn_on();
+              call.set_effect("None");   // park on the colour, no animation
+              call.set_brightness(1.0f);
+              call.set_rgb(((v >> 16) & 0xFF) / 255.0f,
+                           ((v >> 8) & 0xFF) / 255.0f,
+                           (v & 0xFF) / 255.0f);
+              call.perform();
+            }
           } else if (act.type == castle_web::SCENE) {
             // Generated scene scripts, by bare name. A miss is logged, not
             // silent — a typo in a URL should say so.

@@ -16,6 +16,7 @@ const STATUS = {
   sd_mounted: true,
   psram_free_kb: 1500,
   heap_free_kb: 70,
+  volume: 40,
 };
 
 const FILES = [
@@ -88,6 +89,28 @@ test("the panel lists the card and plays a track on the castle", async ({ page }
   await expect.poll(() => calls.filter((c) => c.includes("/api/play")).length)
     .toBeGreaterThan(0);
   expect(calls.some((c) => c.includes("f=wicked_winds.mp3"))).toBe(true);
+});
+
+test("the volume slider starts where the amp actually is", async ({ page }) => {
+  await stubCastle(page);
+  await page.goto("/");
+  await page.locator("#devMore").click();
+  await expect(page.locator("#dpVol")).toHaveValue("40");
+});
+
+test("the light override parks a colour and hands the show back", async ({ page }) => {
+  const calls = await stubCastle(page);
+  await page.goto("/");
+  await page.locator("#devMore").click();
+  await page.locator("#dpColor").fill("#00ff80");
+  await expect.poll(() => calls.filter((c) => c.includes("/api/light?c=00ff80")).length)
+    .toBeGreaterThan(0);
+  await page.locator("#dpShow").click();
+  await expect.poll(() => calls.filter((c) => c.includes("c=show")).length)
+    .toBeGreaterThan(0);
+  await page.locator("#dpOff").click();
+  await expect.poll(() => calls.filter((c) => c.includes("c=off")).length)
+    .toBeGreaterThan(0);
 });
 
 test("the boot log is one tap away", async ({ page }) => {

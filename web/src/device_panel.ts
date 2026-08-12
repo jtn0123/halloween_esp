@@ -31,6 +31,8 @@ interface DeviceStatus {
   uptime_s: number;
   sd_mounted: boolean;
   psram_free_kb: number;
+  /** 0–100, mirrored from the media player; older firmware omits it. */
+  volume?: number;
 }
 
 const fmtUptime = (s: number): string =>
@@ -87,8 +89,19 @@ export class DevicePanel {
       `${st.psram_free_kb} KB PSRAM free` +
       `</div>` +
       `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f">` +
-      `🔊 <input id="dpVol" type="range" min="0" max="100" value="70" ` +
-      `style="width:200px;vertical-align:middle">` +
+      `🔊 <input id="dpVol" type="range" min="0" max="100" ` +
+      `value="${st.volume ?? 70}" style="width:200px;vertical-align:middle">` +
+      `</div>` +
+      `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;` +
+      `display:flex;gap:.5rem;align-items:center">` +
+      `💡 <input id="dpColor" type="color" value="#ff8c1e" ` +
+      `title="Park the pixels on a colour" style="cursor:pointer">` +
+      `<button id="dpShow" title="Hand the pixels back to the scene engine" ` +
+      `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
+      `border-radius:6px;padding:.2rem .5rem">resume show</button>` +
+      `<button id="dpOff" style="cursor:pointer;background:none;` +
+      `color:#9a8fb0;border:1px solid #35264f;border-radius:6px;` +
+      `padding:.2rem .5rem">off</button>` +
       `</div>` +
       `<div style="max-height:180px;overflow:auto" id="dpFiles">` +
       (tracks.length
@@ -124,6 +137,20 @@ export class DevicePanel {
           void fetch(`/api/volume?v=${v}`, { method: "POST" });
         }, 150);
       });
+
+    // The light override: a colour parks the chain (today: the one onboard
+    // pixel, which plays towerL pixel 0), "resume show" gives it back.
+    this.body.querySelector<HTMLInputElement>("#dpColor")!
+      .addEventListener("input", (e) => {
+        const hex = (e.target as HTMLInputElement).value.slice(1);
+        void fetch(`/api/light?c=${hex}`, { method: "POST" });
+      });
+    this.body.querySelector<HTMLButtonElement>("#dpShow")!
+      .addEventListener("click", () =>
+        void fetch("/api/light?c=show", { method: "POST" }));
+    this.body.querySelector<HTMLButtonElement>("#dpOff")!
+      .addEventListener("click", () =>
+        void fetch("/api/light?c=off", { method: "POST" }));
 
     this.body.querySelectorAll<HTMLButtonElement>("[data-play]").forEach((b) =>
       b.addEventListener("click", () => {

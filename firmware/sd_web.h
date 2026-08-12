@@ -29,6 +29,7 @@
 #include <esp_http_server.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
+#include <atomic>
 #include <mutex>
 #include <string>
 #include <cstdio>
@@ -47,7 +48,12 @@ static const char *const TAG = "castle_web";
 inline httpd_handle_t g_server = nullptr;
 
 // ── pending action, handed from httpd task to the main loop ─────────────
-enum ActionType { NONE = 0, PLAY = 1, SCENE = 2, STOP = 3, VOLUME = 4 };
+enum ActionType { NONE = 0, PLAY = 1, SCENE = 2, STOP = 3, VOLUME = 4, LIGHT = 5 };
+
+/// Mirrored from the media player by the YAML interval (the httpd task must
+/// not touch ESPHome objects), so /api/status can report the real volume and
+/// the page's slider can start where the amp actually is.
+inline std::atomic<int> g_volume{70};
 struct Action {
   int type{NONE};
   std::string arg;
@@ -115,15 +121,17 @@ inline esp_err_t reply_err(httpd_req_t *req, const char *status, const char *msg
 
 // ── /api/status ─────────────────────────────────────────────────────────
 inline esp_err_t h_status(httpd_req_t *req) {
-  char buf[320];
+  char buf[340];
   snprintf(buf, sizeof(buf),
            "{\"version\":\"%s\",\"compiled\":\"%s %s\",\"uptime_s\":%lld,"
-           "\"sd_mounted\":%s,\"psram_free_kb\":%u,\"heap_free_kb\":%u}",
+           "\"sd_mounted\":%s,\"psram_free_kb\":%u,\"heap_free_kb\":%u,"
+           "\"volume\":%d}",
            CASTLE_VERSION, __DATE__, __TIME__,
            (long long) (esp_timer_get_time() / 1000000),
            castle_sd::g_mounted ? "true" : "false",
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
-           (unsigned) (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024));
+           (unsigned) (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+           g_volume.load());
   return reply_json(req, buf);
 }
 
@@ -260,6 +268,19 @@ inline esp_err_t h_volume(httpd_req_t *req) {
   return reply_json(req, "{\"queued\":true}");
 }
 
+// ── POST /api/light?c=<RRGGBB | show | off> ─────────────────────────────
+// A manual override for the pixel chain. "show" hands control back to the
+// scene engine's effect; a hex colour parks the chain on that colour — which
+// today means the one onboard pixel, and later means all 21.
+inline esp_err_t h_light(httpd_req_t *req) {
+  std::string c = query_param(req, "c");
+  bool hex6 = c.size() == 6 && c.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+  if (!hex6 && c != "show" && c != "off")
+    return reply_err(req, "400 Bad Request", "need ?c=RRGGBB, show, or off");
+  set_pending(LIGHT, c);
+  return reply_json(req, "{\"queued\":true}");
+}
+
 // ── /api/bootlog — the ring buffer, as text ─────────────────────────────
 // This is the same data as the "Dump boot log" button, but pulled instead of
 // pushed: no API subscription, no log-level negotiation, just the bytes.
@@ -294,7 +315,10 @@ inline const char *content_type(const std::string &p) {
     size_t n = strlen(s);
     return p.size() >= n && p.compare(p.size() - n, n, s) == 0;
   };
-  if (ends(".html")) return "text/html";
+  // charset matters: the desk is a megabyte of UTF-8, and its <meta charset>
+  // sits too deep in the file for the browser's pre-scan — without the header
+  // every · and ² on the page renders as mojibake.
+  if (ends(".html")) return "text/html; charset=utf-8";
   if (ends(".js")) return "application/javascript";
   if (ends(".css")) return "text/css";
   if (ends(".svg")) return "image/svg+xml";
@@ -348,7 +372,7 @@ fetch('/api/files').then(r=>r.json()).then(fs=>files.innerHTML=fs.filter(f=>!f.d
 
 inline esp_err_t h_root(httpd_req_t *req) {
   if (castle_sd::g_mounted && send_sd_file(req, "/sd/site/index.html")) return ESP_OK;
-  httpd_resp_set_type(req, "text/html");
+  httpd_resp_set_type(req, "text/html; charset=utf-8");
   return httpd_resp_send(req, kFallbackPage, HTTPD_RESP_USE_STRLEN);
 }
 
@@ -368,7 +392,7 @@ inline void start() {
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.server_port = 80;
   cfg.uri_match_fn = httpd_uri_match_wildcard;
-  cfg.max_uri_handlers = 12;
+  cfg.max_uri_handlers = 16;
   cfg.stack_size = 6144;   // default 4 KB is too tight for FATFS + our buffers
   cfg.lru_purge_enable = true;
 
@@ -393,6 +417,7 @@ inline void start() {
   reg("/api/scene", HTTP_POST, h_scene);
   reg("/api/stop", HTTP_POST, h_stop);
   reg("/api/volume", HTTP_POST, h_volume);
+  reg("/api/light", HTTP_POST, h_light);
   reg("/api/bootlog", HTTP_GET, h_bootlog);
   reg("/site/*", HTTP_GET, h_site);
   reg("/", HTTP_GET, h_root);
