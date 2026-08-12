@@ -361,6 +361,37 @@
     .bandcfg__val, .bandcfg__hits { display: none; }
   }
 
+  /* Codec A/B. Size and fidelity sit on the button because those are the two
+     halves of the trade being made. */
+  .codecab { margin-top: 8px; }
+  .codecab__bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .codecab__bar button {
+    font-family: var(--f-data); font-size: 10px; letter-spacing: .08em;
+    text-transform: uppercase; padding: 5px 10px; border-radius: 3px;
+    cursor: pointer; background: var(--panel-2); color: var(--ink-2);
+    border: 1px solid var(--line-2);
+  }
+  .codecab__bar button:hover:not([disabled]) {
+    border-color: var(--accent); color: var(--accent);
+  }
+  .codecab__bar button[disabled] { opacity: .55; cursor: default; }
+  .codecab__note { font-size: 11.5px; color: var(--ink-2); flex: 1; min-width: 12em; }
+  .codecab__rows {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    gap: 6px; margin-top: 8px;
+  }
+  .codecab__rows[hidden] { display: none; }
+  .codecab__pick {
+    display: grid; gap: 1px; padding: 7px 9px; border-radius: 3px; cursor: pointer;
+    text-align: left; background: var(--panel); color: var(--ink-2);
+    border: 1px solid var(--line-2); font-family: var(--f-data); font-size: 10px;
+  }
+  .codecab__pick b { font-size: 12px; color: var(--ink); letter-spacing: .06em; }
+  .codecab__pick span { color: var(--muted); }
+  .codecab__pick:hover { border-color: var(--accent); }
+  .codecab__pick.on { border-color: var(--spirit); }
+  .codecab__pick.on b { color: var(--spirit); }
+
   .trk-yaml {
     margin: 11px 0 0; padding: 11px; border-radius: 4px; background: var(--panel-2);
     border: 1px solid var(--line-2); font-family: var(--f-data); font-size: 11px;
@@ -1259,6 +1290,134 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         }
       }
     };
+  }
+
+  // src/codec_ab.ts
+  var kb2 = (n) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MB` : `${Math.round(n / 1024)} KB`;
+  function createCodecAb(deps) {
+    const el = document.createElement("div");
+    el.className = "codecab";
+    const bar = document.createElement("div");
+    bar.className = "codecab__bar";
+    const run = document.createElement("button");
+    run.type = "button";
+    run.textContent = "Compare codecs";
+    run.title = "Encode this clip as WAV, MP3, Opus and FLAC, then switch between them while it plays";
+    const note = document.createElement("span");
+    note.className = "codecab__note";
+    bar.append(run, note);
+    const rowsEl = document.createElement("div");
+    rowsEl.className = "codecab__rows";
+    rowsEl.hidden = true;
+    el.append(bar, rowsEl);
+    const audio = new Audio();
+    audio.muted = true;
+    audio.loop = true;
+    audio.preload = "auto";
+    let rows = [];
+    let current = null;
+    let busy = false;
+    function stop() {
+      audio.pause();
+      audio.muted = true;
+      current = null;
+      draw();
+    }
+    function reset() {
+      stop();
+      rows = [];
+      rowsEl.hidden = true;
+      rowsEl.replaceChildren();
+      note.textContent = "";
+    }
+    function pick(codec) {
+      const row = rows.find((r) => r.codec === codec);
+      if (!row) return;
+      if (current === codec) return stop();
+      const at = audio.currentTime;
+      deps.onClaim?.();
+      current = codec;
+      audio.src = row.url;
+      audio.muted = false;
+      audio.volume = 0.7;
+      const resume = () => {
+        if (Number.isFinite(at) && at > 0) {
+          try {
+            audio.currentTime = at;
+          } catch {
+          }
+        }
+        audio.removeEventListener("loadedmetadata", resume);
+      };
+      audio.addEventListener("loadedmetadata", resume);
+      void audio.play().catch(() => {
+        stop();
+        note.textContent = `Could not play the ${codec} encode.`;
+      });
+      draw();
+    }
+    function draw() {
+      rowsEl.replaceChildren();
+      if (!rows.length) return;
+      const smallest = Math.min(...rows.map((r) => r.bytes));
+      for (const r of rows) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "codecab__pick" + (current === r.codec ? " on" : "");
+        b.dataset["codec"] = r.codec;
+        const loss = r.db <= 0 ? "reference" : `${r.db.toFixed(2)} dB`;
+        b.innerHTML = `<b>${r.codec.toUpperCase()}</b><span>${kb2(r.bytes)}${r.bytes === smallest ? " \xB7 smallest" : ""}</span><span>${loss}</span>`;
+        b.title = r.db <= 0 ? "The lossless encode everything else is measured against" : `Spectral distance from the lossless encode. Lower is closer; a lossless codec floors at about 0.06 dB.`;
+        b.addEventListener("click", () => pick(r.codec));
+        rowsEl.append(b);
+      }
+      rowsEl.hidden = false;
+    }
+    run.addEventListener("click", async () => {
+      const t = deps.target();
+      if (!t) {
+        note.textContent = "Pick a track first.";
+        return;
+      }
+      if (busy) return;
+      busy = true;
+      reset();
+      run.disabled = true;
+      run.textContent = "Encoding\u2026";
+      note.textContent = `Encoding ${t.take.toFixed(1)}s four ways\u2026`;
+      try {
+        const o = deps.opts();
+        const r = await fetch("/api/compare", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: t.id,
+            start: t.start,
+            take: t.take,
+            bitrate: o.bitrate,
+            channels: o.channels,
+            sample_rate: o.sample_rate
+          })
+        }).then((x) => x.json());
+        if (!r.ok || !r.codecs) {
+          note.textContent = `Could not encode \u2014 ${r.error || "unknown error"}`;
+          return;
+        }
+        rows = r.codecs;
+        draw();
+        note.textContent = "Press one to hear it. Switching keeps the position, so you are comparing the same moment.";
+      } catch (err) {
+        note.textContent = `Could not encode \u2014 ${String(err)}`;
+      } finally {
+        busy = false;
+        run.disabled = false;
+        run.textContent = "Compare codecs";
+      }
+    });
+    audio.addEventListener("error", () => {
+      if (current) stop();
+    });
+    return { el, reset, stop };
   }
 
   // src/effects.ts
@@ -2888,8 +3047,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         const block = sceneYaml(id, audio.duration, counts, ext);
         T.yaml.hidden = false;
         T.yaml.textContent = block;
-        const kb2 = Math.round(audio.duration * 96 * 1e3 / 8 / 1024);
-        say(`${file.name}: ${audio.duration.toFixed(1)}s, ~${kb2} KB at 96 kbps. ` + Object.entries(counts).map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" \xB7 ") + `. Copy the block below, save the file into tracks/${id}.${ext}, then run make audio.`);
+        const kb3 = Math.round(audio.duration * 96 * 1e3 / 8 / 1024);
+        say(`${file.name}: ${audio.duration.toFixed(1)}s, ~${kb3} KB at 96 kbps. ` + Object.entries(counts).map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" \xB7 ") + `. Copy the block below, save the file into tracks/${id}.${ext}, then run make audio.`);
       } catch (err) {
         say(`Could not read that file \u2014 ${String(err)}`, true);
       }
@@ -3177,6 +3336,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     note.title = BAND_HELP;
     row.append(play, snap, readout);
     wrap.append(view.el, row, deps.bands.el, note);
+    if (deps.codecs) wrap.append(deps.codecs.el);
     host.append(wrap);
     const say = (msg, err = false) => {
       note.textContent = msg;
@@ -3403,6 +3563,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       show(id) {
         if (id === trackId) return;
         stop();
+        deps.codecs?.reset();
         host.hidden = id === null;
         trackId = id;
         clip = null;
@@ -3529,8 +3690,25 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   var previewScene = null;
   var sceneBeforeAudition = null;
   var bands = createBandEditor(() => wave.reanalyse());
+  var selectedTrack = null;
+  var codecs = createCodecAb({
+    target: () => {
+      const c = wave.clip();
+      if (!selectedTrack || !c) return null;
+      return { id: selectedTrack, start: c.start, take: c.end - c.start };
+    },
+    opts: () => {
+      const v = (id) => document.getElementById(id)?.value.trim() ?? "";
+      return { bitrate: v("trkBitrate"), channels: v("trkCh"), sample_rate: v("trkRate") };
+    },
+    onClaim: () => {
+      wave.stop();
+      tracks.stopPreview();
+    }
+  });
   var wave = initWaveform({
     bands,
+    codecs,
     onClipChange: (clip, data) => {
       previewScene = data ? sceneFromTrack(data, clip, bands.zones()) : null;
       if (sceneBeforeAudition && previewScene) transport.loadScene(previewScene);
@@ -3543,6 +3721,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         return;
       }
       tracks.stopPreview();
+      codecs.stop();
       if (!sceneBeforeAudition && previewScene) {
         sceneBeforeAudition = state.scene;
         transport.loadScene(previewScene);
@@ -3553,7 +3732,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   var tracks = initTracks({
     scenes: SCENES,
     bands,
-    onSelect: (id) => wave.show(id),
+    onSelect: (id) => {
+      selectedTrack = id;
+      wave.show(id);
+    },
     onAudioClaim: () => wave.stop()
   });
   function frame(now) {

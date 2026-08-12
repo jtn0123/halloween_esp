@@ -11,6 +11,7 @@
 
 import { RenderedAudio, type AudioMode } from "./audio.js";
 import { createBandEditor } from "./band_editor.js";
+import { createCodecAb } from "./codec_ab.js";
 import { defaultParams } from "./effects.js";
 import { Panels } from "./panels.js";
 import { createState, step } from "./show.js";
@@ -155,8 +156,27 @@ let sceneBeforeAudition: Scene | null = null;
    re-analyses on change, and the scene generator writes it out. */
 const bands = createBandEditor(() => wave.reanalyse());
 
+/* Hearing what each codec costs, on the clip that is actually selected. It
+   needs the clip from the editor and the encoder settings from the options
+   row, which is why it is assembled here and not inside either. */
+let selectedTrack: string | null = null;
+const codecs = createCodecAb({
+  target: () => {
+    const c = wave.clip();
+    if (!selectedTrack || !c) return null;
+    return { id: selectedTrack, start: c.start, take: c.end - c.start };
+  },
+  opts: () => {
+    const v = (id: string): string =>
+      (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? "";
+    return { bitrate: v("trkBitrate"), channels: v("trkCh"), sample_rate: v("trkRate") };
+  },
+  onClaim: () => { wave.stop(); tracks.stopPreview(); },
+});
+
 const wave = initWaveform({
   bands,
+  codecs,
   onClipChange: (clip, data) => {
     previewScene = data ? sceneFromTrack(data, clip, bands.zones()) : null;
     // Already auditioning: adopt the new selection without stopping.
@@ -172,6 +192,7 @@ const wave = initWaveform({
     // The region audition and the row preview are two audio elements; only one
     // of them should ever be making noise.
     tracks.stopPreview();
+    codecs.stop();
     if (!sceneBeforeAudition && previewScene) {
       sceneBeforeAudition = state.scene;
       transport.loadScene(previewScene);
@@ -184,7 +205,7 @@ const wave = initWaveform({
 const tracks = initTracks({
   scenes: SCENES,
   bands,
-  onSelect: (id) => wave.show(id),
+  onSelect: (id) => { selectedTrack = id; wave.show(id); },
   onAudioClaim: () => wave.stop(),
 });
 

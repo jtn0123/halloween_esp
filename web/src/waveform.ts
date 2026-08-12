@@ -15,6 +15,7 @@
 
 import { BAND_HELP, BANDS, bandSummary } from "./bands.js";
 import type { BandEditor } from "./band_editor.js";
+import type { CodecAb } from "./codec_ab.js";
 import { EDGE_SLOP, WaveView, type WaveClip, type WaveData } from "./waveform_view.js";
 
 export interface WaveformDeps {
@@ -38,6 +39,11 @@ export interface WaveformDeps {
    * it because the scene generator reads the same settings.
    */
   bands: BandEditor;
+  /**
+   * Codec comparison for the selected clip. Mounted here because the clip is
+   * here; owned outside because it needs the import options too.
+   */
+  codecs?: CodecAb;
   /** Container id, for the rare page that mounts this somewhere else. */
   containerId?: string;
 }
@@ -98,6 +104,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   note.title = BAND_HELP;
   row.append(play, snap, readout);
   wrap.append(view.el, row, deps.bands.el, note);
+  if (deps.codecs) wrap.append(deps.codecs.el);
   host.append(wrap);
 
   const say = (msg: string, err = false): void => {
@@ -409,6 +416,9 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     show(id: string | null): void {
       if (id === trackId) return;
       stop();
+      // The encodes belong to the track that was showing; keeping them would
+      // let you A/B one track while looking at another.
+      deps.codecs?.reset();
       host.hidden = id === null;       // nothing selected, nothing to show
       trackId = id;
       clip = null;                     // a new track's in/out points are its own

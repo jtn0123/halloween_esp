@@ -36,80 +36,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import analyze as ana  # noqa: E402
 import manifest as mf  # noqa: E402
 import studio_media as sm  # noqa: E402
 import studio_jobs as sj  # noqa: E402
+# Re-exported: TRACKS and these helpers are the track vocabulary, and
+# callers (including the tests) reach for them through this module.
+from studio_tracks import (  # noqa: E402,F401
+    AUDIO_EXT, MIME, TRACKS, parse_sensitivity, track_files, track_info,
+    track_path,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
-# Overridable so a test can drive the real server against a disposable
-# directory instead of the tracks you actually care about. Nothing else reads
-# it; leave it unset and this is the repo's own tracks/.
-TRACKS = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks"))
 SCENES = ROOT / "scenes" / "scenes.yaml"
 HTML = ROOT / "previewer" / "castle-cue-desk.html"
 PY = str(ROOT / ".venv" / "bin" / "python")
 
 _lock = threading.Lock()          # ffmpeg/yt-dlp jobs are serialised
 _runner = sj.JobRunner()          # long imports run in the background
-
-# Every container import_track.py can write. This list is the reason the format
-# option works at all end to end: globbing "*.mp3" — which is what this file did
-# when only MP3 existed — makes a WAV or FLAC import land on disk and then never
-# appear in the panel, which reads as the import having silently failed.
-AUDIO_EXT = ("mp3", "wav", "flac", "opus")
-MIME = {"mp3": "audio/mpeg", "wav": "audio/wav",
-        "flac": "audio/flac", "opus": "audio/ogg"}
-
-
-def track_files() -> list[Path]:
-    """Every imported track, whatever container it landed in, by id."""
-    return sorted((p for e in AUDIO_EXT for p in TRACKS.glob(f"*.{e}")),
-                  key=lambda p: p.stem)
-
-
-def parse_sensitivity(q: dict) -> float | dict:
-    """Read `?sensitivity=` plus any per-band `?sens_low=` overrides.
-
-    The three bands routinely want different thresholds — a track can have a
-    crisp kick under a wash of cymbals — so the editor sends one per band. A
-    bare `sensitivity` still means "all three", which is what every older
-    caller sends.
-    """
-    base = 1.1
-    try:
-        base = float((q.get("sensitivity") or ["1.1"])[0])
-    except ValueError:
-        pass
-    per = {}
-    for short in ("low", "mid", "high"):
-        raw = (q.get(f"sens_{short}") or [None])[0]
-        if raw is None:
-            continue
-        try:
-            per[f"onset_{short}"] = float(raw)
-        except ValueError:
-            continue
-    if not per:
-        return base
-    # Any band the caller did not name keeps the shared value.
-    for short in ("low", "mid", "high"):
-        per.setdefault(f"onset_{short}", base)
-    return per
-
-
-def track_path(tid: str) -> Path | None:
-    """Resolve a bare track id to the file that holds it.
-
-    The id is the contract everywhere else — scenes, the manifest, the panel —
-    and the extension is an import detail. Callers pass the id and get back
-    whichever container it happens to live in, or None.
-    """
-    for e in AUDIO_EXT:
-        p = TRACKS / f"{tid}.{e}"
-        if p.exists():
-            return p
-    return None
 
 
 def _restart() -> None:
@@ -125,37 +68,6 @@ def _restart() -> None:
 def run(cmd: list[str]) -> tuple[bool, str]:
     p = subprocess.run(cmd, capture_output=True, text=True)
     return p.returncode == 0, (p.stdout + p.stderr)[-4000:]
-
-
-def track_info(p: Path) -> dict:
-    """Everything the Tracks panel needs, including where the file came from.
-
-    The manifest is the cheap part — read it even if decoding fails, so a
-    broken file still shows its source and can be re-imported.
-    """
-    meta = mf.get(p.stem) or {}
-    info = {
-        "id": p.stem,
-        # The panel needs this to write `audio_file:` into a scene. Without it
-        # it guessed ".mp3", which produced a scene pointing at a file that
-        # does not exist for every non-MP3 import.
-        "ext": p.suffix.lstrip("."),
-        "kb": p.stat().st_size // 1024,
-        "source": meta.get("source", ""),
-        "title": meta.get("title", ""),
-        "imported": meta.get("imported", ""),
-        "opts": meta.get("opts", {}),
-        "notes": meta.get("notes", ""),
-    }
-    try:
-        x = ana.load_audio(p)
-        marks = ana.analyze(x)
-    except Exception as e:                       # noqa: BLE001
-        info["error"] = str(e)
-        return info
-    info["dur"] = round(len(x) / ana.SR, 2)
-    info["onsets"] = {k: len(v) for k, v in marks.items()}
-    return info
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -251,6 +163,14 @@ class Handler(BaseHTTPRequestHandler):
             if p is None:
                 return self.send_json({"error": "no such track"}, 404)
             return self.send_json(sm.waveform(p, sensitivity=sens))
+        if path.startswith("/api/compare/"):
+            # /api/compare/<token>/<codec>
+            parts = path.split("/")
+            p = sm.compare_file(parts[-2], parts[-1]) if len(parts) >= 5 else None
+            if p is None:
+                return self.send_json({"error": "no such comparison"}, 404)
+            return self.send_range(p, MIME.get(p.suffix.lstrip("."),
+                                               "application/octet-stream"))
         if path.startswith("/api/track/"):
             # Path(...).name strips any directory part, so a traversal
             # like ../../etc/passwd cannot escape TRACKS. That call IS
@@ -317,6 +237,24 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"ok": ok, "log": out,
                                    "tracks": [track_info(p)
                                               for p in track_files()]})
+        if path == "/api/compare":
+            req = json.loads(raw or b"{}")
+            p = track_path((req.get("id") or "").strip())
+            if p is None:
+                return self.send_json({"ok": False, "error": "no such track"}, 404)
+            num = lambda k, d: float(req.get(k) or d)      # noqa: E731
+            opts = {
+                "start": num("start", 0), "take": (float(req["take"])
+                                                   if req.get("take") else None),
+                "fade_in": None, "fade_out": None, "normalize": False,
+                "gain_db": None, "bitrate": int(num("bitrate", 96)),
+                "channels": int(num("channels", 1)),
+                "sample_rate": int(num("sample_rate", 44100)),
+            }
+            # ffmpeg four times over; serialise with every other encode job.
+            with _lock:
+                out = sm.compare(p, opts, token=f"{p.stem}-{int(time.time())}")
+            return self.send_json(out)
         if path == "/api/probe":
             req = json.loads(raw or b"{}")
             return self.send_json(sm.probe((req.get("url") or "").strip()))

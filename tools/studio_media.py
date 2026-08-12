@@ -12,6 +12,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -75,6 +76,56 @@ def probe(url: str, timeout: int = 60) -> dict:
         "warning": "this is a live stream — it has no end to trim from"
                    if d.get("is_live") else "",
     }
+
+
+"""Codec comparisons, kept until a few newer ones push them out.
+
+Each comparison is a directory of encodes the browser then streams. They are
+not worth persisting — the inputs are in the panel and re-encoding takes a
+second — so they live in a temp directory and the oldest are dropped rather
+than accumulating for the life of the process.
+"""
+_COMPARES: dict[str, Path] = {}
+KEEP_COMPARES = 3
+
+
+def compare(path: Path, opts: dict, token: str) -> dict:
+    """Encode one clip every way, and score each against the lossless one.
+
+    See tools/codec_compare.py for what the score is and — more importantly —
+    what it is not. The point of this endpoint is the audio it produces; the
+    number is there so two encodes that sound close can still be ranked.
+    """
+    import codec_compare as cc
+
+    root = Path(tempfile.mkdtemp(prefix="castle-cmp-"))
+    try:
+        rows = cc.encode_set(path, root, opts)
+    except SystemExit as e:                      # ffmpeg said no
+        shutil.rmtree(root, ignore_errors=True)
+        return {"ok": False, "error": str(e)}
+
+    _COMPARES[token] = root
+    for old in list(_COMPARES)[:-KEEP_COMPARES]:
+        shutil.rmtree(_COMPARES.pop(old), ignore_errors=True)
+
+    for r in rows:
+        r["url"] = f"/api/compare/{token}/{r['codec']}"
+    return {"ok": True, "token": token, "reference": cc.REFERENCE, "codecs": rows}
+
+
+def compare_file(token: str, codec: str) -> Path | None:
+    """The encode behind one row of a comparison, or None."""
+    root = _COMPARES.get(token)
+    if root is None or codec not in cc_codecs():
+        return None
+    p = root / f"{codec}.{codec}"
+    return p if p.exists() else None
+
+
+def cc_codecs() -> tuple[str, ...]:
+    import codec_compare as cc
+    return cc.CODECS
 
 
 def waveform(path: Path, sensitivity: float = 1.1, buckets: int = PEAKS) -> dict:

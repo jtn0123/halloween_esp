@@ -214,3 +214,59 @@ test("Snap to beat moves the clip onto detected onsets", async ({ page }) => {
   await expect(page.locator("#trkWave p"))
     .toHaveText(/Snapped to the nearest onsets|Already on a beat/);
 });
+
+test("codec comparison encodes the clip and switches without losing position",
+  async ({ page }) => {
+    await row(page, MP3).locator(".trk__nm").click();
+    await expect(page.locator("#trkWave")).toContainText(/start 0:00/);
+
+    const compare = page.locator(".codecab__bar button");
+    await expect(compare).toHaveText("Compare codecs");
+    await compare.click();
+    // Four ffmpeg passes; the button must say so rather than looking dead.
+    await expect(compare).toHaveText("Encoding…");
+
+    const picks = page.locator(".codecab__pick");
+    await expect(picks).toHaveCount(4, { timeout: 60_000 });
+    await expect(compare).toHaveText("Compare codecs");
+
+    // The lossless reference is labelled as such, and the lossy encodes carry
+    // a number. Both halves of the trade are on the button.
+    await expect(picks.filter({ hasText: "WAV" })).toContainText("reference");
+    await expect(picks.filter({ hasText: "MP3" })).toContainText(/[\d.]+ dB/);
+    // Lossy has to be smaller than lossless, or the comparison is broken.
+    // Read the size span itself. textContent() on the whole button glues the
+    // label to the size — "MP3" + "48 KB" reads as "MP348 KB" — and a regex
+    // over that happily returns 348.
+    const size = async (codec: string) => {
+      const t = await picks.filter({ hasText: codec }).locator("span").first()
+        .textContent();
+      const m = /^([\d.]+)\s*(KB|MB)/.exec((t ?? "").trim());
+      expect(m, `no size on the ${codec} button: ${t}`).not.toBeNull();
+      return Number(m![1]) * (m![2] === "MB" ? 1024 : 1);
+    };
+    expect(await size("MP3")).toBeLessThan(await size("WAV"));
+
+    // Playing one, then switching, must keep the position — an A/B that
+    // restarts from zero compares nothing.
+    await picks.filter({ hasText: "MP3" }).click();
+    await expect(picks.filter({ hasText: "MP3" })).toHaveClass(/on/);
+    await expect.poll(() => playing(page, "/api/compare/")).toBe(1);
+    await page.waitForTimeout(1200);
+
+    const at = () => page.evaluate(`
+      [...(window.__media || [])].filter(a => a.src.includes("/api/compare/"))
+        .map(a => a.currentTime).pop() ?? 0`) as Promise<number>;
+    const before = await at();
+    expect(before).toBeGreaterThan(0.3);
+
+    await picks.filter({ hasText: "FLAC" }).click();
+    await expect(picks.filter({ hasText: "FLAC" })).toHaveClass(/on/);
+    await expect(picks.filter({ hasText: "MP3" })).not.toHaveClass(/on/);
+    await expect.poll(at).toBeGreaterThan(before - 0.35);
+
+    // Pressing the one that is playing stops it.
+    await picks.filter({ hasText: "FLAC" }).click();
+    await expect(picks.filter({ hasText: "FLAC" })).not.toHaveClass(/on/);
+    await expect.poll(() => sounding(page)).toBe(0);
+  });

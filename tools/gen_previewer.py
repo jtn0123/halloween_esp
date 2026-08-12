@@ -192,7 +192,6 @@ def inject_styles(html: str) -> str:
 def main() -> int:
     raw = SRC.read_text()
     doc = yaml.safe_load(raw)
-    import json
     markers = json.loads(MARKERS_FILE.read_text()) if MARKERS_FILE.exists() else {}
     scenes = [to_previewer(s, i, raw, markers)
               for i, s in enumerate(doc["scenes"], start=1)]
