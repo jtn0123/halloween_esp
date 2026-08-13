@@ -20,9 +20,12 @@ for firmware, version bump → OTA → /api/status confirm.
       neutral < 8 hits so hand-written scenes are untouched)
 - [x] #8  Accent = vel ≥ rolling-mean(8) + 0.25 and ≥ 0.55 → boost fires
       below the global bar
-- [ ] #9  Per-band section gating: hush drops highs, halves mids
-- [ ] #5  Silence handling: envelope ≈ 0 for >2s → fade to near-black
-- [ ] #6  Anticipation: 1-beat pre-dim before hush→chorus boundaries
+- [x] #9  Per-band section gating (2026-08-13: gates reconstructed from the
+      exported set-cue notes, so YAML is the single section carrier)
+- [x] #5  Silence handling: env < 0.04 held ≥ 2 s → near-black tier, grey
+      strip on the waveform
+- [x] #6  Anticipation: previous look dips to 45% for 450 ms before a chorus
+      (never out of silence)
 - [ ] #10 attack_ms strike-shape field (lows slam, pads bloom)
 
 ## Phase 3 — Flavors, each behind an editor toggle (default off)
