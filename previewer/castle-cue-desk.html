@@ -343,7 +343,7 @@
   }
   .bandcfg__row {
     display: grid; align-items: center; gap: 9px;
-    grid-template-columns: 9px 2.6em 5.6em 1fr 2.8em 7.5em;
+    grid-template-columns: 9px 2.6em 5.6em 1fr 2.8em 7.5em 3.6em;
     font-family: var(--f-data); font-size: 11px; color: var(--ink-2);
   }
   .bandcfg__dot { width: 9px; height: 9px; border-radius: 50%; display: block; }
@@ -360,7 +360,7 @@
   .bandcfg__hits { text-align: right; }
   @media (max-width: 620px) {
     .bandcfg__row { grid-template-columns: 9px 2.6em 5.6em 1fr; }
-    .bandcfg__val, .bandcfg__hits { display: none; }
+    .bandcfg__val, .bandcfg__hits, .bandcfg__mix { display: none; }
   }
 
   /* Codec A/B. Size and fidelity sit on the button because those are the two
@@ -1282,17 +1282,29 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   var MAX_SENS = 3;
   var DEFAULT_SENS = 1.1;
   var clampSens = (v) => Number.isFinite(v) ? Math.min(MAX_SENS, Math.max(MIN_SENS, v)) : DEFAULT_SENS;
-  function createBandEditor(onChange) {
+  function createBandEditor(onChange, onMix) {
     const zone = {};
     const sens = {};
     const found = {};
+    const on = {};
+    const muteBtns = {};
+    const rows = {};
+    const syncMix = () => {
+      for (const b of BANDS) {
+        muteBtns[b.name].classList.toggle("on", !on[b.name]);
+        rows[b.name].style.opacity = on[b.name] ? "" : "0.45";
+      }
+      onMix?.();
+    };
     const el = document.createElement("div");
     el.className = "bandcfg";
     for (const b of BANDS) {
       zone[b.name] = b.zone;
       sens[b.name] = DEFAULT_SENS;
+      on[b.name] = true;
       const row = document.createElement("div");
       row.className = "bandcfg__row";
+      rows[b.name] = row;
       const swatch = document.createElement("i");
       swatch.className = "bandcfg__dot";
       swatch.style.background = b.ink;
@@ -1334,12 +1346,39 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       hits.className = "bandcfg__hits";
       hits.textContent = "\u2014";
       found[b.name] = hits;
-      row.append(swatch, name, zoneSel, slider, read, hits);
+      const mute = document.createElement("button");
+      mute.type = "button";
+      mute.className = "bandcfg__mute";
+      mute.style.cssText = "min-width:1.8em;padding:1px 4px";
+      mute.textContent = "M";
+      mute.title = `Mute the ${b.label} band in the audition (export unaffected)`;
+      mute.addEventListener("click", () => {
+        on[b.name] = !on[b.name];
+        syncMix();
+      });
+      muteBtns[b.name] = mute;
+      const solo = document.createElement("button");
+      solo.type = "button";
+      solo.className = "bandcfg__solo";
+      solo.style.cssText = "min-width:1.8em;padding:1px 4px";
+      solo.textContent = "S";
+      solo.title = `Audition only the ${b.label} band \u2014 press again to hear all`;
+      solo.addEventListener("click", () => {
+        const already = on[b.name] && BANDS.every((x) => x.name === b.name || !on[x.name]);
+        for (const x of BANDS) on[x.name] = already ? true : x.name === b.name;
+        syncMix();
+      });
+      const mix2 = document.createElement("span");
+      mix2.className = "bandcfg__mix";
+      mix2.style.cssText = "display:inline-flex;gap:3px";
+      mix2.append(mute, solo);
+      row.append(swatch, name, zoneSel, slider, read, hits, mix2);
       el.append(row);
     }
     return {
       el,
       settings: () => ({ zone: { ...zone }, sensitivity: { ...sens } }),
+      active: () => ({ ...on }),
       zones: () => ({ ...zone }),
       query: () => BANDS.map((b) => `sens_${b.label}=${encodeURIComponent(sens[b.name].toFixed(2))}`).join("&"),
       customised: () => BANDS.some((b) => zone[b.name] !== b.zone || Math.abs(sens[b.name] - DEFAULT_SENS) > 1e-9),
@@ -3357,6 +3396,83 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       pixels: "scatter"
     }
   };
+  var BAND_STYLE_CLASSIC = {
+    onset_low: {
+      zones: ["door"],
+      alternate: false,
+      intensity: 0.62,
+      decay: 0.9,
+      ms: 120,
+      colors: [[1, 0.15, 0.05, 0]],
+      colorHot: [1, 0.15, 0.05, 0]
+    },
+    onset_mid: {
+      zones: ["towerL"],
+      alternate: false,
+      intensity: 0.62,
+      decay: 0.9,
+      ms: 120,
+      colors: [[0.7, 0.2, 1, 0]],
+      colorHot: [0.7, 0.2, 1, 0]
+    },
+    onset_high: {
+      zones: ["towerR"],
+      alternate: false,
+      intensity: 0.62,
+      decay: 0.9,
+      ms: 120,
+      colors: [[0.2, 1, 0.4, 0]],
+      colorHot: [0.2, 1, 0.4, 0]
+    }
+  };
+  var NEUTRAL = { intensity: 1, decay: 1 };
+  var variant = "current";
+  var tweaks = {
+    onset_low: { ...NEUTRAL },
+    onset_mid: { ...NEUTRAL },
+    onset_high: { ...NEUTRAL }
+  };
+  var setStyleVariant = (v) => {
+    variant = v;
+  };
+  var styleVariant = () => variant;
+  var setStyleTweak = (band, t) => {
+    Object.assign(tweaks[band], t);
+  };
+  var resetStyleTweaks = () => {
+    for (const b of Object.keys(tweaks)) tweaks[b] = { ...NEUTRAL };
+  };
+  function styleFor(band, forExport = false) {
+    const base = !forExport && variant === "classic" ? BAND_STYLE_CLASSIC[band] : BAND_STYLE[band];
+    const t = tweaks[band];
+    if (t.intensity === 1 && t.decay === 1) return base;
+    return {
+      ...base,
+      intensity: Math.min(1, Math.round(base.intensity * t.intensity * 1e3) / 1e3),
+      decay: Math.min(0.995, Math.max(
+        0.5,
+        Math.round((1 - (1 - base.decay) / t.decay) * 1e3) / 1e3
+      ))
+    };
+  }
+  function styleAsTs() {
+    const num2 = (v) => String(Math.round(v * 1e3) / 1e3);
+    const col = (c) => `[${c.map(num2).join(", ")}]`;
+    const lines = Object.keys(BAND_STYLE).map((b) => {
+      const s = styleFor(b, true);
+      return `  ${b}: {
+    zones: [${s.zones.map((z) => `"${z}"`).join(", ")}], alternate: ${s.alternate}, intensity: ${num2(s.intensity)}, decay: ${num2(s.decay)}, ms: ${s.ms},
+    colors: [${s.colors.map(col).join(", ")}],
+    colorHot: ${col(s.colorHot)},
+` + (s.pixelsByVel ? `    pixelsByVel: true,
+` : "") + (s.pixels ? `    pixels: "${s.pixels}",
+` : "") + (s.boostAt !== void 0 ? `    boostAt: ${num2(s.boostAt)}, boostTargets: [${(s.boostTargets ?? []).map((z) => `"${z}"`).join(", ")}],
+` : "") + `  },`;
+    });
+    return `export const BAND_STYLE = {
+${lines.join("\n")}
+};`;
+  }
   var blendColor = (base, hot, vel) => !hot ? base : [
     base[0] + (hot[0] - base[0]) * vel,
     base[1] + (hot[1] - base[1]) * vel,
@@ -3365,7 +3481,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   ];
   var pixelsForVel = (vel) => vel < 0.4 ? "center" : vel < 0.72 ? "scatter" : "all";
   function bandStrikes(band, hits, startSec, endSec, zoneOverride) {
-    const s = BAND_STYLE[band];
+    const s = styleFor(band);
     const pinned = zoneOverride !== void 0 && zoneOverride !== BAND_BY_NAME[band].zone;
     const zones = pinned ? [zoneOverride] : s.zones;
     const out = [];
@@ -3468,8 +3584,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     return out.length ? out : [[0, 1]];
   }
   function sectionCues(env2, startSec, endSec) {
+    const segs = styleVariant() === "classic" ? [[0, 1]] : sections(env2, startSec, endSec);
     const out = [];
-    for (const [sec, tierIdx] of sections(env2, startSec, endSec)) {
+    for (const [sec, tierIdx] of segs) {
       const look = TIERS[tierIdx];
       const t = Math.round(sec * 1e3);
       const note = ["hush", "verse", "chorus"][tierIdx];
@@ -3510,17 +3627,18 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     towerR: { center: "ember", palette: "moonlight", phase: 1.3 },
     door: { overlay: "sparkle", palette: "ember" }
   };
-  function trackCues(onsets, env2, startSec, endSec, zoneOverrides = {}) {
+  function trackCues(onsets, env2, startSec, endSec, zoneOverrides = {}, active = {}) {
     const cues = [...sectionCues(env2, startSec, endSec)];
     for (const band of Object.keys(BAND_STYLE)) {
       const hits = onsets[band];
-      if (hits) cues.push(...bandStrikes(
-        band,
-        hits,
-        startSec,
-        endSec,
-        zoneOverrides[band]
-      ));
+      if (hits && active[band] !== false)
+        cues.push(...bandStrikes(
+          band,
+          hits,
+          startSec,
+          endSec,
+          zoneOverrides[band]
+        ));
     }
     cues.sort((a, z) => a.t - z.t);
     return cues;
@@ -3534,7 +3652,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     door: TIERS[0].doorLevel
   };
   var VOLUME2 = 0.7;
-  function sceneFromTrack(data, clip, zones = {}) {
+  function sceneFromTrack(data, clip, zones = {}, active = {}) {
     const start = clip?.start ?? 0;
     const end = clip?.end ?? data.duration;
     const dur = Math.max(1, Math.round((end - start) * 1e3));
@@ -3554,7 +3672,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         data.env,
         start,
         end,
-        zones
+        zones,
+        active
       ),
       // No rendered file: the audition element is the audio, and giving this a
       // file name would have the show engine try to play a second copy.
@@ -3592,7 +3711,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     for (const b of BANDS) {
       const n = counts[b.name];
       if (!n) continue;
-      const s = BAND_STYLE[b.name];
+      const s = styleFor(b.name, true);
       const pinned = bands2 !== void 0 && bands2.zones()[b.name] !== b.zone;
       const zones = pinned ? [bands2.zones()[b.name]] : s.zones;
       const opts = [
@@ -3945,6 +4064,124 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     return { stopPreview: () => preview.stop() };
   }
 
+  // src/style_lab.ts
+  function createStyleLab(onStyle) {
+    const el = document.createElement("details");
+    el.className = "stylelab";
+    el.style.cssText = "margin:6px 0;font:12px/1.7 var(--f-data),ui-monospace,monospace;color:var(--ink-2)";
+    const sum = document.createElement("summary");
+    sum.style.cursor = "pointer";
+    sum.textContent = "Style lab \u2014 A/B and knobs";
+    sum.title = "Compare the light engine against the old flat look, and trim intensity/tails live";
+    el.append(sum);
+    const row = (label) => {
+      const r = document.createElement("div");
+      r.className = "stylelab__row";
+      r.style.cssText = "display:flex;align-items:center;gap:8px;margin:3px 0";
+      const s = document.createElement("span");
+      s.className = "stylelab__nm";
+      s.style.cssText = "min-width:3.5em";
+      s.textContent = label;
+      r.append(s);
+      return r;
+    };
+    const abRow = row("engine");
+    const ab = document.createElement("button");
+    ab.type = "button";
+    ab.className = "stylelab__ab";
+    const sayAb = () => {
+      const b = styleVariant() === "classic";
+      ab.textContent = b ? "B \xB7 classic flat (comparison only)" : "A \xB7 current dynamics";
+      ab.classList.toggle("on", b);
+    };
+    ab.title = "Toggle the whole strike engine between the current dynamics and the pre-4K baseline. Exports always use A.";
+    ab.addEventListener("click", () => {
+      setStyleVariant(styleVariant() === "classic" ? "current" : "classic");
+      sayAb();
+      onStyle();
+    });
+    sayAb();
+    abRow.append(ab);
+    el.append(abRow);
+    const sliders = [];
+    const knob = (r, band, key, min, max, title) => {
+      const s = document.createElement("input");
+      s.type = "range";
+      s.className = "stylelab__knob";
+      s.style.cssText = "width:90px";
+      s.min = String(min);
+      s.max = String(max);
+      s.step = "0.05";
+      s.value = "1";
+      s.title = title;
+      const val = document.createElement("span");
+      val.className = "stylelab__val";
+      val.textContent = "\xD71.00";
+      s.addEventListener("input", () => {
+        setStyleTweak(band, { [key]: +s.value });
+        val.textContent = `\xD7${(+s.value).toFixed(2)}`;
+        onStyle();
+      });
+      sliders.push(s);
+      r.append(s, val);
+    };
+    for (const b of BANDS) {
+      const r = row(b.label);
+      knob(
+        r,
+        b.name,
+        "intensity",
+        0.3,
+        1.3,
+        `${b.label} strike intensity, on top of the committed style`
+      );
+      knob(
+        r,
+        b.name,
+        "decay",
+        0.5,
+        2,
+        `${b.label} tail length \u2014 \xD72 rings out twice as long`
+      );
+      el.append(r);
+    }
+    const foot = row("");
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.textContent = "Reset";
+    reset.title = "Neutral knobs, engine A";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.textContent = "Copy as TS";
+    copy.title = "The effective BAND_STYLE literal, for pasting into web/src/track_lights.ts when a knob setting should become law";
+    const out = document.createElement("pre");
+    out.className = "stylelab__ts";
+    out.style.cssText = "max-height:14em;overflow:auto;font-size:10px;background:var(--panel-2);padding:6px;border-radius:6px";
+    out.hidden = true;
+    const doReset = () => {
+      resetStyleTweaks();
+      setStyleVariant("current");
+      for (const s of sliders) {
+        s.value = "1";
+        s.nextElementSibling.textContent = "\xD71.00";
+      }
+      sayAb();
+      out.hidden = true;
+      onStyle();
+    };
+    reset.addEventListener("click", doReset);
+    copy.addEventListener("click", () => {
+      const ts = styleAsTs();
+      out.textContent = ts;
+      out.hidden = false;
+      void navigator.clipboard?.writeText(ts).catch(() => {
+      });
+    });
+    foot.append(reset, copy);
+    el.append(foot, out);
+    return { el, reset: doReset };
+  }
+
   // src/waveform_view.ts
   var BAND_ORDER = ["onset_high", "onset_mid", "onset_low"];
   var LANE = 9;
@@ -3969,6 +4206,15 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       /** Null until a track has been analysed; `message` is shown instead. */
       this.data = null;
       this.clip = null;
+      /**
+       * Loudness tiers as the audition will play them: [absolute seconds, tier]
+       * with tier 0 hush / 1 verse / 2 chorus. Computed by the host from the SAME
+       * sections() the scene uses — this overlay is a promise about the show, so
+       * it must not have its own opinion. Null: no tinting.
+       */
+      this.sections = null;
+      /** Bands muted in the band editor — their lanes draw dimmed. */
+      this.muted = {};
       /** Audition position in seconds, or null when stopped. */
       this.playhead = null;
       /** Stands in for the waveform — "no track selected", a failed fetch, etc. */
@@ -4027,10 +4273,33 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         g2.fillText(this.message, this.w / 2, this.h / 2, this.w - 16);
         return;
       }
+      this.drawSections();
       this.drawWave();
       this.drawOnsets();
       this.drawClip();
       this.drawPlayhead();
+    }
+    /** Hush/verse/chorus washes behind the wave, plus a solid strip up top. */
+    drawSections() {
+      const segs = this.sections, d = this.data;
+      if (!segs || !segs.length || !d) return;
+      const g2 = this.g2, h = this.h - LANES - 2;
+      const WASH = ["", "rgba(255,157,60,0.10)", "rgba(255,84,60,0.16)"];
+      const STRIP = [
+        "rgba(90,140,255,0.55)",
+        "rgba(255,157,60,0.75)",
+        "rgba(255,84,60,0.9)"
+      ];
+      segs.forEach(([sec, tier], i) => {
+        const x0 = this.secToX(sec);
+        const x1 = this.secToX(segs[i + 1]?.[0] ?? d.duration);
+        if (WASH[tier]) {
+          g2.fillStyle = WASH[tier];
+          g2.fillRect(x0, 0, x1 - x0, h);
+        }
+        g2.fillStyle = STRIP[tier] ?? STRIP[1];
+        g2.fillRect(x0, 0, x1 - x0, 3);
+      });
     }
     /** The peaks, mirrored about the midline as one filled shape. */
     drawWave() {
@@ -4064,16 +4333,18 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         const hits = d.onsets[band];
         if (!hits) return;
         const top = waveH + 2 + row * LANE;
+        const dim = this.muted[band] ? 0.22 : 1;
         g2.fillStyle = BAND_INK[band];
         for (const [sec, vel] of hits) {
           const x = Math.round(this.secToX(sec));
           const v = clamp2(vel, 0, 1);
-          g2.globalAlpha = 0.1 + 0.3 * v;
+          g2.globalAlpha = (0.1 + 0.3 * v) * dim;
           g2.fillRect(x, 0, 1, waveH);
-          g2.globalAlpha = 1;
+          g2.globalAlpha = dim;
           const tick = 3 + Math.round(v * (LANE - 4));
           g2.fillRect(x - 1, top + (LANE - 1 - tick), 2, tick);
         }
+        g2.globalAlpha = 1;
       });
     }
     /** The selection: everything outside it knocked back, edges and handles. */
@@ -4119,6 +4390,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         reanalyse: () => {
         },
         clip: () => null,
+        resync: () => {
+        },
         stop: () => {
         },
         destroy: () => {
@@ -4146,7 +4419,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     const note = mk("p", "margin:4px 0 0;color:var(--ink-2)");
     note.title = BAND_HELP;
     row.append(play, snap, readout);
-    wrap.append(view.el, row, deps.bands.el, note);
+    const lab = createStyleLab(() => sync());
+    wrap.append(view.el, row, deps.bands.el, lab.el, note);
     if (deps.codecs) wrap.append(deps.codecs.el);
     host.append(wrap);
     const say = (msg, err = false) => {
@@ -4171,6 +4445,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     }
     function sync() {
       view.clip = clip;
+      const d = view.data;
+      const start2 = clip?.start ?? 0, end = clip?.end ?? d?.duration ?? 0;
+      view.sections = d?.env ? sections(d.env, start2, end).map(([s, tier]) => [start2 + s, tier]) : null;
+      for (const b of BANDS) view.muted[b.name] = !deps.bands.active()[b.name];
       view.draw();
       readout.textContent = clip ? `start ${clock(clip.start)}  \xB7  length ${clock(clip.end - clip.start)}` : "drag across the waveform to pick a clip";
       play.disabled = !clip || !view.data;
@@ -4398,6 +4676,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       },
       reanalyse,
       clip: () => clip,
+      resync: () => sync(),
       stop: () => stop(),
       destroy() {
         stop();
@@ -4541,7 +4820,12 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   }
   var previewScene = null;
   var sceneBeforeAudition = null;
-  var bands = createBandEditor(() => wave.reanalyse());
+  var bands = createBandEditor(
+    () => wave.reanalyse(),
+    // Mute/solo: same analysis, different mix —
+    // rebuild the audition without re-fetching.
+    () => wave.resync()
+  );
   var selectedTrack = null;
   var codecs = createCodecAb({
     target: () => {
@@ -4562,7 +4846,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     bands,
     codecs,
     onClipChange: (clip, data) => {
-      previewScene = data ? sceneFromTrack(data, clip, bands.zones()) : null;
+      previewScene = data ? sceneFromTrack(data, clip, bands.zones(), bands.active()) : null;
       if (sceneBeforeAudition && previewScene) transport.loadScene(previewScene);
     },
     onAudition: (playing, positionMs) => {

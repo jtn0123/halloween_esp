@@ -196,7 +196,10 @@ let sceneBeforeAudition: Scene | null = null;
 /* Which zone each band lights and how hard it has to hit. Created here rather
    than inside either panel because both read it: the clip editor mounts it and
    re-analyses on change, and the scene generator writes it out. */
-const bands = createBandEditor(() => wave.reanalyse());
+const bands = createBandEditor(() => wave.reanalyse(),
+                               // Mute/solo: same analysis, different mix —
+                               // rebuild the audition without re-fetching.
+                               () => wave.resync());
 
 /* Hearing what each codec costs, on the clip that is actually selected. It
    needs the clip from the editor and the encoder settings from the options
@@ -220,7 +223,8 @@ const wave = initWaveform({
   bands,
   codecs,
   onClipChange: (clip, data) => {
-    previewScene = data ? sceneFromTrack(data, clip, bands.zones()) : null;
+    previewScene = data
+      ? sceneFromTrack(data, clip, bands.zones(), bands.active()) : null;
     // Already auditioning: adopt the new selection without stopping.
     if (sceneBeforeAudition && previewScene) transport.loadScene(previewScene);
   },

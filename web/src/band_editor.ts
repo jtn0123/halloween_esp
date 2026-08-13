@@ -37,6 +37,9 @@ export interface BandEditor {
   customised: () => boolean;
   /** Report what the last analysis found, per band, so the rows can say. */
   report: (counts: Readonly<Record<string, number>>, durationSec?: number) => void;
+  /** Which bands the AUDITION plays; false = muted. Exports ignore this —
+   *  mute is a listening tool, not a scene decision. */
+  active: () => Record<BandName, boolean>;
 }
 
 const clampSens = (v: number): number =>
@@ -45,11 +48,25 @@ const clampSens = (v: number): number =>
 /**
  * @param onChange fired after any control moves. Re-analysis is the caller's
  *        job, because only it knows how expensive that is.
+ * @param onMix fired when a mute/solo changes — the detection is untouched,
+ *        so this needs a scene rebuild, not the re-analysis onChange buys.
  */
-export function createBandEditor(onChange: () => void): BandEditor {
+export function createBandEditor(onChange: () => void,
+                                 onMix?: () => void): BandEditor {
   const zone = {} as Record<BandName, ZoneId>;
   const sens = {} as Record<BandName, number>;
   const found = {} as Record<BandName, HTMLElement>;
+  const on = {} as Record<BandName, boolean>;
+  const muteBtns = {} as Record<BandName, HTMLButtonElement>;
+  const rows = {} as Record<BandName, HTMLElement>;
+
+  const syncMix = (): void => {
+    for (const b of BANDS) {
+      muteBtns[b.name].classList.toggle("on", !on[b.name]);
+      rows[b.name].style.opacity = on[b.name] ? "" : "0.45";
+    }
+    onMix?.();
+  };
 
   const el = document.createElement("div");
   el.className = "bandcfg";
@@ -57,9 +74,11 @@ export function createBandEditor(onChange: () => void): BandEditor {
   for (const b of BANDS) {
     zone[b.name] = b.zone;
     sens[b.name] = DEFAULT_SENS;
+    on[b.name] = true;
 
     const row = document.createElement("div");
     row.className = "bandcfg__row";
+    rows[b.name] = row;
 
     const swatch = document.createElement("i");
     swatch.className = "bandcfg__dot";
@@ -112,13 +131,47 @@ export function createBandEditor(onChange: () => void): BandEditor {
     hits.textContent = "—";
     found[b.name] = hits;
 
-    row.append(swatch, name, zoneSel, slider, read, hits);
+    // Mute and solo, mixing-console style, for the AUDITION only. Judging
+    // one band's contribution against three at once is guesswork; against
+    // silence it is obvious.
+    const mute = document.createElement("button");
+    mute.type = "button";
+    mute.className = "bandcfg__mute";
+    // Inline like the style lab's chrome: styles.css is at the 500-line cap.
+    mute.style.cssText = "min-width:1.8em;padding:1px 4px";
+    mute.textContent = "M";
+    mute.title = `Mute the ${b.label} band in the audition (export unaffected)`;
+    mute.addEventListener("click", () => {
+      on[b.name] = !on[b.name];
+      syncMix();
+    });
+    muteBtns[b.name] = mute;
+
+    const solo = document.createElement("button");
+    solo.type = "button";
+    solo.className = "bandcfg__solo";
+    solo.style.cssText = "min-width:1.8em;padding:1px 4px";
+    solo.textContent = "S";
+    solo.title = `Audition only the ${b.label} band — press again to hear all`;
+    solo.addEventListener("click", () => {
+      const already = on[b.name] && BANDS.every(x => x.name === b.name || !on[x.name]);
+      for (const x of BANDS) on[x.name] = already ? true : x.name === b.name;
+      syncMix();
+    });
+
+    // One grid cell for both, or they wrap to an implicit row below.
+    const mix = document.createElement("span");
+    mix.className = "bandcfg__mix";
+    mix.style.cssText = "display:inline-flex;gap:3px";
+    mix.append(mute, solo);
+    row.append(swatch, name, zoneSel, slider, read, hits, mix);
     el.append(row);
   }
 
   return {
     el,
     settings: () => ({ zone: { ...zone }, sensitivity: { ...sens } }),
+    active: () => ({ ...on }),
     zones: () => ({ ...zone }),
     query: () => BANDS
       .map(b => `sens_${b.label}=${encodeURIComponent(sens[b.name].toFixed(2))}`)

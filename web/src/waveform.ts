@@ -16,6 +16,8 @@
 import { BAND_HELP, BANDS, bandSummary } from "./bands.js";
 import type { BandEditor } from "./band_editor.js";
 import type { CodecAb } from "./codec_ab.js";
+import { createStyleLab } from "./style_lab.js";
+import { sections } from "./track_lights.js";
 import { EDGE_SLOP, WaveView, type WaveClip, type WaveData } from "./waveform_view.js";
 
 export interface WaveformDeps {
@@ -55,6 +57,9 @@ export interface WaveformApi {
   reanalyse(): void;
   /** The current in/out points in seconds, or null when nothing is selected. */
   clip(): WaveClip | null;
+  /** Rebuild the audition scene and redraw — after a mute or style change,
+   *  where the analysis is still good and re-fetching it would be waste. */
+  resync(): void;
   /** Stop the audition. Safe to call when nothing is playing. */
   stop(): void;
   /** Drop the DOM, the observer, the timers and the audio element. */
@@ -70,7 +75,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     // has no #trkWave, and that is not worth taking the whole desk down for.
     console.warn("waveform: no #trkWave container — clip editor not mounted.");
     return { show: () => {}, reanalyse: () => {}, clip: () => null,
-             stop: () => {}, destroy: () => {} };
+             resync: () => {}, stop: () => {}, destroy: () => {} };
   }
 
   const view = new WaveView();
@@ -103,7 +108,8 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   const note = mk("p", "margin:4px 0 0;color:var(--ink-2)");
   note.title = BAND_HELP;
   row.append(play, snap, readout);
-  wrap.append(view.el, row, deps.bands.el, note);
+  const lab = createStyleLab(() => sync());
+  wrap.append(view.el, row, deps.bands.el, lab.el, note);
   if (deps.codecs) wrap.append(deps.codecs.el);
   host.append(wrap);
 
@@ -151,6 +157,14 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
 
   function sync(): void {
     view.clip = clip;
+    // The tier overlay, from the SAME sections() call the audition scene
+    // makes for this window — a promise about the show, not a decoration.
+    const d = view.data;
+    const start = clip?.start ?? 0, end = clip?.end ?? d?.duration ?? 0;
+    view.sections = d?.env
+      ? sections(d.env, start, end).map(([s, tier]) => [start + s, tier])
+      : null;
+    for (const b of BANDS) view.muted[b.name] = !deps.bands.active()[b.name];
     view.draw();
     readout.textContent = clip
       ? `start ${clock(clip.start)}  ·  length ${clock(clip.end - clip.start)}`
@@ -446,6 +460,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     },
     reanalyse,
     clip: () => clip,
+    resync: () => sync(),
     stop: () => stop(),
     destroy(): void {
       stop();

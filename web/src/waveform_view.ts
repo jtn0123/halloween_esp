@@ -86,6 +86,15 @@ export class WaveView {
   /** Null until a track has been analysed; `message` is shown instead. */
   data: WaveData | null = null;
   clip: WaveClip | null = null;
+  /**
+   * Loudness tiers as the audition will play them: [absolute seconds, tier]
+   * with tier 0 hush / 1 verse / 2 chorus. Computed by the host from the SAME
+   * sections() the scene uses — this overlay is a promise about the show, so
+   * it must not have its own opinion. Null: no tinting.
+   */
+  sections: Array<[number, number]> | null = null;
+  /** Bands muted in the band editor — their lanes draw dimmed. */
+  muted: Partial<Record<BandName, boolean>> = {};
   /** Audition position in seconds, or null when stopped. */
   playhead: number | null = null;
   /** Stands in for the waveform — "no track selected", a failed fetch, etc. */
@@ -155,10 +164,32 @@ export class WaveView {
       return;
     }
 
+    this.drawSections();
     this.drawWave();
     this.drawOnsets();
     this.drawClip();
     this.drawPlayhead();
+  }
+
+  /** Hush/verse/chorus washes behind the wave, plus a solid strip up top. */
+  private drawSections(): void {
+    const segs = this.sections, d = this.data;
+    if (!segs || !segs.length || !d) return;
+    const g2 = this.g2, h = this.h - LANES - 2;
+    // Hush stays unpainted — quiet reading as "nothing here" is correct.
+    const WASH = ["", "rgba(255,157,60,0.10)", "rgba(255,84,60,0.16)"];
+    const STRIP = ["rgba(90,140,255,0.55)", "rgba(255,157,60,0.75)",
+                   "rgba(255,84,60,0.9)"];
+    segs.forEach(([sec, tier], i) => {
+      const x0 = this.secToX(sec);
+      const x1 = this.secToX(segs[i + 1]?.[0] ?? d.duration);
+      if (WASH[tier]) {
+        g2.fillStyle = WASH[tier]!;
+        g2.fillRect(x0, 0, x1 - x0, h);
+      }
+      g2.fillStyle = STRIP[tier] ?? STRIP[1]!;
+      g2.fillRect(x0, 0, x1 - x0, 3);
+    });
   }
 
   /** The peaks, mirrored about the midline as one filled shape. */
@@ -199,18 +230,22 @@ export class WaveView {
       const hits = d.onsets[band];
       if (!hits) return;
       const top = waveH + 2 + row * LANE;
+      // A muted band's lane fades rather than vanishes: the hits are still
+      // detected and will still export — only the audition skips them.
+      const dim = this.muted[band] ? 0.22 : 1;
       g2.fillStyle = BAND_INK[band];
       for (const [sec, vel] of hits) {
         const x = Math.round(this.secToX(sec));
         const v = clamp(vel, 0, 1);
         // The lane tick says when and how hard; the faint full-height line says
         // against what, which is the judgement being asked of the user here.
-        g2.globalAlpha = 0.10 + 0.30 * v;
+        g2.globalAlpha = (0.10 + 0.30 * v) * dim;
         g2.fillRect(x, 0, 1, waveH);
-        g2.globalAlpha = 1;
+        g2.globalAlpha = dim;
         const tick = 3 + Math.round(v * (LANE - 4));
         g2.fillRect(x - 1, top + (LANE - 1 - tick), 2, tick);
       }
+      g2.globalAlpha = 1;
     });
   }
 

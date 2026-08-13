@@ -10,8 +10,10 @@
  */
 
 import {
-  BAND_STYLE, TIERS, blendColor, pixelsForVel, bandStrikes,
+  BAND_STYLE, BAND_STYLE_CLASSIC, TIERS, blendColor, pixelsForVel, bandStrikes,
   sections, sectionCues, trackCues,
+  setStyleVariant, styleVariant, setStyleTweak, resetStyleTweaks, styleFor,
+  styleAsTs,
 } from "../dist/track_lights.mjs";
 
 let pass = 0;
@@ -133,6 +135,58 @@ for (const [name, s] of Object.entries(BAND_STYLE)) {
   ok(s.colorHot[3] <= 0.15, `${name} hot colour keeps W low`);
   ok(s.decay > 0.5 && s.decay < 1, `${name} decay is a per-frame factor`);
   ok(!(s.pixelsByVel && s.pixels), `${name} does not set both mask modes`);
+}
+
+/* ── The style lab: variant, tweaks, and the export's honesty ── */
+{
+  ok(styleVariant() === "current", "the lab starts on the current engine");
+  setStyleVariant("classic");
+  const s = bandStrikes("onset_mid", hits, 0, 10);
+  ok(s.every(c => c.targets.length === 1 && c.targets[0] === "towerL"),
+     "classic mid stays parked on towerL — no movement");
+  ok(s.every(c => c.pixels === undefined), "classic strikes hit the whole jewel");
+  const keys = new Set(s.map(c => c.color.join(",")));
+  ok(keys.size === 1, "classic is ONE flat colour — velocity moves intensity only");
+  const env = [];
+  for (let t = 0; t <= 30; t += 0.25) env.push([t, t >= 10 && t < 20 ? 0.9 : 0.1]);
+  ok(sectionCues(env, 0, 30).length === 3,
+     "classic holds ONE look — sections do not fire in B");
+  // The cardinal rule: the export never ships the comparison baseline.
+  ok(styleFor("onset_mid", true).colors.length
+       === BAND_STYLE.onset_mid.colors.length,
+     "styleFor(forExport) ignores the B variant");
+  setStyleVariant("current");
+  ok(sectionCues(env, 0, 30).length === 9, "back on A, sections fire again");
+}
+{
+  setStyleTweak("onset_low", { intensity: 0.5 });
+  const s = styleFor("onset_low");
+  ok(Math.abs(s.intensity - BAND_STYLE.onset_low.intensity * 0.5) < 1e-9,
+     "intensity knob multiplies");
+  setStyleTweak("onset_low", { intensity: 1.3 });
+  ok(styleFor("onset_low").intensity <= 1, "intensity clamps at 1");
+  setStyleTweak("onset_low", { intensity: 1, decay: 2 });
+  const d0 = BAND_STYLE.onset_low.decay, d2 = styleFor("onset_low").decay;
+  ok(Math.abs((1 - d2) - (1 - d0) / 2) < 1e-3,
+     "decay ×2 halves the per-frame loss — twice the tail, never ≥ 1");
+  ok(styleFor("onset_low", true).decay === d2,
+     "tweaks DO export — what you auditioned is what ships");
+  resetStyleTweaks();
+  ok(styleFor("onset_low").decay === d0, "reset returns to the committed style");
+  ok(styleAsTs().includes("onset_mid") && styleAsTs().includes("colorHot"),
+     "the TS snippet carries the whole table");
+}
+{
+  const cues = trackCues({ onset_low: hits, onset_mid: hits }, undefined, 0, 10,
+                         {}, { onset_mid: false });
+  ok(cues.filter(c => c.op === "strike").length === 4,
+     "a muted band's strikes are absent from the audition");
+  ok(cues.filter(c => c.op === "strike").every(c => c.detail === "onset_low"),
+     "only the live band remains");
+}
+for (const [name, s] of Object.entries(BAND_STYLE_CLASSIC)) {
+  ok(s.colors.length === 1 && !s.alternate && !s.pixelsByVel && !s.boostAt,
+     `${name} classic baseline stays flat — it exists to lose fairly`);
 }
 
 if (fails.length) {

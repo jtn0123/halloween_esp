@@ -339,7 +339,7 @@
   }
   .bandcfg__row {
     display: grid; align-items: center; gap: 9px;
-    grid-template-columns: 9px 2.6em 5.6em 1fr 2.8em 7.5em;
+    grid-template-columns: 9px 2.6em 5.6em 1fr 2.8em 7.5em 3.6em;
     font-family: var(--f-data); font-size: 11px; color: var(--ink-2);
   }
   .bandcfg__dot { width: 9px; height: 9px; border-radius: 50%; display: block; }
@@ -356,7 +356,7 @@
   .bandcfg__hits { text-align: right; }
   @media (max-width: 620px) {
     .bandcfg__row { grid-template-columns: 9px 2.6em 5.6em 1fr; }
-    .bandcfg__val, .bandcfg__hits { display: none; }
+    .bandcfg__val, .bandcfg__hits, .bandcfg__mix { display: none; }
   }
 
   /* Codec A/B. Size and fidelity sit on the button because those are the two

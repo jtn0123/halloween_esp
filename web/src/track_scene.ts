@@ -17,7 +17,7 @@
 import { BANDS, type BandName } from "./bands.js";
 import type { BandEditor } from "./band_editor.js";
 import type { WaveClip, WaveData } from "./waveform_view.js";
-import { BAND_STYLE, TIERS, ZONES_BLOCK, sectionCues, trackCues }
+import { TIERS, ZONES_BLOCK, sectionCues, styleFor, trackCues }
   from "./track_lights.js";
 import type { EffectName, Scene, ZoneId } from "./types.js";
 import type { Onset } from "./onsets.js";
@@ -44,7 +44,9 @@ export type ZoneMap = Partial<Record<BandName, ZoneId>>;
  * that starts at 1:30.
  */
 export function sceneFromTrack(data: WaveData, clip: WaveClip | null,
-                               zones: ZoneMap = {}): Scene {
+                               zones: ZoneMap = {},
+                               active: Partial<Record<BandName, boolean>> = {},
+                               ): Scene {
   const start = clip?.start ?? 0;
   const end = clip?.end ?? data.duration;
   const dur = Math.max(1, Math.round((end - start) * 1000));
@@ -62,7 +64,7 @@ export function sceneFromTrack(data: WaveData, clip: WaveClip | null,
     levels: LEVELS,
     zones: ZONES_BLOCK,
     cues: trackCues(data.onsets as Record<string, readonly Onset[]>,
-                    data.env, start, end, zones),
+                    data.env, start, end, zones, active),
     // No rendered file: the audition element is the audio, and giving this a
     // file name would have the show engine try to play a second copy.
     file: "",
@@ -118,7 +120,9 @@ export function sceneYaml(id: string, dur: number | undefined,
   for (const b of BANDS) {
     const n = counts[b.name];
     if (!n) continue;
-    const s = BAND_STYLE[b.name];
+    // Effective style: the knobs panel's live tweaks apply, the A/B variant
+    // never does — see the style-lab note in track_lights.ts.
+    const s = styleFor(b.name, true);
     const pinned = bands !== undefined && bands.zones()[b.name] !== b.zone;
     const zones: readonly ZoneId[] = pinned ? [bands.zones()[b.name]!] : s.zones;
     const opts = [
