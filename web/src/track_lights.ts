@@ -99,88 +99,10 @@ export const BAND_STYLE: Readonly<Record<BandName, BandStyle>> = {
   },
 };
 
-/* ── The style lab: A/B and live knobs ────────────────────────────────
- * Evaluation tooling, not show design. "B" is the pre-4K look — one flat
- * colour per band, whole-jewel flashes, no movement, no sections — kept as
- * the honest baseline so "did the new dynamics help?" is one button, not an
- * argument. Tweaks are live multipliers from the knobs panel.
- *
- * The EXPORT always uses variant A (with tweaks): B exists to be compared
- * against, never to be shipped, and writing whatever the toggle happened to
- * be on would reintroduce the audition/device divergence this file exists
- * to prevent. */
-
-export const BAND_STYLE_CLASSIC: Readonly<Record<BandName, BandStyle>> = {
-  onset_low: { zones: ["door"], alternate: false, intensity: 0.62,
-               decay: 0.90, ms: 120, colors: [[1.0, 0.15, 0.05, 0.0]],
-               colorHot: [1.0, 0.15, 0.05, 0.0] },
-  onset_mid: { zones: ["towerL"], alternate: false, intensity: 0.62,
-               decay: 0.90, ms: 120, colors: [[0.7, 0.2, 1.0, 0.0]],
-               colorHot: [0.7, 0.2, 1.0, 0.0] },
-  onset_high: { zones: ["towerR"], alternate: false, intensity: 0.62,
-                decay: 0.90, ms: 120, colors: [[0.2, 1.0, 0.4, 0.0]],
-                colorHot: [0.2, 1.0, 0.4, 0.0] },
-};
-
-export type StyleVariant = "current" | "classic";
-export interface StyleTweak { intensity: number; decay: number }
-const NEUTRAL: StyleTweak = { intensity: 1, decay: 1 };
-
-let variant: StyleVariant = "current";
-const tweaks: Record<BandName, StyleTweak> = {
-  onset_low: { ...NEUTRAL }, onset_mid: { ...NEUTRAL }, onset_high: { ...NEUTRAL },
-};
-
-export const setStyleVariant = (v: StyleVariant): void => { variant = v; };
-export const styleVariant = (): StyleVariant => variant;
-export const setStyleTweak = (band: BandName, t: Partial<StyleTweak>): void => {
-  Object.assign(tweaks[band], t);
-};
-export const resetStyleTweaks = (): void => {
-  for (const b of Object.keys(tweaks) as BandName[]) tweaks[b] = { ...NEUTRAL };
-};
-
-/**
- * The style a band renders AND exports with. Tweaks apply in both cases;
- * the classic variant applies only when auditioning (`forExport` false).
- * Decay is eased toward 1 rather than multiplied — decay 0.945 × 1.05 would
- * exceed 1 and a strike would never die.
- */
-export function styleFor(band: BandName, forExport = false): BandStyle {
-  const base = !forExport && variant === "classic"
-    ? BAND_STYLE_CLASSIC[band] : BAND_STYLE[band];
-  const t = tweaks[band];
-  if (t.intensity === 1 && t.decay === 1) return base;
-  return {
-    ...base,
-    intensity: Math.min(1, Math.round(base.intensity * t.intensity * 1000) / 1000),
-    decay: Math.min(0.995, Math.max(0.5,
-      Math.round((1 - (1 - base.decay) / t.decay) * 1000) / 1000)),
-  };
-}
-
-/** The effective styles as a BAND_STYLE literal, for pasting back into this
- *  file once a knob setting has earned permanence. */
-export function styleAsTs(): string {
-  const num = (v: number): string => String(Math.round(v * 1000) / 1000);
-  const col = (c: Rgbw): string => `[${c.map(num).join(", ")}]`;
-  const lines = (Object.keys(BAND_STYLE) as BandName[]).map(b => {
-    const s = styleFor(b, true);
-    return `  ${b}: {\n`
-      + `    zones: [${s.zones.map(z => `"${z}"`).join(", ")}], `
-      + `alternate: ${s.alternate}, intensity: ${num(s.intensity)}, `
-      + `decay: ${num(s.decay)}, ms: ${s.ms},\n`
-      + `    colors: [${s.colors.map(col).join(", ")}],\n`
-      + `    colorHot: ${col(s.colorHot)},\n`
-      + (s.pixelsByVel ? `    pixelsByVel: true,\n` : "")
-      + (s.pixels ? `    pixels: "${s.pixels}",\n` : "")
-      + (s.boostAt !== undefined
-         ? `    boostAt: ${num(s.boostAt)}, boostTargets: `
-           + `[${(s.boostTargets ?? []).map(z => `"${z}"`).join(", ")}],\n` : "")
-      + `  },`;
-  });
-  return `export const BAND_STYLE = {\n${lines.join("\n")}\n};`;
-}
+export { BAND_STYLE_CLASSIC, setStyleVariant, styleVariant, setStyleTweak,
+         resetStyleTweaks, styleFor, styleAsTs } from "./track_style.js";
+export type { StyleVariant, StyleTweak } from "./track_style.js";
+import { styleFor, styleVariant } from "./track_style.js";
 
 /** color -> colorHot by velocity. Same maths as blend_color in the generators. */
 export const blendColor = (base: Rgbw, hot: Rgbw | undefined, vel: number): Rgbw =>
@@ -231,6 +153,7 @@ export const PAN_DECISIVE = 0.25;
 export function bandStrikes(
   band: BandName, hits: readonly Onset[],
   startSec: number, endSec: number, zoneOverride?: ZoneId,
+  gates: ReadonlyArray<readonly [number, string]> = [],
 ): StrikeCue[] {
   const s = styleFor(band);
   const pinned = zoneOverride !== undefined && zoneOverride !== BAND_BY_NAME[band].zone;
@@ -245,6 +168,9 @@ export function bandStrikes(
   const vels = win.map(([, vel]) => vel);
   const out: StrikeCue[] = [];
   win.forEach(([sec, vel, pan], i) => {
+    const tMs = Math.round((sec - startSec) * 1000);
+    const mul = gateMul(band, gates, tMs);
+    if (mul === null) return;                 // gated out by its section (#9)
     let targets: ZoneId[];
     if (s.alternate && !pinned) {
       // A decisively panned hit goes to ITS tower (#7); the rest keep the
@@ -262,9 +188,9 @@ export function bandStrikes(
     }
     const pixels = s.pixelsByVel ? pixelsForVel(vel) : s.pixels;
     out.push({
-      t: Math.round((sec - startSec) * 1000),
+      t: tMs,
       bus: "LED", op: "strike", ms,
-      intensity: Math.round(s.intensity * vel * 1000) / 1000,
+      intensity: Math.round(s.intensity * vel * mul * 1000) / 1000,
       color: blendColor(s.colors[i % s.colors.length]!, s.colorHot, vel),
       decay,
       ...(pixels ? { pixels } : {}),
@@ -293,6 +219,17 @@ export const TIERS: readonly TierLook[] = [
   { towers: "seance", towersLevel: 0.70, door: "ember", doorLevel: 0.80 },  // mid
   { towers: "mansion", towersLevel: 0.95, door: "furnace", doorLevel: 0.95 }, // loud
 ];
+
+/* Tier index 3: real silence — a dramatic pause, a spoken-word gap. Near
+ * black, not off: a faint ember means "holding its breath", where zero reads
+ * as a power fault. The recovery flash when audio returns is free drama. */
+export const SILENCE_TIER = 3;
+export const SILENCE_LOOK: TierLook =
+  { towers: "chill", towersLevel: 0.06, door: "ember", doorLevel: 0.08 };
+/** env below this is silence for our purposes... */
+const SILENCE_LEVEL = 0.04;
+/** ...but only when it HOLDS — a breath between phrases is not a pause. */
+const SILENCE_MIN_SEC = 2.0;
 
 /** A tier change must hold this long before it commits — a snare hit is not
  *  a chorus, and a breath between phrases is not a hush. */
@@ -375,7 +312,46 @@ export function sections(
       pending = want; pendingFor = 0;
     }
   }
-  return out.length ? out : [[0, 1]];
+  return overlaySilence(out.length ? out : [[0, 1]], env, startSec, endSec);
+}
+
+/**
+ * #5: carve real silences out of the tier timeline. Uses the RAW envelope,
+ * not the smoothed one — smoothing would erode a pause from both ends until
+ * a real four-second hole read as two seconds and slipped under the bar.
+ */
+function overlaySilence(
+  segs: Array<[number, number]>,
+  env: ReadonlyArray<readonly [number, number]>,
+  startSec: number, endSec: number,
+): Array<[number, number]> {
+  const STEP = 0.25;
+  const n = Math.max(1, Math.floor((endSec - startSec) / STEP) + 1);
+  const need = Math.round(SILENCE_MIN_SEC / STEP);
+  const inRun = new Array<boolean>(n).fill(false);
+  let any = false;
+  for (let i = 0; i < n;) {
+    if (envAt(env, startSec + i * STEP) >= SILENCE_LEVEL) { i++; continue; }
+    let j = i;
+    while (j < n && envAt(env, startSec + j * STEP) < SILENCE_LEVEL) j++;
+    if (j - i >= need) { inRun.fill(true, i, j); any = true; }
+    i = j;
+  }
+  if (!any) return segs;
+
+  const tierAt = (rel: number): number => {
+    let t = segs[0]![1];
+    for (const [s, tier] of segs) { if (s <= rel + 1e-9) t = tier; else break; }
+    return t;
+  };
+  const merged: Array<[number, number]> = [];
+  for (let k = 0; k < n; k++) {
+    const rel = k * STEP;
+    const tier = inRun[k] ? SILENCE_TIER : tierAt(rel);
+    if (!merged.length || merged[merged.length - 1]![1] !== tier)
+      merged.push([rel, tier]);
+  }
+  return merged;
 }
 
 /** Sections as explicit `set` cues, one per zone per boundary. */
@@ -388,21 +364,68 @@ export function sectionCues(
   const segs = styleVariant() === "classic"
     ? ([[0, 1]] as Array<[number, number]>)
     : sections(env, startSec, endSec);
-  const out: SetCue[] = [];
-  for (const [sec, tierIdx] of segs) {
-    const look = TIERS[tierIdx]!;
-    const t = Math.round(sec * 1000);
-    const note = ["hush", "verse", "chorus"][tierIdx]!;
-    out.push(
+  const NOTES = ["hush", "verse", "chorus", "silence"];
+  const lookOf = (tier: number): TierLook =>
+    tier === SILENCE_TIER ? SILENCE_LOOK : TIERS[tier]!;
+  const trio = (t: number, look: TierLook, note: string, dim = 1): SetCue[] => {
+    const lv = (l: number): number => Math.round(l * dim * 1000) / 1000;
+    return [
       { t, bus: "LED", op: "set", zone: "towerL", eff: look.towers,
-        level: look.towersLevel, detail: note },
+        level: lv(look.towersLevel), detail: note },
       { t, bus: "LED", op: "set", zone: "towerR", eff: look.towers,
-        level: look.towersLevel, detail: note },
+        level: lv(look.towersLevel), detail: note },
       { t, bus: "LED", op: "set", zone: "door", eff: look.door,
-        level: look.doorLevel, detail: note },
-    );
+        level: lv(look.doorLevel), detail: note },
+    ];
+  };
+  const out: SetCue[] = [];
+  segs.forEach(([sec, tierIdx], i) => {
+    const prev = segs[i - 1];
+    // #6: a dip right before the chorus slams in. A drop reads twice as big
+    // from half a beat of darkness — every lighting desk knows this one.
+    // Not out of silence (already dark), and not when the previous section
+    // was too short to establish a level worth dipping from.
+    if (tierIdx === 2 && prev && prev[1] !== 2 && prev[1] !== SILENCE_TIER
+        && sec - prev[0] >= 0.7) {
+      out.push(...trio(Math.round((sec - 0.45) * 1000), lookOf(prev[1]),
+                       "predim", 0.45));
+    }
+    out.push(...trio(Math.round(sec * 1000), lookOf(tierIdx), NOTES[tierIdx]!));
+  });
+  return out;
+}
+
+/**
+ * The section timeline as [ms, note] gates for strike expansion (#9). Built
+ * from the section SET CUES rather than the envelope, because that is the
+ * only section information an exported scene carries — the Python
+ * generators reconstruct exactly this list from the YAML, so both sides
+ * gate from the same source of truth.
+ */
+export function sectionGates(cues: readonly Cue[]): Array<[number, string]> {
+  const out: Array<[number, string]> = [];
+  for (const c of cues) {
+    const note = c.detail;
+    if (c.op !== "set" || note === undefined
+        || !["hush", "verse", "chorus", "silence"].includes(note)) continue;
+    if (!out.length || out[out.length - 1]![0] !== c.t) out.push([c.t, note]);
   }
   return out;
+}
+
+/** What a section does to one band's hit: null = skip, else an intensity
+ *  multiplier. Same table as gate_mul in gen_esphome.py. */
+export function gateMul(band: BandName,
+                        gates: ReadonlyArray<readonly [number, string]>,
+                        tMs: number): number | null {
+  let note: string | undefined;
+  for (const [gt, n] of gates) { if (gt <= tMs) note = n; else break; }
+  if (note === "silence") return null;      // nothing strikes in a held pause
+  if (note === "hush") {
+    if (band === "onset_high") return null; // quiet passages lose the glitter
+    if (band === "onset_mid") return 0.5;   // and the voices whisper
+  }
+  return 1;
 }
 
 /* ── Static texture ───────────────────────────────────────────────────── */
@@ -428,13 +451,16 @@ export function trackCues(
   active: Partial<Record<BandName, boolean>> = {},
 ): Cue[] {
   const cues: Cue[] = [...sectionCues(env, startSec, endSec)];
+  // The strike gates come from the cues just emitted — the same timeline
+  // the exported YAML will carry, which is what the Python side reads.
+  const gates = sectionGates(cues);
   for (const band of Object.keys(BAND_STYLE) as BandName[]) {
     const hits = onsets[band];
     // Muted in the band editor = absent from the audition. Audition only:
     // the export ignores mutes, which are a listening tool, not a decision.
     if (hits && active[band] !== false)
       cues.push(...bandStrikes(band, hits, startSec, endSec,
-                               zoneOverrides[band]));
+                               zoneOverrides[band], gates));
   }
   cues.sort((a, z) => a.t - z.t);
   return cues;

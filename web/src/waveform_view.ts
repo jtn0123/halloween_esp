@@ -178,9 +178,12 @@ export class WaveView {
     if (!segs || !segs.length || !d) return;
     const g2 = this.g2, h = this.h - LANES - 2;
     // Hush stays unpainted — quiet reading as "nothing here" is correct.
-    const WASH = ["", "rgba(255,157,60,0.10)", "rgba(255,84,60,0.16)"];
+    // Index 3 is real silence: a grey hatch-wash so a held pause is visibly
+    // different from a merely quiet passage.
+    const WASH = ["", "rgba(255,157,60,0.10)", "rgba(255,84,60,0.16)",
+                  "rgba(128,128,150,0.18)"];
     const STRIP = ["rgba(90,140,255,0.55)", "rgba(255,157,60,0.75)",
-                   "rgba(255,84,60,0.9)"];
+                   "rgba(255,84,60,0.9)", "rgba(128,128,150,0.8)"];
     segs.forEach(([sec, tier], i) => {
       const x0 = this.secToX(sec);
       const x1 = this.secToX(segs[i + 1]?.[0] ?? d.duration);

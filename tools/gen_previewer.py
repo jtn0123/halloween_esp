@@ -123,6 +123,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
     # per-hit dynamics: color_hot, pixels_by_vel, boost_at/boost_targets,
     # ms) and web/src/track_lights.ts — keep all three in lockstep.
     scene_marks = markers.get(sid, {})
+    gates = gen.section_gates(scene)
     for pcfg in scene.get("pulse") or []:
         beats = scene_marks.get(pcfg["synth"], [])
         zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
@@ -133,11 +134,14 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         for i, beat in enumerate(beats):
             t, vel = beat[0], beat[1]
             pan = beat[2] if len(beat) > 2 else None
+            mul = gen.gate_mul(pcfg["synth"], gates, t)
+            if mul is None:
+                continue                       # gated out by its section (#9)
             cyc = pcfg.get("colors")
             base = cyc[i % len(cyc)] if cyc else pcfg.get("color", [1, 1, 1, 1])
             c = {"t": t, "bus": "LED", "op": "strike",
                  "ms": ms,
-                 "intensity": round(pcfg.get("intensity", 0.3) * vel, 3),
+                 "intensity": round(pcfg.get("intensity", 0.3) * vel * mul, 3),
                  "color": _blend_color(base, pcfg.get("color_hot"), vel),
                  "decay": decay,
                  "detail": pcfg["synth"]}

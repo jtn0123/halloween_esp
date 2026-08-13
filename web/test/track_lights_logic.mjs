@@ -86,8 +86,17 @@ const hits = [[0.0, 1.0], [0.153, 0.55], [0.82, 0.91], [1.6, 0.4]];
      "quiet→loud→quiet becomes three sections");
   ok(Math.abs(secs[1][0] - 10) < 2, "the chorus boundary lands near 10s");
   const cues = sectionCues(env, 0, 30);
-  ok(cues.length === 9, "three sections × three zones");
+  ok(cues.filter(c => c.detail !== "predim").length === 9,
+     "three sections × three zones");
   ok(cues.every(c => c.op === "set"), "sections are set cues");
+  // #6: the chorus entry is preceded by a dip in the PREVIOUS look.
+  const dips = cues.filter(c => c.detail === "predim");
+  ok(dips.length === 3, "one pre-dim trio before the chorus");
+  const chorusT = cues.find(c => c.detail === "chorus").t;
+  ok(dips.every(d => d.t === chorusT - 450), "the dip sits 450 ms early");
+  ok(dips.some(d => d.eff === TIERS[0].towers
+                 && d.level === Math.round(TIERS[0].towersLevel * 0.45 * 1000) / 1000),
+     "the dip is the previous tier's look at 45%");
   const loud = cues.filter(c => c.detail === "chorus");
   ok(loud.some(c => c.zone === "towerL" && c.eff === TIERS[2].towers),
      "the chorus look reaches the towers");
@@ -180,6 +189,45 @@ for (const [name, s] of Object.entries(BAND_STYLE)) {
      "hits outside the clip do not vote on the tempo");
 }
 
+/* ── Silence (#5) and section gating (#9) ── */
+{
+  // Loud, then a 3 s hole (env points below 0.04 are dropped at source, so
+  // a hole IS silence), then loud again.
+  const env = [];
+  for (let t = 0; t <= 20; t += 0.25) {
+    if (t < 8 || t > 11) env.push([t, 0.9]);
+  }
+  const secs = sections(env, 0, 20);
+  ok(secs.some(([, tier]) => tier === 3), "a held pause becomes a silence tier");
+  const sil = secs.find(([, tier]) => tier === 3);
+  ok(Math.abs(sil[0] - 8) < 1.2, `the pause starts near 8 s (got ${sil[0]})`);
+  const cues = sectionCues(env, 0, 20);
+  ok(cues.some(c => c.detail === "silence" && c.level <= 0.08),
+     "silence cues drop the castle near-black");
+  ok(!cues.some(c => c.detail === "predim"
+                  && Math.abs(c.t - (secs.find(([s, tr], i) => tr === 2 && secs[i-1]?.[1] === 3)?.[0] ?? -9) * 1000 + 450) < 1),
+     "no dip when coming OUT of silence — it is already dark");
+  // A 1.5 s gap is a breath, not a pause.
+  const short = [];
+  for (let t = 0; t <= 20; t += 0.25) { if (t < 8 || t > 9.5) short.push([t, 0.9]); }
+  ok(!sections(short, 0, 20).some(([, tier]) => tier === 3),
+     "short gaps do not trigger the silence tier");
+}
+{
+  const gates = [[0, "hush"], [5000, "chorus"], [10000, "silence"]];
+  const hits4 = [[1, 0.8], [6, 0.8], [11, 0.8]];
+  const high = bandStrikes("onset_high", hits4, 0, 20, undefined, gates);
+  eq(high.map(c => c.t), [6000], "highs are gated out of hush and silence");
+  const mid = bandStrikes("onset_mid", hits4, 0, 20, undefined, gates);
+  ok(Math.abs(mid[0].intensity - BAND_STYLE.onset_mid.intensity * 0.8 * 0.5) < 1e-9,
+     "mids whisper at half intensity in a hush");
+  ok(Math.abs(mid[1].intensity - BAND_STYLE.onset_mid.intensity * 0.8) < 1e-9,
+     "and speak at full in the chorus");
+  ok(mid.length === 2, "nothing strikes in a held pause");
+  const low = bandStrikes("onset_low", hits4, 0, 20, undefined, gates);
+  eq(low.map(c => c.t), [1000, 6000], "the low band keeps its hush hits, drops silence");
+}
+
 /* ── The style lab: variant, tweaks, and the export's honesty ── */
 {
   ok(styleVariant() === "current", "the lab starts on the current engine");
@@ -199,7 +247,8 @@ for (const [name, s] of Object.entries(BAND_STYLE)) {
        === BAND_STYLE.onset_mid.colors.length,
      "styleFor(forExport) ignores the B variant");
   setStyleVariant("current");
-  ok(sectionCues(env, 0, 30).length === 9, "back on A, sections fire again");
+  ok(sectionCues(env, 0, 30).filter(c => c.detail !== "predim").length === 9,
+     "back on A, sections fire again");
 }
 {
   setStyleTweak("onset_low", { intensity: 0.5 });

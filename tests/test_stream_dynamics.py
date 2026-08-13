@@ -106,5 +106,63 @@ class TestStreamDynamicsParity(unittest.TestCase):
 
 
 
+class TestSectionGatingParity(unittest.TestCase):
+    """#9/#5: strikes gated by the scene's own section set-cues.
+
+    The section timeline exists only as the exported hush/verse/chorus/
+    silence `set` cues; both generators must reconstruct the same gates from
+    them, and apply the same table gateMul() applies in the browser.
+    """
+
+    GATED = {"synth": "onset_high", "zones": ["towerR"], "intensity": 0.72,
+             "color": [0.0, 1.0, 0.0, 0.0], "ms": 130}
+    # hush until 5 s, chorus to 10 s, silence after. The predim cue must NOT
+    # count as a boundary, and the three zones' cues dedupe to one gate.
+    CUES = (
+        [{"t": 0, "op": "set", "zone": z, "effect": "chill",
+          "level": 0.4, "note": "hush"} for z in ("towerL", "towerR", "door")]
+        + [{"t": 4550, "op": "set", "zone": "towerL", "effect": "chill",
+            "level": 0.18, "note": "predim"}]
+        + [{"t": 5000, "op": "set", "zone": z, "effect": "mansion",
+            "level": 0.95, "note": "chorus"} for z in ("towerL", "towerR", "door")]
+        + [{"t": 10000, "op": "set", "zone": z, "effect": "chill",
+            "level": 0.06, "note": "silence"} for z in ("towerL", "towerR", "door")]
+    )
+
+    def scene(self, **over) -> dict:
+        return dict(PULSE_SCENE, cues=self.CUES,
+                    pulse=[dict(self.GATED, **over)])
+
+    M = {"parity": {"onset_high": [[1000, 0.8], [6000, 0.8], [11000, 0.8]],
+                    "onset_mid": [[1000, 0.8], [6000, 0.8], [11000, 0.8]],
+                    "onset_low": [[1000, 0.8], [6000, 0.8], [11000, 0.8]]}}
+
+    def test_gates_deduplicate_and_skip_the_predim(self) -> None:
+        self.assertEqual(ge.section_gates(self.scene()),
+                         [(0, "hush"), (5000, "chorus"), (10000, "silence")])
+
+    def test_highs_vanish_from_hush_and_silence(self) -> None:
+        for side in ("esphome", "previewer"):
+            times = [t for t, *_ in dynamic_strikes(side, self.scene(), self.M)]
+            self.assertEqual(times, [6000])
+
+    def test_mids_whisper_at_half_in_a_hush(self) -> None:
+        s = self.scene(synth="onset_mid", intensity=0.80)
+        for side in ("esphome", "previewer"):
+            got = {t: i for t, _z, i, *_ in dynamic_strikes(side, s, self.M)}
+            self.assertEqual(got, {1000: 0.32, 6000: 0.64})   # 0.8*0.8*{0.5,1}
+
+    def test_lows_keep_their_hush_hits_and_lose_silence(self) -> None:
+        s = self.scene(synth="onset_low")
+        for side in ("esphome", "previewer"):
+            times = [t for t, *_ in dynamic_strikes(side, s, self.M)]
+            self.assertEqual(times, [1000, 6000])
+
+    def test_a_scene_without_section_cues_is_untouched(self) -> None:
+        s = dict(PULSE_SCENE, pulse=[dict(self.GATED)])
+        for side in ("esphome", "previewer"):
+            self.assertEqual(len(dynamic_strikes(side, s, self.M)), 3)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

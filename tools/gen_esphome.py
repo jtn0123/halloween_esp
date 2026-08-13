@@ -69,46 +69,11 @@ def eff_id(name: str, scene_id: str) -> int:
     return EFFECT_IDS[name]
 
 
-def tempo_factor(times_s: list[float]) -> float:
-    """#3: the stream's own pace, from the median gap between its hits.
-
-    A 180 BPM track and a 70 BPM one used to get identical tails, so fast
-    material smeared and slow material strobed. Below 8 hits there is no
-    tempo evidence and the factor stays neutral — which also keeps every
-    hand-written pulse stream exactly as it was.
-
-    Same arithmetic in gen_previewer.py and track_lights.ts.
-    """
-    if len(times_s) < 8:
-        return 1.0
-    gaps = sorted(times_s[i + 1] - times_s[i] for i in range(len(times_s) - 1))
-    m = len(gaps) // 2
-    g = gaps[m] if len(gaps) % 2 else (gaps[m - 1] + gaps[m]) / 2
-    return min(1.6, max(0.7, g / 0.45))
-
-
-def tempo_decay(decay: float, factor: float) -> float:
-    """Stretch or shrink the tail: factor scales time-to-dark, not the decay
-    number itself (0.945 x 1.05 would exceed 1 and never die). floor(+0.5)
-    instead of round(): Python rounds half-even, JS half-up, and the parity
-    tests compare digits."""
-    return math.floor((1 - (1 - decay) / factor) * 10000 + 0.5) / 10000
-
-
-def is_accent(vels: list[float], i: int) -> bool:
-    """#8: louder than its own recent neighbourhood, not just loud.
-
-    On a compression-mastered track every other hit clears a global
-    threshold; against a rolling window only the real accents do. Needs 3
-    prior hits — the first few have no neighbourhood to stand out from.
-    """
-    w = vels[max(0, i - 8):i]
-    return len(w) >= 3 and vels[i] >= sum(w) / len(w) + 0.25 and vels[i] >= 0.55
-
-
-# A pan this far off-centre overrides round-robin movement (#7). Below it,
-# stereo position is a mixing accident, not a statement.
-PAN_DECISIVE = 0.25
+# The per-stream dynamics rules (tempo, accents, pan, section gates) live
+# in pulse_dynamics.py so this file and gen_previewer.py share ONE Python
+# copy; web/src/track_lights.ts remains the deliberate TS duplicate.
+from pulse_dynamics import (tempo_factor, tempo_decay, is_accent,  # noqa: F401,E402
+                            PAN_DECISIVE, section_gates, gate_mul)
 
 
 def pulse_cues(scene: dict, markers: dict) -> list[dict]:
@@ -143,6 +108,7 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
     tools/gen_previewer.py — keep all three in lockstep.
     """
     scene_marks = markers.get(scene["id"], {})
+    gates = section_gates(scene)
     out = []
     for cfg in scene.get("pulse") or []:
         beats = scene_marks.get(cfg["synth"], [])
@@ -158,6 +124,9 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
         for i, beat in enumerate(beats):
             t, vel = beat[0], beat[1]
             pan = beat[2] if len(beat) > 2 else None
+            mul = gate_mul(cfg["synth"], gates, t)
+            if mul is None:
+                continue                       # gated out by its section (#9)
             if zones and cfg.get("alternate"):
                 # A decisively panned hit goes to ITS tower (#7); everything
                 # else keeps the round-robin movement.
@@ -176,7 +145,7 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
             base = cyc[i % len(cyc)] if cyc else cfg.get("color", WHITE)
             out.append({"t": t, "op": "strike", "targets": targets,
                         "ms": ms,
-                        "intensity": round(cfg.get("intensity", 0.3) * vel, 3),
+                        "intensity": round(cfg.get("intensity", 0.3) * vel * mul, 3),
                         "color": blend_color(base, cfg.get("color_hot"), vel),
                         "decay": decay,
                         # WHERE on the jewel the pulse lands: a bass thump can
