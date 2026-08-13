@@ -14,6 +14,8 @@
 // into true streaming with no cap and no custom AudioReader.
 
 #include <esp_http_server.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -72,6 +74,14 @@ inline bool send_sd_file(httpd_req_t *req, const char *path,
   size_t got;
   while ((got = fread(buf, 1, CHUNK, f)) > 0) {
     if (httpd_resp_send_chunk(req, buf, got) != ESP_OK) break;
+    // Yield between chunks. Without this, a bulk download (the 1 MB site
+    // page) is hundreds of back-to-back SD reads + TCP sends on the httpd
+    // task, and on this single-core S2 the watched main loop starves —
+    // task-watchdog, reboot, and a castle that "goes offline" whenever a
+    // browser holds the page open. Same disease, same cure as h_ota's
+    // upload loop in sd_web.h; caps streaming at ~400 KB/s, far above
+    // what audio playback (16 KB/s) or a page load needs.
+    vTaskDelay(1);
   }
   free(buf);
   fclose(f);
