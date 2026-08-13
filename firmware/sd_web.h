@@ -49,6 +49,7 @@ inline httpd_handle_t g_server = nullptr;
 enum ActionType {
   NONE = 0, PLAY = 1, SCENE = 2, STOP = 3, VOLUME = 4, LIGHT = 5,
   PIRCFG = 6, RESTART = 7, SHOW = 8,   // arg "1" starts the playlist, "0" stops
+  BLACKOUT = 9,                        // #25: everything off, NOW
 };
 struct Action {
   int type{NONE};
@@ -78,6 +79,15 @@ inline std::mutex g_state_mu;
 inline std::string g_scene;        // current scene id, "" until one runs
 inline std::string g_track;        // current audio track, "" when idle
 inline std::string g_pir_scene;    // what motion triggers
+// #29: scene audio files the boot manifest check could not find on the
+// card, comma-separated; empty = all present (the overwhelmingly normal
+// case). Set once at boot by the generated manifest_check script.
+inline std::string g_missing;
+
+inline void set_missing(const std::string &csv) {
+  std::lock_guard<std::mutex> lk(g_state_mu);
+  g_missing = csv;
+}
 
 inline void mirror_show_state(const std::string &scene, const std::string &track,
                               const std::string &pir_scene) {
@@ -143,15 +153,17 @@ inline std::string query_param(httpd_req_t *req, const char *key) {
 
 // ── /api/status ─────────────────────────────────────────────────────────
 inline esp_err_t h_status(httpd_req_t *req) {
-  std::string scene, track, pir_scene;
+  std::string scene, track, pir_scene, missing;
   {
     std::lock_guard<std::mutex> lk(g_state_mu);
     scene = g_scene; track = g_track; pir_scene = g_pir_scene;
+    missing = g_missing;
   }
-  char buf[520];
+  char buf[680];
   snprintf(buf, sizeof(buf),
            "{\"version\":\"%s\",\"compiled\":\"%s %s\",\"uptime_s\":%lld,"
            "\"sd_mounted\":%s,\"psram_free_kb\":%u,\"heap_free_kb\":%u,"
+           "\"missing\":\"%s\","
            "\"volume\":%d,\"scene\":\"%s\",\"track\":\"%s\",\"show_on\":%s,"
            "\"pir\":{\"armed\":%s,\"cooldown_s\":%d,\"scene\":\"%s\"}}",
            CASTLE_VERSION, __DATE__, __TIME__,
@@ -159,6 +171,7 @@ inline esp_err_t h_status(httpd_req_t *req) {
            castle_sd::g_mounted ? "true" : "false",
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+           missing.c_str(),
            g_volume.load(), scene.c_str(), track.c_str(),
            g_show_on.load() ? "true" : "false",
            g_pir_armed.load() ? "true" : "false", g_pir_cooldown.load(),
@@ -292,18 +305,8 @@ inline esp_err_t h_stop(httpd_req_t *req) {
   return reply_json(req, "{\"queued\":true}");
 }
 
-// The all-evening playlist (#19): every scene in order with an ambient gap,
-// looping until told to stop. The script itself is generated into
-// scenes.yaml; these just flip it.
-inline esp_err_t h_show_start(httpd_req_t *req) {
-  set_pending(SHOW, "1");
-  return reply_json(req, "{\"queued\":true}");
-}
-
-inline esp_err_t h_show_stop(httpd_req_t *req) {
-  set_pending(SHOW, "0");
-  return reply_json(req, "{\"queued\":true}");
-}
+// Show-night handlers (playlist start/stop, blackout) live in
+// sd_web_remote.h with the page that presses them.
 
 inline esp_err_t h_volume(httpd_req_t *req) {
   std::string v = query_param(req, "v");
@@ -433,6 +436,7 @@ inline esp_err_t h_bootlog(httpd_req_t *req) {
 }  // namespace castle_web
 
 #include "sd_web_site.h"
+#include "sd_web_remote.h"
 
 namespace castle_web {
 
@@ -470,6 +474,9 @@ inline void start() {
   reg("/api/stop", HTTP_POST, h_stop);
   reg("/api/show/start", HTTP_POST, h_show_start);
   reg("/api/show/stop", HTTP_POST, h_show_stop);
+  reg("/api/blackout", HTTP_POST, h_blackout);
+  reg("/api/blackout", HTTP_GET, h_blackout);   // bookmarkable
+  reg("/remote", HTTP_GET, h_remote);
   reg("/api/volume", HTTP_POST, h_volume);
   reg("/api/light", HTTP_POST, h_light);
   reg("/api/pir", HTTP_POST, h_pir);

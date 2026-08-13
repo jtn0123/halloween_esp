@@ -38,3 +38,31 @@ def emit_show_playlist(doc: dict) -> list[str]:
     out.append("      - script.execute: show_playlist")
     out.append("")
     return out
+
+
+def emit_manifest_check(doc: dict) -> list[str]:
+    """#29: stat() every scene audio file once after mount; missing
+    names land in /api/status instead of being discovered as silence
+    when the cue fires. Generated: the file list IS the scene list."""
+    sd: list[str] = []
+    # #29: the boot manifest check. Every audio file the show will ask for,
+    # stat()ed once after mount; whatever is missing lands in /api/status
+    # (and the remote's status line) instead of being discovered as silence
+    # when the cue fires. Generated because the file list IS the scene list.
+    sd += ["  - id: manifest_check",
+           "    then:",
+           "      - lambda: |-",
+           "          if (!castle_sd::g_mounted) return;",
+           "          std::string missing;",
+           "          struct stat st;"]
+    for i, scene in enumerate(doc["scenes"], start=1):
+        fname = f"{i:02d}_{scene['id']}.mp3"
+        sd.append(f"          if (stat(\"/sd/scenes/{fname}\", &st) != 0)"
+                  f" missing += missing.empty() ? \"{fname}\" : \",{fname}\";")
+    sd += ["          castle_web::set_missing(missing);",
+           "          if (!missing.empty())",
+           "            ESP_LOGW(\"castle\", \"MISSING scene audio: %s\","
+           " missing.c_str());",
+           "          else ESP_LOGI(\"castle\", \"manifest: all %d scene files"
+           f" present\", {len(doc['scenes'])});", ""]
+    return sd

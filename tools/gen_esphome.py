@@ -166,7 +166,7 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
     return out
 
 
-from gen_show import emit_show_playlist  # noqa: E402  (500-line cap)
+from gen_show import emit_show_playlist, emit_manifest_check  # noqa: E402  (500-line cap)
 
 
 def blend_color(base: list, hot: list | None, vel: float) -> list:
@@ -477,6 +477,7 @@ def main() -> int:
           "          call.set_media_url(\"http://127.0.0.1/sd/scenes/\" + track + \".mp3\");",
           "          call.set_announcement(true);",
           "          call.perform();", ""]
+    sd += emit_manifest_check(doc)
     AUDIO_SD.write_text("\n".join(sd))
 
     n_cues = sum(len(s.get("cues") or []) for s in doc["scenes"])

@@ -26,3 +26,22 @@ script:
           call.set_media_url("http://127.0.0.1/sd/scenes/" + track + ".mp3");
           call.set_announcement(true);
           call.perform();
+
+  - id: manifest_check
+    then:
+      - lambda: |-
+          if (!castle_sd::g_mounted) return;
+          std::string missing;
+          struct stat st;
+          if (stat("/sd/scenes/01_vigil.mp3", &st) != 0) missing += missing.empty() ? "01_vigil.mp3" : ",01_vigil.mp3";
+          if (stat("/sd/scenes/02_storm.mp3", &st) != 0) missing += missing.empty() ? "02_storm.mp3" : ",02_storm.mp3";
+          if (stat("/sd/scenes/03_seance.mp3", &st) != 0) missing += missing.empty() ? "03_seance.mp3" : ",03_seance.mp3";
+          if (stat("/sd/scenes/04_ballroom.mp3", &st) != 0) missing += missing.empty() ? "04_ballroom.mp3" : ",04_ballroom.mp3";
+          if (stat("/sd/scenes/05_descent.mp3", &st) != 0) missing += missing.empty() ? "05_descent.mp3" : ",05_descent.mp3";
+          if (stat("/sd/scenes/06_visitation.mp3", &st) != 0) missing += missing.empty() ? "06_visitation.mp3" : ",06_visitation.mp3";
+          if (stat("/sd/scenes/07_approach.mp3", &st) != 0) missing += missing.empty() ? "07_approach.mp3" : ",07_approach.mp3";
+          if (stat("/sd/scenes/08_crypt.mp3", &st) != 0) missing += missing.empty() ? "08_crypt.mp3" : ",08_crypt.mp3";
+          castle_web::set_missing(missing);
+          if (!missing.empty())
+            ESP_LOGW("castle", "MISSING scene audio: %s", missing.c_str());
+          else ESP_LOGI("castle", "manifest: all %d scene files present", 8);

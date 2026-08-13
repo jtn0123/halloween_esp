@@ -98,6 +98,7 @@ esphome:
     - sd_audio.h
     - sd_web.h
     - sd_web_site.h
+    - sd_web_remote.h
     - castle_eink.h
     - generated/qr_castle.h
     - generated/eink_font.h
@@ -126,6 +127,11 @@ esphome:
             // SD's SPI bus rather than race it. Also fine with no card.
             castle_eink::begin(CASTLE_VERSION, ${eink_cs}, ${eink_dc},
                                ${sd_sck}, ${sd_mosi}, ${sd_miso});
+        # #29: prove every scene file exists BEFORE a cue plays silence.
+        - script.execute: manifest_check
+        # #26: a visible sweep of every colour channel at plug-in, so a dead
+        # channel is a porch-step diagnosis, not a mid-show mystery.
+        - script.execute: boot_selftest
 
 # The onboard pixel is dark until its power rail (GPIO21) is driven high —
 # same as bench.yaml. Harmless once the real jewels take over: GPIO21 is clear
@@ -153,6 +159,37 @@ output:
 # sd_web_site.h) — this stays as the deliberate fallback for the day the
 # loopback stream misbehaves, reachable via the "Play SD file" button.
 script:
+  # #26: boot self-test — every zone flashes R, G, B, W in turn, riding the
+  # strike machinery over whatever scene is starting. No tone on purpose:
+  # vigil's own opening audio is the speaker test, and a chirp here would
+  # stomp it (one announcement pipeline).
+  - id: boot_selftest
+    then:
+      - lambda: |-
+          for (int z = 0; z < 3; z++) {
+            id(zone_flash_col)[z*4+0] = 1; id(zone_flash_col)[z*4+1] = 0;
+            id(zone_flash_col)[z*4+2] = 0; id(zone_flash_col)[z*4+3] = 0;
+            id(zone_flash)[z] = 1.0f; id(zone_flash_decay)[z] = 0.86f;
+          }
+      - delay: 350ms
+      - lambda: |-
+          for (int z = 0; z < 3; z++) {
+            id(zone_flash_col)[z*4+1] = 1; id(zone_flash_col)[z*4+0] = 0;
+            id(zone_flash)[z] = 1.0f;
+          }
+      - delay: 350ms
+      - lambda: |-
+          for (int z = 0; z < 3; z++) {
+            id(zone_flash_col)[z*4+2] = 1; id(zone_flash_col)[z*4+1] = 0;
+            id(zone_flash)[z] = 1.0f;
+          }
+      - delay: 350ms
+      - lambda: |-
+          for (int z = 0; z < 3; z++) {
+            id(zone_flash_col)[z*4+3] = 1; id(zone_flash_col)[z*4+2] = 0;
+            id(zone_flash)[z] = 1.0f;
+          }
+
   - id: play_sd
     mode: restart
     parameters:
@@ -259,6 +296,11 @@ interval:
               id(show_playlist)->stop();
               id(scene_stop)->execute();
             }
+          } else if (act.type == castle_web::BLACKOUT) {
+            // #25: the panic switch. Show, scene, audio, pixels — off.
+            id(show_playlist)->stop();
+            id(scene_stop)->execute();
+            id(castle_leds).turn_off().perform();
           } else if (act.type == castle_web::RESTART) {
             // Queued by the web OTA so its HTTP reply gets out first.
             esphome::App.safe_reboot();
