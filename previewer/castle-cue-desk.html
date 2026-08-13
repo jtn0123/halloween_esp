@@ -535,8 +535,13 @@
   .zd { font-size: 12px; }
   .zd select { max-width: 84px; }
 
-  /* Track rows: name above controls instead of squeezed beside them. */
-  .trk-row { grid-template-columns: 1fr auto; }
+  /* Track rows: the class is .trk (not .trk-row — the first draft of this
+     rule styled a selector that does not exist, and RE-IMPORT/DELETE fell off
+     the right edge of the screen). Name on top, all four buttons wrapping
+     below at full width. */
+  .trk { grid-template-columns: 1fr; }
+  .trk__act { flex-wrap: wrap; }
+  .trk__act button { min-height: 40px; }
 
   /* The device chrome is fixed-position with inline styles; these bounds
      override just enough that neither can outgrow the viewport. */
@@ -1892,8 +1897,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       this.canvas = document.createElement("canvas");
       this.canvas.id = "jewels";
       this.canvas.title = "The 21 real pixels, one dot each \u2014 centre + ring per jewel";
-      this.canvas.style.cssText = "display:block;width:100%;max-width:420px;margin:.4rem auto 0;";
-      anchor.insertAdjacentElement("afterend", this.canvas);
+      this.canvas.style.cssText = "display:block;width:100%;max-width:420px;height:auto;aspect-ratio:420/132;margin:.4rem auto 0;";
+      (anchor.closest(".stage") ?? anchor).insertAdjacentElement("afterend", this.canvas);
       const ctx = this.canvas.getContext("2d");
       if (!ctx) throw new Error("no 2d context for jewel insets");
       this.ctx = ctx;
@@ -3075,17 +3080,13 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   };
   var channelsOf = (raw) => +raw === 2 ? 2 : 1;
   var mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
-  var PSRAM_FREE = 1713 * 1024;
   var FLASH_FREE = 2.9 * 1024 * 1024;
-  var WANTED_SEC = 240;
   function capacityHtml(bitrate, channels, usedBytes) {
     const kbps = clampKbps(bitrate);
     const ch = channelsOf(channels);
     const bps = kbps * 1e3 / 8;
-    const psram = PSRAM_FREE / bps;
     const left = Math.max(0, (FLASH_FREE - usedBytes) / bps);
-    const fits = psram >= WANTED_SEC;
-    return `<b>${kbps} kbps ${ch === 2 ? "stereo" : "mono"}</b> = ${(bps / 1024).toFixed(1)} KB/s &nbsp;\xB7&nbsp; <span title="firmware/castle.yaml \u2014 every scene shares this">flash build, alongside the current show: <b>${mmss(left)}</b></span> &nbsp;\xB7&nbsp; <span title="firmware/castle_sd.yaml \u2014 the card holds any number of tracks, but each one is read whole into PSRAM before it plays">SD build, one track: <b>${mmss(psram)}</b> <span class="${fits ? "ok" : "no"}">${fits ? "(4 min fits)" : "(under 4 min)"}</span></span>`;
+    return `<b>${kbps} kbps ${ch === 2 ? "stereo" : "mono"}</b> = ${(bps / 1024).toFixed(1)} KB/s &nbsp;\xB7&nbsp; <span title="firmware/castle_flash.yaml \u2014 every scene shares this">flash build, alongside the current show: <b>${mmss(left)}</b></span> &nbsp;\xB7&nbsp; <span title="firmware/castle_sd.yaml \u2014 tracks stream off the card through the device's own web server, so length is bounded by the 32 GB card, not by memory">SD build: <span class="ok">any length (streams)</span></span>`;
   }
   function optsHint(o) {
     const bits = [];

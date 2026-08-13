@@ -32,9 +32,15 @@ export class JewelInsets {
     this.canvas = document.createElement("canvas");
     this.canvas.id = "jewels";
     this.canvas.title = "The 21 real pixels, one dot each — centre + ring per jewel";
+    // OUTSIDE the .stage box, and with an explicit height. Inside it, two
+    // things go wrong at once: `.stage canvas { height:100% }` stretches the
+    // 420x132 bitmap to the stage's full height (giant blurry ovals), and
+    // the stage's fixed aspect-ratio means the extra canvas overflows the
+    // panel as a dead black region.
     this.canvas.style.cssText =
-      "display:block;width:100%;max-width:420px;margin:.4rem auto 0;";
-    anchor.insertAdjacentElement("afterend", this.canvas);
+      "display:block;width:100%;max-width:420px;height:auto;" +
+      "aspect-ratio:420/132;margin:.4rem auto 0;";
+    (anchor.closest(".stage") ?? anchor).insertAdjacentElement("afterend", this.canvas);
     const ctx = this.canvas.getContext("2d");
     if (!ctx) throw new Error("no 2d context for jewel insets");
     this.ctx = ctx;

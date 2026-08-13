@@ -43,14 +43,18 @@ for (const raw of ["-5", "-1", "0", "abc", "", "1", "9999"]) {
 }
 // The readout names the two builds that exist, and must not claim a third.
 // It used to end with "streamed from SD: no limit" in green — a promise the
-// stack cannot keep, since micro-decoder 0.2.0 has no pull API to stream into
-// (HARDWARE_FINDINGS.md §3b). A false ceiling is worse than a missing one,
-// because you plan around it.
+// This guard has flipped sides once: it used to forbid the word "stream"
+// because micro-decoder 0.2.0 had no pull API and the readout was making a
+// promise the stack could not keep. Then the loopback stream shipped
+// (firmware/sd_web_site.h, verified on the device), and the same guard now
+// requires the claim it once banned. The invariant underneath is constant:
+// the readout must match what the hardware actually does TODAY.
 ok(/flash build/.test(capacityHtml("96", "1", 0)), "the flash build's ceiling is named");
-ok(/SD build/.test(capacityHtml("96", "1", 0)), "the SD build's ceiling is named");
-ok(!/stream/i.test(capacityHtml("96", "1", 0)),
-   "the readout must not offer streaming — it does not exist on this decoder");
-ok(!/no limit/.test(capacityHtml("96", "1", 0)), "and must not imply an unbounded ceiling");
+ok(/SD build/.test(capacityHtml("96", "1", 0)), "the SD build is named");
+ok(/stream/i.test(capacityHtml("96", "1", 0)),
+   "the SD build streams now — the readout must say so");
+ok(!/under 4 min|one track:/.test(capacityHtml("96", "1", 0)),
+   "and the dead PSRAM per-track ceiling must not resurface");
 ok(/stereo/.test(capacityHtml("96", "2", 0)), "channels reach the readout");
 // More of the show on the flash means less room left for the next track.
 {

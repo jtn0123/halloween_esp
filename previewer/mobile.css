@@ -30,8 +30,13 @@
   .zd { font-size: 12px; }
   .zd select { max-width: 84px; }
 
-  /* Track rows: name above controls instead of squeezed beside them. */
-  .trk-row { grid-template-columns: 1fr auto; }
+  /* Track rows: the class is .trk (not .trk-row — the first draft of this
+     rule styled a selector that does not exist, and RE-IMPORT/DELETE fell off
+     the right edge of the screen). Name on top, all four buttons wrapping
+     below at full width. */
+  .trk { grid-template-columns: 1fr; }
+  .trk__act { flex-wrap: wrap; }
+  .trk__act button { min-height: 40px; }
 
   /* The device chrome is fixed-position with inline styles; these bounds
      override just enough that neither can outgrow the viewport. */

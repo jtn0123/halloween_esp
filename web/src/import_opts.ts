@@ -59,25 +59,19 @@ export const channelsOf = (raw: string): 1 | 2 => (+raw === 2 ? 2 : 1);
 export const mmss = (s: number): string =>
   `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
-/* Two builds, two ceilings, and the readout shows the arithmetic rather than
-   asserting it:
+/* One real ceiling left, and the readout shows the arithmetic:
 
      ~2.9 MB  flash left for ALL scenes after the firmware. This is what the
-              flash build (firmware/castle.yaml) has to fit the whole show in.
-     1.67 MB  free PSRAM — MEASURED on the real board while playing, not
-              estimated (bench_audio, 2026-08-10: 1713 KB free with a scene
-              running). This is the cap on ONE track under the SD build.
+              flash build (firmware/castle_flash.yaml) has to fit the show in.
 
-   There is deliberately no third figure for the 32 GB card, because reaching
-   it would mean streaming and streaming does not exist here. This line used to
-   claim "streamed from SD: no limit" in green, which was a verified-false
-   promise: micro-decoder 0.2.0 offers play_buffer (whole file in RAM) and
-   play_url (HTTP) and nothing else, so there is no pull API to stream into.
-   See HARDWARE_FINDINGS.md §3b. A readout that advertises a capability the
-   stack does not have is worse than one that omits it — you plan around it. */
-const PSRAM_FREE = 1713 * 1024, FLASH_FREE = 2.9 * 1024 * 1024;
-/** Seconds of PSRAM playback that counts as enough for a whole song. */
-const WANTED_SEC = 240;
+   The SD build has no per-track cap anymore. This line spent one evening
+   claiming "streamed from SD: no limit" when streaming did not exist, and the
+   next claiming "under 4 min" after the loopback stream removed the PSRAM
+   ceiling — wrong in both directions, each verified against the device. The
+   truth today: /api/play and the scene scripts hand the media pipeline a
+   http://127.0.0.1/sd/... URL (firmware/sd_web_site.h) and it streams; length
+   is bounded by the card. */
+const FLASH_FREE = 2.9 * 1024 * 1024;
 
 /**
  * The capacity line, as HTML.
@@ -89,16 +83,14 @@ export function capacityHtml(bitrate: string, channels: string,
   const kbps = clampKbps(bitrate);
   const ch = channelsOf(channels);
   const bps = kbps * 1000 / 8;          // the bitrate already covers channels
-  const psram = PSRAM_FREE / bps;
   const left = Math.max(0, (FLASH_FREE - usedBytes) / bps);
-  const fits = psram >= WANTED_SEC;
   return `<b>${kbps} kbps ${ch === 2 ? "stereo" : "mono"}</b> = ${(bps / 1024).toFixed(1)} KB/s &nbsp;·&nbsp; `
-    + `<span title="firmware/castle.yaml — every scene shares this">`
+    + `<span title="firmware/castle_flash.yaml — every scene shares this">`
     + `flash build, alongside the current show: <b>${mmss(left)}</b></span> &nbsp;·&nbsp; `
-    + `<span title="firmware/castle_sd.yaml — the card holds any number of tracks, `
-    + `but each one is read whole into PSRAM before it plays">`
-    + `SD build, one track: <b>${mmss(psram)}</b> `
-    + `<span class="${fits ? "ok" : "no"}">${fits ? "(4 min fits)" : "(under 4 min)"}</span></span>`;
+    + `<span title="firmware/castle_sd.yaml — tracks stream off the card through `
+    + `the device's own web server, so length is bounded by the 32 GB card, `
+    + `not by memory">`
+    + `SD build: <span class="ok">any length (streams)</span></span>`;
 }
 
 /**
