@@ -28,7 +28,7 @@ help:
 setup:
 	/opt/homebrew/bin/python3.13 -m venv .venv
 	$(PY) -m pip install --quiet --upgrade pip
-	.venv/bin/pip install --quiet numpy scipy pyyaml esphome
+	.venv/bin/pip install --quiet numpy scipy pyyaml esphome segno
 	@echo "ready. 'make build' next."
 
 audio:

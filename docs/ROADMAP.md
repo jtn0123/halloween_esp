@@ -1,0 +1,55 @@
+# Castle roadmap — accepted improvements, in build order
+
+Picked 2026-08-12. Each phase ships and verifies before the next starts.
+Verification: the Playwright screenshot gauntlet + hue/saturation audit, and
+for firmware, version bump → OTA → /api/status confirm.
+
+## Phase 1 — Evaluation tooling (cue desk, browser only)
+- [ ] #11 Section overlay: tint hush/verse/chorus tiers behind the waveform
+- [ ] #12 Onset dots: per-band coloured ticks on the waveform
+- [ ] #14 A/B audition: toggle current BAND_STYLE vs last-committed on the same clip
+      (this is also how #1/#2 get judged — build before Phase 3)
+- [ ] #13 Per-band mute/solo in the band editor
+- [ ] #15 Live knobs for intensity/decay/boost_at + "copy as TS" export
+
+## Phase 2 — Dynamics engine (track_lights.ts + gen_esphome.py +
+##            gen_previewer.py, parity tests for every rule)
+- [ ] #7  Stereo panning → towerL/towerR from channel energy (VERY IMPORTANT)
+- [ ] #3  Tempo-aware decay/ms from median onset spacing
+- [ ] #8  Accent = vel ≫ local rolling mean, not global threshold (drives boost)
+- [ ] #9  Per-band section gating: hush drops highs, halves mids
+- [ ] #5  Silence handling: envelope ≈ 0 for >2s → fade to near-black
+- [ ] #6  Anticipation: 1-beat pre-dim before hush→chorus boundaries
+- [ ] #10 attack_ms strike-shape field (lows slam, pads bloom)
+
+## Phase 3 — Flavors, each behind an editor toggle (default off)
+- [ ] #1  Palette drift: triad hue rotates slowly over the song
+- [ ] #2  Chorus takeover: unified palette during chorus sections
+- [ ] #4  Sustained-note detection → slow zone-wide swells
+
+## Phase 4 — Device & show night (firmware, one OTA per feature)
+- [x] #24 eInk status screen: scene, uptime, SD free, QR to web remote
+      (shipped v5.11 2026-08-12; needs one eyeball check — if the text is
+      upside down, flip ROT180 in firmware/castle_eink.h)
+- [ ] #19 Playlist/show mode: ordered scenes, crossfade, ambient gaps
+- [ ] #21 Phone "big buttons" page: Ambient / Scare / Song / Off
+- [ ] #25 /api/blackout panic endpoint
+- [ ] #26 Boot self-test sweep (zones, colours, test tone)
+- [ ] #29 SD manifest check: verify every audio_file on boot, surface missing
+- [ ] #27 Crash telemetry: append health + reset reason to CSV on SD each boot
+
+## Phase 5 — Hardware-gated
+- [ ] #20 Physical trigger (sensor TBD — see below). Firmware side: GPIO +
+      debounce + HTTP trigger endpoint can be built before the sensor arrives.
+- [ ] #30 Jewels dry-run mode. Do NOT flash castle_sd_jewels.yaml until the
+      jewels are physically soldered to A0.
+
+## #20 sensor decision (pending purchase)
+Recommendation: combo — wired button for control, motion for automation.
+- Wired big-dome arcade button + 2-core cable to a GPIO (internal pullup).
+  Foolproof, zero latency, works with cold hands in the dark. ~$8.
+- Motion: PIR (HC-SR501, ~$3) is fine under a porch roof but false-triggers in
+  sun/wind/heat; mmWave presence (HLK-LD2410, ~$5, UART) is far more reliable
+  outdoors. For a walkway "beam", VL53L1X ToF works to ~3 m.
+- Firmware treats both as the same trigger event with a cooldown, so either
+  can be added whenever it arrives.

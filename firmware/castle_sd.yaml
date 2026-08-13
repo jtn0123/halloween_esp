@@ -50,6 +50,7 @@ substitutions:
   # of the time", which is the worst kind of bug to chase on a porch.
   eink_cs: "9"          # D9
   sram_cs: "6"          # D6
+  eink_dc: "10"         # D10 — panel data/command (free since I2S moved to A3)
 
 packages:
   base: !include castle.yaml
@@ -97,6 +98,9 @@ esphome:
     - sd_audio.h
     - sd_web.h
     - sd_web_site.h
+    - castle_eink.h
+    - generated/qr_castle.h
+    - generated/eink_font.h
   on_boot:
     # A LIST, not a mapping, and that matters more than it looks. ESPHome
     # merges a package's lists by appending them, but a mapping written over a
@@ -118,6 +122,10 @@ esphome:
             // Started whether or not the card mounted: the server is also how
             // you find out the card is missing without walking to the castle.
             castle_web::start();
+            // The status panel — after the mount attempt so it can join the
+            // SD's SPI bus rather than race it. Also fine with no card.
+            castle_eink::begin(CASTLE_VERSION, ${eink_cs}, ${eink_dc},
+                               ${sd_sck}, ${sd_mosi}, ${sd_miso});
 
 # The onboard pixel is dark until its power rail (GPIO21) is driven high —
 # same as bench.yaml. Harmless once the real jewels take over: GPIO21 is clear
@@ -179,6 +187,10 @@ interval:
           castle_web::mirror_show_state(id(current_scene).state,
                                         id(current_track).state,
                                         id(pir_scene).current_option().str());
+          // Same mirror, other direction of glass: a scene change queues an
+          // eInk refresh (rate-limited inside).
+          castle_eink::note_state(id(current_scene).state,
+                                  id(current_track).state);
 
           auto act = castle_web::take_pending();
           if (act.type == castle_web::NONE) return;
@@ -275,6 +287,14 @@ button:
       - lambda: |-
           castle_sd::remount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso});
           castle_sd::list_root();
+
+  # Redraws the status panel now-ish (its task rate-limits to 15 s). For the
+  # bench: change something, press, look at the screen.
+  - platform: template
+    name: "Refresh eInk"
+    entity_category: diagnostic
+    on_press:
+      - lambda: 'castle_eink::request_refresh();'
 
   # Plays whatever `SD file` names. Separate from the script so it can be
   # pressed from anywhere that speaks the API, with no YAML edit.
