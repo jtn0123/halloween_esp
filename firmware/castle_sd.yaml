@@ -28,7 +28,8 @@ substitutions:
   # (GPIO33, plain RGB) exactly like bench.yaml does: it plays pixel 0 of
   # towerL and the 20 pixels that don't exist fall off the end of the wire.
   # WHEN THE JEWELS ARE SOLDERED: wire their DIN (via the 74AHCT125) to A0,
-  # then change these two lines to  pin_led_data: "18"  /  led_rgbw: "true".
+  # then flash firmware/castle_sd_jewels.yaml — it overrides these two lines
+  # and nothing else.
   pin_led_data: "33"
   led_rgbw: "false"
 

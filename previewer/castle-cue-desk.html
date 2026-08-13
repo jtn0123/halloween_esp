@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Castle Cue Desk</title>
 <style>
     /* ─── Tokens ──────────────────────────────────────────────────────────
@@ -500,6 +502,60 @@
     font-family: var(--f-data); font-size: 11px;
   }
   .trk-hintline { font-size: 11px; color: var(--muted); }
+
+/* Small screens — inlined after styles.css by tools/gen_previewer.py.
+ *
+ * The desk was designed for a desk; a phone gets the same page with the
+ * grid collapsed, tap targets grown, and anything wide scrolling inside its
+ * own box instead of dragging the whole page sideways. The device chip and
+ * panel (device.ts / device_panel.ts carry their own inline styles) are
+ * given width bounds here so they never overflow a 375 px screen.
+ */
+
+@media (max-width: 760px) {
+  .desk { padding: 14px 10px 96px; }
+
+  /* Header stacks; the hardware chips wrap under the title. */
+  .head { flex-direction: column; gap: 10px; }
+  .head h1 { font-size: 26px; }
+  .rig { flex-wrap: wrap; }
+
+  /* One column — the desktop two-column split needs 1040px anyway, but the
+     inner grids (scene tiles, slider rows) also tighten here. */
+  .scenes { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+  .chan { grid-template-columns: 22px 1fr auto; gap: 8px; padding: 12px 10px; }
+
+  /* Fingers, not cursors: the WCAG floor is 44px; every control that matters
+     during a show gets at least that. */
+  .transport button, .scene, .codecab__bar button { min-height: 44px; }
+  input[type="range"] { min-height: 32px; }
+
+  /* Wide things scroll inside their own box — the page never pans. */
+  .sheet-fold table, .src pre, #zdOut { display: block; overflow-x: auto; }
+  .zd { font-size: 12px; }
+  .zd select { max-width: 84px; }
+
+  /* Track rows: name above controls instead of squeezed beside them. */
+  .trk-row { grid-template-columns: 1fr auto; }
+
+  /* The device chrome is fixed-position with inline styles; these bounds
+     override just enough that neither can outgrow the viewport. */
+  #deviceChip { left: 12px; right: 12px !important; max-width: none; }
+  #devicePanel {
+    width: auto !important;
+    left: 12px;
+    right: 12px !important;
+    bottom: 110px !important;
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+  #jewels { max-width: 100%; }
+}
+
+/* Phones held sideways still get the single column but keep the stage big. */
+@media (max-width: 760px) and (orientation: landscape) {
+  .stage canvas { max-height: 70vh; }
+}
 </style>
 
 <div class="desk">

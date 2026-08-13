@@ -69,4 +69,5 @@ jobs:
         run: |
           esphome config firmware/castle_flash.yaml > /dev/null
           esphome config firmware/castle_sd.yaml > /dev/null
+          esphome config firmware/castle_sd_jewels.yaml > /dev/null
           esphome config firmware/bench.yaml > /dev/null

@@ -1,0 +1,22 @@
+# The SD build for the FINISHED rig — external jewels wired, onboard pixel
+# retired. This file exists so soldering day is one command, not an edit:
+#
+#   .venv/bin/esphome run firmware/castle_sd_jewels.yaml --device <ip>
+#   # or, once it has been flashed once:  tools/sd_sync.py ota <built bin>
+#
+# DO NOT flash this before the jewels are physically wired: it drives A0
+# (GPIO18), and with nothing attached there the castle goes dark — that exact
+# mistake cost a debugging session once already (see castle-hardware-state in
+# the project notes). The onboard-pixel build (castle_sd.yaml) stays the
+# default until the hardware exists.
+#
+# The wiring this expects, from castle.yaml's pin map:
+#   A0 (GPIO18) -> 74AHCT125 level shifter -> 470R -> first Jewel DIN
+#   21 RGBW pixels total: towerL 0-6, towerR 7-13, door 14-20
+
+substitutions:
+  pin_led_data: "18"    # A0 — overrides castle_sd.yaml's onboard 33
+  led_rgbw: "true"      # the Jewels are RGBW; the onboard pixel was RGB
+
+packages:
+  base: !include castle_sd.yaml

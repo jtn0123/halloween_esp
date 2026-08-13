@@ -37,6 +37,7 @@ AUDIO = ROOT / "audio"
 WEB = ROOT / "web"
 BUNDLE = WEB / "dist" / "bundle.js"
 STYLES = ROOT / "previewer" / "styles.css"
+MOBILE = ROOT / "previewer" / "mobile.css"
 
 START = "// @GEN-DATA-START"
 END = "// @GEN-DATA-END"
@@ -191,7 +192,8 @@ def inject_styles(html: str) -> str:
     if i < 0:
         sys.exit(f"{STYLE_MARK} marker not found in {TEMPLATE}")
     j = html.index("*/", i) + 2
-    return html[:i] + STYLES.read_text().rstrip() + html[j:]
+    css = STYLES.read_text().rstrip() + "\n\n" + MOBILE.read_text().rstrip()
+    return html[:i] + css + html[j:]
 
 
 def main() -> int:
