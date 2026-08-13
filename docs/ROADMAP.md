@@ -4,13 +4,13 @@ Picked 2026-08-12. Each phase ships and verifies before the next starts.
 Verification: the Playwright screenshot gauntlet + hue/saturation audit, and
 for firmware, version bump → OTA → /api/status confirm.
 
-## Phase 1 — Evaluation tooling (cue desk, browser only)
-- [ ] #11 Section overlay: tint hush/verse/chorus tiers behind the waveform
-- [ ] #12 Onset dots: per-band coloured ticks on the waveform
-- [ ] #14 A/B audition: toggle current BAND_STYLE vs last-committed on the same clip
-      (this is also how #1/#2 get judged — build before Phase 3)
-- [ ] #13 Per-band mute/solo in the band editor
-- [ ] #15 Live knobs for intensity/decay/boost_at + "copy as TS" export
+## Phase 1 — Evaluation tooling (cue desk, browser only) — DONE 2026-08-12
+- [x] #11 Section overlay: tint hush/verse/chorus tiers behind the waveform
+- [x] #12 Onset dots — already existed (lane ticks + washes in waveform_view)
+- [x] #14 A/B audition: one button swaps the engine vs the frozen pre-4K
+      baseline (exports always use A)
+- [x] #13 Per-band mute/solo in the band editor (audition only)
+- [x] #15 Live intensity/tail knobs + "Copy as TS" (tweaks DO export)
 
 ## Phase 2 — Dynamics engine (track_lights.ts + gen_esphome.py +
 ##            gen_previewer.py, parity tests for every rule)
