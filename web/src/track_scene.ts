@@ -17,8 +17,8 @@
 import { BANDS, type BandName } from "./bands.js";
 import type { BandEditor } from "./band_editor.js";
 import type { WaveClip, WaveData } from "./waveform_view.js";
-import { TIERS, ZONES_BLOCK, sectionCues, styleFor, trackCues }
-  from "./track_lights.js";
+import { TIERS, ZONES_BLOCK, getFlavors, sectionCues, styleFor,
+         sustainedSwells, trackCues } from "./track_lights.js";
 import type { EffectName, Scene, ZoneId } from "./types.js";
 import type { Onset } from "./onsets.js";
 
@@ -130,6 +130,10 @@ export function sceneYaml(id: string, dur: number | undefined,
       ...(s.alternate && !pinned ? ["alternate: true"] : []),
       `intensity: ${num(s.intensity)}`, `decay: ${num(s.decay)}`, `ms: ${s.ms}`,
       ...(s.attackMs ? [`attack_ms: ${s.attackMs}`] : []),
+      // Flavour toggles ship when they are ON — what you audition is what
+      // the generators expand.
+      ...(getFlavors().drift ? ["drift: true"] : []),
+      ...(getFlavors().takeover ? ["takeover: true"] : []),
       `colors: [${s.colors.map(rgbw).join(", ")}]`,
       `color_hot: ${rgbw(s.colorHot)}`,
       ...(s.pixelsByVel ? ["pixels_by_vel: true"] : []),
@@ -142,13 +146,23 @@ export function sceneYaml(id: string, dur: number | undefined,
     L.push(`      - {${opts.join(", ")}}   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
   }
   const sects = env?.length && dur ? sectionCues(env, 0, dur) : [];
-  if (!sects.length) {
+  // #4 swells ride along as explicit strikes — attack does the shaping, so
+  // the generators expand them with code they already have.
+  const swells = getFlavors().swells && env?.length && dur
+    ? sustainedSwells(env, 0, dur) : [];
+  if (!sects.length && !swells.length) {
     L.push(`    cues: []`);
   } else {
     L.push(`    cues:`);
     for (const c of sects) {
       L.push(`      - {t: ${c.t}, op: set, zone: ${c.zone}, effect: ${c.eff}, `
            + `level: ${num(c.level ?? 1)}, note: ${c.detail}}`);
+    }
+    for (const c of swells) {
+      L.push(`      - {t: ${c.t}, op: strike, targets: [${(c.targets ?? []).join(", ")}], `
+           + `ms: ${c.ms}, intensity: ${num(c.intensity ?? 1)}, `
+           + `color: ${rgbw(c.color ?? [1, 1, 1, 1])}, decay: ${num(c.decay ?? 0.9)}, `
+           + `attack: ${c.attack}, note: ${c.detail}}`);
     }
   }
   return L.join("\n");

@@ -176,6 +176,40 @@ class TestSectionGatingParity(unittest.TestCase):
                             [c for c in gp.to_previewer(plain, 1, "", self.M)["cues"]
                              if c["op"] == "strike"]))
 
+    def test_drift_walks_the_triad_identically(self) -> None:
+        """#1: drift lerps AROUND the colour cycle by time. The half-period
+        pin [0, 0.5, 0.5, 0] is the same digit the browser suite asserts."""
+        import pulse_dynamics as pd
+        cyc = [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]]
+        self.assertEqual(pd.drift_base(cyc, 0, 30000), [0.0, 0.5, 0.5, 0.0])
+        self.assertEqual(pd.drift_base(cyc, 0, 0), [1, 0, 0, 0])
+        m = {"parity": {"onset_low": [[0, 0.5], [30000, 0.5]]}}
+        s = dict(PULSE_SCENE, pulse=[{"synth": "onset_low", "zones": ["door"],
+                                      "intensity": 0.6, "colors": cyc,
+                                      "drift": True, "ms": 110}])
+        a = dynamic_strikes("esphome", s, m)
+        self.assertEqual(a, dynamic_strikes("previewer", s, m))
+        by_t = {t: col for t, _z, _i, col, *_ in a}
+        self.assertEqual(by_t[0], (1.0, 0.0, 0.0, 0.0))
+        # hit index 1 at half period: pos = 1 + 1.5 -> lerp colors[2]->[0]
+        self.assertEqual(by_t[30000], (0.5, 0.0, 0.5, 0.0))
+
+    def test_takeover_unifies_the_chorus_only(self) -> None:
+        """#2: chorus hits use the shared warm family; verse hits keep their
+        own colours. Both generators agree."""
+        import pulse_dynamics as pd
+        m = {"parity": {"onset_low": [[1000, 1.0], [6000, 1.0]]}}
+        s = dict(PULSE_SCENE, cues=self.CUES,
+                 pulse=[{"synth": "onset_low", "zones": ["door"],
+                         "intensity": 0.6, "colors": [[1, 0, 0, 0]],
+                         "color_hot": [1, 0, 0, 0], "takeover": True,
+                         "ms": 110}])
+        a = dynamic_strikes("esphome", s, m)
+        self.assertEqual(a, dynamic_strikes("previewer", s, m))
+        by_t = {t: col for t, _z, _i, col, *_ in a}
+        self.assertEqual(by_t[1000], (1.0, 0.0, 0.0, 0.0))     # hush: own colour
+        self.assertEqual(by_t[6000], tuple(pd.TAKEOVER_HOT))   # chorus, vel 1.0
+
     def test_a_scene_without_section_cues_is_untouched(self) -> None:
         s = dict(PULSE_SCENE, pulse=[dict(self.GATED)])
         for side in ("esphome", "previewer"):

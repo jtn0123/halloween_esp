@@ -22,7 +22,8 @@
 
 import { BANDS, type BandName } from "./bands.js";
 import {
-  resetStyleTweaks, setStyleTweak, setStyleVariant, styleAsTs, styleVariant,
+  resetFlavors, resetStyleTweaks, setFlavor, setStyleTweak, setStyleVariant,
+  styleAsTs, styleVariant, type Flavors,
 } from "./track_lights.js";
 
 export interface StyleLab {
@@ -79,6 +80,32 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   abRow.append(ab);
   el.append(abRow);
 
+  /* ── Flavours: taste features, default off, judged via the A/B above.
+     Turning one on colours the audition AND the next export. ── */
+  const flavRow = row("flavour");
+  const flavBoxes: HTMLInputElement[] = [];
+  const FLAVORS: Array<[keyof Flavors, string, string]> = [
+    ["drift", "drift", "Palette drift: each band's hues walk around its own "
+      + "triad, one lap per minute — a long song never repeats a look"],
+    ["takeover", "chorus", "Chorus takeover: during choruses every band "
+      + "agrees on one warm gold/flame family, splintering back at the verse"],
+    ["swells", "swells", "Sustained swells: loud plateaus bloom the towers "
+      + "in slowly (900 ms attack) on top of the strikes"],
+  ];
+  for (const [key, label, title] of FLAVORS) {
+    const wrap = document.createElement("label");
+    wrap.style.cssText = "display:inline-flex;align-items:center;gap:3px;cursor:pointer";
+    wrap.title = title;
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.className = `stylelab__flav-${key}`;
+    box.addEventListener("change", () => { setFlavor(key, box.checked); onStyle(); });
+    flavBoxes.push(box);
+    wrap.append(box, document.createTextNode(label));
+    flavRow.append(wrap);
+  }
+  el.append(flavRow);
+
   /* ── Knobs ── */
   const sliders: HTMLInputElement[] = [];
   const knob = (r: HTMLElement, band: BandName, key: "intensity" | "decay",
@@ -132,6 +159,8 @@ export function createStyleLab(onStyle: () => void): StyleLab {
 
   const doReset = (): void => {
     resetStyleTweaks();
+    resetFlavors();
+    for (const b of flavBoxes) b.checked = false;
     setStyleVariant("current");
     for (const s of sliders) {
       s.value = "1";

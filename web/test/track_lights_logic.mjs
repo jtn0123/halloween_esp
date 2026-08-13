@@ -237,6 +237,65 @@ for (const [name, s] of Object.entries(BAND_STYLE)) {
   ok(low[0].attack === undefined, "low strikes keep the instant slam");
 }
 
+/* ── Phase-3 flavours: drift, takeover, swells (default OFF) ── */
+{
+  const { setFlavor, resetFlavors, driftBase, TAKEOVER_COLORS, TAKEOVER_HOT,
+          sustainedSwells } = await import("../dist/track_lights.mjs");
+  // Drift arithmetic — the digit pinned by pulse_dynamics.drift_base.
+  eq(driftBase([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]], 0, 30000),
+     [0, 0.5, 0.5, 0], "half a period walks the triad half a lap");
+  eq(driftBase([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0]], 0, 0),
+     [1, 0, 0, 0], "t=0 is the plain cycle colour");
+
+  const one = [[0, 0.5]];
+  const plain = bandStrikes("onset_mid", one, 0, 10)[0].color.join(",");
+  setFlavor("drift", true);
+  ok(bandStrikes("onset_mid", one, 0, 10)[0].color.join(",") === plain,
+     "drift at t=0 changes nothing — it drifts, it does not repaint");
+  const later = bandStrikes("onset_mid", [[20, 0.5]], 0, 60)[0];
+  const noDrift = (resetFlavors(),
+                   bandStrikes("onset_mid", [[20, 0.5]], 0, 60)[0]);
+  ok(later.color.join(",") !== noDrift.color.join(","),
+     "20 s in, the drifted hue differs from the static cycle");
+
+  // Takeover: chorus hits use the shared warm family.
+  setFlavor("takeover", true);
+  const gates = [[0, "verse"], [5000, "chorus"]];
+  const verse = bandStrikes("onset_mid", [[1, 1.0]], 0, 10, undefined, gates)[0];
+  const chorus = bandStrikes("onset_mid", [[6, 1.0]], 0, 10, undefined, gates)[0];
+  eq(chorus.color, TAKEOVER_HOT, "a vel-1.0 chorus hit lands on the takeover hot");
+  ok(verse.color.join(",") !== chorus.color.join(","),
+     "the verse keeps the band's own colour — the splinter is the point");
+  for (const c of TAKEOVER_COLORS) {
+    ok(Math.min(c[0], c[1], c[2]) <= 0.30 && c[3] <= 0.12,
+       "takeover colours pass the same saturation guard as BAND_STYLE");
+  }
+  resetFlavors();
+
+  // Swells: a loud plateau blooms; toggles default off.
+  const env = [];
+  for (let t = 0; t <= 20; t += 0.25) env.push([t, t >= 5 && t < 12 ? 0.8 : 0.2]);
+  const sw = sustainedSwells(env, 0, 20);
+  ok(sw.length === 1 && sw[0].attack === 900 && sw[0].detail === "swell",
+     "a 7 s plateau becomes one swell with a 900 ms attack");
+  ok(Math.abs(sw[0].t - 5000) < 1200, "the swell starts at the plateau");
+  const short2 = [];
+  for (let t = 0; t <= 20; t += 0.25) short2.push([t, t >= 5 && t < 7.25 ? 0.8 : 0.2]);
+  ok(sustainedSwells(short2, 0, 20).length === 0,
+     "a 2.25 s plateau is not sustained enough");
+  const cues = trackCues({ onset_mid: [[1, 0.5]] }, env, 0, 20);
+  ok(!cues.some(c => c.detail === "swell"),
+     "swells are OFF unless the toggle says otherwise");
+  setFlavor("swells", true);
+  ok(trackCues({ onset_mid: [[1, 0.5]] }, env, 0, 20)
+       .some(c => c.detail === "swell"), "and ON when it does");
+  setStyleVariant("classic");
+  ok(!trackCues({ onset_mid: [[1, 0.5]] }, env, 0, 20)
+       .some(c => c.detail === "swell"), "the classic baseline ignores flavours");
+  setStyleVariant("current");
+  resetFlavors();
+}
+
 /* ── The style lab: variant, tweaks, and the export's honesty ── */
 {
   ok(styleVariant() === "current", "the lab starts on the current engine");

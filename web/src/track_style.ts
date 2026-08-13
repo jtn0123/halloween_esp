@@ -15,6 +15,20 @@ import type { BandName } from "./bands.js";
 import { BAND_STYLE, type BandStyle } from "./track_lights.js";
 import type { Rgbw } from "./types.js";
 
+/* ── Phase-3 flavours, each behind a default-off toggle ───────────────
+ * Session state like the knobs: turning one on colours the audition AND the
+ * next export (what you audition is what ships), but nothing is on unless
+ * the user chose it this session. The A/B baseline ignores them all. */
+export interface Flavors { drift: boolean; takeover: boolean; swells: boolean }
+const flavors: Flavors = { drift: false, takeover: false, swells: false };
+export const setFlavor = (name: keyof Flavors, on: boolean): void => {
+  flavors[name] = on;
+};
+export const getFlavors = (): Flavors => ({ ...flavors });
+export const resetFlavors = (): void => {
+  flavors.drift = flavors.takeover = flavors.swells = false;
+};
+
 /* ── The style lab: A/B and live knobs ────────────────────────────────
  * Evaluation tooling, not show design. "B" is the pre-4K look — one flat
  * colour per band, whole-jewel flashes, no movement, no sections — kept as
@@ -98,3 +112,29 @@ export function styleAsTs(): string {
   return `export const BAND_STYLE = {\n${lines.join("\n")}\n};`;
 }
 
+
+/* ── Flavour arithmetic — digit twins of pulse_dynamics.py ── */
+
+/** #1: one full lap of the band's triad per this many seconds. */
+export const DRIFT_PERIOD_S = 60;
+
+/** The drifted base colour: lerp AROUND the cycle by time. */
+export function driftBase(colors: readonly Rgbw[], i: number, tMs: number): Rgbw {
+  const n = colors.length;
+  if (n < 2) return colors[0]!;
+  const p = ((tMs / 1000) % DRIFT_PERIOD_S) / DRIFT_PERIOD_S;
+  const pos = (i + p * n) % n;
+  const k = Math.floor(pos);
+  const f = pos - k;
+  const a = colors[k]!, b = colors[(k + 1) % n]!;
+  return [0, 1, 2, 3].map(c =>
+    Math.round((a[c]! + (b[c]! - a[c]!) * f) * 1000) / 1000) as unknown as Rgbw;
+}
+
+/** #2: the one warm family every band shares during a chorus. */
+export const TAKEOVER_COLORS: readonly Rgbw[] = [
+  [1.0, 0.55, 0.0, 0.0],    // gold
+  [1.0, 0.25, 0.0, 0.05],   // flame orange
+  [1.0, 0.0, 0.35, 0.0],    // hot rose
+];
+export const TAKEOVER_HOT: Rgbw = [1.0, 0.75, 0.1, 0.12];

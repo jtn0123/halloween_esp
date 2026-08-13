@@ -73,7 +73,8 @@ def eff_id(name: str, scene_id: str) -> int:
 # in pulse_dynamics.py so this file and gen_previewer.py share ONE Python
 # copy; web/src/track_lights.ts remains the deliberate TS duplicate.
 from pulse_dynamics import (tempo_factor, tempo_decay, is_accent,  # noqa: F401,E402
-                            PAN_DECISIVE, section_gates, gate_mul)
+                            PAN_DECISIVE, section_gates, gate_mul, gate_note,
+                            drift_base, TAKEOVER_COLORS, TAKEOVER_HOT)
 
 
 def pulse_cues(scene: dict, markers: dict) -> list[dict]:
@@ -142,11 +143,19 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
                 targets = targets + [z for z in cfg["boost_targets"]
                                      if z not in targets]
             cyc = cfg.get("colors")
-            base = cyc[i % len(cyc)] if cyc else cfg.get("color", WHITE)
+            hot = cfg.get("color_hot")
+            if cfg.get("takeover") and gate_note(gates, t) == "chorus":
+                # #2: in a chorus the castle agrees on one warm family.
+                base = TAKEOVER_COLORS[i % len(TAKEOVER_COLORS)]
+                hot = TAKEOVER_HOT
+            elif cyc and cfg.get("drift"):
+                base = drift_base(cyc, i, t)     # #1: hues walk over time
+            else:
+                base = cyc[i % len(cyc)] if cyc else cfg.get("color", WHITE)
             out.append({"t": t, "op": "strike", "targets": targets,
                         "ms": ms,
                         "intensity": round(cfg.get("intensity", 0.3) * vel * mul, 3),
-                        "color": blend_color(base, cfg.get("color_hot"), vel),
+                        "color": blend_color(base, hot, vel),
                         "decay": decay,
                         # #10: rise time to peak; 0 keeps the instant slam.
                         "attack": int(cfg.get("attack_ms", 0)),

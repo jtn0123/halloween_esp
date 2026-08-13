@@ -140,11 +140,18 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
             if mul is None:
                 continue                       # gated out by its section (#9)
             cyc = pcfg.get("colors")
-            base = cyc[i % len(cyc)] if cyc else pcfg.get("color", [1, 1, 1, 1])
+            hot = pcfg.get("color_hot")
+            if pcfg.get("takeover") and gen.gate_note(gates, t) == "chorus":
+                base = gen.TAKEOVER_COLORS[i % len(gen.TAKEOVER_COLORS)]
+                hot = gen.TAKEOVER_HOT
+            elif cyc and pcfg.get("drift"):
+                base = gen.drift_base(cyc, i, t)
+            else:
+                base = cyc[i % len(cyc)] if cyc else pcfg.get("color", [1, 1, 1, 1])
             c = {"t": t, "bus": "LED", "op": "strike",
                  "ms": ms,
                  "intensity": round(pcfg.get("intensity", 0.3) * vel * mul, 3),
-                 "color": _blend_color(base, pcfg.get("color_hot"), vel),
+                 "color": _blend_color(base, hot, vel),
                  "decay": decay,
                  "detail": pcfg["synth"]}
             if pcfg.get("attack_ms"):

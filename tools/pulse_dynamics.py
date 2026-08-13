@@ -94,3 +94,48 @@ def gate_mul(synth: str, gates: list[tuple[int, str]], t_ms: int) -> float | Non
         if synth == "onset_mid":
             return 0.5
     return 1.0
+
+
+def gate_note(gates: list[tuple[int, str]], t_ms: int) -> str | None:
+    """The section a moment lives in, or None before any boundary."""
+    note = None
+    for gt, n in gates:
+        if gt <= t_ms:
+            note = n
+        else:
+            break
+    return note
+
+
+# ── Phase-3 flavours (both default OFF; a scene opts in per stream) ────
+
+# #1 Palette drift: the hit's base colour walks AROUND the band's own triad
+# over time — one full lap per DRIFT_PERIOD_S — so a three-minute song never
+# repeats a look. Plain lerp between neighbouring cycle colours: no HSV
+# matrices, so the two Python sides and the TS side agree to the digit.
+DRIFT_PERIOD_S = 60.0
+
+
+def drift_base(colors: list, i: int, t_ms: int) -> list:
+    """Twin of driftBase in track_lights.ts."""
+    n = len(colors)
+    if n < 2:
+        return colors[0]
+    p = (t_ms / 1000.0 % DRIFT_PERIOD_S) / DRIFT_PERIOD_S
+    pos = (i + p * n) % n
+    k = int(pos)
+    f = pos - k
+    a, b = colors[k], colors[(k + 1) % n]
+    return [round(x + (y - x) * f, 3) for x, y in zip(a, b)]
+
+
+# #2 Chorus takeover: during a chorus the whole castle agrees on ONE warm
+# family instead of three per-band hues — the splinter back to per-band
+# colour at the verse is what makes the chorus feel like an event. Table
+# passes the same saturation guards as BAND_STYLE (one channel low, W low).
+TAKEOVER_COLORS = [
+    [1.0, 0.55, 0.0, 0.0],    # gold
+    [1.0, 0.25, 0.0, 0.05],   # flame orange
+    [1.0, 0.0, 0.35, 0.0],    # hot rose
+]
+TAKEOVER_HOT = [1.0, 0.75, 0.1, 0.12]
