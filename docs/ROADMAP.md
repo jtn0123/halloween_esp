@@ -43,11 +43,15 @@ for firmware, version bump → OTA → /api/status confirm.
 - [x] #19 Playlist/show mode (2026-08-13, v5.15): show: block, generated
       self-looping script, dark gaps between scenes, /api/show/start|stop,
       device-panel button. Verified advancing live.
-- [ ] #21 Phone "big buttons" page: Ambient / Scare / Song / Off
-- [ ] #25 /api/blackout panic endpoint
-- [ ] #26 Boot self-test sweep (zones, colours, test tone)
-- [ ] #29 SD manifest check: verify every audio_file on boot, surface missing
-- [ ] #27 Crash telemetry: append health + reset reason to CSV on SD each boot
+- [x] #21 Phone remote at /remote — four giant buttons, embedded in
+      flash so it survives a missing SD (v5.16)
+- [x] #25 /api/blackout — GET+POST, bookmarkable, kills everything (v5.16)
+- [x] #26 Boot self-test: R/G/B/W sweep per zone at plug-in; no tone
+      (vigil's opening audio is the speaker test) (v5.16)
+- [x] #29 Manifest check: every scene file stat()ed at boot; missing
+      names in /api/status + remote status line (v5.16)
+- [x] #27 Crash telemetry — already existed as /sd/logs/castle.log (one
+      line per boot: version, reason, crash count). PHASE 4 COMPLETE.
 
 ## Phase 5 — Hardware-gated
 - [ ] #20 Physical trigger (sensor TBD — see below). Firmware side: GPIO +
