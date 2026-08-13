@@ -285,9 +285,13 @@ class TestStudioMedia(unittest.TestCase):
         import studio_media as sm
         d = sm.waveform(self.wav)
         self.assertIn("onset_low", d["onsets"])
-        for t, v in d["onsets"]["onset_low"]:
+        for t, v, *rest in d["onsets"]["onset_low"]:
             self.assertGreaterEqual(t, 0.0)
             self.assertLessEqual(v, 1.0)
+            # The optional third element is the hit's pan, -1..1. The test
+            # fixture is mono, so any pan present must read centre.
+            for pan in rest:
+                self.assertEqual(pan, 0.0)
 
     def test_probe_rejects_non_links_without_touching_the_network(self) -> None:
         import studio_media as sm

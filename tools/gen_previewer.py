@@ -22,11 +22,18 @@ from __future__ import annotations
 import base64
 import subprocess
 import json
+import math
 import re
 import sys
 from pathlib import Path
 
 import yaml
+
+# The pulse dynamics helpers (tempo, accent, pan threshold) are shared with
+# the firmware generator rather than duplicated a third time — one pair of
+# implementations (Python here, TS in track_lights.ts) is a parity burden;
+# three was how the last drift happened.
+import gen_esphome as gen
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "scenes" / "scenes.yaml"
@@ -119,14 +126,20 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
     for pcfg in scene.get("pulse") or []:
         beats = scene_marks.get(pcfg["synth"], [])
         zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
-        for i, (t, vel) in enumerate(beats):
+        factor = gen.tempo_factor([b[0] / 1000.0 for b in beats])
+        decay = gen.tempo_decay(pcfg.get("decay", 0.90), factor)
+        ms = int(math.floor(int(pcfg.get("ms", 120)) * factor + 0.5))
+        vels = [b[1] for b in beats]
+        for i, beat in enumerate(beats):
+            t, vel = beat[0], beat[1]
+            pan = beat[2] if len(beat) > 2 else None
             cyc = pcfg.get("colors")
             base = cyc[i % len(cyc)] if cyc else pcfg.get("color", [1, 1, 1, 1])
             c = {"t": t, "bus": "LED", "op": "strike",
-                 "ms": int(pcfg.get("ms", 120)),
+                 "ms": ms,
                  "intensity": round(pcfg.get("intensity", 0.3) * vel, 3),
                  "color": _blend_color(base, pcfg.get("color_hot"), vel),
-                 "decay": pcfg.get("decay", 0.90),
+                 "decay": decay,
                  "detail": pcfg["synth"]}
             if pcfg.get("pixels_by_vel"):
                 c["pixels"] = ("center" if vel < 0.40
@@ -134,11 +147,16 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
             elif pcfg.get("pixels"):
                 c["pixels"] = pcfg["pixels"]
             if zones and pcfg.get("alternate"):
-                c["targets"] = [zones[i % len(zones)]]
+                if (pan is not None and abs(pan) >= gen.PAN_DECISIVE
+                        and "towerL" in zones and "towerR" in zones):
+                    c["targets"] = ["towerL" if pan < 0 else "towerR"]
+                else:
+                    c["targets"] = [zones[i % len(zones)]]
             elif zones:
                 c["targets"] = list(zones)
             if (c.get("targets") and pcfg.get("boost_targets")
-                    and vel >= pcfg.get("boost_at", 2)):
+                    and (vel >= pcfg.get("boost_at", 2)
+                         or gen.is_accent(vels, i))):
                 c["targets"] = c["targets"] + [z for z in pcfg["boost_targets"]
                                                if z not in c["targets"]]
             cues.append(c)

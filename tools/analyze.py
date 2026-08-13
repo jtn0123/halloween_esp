@@ -59,6 +59,53 @@ def load_audio(path: Path, sr: int = SR) -> np.ndarray:
     return np.frombuffer(out, dtype="<f4").astype(np.float64)
 
 
+def load_stereo(path: Path, sr: int = SR) -> tuple[np.ndarray, np.ndarray]:
+    """Left and right channels. A mono file comes back as two equal arrays,
+    which the pan measurement correctly reads as centre."""
+    out = subprocess.run(
+        ["ffmpeg", "-v", "quiet", "-i", str(path),
+         "-f", "f32le", "-ac", "2", "-ar", str(sr), "-"],
+        capture_output=True, check=True,
+    ).stdout
+    x = np.frombuffer(out, dtype="<f4").astype(np.float64)
+    return x[0::2], x[1::2]
+
+
+# Pan measurement window. Long enough to catch the body of a hit, short
+# enough that the next instrument over does not vote in it.
+PAN_WIN_S = 0.08
+# |pan| below this is centre for all practical purposes; the expansions use
+# their own (larger) threshold to decide when a pan is worth acting on.
+PAN_DEAD = 0.05
+
+
+def annotate_pan(hits: list[tuple[float, float]],
+                 left: np.ndarray, right: np.ndarray,
+                 sr: int = SR) -> list[tuple[float, float, float]]:
+    """Attach where in the stereo field each hit lives: (t, vel) -> (t, vel, pan).
+
+    pan is -1 (hard left) .. +1 (hard right), 0 centre, from the L/R RMS
+    balance in a short window at the hit. The tuple grows a third element so
+    every existing consumer that unpacks two keeps working untouched; the
+    expansions that know about pan route hits between the towers with it.
+    """
+    n = int(PAN_WIN_S * sr)
+    out = []
+    for t, vel in hits:
+        a = max(0, int(t * sr))
+        b = min(len(left), a + n)
+        if b <= a:
+            out.append((t, vel, 0.0))
+            continue
+        lo = float(np.sqrt((left[a:b] ** 2).mean()))
+        hi = float(np.sqrt((right[a:b] ** 2).mean()))
+        pan = 0.0 if lo + hi < 1e-9 else (hi - lo) / (hi + lo)
+        if abs(pan) < PAN_DEAD:
+            pan = 0.0
+        out.append((t, vel, round(pan, 2)))
+    return out
+
+
 def _flux(mag: np.ndarray) -> np.ndarray:
     """Positive spectral flux: how much energy APPEARED since last frame.
 
@@ -226,14 +273,22 @@ def envelope(x: np.ndarray, sr: int = SR, hz: float = ENV_HZ,
 
 
 def analyze_full(x: np.ndarray, sr: int = SR, sensitivity=1.1,
-                 ) -> dict[str, list[tuple[float, float]]]:
+                 stereo: tuple[np.ndarray, np.ndarray] | None = None,
+                 ) -> dict[str, list[tuple[float, ...]]]:
     """Onsets, plus a level envelope for any band that has no beat.
 
     This is what the importer uses. A track can be beaty in the bass and
     beatless up top — a kick under a synth pad — and each band gets whichever
     treatment actually suits it rather than one verdict for the whole file.
+
+    With `stereo` (the L/R channels from load_stereo), each onset carries a
+    third element: its pan. Level envelopes never do — a pan for "how loud is
+    this band" is not a meaningful question.
     """
     onsets = analyze(x, sr, sensitivity=sensitivity)
+    if stereo is not None:
+        onsets = {name: annotate_pan(hits, stereo[0], stereo[1], sr)
+                  for name, hits in onsets.items()}
     thin = [name for name, _lo, _hi, _g in BANDS
             if len(onsets.get(name, [])) < BEATLESS]
     if not thin:

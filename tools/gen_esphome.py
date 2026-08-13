@@ -15,6 +15,7 @@ absolute timestamps, because ESPHome scripts step forward with `delay:`.
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 import yaml
@@ -68,6 +69,48 @@ def eff_id(name: str, scene_id: str) -> int:
     return EFFECT_IDS[name]
 
 
+def tempo_factor(times_s: list[float]) -> float:
+    """#3: the stream's own pace, from the median gap between its hits.
+
+    A 180 BPM track and a 70 BPM one used to get identical tails, so fast
+    material smeared and slow material strobed. Below 8 hits there is no
+    tempo evidence and the factor stays neutral — which also keeps every
+    hand-written pulse stream exactly as it was.
+
+    Same arithmetic in gen_previewer.py and track_lights.ts.
+    """
+    if len(times_s) < 8:
+        return 1.0
+    gaps = sorted(times_s[i + 1] - times_s[i] for i in range(len(times_s) - 1))
+    m = len(gaps) // 2
+    g = gaps[m] if len(gaps) % 2 else (gaps[m - 1] + gaps[m]) / 2
+    return min(1.6, max(0.7, g / 0.45))
+
+
+def tempo_decay(decay: float, factor: float) -> float:
+    """Stretch or shrink the tail: factor scales time-to-dark, not the decay
+    number itself (0.945 x 1.05 would exceed 1 and never die). floor(+0.5)
+    instead of round(): Python rounds half-even, JS half-up, and the parity
+    tests compare digits."""
+    return math.floor((1 - (1 - decay) / factor) * 10000 + 0.5) / 10000
+
+
+def is_accent(vels: list[float], i: int) -> bool:
+    """#8: louder than its own recent neighbourhood, not just loud.
+
+    On a compression-mastered track every other hit clears a global
+    threshold; against a rolling window only the real accents do. Needs 3
+    prior hits — the first few have no neighbourhood to stand out from.
+    """
+    w = vels[max(0, i - 8):i]
+    return len(w) >= 3 and vels[i] >= sum(w) / len(w) + 0.25 and vels[i] >= 0.55
+
+
+# A pan this far off-centre overrides round-robin movement (#7). Below it,
+# stereo position is a mixing accident, not a statement.
+PAN_DECISIVE = 0.25
+
+
 def pulse_cues(scene: dict, markers: dict) -> list[dict]:
     """Beat markers from the audio render, turned into light pulses.
 
@@ -107,21 +150,35 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
             print(f"note: scene {scene['id']}: no markers for synth "
                   f"{cfg['synth']!r} — pulse stream skipped")
         zones = cfg.get("zones") or ([cfg["zone"]] if cfg.get("zone") else None)
-        for i, (t, vel) in enumerate(beats):
+        # Times arrive in ms here; the tempo maths speaks seconds everywhere.
+        factor = tempo_factor([b[0] / 1000.0 for b in beats])
+        decay = tempo_decay(cfg.get("decay", DEFAULT_DECAY), factor)
+        ms = int(math.floor(int(cfg.get("ms", 120)) * factor + 0.5))
+        vels = [b[1] for b in beats]
+        for i, beat in enumerate(beats):
+            t, vel = beat[0], beat[1]
+            pan = beat[2] if len(beat) > 2 else None
             if zones and cfg.get("alternate"):
-                targets = [zones[i % len(zones)]]
+                # A decisively panned hit goes to ITS tower (#7); everything
+                # else keeps the round-robin movement.
+                if (pan is not None and abs(pan) >= PAN_DECISIVE
+                        and "towerL" in zones and "towerR" in zones):
+                    targets = ["towerL" if pan < 0 else "towerR"]
+                else:
+                    targets = [zones[i % len(zones)]]
             else:
                 targets = list(zones) if zones else None   # None -> all zones
-            if targets and cfg.get("boost_targets") and vel >= cfg.get("boost_at", 2):
+            if (targets and cfg.get("boost_targets")
+                    and (vel >= cfg.get("boost_at", 2) or is_accent(vels, i))):
                 targets = targets + [z for z in cfg["boost_targets"]
                                      if z not in targets]
             cyc = cfg.get("colors")
             base = cyc[i % len(cyc)] if cyc else cfg.get("color", WHITE)
             out.append({"t": t, "op": "strike", "targets": targets,
-                        "ms": int(cfg.get("ms", 120)),
+                        "ms": ms,
                         "intensity": round(cfg.get("intensity", 0.3) * vel, 3),
                         "color": blend_color(base, cfg.get("color_hot"), vel),
-                        "decay": cfg.get("decay", DEFAULT_DECAY),
+                        "decay": decay,
                         # WHERE on the jewel the pulse lands: a bass thump can
                         # hit the door's centre while highs scatter the rings.
                         "pixels": pixels_for(cfg, vel),

@@ -192,6 +192,37 @@ export const blendColor = (base: Rgbw, hot: Rgbw | undefined, vel: number): Rgbw
 export const pixelsForVel = (vel: number): "center" | "scatter" | "all" =>
   vel < 0.40 ? "center" : vel < 0.72 ? "scatter" : "all";
 
+/* ── Per-stream dynamics (#3 tempo, #8 accents, #7 pan) ─────────────────
+ * Twins of tempo_factor / tempo_decay / is_accent / PAN_DECISIVE in
+ * gen_esphome.py (gen_previewer.py imports them from there). The parity
+ * tests pin both sides to the same digits. */
+
+/** Median hit gap -> tail-length factor. Neutral below 8 hits, so sparse
+ *  streams and every hand-written scene keep their exact old look. */
+export function tempoFactor(timesSec: readonly number[]): number {
+  if (timesSec.length < 8) return 1.0;
+  const gaps = timesSec.slice(1).map((t, i) => t - timesSec[i]!).sort((a, b) => a - b);
+  const m = Math.floor(gaps.length / 2);
+  const g = gaps.length % 2 ? gaps[m]! : (gaps[m - 1]! + gaps[m]!) / 2;
+  return Math.min(1.6, Math.max(0.7, g / 0.45));
+}
+
+/** Scale time-to-dark, not the decay digit; floor(+0.5) matches Python. */
+export const tempoDecay = (decay: number, factor: number): number =>
+  Math.floor((1 - (1 - decay) / factor) * 10000 + 0.5) / 10000;
+
+/** Louder than its recent neighbourhood — the accent a global threshold
+ *  misses on compression-mastered music. */
+export function isAccent(vels: readonly number[], i: number): boolean {
+  const w = vels.slice(Math.max(0, i - 8), i);
+  return w.length >= 3
+    && vels[i]! >= w.reduce((a, v) => a + v, 0) / w.length + 0.25
+    && vels[i]! >= 0.55;
+}
+
+/** |pan| at or above this routes the hit to its own tower. */
+export const PAN_DECISIVE = 0.25;
+
 /**
  * Expand one band's onsets into strike cues, exactly as the Python pulse
  * expansion would. `zoneOverride` is the user pinning this band to one zone
@@ -204,20 +235,38 @@ export function bandStrikes(
   const s = styleFor(band);
   const pinned = zoneOverride !== undefined && zoneOverride !== BAND_BY_NAME[band].zone;
   const zones: readonly ZoneId[] = pinned ? [zoneOverride] : s.zones;
+  // Windowed FIRST: the Python expansions only ever see the clip's hits
+  // (markers are detected on the rendered clip), so the tempo and accent
+  // context must be the clip here too or the two sides drift.
+  const win = hits.filter(([sec]) => sec >= startSec && sec <= endSec);
+  const factor = tempoFactor(win.map(([sec]) => sec));
+  const decay = tempoDecay(s.decay, factor);
+  const ms = Math.floor(s.ms * factor + 0.5);
+  const vels = win.map(([, vel]) => vel);
   const out: StrikeCue[] = [];
-  hits.forEach(([sec, vel], i) => {
-    if (sec < startSec || sec > endSec) return;
-    let targets = s.alternate && !pinned ? [zones[i % zones.length]!] : [...zones];
-    if (s.boostTargets && s.boostAt !== undefined && vel >= s.boostAt) {
+  win.forEach(([sec, vel, pan], i) => {
+    let targets: ZoneId[];
+    if (s.alternate && !pinned) {
+      // A decisively panned hit goes to ITS tower (#7); the rest keep the
+      // round-robin movement.
+      targets = pan !== undefined && Math.abs(pan) >= PAN_DECISIVE
+             && zones.includes("towerL") && zones.includes("towerR")
+        ? [pan < 0 ? "towerL" : "towerR"]
+        : [zones[i % zones.length]!];
+    } else {
+      targets = [...zones];
+    }
+    if (s.boostTargets
+        && ((s.boostAt !== undefined && vel >= s.boostAt) || isAccent(vels, i))) {
       targets = targets.concat(s.boostTargets.filter(z => !targets.includes(z)));
     }
     const pixels = s.pixelsByVel ? pixelsForVel(vel) : s.pixels;
     out.push({
       t: Math.round((sec - startSec) * 1000),
-      bus: "LED", op: "strike", ms: s.ms,
+      bus: "LED", op: "strike", ms,
       intensity: Math.round(s.intensity * vel * 1000) / 1000,
       color: blendColor(s.colors[i % s.colors.length]!, s.colorHot, vel),
-      decay: s.decay,
+      decay,
       ...(pixels ? { pixels } : {}),
       targets,
       detail: band,

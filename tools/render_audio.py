@@ -84,10 +84,13 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
                 # have thrown on the map and, worse, silently ignored it if it
                 # had not — the render must detect the same onsets the editor
                 # showed, or the tuning was for nothing.
-                x, sr, sensitivity=scene.get("sensitivity", 1.1)).items():
+                x, sr, sensitivity=scene.get("sensitivity", 1.1),
+                # Onsets gain a pan third element; markers grow with them,
+                # and the pulse expansions route decisive pans by tower.
+                stereo=analyze.load_stereo(path, sr)).items():
             markers.setdefault(band, []).extend(
-                [int((t + scene.get("track_at", 0.0)) * 1000), v]
-                for t, v in hits if t < dur - 0.1)
+                [int((h[0] + scene.get("track_at", 0.0)) * 1000), *h[1:]]
+                for h in hits if h[0] < dur - 0.1)
 
     for ev in scene.get("score") or []:
         name = ev["synth"]

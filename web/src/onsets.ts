@@ -7,8 +7,12 @@
  * ceiling; the seam is clean, since nothing here touches the DOM or the server.
  */
 
-/** [time in seconds, strength 0..1], both rounded to 3 dp for a tidy YAML. */
-export type Onset = [number, number];
+/**
+ * [time in seconds, strength 0..1, pan?], time/strength rounded to 3 dp for
+ * a tidy YAML. The optional third element is the hit's stereo position, -1
+ * (left) .. +1 (right) — present when the analysis had stereo to look at.
+ */
+export type Onset = [time: number, strength: number, pan?: number];
 
 /** Band name, low edge Hz, high edge Hz, minimum spacing between hits (s). */
 type Band = [string, number, number, number];
@@ -71,7 +75,7 @@ export function pickOnsets(
  */
 export function loudnessEnvelope(
   samples: Float32Array, sampleRate: number, hz = 6,
-): Onset[] {
+): [number, number][] {
   const hop = 512;
   const n = Math.floor(samples.length / hop);
   if (n < 3) return [];
@@ -85,7 +89,7 @@ export function loudnessEnvelope(
   for (const v of env) { if (v < lo) lo = v; if (v > hi) hi = v; }
   if (hi - lo < 1e-9) return [];
   const step = Math.max(1, Math.round(sampleRate / hop / hz));
-  const out: Onset[] = [];
+  const out: [number, number][] = [];
   for (let i = 0; i < n; i += step) {
     const v = (env[i]! - lo) / (hi - lo);
     if (v > 0.02) out.push([+(i * hop / sampleRate).toFixed(3), +v.toFixed(3)]);
@@ -93,8 +97,31 @@ export function loudnessEnvelope(
   return out;
 }
 
+/**
+ * Where in the stereo field a hit lives: L/R RMS balance over an 80 ms
+ * window at the hit. The browser twin of analyze.py annotate_pan — same
+ * window, same dead zone, same rounding.
+ */
+export function annotatePan(
+  hits: Onset[], left: Float32Array, right: Float32Array, sampleRate: number,
+): Onset[] {
+  const n = Math.floor(0.08 * sampleRate);
+  return hits.map(([t, vel]) => {
+    const a = Math.max(0, Math.floor(t * sampleRate));
+    const b = Math.min(left.length, a + n);
+    if (b <= a) return [t, vel, 0];
+    let l = 0, r = 0;
+    for (let i = a; i < b; i++) { l += left[i]! * left[i]!; r += right[i]! * right[i]!; }
+    l = Math.sqrt(l / (b - a)); r = Math.sqrt(r / (b - a));
+    let pan = l + r < 1e-9 ? 0 : (r - l) / (r + l);
+    if (Math.abs(pan) < 0.05) pan = 0;
+    return [t, vel, Math.round(pan * 100) / 100];
+  });
+}
+
 export async function detectOnsets(audio: AudioBuffer): Promise<Record<string, Onset[]>> {
   const out: Record<string, Onset[]> = {};
+  const stereo = audio.numberOfChannels >= 2;
   for (const [name, lo, hi, gap] of BANDS) {
     const oc = new OfflineAudioContext(1, audio.length, audio.sampleRate);
     const src = oc.createBufferSource(); src.buffer = audio;
@@ -106,7 +133,10 @@ export async function detectOnsets(audio: AudioBuffer): Promise<Record<string, O
     // The detection itself is pure — no Web Audio, no DOM — so it lives in
     // its own function and can be tested in node. Everything above this line
     // is just getting band-filtered samples out of the browser.
-    const hits = pickOnsets(band, audio.sampleRate, gap);
+    let hits = pickOnsets(band, audio.sampleRate, gap);
+    if (hits.length && stereo)
+      hits = annotatePan(hits, audio.getChannelData(0), audio.getChannelData(1),
+                         audio.sampleRate);
     if (hits.length) out[name] = hits;
   }
   return out;

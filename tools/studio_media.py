@@ -147,7 +147,10 @@ def waveform(path: Path, sensitivity: float = 1.1, buckets: int = PEAKS) -> dict
     top = max(peaks) or 1.0
     peaks = [round(p / top, 4) for p in peaks]
 
-    marks = ana.analyze_full(x, sensitivity=sensitivity)
+    # Stereo alongside the mono: onsets carry their pan as a third element,
+    # which the audition uses to route hits between the towers.
+    marks = ana.analyze_full(x, sensitivity=sensitivity,
+                             stereo=ana.load_stereo(path))
     # Full-range loudness over time, alongside the onsets. Onsets say WHEN
     # something hit; this says how big the music is right now, which is what
     # lets a generated scene dim for the spoken verse and bloom for the
@@ -157,6 +160,7 @@ def waveform(path: Path, sensitivity: float = 1.1, buckets: int = PEAKS) -> dict
         "id": path.stem,
         "duration": round(dur, 3),
         "peaks": peaks,
-        "onsets": {k: [[round(t, 3), v] for t, v in v_] for k, v_ in marks.items()},
+        "onsets": {k: [[round(h[0], 3), *h[1:]] for h in v_]
+                   for k, v_ in marks.items()},
         "env": [[round(t, 3), v] for t, v in env.get("level_full", [])],
     }

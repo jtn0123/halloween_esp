@@ -16,8 +16,9 @@ import { BAND_INK, type BandName } from "./bands.js";
 export { BAND_INK };
 export type { BandName };
 
-/** `[time in seconds, strength 0..1]` — the same pair analyze.py emits. */
-export type Onset = readonly [seconds: number, velocity: number];
+/** `[seconds, strength 0..1, pan?]` — the tuple analyze.py emits; pan (-1
+ *  left .. +1 right) rides along when the analysis saw stereo. */
+export type Onset = readonly [seconds: number, velocity: number, pan?: number];
 
 /** A band with no hits is simply absent, so every entry is optional. */
 export type WaveOnsets = Partial<Record<BandName, readonly Onset[]>>;

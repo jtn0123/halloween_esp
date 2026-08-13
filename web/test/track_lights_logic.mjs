@@ -13,7 +13,7 @@ import {
   BAND_STYLE, BAND_STYLE_CLASSIC, TIERS, blendColor, pixelsForVel, bandStrikes,
   sections, sectionCues, trackCues,
   setStyleVariant, styleVariant, setStyleTweak, resetStyleTweaks, styleFor,
-  styleAsTs,
+  styleAsTs, tempoFactor, tempoDecay, isAccent, PAN_DECISIVE,
 } from "../dist/track_lights.mjs";
 
 let pass = 0;
@@ -135,6 +135,49 @@ for (const [name, s] of Object.entries(BAND_STYLE)) {
   ok(s.colorHot[3] <= 0.15, `${name} hot colour keeps W low`);
   ok(s.decay > 0.5 && s.decay < 1, `${name} decay is a per-frame factor`);
   ok(!(s.pixelsByVel && s.pixels), `${name} does not set both mask modes`);
+}
+
+/* ── Stream dynamics: pan, tempo, accents — TestStreamDynamicsParity's
+      numbers, digit for digit ── */
+{
+  const panned = [[0, 0.5, -0.6], [0.3, 0.5, 0.6], [0.6, 0.5, 0.1], [0.9, 0.5]];
+  const s = bandStrikes("onset_mid", panned, 0, 10);
+  eq(s.map(c => c.targets[0]), ["towerL", "towerR", "towerL", "towerR"],
+     "decisive pans pick their tower; the rest keep the round-robin");
+  const edge = bandStrikes("onset_mid", [[0, 0.5, 0.25], [0.3, 0.5, -0.24]], 0, 10);
+  eq(edge.map(c => c.targets[0]), ["towerR", "towerR"],
+     `pan ${PAN_DECISIVE} is decisive (>=), 0.24 is not`);
+  const door = bandStrikes("onset_low", [[0, 0.5, -0.9]], 0, 10);
+  eq(door[0].targets, ["door"], "a door-only stream ignores pan");
+}
+{
+  ok(tempoFactor([0, 1, 2, 3, 4, 5, 6]) === 1.0, "7 hits are not a tempo");
+  ok(Math.abs(tempoFactor(Array.from({length: 8}, (_, i) => i * 0.25)) - 0.7) < 1e-9,
+     "0.25 s gaps clamp the factor at 0.7");
+  ok(Math.abs(tempoFactor(Array.from({length: 8}, (_, i) => i * 0.9)) - 1.6) < 1e-9,
+     "0.9 s gaps clamp at 1.6");
+  ok(tempoDecay(0.90, 0.7) === 0.8571, "fast decay digit matches Python");
+  ok(tempoDecay(0.90, 1.6) === 0.9375, "slow decay digit matches Python");
+  const fast = bandStrikes("onset_low",
+    Array.from({length: 8}, (_, i) => [i * 0.25, 0.5]), 0, 10);
+  ok(fast.every(c => c.ms === Math.floor(BAND_STYLE.onset_low.ms * 0.7 + 0.5)
+                  && c.decay === tempoDecay(BAND_STYLE.onset_low.decay, 0.7)),
+     "fast streams get shorter strikes and tails");
+}
+{
+  const accent = bandStrikes("onset_low",
+    [[0, 0.3], [0.2, 0.3], [0.4, 0.3], [0.6, 0.7]], 0, 10);
+  eq(accent[3].targets, ["door", "towerL", "towerR"],
+     "vel 0.7 among 0.3s is an accent — boost fires below the global bar");
+  eq(accent[2].targets, ["door"], "its neighbours do not");
+  ok(!isAccent([0.3, 0.7], 1), "one prior hit is not a neighbourhood");
+  ok(!isAccent([0.3, 0.3, 0.3, 0.5], 3), "0.5 misses the 0.55 floor");
+  // The tempo maths reads only the CLIP's hits — the Python side never sees
+  // outside the clip, and the two must drift never.
+  const windowed = bandStrikes("onset_low",
+    [[0, 1.0], ...Array.from({length: 8}, (_, i) => [5 + i * 0.25, 0.5])], 5, 10);
+  ok(windowed.every(c => c.ms === Math.floor(BAND_STYLE.onset_low.ms * 0.7 + 0.5)),
+     "hits outside the clip do not vote on the tempo");
 }
 
 /* ── The style lab: variant, tweaks, and the export's honesty ── */
