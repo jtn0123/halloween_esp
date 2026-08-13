@@ -218,6 +218,11 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
     if (fwrite(buf, 1, got, f) != (size_t) got) { ok = false; break; }
     remaining -= got;
     written += got;
+    // The third appearance of this bug class (h_ota and send_sd_file were
+    // the first two): a megabyte of back-to-back recv+SD-write on the httpd
+    // task starves the watched main loop, and the watchdog resets the castle
+    // mid-upload. One tick per chunk is the whole cure.
+    vTaskDelay(1);
   }
   free(buf);
   fclose(f);
@@ -326,6 +331,11 @@ inline esp_err_t h_ota(httpd_req_t *req) {
   if (req->content_len < 65536 || req->content_len > part->size)
     return reply_err(req, "400 Bad Request", "implausible image size");
 
+  // Nothing else may touch the SPI bus or burn CPU while flash is being
+  // written — the v5.12 upload watchdogged twice, with audio already
+  // stopped, because the eInk panel picked that moment to refresh.
+  castle_sd::g_quiesce = true;
+
   esp_ota_handle_t ota;
   // SEQUENTIAL_WRITES, not the image size: passing a size makes ota_begin
   // erase the whole 1.75 MB partition in one synchronous burn — several
@@ -334,8 +344,10 @@ inline esp_err_t h_ota(httpd_req_t *req) {
   // — the health endpoint's first real case was this very handler.)
   // Sequential mode erases each block just before writing it: same result,
   // watchdog-sized pauses.
-  if (esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES, &ota) != ESP_OK)
+  if (esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES, &ota) != ESP_OK) {
+    castle_sd::g_quiesce = false;
     return reply_err(req, "500 Internal Server Error", "ota begin failed");
+  }
 
   static constexpr size_t CHUNK = 8192;
   char *buf = (char *) malloc(CHUNK);
@@ -361,10 +373,13 @@ inline esp_err_t h_ota(httpd_req_t *req) {
   free(buf);
   if (!ok || esp_ota_end(ota) != ESP_OK) {
     ESP_LOGE(TAG, "web OTA failed with %u bytes left", (unsigned) remaining);
+    castle_sd::g_quiesce = false;
     return reply_err(req, "500 Internal Server Error", "ota write failed");
   }
-  if (esp_ota_set_boot_partition(part) != ESP_OK)
+  if (esp_ota_set_boot_partition(part) != ESP_OK) {
+    castle_sd::g_quiesce = false;
     return reply_err(req, "500 Internal Server Error", "could not select slot");
+  }
   ESP_LOGI(TAG, "web OTA complete (%u bytes) — rebooting", (unsigned) req->content_len);
   // Reply BEFORE queueing the restart, and give lwip a beat to flush the
   // segment — the first live test flashed perfectly but rebooted with the

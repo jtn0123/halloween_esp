@@ -55,6 +55,11 @@ inline uint8_t *g_buf = nullptr;
 inline esphome::audio::AudioFile g_file{};
 inline sdmmc_card_t *g_card = nullptr;
 inline bool g_mounted = false;
+/// Raised by the web OTA while it burns flash. Background chores (the eInk
+/// panel) must sit still: flash writes suspend the cache, and any ready task
+/// above the main loop's priority eats the breathing ticks h_ota inserts so
+/// the watchdog stays fed. Cleared on OTA failure; success reboots anyway.
+inline volatile bool g_quiesce = false;
 
 /// Mount the card. Safe to call when no card is present — it logs and returns
 /// false, and the rest of the device carries on with the flash scenes.

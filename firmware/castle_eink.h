@@ -271,6 +271,10 @@ inline void task(void *) {
   bool ever = false;
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(1000));
+    // A web OTA is burning flash: sit still. A refresh here spends the very
+    // scheduler ticks the OTA loop yields to keep the watchdog fed — this
+    // exact combination reset the castle twice before the flag existed.
+    if (castle_sd::g_quiesce) continue;
     const uint32_t now = (uint32_t) (esp_timer_get_time() / 1000ULL);
     const uint32_t gap = g_force.load() ? FORCE_GAP_MS : MIN_GAP_MS;
     const bool due = g_pending.load() || g_force.load() ||
@@ -300,7 +304,9 @@ inline void begin(const char *version, int cs, int dc, int sck, int mosi,
   g_miso = miso;
   g_lock = xSemaphoreCreateMutex();
   // 4 KB stack: render() uses ~200 B of locals; snprintf is the deep call.
-  xTaskCreate(task, "eink", 4096, nullptr, 2, nullptr);
+  // Priority 1 — NEVER above the main loop. At 2 the panel's SPI work
+  // preempted the loop during flash writes and the watchdog fired.
+  xTaskCreate(task, "eink", 4096, nullptr, 1, nullptr);
 }
 
 /// Mirror show state in from the 200 ms bridge interval. Cheap to call every
