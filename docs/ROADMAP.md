@@ -14,9 +14,12 @@ for firmware, version bump → OTA → /api/status confirm.
 
 ## Phase 2 — Dynamics engine (track_lights.ts + gen_esphome.py +
 ##            gen_previewer.py, parity tests for every rule)
-- [ ] #7  Stereo panning → towerL/towerR from channel energy (VERY IMPORTANT)
-- [ ] #3  Tempo-aware decay/ms from median onset spacing
-- [ ] #8  Accent = vel ≫ local rolling mean, not global threshold (drives boost)
+- [x] #7  Stereo panning → towerL/towerR from channel energy (2026-08-12:
+      pan rides as an optional 3rd onset-tuple element; |pan| ≥ 0.25 decisive)
+- [x] #3  Tempo-aware decay/ms from median onset spacing (factor 0.7–1.6,
+      neutral < 8 hits so hand-written scenes are untouched)
+- [x] #8  Accent = vel ≥ rolling-mean(8) + 0.25 and ≥ 0.55 → boost fires
+      below the global bar
 - [ ] #9  Per-band section gating: hush drops highs, halves mids
 - [ ] #5  Silence handling: envelope ≈ 0 for >2s → fade to near-black
 - [ ] #6  Anticipation: 1-beat pre-dim before hush→chorus boundaries
