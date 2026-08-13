@@ -26,7 +26,9 @@ for firmware, version bump → OTA → /api/status confirm.
       strip on the waveform
 - [x] #6  Anticipation: previous look dips to 45% for 450 ms before a chorus
       (never out of silence)
-- [ ] #10 attack_ms strike-shape field (lows slam, pads bloom)
+- [x] #10 attack_ms strike-shape field (2026-08-13: rise of peak*16/attack
+      per frame in both renderers; mid band swells 90 ms, drums still slam;
+      firmware v5.14). PHASE 2 COMPLETE.
 
 ## Phase 3 — Flavors, each behind an editor toggle (default off)
 - [ ] #1  Palette drift: triad hue rotates slowly over the song
