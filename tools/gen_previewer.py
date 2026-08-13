@@ -115,6 +115,8 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
                 c["decay"] = float(cue["decay"])
             if "pixels" in cue:
                 c["pixels"] = cue["pixels"]
+            if "attack" in cue:
+                c["attack"] = int(cue["attack"])
             cues.append(c)
         else:
             sys.exit(f"scene {sid}: unknown cue op {cue['op']!r}")
@@ -145,6 +147,8 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
                  "color": _blend_color(base, pcfg.get("color_hot"), vel),
                  "decay": decay,
                  "detail": pcfg["synth"]}
+            if pcfg.get("attack_ms"):
+                c["attack"] = int(pcfg["attack_ms"])
             if pcfg.get("pixels_by_vel"):
                 c["pixels"] = ("center" if vel < 0.40
                                else "scatter" if vel < 0.72 else "all")

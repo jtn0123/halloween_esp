@@ -148,6 +148,8 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
                         "intensity": round(cfg.get("intensity", 0.3) * vel * mul, 3),
                         "color": blend_color(base, cfg.get("color_hot"), vel),
                         "decay": decay,
+                        # #10: rise time to peak; 0 keeps the instant slam.
+                        "attack": int(cfg.get("attack_ms", 0)),
                         # WHERE on the jewel the pulse lands: a bass thump can
                         # hit the door's centre while highs scatter the rings.
                         "pixels": pixels_for(cfg, vel),
@@ -204,6 +206,7 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
         return (
             f"id(zone_effect)[{i}] = {eff_id(scene['base'].get(z, 'off'), sid)};"
             f" id(zone_flash)[{i}] = 0.0f;"
+            f" id(zone_flash_target)[{i}] = 0.0f;"
             f" id(zone_flash_decay)[{i}] = {DEFAULT_DECAY}f;"
             f" id(zone_level)[{i}] = {float(levels.get(z, 1.0)):.2f}f;"
             f" id(zone_center)[{i}] = {center};"
@@ -250,10 +253,19 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
             col = cue.get("color", WHITE)
             dec = float(cue.get("decay", DEFAULT_DECAY))
             mode = FLASH_MODE_IDS.get(cue.get("pixels", "all"), 0)
+            attack = int(cue.get("attack", 0))
             parts = []
             for z in targets:
                 i = zone_ids.index(z)
-                parts.append(f"id(zone_flash)[{i}] = {amt:.3f}f;")
+                if attack > 0:
+                    # #10: swell to the peak over `attack` ms — the render
+                    # loop climbs by _rise per 16 ms frame, then decays.
+                    parts.append(f"id(zone_flash_target)[{i}] = {amt:.3f}f;")
+                    parts.append(
+                        f"id(zone_flash_rise)[{i}] = {amt * 16.0 / attack:.4f}f;")
+                else:
+                    parts.append(f"id(zone_flash)[{i}] = {amt:.3f}f;")
+                    parts.append(f"id(zone_flash_target)[{i}] = 0.0f;")
                 parts.append(f"id(zone_flash_decay)[{i}] = {dec}f;")
                 # Mask + epoch: WHERE on the jewel this strike lands, and a
                 # fresh scatter subset each time (mirrors fireCues in show.ts).

@@ -52,6 +52,9 @@ export interface BandStyle {
   /** A hit this hard spills onto the extra zones too — the big downbeat. */
   boostAt?: number;
   boostTargets?: readonly ZoneId[];
+  /** #10: rise time to peak, ms. Absent = instant slam. Drums slam; voices
+   *  and pads swell in. */
+  attackMs?: number;
 }
 
 /**
@@ -87,6 +90,7 @@ export const BAND_STYLE: Readonly<Record<BandName, BandStyle>> = {
              [0.25, 0.12, 1.0, 0.0]],    // indigo
     colorHot: [1.0, 0.15, 0.85, 0.12],   // hot pink, stays pink
     pixelsByVel: true,
+    attackMs: 90,                        // voices swell in; drums still slam
   },
   onset_high: {
     zones: ["towerR", "door", "towerL"], alternate: true,
@@ -194,6 +198,7 @@ export function bandStrikes(
       color: blendColor(s.colors[i % s.colors.length]!, s.colorHot, vel),
       decay,
       ...(pixels ? { pixels } : {}),
+      ...(s.attackMs ? { attack: s.attackMs } : {}),
       targets,
       detail: band,
     });

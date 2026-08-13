@@ -158,6 +158,24 @@ class TestSectionGatingParity(unittest.TestCase):
             times = [t for t, *_ in dynamic_strikes(side, s, self.M)]
             self.assertEqual(times, [1000, 6000])
 
+    def test_attack_rides_through_both_generators(self) -> None:
+        """#10: attack_ms on the stream becomes `attack` on every strike —
+        the esphome emitter turns it into a target+rise, the previewer hands
+        it to show.ts, and absent means 0/absent (the instant slam)."""
+        import gen_previewer as gp
+        s = self.scene(synth="onset_low", attack_ms=90)
+        self.assertTrue(all(c["attack"] == 90
+                            for c in ge.pulse_cues(s, self.M)))
+        pv = [c for c in gp.to_previewer(s, 1, "", self.M)["cues"]
+              if c["op"] == "strike"]
+        self.assertTrue(all(c.get("attack") == 90 for c in pv))
+        plain = self.scene(synth="onset_low")
+        self.assertTrue(all(c["attack"] == 0
+                            for c in ge.pulse_cues(plain, self.M)))
+        self.assertTrue(all("attack" not in c for c in
+                            [c for c in gp.to_previewer(plain, 1, "", self.M)["cues"]
+                             if c["op"] == "strike"]))
+
     def test_a_scene_without_section_cues_is_untouched(self) -> None:
         s = dict(PULSE_SCENE, pulse=[dict(self.GATED)])
         for side in ("esphome", "previewer"):

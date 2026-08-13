@@ -57,6 +57,11 @@ export interface ShowState {
   flash: PerZone<number>;
   flashCol: PerZone<StrikeColor>;
   flashDecay: PerZone<number>;
+  /** #10 attack: a pending rise. While > 0 the flash climbs by flashRise per
+   *  frame instead of decaying; at the peak it flips back to decay. 0 = the
+   *  classic instant slam. Mirrors zone_flash_target/_rise in castle.yaml. */
+  flashTarget: PerZone<number>;
+  flashRise: PerZone<number>;
   /** Scales the base effect only; strikes are unscaled. */
   level: PerZone<number>;
   /** Modelled decode spin-up, so screen and speaker agree. */
@@ -90,6 +95,8 @@ export function createState(scene: Scene, now: number): ShowState {
     flash: perZone(() => 0),
     flashCol: perZone<StrikeColor>(() => WHITE),
     flashDecay: perZone(() => DEFAULT_DECAY),
+    flashTarget: perZone(() => 0),
+    flashRise: perZone(() => 0),
     level: perZone(() => 1),
     latency: 70,
     soft: false,
@@ -127,6 +134,8 @@ export function rebuildLightsAt(st: ShowState, sc: Scene, ms: number): void {
   st.flash = perZone(() => 0);
   st.flashCol = perZone<StrikeColor>(() => WHITE);
   st.flashDecay = perZone(() => DEFAULT_DECAY);
+  st.flashTarget = perZone(() => 0);
+  st.flashRise = perZone(() => 0);
   st.level = { towerL: 1, towerR: 1, door: 1, ...sc.levels };
   st.eff = { ...perZone<EffectName>(() => "off"), ...sc.base };
   applyZoneDetail(st, sc);
@@ -187,7 +196,16 @@ export function fireCues(
       // violet bloom in the same vocabulary.
       const amt = (st.soft ? 0.42 : 1) * (c.intensity ?? 1);
       for (const id of strikeTargets(c)) {
-        st.flash[id] = Math.min(1, st.flash[id] + amt);
+        const peak = Math.min(1, st.flash[id] + amt);
+        if (c.attack && c.attack > 0) {
+          // #10: swell to the peak over attack ms rather than popping.
+          // The rise is per 16 ms frame, same arithmetic as the firmware.
+          st.flashTarget[id] = peak;
+          st.flashRise[id] = peak * 16 / c.attack;
+        } else {
+          st.flash[id] = peak;
+          st.flashTarget[id] = 0;    // a slam cancels any pending swell
+        }
         st.flashCol[id] = c.color ?? WHITE;
         st.flashDecay[id] = c.decay ?? DEFAULT_DECAY;
         // Where the strike lands on the jewel: whole face, a fresh random
@@ -200,9 +218,18 @@ export function fireCues(
   }
 }
 
-/** Per-zone strike decay. Soft mode slows the fall, as the firmware does. */
+/** Per-zone strike rise-then-decay. Soft mode slows the fall, as the
+ *  firmware does; the rise is not softened — soft already shrank the peak. */
 export function decayFlashes(st: ShowState): void {
   for (const id of ZONE_IDS) {
+    if (st.flashTarget[id] > 0) {
+      st.flash[id] += st.flashRise[id];
+      if (st.flash[id] >= st.flashTarget[id]) {
+        st.flash[id] = st.flashTarget[id];
+        st.flashTarget[id] = 0;       // peak reached: decay takes over
+      }
+      continue;
+    }
     const d0 = st.flashDecay[id];
     st.flash[id] *= st.soft ? 1 - (1 - d0) * 0.35 : d0;
     if (st.flash[id] < 0.004) st.flash[id] = 0;

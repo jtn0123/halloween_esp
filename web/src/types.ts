@@ -65,6 +65,9 @@ export interface StrikeCue extends CueBase {
   pixels?: string;
   /** Per-frame multiplier at 16 ms. 0.82 snaps, 0.97 blooms. */
   decay?: number;
+  /** Rise time to peak, ms. Absent/0 = the classic instant slam; ~90 lets a
+   *  voice or pad swell in instead of popping. Decay starts at the peak. */
+  attack?: number;
 }
 
 export type Cue = AudioCue | SetCue | StrikeCue;

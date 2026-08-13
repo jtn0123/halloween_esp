@@ -17,7 +17,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.13"
+  version: "5.14"
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
   #
@@ -188,6 +188,8 @@ wifi:
 packages:
   # The generated scene scripts.
   scenes: !include generated/scenes.yaml
+  # Install-calibration knobs (mansion balance, per-zone trims).
+  tuning: !include tuning.yaml
   # Build trees live off the internal disk — see the file for why, and for
   # how to go back to building locally.
   build_path: !include build_path.yaml
@@ -215,6 +217,17 @@ globals:
     type: float[3]
     restore_value: false
     initial_value: "{0.90f, 0.90f, 0.90f}"
+  # Attack (#10): while _target > 0 the flash CLIMBS by _rise per frame
+  # instead of decaying, then flips to decay at the peak. 0 = instant slam,
+  # which is every strike that does not say otherwise.
+  - id: zone_flash_target
+    type: float[3]
+    restore_value: false
+    initial_value: "{0.0f, 0.0f, 0.0f}"
+  - id: zone_flash_rise
+    type: float[3]
+    restore_value: false
+    initial_value: "{0.0f, 0.0f, 0.0f}"
   # Per-zone brightness for the BASE effect only — strikes are unscaled.
   # This is what buys a scene contrast: hold the standing effect low and the
   # audio-driven pulses become the loudest thing in the room, which is the
@@ -255,49 +268,10 @@ globals:
     restore_value: false
     initial_value: "{0, 0, 0}"
 
-number:
-  # Live tuning knobs, exposed to Home Assistant. These match the sliders on
-  # the browser previewer so a setting found there can be dialled in here.
-  - platform: template
-    name: "Mansion balance"
-    id: hue_balance
-    optimistic: true
-    min_value: 0
-    max_value: 1
-    step: 0.01
-    initial_value: 0.5
-    restore_value: true
-  # Installation calibration: the door jewel sits closer to the viewer than
-  # the towers, and drywall eats light unevenly. Trim scales EVERYTHING in a
-  # zone (base and strikes), persists across reboots, and belongs to the
-  # install — which is why it is a device setting and not a scene field.
-  - platform: template
-    name: "Trim towerL"
-    id: trim_towerl
-    optimistic: true
-    min_value: 0.1
-    max_value: 1
-    step: 0.05
-    initial_value: 1
-    restore_value: true
-  - platform: template
-    name: "Trim towerR"
-    id: trim_towerr
-    optimistic: true
-    min_value: 0.1
-    max_value: 1
-    step: 0.05
-    initial_value: 1
-    restore_value: true
-  - platform: template
-    name: "Trim door"
-    id: trim_door
-    optimistic: true
-    min_value: 0.1
-    max_value: 1
-    step: 0.05
-    initial_value: 1
-    restore_value: true
+# Device tuning knobs (mansion balance + per-zone install trims) live in
+# tuning.yaml — split for the 500-line cap along a real seam: they are
+# install calibration, not show logic. Packages append lists, and the
+# core defines no `number:` of its own, so the merge is trivial.
 
 switch:
   - platform: template
@@ -377,8 +351,17 @@ light:
               // turning a strobe into a swell.
               float d0 = id(zone_flash_decay)[z];
               float d = soft ? (1.0f - (1.0f - d0) * 0.35f) : d0;
-              id(zone_flash)[z] *= d;
-              if (id(zone_flash)[z] < 0.004f) id(zone_flash)[z] = 0.0f;
+              if (id(zone_flash_target)[z] > 0.0f) {
+                // Attack phase: swell toward the peak, then hand to decay.
+                id(zone_flash)[z] += id(zone_flash_rise)[z];
+                if (id(zone_flash)[z] >= id(zone_flash_target)[z]) {
+                  id(zone_flash)[z] = id(zone_flash_target)[z];
+                  id(zone_flash_target)[z] = 0.0f;
+                }
+              } else {
+                id(zone_flash)[z] *= d;
+                if (id(zone_flash)[z] < 0.004f) id(zone_flash)[z] = 0.0f;
+              }
               float fbase = id(zone_flash)[z] * (soft ? 0.55f : 0.92f);
               const float *fc = &id(zone_flash_col)[z * 4];
               float lv = id(zone_level)[z];

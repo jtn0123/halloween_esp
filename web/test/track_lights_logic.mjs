@@ -228,6 +228,15 @@ for (const [name, s] of Object.entries(BAND_STYLE)) {
   eq(low.map(c => c.t), [1000, 6000], "the low band keeps its hush hits, drops silence");
 }
 
+/* ── Attack (#10): voices swell, drums slam ── */
+{
+  const mid = bandStrikes("onset_mid", [[0, 0.8]], 0, 10);
+  ok(mid[0].attack === BAND_STYLE.onset_mid.attackMs,
+     "mid strikes carry the style's attack");
+  const low = bandStrikes("onset_low", [[0, 0.8]], 0, 10);
+  ok(low[0].attack === undefined, "low strikes keep the instant slam");
+}
+
 /* ── The style lab: variant, tweaks, and the export's honesty ── */
 {
   ok(styleVariant() === "current", "the lab starts on the current engine");

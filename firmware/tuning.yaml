@@ -1,0 +1,47 @@
+# Device tuning knobs — split from castle.yaml (see the note there).
+# Everything in this file is INSTALL calibration: values that belong to
+# the physical build and persist across reboots, not to any scene.
+
+number:
+  # Live tuning knobs, exposed to Home Assistant. These match the sliders on
+  # the browser previewer so a setting found there can be dialled in here.
+  - platform: template
+    name: "Mansion balance"
+    id: hue_balance
+    optimistic: true
+    min_value: 0
+    max_value: 1
+    step: 0.01
+    initial_value: 0.5
+    restore_value: true
+  # Installation calibration: the door jewel sits closer to the viewer than
+  # the towers, and drywall eats light unevenly. Trim scales EVERYTHING in a
+  # zone (base and strikes), persists across reboots, and belongs to the
+  # install — which is why it is a device setting and not a scene field.
+  - platform: template
+    name: "Trim towerL"
+    id: trim_towerl
+    optimistic: true
+    min_value: 0.1
+    max_value: 1
+    step: 0.05
+    initial_value: 1
+    restore_value: true
+  - platform: template
+    name: "Trim towerR"
+    id: trim_towerr
+    optimistic: true
+    min_value: 0.1
+    max_value: 1
+    step: 0.05
+    initial_value: 1
+    restore_value: true
+  - platform: template
+    name: "Trim door"
+    id: trim_door
+    optimistic: true
+    min_value: 0.1
+    max_value: 1
+    step: 0.05
+    initial_value: 1
+    restore_value: true

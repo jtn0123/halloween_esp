@@ -220,6 +220,42 @@ const P = defaultParams();
   ok(plays === 0, "a paused show fires nothing, however far the clock has moved");
 }
 
+/* ── Attack (#10): a strike can swell to its peak instead of popping ── */
+{
+  const sc = scene({ cues: [
+    { t: 0, bus: "LED", op: "strike", ms: 200, targets: ["door"],
+      intensity: 0.8, decay: 0.9, attack: 96 },
+  ]});
+  const st = createState(sc, 0);
+  fireCues(st, 0, () => {});
+  ok(st.flash.door === 0, "an attack strike starts from dark, not at peak");
+  ok(st.flashTarget.door === 0.8, "the peak is armed");
+  decayFlashes(st);
+  ok(Math.abs(st.flash.door - 0.8 * 16 / 96) < 1e-9,
+     "one frame climbs peak*16/attack — the firmware's exact arithmetic");
+  // 6 exact frames in theory; float accumulation means the clamp lands on
+  // the 7th. What matters is reaching the peak and disarming.
+  for (let i = 0; i < 6; i++) decayFlashes(st);
+  ok(st.flash.door === 0.8 && st.flashTarget.door === 0,
+     "the swell reaches the peak and disarms");
+  decayFlashes(st);
+  ok(Math.abs(st.flash.door - 0.72) < 1e-9, "then ordinary decay takes over");
+}
+{
+  const sc = scene({ cues: [
+    { t: 0, bus: "LED", op: "strike", ms: 100, targets: ["door"],
+      intensity: 0.5, decay: 0.9, attack: 200 },
+    { t: 50, bus: "LED", op: "strike", ms: 100, targets: ["door"],
+      intensity: 1.0, decay: 0.9 },
+  ]});
+  const st = createState(sc, 0);
+  fireCues(st, 0, () => {});
+  decayFlashes(st);
+  fireCues(st, 60, () => {});
+  ok(st.flash.door === 1 && st.flashTarget.door === 0,
+     "a slam mid-swell wins instantly and cancels the pending rise");
+}
+
 console.log(`show engine: ${pass} assertions`);
 if (fails.length) {
   console.error(`\nFAILED — ${fails.length}:`);
