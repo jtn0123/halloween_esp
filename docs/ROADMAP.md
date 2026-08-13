@@ -40,7 +40,9 @@ for firmware, version bump → OTA → /api/status confirm.
 - [x] #24 eInk status screen: scene, uptime, SD free, QR to web remote
       (shipped v5.11 2026-08-12; needs one eyeball check — if the text is
       upside down, flip ROT180 in firmware/castle_eink.h)
-- [ ] #19 Playlist/show mode: ordered scenes, crossfade, ambient gaps
+- [x] #19 Playlist/show mode (2026-08-13, v5.15): show: block, generated
+      self-looping script, dark gaps between scenes, /api/show/start|stop,
+      device-panel button. Verified advancing live.
 - [ ] #21 Phone "big buttons" page: Ambient / Scare / Song / Off
 - [ ] #25 /api/blackout panic endpoint
 - [ ] #26 Boot self-test sweep (zones, colours, test tone)
