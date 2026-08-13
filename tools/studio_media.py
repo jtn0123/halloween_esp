@@ -148,9 +148,15 @@ def waveform(path: Path, sensitivity: float = 1.1, buckets: int = PEAKS) -> dict
     peaks = [round(p / top, 4) for p in peaks]
 
     marks = ana.analyze_full(x, sensitivity=sensitivity)
+    # Full-range loudness over time, alongside the onsets. Onsets say WHEN
+    # something hit; this says how big the music is right now, which is what
+    # lets a generated scene dim for the spoken verse and bloom for the
+    # chorus instead of holding one level for three minutes.
+    env = ana.envelope(x, bands=[("onset_full", 20, 16000, 0.0)])
     return {
         "id": path.stem,
         "duration": round(dur, 3),
         "peaks": peaks,
         "onsets": {k: [[round(t, 3), v] for t, v in v_] for k, v_ in marks.items()},
+        "env": [[round(t, 3), v] for t, v in env.get("level_full", [])],
     }

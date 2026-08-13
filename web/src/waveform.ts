@@ -170,7 +170,8 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     const peaks = b?.peaks, dur = b?.duration;
     if (!Array.isArray(peaks) || typeof dur !== "number" || !(dur > 0))
       return `Analysis for “${id}” came back without usable peaks.`;
-    return { id, duration: dur, peaks, onsets: b?.onsets ?? {} };
+    return { id, duration: dur, peaks, onsets: b?.onsets ?? {},
+             ...(b?.env ? { env: b.env } : {}) };
   }
 
   async function analyse(id: string): Promise<WaveData | string> {
@@ -429,6 +430,14 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       host.hidden = id === null;       // nothing selected, nothing to show
       trackId = id;
       clip = null;                     // a new track's in/out points are its own
+      // Drop the previous track's analysis NOW, not when the new one lands.
+      // Between show() and load() finishing, the old data was still live: a
+      // drag in that window built a clip — and an audition scene — from the
+      // old track's onsets against the new track's audio, and the Audition
+      // button sat enabled with nothing valid behind it.
+      view.data = null;
+      view.message = id ? `Analysing ${id}…` : "No track selected.";
+      sync();
       // No extension — the studio resolves the id to whichever container the
       // import landed in, so a WAV or FLAC track auditions like any other.
       if (id) audio.src = `/api/track/${encodeURIComponent(id)}`;

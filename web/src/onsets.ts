@@ -63,6 +63,36 @@ export function pickOnsets(
   return hits;
 }
 
+/**
+ * Full-range loudness over time — the browser twin of the `env` field the
+ * studio's waveform endpoint returns (tools/analyze.py envelope()). Same
+ * output contract: [seconds, level 0..1] at ~6 Hz, log-compressed, scaled to
+ * the material's own range, near-silent points dropped.
+ */
+export function loudnessEnvelope(
+  samples: Float32Array, sampleRate: number, hz = 6,
+): Onset[] {
+  const hop = 512;
+  const n = Math.floor(samples.length / hop);
+  if (n < 3) return [];
+  const env = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    for (let j = i * hop; j < (i + 1) * hop; j++) s += samples[j]! * samples[j]!;
+    env[i] = Math.log1p(Math.sqrt(s / hop) * 50);
+  }
+  let lo = Infinity, hi = -Infinity;
+  for (const v of env) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (hi - lo < 1e-9) return [];
+  const step = Math.max(1, Math.round(sampleRate / hop / hz));
+  const out: Onset[] = [];
+  for (let i = 0; i < n; i += step) {
+    const v = (env[i]! - lo) / (hi - lo);
+    if (v > 0.02) out.push([+(i * hop / sampleRate).toFixed(3), +v.toFixed(3)]);
+  }
+  return out;
+}
+
 export async function detectOnsets(audio: AudioBuffer): Promise<Record<string, Onset[]>> {
   const out: Record<string, Onset[]> = {};
   for (const [name, lo, hi, gap] of BANDS) {

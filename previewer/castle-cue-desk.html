@@ -3190,6 +3190,30 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     }
     return hits;
   }
+  function loudnessEnvelope(samples, sampleRate, hz = 6) {
+    const hop = 512;
+    const n = Math.floor(samples.length / hop);
+    if (n < 3) return [];
+    const env2 = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      let s = 0;
+      for (let j = i * hop; j < (i + 1) * hop; j++) s += samples[j] * samples[j];
+      env2[i] = Math.log1p(Math.sqrt(s / hop) * 50);
+    }
+    let lo = Infinity, hi = -Infinity;
+    for (const v of env2) {
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    if (hi - lo < 1e-9) return [];
+    const step2 = Math.max(1, Math.round(sampleRate / hop / hz));
+    const out = [];
+    for (let i = 0; i < n; i += step2) {
+      const v = (env2[i] - lo) / (hi - lo);
+      if (v > 0.02) out.push([+(i * hop / sampleRate).toFixed(3), +v.toFixed(3)]);
+    }
+    return out;
+  }
   async function detectOnsets(audio) {
     const out = {};
     for (const [name, lo, hi, gap] of BANDS2) {
@@ -3266,36 +3290,226 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     };
   }
 
+  // src/track_lights.ts
+  var BAND_STYLE = {
+    /* Intensity and decay are tuned against real screenshots: at the first
+       pass (intensity ~0.6, decay 0.86-0.94) the median hit landed at 0.25
+       over a lit amber base and was gone in ~200 ms — the colours were firing
+       and invisible. Hits must READ, or the whole exercise is three lamps. */
+    onset_low: {
+      zones: ["door"],
+      alternate: false,
+      intensity: 0.85,
+      decay: 0.9,
+      ms: 140,
+      color: [1, 0.07, 0, 0],
+      colorHot: [1, 0.58, 0.06, 0.3],
+      pixelsByVel: true,
+      boostAt: 0.85,
+      boostTargets: ["towerL", "towerR"]
+    },
+    onset_mid: {
+      zones: ["towerL", "towerR"],
+      alternate: true,
+      intensity: 0.8,
+      decay: 0.945,
+      ms: 160,
+      color: [0.62, 0.08, 1, 0.04],
+      colorHot: [1, 0.4, 0.95, 0.45],
+      pixelsByVel: true
+    },
+    onset_high: {
+      zones: ["towerR", "door", "towerL"],
+      alternate: true,
+      intensity: 0.72,
+      decay: 0.95,
+      ms: 130,
+      color: [0.25, 1, 0.5, 0],
+      colorHot: [0.55, 1, 0.95, 0.55],
+      pixels: "scatter"
+    }
+  };
+  var blendColor = (base, hot, vel) => !hot ? base : [
+    base[0] + (hot[0] - base[0]) * vel,
+    base[1] + (hot[1] - base[1]) * vel,
+    base[2] + (hot[2] - base[2]) * vel,
+    base[3] + (hot[3] - base[3]) * vel
+  ];
+  var pixelsForVel = (vel) => vel < 0.4 ? "center" : vel < 0.72 ? "scatter" : "all";
+  function bandStrikes(band, hits, startSec, endSec, zoneOverride) {
+    const s = BAND_STYLE[band];
+    const pinned = zoneOverride !== void 0 && zoneOverride !== BAND_BY_NAME[band].zone;
+    const zones = pinned ? [zoneOverride] : s.zones;
+    const out = [];
+    hits.forEach(([sec, vel], i) => {
+      if (sec < startSec || sec > endSec) return;
+      let targets = s.alternate && !pinned ? [zones[i % zones.length]] : [...zones];
+      if (s.boostTargets && s.boostAt !== void 0 && vel >= s.boostAt) {
+        targets = targets.concat(s.boostTargets.filter((z) => !targets.includes(z)));
+      }
+      const pixels = s.pixelsByVel ? pixelsForVel(vel) : s.pixels;
+      out.push({
+        t: Math.round((sec - startSec) * 1e3),
+        bus: "LED",
+        op: "strike",
+        ms: s.ms,
+        intensity: Math.round(s.intensity * vel * 1e3) / 1e3,
+        color: blendColor(s.color, s.colorHot, vel),
+        decay: s.decay,
+        ...pixels ? { pixels } : {},
+        targets,
+        detail: band
+      });
+    });
+    return out;
+  }
+  var TIERS = [
+    { towers: "chill", towersLevel: 0.4, door: "ember", doorLevel: 0.5 },
+    // quiet
+    { towers: "candle", towersLevel: 0.65, door: "ember", doorLevel: 0.8 },
+    // mid
+    { towers: "mansion", towersLevel: 0.95, door: "furnace", doorLevel: 0.95 }
+    // loud
+  ];
+  var DEBOUNCE_SEC = 1;
+  var HYST = 0.08;
+  var FLAT_RANGE = 0.15;
+  function envAt(env2, sec) {
+    let best = 0, bestDt = 0.5;
+    for (const [t, v] of env2) {
+      const dt = Math.abs(t - sec);
+      if (dt < bestDt) {
+        bestDt = dt;
+        best = v;
+      }
+    }
+    return best;
+  }
+  function desiredTier(v, cur, up) {
+    if (cur < 0) return v >= up[1] ? 2 : v >= up[0] ? 1 : 0;
+    let next = cur;
+    if (v >= up[1]) next = 2;
+    else if (v >= up[0]) next = Math.max(next, 1);
+    if (v < up[0] - HYST) next = 0;
+    else if (v < up[1] - HYST) next = Math.min(next, 1);
+    return next;
+  }
+  var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  function sections(env2, startSec, endSec) {
+    if (!env2 || !env2.length) return [[0, 1]];
+    const STEP = 0.25;
+    const smoothed = [];
+    for (let sec = startSec; sec <= endSec; sec += STEP) {
+      smoothed.push((envAt(env2, sec - 0.5) + envAt(env2, sec) + envAt(env2, sec + 0.5)) / 3);
+    }
+    const sorted = [...smoothed].sort((a, b) => a - b);
+    const pct = (q) => sorted[Math.floor(q * (sorted.length - 1))];
+    if (pct(0.9) - pct(0.1) < FLAT_RANGE) return [[0, 1]];
+    const up0 = clamp(pct(0.35), 0.25, 0.55);
+    const up = [up0, clamp(pct(0.7), up0 + 0.15, 0.8)];
+    const out = [];
+    let tier = -1;
+    let pending = -1, pendingFor = 0;
+    for (let i = 0; i < smoothed.length; i++) {
+      const sec = startSec + i * STEP;
+      const v = smoothed[i];
+      const want = desiredTier(v, tier, up);
+      if (tier < 0) {
+        tier = want;
+        out.push([0, tier]);
+        continue;
+      }
+      if (want === tier) {
+        pending = -1;
+        pendingFor = 0;
+        continue;
+      }
+      if (want === pending) {
+        pendingFor += STEP;
+        if (pendingFor >= DEBOUNCE_SEC) {
+          tier = want;
+          out.push([sec - startSec, tier]);
+          pending = -1;
+          pendingFor = 0;
+        }
+      } else {
+        pending = want;
+        pendingFor = 0;
+      }
+    }
+    return out.length ? out : [[0, 1]];
+  }
+  function sectionCues(env2, startSec, endSec) {
+    const out = [];
+    for (const [sec, tierIdx] of sections(env2, startSec, endSec)) {
+      const look = TIERS[tierIdx];
+      const t = Math.round(sec * 1e3);
+      const note = ["hush", "verse", "chorus"][tierIdx];
+      out.push(
+        {
+          t,
+          bus: "LED",
+          op: "set",
+          zone: "towerL",
+          eff: look.towers,
+          level: look.towersLevel,
+          detail: note
+        },
+        {
+          t,
+          bus: "LED",
+          op: "set",
+          zone: "towerR",
+          eff: look.towers,
+          level: look.towersLevel,
+          detail: note
+        },
+        {
+          t,
+          bus: "LED",
+          op: "set",
+          zone: "door",
+          eff: look.door,
+          level: look.doorLevel,
+          detail: note
+        }
+      );
+    }
+    return out;
+  }
+  var ZONES_BLOCK = {
+    towerL: { center: "ember", palette: "haunt" },
+    towerR: { center: "ember", palette: "moonlight", phase: 1.3 },
+    door: { overlay: "sparkle", palette: "ember" }
+  };
+  function trackCues(onsets, env2, startSec, endSec, zoneOverrides = {}) {
+    const cues = [...sectionCues(env2, startSec, endSec)];
+    for (const band of Object.keys(BAND_STYLE)) {
+      const hits = onsets[band];
+      if (hits) cues.push(...bandStrikes(
+        band,
+        hits,
+        startSec,
+        endSec,
+        zoneOverrides[band]
+      ));
+    }
+    cues.sort((a, z) => a.t - z.t);
+    return cues;
+  }
+
   // src/track_scene.ts
-  var BASE = { towerL: "chill", towerR: "chill", door: "ember" };
-  var LEVELS = { towerL: 0.4, towerR: 0.4, door: 0.5 };
-  var PULSE_INTENSITY = 0.55;
+  var BASE = { towerL: TIERS[0].towers, towerR: TIERS[0].towers, door: TIERS[0].door };
+  var LEVELS = {
+    towerL: TIERS[0].towersLevel,
+    towerR: TIERS[0].towersLevel,
+    door: TIERS[0].doorLevel
+  };
   var VOLUME2 = 0.7;
   function sceneFromTrack(data, clip, zones = {}) {
     const start = clip?.start ?? 0;
     const end = clip?.end ?? data.duration;
     const dur = Math.max(1, Math.round((end - start) * 1e3));
-    const cues = [];
-    for (const b of BANDS) {
-      const hits = data.onsets[b.name];
-      if (!hits) continue;
-      const zone = zones[b.name] ?? b.zone;
-      for (const [sec, vel] of hits) {
-        if (sec < start || sec > end) continue;
-        cues.push({
-          t: Math.round((sec - start) * 1e3),
-          bus: "LED",
-          op: "strike",
-          ms: 120,
-          intensity: Math.round(PULSE_INTENSITY * vel * 1e3) / 1e3,
-          color: b.rgbw,
-          decay: b.decay,
-          targets: [zone],
-          detail: b.name
-        });
-      }
-    }
-    cues.sort((a, z) => a.t - z.t);
     return {
       id: `preview:${data.id}`,
       name: data.id,
@@ -3306,7 +3520,14 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       blurb: "Live preview of the clip you have selected. The lights are the onsets detected in this region \u2014 the same ones the scene would use.",
       base: BASE,
       levels: LEVELS,
-      cues,
+      zones: ZONES_BLOCK,
+      cues: trackCues(
+        data.onsets,
+        data.env,
+        start,
+        end,
+        zones
+      ),
       // No rendered file: the audition element is the audio, and giving this a
       // file name would have the show engine try to play a second copy.
       file: "",
@@ -3314,7 +3535,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       yaml: ""
     };
   }
-  function sceneYaml(id, dur, counts, ext = "mp3", bands2) {
+  var num = (v) => String(Math.round(v * 1e3) / 1e3);
+  var rgbw = (c) => `[${c.map(num).join(", ")}]`;
+  function sceneYaml(id, dur, counts, ext = "mp3", bands2, env2) {
     const L = [
       `  - id: ${id}`,
       `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}`,
@@ -3332,15 +3555,45 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       ...bands2?.customised() ? [`    sensitivity: {${BANDS.map((b) => `${b.label}: ${bands2.settings().sensitivity[b.name].toFixed(2)}`).join(", ")}}`] : [],
       `    base: {towerL: ${BASE.towerL}, towerR: ${BASE.towerR}, door: ${BASE.door}}`,
       `    levels: {towerL: ${LEVELS.towerL}, towerR: ${LEVELS.towerR}, door: ${LEVELS.door}}`,
+      `    zones:`,
+      `      towerL: {center: ${ZONES_BLOCK.towerL.center}, palette: ${ZONES_BLOCK.towerL.palette}}`,
+      `      towerR: {center: ${ZONES_BLOCK.towerR.center}, palette: ${ZONES_BLOCK.towerR.palette}, phase: ${ZONES_BLOCK.towerR.phase}}`,
+      `      door: {overlay: ${ZONES_BLOCK.door.overlay}, palette: ${ZONES_BLOCK.door.palette}}`,
       `    pulse:`
     ];
     for (const b of BANDS) {
       const n = counts[b.name];
       if (!n) continue;
-      const zone = bands2?.zones()[b.name] ?? b.zone;
-      L.push(`      - {synth: ${b.name}, zone: ${zone}, intensity: ${PULSE_INTENSITY}, decay: ${b.decay}, color: [${b.rgbw.join(", ")}]}   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
+      const s = BAND_STYLE[b.name];
+      const pinned = bands2 !== void 0 && bands2.zones()[b.name] !== b.zone;
+      const zones = pinned ? [bands2.zones()[b.name]] : s.zones;
+      const opts = [
+        `synth: ${b.name}`,
+        `zones: [${zones.join(", ")}]`,
+        ...s.alternate && !pinned ? ["alternate: true"] : [],
+        `intensity: ${num(s.intensity)}`,
+        `decay: ${num(s.decay)}`,
+        `ms: ${s.ms}`,
+        `color: ${rgbw(s.color)}`,
+        `color_hot: ${rgbw(s.colorHot)}`,
+        ...s.pixelsByVel ? ["pixels_by_vel: true"] : [],
+        ...s.pixels ? [`pixels: ${s.pixels}`] : [],
+        ...s.boostAt !== void 0 ? [
+          `boost_at: ${num(s.boostAt)}`,
+          `boost_targets: [${(s.boostTargets ?? []).join(", ")}]`
+        ] : []
+      ];
+      L.push(`      - {${opts.join(", ")}}   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
     }
-    L.push(`    cues: []`);
+    const sects = env2?.length && dur ? sectionCues(env2, 0, dur) : [];
+    if (!sects.length) {
+      L.push(`    cues: []`);
+    } else {
+      L.push(`    cues:`);
+      for (const c of sects) {
+        L.push(`      - {t: ${c.t}, op: set, zone: ${c.zone}, effect: ${c.eff}, level: ${num(c.level ?? 1)}, note: ${c.detail}}`);
+      }
+    }
     return L.join("\n");
   }
 
@@ -3511,7 +3764,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         try {
           const r = await fetch("/api/tracks").then((res2) => res2.json());
           const t = (r.tracks || []).find((x) => x.id === id);
-          const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands);
+          const wf = await fetch(`/api/waveform/${encodeURIComponent(id)}`).then((res2) => res2.ok ? res2.json() : null).catch(() => null);
+          const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands, wf?.env);
           T.yaml.hidden = false;
           T.yaml.textContent = block;
           say(`Writing scene "${id}" into scenes.yaml and re-rendering the show\u2026`);
@@ -3650,7 +3904,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         const id = (opts().id || file.name.replace(/\.[^.]+$/, "")).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 32);
         const counts = Object.fromEntries(Object.entries(marks).map(([k, v]) => [k, v.length]));
         const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || "mp3").toLowerCase();
-        const block = sceneYaml(id, audio.duration, counts, ext, deps.bands);
+        const env2 = loudnessEnvelope(audio.getChannelData(0), audio.sampleRate);
+        const block = sceneYaml(id, audio.duration, counts, ext, deps.bands, env2);
         T.yaml.hidden = false;
         T.yaml.textContent = block;
         const kb4 = Math.round(audio.duration * 96 * 1e3 / 8 / 1024);
@@ -3667,7 +3922,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   var LANE = 9;
   var LANES = LANE * BAND_ORDER.length;
   var EDGE_SLOP = 7;
-  var clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  var clamp2 = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   var readPalette = (el) => {
     const cs = getComputedStyle(el);
     const v = (name, fallback) => cs.getPropertyValue(name).trim() || fallback;
@@ -3724,7 +3979,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     /** CSS x -> seconds, clamped to the track. */
     xToSec(x) {
       const d = this.data?.duration ?? 0;
-      return d > 0 ? clamp(x / this.w, 0, 1) * d : 0;
+      return d > 0 ? clamp2(x / this.w, 0, 1) * d : 0;
     }
     /** Where a pointer event landed, in this canvas's own CSS pixels. */
     eventX(e) {
@@ -3784,7 +4039,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         g2.fillStyle = BAND_INK[band];
         for (const [sec, vel] of hits) {
           const x = Math.round(this.secToX(sec));
-          const v = clamp(vel, 0, 1);
+          const v = clamp2(vel, 0, 1);
           g2.globalAlpha = 0.1 + 0.3 * v;
           g2.fillRect(x, 0, 1, waveH);
           g2.globalAlpha = 1;
@@ -3825,7 +4080,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   };
 
   // src/waveform.ts
-  var clamp2 = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  var clamp3 = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   function initWaveform(deps) {
     const host = document.getElementById(deps.containerId ?? "trkWave");
     if (!host) {
@@ -3899,7 +4154,13 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       const peaks = b?.peaks, dur = b?.duration;
       if (!Array.isArray(peaks) || typeof dur !== "number" || !(dur > 0))
         return `Analysis for \u201C${id}\u201D came back without usable peaks.`;
-      return { id, duration: dur, peaks, onsets: b?.onsets ?? {} };
+      return {
+        id,
+        duration: dur,
+        peaks,
+        onsets: b?.onsets ?? {},
+        ...b?.env ? { env: b.env } : {}
+      };
     }
     async function analyse(id) {
       try {
@@ -3941,7 +4202,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       }
       view.data = res;
       view.message = "";
-      clip = clip ? { start: clamp2(clip.start, 0, res.duration), end: clamp2(clip.end, 0, res.duration) } : { start: 0, end: res.duration };
+      clip = clip ? { start: clamp3(clip.start, 0, res.duration), end: clamp3(clip.end, 0, res.duration) } : { start: 0, end: res.duration };
       say(counts(res));
       sync();
       pushOpts();
@@ -4100,6 +4361,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         host.hidden = id === null;
         trackId = id;
         clip = null;
+        view.data = null;
+        view.message = id ? `Analysing ${id}\u2026` : "No track selected.";
+        sync();
         if (id) audio.src = `/api/track/${encodeURIComponent(id)}`;
         else audio.removeAttribute("src");
         void load();

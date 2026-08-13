@@ -79,6 +79,18 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
     its own colour, intensity and decay, so a heartbeat can be a fast red
     snap while a bell toll is a slow violet bloom. `zones` + `alternate`
     round-robins markers across zones (whispers moving between the towers).
+
+    Dynamics, all per hit, all driven by the marker's velocity:
+      color_hot:     a second colour; each hit blends color->color_hot by vel,
+                     so soft hits sit deep in the hue and hard hits go bright.
+      pixels_by_vel: soft hits touch the centre, medium hits scatter, hard
+                     hits take the whole jewel (overrides `pixels`).
+      boost_at/boost_targets: a hit at or above `boost_at` spills onto the
+                     extra zones too — the big downbeat that lights the castle.
+      ms:            strike length for this stream (default 120).
+
+    The same arithmetic lives in web/src/track_lights.ts and
+    tools/gen_previewer.py — keep all three in lockstep.
     """
     scene_marks = markers.get(scene["id"], {})
     out = []
@@ -92,16 +104,38 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
             if zones and cfg.get("alternate"):
                 targets = [zones[i % len(zones)]]
             else:
-                targets = zones          # None -> all zones
+                targets = list(zones) if zones else None   # None -> all zones
+            if targets and cfg.get("boost_targets") and vel >= cfg.get("boost_at", 2):
+                targets = targets + [z for z in cfg["boost_targets"]
+                                     if z not in targets]
             out.append({"t": t, "op": "strike", "targets": targets,
+                        "ms": int(cfg.get("ms", 120)),
                         "intensity": round(cfg.get("intensity", 0.3) * vel, 3),
-                        "color": cfg.get("color", WHITE),
+                        "color": blend_color(cfg.get("color", WHITE),
+                                             cfg.get("color_hot"), vel),
                         "decay": cfg.get("decay", DEFAULT_DECAY),
                         # WHERE on the jewel the pulse lands: a bass thump can
                         # hit the door's centre while highs scatter the rings.
-                        "pixels": cfg.get("pixels", "all"),
+                        "pixels": pixels_for(cfg, vel),
                         "note": cfg["synth"]})
     return out
+
+
+def blend_color(base: list, hot: list | None, vel: float) -> list:
+    """color -> color_hot by velocity. Identical in track_lights.ts."""
+    if not hot:
+        return base
+    return [round(b + (h - b) * vel, 3) for b, h in zip(base, hot)]
+
+
+def pixels_for(cfg: dict, vel: float) -> str:
+    """Velocity picks the strike mask: soft centre, medium scatter, hard all.
+
+    Thresholds are shared with track_lights.ts and gen_previewer.py.
+    """
+    if not cfg.get("pixels_by_vel"):
+        return cfg.get("pixels", "all")
+    return "center" if vel < 0.40 else ("scatter" if vel < 0.72 else "all")
 
 
 def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[str]:

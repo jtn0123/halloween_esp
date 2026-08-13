@@ -30,6 +30,12 @@ export interface WaveData {
   /** Absolute peak per bucket, 0..1, roughly a thousand of them. */
   peaks: readonly number[];
   onsets: WaveOnsets;
+  /**
+   * Full-range loudness over time, [seconds, level 0..1] at ~6 Hz. Near-silent
+   * points are omitted at the source, so a gap reads as quiet. Optional: an
+   * older studio, or static mode before analysis, simply has none.
+   */
+  env?: ReadonlyArray<readonly [number, number]>;
 }
 
 /** In and out points, in seconds. */

@@ -15,7 +15,7 @@
 import type { BandEditor } from "./band_editor.js";
 import { BAND_HELP, bandSummary } from "./bands.js";
 import { initImportOpts } from "./import_opts.js";
-import { detectOnsets } from "./onsets.js";
+import { detectOnsets, loudnessEnvelope } from "./onsets.js";
 import { createPreview } from "./preview.js";
 import { sceneYaml } from "./track_scene.js";
 import type { Scene } from "./types.js";
@@ -308,7 +308,12 @@ export function initTracks(deps: TracksDeps): TracksApi {
         // The list was just refetched from the same server that drew the row, so
         // a miss here means the track vanished mid-click — let it throw.
         const t = (r.tracks || []).find(x => x.id === id)!;
-        const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands);
+        // The loudness envelope drives the scene's quiet/verse/chorus set
+        // cues. Missing it degrades to one standing look, not to a failure.
+        const wf = await fetch(`/api/waveform/${encodeURIComponent(id)}`)
+          .then(res => res.ok ? res.json() as Promise<{ env?: [number, number][] }> : null)
+          .catch(() => null);
+        const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands, wf?.env);
         T.yaml.hidden = false; T.yaml.textContent = block;
         say(`Writing scene "${id}" into scenes.yaml and re-rendering the show…`);
         const res = await fetch("/api/scene", {
@@ -454,7 +459,8 @@ export function initTracks(deps: TracksDeps): TracksApi {
       // container the file already is — not at the .mp3 the studio would have
       // made of it.
       const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || "mp3").toLowerCase();
-      const block = sceneYaml(id, audio.duration, counts, ext, deps.bands);
+      const env = loudnessEnvelope(audio.getChannelData(0), audio.sampleRate);
+      const block = sceneYaml(id, audio.duration, counts, ext, deps.bands, env);
       T.yaml.hidden = false; T.yaml.textContent = block;
       const kb = Math.round(audio.duration * 96 * 1000 / 8 / 1024);
       say(`${file.name}: ${audio.duration.toFixed(1)}s, ~${kb} KB at 96 kbps. `

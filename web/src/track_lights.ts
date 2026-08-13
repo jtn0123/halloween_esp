@@ -1,0 +1,272 @@
+/**
+ * The look of a track-driven scene — every decision in one table.
+ *
+ * A generated scene used to be three fixed colours on three fixed lamps, one
+ * identical whole-jewel flash per onset. Musically dense material (voices,
+ * bells, drums at once) rendered as a slow trickle of indistinguishable
+ * blinks — the lights were technically following the music while visibly
+ * ignoring it.
+ *
+ * This module is the upgrade, and the single source both consumers read:
+ *
+ *   sceneFromTrack (the audition)  — expands onsets to cues HERE
+ *   sceneYaml      (the export)    — writes the same decisions as `pulse:`
+ *                                    config for tools/gen_previewer.py and
+ *                                    tools/gen_esphome.py to expand
+ *
+ * The expansion arithmetic (velocity colour blend, velocity pixel masks,
+ * boost spillover, alternate round-robin) is duplicated in those two Python
+ * generators, deliberately and exactly — see pulse_cues() in gen_esphome.py.
+ * Keep all three in lockstep.
+ */
+
+import { BAND_BY_NAME, type BandName } from "./bands.js";
+import type { Cue, EffectName, Rgbw, SetCue, StrikeCue, ZoneId } from "./types.js";
+import type { Onset } from "./onsets.js";
+
+/** One band's whole visual treatment. */
+export interface BandStyle {
+  /** Round-robin movement when the user has not pinned the band to a zone. */
+  zones: readonly ZoneId[];
+  alternate: boolean;
+  intensity: number;
+  decay: number;
+  ms: number;
+  /** Soft-hit colour … */
+  color: Rgbw;
+  /** … blended toward this by velocity, so no two hits look alike. */
+  colorHot: Rgbw;
+  /** Velocity picks the mask: soft centre, medium scatter, hard whole jewel. */
+  pixelsByVel?: boolean;
+  /** Fixed mask instead (the highs always glint as scattered pixels). */
+  pixels?: "all" | "scatter" | "center" | "ring";
+  /** A hit this hard spills onto the extra zones too — the big downbeat. */
+  boostAt?: number;
+  boostTargets?: readonly ZoneId[];
+}
+
+/**
+ * low   — drums, heartbeats: deep red at the door's core, gold when it slams,
+ *         and the hardest hits light the whole castle.
+ * mid   — voices, piano: violet answering between the towers, hot pink-white
+ *         on the belted notes.
+ * high  — bells, sparkle: green-ice glints scattered across single pixels,
+ *         walking tower→door→tower so the glitter moves.
+ */
+export const BAND_STYLE: Readonly<Record<BandName, BandStyle>> = {
+  /* Intensity and decay are tuned against real screenshots: at the first
+     pass (intensity ~0.6, decay 0.86-0.94) the median hit landed at 0.25
+     over a lit amber base and was gone in ~200 ms — the colours were firing
+     and invisible. Hits must READ, or the whole exercise is three lamps. */
+  onset_low: {
+    zones: ["door"], alternate: false, intensity: 0.85, decay: 0.90, ms: 140,
+    color: [1.0, 0.07, 0.0, 0.0], colorHot: [1.0, 0.58, 0.06, 0.30],
+    pixelsByVel: true, boostAt: 0.85, boostTargets: ["towerL", "towerR"],
+  },
+  onset_mid: {
+    zones: ["towerL", "towerR"], alternate: true,
+    intensity: 0.80, decay: 0.945, ms: 160,
+    color: [0.62, 0.08, 1.0, 0.04], colorHot: [1.0, 0.40, 0.95, 0.45],
+    pixelsByVel: true,
+  },
+  onset_high: {
+    zones: ["towerR", "door", "towerL"], alternate: true,
+    intensity: 0.72, decay: 0.95, ms: 130,
+    color: [0.25, 1.0, 0.50, 0.0], colorHot: [0.55, 1.0, 0.95, 0.55],
+    pixels: "scatter",
+  },
+};
+
+/** color -> colorHot by velocity. Same maths as blend_color in the generators. */
+export const blendColor = (base: Rgbw, hot: Rgbw | undefined, vel: number): Rgbw =>
+  !hot ? base
+       : [base[0] + (hot[0] - base[0]) * vel, base[1] + (hot[1] - base[1]) * vel,
+          base[2] + (hot[2] - base[2]) * vel, base[3] + (hot[3] - base[3]) * vel];
+
+/** Velocity mask thresholds — shared with pixels_for in the generators. */
+export const pixelsForVel = (vel: number): "center" | "scatter" | "all" =>
+  vel < 0.40 ? "center" : vel < 0.72 ? "scatter" : "all";
+
+/**
+ * Expand one band's onsets into strike cues, exactly as the Python pulse
+ * expansion would. `zoneOverride` is the user pinning this band to one zone
+ * in the band editor — movement then defers to their choice.
+ */
+export function bandStrikes(
+  band: BandName, hits: readonly Onset[],
+  startSec: number, endSec: number, zoneOverride?: ZoneId,
+): StrikeCue[] {
+  const s = BAND_STYLE[band];
+  const pinned = zoneOverride !== undefined && zoneOverride !== BAND_BY_NAME[band].zone;
+  const zones: readonly ZoneId[] = pinned ? [zoneOverride] : s.zones;
+  const out: StrikeCue[] = [];
+  hits.forEach(([sec, vel], i) => {
+    if (sec < startSec || sec > endSec) return;
+    let targets = s.alternate && !pinned ? [zones[i % zones.length]!] : [...zones];
+    if (s.boostTargets && s.boostAt !== undefined && vel >= s.boostAt) {
+      targets = targets.concat(s.boostTargets.filter(z => !targets.includes(z)));
+    }
+    const pixels = s.pixelsByVel ? pixelsForVel(vel) : s.pixels;
+    out.push({
+      t: Math.round((sec - startSec) * 1000),
+      bus: "LED", op: "strike", ms: s.ms,
+      intensity: Math.round(s.intensity * vel * 1000) / 1000,
+      color: blendColor(s.color, s.colorHot, vel),
+      decay: s.decay,
+      ...(pixels ? { pixels } : {}),
+      targets,
+      detail: band,
+    });
+  });
+  return out;
+}
+
+/* ── Sections: the scene breathes with the song ───────────────────────── */
+
+/** What each loudness tier does to the standing light. */
+export interface TierLook {
+  towers: EffectName; towersLevel: number;
+  door: EffectName; doorLevel: number;
+}
+export const TIERS: readonly TierLook[] = [
+  { towers: "chill", towersLevel: 0.40, door: "ember", doorLevel: 0.50 },   // quiet
+  { towers: "candle", towersLevel: 0.65, door: "ember", doorLevel: 0.80 },  // mid
+  { towers: "mansion", towersLevel: 0.95, door: "furnace", doorLevel: 0.95 }, // loud
+];
+
+/** A tier change must hold this long before it commits — a snare hit is not
+ *  a chorus, and a breath between phrases is not a hush. */
+const DEBOUNCE_SEC = 1.0;
+/** Hysteresis width: once entered, a tier is left this far below its edge. */
+const HYST = 0.08;
+/** A song whose loudness barely moves has no sections worth cutting. */
+const FLAT_RANGE = 0.15;
+
+/** env sampled at `sec` — points are sparse and near-silence is omitted,
+ *  so a miss reads as quiet. */
+function envAt(env: ReadonlyArray<readonly [number, number]>, sec: number): number {
+  let best = 0, bestDt = 0.5;               // nothing within half a second: 0
+  for (const [t, v] of env) {
+    const dt = Math.abs(t - sec);
+    if (dt < bestDt) { bestDt = dt; best = v; }
+  }
+  return best;
+}
+
+/** Where `v` wants the castle, given where it is — hysteresis, direct jump. */
+function desiredTier(v: number, cur: number, up: readonly number[]): number {
+  if (cur < 0) return v >= up[1]! ? 2 : v >= up[0]! ? 1 : 0;
+  let next = cur;
+  if (v >= up[1]!) next = 2;
+  else if (v >= up[0]!) next = Math.max(next, 1);
+  if (v < up[0]! - HYST) next = 0;
+  else if (v < up[1]! - HYST) next = Math.min(next, 1);
+  return next;
+}
+
+const clamp = (v: number, lo: number, hi: number): number =>
+  Math.min(hi, Math.max(lo, v));
+
+/** The tier boundaries of a clip: [startSec, tierIndex] pairs, first at 0. */
+export function sections(
+  env: ReadonlyArray<readonly [number, number]> | undefined,
+  startSec: number, endSec: number,
+): Array<[number, number]> {
+  if (!env || !env.length) return [[0, 1]];      // no envelope: hold the middle
+  const STEP = 0.25;
+
+  // Smooth over ±0.5 s so one hit cannot promote a whole section.
+  const smoothed: number[] = [];
+  for (let sec = startSec; sec <= endSec; sec += STEP) {
+    smoothed.push((envAt(env, sec - 0.5) + envAt(env, sec) + envAt(env, sec + 0.5)) / 3);
+  }
+
+  // The tier edges come from the song's OWN loudness distribution. Fixed
+  // edges never fired on real music: mastering compression parks the whole
+  // normalised envelope mid-range, so a fixed 0.70 chorus bar was simply
+  // never cleared and every track sat in "verse" for its full length.
+  const sorted = [...smoothed].sort((a, b) => a - b);
+  const pct = (q: number): number => sorted[Math.floor(q * (sorted.length - 1))]!;
+  if (pct(0.9) - pct(0.1) < FLAT_RANGE) return [[0, 1]];   // flat: hold middle
+  const up0 = clamp(pct(0.35), 0.25, 0.55);
+  const up: readonly number[] = [up0, clamp(pct(0.70), up0 + 0.15, 0.80)];
+
+  const out: Array<[number, number]> = [];
+  let tier = -1;
+  let pending = -1, pendingFor = 0;
+  for (let i = 0; i < smoothed.length; i++) {
+    const sec = startSec + i * STEP;
+    const v = smoothed[i]!;
+    const want = desiredTier(v, tier, up);
+    if (tier < 0) {                                    // first sample commits
+      tier = want;
+      out.push([0, tier]);
+      continue;
+    }
+    if (want === tier) { pending = -1; pendingFor = 0; continue; }
+    if (want === pending) {
+      pendingFor += STEP;
+      if (pendingFor >= DEBOUNCE_SEC) {
+        tier = want;
+        out.push([sec - startSec, tier]);
+        pending = -1; pendingFor = 0;
+      }
+    } else {
+      pending = want; pendingFor = 0;
+    }
+  }
+  return out.length ? out : [[0, 1]];
+}
+
+/** Sections as explicit `set` cues, one per zone per boundary. */
+export function sectionCues(
+  env: ReadonlyArray<readonly [number, number]> | undefined,
+  startSec: number, endSec: number,
+): SetCue[] {
+  const out: SetCue[] = [];
+  for (const [sec, tierIdx] of sections(env, startSec, endSec)) {
+    const look = TIERS[tierIdx]!;
+    const t = Math.round(sec * 1000);
+    const note = ["hush", "verse", "chorus"][tierIdx]!;
+    out.push(
+      { t, bus: "LED", op: "set", zone: "towerL", eff: look.towers,
+        level: look.towersLevel, detail: note },
+      { t, bus: "LED", op: "set", zone: "towerR", eff: look.towers,
+        level: look.towersLevel, detail: note },
+      { t, bus: "LED", op: "set", zone: "door", eff: look.door,
+        level: look.doorLevel, detail: note },
+    );
+  }
+  return out;
+}
+
+/* ── Static texture ───────────────────────────────────────────────────── */
+
+/**
+ * The zones: block a generated scene carries. Ember cores inside whatever the
+ * ring is doing; the towers on different palettes so the loud sections'
+ * crossfade effects colour them differently; the door always faintly
+ * glinting; towerR breathing out of phase with towerL.
+ */
+export const ZONES_BLOCK = {
+  towerL: { center: "ember" as EffectName, palette: "haunt" },
+  towerR: { center: "ember" as EffectName, palette: "moonlight", phase: 1.3 },
+  door: { overlay: "sparkle", palette: "ember" },
+} as const;
+
+/** Everything the audition needs, windowed to the clip and sorted. */
+export function trackCues(
+  onsets: Readonly<Record<string, readonly Onset[]>>,
+  env: ReadonlyArray<readonly [number, number]> | undefined,
+  startSec: number, endSec: number,
+  zoneOverrides: Partial<Record<BandName, ZoneId>> = {},
+): Cue[] {
+  const cues: Cue[] = [...sectionCues(env, startSec, endSec)];
+  for (const band of Object.keys(BAND_STYLE) as BandName[]) {
+    const hits = onsets[band];
+    if (hits) cues.push(...bandStrikes(band, hits, startSec, endSec,
+                                       zoneOverrides[band]));
+  }
+  cues.sort((a, z) => a.t - z.t);
+  return cues;
+}

@@ -8,25 +8,27 @@
  * This builds the scene the import would actually generate, for just the
  * selected region, so the stage above shows what you are about to commit to.
  *
- * The cue shape here mirrors the `pulse:` expansion in tools/gen_previewer.py
- * exactly — same ms, same `intensity * velocity`, same `targets` — because a
- * preview that disagrees with the generated scene is the one bug this project
- * cannot afford. If that expansion changes, this changes with it.
+ * Every visual decision — colour ramps, pixel masks, movement, sections —
+ * lives in track_lights.ts, which BOTH sceneFromTrack and sceneYaml read.
+ * The audition and the exported YAML cannot drift apart, because neither of
+ * them owns the look.
  */
 
 import { BANDS, type BandName } from "./bands.js";
 import type { BandEditor } from "./band_editor.js";
 import type { WaveClip, WaveData } from "./waveform_view.js";
-import type { Cue, EffectName, Scene, ZoneId } from "./types.js";
+import { BAND_STYLE, TIERS, ZONES_BLOCK, sectionCues, trackCues }
+  from "./track_lights.js";
+import type { EffectName, Scene, ZoneId } from "./types.js";
+import type { Onset } from "./onsets.js";
 
-/** Matches the `base:`/`levels:` that sceneYaml writes for an import. */
+/** Matches the `base:`/`levels:` that sceneYaml writes — the quiet tier. */
 const BASE: Record<ZoneId, EffectName> =
-  { towerL: "chill", towerR: "chill", door: "ember" };
-const LEVELS: Partial<Record<ZoneId, number>> =
-  { towerL: 0.4, towerR: 0.4, door: 0.5 };
-
-/** The `intensity:` a generated pulse stream carries, before velocity. */
-const PULSE_INTENSITY = 0.55;
+  { towerL: TIERS[0]!.towers, towerR: TIERS[0]!.towers, door: TIERS[0]!.door };
+const LEVELS: Partial<Record<ZoneId, number>> = {
+  towerL: TIERS[0]!.towersLevel, towerR: TIERS[0]!.towersLevel,
+  door: TIERS[0]!.doorLevel,
+};
 
 /** Playback level for a generated scene. */
 const VOLUME = 0.7;
@@ -47,26 +49,6 @@ export function sceneFromTrack(data: WaveData, clip: WaveClip | null,
   const end = clip?.end ?? data.duration;
   const dur = Math.max(1, Math.round((end - start) * 1000));
 
-  const cues: Cue[] = [];
-  for (const b of BANDS) {
-    const hits = data.onsets[b.name];
-    if (!hits) continue;
-    const zone = zones[b.name] ?? b.zone;
-    for (const [sec, vel] of hits) {
-      if (sec < start || sec > end) continue;
-      cues.push({
-        t: Math.round((sec - start) * 1000),
-        bus: "LED", op: "strike", ms: 120,
-        intensity: Math.round(PULSE_INTENSITY * vel * 1000) / 1000,
-        color: b.rgbw,
-        decay: b.decay,
-        targets: [zone],
-        detail: b.name,
-      });
-    }
-  }
-  cues.sort((a, z) => a.t - z.t);
-
   return {
     id: `preview:${data.id}`,
     name: data.id,
@@ -78,7 +60,9 @@ export function sceneFromTrack(data: WaveData, clip: WaveClip | null,
          + "onsets detected in this region — the same ones the scene would use.",
     base: BASE,
     levels: LEVELS,
-    cues,
+    zones: ZONES_BLOCK,
+    cues: trackCues(data.onsets as Record<string, readonly Onset[]>,
+                    data.env, start, end, zones),
     // No rendered file: the audition element is the audio, and giving this a
     // file name would have the show engine try to play a second copy.
     file: "",
@@ -87,20 +71,26 @@ export function sceneFromTrack(data: WaveData, clip: WaveClip | null,
   };
 }
 
+const num = (v: number): string => String(Math.round(v * 1000) / 1000);
+const rgbw = (c: readonly number[]): string => `[${c.map(num).join(", ")}]`;
+
 /**
  * The same scene, as the YAML that goes into scenes.yaml.
  *
- * Deliberately in this file rather than in tracks.ts. This and
- * `sceneFromTrack` above are two renderings of one decision — which band
- * lights which zone, in what colour, decaying how fast — and if they drift
- * apart the audition stops predicting the show. Side by side, a divergence is
- * visible; a file apart, it is not.
+ * The strikes go out as `pulse:` streams carrying the per-hit dynamics
+ * (color_hot, pixels_by_vel, boost) that tools/gen_previewer.py and
+ * tools/gen_esphome.py expand with the same arithmetic trackCues uses.
+ * The sections go out as explicit `set` cues, because they are few and the
+ * generators already understand them.
  *
  * @param bands the editor's per-band choices, when there are any.
+ * @param env   full-range loudness from the waveform analysis; without it the
+ *              scene still works, it just holds one look instead of breathing.
  */
 export function sceneYaml(id: string, dur: number | undefined,
                           counts: Record<string, number>, ext = "mp3",
-                          bands?: BandEditor): string {
+                          bands?: BandEditor,
+                          env?: ReadonlyArray<readonly [number, number]>): string {
   const L = [
     `  - id: ${id}`,
     `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}`,
@@ -119,16 +109,41 @@ export function sceneYaml(id: string, dur: number | undefined,
       : []),
     `    base: {towerL: ${BASE.towerL}, towerR: ${BASE.towerR}, door: ${BASE.door}}`,
     `    levels: {towerL: ${LEVELS.towerL}, towerR: ${LEVELS.towerR}, door: ${LEVELS.door}}`,
+    `    zones:`,
+    `      towerL: {center: ${ZONES_BLOCK.towerL.center}, palette: ${ZONES_BLOCK.towerL.palette}}`,
+    `      towerR: {center: ${ZONES_BLOCK.towerR.center}, palette: ${ZONES_BLOCK.towerR.palette}, phase: ${ZONES_BLOCK.towerR.phase}}`,
+    `      door: {overlay: ${ZONES_BLOCK.door.overlay}, palette: ${ZONES_BLOCK.door.palette}}`,
     `    pulse:`,
   ];
   for (const b of BANDS) {
     const n = counts[b.name];
     if (!n) continue;
-    const zone = bands?.zones()[b.name] ?? b.zone;
-    L.push(`      - {synth: ${b.name}, zone: ${zone}, intensity: ${PULSE_INTENSITY}, `
-         + `decay: ${b.decay}, color: [${b.rgbw.join(", ")}]}`
-         + `   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
+    const s = BAND_STYLE[b.name];
+    const pinned = bands !== undefined && bands.zones()[b.name] !== b.zone;
+    const zones: readonly ZoneId[] = pinned ? [bands.zones()[b.name]!] : s.zones;
+    const opts = [
+      `synth: ${b.name}`, `zones: [${zones.join(", ")}]`,
+      ...(s.alternate && !pinned ? ["alternate: true"] : []),
+      `intensity: ${num(s.intensity)}`, `decay: ${num(s.decay)}`, `ms: ${s.ms}`,
+      `color: ${rgbw(s.color)}`, `color_hot: ${rgbw(s.colorHot)}`,
+      ...(s.pixelsByVel ? ["pixels_by_vel: true"] : []),
+      ...(s.pixels ? [`pixels: ${s.pixels}`] : []),
+      ...(s.boostAt !== undefined
+        ? [`boost_at: ${num(s.boostAt)}`,
+           `boost_targets: [${(s.boostTargets ?? []).join(", ")}]`]
+        : []),
+    ];
+    L.push(`      - {${opts.join(", ")}}   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
   }
-  L.push(`    cues: []`);
+  const sects = env?.length && dur ? sectionCues(env, 0, dur) : [];
+  if (!sects.length) {
+    L.push(`    cues: []`);
+  } else {
+    L.push(`    cues:`);
+    for (const c of sects) {
+      L.push(`      - {t: ${c.t}, op: set, zone: ${c.zone}, effect: ${c.eff}, `
+           + `level: ${num(c.level ?? 1)}, note: ${c.detail}}`);
+    }
+  }
   return L.join("\n");
 }

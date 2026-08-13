@@ -310,5 +310,90 @@ class TestGenPreviewerMain(unittest.TestCase):
         self.assertFalse(gp.HTML.exists())
 
 
+def dynamic_strikes(side, scene: dict, markers: dict) -> list[tuple]:
+    """Strikes including the per-hit dynamics fields (pixels, ms, colour)."""
+    if side == "esphome":
+        cues = ge.pulse_cues(scene, markers)
+    else:
+        cues = [c for c in gp.to_previewer(scene, 1, "", markers)["cues"]
+                if c["op"] == "strike"]
+    return sorted(
+        (c["t"], tuple(c.get("targets") or ZIDS), c["intensity"],
+         tuple(float(v) for v in c["color"]),
+         c.get("pixels", "all"), c.get("ms", 120))
+        for c in cues)
+
+
+class TestPulseDynamicsParity(unittest.TestCase):
+    """The per-hit dynamics: colour blend, velocity masks, boost, ms.
+
+    Each is arithmetic duplicated across gen_esphome.py, gen_previewer.py and
+    web/src/track_lights.ts. These pin the two Python copies to each other and
+    to the exact numbers the TypeScript copy is tested against, so all three
+    meet at the same values.
+    """
+
+    DYN = {"synth": "heartbeat", "zone": "door", "intensity": 0.6,
+           "color": [1.0, 0.0, 0.0, 0.0], "color_hot": [1.0, 0.5, 0.0, 0.4],
+           "pixels_by_vel": True, "ms": 110,
+           "boost_at": 0.85, "boost_targets": ["towerL", "towerR"]}
+
+    def scene(self, **over) -> dict:
+        return dict(PULSE_SCENE, pulse=[dict(self.DYN, **over)])
+
+    def test_colour_blends_by_velocity_identically(self) -> None:
+        # heartbeat velocities: 1.0, 0.55, 0.91, 0.4
+        a = dynamic_strikes("esphome", self.scene(), MARKERS)
+        b = dynamic_strikes("previewer", self.scene(), MARKERS)
+        self.assertEqual(a, b)
+        by_t = {t: col for t, _z, _i, col, _p, _m in a}
+        self.assertEqual(by_t[0], (1.0, 0.5, 0.0, 0.4))          # vel 1.0: hot
+        self.assertEqual(by_t[153], (1.0, 0.275, 0.0, 0.22))     # vel 0.55
+        self.assertEqual(by_t[1600], (1.0, 0.2, 0.0, 0.16))      # vel 0.40
+
+    def test_velocity_picks_the_same_mask(self) -> None:
+        masks = {t: p for t, _z, _i, _c, p, _m
+                 in dynamic_strikes("esphome", self.scene(), MARKERS)}
+        # vel 0.40 sits ON the centre/scatter edge; both sides use `<`.
+        self.assertEqual(masks, {0: "all", 153: "scatter",
+                                 820: "all", 1600: "scatter"})
+        self.assertEqual(masks, {t: p for t, _z, _i, _c, p, _m
+                                 in dynamic_strikes("previewer", self.scene(), MARKERS)})
+
+    def test_soft_hits_land_on_the_centre(self) -> None:
+        m = {"parity": {"heartbeat": [[100, 0.2]]}}
+        for side in ("esphome", "previewer"):
+            (_t, _z, _i, _c, pixels, _ms), = dynamic_strikes(side, self.scene(), m)
+            self.assertEqual(pixels, "center")
+
+    def test_boost_spills_onto_the_extra_zones(self) -> None:
+        for side in ("esphome", "previewer"):
+            zones = {t: z for t, z, *_ in dynamic_strikes(side, self.scene(), MARKERS)}
+            # vel 1.0 and 0.91 clear boost_at 0.85; 0.55 and 0.40 do not.
+            self.assertEqual(zones[0], ("door", "towerL", "towerR"))
+            self.assertEqual(zones[820], ("door", "towerL", "towerR"))
+            self.assertEqual(zones[153], ("door",))
+            self.assertEqual(zones[1600], ("door",))
+
+    def test_boost_does_not_fire_without_targets(self) -> None:
+        s = self.scene()
+        del s["pulse"][0]["boost_targets"]
+        for side in ("esphome", "previewer"):
+            zones = {t: z for t, z, *_ in dynamic_strikes(side, s, MARKERS)}
+            self.assertEqual(zones[0], ("door",))
+
+    def test_ms_reaches_both_sides(self) -> None:
+        for side in ("esphome", "previewer"):
+            self.assertEqual({m for *_rest, m in dynamic_strikes(side, self.scene(), MARKERS)},
+                             {110})
+
+    def test_plain_streams_are_untouched(self) -> None:
+        """A stream without the new fields renders exactly as before."""
+        a = esphome_strikes(PULSE_SCENE, MARKERS)
+        b = previewer_strikes(PULSE_SCENE, MARKERS)
+        self.assertEqual(a, b)
+        self.assertEqual(len(a), 14)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

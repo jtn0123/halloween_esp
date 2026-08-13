@@ -58,6 +58,14 @@ def scene_yaml_slice(text: str, sid: str) -> str:
     return m.group(0).rstrip() if m else f"# (slice for {sid} not found)"
 
 
+def _blend_color(base: list, hot: list | None, vel: float) -> list:
+    """color -> color_hot by velocity — same maths as gen_esphome.blend_color
+    and track_lights.ts."""
+    if not hot:
+        return base
+    return [round(b + (h - b) * vel, 3) for b, h in zip(base, hot)]
+
+
 def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
     sid = scene["id"]
     cues = []
@@ -104,23 +112,34 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         else:
             sys.exit(f"scene {sid}: unknown cue op {cue['op']!r}")
     # Pulse streams: one per synth, colour/decay per stream, velocity per
-    # marker. Same merge as tools/gen_esphome.py — keep them in lockstep.
+    # marker. Same merge as tools/gen_esphome.py (which documents the
+    # per-hit dynamics: color_hot, pixels_by_vel, boost_at/boost_targets,
+    # ms) and web/src/track_lights.ts — keep all three in lockstep.
     scene_marks = markers.get(sid, {})
     for pcfg in scene.get("pulse") or []:
         beats = scene_marks.get(pcfg["synth"], [])
         zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
         for i, (t, vel) in enumerate(beats):
-            c = {"t": t, "bus": "LED", "op": "strike", "ms": 120,
+            c = {"t": t, "bus": "LED", "op": "strike",
+                 "ms": int(pcfg.get("ms", 120)),
                  "intensity": round(pcfg.get("intensity", 0.3) * vel, 3),
-                 "color": pcfg.get("color", [1, 1, 1, 1]),
+                 "color": _blend_color(pcfg.get("color", [1, 1, 1, 1]),
+                                       pcfg.get("color_hot"), vel),
                  "decay": pcfg.get("decay", 0.90),
                  "detail": pcfg["synth"]}
-            if pcfg.get("pixels"):
+            if pcfg.get("pixels_by_vel"):
+                c["pixels"] = ("center" if vel < 0.40
+                               else "scatter" if vel < 0.72 else "all")
+            elif pcfg.get("pixels"):
                 c["pixels"] = pcfg["pixels"]
             if zones and pcfg.get("alternate"):
                 c["targets"] = [zones[i % len(zones)]]
             elif zones:
-                c["targets"] = zones
+                c["targets"] = list(zones)
+            if (c.get("targets") and pcfg.get("boost_targets")
+                    and vel >= pcfg.get("boost_at", 2)):
+                c["targets"] = c["targets"] + [z for z in pcfg["boost_targets"]
+                                               if z not in c["targets"]]
             cues.append(c)
     cues.sort(key=lambda c: c["t"])
 
