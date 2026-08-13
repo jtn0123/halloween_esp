@@ -31,9 +31,10 @@ for firmware, version bump → OTA → /api/status confirm.
       firmware v5.14). PHASE 2 COMPLETE.
 
 ## Phase 3 — Flavors, each behind an editor toggle (default off)
-- [ ] #1  Palette drift: triad hue rotates slowly over the song
-- [ ] #2  Chorus takeover: unified palette during chorus sections
-- [ ] #4  Sustained-note detection → slow zone-wide swells
+- [x] #1  Palette drift: triad lerp, one lap/min (2026-08-13)
+- [x] #2  Chorus takeover: shared warm family in choruses (2026-08-13)
+- [x] #4  Sustained swells: env plateaus bloom the towers, exported as
+      explicit attack strikes (2026-08-13). PHASE 3 COMPLETE.
 
 ## Phase 4 — Device & show night (firmware, one OTA per feature)
 - [x] #24 eInk status screen: scene, uptime, SD free, QR to web remote
