@@ -120,11 +120,12 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         beats = scene_marks.get(pcfg["synth"], [])
         zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
         for i, (t, vel) in enumerate(beats):
+            cyc = pcfg.get("colors")
+            base = cyc[i % len(cyc)] if cyc else pcfg.get("color", [1, 1, 1, 1])
             c = {"t": t, "bus": "LED", "op": "strike",
                  "ms": int(pcfg.get("ms", 120)),
                  "intensity": round(pcfg.get("intensity", 0.3) * vel, 3),
-                 "color": _blend_color(pcfg.get("color", [1, 1, 1, 1]),
-                                       pcfg.get("color_hot"), vel),
+                 "color": _blend_color(base, pcfg.get("color_hot"), vel),
                  "decay": pcfg.get("decay", 0.90),
                  "detail": pcfg["synth"]}
             if pcfg.get("pixels_by_vel"):

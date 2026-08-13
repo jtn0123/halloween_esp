@@ -387,6 +387,30 @@ class TestPulseDynamicsParity(unittest.TestCase):
             self.assertEqual({m for *_rest, m in dynamic_strikes(side, self.scene(), MARKERS)},
                              {110})
 
+    def test_colour_cycle_agrees_hit_for_hit(self) -> None:
+        """`colors:` cycles by hit index, identically on both sides."""
+        cyc = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]
+        s = self.scene(colors=cyc)
+        del s["pulse"][0]["color_hot"]      # bare cycle, no blend
+        a = dynamic_strikes("esphome", s, MARKERS)
+        b = dynamic_strikes("previewer", s, MARKERS)
+        self.assertEqual(a, b)
+        # heartbeat markers in time order: t=0, 153, 820, 1600 — cycle wraps.
+        by_t = {t: col for t, _z, _i, col, _p, _m in a}
+        self.assertEqual(by_t[0], (1.0, 0.0, 0.0, 0.0))
+        self.assertEqual(by_t[153], (0.0, 1.0, 0.0, 0.0))
+        self.assertEqual(by_t[820], (0.0, 0.0, 1.0, 0.0))
+        self.assertEqual(by_t[1600], (1.0, 0.0, 0.0, 0.0))
+
+    def test_colour_cycle_blends_toward_hot(self) -> None:
+        cyc = [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]
+        s = self.scene(colors=cyc, color_hot=[1.0, 1.0, 0.0, 0.0])
+        a = dynamic_strikes("esphome", s, MARKERS)
+        self.assertEqual(a, dynamic_strikes("previewer", s, MARKERS))
+        by_t = {t: col for t, _z, _i, col, _p, _m in a}
+        self.assertEqual(by_t[0], (1.0, 1.0, 0.0, 0.0))       # vel 1.0 -> hot
+        self.assertEqual(by_t[153], (0.55, 0.55, 0.45, 0.0))  # vel .55 from blue
+
     def test_plain_streams_are_untouched(self) -> None:
         """A stream without the new fields renders exactly as before."""
         a = esphome_strikes(PULSE_SCENE, MARKERS)

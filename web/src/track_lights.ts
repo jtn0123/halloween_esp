@@ -32,9 +32,18 @@ export interface BandStyle {
   intensity: number;
   decay: number;
   ms: number;
-  /** Soft-hit colour … */
-  color: Rgbw;
-  /** … blended toward this by velocity, so no two hits look alike. */
+  /**
+   * Colours the stream cycles through hit by hit — consecutive hits differ
+   * in HUE, not just brightness. Exported as `colors:` for the generators.
+   */
+  colors: readonly Rgbw[];
+  /**
+   * Each hit's base colour blends toward this by velocity. SATURATED on
+   * purpose: an earlier pass used white-ish hot colours, and since the hard
+   * hits are the visible ones, the whole show read as "mostly white" —
+   * confirmed by the user against real screenshots. W stays near zero here;
+   * white is what strikes decay THROUGH on screen, not what they are.
+   */
   colorHot: Rgbw;
   /** Velocity picks the mask: soft centre, medium scatter, hard whole jewel. */
   pixelsByVel?: boolean;
@@ -57,22 +66,35 @@ export const BAND_STYLE: Readonly<Record<BandName, BandStyle>> = {
   /* Intensity and decay are tuned against real screenshots: at the first
      pass (intensity ~0.6, decay 0.86-0.94) the median hit landed at 0.25
      over a lit amber base and was gone in ~200 ms — the colours were firing
-     and invisible. Hits must READ, or the whole exercise is three lamps. */
+     and invisible. Hits must READ, or the whole exercise is three lamps.
+
+     The colour cycles are triads a few hue-steps apart, so a run of hits in
+     one band walks through related-but-distinct colours instead of pulsing
+     one. Every entry is saturated (one channel low or zero, W ≤ 0.12). */
   onset_low: {
     zones: ["door"], alternate: false, intensity: 0.85, decay: 0.90, ms: 140,
-    color: [1.0, 0.07, 0.0, 0.0], colorHot: [1.0, 0.58, 0.06, 0.30],
+    colors: [[1.0, 0.04, 0.0, 0.0],      // deep red
+             [1.0, 0.18, 0.0, 0.0],      // vermilion
+             [0.85, 0.0, 0.25, 0.0]],    // crimson-magenta
+    colorHot: [1.0, 0.45, 0.02, 0.10],   // hot amber, not white
     pixelsByVel: true, boostAt: 0.85, boostTargets: ["towerL", "towerR"],
   },
   onset_mid: {
     zones: ["towerL", "towerR"], alternate: true,
     intensity: 0.80, decay: 0.945, ms: 160,
-    color: [0.62, 0.08, 1.0, 0.04], colorHot: [1.0, 0.40, 0.95, 0.45],
+    colors: [[0.55, 0.0, 1.0, 0.0],      // violet
+             [1.0, 0.0, 0.75, 0.0],      // magenta
+             [0.25, 0.12, 1.0, 0.0]],    // indigo
+    colorHot: [1.0, 0.15, 0.85, 0.12],   // hot pink, stays pink
     pixelsByVel: true,
   },
   onset_high: {
     zones: ["towerR", "door", "towerL"], alternate: true,
     intensity: 0.72, decay: 0.95, ms: 130,
-    color: [0.25, 1.0, 0.50, 0.0], colorHot: [0.55, 1.0, 0.95, 0.55],
+    colors: [[0.05, 1.0, 0.35, 0.0],     // emerald
+             [0.0, 0.85, 1.0, 0.0],      // cyan
+             [0.65, 1.0, 0.0, 0.0]],     // chartreuse
+    colorHot: [0.25, 1.0, 0.70, 0.15],   // hot spring-green
     pixels: "scatter",
   },
 };
@@ -111,7 +133,7 @@ export function bandStrikes(
       t: Math.round((sec - startSec) * 1000),
       bus: "LED", op: "strike", ms: s.ms,
       intensity: Math.round(s.intensity * vel * 1000) / 1000,
-      color: blendColor(s.color, s.colorHot, vel),
+      color: blendColor(s.colors[i % s.colors.length]!, s.colorHot, vel),
       decay: s.decay,
       ...(pixels ? { pixels } : {}),
       targets,
@@ -128,9 +150,15 @@ export interface TierLook {
   towers: EffectName; towersLevel: number;
   door: EffectName; doorLevel: number;
 }
+/* The verse held `candle` towers until a screenshot audit showed why the
+ * show still read whitish: candle is W-LED-dominated (W 1.0 vs R 0.34), and
+ * the verse is most of any song. seance breathes through the zone's palette
+ * instead — saturated violet/green on the haunt tower, blues on the
+ * moonlight one — so the ambience carries colour, not just the strikes.
+ * The door keeps its fire (ember -> furnace); warm is the point there. */
 export const TIERS: readonly TierLook[] = [
   { towers: "chill", towersLevel: 0.40, door: "ember", doorLevel: 0.50 },   // quiet
-  { towers: "candle", towersLevel: 0.65, door: "ember", doorLevel: 0.80 },  // mid
+  { towers: "seance", towersLevel: 0.70, door: "ember", doorLevel: 0.80 },  // mid
   { towers: "mansion", towersLevel: 0.95, door: "furnace", doorLevel: 0.95 }, // loud
 ];
 

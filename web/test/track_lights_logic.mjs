@@ -108,10 +108,29 @@ eq(sections([], 0, 30), [[0, 1]], "empty envelope: hold the middle tier");
   ok(cues.filter(c => c.op === "strike").length === 8, "both bands' strikes made it");
 }
 
-/* ── The style table stays within the vocabulary ── */
+/* ── Per-hit colour cycling: consecutive hits differ in hue ── */
+{
+  const soft = [[0.0, 0.3], [0.5, 0.3], [1.0, 0.3], [1.5, 0.3]];
+  const s = bandStrikes("onset_mid", soft, 0, 10);
+  const keys = s.map(c => c.color.join(","));
+  ok(new Set(keys.slice(0, 3)).size === 3,
+     "three consecutive hits use three different base colours");
+  ok(keys[0] === keys[3], "the cycle wraps at its length");
+}
+
+/* ── The style table stays within the vocabulary, and stays COLOURED ── */
 for (const [name, s] of Object.entries(BAND_STYLE)) {
-  ok(s.color.every((v, i) => v <= s.colorHot[i] + 1 && v >= 0),
-     `${name} colours are sane`);
+  ok(s.colors.length >= 2, `${name} cycles at least two colours`);
+  for (const c of s.colors) {
+    ok(Math.min(c[0], c[1], c[2]) <= 0.30,
+       `${name} cycle colours are saturated (one channel low): ${c}`);
+    ok(c[3] <= 0.12, `${name} cycle colours keep W low: ${c}`);
+  }
+  // The hot end is what the LOUD hits render as — the visible ones. It must
+  // stay a colour, or the show goes white exactly when it matters most.
+  ok(Math.min(s.colorHot[0], s.colorHot[1], s.colorHot[2]) <= 0.30,
+     `${name} hot colour stays saturated`);
+  ok(s.colorHot[3] <= 0.15, `${name} hot colour keeps W low`);
   ok(s.decay > 0.5 && s.decay < 1, `${name} decay is a per-frame factor`);
   ok(!(s.pixelsByVel && s.pixels), `${name} does not set both mask modes`);
 }

@@ -81,8 +81,15 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
     round-robins markers across zones (whispers moving between the towers).
 
     Dynamics, all per hit, all driven by the marker's velocity:
-      color_hot:     a second colour; each hit blends color->color_hot by vel,
-                     so soft hits sit deep in the hue and hard hits go bright.
+      colors:        a LIST of colours the stream cycles through hit by hit,
+                     so consecutive hits differ in hue, not just brightness.
+                     Overrides `color` when present.
+      color_hot:     a second colour; each hit blends its base->color_hot by
+                     vel, so soft hits sit deep in the hue and hard hits go
+                     bright. Keep it saturated: a white-ish hot colour makes
+                     every LOUD hit white, and the loud hits are the ones you
+                     see — the show reads as "mostly white" (round-3 gauntlet
+                     screenshots proved it).
       pixels_by_vel: soft hits touch the centre, medium hits scatter, hard
                      hits take the whole jewel (overrides `pixels`).
       boost_at/boost_targets: a hit at or above `boost_at` spills onto the
@@ -108,11 +115,12 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
             if targets and cfg.get("boost_targets") and vel >= cfg.get("boost_at", 2):
                 targets = targets + [z for z in cfg["boost_targets"]
                                      if z not in targets]
+            cyc = cfg.get("colors")
+            base = cyc[i % len(cyc)] if cyc else cfg.get("color", WHITE)
             out.append({"t": t, "op": "strike", "targets": targets,
                         "ms": int(cfg.get("ms", 120)),
                         "intensity": round(cfg.get("intensity", 0.3) * vel, 3),
-                        "color": blend_color(cfg.get("color", WHITE),
-                                             cfg.get("color_hot"), vel),
+                        "color": blend_color(base, cfg.get("color_hot"), vel),
                         "decay": cfg.get("decay", DEFAULT_DECAY),
                         # WHERE on the jewel the pulse lands: a bass thump can
                         # hit the door's centre while highs scatter the rings.

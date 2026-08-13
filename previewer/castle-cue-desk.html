@@ -3293,17 +3293,29 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   // src/track_lights.ts
   var BAND_STYLE = {
     /* Intensity and decay are tuned against real screenshots: at the first
-       pass (intensity ~0.6, decay 0.86-0.94) the median hit landed at 0.25
-       over a lit amber base and was gone in ~200 ms — the colours were firing
-       and invisible. Hits must READ, or the whole exercise is three lamps. */
+         pass (intensity ~0.6, decay 0.86-0.94) the median hit landed at 0.25
+         over a lit amber base and was gone in ~200 ms — the colours were firing
+         and invisible. Hits must READ, or the whole exercise is three lamps.
+    
+         The colour cycles are triads a few hue-steps apart, so a run of hits in
+         one band walks through related-but-distinct colours instead of pulsing
+         one. Every entry is saturated (one channel low or zero, W ≤ 0.12). */
     onset_low: {
       zones: ["door"],
       alternate: false,
       intensity: 0.85,
       decay: 0.9,
       ms: 140,
-      color: [1, 0.07, 0, 0],
-      colorHot: [1, 0.58, 0.06, 0.3],
+      colors: [
+        [1, 0.04, 0, 0],
+        // deep red
+        [1, 0.18, 0, 0],
+        // vermilion
+        [0.85, 0, 0.25, 0]
+      ],
+      // crimson-magenta
+      colorHot: [1, 0.45, 0.02, 0.1],
+      // hot amber, not white
       pixelsByVel: true,
       boostAt: 0.85,
       boostTargets: ["towerL", "towerR"]
@@ -3314,8 +3326,16 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       intensity: 0.8,
       decay: 0.945,
       ms: 160,
-      color: [0.62, 0.08, 1, 0.04],
-      colorHot: [1, 0.4, 0.95, 0.45],
+      colors: [
+        [0.55, 0, 1, 0],
+        // violet
+        [1, 0, 0.75, 0],
+        // magenta
+        [0.25, 0.12, 1, 0]
+      ],
+      // indigo
+      colorHot: [1, 0.15, 0.85, 0.12],
+      // hot pink, stays pink
       pixelsByVel: true
     },
     onset_high: {
@@ -3324,8 +3344,16 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       intensity: 0.72,
       decay: 0.95,
       ms: 130,
-      color: [0.25, 1, 0.5, 0],
-      colorHot: [0.55, 1, 0.95, 0.55],
+      colors: [
+        [0.05, 1, 0.35, 0],
+        // emerald
+        [0, 0.85, 1, 0],
+        // cyan
+        [0.65, 1, 0, 0]
+      ],
+      // chartreuse
+      colorHot: [0.25, 1, 0.7, 0.15],
+      // hot spring-green
       pixels: "scatter"
     }
   };
@@ -3354,7 +3382,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         op: "strike",
         ms: s.ms,
         intensity: Math.round(s.intensity * vel * 1e3) / 1e3,
-        color: blendColor(s.color, s.colorHot, vel),
+        color: blendColor(s.colors[i % s.colors.length], s.colorHot, vel),
         decay: s.decay,
         ...pixels ? { pixels } : {},
         targets,
@@ -3366,7 +3394,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   var TIERS = [
     { towers: "chill", towersLevel: 0.4, door: "ember", doorLevel: 0.5 },
     // quiet
-    { towers: "candle", towersLevel: 0.65, door: "ember", doorLevel: 0.8 },
+    { towers: "seance", towersLevel: 0.7, door: "ember", doorLevel: 0.8 },
     // mid
     { towers: "mansion", towersLevel: 0.95, door: "furnace", doorLevel: 0.95 }
     // loud
@@ -3574,7 +3602,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         `intensity: ${num(s.intensity)}`,
         `decay: ${num(s.decay)}`,
         `ms: ${s.ms}`,
-        `color: ${rgbw(s.color)}`,
+        `colors: [${s.colors.map(rgbw).join(", ")}]`,
         `color_hot: ${rgbw(s.colorHot)}`,
         ...s.pixelsByVel ? ["pixels_by_vel: true"] : [],
         ...s.pixels ? [`pixels: ${s.pixels}`] : [],
