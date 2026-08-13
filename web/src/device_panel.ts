@@ -35,6 +35,10 @@ interface DeviceStatus {
   volume?: number;
   /** Motion-sensor config, mirrored from the pir_* entities. */
   pir?: { armed: boolean; cooldown_s: number; scene: string };
+  /** Is the evening playlist running; older firmware omits it. */
+  show_on?: boolean;
+  /** Current scene id, "" when idle. */
+  scene?: string;
 }
 
 /** Scene ids for the PIR select — read from the page's own generated data,
@@ -99,6 +103,15 @@ export class DevicePanel {
       `${st.psram_free_kb} KB PSRAM free` +
       `</div>` +
       `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f">` +
+      `<button id="dpPlaylist" title="Every scene in order with dark gaps, ` +
+      `looping until stopped — the whole evening on one button" ` +
+      `style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;` +
+      `background:${st.show_on ? "#7a2a2a" : "#2a5537"};color:inherit">` +
+      `${st.show_on ? "■ stop the show" : "▶ start the show"}</button>` +
+      (st.show_on && st.scene
+        ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") +
+      `</div>` +
+      `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f">` +
       `🔊 <input id="dpVol" type="range" min="0" max="100" ` +
       `value="${st.volume ?? 70}" style="width:200px;vertical-align:middle">` +
       `</div>` +
@@ -148,6 +161,16 @@ export class DevicePanel {
       `<pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;` +
       `font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre>` +
       `</div>`;
+
+    // The playlist toggle re-renders after the queued action lands (the
+    // 200 ms bridge plus a beat), so the button reflects the device's own
+    // idea of the show, not the click's.
+    this.body.querySelector<HTMLButtonElement>("#dpPlaylist")!
+      .addEventListener("click", () => {
+        void fetch(`/api/show/${st.show_on ? "stop" : "start"}`, { method: "POST" })
+          .then(() => new Promise(r => setTimeout(r, 600)))
+          .then(() => this.render());
+      });
 
     // Volume: debounced so a slider drag is a handful of POSTs, not hundreds.
     let volTimer: number | undefined;

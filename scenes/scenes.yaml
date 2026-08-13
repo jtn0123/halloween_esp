@@ -29,6 +29,13 @@ hardware:
     bitrate: 32
     channels: 1
 
+# The all-evening playlist (#19): "start show" runs these in order, each for
+# its full length, with a dark ambient gap between, looping until stopped.
+# Omit `order:` to play every scene except motion-triggered ones (the PIR
+# owns those) in file order.
+show:
+  gap_ms: 12000
+
 zones:
   - {id: towerL, channel: 1, name: "Tower window, stage left"}
   - {id: towerR, channel: 2, name: "Tower window, stage right"}

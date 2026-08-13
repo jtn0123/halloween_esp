@@ -182,6 +182,7 @@ interval:
           // Mirror live state OUT to the web server (its handlers must never
           // read ESPHome objects), then execute anything it queued.
           castle_web::g_volume.store((int) (id(castle_media)->volume * 100.0f + 0.5f));
+          castle_web::g_show_on.store(id(show_playlist)->is_running());
           castle_web::g_pir_armed.store(id(pir_armed).state);
           castle_web::g_pir_cooldown.store((int) id(pir_cooldown).state);
           castle_web::mirror_show_state(id(current_scene).state,
@@ -248,6 +249,15 @@ interval:
               auto call = id(pir_scene).make_call();
               call.set_option(s);
               call.perform();
+            }
+          } else if (act.type == castle_web::SHOW) {
+            // The evening playlist (#19). Stopping also stops whatever
+            // scene it was mid-way through — "stop the show" means quiet.
+            if (act.arg == "1") {
+              id(show_playlist)->execute();
+            } else {
+              id(show_playlist)->stop();
+              id(scene_stop)->execute();
             }
           } else if (act.type == castle_web::RESTART) {
             // Queued by the web OTA so its HTTP reply gets out first.

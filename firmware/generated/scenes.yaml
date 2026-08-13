@@ -443,6 +443,40 @@ script:
           else if (scene == "stop") id(scene_stop)->execute();
           else ESP_LOGW("castle", "unknown scene '%s'", scene.c_str());
 
+  # ── The evening playlist (#19) ───────────────────
+  - id: show_playlist
+    mode: restart
+    then:
+      - script.execute: {id: run_scene, scene: vigil}
+      - delay: 30000ms
+      - script.execute: scene_stop
+      - delay: 12000ms
+      - script.execute: {id: run_scene, scene: storm}
+      - delay: 6500ms
+      - script.execute: scene_stop
+      - delay: 12000ms
+      - script.execute: {id: run_scene, scene: seance}
+      - delay: 35000ms
+      - script.execute: scene_stop
+      - delay: 12000ms
+      - script.execute: {id: run_scene, scene: ballroom}
+      - delay: 15000ms
+      - script.execute: scene_stop
+      - delay: 12000ms
+      - script.execute: {id: run_scene, scene: descent}
+      - delay: 27000ms
+      - script.execute: scene_stop
+      - delay: 12000ms
+      - script.execute: {id: run_scene, scene: visitation}
+      - delay: 11000ms
+      - script.execute: scene_stop
+      - delay: 12000ms
+      - script.execute: {id: run_scene, scene: crypt}
+      - delay: 24000ms
+      - script.execute: scene_stop
+      - delay: 12000ms
+      - script.execute: show_playlist
+
 text_sensor:
   - platform: template
     id: current_scene

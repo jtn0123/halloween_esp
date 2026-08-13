@@ -166,6 +166,9 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
     return out
 
 
+from gen_show import emit_show_playlist  # noqa: E402  (500-line cap)
+
+
 def blend_color(base: list, hot: list | None, vel: float) -> list:
     """color -> color_hot by velocity. Identical in track_lights.ts."""
     if not hot:
@@ -354,6 +357,7 @@ def main() -> int:
     out.append("          else if (scene == \"stop\") id(scene_stop)->execute();")
     out.append("          else ESP_LOGW(\"castle\", \"unknown scene '%s'\", scene.c_str());")
     out.append("")
+    out.extend(emit_show_playlist(doc))
 
     # Show-state sensors and the PIR's configuration entities. Generated here
     # because the scene list is: the PIR select's options ARE the scenes.

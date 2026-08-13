@@ -334,13 +334,15 @@ class TestGenEsphomeMain(unittest.TestCase):
         self.assertEqual(ge.main(), 0)
         doc = yaml.safe_load(ge.OUT.read_text())
         self.assertEqual([s["id"] for s in doc["script"]],
-                         ["scene_a", "scene_b", "scene_stop", "run_scene"])
+                         ["scene_a", "scene_b", "scene_stop", "run_scene",
+                          "show_playlist"])
 
     def test_blackout_script_clears_every_zone(self) -> None:
         """One call has to be enough to make the whole castle go dark."""
         ge.main()
         doc = yaml.safe_load(ge.OUT.read_text())
-        lam = doc["script"][-2]["then"][0]["lambda"]
+        lam = next(s for s in doc["script"]
+                   if s["id"] == "scene_stop")["then"][0]["lambda"]
         for i in range(len(ZONES)):
             self.assertIn(f"id(zone_effect)[{i}] = 0;", lam)
             self.assertIn(f"id(zone_flash)[{i}] = 0.0f;", lam)
@@ -355,7 +357,7 @@ class TestGenEsphomeMain(unittest.TestCase):
         """`make generate` must work before `make audio` has ever run."""
         ge.main()
         doc = yaml.safe_load(ge.OUT.read_text())
-        self.assertEqual(len(doc["script"]), 4)
+        self.assertEqual(len(doc["script"]), 5)
 
     def test_markers_file_is_used_when_present(self) -> None:
         ge.MARKERS.write_text('{"b": {"h": [[250, 1.0]]}}')
