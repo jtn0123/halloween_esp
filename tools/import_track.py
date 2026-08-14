@@ -50,11 +50,18 @@ def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
     if not shutil.which("yt-dlp"):
         raise SystemExit("yt-dlp not installed — `brew install yt-dlp`")
     print(f"fetching {url}")
-    subprocess.run(
+    r = subprocess.run(
         ["yt-dlp", "-x", "--audio-format", "mp3", "--audio-quality", "0",
          "--no-playlist", "-o", str(dest / "%(title)s.%(ext)s"), url],
-        check=True,
+        capture_output=True, text=True,
     )
+    if r.returncode != 0:
+        # yt-dlp's own last lines say WHY ("Video unavailable", a bot check…).
+        # check=True here dumped a raw CalledProcessError traceback into the
+        # studio's red banner, which no one can act on (round-3 user test).
+        tail = [ln for ln in (r.stderr or r.stdout or "").splitlines()
+                if ln.strip()][-3:]
+        raise SystemExit("could not fetch that link:\n" + "\n".join(tail))
     got = sorted(dest.glob("*.mp3"), key=lambda p: p.stat().st_mtime)
     if not got:
         raise SystemExit("yt-dlp produced no audio file")

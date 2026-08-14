@@ -200,7 +200,9 @@ export function fillOptsFrom(t: TrackInfo): void {
   };
   set("trkId", "");                       // a name is for NEW imports only
   set("trkBitrate", o.bitrate != null ? String(o.bitrate) : "");
-  set("trkRate", o.sample_rate != null ? String(o.sample_rate) : "44100");
+  // The 44100 option's value is deliberately "" (the default); writing the
+  // literal "44100" matched nothing and left the select BLANK (round 3).
+  set("trkRate", o.sample_rate === 22050 ? "22050" : "");
   set("trkCh", String(o.channels ?? 1));
   set("trkFormat", (t.ext || o.format || "mp3").toLowerCase());
   set("trkSens", o.sensitivity != null ? String(o.sensitivity) : "1.1");
@@ -211,10 +213,10 @@ export function fillOptsFrom(t: TrackInfo): void {
     norm.checked = !!o.normalize;
     norm.dispatchEvent(new Event("change", { bubbles: true }));
   }
-  // A <select> lands on "" when handed a value it has no option for, and a
-  // blank dropdown reads as "unset" (round 2). Snap back to the default.
-  for (const [id, dflt] of [["trkRate", "44100"], ["trkCh", "1"],
-                            ["trkFormat", "mp3"]] as const) {
+  // A <select> handed a value it has no option for lands on nothing and
+  // reads as "unset" (rounds 2–3). Snap those back to their first option.
+  // trkRate is exempt: its default option's value IS "".
+  for (const [id, dflt] of [["trkCh", "1"], ["trkFormat", "mp3"]] as const) {
     const sel = document.getElementById(id) as HTMLSelectElement | null;
     if (sel && sel.value === "") set(id, dflt);
   }

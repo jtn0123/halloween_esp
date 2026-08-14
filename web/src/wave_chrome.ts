@@ -32,8 +32,11 @@ export function buildWaveChrome(): WaveChrome {
   // Which song this editor is on. Without it (round-1 user test) the only
   // clue was a thin border on a row that might be scrolled out of view, and
   // the wrong track got edited.
+  // No explicit colour: inherit the page's text colour so the heading is
+  // readable in BOTH themes (a hardcoded white was invisible on the light
+  // background — round 3).
   const title = mk("div", "display:block;font:600 14px/1.4 var(--f-data),"
-    + "ui-monospace,monospace;color:var(--ink-0,#fff);margin:0 0 8px");
+    + "ui-monospace,monospace;margin:0 0 8px");
   title.className = "wave__title";
   const row = mk("div", "display:flex;align-items:center;gap:12px;flex-wrap:wrap;"
     + "margin-top:6px;font:12px/1.6 var(--f-data),ui-monospace,monospace;color:var(--ink-2)");

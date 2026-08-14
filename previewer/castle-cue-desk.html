@@ -3251,7 +3251,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     };
     set("trkId", "");
     set("trkBitrate", o.bitrate != null ? String(o.bitrate) : "");
-    set("trkRate", o.sample_rate != null ? String(o.sample_rate) : "44100");
+    set("trkRate", o.sample_rate === 22050 ? "22050" : "");
     set("trkCh", String(o.channels ?? 1));
     set("trkFormat", (t.ext || o.format || "mp3").toLowerCase());
     set("trkSens", o.sensitivity != null ? String(o.sensitivity) : "1.1");
@@ -3262,11 +3262,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       norm.checked = !!o.normalize;
       norm.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    for (const [id, dflt] of [
-      ["trkRate", "44100"],
-      ["trkCh", "1"],
-      ["trkFormat", "mp3"]
-    ]) {
+    for (const [id, dflt] of [["trkCh", "1"], ["trkFormat", "mp3"]]) {
       const sel = document.getElementById(id);
       if (sel && sel.value === "") set(id, dflt);
     }
@@ -4854,7 +4850,7 @@ ${lines.join("\n")}
       return n;
     };
     const wrap = mk("div", "margin:8px 0");
-    const title = mk("div", "display:block;font:600 14px/1.4 var(--f-data),ui-monospace,monospace;color:var(--ink-0,#fff);margin:0 0 8px");
+    const title = mk("div", "display:block;font:600 14px/1.4 var(--f-data),ui-monospace,monospace;margin:0 0 8px");
     title.className = "wave__title";
     const row = mk("div", "display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px;font:12px/1.6 var(--f-data),ui-monospace,monospace;color:var(--ink-2)");
     const play = mk("button", "min-width:7em", "Audition");
