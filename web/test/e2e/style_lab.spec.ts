@@ -103,6 +103,40 @@ test("Reset returns engine A, neutral knobs and no flavours", async ({ page }) =
   expect(yaml).toMatch(/synth: onset_low[^\n]*intensity: 0\.85/);
 });
 
+test("knobs and flavours survive a reload", async ({ page }) => {
+  await openLab(page);
+  await lab(page).locator(".stylelab__knob").first().fill("0.5");
+  await lab(page).locator(".stylelab__flav-drift").check();
+
+  await page.reload();
+  await expect(page.locator("#trkMode")).toHaveText(/studio/);
+  await row(page, MP3).locator(".trk__nm").click();
+  // Restored, not reset — the ten minutes of tuning still stand (round-1
+  // user test lost everything here).
+  await expect(lab(page).locator(".stylelab__knob").first()).toHaveValue("0.5");
+  await expect(lab(page).locator(".stylelab__val").first()).toHaveText("×0.50");
+  await expect(lab(page).locator(".stylelab__flav-drift")).toBeChecked();
+  // And they still ship: the restored state exports like the live one.
+  const yaml = await exportedYaml(page);
+  expect(yaml).toContain("drift: true");
+  expect(yaml).toMatch(/synth: onset_low[^\n]*intensity: 0\.425/);
+  // Leave a clean slate for the specs that follow.
+  await lab(page).getByRole("button", { name: "Reset" }).click();
+});
+
+test("the top Stop silences a track playing from the panel", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#trkMode")).toHaveText(/studio/);
+  await row(page, MP3).locator('button[data-act="play"]').click();
+  await expect(row(page, MP3)).toHaveClass(/playing/);
+
+  // The named round-1 major: this button paused the show clock and let the
+  // song keep playing underneath it.
+  await page.locator("#stop").click();
+  await expect(row(page, MP3)).not.toHaveClass(/playing/);
+  await expect(row(page, MP3).locator('button[data-act="play"]')).toHaveText("Play");
+});
+
 test("solo thins the audition but never the export", async ({ page }) => {
   await openLab(page);
 

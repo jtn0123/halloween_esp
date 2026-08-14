@@ -608,8 +608,9 @@
         <p class="hint">
           <kbd>Space</kbd> play/pause · <kbd>&larr;</kbd><kbd>&rarr;</kbd> seek 1 s
           (<kbd>Shift</kbd> 5 s) · <kbd>R</kbd> restart · <kbd>M</kbd> mute ·
-          <kbd>Esc</kbd> blackout. <strong>Audio starts muted</strong> &mdash; nothing plays
-          until you press play <em>and</em> unmute.
+          <kbd>Esc</kbd> blackout. <strong>Scene audio starts muted</strong> &mdash; it plays
+          only after you press play <em>and</em> unmute. Track Play and Audition
+          buttons are their own consent: pressing one always sounds.
         </p>
       <details class="sheet-fold" id="zdFold">
           <summary>Zone designer — per-pixel texture for this scene</summary>
@@ -1234,12 +1235,24 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     bind(id, fn, fmt) {
       const el = must(id);
       const out = must(id + "O");
+      const key = `castle.trim.${id}`;
+      try {
+        const saved = localStorage.getItem(key);
+        if (saved !== null && Number.isFinite(+saved)) el.value = saved;
+      } catch {
+      }
       const run = () => {
         const v = +el.value;
         fn(v);
         out.textContent = fmt(v);
       };
-      el.addEventListener("input", run);
+      el.addEventListener("input", () => {
+        try {
+          localStorage.setItem(key, el.value);
+        } catch {
+        }
+        run();
+      });
       run();
     }
     bindSliders(h) {
@@ -1336,6 +1349,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       slider.title = `Onset threshold for ${b.label} \u2014 lower finds more, and more of what it finds is noise`;
       const read = document.createElement("span");
       read.className = "bandcfg__val";
+      read.title = `${b.label} sensitivity (the slider's value)`;
       read.textContent = DEFAULT_SENS.toFixed(2);
       slider.addEventListener("input", () => {
         sens[b.name] = clampSens(+slider.value);
@@ -1344,6 +1358,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       });
       const hits = document.createElement("span");
       hits.className = "bandcfg__hits";
+      hits.title = `Hits detected in the ${b.label} band at this sensitivity, and how many land per second`;
       hits.textContent = "\u2014";
       found[b.name] = hits;
       const mute = document.createElement("button");
@@ -1656,7 +1671,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         signal: AbortSignal.timeout(PROBE_TIMEOUT_MS)
       });
       if (!r.ok) return null;
-      return await r.json();
+      const s = await r.json();
+      return s.studio ? null : s;
     } catch {
       return null;
     }
@@ -4109,12 +4125,36 @@ ${lines.join("\n")}
       </div>`;
       }).join("");
     }
+    function fillOptsFrom(t) {
+      const o = t.opts || {};
+      const set = (id, v) => {
+        const el = byId(id);
+        if (v === void 0 || v === null || el.value === String(v)) return;
+        el.value = String(v);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+      set("trkId", "");
+      set("trkBitrate", o.bitrate != null ? String(o.bitrate) : "");
+      set("trkRate", o.sample_rate != null ? String(o.sample_rate) : "44100");
+      set("trkCh", String(o.channels ?? 1));
+      set("trkFormat", (t.ext || o.format || "mp3").toLowerCase());
+      set("trkSens", o.sensitivity != null ? String(o.sensitivity) : "1.1");
+      set("trkFadeIn", o.fade_in != null ? String(o.fade_in) : "");
+      set("trkFadeOut", o.fade_out != null ? String(o.fade_out) : "");
+      const norm = byId("trkNorm");
+      if (norm.checked !== !!o.normalize) {
+        norm.checked = !!o.normalize;
+        norm.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    }
     T.list.addEventListener("click", (e) => {
       const el = e.target;
       if (el?.closest("button")) return;
       const id = el?.closest(".trk")?.dataset["id"];
       if (!id) return;
       T.selected = id;
+      const t = T.tracks.find((x) => x.id === id);
+      if (t) fillOptsFrom(t);
       drawTracks(void 0);
       deps.onSelect?.(id);
     });
@@ -4137,24 +4177,32 @@ ${lines.join("\n")}
       } else if (btn.dataset["act"] === "refresh") {
         say(`Re-importing ${id} from its remembered source\u2026`);
         const o = opts();
-        const r = await fetch("/api/refresh", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id,
-            start: o.start,
-            take: o.take,
-            sensitivity: o.sensitivity,
-            bitrate: val("trkBitrate"),
-            sample_rate: val("trkRate"),
-            channels: val("trkCh"),
-            normalize: byId("trkNorm").checked
-          })
-        }).then((res) => res.json());
-        if (r.ok) {
-          drawTracks(r.tracks);
-          say(`Re-imported ${id}.`);
-        } else say(`Re-import failed \u2014 ${(r.log || r.error || "").slice(-400)}`, true);
+        btn.disabled = true;
+        const label = btn.textContent;
+        btn.textContent = "Working\u2026";
+        try {
+          const r = await fetch("/api/refresh", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id,
+              start: o.start,
+              take: o.take,
+              sensitivity: o.sensitivity,
+              bitrate: val("trkBitrate"),
+              sample_rate: val("trkRate"),
+              channels: val("trkCh"),
+              normalize: byId("trkNorm").checked
+            })
+          }).then((res) => res.json());
+          if (r.ok) {
+            drawTracks(r.tracks);
+            say(`Re-imported ${id}.`);
+          } else say(`Re-import failed \u2014 ${(r.log || r.error || "").slice(-400)}`, true);
+        } finally {
+          btn.disabled = false;
+          if (label !== null) btn.textContent = label;
+        }
       } else {
         const label = btn.textContent;
         btn.disabled = true;
@@ -4316,6 +4364,14 @@ ${lines.join("\n")}
   }
 
   // src/style_lab.ts
+  var LS_KEY = "castle.styleLab";
+  function loadSaved() {
+    try {
+      return JSON.parse(localStorage.getItem(LS_KEY) ?? "{}");
+    } catch {
+      return {};
+    }
+  }
   function createStyleLab(onStyle) {
     const el = document.createElement("details");
     el.className = "stylelab";
@@ -4371,6 +4427,7 @@ ${lines.join("\n")}
       box.className = `stylelab__flav-${key}`;
       box.addEventListener("change", () => {
         setFlavor(key, box.checked);
+        saveState();
         onStyle();
       });
       flavBoxes.push(box);
@@ -4379,6 +4436,27 @@ ${lines.join("\n")}
     }
     el.append(flavRow);
     const sliders = [];
+    const knobRefs = [];
+    const saveState = () => {
+      var _a;
+      const tweaks2 = {};
+      for (const k of knobRefs) {
+        const v = +k.input.value;
+        if (v !== 1) (tweaks2[_a = k.band] ?? (tweaks2[_a] = { intensity: 1, decay: 1 }))[k.key] = v;
+      }
+      const flavors2 = {
+        drift: !!flavBoxes[0]?.checked,
+        takeover: !!flavBoxes[1]?.checked,
+        swells: !!flavBoxes[2]?.checked
+      };
+      try {
+        localStorage.setItem(
+          LS_KEY,
+          JSON.stringify({ tweaks: tweaks2, flavors: flavors2 })
+        );
+      } catch {
+      }
+    };
     const knob = (r, band, key, min, max, title) => {
       const s = document.createElement("input");
       s.type = "range";
@@ -4395,11 +4473,26 @@ ${lines.join("\n")}
       s.addEventListener("input", () => {
         setStyleTweak(band, { [key]: +s.value });
         val.textContent = `\xD7${(+s.value).toFixed(2)}`;
+        saveState();
         onStyle();
       });
       sliders.push(s);
+      knobRefs.push({ band, key, input: s });
       r.append(s, val);
     };
+    const head = row("");
+    const th = (label, title) => {
+      const s = document.createElement("span");
+      s.style.cssText = "width:134px;text-align:center;color:var(--ink-3,#888)";
+      s.textContent = label;
+      s.title = title;
+      return s;
+    };
+    head.append(
+      th("brightness", "How hard this band's hits strike"),
+      th("tail", "How long each hit rings out")
+    );
+    el.append(head);
     for (const b of BANDS) {
       const r = row(b.label);
       knob(
@@ -4428,7 +4521,7 @@ ${lines.join("\n")}
     const copy = document.createElement("button");
     copy.type = "button";
     copy.textContent = "Copy as TS";
-    copy.title = "The effective BAND_STYLE literal, for pasting into web/src/track_lights.ts when a knob setting should become law";
+    copy.title = "Your knobs and flavours are already remembered in this browser and ship with every scene you export. This copies them as code, for making them the project-wide default.";
     const out = document.createElement("pre");
     out.className = "stylelab__ts";
     out.style.cssText = "max-height:14em;overflow:auto;font-size:10px;background:var(--panel-2);padding:6px;border-radius:6px";
@@ -4441,6 +4534,10 @@ ${lines.join("\n")}
       for (const s of sliders) {
         s.value = "1";
         s.nextElementSibling.textContent = "\xD71.00";
+      }
+      try {
+        localStorage.removeItem(LS_KEY);
+      } catch {
       }
       sayAb();
       out.hidden = true;
@@ -4456,6 +4553,20 @@ ${lines.join("\n")}
     });
     foot.append(reset, copy);
     el.append(foot, out);
+    const saved = loadSaved();
+    for (const k of knobRefs) {
+      const v = saved.tweaks?.[k.band]?.[k.key];
+      if (v === void 0 || v === 1 || !Number.isFinite(v)) continue;
+      k.input.value = String(v);
+      k.input.nextElementSibling.textContent = `\xD7${v.toFixed(2)}`;
+      setStyleTweak(k.band, { [k.key]: v });
+    }
+    FLAVORS.forEach(([key], i) => {
+      if (saved.flavors?.[key]) {
+        flavBoxes[i].checked = true;
+        setFlavor(key, true);
+      }
+    });
     return { el, reset: doReset };
   }
 
@@ -4689,6 +4800,8 @@ ${lines.join("\n")}
       return n;
     };
     const wrap = mk("div", "margin:8px 0");
+    const title = mk("div", "font:13px var(--f-data),ui-monospace,monospace;color:var(--ink-1,#eee);margin-bottom:2px");
+    title.className = "wave__title";
     const row = mk("div", "display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:6px;font:12px/1.6 var(--f-data),ui-monospace,monospace;color:var(--ink-2)");
     const play = mk("button", "min-width:7em", "Audition");
     play.type = "button";
@@ -4703,7 +4816,7 @@ ${lines.join("\n")}
     note.title = BAND_HELP;
     row.append(play, snap, readout);
     const lab = createStyleLab(() => sync());
-    wrap.append(view.el, row, deps.bands.el, lab.el, note);
+    wrap.append(title, view.el, row, deps.bands.el, lab.el, note);
     if (deps.codecs) wrap.append(deps.codecs.el);
     host.append(wrap);
     const say = (msg, err = false) => {
@@ -4725,6 +4838,24 @@ ${lines.join("\n")}
       };
       write("trkStart", mmss2(clip.start));
       write("trkTake", (clip.end - clip.start).toFixed(1));
+    }
+    const parseClock = (s) => {
+      const m = /^(?:(\d+):)?(\d+(?:\.\d+)?)$/.exec(s.trim());
+      return m ? Number(m[1] ?? 0) * 60 + Number(m[2]) : null;
+    };
+    const adoptTyped = (e) => {
+      if (!e.isTrusted || !view.data) return;
+      const dur = view.data.duration;
+      const get = (id) => document.getElementById(id)?.value ?? "";
+      const start2 = Math.max(0, Math.min(dur - 0.1, parseClock(get("trkStart")) ?? 0));
+      const takeRaw = get("trkTake");
+      const take = takeRaw === "" || takeRaw === "all" ? dur - start2 : parseClock(takeRaw);
+      if (take === null) return;
+      clip = { start: start2, end: Math.min(dur, start2 + Math.max(0.1, take)) };
+      sync();
+    };
+    for (const id of ["trkStart", "trkTake"]) {
+      document.getElementById(id)?.addEventListener("input", adoptTyped);
     }
     function sync() {
       view.clip = clip;
@@ -4949,6 +5080,8 @@ ${lines.join("\n")}
         deps.codecs?.reset();
         host.hidden = id === null;
         trackId = id;
+        title.textContent = id ? `Clip editor \u2014 ${id}` : "";
+        if (id) host.scrollIntoView({ block: "nearest", behavior: "smooth" });
         clip = null;
         view.data = null;
         view.message = id ? `Analysing ${id}\u2026` : "No track selected.";

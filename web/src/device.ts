@@ -39,6 +39,9 @@ interface Status {
   volume?: number;
   scene?: string;
   track?: string;
+  /** tools/studio.py answers the probe too (so it isn't a console error),
+   *  marked with this so we don't mistake the laptop for the castle. */
+  studio?: boolean;
 }
 
 const PROBE_TIMEOUT_MS = 1500;
@@ -49,7 +52,8 @@ async function probe(): Promise<Status | null> {
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });
     if (!r.ok) return null;
-    return (await r.json()) as Status;
+    const s = (await r.json()) as Status;
+    return s.studio ? null : s;
   } catch {
     return null;
   }

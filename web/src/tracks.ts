@@ -31,6 +31,8 @@ export interface TrackOpts {
   channels?: number;
   format?: string;
   normalize?: boolean;
+  fade_in?: number | string | null;
+  fade_out?: number | string | null;
 }
 
 /** One entry from `GET /api/tracks`. */
@@ -263,6 +265,42 @@ export function initTracks(deps: TracksDeps): TracksApi {
     }).join("");
   }
 
+  /**
+   * Point the Options panel at THIS track's remembered settings.
+   *
+   * The panel is one global form, and it used to keep whatever the last
+   * import typed into it — so "Re-import for stereo" could silently apply a
+   * leftover name, trim or bitrate from a different song (round-1 user
+   * test walked straight into it). Now what the panel shows when a track is
+   * open is what that track was made with. The synthetic input events are
+   * isTrusted:false, so the clip editor ignores them (adoptTyped).
+   *
+   * start/take are NOT filled: the clip editor owns those, and it writes
+   * them when the analysis lands.
+   */
+  function fillOptsFrom(t: TrackInfo): void {
+    const o = t.opts || {};
+    const set = (id: string, v: string | undefined | null): void => {
+      const el = byId<HTMLInputElement>(id);
+      if (v === undefined || v === null || el.value === String(v)) return;
+      el.value = String(v);
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    set("trkId", "");                       // a name is for NEW imports only
+    set("trkBitrate", o.bitrate != null ? String(o.bitrate) : "");
+    set("trkRate", o.sample_rate != null ? String(o.sample_rate) : "44100");
+    set("trkCh", String(o.channels ?? 1));
+    set("trkFormat", (t.ext || o.format || "mp3").toLowerCase());
+    set("trkSens", o.sensitivity != null ? String(o.sensitivity) : "1.1");
+    set("trkFadeIn", o.fade_in != null ? String(o.fade_in) : "");
+    set("trkFadeOut", o.fade_out != null ? String(o.fade_out) : "");
+    const norm = byId<HTMLInputElement>("trkNorm");
+    if (norm.checked !== !!o.normalize) {
+      norm.checked = !!o.normalize;
+      norm.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
   // Clicking anywhere on a row that is not a button opens the clip editor on
   // it. Picking a track and then looking at it is one intent, not two.
   T.list.addEventListener("click", e => {
@@ -271,6 +309,8 @@ export function initTracks(deps: TracksDeps): TracksApi {
     const id = el?.closest<HTMLElement>(".trk")?.dataset["id"];
     if (!id) return;
     T.selected = id;
+    const t = T.tracks.find(x => x.id === id);
+    if (t) fillOptsFrom(t);
     drawTracks(undefined);
     deps.onSelect?.(id);
   });
@@ -295,18 +335,28 @@ export function initTracks(deps: TracksDeps): TracksApi {
       // row keeps whatever was used last time.
       say(`Re-importing ${id} from its remembered source…`);
       const o = opts();
-      const r = await fetch("/api/refresh", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id, start: o.start, take: o.take, sensitivity: o.sensitivity,
-          bitrate: val("trkBitrate"),
-          sample_rate: val("trkRate"),
-          channels: val("trkCh"),
-          normalize: byId<HTMLInputElement>("trkNorm").checked,
-        })
-      }).then(res => res.json() as Promise<ActionResponse>);
-      if (r.ok) { drawTracks(r.tracks); say(`Re-imported ${id}.`); }
-      else say(`Re-import failed — ${(r.log || r.error || "").slice(-400)}`, true);
+      // Busy state on the button itself: a re-import takes seconds, and a
+      // button that looks dead for that long reads as broken (round 1).
+      btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = "Working…";
+      try {
+        const r = await fetch("/api/refresh", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id, start: o.start, take: o.take, sensitivity: o.sensitivity,
+            bitrate: val("trkBitrate"),
+            sample_rate: val("trkRate"),
+            channels: val("trkCh"),
+            normalize: byId<HTMLInputElement>("trkNorm").checked,
+          })
+        }).then(res => res.json() as Promise<ActionResponse>);
+        if (r.ok) { drawTracks(r.tracks); say(`Re-imported ${id}.`); }
+        else say(`Re-import failed — ${(r.log || r.error || "").slice(-400)}`, true);
+      } finally {
+        btn.disabled = false;
+        if (label !== null) btn.textContent = label;
+      }
     } else {
       // Re-rendering the whole show takes seconds — longer than anyone waits
       // before deciding a button is broken. Say so on the button itself.

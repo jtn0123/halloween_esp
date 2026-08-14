@@ -118,6 +118,7 @@ export function createBandEditor(onChange: () => void,
 
     const read = document.createElement("span");
     read.className = "bandcfg__val";
+    read.title = `${b.label} sensitivity (the slider's value)`;
     read.textContent = DEFAULT_SENS.toFixed(2);
 
     slider.addEventListener("input", () => {
@@ -128,6 +129,8 @@ export function createBandEditor(onChange: () => void,
 
     const hits = document.createElement("span");
     hits.className = "bandcfg__hits";
+    hits.title = `Hits detected in the ${b.label} band at this sensitivity, `
+               + "and how many land per second";
     hits.textContent = "—";
     found[b.name] = hits;
 

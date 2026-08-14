@@ -93,6 +93,12 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   };
 
   const wrap = mk("div", "margin:8px 0");
+  // Which song this editor is on. Without it (round-1 user test) the only
+  // clue was a thin border on a row that might be scrolled out of view, and
+  // the wrong track got edited.
+  const title = mk("div", "font:13px var(--f-data),ui-monospace,monospace;"
+    + "color:var(--ink-1,#eee);margin-bottom:2px");
+  title.className = "wave__title";
   const row = mk("div", "display:flex;align-items:center;gap:12px;flex-wrap:wrap;"
     + "margin-top:6px;font:12px/1.6 var(--f-data),ui-monospace,monospace;color:var(--ink-2)");
   const play = mk("button", "min-width:7em", "Audition");
@@ -111,7 +117,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   note.title = BAND_HELP;
   row.append(play, snap, readout);
   const lab = createStyleLab(() => sync());
-  wrap.append(view.el, row, deps.bands.el, lab.el, note);
+  wrap.append(title, view.el, row, deps.bands.el, lab.el, note);
   if (deps.codecs) wrap.append(deps.codecs.el);
   host.append(wrap);
 
@@ -155,6 +161,32 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     };
     write("trkStart", mmss(clip.start));
     write("trkTake", (clip.end - clip.start).toFixed(1));
+  }
+
+  /* The reverse direction: typing into those same inputs moves the clip.
+   * Round-1 user test: LENGTH said 0.1 while the editor said 2:33 and the
+   * audition played the whole song — two widgets, two truths. The synthetic
+   * events pushOpts sends are isTrusted:false, so only human edits land
+   * here and the loop cannot chase its own tail. */
+  const parseClock = (s: string): number | null => {
+    const m = /^(?:(\d+):)?(\d+(?:\.\d+)?)$/.exec(s.trim());
+    return m ? Number(m[1] ?? 0) * 60 + Number(m[2]) : null;
+  };
+  const adoptTyped = (e: Event): void => {
+    if (!e.isTrusted || !view.data) return;
+    const dur = view.data.duration;
+    const get = (id: string): string =>
+      (document.getElementById(id) as HTMLInputElement | null)?.value ?? "";
+    const start = Math.max(0, Math.min(dur - 0.1, parseClock(get("trkStart")) ?? 0));
+    const takeRaw = get("trkTake");
+    const take = takeRaw === "" || takeRaw === "all"
+      ? dur - start : parseClock(takeRaw);
+    if (take === null) return;                    // half-typed: wait
+    clip = { start, end: Math.min(dur, start + Math.max(0.1, take)) };
+    sync();
+  };
+  for (const id of ["trkStart", "trkTake"]) {
+    document.getElementById(id)?.addEventListener("input", adoptTyped);
   }
 
   function sync(): void {
@@ -445,6 +477,10 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       deps.codecs?.reset();
       host.hidden = id === null;       // nothing selected, nothing to show
       trackId = id;
+      title.textContent = id ? `Clip editor — ${id}` : "";
+      // The editor appears ABOVE the list; from a row at the bottom it opened
+      // entirely off-screen with no cue that anything had happened.
+      if (id) host.scrollIntoView({ block: "nearest", behavior: "smooth" });
       clip = null;                     // a new track's in/out points are its own
       // Drop the previous track's analysis NOW, not when the new one lands.
       // Between show() and load() finishing, the old data was still live: a

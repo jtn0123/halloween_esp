@@ -32,6 +32,24 @@ export interface StyleLab {
   reset: () => void;
 }
 
+/**
+ * Knobs and flavours survive a reload (round-1 user test: someone tuned the
+ * show for ten minutes, reloaded, and lost everything with no warning).
+ * localStorage, this browser only — the A/B variant is deliberately NOT
+ * saved: B is a comparison stance, not a setting.
+ */
+const LS_KEY = "castle.styleLab";
+
+interface SavedLab {
+  tweaks?: Partial<Record<BandName, { intensity: number; decay: number }>>;
+  flavors?: Partial<Flavors>;
+}
+
+function loadSaved(): SavedLab {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) ?? "{}") as SavedLab; }
+  catch { return {}; }
+}
+
 /** @param onStyle re-expand the audition after any change here. */
 export function createStyleLab(onStyle: () => void): StyleLab {
   // Styling is inline: previewer/styles.css sits exactly at the 500-line cap,
@@ -105,7 +123,11 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     const box = document.createElement("input");
     box.type = "checkbox";
     box.className = `stylelab__flav-${key}`;
-    box.addEventListener("change", () => { setFlavor(key, box.checked); onStyle(); });
+    box.addEventListener("change", () => {
+      setFlavor(key, box.checked);
+      saveState();
+      onStyle();
+    });
     flavBoxes.push(box);
     wrap.append(box, document.createTextNode(label));
     flavRow.append(wrap);
@@ -114,6 +136,26 @@ export function createStyleLab(onStyle: () => void): StyleLab {
 
   /* ── Knobs ── */
   const sliders: HTMLInputElement[] = [];
+  const knobRefs: Array<{ band: BandName; key: "intensity" | "decay";
+                          input: HTMLInputElement }> = [];
+
+  const saveState = (): void => {
+    const tweaks: SavedLab["tweaks"] = {};
+    for (const k of knobRefs) {
+      const v = +k.input.value;
+      if (v !== 1) (tweaks[k.band] ??= { intensity: 1, decay: 1 })[k.key] = v;
+    }
+    const flavors: Flavors = {
+      drift: !!flavBoxes[0]?.checked,
+      takeover: !!flavBoxes[1]?.checked,
+      swells: !!flavBoxes[2]?.checked,
+    };
+    try {
+      localStorage.setItem(LS_KEY,
+        JSON.stringify({ tweaks, flavors } satisfies SavedLab));
+    } catch { /* private mode: settings just stay session-only */ }
+  };
+
   const knob = (r: HTMLElement, band: BandName, key: "intensity" | "decay",
                 min: number, max: number, title: string): void => {
     const s = document.createElement("input");
@@ -131,11 +173,29 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     s.addEventListener("input", () => {
       setStyleTweak(band, { [key]: +s.value });
       val.textContent = `×${(+s.value).toFixed(2)}`;
+      saveState();
       onStyle();
     });
     sliders.push(s);
+    knobRefs.push({ band, key, input: s });
     r.append(s, val);
   };
+
+  // Column headers: two anonymous "×1.00" sliders per band read as noise
+  // without them (round 1).
+  const head = row("");
+  const th = (label: string, title: string): HTMLSpanElement => {
+    const s = document.createElement("span");
+    // 90px slider + its "×1.00" readout: match that span so the two labels
+    // sit over their own columns.
+    s.style.cssText = "width:134px;text-align:center;color:var(--ink-3,#888)";
+    s.textContent = label;
+    s.title = title;
+    return s;
+  };
+  head.append(th("brightness", "How hard this band's hits strike"),
+              th("tail", "How long each hit rings out"));
+  el.append(head);
 
   for (const b of BANDS) {
     const r = row(b.label);
@@ -155,8 +215,9 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   const copy = document.createElement("button");
   copy.type = "button";
   copy.textContent = "Copy as TS";
-  copy.title = "The effective BAND_STYLE literal, for pasting into "
-             + "web/src/track_lights.ts when a knob setting should become law";
+  copy.title = "Your knobs and flavours are already remembered in this "
+             + "browser and ship with every scene you export. This copies "
+             + "them as code, for making them the project-wide default.";
   const out = document.createElement("pre");
   out.className = "stylelab__ts";
   out.style.cssText = "max-height:14em;overflow:auto;font-size:10px;"
@@ -172,6 +233,7 @@ export function createStyleLab(onStyle: () => void): StyleLab {
       s.value = "1";
       (s.nextElementSibling as HTMLElement).textContent = "×1.00";
     }
+    try { localStorage.removeItem(LS_KEY); } catch { /* fine */ }
     sayAb();
     out.hidden = true;
     onStyle();
@@ -185,6 +247,23 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   });
   foot.append(reset, copy);
   el.append(foot, out);
+
+  // Restore last session's knobs and flavours — the settings someone spent
+  // ten minutes finding must not evaporate on reload.
+  const saved = loadSaved();
+  for (const k of knobRefs) {
+    const v = saved.tweaks?.[k.band]?.[k.key];
+    if (v === undefined || v === 1 || !Number.isFinite(v)) continue;
+    k.input.value = String(v);
+    (k.input.nextElementSibling as HTMLElement).textContent = `×${v.toFixed(2)}`;
+    setStyleTweak(k.band, { [k.key]: v });
+  }
+  FLAVORS.forEach(([key], i) => {
+    if (saved.flavors?.[key]) {
+      flavBoxes[i]!.checked = true;
+      setFlavor(key, true);
+    }
+  });
 
   return { el, reset: doReset };
 }

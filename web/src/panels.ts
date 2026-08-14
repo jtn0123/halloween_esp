@@ -370,13 +370,24 @@ export class Panels {
   private bind(id: string, fn: (v: number) => void, fmt: (v: number) => string): void {
     const el = must<HTMLInputElement>(id);
     const out = must(id + "O");
+    // Trim settings survive a reload (round-1 user test: a tuned Master
+    // brightness silently snapped back to the markup default). localStorage,
+    // per slider, restored before the first run so nothing flashes.
+    const key = `castle.trim.${id}`;
+    try {
+      const saved = localStorage.getItem(key);
+      if (saved !== null && Number.isFinite(+saved)) el.value = saved;
+    } catch { /* private mode: session-only */ }
     const run = (): void => {
       const v = +el.value;
       fn(v);
       out.textContent = fmt(v);
     };
-    el.addEventListener("input", run);
-    run();   // the markup carries the starting values; adopt them, don't guess
+    el.addEventListener("input", () => {
+      try { localStorage.setItem(key, el.value); } catch { /* fine */ }
+      run();
+    });
+    run();   // markup (or the saved value) carries the start; adopt it
   }
 
   bindSliders(h: SliderHandlers): void {

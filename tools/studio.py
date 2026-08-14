@@ -150,6 +150,11 @@ class Handler(BaseHTTPRequestHandler):
                 TRACKS.mkdir(exist_ok=True)
                 d["tracks"] = [track_info(p) for p in track_files()]
             return self.send_json(d)
+        if path == "/api/status":
+            # The desk probes this to decide simulator-vs-device mode. A 404
+            # here was correct but noisy (a red line in every console). The
+            # studio answers, marked so device.ts knows it is NOT the castle.
+            return self.send_json({"studio": True})
         if path == "/api/tracks":
             TRACKS.mkdir(exist_ok=True)
             return self.send_json({
