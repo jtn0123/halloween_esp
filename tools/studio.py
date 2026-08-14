@@ -47,7 +47,10 @@ from studio_tracks import (  # noqa: E402,F401
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-SCENES = ROOT / "scenes" / "scenes.yaml"
+# CASTLE_SCENES redirects scene writes the way CASTLE_TRACKS redirects the
+# track library — a sandboxed studio (tests, UX sessions on a scratch copy)
+# must not be able to edit the real show. Unset means the real file.
+SCENES = Path(os.environ.get("CASTLE_SCENES") or (ROOT / "scenes" / "scenes.yaml"))
 HTML = ROOT / "previewer" / "castle-cue-desk.html"
 PY = str(ROOT / ".venv" / "bin" / "python")
 

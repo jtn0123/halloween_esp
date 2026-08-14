@@ -11,6 +11,8 @@
  * all of this lived inside a DOM-bound closure.
  */
 
+import type { TrackInfo } from "./tracks.js";
+
 /**
  * The option row as it goes out to the server. Deliberately strings, not
  * numbers: blank means "leave it as it was", and only a string can carry that
@@ -173,4 +175,47 @@ export function initImportOpts(flashUsed: () => number): OptsForm {
   }
   sync();
   return { values, sync };
+}
+
+/**
+ * Point the Options panel at one track's remembered settings.
+ *
+ * The panel is one global form, and it used to keep whatever the last
+ * import typed into it — so "Re-import for stereo" could silently apply a
+ * leftover name, trim or bitrate from a different song (round-1 user test
+ * walked straight into it). Now what the panel shows when a track is open
+ * is what that track was made with. The synthetic input events are
+ * isTrusted:false, so the clip editor ignores them (adoptTyped).
+ *
+ * start/take are NOT filled: the clip editor owns those, and it writes
+ * them when the analysis lands.
+ */
+export function fillOptsFrom(t: TrackInfo): void {
+  const o = t.opts || {};
+  const set = (id: string, v: string | undefined | null): void => {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if (!el || v === undefined || v === null || el.value === String(v)) return;
+    el.value = String(v);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  set("trkId", "");                       // a name is for NEW imports only
+  set("trkBitrate", o.bitrate != null ? String(o.bitrate) : "");
+  set("trkRate", o.sample_rate != null ? String(o.sample_rate) : "44100");
+  set("trkCh", String(o.channels ?? 1));
+  set("trkFormat", (t.ext || o.format || "mp3").toLowerCase());
+  set("trkSens", o.sensitivity != null ? String(o.sensitivity) : "1.1");
+  set("trkFadeIn", o.fade_in != null ? String(o.fade_in) : "");
+  set("trkFadeOut", o.fade_out != null ? String(o.fade_out) : "");
+  const norm = document.getElementById("trkNorm") as HTMLInputElement | null;
+  if (norm && norm.checked !== !!o.normalize) {
+    norm.checked = !!o.normalize;
+    norm.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  // A <select> lands on "" when handed a value it has no option for, and a
+  // blank dropdown reads as "unset" (round 2). Snap back to the default.
+  for (const [id, dflt] of [["trkRate", "44100"], ["trkCh", "1"],
+                            ["trkFormat", "mp3"]] as const) {
+    const sel = document.getElementById(id) as HTMLSelectElement | null;
+    if (sel && sel.value === "") set(id, dflt);
+  }
 }

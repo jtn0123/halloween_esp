@@ -19,6 +19,8 @@ import type { CodecAb } from "./codec_ab.js";
 import { createStyleLab } from "./style_lab.js";
 import { sections } from "./track_lights.js";
 import { EDGE_SLOP, WaveView, type WaveClip, type WaveData } from "./waveform_view.js";
+import { clock, loadClip, mmss, parseClock, saveClip } from "./wave_clip.js";
+import { buildWaveChrome } from "./wave_chrome.js";
 
 export interface WaveformDeps {
   /**
@@ -62,6 +64,8 @@ export interface WaveformApi {
   resync(): void;
   /** Stop the audition. Safe to call when nothing is playing. */
   stop(): void;
+  /** Paint the in-editor zone mirror from the current stage frame. */
+  mirror(out: Record<string, { avg: readonly number[] }>): void;
   /** Drop the DOM, the observer, the timers and the audio element. */
   destroy(): void;
 }
@@ -75,47 +79,15 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     // has no #trkWave, and that is not worth taking the whole desk down for.
     console.warn("waveform: no #trkWave container — clip editor not mounted.");
     return { show: () => {}, reanalyse: () => {}, clip: () => null,
-             resync: () => {}, stop: () => {}, destroy: () => {} };
+             resync: () => {}, stop: () => {}, mirror: () => {},
+             destroy: () => {} };
   }
 
   const view = new WaveView();
 
-  /* ── Chrome ──────────────────────────────────────────────────────────
-     Built here rather than in the template because the template is generated
-     and this panel is the only thing that needs any of it. Layout is inline
-     for the same reason: four rules, and no stylesheet to keep in step. */
-  const mk = <K extends keyof HTMLElementTagNameMap>(
-    tag: K, css: string, text = ""): HTMLElementTagNameMap[K] => {
-    const n = document.createElement(tag);
-    n.style.cssText = css;
-    if (text) n.textContent = text;
-    return n;
-  };
-
-  const wrap = mk("div", "margin:8px 0");
-  // Which song this editor is on. Without it (round-1 user test) the only
-  // clue was a thin border on a row that might be scrolled out of view, and
-  // the wrong track got edited.
-  const title = mk("div", "font:13px var(--f-data),ui-monospace,monospace;"
-    + "color:var(--ink-1,#eee);margin-bottom:2px");
-  title.className = "wave__title";
-  const row = mk("div", "display:flex;align-items:center;gap:12px;flex-wrap:wrap;"
-    + "margin-top:6px;font:12px/1.6 var(--f-data),ui-monospace,monospace;color:var(--ink-2)");
-  const play = mk("button", "min-width:7em", "Audition");
-  play.type = "button";
-  play.disabled = true;
-  play.title = "Loop the selected region WITH its generated lights on the "
-             + "stage above. (The row's Play button is the plain audio, "
-             + "no lights.)";
-  const readout = mk("span", "font-variant-numeric:tabular-nums");
-  const snap = mk("button", "", "Snap to beat");
-  snap.type = "button";
-  snap.disabled = true;
-  snap.title = "Nudge the clip's start/end onto the nearest detected beats, "
-             + "so the loop does not click or cut a note at the seam";
-  const note = mk("p", "margin:4px 0 0;color:var(--ink-2)");
+  const { wrap, title, row, play, snap, readout, note, mirrorDots } =
+    buildWaveChrome();
   note.title = BAND_HELP;
-  row.append(play, snap, readout);
   const lab = createStyleLab(() => sync());
   wrap.append(title, view.el, row, deps.bands.el, lab.el, note);
   if (deps.codecs) wrap.append(deps.codecs.el);
@@ -130,19 +102,6 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   let clip: WaveClip | null = null;
   /** Bumped per request, so a slow analysis cannot land on top of a newer one. */
   let token = 0;
-
-  /* ── Formatting ──
-     Three formats, because three different things read them: the readout is
-     for a human judging an edit, and the two inputs are for ffmpeg. */
-
-  /** m:ss.s — a tenth of a second is worth seeing when you are placing an edit. */
-  const clock = (s: number): string =>
-    `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")}`;
-
-  /** m:ss for `trkStart`. Floored, never rounded: a start that rounds *up* eats
-      the first transient of the clip you just spent a minute lining up. */
-  const mmss = (s: number): string =>
-    `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
   /**
    * Push the selection into the Tracks option row.
@@ -168,10 +127,6 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
    * audition played the whole song — two widgets, two truths. The synthetic
    * events pushOpts sends are isTrusted:false, so only human edits land
    * here and the loop cannot chase its own tail. */
-  const parseClock = (s: string): number | null => {
-    const m = /^(?:(\d+):)?(\d+(?:\.\d+)?)$/.exec(s.trim());
-    return m ? Number(m[1] ?? 0) * 60 + Number(m[2]) : null;
-  };
   const adoptTyped = (e: Event): void => {
     if (!e.isTrusted || !view.data) return;
     const dur = view.data.duration;
@@ -182,8 +137,14 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     const take = takeRaw === "" || takeRaw === "all"
       ? dur - start : parseClock(takeRaw);
     if (take === null) return;                    // half-typed: wait
-    clip = { start, end: Math.min(dur, start + Math.max(0.1, take)) };
+    const end = Math.min(dur, start + Math.max(0.1, take));
+    clip = { start, end };
     sync();
+    // Two disagreeing numbers with no comment read as a bug (round 2):
+    // when the typed length runs past the track, say where it stopped.
+    if (start + take > dur + 0.05) {
+      say(`That length runs past the end — clipped at ${clock(dur)}.`);
+    }
   };
   for (const id of ["trkStart", "trkTake"]) {
     document.getElementById(id)?.addEventListener("input", adoptTyped);
@@ -205,6 +166,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       : "drag across the waveform to pick a clip";
     play.disabled = !clip || !view.data;
     snap.disabled = play.disabled;
+    if (trackId && view.data) saveClip(trackId, clip, view.data.duration);
     deps.onClipChange?.(clip, view.data);
   }
 
@@ -269,9 +231,13 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     view.data = res;
     view.message = "";
     // First look shows the whole track; a re-analysis at a new sensitivity must
-    // not throw away in and out points already placed by hand.
-    clip = clip
-      ? { start: clamp(clip.start, 0, res.duration), end: clamp(clip.end, 0, res.duration) }
+    // not throw away in and out points already placed by hand. And a clip
+    // dialed in last session comes back (round 2: the knobs survived a
+    // reload, the twenty minutes of trimming did not — backwards).
+    const remembered = clip ?? loadClip(id, res.duration);
+    clip = remembered
+      ? { start: clamp(remembered.start, 0, res.duration),
+          end: clamp(remembered.end, 0, res.duration) }
       : { start: 0, end: res.duration };
     say(counts(res));
     sync();
@@ -500,6 +466,16 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     clip: () => clip,
     resync: () => sync(),
     stop: () => stop(),
+    /** Paint the zone mirror from the frame the stage just drew. */
+    mirror(out: Record<string, { avg: readonly number[] }>): void {
+      if (host.hidden) return;
+      for (const [z, d] of Object.entries(mirrorDots)) {
+        const c = out[z]?.avg;
+        if (!c || !d) continue;
+        d.style.background = `rgb(${Math.round(c[0]! * 255)},`
+          + `${Math.round(c[1]! * 255)},${Math.round(c[2]! * 255)})`;
+      }
+    },
     destroy(): void {
       stop();
       window.clearTimeout(sensTimer);

@@ -32,6 +32,9 @@ export interface TransportDeps {
    * audition adopts clip changes by reloading the scene mid-play.
    */
   stopExternal?: () => void;
+  /** Whether an external player is sounding. With the button showing Pause
+   *  for a row preview, pressing it must pause THAT — not start the scene. */
+  isExternalPlaying?: () => boolean;
 }
 
 export class Transport {
@@ -97,6 +100,11 @@ export class Transport {
       // clock alone leaves the song playing and the button looking broken.
       this.d.stopExternal?.();
       this.setPlaying(false);
+    } else if (this.d.isExternalPlaying?.()) {
+      // A row preview is sounding and the button says Pause: pause means
+      // that, not "also start the scene".
+      this.d.stopExternal?.();
+      this.syncUI();
     } else {
       this.play();
     }
@@ -169,8 +177,15 @@ export class Transport {
     this.loadScene(this.st.scene, { play: this.st.running });
   }
 
+  /** Re-read the world and redraw the play button — for external players. */
+  refreshUI(): void {
+    this.syncUI();
+  }
+
   private syncUI(): void {
-    const running = this.st.running;
+    // A sounding row preview counts: the button showing a dead ▶ Play while
+    // music audibly plays read as "the transport is broken" (round 2).
+    const running = this.st.running || (this.d.isExternalPlaying?.() ?? false);
     const icon = document.getElementById("playIcon");
     const label = document.getElementById("playLabel");
     const btn = document.getElementById("play");

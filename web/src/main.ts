@@ -84,13 +84,16 @@ const transport = new Transport({
     panels.renderTicks(sc);
     panels.renderSceneInfo(sc);
   },
-  // Evaluated at click time, so the const-after-this-line references are
-  // safe. Each stop is a no-op when that player is idle.
+  // These close over consts declared further down. syncUI runs during THIS
+  // construction (loadScene → setPlaying), when the bundle's hoisted vars
+  // are still undefined — hence the ?. guards, which double as no-ops for
+  // players that are simply idle.
   stopExternal: () => {
-    wave.stop();
-    tracks.stopPreview();
-    codecs.stop();
+    wave?.stop();
+    tracks?.stopPreview();
+    codecs?.stop();
   },
+  isExternalPlaying: () => tracks?.previewing() ?? false,
 });
 
 /* ── Chrome ── */
@@ -260,6 +263,7 @@ const tracks = initTracks({
   bands,
   onSelect: (id) => { selectedTrack = id; wave.show(id); },
   onAudioClaim: () => wave.stop(),
+  onPreviewState: () => transport.refreshUI(),
 });
 
 /* ── Frame loop ── */
@@ -277,6 +281,7 @@ function frame(now: number): void {
   stage.draw(f.zones, now / 1000, f.flash, f.flashColor);
   insets.draw(f.zones);
   panels.updateMeters(f.zones);
+  wave.mirror(f.zones);
   panels.updateTransport(f.elapsed, state.scene);
   requestAnimationFrame(frame);
 }

@@ -93,8 +93,11 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     ab.textContent = b ? "B · classic flat (comparison only)" : "A · current dynamics";
     ab.classList.toggle("on", b);
   };
-  ab.title = "Toggle the whole strike engine between the current dynamics "
-           + "and the pre-4K baseline. Exports always use A.";
+  ab.title = "Toggle the whole light engine between A (current) and B (the "
+           + "old flat look, kept as a reference point). B is for judging "
+           + "whether A is actually better — it can't be shipped, so exports "
+           + "always use A. If B ever looks better, that's a bug to report, "
+           + "not a setting to keep.";
   ab.addEventListener("click", () => {
     setStyleVariant(styleVariant() === "classic" ? "current" : "classic");
     sayAb();
@@ -132,6 +135,15 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     wrap.append(box, document.createTextNode(label));
     flavRow.append(wrap);
   }
+  // Expectations, or the boxes read as dead (round 2: a tester turned all
+  // three on, auditioned ten seconds of ambience, and measured no change —
+  // correctly, because nothing they gate had happened yet).
+  const flavHint = document.createElement("div");
+  flavHint.style.cssText = "margin:1px 0 3px;color:var(--ink-3,#888);font-size:11px";
+  flavHint.textContent = "drift shows over ~a minute · chorus fires only in "
+    + "loud chorus sections · swells need long sustained louds — audition a "
+    + "loud stretch of the song to see them";
+  flavRow.append(flavHint);
   el.append(flavRow);
 
   /* ── Knobs ── */

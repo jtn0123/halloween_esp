@@ -13,8 +13,8 @@
  */
 
 import type { BandEditor } from "./band_editor.js";
-import { BAND_HELP, bandSummary } from "./bands.js";
-import { initImportOpts } from "./import_opts.js";
+import { fillOptsFrom, initImportOpts } from "./import_opts.js";
+import { trackRowHtml } from "./track_rows.js";
 import { detectOnsets, loudnessEnvelope } from "./onsets.js";
 import { createPreview } from "./preview.js";
 import { sceneYaml } from "./track_scene.js";
@@ -75,6 +75,8 @@ export interface TracksDeps {
    * static/artifact build has no server to fetch one from.
    */
   onSelect?: (trackId: string | null) => void;
+  /** Row preview started or stopped — so the transport can reflect it. */
+  onPreviewState?: (playing: boolean) => void;
   /**
    * Fired just before a row preview starts, so the host can stop whatever else
    * it has playing. Two audio sources at once is never what was meant.
@@ -91,6 +93,9 @@ export interface TracksDeps {
 export interface TracksApi {
   /** Silence the row preview — for when something else wants the speakers. */
   stopPreview: () => void;
+  /** Whether a row preview is sounding right now — so the transport can
+   *  show Pause and mean it instead of playing dead (round 2). */
+  previewing: () => boolean;
 }
 
 export function initTracks(deps: TracksDeps): TracksApi {
@@ -169,16 +174,11 @@ export function initTracks(deps: TracksDeps): TracksApi {
       say("");
     });
 
-  const ESCAPES: Record<string, string> =
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
-  const esc = (s: unknown): string =>
-    String(s).replace(/[&<>"]/g, c => ESCAPES[c] as string);
-
   /* Row audition. The button is the only thing that can make this speak — see
      preview.ts. Redrawing on every change keeps the label ("Play"/"Stop") and
      the row highlight from drifting out of step with what is actually on. */
   const preview = createPreview({
-    onChange: () => syncPlaying(),
+    onChange: () => { syncPlaying(); deps.onPreviewState?.(preview.playing() !== null); },
     onError: msg => say(msg, true),
     onClaim: () => deps.onAudioClaim?.(),
   });
@@ -209,96 +209,13 @@ export function initTracks(deps: TracksDeps): TracksApi {
   function drawTracks(tracks: TrackInfo[] | undefined): void {
     if (tracks) T.tracks = tracks;
     const playingId = preview.playing();
-    T.list.innerHTML = T.tracks.map(t => {
-      const o = t.opts || {};
-      const ext = (t.ext || o.format || "mp3").toLowerCase();
-      // Bitrate is a property of the lossy encoders only; printing "?kbps"
-      // next to a WAV says the import went wrong when it went fine.
-      const lossless = ext === "wav" || ext === "flac";
-      // Mono is not just a fact — it costs the show its left/right tower
-      // ping-pong (pan routing needs two channels). Say so where the user
-      // is looking, with the fix spelled out.
-      const mono = o.channels !== 2;
-      const monoBadge = mono
-        ? `<span class="trk__mono" style="color:var(--warn,#e0a34a)" title="Mono `
-          + `import: the towers cannot answer left/right without stereo. Fix: `
-          + `set channels to stereo in Options above, then press Re-import on `
-          + `this row.">mono ⚠</span>`
-        : "stereo";
-      const fmt = [ext.toUpperCase(),
-                   lossless ? null : `${o.bitrate || "?"}kbps`,
-                   monoBadge,
-                   `${(o.sample_rate || 44100) / 1000}k`,
-                   o.normalize ? "normalised" : null].filter(Boolean).join(" · ");
-      const sounding = playingId === t.id;
-      // Rate per zone, not raw counts — see bandSummary for why the counts are
-      // the wrong number to put in front of someone.
-      const onsets = bandSummary(t.onsets || {}, t.dur);
-      // The remembered source. A link if it came from one, so you can go back
-      // to where it came from without digging through history.
-      const isUrl = /^https?:\/\//.test(t.source || "");
-      const src = !t.source ? ""
-        : isUrl
-          ? `<a href="${esc(t.source)}" target="_blank" rel="noreferrer noopener">${esc(t.title || t.source).slice(0, 64)}</a>`
-          : esc(t.source.replace(/^file:/, "").split("/").pop());
-      const inShow = T.sceneIds.has(t.id);
-      const cls = ["trk", T.selected === t.id ? "sel" : "",
-                   sounding ? "playing" : ""].filter(Boolean).join(" ");
-      return `
-      <div class="${cls}" data-id="${esc(t.id)}" title="Click to open the clip editor">
-        <div class="trk__nm">${esc(t.id)}
-          ${inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
-          <small>${t.dur ?? "?"}s · ${t.kb} KB · ${fmt}</small>
-          <small title="${esc(BAND_HELP)}">${esc(onsets)}</small>
-          ${src ? `<small class="trk__src">from ${src}</small>` : ""}
-          ${t.notes ? `<small>${esc(t.notes)}</small>` : ""}
-        </div>
-        <div class="trk__act">
-          <button data-act="play" class="${sounding ? "on" : ""}"
-                  title="Listen to the whole file — audio only, no lights. To see the light show, click the row and press Audition in the editor.">${sounding ? "Stop" : "Play"}</button>
-          <button data-act="scene" title="${inShow ? "Rewrite this scene from the track as it is now" : "Add this track to the show as a new scene"}"
-            >${inShow ? "Update scene" : "Make scene"}</button>
-          ${t.source ? `<button data-act="refresh" title="Rebuild from the remembered source using the options above">Re-import</button>` : ""}
-          <button data-act="del" class="danger">Delete</button>
-        </div>
-      </div>`;
-    }).join("");
-  }
-
-  /**
-   * Point the Options panel at THIS track's remembered settings.
-   *
-   * The panel is one global form, and it used to keep whatever the last
-   * import typed into it — so "Re-import for stereo" could silently apply a
-   * leftover name, trim or bitrate from a different song (round-1 user
-   * test walked straight into it). Now what the panel shows when a track is
-   * open is what that track was made with. The synthetic input events are
-   * isTrusted:false, so the clip editor ignores them (adoptTyped).
-   *
-   * start/take are NOT filled: the clip editor owns those, and it writes
-   * them when the analysis lands.
-   */
-  function fillOptsFrom(t: TrackInfo): void {
-    const o = t.opts || {};
-    const set = (id: string, v: string | undefined | null): void => {
-      const el = byId<HTMLInputElement>(id);
-      if (v === undefined || v === null || el.value === String(v)) return;
-      el.value = String(v);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    };
-    set("trkId", "");                       // a name is for NEW imports only
-    set("trkBitrate", o.bitrate != null ? String(o.bitrate) : "");
-    set("trkRate", o.sample_rate != null ? String(o.sample_rate) : "44100");
-    set("trkCh", String(o.channels ?? 1));
-    set("trkFormat", (t.ext || o.format || "mp3").toLowerCase());
-    set("trkSens", o.sensitivity != null ? String(o.sensitivity) : "1.1");
-    set("trkFadeIn", o.fade_in != null ? String(o.fade_in) : "");
-    set("trkFadeOut", o.fade_out != null ? String(o.fade_out) : "");
-    const norm = byId<HTMLInputElement>("trkNorm");
-    if (norm.checked !== !!o.normalize) {
-      norm.checked = !!o.normalize;
-      norm.dispatchEvent(new Event("change", { bubbles: true }));
-    }
+    // The row markup lives in track_rows.ts (500-line cap; the seam is
+    // "how a row looks" vs "what clicking it does").
+    T.list.innerHTML = T.tracks.map(t => trackRowHtml(t, {
+      selected: T.selected === t.id,
+      inShow: T.sceneIds.has(t.id),
+      sounding: playingId === t.id,
+    })).join("");
   }
 
   // Clicking anywhere on a row that is not a button opens the clip editor on
@@ -311,6 +228,14 @@ export function initTracks(deps: TracksDeps): TracksApi {
     T.selected = id;
     const t = T.tracks.find(x => x.id === id);
     if (t) fillOptsFrom(t);
+    // The mono badge IS the fix: clicking it stages stereo so the next
+    // Re-import does what the warning promised.
+    if (el?.closest(".trk__mono")) {
+      const ch = byId<HTMLInputElement>("trkCh");
+      ch.value = "2";
+      ch.dispatchEvent(new Event("input", { bubbles: true }));
+      say(`Channels set to stereo for ${id} — press Re-import on its row to rebuild it.`);
+    }
     drawTracks(undefined);
     deps.onSelect?.(id);
   });
@@ -333,6 +258,13 @@ export function initTracks(deps: TracksDeps): TracksApi {
     } else if (btn.dataset["act"] === "refresh") {
       // Rebuild from the remembered source. Anything left blank in the option
       // row keeps whatever was used last time.
+      // Re-import must use THIS row's settings even when a different track
+      // (or none) is open in the editor — a leftover panel state silently
+      // rebuilding the wrong way was round 1's nastiest trap.
+      if (T.selected !== id) {
+        const t = T.tracks.find(x => x.id === id);
+        if (t) fillOptsFrom(t);
+      }
       say(`Re-importing ${id} from its remembered source…`);
       const o = opts();
       // Busy state on the button itself: a re-import takes seconds, and a
@@ -351,7 +283,18 @@ export function initTracks(deps: TracksDeps): TracksApi {
             normalize: byId<HTMLInputElement>("trkNorm").checked,
           })
         }).then(res => res.json() as Promise<ActionResponse>);
-        if (r.ok) { drawTracks(r.tracks); say(`Re-imported ${id}.`); }
+        if (r.ok) {
+          drawTracks(r.tracks);
+          // Say what came OUT, not just that something happened: fourteen
+          // silent seconds ending in an unchanged row read as a dead button.
+          const after = (r.tracks || []).find(x => x.id === id);
+          const ch = after?.opts?.channels === 2 ? "stereo" : "mono";
+          say(`Re-imported ${id} — ${ch}.`
+            + (ch === "mono"
+              ? " Still mono: click its mono ⚠ badge (or set CHANNELS to"
+                + " stereo in Options) and Re-import again."
+              : ""));
+        }
         else say(`Re-import failed — ${(r.log || r.error || "").slice(-400)}`, true);
       } finally {
         btn.disabled = false;
@@ -529,5 +472,8 @@ export function initTracks(deps: TracksDeps): TracksApi {
     } catch (err) { say(`Could not read that file — ${String(err)}`, true); }
   }
 
-  return { stopPreview: () => preview.stop() };
+  return {
+    stopPreview: () => preview.stop(),
+    previewing: () => preview.playing() !== null,
+  };
 }

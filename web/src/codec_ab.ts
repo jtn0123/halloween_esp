@@ -142,7 +142,7 @@ export function createCodecAb(deps: CodecAbDeps): CodecAb {
       b.className = "codecab__pick" + (current === r.codec ? " on" : "");
       b.dataset["codec"] = r.codec;
       // Size and fidelity are the trade being made, so both are on the button.
-      const loss = r.db <= 0 ? "reference" : `${r.db.toFixed(2)} dB`;
+      const loss = r.db <= 0 ? "reference" : `${r.db.toFixed(2)} dB vs lossless`;
       b.innerHTML = `<b>${r.codec.toUpperCase()}</b>`
         + `<span>${kb(r.bytes)}${r.bytes === smallest ? " · smallest" : ""}</span>`
         + `<span>${loss}</span>`;
