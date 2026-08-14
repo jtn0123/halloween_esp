@@ -31,6 +31,38 @@
     "source": "https://youtu.be/FNvO9etT3Ec?list=PLxA687tYuMWiSFydrFrY21oxq4G9InAWX",
     "title": "Halloween Songs - Ghostbusters Theme Song (Audio)"
   },
+  "i_put_a_spell_on_you__in_the_sty": {
+    "audio": {
+      "bitrate": 96,
+      "bytes": 1465514,
+      "channels": 2,
+      "duration": 122.05,
+      "format": "mp3",
+      "sample_rate": 44100
+    },
+    "imported": "2026-08-12T21:14:39",
+    "notes": "",
+    "onsets": {
+      "onset_high": 225,
+      "onset_low": 289,
+      "onset_mid": 256
+    },
+    "opts": {
+      "bitrate": 96,
+      "channels": 2,
+      "fade_in": null,
+      "fade_out": null,
+      "format": "mp3",
+      "gain_db": null,
+      "normalize": false,
+      "sample_rate": 44100,
+      "sensitivity": 1.1,
+      "start": "0:00",
+      "take": "246.3"
+    },
+    "source": "https://youtu.be/Gtzc3NYtzGI?list=PLNBezEIa70v_H9y-M_ItcsYQF8Wssf9ax",
+    "title": "I Put a Spell on You (In the Style of Hocus Pocus)"
+  },
   "the_ballad_of_the_witches__road_": {
     "audio": {
       "bitrate": 96,
