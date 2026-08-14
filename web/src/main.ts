@@ -84,6 +84,13 @@ const transport = new Transport({
     panels.renderTicks(sc);
     panels.renderSceneInfo(sc);
   },
+  // Evaluated at click time, so the const-after-this-line references are
+  // safe. Each stop is a no-op when that player is idle.
+  stopExternal: () => {
+    wave.stop();
+    tracks.stopPreview();
+    codecs.stop();
+  },
 });
 
 /* ── Chrome ── */

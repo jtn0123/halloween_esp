@@ -98,13 +98,15 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   const play = mk("button", "min-width:7em", "Audition");
   play.type = "button";
   play.disabled = true;
-  play.title = "Play just the selected region, on a loop";
+  play.title = "Loop the selected region WITH its generated lights on the "
+             + "stage above. (The row's Play button is the plain audio, "
+             + "no lights.)";
   const readout = mk("span", "font-variant-numeric:tabular-nums");
   const snap = mk("button", "", "Snap to beat");
   snap.type = "button";
   snap.disabled = true;
-  snap.title = "Move the in and out points to the nearest detected onsets, so "
-             + "a looping scene does not click at the seam";
+  snap.title = "Nudge the clip's start/end onto the nearest detected beats, "
+             + "so the loop does not click or cut a note at the seam";
   const note = mk("p", "margin:4px 0 0;color:var(--ink-2)");
   note.title = BAND_HELP;
   row.append(play, snap, readout);

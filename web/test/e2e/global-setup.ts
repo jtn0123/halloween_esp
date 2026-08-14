@@ -31,9 +31,13 @@ export default function globalSetup(): () => void {
     throw new Error(`no built page at ${PAGE} — run \`make preview\` first`);
   }
 
+  // cwd is this directory, not ROOT, and the script gets ROOT by env: the
+  // seeding must not care where it runs from (and macOS can wedge a
+  // directory's TCC tag so that getcwd() fails there — seen live on the
+  // repo root; a process may not even start with that cwd).
   execFileSync(PY, ["-c", SEED], {
-    cwd: ROOT,
-    env: { ...process.env, CASTLE_TRACKS: dir },
+    cwd: __dirname,
+    env: { ...process.env, CASTLE_TRACKS: dir, CASTLE_ROOT: ROOT },
     stdio: "inherit",
   });
 
@@ -50,7 +54,9 @@ export default function globalSetup(): () => void {
 const SEED = `
 import os, sys, tempfile, shutil
 from pathlib import Path
-sys.path.insert(0, "tools"); sys.path.insert(0, "tests")
+root = os.environ["CASTLE_ROOT"]
+sys.path.insert(0, os.path.join(root, "tools"))
+sys.path.insert(0, os.path.join(root, "tests"))
 import import_track as it
 from helpers import make_click_track
 

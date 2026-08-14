@@ -24,6 +24,14 @@ export interface TransportDeps {
   getMode: () => "rendered" | "synth";
   /** Redraw the cue sheet, ticks and scene labels when the scene changes. */
   onSceneChange: (sc: Scene) => void;
+  /**
+   * Silence every player this module does NOT own — the track-row preview,
+   * the clip audition, the codec A/B. Pause and Stop are the user saying
+   * "quiet", and "quiet except the song in the panel below" reads as a stop
+   * button that does not work. Deliberately NOT called from loadScene: the
+   * audition adopts clip changes by reloading the scene mid-play.
+   */
+  stopExternal?: () => void;
 }
 
 export class Transport {
@@ -84,8 +92,14 @@ export class Transport {
   }
 
   toggle(): void {
-    if (this.st.running) this.setPlaying(false);
-    else this.play();
+    if (this.st.running) {
+      // The audition slaves this clock from outside (syncTo), so pausing the
+      // clock alone leaves the song playing and the button looking broken.
+      this.d.stopExternal?.();
+      this.setPlaying(false);
+    } else {
+      this.play();
+    }
   }
 
   /**
@@ -137,9 +151,11 @@ export class Transport {
     else this.setPlaying(false);
   }
 
-  /** Everything off, clock to zero. */
+  /** Everything off, clock to zero. EVERYTHING — including the players this
+   *  module does not own. */
   blackout(): void {
     const st = this.st;
+    this.d.stopExternal?.();
     this.setPlaying(false);
     st.held = 0;
     rebuildLightsAt(st, st.scene, 0);

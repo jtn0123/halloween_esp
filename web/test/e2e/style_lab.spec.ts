@@ -22,7 +22,8 @@ async function openLab(page: Page): Promise<void> {
   await expect(page.locator("#trkMode")).toHaveText(/studio/);
   await row(page, MP3).locator(".trk__nm").click();
   await expect(page.locator("#trkWave")).toContainText(/start 0:00/);
-  await lab(page).locator("summary").click();
+  // The lab ships unfolded — it was undiscoverable as a closed <details>.
+  // Clicking the summary here would fold it shut, so just assert.
   await expect(lab(page).locator(".stylelab__ab")).toBeVisible();
 }
 

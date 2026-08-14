@@ -213,9 +213,19 @@ export function initTracks(deps: TracksDeps): TracksApi {
       // Bitrate is a property of the lossy encoders only; printing "?kbps"
       // next to a WAV says the import went wrong when it went fine.
       const lossless = ext === "wav" || ext === "flac";
+      // Mono is not just a fact — it costs the show its left/right tower
+      // ping-pong (pan routing needs two channels). Say so where the user
+      // is looking, with the fix spelled out.
+      const mono = o.channels !== 2;
+      const monoBadge = mono
+        ? `<span class="trk__mono" style="color:var(--warn,#e0a34a)" title="Mono `
+          + `import: the towers cannot answer left/right without stereo. Fix: `
+          + `set channels to stereo in Options above, then press Re-import on `
+          + `this row.">mono ⚠</span>`
+        : "stereo";
       const fmt = [ext.toUpperCase(),
                    lossless ? null : `${o.bitrate || "?"}kbps`,
-                   o.channels === 2 ? "stereo" : "mono",
+                   monoBadge,
                    `${(o.sample_rate || 44100) / 1000}k`,
                    o.normalize ? "normalised" : null].filter(Boolean).join(" · ");
       const sounding = playingId === t.id;
@@ -243,7 +253,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
         </div>
         <div class="trk__act">
           <button data-act="play" class="${sounding ? "on" : ""}"
-                  title="Listen to the whole imported file">${sounding ? "Stop" : "Play"}</button>
+                  title="Listen to the whole file — audio only, no lights. To see the light show, click the row and press Audition in the editor.">${sounding ? "Stop" : "Play"}</button>
           <button data-act="scene" title="${inShow ? "Rewrite this scene from the track as it is now" : "Add this track to the show as a new scene"}"
             >${inShow ? "Update scene" : "Make scene"}</button>
           ${t.source ? `<button data-act="refresh" title="Rebuild from the remembered source using the options above">Re-import</button>` : ""}

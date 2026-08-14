@@ -40,11 +40,17 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   el.className = "stylelab";
   el.style.cssText = "margin:6px 0;font:12px/1.7 var(--f-data),ui-monospace,"
     + "monospace;color:var(--ink-2)";
+  // Open by default: this panel was invisible in practice — a collapsed fold
+  // labelled "Style lab" told nobody that the A/B lives here. Discoverable
+  // first, foldable after.
+  el.open = true;
   const sum = document.createElement("summary");
   sum.style.cursor = "pointer";
-  sum.textContent = "Style lab — A/B and knobs";
+  sum.textContent = "Judge the lights — A/B engine test, flavours, knobs";
   sum.title = "Compare the light engine against the old flat look, and trim "
-            + "intensity/tails live";
+            + "intensity/tails live. Applies to the audition and to the next "
+            + "Make/Update scene — the baked scenes on the left don't change "
+            + "until you re-export them.";
   el.append(sum);
 
   const row = (label: string): HTMLDivElement => {
