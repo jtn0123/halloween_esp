@@ -38,6 +38,15 @@ def tempo_decay(decay: float, factor: float) -> float:
     return math.floor((1 - (1 - decay) / factor) * 10000 + 0.5) / 10000
 
 
+def round3(x: float) -> float:
+    """floor(x*1000+0.5)/1000 — the exact arithmetic of JS's
+    Math.round(x*1000)/1000, which is what track_lights.ts does to every
+    intensity and colour channel. Python's round(x, 3) disagrees with it
+    whenever the *1000 float drift crosses the half (the fuzz found 546
+    such strikes in 2433): same cure as tempo_decay, half-up via floor."""
+    return math.floor(x * 1000 + 0.5) / 1000
+
+
 def is_accent(vels: list[float], i: int) -> bool:
     """#8: louder than its own recent neighbourhood, not just loud.
 
@@ -126,7 +135,7 @@ def drift_base(colors: list, i: int, t_ms: int) -> list:
     k = int(pos)
     f = pos - k
     a, b = colors[k], colors[(k + 1) % n]
-    return [round(x + (y - x) * f, 3) for x, y in zip(a, b)]
+    return [round3(x + (y - x) * f) for x, y in zip(a, b)]
 
 
 # #2 Chorus takeover: during a chorus the whole castle agrees on ONE warm

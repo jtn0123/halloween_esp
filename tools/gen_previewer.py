@@ -70,7 +70,7 @@ def _blend_color(base: list, hot: list | None, vel: float) -> list:
     and track_lights.ts."""
     if not hot:
         return base
-    return [round(b + (h - b) * vel, 3) for b, h in zip(base, hot)]
+    return [gen.round3(b + (h - b) * vel) for b, h in zip(base, hot)]
 
 
 def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
@@ -150,7 +150,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
                 base = cyc[i % len(cyc)] if cyc else pcfg.get("color", [1, 1, 1, 1])
             c = {"t": t, "bus": "LED", "op": "strike",
                  "ms": ms,
-                 "intensity": round(pcfg.get("intensity", 0.3) * vel * mul, 3),
+                 "intensity": gen.round3(pcfg.get("intensity", 0.3) * vel * mul),
                  "color": _blend_color(base, hot, vel),
                  "decay": decay,
                  "detail": pcfg["synth"]}

@@ -74,7 +74,7 @@ def eff_id(name: str, scene_id: str) -> int:
 # copy; web/src/track_lights.ts remains the deliberate TS duplicate.
 from pulse_dynamics import (tempo_factor, tempo_decay, is_accent,  # noqa: F401,E402
                             PAN_DECISIVE, section_gates, gate_mul, gate_note,
-                            drift_base, TAKEOVER_COLORS, TAKEOVER_HOT)
+                            drift_base, round3, TAKEOVER_COLORS, TAKEOVER_HOT)
 
 
 def pulse_cues(scene: dict, markers: dict) -> list[dict]:
@@ -154,7 +154,7 @@ def pulse_cues(scene: dict, markers: dict) -> list[dict]:
                 base = cyc[i % len(cyc)] if cyc else cfg.get("color", WHITE)
             out.append({"t": t, "op": "strike", "targets": targets,
                         "ms": ms,
-                        "intensity": round(cfg.get("intensity", 0.3) * vel * mul, 3),
+                        "intensity": round3(cfg.get("intensity", 0.3) * vel * mul),
                         "color": blend_color(base, hot, vel),
                         "decay": decay,
                         # #10: rise time to peak; 0 keeps the instant slam.
@@ -173,7 +173,7 @@ def blend_color(base: list, hot: list | None, vel: float) -> list:
     """color -> color_hot by velocity. Identical in track_lights.ts."""
     if not hot:
         return base
-    return [round(b + (h - b) * vel, 3) for b, h in zip(base, hot)]
+    return [round3(b + (h - b) * vel) for b, h in zip(base, hot)]
 
 
 def pixels_for(cfg: dict, vel: float) -> str:
