@@ -59,12 +59,20 @@ for firmware, version bump → OTA → /api/status confirm.
 - [ ] #30 Jewels dry-run mode. Do NOT flash castle_sd_jewels.yaml until the
       jewels are physically soldered to A0.
 
-## #20 sensor decision (pending purchase)
-Recommendation: combo — wired button for control, motion for automation.
-- Wired big-dome arcade button + 2-core cable to a GPIO (internal pullup).
-  Foolproof, zero latency, works with cold hands in the dark. ~$8.
-- Motion: PIR (HC-SR501, ~$3) is fine under a porch roof but false-triggers in
-  sun/wind/heat; mmWave presence (HLK-LD2410, ~$5, UART) is far more reliable
-  outdoors. For a walkway "beam", VL53L1X ToF works to ~3 m.
-- Firmware treats both as the same trigger event with a cooldown, so either
-  can be added whenever it arrives.
+## #20 trigger hardware — DECIDED 2026-08-13: both, plus a button panel
+User is ordering both motion (HLK-LD2410 mmWave preferred outdoors over PIR)
+and buttons. Jewels are ordered too (#30 unblocks on soldering).
+
+**The side-of-house button panel** (user's design):
+- 2–3 arcade buttons, RGB-controlled so their meaning is software:
+  green glow = start the show (LED goes DARK once running, so it doesn't
+  compete with the castle); red ember = stop; third TBD (scare / next).
+- Parts: translucent CLEAR arcade buttons (Adafruit 30mm #471 or 24mm mini
+  #3489) + NeoPixel diffused 5mm through-hole LEDs (#1938) swapped into the
+  LED holders — no true-RGB arcade button exists off the shelf; this is the
+  standard Adafruit-documented retrofit. One WS2812 chain = all buttons.
+- Wiring: 3 GPIO inputs (pullups, PIR-style debounce/cooldown) + one short
+  NeoPixel chain through a spare 74AHCT125 gate (few-meter run wants the
+  shifter + twisted pair). Firmware: map presses to show start / stop /
+  blackout APIs that already exist; drive button colours from the same
+  mirrored show state the eInk reads.
