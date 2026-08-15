@@ -73,6 +73,20 @@ test("the ready panel draws three layers and Left exposes what mono missed",
     .toContainText("all seen by mono analysis");
 });
 
+test("L / R stacks the channels and counts one-sided hits", async ({ page }) => {
+  await page.route(`**/api/stems/${MP3}`, r =>
+    r.fulfill({ json: READY }));
+  await openEditor(page);
+  const panel = page.locator("#trkWave .stems");
+  await panel.getByRole("button", { name: "L / R" }).click();
+  // The fixture's 5 s hit lives only in the left channel.
+  await expect(panel.locator(".stems-cap").first())
+    .toContainText("1 left-only · 0 right-only");
+  // The stacked strips get taller to hold the two mirrored halves.
+  const box = await panel.locator(".stems-strip").first().boundingBox();
+  expect(box!.height).toBeGreaterThan(70);
+});
+
 test("a stale split says so instead of quietly showing old audio",
     async ({ page }) => {
   await page.route(`**/api/stems/${MP3}`, r =>

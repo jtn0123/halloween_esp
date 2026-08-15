@@ -32,7 +32,7 @@ export interface StemsApi {
   destroy(): void;
 }
 
-type Channel = "left" | "both" | "right";
+type Channel = "left" | "both" | "right" | "stack";
 type Layer = "vocals" | "backing" | "combined";
 
 const LAYERS: readonly { key: Layer; label: string; hint: string; ink: string }[] = [
@@ -55,10 +55,11 @@ const btn = (label: string): HTMLButtonElement => {
   return b;
 };
 
-/** Onsets in `chan` that have no counterpart in the mono analysis. */
-function missedTimes(chan: StemChannel, mono: StemChannel | undefined,
+/** Onsets in `chan` that have no counterpart in `other` — the generic form
+ *  behind both audits: channel-vs-mono, and left-vs-right in the stacked view. */
+function missedTimes(chan: StemChannel, other: StemChannel | undefined,
                      band: string): number[] {
-  const seen = (mono?.onsets[band] ?? []).map(h => h[0]).sort((a, z) => a - z);
+  const seen = (other?.onsets[band] ?? []).map(h => h[0]).sort((a, z) => a - z);
   const out: number[] = [];
   for (const [t] of chan.onsets[band] ?? []) {
     // seen is sorted and short; a linear probe is cheaper than being clever.
@@ -85,12 +86,16 @@ export function createStemsView(deps: StemsDeps): StemsApi {
   seg.setAttribute("aria-label", "analysis channel");
   const segBtns: Record<Channel, HTMLButtonElement> = {
     left: btn("Left"), both: btn("Both"), right: btn("Right"),
+    stack: btn("L / R"),
   };
   segBtns.both.title = "The mono downmix — exactly what the pipeline analyses today.";
   segBtns.left.title = "This side only, in your ears and in the strips. "
     + "White ticks are hits the mono analysis never saw.";
   segBtns.right.title = segBtns.left.title.replace("This side", "The right side");
-  seg.append(segBtns.left, segBtns.both, segBtns.right);
+  segBtns.stack.title = "Both channels stacked in one strip — left grows up "
+    + "from the centre line, right grows down. Anything one-sided has bars "
+    + "on only one half.";
+  seg.append(segBtns.left, segBtns.both, segBtns.right, segBtns.stack);
   head.append(title, seg, split);
 
   const note = document.createElement("p");
@@ -169,6 +174,7 @@ export function createStemsView(deps: StemsDeps): StemsApi {
   function applyRouting(): void {
     const on: Record<Channel, number[]> = {
       both: [1, 0, 0, 1], left: [1, 1, 0, 0], right: [0, 0, 1, 1],
+      stack: [1, 0, 0, 1],               // the stacked view plays true stereo
     };
     for (const g of Object.values(gains))
       on[channel].forEach((v, i) => { g[i]!.gain.value = v; });
@@ -178,18 +184,34 @@ export function createStemsView(deps: StemsDeps): StemsApi {
 
   function draw(layer: Layer): void {
     const r = rows[layer];
-    const d = data?.layers?.[layer]?.[channel];
-    const mono = data?.layers?.[layer]?.both;
+    const chans = data?.layers?.[layer];
     const dur = data?.duration ?? 1;
     const dpr = window.devicePixelRatio || 1;
     const w = r.cv.clientWidth, h = r.cv.clientHeight;
-    if (!w) return;
+    if (!w || !chans) return;
     r.cv.width = w * dpr; r.cv.height = h * dpr;
     const g = r.cv.getContext("2d");
-    if (!g || !d) return;
+    if (!g) return;
     g.scale(dpr, dpr);
+    const ink = LAYERS.find(l => l.key === layer)!.ink;
+
+    if (channel === "stack") drawStacked(g, layer, w, h, ink);
+    else drawSingle(g, layer, w, h, ink);
+
+    if (playing === layer) {
+      g.fillStyle = "#fff";
+      g.fillRect(rows[layer].audio.currentTime / dur * w, 0, 1.5, h);
+    }
+  }
+
+  function drawSingle(g: CanvasRenderingContext2D, layer: Layer,
+                      w: number, h: number, ink: string): void {
+    const d = data?.layers?.[layer]?.[channel];
+    const mono = data?.layers?.[layer]?.both;
+    const dur = data?.duration ?? 1;
+    if (!d) return;
     const peakH = h - 14;
-    g.fillStyle = LAYERS.find(l => l.key === layer)!.ink;
+    g.fillStyle = ink;
     g.globalAlpha = 0.85;
     const n = d.peaks.length || 1;
     for (let i = 0; i < n; i++) {
@@ -214,14 +236,59 @@ export function createStemsView(deps: StemsDeps): StemsApi {
       }
     }
     const total = Object.values(d.onsets).reduce((s, v) => s + v.length, 0);
-    r.cap.textContent = channel === "both"
+    rows[layer].cap.textContent = channel === "both"
       ? `${total} hits — the pipeline's own picture`
       : `${total} hits · ${missed === 0 ? "all seen by mono analysis"
           : `${missed} the mono analysis missed`}`;
-    if (playing === layer) {
+  }
+
+  /** Left grows up from the centre line, right grows down. The two halves
+   *  are scaled by each channel's TRUE level rather than its own normalised
+   *  peaks — a channel that is genuinely quieter must look quieter, or the
+   *  view answers the wrong question. */
+  function drawStacked(g: CanvasRenderingContext2D, layer: Layer,
+                       w: number, h: number, ink: string): void {
+    const L = data?.layers?.[layer]?.left;
+    const R = data?.layers?.[layer]?.right;
+    const dur = data?.duration ?? 1;
+    if (!L || !R) return;
+    const mid = h / 2;
+    const half = mid - 10;             // room for the tick lanes at each edge
+    const top = Math.max(L.level, R.level) || 1;
+
+    const halfBars = (d: StemChannel, dir: -1 | 1, alpha: number): void => {
+      const scale = (d.level / top) * half;
+      const n = d.peaks.length || 1;
+      g.globalAlpha = alpha;
+      g.fillStyle = ink;
+      for (let i = 0; i < n; i++) {
+        const bh = Math.max(1, (d.peaks[i] ?? 0) * scale);
+        g.fillRect(i / n * w, dir < 0 ? mid - bh : mid,
+                   Math.max(1, w / n - 0.4), bh);
+      }
+      g.globalAlpha = 1;
+    };
+    halfBars(L, -1, 0.9);
+    halfBars(R, 1, 0.55);              // dimmer, so the halves read apart
+    g.fillStyle = "rgba(255,255,255,0.35)";
+    g.fillRect(0, mid - 0.5, w, 1);
+
+    // One-sided hits: white ticks on the half that heard them alone.
+    let lOnly = 0, rOnly = 0;
+    for (const b of BANDS) {
       g.fillStyle = "#fff";
-      g.fillRect(rows[layer].audio.currentTime / dur * w, 0, 1.5, h);
+      for (const t of missedTimes(L, R, b.name)) {
+        g.fillRect(t / dur * w, 1, 1.5, 8);
+        lOnly++;
+      }
+      for (const t of missedTimes(R, L, b.name)) {
+        g.fillRect(t / dur * w, h - 9, 1.5, 8);
+        rOnly++;
+      }
     }
+    rows[layer].cap.textContent = lOnly === 0 && rOnly === 0
+      ? "left and right hit together everywhere"
+      : `${lOnly} left-only · ${rOnly} right-only hits (white ticks, top/bottom)`;
   }
 
   const drawAll = (): void => { for (const L of LAYERS) draw(L.key); };
@@ -283,6 +350,9 @@ export function createStemsView(deps: StemsDeps): StemsApi {
     channel = c;
     for (const [k, b] of Object.entries(segBtns))
       b.setAttribute("aria-pressed", String(k === c));
+    // The stacked view holds two mirrored halves; give it more vertical room.
+    for (const L of LAYERS)
+      rows[L.key].cv.style.height = c === "stack" ? "84px" : "";
     applyRouting();
     drawAll();
   }
@@ -304,8 +374,9 @@ export function createStemsView(deps: StemsDeps): StemsApi {
     say(d.stale
       ? "The track was re-imported after this split — the strips describe "
         + "the OLD audio. Re-split to catch up."
-      : "Both = what the pipeline hears. Left/Right solo a side; white "
-        + "ticks are hits the mono analysis never saw.", d.stale === true);
+      : "Both = what the pipeline hears. Left/Right solo a side. L / R "
+        + "stacks them — left above the line, right below — so one-sided "
+        + "sound has bars on only one half.", d.stale === true);
     setChannel(channel);
   }
 

@@ -4564,8 +4564,8 @@ ${lines.join("\n")}
     b.textContent = label;
     return b;
   };
-  function missedTimes(chan, mono, band) {
-    const seen = (mono?.onsets[band] ?? []).map((h) => h[0]).sort((a, z) => a - z);
+  function missedTimes(chan, other, band) {
+    const seen = (other?.onsets[band] ?? []).map((h) => h[0]).sort((a, z) => a - z);
     const out = [];
     for (const [t] of chan.onsets[band] ?? []) {
       if (!seen.some((s) => Math.abs(s - t) <= MISS_WINDOW)) out.push(t);
@@ -4589,12 +4589,14 @@ ${lines.join("\n")}
     const segBtns = {
       left: btn("Left"),
       both: btn("Both"),
-      right: btn("Right")
+      right: btn("Right"),
+      stack: btn("L / R")
     };
     segBtns.both.title = "The mono downmix \u2014 exactly what the pipeline analyses today.";
     segBtns.left.title = "This side only, in your ears and in the strips. White ticks are hits the mono analysis never saw.";
     segBtns.right.title = segBtns.left.title.replace("This side", "The right side");
-    seg.append(segBtns.left, segBtns.both, segBtns.right);
+    segBtns.stack.title = "Both channels stacked in one strip \u2014 left grows up from the centre line, right grows down. Anything one-sided has bars on only one half.";
+    seg.append(segBtns.left, segBtns.both, segBtns.right, segBtns.stack);
     head.append(title, seg, split);
     const note = document.createElement("p");
     note.className = "stems-note";
@@ -4664,7 +4666,9 @@ ${lines.join("\n")}
       const on = {
         both: [1, 0, 0, 1],
         left: [1, 1, 0, 0],
-        right: [0, 0, 1, 1]
+        right: [0, 0, 1, 1],
+        stack: [1, 0, 0, 1]
+        // the stacked view plays true stereo
       };
       for (const g of Object.values(gains))
         on[channel].forEach((v, i) => {
@@ -4673,19 +4677,31 @@ ${lines.join("\n")}
     }
     function draw(layer) {
       const r = rows[layer];
-      const d = data?.layers?.[layer]?.[channel];
-      const mono = data?.layers?.[layer]?.both;
+      const chans = data?.layers?.[layer];
       const dur = data?.duration ?? 1;
       const dpr = window.devicePixelRatio || 1;
       const w = r.cv.clientWidth, h = r.cv.clientHeight;
-      if (!w) return;
+      if (!w || !chans) return;
       r.cv.width = w * dpr;
       r.cv.height = h * dpr;
       const g = r.cv.getContext("2d");
-      if (!g || !d) return;
+      if (!g) return;
       g.scale(dpr, dpr);
+      const ink = LAYERS.find((l) => l.key === layer).ink;
+      if (channel === "stack") drawStacked(g, layer, w, h, ink);
+      else drawSingle(g, layer, w, h, ink);
+      if (playing === layer) {
+        g.fillStyle = "#fff";
+        g.fillRect(rows[layer].audio.currentTime / dur * w, 0, 1.5, h);
+      }
+    }
+    function drawSingle(g, layer, w, h, ink) {
+      const d = data?.layers?.[layer]?.[channel];
+      const mono = data?.layers?.[layer]?.both;
+      const dur = data?.duration ?? 1;
+      if (!d) return;
       const peakH = h - 14;
-      g.fillStyle = LAYERS.find((l) => l.key === layer).ink;
+      g.fillStyle = ink;
       g.globalAlpha = 0.85;
       const n = d.peaks.length || 1;
       for (let i = 0; i < n; i++) {
@@ -4707,11 +4723,49 @@ ${lines.join("\n")}
         }
       }
       const total = Object.values(d.onsets).reduce((s, v) => s + v.length, 0);
-      r.cap.textContent = channel === "both" ? `${total} hits \u2014 the pipeline's own picture` : `${total} hits \xB7 ${missed === 0 ? "all seen by mono analysis" : `${missed} the mono analysis missed`}`;
-      if (playing === layer) {
+      rows[layer].cap.textContent = channel === "both" ? `${total} hits \u2014 the pipeline's own picture` : `${total} hits \xB7 ${missed === 0 ? "all seen by mono analysis" : `${missed} the mono analysis missed`}`;
+    }
+    function drawStacked(g, layer, w, h, ink) {
+      const L = data?.layers?.[layer]?.left;
+      const R = data?.layers?.[layer]?.right;
+      const dur = data?.duration ?? 1;
+      if (!L || !R) return;
+      const mid = h / 2;
+      const half = mid - 10;
+      const top = Math.max(L.level, R.level) || 1;
+      const halfBars = (d, dir, alpha) => {
+        const scale = d.level / top * half;
+        const n = d.peaks.length || 1;
+        g.globalAlpha = alpha;
+        g.fillStyle = ink;
+        for (let i = 0; i < n; i++) {
+          const bh = Math.max(1, (d.peaks[i] ?? 0) * scale);
+          g.fillRect(
+            i / n * w,
+            dir < 0 ? mid - bh : mid,
+            Math.max(1, w / n - 0.4),
+            bh
+          );
+        }
+        g.globalAlpha = 1;
+      };
+      halfBars(L, -1, 0.9);
+      halfBars(R, 1, 0.55);
+      g.fillStyle = "rgba(255,255,255,0.35)";
+      g.fillRect(0, mid - 0.5, w, 1);
+      let lOnly = 0, rOnly = 0;
+      for (const b of BANDS) {
         g.fillStyle = "#fff";
-        g.fillRect(rows[layer].audio.currentTime / dur * w, 0, 1.5, h);
+        for (const t of missedTimes(L, R, b.name)) {
+          g.fillRect(t / dur * w, 1, 1.5, 8);
+          lOnly++;
+        }
+        for (const t of missedTimes(R, L, b.name)) {
+          g.fillRect(t / dur * w, h - 9, 1.5, 8);
+          rOnly++;
+        }
       }
+      rows[layer].cap.textContent = lOnly === 0 && rOnly === 0 ? "left and right hit together everywhere" : `${lOnly} left-only \xB7 ${rOnly} right-only hits (white ticks, top/bottom)`;
     }
     const drawAll = () => {
       for (const L of LAYERS) draw(L.key);
@@ -4781,6 +4835,8 @@ ${lines.join("\n")}
       channel = c;
       for (const [k, b] of Object.entries(segBtns))
         b.setAttribute("aria-pressed", String(k === c));
+      for (const L of LAYERS)
+        rows[L.key].cv.style.height = c === "stack" ? "84px" : "";
       applyRouting();
       drawAll();
     }
@@ -4796,7 +4852,7 @@ ${lines.join("\n")}
       rows.vocals.audio.src = `/api/stem/${encodeURIComponent(id)}/vocals`;
       rows.backing.audio.src = `/api/stem/${encodeURIComponent(id)}/backing`;
       rows.combined.audio.src = `/api/track/${encodeURIComponent(id)}`;
-      say(d.stale ? "The track was re-imported after this split \u2014 the strips describe the OLD audio. Re-split to catch up." : "Both = what the pipeline hears. Left/Right solo a side; white ticks are hits the mono analysis never saw.", d.stale === true);
+      say(d.stale ? "The track was re-imported after this split \u2014 the strips describe the OLD audio. Re-split to catch up." : "Both = what the pipeline hears. Left/Right solo a side. L / R stacks them \u2014 left above the line, right below \u2014 so one-sided sound has bars on only one half.", d.stale === true);
       setChannel(channel);
     }
     function empty(msg) {
