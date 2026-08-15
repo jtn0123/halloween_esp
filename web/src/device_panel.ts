@@ -67,12 +67,9 @@ export class DevicePanel {
 
   constructor() {
     this.root = document.createElement("div");
+    // Styled in previewer/panels.css — as tokens, so the panel follows the
+    // light theme instead of hardcoding its own dark one (grade report C7).
     this.root.id = "devicePanel";
-    this.root.style.cssText =
-      "position:fixed;right:12px;bottom:96px;z-index:39;width:290px;" +
-      "background:#1c1428;color:#e8e0f0;border:1px solid #503a75;" +
-      "border-radius:12px;font:13px system-ui;display:none;" +
-      "box-shadow:0 6px 24px rgba(0,0,0,.55);overflow:hidden";
     this.body = document.createElement("div");
     this.root.appendChild(this.body);
     document.body.appendChild(this.root);

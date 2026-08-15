@@ -9,7 +9,7 @@ build when the binary literally will not fit, but that is a cliff: the build
 before it passes at 99% and tells you nothing.
 
 This warns on the approach. Run it after a build; it is wired into `make
-build`.
+check`.
 
 The margin matters more here than in most projects because the fallback is
 physical access, and the whole point of the OTA work was to stop needing that.

@@ -82,6 +82,13 @@ def main() -> int:
         biggest = rows[0] if rows else (0, "-", False)
         print(f"LOC check passed — {len(rows)} files, largest "
               f"{biggest[0]} lines ({biggest[1]}), cap {LIMIT}")
+        # The early warning: a file within 50 lines of the cap will cross it
+        # mid-feature, forcing a split under pressure instead of on a chosen
+        # seam. Naming it now is what makes the cap serve design.
+        nearing = [(n, rel) for n, rel, _ in rows if LIMIT - 50 < n <= LIMIT]
+        if nearing:
+            print(f"  nearing the cap ({LIMIT - 50}+): "
+                  + ", ".join(f"{rel} ({n})" for n, rel in nearing))
         return 0
 
     print(f"LOC check FAILED — {len(over)} file(s) over the {LIMIT}-line cap:\n")

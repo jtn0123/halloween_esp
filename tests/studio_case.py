@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import import_track as it  # noqa: E402
 import manifest as mf  # noqa: E402
 import studio  # noqa: E402
+import studio_tracks  # noqa: E402
 from helpers import make_click_track  # noqa: E402
 
 CONVERT_OPTS = {"start": 0, "take": None, "fade_in": None, "fade_out": None,
@@ -59,11 +60,14 @@ class ServerCase(unittest.TestCase):
     the wrong reason.
     """
 
-    # Endpoints read the real tracks/ directory, so the fixtures live there —
-    # tagged with the pid so two runs at once cannot fight over a filename,
-    # and so the cleanup can never touch a track that is not ours.
-    manifest_before: bytes | None
-    tracks_before: set[str]
+    # A REAL sandbox, not fixtures-in-the-real-library: CASTLE_TRACKS in the
+    # env covers the import_track.py child processes the server spawns, and
+    # the four already-imported parent bindings are patched to match. The
+    # old scheme (pid-tagged fixtures in the live tracks/, restored on
+    # teardown) left debris in the user's library whenever a run crashed —
+    # the exact thing the env knob exists to prevent (grade report D2).
+    sandbox: Path
+    _sandbox_patches: list
     wave: Path
     wav: Path
     srv: ThreadingHTTPServer
@@ -77,9 +81,17 @@ class ServerCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.manifest_before = (mf.PATH.read_bytes() if mf.PATH.exists() else None)
-        cls.tracks_before = {p.name for p in studio.track_files()
-                             if not p.name.startswith(cls.PREFIX)}
+        from unittest import mock
+        cls.sandbox = Path(tempfile.mkdtemp(prefix="castle-tests-"))
+        cls._sandbox_patches = [
+            mock.patch.dict(os.environ, {"CASTLE_TRACKS": str(cls.sandbox)}),
+            mock.patch.object(studio, "TRACKS", cls.sandbox),
+            mock.patch.object(studio_tracks, "TRACKS", cls.sandbox),
+            mock.patch.object(it, "TRACKS", cls.sandbox),
+            mock.patch.object(mf, "PATH", cls.sandbox / "tracks.json"),
+        ]
+        for patch in cls._sandbox_patches:
+            patch.start()
         cls.wave = studio.TRACKS / f"{cls.WAVE_ID}.mp3"
         make_mp3(cls.wave)
         # A second track in a container that is not MP3. The format option can
@@ -97,18 +109,13 @@ class ServerCase(unittest.TestCase):
         cls.srv.shutdown()
         cls.srv.server_close()
         cls.thread.join(timeout=5)
-        for ext in studio.AUDIO_EXT:
-            for p in studio.TRACKS.glob(f"{cls.PREFIX}*.{ext}"):
-                p.unlink(missing_ok=True)
-        shutil.rmtree(studio.TRACKS / "_upload", ignore_errors=True)
-        if cls.manifest_before is not None:
-            mf.PATH.write_bytes(cls.manifest_before)
-        # The invariant worth guarding: a test run must never cost you a track
-        # you imported. Checked as "nothing went missing" rather than "the
-        # directory is identical", so an unrelated file appearing alongside is
-        # not mistaken for damage.
-        gone = cls.tracks_before - {p.name for p in studio.track_files()}
-        assert not gone, f"tests removed pre-existing tracks: {gone}"
+        sandbox = cls.sandbox
+        for patch in cls._sandbox_patches:
+            patch.stop()
+        shutil.rmtree(sandbox, ignore_errors=True)
+        # The invariant the old fixture guarded by hand — "a test run must
+        # never cost you a track" — now holds by construction: nothing in
+        # the run ever pointed at the real library.
 
     # ── HTTP ──
     def req(self, method: str, path: str, data: bytes | None = None,

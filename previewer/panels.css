@@ -1,0 +1,22 @@
+/* Panels that used to carry their styling as cssText in the modules that
+   build them — styles.css sat exactly at the 500-line cap, so the newest
+   chrome was pushed out of the cascade and (for the device panel) out of
+   the theme system entirely: it hardcoded its dark colours and ignored the
+   light theme. This file is the overflow room; gen_previewer.py inlines it
+   right after styles.css. */
+
+#devicePanel {
+  position: fixed;
+  right: 12px;
+  bottom: 96px;
+  z-index: 39;
+  width: 290px;
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  font: 13px system-ui;
+  display: none;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .55);
+  overflow: hidden;
+}

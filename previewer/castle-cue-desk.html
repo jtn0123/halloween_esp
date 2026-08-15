@@ -503,6 +503,29 @@
   }
   .trk-hintline { font-size: 11px; color: var(--muted); }
 
+/* Panels that used to carry their styling as cssText in the modules that
+   build them — styles.css sat exactly at the 500-line cap, so the newest
+   chrome was pushed out of the cascade and (for the device panel) out of
+   the theme system entirely: it hardcoded its dark colours and ignored the
+   light theme. This file is the overflow room; gen_previewer.py inlines it
+   right after styles.css. */
+
+#devicePanel {
+  position: fixed;
+  right: 12px;
+  bottom: 96px;
+  z-index: 39;
+  width: 290px;
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  font: 13px system-ui;
+  display: none;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .55);
+  overflow: hidden;
+}
+
 /* Small screens — inlined after styles.css by tools/gen_previewer.py.
  *
  * The desk was designed for a desk; a phone gets the same page with the
@@ -1610,7 +1633,6 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       this.open = false;
       this.root = document.createElement("div");
       this.root.id = "devicePanel";
-      this.root.style.cssText = "position:fixed;right:12px;bottom:96px;z-index:39;width:290px;background:#1c1428;color:#e8e0f0;border:1px solid #503a75;border-radius:12px;font:13px system-ui;display:none;box-shadow:0 6px 24px rgba(0,0,0,.55);overflow:hidden";
       this.body = document.createElement("div");
       this.root.appendChild(this.body);
       document.body.appendChild(this.root);

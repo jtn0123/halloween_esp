@@ -43,6 +43,9 @@ AUDIO = ROOT / "audio"
 WEB = ROOT / "web"
 BUNDLE = WEB / "dist" / "bundle.js"
 STYLES = ROOT / "previewer" / "styles.css"
+# The overflow room: styles.css sits at the 500-line cap, and pushing new
+# rules into cssText strings was costing panels their theming.
+PANELS = ROOT / "previewer" / "panels.css"
 MOBILE = ROOT / "previewer" / "mobile.css"
 
 START = "// @GEN-DATA-START"
@@ -245,7 +248,8 @@ def inject_styles(html: str) -> str:
     if i < 0:
         sys.exit(f"{STYLE_MARK} marker not found in {TEMPLATE}")
     j = html.index("*/", i) + 2
-    css = STYLES.read_text().rstrip() + "\n\n" + MOBILE.read_text().rstrip()
+    css = (STYLES.read_text().rstrip() + "\n\n" + PANELS.read_text().rstrip()
+           + "\n\n" + MOBILE.read_text().rstrip())
     return html[:i] + css + html[j:]
 
 

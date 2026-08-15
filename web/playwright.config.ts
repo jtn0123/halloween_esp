@@ -32,6 +32,13 @@ const PORT = Number(process.env.CASTLE_E2E_PORT || 8799);
 const TRACKS = process.env.CASTLE_TRACKS
   || mkdtempSync(join(tmpdir(), "castle-e2e-"));
 process.env.CASTLE_TRACKS = TRACKS;
+/* Scene writes redirect too. Without this the sandbox had a hole: a test
+   clicking "Make scene" wrote the user's REAL scenes/scenes.yaml — which
+   actually happened once (2026-08-13, a stray ghostbusters scene, reverted).
+   The suite intercepts /api/scene client-side, but the server-side guard is
+   the one that cannot be forgotten by a new spec. */
+const SCENES_FILE = join(TRACKS, "scenes.yaml");
+process.env.CASTLE_SCENES = SCENES_FILE;
 
 export default defineConfig({
   testDir: "./test/e2e",
@@ -68,7 +75,7 @@ export default defineConfig({
     // A studio the user is already running is pointed at their real tracks,
     // which is exactly what this suite must not touch.
     reuseExistingServer: false,
-    env: { CASTLE_TRACKS: TRACKS },
+    env: { CASTLE_TRACKS: TRACKS, CASTLE_SCENES: SCENES_FILE },
     stdout: "pipe",
     stderr: "pipe",
     timeout: 30_000,

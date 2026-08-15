@@ -178,9 +178,12 @@ class TestInjection(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
-        self._saved = (gp.STYLES, gp.MOBILE, gp.WEB, gp.BUNDLE, gp.subprocess)
+        self._saved = (gp.STYLES, gp.PANELS, gp.MOBILE, gp.WEB, gp.BUNDLE,
+                       gp.subprocess)
         gp.STYLES = self.tmp / "styles.css"
         gp.STYLES.write_text("body { color: red }\n\n")
+        gp.PANELS = self.tmp / "panels.css"
+        gp.PANELS.write_text("/* panels */\n")
         gp.MOBILE = self.tmp / "mobile.css"
         gp.MOBILE.write_text("/* mobile */\n")
         gp.WEB = self.tmp / "web"
@@ -191,7 +194,8 @@ class TestInjection(unittest.TestCase):
         gp.subprocess = self.fake_subprocess(0)  # type: ignore[assignment]  # test double
 
     def tearDown(self) -> None:
-        gp.STYLES, gp.MOBILE, gp.WEB, gp.BUNDLE, gp.subprocess = self._saved
+        (gp.STYLES, gp.PANELS, gp.MOBILE, gp.WEB, gp.BUNDLE,
+         gp.subprocess) = self._saved
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def fake_subprocess(self, rc: int) -> types.SimpleNamespace:
@@ -203,7 +207,7 @@ class TestInjection(unittest.TestCase):
 
     def test_styles_replace_the_marker_comment(self) -> None:
         got = gp.inject_styles("<style>/* @STYLES filler */</style>")
-        self.assertEqual(got, "<style>body { color: red }\n\n/* mobile */</style>")
+        self.assertEqual(got, "<style>body { color: red }\n\n/* panels */\n\n/* mobile */</style>")
 
     def test_missing_style_marker_exits_instead_of_writing_a_broken_page(self) -> None:
         with self.assertRaises(SystemExit) as cm:

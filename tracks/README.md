@@ -14,7 +14,8 @@ tools/import_track.py ~/Music/thing.wav --id organ_loop
 tools/import_track.py <url> --id chant --start 0:12 --take 24
 ```
 
-The importer converts to the project format (mono, 44.1 kHz, 96 kbps), reports
+The importer converts to the project format (stereo, 44.1 kHz, 96 kbps,
+loudness-matched), reports
 what the file will cost you in flash, runs onset detection, and prints a ready
 scene block to paste into `scenes/scenes.yaml`.
 

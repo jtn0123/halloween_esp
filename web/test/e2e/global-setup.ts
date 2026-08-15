@@ -10,6 +10,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { existsSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -35,6 +36,9 @@ export default function globalSetup(): () => void {
   // seeding must not care where it runs from (and macOS can wedge a
   // directory's TCC tag so that getcwd() fails there — seen live on the
   // repo root; a process may not even start with that cwd).
+  // The scratch show file the server's scene writes land in (see the
+  // CASTLE_SCENES note in playwright.config.ts).
+  writeFileSync(join(dir, "scenes.yaml"), "scenes:\n");
   execFileSync(PY, ["-c", SEED], {
     cwd: __dirname,
     env: { ...process.env, CASTLE_TRACKS: dir, CASTLE_ROOT: ROOT },

@@ -3,10 +3,10 @@
 All nine modules landed and the switchover is complete. Kept as a record of
 why it was done this way; the layout table below is now the actual layout.
 
-The previewer works, but it is one 1892-line HTML file with ~1400 lines of
-untyped inline JavaScript. The LOC check exempts it as *generated* — which is
-technically true and practically a dodge, because its source is that inline
-script. This is the plan for fixing that properly.
+(As it stood before the migration: one 1892-line HTML file with ~1400
+lines of untyped inline JavaScript, exempt from the LOC check as
+"generated" — technically true, practically a dodge. What follows was the
+plan; the Outcome section at the bottom is what actually happened.)
 
 ## Why bother
 
