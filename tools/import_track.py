@@ -49,11 +49,16 @@ def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
     if not shutil.which("yt-dlp"):
         raise SystemExit("yt-dlp not installed — `brew install yt-dlp`")
     print(f"fetching {url}")
-    r = subprocess.run(
-        ["yt-dlp", "-x", "--audio-format", "mp3", "--audio-quality", "0",
-         "--no-playlist", "-o", str(dest / "%(title)s.%(ext)s"), url],
-        capture_output=True, text=True, check=False,  # handled below
-    )
+    try:
+        r = subprocess.run(
+            ["yt-dlp", "-x", "--audio-format", "mp3", "--audio-quality", "0",
+             "--no-playlist", "-o", str(dest / "%(title)s.%(ext)s"), url],
+            capture_output=True, text=True, check=False,  # handled below
+            timeout=900,   # a hung download must not wedge the studio's lock
+        )
+    except subprocess.TimeoutExpired:
+        raise SystemExit("gave up after 15 minutes — the download stalled. "
+                         "Try the link again, or a different source.") from None
     if r.returncode != 0:
         # yt-dlp's own last lines say WHY ("Video unavailable", a bot check…).
         # check=True here dumped a raw CalledProcessError traceback into the
@@ -153,7 +158,12 @@ def convert(src: Path, out: Path, o: dict) -> None:
         cmd += ["-b:a", f"{o['bitrate']}k"]
 
     cmd.append(str(out))
-    r = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, check=False,
+                           timeout=300)
+    except subprocess.TimeoutExpired:
+        raise SystemExit(f"ffmpeg stalled encoding {out.name} — "
+                         "gave up after 5 minutes") from None
     if r.returncode != 0:
         # ffmpeg's own last line names the actual problem; a traceback does not.
         tail = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
@@ -387,6 +397,12 @@ def main() -> int:
     tid = args.refresh or args.id or "".join(
         c if c.isalnum() else "_" for c in src.stem.lower()
     ).strip("_")[:32]
+    # The derived branch above is sanitised by construction; an EXPLICIT id
+    # was not, and the studio forwards the browser's id verbatim — so
+    # "../../audio/01_vigil" used to walk out of tracks/ and overwrite show
+    # audio. Same alphabet for every spelling, no exceptions.
+    if not tid or not all(c.isalnum() or c == "_" for c in tid):
+        raise SystemExit(f"track id {tid!r} — letters, digits and _ only")
 
     out = TRACKS / f"{tid}.{o['format']}"
     conv = dict(o)

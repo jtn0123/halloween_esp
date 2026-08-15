@@ -18,8 +18,9 @@ Endpoints (all JSON, all local-only):
     GET    /api/track/<id>          stream a track for the browser to audition
                                     (extension optional — the server owns it)
 
-Binds to 127.0.0.1 only. This drives ffmpeg and yt-dlp on your machine and
-edits files in the repo; it is not something to expose to a network.
+Binds to 127.0.0.1 by default. This drives ffmpeg and yt-dlp on your machine
+and edits files in the repo; `--lan` opens it to the local network for the
+phone/iPad remote — do that only on a network you control.
 """
 
 from __future__ import annotations
@@ -74,9 +75,27 @@ def _restart() -> None:
     os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
-def run(cmd: list[str]) -> tuple[bool, str]:
-    p = subprocess.run(cmd, capture_output=True, text=True, check=False)
+def run(cmd: list[str], timeout: int = 900) -> tuple[bool, str]:
+    # The ceiling matters more than its exact value: these run holding
+    # _lock, so one hung ffmpeg/yt-dlp used to wedge every later import
+    # and rebuild for the life of the process.
+    try:
+        p = subprocess.run(cmd, capture_output=True, text=True, check=False,
+                           timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, f"gave up after {timeout}s — the job stalled"
     return p.returncode == 0, (p.stdout + p.stderr)[-4000:]
+
+
+def safe_id(raw: str) -> str | None:
+    """A track id as the importer would mint it — or None.
+
+    The browser's id lands in `--id`/`--refresh` and then in a filesystem
+    path, so this is the write-side twin of the `Path(...).name` guard the
+    serving routes use: "../../audio/01_vigil" must die HERE, not in
+    import_track's error output."""
+    tid = (raw or "").strip()
+    return tid if tid and all(c.isalnum() or c == "_" for c in tid) else None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -220,6 +239,9 @@ class Handler(BaseHTTPRequestHandler):
             src = (req.get("url") or "").strip()
             if not src.startswith(("http://", "https://")):
                 return self.send_json({"error": "url must be http(s)"}, 400)
+            if req.get("id") and safe_id(req["id"]) is None:
+                return self.send_json(
+                    {"error": "id: letters, digits and _ only"}, 400)
             args = [PY, str(ROOT / "tools" / "import_track.py"), src]
             for k in ("id", "start", "take", "sensitivity", "bitrate",
                       "sample_rate", "channels", "format", "gain_db",
@@ -234,8 +256,8 @@ class Handler(BaseHTTPRequestHandler):
             # Rebuild a track from its remembered source, with any option
             # overridden. This is why the manifest exists.
             req = json.loads(raw or b"{}")
-            tid = (req.get("id") or "").strip()
-            if not tid:
+            tid = safe_id(req.get("id") or "")
+            if tid is None:
                 return self.send_json({"error": "no id"}, 400)
             args = [PY, str(ROOT / "tools" / "import_track.py"), "--refresh", tid]
             for k in ("start", "take", "sensitivity", "bitrate",
@@ -253,7 +275,9 @@ class Handler(BaseHTTPRequestHandler):
                                               for p in track_files()]})
         if path == "/api/compare":
             req = json.loads(raw or b"{}")
-            p = track_path((req.get("id") or "").strip())
+            # .name-strip like every other track route — without it this was
+            # an arbitrary-read: "../../x" resolved, encoded, and streamed.
+            p = track_path(Path((req.get("id") or "").strip()).name)
             if p is None:
                 return self.send_json({"ok": False, "error": "no such track"}, 404)
             num = lambda k, d: float(req.get(k) or d)      # noqa: E731
@@ -318,6 +342,8 @@ class Handler(BaseHTTPRequestHandler):
             args.append(str(src))
             req = json.loads(self.headers.get("X-Import-Opts") or "{}")
 
+        if req.get("id") and safe_id(str(req["id"])) is None:
+            return self.send_json({"error": "id: letters, digits and _ only"}, 400)
         for k in ("id", "start", "take", "sensitivity", "bitrate",
                   "sample_rate", "channels", "format", "gain_db",
                       "fade_in", "fade_out", "notes"):
@@ -345,18 +371,43 @@ class Handler(BaseHTTPRequestHandler):
         sid = (req.get("id") or "").strip()
         if not block or not sid:
             return self.send_json({"error": "need id and yaml"}, 400)
-        raw = SCENES.read_text()
+        # The block must PARSE, and must be the one scene it claims to be —
+        # scenes.yaml is the hand-authored source of truth for the whole
+        # show, and a malformed splice used to corrupt it permanently (the
+        # UI then showed "no scenes" instead of an error).
+        import yaml as _yaml
+        try:
+            parsed = _yaml.safe_load(block)
+        except _yaml.YAMLError as e:
+            return self.send_json({"error": f"scene is not valid YAML: {e}"}, 400)
+        if (not isinstance(parsed, list) or len(parsed) != 1
+                or not isinstance(parsed[0], dict) or parsed[0].get("id") != sid):
+            return self.send_json(
+                {"error": f"expected exactly one scene with id {sid!r}"}, 400)
         import re
         pat = re.compile(rf"^  - id: {re.escape(sid)}\n(?:.*\n)*?(?=^  - id: |\Z)", re.MULTILINE)
-        replaced = bool(pat.search(raw))
-        if replaced:
-            raw = pat.sub(block + "\n\n", raw)
-        else:
-            raw = raw.rstrip() + "\n\n" + block + "\n"
-        # Exactly one trailing newline either way. Replacing the last scene in
-        # the file leaves a blank line behind otherwise — stable rather than
-        # growing, but it shows up as a diff on a write that changed nothing.
-        SCENES.write_text(raw.rstrip() + "\n")
+        with _lock:
+            # Read-modify-write under the lock: two concurrent saves used to
+            # interleave here and one silently lost.
+            before = SCENES.read_text()
+            replaced = bool(pat.search(before))
+            if replaced:
+                # lambda: a plain-string replacement treats backslashes as
+                # group escapes and mangles the block (gen_previewer.py
+                # documents this exact trap).
+                raw = pat.sub(lambda _: block + "\n\n", before)
+            else:
+                raw = before.rstrip() + "\n\n" + block + "\n"
+            # Exactly one trailing newline either way. Replacing the last
+            # scene in the file leaves a blank line behind otherwise — stable
+            # rather than growing, but it shows up as a diff on a write that
+            # changed nothing.
+            # Keep the pre-edit text, then replace atomically: a crash
+            # mid-write must never be able to truncate the show.
+            SCENES.with_suffix(".yaml.bak").write_text(before)
+            tmp = SCENES.with_suffix(".yaml.tmp")
+            tmp.write_text(raw.rstrip() + "\n")
+            os.replace(tmp, SCENES)
         with _lock:
             ok1, o1 = run([PY, str(ROOT / "tools" / "render_audio.py")])
             ok2, o2 = run([PY, str(ROOT / "tools" / "gen_esphome.py")])
@@ -381,7 +432,9 @@ def parse_multipart(raw: bytes, ctype: str) -> tuple[str, bytes]:
             continue
         name = head.decode("utf-8", "replace").split("filename=")[1]
         name = name.split('"')[1] if '"' in name else name.strip()
-        return Path(name).name, data.rstrip(b"\r\n-")
+        # Strip exactly the CRLF before the boundary — rstrip(b"\r\n-")
+        # also ate any REAL trailing 0x2D/0x0D/0x0A bytes of the file.
+        return Path(name).name, data[:-2] if data.endswith(b"\r\n") else data
     return "", b""
 
 
@@ -390,7 +443,10 @@ def scene_ids() -> list[str]:
     try:
         doc = yaml.safe_load(SCENES.read_text())
         return [s["id"] for s in doc.get("scenes", [])]
-    except Exception:
+    except Exception as e:
+        # But it must not be SILENT either: "no scenes" and "the file is
+        # broken, here's the parse error" are very different situations.
+        print(f"WARNING: could not parse {SCENES}: {e}")
         return []
 
 
@@ -409,17 +465,19 @@ def lan_ip() -> str:
 
 def main() -> int:
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
-    # Bound to every interface so the cue desk works from a phone or iPad on
-    # the same WiFi. That is a deliberate choice for a home network: anyone
-    # who can reach this port can drive ffmpeg/yt-dlp and edit files in the
-    # repo. Do not run it on a network you do not control.
-    host = "0.0.0.0" if "--localhost" not in sys.argv else "127.0.0.1"
+    # This Mac only, unless asked: the server has no auth and it drives
+    # ffmpeg/yt-dlp and edits files in the repo. --lan opts into the
+    # phone/iPad use case deliberately, on a network you control.
+    # (--localhost is accepted as a no-op for old launchers and Playwright.)
+    host = "0.0.0.0" if "--lan" in sys.argv else "127.0.0.1"
     TRACKS.mkdir(exist_ok=True)
     srv = ThreadingHTTPServer((host, port), Handler)
     print(f"cue desk studio  ->  http://127.0.0.1:{port}")
     if host == "0.0.0.0":
         print(f"  from your phone  ->  http://{lan_ip()}:{port}")
-        print("  (open to your LAN — pass --localhost to restrict to this Mac)")
+        print("  (OPEN TO YOUR LAN — anyone on the WiFi can edit the show)")
+    else:
+        print("  (this Mac only — pass --lan to reach it from your phone)")
     print("  serving the previewer with track management enabled")
     print("  ctrl-c to stop")
     try:

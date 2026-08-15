@@ -49,24 +49,30 @@ BANDS = [
 ]
 
 
+def _decode(path: Path, channels: int, sr: int) -> bytes:
+    """One ffmpeg decode, with a ceiling — a stalled decode used to hold the
+    studio's job lock forever, wedging every later import and rebuild."""
+    try:
+        return subprocess.run(
+            ["ffmpeg", "-v", "quiet", "-i", str(path),
+             "-f", "f32le", "-ac", str(channels), "-ar", str(sr), "-"],
+            capture_output=True, check=True, timeout=120,
+        ).stdout
+    except subprocess.TimeoutExpired:
+        raise SystemExit(f"ffmpeg stalled decoding {path.name} — "
+                         "gave up after 2 minutes") from None
+
+
 def load_audio(path: Path, sr: int = SR) -> np.ndarray:
     """Decode anything ffmpeg understands to mono float32."""
-    out = subprocess.run(
-        ["ffmpeg", "-v", "quiet", "-i", str(path),
-         "-f", "f32le", "-ac", "1", "-ar", str(sr), "-"],
-        capture_output=True, check=True,
-    ).stdout
+    out = _decode(path, 1, sr)
     return np.frombuffer(out, dtype="<f4").astype(np.float64)
 
 
 def load_stereo(path: Path, sr: int = SR) -> tuple[np.ndarray, np.ndarray]:
     """Left and right channels. A mono file comes back as two equal arrays,
     which the pan measurement correctly reads as centre."""
-    out = subprocess.run(
-        ["ffmpeg", "-v", "quiet", "-i", str(path),
-         "-f", "f32le", "-ac", "2", "-ar", str(sr), "-"],
-        capture_output=True, check=True,
-    ).stdout
+    out = _decode(path, 2, sr)
     x = np.frombuffer(out, dtype="<f4").astype(np.float64)
     return x[0::2], x[1::2]
 

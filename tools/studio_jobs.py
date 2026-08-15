@@ -81,13 +81,21 @@ class JobRunner:
             with subprocess.Popen(argv, stdout=subprocess.PIPE,
                                   stderr=subprocess.STDOUT, text=True,
                                   bufsize=1) as p:
-                assert p.stdout is not None
-                for raw in p.stdout:
-                    line = raw.rstrip()
-                    if line:
-                        job.log.append(line)
-                    self._interpret(job, line)
-                code = p.wait()
+                # Wall-clock kill: a child that stops producing output blocks
+                # the readline below forever, and the job would sit at
+                # "fetching" for the life of the server.
+                watchdog = threading.Timer(900, p.kill)
+                watchdog.start()
+                try:
+                    assert p.stdout is not None
+                    for raw in p.stdout:
+                        line = raw.rstrip()
+                        if line:
+                            job.log.append(line)
+                        self._interpret(job, line)
+                    code = p.wait()
+                finally:
+                    watchdog.cancel()
         except OSError as e:
             job.phase, job.error = "failed", str(e)
             return
@@ -95,7 +103,9 @@ class JobRunner:
             job.phase, job.percent, job.detail = "done", 100.0, ""
         else:
             job.phase = "failed"
-            job.error = self._explain(job.log) or f"import failed (exit {code})"
+            job.error = self._explain(job.log) or (
+                "gave up after 15 minutes — the job stalled" if code == -9
+                else f"import failed (exit {code})")
 
     @staticmethod
     def _interpret(job: Job, line: str) -> None:

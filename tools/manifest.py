@@ -27,8 +27,11 @@ part that makes an import reproducible, and it costs nothing to keep.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
+import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -39,39 +42,69 @@ ROOT = Path(__file__).resolve().parent.parent
 PATH = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks")) / "tracks.json"
 
 
+@contextmanager
+def _locked():
+    """Cross-process lock for read-modify-write.
+
+    The studio server (forget) and its import_track children (record) both
+    rewrite this file; without the lock, two concurrent imports could each
+    load, mutate and save — and one import's provenance would silently
+    vanish."""
+    PATH.parent.mkdir(exist_ok=True)
+    with open(PATH.with_suffix(".lock"), "w") as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
+
+
 def load() -> dict:
     if not PATH.exists():
         return {}
     try:
         return json.loads(PATH.read_text())
     except json.JSONDecodeError:
+        # A half-written manifest used to read as "no tracks were ever
+        # imported" — and the NEXT save then persisted that empty dict,
+        # destroying every track's provenance. Move the damaged file aside
+        # (nothing is lost, it can be hand-repaired) and say so loudly.
+        aside = PATH.with_name(f"tracks.json.corrupt-{int(time.time())}")
+        PATH.rename(aside)
+        print(f"WARNING: {PATH.name} was not valid JSON — moved to "
+              f"{aside.name}; starting from an empty manifest")
         return {}
 
 
 def save(data: dict) -> None:
     PATH.parent.mkdir(exist_ok=True)
-    PATH.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    # Write-then-rename so a crash mid-write can never truncate the real
+    # file: os.replace is atomic on the same filesystem.
+    tmp = PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    os.replace(tmp, PATH)
 
 
 def record(tid: str, *, source: str, title: str = "", opts: dict | None = None,
            audio: dict | None = None, onsets: dict | None = None,
            notes: str = "") -> dict:
-    data = load()
-    prev = data.get(tid, {})
-    entry = {
-        "source": source,
-        "title": title or prev.get("title", ""),
-        # Local wall clock on purpose: single-machine library, human-read
-        # stamps. A tz-aware stamp would churn every entry for no reader.
-        "imported": datetime.now().replace(microsecond=0).isoformat(),  # noqa: DTZ005
-        "opts": opts or {},
-        "audio": audio or {},
-        "onsets": onsets or {},
-        # Notes are the user's; never clobber them on a refresh.
-        "notes": notes or prev.get("notes", ""),
-    }
-    data[tid] = entry
-    save(data)
+    with _locked():
+        data = load()
+        prev = data.get(tid, {})
+        entry = {
+            "source": source,
+            "title": title or prev.get("title", ""),
+            # Local wall clock on purpose: single-machine library, human-read
+            # stamps. A tz-aware stamp would churn every entry for no reader.
+            "imported": datetime.now().replace(microsecond=0).isoformat(),  # noqa: DTZ005
+            "opts": opts or {},
+            "audio": audio or {},
+            "onsets": onsets or {},
+            # Notes are the user's; never clobber them on a refresh.
+            "notes": notes or prev.get("notes", ""),
+        }
+        data[tid] = entry
+        save(data)
     return entry
 
 
@@ -80,7 +113,8 @@ def get(tid: str) -> dict | None:
 
 
 def forget(tid: str) -> None:
-    data = load()
-    if tid in data:
-        del data[tid]
-        save(data)
+    with _locked():
+        data = load()
+        if tid in data:
+            del data[tid]
+            save(data)
