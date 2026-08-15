@@ -46,6 +46,20 @@ export interface CompareResponse {
   ok: boolean; error?: string; reference?: string; codecs?: CodecRow[];
 }
 
+/** One background import, as /api/import/async and /api/job/<id> report it. */
+export interface JobResponse {
+  id: string;
+  /** queued | fetching | converting | analysing | done | failed */
+  phase: string;
+  percent: number;
+  detail: string;
+  error: string | null;
+  done: boolean;
+  log: string[];
+  /** Present on the final poll only, so the panel can redraw. */
+  tracks?: TrackInfo[];
+}
+
 /* One ceiling per kind of wait. The server's own subprocess timeouts are
    the real backstop (studio.py run()); these just keep the UI honest when
    the server itself is gone. */
@@ -81,6 +95,12 @@ export const api = {
 
   importUrl: (req: object): Promise<ActionResponse> =>
     call("/api/import", post(req), IMPORT),
+
+  /** Start a background URL import; poll `job()` for progress. */
+  importAsync: (req: object): Promise<JobResponse> =>
+    call("/api/import/async", post(req)),
+  job: (id: string): Promise<JobResponse> =>
+    call(`/api/job/${encodeURIComponent(id)}`),
 
   importFile: (file: File, opts: unknown): Promise<ActionResponse> => {
     const fd = new FormData();

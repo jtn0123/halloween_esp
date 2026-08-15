@@ -1460,6 +1460,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     tracksFresh: () => call("/api/tracks", { cache: "no-store" }),
     remove: (id) => call(`/api/tracks/${encodeURIComponent(id)}`, { method: "DELETE" }),
     importUrl: (req) => call("/api/import", post(req), IMPORT),
+    /** Start a background URL import; poll `job()` for progress. */
+    importAsync: (req) => call("/api/import/async", post(req)),
+    job: (id) => call(`/api/job/${encodeURIComponent(id)}`),
     importFile: (file, opts) => {
       const fd = new FormData();
       fd.append("file", file);
@@ -4388,19 +4391,40 @@ ${lines.join("\n")}
       }
       goOffline("Restart didn't come back within 15 s \u2014 relaunch with Castle Cue Desk.command.");
     });
+    const PHASE_TEXT = {
+      queued: "waiting for the previous job",
+      fetching: "downloading",
+      converting: "converting with ffmpeg",
+      analysing: "detecting beats"
+    };
     byId("trkGet").addEventListener("click", async () => {
       const url = val("trkUrl");
       if (!url) return say("Paste a link first.", true);
-      say("Importing\u2026 this runs yt-dlp and ffmpeg locally, so give it a moment.");
+      const btn = byId("trkGet");
+      btn.disabled = true;
+      say("Importing\u2026");
       try {
-        const r = await api.importUrl(Object.assign({ url }, opts()));
-        if (r.ok) {
-          drawTracks(r.tracks);
+        let job = await api.importAsync(Object.assign({ url }, opts()));
+        if (!job.id) {
+          return say(`Import failed \u2014 ${job.error ?? "the studio refused the request"}`, true);
+        }
+        for (let i = 0; i < 1200 && !job.done; i++) {
+          await new Promise((r) => setTimeout(r, 800));
+          job = await api.job(job.id);
+          const pct = job.percent > 0 ? ` ${Math.round(job.percent)}%` : "";
+          say(`Importing \u2014 ${PHASE_TEXT[job.phase] ?? job.phase}${pct}${job.detail ? ` \xB7 ${job.detail}` : ""}`);
+        }
+        if (job.phase === "done") {
+          if (job.tracks) drawTracks(job.tracks);
           say("Imported. Press Play to hear it, or \u201CMake scene\u201D to wire it into the show.");
           byId("trkUrl").value = "";
-        } else say(`Import failed \u2014 ${(r.log || r.error || "").slice(-400)}`, true);
+        } else {
+          say(`Import failed \u2014 ${job.error || job.log.slice(-3).join(" ") || "gave up waiting"}`, true);
+        }
       } catch (err) {
         say(`Import failed \u2014 ${String(err)}`, true);
+      } finally {
+        btn.disabled = false;
       }
     });
     const drop = byId("trkDrop");

@@ -297,3 +297,46 @@ test("codec comparison encodes the clip and switches without losing position",
     await expect(picks.filter({ hasText: "FLAC" })).not.toHaveClass(/on/);
     await expect.poll(() => sounding(page)).toBe(0);
   });
+
+test("a URL import shows live progress and lands in the list", async ({ page }) => {
+  // The polling loop against a mocked job runner: phases stream into the
+  // status line, and the final poll's track list redraws the panel. The
+  // real yt-dlp path can't run in a test; the wiring is what broke (A8 —
+  // the async pipeline shipped with no caller at all).
+  let polls = 0;
+  await page.route("**/api/import/async", (r) => r.fulfill({ json: {
+    id: "j1", phase: "queued", percent: 0, detail: "", error: null,
+    done: false, log: [],
+  } }));
+  await page.route("**/api/job/j1", (r) => {
+    polls += 1;
+    const stages = [
+      { phase: "fetching", percent: 40, detail: "12.4MB", done: false },
+      { phase: "converting", percent: 80, detail: "", done: false },
+      { phase: "done", percent: 100, detail: "", done: true },
+    ];
+    const s = stages[Math.min(polls - 1, 2)]!;
+    return r.fulfill({ json: {
+      id: "j1", error: null, log: [], ...s,
+      ...(s.done ? { tracks: [{ id: "e2e_async", dur: 9, bytes: 1000,
+                                ext: "mp3", onsets: {} }] } : {}),
+    } });
+  });
+  await page.locator("#trkUrl").fill("https://example.com/x");
+  await page.locator("#trkGet").click();
+  await expect(page.locator("#trkNote")).toContainText("downloading 40%");
+  await expect(page.locator("#trkNote")).toContainText("Imported",
+    { timeout: 10_000 });
+  await expect(row(page, "e2e_async")).toBeVisible();
+});
+
+test("an import the server refuses fails with its reason, not a spinner",
+    async ({ page }) => {
+  await page.route("**/api/import/async", (r) => r.fulfill({
+    status: 400, json: { error: "id: letters, digits and _ only" },
+  }));
+  await page.locator("#trkUrl").fill("https://example.com/x");
+  await page.locator("#trkGet").click();
+  await expect(page.locator("#trkNote")).toContainText("letters, digits");
+  await expect(page.locator("#trkGet")).toBeEnabled();
+});

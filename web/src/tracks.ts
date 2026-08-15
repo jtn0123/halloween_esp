@@ -384,17 +384,47 @@ export function initTracks(deps: TracksDeps): TracksApi {
             + "Castle Cue Desk.command.");
   });
 
+  /* URL imports go through the background job runner: a long yt-dlp
+     download used to sit behind one blocking POST, showing a frozen
+     "Importing…" for minutes with no sign of life (grade report A8 — the
+     async pipeline existed, tested, with no caller). Now the phase and
+     percent from the server's own progress parser reach the status line. */
+  const PHASE_TEXT: Record<string, string> = {
+    queued: "waiting for the previous job",
+    fetching: "downloading",
+    converting: "converting with ffmpeg",
+    analysing: "detecting beats",
+  };
   byId("trkGet").addEventListener("click", async () => {
     const url = val("trkUrl");
     if (!url) return say("Paste a link first.", true);
-    say("Importing… this runs yt-dlp and ffmpeg locally, so give it a moment.");
+    const btn = byId<HTMLButtonElement>("trkGet");
+    btn.disabled = true;
+    say("Importing…");
     try {
-      const r = await api.importUrl(Object.assign({ url }, opts()));
-      if (r.ok) { drawTracks(r.tracks);
-                  say("Imported. Press Play to hear it, or “Make scene” to wire it into the show.");
-                  byId<HTMLInputElement>("trkUrl").value = ""; }
-      else say(`Import failed — ${(r.log || r.error || "").slice(-400)}`, true);
+      let job = await api.importAsync(Object.assign({ url }, opts()));
+      if (!job.id) {                       // refused at the door (bad url/id)
+        return say(`Import failed — ${(job as { error?: string }).error
+                     ?? "the studio refused the request"}`, true);
+      }
+      // ~16 min at 800 ms/poll — past the server's own 15-minute kill.
+      for (let i = 0; i < 1200 && !job.done; i++) {
+        await new Promise(r => setTimeout(r, 800));
+        job = await api.job(job.id);
+        const pct = job.percent > 0 ? ` ${Math.round(job.percent)}%` : "";
+        say(`Importing — ${PHASE_TEXT[job.phase] ?? job.phase}${pct}`
+          + `${job.detail ? ` · ${job.detail}` : ""}`);
+      }
+      if (job.phase === "done") {
+        if (job.tracks) drawTracks(job.tracks);
+        say("Imported. Press Play to hear it, or “Make scene” to wire it into the show.");
+        byId<HTMLInputElement>("trkUrl").value = "";
+      } else {
+        say(`Import failed — ${job.error || job.log.slice(-3).join(" ")
+             || "gave up waiting"}`, true);
+      }
     } catch (err) { say(`Import failed — ${String(err)}`, true); }
+    finally { btn.disabled = false; }
   });
 
   /* ── Drag and drop ── */
