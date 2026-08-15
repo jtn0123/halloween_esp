@@ -13,9 +13,11 @@
  */
 
 import { api } from "./api.js";
+import { startEta } from "./eta.js";
 import type { BandEditor } from "./band_editor.js";
 import { fillOptsFrom, initImportOpts } from "./import_opts.js";
 import { trackRowHtml } from "./track_rows.js";
+import { wireUrlImport } from "./track_import_url.js";
 import { detectOnsets, loudnessEnvelope } from "./onsets.js";
 import { createPreview } from "./preview.js";
 import { sceneYaml } from "./track_scene.js";
@@ -262,8 +264,8 @@ export function initTracks(deps: TracksDeps): TracksApi {
         const t = T.tracks.find(x => x.id === id);
         if (t) fillOptsFrom(t);
       }
-      say(`Re-importing ${id} from its remembered source…`);
       const o = opts();
+      const eta = startEta("reimport", `Re-importing ${id} from its remembered source`, say);
       // Busy state on the button itself: a re-import takes seconds, and a
       // button that looks dead for that long reads as broken (round 1).
       btn.disabled = true;
@@ -290,7 +292,9 @@ export function initTracks(deps: TracksDeps): TracksApi {
               : ""));
         }
         else say(`Re-import failed — ${(r.log || r.error || "").slice(-400)}`, true);
+        eta.stop(r.ok);
       } finally {
+        eta.stop();
         btn.disabled = false;
         if (label !== null) btn.textContent = label;
       }
@@ -310,12 +314,14 @@ export function initTracks(deps: TracksDeps): TracksApi {
         const wf = await api.waveform(id).then(w => w.body).catch(() => null);
         const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands, wf?.env);
         T.yaml.hidden = false; T.yaml.textContent = block;
-        say(`Writing scene "${id}" into scenes.yaml and re-rendering the show…`);
-        const res = await api.scene(id, block);
+        const eta = startEta("scene",
+          `Writing scene "${id}" into scenes.yaml and re-rendering the show`, say);
+        const res = await api.scene(id, block).finally(() => eta.stop());
         if (!res.ok) {
           say(`Scene write failed — ${(res.log || res.error || "").slice(-300)}`, true);
           return;
         }
+        eta.stop(true);
         // The row now says "in the show", which is the visible proof the click
         // did something. The page's own scene list is baked in at generate
         // time, so it needs a reload — offered, not forced.
@@ -384,48 +390,10 @@ export function initTracks(deps: TracksDeps): TracksApi {
             + "Castle Cue Desk.command.");
   });
 
-  /* URL imports go through the background job runner: a long yt-dlp
-     download used to sit behind one blocking POST, showing a frozen
-     "Importing…" for minutes with no sign of life (grade report A8 — the
-     async pipeline existed, tested, with no caller). Now the phase and
-     percent from the server's own progress parser reach the status line. */
-  const PHASE_TEXT: Record<string, string> = {
-    queued: "waiting for the previous job",
-    fetching: "downloading",
-    converting: "converting with ffmpeg",
-    analysing: "detecting beats",
-  };
-  byId("trkGet").addEventListener("click", async () => {
-    const url = val("trkUrl");
-    if (!url) return say("Paste a link first.", true);
-    const btn = byId<HTMLButtonElement>("trkGet");
-    btn.disabled = true;
-    say("Importing…");
-    try {
-      let job = await api.importAsync(Object.assign({ url }, opts()));
-      if (!job.id) {                       // refused at the door (bad url/id)
-        return say(`Import failed — ${(job as { error?: string }).error
-                     ?? "the studio refused the request"}`, true);
-      }
-      // ~16 min at 800 ms/poll — past the server's own 15-minute kill.
-      for (let i = 0; i < 1200 && !job.done; i++) {
-        await new Promise(r => setTimeout(r, 800));
-        job = await api.job(job.id);
-        const pct = job.percent > 0 ? ` ${Math.round(job.percent)}%` : "";
-        say(`Importing — ${PHASE_TEXT[job.phase] ?? job.phase}${pct}`
-          + `${job.detail ? ` · ${job.detail}` : ""}`);
-      }
-      if (job.phase === "done") {
-        if (job.tracks) drawTracks(job.tracks);
-        say("Imported. Press Play to hear it, or “Make scene” to wire it into the show.");
-        byId<HTMLInputElement>("trkUrl").value = "";
-      } else {
-        say(`Import failed — ${job.error || job.log.slice(-3).join(" ")
-             || "gave up waiting"}`, true);
-      }
-    } catch (err) { say(`Import failed — ${String(err)}`, true); }
-    finally { btn.disabled = false; }
-  });
+  // URL imports live in track_import_url.ts — the one flow that talks to
+  // the background job runner, with yt-dlp's own download ETA and a learned
+  // one for the convert/analyse tail.
+  wireUrlImport({ say, opts, drawTracks });
 
   /* ── Drag and drop ── */
   const drop = byId("trkDrop");

@@ -18,6 +18,7 @@
  */
 
 import { api } from "./api.js";
+import { startEta } from "./eta.js";
 
 export interface CodecRow {
   codec: string;
@@ -160,17 +161,22 @@ export function createCodecAb(deps: CodecAbDeps): CodecAb {
     run.disabled = true;
     run.textContent = "Encoding…";
     // Four ffmpeg passes over the clip; on a long selection that is a wait
-    // worth naming rather than leaving as a dead button.
-    note.textContent = `Encoding ${t.take.toFixed(1)}s four ways…`;
+    // worth naming rather than leaving as a dead button. The learned rate is
+    // seconds-per-clip-second, so a 10s and a 90s selection each get an
+    // honest number.
+    const eta = startEta("codec", `Encoding ${t.take.toFixed(1)}s four ways`,
+                         m => { note.textContent = m; }, t.take);
     try {
       const o = deps.opts();
       const r = await api.compare({ id: t.id, start: t.start, take: t.take,
                                     bitrate: o.bitrate, channels: o.channels,
-                                    sample_rate: o.sample_rate });
+                                    sample_rate: o.sample_rate })
+        .finally(() => eta.stop());
       if (!r.ok || !r.codecs) {
         note.textContent = `Could not encode — ${r.error || "unknown error"}`;
         return;
       }
+      eta.stop(true);
       rows = r.codecs;
       draw();
       note.textContent = "Press one to hear it. Switching keeps the position, "

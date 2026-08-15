@@ -1286,7 +1286,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       box.scrollTop = Math.max(0, top);
     }
     /** Wire one slider to its handler and its readout. */
-    bind(id, fn, fmt) {
+    bind(id, fn, fmt2) {
       const el = must(id);
       const out = must(id + "O");
       const key = `castle.trim.${id}`;
@@ -1298,7 +1298,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       const run = () => {
         const v = +el.value;
         fn(v);
-        out.textContent = fmt(v);
+        out.textContent = fmt2(v);
       };
       el.addEventListener("input", () => {
         try {
@@ -1537,6 +1537,64 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     serverRestart: () => call("/api/server/restart", { method: "POST" })
   };
 
+  // src/eta.ts
+  var BLEND = 0.5;
+  var mem = /* @__PURE__ */ new Map();
+  var store = {
+    get(k) {
+      try {
+        return window.localStorage.getItem(k);
+      } catch {
+        return mem.get(k) ?? null;
+      }
+    },
+    set(k, v) {
+      try {
+        window.localStorage.setItem(k, v);
+      } catch {
+        mem.set(k, v);
+      }
+    }
+  };
+  var rateOf = (key) => {
+    const raw = store.get(`castleEta:${key}`);
+    const n = raw === null ? NaN : Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  var fmt = (s) => {
+    s = Math.max(1, Math.round(s));
+    return s < 90 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+  };
+  function startEta(key, base, say, units = 1) {
+    const rate = rateOf(key);
+    const t0 = Date.now();
+    const estimate = rate === null ? null : rate * Math.max(units, 1e-3);
+    const line = () => {
+      const elapsed = (Date.now() - t0) / 1e3;
+      if (estimate === null)
+        return elapsed < 3 ? base : `${base} \u2014 ${fmt(elapsed)} so far (first run, learning how long this takes)`;
+      const left = estimate - elapsed;
+      return left > 1 ? `${base} \u2014 about ${fmt(left)} left` : `${base} \u2014 taking longer than usual (${fmt(elapsed)} so far)`;
+    };
+    let timer = say === null ? 0 : window.setInterval(() => say(line()), 1e3);
+    if (say !== null) say(line());
+    return {
+      line,
+      stop(learn = false) {
+        if (timer) {
+          window.clearInterval(timer);
+          timer = 0;
+        }
+        if (!learn) return;
+        const seconds = (Date.now() - t0) / 1e3;
+        const fresh = seconds / Math.max(units, 1e-3);
+        const prev = rateOf(key);
+        const next = prev === null ? fresh : prev * (1 - BLEND) + fresh * BLEND;
+        store.set(`castleEta:${key}`, String(next));
+      }
+    };
+  }
+
   // src/codec_ab.ts
   var kb2 = (n) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MB` : `${Math.round(n / 1024)} KB`;
   function createCodecAb(deps) {
@@ -1633,7 +1691,14 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       reset();
       run.disabled = true;
       run.textContent = "Encoding\u2026";
-      note.textContent = `Encoding ${t.take.toFixed(1)}s four ways\u2026`;
+      const eta = startEta(
+        "codec",
+        `Encoding ${t.take.toFixed(1)}s four ways`,
+        (m) => {
+          note.textContent = m;
+        },
+        t.take
+      );
       try {
         const o = deps.opts();
         const r = await api.compare({
@@ -1643,11 +1708,12 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
           bitrate: o.bitrate,
           channels: o.channels,
           sample_rate: o.sample_rate
-        });
+        }).finally(() => eta.stop());
         if (!r.ok || !r.codecs) {
           note.textContent = `Could not encode \u2014 ${r.error || "unknown error"}`;
           return;
         }
+        eta.stop(true);
         rows = r.codecs;
         draw();
         note.textContent = "Press one to hear it. Switching keeps the position, so you are comparing the same moment.";
@@ -3303,8 +3369,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     if (o.take) {
       bits.push(`${o.take}s${o.start && o.start !== "0:00" ? ` from ${o.start}` : ""}`);
     }
-    const fmt = (o.format || "mp3").toLowerCase();
-    bits.push(LOSSLESS.includes(fmt) ? fmt.toUpperCase() : `${fmt.toUpperCase()} ${clampKbps(o.bitrate)}k`);
+    const fmt2 = (o.format || "mp3").toLowerCase();
+    bits.push(LOSSLESS.includes(fmt2) ? fmt2.toUpperCase() : `${fmt2.toUpperCase()} ${clampKbps(o.bitrate)}k`);
     if (channelsOf(o.channels) === 2) bits.push("stereo");
     if (o.normalize) bits.push("loudness matched");
     const fi = +o.fade_in, fo = +o.fade_out;
@@ -3348,9 +3414,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       if (hint) hint.textContent = optsHint(o);
       const br = el("trkBitrate");
       if (br) {
-        const fmt = (o.format || "mp3").toLowerCase();
-        br.disabled = LOSSLESS.includes(fmt);
-        br.title = br.disabled ? `${fmt.toUpperCase()} has no bitrate to set` : "";
+        const fmt2 = (o.format || "mp3").toLowerCase();
+        br.disabled = LOSSLESS.includes(fmt2);
+        br.title = br.disabled ? `${fmt2.toUpperCase()} has no bitrate to set` : "";
       }
     }
     for (const id of WATCHED) {
@@ -3398,7 +3464,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     const mono = o.channels !== 2;
     const monoInShow = mono && ctx.inShow;
     const monoBadge = mono ? `<span class="trk__mono" style="color:${monoInShow ? "var(--err,#ff6b5a)" : "var(--warn,#e0a34a)"};cursor:pointer;text-decoration:underline dotted" title="Mono import: the towers cannot answer left/right without stereo.${monoInShow ? " THIS TRACK IS IN THE SHOW \u2014 the audience hears it mono." : ""} Click here to set stereo, then press Re-import.">mono \u26A0${monoInShow ? " in the show" : ""}</span>` : "stereo";
-    const fmt = [
+    const fmt2 = [
       ext.toUpperCase(),
       lossless ? null : `${o.bitrate || "?"}kbps`,
       monoBadge,
@@ -3417,7 +3483,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   <div class="${cls}" data-id="${esc(t.id)}" title="Click to open the clip editor">
     <div class="trk__nm">${esc(t.id)}
       ${ctx.inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
-      <small>${t.dur ?? "?"}s \xB7 ${t.kb} KB \xB7 ${fmt}</small>
+      <small>${t.dur ?? "?"}s \xB7 ${t.kb} KB \xB7 ${fmt2}</small>
       <small title="${esc(BAND_HELP)}">${esc(onsets)}</small>
       ${src ? `<small class="trk__src">from ${src}</small>` : ""}
       ${t.notes ? `<small>${esc(t.notes)}</small>` : ""}
@@ -3431,6 +3497,59 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       <button data-act="del" class="danger">Delete</button>
     </div>
   </div>`;
+  }
+
+  // src/track_import_url.ts
+  var PHASE_TEXT = {
+    queued: "waiting for the previous job",
+    fetching: "downloading",
+    converting: "converting with ffmpeg",
+    analysing: "detecting beats"
+  };
+  function wireUrlImport({ say, opts, drawTracks }) {
+    const btn2 = document.getElementById("trkGet");
+    const urlBox = document.getElementById("trkUrl");
+    btn2.addEventListener("click", () => void (async () => {
+      const url = urlBox.value.trim();
+      if (!url) return say("Paste a link first.", true);
+      btn2.disabled = true;
+      say("Importing\u2026");
+      let tail = null;
+      try {
+        let job = await api.importAsync(Object.assign({ url }, opts()));
+        if (!job.id) {
+          return say(`Import failed \u2014 ${job.error ?? "the studio refused the request"}`, true);
+        }
+        for (let i = 0; i < 1200 && !job.done; i++) {
+          await new Promise((r) => setTimeout(r, 800));
+          job = await api.job(job.id);
+          if (job.phase === "fetching" || job.phase === "queued") {
+            const pct = job.percent > 0 ? ` ${Math.round(job.percent)}%` : "";
+            say(`Importing \u2014 ${PHASE_TEXT[job.phase] ?? job.phase}${pct}${job.detail ? ` \xB7 ${job.detail}` : ""}`);
+          } else if (!job.done) {
+            tail ?? (tail = startEta(
+              "import-tail",
+              "Importing \u2014 converting and detecting beats",
+              null
+            ));
+            say(tail.line());
+          }
+        }
+        if (job.phase === "done") {
+          tail?.stop(true);
+          if (job.tracks) drawTracks(job.tracks);
+          say("Imported. Press Play to hear it, or \u201CMake scene\u201D to wire it into the show.");
+          urlBox.value = "";
+        } else {
+          say(`Import failed \u2014 ${job.error || job.log.slice(-3).join(" ") || "gave up waiting"}`, true);
+        }
+      } catch (err) {
+        say(`Import failed \u2014 ${String(err)}`, true);
+      } finally {
+        tail?.stop();
+        btn2.disabled = false;
+      }
+    })());
   }
 
   // src/onsets.ts
@@ -4340,8 +4459,8 @@ ${lines.join("\n")}
           const t = T.tracks.find((x) => x.id === id);
           if (t) fillOptsFrom(t);
         }
-        say(`Re-importing ${id} from its remembered source\u2026`);
         const o = opts();
+        const eta = startEta("reimport", `Re-importing ${id} from its remembered source`, say);
         btn2.disabled = true;
         const label = btn2.textContent;
         btn2.textContent = "Working\u2026";
@@ -4362,7 +4481,9 @@ ${lines.join("\n")}
             const ch = after?.opts?.channels === 2 ? "stereo" : "mono";
             say(`Re-imported ${id} \u2014 ${ch}.` + (ch === "mono" ? " Still mono: click its mono \u26A0 badge (or set CHANNELS to stereo in Options) and Re-import again." : ""));
           } else say(`Re-import failed \u2014 ${(r.log || r.error || "").slice(-400)}`, true);
+          eta.stop(r.ok);
         } finally {
+          eta.stop();
           btn2.disabled = false;
           if (label !== null) btn2.textContent = label;
         }
@@ -4377,12 +4498,17 @@ ${lines.join("\n")}
           const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands, wf?.env);
           T.yaml.hidden = false;
           T.yaml.textContent = block;
-          say(`Writing scene "${id}" into scenes.yaml and re-rendering the show\u2026`);
-          const res = await api.scene(id, block);
+          const eta = startEta(
+            "scene",
+            `Writing scene "${id}" into scenes.yaml and re-rendering the show`,
+            say
+          );
+          const res = await api.scene(id, block).finally(() => eta.stop());
           if (!res.ok) {
             say(`Scene write failed \u2014 ${(res.log || res.error || "").slice(-300)}`, true);
             return;
           }
+          eta.stop(true);
           T.sceneIds = new Set(res.scenes || [...T.sceneIds, id]);
           drawTracks(void 0);
           sayReload(`Scene "${id}" ${res.replaced ? "updated" : "added"} in scenes.yaml and the audio re-rendered.`);
@@ -4437,42 +4563,7 @@ ${lines.join("\n")}
       }
       goOffline("Restart didn't come back within 15 s \u2014 relaunch with Castle Cue Desk.command.");
     });
-    const PHASE_TEXT = {
-      queued: "waiting for the previous job",
-      fetching: "downloading",
-      converting: "converting with ffmpeg",
-      analysing: "detecting beats"
-    };
-    byId("trkGet").addEventListener("click", async () => {
-      const url = val("trkUrl");
-      if (!url) return say("Paste a link first.", true);
-      const btn2 = byId("trkGet");
-      btn2.disabled = true;
-      say("Importing\u2026");
-      try {
-        let job = await api.importAsync(Object.assign({ url }, opts()));
-        if (!job.id) {
-          return say(`Import failed \u2014 ${job.error ?? "the studio refused the request"}`, true);
-        }
-        for (let i = 0; i < 1200 && !job.done; i++) {
-          await new Promise((r) => setTimeout(r, 800));
-          job = await api.job(job.id);
-          const pct = job.percent > 0 ? ` ${Math.round(job.percent)}%` : "";
-          say(`Importing \u2014 ${PHASE_TEXT[job.phase] ?? job.phase}${pct}${job.detail ? ` \xB7 ${job.detail}` : ""}`);
-        }
-        if (job.phase === "done") {
-          if (job.tracks) drawTracks(job.tracks);
-          say("Imported. Press Play to hear it, or \u201CMake scene\u201D to wire it into the show.");
-          byId("trkUrl").value = "";
-        } else {
-          say(`Import failed \u2014 ${job.error || job.log.slice(-3).join(" ") || "gave up waiting"}`, true);
-        }
-      } catch (err) {
-        say(`Import failed \u2014 ${String(err)}`, true);
-      } finally {
-        btn2.disabled = false;
-      }
-    });
+    wireUrlImport({ say, opts, drawTracks });
     const drop = byId("trkDrop");
     ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => {
       e.preventDefault();
@@ -4863,11 +4954,14 @@ ${lines.join("\n")}
       split.disabled = false;
       say(msg);
     }
-    async function poll(jobId) {
+    async function poll(jobId, eta) {
       const mine = token;
       for (let i = 0; i < 400; i++) {
         await new Promise((r) => setTimeout(r, 1500));
-        if (mine !== token) return;
+        if (mine !== token) {
+          eta.stop();
+          return;
+        }
         let job;
         try {
           job = await api.job(jobId);
@@ -4875,18 +4969,20 @@ ${lines.join("\n")}
           continue;
         }
         if (!job.done) {
-          const last = job.log[job.log.length - 1] ?? "";
-          say(`Splitting voices \u2014 Demucs running\u2026 ${last.slice(0, 60)}`);
+          say(eta.line());
           continue;
         }
         if (job.phase === "failed") {
+          eta.stop();
           empty("Split failed \u2014 " + (job.error || "see the studio log."));
           note.classList.add("err");
           return;
         }
+        eta.stop(true);
         await load();
         return;
       }
+      eta.stop();
       empty("Split is taking too long \u2014 check the studio terminal.");
     }
     split.addEventListener("click", () => {
@@ -4894,15 +4990,24 @@ ${lines.join("\n")}
       if (!id) return;
       void (async () => {
         split.disabled = true;
-        say("Splitting voices \u2014 Demucs running\u2026");
+        const units = data?.duration ?? deps.duration?.() ?? 200;
+        const eta = startEta(
+          "stems-split",
+          "Splitting voices \u2014 Demucs running",
+          null,
+          units
+        );
+        say(eta.line());
         try {
           const job = await api.stemsSplit(id, data !== null);
           if (!job.id) {
+            eta.stop();
             empty(job.error || "The studio refused the split.");
             return;
           }
-          void poll(job.id);
+          void poll(job.id, eta);
         } catch (err) {
+          eta.stop();
           empty(`Could not reach the studio \u2014 ${String(err)}`);
         }
       })();
@@ -5489,7 +5594,10 @@ ${lines.join("\n")}
     const { wrap, title, row, play, snap, readout, note, mirrorDots } = buildWaveChrome();
     note.title = BAND_HELP;
     const lab = createStyleLab(() => sync());
-    const stems = createStemsView({ onPlay: () => stop() });
+    const stems = createStemsView({
+      onPlay: () => stop(),
+      duration: () => view.data?.duration ?? null
+    });
     wrap.append(title, view.el, row, deps.bands.el, lab.el, stems.el, note);
     if (deps.codecs) wrap.append(deps.codecs.el);
     host.append(wrap);

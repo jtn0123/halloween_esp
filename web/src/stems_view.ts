@@ -17,10 +17,14 @@
 
 import { api, type StemChannel, type StemsResponse } from "./api.js";
 import { BANDS } from "./bands.js";
+import { startEta, type EtaHandle } from "./eta.js";
 
 export interface StemsDeps {
   /** Fired when a stem starts playing, so the host can stop its audition. */
   onPlay: () => void;
+  /** The current track's duration in seconds, when the host knows it —
+   *  it scales the split's ETA before the first analysis exists. */
+  duration?: () => number | null;
 }
 
 export interface StemsApi {
@@ -389,27 +393,26 @@ export function createStemsView(deps: StemsDeps): StemsApi {
     say(msg);
   }
 
-  async function poll(jobId: string): Promise<void> {
+  async function poll(jobId: string, eta: EtaHandle): Promise<void> {
     const mine = token;
     for (let i = 0; i < 400; i++) {
       await new Promise(r => setTimeout(r, 1500));
-      if (mine !== token) return;
+      if (mine !== token) { eta.stop(); return; }
       let job;
       try { job = await api.job(jobId); }
       catch { continue; }              // one dropped poll is not a failure
-      if (!job.done) {
-        const last = job.log[job.log.length - 1] ?? "";
-        say(`Splitting voices — Demucs running… ${last.slice(0, 60)}`);
-        continue;
-      }
+      if (!job.done) { say(eta.line()); continue; }
       if (job.phase === "failed") {
+        eta.stop();
         empty("Split failed — " + (job.error || "see the studio log."));
         note.classList.add("err");
         return;
       }
+      eta.stop(true);                  // a finished split teaches the next ETA
       await load();
       return;
     }
+    eta.stop();
     empty("Split is taking too long — check the studio terminal.");
   }
 
@@ -418,12 +421,23 @@ export function createStemsView(deps: StemsDeps): StemsApi {
     if (!id) return;
     void (async () => {
       split.disabled = true;
-      say("Splitting voices — Demucs running…");
+      // The split's cost scales with the track's length, so the learned rate
+      // is seconds-per-audio-second. An unsplit track's duration comes from
+      // the clip editor's analysis; failing that, assume a typical song.
+      const units = data?.duration ?? deps.duration?.() ?? 200;
+      const eta = startEta("stems-split", "Splitting voices — Demucs running",
+                           null, units);
+      say(eta.line());
       try {
         const job = await api.stemsSplit(id, data !== null);
-        if (!job.id) { empty(job.error || "The studio refused the split."); return; }
-        void poll(job.id);
+        if (!job.id) {
+          eta.stop();
+          empty(job.error || "The studio refused the split.");
+          return;
+        }
+        void poll(job.id, eta);
       } catch (err) {
+        eta.stop();
         empty(`Could not reach the studio — ${String(err)}`);
       }
     })();

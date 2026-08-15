@@ -93,7 +93,8 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   note.title = BAND_HELP;
   const lab = createStyleLab(() => sync());
   // Two things can make noise here; each silences the other on play.
-  const stems = createStemsView({ onPlay: () => stop() });
+  const stems = createStemsView({ onPlay: () => stop(),
+                                  duration: () => view.data?.duration ?? null });
   wrap.append(title, view.el, row, deps.bands.el, lab.el, stems.el, note);
   if (deps.codecs) wrap.append(deps.codecs.el);
   host.append(wrap);
