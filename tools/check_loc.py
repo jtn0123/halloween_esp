@@ -40,9 +40,12 @@ def tracked_files() -> list[Path]:
     `--others --exclude-standard` adds untracked files while still honouring
     .gitignore, so build output and node_modules stay out of it.
     """
+    # check=True: if git fails, fail LOUDLY. Without it a broken git (seen
+    # 2026-08-13, a corrupted xattr on the repo root) yields an empty file
+    # list and the check "passes" having measured nothing.
     out = subprocess.run(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-        cwd=ROOT, capture_output=True, text=True).stdout
+        cwd=ROOT, capture_output=True, text=True, check=True).stdout
     # --cached and --others can name the same path; dedupe while keeping order.
     seen: set[str] = set()
     files = []
@@ -70,8 +73,8 @@ def measure() -> list[tuple[int, str, bool]]:
 def main() -> int:
     rows = measure()
     if "--list" in sys.argv:
-        for n, rel, over in rows[:15]:
-            print(f"{n:>6}  {'OVER' if over else '    '}  {rel}")
+        for n, rel, is_over in rows[:15]:
+            print(f"{n:>6}  {'OVER' if is_over else '    '}  {rel}")
         return 0
 
     over = [(n, rel) for n, rel, o in rows if o]

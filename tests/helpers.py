@@ -9,12 +9,7 @@ what came back, shared by test_synth_voices.py and test_synth_pieces.py.
 
 from __future__ import annotations
 
-import json
-import shutil
-import subprocess
 import sys
-import tempfile
-import unittest
 import wave
 from pathlib import Path
 
@@ -23,12 +18,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import analyze as ana          # noqa: E402
-import import_track as it      # noqa: E402
-import manifest as mf          # noqa: E402
-import render_audio as ra      # noqa: E402
-import synth                   # noqa: E402
-import yaml                    # noqa: E402
+import analyze as ana  # noqa: E402
+import synth  # noqa: E402
 
 # Long enough that every fade knee in wind/drone (they reference dur - 1.5 and
 # dur - 3.0) is still in order, short enough that the whole registry renders in

@@ -36,6 +36,7 @@ def main() -> int:
         img = Image.new("1", (cw, ch), 0)
         ImageDraw.Draw(img).text((0, 0), chr(c), font=font, fill=1)
         px = img.load()
+        assert px is not None    # "1"-mode images always expose pixels
         rows = []
         for y in range(ch):
             b = 0
@@ -43,7 +44,7 @@ def main() -> int:
                 if px[x, y]:
                     b |= 0x80 >> x
             rows.append(f"0x{b:02x}")
-        name = chr(c).replace("\\", "backslash") if c in (0x5C,) else chr(c)
+        name = chr(c).replace("\\", "backslash") if c == 0x5C else chr(c)
         lines.append(f"    {', '.join(rows)},  // '{name}'")
 
     OUT.parent.mkdir(exist_ok=True)

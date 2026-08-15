@@ -20,20 +20,19 @@ Run after `make audio`:  tools/gen_previewer.py
 from __future__ import annotations
 
 import base64
-import subprocess
 import json
 import math
 import re
+import subprocess
 import sys
 from pathlib import Path
-
-import yaml
 
 # The pulse dynamics helpers (tempo, accent, pan threshold) are shared with
 # the firmware generator rather than duplicated a third time — one pair of
 # implementations (Python here, TS in track_lights.ts) is a parity burden;
 # three was how the last drift happened.
-import gen_esphome as gen
+import pulse_dynamics as pd
+import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "scenes" / "scenes.yaml"
@@ -61,7 +60,7 @@ KNOWN_EFFECTS = {
 def scene_yaml_slice(text: str, sid: str) -> str:
     """The scene's verbatim block from scenes.yaml, for the source panel."""
     # (?:.*\n)*? — `.*` not `.+`, so blank lines inside a block don't end it.
-    m = re.search(rf"^  - id: {sid}\n(?:.*\n)*?(?=^  - id: |\Z)", text, re.M)
+    m = re.search(rf"^  - id: {sid}\n(?:.*\n)*?(?=^  - id: |\Z)", text, re.MULTILINE)
     return m.group(0).rstrip() if m else f"# (slice for {sid} not found)"
 
 
@@ -70,19 +69,20 @@ def _blend_color(base: list, hot: list | None, vel: float) -> list:
     and track_lights.ts."""
     if not hot:
         return base
-    return [gen.round3(b + (h - b) * vel) for b, h in zip(base, hot)]
+    return [pd.round3(b + (h - b) * vel) for b, h in zip(base, hot)]
 
 
 def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
     sid = scene["id"]
-    cues = []
-    for ev in scene.get("score") or []:
-        cues.append({
+    cues = [
+        {
             "t": int(ev["t"] * 1000),
             "bus": "AUD",
             "op": "play_loop" if scene.get("loop") and ev["synth"] == "wind" else "play",
             "snd": ev["synth"],
-        })
+        }
+        for ev in scene.get("score") or []
+    ]
     for cue in scene.get("cues") or []:
         if cue["op"] == "set":
             if cue["effect"] not in KNOWN_EFFECTS:
@@ -125,32 +125,32 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
     # per-hit dynamics: color_hot, pixels_by_vel, boost_at/boost_targets,
     # ms) and web/src/track_lights.ts — keep all three in lockstep.
     scene_marks = markers.get(sid, {})
-    gates = gen.section_gates(scene)
+    gates = pd.section_gates(scene)
     for pcfg in scene.get("pulse") or []:
         beats = scene_marks.get(pcfg["synth"], [])
         zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
-        factor = gen.tempo_factor([b[0] / 1000.0 for b in beats])
-        decay = gen.tempo_decay(pcfg.get("decay", 0.90), factor)
-        ms = int(math.floor(int(pcfg.get("ms", 120)) * factor + 0.5))
+        factor = pd.tempo_factor([b[0] / 1000.0 for b in beats])
+        decay = pd.tempo_decay(pcfg.get("decay", 0.90), factor)
+        ms = math.floor(int(pcfg.get("ms", 120)) * factor + 0.5)
         vels = [b[1] for b in beats]
         for i, beat in enumerate(beats):
             t, vel = beat[0], beat[1]
             pan = beat[2] if len(beat) > 2 else None
-            mul = gen.gate_mul(pcfg["synth"], gates, t)
+            mul = pd.gate_mul(pcfg["synth"], gates, t)
             if mul is None:
                 continue                       # gated out by its section (#9)
             cyc = pcfg.get("colors")
             hot = pcfg.get("color_hot")
-            if pcfg.get("takeover") and gen.gate_note(gates, t) == "chorus":
-                base = gen.TAKEOVER_COLORS[i % len(gen.TAKEOVER_COLORS)]
-                hot = gen.TAKEOVER_HOT
+            if pcfg.get("takeover") and pd.gate_note(gates, t) == "chorus":
+                base = pd.TAKEOVER_COLORS[i % len(pd.TAKEOVER_COLORS)]
+                hot = pd.TAKEOVER_HOT
             elif cyc and pcfg.get("drift"):
-                base = gen.drift_base(cyc, i, t)
+                base = pd.drift_base(cyc, i, t)
             else:
                 base = cyc[i % len(cyc)] if cyc else pcfg.get("color", [1, 1, 1, 1])
             c = {"t": t, "bus": "LED", "op": "strike",
                  "ms": ms,
-                 "intensity": gen.round3(pcfg.get("intensity", 0.3) * vel * mul),
+                 "intensity": pd.round3(pcfg.get("intensity", 0.3) * vel * mul),
                  "color": _blend_color(base, hot, vel),
                  "decay": decay,
                  "detail": pcfg["synth"]}
@@ -162,7 +162,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
             elif pcfg.get("pixels"):
                 c["pixels"] = pcfg["pixels"]
             if zones and pcfg.get("alternate"):
-                if (pan is not None and abs(pan) >= gen.PAN_DECISIVE
+                if (pan is not None and abs(pan) >= pd.PAN_DECISIVE
                         and "towerL" in zones and "towerR" in zones):
                     c["targets"] = ["towerL" if pan < 0 else "towerR"]
                 else:
@@ -171,7 +171,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
                 c["targets"] = list(zones)
             if (c.get("targets") and pcfg.get("boost_targets")
                     and (vel >= pcfg.get("boost_at", 2)
-                         or gen.is_accent(vels, i))):
+                         or pd.is_accent(vels, i))):
                 c["targets"] = c["targets"] + [z for z in pcfg["boost_targets"]
                                                if z not in c["targets"]]
             cues.append(c)
@@ -217,7 +217,7 @@ def inject_bundle(html: str) -> str:
     r = subprocess.run(
         ["npx", "esbuild", "src/main.ts", "--bundle", "--format=iife",
          "--target=es2020", "--outfile=dist/bundle.js"],
-        cwd=WEB, capture_output=True, text=True,
+        cwd=WEB, capture_output=True, text=True, check=False,  # handled below
     )
     if r.returncode != 0:
         sys.exit(f"esbuild failed:\n{r.stdout}\n{r.stderr}")
@@ -276,7 +276,7 @@ def main() -> int:
     )
 
     html = TEMPLATE.read_text()
-    pattern = re.compile(re.escape(START) + r".*?" + re.escape(END), re.S)
+    pattern = re.compile(re.escape(START) + r".*?" + re.escape(END), re.DOTALL)
     if not pattern.search(html):
         sys.exit(f"markers not found in {TEMPLATE} — expected {START} ... {END}")
     # sub() treats backslashes in the replacement as escapes, and the audio is

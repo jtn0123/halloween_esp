@@ -10,16 +10,16 @@ from __future__ import annotations
 import shutil
 import sys
 import tempfile
-import types
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import gen_esphome as ge        # noqa: E402
-import gen_previewer as gp      # noqa: E402
-import yaml                     # noqa: E402
+import gen_esphome as ge  # noqa: E402
+import gen_previewer as gp  # noqa: E402
+import yaml  # noqa: E402
 
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 ZIDS = [z["id"] for z in ZONES]
@@ -101,7 +101,7 @@ class TestEffectIds(unittest.TestCase):
 class TestPulseCues(unittest.TestCase):
     """Beat markers are what lock the lights to the audio; this is the join."""
 
-    MARKS = {"probe": {"heart": [[0, 1.0], [500, 0.5], [1000, 0.25]],
+    MARKS: ClassVar[dict] = {"probe": {"heart": [[0, 1.0], [500, 0.5], [1000, 0.25]],
                        "whisper": [[100, 1.0], [200, 1.0], [300, 1.0]]}}
 
     def test_no_pulse_block_is_no_cues(self) -> None:
@@ -299,7 +299,7 @@ class TestEmitScene(unittest.TestCase):
 class TestGenEsphomeMain(unittest.TestCase):
     """End to end: a scenes.yaml on disk becomes a loadable ESPHome file."""
 
-    DOC = {
+    DOC: ClassVar[dict] = {
         "hardware": {"pixels_per_zone": 7},
         "zones": ZONES,
         "scenes": [

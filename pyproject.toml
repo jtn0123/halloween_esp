@@ -1,0 +1,36 @@
+# Lint and type-check config for the Python half. The TS half has its own
+# strictness in web/tsconfig.json; this brings tools/ and tests/ up to the
+# same standard. Run both with `make lint` (wired into `make check` and CI).
+
+[tool.ruff]
+target-version = "py313"
+line-length = 88
+
+[tool.ruff.lint]
+# The families the 2026-08 baseline was measured against — pyflakes, the
+# pycodestyle error classes, import order, and the bug-shaped rule packs.
+# Deliberately not the full alphabet: style-only packs would bury the
+# signal this exists to surface (silent subprocess failures, mutable
+# defaults, dead noqa comments).
+select = [
+    "E4", "E7", "E9",  # pycodestyle errors (imports, statements, runtime)
+    "F",               # pyflakes: unused imports/vars, redefinitions
+    "I",               # import order
+    "RUF",             # ruff's own: stale noqa, mutable class defaults
+    "PLW",             # pylint warnings: subprocess-run-without-check
+    "PERF",            # performance smells
+    "DTZ",             # naive datetime use
+    "ISC",             # implicit string concatenation traps
+    "FURB",            # modernisation with behaviour-preserving fixes
+    "EXE",             # shebang/executable-bit agreement
+]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["tools", "tests"]
+# The analysis/synth stack sits on scipy (no stubs shipped) and the device
+# tools on esphome's transitive deps; missing stubs there are noise, not
+# signal.
+[[tool.mypy.overrides]]
+module = ["scipy.*", "aioesphomeapi.*", "PIL.*", "esphome.*"]
+ignore_missing_imports = true

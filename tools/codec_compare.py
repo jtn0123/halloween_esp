@@ -34,8 +34,8 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-import analyze as ana  # noqa: E402
-import import_track as it  # noqa: E402
+import analyze as ana
+import import_track as it
 
 # The lossless reference every other encode is measured against. Making it
 # first, once, also means the codecs are all fed identical audio — trimming

@@ -17,11 +17,12 @@ import time
 import unittest
 import warnings
 from pathlib import Path
+from typing import ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import studio_jobs as sj       # noqa: E402
+import studio_jobs as sj  # noqa: E402
 
 
 def setUpModule() -> None:
@@ -150,7 +151,7 @@ class TestExplain(unittest.TestCase):
     as a sentence, not as `ERROR: [youtube] abc: Private video. Sign in…`.
     """
 
-    CASES = [
+    CASES: ClassVar[list] = [
         ("ERROR: [youtube] abc: Private video. Sign in if you've been granted access",
          "That video is private."),
         ("ERROR: [youtube] abc: Video unavailable", "That video is unavailable."),
@@ -218,7 +219,7 @@ class TestAsDict(unittest.TestCase):
             self.assertTrue(job.as_dict()["done"], phase)
         for phase in ("queued", "fetching", "converting", "analysing"):
             job = sj.Job(id="x")
-            job.phase = phase
+            job.phase = phase  # type: ignore[assignment]  # loop var widens to str
             self.assertFalse(job.as_dict()["done"], phase)
 
     def test_log_is_capped_to_the_tail(self) -> None:

@@ -23,12 +23,11 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-
-
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
-import analyze as ana  # noqa: E402
-import manifest as mf  # noqa: E402
+import analyze as ana
+import manifest as mf
 
 ROOT = Path(__file__).resolve().parent.parent
 TRACKS = ROOT / "tracks"
@@ -53,7 +52,7 @@ def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
     r = subprocess.run(
         ["yt-dlp", "-x", "--audio-format", "mp3", "--audio-quality", "0",
          "--no-playlist", "-o", str(dest / "%(title)s.%(ext)s"), url],
-        capture_output=True, text=True,
+        capture_output=True, text=True, check=False,  # handled below
     )
     if r.returncode != 0:
         # yt-dlp's own last lines say WHY ("Video unavailable", a bot check…).
@@ -154,7 +153,7 @@ def convert(src: Path, out: Path, o: dict) -> None:
         cmd += ["-b:a", f"{o['bitrate']}k"]
 
     cmd.append(str(out))
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if r.returncode != 0:
         # ffmpeg's own last line names the actual problem; a traceback does not.
         tail = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
@@ -332,8 +331,8 @@ def main() -> int:
                                  sensitivity=args.sensitivity
                                  if args.sensitivity is not None else 1.1)
         dur = len(ana.load_audio(src)) / ana.SR
-        for k, v in marks.items():
-            print(f"  {k:<11} {len(v):>4} onsets")
+        for band, hits in marks.items():
+            print(f"  {band:<11} {len(hits):>4} onsets")
         print(f"\n{scene_block(src.stem, dur, marks, src.suffix.lstrip('.') or 'mp3')}")
         return 0
 
@@ -343,7 +342,7 @@ def main() -> int:
         raise SystemExit(f"no remembered track {args.refresh!r} "
                          f"(tools/import_track.py --list)")
     base = dict(prev.get("opts", {})) if prev else {}
-    o = {
+    o: dict[str, Any] = {
         "start": base.get("start", "0"),
         "take": base.get("take"),
         "fade_in": base.get("fade_in"),
@@ -368,8 +367,7 @@ def main() -> int:
     source = args.source or (prev or {}).get("source", "")
     if not source:
         raise SystemExit("need a source (file or URL)")
-    if source.startswith("file:"):
-        source = source[5:]
+    source = source.removeprefix("file:")
     is_url = "://" in source
 
     # Per-run scratch dir. A shared one races: two imports at once, and the

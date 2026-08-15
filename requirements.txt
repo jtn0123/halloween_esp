@@ -1,0 +1,14 @@
+# The Python side's real dependencies — everything tools/ imports directly.
+# aioesphomeapi and Pillow used to arrive only as transitive deps of esphome,
+# which meant an esphome release dropping either would silently break
+# tools/device.py / tools/gen_eink_font.py.
+#
+# esphome is pinned to the version CI validates with (.github/workflows/
+# ci.yml) so the board is built with the config that was checked.
+numpy~=2.5
+scipy~=1.18
+PyYAML~=6.0
+esphome==2026.7.4
+segno~=1.6
+aioesphomeapi~=45.7
+Pillow~=12.3

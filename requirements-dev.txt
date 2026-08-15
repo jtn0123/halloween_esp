@@ -1,0 +1,4 @@
+# Gates that only developers run (make lint, CI).
+ruff~=0.16
+mypy~=2.3
+types-PyYAML

@@ -61,7 +61,9 @@ def record(tid: str, *, source: str, title: str = "", opts: dict | None = None,
     entry = {
         "source": source,
         "title": title or prev.get("title", ""),
-        "imported": datetime.now().replace(microsecond=0).isoformat(),
+        # Local wall clock on purpose: single-machine library, human-read
+        # stamps. A tz-aware stamp would churn every entry for no reader.
+        "imported": datetime.now().replace(microsecond=0).isoformat(),  # noqa: DTZ005
         "opts": opts or {},
         "audio": audio or {},
         "onsets": onsets or {},

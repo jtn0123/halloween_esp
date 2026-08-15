@@ -19,9 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import gen_esphome as ge        # noqa: E402
-import gen_previewer as gp      # noqa: E402
-import yaml                     # noqa: E402
+import gen_previewer as gp  # noqa: E402
+import yaml  # noqa: E402
 
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 ZIDS = [z["id"] for z in ZONES]
@@ -189,7 +188,7 @@ class TestInjection(unittest.TestCase):
         gp.BUNDLE = gp.WEB / "dist" / "bundle.js"
         gp.BUNDLE.parent.mkdir(parents=True)
         self.js = "console.log(1);"
-        gp.subprocess = self.fake_subprocess(0)
+        gp.subprocess = self.fake_subprocess(0)  # type: ignore[assignment]  # test double
 
     def tearDown(self) -> None:
         gp.STYLES, gp.MOBILE, gp.WEB, gp.BUNDLE, gp.subprocess = self._saved
@@ -227,7 +226,7 @@ class TestInjection(unittest.TestCase):
         self.assertIn("npm install", str(cm.exception))
 
     def test_failed_build_is_not_silently_inlined(self) -> None:
-        gp.subprocess = self.fake_subprocess(1)
+        gp.subprocess = self.fake_subprocess(1)  # type: ignore[assignment]  # test double
         with self.assertRaises(SystemExit) as cm:
             gp.inject_bundle("/* @BUNDLE */")
         self.assertIn("esbuild failed", str(cm.exception))

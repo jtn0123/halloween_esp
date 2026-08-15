@@ -106,7 +106,7 @@ class TestImageCheck(unittest.TestCase):
             build.mkdir(parents=True)
             (build / "big.bin").write_bytes(b"x" * (check_image.SLOT + 1))
             orig = check_image.find_image
-            check_image.find_image = lambda _n: build / "big.bin"
+            check_image.find_image = lambda _n: build / "big.bin"  # type: ignore[assignment]  # test double
             argv = sys.argv
             try:
                 sys.argv = ["check_image.py", "big"]
@@ -125,7 +125,7 @@ class TestImageCheck(unittest.TestCase):
             build.mkdir(parents=True)
             (build / "small.bin").write_bytes(b"x" * int(check_image.SLOT * 0.5))
             orig = check_image.find_image
-            check_image.find_image = lambda _n: build / "small.bin"
+            check_image.find_image = lambda _n: build / "small.bin"  # type: ignore[assignment]  # test double
             argv = sys.argv
             try:
                 sys.argv = ["check_image.py", "small"]

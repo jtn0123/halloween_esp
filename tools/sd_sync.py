@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import gzip
 import json
-import subprocess
 import sys
 import urllib.parse
 import urllib.request

@@ -8,6 +8,7 @@ them testable without standing anything up.
 
 from __future__ import annotations
 
+import itertools
 import json
 import shutil
 import subprocess
@@ -18,7 +19,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
-import analyze as ana  # noqa: E402
+import analyze as ana
 
 # Waveform resolution. ~1000 buckets is more than any reasonable canvas width,
 # so the browser downsamples rather than interpolating, and it keeps the JSON
@@ -45,7 +46,7 @@ def probe(url: str, timeout: int = 60) -> dict:
     try:
         r = subprocess.run(
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", url],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True, text=True, timeout=timeout, check=False,
         )
     except subprocess.TimeoutExpired:
         return {"ok": False, "error": f"timed out after {timeout}s asking about that link"}
@@ -143,7 +144,7 @@ def waveform(path: Path, sensitivity: float = 1.1, buckets: int = PEAKS) -> dict
     n = min(buckets, len(x))
     edges = np.linspace(0, len(x), n + 1).astype(int)
     peaks = [float(np.abs(x[a:b]).max()) if b > a else 0.0
-             for a, b in zip(edges[:-1], edges[1:])]
+             for a, b in itertools.pairwise(edges)]
     top = max(peaks) or 1.0
     peaks = [round(p / top, 4) for p in peaks]
 

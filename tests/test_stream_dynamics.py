@@ -10,11 +10,12 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 # Importable both as `tests.test_stream_dynamics` and via discovery from
 # inside the directory — the sibling carries the shared fixtures.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_generator_parity import PULSE_SCENE, dynamic_strikes, ge  # noqa: E402
+from test_generator_parity import PULSE_SCENE, dynamic_strikes, ge
 
 
 class TestStreamDynamicsParity(unittest.TestCase):
@@ -24,7 +25,7 @@ class TestStreamDynamicsParity(unittest.TestCase):
     are the numbers web/test/track_lights_logic.mjs pins the TS copy to.
     """
 
-    MOVE = {"synth": "heartbeat", "zones": ["towerL", "towerR"],
+    MOVE: ClassVar[dict] = {"synth": "heartbeat", "zones": ["towerL", "towerR"],
             "alternate": True, "intensity": 0.6,
             "color": [1.0, 0.0, 0.0, 0.0], "ms": 110}
 
@@ -63,8 +64,8 @@ class TestStreamDynamicsParity(unittest.TestCase):
             # gap 0.25 s -> factor clamps at 0.7: ms floor(110*0.7+0.5) = 77.
             self.assertEqual({ms for *_r, ms in cues}, {77})
         # decay is not in the tuple; check it straight off the esphome cues.
-        cues = ge.pulse_cues(self.scene(), m)
-        self.assertEqual({c["decay"] for c in cues}, {0.8571})
+        cues = ge.pulse_cues(self.scene(), m)  # type: ignore[assignment]  # dict cues reuse the name
+        self.assertEqual({c["decay"] for c in cues}, {0.8571})  # type: ignore[call-overload]  # dict cues
 
     def test_slow_material_rings_longer(self) -> None:
         m = {"parity": {"heartbeat": [[i * 900, 0.5] for i in range(8)]}}
@@ -114,7 +115,7 @@ class TestSectionGatingParity(unittest.TestCase):
     them, and apply the same table gateMul() applies in the browser.
     """
 
-    GATED = {"synth": "onset_high", "zones": ["towerR"], "intensity": 0.72,
+    GATED: ClassVar[dict] = {"synth": "onset_high", "zones": ["towerR"], "intensity": 0.72,
              "color": [0.0, 1.0, 0.0, 0.0], "ms": 130}
     # hush until 5 s, chorus to 10 s, silence after. The predim cue must NOT
     # count as a boundary, and the three zones' cues dedupe to one gate.
@@ -133,7 +134,7 @@ class TestSectionGatingParity(unittest.TestCase):
         return dict(PULSE_SCENE, cues=self.CUES,
                     pulse=[dict(self.GATED, **over)])
 
-    M = {"parity": {"onset_high": [[1000, 0.8], [6000, 0.8], [11000, 0.8]],
+    M: ClassVar[dict] = {"parity": {"onset_high": [[1000, 0.8], [6000, 0.8], [11000, 0.8]],
                     "onset_mid": [[1000, 0.8], [6000, 0.8], [11000, 0.8]],
                     "onset_low": [[1000, 0.8], [6000, 0.8], [11000, 0.8]]}}
 

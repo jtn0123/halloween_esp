@@ -2,7 +2,7 @@ PY := .venv/bin/python
 ESPHOME := .venv/bin/esphome
 YAML := firmware/castle_flash.yaml
 
-.PHONY: test check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean
+.PHONY: test lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean
 
 help:
 	@echo "Halloween Castle"
@@ -28,7 +28,7 @@ help:
 setup:
 	/opt/homebrew/bin/python3.13 -m venv .venv
 	$(PY) -m pip install --quiet --upgrade pip
-	.venv/bin/pip install --quiet numpy scipy pyyaml esphome segno
+	.venv/bin/pip install --quiet -r requirements.txt -r requirements-dev.txt
 	@echo "ready. 'make build' next."
 
 audio:
@@ -85,7 +85,13 @@ bench-audio-logs:
 test:
 	@$(PY) -m unittest discover -s tests -q
 
-check: test
+# Lint + type-check the Python half; config lives in pyproject.toml. The TS
+# half's equivalent is the tsc line in `check`.
+lint:
+	@.venv/bin/ruff check tools tests
+	@.venv/bin/mypy tools tests
+
+check: test lint
 	@$(PY) tools/check_image.py castle-sd
 	@$(PY) tools/check_loc.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"

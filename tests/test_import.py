@@ -19,13 +19,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import analyze as ana          # noqa: E402
-import json
-import subprocess
-import manifest as mf          # noqa: E402
-import render_audio as ra      # noqa: E402
-import yaml                    # noqa: E402
-import import_track as it      # noqa: E402
+import json  # noqa: E402  (sys.path bootstrap above must run first)
+import subprocess  # noqa: E402
+
+import analyze as ana  # noqa: E402
+import import_track as it  # noqa: E402
+import manifest as mf  # noqa: E402
+import render_audio as ra  # noqa: E402
+import yaml  # noqa: E402
 from helpers import make_click_track  # noqa: E402
 
 
@@ -43,6 +44,9 @@ class TestTimeParsing(unittest.TestCase):
 class TestConvert(unittest.TestCase):
     """The imported file has to be something the device can actually play."""
 
+    tmp: Path
+    src: Path
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.tmp = Path(tempfile.mkdtemp())
@@ -54,9 +58,10 @@ class TestConvert(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def opts(self, **over: object) -> dict:
-        o = {"start": 0, "take": None, "fade_in": None, "fade_out": None,
-             "bitrate": 96, "channels": 1, "sample_rate": 44100,
-             "normalize": False, "gain_db": None}
+        o: dict[str, object] = {"start": 0, "take": None, "fade_in": None,
+                                "fade_out": None, "bitrate": 96, "channels": 1,
+                                "sample_rate": 44100, "normalize": False,
+                                "gain_db": None}
         o.update(over)
         return o
 
@@ -128,7 +133,9 @@ class TestConvert(unittest.TestCase):
         x = np.sign(np.sin(2 * np.pi * 220 * t)) * 0.999
         pcm = (np.clip(x, -1, 1) * 32767).astype("<i2")
         with wave.open(str(hot), "wb") as w:
-            w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(sr)
             w.writeframes(pcm.tobytes())
 
         # 1.3 is ~+2.3 dBFS: comfortably above what encoder ringing accounts
@@ -155,7 +162,9 @@ class TestConvert(unittest.TestCase):
         t = np.arange(int(3.0 * sr)) / sr
         x = np.sin(2 * np.pi * 220 * t) * 0.05          # -26 dBFS
         with wave.open(str(quiet), "wb") as w:
-            w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(sr)
             w.writeframes((x * 32767).astype("<i2").tobytes())
 
         out = self.tmp / "q.mp3"
@@ -262,6 +271,9 @@ class TestSceneBlock(unittest.TestCase):
 class TestRenderIntegration(unittest.TestCase):
     """End to end: an imported file becomes a scene with light cues on it."""
 
+    tmp: Path
+    track: Path
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.tmp = Path(tempfile.mkdtemp())
@@ -327,7 +339,8 @@ class TestExternalTools(unittest.TestCase):
 
     def test_ytdlp_understands_a_youtube_url(self) -> None:
         """No network: --simulate with a bad URL still proves URL parsing."""
-        r = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True)
+        r = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True,
+                           check=False)   # asserted on returncode below
         self.assertEqual(r.returncode, 0)
         self.assertRegex(r.stdout.strip(), r"^\d{4}\.\d{2}\.\d{2}")
 

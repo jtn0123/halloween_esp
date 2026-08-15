@@ -61,8 +61,8 @@ def emit_manifest_check(doc: dict) -> list[str]:
                   f" missing += missing.empty() ? \"{fname}\" : \",{fname}\";")
     sd += ["          castle_web::set_missing(missing);",
            "          if (!missing.empty())",
-           "            ESP_LOGW(\"castle\", \"MISSING scene audio: %s\","
-           " missing.c_str());",
-           "          else ESP_LOGI(\"castle\", \"manifest: all %d scene files"
-           f" present\", {len(doc['scenes'])});", ""]
+           ("            ESP_LOGW(\"castle\", \"MISSING scene audio: %s\","
+            " missing.c_str());"),
+           ("          else ESP_LOGI(\"castle\", \"manifest: all %d scene files"
+            f" present\", {len(doc['scenes'])});"), ""]
     return sd

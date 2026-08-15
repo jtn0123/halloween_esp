@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 
+
 def tempo_factor(times_s: list[float]) -> float:
     """#3: the stream's own pace, from the median gap between its hits.
 

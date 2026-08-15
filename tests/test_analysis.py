@@ -20,13 +20,17 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import analyze as ana          # noqa: E402
-import import_track as it      # noqa: E402
+import analyze as ana  # noqa: E402
+import import_track as it  # noqa: E402
 from helpers import make_click_track  # noqa: E402
 
 
 class TestOnsetDetection(unittest.TestCase):
     """The detector is the reason imported tracks get light at all."""
+
+    tmp: Path
+    wav: Path
+    beats: list[float]
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -71,7 +75,9 @@ class TestOnsetDetection(unittest.TestCase):
     def test_silence_yields_nothing(self) -> None:
         p = self.tmp / "silence.wav"
         with wave.open(str(p), "wb") as w:
-            w.setnchannels(1); w.setsampwidth(2); w.setframerate(ana.SR)
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(ana.SR)
             w.writeframes((np.zeros(ana.SR * 2)).astype("<i2").tobytes())
         self.assertEqual(ana.analyze_file(p), {},
                          "silence should produce no onsets, not phantom ones")
@@ -80,7 +86,9 @@ class TestOnsetDetection(unittest.TestCase):
         """A clip shorter than one analysis window must not throw."""
         p = self.tmp / "tiny.wav"
         with wave.open(str(p), "wb") as w:
-            w.setnchannels(1); w.setsampwidth(2); w.setframerate(ana.SR)
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(ana.SR)
             w.writeframes((np.zeros(64)).astype("<i2").tobytes())
         self.assertEqual(ana.analyze_file(p), {})
 
@@ -101,6 +109,9 @@ class TestEnvelopeFallback(unittest.TestCase):
     castle's material is atmospheric, so that gap mattered.
     """
 
+    tmp: Path
+    drone: Path
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.tmp = Path(tempfile.mkdtemp())
@@ -112,7 +123,9 @@ class TestEnvelopeFallback(unittest.TestCase):
         swell = 0.25 + 0.75 * (0.5 + 0.5 * np.sin(2 * np.pi * 0.12 * t))
         x = tone * swell * 0.6
         with wave.open(str(cls.drone), "wb") as w:
-            w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(sr)
             w.writeframes((np.clip(x, -1, 1) * 32767).astype("<i2").tobytes())
 
     @classmethod
@@ -151,13 +164,15 @@ class TestEnvelopeFallback(unittest.TestCase):
         """An envelope must glide. Beat decay would chop a swell into steps."""
         full = ana.analyze_full(ana.load_audio(self.drone))
         block = it.scene_block("drone", 12.0, full)
-        line = next(l for l in block.splitlines() if "level_low" in l)
+        line = next(ln for ln in block.splitlines() if "level_low" in ln)
         self.assertIn("decay: 0.9", line)
 
     def test_silence_produces_no_envelope(self) -> None:
         p = self.tmp / "silent.wav"
         with wave.open(str(p), "wb") as w:
-            w.setnchannels(1); w.setsampwidth(2); w.setframerate(ana.SR)
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(ana.SR)
             w.writeframes(np.zeros(ana.SR * 3).astype("<i2").tobytes())
         self.assertEqual(ana.analyze_full(ana.load_audio(p)), {})
 
@@ -260,6 +275,9 @@ class TestDensityFitting(unittest.TestCase):
 
 class TestStudioMedia(unittest.TestCase):
     """Probe and waveform, without standing up a server."""
+
+    tmp: Path
+    wav: Path
 
     @classmethod
     def setUpClass(cls) -> None:

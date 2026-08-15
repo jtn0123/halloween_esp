@@ -94,7 +94,7 @@ class TestRenderScene(unittest.TestCase):
         sc = self.scene(duration_ms=3000,
                         score=[{"t": 0.0, "synth": "heartbeat", "dur": 10.0}])
         _, marks = ra.render_scene(sc, CFG)
-        for _band, hits in marks.items():
+        for hits in marks.values():
             for ms, _v in hits:
                 self.assertLess(ms, 3000)
 

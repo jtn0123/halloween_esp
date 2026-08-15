@@ -49,7 +49,7 @@ async def run(host: str, cmd: str, args: list[str]) -> int:
 
         if cmd == "list":
             for e in sorted(entities, key=lambda x: (type(x).__name__, x.name)):
-                print(f"{type(x_ := e).__name__:22} {e.name}")
+                print(f"{type(e).__name__:22} {e.name}")
             return 0
 
         seconds = 8.0

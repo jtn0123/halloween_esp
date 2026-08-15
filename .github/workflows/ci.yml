@@ -22,8 +22,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
+      # ffmpeg: analyze.py decodes through it, and several tests exercise
+      # that path — without it the whole test_analysis module errors out.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: pip install pyyaml numpy scipy
+      - run: pip install -r requirements-dev.txt
+      - name: lint
+        run: ruff check tools tests
+      - name: type check
+        run: mypy tools tests
       - name: unit tests
         run: python -m unittest discover -s tests -q
       - name: LOC cap
@@ -57,17 +65,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - run: pip install "esphome==2026.7.4" pyyaml
+          python-version: "3.13"
+      # ffmpeg + numpy/scipy: the flash build embeds audio/*.mp3, which are
+      # gitignored — CI has to render them before validation or the config
+      # references files that do not exist.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: pip install "esphome==2026.7.4" pyyaml numpy scipy
+      - name: render scene audio
+        run: python tools/render_audio.py
       - name: generate
         run: python tools/gen_esphome.py
       - name: fake secrets            # validation needs names, not real keys
         run: |
           printf 'wifi_ssid: "ci"\nwifi_password: "ci-password"\n' \
             > firmware/secrets.yaml
+      # No `> /dev/null`: esphome prints its ERRORS to stdout, and piping it
+      # away turned every validation failure into a bare "exit code 2".
       - name: validate every buildable variant
         run: |
-          esphome config firmware/castle_flash.yaml > /dev/null
-          esphome config firmware/castle_sd.yaml > /dev/null
-          esphome config firmware/castle_sd_jewels.yaml > /dev/null
-          esphome config firmware/bench.yaml > /dev/null
+          for y in castle_flash castle_sd castle_sd_jewels bench; do
+            esphome config "firmware/$y.yaml" > "/tmp/$y.out" 2>&1 \
+              || { echo "== $y FAILED"; cat "/tmp/$y.out"; exit 1; }
+            echo "$y OK"
+          done

@@ -24,9 +24,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import synth as S              # noqa: E402
-from helpers import (          # noqa: E402
-    MARKER_SYNTHS, peak, render_synth, rms, window_peaks)
+import synth as S  # noqa: E402
+from helpers import MARKER_SYNTHS, peak, render_synth, rms, window_peaks  # noqa: E402
 
 
 class TestPlace(unittest.TestCase):
@@ -86,6 +85,8 @@ class TestPlace(unittest.TestCase):
 class TestMarkers(unittest.TestCase):
     """The (buf, marks) voices drive the lights. A marker outside the audio is
     a flash with nothing under it."""
+
+    rendered: dict[str, tuple]
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -187,6 +188,8 @@ class TestReverb(unittest.TestCase):
     """The stone hall runs over the whole mix, so it must not add energy it
     cannot account for, and must be a true bypass when it is switched off."""
 
+    dry: np.ndarray
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.dry, _ = render_synth("musicbox")
@@ -250,6 +253,9 @@ class TestReverb(unittest.TestCase):
 class TestLimiter(unittest.TestCase):
     """Two overlapping organ chords clip without it; it must also stay out of
     the way of anything already under the ceiling."""
+
+    loud: np.ndarray
+    quiet: np.ndarray
 
     @classmethod
     def setUpClass(cls) -> None:

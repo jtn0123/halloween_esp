@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import manifest as mf          # noqa: E402
-import studio                  # noqa: E402
+import manifest as mf  # noqa: E402
+import studio  # noqa: E402
 from helpers import make_click_track  # noqa: E402
 from studio_case import ServerCase, make_mp3  # noqa: E402
 
@@ -107,7 +107,7 @@ class TestReads(ServerCase):
         _, d = self.get_json("/api/tracks")
         mine = next((t for t in d["tracks"] if t["id"] == self.WAV_ID), None)
         self.assertIsNotNone(mine, "a WAV import never appeared in the list")
-        self.assertEqual(mine["ext"], "wav")
+        self.assertEqual(mine["ext"], "wav")  # type: ignore[index]  # narrowed by assertIsNotNone
         code, body = self.req("GET", f"/api/track/{self.WAV_ID}")
         self.assertEqual(code, 200)
         self.assertEqual(body, self.wav.read_bytes())

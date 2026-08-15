@@ -23,9 +23,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import import_track as it      # noqa: E402
-import manifest as mf          # noqa: E402
-import studio                  # noqa: E402
+import import_track as it  # noqa: E402
+import manifest as mf  # noqa: E402
+import studio  # noqa: E402
 from helpers import make_click_track  # noqa: E402
 
 CONVERT_OPTS = {"start": 0, "take": None, "fade_in": None, "fade_out": None,
@@ -62,6 +62,14 @@ class ServerCase(unittest.TestCase):
     # Endpoints read the real tracks/ directory, so the fixtures live there —
     # tagged with the pid so two runs at once cannot fight over a filename,
     # and so the cleanup can never touch a track that is not ours.
+    manifest_before: bytes | None
+    tracks_before: set[str]
+    wave: Path
+    wav: Path
+    srv: ThreadingHTTPServer
+    port: int
+    thread: threading.Thread
+
     PREFIX = f"_t_studio_{os.getpid()}_"
     WAVE_ID = PREFIX + "wave"
     WAV_ID = PREFIX + "lossless"

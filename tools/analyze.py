@@ -133,7 +133,7 @@ def _pick_peaks(env: np.ndarray, times: np.ndarray, min_gap: float,
     local = signal.medfilt(env, kernel_size=k)
     thresh = local + sensitivity * (env.std() + 1e-9)
 
-    hits = []
+    hits: list[tuple[float, float]] = []
     last = -1e9
     for i in range(1, len(env) - 1):
         if env[i] < thresh[i]:
@@ -240,7 +240,7 @@ def envelope(x: np.ndarray, sr: int = SR, hz: float = ENV_HZ,
         return {}
     f, t, Z = signal.stft(x, fs=sr, nperseg=WIN, noverlap=WIN - HOP)
     mag = np.abs(Z)
-    step = max(1, int(round((sr / HOP) / hz)))
+    step = max(1, round((sr / HOP) / hz))
 
     out: dict[str, list[tuple[float, float]]] = {}
     for name, lo, hi, _gap in bands:
@@ -285,16 +285,20 @@ def analyze_full(x: np.ndarray, sr: int = SR, sensitivity=1.1,
     third element: its pan. Level envelopes never do — a pan for "how loud is
     this band" is not a meaningful question.
     """
-    onsets = analyze(x, sr, sensitivity=sensitivity)
+    # The wider tuple[float, ...] spelling: with `stereo` every hit grows
+    # a pan third element, and the dict must hold both shapes.
+    onsets: dict[str, list[tuple[float, ...]]] = {
+        k: list(v) for k, v in analyze(x, sr, sensitivity=sensitivity).items()}
     if stereo is not None:
-        onsets = {name: annotate_pan(hits, stereo[0], stereo[1], sr)
+        onsets = {name: list(annotate_pan([(h[0], h[1]) for h in hits],
+                                          stereo[0], stereo[1], sr))
                   for name, hits in onsets.items()}
     thin = [name for name, _lo, _hi, _g in BANDS
             if len(onsets.get(name, [])) < BEATLESS]
     if not thin:
         return onsets
     levels = envelope(x, sr, bands=[b for b in BANDS if b[0] in thin])
-    return {**onsets, **levels}
+    return {**onsets, **{k: list(v) for k, v in levels.items()}}
 
 
 def main() -> int:

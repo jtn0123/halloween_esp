@@ -10,6 +10,8 @@ All musical material is original, written in the haunted-parlour idiom
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 from scipy import signal
 
@@ -25,6 +27,11 @@ RANKS = [
 STOPS = 0.42        # how much upper chorus is drawn
 TREM_HZ = 5.1
 TREM_DEPTH = 0.046  # multiplicative, not additive — see previewer notes
+
+
+# A voice returns its audio, optionally paired with (time, velocity)
+# markers for the beats it actually placed.
+Voice = np.ndarray | tuple[np.ndarray, list[tuple[float, float]]]
 
 
 def nt(semitones: float) -> float:
@@ -191,7 +198,7 @@ def shriek(rng: np.random.Generator) -> np.ndarray:
     return out * np.interp(t, [0, 0.04, dur], [0.0, 1.0, 0.0]) ** 1.3 * 0.34
 
 
-def heartbeat(dur: float, rng: np.random.Generator) -> np.ndarray:
+def heartbeat(dur: float, rng: np.random.Generator) -> Voice:
     """Lub-dub at ~48 bpm. The second thump is softer and higher, like the
     real thing; the pause after each pair is what makes it read as a heart
     and not a drum machine."""
@@ -243,7 +250,7 @@ def drone(dur: float) -> np.ndarray:
     return out * wander * fade * 0.16
 
 
-def whispers(dur: float, rng: np.random.Generator) -> np.ndarray:
+def whispers(dur: float, rng: np.random.Generator) -> Voice:
     """Sibilant bursts through wandering narrow formants — voices at the edge
     of intelligibility. Kept quiet on purpose: heard clearly, it's a noise
     effect; half-heard, the listener's brain writes the words."""
@@ -272,7 +279,7 @@ def whispers(dur: float, rng: np.random.Generator) -> np.ndarray:
     return buf * 0.5, words
 
 
-def toll() -> np.ndarray:
+def toll() -> Voice:
     dur = 5.0
     n = int(dur * SR)
     t = _t(n)
@@ -296,7 +303,7 @@ def _place(buf: np.ndarray, sig: np.ndarray, t0: float) -> None:
         buf[i:i + k] += sig[:k]
 
 
-def organ() -> np.ndarray:
+def organ() -> Voice:
     """Procession in D minor: i - bII - i - V7b9. 7.5 s chords, 0.9 s overlap."""
     chords = [
         (-19, (5, 8, 12)),      # i     D minor
@@ -314,7 +321,7 @@ def organ() -> np.ndarray:
     return buf, [(i * 6.6, 1.0) for i in range(len(chords))]
 
 
-def descent() -> np.ndarray:
+def descent() -> Voice:
     """32' pedal held throughout; upper voices walk down chromatically."""
     buf = np.zeros(int(27.5 * SR))
     _place(buf, pipe(nt(-19), 25.5, 0.090), 0.0)
@@ -328,7 +335,7 @@ def descent() -> np.ndarray:
     return buf
 
 
-def waltz() -> np.ndarray:
+def waltz() -> Voice:
     """8 bars, 3/4. Bass on the downbeat, triad on 2 and 3, music box on top."""
     B = 0.52
     prog = [(0, (0, 3, 7)), (0, (0, 3, 7)), (5, (0, 3, 7)), (7, (0, 4, 7)),
@@ -342,14 +349,14 @@ def waltz() -> np.ndarray:
         for k in (1, 2):
             for s in iv:
                 _place(buf, piano(nt(root + s - 12), 0.75, 0.07), bt + k * B)
-    for i, s in enumerate(mel):
-        if s is not None:
-            _place(buf, box(nt(s), 1.7, 0.15), i * B)
+    for i, note in enumerate(mel):
+        if note is not None:
+            _place(buf, box(nt(note), 1.7, 0.15), i * B)
     # Downbeats, bar 1 of each 4-bar phrase accented.
     return buf, [(bar * 3 * B, 1.0 if bar % 4 == 0 else 0.7) for bar in range(len(prog))]
 
 
-def musicbox() -> np.ndarray:
+def musicbox() -> Voice:
     buf = np.zeros(int(3.5 * SR))
     for i, s in enumerate((24, 22, 19, 15, 12)):
         _place(buf, box(nt(s), 1.9, 0.17), i * 0.30)
@@ -399,7 +406,7 @@ def limit(x: np.ndarray, ceiling: float = 0.89) -> np.ndarray:
     return np.clip(x * gain, -1.0, 1.0)
 
 
-SYNTHS = {
+SYNTHS: dict[str, Callable[..., Voice]] = {
     "wind": lambda rng, dur=30.0: wind(dur, rng),
     "heartbeat": lambda rng, dur=20.0: heartbeat(dur, rng),
     "drone": lambda rng, dur=20.0: drone(dur),

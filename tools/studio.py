@@ -36,13 +36,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-import manifest as mf  # noqa: E402
-import studio_media as sm  # noqa: E402
-import studio_jobs as sj  # noqa: E402
+import manifest as mf
+import studio_jobs as sj
+import studio_media as sm
+
 # Re-exported: TRACKS and these helpers are the track vocabulary, and
 # callers (including the tests) reach for them through this module.
-from studio_tracks import (  # noqa: E402,F401
-    AUDIO_EXT, MIME, TRACKS, parse_sensitivity, track_files, track_info,
+from studio_tracks import (
+    AUDIO_EXT,
+    MIME,
+    TRACKS,
+    parse_sensitivity,
+    track_files,
+    track_info,
     track_path,
 )
 
@@ -69,7 +75,7 @@ def _restart() -> None:
 
 
 def run(cmd: list[str]) -> tuple[bool, str]:
-    p = subprocess.run(cmd, capture_output=True, text=True)
+    p = subprocess.run(cmd, capture_output=True, text=True, check=False)
     return p.returncode == 0, (p.stdout + p.stderr)[-4000:]
 
 
@@ -341,7 +347,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "need id and yaml"}, 400)
         raw = SCENES.read_text()
         import re
-        pat = re.compile(rf"^  - id: {re.escape(sid)}\n(?:.*\n)*?(?=^  - id: |\Z)", re.M)
+        pat = re.compile(rf"^  - id: {re.escape(sid)}\n(?:.*\n)*?(?=^  - id: |\Z)", re.MULTILINE)
         replaced = bool(pat.search(raw))
         if replaced:
             raw = pat.sub(block + "\n\n", raw)
@@ -384,7 +390,7 @@ def scene_ids() -> list[str]:
     try:
         doc = yaml.safe_load(SCENES.read_text())
         return [s["id"] for s in doc.get("scenes", [])]
-    except Exception:                            # noqa: BLE001
+    except Exception:
         return []
 
 

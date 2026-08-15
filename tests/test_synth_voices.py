@@ -26,9 +26,14 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import synth as S              # noqa: E402
-from helpers import (          # noqa: E402
-    SYNTH_DUR, TONAL_SYNTHS, peak, render_synth, window_peaks)
+import synth as S  # noqa: E402
+from helpers import (  # noqa: E402
+    SYNTH_DUR,
+    TONAL_SYNTHS,
+    peak,
+    render_synth,
+    window_peaks,
+)
 
 
 def organ_carrier(f: float, dur: float) -> np.ndarray:
@@ -79,6 +84,10 @@ class TestFilters(unittest.TestCase):
     the response.
     """
 
+    t: np.ndarray
+    low: np.ndarray
+    high: np.ndarray
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.t = np.arange(2 * S.SR) / S.SR
@@ -125,6 +134,9 @@ class TestTremulant(unittest.TestCase):
     chord release. The fix was a separate multiplicative stage; these tests
     check the property that tells the two apart.
     """
+
+    out: np.ndarray
+    carrier: np.ndarray
 
     F = S.nt(-19)
     D = 7.5                      # exactly what organ() and descent() ask for
@@ -233,6 +245,8 @@ class TestEveryVoice(unittest.TestCase):
     """One render of each registry entry, checked for the things that make a
     file unusable: NaN, silence, a wrong length, or a peak that would slam the
     master limiter into pumping."""
+
+    rendered: dict[str, tuple]
 
     @classmethod
     def setUpClass(cls) -> None:

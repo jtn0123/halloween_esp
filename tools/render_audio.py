@@ -27,8 +27,8 @@ import numpy as np
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
-import analyze  # noqa: E402
-import synth  # noqa: E402
+import analyze
+import synth
 
 ROOT = Path(__file__).resolve().parent.parent
 SCENES = ROOT / "scenes" / "scenes.yaml"
@@ -98,9 +98,10 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
         if fn is None:
             raise SystemExit(f"scene {scene['id']}: unknown synth {name!r}")
         res = fn(rng, dur=ev["dur"]) if "dur" in ev else fn(rng)
-        sig, marks = res if isinstance(res, tuple) else (res, [])
+        sig, raw_marks = res if isinstance(res, tuple) else (res, [])
         # A synth may report bare times or (time, velocity) pairs.
-        marks = [m if isinstance(m, tuple) else (m, 1.0) for m in marks]
+        marks: list[tuple[float, float]] = [
+            m if isinstance(m, tuple) else (m, 1.0) for m in raw_marks]
         if "take" in ev:                      # trim a long piece to fit
             sig = sig[: int(ev["take"] * sr)]
             fade = min(len(sig), int(0.4 * sr))

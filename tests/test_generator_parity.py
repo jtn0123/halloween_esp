@@ -21,13 +21,14 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import gen_esphome as ge        # noqa: E402
-import gen_previewer as gp      # noqa: E402
-import yaml                     # noqa: E402
+import gen_esphome as ge  # noqa: E402
+import gen_previewer as gp  # noqa: E402
+import yaml  # noqa: E402
 
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 ZIDS = [z["id"] for z in ZONES]
@@ -108,7 +109,7 @@ class TestPulseParity(unittest.TestCase):
         Visually plausible on both sides in isolation, and only wrong when you
         compare the browser to the wall.
         """
-        s = dict(PULSE_SCENE, pulse=[PULSE_SCENE["pulse"][3]])
+        s = dict(PULSE_SCENE, pulse=[PULSE_SCENE["pulse"][3]])  # type: ignore[index]  # heterogeneous scene dict
         pairs = [(t, z) for t, z, *_ in esphome_strikes(s, MARKERS)]
         self.assertEqual(pairs, [(2600, ("towerL",)), (3537, ("towerR",)),
                                  (4100, ("towerL",)), (5000, ("towerR",))])
@@ -214,7 +215,7 @@ class TestGenPreviewerMain(unittest.TestCase):
                 "  /* @BUNDLE here */\n"
                 "</script>\n")
 
-    DOC = {"zones": ZONES, "scenes": [
+    DOC: ClassVar[dict] = {"zones": ZONES, "scenes": [
         {**PULSE_SCENE, "id": "one"},
         {"id": "two", "name": "Two", "kind": "ambient", "duration_ms": 100,
          "base": {"door": "candle"}},
@@ -242,7 +243,7 @@ class TestGenPreviewerMain(unittest.TestCase):
         gp.BUNDLE = gp.WEB / "dist" / "bundle.js"
         gp.BUNDLE.parent.mkdir(parents=True)
         gp.BUNDLE.write_text("/*js*/")
-        gp.subprocess = types.SimpleNamespace(
+        gp.subprocess = types.SimpleNamespace(  # type: ignore[assignment]  # test double
             run=lambda *a, **k: types.SimpleNamespace(
                 returncode=0, stdout="", stderr=""))
 
@@ -333,7 +334,7 @@ class TestPulseDynamicsParity(unittest.TestCase):
     meet at the same values.
     """
 
-    DYN = {"synth": "heartbeat", "zone": "door", "intensity": 0.6,
+    DYN: ClassVar[dict] = {"synth": "heartbeat", "zone": "door", "intensity": 0.6,
            "color": [1.0, 0.0, 0.0, 0.0], "color_hot": [1.0, 0.5, 0.0, 0.4],
            "pixels_by_vel": True, "ms": 110,
            "boost_at": 0.85, "boost_targets": ["towerL", "towerR"]}

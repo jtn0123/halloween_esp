@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import analyze as ana          # noqa: E402
-import codec_compare as cc     # noqa: E402
+import analyze as ana  # noqa: E402
+import codec_compare as cc  # noqa: E402
 from helpers import make_click_track  # noqa: E402
 
 OPTS = {"start": 0, "take": 3.0, "fade_in": None, "fade_out": None,
@@ -63,6 +63,11 @@ class TestSpectralDistance(unittest.TestCase):
 @unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
 class TestEncodeSet(unittest.TestCase):
     """The whole pass, against real encoders."""
+
+    tmp: Path
+    src: Path
+    rows: list[dict]
+    by: dict
 
     @classmethod
     def setUpClass(cls) -> None:

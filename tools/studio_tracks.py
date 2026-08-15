@@ -107,7 +107,7 @@ def track_info(p: Path) -> dict:
     try:
         x = ana.load_audio(p)
         marks = ana.analyze(x)
-    except Exception as e:                       # noqa: BLE001
+    except Exception as e:
         info["error"] = str(e)
         return info
     info["dur"] = round(len(x) / ana.SR, 2)

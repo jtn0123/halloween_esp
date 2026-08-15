@@ -22,8 +22,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-import gen_esphome as ge  # noqa: E402
-import gen_previewer as gp  # noqa: E402
+import gen_esphome as ge
+import gen_previewer as gp
 
 
 def norm(c: dict) -> dict:
