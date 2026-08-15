@@ -446,7 +446,12 @@ inline void start() {
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.server_port = 80;
   cfg.uri_match_fn = httpd_uri_match_wildcard;
-  cfg.max_uri_handlers = 20;
+  // MUST exceed the reg() count below (23 today). At 20, the LAST THREE
+  // registrations failed silently on the device — /sd/* (the very URL the
+  // media pipeline streams scene audio through), /site/* and / — so the
+  // cue desk 404'd and SD streaming was dead while every /api route worked.
+  // Found on the live board 2026-08-15; headroom so the next route is free.
+  cfg.max_uri_handlers = 32;
   cfg.stack_size = 6144;   // default 4 KB is too tight for FATFS + our buffers
   cfg.lru_purge_enable = true;
 
