@@ -707,7 +707,7 @@
                     <option value="1">mono &mdash; halves the size</option>
                   </select>
                 </label>
-                <label class="trk-chk"><input type="checkbox" id="trkNorm"> match loudness</label>
+                <label class="trk-chk"><input type="checkbox" id="trkNorm" checked> match loudness</label>
               </fieldset>
               <fieldset>
                 <legend>Lights</legend>
@@ -3907,7 +3907,7 @@ ${lines.join("\n")}
     const w = vels.slice(Math.max(0, i - 8), i);
     return w.length >= 3 && vels[i] >= w.reduce((a, v) => a + v, 0) / w.length + 0.25 && vels[i] >= 0.55;
   }
-  var PAN_DECISIVE = 0.25;
+  var PAN_DECISIVE = 0.1;
   function bandStrikes(band, hits, startSec, endSec, zoneOverride, gates = []) {
     const s = styleFor(band);
     const pinned = zoneOverride !== void 0 && zoneOverride !== BAND_BY_NAME[band].zone;

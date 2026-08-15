@@ -297,9 +297,11 @@ def main() -> int:
     g.add_argument("--sample-rate", type=int,
                    help="Hz (default 44100). 22050 halves the data rate and "
                         "is plenty for atmospheres")
-    g.add_argument("--normalize", action="store_true",
+    g.add_argument("--normalize", action=argparse.BooleanOptionalAction,
+                   default=None,
                    help="EBU R128 loudness match, so imports sit level with "
-                        "the generated scenes")
+                        "the generated scenes and each other (default on; "
+                        "--no-normalize keeps the source's own level)")
     g.add_argument("--gain-db", type=float, help="flat gain adjustment in dB")
 
     g = ap.add_argument_group("analysis")
@@ -349,7 +351,7 @@ def main() -> int:
         "bitrate": base.get("bitrate", BITRATE),
         "channels": base.get("channels", 2),
         "sample_rate": base.get("sample_rate", 44100),
-        "normalize": base.get("normalize", False),
+        "normalize": base.get("normalize", True),
         "gain_db": base.get("gain_db"),
         "sensitivity": base.get("sensitivity", 1.1),
         "format": base.get("format", "mp3"),
@@ -358,6 +360,10 @@ def main() -> int:
         v = getattr(args, k, None)
         if v not in (None, False):
             o[k] = v
+    # normalize is tri-state (None = keep the remembered/default value), and
+    # an explicit --no-normalize is a False the loop above would drop.
+    if args.normalize is not None:
+        o["normalize"] = args.normalize
 
     source = args.source or (prev or {}).get("source", "")
     if not source:
@@ -394,7 +400,10 @@ def main() -> int:
     x = ana.load_audio(out)
     dur = len(x) / ana.SR
     size = out.stat().st_size
-    marks = ana.analyze_full(x, sensitivity=o["sensitivity"])
+    # stereo= so import-time markers carry pan, same as the studio's live
+    # analysis — otherwise the pasteable scene block and the desk disagree.
+    marks = ana.analyze_full(x, sensitivity=o["sensitivity"],
+                             stereo=ana.load_stereo(out))
 
     mf.record(
         tid,

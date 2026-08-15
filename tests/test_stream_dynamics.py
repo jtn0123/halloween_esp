@@ -33,7 +33,7 @@ class TestStreamDynamicsParity(unittest.TestCase):
 
     def test_decisive_pan_overrides_round_robin(self) -> None:
         m = {"parity": {"heartbeat": [[0, 0.5, -0.6], [300, 0.5, 0.6],
-                                      [600, 0.5, 0.1], [900, 0.5]]}}
+                                      [600, 0.5, 0.05], [900, 0.5]]}}
         for side in ("esphome", "previewer"):
             zones = {t: z for t, z, *_ in dynamic_strikes(side, self.scene(), m)}
             self.assertEqual(zones[0], ("towerL",))     # panned hard left
@@ -41,12 +41,12 @@ class TestStreamDynamicsParity(unittest.TestCase):
             self.assertEqual(zones[600], ("towerL",))   # centre-ish: round-robin
             self.assertEqual(zones[900], ("towerR",))   # no pan at all: same
 
-    def test_pan_threshold_sits_at_a_quarter(self) -> None:
-        m = {"parity": {"heartbeat": [[0, 0.5, 0.25], [300, 0.5, -0.24]]}}
+    def test_pan_threshold_sits_at_a_tenth(self) -> None:
+        m = {"parity": {"heartbeat": [[0, 0.5, 0.10], [300, 0.5, -0.09]]}}
         for side in ("esphome", "previewer"):
             zones = {t: z for t, z, *_ in dynamic_strikes(side, self.scene(), m)}
-            self.assertEqual(zones[0], ("towerR",))     # 0.25 is decisive (>=)
-            self.assertEqual(zones[300], ("towerR",))   # -0.24 is not: rr i=1
+            self.assertEqual(zones[0], ("towerR",))     # 0.10 is decisive (>=)
+            self.assertEqual(zones[300], ("towerR",))   # -0.09 is not: rr i=1
 
     def test_pan_only_moves_between_the_towers(self) -> None:
         """A door-only stream must ignore pan — there is no left door."""

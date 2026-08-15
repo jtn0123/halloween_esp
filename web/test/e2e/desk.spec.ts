@@ -77,8 +77,10 @@ test("the import options summarise themselves while collapsed", async ({ page })
   await opts.locator("summary").click();
   await page.locator("#trkTake").fill("24");
   await page.locator("#trkStart").fill("0:30");
-  // "stereo" is in the hint because stereo is now the default channel count.
-  await expect(page.locator("#trkOptsHint")).toHaveText("— 24s from 0:30, MP3 96k, stereo");
+  // "stereo" and "loudness matched" are in the hint because both are now
+  // the defaults.
+  await expect(page.locator("#trkOptsHint"))
+    .toHaveText("— 24s from 0:30, MP3 96k, stereo, loudness matched");
 });
 
 test("bitrate is refused for the containers that have none", async ({ page }) => {
@@ -89,7 +91,8 @@ test("bitrate is refused for the containers that have none", async ({ page }) =>
   for (const fmt of ["wav", "flac"]) {
     await page.locator("#trkFormat").selectOption(fmt);
     await expect(bitrate).toBeDisabled();
-    await expect(page.locator("#trkOptsHint")).toHaveText(`— ${fmt.toUpperCase()}, stereo`);
+    await expect(page.locator("#trkOptsHint"))
+      .toHaveText(`— ${fmt.toUpperCase()}, stereo, loudness matched`);
   }
   await page.locator("#trkFormat").selectOption("mp3");
   await expect(bitrate).toBeEnabled();

@@ -149,8 +149,11 @@ export function isAccent(vels: readonly number[], i: number): boolean {
     && vels[i]! >= 0.55;
 }
 
-/** |pan| at or above this routes the hit to its own tower. */
-export const PAN_DECISIVE = 0.25;
+/** |pan| at or above this routes the hit to its own tower. Measured against
+ *  the real library (see pulse_dynamics.py): 0.25 almost never fired on real
+ *  mixes; 0.10 clears the analyzer's dead zone and catches what is audibly
+ *  on one side. */
+export const PAN_DECISIVE = 0.10;
 
 /**
  * Expand one band's onsets into strike cues, exactly as the Python pulse

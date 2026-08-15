@@ -8,7 +8,7 @@
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-14T19:32:32",
+    "imported": "2026-08-14T19:56:30",
     "notes": "",
     "onsets": {
       "onset_high": 892,
@@ -28,7 +28,7 @@
       "start": "0:00",
       "take": "246.3"
     },
-    "source": "https://youtu.be/FNvO9etT3Ec?list=PLxA687tYuMWiSFydrFrY21oxq4G9InAWX",
+    "source": "https://youtu.be/FNvO9etT3Ec",
     "title": "Halloween Songs - Ghostbusters Theme Song (Audio)"
   },
   "i_put_a_spell_on_you__in_the_sty": {
@@ -60,7 +60,7 @@
       "start": "0:00",
       "take": "246.3"
     },
-    "source": "https://youtu.be/Gtzc3NYtzGI?list=PLNBezEIa70v_H9y-M_ItcsYQF8Wssf9ax",
+    "source": "https://youtu.be/Gtzc3NYtzGI",
     "title": "I Put a Spell on You (In the Style of Hocus Pocus)"
   },
   "the_ballad_of_the_witches__road_": {
@@ -72,12 +72,12 @@
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-11T21:27:12",
+    "imported": "2026-08-14T19:54:27",
     "notes": "",
     "onsets": {
-      "onset_high": 125,
-      "onset_low": 253,
-      "onset_mid": 131
+      "onset_high": 149,
+      "onset_low": 267,
+      "onset_mid": 181
     },
     "opts": {
       "bitrate": 96,
@@ -86,7 +86,7 @@
       "fade_out": null,
       "format": "mp3",
       "gain_db": null,
-      "normalize": false,
+      "normalize": true,
       "sample_rate": 44100,
       "sensitivity": 1.1,
       "start": "0:00",
@@ -104,12 +104,12 @@
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-14T19:32:48",
+    "imported": "2026-08-14T19:54:42",
     "notes": "",
     "onsets": {
-      "onset_high": 292,
-      "onset_low": 466,
-      "onset_mid": 423
+      "onset_high": 296,
+      "onset_low": 497,
+      "onset_mid": 452
     },
     "opts": {
       "bitrate": 96,
@@ -118,7 +118,7 @@
       "fade_out": null,
       "format": "mp3",
       "gain_db": null,
-      "normalize": false,
+      "normalize": true,
       "sample_rate": 44100,
       "sensitivity": 1.1,
       "start": "0",
@@ -136,7 +136,7 @@
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-14T19:33:49",
+    "imported": "2026-08-14T19:54:46",
     "notes": "",
     "onsets": {
       "onset_high": 22,

@@ -45,7 +45,9 @@ const r3 = (x) => Math.round(x * 1000) / 1000;
 /* Velocities that sit ON the shared thresholds get extra visits: the
  * strict-vs-inclusive bugs live there. */
 const EDGE_VELS = [0.4, 0.55, 0.72, 0.85, 0.25, 1.0];
-const EDGE_PANS = [0.25, -0.25, 0.24, -0.24, 1.0, -1.0, 0.0];
+// Both sides of the decisive threshold (0.10), plus the old 0.25 edges so a
+// regression back to the original constant would still be caught.
+const EDGE_PANS = [0.1, -0.1, 0.09, -0.09, 0.25, -0.25, 1.0, -1.0, 0.0];
 
 function genHits() {
   const n = Math.floor(rnd() * 25); // 0..24, straddles the 8-hit tempo gate

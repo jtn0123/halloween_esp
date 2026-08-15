@@ -149,13 +149,13 @@ for (const [name, s] of Object.entries(BAND_STYLE)) {
 /* ── Stream dynamics: pan, tempo, accents — TestStreamDynamicsParity's
       numbers, digit for digit ── */
 {
-  const panned = [[0, 0.5, -0.6], [0.3, 0.5, 0.6], [0.6, 0.5, 0.1], [0.9, 0.5]];
+  const panned = [[0, 0.5, -0.6], [0.3, 0.5, 0.6], [0.6, 0.5, 0.05], [0.9, 0.5]];
   const s = bandStrikes("onset_mid", panned, 0, 10);
   eq(s.map(c => c.targets[0]), ["towerL", "towerR", "towerL", "towerR"],
      "decisive pans pick their tower; the rest keep the round-robin");
-  const edge = bandStrikes("onset_mid", [[0, 0.5, 0.25], [0.3, 0.5, -0.24]], 0, 10);
+  const edge = bandStrikes("onset_mid", [[0, 0.5, 0.1], [0.3, 0.5, -0.09]], 0, 10);
   eq(edge.map(c => c.targets[0]), ["towerR", "towerR"],
-     `pan ${PAN_DECISIVE} is decisive (>=), 0.24 is not`);
+     `pan ${PAN_DECISIVE} is decisive (>=), 0.09 is not`);
   const door = bandStrikes("onset_low", [[0, 0.5, -0.9]], 0, 10);
   eq(door[0].targets, ["door"], "a door-only stream ignores pan");
 }

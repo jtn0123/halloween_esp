@@ -59,8 +59,12 @@ def is_accent(vels: list[float], i: int) -> bool:
 
 
 # A pan this far off-centre overrides round-robin movement (#7). Below it,
-# stereo position is a mixing accident, not a statement.
-PAN_DECISIVE = 0.25
+# stereo position is a mixing accident, not a statement. 0.25 was the guess
+# before any stereo material existed; measured against the real library
+# (median |pan| 0.00-0.07, wide moments 0.10-0.61) it fired on ~0.3% of
+# hits. 0.10 sits above the analyzer's dead zone and the mixes' centre
+# wobble, and catches the moments that are audibly on one side.
+PAN_DECISIVE = 0.10
 
 # The section notes a generated scene's set cues carry (track_lights.ts
 # sectionCues). "predim" is deliberately absent: the dip is scenery, not a
