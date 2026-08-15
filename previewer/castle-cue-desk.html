@@ -703,8 +703,8 @@
                 </label>
                 <label>channels
                   <select id="trkCh">
-                    <option value="1">mono</option>
                     <option value="2">stereo</option>
+                    <option value="1">mono &mdash; halves the size</option>
                   </select>
                 </label>
                 <label class="trk-chk"><input type="checkbox" id="trkNorm"> match loudness</label>
@@ -3262,7 +3262,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       norm.checked = !!o.normalize;
       norm.dispatchEvent(new Event("change", { bubbles: true }));
     }
-    for (const [id, dflt] of [["trkCh", "1"], ["trkFormat", "mp3"]]) {
+    for (const [id, dflt] of [["trkCh", "2"], ["trkFormat", "mp3"]]) {
       const sel = document.getElementById(id);
       if (sel && sel.value === "") set(id, dflt);
     }

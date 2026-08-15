@@ -291,8 +291,9 @@ def main() -> int:
                         "opus need the matching decoder enabled in the "
                         "pipeline (see `format:` in castle.yaml)")
     g.add_argument("--channels", type=int, choices=(1, 2),
-                   help="1 = mono (default). 2 needs a second amp on the "
-                        "hardware; see PROJECT_NOTES §12.10")
+                   help="2 = stereo (default; the show runs two speaker "
+                        "chains). 1 = mono, half the size, for effects that "
+                        "have no side to be on")
     g.add_argument("--sample-rate", type=int,
                    help="Hz (default 44100). 22050 halves the data rate and "
                         "is plenty for atmospheres")
@@ -346,7 +347,7 @@ def main() -> int:
         "fade_in": base.get("fade_in"),
         "fade_out": base.get("fade_out"),
         "bitrate": base.get("bitrate", BITRATE),
-        "channels": base.get("channels", 1),
+        "channels": base.get("channels", 2),
         "sample_rate": base.get("sample_rate", 44100),
         "normalize": base.get("normalize", False),
         "gain_db": base.get("gain_db"),

@@ -3,21 +3,21 @@
     "audio": {
       "bitrate": 96,
       "bytes": 2956061,
-      "channels": 1,
+      "channels": 2,
       "duration": 246.26,
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-11T19:51:39",
+    "imported": "2026-08-14T19:32:32",
     "notes": "",
     "onsets": {
-      "onset_high": 899,
-      "onset_low": 679,
-      "onset_mid": 601
+      "onset_high": 892,
+      "onset_low": 678,
+      "onset_mid": 597
     },
     "opts": {
       "bitrate": 96,
-      "channels": 1,
+      "channels": 2,
       "fade_in": null,
       "fade_out": null,
       "format": "mp3",
@@ -99,21 +99,21 @@
     "audio": {
       "bitrate": 96,
       "bytes": 2321285,
-      "channels": 1,
+      "channels": 2,
       "duration": 193.36,
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-11T19:53:20",
+    "imported": "2026-08-14T19:32:48",
     "notes": "",
     "onsets": {
-      "onset_high": 299,
-      "onset_low": 473,
-      "onset_mid": 422
+      "onset_high": 292,
+      "onset_low": 466,
+      "onset_mid": 423
     },
     "opts": {
       "bitrate": 96,
-      "channels": 1,
+      "channels": 2,
       "fade_in": null,
       "fade_out": null,
       "format": "mp3",
@@ -131,21 +131,21 @@
     "audio": {
       "bitrate": 96,
       "bytes": 288750,
-      "channels": 1,
+      "channels": 2,
       "duration": 24.0,
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-11T19:42:29",
+    "imported": "2026-08-14T19:33:49",
     "notes": "",
     "onsets": {
       "onset_high": 22,
-      "onset_low": 62,
-      "onset_mid": 80
+      "onset_low": 60,
+      "onset_mid": 81
     },
     "opts": {
       "bitrate": 96,
-      "channels": 1,
+      "channels": 2,
       "fade_in": null,
       "fade_out": null,
       "format": "mp3",
@@ -156,7 +156,7 @@
       "start": "0:00",
       "take": "24.0"
     },
-    "source": "https://www.youtube.com/watch?v=tzJ6hzTpejs&list=RDtzJ6hzTpejs&start_radio=1",
+    "source": "https://www.youtube.com/watch?v=tzJ6hzTpejs",
     "title": "Wicked Winds Melody"
   }
 }

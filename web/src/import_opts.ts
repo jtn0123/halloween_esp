@@ -216,7 +216,7 @@ export function fillOptsFrom(t: TrackInfo): void {
   // A <select> handed a value it has no option for lands on nothing and
   // reads as "unset" (rounds 2–3). Snap those back to their first option.
   // trkRate is exempt: its default option's value IS "".
-  for (const [id, dflt] of [["trkCh", "1"], ["trkFormat", "mp3"]] as const) {
+  for (const [id, dflt] of [["trkCh", "2"], ["trkFormat", "mp3"]] as const) {
     const sel = document.getElementById(id) as HTMLSelectElement | null;
     if (sel && sel.value === "") set(id, dflt);
   }

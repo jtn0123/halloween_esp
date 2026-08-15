@@ -86,7 +86,8 @@ class TestImportFromFile(CliCase):
         assert entry is not None
         self.assertTrue(entry["source"].startswith("file:"))
         self.assertEqual(entry["notes"], "a note")
-        self.assertEqual(entry["audio"]["channels"], 1)
+        # Stereo is the default: the show runs two speaker chains.
+        self.assertEqual(entry["audio"]["channels"], 2)
 
     def test_id_is_derived_from_the_filename_when_omitted(self) -> None:
         self.run_cli(str(self.src))
