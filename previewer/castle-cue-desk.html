@@ -510,6 +510,37 @@
    light theme. This file is the overflow room; gen_previewer.py inlines it
    right after styles.css. */
 
+/* Stems panel (stems_view.ts) — three layer strips inside the clip editor. */
+.stems {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+}
+.stems-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.stems-head h3 { margin: 0; font-size: 13px; flex: 1; }
+.stems-seg button { border-radius: 0; }
+.stems-seg button:first-child { border-radius: 6px 0 0 6px; }
+.stems-seg button:last-child { border-radius: 0 6px 6px 0; }
+.stems-seg button[aria-pressed="true"] {
+  background: var(--accent, #7a5cff);
+  color: #fff;
+}
+.stems-note { margin: 6px 0; font-size: 12px; color: var(--ink-2, #a9a4bd); }
+.stems-note.err { color: var(--bad, #ff6a6a); }
+.stems-row { margin: 8px 0 2px; }
+.stems-row-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; margin-bottom: 4px;
+}
+.stems-dot { width: 9px; height: 9px; border-radius: 50%; }
+.stems-cap { color: var(--ink-2, #a9a4bd); }
+.stems-strip {
+  width: 100%; height: 56px; display: block;
+  background: var(--panel, #0d101c); border-radius: 6px; cursor: pointer;
+}
+
 #devicePanel {
   position: fixed;
   right: 12px;
@@ -1485,6 +1516,21 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         body: res.ok ? await res.json() : null
       };
     },
+    /** status too: a 404 means "not split yet", which is a state the panel
+     *  renders (a Split button), not an error it reports. */
+    stems: async (id) => {
+      const res = await fetch(
+        `/api/stems/${encodeURIComponent(id)}`,
+        { signal: AbortSignal.timeout(QUICK) }
+      );
+      try {
+        return { status: res.status, body: await res.json() };
+      } catch {
+        return { status: res.status, body: null };
+      }
+    },
+    /** Start a background Demucs split; poll `job()` for progress. */
+    stemsSplit: (id, force = false) => call("/api/stems", post({ id, force })),
     scene: (id, yaml) => call("/api/scene", post({ id, yaml }), ENCODE),
     compare: (req) => call("/api/compare", post(req), ENCODE),
     serverStop: () => call("/api/server/stop", { method: "POST" }),
@@ -3161,10 +3207,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       const running = this.st.running || (this.d.isExternalPlaying?.() ?? false);
       const icon = document.getElementById("playIcon");
       const label = document.getElementById("playLabel");
-      const btn = document.getElementById("play");
+      const btn2 = document.getElementById("play");
       if (icon) icon.innerHTML = running ? "&#10073;&#10073;" : "&#9654;";
       if (label) label.textContent = running ? "Pause" : "Play";
-      btn?.setAttribute("aria-pressed", String(running));
+      btn2?.setAttribute("aria-pressed", String(running));
     }
     /** Drag-to-seek on the scrub bar. */
     bindScrub(scrub2) {
@@ -4270,12 +4316,12 @@ ${lines.join("\n")}
       deps.onSelect?.(id);
     });
     T.list.addEventListener("click", async (e) => {
-      const btn = e.target?.closest("button");
-      if (!btn) return;
-      const id = btn.closest(".trk").dataset["id"] ?? "";
-      if (btn.dataset["act"] === "play") {
+      const btn2 = e.target?.closest("button");
+      if (!btn2) return;
+      const id = btn2.closest(".trk").dataset["id"] ?? "";
+      if (btn2.dataset["act"] === "play") {
         preview.toggle(id);
-      } else if (btn.dataset["act"] === "del") {
+      } else if (btn2.dataset["act"] === "del") {
         if (!confirm(`Delete track "${id}"? The file is removed from tracks/.`)) return;
         if (preview.playing() === id) preview.stop();
         try {
@@ -4289,16 +4335,16 @@ ${lines.join("\n")}
           deps.onSelect?.(null);
         }
         refresh();
-      } else if (btn.dataset["act"] === "refresh") {
+      } else if (btn2.dataset["act"] === "refresh") {
         if (T.selected !== id) {
           const t = T.tracks.find((x) => x.id === id);
           if (t) fillOptsFrom(t);
         }
         say(`Re-importing ${id} from its remembered source\u2026`);
         const o = opts();
-        btn.disabled = true;
-        const label = btn.textContent;
-        btn.textContent = "Working\u2026";
+        btn2.disabled = true;
+        const label = btn2.textContent;
+        btn2.textContent = "Working\u2026";
         try {
           const r = await api.refresh({
             id,
@@ -4317,13 +4363,13 @@ ${lines.join("\n")}
             say(`Re-imported ${id} \u2014 ${ch}.` + (ch === "mono" ? " Still mono: click its mono \u26A0 badge (or set CHANNELS to stereo in Options) and Re-import again." : ""));
           } else say(`Re-import failed \u2014 ${(r.log || r.error || "").slice(-400)}`, true);
         } finally {
-          btn.disabled = false;
-          if (label !== null) btn.textContent = label;
+          btn2.disabled = false;
+          if (label !== null) btn2.textContent = label;
         }
       } else {
-        const label = btn.textContent;
-        btn.disabled = true;
-        btn.textContent = "Working\u2026";
+        const label = btn2.textContent;
+        btn2.disabled = true;
+        btn2.textContent = "Working\u2026";
         try {
           const r = await api.tracks();
           const t = (r.tracks || []).find((x) => x.id === id);
@@ -4341,8 +4387,8 @@ ${lines.join("\n")}
           drawTracks(void 0);
           sayReload(`Scene "${id}" ${res.replaced ? "updated" : "added"} in scenes.yaml and the audio re-rendered.`);
         } finally {
-          btn.disabled = false;
-          if (label !== null) btn.textContent = label;
+          btn2.disabled = false;
+          if (label !== null) btn2.textContent = label;
         }
       }
     });
@@ -4400,8 +4446,8 @@ ${lines.join("\n")}
     byId("trkGet").addEventListener("click", async () => {
       const url = val("trkUrl");
       if (!url) return say("Paste a link first.", true);
-      const btn = byId("trkGet");
-      btn.disabled = true;
+      const btn2 = byId("trkGet");
+      btn2.disabled = true;
       say("Importing\u2026");
       try {
         let job = await api.importAsync(Object.assign({ url }, opts()));
@@ -4424,7 +4470,7 @@ ${lines.join("\n")}
       } catch (err) {
         say(`Import failed \u2014 ${String(err)}`, true);
       } finally {
-        btn.disabled = false;
+        btn2.disabled = false;
       }
     });
     const drop = byId("trkDrop");
@@ -4487,6 +4533,366 @@ ${lines.join("\n")}
     return {
       stopPreview: () => preview.stop(),
       previewing: () => preview.playing() !== null
+    };
+  }
+
+  // src/stems_view.ts
+  var LAYERS = [
+    {
+      key: "vocals",
+      label: "Voice",
+      ink: "#ff5fa2",
+      hint: "only when someone sings \u2014 the layer a door could sing with"
+    },
+    {
+      key: "backing",
+      label: "Background",
+      ink: "#5f9fff",
+      hint: "drums and synths \u2014 the rhythm the towers keep"
+    },
+    {
+      key: "combined",
+      label: "Combined",
+      ink: "#ffb75f",
+      hint: "the original file, untouched \u2014 what the castle plays"
+    }
+  ];
+  var MISS_WINDOW = 0.09;
+  var btn = (label) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    return b;
+  };
+  function missedTimes(chan, mono, band) {
+    const seen = (mono?.onsets[band] ?? []).map((h) => h[0]).sort((a, z) => a - z);
+    const out = [];
+    for (const [t] of chan.onsets[band] ?? []) {
+      if (!seen.some((s) => Math.abs(s - t) <= MISS_WINDOW)) out.push(t);
+    }
+    return out;
+  }
+  function createStemsView(deps) {
+    const el = document.createElement("section");
+    el.className = "stems";
+    el.hidden = true;
+    const head = document.createElement("div");
+    head.className = "stems-head";
+    const title = document.createElement("h3");
+    title.textContent = "Voice / background split";
+    const split = btn("Split voices");
+    split.title = "Run Demucs on this track (~30 s on this Mac). The castle keeps playing the combined file; only the light analysis changes.";
+    const seg = document.createElement("div");
+    seg.className = "stems-seg";
+    seg.setAttribute("role", "group");
+    seg.setAttribute("aria-label", "analysis channel");
+    const segBtns = {
+      left: btn("Left"),
+      both: btn("Both"),
+      right: btn("Right")
+    };
+    segBtns.both.title = "The mono downmix \u2014 exactly what the pipeline analyses today.";
+    segBtns.left.title = "This side only, in your ears and in the strips. White ticks are hits the mono analysis never saw.";
+    segBtns.right.title = segBtns.left.title.replace("This side", "The right side");
+    seg.append(segBtns.left, segBtns.both, segBtns.right);
+    head.append(title, seg, split);
+    const note = document.createElement("p");
+    note.className = "stems-note";
+    const rows = {};
+    const body = document.createElement("div");
+    for (const L of LAYERS) {
+      const row = document.createElement("div");
+      row.className = "stems-row";
+      const h = document.createElement("div");
+      h.className = "stems-row-head";
+      const dot = document.createElement("span");
+      dot.className = "stems-dot";
+      dot.style.background = L.ink;
+      const name = document.createElement("b");
+      name.textContent = L.label;
+      const cap = document.createElement("span");
+      cap.className = "stems-cap";
+      const play2 = btn("Play");
+      h.append(dot, name, play2, cap);
+      const cv = document.createElement("canvas");
+      cv.className = "stems-strip";
+      cv.title = L.hint;
+      const audio = new Audio();
+      audio.preload = "none";
+      audio.muted = true;
+      row.append(h, cv);
+      body.append(row);
+      rows[L.key] = { row, play: play2, cv, cap, audio };
+    }
+    el.append(head, note, body);
+    let trackId = null;
+    let data = null;
+    let channel = "both";
+    let playing = null;
+    let raf = 0;
+    let token = 0;
+    const say = (msg, err = false) => {
+      note.textContent = msg;
+      note.classList.toggle("err", err);
+    };
+    let ctx = null;
+    const gains = {};
+    function ensureGraph() {
+      if (ctx) return;
+      ctx = new AudioContext();
+      for (const L of LAYERS) {
+        const a = rows[L.key].audio;
+        const src = ctx.createMediaElementSource(a);
+        const sp = ctx.createChannelSplitter(2);
+        const mg = ctx.createChannelMerger(2);
+        const g = [0, 0, 0, 0].map(() => ctx.createGain());
+        src.connect(sp);
+        sp.connect(g[0], 0);
+        g[0].connect(mg, 0, 0);
+        sp.connect(g[1], 0);
+        g[1].connect(mg, 0, 1);
+        sp.connect(g[2], 1);
+        g[2].connect(mg, 0, 0);
+        sp.connect(g[3], 1);
+        g[3].connect(mg, 0, 1);
+        mg.connect(ctx.destination);
+        gains[L.key] = g;
+      }
+      applyRouting();
+    }
+    function applyRouting() {
+      const on = {
+        both: [1, 0, 0, 1],
+        left: [1, 1, 0, 0],
+        right: [0, 0, 1, 1]
+      };
+      for (const g of Object.values(gains))
+        on[channel].forEach((v, i) => {
+          g[i].gain.value = v;
+        });
+    }
+    function draw(layer) {
+      const r = rows[layer];
+      const d = data?.layers?.[layer]?.[channel];
+      const mono = data?.layers?.[layer]?.both;
+      const dur = data?.duration ?? 1;
+      const dpr = window.devicePixelRatio || 1;
+      const w = r.cv.clientWidth, h = r.cv.clientHeight;
+      if (!w) return;
+      r.cv.width = w * dpr;
+      r.cv.height = h * dpr;
+      const g = r.cv.getContext("2d");
+      if (!g || !d) return;
+      g.scale(dpr, dpr);
+      const peakH = h - 14;
+      g.fillStyle = LAYERS.find((l) => l.key === layer).ink;
+      g.globalAlpha = 0.85;
+      const n = d.peaks.length || 1;
+      for (let i = 0; i < n; i++) {
+        const bh = Math.max(1, (d.peaks[i] ?? 0) * peakH);
+        g.fillRect(i / n * w, (peakH - bh) / 2 + 2, Math.max(1, w / n - 0.4), bh);
+      }
+      g.globalAlpha = 1;
+      let missed = 0;
+      for (const b of BANDS) {
+        g.fillStyle = b.ink;
+        for (const [t] of d.onsets[b.name] ?? [])
+          g.fillRect(t / dur * w, h - 11, 1.5, 9);
+        if (channel !== "both") {
+          g.fillStyle = "#fff";
+          for (const t of missedTimes(d, mono, b.name)) {
+            g.fillRect(t / dur * w, 1, 1.5, 8);
+            missed++;
+          }
+        }
+      }
+      const total = Object.values(d.onsets).reduce((s, v) => s + v.length, 0);
+      r.cap.textContent = channel === "both" ? `${total} hits \u2014 the pipeline's own picture` : `${total} hits \xB7 ${missed === 0 ? "all seen by mono analysis" : `${missed} the mono analysis missed`}`;
+      if (playing === layer) {
+        g.fillStyle = "#fff";
+        g.fillRect(rows[layer].audio.currentTime / dur * w, 0, 1.5, h);
+      }
+    }
+    const drawAll = () => {
+      for (const L of LAYERS) draw(L.key);
+    };
+    function frame2() {
+      if (!playing) return;
+      draw(playing);
+      raf = requestAnimationFrame(frame2);
+    }
+    function stop() {
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      for (const L of LAYERS) {
+        rows[L.key].audio.pause();
+        rows[L.key].audio.muted = true;
+        rows[L.key].play.textContent = "Play";
+      }
+      const was = playing;
+      playing = null;
+      if (was) draw(was);
+    }
+    function play(layer) {
+      if (playing === layer) {
+        stop();
+        return;
+      }
+      const from = playing ? rows[playing].audio.currentTime : 0;
+      stop();
+      deps.onPlay();
+      ensureGraph();
+      void ctx?.resume();
+      const a = rows[layer].audio;
+      if (from) {
+        try {
+          a.currentTime = from;
+        } catch {
+        }
+      }
+      a.muted = false;
+      a.volume = 0.8;
+      playing = layer;
+      void a.play().catch(() => {
+        stop();
+        say("Could not play that stem.", true);
+      });
+      rows[layer].play.textContent = "Stop";
+      raf = requestAnimationFrame(frame2);
+    }
+    for (const L of LAYERS) {
+      rows[L.key].play.addEventListener("click", () => play(L.key));
+      rows[L.key].audio.addEventListener("ended", stop);
+      rows[L.key].cv.addEventListener("click", (e) => {
+        const dur = data?.duration;
+        if (!dur) return;
+        const frac = e.offsetX / rows[L.key].cv.clientWidth;
+        const target = playing ?? L.key;
+        try {
+          rows[target].audio.currentTime = frac * dur;
+        } catch {
+        }
+        if (!playing) play(target);
+      });
+    }
+    function setChannel(c) {
+      channel = c;
+      for (const [k, b] of Object.entries(segBtns))
+        b.setAttribute("aria-pressed", String(k === c));
+      applyRouting();
+      drawAll();
+    }
+    for (const [k, b] of Object.entries(segBtns))
+      b.addEventListener("click", () => setChannel(k));
+    function ready(d) {
+      data = d;
+      body.hidden = false;
+      seg.hidden = false;
+      split.textContent = "Re-split";
+      split.disabled = false;
+      const id = trackId ?? "";
+      rows.vocals.audio.src = `/api/stem/${encodeURIComponent(id)}/vocals`;
+      rows.backing.audio.src = `/api/stem/${encodeURIComponent(id)}/backing`;
+      rows.combined.audio.src = `/api/track/${encodeURIComponent(id)}`;
+      say(d.stale ? "The track was re-imported after this split \u2014 the strips describe the OLD audio. Re-split to catch up." : "Both = what the pipeline hears. Left/Right solo a side; white ticks are hits the mono analysis never saw.", d.stale === true);
+      setChannel(channel);
+    }
+    function empty(msg) {
+      data = null;
+      body.hidden = true;
+      seg.hidden = true;
+      split.textContent = "Split voices";
+      split.disabled = false;
+      say(msg);
+    }
+    async function poll(jobId) {
+      const mine = token;
+      for (let i = 0; i < 400; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        if (mine !== token) return;
+        let job;
+        try {
+          job = await api.job(jobId);
+        } catch {
+          continue;
+        }
+        if (!job.done) {
+          const last = job.log[job.log.length - 1] ?? "";
+          say(`Splitting voices \u2014 Demucs running\u2026 ${last.slice(0, 60)}`);
+          continue;
+        }
+        if (job.phase === "failed") {
+          empty("Split failed \u2014 " + (job.error || "see the studio log."));
+          note.classList.add("err");
+          return;
+        }
+        await load();
+        return;
+      }
+      empty("Split is taking too long \u2014 check the studio terminal.");
+    }
+    split.addEventListener("click", () => {
+      const id = trackId;
+      if (!id) return;
+      void (async () => {
+        split.disabled = true;
+        say("Splitting voices \u2014 Demucs running\u2026");
+        try {
+          const job = await api.stemsSplit(id, data !== null);
+          if (!job.id) {
+            empty(job.error || "The studio refused the split.");
+            return;
+          }
+          void poll(job.id);
+        } catch (err) {
+          empty(`Could not reach the studio \u2014 ${String(err)}`);
+        }
+      })();
+    });
+    async function load() {
+      const id = trackId;
+      if (!id) return;
+      const mine = ++token;
+      try {
+        const r = await api.stems(id);
+        if (mine !== token) return;
+        if (r.status === 404 || !r.body?.ok) {
+          empty("Not split yet. Splitting shows which hits are sung and which side they live on \u2014 the castle still plays the combined file.");
+          return;
+        }
+        ready(r.body);
+      } catch (err) {
+        if (mine === token) empty(`Could not reach the studio \u2014 ${String(err)}`);
+      }
+    }
+    const onResize = () => drawAll();
+    window.addEventListener("resize", onResize);
+    return {
+      el,
+      show(id) {
+        token++;
+        stop();
+        trackId = id;
+        el.hidden = id === null;
+        if (!id) {
+          data = null;
+          return;
+        }
+        body.hidden = true;
+        seg.hidden = true;
+        say("Checking for stems\u2026");
+        void load();
+      },
+      stop,
+      destroy() {
+        token++;
+        stop();
+        window.removeEventListener("resize", onResize);
+        void ctx?.close();
+        el.remove();
+      }
     };
   }
 
@@ -5027,7 +5433,8 @@ ${lines.join("\n")}
     const { wrap, title, row, play, snap, readout, note, mirrorDots } = buildWaveChrome();
     note.title = BAND_HELP;
     const lab = createStyleLab(() => sync());
-    wrap.append(title, view.el, row, deps.bands.el, lab.el, note);
+    const stems = createStemsView({ onPlay: () => stop() });
+    wrap.append(title, view.el, row, deps.bands.el, lab.el, stems.el, note);
     if (deps.codecs) wrap.append(deps.codecs.el);
     host.append(wrap);
     const say = (msg, err = false) => {
@@ -5216,6 +5623,7 @@ ${lines.join("\n")}
     }
     function start() {
       if (!clip || !view.data) return;
+      stems.stop();
       playing = true;
       audio.muted = false;
       audio.volume = 0.6;
@@ -5293,6 +5701,7 @@ ${lines.join("\n")}
         sync();
         if (id) audio.src = `/api/track/${encodeURIComponent(id)}`;
         else audio.removeAttribute("src");
+        stems.show(id);
         void load();
       },
       reanalyse,
@@ -5310,6 +5719,7 @@ ${lines.join("\n")}
       },
       destroy() {
         stop();
+        stems.destroy();
         window.clearTimeout(sensTimer);
         token++;
         view.destroy();

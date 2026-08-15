@@ -17,6 +17,7 @@ import { api } from "./api.js";
 import { BAND_HELP, BANDS, bandSummary } from "./bands.js";
 import type { BandEditor } from "./band_editor.js";
 import type { CodecAb } from "./codec_ab.js";
+import { createStemsView } from "./stems_view.js";
 import { createStyleLab } from "./style_lab.js";
 import { sections } from "./track_lights.js";
 import { EDGE_SLOP, WaveView, type WaveClip, type WaveData } from "./waveform_view.js";
@@ -91,7 +92,9 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     buildWaveChrome();
   note.title = BAND_HELP;
   const lab = createStyleLab(() => sync());
-  wrap.append(title, view.el, row, deps.bands.el, lab.el, note);
+  // Two things can make noise here; each silences the other on play.
+  const stems = createStemsView({ onPlay: () => stop() });
+  wrap.append(title, view.el, row, deps.bands.el, lab.el, stems.el, note);
   if (deps.codecs) wrap.append(deps.codecs.el);
   host.append(wrap);
 
@@ -336,6 +339,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
 
   function start(): void {
     if (!clip || !view.data) return;
+    stems.stop();
     playing = true;
     audio.muted = false;               // the button press is the consent
     audio.volume = 0.6;                // modest — this is a check, not a mix
@@ -443,6 +447,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       // import landed in, so a WAV or FLAC track auditions like any other.
       if (id) audio.src = `/api/track/${encodeURIComponent(id)}`;
       else audio.removeAttribute("src");
+      stems.show(id);
       void load();
     },
     reanalyse,
@@ -461,6 +466,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     },
     destroy(): void {
       stop();
+      stems.destroy();
       window.clearTimeout(sensTimer);
       token++;                         // orphan any analysis still in flight
       view.destroy();

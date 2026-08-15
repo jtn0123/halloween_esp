@@ -42,6 +42,28 @@ export interface WaveformResponse {
   env?: [number, number][];
 }
 
+/** One (layer, channel) picture from the stems analysis. */
+export interface StemChannel {
+  peaks: number[];
+  /** Raw peak level of the channel before per-channel normalisation —
+   *  how the two sides genuinely compare in loudness. */
+  level: number;
+  onsets: Record<string, [number, number][]>;
+}
+
+/** /api/stems/<id>: three layers × three channels, plus freshness. */
+export interface StemsResponse {
+  ok: boolean;
+  error?: string;
+  id?: string;
+  duration?: number;
+  /** vocals | backing | combined  →  left | right | both */
+  layers?: Record<string, Record<string, StemChannel>>;
+  /** True when the track was re-imported after the split — the stems on
+   *  disk describe audio that no longer exists. */
+  stale?: boolean;
+}
+
 export interface CompareResponse {
   ok: boolean; error?: string; reference?: string; codecs?: CodecRow[];
 }
@@ -127,6 +149,22 @@ export const api = {
       body: res.ok ? await res.json() as WaveformResponse : null,
     };
   },
+
+  /** status too: a 404 means "not split yet", which is a state the panel
+   *  renders (a Split button), not an error it reports. */
+  stems: async (id: string):
+      Promise<{ status: number; body: StemsResponse | null }> => {
+    const res = await fetch(`/api/stems/${encodeURIComponent(id)}`,
+      { signal: AbortSignal.timeout(QUICK) });
+    try {
+      return { status: res.status, body: await res.json() as StemsResponse };
+    } catch {
+      return { status: res.status, body: null };
+    }
+  },
+  /** Start a background Demucs split; poll `job()` for progress. */
+  stemsSplit: (id: string, force = false): Promise<JobResponse> =>
+    call("/api/stems", post({ id, force })),
 
   scene: (id: string, yaml: string): Promise<ActionResponse> =>
     call("/api/scene", post({ id, yaml }), ENCODE),

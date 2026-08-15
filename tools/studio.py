@@ -38,6 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import manifest as mf
+import stems as st
 import studio_http as sh
 import studio_jobs as sj
 import studio_media as sm
@@ -143,6 +144,20 @@ class Handler(sh.JsonHandler):
             if p is None:
                 return self.send_json({"error": "no such track"}, 404)
             return self.send_json(sm.waveform(p, sensitivity=sens))
+        if path.startswith("/api/stems/"):
+            # Cached nine-way analysis (layer x channel), written by the
+            # split job — never derived inside a GET, which would stall the
+            # panel for the length of nine STFTs.
+            out = st.analysis(Path(path).name)
+            return self.send_json(out, 200 if out.get("ok") else 404)
+        if path.startswith("/api/stem/"):
+            # /api/stem/<tid>/<layer> — the stem mp3s; `combined` has no file
+            # here because the original track already streams via /api/track.
+            parts = path.split("/")
+            p = st.stem_file(parts[-2], parts[-1]) if len(parts) >= 5 else None
+            if p is None:
+                return self.send_json({"error": "no such stem"}, 404)
+            return self.send_range(p, "audio/mpeg")
         if path.startswith("/api/compare/"):
             # /api/compare/<token>/<codec>
             parts = path.split("/")
@@ -198,6 +213,18 @@ class Handler(sh.JsonHandler):
                     args += [f"--{k.replace('_', '-')}", str(v)]
             if req.get("normalize"):
                 args.append("--normalize")
+            return self.send_json(_runner.start(args).as_dict())
+        if path == "/api/stems":
+            # Demucs split as a background job — ~25 s on the GPU is far too
+            # long to hold an HTTP request open, and the JobRunner already
+            # knows how to babysit a child process.
+            req = self.json_body(raw)
+            tid = safe_id(req.get("id") or "")
+            if tid is None or track_path(tid) is None:
+                return self.send_json({"error": "no such track"}, 400)
+            args = [PY, str(ROOT / "tools" / "stems.py"), tid]
+            if req.get("force"):
+                args.append("--force")
             return self.send_json(_runner.start(args).as_dict())
         if path == "/api/refresh":
             # Rebuild a track from its remembered source, with any option
