@@ -40,12 +40,12 @@
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-12T21:14:39",
+    "imported": "2026-08-14T20:08:42",
     "notes": "",
     "onsets": {
-      "onset_high": 225,
-      "onset_low": 289,
-      "onset_mid": 256
+      "onset_high": 259,
+      "onset_low": 317,
+      "onset_mid": 288
     },
     "opts": {
       "bitrate": 96,
@@ -54,7 +54,7 @@
       "fade_out": null,
       "format": "mp3",
       "gain_db": null,
-      "normalize": false,
+      "normalize": true,
       "sample_rate": 44100,
       "sensitivity": 1.1,
       "start": "0:00",
