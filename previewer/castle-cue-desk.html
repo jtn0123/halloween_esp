@@ -3526,6 +3526,76 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     };
   }
 
+  // src/band_style.ts
+  var BAND_STYLE = {
+    /* Intensity and decay are tuned against real screenshots: at the first
+         pass (intensity ~0.6, decay 0.86-0.94) the median hit landed at 0.25
+         over a lit amber base and was gone in ~200 ms — the colours were firing
+         and invisible. Hits must READ, or the whole exercise is three lamps.
+    
+         The colour cycles are triads a few hue-steps apart, so a run of hits in
+         one band walks through related-but-distinct colours instead of pulsing
+         one. Every entry is saturated (one channel low or zero, W ≤ 0.12). */
+    onset_low: {
+      zones: ["door"],
+      alternate: false,
+      intensity: 0.85,
+      decay: 0.9,
+      ms: 140,
+      colors: [
+        [1, 0.04, 0, 0],
+        // deep red
+        [1, 0.18, 0, 0],
+        // vermilion
+        [0.85, 0, 0.25, 0]
+      ],
+      // crimson-magenta
+      colorHot: [1, 0.45, 0.02, 0.1],
+      // hot amber, not white
+      pixelsByVel: true,
+      boostAt: 0.85,
+      boostTargets: ["towerL", "towerR"]
+    },
+    onset_mid: {
+      zones: ["towerL", "towerR"],
+      alternate: true,
+      intensity: 0.8,
+      decay: 0.945,
+      ms: 160,
+      colors: [
+        [0.55, 0, 1, 0],
+        // violet
+        [1, 0, 0.75, 0],
+        // magenta
+        [0.25, 0.12, 1, 0]
+      ],
+      // indigo
+      colorHot: [1, 0.15, 0.85, 0.12],
+      // hot pink, stays pink
+      pixelsByVel: true,
+      attackMs: 90
+      // voices swell in; drums still slam
+    },
+    onset_high: {
+      zones: ["towerR", "door", "towerL"],
+      alternate: true,
+      intensity: 0.72,
+      decay: 0.95,
+      ms: 130,
+      colors: [
+        [0.05, 1, 0.35, 0],
+        // emerald
+        [0, 0.85, 1, 0],
+        // cyan
+        [0.65, 1, 0, 0]
+      ],
+      // chartreuse
+      colorHot: [0.25, 1, 0.7, 0.15],
+      // hot spring-green
+      pixels: "scatter"
+    }
+  };
+
   // src/track_style.ts
   var flavors = { drift: false, takeover: false, swells: false };
   var setFlavor = (name, on) => {
@@ -3650,12 +3720,20 @@ ${lines.join("\n")}
   var HYST = 0.08;
   var FLAT_RANGE = 0.15;
   function envAt(env2, sec) {
+    let lo = 0, hi = env2.length;
+    while (lo < hi) {
+      const m = lo + hi >> 1;
+      if (env2[m][0] < sec) lo = m + 1;
+      else hi = m;
+    }
     let best = 0, bestDt = 0.5;
-    for (const [t, v] of env2) {
-      const dt = Math.abs(t - sec);
+    for (const j of [lo - 1, lo]) {
+      const p = env2[j];
+      if (!p) continue;
+      const dt = Math.abs(p[0] - sec);
       if (dt < bestDt) {
         bestDt = dt;
-        best = v;
+        best = p[1];
       }
     }
     return best;
@@ -3869,74 +3947,6 @@ ${lines.join("\n")}
   }
 
   // src/track_lights.ts
-  var BAND_STYLE = {
-    /* Intensity and decay are tuned against real screenshots: at the first
-         pass (intensity ~0.6, decay 0.86-0.94) the median hit landed at 0.25
-         over a lit amber base and was gone in ~200 ms — the colours were firing
-         and invisible. Hits must READ, or the whole exercise is three lamps.
-    
-         The colour cycles are triads a few hue-steps apart, so a run of hits in
-         one band walks through related-but-distinct colours instead of pulsing
-         one. Every entry is saturated (one channel low or zero, W ≤ 0.12). */
-    onset_low: {
-      zones: ["door"],
-      alternate: false,
-      intensity: 0.85,
-      decay: 0.9,
-      ms: 140,
-      colors: [
-        [1, 0.04, 0, 0],
-        // deep red
-        [1, 0.18, 0, 0],
-        // vermilion
-        [0.85, 0, 0.25, 0]
-      ],
-      // crimson-magenta
-      colorHot: [1, 0.45, 0.02, 0.1],
-      // hot amber, not white
-      pixelsByVel: true,
-      boostAt: 0.85,
-      boostTargets: ["towerL", "towerR"]
-    },
-    onset_mid: {
-      zones: ["towerL", "towerR"],
-      alternate: true,
-      intensity: 0.8,
-      decay: 0.945,
-      ms: 160,
-      colors: [
-        [0.55, 0, 1, 0],
-        // violet
-        [1, 0, 0.75, 0],
-        // magenta
-        [0.25, 0.12, 1, 0]
-      ],
-      // indigo
-      colorHot: [1, 0.15, 0.85, 0.12],
-      // hot pink, stays pink
-      pixelsByVel: true,
-      attackMs: 90
-      // voices swell in; drums still slam
-    },
-    onset_high: {
-      zones: ["towerR", "door", "towerL"],
-      alternate: true,
-      intensity: 0.72,
-      decay: 0.95,
-      ms: 130,
-      colors: [
-        [0.05, 1, 0.35, 0],
-        // emerald
-        [0, 0.85, 1, 0],
-        // cyan
-        [0.65, 1, 0, 0]
-      ],
-      // chartreuse
-      colorHot: [0.25, 1, 0.7, 0.15],
-      // hot spring-green
-      pixels: "scatter"
-    }
-  };
   var blendColor = (base, hot, vel) => !hot ? base : [
     base[0] + (hot[0] - base[0]) * vel,
     base[1] + (hot[1] - base[1]) * vel,
@@ -4877,6 +4887,39 @@ ${lines.join("\n")}
     }
   }
 
+  // src/wave_opts_bridge.ts
+  function initOptsBridge(getDur, onTyped, say) {
+    const adoptTyped = (e) => {
+      const dur = getDur();
+      if (!e.isTrusted || dur === null) return;
+      const get = (id) => document.getElementById(id)?.value ?? "";
+      const start = Math.max(0, Math.min(dur - 0.1, parseClock(get("trkStart")) ?? 0));
+      const takeRaw = get("trkTake");
+      const take = takeRaw === "" || takeRaw === "all" ? dur - start : parseClock(takeRaw);
+      if (take === null) return;
+      const end = Math.min(dur, start + Math.max(0.1, take));
+      const clamped = start + take > dur + 0.05;
+      onTyped({ start, end }, clamped);
+      if (clamped) say(`That length runs past the end \u2014 clipped at ${clock(dur)}.`);
+    };
+    for (const id of ["trkStart", "trkTake"]) {
+      document.getElementById(id)?.addEventListener("input", adoptTyped);
+    }
+    return {
+      push(clip) {
+        if (!clip) return;
+        const write = (id, value) => {
+          const el = document.getElementById(id);
+          if (!el) return;
+          el.value = value;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+        };
+        write("trkStart", mmss2(clip.start));
+        write("trkTake", (clip.end - clip.start).toFixed(1));
+      }
+    };
+  }
+
   // src/wave_chrome.ts
   function buildWaveChrome() {
     const mk = (tag, css, text = "") => {
@@ -4948,47 +4991,39 @@ ${lines.join("\n")}
     let trackId = null;
     let clip = null;
     let token = 0;
-    function pushOpts() {
-      if (!clip) return;
-      const write = (id, value) => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.value = value;
-        el.dispatchEvent(new Event("input", { bubbles: true }));
-      };
-      write("trkStart", mmss2(clip.start));
-      write("trkTake", (clip.end - clip.start).toFixed(1));
-    }
-    const adoptTyped = (e) => {
-      if (!e.isTrusted || !view.data) return;
-      const dur = view.data.duration;
-      const get = (id) => document.getElementById(id)?.value ?? "";
-      const start2 = Math.max(0, Math.min(dur - 0.1, parseClock(get("trkStart")) ?? 0));
-      const takeRaw = get("trkTake");
-      const take = takeRaw === "" || takeRaw === "all" ? dur - start2 : parseClock(takeRaw);
-      if (take === null) return;
-      const end = Math.min(dur, start2 + Math.max(0.1, take));
-      clip = { start: start2, end };
-      sync();
-      if (start2 + take > dur + 0.05) {
-        say(`That length runs past the end \u2014 clipped at ${clock(dur)}.`);
-      }
-    };
-    for (const id of ["trkStart", "trkTake"]) {
-      document.getElementById(id)?.addEventListener("input", adoptTyped);
-    }
-    function sync() {
+    const bridge = initOptsBridge(
+      () => view.data?.duration ?? null,
+      (c) => {
+        clip = c;
+        sync();
+      },
+      (msg) => say(msg)
+    );
+    const pushOpts = () => bridge.push(clip);
+    function syncLight() {
       view.clip = clip;
-      const d = view.data;
-      const start2 = clip?.start ?? 0, end = clip?.end ?? d?.duration ?? 0;
-      view.sections = d?.env ? sections(d.env, start2, end).map(([s, tier]) => [start2 + s, tier]) : null;
-      for (const b of BANDS) view.muted[b.name] = !deps.bands.active()[b.name];
       view.draw();
       readout.textContent = clip ? `start ${clock(clip.start)}  \xB7  length ${clock(clip.end - clip.start)}` : "drag across the waveform to pick a clip";
       play.disabled = !clip || !view.data;
       snap.disabled = play.disabled;
+    }
+    function sync() {
+      const d = view.data;
+      const start2 = clip?.start ?? 0, end = clip?.end ?? d?.duration ?? 0;
+      view.sections = d?.env ? sections(d.env, start2, end).map(([s, tier]) => [start2 + s, tier]) : null;
+      for (const b of BANDS) view.muted[b.name] = !deps.bands.active()[b.name];
+      syncLight();
       if (trackId && view.data) saveClip(trackId, clip, view.data.duration);
       deps.onClipChange?.(clip, view.data);
+    }
+    let heavyPending = false;
+    function syncSoon() {
+      if (heavyPending) return;
+      heavyPending = true;
+      requestAnimationFrame(() => {
+        heavyPending = false;
+        sync();
+      });
     }
     function toWave(id, body) {
       const b = body;
@@ -5056,7 +5091,8 @@ ${lines.join("\n")}
     function drag(t) {
       const lo = Math.min(anchor, t), hi = Math.max(anchor, t);
       clip = { start: lo, end: Math.max(hi, lo + 0.02) };
-      sync();
+      syncLight();
+      syncSoon();
       pushOpts();
       if (playing) seekIntoClip();
     }
@@ -5266,6 +5302,7 @@ ${lines.join("\n")}
     document.head.appendChild(css);
     document.body.classList.add("kiosk");
   }
+  var players = null;
   var panels = new Panels((ms) => transport.seekTo(ms));
   var transport = new Transport({
     state,
@@ -5277,16 +5314,14 @@ ${lines.join("\n")}
       panels.renderTicks(sc);
       panels.renderSceneInfo(sc);
     },
-    // These close over consts declared further down. syncUI runs during THIS
-    // construction (loadScene → setPlaying), when the bundle's hoisted vars
-    // are still undefined — hence the ?. guards, which double as no-ops for
-    // players that are simply idle.
+    // syncUI runs during THIS construction (loadScene → setPlaying), before
+    // `players` is assigned — the null then is real, typed, and a no-op.
     stopExternal: () => {
-      wave?.stop();
-      tracks?.stopPreview();
-      codecs?.stop();
+      players?.wave.stop();
+      players?.tracks.stopPreview();
+      players?.codecs.stop();
     },
-    isExternalPlaying: () => tracks?.previewing() ?? false
+    isExternalPlaying: () => players?.tracks.previewing() ?? false
   });
   var adopting = false;
   var device = deviceBridge({
@@ -5379,15 +5414,15 @@ ${lines.join("\n")}
   var previewScene = null;
   var sceneBeforeAudition = null;
   var bands = createBandEditor(
-    () => wave.reanalyse(),
+    () => players?.wave.reanalyse(),
     // Mute/solo: same analysis, different mix —
     // rebuild the audition without re-fetching.
-    () => wave.resync()
+    () => players?.wave.resync()
   );
   var selectedTrack = null;
   var codecs = createCodecAb({
     target: () => {
-      const c = wave.clip();
+      const c = players?.wave.clip();
       if (!selectedTrack || !c) return null;
       return { id: selectedTrack, start: c.start, take: c.end - c.start };
     },
@@ -5396,8 +5431,8 @@ ${lines.join("\n")}
       return { bitrate: v("trkBitrate"), channels: v("trkCh"), sample_rate: v("trkRate") };
     },
     onClaim: () => {
-      wave.stop();
-      tracks.stopPreview();
+      players?.wave.stop();
+      players?.tracks.stopPreview();
     }
   });
   var wave = initWaveform({
@@ -5433,6 +5468,7 @@ ${lines.join("\n")}
     onAudioClaim: () => wave.stop(),
     onPreviewState: () => transport.refreshUI()
   });
+  players = { wave, tracks, codecs };
   function frame(now) {
     const f = step(
       state,

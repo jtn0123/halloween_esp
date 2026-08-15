@@ -45,14 +45,26 @@ def norm(c: dict) -> dict:
 
 
 def run_case(case: dict) -> dict:
-    scene = {
-        "id": "fuzz", "name": "Fuzz", "kind": "custom",
-        "duration_ms": case["dur_ms"], "volume": 0.7,
-        "base": {"towerL": "candle", "towerR": "candle", "door": "candle"},
-        "pulse": [case["cfg"]],
-        "cues": case["gate_cues"],
-    }
-    markers = {"fuzz": {case["cfg"]["synth"]: case["hits"]}}
+    if "scene_yaml" in case:
+        # D5: the DEFAULT styles, through the REAL handover. The random
+        # cases pass cfg dicts built by a mirror of sceneYaml's field map,
+        # which proves the arithmetic but not the map itself — a TS default
+        # sceneYaml forgot to emit would slip through with a green fuzz.
+        # Here the actual sceneYaml text is parsed exactly as scenes.yaml
+        # would be.
+        import yaml
+        scene = yaml.safe_load(case["scene_yaml"])[0]
+        scene.setdefault("cues", [])
+        markers = {scene["id"]: case["hits_by_synth"]}
+    else:
+        scene = {
+            "id": "fuzz", "name": "Fuzz", "kind": "custom",
+            "duration_ms": case["dur_ms"], "volume": 0.7,
+            "base": {"towerL": "candle", "towerR": "candle", "door": "candle"},
+            "pulse": [case["cfg"]],
+            "cues": case["gate_cues"],
+        }
+        markers = {"fuzz": {case["cfg"]["synth"]: case["hits"]}}
     esphome = [norm(c) for c in ge.pulse_cues(scene, markers)]
     prev = gp.to_previewer(scene, 1, "", markers)["cues"]
     previewer = [norm(c) for c in prev

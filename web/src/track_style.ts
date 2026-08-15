@@ -12,7 +12,7 @@
  */
 
 import type { BandName } from "./bands.js";
-import { BAND_STYLE, type BandStyle } from "./track_lights.js";
+import { BAND_STYLE, type BandStyle } from "./band_style.js";
 import type { Rgbw } from "./types.js";
 
 /* ── Phase-3 flavours, each behind a default-off toggle ───────────────

@@ -21,6 +21,7 @@ import { existsSync } from "node:fs";
 import {
   bandStrikes, styleFor, setFlavor, resetFlavors,
 } from "../dist/track_lights.mjs";
+import { sceneYaml } from "../dist/track_scene.mjs";
 
 const SEED = Number(process.env.FUZZ_SEED ?? 0xc0ffee);
 const N = Number(process.env.FUZZ_CASES ?? 250);
@@ -129,6 +130,40 @@ for (let i = 0; i < N; i++) {
   resetFlavors();
 }
 
+/* ── D5: the DEFAULT styles through the REAL sceneYaml handover ──
+   The random cases above pass cfg dicts built by cfgFor, a MIRROR of
+   sceneYaml's field map — which proves the arithmetic but not the map. A
+   TS default that sceneYaml forgot to emit (or spelt differently) would
+   sail through with a green fuzz. These cases generate the actual YAML
+   block the desk writes into scenes.yaml, let the Python side parse it
+   for real, and pin the whole default vocabulary end to end. */
+for (const only of [["onset_low"], ["onset_mid"], ["onset_high"], BANDS]) {
+  const hitsBySynth = {};
+  const counts = {};
+  let durMs = 0;
+  for (const band of only) {
+    const hits = genHits();
+    hitsBySynth[band] = hits;
+    counts[band] = hits.length || 1;
+    durMs = Math.max(durMs, (hits.length ? hits[hits.length - 1][0] : 0) + 1000);
+  }
+  resetFlavors();
+  cases.push({
+    dur_ms: durMs,
+    scene_yaml: sceneYaml("fuzzyaml", durMs / 1000, counts, "mp3"),
+    hits_by_synth: hitsBySynth,
+  });
+  // sceneYaml emits pulse streams in BANDS order; the generators expand
+  // them in that order too, so the expected list is the same concat.
+  expected.push(BANDS.flatMap((band) => {
+    const hits = hitsBySynth[band];
+    if (!hits) return [];
+    const hitsSec = hits.map(([t, v, p]) =>
+      p === undefined ? [t / 1000, v] : [t / 1000, v, p]);
+    return bandStrikes(band, hitsSec, 0, durMs / 1000, undefined, []);
+  }));
+}
+
 /* ── the Python side, on the same cases ── */
 const py = ["../.venv/bin/python", "python3"].find((p) =>
   p === "python3" || existsSync(p));
@@ -182,10 +217,22 @@ function diffCue(where, i, j, a, b) {
   return null;
 }
 
-for (let i = 0; i < N; i++) {
-  const ts = expected[i].map(normTs);
-  for (const [name, got] of [["esphome", results[i].esphome],
-                             ["previewer", results[i].previewer]]) {
+/* The previewer sorts its cue list by time for playback (a legitimate
+   difference in ORDER, not content), while pulse_cues and bandStrikes emit
+   per-stream. The multi-band yaml cases interleave streams, so those are
+   compared as canonically-sorted multisets; single-stream cases stay
+   order-exact. */
+const canon = (list) => [...list].sort((a, b) =>
+  JSON.stringify(a) < JSON.stringify(b) ? -1
+    : JSON.stringify(a) > JSON.stringify(b) ? 1 : 0);
+
+for (let i = 0; i < cases.length; i++) {
+  const multi = "scene_yaml" in cases[i];
+  const ts0 = expected[i].map(normTs);
+  const ts = multi ? canon(ts0) : ts0;
+  for (const [name, got0] of [["esphome", results[i].esphome],
+                              ["previewer", results[i].previewer]]) {
+    const got = multi ? canon(got0) : got0;
     if (got.length !== ts.length) {
       fails.push(`case ${i} ${name}: ${got.length} strikes, TS has ${ts.length}`);
       continue;

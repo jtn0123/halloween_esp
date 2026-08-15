@@ -50,12 +50,26 @@ const HYST = 0.08;
 const FLAT_RANGE = 0.15;
 
 /** env sampled at `sec` — points are sparse and near-silence is omitted,
- *  so a miss reads as quiet. */
+ *  so a miss reads as quiet.
+ *
+ *  Binary search, not a scan: the envelope is time-sorted (the analyzer
+ *  emits it that way), and this is called three times per 0.25 s step from
+ *  three different passes — the full scan was ~4-8 MILLION comparisons per
+ *  sections() call on a 4-minute track, running on every drag frame
+ *  (grade report G1). Tie-breaking matches the old scan exactly: strict <,
+ *  so the earlier point wins an exact tie. */
 function envAt(env: ReadonlyArray<readonly [number, number]>, sec: number): number {
+  let lo = 0, hi = env.length;              // first index with t >= sec
+  while (lo < hi) {
+    const m = (lo + hi) >> 1;
+    if (env[m]![0] < sec) lo = m + 1; else hi = m;
+  }
   let best = 0, bestDt = 0.5;               // nothing within half a second: 0
-  for (const [t, v] of env) {
-    const dt = Math.abs(t - sec);
-    if (dt < bestDt) { bestDt = dt; best = v; }
+  for (const j of [lo - 1, lo]) {           // nearest is one of the two
+    const p = env[j];
+    if (!p) continue;
+    const dt = Math.abs(p[0] - sec);
+    if (dt < bestDt) { bestDt = dt; best = p[1]; }
   }
   return best;
 }

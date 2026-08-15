@@ -20,7 +20,8 @@ import type { CodecAb } from "./codec_ab.js";
 import { createStyleLab } from "./style_lab.js";
 import { sections } from "./track_lights.js";
 import { EDGE_SLOP, WaveView, type WaveClip, type WaveData } from "./waveform_view.js";
-import { clock, loadClip, mmss, parseClock, saveClip } from "./wave_clip.js";
+import { clock, loadClip, saveClip } from "./wave_clip.js";
+import { initOptsBridge } from "./wave_opts_bridge.js";
 import { buildWaveChrome } from "./wave_chrome.js";
 
 export interface WaveformDeps {
@@ -104,55 +105,28 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   /** Bumped per request, so a slow analysis cannot land on top of a newer one. */
   let token = 0;
 
-  /**
-   * Push the selection into the Tracks option row.
-   *
-   * This is the entire output of the editor. The inputs are also typed into by
-   * hand, so the synthetic `input` event goes out too — anything that watches
-   * them should not be able to tell a drag from a keystroke.
-   */
-  function pushOpts(): void {
-    if (!clip) return;
-    const write = (id: string, value: string): void => {
-      const el = document.getElementById(id) as HTMLInputElement | null;
-      if (!el) return;
-      el.value = value;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-    };
-    write("trkStart", mmss(clip.start));
-    write("trkTake", (clip.end - clip.start).toFixed(1));
-  }
+  // START/LENGTH in the Options row: dragging writes them, typing them
+  // moves the clip. The whole two-way contract lives in wave_opts_bridge.
+  const bridge = initOptsBridge(
+    () => view.data?.duration ?? null,
+    (c) => { clip = c; sync(); },
+    (msg) => say(msg),
+  );
+  const pushOpts = (): void => bridge.push(clip);
 
-  /* The reverse direction: typing into those same inputs moves the clip.
-   * Round-1 user test: LENGTH said 0.1 while the editor said 2:33 and the
-   * audition played the whole song — two widgets, two truths. The synthetic
-   * events pushOpts sends are isTrusted:false, so only human edits land
-   * here and the loop cannot chase its own tail. */
-  const adoptTyped = (e: Event): void => {
-    if (!e.isTrusted || !view.data) return;
-    const dur = view.data.duration;
-    const get = (id: string): string =>
-      (document.getElementById(id) as HTMLInputElement | null)?.value ?? "";
-    const start = Math.max(0, Math.min(dur - 0.1, parseClock(get("trkStart")) ?? 0));
-    const takeRaw = get("trkTake");
-    const take = takeRaw === "" || takeRaw === "all"
-      ? dur - start : parseClock(takeRaw);
-    if (take === null) return;                    // half-typed: wait
-    const end = Math.min(dur, start + Math.max(0.1, take));
-    clip = { start, end };
-    sync();
-    // Two disagreeing numbers with no comment read as a bug (round 2):
-    // when the typed length runs past the track, say where it stopped.
-    if (start + take > dur + 0.05) {
-      say(`That length runs past the end — clipped at ${clock(dur)}.`);
-    }
-  };
-  for (const id of ["trkStart", "trkTake"]) {
-    document.getElementById(id)?.addEventListener("input", adoptTyped);
+  /** The per-frame half: redraw and readout only. Cheap enough to run on
+   *  every pointermove of a drag. */
+  function syncLight(): void {
+    view.clip = clip;
+    view.draw();
+    readout.textContent = clip
+      ? `start ${clock(clip.start)}  ·  length ${clock(clip.end - clip.start)}`
+      : "drag across the waveform to pick a clip";
+    play.disabled = !clip || !view.data;
+    snap.disabled = play.disabled;
   }
 
   function sync(): void {
-    view.clip = clip;
     // The tier overlay, from the SAME sections() call the audition scene
     // makes for this window — a promise about the show, not a decoration.
     const d = view.data;
@@ -161,14 +135,20 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       ? sections(d.env, start, end).map(([s, tier]) => [start + s, tier])
       : null;
     for (const b of BANDS) view.muted[b.name] = !deps.bands.active()[b.name];
-    view.draw();
-    readout.textContent = clip
-      ? `start ${clock(clip.start)}  ·  length ${clock(clip.end - clip.start)}`
-      : "drag across the waveform to pick a clip";
-    play.disabled = !clip || !view.data;
-    snap.disabled = play.disabled;
+    syncLight();
     if (trackId && view.data) saveClip(trackId, clip, view.data.duration);
     deps.onClipChange?.(clip, view.data);
+  }
+
+  /* The expensive half of sync() — sections() over the envelope, a
+     localStorage write, and onClipChange (which rebuilds and re-sorts the
+     whole audition scene) — used to run on EVERY pointermove of a drag
+     (grade report G2). One trailing frame carries the same result. */
+  let heavyPending = false;
+  function syncSoon(): void {
+    if (heavyPending) return;
+    heavyPending = true;
+    requestAnimationFrame(() => { heavyPending = false; sync(); });
   }
 
   /* ── Analysis ── */
@@ -262,7 +242,10 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     clip = { start: lo, end: Math.max(hi, lo + 0.02) };
     // Live rather than on release: those two inputs are the real output of this
     // editor, and watching them move is how you know the drag is landing.
-    sync();
+    // Redraw NOW; the heavy half (sections, persistence, scene rebuild)
+    // rides one trailing frame so the drag itself stays at frame rate.
+    syncLight();
+    syncSoon();
     pushOpts();
     if (playing) seekIntoClip();
   }

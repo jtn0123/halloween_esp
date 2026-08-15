@@ -11,7 +11,7 @@
 
 import { RenderedAudio, type AudioMode } from "./audio.js";
 import { createBandEditor } from "./band_editor.js";
-import { createCodecAb } from "./codec_ab.js";
+import { createCodecAb, type CodecAb } from "./codec_ab.js";
 import { deviceBridge } from "./device.js";
 import { defaultParams } from "./effects.js";
 import { JewelInsets } from "./insets.js";
@@ -21,9 +21,9 @@ import { createState, step } from "./show.js";
 import { Stage } from "./stage.js";
 import { Synth } from "./synth.js";
 import { Transport } from "./transport.js";
-import { initTracks } from "./tracks.js";
+import { initTracks, type TracksApi } from "./tracks.js";
 import { sceneFromTrack } from "./track_scene.js";
-import { initWaveform } from "./waveform.js";
+import { initWaveform, type WaveformApi } from "./waveform.js";
 import type { GeneratedData, Scene } from "./types.js";
 
 declare global {
@@ -72,6 +72,16 @@ if (new URLSearchParams(location.search).has("kiosk")) {
   document.body.classList.add("kiosk");
 }
 
+/* The three sound sources are built AFTER the transport that needs to stop
+   them, so they live behind a holder that is honestly null until then. The
+   previous spelling closed over the consts directly with `?.` guards — but
+   esbuild hoists top-level const to var, TypeScript typed them non-nullable,
+   and nothing stopped a future edit from dropping a guard. This exact class
+   of bug once took out 26 tests (grade report C3); now the compiler enforces
+   every access. */
+interface Players { wave: WaveformApi; tracks: TracksApi; codecs: CodecAb }
+let players: Players | null = null;
+
 // Panels wires the cue-sheet row clicks itself, so seeking is a constructor
 // dependency rather than a separate binding.
 const panels = new Panels((ms) => transport.seekTo(ms));
@@ -84,16 +94,14 @@ const transport = new Transport({
     panels.renderTicks(sc);
     panels.renderSceneInfo(sc);
   },
-  // These close over consts declared further down. syncUI runs during THIS
-  // construction (loadScene → setPlaying), when the bundle's hoisted vars
-  // are still undefined — hence the ?. guards, which double as no-ops for
-  // players that are simply idle.
+  // syncUI runs during THIS construction (loadScene → setPlaying), before
+  // `players` is assigned — the null then is real, typed, and a no-op.
   stopExternal: () => {
-    wave?.stop();
-    tracks?.stopPreview();
-    codecs?.stop();
+    players?.wave.stop();
+    players?.tracks.stopPreview();
+    players?.codecs.stop();
   },
-  isExternalPlaying: () => tracks?.previewing() ?? false,
+  isExternalPlaying: () => players?.tracks.previewing() ?? false,
 });
 
 /* ── Chrome ── */
@@ -206,10 +214,10 @@ let sceneBeforeAudition: Scene | null = null;
 /* Which zone each band lights and how hard it has to hit. Created here rather
    than inside either panel because both read it: the clip editor mounts it and
    re-analyses on change, and the scene generator writes it out. */
-const bands = createBandEditor(() => wave.reanalyse(),
+const bands = createBandEditor(() => players?.wave.reanalyse(),
                                // Mute/solo: same analysis, different mix —
                                // rebuild the audition without re-fetching.
-                               () => wave.resync());
+                               () => players?.wave.resync());
 
 /* Hearing what each codec costs, on the clip that is actually selected. It
    needs the clip from the editor and the encoder settings from the options
@@ -217,7 +225,7 @@ const bands = createBandEditor(() => wave.reanalyse(),
 let selectedTrack: string | null = null;
 const codecs = createCodecAb({
   target: () => {
-    const c = wave.clip();
+    const c = players?.wave.clip();
     if (!selectedTrack || !c) return null;
     return { id: selectedTrack, start: c.start, take: c.end - c.start };
   },
@@ -226,7 +234,7 @@ const codecs = createCodecAb({
       (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? "";
     return { bitrate: v("trkBitrate"), channels: v("trkCh"), sample_rate: v("trkRate") };
   },
-  onClaim: () => { wave.stop(); tracks.stopPreview(); },
+  onClaim: () => { players?.wave.stop(); players?.tracks.stopPreview(); },
 });
 
 const wave = initWaveform({
@@ -265,6 +273,7 @@ const tracks = initTracks({
   onAudioClaim: () => wave.stop(),
   onPreviewState: () => transport.refreshUI(),
 });
+players = { wave, tracks, codecs };
 
 /* ── Frame loop ── */
 function frame(now: number): void {
