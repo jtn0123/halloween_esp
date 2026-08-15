@@ -149,6 +149,28 @@ def encode_mp3(wav: Path, mp3: Path, bitrate: int) -> None:
     )
 
 
+def render_chirp(cfg: dict) -> None:
+    """audio/00_chirp.mp3 — the firmware's no-SD-card fallback beep.
+
+    castle_sd.yaml embeds it (a card can be absent; silence would read as
+    a dead speaker), but until now it only existed as a hand-made file on
+    one machine — gitignored, so a fresh clone or CI could not validate
+    the SD build at all. Synthesised here like everything else in audio/:
+    two rising sine blips, deterministic, ~0.4 s.
+    """
+    sr = cfg["sample_rate"]
+    t = np.arange(int(0.4 * sr)) / sr
+    x = np.zeros_like(t)
+    for at, f in ((0.02, 880.0), (0.20, 1320.0)):
+        seg = (t >= at) & (t < at + 0.12)
+        ts = t[seg] - at
+        x[seg] += np.sin(2 * np.pi * f * ts) * np.exp(-ts * 28) * 0.7
+    wav = OUT / "00_chirp.wav"
+    write_wav(wav, x * TARGET_PEAK, sr)
+    encode_mp3(wav, OUT / "00_chirp.mp3", cfg["bitrate"])
+    wav.unlink()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="render just this scene id")
@@ -158,6 +180,8 @@ def main() -> int:
     doc = yaml.safe_load(SCENES.read_text())
     cfg = doc["hardware"]["audio"]
     OUT.mkdir(exist_ok=True)
+    if not args.only:
+        render_chirp(cfg)
 
     scenes = doc["scenes"]
     if args.only:

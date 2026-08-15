@@ -26,7 +26,9 @@ jobs:
       # ffmpeg: analyze.py decodes through it, and several tests exercise
       # that path — without it the whole test_analysis module errors out.
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg lame
-      - run: pip install pyyaml numpy scipy
+      # yt-dlp: two tests assert the import toolchain is present and that
+      # probe/import guards reject junk BEFORE shelling out to it.
+      - run: pip install pyyaml numpy scipy yt-dlp
       - run: pip install -r requirements-dev.txt
       - name: lint
         run: ruff check tools tests
