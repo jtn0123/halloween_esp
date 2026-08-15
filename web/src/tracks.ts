@@ -12,6 +12,7 @@
  *           block to paste.
  */
 
+import { api } from "./api.js";
 import type { BandEditor } from "./band_editor.js";
 import { fillOptsFrom, initImportOpts } from "./import_opts.js";
 import { trackRowHtml } from "./track_rows.js";
@@ -55,14 +56,6 @@ export interface TrackInfo {
   error?: string;
 }
 
-interface TracksResponse { tracks?: TrackInfo[]; scenes?: string[] }
-/** Import, re-import and scene writes all answer with ok plus a tail of log. */
-interface ActionResponse {
-  ok: boolean; tracks?: TrackInfo[]; log?: string; error?: string;
-  /** Scene writes only: whether an existing scene of that id was overwritten. */
-  replaced?: boolean;
-  scenes?: string[];
-}
 
 export interface TracksDeps {
   /** The show as loaded, for the capacity readout's "alongside the current show". */
@@ -156,8 +149,9 @@ export function initTracks(deps: TracksDeps): TracksApi {
   const form = initImportOpts(flashUsed);
   const opts = form.values;
 
-  void fetch("/api/tracks").then(r => r.ok ? r.json() as Promise<TracksResponse> : Promise.reject())
-    .then(d => { T.mode = "studio"; T.modeEl.textContent = "studio · connected";
+  void api.tracks()
+    .then(d => {
+      if (!d.tracks && !d.scenes) return Promise.reject(new Error("no list")); T.mode = "studio"; T.modeEl.textContent = "studio · connected";
                  byId("trkServer").hidden = false;
                  T.sceneIds = new Set(d.scenes || []);
                  drawTracks(d.tracks);
@@ -250,9 +244,12 @@ export function initTracks(deps: TracksDeps): TracksApi {
     } else if (btn.dataset["act"] === "del") {
       if (!confirm(`Delete track "${id}"? The file is removed from tracks/.`)) return;
       if (preview.playing() === id) preview.stop();
-      const r = await fetch(`/api/tracks/${id}`, { method: "DELETE" })
-        .then(res => res.json() as Promise<ActionResponse>);
-      say(r.ok ? `Deleted ${id}.` : `Could not delete ${id}.`, !r.ok);
+      try {
+        const r = await api.remove(id);
+        say(r.ok ? `Deleted ${id}.` : `Could not delete ${id}.`, !r.ok);
+      } catch (err) {
+        say(`Could not delete ${id} — ${String(err)}`, true);
+      }
       if (T.selected === id) { T.selected = null; deps.onSelect?.(null); }
       refresh();
     } else if (btn.dataset["act"] === "refresh") {
@@ -273,16 +270,13 @@ export function initTracks(deps: TracksDeps): TracksApi {
       const label = btn.textContent;
       btn.textContent = "Working…";
       try {
-        const r = await fetch("/api/refresh", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id, start: o.start, take: o.take, sensitivity: o.sensitivity,
-            bitrate: val("trkBitrate"),
-            sample_rate: val("trkRate"),
-            channels: val("trkCh"),
-            normalize: byId<HTMLInputElement>("trkNorm").checked,
-          })
-        }).then(res => res.json() as Promise<ActionResponse>);
+        const r = await api.refresh({
+          id, start: o.start, take: o.take, sensitivity: o.sensitivity,
+          bitrate: val("trkBitrate"),
+          sample_rate: val("trkRate"),
+          channels: val("trkCh"),
+          normalize: byId<HTMLInputElement>("trkNorm").checked,
+        });
         if (r.ok) {
           drawTracks(r.tracks);
           // Say what came OUT, not just that something happened: fourteen
@@ -307,22 +301,17 @@ export function initTracks(deps: TracksDeps): TracksApi {
       btn.disabled = true;
       btn.textContent = "Working…";
       try {
-        const r = await fetch("/api/tracks").then(res => res.json() as Promise<TracksResponse>);
+        const r = await api.tracks();
         // The list was just refetched from the same server that drew the row, so
         // a miss here means the track vanished mid-click — let it throw.
         const t = (r.tracks || []).find(x => x.id === id)!;
         // The loudness envelope drives the scene's quiet/verse/chorus set
         // cues. Missing it degrades to one standing look, not to a failure.
-        const wf = await fetch(`/api/waveform/${encodeURIComponent(id)}`)
-          .then(res => res.ok ? res.json() as Promise<{ env?: [number, number][] }> : null)
-          .catch(() => null);
+        const wf = await api.waveform(id).then(w => w.body).catch(() => null);
         const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands, wf?.env);
         T.yaml.hidden = false; T.yaml.textContent = block;
         say(`Writing scene "${id}" into scenes.yaml and re-rendering the show…`);
-        const res = await fetch("/api/scene", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, yaml: block })
-        }).then(x => x.json() as Promise<ActionResponse>);
+        const res = await api.scene(id, block);
         if (!res.ok) {
           say(`Scene write failed — ${(res.log || res.error || "").slice(-300)}`, true);
           return;
@@ -343,8 +332,11 @@ export function initTracks(deps: TracksDeps): TracksApi {
 
   const refresh = (): void => {
     if (T.mode !== "studio") return;
-    void fetch("/api/tracks").then(r => r.json() as Promise<TracksResponse>)
-      .then(d => { T.sceneIds = new Set(d.scenes || []); drawTracks(d.tracks); });
+    void api.tracks()
+      .then(d => { T.sceneIds = new Set(d.scenes || []); drawTracks(d.tracks); })
+      // The list is redrawn after deletes and imports; if the server died in
+      // between, the row must not just silently stay stale (round-1 C5).
+      .catch(() => say("Lost the studio server — is it still running?", true));
   };
 
   /* ── Server controls ──────────────────────────────────────────────
@@ -370,21 +362,20 @@ export function initTracks(deps: TracksDeps): TracksApi {
     say("Stopping…");
     // The server answers before it shuts down, so a failure here is a real
     // failure rather than the expected disconnect.
-    try { await fetch("/api/server/stop", { method: "POST" }); } catch { /* already gone */ }
+    try { await api.serverStop(); } catch { /* already gone */ }
     setTimeout(() => goOffline("Studio stopped. Everything on this page still "
       + "works — you just can't import or write scenes until it's running again."), 600);
   });
 
   byId("srvRestart").addEventListener("click", async () => {
     say("Restarting…");
-    try { await fetch("/api/server/restart", { method: "POST" }); } catch { /* it's re-execing */ }
+    try { await api.serverRestart(); } catch { /* it's re-execing */ }
     // It re-execs itself, so poll until it answers again rather than guessing
     // how long that takes.
     for (let i = 0; i < 30; i++) {
       await new Promise(r => setTimeout(r, 500));
       try {
-        const d = await fetch("/api/tracks", { cache: "no-store" })
-          .then(r => r.json() as Promise<TracksResponse>);
+        const d = await api.tracksFresh();
         drawTracks(d.tracks);
         return say("Studio restarted.");
       } catch { /* still coming up */ }
@@ -398,10 +389,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
     if (!url) return say("Paste a link first.", true);
     say("Importing… this runs yt-dlp and ffmpeg locally, so give it a moment.");
     try {
-      const r = await fetch("/api/import", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(Object.assign({ url }, opts()))
-      }).then(res => res.json() as Promise<ActionResponse>);
+      const r = await api.importUrl(Object.assign({ url }, opts()));
       if (r.ok) { drawTracks(r.tracks);
                   say("Imported. Press Play to hear it, or “Make scene” to wire it into the show.");
                   byId<HTMLInputElement>("trkUrl").value = ""; }
@@ -431,11 +419,8 @@ export function initTracks(deps: TracksDeps): TracksApi {
   async function takeFile(file: File): Promise<void> {
     if (T.mode === "studio") {
       say(`Uploading ${file.name}…`);
-      const fd = new FormData(); fd.append("file", file);
       try {
-        const r = await fetch("/api/import", {
-          method: "POST", headers: { "X-Import-Opts": JSON.stringify(opts()) }, body: fd
-        }).then(res => res.json() as Promise<ActionResponse>);
+        const r = await api.importFile(file, opts());
         if (r.ok) { drawTracks(r.tracks);
                     say("Imported. Press Play to hear it, or “Make scene” to wire it in."); }
         else say(`Import failed — ${(r.log || r.error || "").slice(-400)}`, true);

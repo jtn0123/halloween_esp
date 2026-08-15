@@ -1412,6 +1412,59 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     };
   }
 
+  // src/api.ts
+  var QUICK = 3e4;
+  var ENCODE = 5 * 6e4;
+  var IMPORT = 16 * 6e4;
+  async function call(path, init = {}, timeoutMs = QUICK) {
+    const res = await fetch(
+      path,
+      { ...init, signal: AbortSignal.timeout(timeoutMs) }
+    );
+    try {
+      return await res.json();
+    } catch {
+      throw new Error(`the studio sent no JSON (HTTP ${res.status})`);
+    }
+  }
+  var post = (body) => ({
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  var api = {
+    tracks: () => call("/api/tracks"),
+    tracksFresh: () => call("/api/tracks", { cache: "no-store" }),
+    remove: (id) => call(`/api/tracks/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    importUrl: (req) => call("/api/import", post(req), IMPORT),
+    importFile: (file, opts) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return call("/api/import", {
+        method: "POST",
+        headers: { "X-Import-Opts": JSON.stringify(opts) },
+        body: fd
+      }, IMPORT);
+    },
+    refresh: (req) => call("/api/refresh", post(req), IMPORT),
+    /** status too, because a 404 here is an ordinary outcome (track deleted
+     *  under the panel) that deserves its own sentence, not a red error. */
+    waveform: async (id, query = "") => {
+      const res = await fetch(
+        `/api/waveform/${encodeURIComponent(id)}${query ? `?${query}` : ""}`,
+        { signal: AbortSignal.timeout(ENCODE) }
+      );
+      return {
+        status: res.status,
+        body: res.ok ? await res.json() : null
+      };
+    },
+    scene: (id, yaml) => call("/api/scene", post({ id, yaml }), ENCODE),
+    compare: (req) => call("/api/compare", post(req), ENCODE),
+    serverStop: () => call("/api/server/stop", { method: "POST" }),
+    serverRestart: () => call("/api/server/restart", { method: "POST" })
+  };
+
   // src/codec_ab.ts
   var kb2 = (n) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MB` : `${Math.round(n / 1024)} KB`;
   function createCodecAb(deps) {
@@ -1511,18 +1564,14 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       note.textContent = `Encoding ${t.take.toFixed(1)}s four ways\u2026`;
       try {
         const o = deps.opts();
-        const r = await fetch("/api/compare", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: t.id,
-            start: t.start,
-            take: t.take,
-            bitrate: o.bitrate,
-            channels: o.channels,
-            sample_rate: o.sample_rate
-          })
-        }).then((x) => x.json());
+        const r = await api.compare({
+          id: t.id,
+          start: t.start,
+          take: t.take,
+          bitrate: o.bitrate,
+          channels: o.channels,
+          sample_rate: o.sample_rate
+        });
         if (!r.ok || !r.codecs) {
           note.textContent = `Could not encode \u2014 ${r.error || "unknown error"}`;
           return;
@@ -1687,7 +1736,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     }, 1400);
     setTimeout(() => el.remove(), 1900);
   }
-  function post(path, okMsg) {
+  function post2(path, okMsg) {
     fetch(path, { method: "POST" }).then(
       (r) => {
         r.ok ? toast(okMsg) : toast(`${okMsg} failed`, true);
@@ -1713,14 +1762,14 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       chip.querySelector("#devMirror").addEventListener("change", (e) => {
         mirror = e.target.checked;
       });
-      chip.querySelector("#devStop").addEventListener("click", () => post("/api/stop", "stop"));
+      chip.querySelector("#devStop").addEventListener("click", () => post2("/api/stop", "stop"));
       chip.querySelector("#devMore").addEventListener("click", () => panel.toggle());
       let volTimer;
       const vol = chip.querySelector("#devVol");
       vol.addEventListener("input", () => {
         clearTimeout(volTimer);
         volTimer = window.setTimeout(
-          () => post(`/api/volume?v=${vol.value}`, `volume ${vol.value}`),
+          () => post2(`/api/volume?v=${vol.value}`, `volume ${vol.value}`),
           150
         );
       });
@@ -1728,7 +1777,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         const to = Number(vol.value) === 0 ? lastVol || 70 : 0;
         if (to === 0) lastVol = Number(vol.value);
         vol.value = String(to);
-        post(`/api/volume?v=${to}`, to === 0 ? "muted" : `volume ${to}`);
+        post2(`/api/volume?v=${to}`, to === 0 ? "muted" : `volume ${to}`);
       });
     };
     void probe().then((s) => {
@@ -1745,11 +1794,11 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     return {
       scene(id) {
         if (!live || !mirror) return;
-        post(`/api/scene?s=${encodeURIComponent(id)}`, `scene ${id}`);
+        post2(`/api/scene?s=${encodeURIComponent(id)}`, `scene ${id}`);
       },
       stop() {
         if (!live) return;
-        post("/api/stop", "stop");
+        post2("/api/stop", "stop");
       }
     };
   }
@@ -4121,7 +4170,8 @@ ${lines.join("\n")}
     const flashUsed = () => SCENES2.reduce((a, s) => a + (s.bytes || s.dur / 1e3 * 12e3), 0);
     const form = initImportOpts(flashUsed);
     const opts = form.values;
-    void fetch("/api/tracks").then((r) => r.ok ? r.json() : Promise.reject()).then((d) => {
+    void api.tracks().then((d) => {
+      if (!d.tracks && !d.scenes) return Promise.reject(new Error("no list"));
       T.mode = "studio";
       T.modeEl.textContent = "studio \xB7 connected";
       byId("trkServer").hidden = false;
@@ -4193,8 +4243,12 @@ ${lines.join("\n")}
       } else if (btn.dataset["act"] === "del") {
         if (!confirm(`Delete track "${id}"? The file is removed from tracks/.`)) return;
         if (preview.playing() === id) preview.stop();
-        const r = await fetch(`/api/tracks/${id}`, { method: "DELETE" }).then((res) => res.json());
-        say(r.ok ? `Deleted ${id}.` : `Could not delete ${id}.`, !r.ok);
+        try {
+          const r = await api.remove(id);
+          say(r.ok ? `Deleted ${id}.` : `Could not delete ${id}.`, !r.ok);
+        } catch (err) {
+          say(`Could not delete ${id} \u2014 ${String(err)}`, true);
+        }
         if (T.selected === id) {
           T.selected = null;
           deps.onSelect?.(null);
@@ -4211,20 +4265,16 @@ ${lines.join("\n")}
         const label = btn.textContent;
         btn.textContent = "Working\u2026";
         try {
-          const r = await fetch("/api/refresh", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id,
-              start: o.start,
-              take: o.take,
-              sensitivity: o.sensitivity,
-              bitrate: val("trkBitrate"),
-              sample_rate: val("trkRate"),
-              channels: val("trkCh"),
-              normalize: byId("trkNorm").checked
-            })
-          }).then((res) => res.json());
+          const r = await api.refresh({
+            id,
+            start: o.start,
+            take: o.take,
+            sensitivity: o.sensitivity,
+            bitrate: val("trkBitrate"),
+            sample_rate: val("trkRate"),
+            channels: val("trkCh"),
+            normalize: byId("trkNorm").checked
+          });
           if (r.ok) {
             drawTracks(r.tracks);
             const after = (r.tracks || []).find((x) => x.id === id);
@@ -4240,18 +4290,14 @@ ${lines.join("\n")}
         btn.disabled = true;
         btn.textContent = "Working\u2026";
         try {
-          const r = await fetch("/api/tracks").then((res2) => res2.json());
+          const r = await api.tracks();
           const t = (r.tracks || []).find((x) => x.id === id);
-          const wf = await fetch(`/api/waveform/${encodeURIComponent(id)}`).then((res2) => res2.ok ? res2.json() : null).catch(() => null);
+          const wf = await api.waveform(id).then((w) => w.body).catch(() => null);
           const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands, wf?.env);
           T.yaml.hidden = false;
           T.yaml.textContent = block;
           say(`Writing scene "${id}" into scenes.yaml and re-rendering the show\u2026`);
-          const res = await fetch("/api/scene", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id, yaml: block })
-          }).then((x) => x.json());
+          const res = await api.scene(id, block);
           if (!res.ok) {
             say(`Scene write failed \u2014 ${(res.log || res.error || "").slice(-300)}`, true);
             return;
@@ -4267,10 +4313,10 @@ ${lines.join("\n")}
     });
     const refresh = () => {
       if (T.mode !== "studio") return;
-      void fetch("/api/tracks").then((r) => r.json()).then((d) => {
+      void api.tracks().then((d) => {
         T.sceneIds = new Set(d.scenes || []);
         drawTracks(d.tracks);
-      });
+      }).catch(() => say("Lost the studio server \u2014 is it still running?", true));
     };
     const goOffline = (msg) => {
       preview.stop();
@@ -4288,7 +4334,7 @@ ${lines.join("\n")}
       if (!confirm("Stop the studio server? Importing and scene editing stop until you launch it again with Castle Cue Desk.command.")) return;
       say("Stopping\u2026");
       try {
-        await fetch("/api/server/stop", { method: "POST" });
+        await api.serverStop();
       } catch {
       }
       setTimeout(() => goOffline("Studio stopped. Everything on this page still works \u2014 you just can't import or write scenes until it's running again."), 600);
@@ -4296,13 +4342,13 @@ ${lines.join("\n")}
     byId("srvRestart").addEventListener("click", async () => {
       say("Restarting\u2026");
       try {
-        await fetch("/api/server/restart", { method: "POST" });
+        await api.serverRestart();
       } catch {
       }
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 500));
         try {
-          const d = await fetch("/api/tracks", { cache: "no-store" }).then((r) => r.json());
+          const d = await api.tracksFresh();
           drawTracks(d.tracks);
           return say("Studio restarted.");
         } catch {
@@ -4315,11 +4361,7 @@ ${lines.join("\n")}
       if (!url) return say("Paste a link first.", true);
       say("Importing\u2026 this runs yt-dlp and ffmpeg locally, so give it a moment.");
       try {
-        const r = await fetch("/api/import", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(Object.assign({ url }, opts()))
-        }).then((res) => res.json());
+        const r = await api.importUrl(Object.assign({ url }, opts()));
         if (r.ok) {
           drawTracks(r.tracks);
           say("Imported. Press Play to hear it, or \u201CMake scene\u201D to wire it into the show.");
@@ -4355,14 +4397,8 @@ ${lines.join("\n")}
     async function takeFile(file) {
       if (T.mode === "studio") {
         say(`Uploading ${file.name}\u2026`);
-        const fd = new FormData();
-        fd.append("file", file);
         try {
-          const r = await fetch("/api/import", {
-            method: "POST",
-            headers: { "X-Import-Opts": JSON.stringify(opts()) },
-            body: fd
-          }).then((res) => res.json());
+          const r = await api.importFile(file, opts());
           if (r.ok) {
             drawTracks(r.tracks);
             say("Imported. Press Play to hear it, or \u201CMake scene\u201D to wire it in.");
@@ -4969,12 +5005,10 @@ ${lines.join("\n")}
     }
     async function analyse(id) {
       try {
-        const r = await fetch(
-          `/api/waveform/${encodeURIComponent(id)}?${deps.bands.query()}`
-        );
+        const r = await api.waveform(id, deps.bands.query());
         if (r.status === 404) return `No waveform for \u201C${id}\u201D \u2014 the studio has not analysed it.`;
-        if (!r.ok) return `Analysis failed \u2014 HTTP ${r.status}.`;
-        return toWave(id, await r.json());
+        if (r.body === null) return `Analysis failed \u2014 HTTP ${r.status}.`;
+        return toWave(id, r.body);
       } catch (err) {
         return `Could not reach the studio \u2014 ${String(err)}`;
       }

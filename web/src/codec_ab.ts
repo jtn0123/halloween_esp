@@ -17,19 +17,14 @@
  * only the explicit click unmutes it.
  */
 
+import { api } from "./api.js";
+
 export interface CodecRow {
   codec: string;
   bytes: number;
   /** Spectral distance from the lossless reference, dB. 0 for the reference. */
   db: number;
   url: string;
-}
-
-interface CompareResponse {
-  ok: boolean;
-  error?: string;
-  reference?: string;
-  codecs?: CodecRow[];
 }
 
 export interface CodecAbDeps {
@@ -169,12 +164,9 @@ export function createCodecAb(deps: CodecAbDeps): CodecAb {
     note.textContent = `Encoding ${t.take.toFixed(1)}s four ways…`;
     try {
       const o = deps.opts();
-      const r = await fetch("/api/compare", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: t.id, start: t.start, take: t.take,
-                               bitrate: o.bitrate, channels: o.channels,
-                               sample_rate: o.sample_rate }),
-      }).then(x => x.json() as Promise<CompareResponse>);
+      const r = await api.compare({ id: t.id, start: t.start, take: t.take,
+                                    bitrate: o.bitrate, channels: o.channels,
+                                    sample_rate: o.sample_rate });
       if (!r.ok || !r.codecs) {
         note.textContent = `Could not encode — ${r.error || "unknown error"}`;
         return;

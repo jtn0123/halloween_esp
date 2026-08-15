@@ -238,7 +238,9 @@ class TestWrites(ServerCase):
         with mock.patch("studio_media.subprocess.run",
                         side_effect=AssertionError("probe shelled out")):
             code, d = self.post_json("/api/probe", {"url": "not a link at all"})
-        self.assertEqual(code, 200)
+        # 400, not 200: a bad link is the caller's mistake, and the status
+        # code is allowed to say so (grade report B2).
+        self.assertEqual(code, 400)
         self.assertFalse(d["ok"])
         self.assertIn("link", d["error"])
 
@@ -247,7 +249,7 @@ class TestWrites(ServerCase):
                         side_effect=AssertionError("probe shelled out")):
             code, d = self.req("POST", "/api/probe", b"",
                                {"Content-Type": "application/json"})
-        self.assertEqual(code, 200)
+        self.assertEqual(code, 400)   # no url = the caller's mistake (B2)
         self.assertFalse(json.loads(d)["ok"])
 
     def test_sync_import_rejects_a_missing_url(self) -> None:

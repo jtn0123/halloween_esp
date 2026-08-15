@@ -33,11 +33,12 @@ import sys
 import threading
 import time
 import urllib.parse
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import manifest as mf
+import studio_http as sh
 import studio_jobs as sj
 import studio_media as sm
 
@@ -98,72 +99,18 @@ def safe_id(raw: str) -> str | None:
     return tid if tid and all(c.isalnum() or c == "_" for c in tid) else None
 
 
-class Handler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-
-    def log_message(self, fmt, *a):              # quieter console
-        sys.stderr.write("  %s\n" % (fmt % a))
-
-    # ── helpers ──
-    def send_json(self, obj, code=200):
-        body = json.dumps(obj).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def send_bytes(self, body: bytes, ctype: str):
-        self.send_response(200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def send_range(self, p: Path, ctype: str):
-        """Serve an audio file, honouring a single Range request.
-
-        Without this the browser has to pull the whole file before it will let
-        you seek in it. That is invisible on a 20-second clip and very visible
-        on a four-minute import, where "audition from 1:30" means waiting for
-        3 MB first. Only the one-range form is handled — that is all a media
-        element ever asks for — and anything else falls back to the whole file.
-        """
-        data = p.read_bytes()
-        total = len(data)
-        rng = (self.headers.get("Range") or "").strip()
-        lo, hi = 0, total - 1
-        partial = False
-        if rng.startswith("bytes=") and "," not in rng:
-            a, _, b = rng[6:].partition("-")
-            try:
-                if a:
-                    lo, hi = int(a), (int(b) if b else total - 1)
-                elif b:                       # bytes=-500 -> the last 500
-                    lo, hi = max(0, total - int(b)), total - 1
-                partial = True
-            except ValueError:
-                partial = False
-        hi = min(hi, total - 1)
-        if not partial or lo > hi:
-            lo, hi, partial = 0, total - 1, False
-        chunk = data[lo:hi + 1]
-        self.send_response(206 if partial else 200)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Content-Length", str(len(chunk)))
-        if partial:
-            self.send_header("Content-Range", f"bytes {lo}-{hi}/{total}")
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(chunk)
-
-    def body(self) -> bytes:
-        return self.rfile.read(int(self.headers.get("Content-Length", 0) or 0))
-
+class Handler(sh.JsonHandler):
     # ── routes ──
     def do_GET(self):
+        self._guarded(self._get)
+
+    def do_POST(self):
+        self._guarded(self._post)
+
+    def do_DELETE(self):
+        self._guarded(self._delete)
+
+    def _get(self):
         path = urllib.parse.urlparse(self.path).path
         if path in ("/", "/index.html"):
             if not HTML.exists():
@@ -217,7 +164,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_range(p, MIME[p.suffix.lstrip(".")])
         self.send_json({"error": "not found"}, 404)
 
-    def do_DELETE(self):
+    def _delete(self):
         path = urllib.parse.urlparse(self.path).path
         if path.startswith("/api/tracks/"):
             tid = Path(path).name
@@ -229,13 +176,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"error": "not found"}, 404)
         self.send_json({"error": "not found"}, 404)
 
-    def do_POST(self):
+    def _post(self):
         path = urllib.parse.urlparse(self.path).path
         raw = self.body()
         if path == "/api/import":
             return self.do_import(raw)
         if path == "/api/import/async":
-            req = json.loads(raw or b"{}")
+            req = self.json_body(raw)
             src = (req.get("url") or "").strip()
             if not src.startswith(("http://", "https://")):
                 return self.send_json({"error": "url must be http(s)"}, 400)
@@ -255,7 +202,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/refresh":
             # Rebuild a track from its remembered source, with any option
             # overridden. This is why the manifest exists.
-            req = json.loads(raw or b"{}")
+            req = self.json_body(raw)
             tid = safe_id(req.get("id") or "")
             if tid is None:
                 return self.send_json({"error": "no id"}, 400)
@@ -272,9 +219,10 @@ class Handler(BaseHTTPRequestHandler):
                 ok, out = run(args)
             return self.send_json({"ok": ok, "log": out,
                                    "tracks": [track_info(p)
-                                              for p in track_files()]})
+                                              for p in track_files()]},
+                                  200 if ok else 500)
         if path == "/api/compare":
-            req = json.loads(raw or b"{}")
+            req = self.json_body(raw)
             # .name-strip like every other track route — without it this was
             # an arbitrary-read: "../../x" resolved, encoded, and streamed.
             p = track_path(Path((req.get("id") or "").strip()).name)
@@ -292,10 +240,12 @@ class Handler(BaseHTTPRequestHandler):
             # ffmpeg four times over; serialise with every other encode job.
             with _lock:
                 out = sm.compare(p, opts, token=f"{p.stem}-{int(time.time())}")
-            return self.send_json(out)
+            return self.send_json(out, 200 if out.get("ok") else 500)
         if path == "/api/probe":
-            req = json.loads(raw or b"{}")
-            return self.send_json(sm.probe((req.get("url") or "").strip()))
+            req = self.json_body(raw)
+            out = sm.probe((req.get("url") or "").strip())
+            # A bad or unreadable link is the caller's problem: 400, not 200.
+            return self.send_json(out, 200 if out.get("ok") else 400)
         if path == "/api/server/stop":
             # Answer first, then shut down — otherwise the page sees the
             # socket die and reports a network error instead of "stopped".
@@ -307,14 +257,15 @@ class Handler(BaseHTTPRequestHandler):
             threading.Thread(target=_restart, daemon=True).start()
             return
         if path == "/api/scene":
-            return self.do_scene(json.loads(raw or b"{}"))
+            return self.do_scene(self.json_body(raw))
         if path == "/api/rebuild":
             with _lock:
                 ok1, o1 = run([PY, str(ROOT / "tools" / "render_audio.py")])
                 ok2, o2 = run([PY, str(ROOT / "tools" / "gen_esphome.py")])
                 ok3, o3 = run([PY, str(ROOT / "tools" / "gen_previewer.py")])
-            return self.send_json({"ok": ok1 and ok2 and ok3,
-                                   "log": (o1 + o2 + o3)[-4000:]})
+            ok = ok1 and ok2 and ok3
+            return self.send_json({"ok": ok, "log": (o1 + o2 + o3)[-4000:]},
+                                  200 if ok else 500)
         self.send_json({"error": "not found"}, 404)
 
     def do_import(self, raw: bytes):
@@ -323,7 +274,7 @@ class Handler(BaseHTTPRequestHandler):
         args = [PY, str(ROOT / "tools" / "import_track.py")]
 
         if ctype.startswith("application/json"):
-            req = json.loads(raw or b"{}")
+            req = self.json_body(raw)
             src = (req.get("url") or "").strip()
             if not src:
                 return self.send_json({"error": "no url"}, 400)
@@ -332,7 +283,7 @@ class Handler(BaseHTTPRequestHandler):
             args.append(src)
         else:
             # multipart upload: pull out the single file part
-            fname, data = parse_multipart(raw, ctype)
+            fname, data = sh.parse_multipart(raw, ctype)
             if not data:
                 return self.send_json({"error": "no file in upload"}, 400)
             tmp = TRACKS / "_upload"
@@ -358,7 +309,8 @@ class Handler(BaseHTTPRequestHandler):
         shutil.rmtree(TRACKS / "_upload", ignore_errors=True)
         return self.send_json({"ok": ok, "log": out,
                                "tracks": [track_info(p)
-                                          for p in track_files()]}, )
+                                          for p in track_files()]},
+                              200 if ok else 500)
 
     def do_scene(self, req: dict):
         """Insert or replace a scene block in scenes.yaml.
@@ -415,27 +367,11 @@ class Handler(BaseHTTPRequestHandler):
         # `replaced` and `scenes` are what let the panel say what actually
         # happened instead of "written", which is indistinguishable from
         # nothing having happened at all.
-        return self.send_json({"ok": ok1 and ok2 and ok3, "id": sid,
+        ok = ok1 and ok2 and ok3
+        return self.send_json({"ok": ok, "id": sid,
                                "replaced": replaced, "scenes": scene_ids(),
-                               "log": (o1 + o2 + o3)[-4000:]})
-
-
-def parse_multipart(raw: bytes, ctype: str) -> tuple[str, bytes]:
-    if "boundary=" not in ctype:
-        return "", b""
-    b = ("--" + ctype.split("boundary=")[1].strip().strip('"')).encode()
-    for part in raw.split(b):
-        if b"\r\n\r\n" not in part:
-            continue
-        head, data = part.split(b"\r\n\r\n", 1)
-        if b"filename=" not in head:
-            continue
-        name = head.decode("utf-8", "replace").split("filename=")[1]
-        name = name.split('"')[1] if '"' in name else name.strip()
-        # Strip exactly the CRLF before the boundary — rstrip(b"\r\n-")
-        # also ate any REAL trailing 0x2D/0x0D/0x0A bytes of the file.
-        return Path(name).name, data[:-2] if data.endswith(b"\r\n") else data
-    return "", b""
+                               "log": (o1 + o2 + o3)[-4000:]},
+                              200 if ok else 500)
 
 
 def scene_ids() -> list[str]:

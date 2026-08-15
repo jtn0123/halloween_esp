@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import studio  # noqa: E402
+import studio_http as sh  # noqa: E402
 
 
 class Quiet(studio.Handler):
@@ -93,7 +94,7 @@ class TestMultipart(unittest.TestCase):
             + data + f"\r\n--{boundary}--\r\n".encode()
 
     def test_extracts_name_and_bytes(self) -> None:
-        name, data = studio.parse_multipart(
+        name, data = sh.parse_multipart(
             self.body("clip.wav", b"\x00\x01\x02payload"),
             "multipart/form-data; boundary=BOUND")
         self.assertEqual(name, "clip.wav")
@@ -101,23 +102,23 @@ class TestMultipart(unittest.TestCase):
 
     def test_strips_any_path_from_the_filename(self) -> None:
         """A browser can send a full path; writing it verbatim would escape tracks/."""
-        name, _ = studio.parse_multipart(
+        name, _ = sh.parse_multipart(
             self.body("../../etc/passwd", b"x"),
             "multipart/form-data; boundary=BOUND")
         self.assertEqual(name, "passwd")
 
     def test_quoted_boundary_is_accepted(self) -> None:
-        name, _ = studio.parse_multipart(
+        name, _ = sh.parse_multipart(
             self.body("a.wav", b"x"), 'multipart/form-data; boundary="BOUND"')
         self.assertEqual(name, "a.wav")
 
     def test_no_boundary_yields_nothing(self) -> None:
-        self.assertEqual(studio.parse_multipart(b"whatever", "text/plain"), ("", b""))
+        self.assertEqual(sh.parse_multipart(b"whatever", "text/plain"), ("", b""))
 
     def test_a_part_without_a_filename_is_not_a_file(self) -> None:
         body = (b"--B\r\nContent-Disposition: form-data; name=\"opts\"\r\n\r\n"
                 b"{}\r\n--B--\r\n")
-        self.assertEqual(studio.parse_multipart(body, "multipart/form-data; boundary=B"),
+        self.assertEqual(sh.parse_multipart(body, "multipart/form-data; boundary=B"),
                          ("", b""))
 
 

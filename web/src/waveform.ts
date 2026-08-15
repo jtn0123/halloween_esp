@@ -13,6 +13,7 @@
  * without knowing this file exists.
  */
 
+import { api } from "./api.js";
 import { BAND_HELP, BANDS, bandSummary } from "./bands.js";
 import type { BandEditor } from "./band_editor.js";
 import type { CodecAb } from "./codec_ab.js";
@@ -186,13 +187,12 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
 
   async function analyse(id: string): Promise<WaveData | string> {
     try {
-      const r = await fetch(
-        `/api/waveform/${encodeURIComponent(id)}?${deps.bands.query()}`);
+      const r = await api.waveform(id, deps.bands.query());
       // A missing track is an ordinary outcome — the panel can be showing a row
       // the server has since deleted — so it reads as a message, not a throw.
       if (r.status === 404) return `No waveform for “${id}” — the studio has not analysed it.`;
-      if (!r.ok) return `Analysis failed — HTTP ${r.status}.`;
-      return toWave(id, await r.json());
+      if (r.body === null) return `Analysis failed — HTTP ${r.status}.`;
+      return toWave(id, r.body);
     } catch (err) {
       // Static mode: the page is open without tools/studio.py behind it.
       return `Could not reach the studio — ${String(err)}`;
