@@ -32,5 +32,5 @@ files = ["tools", "tests"]
 # tools on esphome's transitive deps; missing stubs there are noise, not
 # signal.
 [[tool.mypy.overrides]]
-module = ["scipy.*", "aioesphomeapi.*", "PIL.*", "esphome.*"]
+module = ["scipy.*", "aioesphomeapi.*", "PIL.*", "esphome.*", "segno.*"]
 ignore_missing_imports = true

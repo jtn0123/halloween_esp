@@ -25,7 +25,7 @@ jobs:
           python-version: "3.13"
       # ffmpeg: analyze.py decodes through it, and several tests exercise
       # that path — without it the whole test_analysis module errors out.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg lame
       - run: pip install pyyaml numpy scipy
       - run: pip install -r requirements-dev.txt
       - name: lint
@@ -46,6 +46,16 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # The e2e suite drives the REAL studio server, whose launch command is
+      # .venv/bin/python — so the venv and its media tools must exist here.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg lame
+      - name: studio server venv
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --quiet numpy scipy pyyaml
       - run: npm ci
         working-directory: web
       - run: npx tsc --noEmit
@@ -69,7 +79,7 @@ jobs:
       # ffmpeg + numpy/scipy: the flash build embeds audio/*.mp3, which are
       # gitignored — CI has to render them before validation or the config
       # references files that do not exist.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg lame
       - run: pip install "esphome==2026.7.4" pyyaml numpy scipy
       - name: render scene audio
         run: python tools/render_audio.py
