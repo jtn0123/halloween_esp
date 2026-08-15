@@ -114,7 +114,7 @@ test("clicking a row opens the clip editor on it", async ({ page }) => {
   await expect(page.locator("#trkWave")).toBeHidden();
   await row(page, MP3).locator(".trk__nm").click();
   await expect(page.locator("#trkWave")).toBeVisible();
-  await expect(page.locator("#trkWave canvas")).toBeVisible();
+  await expect(page.locator("#trkWave canvas:not(.stems-strip)")).toBeVisible();
   await expect(row(page, MP3)).toHaveClass(/sel/);
   // Analysis has landed when the readout names the selection.
   await expect(page.locator("#trkWave")).toContainText(/start 0:00/);
@@ -218,7 +218,7 @@ test("each band gets its own zone and its own threshold", async ({ page }) => {
 
   // Reassigning a zone follows through to the summary line.
   await rows.nth(0).locator(".bandcfg__zone").selectOption("towerR");
-  await expect(page.locator("#trkWave p")).toContainText("towerR");
+  await expect(page.locator("#trkWave p:not(.stems-note)")).toContainText("towerR");
 });
 
 test("Snap to beat moves the clip onto detected onsets", async ({ page }) => {
@@ -227,7 +227,7 @@ test("Snap to beat moves the clip onto detected onsets", async ({ page }) => {
   await expect(snap).toBeEnabled();
 
   // Drag out a region that deliberately does not start on a transient.
-  const canvas = page.locator("#trkWave canvas");
+  const canvas = page.locator("#trkWave canvas:not(.stems-strip)");
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + box.width * 0.31, box.y + box.height / 2);
   await page.mouse.down();
@@ -238,7 +238,7 @@ test("Snap to beat moves the clip onto detected onsets", async ({ page }) => {
   await snap.click();
   // Either it moved the edit, or both ends were already on a beat. Both are
   // correct outcomes; silently doing nothing without saying so is not.
-  await expect(page.locator("#trkWave p"))
+  await expect(page.locator("#trkWave p:not(.stems-note)"))
     .toHaveText(/Snapped to the nearest onsets|Already on a beat/);
 });
 
