@@ -82,32 +82,27 @@
   .desk { max-width: 1320px; margin: 0 auto; padding: 28px 20px 64px; }
 
   /* ─── Masthead ─────────────────────────────────────────────────────── */
+  /* One row, and it lights itself: panels.updateShell paints a low spill of
+     the doorway's colour behind it, so the header belongs to the show rather
+     than sitting above it. The prose it used to carry is in the footer fold. */
   .head {
-    display: flex; flex-wrap: wrap; align-items: flex-end;
-    justify-content: space-between; gap: 20px;
-    padding-bottom: 20px; margin-bottom: 24px;
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: space-between; gap: 14px;
+    padding: 6px 0 14px; margin-bottom: 18px;
     border-bottom: 1px solid var(--line);
   }
+  .head__id { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
   .head h1 {
-    font-family: var(--f-display);
-    font-size: clamp(30px, 4.6vw, 46px);
-    font-weight: 400; letter-spacing: .005em;
-    margin: 2px 0 6px; text-wrap: balance;
+    font-family: var(--f-display); font-size: clamp(24px, 3vw, 30px);
+    font-weight: 400; letter-spacing: .005em; margin: 0; white-space: nowrap;
   }
   .eyebrow {
-    font-family: var(--f-data); font-size: 10.5px;
-    letter-spacing: .16em; text-transform: uppercase;
-    color: var(--muted); margin: 0;
+    font-family: var(--f-data); font-size: 10.5px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--muted); margin: 0; white-space: nowrap;
   }
-  .head p.sub { margin: 0; color: var(--ink-2); max-width: 60ch; font-size: 14px; }
-  .rig { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip {
-    font-family: var(--f-data); font-size: 11px; letter-spacing: .04em;
-    padding: 4px 9px; border-radius: 3px;
-    border: 1px solid var(--line-2); color: var(--ink-2); background: var(--panel);
-    white-space: nowrap;
-  }
-  .chip b { color: var(--ink); font-weight: 600; }
+  .head__live { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .head__dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--spirit); box-shadow: 0 0 7px var(--spirit); }
+  .head__txt { font-family: var(--f-data); font-size: 10.5px; letter-spacing: .06em; color: var(--muted); }
 
   /* ─── Layout ───────────────────────────────────────────────────────── */
   .grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
@@ -168,15 +163,14 @@
   }
 
   /* ─── Channel strips ───────────────────────────────────────────────── */
+  /* The swatch IS the meter — it glows in proportion to level, so a separate
+     bar next to the hex readout was saying the same thing three times. */
   .chans { display: grid; gap: 1px; background: var(--line); }
-  .chan { display: grid; grid-template-columns: 26px 1fr auto; gap: 12px; align-items: center; padding: 11px 14px; background: var(--panel); }
-  .chan__sw { width: 26px; height: 26px; border-radius: 3px; border: 1px solid var(--line-2); }
+  .chan { display: grid; grid-template-columns: 20px 1fr auto; gap: 11px; align-items: center; padding: 8px 14px; background: var(--panel); }
+  .chan__sw { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line-2); }
   .chan__nm { font-size: 13px; }
   .chan__nm small { display: block; font-family: var(--f-data); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-  .chan__mtr { display: flex; align-items: center; gap: 10px; }
-  .meter { width: 84px; height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
-  .meter i { display: block; height: 100%; width: 0; }
-  .chan__val { font-family: var(--f-data); font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; min-width: 84px; text-align: right; }
+  .chan__val { font-family: var(--f-data); font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 
   /* ─── Scene selector — compact grid, lives right under the stage ───── */
   .scenes {
@@ -184,13 +178,16 @@
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   }
   .scene {
-    display: block; text-align: left; cursor: pointer;
-    border: 0; border-top: 3px solid transparent; padding: 9px 12px 10px;
+    position: relative; display: block; text-align: left; cursor: pointer;
+    border: 0; border-top: 3px solid transparent; padding: 10px 12px 9px;
     background: var(--panel); color: var(--ink); font: inherit;
   }
   .scene:hover { background: var(--panel-2); }
   .scene[aria-pressed="true"] { border-top-color: var(--accent); background: var(--panel-2); }
-  .scene strong { display: block; font-family: var(--f-display); font-size: 17px; font-weight: 400; }
+  /* The scene's own light, sampled from the effects it runs (scene_tint.ts) —
+     so the grid can be scanned for a colour instead of read for a word. */
+  .scene__tint { position: absolute; top: 0; left: 9px; right: 9px; height: 2px; border-radius: 0 0 2px 2px; }
+  .scene strong { display: block; font-family: var(--f-display); font-size: 17px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .scene span {
     display: block; margin-top: 1px; font-family: var(--f-data); font-size: 9.5px;
     letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
@@ -198,8 +195,6 @@
   }
   /* What the scene costs in flash, which is the budget you are spending. */
   .scene__sz { color: var(--ink-2); letter-spacing: .06em; }
-  #sceneCount .ok { color: var(--spirit); }
-  #sceneCount .no { color: var(--alarm); }
   .scenes-blurb {
     margin: 0; padding: 10px 14px; border-top: 1px solid var(--line);
     font-size: 12.5px; color: var(--ink-2); line-height: 1.5; min-height: 2.4em;
@@ -406,9 +401,6 @@
     letter-spacing: .09em; text-transform: uppercase; color: var(--ink-2);
     padding: 7px 0; list-style: none;
   }
-  .sheet-fold > summary::-webkit-details-marker { display: none; }
-  .sheet-fold > summary::before { content: "▸ "; color: var(--accent); }
-  .sheet-fold[open] > summary::before { content: "▾ "; }
   .sheet-fold > summary:hover { color: var(--accent); }
   .sheet-count { color: var(--muted); text-transform: none; letter-spacing: 0; }
   .sheet-wrap {

@@ -46,17 +46,70 @@ test("the cue sheet is collapsed, counted and capped", async ({ page }) => {
   expect(capped).toBe(true);
 });
 
-test("scenes carry their size and total against the flash budget",
+test("scenes carry their size and their own colour", async ({ page }) => {
+  await expect(page.locator("#sceneCount")).toHaveText(/\d+ loaded/);
+  const first = page.locator(".scene").first();
+  await expect(first.locator(".scene__sz")).toHaveText(/\d+s/);
+  // The tile's bar is sampled from the effects the scene runs (scene_tint.ts).
+  // Two scenes sharing a base still have to come out different, or the grid is
+  // eight grey tiles again and you are back to reading the words.
+  const tints = await page.locator(".scene__tint").evaluateAll(
+    els => els.map(e => (e as HTMLElement).style.background));
+  expect(tints.length).toBeGreaterThan(1);
+  expect(tints.every(t => t !== "")).toBe(true);
+  expect(new Set(tints).size).toBeGreaterThan(1);
+});
+
+test("the budget card measures the show against both builds", async ({ page }) => {
+  // What used to be a parenthesised percentage next to the scene count. The
+  // flash ceiling is the app partition (firmware/partitions_single_app.csv);
+  // the card is the experimental `make sd-build` variant.
+  await expect(page.locator("#budHead"))
+    .toHaveText(/[\d.]+ [KMG]B of 3\.88 MB · \d+%/);
+  await expect(page.locator("#budPick")).toBeHidden();
+
+  // Every band is the scene behind it, and so is every legend row — on the
+  // card view the used bands are hairlines, so the rows have to select too.
+  await page.locator("#budRows .budget__row").nth(1).click();
+  await expect(page.locator("#budPick")).toBeVisible();
+  await expect(page.locator(".budget__pickhd b")).toHaveText(/[\d.]+ [KMG]B · /);
+
+  await page.locator('#budTabs button[data-bud="sd"]').click();
+  await expect(page.locator("#budHead")).toContainText("of 32.00 GB");
+  await expect(page.locator("#budRows")).toContainText("/sd/scenes");
+  await expect(page.locator("#budNote")).toContainText("Experimental");
+  // The selection does not survive the switch — the keys mean different things.
+  await expect(page.locator("#budPick")).toBeHidden();
+});
+
+test("the stage view toggle shows the castle, the pixels, or both",
   async ({ page }) => {
-    await expect(page.locator("#sceneCount")).toHaveText(/\d+ loaded/);
-    const first = page.locator(".scene").first();
-    await expect(first.locator(".scene__sz")).toHaveText(/\d+s/);
-    // The budget line only appears once something has been rendered, which is
-    // the normal state of a built checkout.
-    const text = await page.locator("#sceneCount").textContent();
-    if (/flash/.test(text ?? "")) {
-      expect(text).toMatch(/of [\d.]+ MB flash \(\d+%\)/);
-    }
+    const stage = page.locator(".stage");
+    const jewels = page.locator("#jewels");
+    await expect(stage).toBeVisible();
+    await expect(jewels).toBeVisible();
+
+    await page.locator('#viewSel button[data-view="pixels"]').click();
+    await expect(stage).toBeHidden();
+    await expect(jewels).toBeVisible();
+
+    await page.locator('#viewSel button[data-view="castle"]').click();
+    await expect(stage).toBeVisible();
+    await expect(jewels).toBeHidden();
+
+    // The choice is remembered, the way the trim sliders are.
+    await page.reload();
+    await expect(page.locator("#jewels")).toBeHidden();
+    await page.locator('#viewSel button[data-view="both"]').click();
+  });
+
+test("the masthead says which machine is listening and what it is doing",
+  async ({ page }) => {
+    // No castle answers /api/status in the test rig, so the desk is honest
+    // about being a simulator — and it starts muted, always.
+    await expect(page.locator("#headTxt")).toHaveText(/^simulator · .* · muted$/);
+    await page.locator("#mute").click();
+    await expect(page.locator("#headTxt")).toContainText("sounding");
   });
 
 test("picking a scene loads it without starting audio", async ({ page }) => {

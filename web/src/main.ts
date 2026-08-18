@@ -11,6 +11,8 @@
 
 import { RenderedAudio, type AudioMode } from "./audio.js";
 import { createBandEditor } from "./band_editor.js";
+import { initBudget } from "./budget.js";
+import { lightChrome, setStatus } from "./chrome_light.js";
 import { createCodecAb, type CodecAb } from "./codec_ab.js";
 import { deviceBridge } from "./device.js";
 import { defaultParams } from "./effects.js";
@@ -19,6 +21,7 @@ import { createZoneDesigner } from "./zone_designer.js";
 import { Panels } from "./panels.js";
 import { createState, step } from "./show.js";
 import { Stage } from "./stage.js";
+import { initStageView } from "./stage_view.js";
 import { Synth } from "./synth.js";
 import { Transport } from "./transport.js";
 import { initTracks, type TracksApi } from "./tracks.js";
@@ -57,16 +60,57 @@ const insets = new JewelInsets(canvas);
 // Live per-zone texture editing on the running preview.
 const designer = createZoneDesigner(() => state);
 
+const kiosk = new URLSearchParams(location.search).has("kiosk");
+// Which of the two the masthead toggle is showing. CSS only; both keep
+// drawing. Not in kiosk: there is no toggle on screen to undo it with, and a
+// wall tablet inheriting "pixels only" from whoever last used the browser
+// would show the porch a row of dots and no castle.
+if (!kiosk) initStageView();
+
 /* ── Kiosk mode ─────────────────────────────────────────────────────────
    ?kiosk=1 strips the page to the stage alone — a wall tablet on the porch
-   showing the full 21-pixel render in sync with the real castle. */
-if (new URLSearchParams(location.search).has("kiosk")) {
+   showing the full 21-pixel render in sync with the real castle.
+
+   Hiding the panels is not enough to make the stage fill the screen. The
+   console column's `.col` wrapper is not a panel, so it survived, and a grid
+   track sized `minmax(320px,1fr)` goes on reserving its share whether or not
+   anything is left inside it — the stage came out at 58% of a 1280px tablet
+   with dead space beside it. The grid has to collapse, and `.desk`'s reading
+   width has to go with it, or a wall display just gets wider margins.
+
+   Width alone is not the answer either. Stage.draw scales the 800x520 design
+   space by WIDTH (see resize()), so a box shorter than that ratio crops the
+   castle's base off rather than letterboxing it — and full-width on a 1280
+   tablet makes the stage 816px tall, pushing the jewel row (the whole point
+   of a kiosk: the real 21 pixels, in sync with the porch) below the fold.
+
+   So the stage is given whichever of the two bounds binds first: the width it
+   has, or the width the leftover HEIGHT allows at its own ratio. Explicitly,
+   not by flexing — a flex-sized box with `width: auto` takes its base from
+   the canvas's intrinsic size, which Stage.resize then writes back from the
+   box, and the circle settles somewhere different depending on when it is
+   measured. Once it settled at 58% in a fresh browser and 78% in a warm one. */
+if (kiosk) {
   const css = document.createElement("style");
+  // The only chrome left below the stage: #jewels, 420px wide at 420:146,
+  // plus its .4rem top margin. Reserve it so the row is never below the fold.
   css.textContent = `
+    body.kiosk { --jewel-row: 153px; }
+    body.kiosk .desk { max-width: none; padding: 0; }
+    body.kiosk .grid { grid-template-columns: 1fr; gap: 0; }
+    body.kiosk .col:not(:has(#stage)) { display: none; }
     body.kiosk section.panel { display: none; }
-    body.kiosk section.panel:has(#stage) { display: block; max-width: none; }
+    body.kiosk section.panel:has(#stage) {
+      display: flex; flex-direction: column; justify-content: center;
+      height: 100vh; max-width: none; border: 0; border-radius: 0;
+    }
+    body.kiosk .stage {
+      flex: none; margin: 0 auto;
+      width: min(100%, calc((100vh - var(--jewel-row)) * 800 / 520));
+    }
+    body.kiosk .panel__hd, body.kiosk .transport, body.kiosk .hint,
     body.kiosk section.panel:has(#stage) details,
-    body.kiosk header, body.kiosk .lead, body.kiosk .chips { display: none; }
+    body.kiosk header, body.kiosk .foot { display: none; }
   `;
   document.head.appendChild(css);
   document.body.classList.add("kiosk");
@@ -85,6 +129,23 @@ let players: Players | null = null;
 // Panels wires the cue-sheet row clicks itself, so seeking is a constructor
 // dependency rather than a separate binding.
 const panels = new Panels((ms) => transport.seekTo(ms));
+
+/* What the show is allowed to cost, in both builds. Scene sizes are real
+   whenever `make audio` has run; the imported library arrives later, once the
+   studio has answered — see the onList hook below. */
+const budget = initBudget(SCENES);
+
+/* ── The masthead's one live line ──────────────────────────────────────
+   Which machine is listening and what the speakers are doing. It is the only
+   status on the page that is true before you have opened anything, so it has
+   to be maintained rather than written once. */
+let deviceLine = "simulator";
+let deviceOk = true;
+function syncStatus(): void {
+  setStatus(`${deviceLine} · `
+    + `${audioMode === "rendered" ? "rendered audio" : "live synth"} · `
+    + `${rendered.muted ? "muted" : "sounding"}`, deviceOk);
+}
 
 const transport = new Transport({
   state, rendered, synth,
@@ -122,6 +183,7 @@ const device = deviceBridge({
     document.querySelector<HTMLElement>(`.scene[data-i="${i}"]`)?.click();
     adopting = false;
   },
+  onStatus: (line, ok) => { deviceLine = line; deviceOk = ok; syncStatus(); },
 });
 panels.renderScenes(SCENES, (sc) => {
   transport.loadScene(sc, { play: state.running });
@@ -150,6 +212,7 @@ panels.bindSliders({
     if (audioMode === "rendered") synth.stopWind(0.4);
     rendered.stopAll();
     transport.loadScene(state.scene, { play: wasPlaying });
+    syncStatus();
   },
 });
 
@@ -168,6 +231,7 @@ if (scrub) transport.bindScrub(scrub);
    master slider — a volume-based mute is one stray write from being undone. */
 const muteBtn = document.getElementById("mute");
 function syncMuteUI(): void {
+  syncStatus();
   if (!muteBtn) return;
   muteBtn.setAttribute("aria-pressed", String(rendered.muted));
   muteBtn.textContent = rendered.muted ? "Muted" : "Mute";
@@ -272,6 +336,9 @@ const tracks = initTracks({
   onSelect: (id) => { selectedTrack = id; wave.show(id); },
   onAudioClaim: () => wave.stop(),
   onPreviewState: () => transport.refreshUI(),
+  // The library is the SD build's biggest number, and it only exists once
+  // the studio has answered — so the budget card learns it here.
+  onList: (list) => budget.setTracks(list),
 });
 players = { wave, tracks, codecs };
 
@@ -290,10 +357,12 @@ function frame(now: number): void {
   stage.draw(f.zones, now / 1000, f.flash, f.flashColor);
   insets.draw(f.zones);
   panels.updateMeters(f.zones);
+  lightChrome(f.zones);
   wave.mirror(f.zones);
   panels.updateTransport(f.elapsed, state.scene);
   requestAnimationFrame(frame);
 }
 
 transport.loadScene(firstScene);
+syncStatus();
 requestAnimationFrame(frame);

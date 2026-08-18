@@ -73,6 +73,12 @@ export interface TracksDeps {
   /** Row preview started or stopped — so the transport can reflect it. */
   onPreviewState?: (playing: boolean) => void;
   /**
+   * The library, every time it is redrawn: imported, deleted, re-imported.
+   * The budget card is the consumer — what the card would hold is the whole
+   * of the SD build's ledger, and only this panel ever learns it.
+   */
+  onList?: (tracks: readonly TrackInfo[]) => void;
+  /**
    * Fired just before a row preview starts, so the host can stop whatever else
    * it has playing. Two audio sources at once is never what was meant.
    */
@@ -106,6 +112,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
     mode: "static" as "static" | "studio",
     note: byId("trkNote"),
     list: byId("trkList"),
+    count: byId("trkCount"),
     yaml: byId("trkYaml"),
     modeEl: byId("trkMode"),
     /** Scene ids already in scenes.yaml, so a row can say it is in the show. */
@@ -212,6 +219,9 @@ export function initTracks(deps: TracksDeps): TracksApi {
       inShow: T.sceneIds.has(t.id),
       sounding: playingId === t.id,
     })).join("");
+    const n = T.tracks.length;
+    T.count.textContent = n === 0 ? "empty" : `${n} imported`;
+    deps.onList?.(T.tracks);
   }
 
   // Clicking anywhere on a row that is not a button opens the clip editor on

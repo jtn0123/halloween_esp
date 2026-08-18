@@ -10,10 +10,17 @@
 @media (max-width: 760px) {
   .desk { padding: 14px 10px 96px; }
 
-  /* Header stacks; the hardware chips wrap under the title. */
-  .head { flex-direction: column; gap: 10px; }
+  /* Header stacks; the live line and the view toggle wrap under the title. */
+  .head { flex-direction: column; align-items: flex-start; gap: 10px; }
   .head h1 { font-size: 26px; }
-  .rig { flex-wrap: wrap; }
+  .head__live { width: 100%; }
+  .viewsel { margin-left: auto; }
+  .viewsel button { min-height: 34px; }
+
+  /* Three sliders across a phone is about 100px each — enough to drag, but
+     only if they are not also paying for the desktop gap between them. */
+  .ctrls__row { gap: 7px; }
+  .budget__tabs button { min-height: 30px; }
 
   /* One column — the desktop two-column split needs 1040px anyway, but the
      inner grids (scene tiles, slider rows) also tighten here. */
@@ -29,6 +36,11 @@
   .sheet-fold table, .src pre, #zdOut { display: block; overflow-x: auto; }
   .zd { font-size: 12px; }
   .zd select { max-width: 84px; }
+
+  /* The studio strip gets its own line under the Tracks title, and its
+     buttons keep the 44px floor like every other control during a show. */
+  .trk-panel .panel__hd .trk-server { width: 100%; justify-content: flex-start; }
+  .trk-srvbtn button { min-height: 40px; }
 
   /* Track rows: the class is .trk (not .trk-row — the first draft of this
      rule styled a selector that does not exist, and RE-IMPORT/DELETE fell off

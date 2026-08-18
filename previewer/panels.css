@@ -5,6 +5,150 @@
    light theme. This file is the overflow room; gen_previewer.py inlines it
    right after styles.css. */
 
+/* ─── Masthead view toggle (stage_view.ts) ──────────────────────────────
+   Castle, Pixels, or both. CSS only: both canvases keep drawing, so the
+   switch is instant and no module has to know the mode exists. */
+.viewsel { display: flex; flex: none; border: 1px solid var(--line-2); border-radius: 999px; overflow: hidden; }
+.viewsel button {
+  font-family: var(--f-data); font-size: 9.5px; letter-spacing: .12em;
+  text-transform: uppercase; padding: 5px 11px; border: 0; cursor: pointer;
+  background: transparent; color: var(--muted);
+  transition: color .14s ease, background .14s ease;
+}
+.viewsel button:hover { background: var(--panel-2); color: var(--ink); }
+.viewsel button[aria-pressed="true"] { background: var(--accent); color: var(--panel); font-weight: 700; }
+/* The jewel row, drawn by insets.ts into a canvas it creates itself. */
+#jewels { display: block; width: 100%; max-width: 420px; height: auto; aspect-ratio: 420 / 146; margin: .4rem auto 0; }
+body.view-castle #jewels { display: none; }
+body.view-pixels .stage { display: none; }
+/* On its own the jewel row can afford to be bigger — it is the whole point
+   of the mode, and 420px of dots in a 900px panel reads as an afterthought. */
+body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
+
+/* The selected scene, ringed rather than bordered: in a 1px-gap grid a fourth
+   border would shift every tile beside it. */
+.scene[aria-pressed="true"] { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+/* ─── Folds ─────────────────────────────────────────────────────────────
+   Every collapsible on the desk wears the same caret. There were five of
+   them under three different treatments — two hand-drawn, two showing the
+   browser's own ▶ — which read as two different kinds of control rather
+   than one control used five times. */
+:is(.sheet-fold, .trim-fold, .foot-fold, .trk-opts-wrap, details.src) > summary {
+  list-style: none;
+}
+:is(.sheet-fold, .trim-fold, .foot-fold, .trk-opts-wrap, details.src)
+  > summary::-webkit-details-marker { display: none; }
+:is(.sheet-fold, .trim-fold, .foot-fold, .trk-opts-wrap, details.src)
+  > summary::before { content: "▸ "; color: var(--accent); }
+:is(.sheet-fold, .trim-fold, .foot-fold, .trk-opts-wrap, details.src)[open]
+  > summary::before { content: "▾ "; }
+
+/* ─── Trim ──────────────────────────────────────────────────────────────
+   The three that get touched during a show, side by side and without their
+   hints; everything else is one fold away. */
+.ctrls__row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ctrl--tight { grid-template-columns: 1fr; gap: 1px; align-content: start; min-width: 0; }
+.ctrl--tight label { font-size: 11px; }
+.ctrl--tight output { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trim-fold { border-top: 1px solid var(--line); padding-top: 11px; }
+.trim-fold > summary, .foot-fold > summary {
+  cursor: pointer; font-family: var(--f-data);
+  font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+}
+.trim-fold > summary:hover, .foot-fold > summary:hover { color: var(--ink); }
+.trim-fold__hint { text-transform: none; letter-spacing: .02em; }
+.trim-fold .ctrls { padding-top: 12px; }
+.hint--block { padding: 0; }
+.foot-fold > summary { margin-bottom: 10px; }
+
+/* ─── Budgets (budget.ts) ───────────────────────────────────────────────
+   Two builds, two ceilings, the same eight scenes measured against each.
+   Every band is clickable, and so is every legend row — on the card view the
+   used bands are hairlines, which is the honest picture and unclickable. */
+.budget .panel__hd { align-items: center; }
+.budget__tabs { display: flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+.budget__tabs button {
+  font-family: var(--f-data); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; padding: 4px 11px; border: 0; cursor: pointer;
+  background: transparent; color: var(--ink-2);
+  transition: background .14s ease, color .14s ease;
+}
+.budget__tabs button + button { border-left: 1px solid var(--line-2); }
+.budget__tabs button:hover { background: var(--panel-2); color: var(--ink); }
+.budget__tabs button[aria-pressed="true"] { background: var(--accent); color: var(--panel); font-weight: 700; }
+.budget__bd { display: grid; gap: 10px; }
+.budget__head {
+  margin: 0; font-family: var(--f-display); font-size: 26px;
+  line-height: 1.15; font-variant-numeric: tabular-nums;
+}
+.budget__head span { font-family: var(--f-body); font-size: 13px; color: var(--muted); }
+.budget__bar {
+  display: flex; gap: 1px; height: 9px; border-radius: 5px;
+  background: var(--line); overflow: hidden;
+}
+.budget__bar i { display: block; height: 100%; cursor: pointer; }
+.budget__bar i.on { outline: 2px solid var(--ink); outline-offset: -2px; }
+.budget__pick {
+  display: grid; gap: 3px; padding: 9px 11px;
+  border: 1px solid var(--line-2); border-radius: 7px; background: var(--panel-2);
+}
+/* `display:grid` beats the UA sheet's [hidden] rule on specificity, and an
+   empty bordered box below the bar looks like a rendering fault. */
+.budget__pick[hidden] { display: none; }
+.budget__pickhd { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.budget__pickhd span { font-family: var(--f-display); font-size: 17px; }
+.budget__pickhd b { font-family: var(--f-data); font-size: 11px; color: var(--accent); font-weight: 400; }
+.budget__pickmeta { font-family: var(--f-data); font-size: 10px; letter-spacing: .04em; color: var(--muted); }
+.budget__pickblurb { font-size: 11.5px; color: var(--ink-2); line-height: 1.5; }
+.budget__rows { display: grid; gap: 2px; }
+.budget__row {
+  display: grid; grid-template-columns: 9px 1fr auto; gap: 8px; align-items: center;
+  padding: 2px 3px; border: 0; border-radius: 4px; background: transparent;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.budget__row:hover, .budget__row.on { background: var(--panel-2); }
+.budget__row i { width: 9px; height: 9px; border-radius: 2px; }
+.budget__row span { font-size: 11.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.budget__row b { font-family: var(--f-data); font-size: 11px; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.budget__note { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+
+/* ─── Tracks: work on the left, library on the right ────────────────────
+   The list used to sit under the clip editor, which put "which track next"
+   a scroll away from the one being trimmed. Below the two-column breakpoint
+   it stacks again, and the library keeps its own scroll either way. */
+.trk-split { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1040px) { .trk-split { grid-template-columns: minmax(0, 1fr) 380px; } }
+.trk-lib { display: flex; flex-direction: column; min-width: 0; border-top: 1px solid var(--line); }
+@media (min-width: 1040px) { .trk-lib { border-top: 0; border-left: 1px solid var(--line); } }
+.trk-lib__hd {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 11px 14px; border-bottom: 1px solid var(--line);
+  font-family: var(--f-data); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--ink-2);
+}
+.trk-lib__hd .note { font-weight: 400; letter-spacing: .04em; color: var(--muted); }
+.trk-lib .trk-list { max-height: 430px; overflow-y: auto; }
+/* A 380px column cannot put four actions beside a title, so the row stacks —
+   the same shape the phone breakpoint already gives it. */
+.trk-lib .trk { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.trk-lib .trk__act { flex-wrap: wrap; }
+.trk-lib__ft {
+  margin: 0; padding: 12px 14px; border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--muted); line-height: 1.6;
+}
+/* The server strip lives in the panel header now, so it drops its own box.
+   Both rows wrap: below about 700px the header cannot hold the title, the
+   mode and two buttons on one line, and `.panel { overflow: hidden }` would
+   quietly clip Restart and Stop server rather than let them wrap. */
+.trk-panel .panel__hd { flex-wrap: wrap; }
+.panel__hd .trk-server {
+  margin: 0; padding: 0; border: 0; background: transparent; flex: none;
+}
+.panel__hd .trk-srvtxt { flex: none; font-size: 11.5px; }
+/* Three children in a space-between row leaves the middle one drifting. */
+#trkMode { margin-right: auto; }
+
 /* Stems panel (stems_view.ts) — three layer strips inside the clip editor. */
 .stems {
   margin-top: 10px;
