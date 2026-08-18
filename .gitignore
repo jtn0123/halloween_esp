@@ -1,4 +1,10 @@
-.venv/
+# No trailing slash on .venv / web/node_modules: a trailing slash matches a
+# DIRECTORY only, and in a git worktree these are usually symlinks back to the
+# main checkout (neither is created by `git worktree add`, both are gitignored,
+# so every worktree needs its own or a link to one). As `.venv/` they showed up
+# as untracked and were one `git add .` away from committing an absolute path
+# to somebody's home directory.
+.venv
 firmware/.esphome/
 firmware/secrets.yaml
 audio/*.wav
@@ -11,7 +17,7 @@ tracks/*
 __pycache__/
 *.pyc
 .DS_Store
-web/node_modules/
+web/node_modules
 web/dist/
 
 # Playwright
