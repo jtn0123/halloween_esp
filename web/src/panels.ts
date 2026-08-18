@@ -12,6 +12,7 @@
  * from one template and a missing id is a build bug, not a runtime condition.
  */
 
+import { sceneTint } from "./scene_tint.js";
 import type { ZoneRender } from "./show.js";
 import type { Cue, Scene, ZoneId } from "./types.js";
 
@@ -42,19 +43,26 @@ export const SOUNDS: Record<string, SoundFile | undefined> = {
 };
 
 /** How the channel strip names each zone. `ch` is the physical output on the
- *  controller, which is what you are looking for when a window is dark. */
+ *  controller, and `px` its slice of the 21-pixel chain — between them they
+ *  are what you are looking for when a window is dark. The ranges come from
+ *  `zone_pixels()` in tools/gen_esphome.py: zone order × 7 pixels each. */
 export interface Channel {
   id: ZoneId;
   ch: number;
   name: string;
-  sub: string;
+  px: string;
 }
 
 export const CHANNELS: readonly Channel[] = [
-  { id: "towerL", ch: 1, name: "Tower window", sub: "stage left" },
-  { id: "towerR", ch: 2, name: "Tower window", sub: "stage right" },
-  { id: "door",   ch: 3, name: "Doorway",      sub: "centre" },
+  { id: "towerL", ch: 1, name: "Tower L", px: "0–6" },
+  { id: "towerR", ch: 2, name: "Tower R", px: "7–13" },
+  { id: "door",   ch: 3, name: "Doorway", px: "14–20" },
 ];
+
+/** The strip reads left-to-right the way the castle stands, which is not the
+ *  order the zones are declared in. Same three channels, laid out as a person
+ *  looking at the porch would find them. */
+const STRIP: readonly ZoneId[] = ["towerL", "door", "towerR"];
 
 /** Where a parameter goes once the slider has been read. Values arrive
  *  already converted, so a caller only has to store them. */
@@ -76,13 +84,6 @@ export interface SliderHandlers {
    */
   renderedAudio?: (useRendered: boolean) => void;
 }
-
-/**
- * Flash left for ALL scene audio after the firmware, on the single-app
- * partition. The same figure tools/render_audio.py budgets against — if one
- * moves, both have to.
- */
-const FLASH_BUDGET = 2.9 * 1024 * 1024;
 
 /** Bytes as the panel prints them: KB under a megabyte, MB above. */
 const kb = (n: number): string =>
@@ -167,7 +168,6 @@ export function toYaml(sc: Scene): string {
 
 interface Meter {
   sw: HTMLElement;
-  bar: HTMLElement;
   val: HTMLElement;
 }
 
@@ -189,6 +189,10 @@ export class Panels {
   private readonly ticks = must("ticks");
   private readonly scrub = must("scrub");
   private readonly meters: Record<ZoneId, Meter>;
+  private readonly shell = document.getElementById("stageShell");
+  private readonly head = document.getElementById("head");
+  private readonly headTxt = document.getElementById("headTxt");
+  private readonly headDot = document.getElementById("headDot");
 
   /** The rows currently in the sheet, cached because the playhead highlight
    *  touches every one of them on every frame. Refreshed by `renderSheet`. */
@@ -200,23 +204,23 @@ export class Panels {
   constructor(private readonly onSeek: (ms: number) => void) {
     // The channel strip is fixed for the life of the page — zones do not come
     // and go — so it is built once and only its numbers change after that.
-    must("chans").innerHTML = CHANNELS.map(z => `
+    // The swatch IS the meter: it carries hue and level at once, which a bar
+    // beside a hex readout could only say twice. Built once — zones do not
+    // come and go — and only its numbers change after that.
+    must("chans").innerHTML = STRIP.map(id => {
+      const z = CHANNELS.find(c => c.id === id);
+      if (!z) throw new Error(`panels: no channel ${id}`);
+      return `
     <div class="chan">
       <div class="chan__sw" id="sw-${z.id}"></div>
-      <div class="chan__nm">${z.name}<small>ch ${z.ch} · ${z.sub}</small></div>
-      <div class="chan__mtr">
-        <div class="meter"><i id="mt-${z.id}"></i></div>
-        <span class="chan__val" id="vl-${z.id}">—</span>
-      </div>
-    </div>`).join("");
+      <div class="chan__nm">${z.name}<small>ch ${z.ch} · px ${z.px}</small></div>
+      <span class="chan__val" id="vl-${z.id}">—</span>
+    </div>`;
+    }).join("");
 
     const meters = {} as Record<ZoneId, Meter>;
     for (const z of CHANNELS) {
-      meters[z.id] = {
-        sw: must(`sw-${z.id}`),
-        bar: must(`mt-${z.id}`),
-        val: must(`vl-${z.id}`),
-      };
+      meters[z.id] = { sw: must(`sw-${z.id}`), val: must(`vl-${z.id}`) };
     }
     this.meters = meters;
 
@@ -241,6 +245,7 @@ export class Panels {
       this.scenesEl.querySelectorAll(".scene")
         .forEach(x => x.setAttribute("aria-pressed", String(x === b)));
       const i = Number((b as HTMLElement).dataset.i);
+      this.markScene(i);
       const sc = this.sceneList[i];
       if (sc && this.onPick) this.onPick(sc, i);
     });
@@ -251,31 +256,32 @@ export class Panels {
   renderScenes(scenes: readonly Scene[], onPick: (scene: Scene, index: number) => void): void {
     this.sceneList = scenes;
     this.onPick = onPick;
+    // The bar across the top is the scene's own light — see scene_tint.ts.
+    // Eight identically grey tiles made you read the word to find Séance;
+    // a swatch answers "which is the green one" before you have read anything.
     this.scenesEl.innerHTML = scenes.map((s, i) => `
     <button class="scene" type="button" data-i="${i}" aria-pressed="${i === 0}"
-            title="${s.blurb}${s.bytes ? `\n\n${s.file} — ${kb(s.bytes)}` : ""}">
-      <strong>${s.name}</strong><span>${s.kind}</span>
-      <span class="scene__sz">${(s.dur / 1000).toFixed(0)}s${s.bytes ? ` · ${kb(s.bytes)}` : ""}</span>
+            title="${s.kind} · ${(s.dur / 1000).toFixed(0)}s${s.loop ? " · loops" : ""}`
+      + ` — ${s.blurb}${s.bytes ? `\n\n${s.file} — ${kb(s.bytes)}` : ""}">
+      <i class="scene__tint" style="background:${sceneTint(s, i === 0 ? 1 : 0.45)}"></i>
+      <strong>${s.name}</strong>
+      <span class="scene__sz">${(s.dur / 1000).toFixed(0)}s${s.loop ? " ↻" : ""}`
+      + `${s.bytes ? ` · ${kb(s.bytes)}` : ""}</span>
     </button>`).join("");
 
-    // The constraint that decides what the show can be, so the total belongs
-    // where the scenes are rather than only in the render log. Named as the
-    // *flash build's* budget, because it is not the only build: castle_sd.yaml
-    // reads scenes off the card instead, where the ceiling is per track rather
-    // than for the whole show. Neither of them streams — see capacityHtml.
-    const total = scenes.reduce((a, s) => a + s.bytes, 0);
-    const pct = Math.round(total / FLASH_BUDGET * 100);
-    this.sceneCount.innerHTML = total
-      ? `${scenes.length} loaded · <b>${kb(total)}</b> of ${kb(FLASH_BUDGET)} flash `
-        + `<span class="${pct >= 90 ? "no" : "ok"}">(${pct}%)</span>`
-      : `${scenes.length} loaded`;
-    this.sceneCount.title = total
-      ? "The flash build (firmware/castle.yaml) fits every scene into the app "
-        + "partition alongside the firmware. The SD build (castle_sd.yaml) "
-        + "lifts this — the card holds any number of tracks — but reads each "
-        + "one whole into PSRAM, so a single track is capped at about 1.5 MB. "
-        + "Neither build streams from the card."
-      : "";
+    // The count only. What the show costs, and against which of the two
+    // builds, is the Budgets panel's whole job now (budget.ts) — it was never
+    // going to fit in a parenthesised percentage.
+    this.sceneCount.textContent = `${scenes.length} loaded`;
+  }
+
+  /** Re-tint the grid so the selected scene's swatch is the bright one. */
+  markScene(index: number): void {
+    this.scenesEl.querySelectorAll<HTMLElement>(".scene").forEach((b, i) => {
+      const sc = this.sceneList[i];
+      const tint = b.querySelector<HTMLElement>(".scene__tint");
+      if (sc && tint) tint.style.background = sceneTint(sc, i === index ? 1 : 0.45);
+    });
   }
 
   /** The cue sheet for one scene, in fire order. */
@@ -311,7 +317,9 @@ export class Panels {
   }
 
   /** The channel meters. Level is the strongest channel rather than a
-   *  luminance mix, because that is what actually clips the LED driver. */
+   *  luminance mix, because that is what actually clips the LED driver — and
+   *  it is what the swatch's own glow is scaled by, so the strip reads at a
+   *  glance and still gives you the exact bytes to type into a scene file. */
   updateMeters(out: ZoneRender): void {
     for (const z of CHANNELS) {
       const m = this.meters[z.id];
@@ -322,11 +330,68 @@ export class Panels {
       const lum = Math.max(r, g, b);
       const css = `rgb(${r},${g},${b})`;
       m.sw.style.background = css;
-      m.bar.style.width = (lum / 255 * 100).toFixed(1) + "%";
-      m.bar.style.background = css;
+      m.sw.style.boxShadow = `0 0 ${(lum / 255 * 20).toFixed(1)}px ${css}`;
       m.val.textContent = String(lum).padStart(3, " ") + "  "
         + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
     }
+  }
+
+  /**
+   * The chrome lights itself from the show.
+   *
+   * The stage panel's border and bloom take the mean of the three zones, and
+   * the masthead gets a low spill of the doorway's colour. Both are hue-only:
+   * luminance drives the strength, so a dim scene glows faintly in its own
+   * colour rather than washing out to grey. Costs one style write a frame.
+   */
+  updateShell(out: ZoneRender): void {
+    const zs = [out.towerL.avg, out.door.avg, out.towerR.avg];
+    const mean = [0, 1, 2].map(k =>
+      Math.min(1, ((zs[0]?.[k] ?? 0) + (zs[1]?.[k] ?? 0) + (zs[2]?.[k] ?? 0)) / 3));
+    const lum = Math.max(mean[0] ?? 0, mean[1] ?? 0, mean[2] ?? 0);
+    if (this.shell) {
+      const n = lum > 0.02 ? 1 / lum : 0;
+      const tint = `rgba(${Math.round((mean[0] ?? 0) * n * 255)},`
+        + `${Math.round((mean[1] ?? 0) * n * 255)},${Math.round((mean[2] ?? 0) * n * 255)},`
+        + `${(0.1 + Math.sqrt(lum) * 0.34).toFixed(3)})`;
+      this.shell.style.boxShadow =
+        `var(--shadow), 0 0 ${(22 + lum * 54).toFixed(0)}px -6px ${tint}`;
+      this.shell.style.borderColor = `color-mix(in srgb, ${tint} 60%, var(--line))`;
+    }
+    if (this.head) {
+      const d = out.door.avg;
+      const tint = `rgb(${Math.round(d[0] * 255)},${Math.round(d[1] * 255)},`
+        + `${Math.round(d[2] * 255)})`;
+      this.head.style.background = "radial-gradient(120% 260% at 22% 150%, "
+        + `color-mix(in srgb, ${tint} 16%, transparent), transparent 70%)`;
+      // The status line catches the tower's light too, so the masthead warms
+      // and cools with the show instead of sitting at one grey. Mixed INTO
+      // --muted rather than set outright: a literal rgb() bright enough to
+      // read on the night stage is unreadable on the light theme's ground.
+      if (this.headTxt) {
+        const l = out.towerL.avg;
+        const lit = Math.max(l[0], l[1], l[2]);
+        const tower = `rgb(${Math.round(l[0] * 255)},${Math.round(l[1] * 255)},`
+          + `${Math.round(l[2] * 255)})`;
+        this.headTxt.style.color =
+          `color-mix(in srgb, ${tower} ${(lit * 45).toFixed(0)}%, var(--muted))`;
+      }
+    }
+  }
+
+  /**
+   * The one live line in the masthead: which machine, what is sounding.
+   *
+   * `ok` drives the dot beside it. A green light next to "castle not
+   * answering" is worse than no light at all — it is the one place on the
+   * page someone glances at to decide whether the porch is alive.
+   */
+  setStatus(text: string, ok = true): void {
+    if (this.headTxt) this.headTxt.textContent = text;
+    if (!this.headDot) return;
+    const c = ok ? "var(--spirit)" : "var(--alarm)";
+    this.headDot.style.background = c;
+    this.headDot.style.boxShadow = `0 0 7px ${c}`;
   }
 
   /** Playhead, clock and the lit row in the sheet. The 700 ms window is a

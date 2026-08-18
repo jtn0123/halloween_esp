@@ -86,32 +86,27 @@
   .desk { max-width: 1320px; margin: 0 auto; padding: 28px 20px 64px; }
 
   /* ─── Masthead ─────────────────────────────────────────────────────── */
+  /* One row, and it lights itself: panels.updateShell paints a low spill of
+     the doorway's colour behind it, so the header belongs to the show rather
+     than sitting above it. The prose it used to carry is in the footer fold. */
   .head {
-    display: flex; flex-wrap: wrap; align-items: flex-end;
-    justify-content: space-between; gap: 20px;
-    padding-bottom: 20px; margin-bottom: 24px;
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: space-between; gap: 14px;
+    padding: 6px 0 14px; margin-bottom: 18px;
     border-bottom: 1px solid var(--line);
   }
+  .head__id { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
   .head h1 {
-    font-family: var(--f-display);
-    font-size: clamp(30px, 4.6vw, 46px);
-    font-weight: 400; letter-spacing: .005em;
-    margin: 2px 0 6px; text-wrap: balance;
+    font-family: var(--f-display); font-size: clamp(24px, 3vw, 30px);
+    font-weight: 400; letter-spacing: .005em; margin: 0; white-space: nowrap;
   }
   .eyebrow {
-    font-family: var(--f-data); font-size: 10.5px;
-    letter-spacing: .16em; text-transform: uppercase;
-    color: var(--muted); margin: 0;
+    font-family: var(--f-data); font-size: 10.5px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--muted); margin: 0; white-space: nowrap;
   }
-  .head p.sub { margin: 0; color: var(--ink-2); max-width: 60ch; font-size: 14px; }
-  .rig { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip {
-    font-family: var(--f-data); font-size: 11px; letter-spacing: .04em;
-    padding: 4px 9px; border-radius: 3px;
-    border: 1px solid var(--line-2); color: var(--ink-2); background: var(--panel);
-    white-space: nowrap;
-  }
-  .chip b { color: var(--ink); font-weight: 600; }
+  .head__live { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .head__dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--spirit); box-shadow: 0 0 7px var(--spirit); }
+  .head__txt { font-family: var(--f-data); font-size: 10.5px; letter-spacing: .06em; color: var(--muted); }
 
   /* ─── Layout ───────────────────────────────────────────────────────── */
   .grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
@@ -172,15 +167,14 @@
   }
 
   /* ─── Channel strips ───────────────────────────────────────────────── */
+  /* The swatch IS the meter — it glows in proportion to level, so a separate
+     bar next to the hex readout was saying the same thing three times. */
   .chans { display: grid; gap: 1px; background: var(--line); }
-  .chan { display: grid; grid-template-columns: 26px 1fr auto; gap: 12px; align-items: center; padding: 11px 14px; background: var(--panel); }
-  .chan__sw { width: 26px; height: 26px; border-radius: 3px; border: 1px solid var(--line-2); }
+  .chan { display: grid; grid-template-columns: 20px 1fr auto; gap: 11px; align-items: center; padding: 8px 14px; background: var(--panel); }
+  .chan__sw { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line-2); }
   .chan__nm { font-size: 13px; }
   .chan__nm small { display: block; font-family: var(--f-data); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-  .chan__mtr { display: flex; align-items: center; gap: 10px; }
-  .meter { width: 84px; height: 5px; background: var(--line); border-radius: 3px; overflow: hidden; }
-  .meter i { display: block; height: 100%; width: 0; }
-  .chan__val { font-family: var(--f-data); font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; min-width: 84px; text-align: right; }
+  .chan__val { font-family: var(--f-data); font-size: 11.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 
   /* ─── Scene selector — compact grid, lives right under the stage ───── */
   .scenes {
@@ -188,13 +182,16 @@
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   }
   .scene {
-    display: block; text-align: left; cursor: pointer;
-    border: 0; border-top: 3px solid transparent; padding: 9px 12px 10px;
+    position: relative; display: block; text-align: left; cursor: pointer;
+    border: 0; border-top: 3px solid transparent; padding: 10px 12px 9px;
     background: var(--panel); color: var(--ink); font: inherit;
   }
   .scene:hover { background: var(--panel-2); }
   .scene[aria-pressed="true"] { border-top-color: var(--accent); background: var(--panel-2); }
-  .scene strong { display: block; font-family: var(--f-display); font-size: 17px; font-weight: 400; }
+  /* The scene's own light, sampled from the effects it runs (scene_tint.ts) —
+     so the grid can be scanned for a colour instead of read for a word. */
+  .scene__tint { position: absolute; top: 0; left: 9px; right: 9px; height: 2px; border-radius: 0 0 2px 2px; }
+  .scene strong { display: block; font-family: var(--f-display); font-size: 17px; font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .scene span {
     display: block; margin-top: 1px; font-family: var(--f-data); font-size: 9.5px;
     letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
@@ -202,8 +199,6 @@
   }
   /* What the scene costs in flash, which is the budget you are spending. */
   .scene__sz { color: var(--ink-2); letter-spacing: .06em; }
-  #sceneCount .ok { color: var(--spirit); }
-  #sceneCount .no { color: var(--alarm); }
   .scenes-blurb {
     margin: 0; padding: 10px 14px; border-top: 1px solid var(--line);
     font-size: 12.5px; color: var(--ink-2); line-height: 1.5; min-height: 2.4em;
@@ -410,9 +405,6 @@
     letter-spacing: .09em; text-transform: uppercase; color: var(--ink-2);
     padding: 7px 0; list-style: none;
   }
-  .sheet-fold > summary::-webkit-details-marker { display: none; }
-  .sheet-fold > summary::before { content: "▸ "; color: var(--accent); }
-  .sheet-fold[open] > summary::before { content: "▾ "; }
   .sheet-fold > summary:hover { color: var(--accent); }
   .sheet-count { color: var(--muted); text-transform: none; letter-spacing: 0; }
   .sheet-wrap {
@@ -510,6 +502,150 @@
    light theme. This file is the overflow room; gen_previewer.py inlines it
    right after styles.css. */
 
+/* ─── Masthead view toggle (stage_view.ts) ──────────────────────────────
+   Castle, Pixels, or both. CSS only: both canvases keep drawing, so the
+   switch is instant and no module has to know the mode exists. */
+.viewsel { display: flex; flex: none; border: 1px solid var(--line-2); border-radius: 999px; overflow: hidden; }
+.viewsel button {
+  font-family: var(--f-data); font-size: 9.5px; letter-spacing: .12em;
+  text-transform: uppercase; padding: 5px 11px; border: 0; cursor: pointer;
+  background: transparent; color: var(--muted);
+  transition: color .14s ease, background .14s ease;
+}
+.viewsel button:hover { background: var(--panel-2); color: var(--ink); }
+.viewsel button[aria-pressed="true"] { background: var(--accent); color: var(--panel); font-weight: 700; }
+/* The jewel row, drawn by insets.ts into a canvas it creates itself. */
+#jewels { display: block; width: 100%; max-width: 420px; height: auto; aspect-ratio: 420 / 146; margin: .4rem auto 0; }
+body.view-castle #jewels { display: none; }
+body.view-pixels .stage { display: none; }
+/* On its own the jewel row can afford to be bigger — it is the whole point
+   of the mode, and 420px of dots in a 900px panel reads as an afterthought. */
+body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
+
+/* The selected scene, ringed rather than bordered: in a 1px-gap grid a fourth
+   border would shift every tile beside it. */
+.scene[aria-pressed="true"] { outline: 1px solid var(--accent); outline-offset: -1px; }
+
+/* ─── Folds ─────────────────────────────────────────────────────────────
+   Every collapsible on the desk wears the same caret. There were five of
+   them under three different treatments — two hand-drawn, two showing the
+   browser's own ▶ — which read as two different kinds of control rather
+   than one control used five times. */
+:is(.sheet-fold, .trim-fold, .foot-fold, .trk-opts-wrap, details.src) > summary {
+  list-style: none;
+}
+:is(.sheet-fold, .trim-fold, .foot-fold, .trk-opts-wrap, details.src)
+  > summary::-webkit-details-marker { display: none; }
+:is(.sheet-fold, .trim-fold, .foot-fold, .trk-opts-wrap, details.src)
+  > summary::before { content: "▸ "; color: var(--accent); }
+:is(.sheet-fold, .trim-fold, .foot-fold, .trk-opts-wrap, details.src)[open]
+  > summary::before { content: "▾ "; }
+
+/* ─── Trim ──────────────────────────────────────────────────────────────
+   The three that get touched during a show, side by side and without their
+   hints; everything else is one fold away. */
+.ctrls__row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ctrl--tight { grid-template-columns: 1fr; gap: 1px; align-content: start; min-width: 0; }
+.ctrl--tight label { font-size: 11px; }
+.ctrl--tight output { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trim-fold { border-top: 1px solid var(--line); padding-top: 11px; }
+.trim-fold > summary, .foot-fold > summary {
+  cursor: pointer; font-family: var(--f-data);
+  font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+}
+.trim-fold > summary:hover, .foot-fold > summary:hover { color: var(--ink); }
+.trim-fold__hint { text-transform: none; letter-spacing: .02em; }
+.trim-fold .ctrls { padding-top: 12px; }
+.hint--block { padding: 0; }
+.foot-fold > summary { margin-bottom: 10px; }
+
+/* ─── Budgets (budget.ts) ───────────────────────────────────────────────
+   Two builds, two ceilings, the same eight scenes measured against each.
+   Every band is clickable, and so is every legend row — on the card view the
+   used bands are hairlines, which is the honest picture and unclickable. */
+.budget .panel__hd { align-items: center; }
+.budget__tabs { display: flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+.budget__tabs button {
+  font-family: var(--f-data); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; padding: 4px 11px; border: 0; cursor: pointer;
+  background: transparent; color: var(--ink-2);
+  transition: background .14s ease, color .14s ease;
+}
+.budget__tabs button + button { border-left: 1px solid var(--line-2); }
+.budget__tabs button:hover { background: var(--panel-2); color: var(--ink); }
+.budget__tabs button[aria-pressed="true"] { background: var(--accent); color: var(--panel); font-weight: 700; }
+.budget__bd { display: grid; gap: 10px; }
+.budget__head {
+  margin: 0; font-family: var(--f-display); font-size: 26px;
+  line-height: 1.15; font-variant-numeric: tabular-nums;
+}
+.budget__head span { font-family: var(--f-body); font-size: 13px; color: var(--muted); }
+.budget__bar {
+  display: flex; gap: 1px; height: 9px; border-radius: 5px;
+  background: var(--line); overflow: hidden;
+}
+.budget__bar i { display: block; height: 100%; cursor: pointer; }
+.budget__bar i.on { outline: 2px solid var(--ink); outline-offset: -2px; }
+.budget__pick {
+  display: grid; gap: 3px; padding: 9px 11px;
+  border: 1px solid var(--line-2); border-radius: 7px; background: var(--panel-2);
+}
+/* `display:grid` beats the UA sheet's [hidden] rule on specificity, and an
+   empty bordered box below the bar looks like a rendering fault. */
+.budget__pick[hidden] { display: none; }
+.budget__pickhd { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.budget__pickhd span { font-family: var(--f-display); font-size: 17px; }
+.budget__pickhd b { font-family: var(--f-data); font-size: 11px; color: var(--accent); font-weight: 400; }
+.budget__pickmeta { font-family: var(--f-data); font-size: 10px; letter-spacing: .04em; color: var(--muted); }
+.budget__pickblurb { font-size: 11.5px; color: var(--ink-2); line-height: 1.5; }
+.budget__rows { display: grid; gap: 2px; }
+.budget__row {
+  display: grid; grid-template-columns: 9px 1fr auto; gap: 8px; align-items: center;
+  padding: 2px 3px; border: 0; border-radius: 4px; background: transparent;
+  color: inherit; font: inherit; text-align: left; cursor: pointer;
+}
+.budget__row:hover, .budget__row.on { background: var(--panel-2); }
+.budget__row i { width: 9px; height: 9px; border-radius: 2px; }
+.budget__row span { font-size: 11.5px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.budget__row b { font-family: var(--f-data); font-size: 11px; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.budget__note { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+
+/* ─── Tracks: work on the left, library on the right ────────────────────
+   The list used to sit under the clip editor, which put "which track next"
+   a scroll away from the one being trimmed. Below the two-column breakpoint
+   it stacks again, and the library keeps its own scroll either way. */
+.trk-split { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1040px) { .trk-split { grid-template-columns: minmax(0, 1fr) 380px; } }
+.trk-lib { display: flex; flex-direction: column; min-width: 0; border-top: 1px solid var(--line); }
+@media (min-width: 1040px) { .trk-lib { border-top: 0; border-left: 1px solid var(--line); } }
+.trk-lib__hd {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 11px 14px; border-bottom: 1px solid var(--line);
+  font-family: var(--f-data); font-size: 10.5px; font-weight: 600;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--ink-2);
+}
+.trk-lib__hd .note { font-weight: 400; letter-spacing: .04em; color: var(--muted); }
+.trk-lib .trk-list { max-height: 430px; overflow-y: auto; }
+/* A 380px column cannot put four actions beside a title, so the row stacks —
+   the same shape the phone breakpoint already gives it. */
+.trk-lib .trk { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.trk-lib .trk__act { flex-wrap: wrap; }
+.trk-lib__ft {
+  margin: 0; padding: 12px 14px; border-top: 1px solid var(--line);
+  font-size: 11.5px; color: var(--muted); line-height: 1.6;
+}
+/* The server strip lives in the panel header now, so it drops its own box.
+   Both rows wrap: below about 700px the header cannot hold the title, the
+   mode and two buttons on one line, and `.panel { overflow: hidden }` would
+   quietly clip Restart and Stop server rather than let them wrap. */
+.trk-panel .panel__hd { flex-wrap: wrap; }
+.panel__hd .trk-server {
+  margin: 0; padding: 0; border: 0; background: transparent; flex: none;
+}
+.panel__hd .trk-srvtxt { flex: none; font-size: 11.5px; }
+/* Three children in a space-between row leaves the middle one drifting. */
+#trkMode { margin-right: auto; }
+
 /* Stems panel (stems_view.ts) — three layer strips inside the clip editor. */
 .stems {
   margin-top: 10px;
@@ -569,10 +705,17 @@
 @media (max-width: 760px) {
   .desk { padding: 14px 10px 96px; }
 
-  /* Header stacks; the hardware chips wrap under the title. */
-  .head { flex-direction: column; gap: 10px; }
+  /* Header stacks; the live line and the view toggle wrap under the title. */
+  .head { flex-direction: column; align-items: flex-start; gap: 10px; }
   .head h1 { font-size: 26px; }
-  .rig { flex-wrap: wrap; }
+  .head__live { width: 100%; }
+  .viewsel { margin-left: auto; }
+  .viewsel button { min-height: 34px; }
+
+  /* Three sliders across a phone is about 100px each — enough to drag, but
+     only if they are not also paying for the desktop gap between them. */
+  .ctrls__row { gap: 7px; }
+  .budget__tabs button { min-height: 30px; }
 
   /* One column — the desktop two-column split needs 1040px anyway, but the
      inner grids (scene tiles, slider rows) also tighten here. */
@@ -588,6 +731,11 @@
   .sheet-fold table, .src pre, #zdOut { display: block; overflow-x: auto; }
   .zd { font-size: 12px; }
   .zd select { max-width: 84px; }
+
+  /* The studio strip gets its own line under the Tracks title, and its
+     buttons keep the 44px floor like every other control during a show. */
+  .trk-panel .panel__hd .trk-server { width: 100%; justify-content: flex-start; }
+  .trk-srvbtn button { min-height: 40px; }
 
   /* Track rows: the class is .trk (not .trk-row — the first draft of this
      rule styled a selector that does not exist, and RE-IMPORT/DELETE fell off
@@ -618,23 +766,35 @@
 </style>
 
 <div class="desk">
-  <header class="head">
-    <div>
-      <p class="eyebrow">Halloween castle · three-zone preview</p>
+  <!-- One row. Everything that used to sit here as prose — what the desk is
+       for, what it runs on, why it is trustworthy — is in the footer fold;
+       the masthead's job during a show is to say what is happening now. -->
+  <header class="head" id="head">
+    <div class="head__id">
       <h1>Castle Cue Desk</h1>
-      <p class="sub">Tune the show on screen before anything gets flashed. Cue sheets here are the source of truth &mdash; they generate the ESPHome config, so what you hear is what ships.</p>
+      <span class="eyebrow" title="ESP32-S2 Feather · MAX98357A I²S amp · 3 NeoPixel Jewels, 7 RGBW pixels each">three zones &middot; 21 px</span>
     </div>
-    <div class="rig">
-      <span class="chip"><b>ESP32-S2</b> Feather</span>
-      <span class="chip"><b>MAX98357A</b> I²S</span>
-      <span class="chip"><b>3</b> zones &middot; 21 px</span>
+    <div class="head__live">
+      <span class="head__dot" id="headDot"></span>
+      <span class="head__txt" id="headTxt">simulator</span>
+      <div class="viewsel" id="viewSel" role="group" aria-label="What the stage shows">
+        <button type="button" data-view="castle" aria-pressed="false"
+                title="The castle as it looks — glow, spill and bloom">Castle</button>
+        <button type="button" data-view="pixels" aria-pressed="false"
+                title="The 21 real pixels, one dot each — the honest per-pixel view">Pixels</button>
+        <button type="button" data-view="both" aria-pressed="true"
+                title="Both at once">Both</button>
+      </div>
     </div>
   </header>
 
   <div class="grid">
     <!-- ─── Stage column ─── -->
     <div class="col">
-      <section class="panel">
+      <!-- The shell lights itself: border and bloom track the mean output, so
+           the panel around the stage is part of the picture rather than a
+           frame sitting in front of it. See panels.updateShell. -->
+      <section class="panel panel--stage" id="stageShell">
         <div class="panel__hd">
           <h2>Stage</h2>
           <span class="note" id="stageNote">Vigil</span>
@@ -681,105 +841,6 @@
         <p class="scenes-blurb" id="sceneBlurb"></p>
       </section>
 
-      <!-- ─── Tracks ─── -->
-      <section class="panel">
-        <div class="panel__hd">
-          <h2>Tracks</h2>
-          <span class="note" id="trkMode">checking…</span>
-        </div>
-        <div class="panel__bd">
-          <!-- Shown only when no local server is reachable. Importing needs
-               yt-dlp and ffmpeg, which a web page cannot run — saying so
-               plainly beats an Import button that quietly does nothing. -->
-          <div class="trk-offline" id="trkOffline" hidden>
-            <strong>The studio isn't running.</strong>
-            <p>Importing needs <code>yt-dlp</code> and <code>ffmpeg</code> on your Mac, and a
-               web page can't start a program that isn't running yet &mdash; that one step has
-               to happen outside the browser. It's a double-click, not a command:</p>
-            <p class="trk-launch"><b>Castle&nbsp;Cue&nbsp;Desk.command</b> &mdash; in the project folder</p>
-            <p>It opens the page for you, and from then on the controls are right here.
-               You can still drop a file below to analyse it without the server.</p>
-          </div>
-
-          <!-- Server controls, once we're actually talking to it. -->
-          <div class="trk-server" id="trkServer" hidden>
-            <span class="trk-dot"></span>
-            <span class="trk-srvtxt">Studio running on <b>127.0.0.1:8765</b></span>
-            <div class="trk-srvbtn">
-              <button id="srvRestart" type="button">Restart</button>
-              <button id="srvStop" type="button" class="danger">Stop server</button>
-            </div>
-          </div>
-          <div class="trk-add">
-            <input type="text" id="trkUrl" placeholder="Paste a link, or drop an audio file below"
-                   autocomplete="off" spellcheck="false">
-            <button class="btn btn--go" id="trkGet" type="button">Import</button>
-          </div>
-          <!-- Options, grouped by what you are actually deciding: which
-               part of the track, what it is encoded as, and how the lights
-               read it. The flat row of eight boxes gave equal weight to
-               "which 20 seconds" and "onset sensitivity", which are not
-               remotely equal decisions. -->
-          <details class="trk-opts-wrap" id="trkOpts">
-            <summary>Options <span class="trk-opts-hint" id="trkOptsHint"></span></summary>
-            <div class="trk-opts">
-              <fieldset>
-                <legend>Which part</legend>
-                <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
-                <label>length <input type="text" id="trkTake" placeholder="all" size="5"></label>
-                <label>name <input type="text" id="trkId" placeholder="auto" size="9"></label>
-                <!-- A looping scene that starts and ends at full level clicks
-                     at the seam. These are seconds of ramp at each end. -->
-                <label title="Seconds of fade at the head, so a loop does not start with a click"
-                  >fade in <input type="number" id="trkFadeIn" placeholder="0"
-                       min="0" max="30" step="0.1" size="4"></label>
-                <label title="Seconds of fade at the tail. Needs a length to fade out from."
-                  >fade out <input type="number" id="trkFadeOut" placeholder="0"
-                       min="0" max="30" step="0.1" size="4"></label>
-              </fieldset>
-              <fieldset>
-                <legend>Format</legend>
-                <label>container
-                  <select id="trkFormat">
-                    <option value="mp3">MP3</option>
-                    <option value="wav">WAV &mdash; no decode cost</option>
-                    <option value="flac">FLAC</option>
-                    <option value="opus">Opus</option>
-                  </select>
-                </label>
-                <label>kbps <input type="number" id="trkBitrate" placeholder="96"
-                       min="32" max="320" step="8" size="4"></label>
-                <label>rate
-                  <select id="trkRate">
-                    <option value="">44100</option>
-                    <option value="22050">22050 &mdash; half the size</option>
-                  </select>
-                </label>
-                <label>channels
-                  <select id="trkCh">
-                    <option value="2">stereo</option>
-                    <option value="1">mono &mdash; halves the size</option>
-                  </select>
-                </label>
-                <label class="trk-chk"><input type="checkbox" id="trkNorm" checked> match loudness</label>
-              </fieldset>
-              <fieldset>
-                <legend>Lights</legend>
-                <label>sensitivity <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
-                <span class="trk-hintline">lower finds more beats</span>
-              </fieldset>
-            </div>
-          </details>
-          <p class="trk-cap" id="trkCap"></p>
-          <!-- The clip editor draws itself in here once a track is picked. -->
-          <div class="trk-wave" id="trkWave"></div>
-          <div class="trk-drop" id="trkDrop">Drop an audio file here</div>
-          <p class="trk-note" id="trkNote"></p>
-          <div class="trk-list" id="trkList"></div>
-          <pre class="trk-yaml" id="trkYaml" hidden></pre>
-        </div>
-      </section>
-
       <section class="panel">
         <div class="panel__hd">
           <h2>Cue sheet</h2>
@@ -810,8 +871,8 @@
     <div class="col">
       <section class="panel">
         <div class="panel__hd">
-          <h2>Channels</h2>
-          <span class="note">live output</span>
+          <h2>Output</h2>
+          <span class="note">mean per zone</span>
         </div>
         <div class="chans" id="chans"></div>
       </section>
@@ -822,64 +883,213 @@
           <span class="note">live</span>
         </div>
         <div class="panel__bd ctrls">
-          <div class="ctrl">
-            <label for="depth">Candle flicker depth</label><output id="depthO"></output>
-            <input type="range" id="depth" min="0" max="100" value="55">
+          <!-- The three that get touched during a show, side by side and
+               without their hints. Everything else is one fold away. -->
+          <div class="ctrls__row">
+            <div class="ctrl ctrl--tight">
+              <label for="bright">Master</label><output id="brightO"></output>
+              <input type="range" id="bright" min="5" max="100" value="85">
+            </div>
+            <div class="ctrl ctrl--tight">
+              <label for="depth">Flicker</label><output id="depthO"></output>
+              <input type="range" id="depth" min="0" max="100" value="55">
+            </div>
+            <div class="ctrl ctrl--tight">
+              <label for="hue">Balance</label><output id="hueO"></output>
+              <input type="range" id="hue" min="0" max="100" value="50">
+            </div>
           </div>
-          <div class="ctrl">
-            <label for="speed">Candle flicker rate</label><output id="speedO"></output>
-            <input type="range" id="speed" min="20" max="400" value="140">
-            <p class="hint">Driven by smoothed value noise, not per-frame random &mdash; that difference is the whole reason a flicker reads as a flame instead of a fault.</p>
-          </div>
-          <div class="ctrl">
-            <label for="hue">Mansion balance</label><output id="hueO"></output>
-            <input type="range" id="hue" min="0" max="100" value="50">
-            <p class="hint">Biases the Séance and Ballroom palettes between violet and séance green. The crossfade keeps moving either way &mdash; this shifts where it sits.</p>
-          </div>
-          <div class="ctrl">
-            <label for="bright">Master brightness</label><output id="brightO"></output>
-            <input type="range" id="bright" min="5" max="100" value="85">
-          </div>
-          <div class="ctrl">
-            <label for="vol">Master volume</label><output id="volO"></output>
-            <input type="range" id="vol" min="0" max="100" value="60">
-          </div>
-          <div class="ctrl">
-            <label for="hall">Hall</label><output id="hallO"></output>
-            <input type="range" id="hall" min="0" max="100" value="58">
-            <p class="hint">Convolution reverb on the cue bus. Drop it to zero and the organ collapses into a synth patch &mdash; the room is doing most of the work.</p>
-          </div>
-          <div class="ctrl">
-            <label for="stops">Stops</label><output id="stopsO"></output>
-            <input type="range" id="stops" min="0" max="100" value="42">
-            <p class="hint">How much of the upper chorus is drawn. The 32&prime; and 16&prime; ranks always sound &mdash; pull this right in and you're left with dark, hollow pedal tone.</p>
-          </div>
-          <div class="ctrl">
-            <label for="trem">Tremulant</label><output id="tremO"></output>
-            <input type="range" id="trem" min="0" max="100" value="33">
-            <p class="hint">The wobble a real organ's tremulant puts on sustained ranks. A little is period-correct; a lot is a fairground.</p>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="renderedAudio" checked>
-            <span>Play rendered audio &mdash; the exact MP3s that ship to the castle, mixed offline with real reverb. Untick to hear the live synth instead; the Hall, Stops and Tremulant sliders shape only that live synth, so they are for experimenting, not for changing what ships.</span>
-          </label>
-          <div class="ctrl">
-            <label for="lat">Trigger latency</label><output id="latO"></output>
-            <input type="range" id="lat" min="0" max="200" value="70">
-            <p class="hint">Models the firmware's delay between the play command and the first sample. Timing tuned with this set honestly will survive the move to hardware.</p>
-          </div>
+          <details class="trim-fold" id="trimMore">
+            <summary>More trim <span class="trim-fold__hint">&mdash; flicker rate, level, latency, live synth</span></summary>
+            <div class="ctrls">
+              <div class="ctrl">
+                <label for="speed">Candle flicker rate</label><output id="speedO"></output>
+                <input type="range" id="speed" min="20" max="400" value="140">
+                <p class="hint">Driven by smoothed value noise, not per-frame random &mdash; that difference is the whole reason a flicker reads as a flame instead of a fault.</p>
+              </div>
+              <div class="ctrl">
+                <label for="vol">Master volume</label><output id="volO"></output>
+                <input type="range" id="vol" min="0" max="100" value="60">
+              </div>
+              <div class="ctrl">
+                <label for="lat">Trigger latency</label><output id="latO"></output>
+                <input type="range" id="lat" min="0" max="200" value="70">
+                <p class="hint">Models the firmware's delay between the play command and the first sample. Timing tuned with this set honestly will survive the move to hardware.</p>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="renderedAudio" checked>
+                <span>Play rendered audio &mdash; the exact MP3s that ship to the castle, mixed offline with real reverb. Untick to hear the live synth instead.</span>
+              </label>
+              <div class="ctrl">
+                <label for="hall">Hall</label><output id="hallO"></output>
+                <input type="range" id="hall" min="0" max="100" value="58">
+                <p class="hint">Convolution reverb on the cue bus. Drop it to zero and the organ collapses into a synth patch &mdash; the room is doing most of the work.</p>
+              </div>
+              <div class="ctrl">
+                <label for="stops">Stops</label><output id="stopsO"></output>
+                <input type="range" id="stops" min="0" max="100" value="42">
+                <p class="hint">How much of the upper chorus is drawn. The 32&prime; and 16&prime; ranks always sound &mdash; pull this right in and you're left with dark, hollow pedal tone.</p>
+              </div>
+              <div class="ctrl">
+                <label for="trem">Tremulant</label><output id="tremO"></output>
+                <input type="range" id="trem" min="0" max="100" value="33">
+                <p class="hint">The wobble a real organ's tremulant puts on sustained ranks. A little is period-correct; a lot is a fairground.</p>
+              </div>
+              <p class="hint hint--block">Hall, Stops and Tremulant shape the live synth only. Rendered audio is what ships.</p>
+            </div>
+          </details>
           <label class="toggle">
             <input type="checkbox" id="soft">
-            <span>Soften lightning &mdash; replaces hard strobes with a slower swell. Worth shipping on the real castle too; hard white strobe is a genuine photosensitivity risk on a public porch.</span>
+            <span><b>Soften lightning</b> &mdash; replaces hard strobes with a slower swell. Worth shipping on the real castle too; hard white strobe is a genuine photosensitivity risk on a public porch.</span>
           </label>
+        </div>
+      </section>
+      <!-- What the show is allowed to cost. Two builds, two different
+           ceilings, and the same eight scenes measured against each — see
+           budget.ts for where every figure comes from. -->
+      <section class="panel budget" id="budget">
+        <div class="panel__hd">
+          <h2>Budgets</h2>
+          <div class="budget__tabs" id="budTabs" role="group" aria-label="Which build">
+            <button type="button" data-bud="flash" aria-pressed="true"
+                    title="Everything embedded in the 3.87 MB app partition.">Flash</button>
+            <button type="button" data-bud="sd" aria-pressed="false"
+                    title="The experimental `make sd-build` variant: the card holds the library and the device streams off it.">SD card</button>
+          </div>
+        </div>
+        <div class="panel__bd budget__bd">
+          <p class="budget__head" id="budHead"></p>
+          <div class="budget__bar" id="budBar"></div>
+          <div class="budget__pick" id="budPick" hidden></div>
+          <div class="budget__rows" id="budRows"></div>
+          <p class="budget__note" id="budNote"></p>
         </div>
       </section>
     </div>
   </div>
 
+  <!-- ─── Tracks ───────────────────────────────────────────────────────
+       Full width, below both columns, and split two ways inside: what you
+       are working on, and what you have. The list used to sit under the clip
+       editor in the narrow stage column, which meant picking the next track
+       was a scroll away from the one you were trimming — and left the
+       waveform half the width it wanted. -->
+  <section class="panel trk-panel">
+    <div class="panel__hd">
+      <h2>Tracks</h2>
+      <span class="note" id="trkMode">checking…</span>
+      <!-- Server controls, once we're actually talking to it. -->
+      <div class="trk-server" id="trkServer" hidden>
+        <span class="trk-dot"></span>
+        <span class="trk-srvtxt">studio on <b>127.0.0.1:8765</b></span>
+        <div class="trk-srvbtn">
+          <button id="srvRestart" type="button">Restart</button>
+          <button id="srvStop" type="button" class="danger">Stop server</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="trk-split">
+      <div class="panel__bd">
+        <!-- Shown only when no local server is reachable. Importing needs
+             yt-dlp and ffmpeg, which a web page cannot run — saying so
+             plainly beats an Import button that quietly does nothing. -->
+        <div class="trk-offline" id="trkOffline" hidden>
+          <strong>The studio isn't running.</strong>
+          <p>Importing needs <code>yt-dlp</code> and <code>ffmpeg</code> on your Mac, and a
+             web page can't start a program that isn't running yet &mdash; that one step has
+             to happen outside the browser. It's a double-click, not a command:</p>
+          <p class="trk-launch"><b>Castle&nbsp;Cue&nbsp;Desk.command</b> &mdash; in the project folder</p>
+          <p>It opens the page for you, and from then on the controls are right here.
+             You can still drop a file below to analyse it without the server.</p>
+        </div>
+
+        <div class="trk-add">
+          <input type="text" id="trkUrl" placeholder="Paste a link, or drop an audio file below"
+                 autocomplete="off" spellcheck="false">
+          <button class="btn btn--go" id="trkGet" type="button">Import</button>
+        </div>
+        <!-- Options, grouped by what you are actually deciding: which
+             part of the track, what it is encoded as, and how the lights
+             read it. The flat row of eight boxes gave equal weight to
+             "which 20 seconds" and "onset sensitivity", which are not
+             remotely equal decisions. -->
+        <details class="trk-opts-wrap" id="trkOpts">
+          <summary>Options <span class="trk-opts-hint" id="trkOptsHint"></span></summary>
+          <div class="trk-opts">
+            <fieldset>
+              <legend>Which part</legend>
+              <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
+              <label>length <input type="text" id="trkTake" placeholder="all" size="5"></label>
+              <label>name <input type="text" id="trkId" placeholder="auto" size="9"></label>
+              <!-- A looping scene that starts and ends at full level clicks
+                   at the seam. These are seconds of ramp at each end. -->
+              <label title="Seconds of fade at the head, so a loop does not start with a click"
+                >fade in <input type="number" id="trkFadeIn" placeholder="0"
+                     min="0" max="30" step="0.1" size="4"></label>
+              <label title="Seconds of fade at the tail. Needs a length to fade out from."
+                >fade out <input type="number" id="trkFadeOut" placeholder="0"
+                     min="0" max="30" step="0.1" size="4"></label>
+            </fieldset>
+            <fieldset>
+              <legend>Format</legend>
+              <label>container
+                <select id="trkFormat">
+                  <option value="mp3">MP3</option>
+                  <option value="wav">WAV &mdash; no decode cost</option>
+                  <option value="flac">FLAC</option>
+                  <option value="opus">Opus</option>
+                </select>
+              </label>
+              <label>kbps <input type="number" id="trkBitrate" placeholder="96"
+                     min="32" max="320" step="8" size="4"></label>
+              <label>rate
+                <select id="trkRate">
+                  <option value="">44100</option>
+                  <option value="22050">22050 &mdash; half the size</option>
+                </select>
+              </label>
+              <label>channels
+                <select id="trkCh">
+                  <option value="2">stereo</option>
+                  <option value="1">mono &mdash; halves the size</option>
+                </select>
+              </label>
+              <label class="trk-chk"><input type="checkbox" id="trkNorm" checked> match loudness</label>
+            </fieldset>
+            <fieldset>
+              <legend>Lights</legend>
+              <label>sensitivity <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
+              <span class="trk-hintline">lower finds more beats</span>
+            </fieldset>
+          </div>
+        </details>
+        <p class="trk-cap" id="trkCap"></p>
+        <p class="trk-note" id="trkNote"></p>
+        <!-- The clip editor draws itself in here once a track is picked. -->
+        <div class="trk-wave" id="trkWave"></div>
+        <div class="trk-drop" id="trkDrop">Drop an audio file here</div>
+        <pre class="trk-yaml" id="trkYaml" hidden></pre>
+      </div>
+
+      <div class="trk-lib">
+        <div class="trk-lib__hd">
+          <span>Library</span>
+          <span class="note" id="trkCount"></span>
+        </div>
+        <div class="trk-list" id="trkList"></div>
+        <p class="trk-lib__ft">Drop an audio file anywhere on this panel to analyse it without importing.</p>
+      </div>
+    </div>
+  </section>
+
   <footer class="foot">
-    <p><strong>How faithful this is.</strong> The effect maths, per-pixel seeds and cue timings are the firmware's own (ported line for line from <code>castle_effects.h</code> and generated from <code>scenes.yaml</code>), and the rendered audio is byte-identical to what ships in flash. What the screen cannot promise is pixel gamma: WS2812-family LEDs diverge from sRGB hardest at exactly the low brightness where flicker lives, so budget one retune pass when the jewels arrive.</p>
-    <p><strong>Why thunder fires before the flash.</strong> Light beats sound to an observer in the real world, so leading with audio is physically right &mdash; and it conveniently swallows the playback trigger latency.</p>
+    <details class="foot-fold">
+      <summary>What this desk is, how faithful it is, and why thunder fires first</summary>
+      <p><strong>What it is.</strong> Tune the show on screen before anything gets flashed. Cue sheets here are the source of truth &mdash; they generate the ESPHome config, so what you hear is what ships. The hardware behind it: an <b>ESP32-S2</b> Feather, a <b>MAX98357A</b> I²S amp, and three NeoPixel Jewels of seven RGBW pixels each.</p>
+      <p><strong>How faithful this is.</strong> The effect maths, per-pixel seeds and cue timings are the firmware's own (ported line for line from <code>castle_effects.h</code> and generated from <code>scenes.yaml</code>), and the rendered audio is byte-identical to what ships in flash. What the screen cannot promise is pixel gamma: WS2812-family LEDs diverge from sRGB hardest at exactly the low brightness where flicker lives, so budget one retune pass when the jewels arrive.</p>
+      <p><strong>Why thunder fires before the flash.</strong> Light beats sound to an observer in the real world, so leading with audio is physically right &mdash; and it conveniently swallows the playback trigger latency.</p>
+    </details>
   </footer>
 </div>
 
@@ -1053,6 +1263,260 @@
   }
   var BAND_HELP = "How often each zone pulses. An onset is a jump in level, not loudness \u2014 a kick drum registers, a sustained pad does not, however loud it is. The three bands are not comparable to each other: each has its own minimum spacing (low 0.16s, mid 0.11s, high 0.09s).";
 
+  // src/effects.ts
+  var defaultParams = () => ({
+    depth: 0.55,
+    speed: 1.4,
+    bright: 0.85,
+    hue: 0.5,
+    soft: false,
+    stops: 0.42,
+    pal: 0
+  });
+  var PALETTE_NAMES = ["haunt", "ember", "moonlight", "toxic"];
+  var PALETTES = [
+    [[0.66, 0.08, 1], [0.14, 1, 0.42]],
+    // haunt: violet <-> green
+    [[0.72, 0.08, 0], [1, 0.55, 0.05]],
+    // ember: deep red <-> amber
+    [[0.1, 0.22, 0.85], [0.72, 0.85, 1]],
+    // moonlight: indigo <-> pale blue
+    [[0.05, 0.9, 0.1], [0.85, 1, 0.05]]
+    // toxic: green <-> acid yellow
+  ];
+  var paletteIndex = (name) => {
+    const i = PALETTE_NAMES.indexOf(name);
+    return i < 0 ? 0 : i;
+  };
+  function hash(n) {
+    const s = Math.sin(n * 127.1) * 43758.5453;
+    return s - Math.floor(s);
+  }
+  function vnoise(x) {
+    const i = Math.floor(x);
+    const f = x - i;
+    const u = f * f * (3 - 2 * f);
+    return hash(i) * (1 - u) + hash(i + 1) * u;
+  }
+  function fbm(x) {
+    return 0.55 * vnoise(x) + 0.3 * vnoise(x * 2.13 + 11.3) + 0.15 * vnoise(x * 4.31 + 27.7);
+  }
+  var pole = (P2, which) => (PALETTES[P2.pal] ?? PALETTES[0])[which];
+  var WARM_W = [1, 0.83, 0.62];
+  function mix(a, b, k) {
+    return [
+      (a[0] ?? 0) + ((b[0] ?? 0) - (a[0] ?? 0)) * k,
+      (a[1] ?? 0) + ((b[1] ?? 0) - (a[1] ?? 0)) * k,
+      (a[2] ?? 0) + ((b[2] ?? 0) - (a[2] ?? 0)) * k
+    ];
+  }
+  var scaled = (c, k) => [c[0] * k, c[1] * k, c[2] * k, 0];
+  var EFFECTS = {
+    off: () => [0, 0, 0, 0],
+    candle: (t, s, P2) => {
+      const n = fbm(t * P2.speed + s * 3.7);
+      const l = Math.max(0, 1 - P2.depth * (1 - n));
+      return [0.34 * l, 0.05 * l, 0, 1 * l];
+    },
+    ember: (t, s) => {
+      const n = fbm(t * 0.63 + s * 2.2);
+      const l = 0.22 + 0.16 * n;
+      return [0.4 * l, 0.06 * l, 0, 0.85 * l];
+    },
+    furnace: (t, s) => {
+      const n = fbm(t * 2.5 + s * 0.9);
+      const l = 0.8 + 0.2 * n;
+      return [1 * l, 0.22 * l, 0.02 * l, 0.55 * l];
+    },
+    spirit: (t, s) => {
+      const b = 0.5 + 0.5 * Math.sin(t * 1.15 + s * 0.8);
+      const l = 0.22 + 0.42 * b;
+      return [0.1 * l, 1 * l, 0.66 * l, 0];
+    },
+    eyes: (t, s) => {
+      const blink = vnoise(t * 1.9 + s * 0.55) > 0.82 ? 0.1 : 1;
+      const l = (0.55 + 0.28 * Math.sin(t * 3.1)) * blink;
+      return [1 * l, 0.05 * l, 0.03 * l, 0];
+    },
+    seance: (t, s, P2) => {
+      const b = 0.5 + 0.5 * Math.sin(t * 0.8 + s * 0.6);
+      return scaled(mix(pole(P2, 0), pole(P2, 1), 0), 0.24 + 0.52 * b);
+    },
+    wisp: (t, s, P2) => {
+      const n = fbm(t * 2.1 + s * 5.3);
+      const l = Math.max(0, 0.18 + 0.82 * n - 0.14);
+      return scaled(mix(pole(P2, 0), pole(P2, 1), 1), l);
+    },
+    mansion: (t, s, P2) => {
+      const sweep = 0.5 + 0.5 * Math.sin(t * 0.38 + s * 0.7);
+      const k = Math.min(1, Math.max(0, sweep * 0.8 + (P2.hue - 0.5) * 0.9));
+      const shimmer = 0.84 + 0.16 * fbm(t * 1.05 + s * 2.7);
+      return scaled(mix(pole(P2, 0), pole(P2, 1), k), 0.62 * shimmer);
+    },
+    throb: (t, s, P2) => {
+      const p = Math.pow(0.5 + 0.5 * Math.sin(t * 7.4 + s * 0.4), 2);
+      return scaled(mix(pole(P2, 0), pole(P2, 1), P2.hue * 0.5), 0.2 + 0.8 * p);
+    },
+    strobe: (t, s, P2) => {
+      if (P2.soft) {
+        const l = 0.34 + 0.44 * (0.5 + 0.5 * Math.sin(t * 3.1 + s));
+        return [0.1 * l, 0.1 * l, 0.14 * l, 1 * l];
+      }
+      const on = Math.sin(t * 44 + s) > 0 ? 1 : 0.06;
+      return [0.12 * on, 0.12 * on, 0.18 * on, 1 * on];
+    },
+    chill: (t, s, P2) => {
+      const b = 0.5 + 0.5 * Math.sin(t * 0.5 + s * 1.1);
+      return scaled(mix(pole(P2, 0), pole(P2, 1), P2.hue * 0.35), 0.14 + 0.16 * b);
+    },
+    blood: (t, s) => {
+      const n = fbm(t * 0.35 + s * 1.7);
+      const l = 0.045 + 0.05 * n;
+      return [1 * l, 0.02 * l, 0.01 * l, 0];
+    }
+  };
+  var effect = (name) => EFFECTS[name] ?? EFFECTS.off;
+  function toScreen(c) {
+    return [
+      Math.min(1, c[0] + c[3] * WARM_W[0]),
+      Math.min(1, c[1] + c[3] * WARM_W[1]),
+      Math.min(1, c[2] + c[3] * WARM_W[2])
+    ];
+  }
+  var pixelSeed = (zoneIndex, pixel) => zoneIndex * 4.7 + pixel * 1.31;
+  var OVERLAY_NAMES = ["none", "sparkle", "chase", "meteor"];
+  var overlayIndex = (name) => {
+    const i = OVERLAY_NAMES.indexOf(name);
+    return i < 0 ? 0 : i;
+  };
+  var ringDist = (a, pos) => {
+    const d = Math.abs(a - pos);
+    return Math.min(d, 6 - d);
+  };
+  function applyOverlay(ov, c, t, p, zi) {
+    if (ov === 1) {
+      const cell = Math.floor(t * 7);
+      const g = hash(cell * 13.7 + p * 7.77 + zi * 3.1);
+      if (g > 0.93) {
+        const k = (g - 0.93) / 0.07;
+        return [
+          Math.min(1, c[0] + 0.3 * k),
+          Math.min(1, c[1] + 0.3 * k),
+          Math.min(1, c[2] + 0.3 * k),
+          Math.min(1, c[3] + 0.9 * k)
+        ];
+      }
+      return c;
+    }
+    if (ov === 2) {
+      const pos = (t * 0.45 + zi * 0.37) % 1 * 6;
+      if (p === 0) return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3] * 0.55];
+      const boost = Math.max(0, 1 - ringDist(p - 1, pos) * 0.9);
+      const k = 0.45 + 0.55 * boost;
+      return [
+        c[0] * k,
+        c[1] * k,
+        c[2] * k,
+        Math.min(1, c[3] * k + 0.5 * boost * boost)
+      ];
+    }
+    if (ov === 3) {
+      const ph = (t / 2.6 + zi * 0.41) % 1;
+      if (ph < 0.12) {
+        if (p !== 0) return c;
+        const k = (0.12 - ph) / 0.12;
+        return [c[0], c[1], c[2], Math.min(1, c[3] + 0.8 * k)];
+      }
+      if (p === 0) return c;
+      const fall = (ph - 0.12) / 0.88 * 6;
+      const fade = 1 - (ph - 0.12) / 0.88 * 0.5;
+      const boost = Math.max(0, 1 - ringDist(p - 1, fall) * 1.2) * fade;
+      return [
+        Math.min(1, c[0] + 0.2 * boost),
+        c[1],
+        Math.min(1, c[2] + 0.25 * boost),
+        Math.min(1, c[3] + 0.6 * boost)
+      ];
+    }
+    return c;
+  }
+  var FLASH_MODES = ["all", "scatter", "center", "ring"];
+  var flashModeIndex = (name) => {
+    const i = FLASH_MODES.indexOf(name);
+    return i < 0 ? 0 : i;
+  };
+  function flashGate(mode, p, zi, epoch) {
+    if (mode === 1) return hash(p * 9.13 + zi * 5.7 + epoch * 17.9) > 0.45 ? 1 : 0.15;
+    if (mode === 2) return p === 0 ? 1 : 0.1;
+    if (mode === 3) return p === 0 ? 0.1 : 1;
+    return 1;
+  }
+
+  // src/scene_tint.ts
+  var ZONE_WEIGHT = { door: 1.3, towerL: 0.7, towerR: 0.7 };
+  var peaks = /* @__PURE__ */ new Map();
+  function effectPeak(name) {
+    if (!name || name === "off") return null;
+    const hit = peaks.get(name);
+    if (hit !== void 0) return hit;
+    const fn = effect(name);
+    const P2 = defaultParams();
+    let best = null;
+    let score = -1;
+    for (let p = 0; p < 14; p++) {
+      for (let px = 0; px < 3; px++) {
+        const c = toScreen(fn(0.3 + p * 0.47, pixelSeed(px * 7, px * 3), P2));
+        const r = Math.min(1, c[0]), g = Math.min(1, c[1]), b = Math.min(1, c[2]);
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+        if (mx < 0.04) continue;
+        const v = (mx - mn) / mx + mx * 0.3;
+        if (v > score) {
+          score = v;
+          best = [r / mx, g / mx, b / mx];
+        }
+      }
+    }
+    peaks.set(name, best);
+    return best;
+  }
+  function sceneTint(scene, alpha) {
+    let ar = 0, ag = 0, ab = 0, weight = 0;
+    const add = (name, w) => {
+      const c = name ? effectPeak(name) : null;
+      if (!c) return;
+      ar += c[0] * w;
+      ag += c[1] * w;
+      ab += c[2] * w;
+      weight += w;
+    };
+    for (const zone of ["door", "towerL", "towerR"]) {
+      add(scene.base[zone], ZONE_WEIGHT[zone]);
+    }
+    let strikes = 0;
+    for (const c of scene.cues) {
+      if (c.bus !== "LED") continue;
+      if (c.op === "strike") strikes += c.intensity ?? 1;
+      else add(c.eff, 0.5);
+    }
+    if (weight === 0) return `rgba(150,140,125,${alpha})`;
+    let r = ar / weight, g = ag / weight, b = ab / weight;
+    const white = Math.min(0.62, strikes * 0.09);
+    r += (1 - r) * white;
+    g += (1 - g) * white;
+    b += (1 - b) * white;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    let h = 0;
+    if (d > 0) {
+      if (mx === r) h = ((g - b) / d + 6) % 6;
+      else if (mx === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60;
+    }
+    const sat = Math.max(0.14, Math.min(0.92, d / mx * 1.15));
+    const lit = alpha >= 1;
+    return `hsl(${h.toFixed(0)} ${(sat * 100).toFixed(0)}% ${lit ? 68 : 56}% / ${lit ? 1 : 0.85})`;
+  }
+
   // src/panels.ts
   var SOUNDS = {
     wind: { sd: "01/001", label: "wind_bed.mp3" },
@@ -1069,11 +1533,11 @@
     whispers: { sd: "04/003", label: "whispers.mp3" }
   };
   var CHANNELS = [
-    { id: "towerL", ch: 1, name: "Tower window", sub: "stage left" },
-    { id: "towerR", ch: 2, name: "Tower window", sub: "stage right" },
-    { id: "door", ch: 3, name: "Doorway", sub: "centre" }
+    { id: "towerL", ch: 1, name: "Tower L", px: "0\u20136" },
+    { id: "towerR", ch: 2, name: "Tower R", px: "7\u201313" },
+    { id: "door", ch: 3, name: "Doorway", px: "14\u201320" }
   ];
-  var FLASH_BUDGET = 2.9 * 1024 * 1024;
+  var STRIP = ["towerL", "door", "towerR"];
   var kb = (n) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MB` : `${Math.round(n / 1024)} KB`;
   function must(id) {
     const el = document.getElementById(id);
@@ -1151,27 +1615,28 @@
       this.tc = must("tc");
       this.ticks = must("ticks");
       this.scrub = must("scrub");
+      this.shell = document.getElementById("stageShell");
+      this.head = document.getElementById("head");
+      this.headTxt = document.getElementById("headTxt");
+      this.headDot = document.getElementById("headDot");
       /** The rows currently in the sheet, cached because the playhead highlight
        *  touches every one of them on every frame. Refreshed by `renderSheet`. */
       this.rows = [];
       this.sceneList = [];
       this.onPick = null;
-      must("chans").innerHTML = CHANNELS.map((z) => `
+      must("chans").innerHTML = STRIP.map((id) => {
+        const z = CHANNELS.find((c) => c.id === id);
+        if (!z) throw new Error(`panels: no channel ${id}`);
+        return `
     <div class="chan">
       <div class="chan__sw" id="sw-${z.id}"></div>
-      <div class="chan__nm">${z.name}<small>ch ${z.ch} \xB7 ${z.sub}</small></div>
-      <div class="chan__mtr">
-        <div class="meter"><i id="mt-${z.id}"></i></div>
-        <span class="chan__val" id="vl-${z.id}">\u2014</span>
-      </div>
-    </div>`).join("");
+      <div class="chan__nm">${z.name}<small>ch ${z.ch} \xB7 px ${z.px}</small></div>
+      <span class="chan__val" id="vl-${z.id}">\u2014</span>
+    </div>`;
+      }).join("");
       const meters = {};
       for (const z of CHANNELS) {
-        meters[z.id] = {
-          sw: must(`sw-${z.id}`),
-          bar: must(`mt-${z.id}`),
-          val: must(`vl-${z.id}`)
-        };
+        meters[z.id] = { sw: must(`sw-${z.id}`), val: must(`vl-${z.id}`) };
       }
       this.meters = meters;
       this.sheet.addEventListener("click", (e) => {
@@ -1189,6 +1654,7 @@
         if (!b) return;
         this.scenesEl.querySelectorAll(".scene").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
         const i = Number(b.dataset.i);
+        this.markScene(i);
         const sc = this.sceneList[i];
         if (sc && this.onPick) this.onPick(sc, i);
       });
@@ -1200,16 +1666,22 @@
       this.onPick = onPick;
       this.scenesEl.innerHTML = scenes.map((s, i) => `
     <button class="scene" type="button" data-i="${i}" aria-pressed="${i === 0}"
-            title="${s.blurb}${s.bytes ? `
+            title="${s.kind} \xB7 ${(s.dur / 1e3).toFixed(0)}s${s.loop ? " \xB7 loops" : ""} \u2014 ${s.blurb}${s.bytes ? `
 
 ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
-      <strong>${s.name}</strong><span>${s.kind}</span>
-      <span class="scene__sz">${(s.dur / 1e3).toFixed(0)}s${s.bytes ? ` \xB7 ${kb(s.bytes)}` : ""}</span>
+      <i class="scene__tint" style="background:${sceneTint(s, i === 0 ? 1 : 0.45)}"></i>
+      <strong>${s.name}</strong>
+      <span class="scene__sz">${(s.dur / 1e3).toFixed(0)}s${s.loop ? " \u21BB" : ""}${s.bytes ? ` \xB7 ${kb(s.bytes)}` : ""}</span>
     </button>`).join("");
-      const total = scenes.reduce((a, s) => a + s.bytes, 0);
-      const pct = Math.round(total / FLASH_BUDGET * 100);
-      this.sceneCount.innerHTML = total ? `${scenes.length} loaded \xB7 <b>${kb(total)}</b> of ${kb(FLASH_BUDGET)} flash <span class="${pct >= 90 ? "no" : "ok"}">(${pct}%)</span>` : `${scenes.length} loaded`;
-      this.sceneCount.title = total ? "The flash build (firmware/castle.yaml) fits every scene into the app partition alongside the firmware. The SD build (castle_sd.yaml) lifts this \u2014 the card holds any number of tracks \u2014 but reads each one whole into PSRAM, so a single track is capped at about 1.5 MB. Neither build streams from the card." : "";
+      this.sceneCount.textContent = `${scenes.length} loaded`;
+    }
+    /** Re-tint the grid so the selected scene's swatch is the bright one. */
+    markScene(index) {
+      this.scenesEl.querySelectorAll(".scene").forEach((b, i) => {
+        const sc = this.sceneList[i];
+        const tint = b.querySelector(".scene__tint");
+        if (sc && tint) tint.style.background = sceneTint(sc, i === index ? 1 : 0.45);
+      });
     }
     /** The cue sheet for one scene, in fire order. */
     renderSheet(scene) {
@@ -1235,7 +1707,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       this.ticks.innerHTML = scene.cues.map((c) => tickMark(c, scene.dur)).join("");
     }
     /** The channel meters. Level is the strongest channel rather than a
-     *  luminance mix, because that is what actually clips the LED driver. */
+     *  luminance mix, because that is what actually clips the LED driver — and
+     *  it is what the swatch's own glow is scaled by, so the strip reads at a
+     *  glance and still gives you the exact bytes to type into a scene file. */
     updateMeters(out) {
       for (const z of CHANNELS) {
         const m = this.meters[z.id];
@@ -1246,10 +1720,53 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         const lum = Math.max(r, g, b);
         const css = `rgb(${r},${g},${b})`;
         m.sw.style.background = css;
-        m.bar.style.width = (lum / 255 * 100).toFixed(1) + "%";
-        m.bar.style.background = css;
+        m.sw.style.boxShadow = `0 0 ${(lum / 255 * 20).toFixed(1)}px ${css}`;
         m.val.textContent = String(lum).padStart(3, " ") + "  " + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
       }
+    }
+    /**
+     * The chrome lights itself from the show.
+     *
+     * The stage panel's border and bloom take the mean of the three zones, and
+     * the masthead gets a low spill of the doorway's colour. Both are hue-only:
+     * luminance drives the strength, so a dim scene glows faintly in its own
+     * colour rather than washing out to grey. Costs one style write a frame.
+     */
+    updateShell(out) {
+      const zs = [out.towerL.avg, out.door.avg, out.towerR.avg];
+      const mean = [0, 1, 2].map((k) => Math.min(1, ((zs[0]?.[k] ?? 0) + (zs[1]?.[k] ?? 0) + (zs[2]?.[k] ?? 0)) / 3));
+      const lum = Math.max(mean[0] ?? 0, mean[1] ?? 0, mean[2] ?? 0);
+      if (this.shell) {
+        const n = lum > 0.02 ? 1 / lum : 0;
+        const tint = `rgba(${Math.round((mean[0] ?? 0) * n * 255)},${Math.round((mean[1] ?? 0) * n * 255)},${Math.round((mean[2] ?? 0) * n * 255)},${(0.1 + Math.sqrt(lum) * 0.34).toFixed(3)})`;
+        this.shell.style.boxShadow = `var(--shadow), 0 0 ${(22 + lum * 54).toFixed(0)}px -6px ${tint}`;
+        this.shell.style.borderColor = `color-mix(in srgb, ${tint} 60%, var(--line))`;
+      }
+      if (this.head) {
+        const d = out.door.avg;
+        const tint = `rgb(${Math.round(d[0] * 255)},${Math.round(d[1] * 255)},${Math.round(d[2] * 255)})`;
+        this.head.style.background = `radial-gradient(120% 260% at 22% 150%, color-mix(in srgb, ${tint} 16%, transparent), transparent 70%)`;
+        if (this.headTxt) {
+          const l = out.towerL.avg;
+          const lit = Math.max(l[0], l[1], l[2]);
+          const tower = `rgb(${Math.round(l[0] * 255)},${Math.round(l[1] * 255)},${Math.round(l[2] * 255)})`;
+          this.headTxt.style.color = `color-mix(in srgb, ${tower} ${(lit * 45).toFixed(0)}%, var(--muted))`;
+        }
+      }
+    }
+    /**
+     * The one live line in the masthead: which machine, what is sounding.
+     *
+     * `ok` drives the dot beside it. A green light next to "castle not
+     * answering" is worse than no light at all — it is the one place on the
+     * page someone glances at to decide whether the porch is alive.
+     */
+    setStatus(text, ok = true) {
+      if (this.headTxt) this.headTxt.textContent = text;
+      if (!this.headDot) return;
+      const c = ok ? "var(--spirit)" : "var(--alarm)";
+      this.headDot.style.background = c;
+      this.headDot.style.boxShadow = `0 0 7px ${c}`;
     }
     /** Playhead, clock and the lit row in the sheet. The 700 ms window is a
      *  readability choice: a strike is over long before you can look at it. */
@@ -1462,6 +1979,175 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
           }
           cell.textContent = durationSec && durationSec > 0 ? `${n} \xB7 ${(n / durationSec).toFixed(1)}/s` : `${n}`;
         }
+      }
+    };
+  }
+
+  // src/budget.ts
+  var APP_PARTITION = 4063232;
+  var FLASH_BUDGET = 2.9 * 1024 * 1024;
+  var FIRMWARE = APP_PARTITION - FLASH_BUDGET;
+  var BYTES_PER_SEC = 32e3 / 8;
+  var CARD = 32 * 1024 * 1024 * 1024;
+  var MB = 1024 * 1024;
+  function size(n) {
+    if (n >= 1024 * MB) return `${(n / 1024 / MB).toFixed(2)} GB`;
+    if (n >= MB) return `${(n / MB).toFixed(2)} MB`;
+    return `${Math.round(n / 1024)} KB`;
+  }
+  function share(part, whole) {
+    const pct = part / whole * 100;
+    if (pct >= 10) return `${Math.round(pct)}%`;
+    return pct >= 0.1 ? `${pct.toFixed(1)}%` : "under 0.1%";
+  }
+  var sceneBytes = (s) => s.bytes || s.dur / 1e3 * BYTES_PER_SEC;
+  function siteCost() {
+    const nav = performance.getEntriesByType("navigation")[0];
+    const plain = nav?.decodedBodySize || document.documentElement.outerHTML.length;
+    const encoded = nav?.encodedBodySize ?? 0;
+    const compressed = encoded > 0 && encoded < plain;
+    return {
+      bytes: plain + (compressed ? encoded : plain),
+      meta: compressed ? `${size(plain)} plain + ${size(encoded)} gzipped \xB7 both measured` : `${size(plain)} plain \xD7 2 \xB7 this server did not gzip, so the .gz is counted at full size`
+    };
+  }
+  function must2(id) {
+    const el = document.getElementById(id);
+    if (!el) throw new Error(`budget: missing #${id}`);
+    return el;
+  }
+  function initBudget(scenes) {
+    const tabsEl = must2("budTabs");
+    const headEl = must2("budHead");
+    const barEl = must2("budBar");
+    const pickEl = must2("budPick");
+    const rowsEl = must2("budRows");
+    const noteEl = must2("budNote");
+    let build = "flash";
+    let picked = null;
+    let library = [];
+    function items() {
+      const showBytes = scenes.reduce((a, s) => a + sceneBytes(s), 0);
+      if (build === "sd") {
+        const lib = library.reduce((a, t) => a + t.kb * 1024, 0);
+        const site = siteCost();
+        const used = showBytes + lib + site.bytes;
+        return {
+          capacity: CARD,
+          used,
+          items: [
+            {
+              key: "scenes",
+              label: `/sd/scenes \u2014 the show's ${scenes.length} rendered scenes`,
+              bytes: showBytes,
+              color: "var(--accent)",
+              meta: `${scenes.length} files \xB7 tools/sd_sync.py scenes`,
+              blurb: "The same rendered show the flash build embeds, streamed off the card instead of out of the app partition."
+            },
+            {
+              key: "tracks",
+              label: `Card root \u2014 imported library (${library.length} tracks)`,
+              bytes: lib,
+              color: "var(--cool)",
+              meta: library.length ? `${library.length} files \xB7 tools/sd_sync.py push` : "nothing imported yet, or the studio is not running",
+              blurb: "Tracks upload as-is: playback streams off the card through the device's own web server (firmware/sd_web_site.h), so there is no PSRAM ceiling to transcode under."
+            },
+            {
+              key: "site",
+              label: "/sd/site \u2014 this cue desk",
+              bytes: site.bytes,
+              color: "var(--spirit)",
+              meta: site.meta,
+              blurb: "One self-contained file, which is the constraint that makes it servable by a microcontroller at all."
+            },
+            {
+              key: "free",
+              label: "Free",
+              bytes: Math.max(0, CARD - used),
+              color: "var(--line-2)",
+              meta: "32 GB card, assumed \u2014 nothing reports it",
+              blurb: "The card holds as many tracks as you like. The ceiling that mattered was flash, not storage."
+            }
+          ]
+        };
+      }
+      return {
+        capacity: APP_PARTITION,
+        used: showBytes + FIRMWARE,
+        items: [
+          {
+            key: "fw",
+            label: "Firmware + effects",
+            bytes: FIRMWARE,
+            color: "var(--line-2)",
+            meta: "app0, 3.87 MB single-app partition",
+            blurb: "One app partition, so no OTA slot: embedded audio pushed the binary past both 1.75 MB halves."
+          },
+          ...scenes.map((s, i) => ({
+            key: `s${i}`,
+            label: s.name,
+            bytes: sceneBytes(s),
+            color: sceneTint(s, 0.85),
+            meta: `${s.id} \xB7 ${(s.dur / 1e3).toFixed(0)}s${s.loop ? " \u21BB" : ""} \xB7 ${s.kind} \xB7 ${s.file}${s.bytes ? "" : " (not rendered \u2014 estimated at 32 kbps mono)"}`,
+            blurb: s.blurb,
+            scene: true
+          })),
+          {
+            key: "free",
+            label: "Free flash",
+            bytes: Math.max(0, FLASH_BUDGET - showBytes),
+            color: "var(--line)",
+            meta: `of the ${size(FLASH_BUDGET)} the scenes share`,
+            blurb: "`make audio` fails loudly if the total goes over. At 32 kbps mono one minute costs about 235 KB."
+          }
+        ]
+      };
+    }
+    function draw() {
+      const { items: list, capacity, used } = items();
+      tabsEl.querySelectorAll("button").forEach((b) => {
+        b.setAttribute("aria-pressed", String(b.dataset["bud"] === build));
+      });
+      const over = used > capacity;
+      headEl.innerHTML = `${size(used)} <span>of ${size(capacity)} \xB7 ${share(used, capacity)}${over ? " \u2014 over budget" : ""}</span>`;
+      headEl.style.color = over ? "var(--alarm)" : "";
+      barEl.innerHTML = list.map((it) => {
+        const w = Math.max(0.4, it.bytes / capacity * 100).toFixed(2);
+        return `<i data-key="${it.key}" style="width:${w}%;background:${it.color}" class="${picked === it.key ? "on" : ""}" title="${it.label} \u2014 ${size(it.bytes)}"></i>`;
+      }).join("");
+      const chosen = list.find((it) => it.key === picked) ?? null;
+      pickEl.hidden = chosen === null;
+      if (chosen) {
+        pickEl.innerHTML = `<div class="budget__pickhd"><span>${chosen.label}</span><b>${size(chosen.bytes)} \xB7 ${share(chosen.bytes, capacity)}</b></div><span class="budget__pickmeta">${chosen.meta}</span><span class="budget__pickblurb">${chosen.blurb}</span>`;
+      }
+      const legend = [
+        ...list.filter((it) => it.key !== "free" && (!it.scene || it.bytes / capacity > 0.012)).slice(0, 6),
+        list.find((it) => it.key === "free")
+      ].filter((it) => it !== void 0);
+      rowsEl.innerHTML = legend.map((it) => `<button type="button" data-key="${it.key}" class="budget__row${picked === it.key ? " on" : ""}"><i style="background:${it.color}"></i><span>${it.label}</span><b>${size(it.bytes)}</b></button>`).join("");
+      noteEl.textContent = build === "sd" ? "Experimental (`make sd-build`, PROJECT_NOTES \xA712.9): no ESP32-S2 has been shown doing this, and the Feather needs a wing to have a slot at all. The flash scenes keep working with no card in." : "Click a band for the scene behind it. `make audio` fails loudly if the total goes over.";
+    }
+    const pick = (e) => {
+      const key = e.target?.closest("[data-key]")?.dataset["key"];
+      if (!key) return;
+      picked = picked === key ? null : key;
+      draw();
+    };
+    barEl.addEventListener("click", pick);
+    rowsEl.addEventListener("click", pick);
+    tabsEl.addEventListener("click", (e) => {
+      const b = e.target?.closest("button");
+      const to = b?.dataset["bud"];
+      if (to !== "flash" && to !== "sd") return;
+      build = to;
+      picked = null;
+      draw();
+    });
+    draw();
+    return {
+      setTracks(tracks2) {
+        library = tracks2;
+        if (build === "sd") draw();
       }
     };
   }
@@ -1890,14 +2576,17 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     chip.id = "deviceChip";
     chip.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:40;display:none;background:#241a38;color:#e8e0f0;border:1px solid #503a75;border-radius:10px;padding:.5rem .75rem;font:13px system-ui;box-shadow:0 4px 16px rgba(0,0,0,.5)";
     document.body.appendChild(chip);
+    const sayStatus = (s) => opts.onStatus?.(`castle v${s.version} \xB7 ${s.sd_mounted ? "SD ok" : "no SD"} \xB7 ${mirror ? "mirroring" : "not mirroring"}`, true);
     const render = (s) => {
       chip.style.display = "block";
       chip.style.opacity = "1";
       lastVol = s.volume ?? lastVol;
+      sayStatus(s);
       const playing = s.scene && s.scene !== "stop" ? `\u25B6 ${s.scene}${s.track ? ` \xB7 ${s.track}` : ""}` : "idle";
       chip.innerHTML = `<div>\u{1F3F0} castle v${s.version} \xB7 ${s.sd_mounted ? "SD ok" : "no SD"} \xB7 <span id="devNow" style="color:#b8a8d8">${playing}</span></div><div style="margin-top:.25rem;display:flex;align-items:center;gap:.4rem"><button id="devMute" title="Mute the castle speaker" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .45rem">${lastVol === 0 ? "\u{1F507}" : "\u{1F50A}"}</button><input id="devVol" type="range" min="0" max="100" value="${lastVol}" style="width:90px"><label style="cursor:pointer;white-space:nowrap"><input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}> on castle</label><button id="devStop" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u25A0</button><button id="devMore" title="SD library, light, PIR, boot log" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u2630</button></div>`;
       chip.querySelector("#devMirror").addEventListener("change", (e) => {
         mirror = e.target.checked;
+        sayStatus(s);
       });
       chip.querySelector("#devStop").addEventListener("click", () => post2("/api/stop", "stop"));
       chip.querySelector("#devMore").addEventListener("click", () => panel.toggle());
@@ -1925,7 +2614,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       setInterval(async () => {
         const now = await probe();
         if (now !== null) render(now);
-        else chip.style.opacity = "0.4";
+        else {
+          chip.style.opacity = "0.4";
+          opts.onStatus?.("castle not answering", false);
+        }
       }, 15e3);
     });
     return {
@@ -1940,200 +2632,11 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     };
   }
 
-  // src/effects.ts
-  var defaultParams = () => ({
-    depth: 0.55,
-    speed: 1.4,
-    bright: 0.85,
-    hue: 0.5,
-    soft: false,
-    stops: 0.42,
-    pal: 0
-  });
-  var PALETTE_NAMES = ["haunt", "ember", "moonlight", "toxic"];
-  var PALETTES = [
-    [[0.66, 0.08, 1], [0.14, 1, 0.42]],
-    // haunt: violet <-> green
-    [[0.72, 0.08, 0], [1, 0.55, 0.05]],
-    // ember: deep red <-> amber
-    [[0.1, 0.22, 0.85], [0.72, 0.85, 1]],
-    // moonlight: indigo <-> pale blue
-    [[0.05, 0.9, 0.1], [0.85, 1, 0.05]]
-    // toxic: green <-> acid yellow
-  ];
-  var paletteIndex = (name) => {
-    const i = PALETTE_NAMES.indexOf(name);
-    return i < 0 ? 0 : i;
-  };
-  function hash(n) {
-    const s = Math.sin(n * 127.1) * 43758.5453;
-    return s - Math.floor(s);
-  }
-  function vnoise(x) {
-    const i = Math.floor(x);
-    const f = x - i;
-    const u = f * f * (3 - 2 * f);
-    return hash(i) * (1 - u) + hash(i + 1) * u;
-  }
-  function fbm(x) {
-    return 0.55 * vnoise(x) + 0.3 * vnoise(x * 2.13 + 11.3) + 0.15 * vnoise(x * 4.31 + 27.7);
-  }
-  var pole = (P2, which) => (PALETTES[P2.pal] ?? PALETTES[0])[which];
-  var WARM_W = [1, 0.83, 0.62];
-  function mix(a, b, k) {
-    return [
-      (a[0] ?? 0) + ((b[0] ?? 0) - (a[0] ?? 0)) * k,
-      (a[1] ?? 0) + ((b[1] ?? 0) - (a[1] ?? 0)) * k,
-      (a[2] ?? 0) + ((b[2] ?? 0) - (a[2] ?? 0)) * k
-    ];
-  }
-  var scaled = (c, k) => [c[0] * k, c[1] * k, c[2] * k, 0];
-  var EFFECTS = {
-    off: () => [0, 0, 0, 0],
-    candle: (t, s, P2) => {
-      const n = fbm(t * P2.speed + s * 3.7);
-      const l = Math.max(0, 1 - P2.depth * (1 - n));
-      return [0.34 * l, 0.05 * l, 0, 1 * l];
-    },
-    ember: (t, s) => {
-      const n = fbm(t * 0.63 + s * 2.2);
-      const l = 0.22 + 0.16 * n;
-      return [0.4 * l, 0.06 * l, 0, 0.85 * l];
-    },
-    furnace: (t, s) => {
-      const n = fbm(t * 2.5 + s * 0.9);
-      const l = 0.8 + 0.2 * n;
-      return [1 * l, 0.22 * l, 0.02 * l, 0.55 * l];
-    },
-    spirit: (t, s) => {
-      const b = 0.5 + 0.5 * Math.sin(t * 1.15 + s * 0.8);
-      const l = 0.22 + 0.42 * b;
-      return [0.1 * l, 1 * l, 0.66 * l, 0];
-    },
-    eyes: (t, s) => {
-      const blink = vnoise(t * 1.9 + s * 0.55) > 0.82 ? 0.1 : 1;
-      const l = (0.55 + 0.28 * Math.sin(t * 3.1)) * blink;
-      return [1 * l, 0.05 * l, 0.03 * l, 0];
-    },
-    seance: (t, s, P2) => {
-      const b = 0.5 + 0.5 * Math.sin(t * 0.8 + s * 0.6);
-      return scaled(mix(pole(P2, 0), pole(P2, 1), 0), 0.24 + 0.52 * b);
-    },
-    wisp: (t, s, P2) => {
-      const n = fbm(t * 2.1 + s * 5.3);
-      const l = Math.max(0, 0.18 + 0.82 * n - 0.14);
-      return scaled(mix(pole(P2, 0), pole(P2, 1), 1), l);
-    },
-    mansion: (t, s, P2) => {
-      const sweep = 0.5 + 0.5 * Math.sin(t * 0.38 + s * 0.7);
-      const k = Math.min(1, Math.max(0, sweep * 0.8 + (P2.hue - 0.5) * 0.9));
-      const shimmer = 0.84 + 0.16 * fbm(t * 1.05 + s * 2.7);
-      return scaled(mix(pole(P2, 0), pole(P2, 1), k), 0.62 * shimmer);
-    },
-    throb: (t, s, P2) => {
-      const p = Math.pow(0.5 + 0.5 * Math.sin(t * 7.4 + s * 0.4), 2);
-      return scaled(mix(pole(P2, 0), pole(P2, 1), P2.hue * 0.5), 0.2 + 0.8 * p);
-    },
-    strobe: (t, s, P2) => {
-      if (P2.soft) {
-        const l = 0.34 + 0.44 * (0.5 + 0.5 * Math.sin(t * 3.1 + s));
-        return [0.1 * l, 0.1 * l, 0.14 * l, 1 * l];
-      }
-      const on = Math.sin(t * 44 + s) > 0 ? 1 : 0.06;
-      return [0.12 * on, 0.12 * on, 0.18 * on, 1 * on];
-    },
-    chill: (t, s, P2) => {
-      const b = 0.5 + 0.5 * Math.sin(t * 0.5 + s * 1.1);
-      return scaled(mix(pole(P2, 0), pole(P2, 1), P2.hue * 0.35), 0.14 + 0.16 * b);
-    },
-    blood: (t, s) => {
-      const n = fbm(t * 0.35 + s * 1.7);
-      const l = 0.045 + 0.05 * n;
-      return [1 * l, 0.02 * l, 0.01 * l, 0];
-    }
-  };
-  var effect = (name) => EFFECTS[name] ?? EFFECTS.off;
-  function toScreen(c) {
-    return [
-      Math.min(1, c[0] + c[3] * WARM_W[0]),
-      Math.min(1, c[1] + c[3] * WARM_W[1]),
-      Math.min(1, c[2] + c[3] * WARM_W[2])
-    ];
-  }
-  var pixelSeed = (zoneIndex, pixel) => zoneIndex * 4.7 + pixel * 1.31;
-  var OVERLAY_NAMES = ["none", "sparkle", "chase", "meteor"];
-  var overlayIndex = (name) => {
-    const i = OVERLAY_NAMES.indexOf(name);
-    return i < 0 ? 0 : i;
-  };
-  var ringDist = (a, pos) => {
-    const d = Math.abs(a - pos);
-    return Math.min(d, 6 - d);
-  };
-  function applyOverlay(ov, c, t, p, zi) {
-    if (ov === 1) {
-      const cell = Math.floor(t * 7);
-      const g = hash(cell * 13.7 + p * 7.77 + zi * 3.1);
-      if (g > 0.93) {
-        const k = (g - 0.93) / 0.07;
-        return [
-          Math.min(1, c[0] + 0.3 * k),
-          Math.min(1, c[1] + 0.3 * k),
-          Math.min(1, c[2] + 0.3 * k),
-          Math.min(1, c[3] + 0.9 * k)
-        ];
-      }
-      return c;
-    }
-    if (ov === 2) {
-      const pos = (t * 0.45 + zi * 0.37) % 1 * 6;
-      if (p === 0) return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3] * 0.55];
-      const boost = Math.max(0, 1 - ringDist(p - 1, pos) * 0.9);
-      const k = 0.45 + 0.55 * boost;
-      return [
-        c[0] * k,
-        c[1] * k,
-        c[2] * k,
-        Math.min(1, c[3] * k + 0.5 * boost * boost)
-      ];
-    }
-    if (ov === 3) {
-      const ph = (t / 2.6 + zi * 0.41) % 1;
-      if (ph < 0.12) {
-        if (p !== 0) return c;
-        const k = (0.12 - ph) / 0.12;
-        return [c[0], c[1], c[2], Math.min(1, c[3] + 0.8 * k)];
-      }
-      if (p === 0) return c;
-      const fall = (ph - 0.12) / 0.88 * 6;
-      const fade = 1 - (ph - 0.12) / 0.88 * 0.5;
-      const boost = Math.max(0, 1 - ringDist(p - 1, fall) * 1.2) * fade;
-      return [
-        Math.min(1, c[0] + 0.2 * boost),
-        c[1],
-        Math.min(1, c[2] + 0.25 * boost),
-        Math.min(1, c[3] + 0.6 * boost)
-      ];
-    }
-    return c;
-  }
-  var FLASH_MODES = ["all", "scatter", "center", "ring"];
-  var flashModeIndex = (name) => {
-    const i = FLASH_MODES.indexOf(name);
-    return i < 0 ? 0 : i;
-  };
-  function flashGate(mode, p, zi, epoch) {
-    if (mode === 1) return hash(p * 9.13 + zi * 5.7 + epoch * 17.9) > 0.45 ? 1 : 0.15;
-    if (mode === 2) return p === 0 ? 1 : 0.1;
-    if (mode === 3) return p === 0 ? 0.1 : 1;
-    return 1;
-  }
-
   // src/insets.ts
   var ZONES = [
     { id: "towerL", label: "tower L" },
-    { id: "towerR", label: "tower R" },
-    { id: "door", label: "door" }
+    { id: "door", label: "door \xB7 centre" },
+    { id: "towerR", label: "tower R" }
   ];
   var angle = (ringIndex) => -Math.PI / 2 + ringIndex * Math.PI / 3;
   var JewelInsets = class {
@@ -2141,14 +2644,13 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       this.canvas = document.createElement("canvas");
       this.canvas.id = "jewels";
       this.canvas.title = "The 21 real pixels, one dot each \u2014 centre + ring per jewel";
-      this.canvas.style.cssText = "display:block;width:100%;max-width:420px;height:auto;aspect-ratio:420/132;margin:.4rem auto 0;";
       (anchor.closest(".stage") ?? anchor).insertAdjacentElement("afterend", this.canvas);
       const ctx = this.canvas.getContext("2d");
       if (!ctx) throw new Error("no 2d context for jewel insets");
       this.ctx = ctx;
     }
     draw(zones) {
-      const W = 420, H = 132;
+      const W = 420, H = 146;
       if (this.canvas.width !== W) {
         this.canvas.width = W;
         this.canvas.height = H;
@@ -2168,10 +2670,18 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         }
         const [r, gg, b] = pix[0] ?? [0, 0, 0];
         this.dot(cx, cy, 12, r, gg, b);
+        g.textAlign = "center";
         g.fillStyle = "#9a8fb0";
         g.font = "11px system-ui";
-        g.textAlign = "center";
-        g.fillText(z.label, cx, H - 12);
+        g.fillText(z.label, cx, H - 26);
+        const avg = zones[z.id].avg;
+        g.fillStyle = "#6d6480";
+        g.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+        g.fillText(
+          avg.slice(0, 3).map((v) => Math.round(Math.min(1, v) * 255).toString(16).padStart(2, "0")).join(""),
+          cx,
+          H - 10
+        );
       });
     }
     dot(x, y, rad, r, g0, b) {
@@ -2664,6 +3174,38 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       g2.fillRect(0, 0, VW, VH);
     }
   };
+
+  // src/stage_view.ts
+  var KEY = "castle.stageView";
+  var MODES = ["castle", "pixels", "both"];
+  var isMode = (v) => v !== null && MODES.includes(v);
+  function initStageView() {
+    const sel = document.getElementById("viewSel");
+    if (!sel) return;
+    let mode = "both";
+    try {
+      const saved = localStorage.getItem(KEY);
+      if (isMode(saved)) mode = saved;
+    } catch {
+    }
+    const apply = () => {
+      for (const m of MODES) document.body.classList.toggle(`view-${m}`, m === mode);
+      sel.querySelectorAll("button").forEach((b) => {
+        b.setAttribute("aria-pressed", String(b.dataset["view"] === mode));
+      });
+    };
+    sel.addEventListener("click", (e) => {
+      const to = e.target?.closest("button")?.dataset["view"];
+      if (!isMode(to ?? null)) return;
+      mode = to;
+      try {
+        localStorage.setItem(KEY, mode);
+      } catch {
+      }
+      apply();
+    });
+    apply();
+  }
 
   // src/synth.ts
   function makeIR(ctx, secs, decay) {
@@ -4344,6 +4886,7 @@ ${lines.join("\n")}
       mode: "static",
       note: byId("trkNote"),
       list: byId("trkList"),
+      count: byId("trkCount"),
       yaml: byId("trkYaml"),
       modeEl: byId("trkMode"),
       /** Scene ids already in scenes.yaml, so a row can say it is in the show. */
@@ -4416,6 +4959,9 @@ ${lines.join("\n")}
         inShow: T.sceneIds.has(t.id),
         sounding: playingId === t.id
       })).join("");
+      const n = T.tracks.length;
+      T.count.textContent = n === 0 ? "empty" : `${n} imported`;
+      deps.onList?.(T.tracks);
     }
     T.list.addEventListener("click", (e) => {
       const el = e.target;
@@ -5376,7 +5922,7 @@ ${lines.join("\n")}
         "rgba(255,84,60,0.16)",
         "rgba(128,128,150,0.18)"
       ];
-      const STRIP = [
+      const STRIP2 = [
         "rgba(90,140,255,0.55)",
         "rgba(255,157,60,0.75)",
         "rgba(255,84,60,0.9)",
@@ -5389,7 +5935,7 @@ ${lines.join("\n")}
           g2.fillStyle = WASH[tier];
           g2.fillRect(x0, 0, x1 - x0, h);
         }
-        g2.fillStyle = STRIP[tier] ?? STRIP[1];
+        g2.fillStyle = STRIP2[tier] ?? STRIP2[1];
         g2.fillRect(x0, 0, x1 - x0, 3);
       });
     }
@@ -5644,13 +6190,13 @@ ${lines.join("\n")}
     }
     function toWave(id, body) {
       const b = body;
-      const peaks = b?.peaks, dur = b?.duration;
-      if (!Array.isArray(peaks) || typeof dur !== "number" || !(dur > 0))
+      const peaks2 = b?.peaks, dur = b?.duration;
+      if (!Array.isArray(peaks2) || typeof dur !== "number" || !(dur > 0))
         return `Analysis for \u201C${id}\u201D came back without usable peaks.`;
       return {
         id,
         duration: dur,
-        peaks,
+        peaks: peaks2,
         onsets: b?.onsets ?? {},
         ...b?.env ? { env: b.env } : {}
       };
@@ -5911,19 +6457,39 @@ ${lines.join("\n")}
   var stage = new Stage(canvas);
   var insets = new JewelInsets(canvas);
   var designer = createZoneDesigner(() => state);
-  if (new URLSearchParams(location.search).has("kiosk")) {
+  var kiosk = new URLSearchParams(location.search).has("kiosk");
+  if (!kiosk) initStageView();
+  if (kiosk) {
     const css = document.createElement("style");
     css.textContent = `
+    body.kiosk { --jewel-row: 153px; }
+    body.kiosk .desk { max-width: none; padding: 0; }
+    body.kiosk .grid { grid-template-columns: 1fr; gap: 0; }
+    body.kiosk .col:not(:has(#stage)) { display: none; }
     body.kiosk section.panel { display: none; }
-    body.kiosk section.panel:has(#stage) { display: block; max-width: none; }
+    body.kiosk section.panel:has(#stage) {
+      display: flex; flex-direction: column; justify-content: center;
+      height: 100vh; max-width: none; border: 0; border-radius: 0;
+    }
+    body.kiosk .stage {
+      flex: none; margin: 0 auto;
+      width: min(100%, calc((100vh - var(--jewel-row)) * 800 / 520));
+    }
+    body.kiosk .panel__hd, body.kiosk .transport, body.kiosk .hint,
     body.kiosk section.panel:has(#stage) details,
-    body.kiosk header, body.kiosk .lead, body.kiosk .chips { display: none; }
+    body.kiosk header, body.kiosk .foot { display: none; }
   `;
     document.head.appendChild(css);
     document.body.classList.add("kiosk");
   }
   var players = null;
   var panels = new Panels((ms) => transport.seekTo(ms));
+  var budget = initBudget(SCENES);
+  var deviceLine = "simulator";
+  var deviceOk = true;
+  function syncStatus() {
+    panels.setStatus(`${deviceLine} \xB7 ${audioMode === "rendered" ? "rendered audio" : "live synth"} \xB7 ${rendered.muted ? "muted" : "sounding"}`, deviceOk);
+  }
   var transport = new Transport({
     state,
     rendered,
@@ -5951,6 +6517,11 @@ ${lines.join("\n")}
       adopting = true;
       document.querySelector(`.scene[data-i="${i}"]`)?.click();
       adopting = false;
+    },
+    onStatus: (line, ok) => {
+      deviceLine = line;
+      deviceOk = ok;
+      syncStatus();
     }
   });
   panels.renderScenes(SCENES, (sc) => {
@@ -5996,6 +6567,7 @@ ${lines.join("\n")}
       if (audioMode === "rendered") synth.stopWind(0.4);
       rendered.stopAll();
       transport.loadScene(state.scene, { play: wasPlaying });
+      syncStatus();
     }
   });
   document.getElementById("play")?.addEventListener("click", () => transport.toggle());
@@ -6005,6 +6577,7 @@ ${lines.join("\n")}
   if (scrub) transport.bindScrub(scrub);
   var muteBtn = document.getElementById("mute");
   function syncMuteUI() {
+    syncStatus();
     if (!muteBtn) return;
     muteBtn.setAttribute("aria-pressed", String(rendered.muted));
     muteBtn.textContent = rendered.muted ? "Muted" : "Mute";
@@ -6086,7 +6659,10 @@ ${lines.join("\n")}
       wave.show(id);
     },
     onAudioClaim: () => wave.stop(),
-    onPreviewState: () => transport.refreshUI()
+    onPreviewState: () => transport.refreshUI(),
+    // The library is the SD build's biggest number, and it only exists once
+    // the studio has answered — so the budget card learns it here.
+    onList: (list) => budget.setTracks(list)
   });
   players = { wave, tracks, codecs };
   function frame(now) {
@@ -6102,11 +6678,13 @@ ${lines.join("\n")}
     stage.draw(f.zones, now / 1e3, f.flash, f.flashColor);
     insets.draw(f.zones);
     panels.updateMeters(f.zones);
+    panels.updateShell(f.zones);
     wave.mirror(f.zones);
     panels.updateTransport(f.elapsed, state.scene);
     requestAnimationFrame(frame);
   }
   transport.loadScene(firstScene);
+  syncStatus();
   requestAnimationFrame(frame);
 })();
 

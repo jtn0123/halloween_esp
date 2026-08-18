@@ -14,10 +14,13 @@
 
 import type { ZoneRender } from "./show.js";
 
+/** Laid out the way the castle stands, not the way the zones are declared —
+ *  the same stage order the channel strip reads in, so a colour you see here
+ *  and a hex you read there are in the same place on the screen. */
 const ZONES: ReadonlyArray<{ id: "towerL" | "towerR" | "door"; label: string }> = [
   { id: "towerL", label: "tower L" },
+  { id: "door", label: "door · centre" },
   { id: "towerR", label: "tower R" },
-  { id: "door", label: "door" },
 ];
 
 /** Ring pixel angles: pixel 1 at 12 o'clock, then clockwise — matches how
@@ -32,14 +35,15 @@ export class JewelInsets {
     this.canvas = document.createElement("canvas");
     this.canvas.id = "jewels";
     this.canvas.title = "The 21 real pixels, one dot each — centre + ring per jewel";
-    // OUTSIDE the .stage box, and with an explicit height. Inside it, two
-    // things go wrong at once: `.stage canvas { height:100% }` stretches the
-    // 420x132 bitmap to the stage's full height (giant blurry ovals), and
-    // the stage's fixed aspect-ratio means the extra canvas overflows the
-    // panel as a dead black region.
-    this.canvas.style.cssText =
-      "display:block;width:100%;max-width:420px;height:auto;" +
-      "aspect-ratio:420/132;margin:.4rem auto 0;";
+    // OUTSIDE the .stage box. Inside it, two things go wrong at once:
+    // `.stage canvas { height:100% }` stretches the 420x146 bitmap to the
+    // stage's full height (giant blurry ovals), and the stage's fixed
+    // aspect-ratio means the extra canvas overflows the panel as a dead
+    // black region.
+    //
+    // Sizing lives in panels.css, not in cssText here: an inline width beats
+    // every stylesheet rule, so the phone breakpoint and the Pixels-only view
+    // were both quietly losing to a hardcoded 420px.
     (anchor.closest(".stage") ?? anchor).insertAdjacentElement("afterend", this.canvas);
     const ctx = this.canvas.getContext("2d");
     if (!ctx) throw new Error("no 2d context for jewel insets");
@@ -47,7 +51,7 @@ export class JewelInsets {
   }
 
   draw(zones: ZoneRender): void {
-    const W = 420, H = 132;
+    const W = 420, H = 146;
     if (this.canvas.width !== W) { this.canvas.width = W; this.canvas.height = H; }
     const g = this.ctx;
     g.clearRect(0, 0, W, H);
@@ -67,10 +71,19 @@ export class JewelInsets {
       const [r, gg, b] = pix[0] ?? [0, 0, 0];
       this.dot(cx, cy, 12, r, gg, b);
 
+      g.textAlign = "center";
       g.fillStyle = "#9a8fb0";
       g.font = "11px system-ui";
-      g.textAlign = "center";
-      g.fillText(z.label, cx, H - 12);
+      g.fillText(z.label, cx, H - 26);
+      // The zone's mean as bytes, under its own jewel. The channel strip says
+      // the same thing, but reading a colour and reading its value should not
+      // mean looking at two corners of the page.
+      const avg = zones[z.id].avg;
+      g.fillStyle = "#6d6480";
+      g.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
+      g.fillText(avg.slice(0, 3).map(v =>
+        Math.round(Math.min(1, v) * 255).toString(16).padStart(2, "0")).join(""),
+      cx, H - 10);
     });
   }
 

@@ -65,6 +65,22 @@ test("served by the castle, the chip appears and mirrors scenes", async ({ page 
   expect(calls.some((c) => c.includes("s=storm"))).toBe(true);
 });
 
+test("the masthead names the castle and tracks mirroring", async ({ page }) => {
+  // In simulator mode the line says "simulator"; served by the castle it has
+  // to say so, because that is the difference between rehearsing and
+  // performing on a porch someone is standing on.
+  await stubCastle(page);
+  await page.goto("/");
+  await expect(page.locator("#deviceChip")).toBeVisible();
+  await expect(page.locator("#headTxt")).toHaveText(/^castle v5\.3 · SD ok · mirroring · /);
+
+  await page.locator("#devMirror").uncheck();
+  await expect(page.locator("#headTxt")).toContainText("not mirroring");
+  // Refreshing the line must not rebuild the chip underneath the hand that
+  // is using it — a rebuild resets the volume slider to the last poll.
+  await expect(page.locator("#devMirror")).not.toBeChecked();
+});
+
 test("mirroring off means scene picks stay local", async ({ page }) => {
   const calls = await stubCastle(page);
   await page.goto("/");

@@ -86,6 +86,14 @@ export interface BridgeOpts {
   /** Called once, on first contact, with the scene the castle is running —
    *  so the desk can open showing reality instead of the default. */
   adoptScene?: (sceneId: string) => void;
+  /**
+   * The device half of the masthead's status line — "castle v1.4 · SD ok ·
+   * mirroring", or "castle not answering" once it stops replying. `ok` is
+   * false only in that last case, so the masthead's dot can stop claiming
+   * everything is fine. Never called in simulator mode, where the desk's own
+   * default stands.
+   */
+  onStatus?: (line: string, ok: boolean) => void;
 }
 
 export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
@@ -103,10 +111,19 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     "box-shadow:0 4px 16px rgba(0,0,0,.5)";
   document.body.appendChild(chip);
 
+  /** What the masthead says about the castle. Split out of `render` so that
+   *  toggling mirroring can refresh the line WITHOUT rebuilding the chip —
+   *  a rebuild mid-drag snaps the volume slider back to the last polled
+   *  value, which is not what the hand on it just asked for. */
+  const sayStatus = (s: Status): void =>
+    opts.onStatus?.(`castle v${s.version} · ${s.sd_mounted ? "SD ok" : "no SD"}`
+      + ` · ${mirror ? "mirroring" : "not mirroring"}`, true);
+
   const render = (s: Status) => {
     chip.style.display = "block";
     chip.style.opacity = "1";
     lastVol = s.volume ?? lastVol;
+    sayStatus(s);
     const playing = s.scene && s.scene !== "stop"
       ? `▶ ${s.scene}${s.track ? ` · ${s.track}` : ""}` : "idle";
     chip.innerHTML =
@@ -130,6 +147,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     chip.querySelector<HTMLInputElement>("#devMirror")!
       .addEventListener("change", (e) => {
         mirror = (e.target as HTMLInputElement).checked;
+        sayStatus(s);   // the masthead says whether picks reach the porch
       });
     chip.querySelector<HTMLButtonElement>("#devStop")!
       .addEventListener("click", () => post("/api/stop", "stop"));
@@ -163,7 +181,10 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     setInterval(async () => {
       const now = await probe();
       if (now !== null) render(now);
-      else chip.style.opacity = "0.4";   // castle stopped answering
+      else {
+        chip.style.opacity = "0.4";      // castle stopped answering
+        opts.onStatus?.("castle not answering", false);
+      }
     }, 15000);
   });
 

@@ -6,23 +6,35 @@
 </style>
 
 <div class="desk">
-  <header class="head">
-    <div>
-      <p class="eyebrow">Halloween castle · three-zone preview</p>
+  <!-- One row. Everything that used to sit here as prose — what the desk is
+       for, what it runs on, why it is trustworthy — is in the footer fold;
+       the masthead's job during a show is to say what is happening now. -->
+  <header class="head" id="head">
+    <div class="head__id">
       <h1>Castle Cue Desk</h1>
-      <p class="sub">Tune the show on screen before anything gets flashed. Cue sheets here are the source of truth &mdash; they generate the ESPHome config, so what you hear is what ships.</p>
+      <span class="eyebrow" title="ESP32-S2 Feather · MAX98357A I²S amp · 3 NeoPixel Jewels, 7 RGBW pixels each">three zones &middot; 21 px</span>
     </div>
-    <div class="rig">
-      <span class="chip"><b>ESP32-S2</b> Feather</span>
-      <span class="chip"><b>MAX98357A</b> I²S</span>
-      <span class="chip"><b>3</b> zones &middot; 21 px</span>
+    <div class="head__live">
+      <span class="head__dot" id="headDot"></span>
+      <span class="head__txt" id="headTxt">simulator</span>
+      <div class="viewsel" id="viewSel" role="group" aria-label="What the stage shows">
+        <button type="button" data-view="castle" aria-pressed="false"
+                title="The castle as it looks — glow, spill and bloom">Castle</button>
+        <button type="button" data-view="pixels" aria-pressed="false"
+                title="The 21 real pixels, one dot each — the honest per-pixel view">Pixels</button>
+        <button type="button" data-view="both" aria-pressed="true"
+                title="Both at once">Both</button>
+      </div>
     </div>
   </header>
 
   <div class="grid">
     <!-- ─── Stage column ─── -->
     <div class="col">
-      <section class="panel">
+      <!-- The shell lights itself: border and bloom track the mean output, so
+           the panel around the stage is part of the picture rather than a
+           frame sitting in front of it. See panels.updateShell. -->
+      <section class="panel panel--stage" id="stageShell">
         <div class="panel__hd">
           <h2>Stage</h2>
           <span class="note" id="stageNote">Vigil</span>
@@ -69,105 +81,6 @@
         <p class="scenes-blurb" id="sceneBlurb"></p>
       </section>
 
-      <!-- ─── Tracks ─── -->
-      <section class="panel">
-        <div class="panel__hd">
-          <h2>Tracks</h2>
-          <span class="note" id="trkMode">checking…</span>
-        </div>
-        <div class="panel__bd">
-          <!-- Shown only when no local server is reachable. Importing needs
-               yt-dlp and ffmpeg, which a web page cannot run — saying so
-               plainly beats an Import button that quietly does nothing. -->
-          <div class="trk-offline" id="trkOffline" hidden>
-            <strong>The studio isn't running.</strong>
-            <p>Importing needs <code>yt-dlp</code> and <code>ffmpeg</code> on your Mac, and a
-               web page can't start a program that isn't running yet &mdash; that one step has
-               to happen outside the browser. It's a double-click, not a command:</p>
-            <p class="trk-launch"><b>Castle&nbsp;Cue&nbsp;Desk.command</b> &mdash; in the project folder</p>
-            <p>It opens the page for you, and from then on the controls are right here.
-               You can still drop a file below to analyse it without the server.</p>
-          </div>
-
-          <!-- Server controls, once we're actually talking to it. -->
-          <div class="trk-server" id="trkServer" hidden>
-            <span class="trk-dot"></span>
-            <span class="trk-srvtxt">Studio running on <b>127.0.0.1:8765</b></span>
-            <div class="trk-srvbtn">
-              <button id="srvRestart" type="button">Restart</button>
-              <button id="srvStop" type="button" class="danger">Stop server</button>
-            </div>
-          </div>
-          <div class="trk-add">
-            <input type="text" id="trkUrl" placeholder="Paste a link, or drop an audio file below"
-                   autocomplete="off" spellcheck="false">
-            <button class="btn btn--go" id="trkGet" type="button">Import</button>
-          </div>
-          <!-- Options, grouped by what you are actually deciding: which
-               part of the track, what it is encoded as, and how the lights
-               read it. The flat row of eight boxes gave equal weight to
-               "which 20 seconds" and "onset sensitivity", which are not
-               remotely equal decisions. -->
-          <details class="trk-opts-wrap" id="trkOpts">
-            <summary>Options <span class="trk-opts-hint" id="trkOptsHint"></span></summary>
-            <div class="trk-opts">
-              <fieldset>
-                <legend>Which part</legend>
-                <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
-                <label>length <input type="text" id="trkTake" placeholder="all" size="5"></label>
-                <label>name <input type="text" id="trkId" placeholder="auto" size="9"></label>
-                <!-- A looping scene that starts and ends at full level clicks
-                     at the seam. These are seconds of ramp at each end. -->
-                <label title="Seconds of fade at the head, so a loop does not start with a click"
-                  >fade in <input type="number" id="trkFadeIn" placeholder="0"
-                       min="0" max="30" step="0.1" size="4"></label>
-                <label title="Seconds of fade at the tail. Needs a length to fade out from."
-                  >fade out <input type="number" id="trkFadeOut" placeholder="0"
-                       min="0" max="30" step="0.1" size="4"></label>
-              </fieldset>
-              <fieldset>
-                <legend>Format</legend>
-                <label>container
-                  <select id="trkFormat">
-                    <option value="mp3">MP3</option>
-                    <option value="wav">WAV &mdash; no decode cost</option>
-                    <option value="flac">FLAC</option>
-                    <option value="opus">Opus</option>
-                  </select>
-                </label>
-                <label>kbps <input type="number" id="trkBitrate" placeholder="96"
-                       min="32" max="320" step="8" size="4"></label>
-                <label>rate
-                  <select id="trkRate">
-                    <option value="">44100</option>
-                    <option value="22050">22050 &mdash; half the size</option>
-                  </select>
-                </label>
-                <label>channels
-                  <select id="trkCh">
-                    <option value="2">stereo</option>
-                    <option value="1">mono &mdash; halves the size</option>
-                  </select>
-                </label>
-                <label class="trk-chk"><input type="checkbox" id="trkNorm" checked> match loudness</label>
-              </fieldset>
-              <fieldset>
-                <legend>Lights</legend>
-                <label>sensitivity <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
-                <span class="trk-hintline">lower finds more beats</span>
-              </fieldset>
-            </div>
-          </details>
-          <p class="trk-cap" id="trkCap"></p>
-          <!-- The clip editor draws itself in here once a track is picked. -->
-          <div class="trk-wave" id="trkWave"></div>
-          <div class="trk-drop" id="trkDrop">Drop an audio file here</div>
-          <p class="trk-note" id="trkNote"></p>
-          <div class="trk-list" id="trkList"></div>
-          <pre class="trk-yaml" id="trkYaml" hidden></pre>
-        </div>
-      </section>
-
       <section class="panel">
         <div class="panel__hd">
           <h2>Cue sheet</h2>
@@ -198,8 +111,8 @@
     <div class="col">
       <section class="panel">
         <div class="panel__hd">
-          <h2>Channels</h2>
-          <span class="note">live output</span>
+          <h2>Output</h2>
+          <span class="note">mean per zone</span>
         </div>
         <div class="chans" id="chans"></div>
       </section>
@@ -210,64 +123,213 @@
           <span class="note">live</span>
         </div>
         <div class="panel__bd ctrls">
-          <div class="ctrl">
-            <label for="depth">Candle flicker depth</label><output id="depthO"></output>
-            <input type="range" id="depth" min="0" max="100" value="55">
+          <!-- The three that get touched during a show, side by side and
+               without their hints. Everything else is one fold away. -->
+          <div class="ctrls__row">
+            <div class="ctrl ctrl--tight">
+              <label for="bright">Master</label><output id="brightO"></output>
+              <input type="range" id="bright" min="5" max="100" value="85">
+            </div>
+            <div class="ctrl ctrl--tight">
+              <label for="depth">Flicker</label><output id="depthO"></output>
+              <input type="range" id="depth" min="0" max="100" value="55">
+            </div>
+            <div class="ctrl ctrl--tight">
+              <label for="hue">Balance</label><output id="hueO"></output>
+              <input type="range" id="hue" min="0" max="100" value="50">
+            </div>
           </div>
-          <div class="ctrl">
-            <label for="speed">Candle flicker rate</label><output id="speedO"></output>
-            <input type="range" id="speed" min="20" max="400" value="140">
-            <p class="hint">Driven by smoothed value noise, not per-frame random &mdash; that difference is the whole reason a flicker reads as a flame instead of a fault.</p>
-          </div>
-          <div class="ctrl">
-            <label for="hue">Mansion balance</label><output id="hueO"></output>
-            <input type="range" id="hue" min="0" max="100" value="50">
-            <p class="hint">Biases the Séance and Ballroom palettes between violet and séance green. The crossfade keeps moving either way &mdash; this shifts where it sits.</p>
-          </div>
-          <div class="ctrl">
-            <label for="bright">Master brightness</label><output id="brightO"></output>
-            <input type="range" id="bright" min="5" max="100" value="85">
-          </div>
-          <div class="ctrl">
-            <label for="vol">Master volume</label><output id="volO"></output>
-            <input type="range" id="vol" min="0" max="100" value="60">
-          </div>
-          <div class="ctrl">
-            <label for="hall">Hall</label><output id="hallO"></output>
-            <input type="range" id="hall" min="0" max="100" value="58">
-            <p class="hint">Convolution reverb on the cue bus. Drop it to zero and the organ collapses into a synth patch &mdash; the room is doing most of the work.</p>
-          </div>
-          <div class="ctrl">
-            <label for="stops">Stops</label><output id="stopsO"></output>
-            <input type="range" id="stops" min="0" max="100" value="42">
-            <p class="hint">How much of the upper chorus is drawn. The 32&prime; and 16&prime; ranks always sound &mdash; pull this right in and you're left with dark, hollow pedal tone.</p>
-          </div>
-          <div class="ctrl">
-            <label for="trem">Tremulant</label><output id="tremO"></output>
-            <input type="range" id="trem" min="0" max="100" value="33">
-            <p class="hint">The wobble a real organ's tremulant puts on sustained ranks. A little is period-correct; a lot is a fairground.</p>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="renderedAudio" checked>
-            <span>Play rendered audio &mdash; the exact MP3s that ship to the castle, mixed offline with real reverb. Untick to hear the live synth instead; the Hall, Stops and Tremulant sliders shape only that live synth, so they are for experimenting, not for changing what ships.</span>
-          </label>
-          <div class="ctrl">
-            <label for="lat">Trigger latency</label><output id="latO"></output>
-            <input type="range" id="lat" min="0" max="200" value="70">
-            <p class="hint">Models the firmware's delay between the play command and the first sample. Timing tuned with this set honestly will survive the move to hardware.</p>
-          </div>
+          <details class="trim-fold" id="trimMore">
+            <summary>More trim <span class="trim-fold__hint">&mdash; flicker rate, level, latency, live synth</span></summary>
+            <div class="ctrls">
+              <div class="ctrl">
+                <label for="speed">Candle flicker rate</label><output id="speedO"></output>
+                <input type="range" id="speed" min="20" max="400" value="140">
+                <p class="hint">Driven by smoothed value noise, not per-frame random &mdash; that difference is the whole reason a flicker reads as a flame instead of a fault.</p>
+              </div>
+              <div class="ctrl">
+                <label for="vol">Master volume</label><output id="volO"></output>
+                <input type="range" id="vol" min="0" max="100" value="60">
+              </div>
+              <div class="ctrl">
+                <label for="lat">Trigger latency</label><output id="latO"></output>
+                <input type="range" id="lat" min="0" max="200" value="70">
+                <p class="hint">Models the firmware's delay between the play command and the first sample. Timing tuned with this set honestly will survive the move to hardware.</p>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="renderedAudio" checked>
+                <span>Play rendered audio &mdash; the exact MP3s that ship to the castle, mixed offline with real reverb. Untick to hear the live synth instead.</span>
+              </label>
+              <div class="ctrl">
+                <label for="hall">Hall</label><output id="hallO"></output>
+                <input type="range" id="hall" min="0" max="100" value="58">
+                <p class="hint">Convolution reverb on the cue bus. Drop it to zero and the organ collapses into a synth patch &mdash; the room is doing most of the work.</p>
+              </div>
+              <div class="ctrl">
+                <label for="stops">Stops</label><output id="stopsO"></output>
+                <input type="range" id="stops" min="0" max="100" value="42">
+                <p class="hint">How much of the upper chorus is drawn. The 32&prime; and 16&prime; ranks always sound &mdash; pull this right in and you're left with dark, hollow pedal tone.</p>
+              </div>
+              <div class="ctrl">
+                <label for="trem">Tremulant</label><output id="tremO"></output>
+                <input type="range" id="trem" min="0" max="100" value="33">
+                <p class="hint">The wobble a real organ's tremulant puts on sustained ranks. A little is period-correct; a lot is a fairground.</p>
+              </div>
+              <p class="hint hint--block">Hall, Stops and Tremulant shape the live synth only. Rendered audio is what ships.</p>
+            </div>
+          </details>
           <label class="toggle">
             <input type="checkbox" id="soft">
-            <span>Soften lightning &mdash; replaces hard strobes with a slower swell. Worth shipping on the real castle too; hard white strobe is a genuine photosensitivity risk on a public porch.</span>
+            <span><b>Soften lightning</b> &mdash; replaces hard strobes with a slower swell. Worth shipping on the real castle too; hard white strobe is a genuine photosensitivity risk on a public porch.</span>
           </label>
+        </div>
+      </section>
+      <!-- What the show is allowed to cost. Two builds, two different
+           ceilings, and the same eight scenes measured against each — see
+           budget.ts for where every figure comes from. -->
+      <section class="panel budget" id="budget">
+        <div class="panel__hd">
+          <h2>Budgets</h2>
+          <div class="budget__tabs" id="budTabs" role="group" aria-label="Which build">
+            <button type="button" data-bud="flash" aria-pressed="true"
+                    title="Everything embedded in the 3.87 MB app partition.">Flash</button>
+            <button type="button" data-bud="sd" aria-pressed="false"
+                    title="The experimental `make sd-build` variant: the card holds the library and the device streams off it.">SD card</button>
+          </div>
+        </div>
+        <div class="panel__bd budget__bd">
+          <p class="budget__head" id="budHead"></p>
+          <div class="budget__bar" id="budBar"></div>
+          <div class="budget__pick" id="budPick" hidden></div>
+          <div class="budget__rows" id="budRows"></div>
+          <p class="budget__note" id="budNote"></p>
         </div>
       </section>
     </div>
   </div>
 
+  <!-- ─── Tracks ───────────────────────────────────────────────────────
+       Full width, below both columns, and split two ways inside: what you
+       are working on, and what you have. The list used to sit under the clip
+       editor in the narrow stage column, which meant picking the next track
+       was a scroll away from the one you were trimming — and left the
+       waveform half the width it wanted. -->
+  <section class="panel trk-panel">
+    <div class="panel__hd">
+      <h2>Tracks</h2>
+      <span class="note" id="trkMode">checking…</span>
+      <!-- Server controls, once we're actually talking to it. -->
+      <div class="trk-server" id="trkServer" hidden>
+        <span class="trk-dot"></span>
+        <span class="trk-srvtxt">studio on <b>127.0.0.1:8765</b></span>
+        <div class="trk-srvbtn">
+          <button id="srvRestart" type="button">Restart</button>
+          <button id="srvStop" type="button" class="danger">Stop server</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="trk-split">
+      <div class="panel__bd">
+        <!-- Shown only when no local server is reachable. Importing needs
+             yt-dlp and ffmpeg, which a web page cannot run — saying so
+             plainly beats an Import button that quietly does nothing. -->
+        <div class="trk-offline" id="trkOffline" hidden>
+          <strong>The studio isn't running.</strong>
+          <p>Importing needs <code>yt-dlp</code> and <code>ffmpeg</code> on your Mac, and a
+             web page can't start a program that isn't running yet &mdash; that one step has
+             to happen outside the browser. It's a double-click, not a command:</p>
+          <p class="trk-launch"><b>Castle&nbsp;Cue&nbsp;Desk.command</b> &mdash; in the project folder</p>
+          <p>It opens the page for you, and from then on the controls are right here.
+             You can still drop a file below to analyse it without the server.</p>
+        </div>
+
+        <div class="trk-add">
+          <input type="text" id="trkUrl" placeholder="Paste a link, or drop an audio file below"
+                 autocomplete="off" spellcheck="false">
+          <button class="btn btn--go" id="trkGet" type="button">Import</button>
+        </div>
+        <!-- Options, grouped by what you are actually deciding: which
+             part of the track, what it is encoded as, and how the lights
+             read it. The flat row of eight boxes gave equal weight to
+             "which 20 seconds" and "onset sensitivity", which are not
+             remotely equal decisions. -->
+        <details class="trk-opts-wrap" id="trkOpts">
+          <summary>Options <span class="trk-opts-hint" id="trkOptsHint"></span></summary>
+          <div class="trk-opts">
+            <fieldset>
+              <legend>Which part</legend>
+              <label>start <input type="text" id="trkStart" placeholder="0:00" size="5"></label>
+              <label>length <input type="text" id="trkTake" placeholder="all" size="5"></label>
+              <label>name <input type="text" id="trkId" placeholder="auto" size="9"></label>
+              <!-- A looping scene that starts and ends at full level clicks
+                   at the seam. These are seconds of ramp at each end. -->
+              <label title="Seconds of fade at the head, so a loop does not start with a click"
+                >fade in <input type="number" id="trkFadeIn" placeholder="0"
+                     min="0" max="30" step="0.1" size="4"></label>
+              <label title="Seconds of fade at the tail. Needs a length to fade out from."
+                >fade out <input type="number" id="trkFadeOut" placeholder="0"
+                     min="0" max="30" step="0.1" size="4"></label>
+            </fieldset>
+            <fieldset>
+              <legend>Format</legend>
+              <label>container
+                <select id="trkFormat">
+                  <option value="mp3">MP3</option>
+                  <option value="wav">WAV &mdash; no decode cost</option>
+                  <option value="flac">FLAC</option>
+                  <option value="opus">Opus</option>
+                </select>
+              </label>
+              <label>kbps <input type="number" id="trkBitrate" placeholder="96"
+                     min="32" max="320" step="8" size="4"></label>
+              <label>rate
+                <select id="trkRate">
+                  <option value="">44100</option>
+                  <option value="22050">22050 &mdash; half the size</option>
+                </select>
+              </label>
+              <label>channels
+                <select id="trkCh">
+                  <option value="2">stereo</option>
+                  <option value="1">mono &mdash; halves the size</option>
+                </select>
+              </label>
+              <label class="trk-chk"><input type="checkbox" id="trkNorm" checked> match loudness</label>
+            </fieldset>
+            <fieldset>
+              <legend>Lights</legend>
+              <label>sensitivity <input type="text" id="trkSens" placeholder="1.1" size="4"></label>
+              <span class="trk-hintline">lower finds more beats</span>
+            </fieldset>
+          </div>
+        </details>
+        <p class="trk-cap" id="trkCap"></p>
+        <p class="trk-note" id="trkNote"></p>
+        <!-- The clip editor draws itself in here once a track is picked. -->
+        <div class="trk-wave" id="trkWave"></div>
+        <div class="trk-drop" id="trkDrop">Drop an audio file here</div>
+        <pre class="trk-yaml" id="trkYaml" hidden></pre>
+      </div>
+
+      <div class="trk-lib">
+        <div class="trk-lib__hd">
+          <span>Library</span>
+          <span class="note" id="trkCount"></span>
+        </div>
+        <div class="trk-list" id="trkList"></div>
+        <p class="trk-lib__ft">Drop an audio file anywhere on this panel to analyse it without importing.</p>
+      </div>
+    </div>
+  </section>
+
   <footer class="foot">
-    <p><strong>How faithful this is.</strong> The effect maths, per-pixel seeds and cue timings are the firmware's own (ported line for line from <code>castle_effects.h</code> and generated from <code>scenes.yaml</code>), and the rendered audio is byte-identical to what ships in flash. What the screen cannot promise is pixel gamma: WS2812-family LEDs diverge from sRGB hardest at exactly the low brightness where flicker lives, so budget one retune pass when the jewels arrive.</p>
-    <p><strong>Why thunder fires before the flash.</strong> Light beats sound to an observer in the real world, so leading with audio is physically right &mdash; and it conveniently swallows the playback trigger latency.</p>
+    <details class="foot-fold">
+      <summary>What this desk is, how faithful it is, and why thunder fires first</summary>
+      <p><strong>What it is.</strong> Tune the show on screen before anything gets flashed. Cue sheets here are the source of truth &mdash; they generate the ESPHome config, so what you hear is what ships. The hardware behind it: an <b>ESP32-S2</b> Feather, a <b>MAX98357A</b> I²S amp, and three NeoPixel Jewels of seven RGBW pixels each.</p>
+      <p><strong>How faithful this is.</strong> The effect maths, per-pixel seeds and cue timings are the firmware's own (ported line for line from <code>castle_effects.h</code> and generated from <code>scenes.yaml</code>), and the rendered audio is byte-identical to what ships in flash. What the screen cannot promise is pixel gamma: WS2812-family LEDs diverge from sRGB hardest at exactly the low brightness where flicker lives, so budget one retune pass when the jewels arrive.</p>
+      <p><strong>Why thunder fires before the flash.</strong> Light beats sound to an observer in the real world, so leading with audio is physically right &mdash; and it conveniently swallows the playback trigger latency.</p>
+    </details>
   </footer>
 </div>
 
