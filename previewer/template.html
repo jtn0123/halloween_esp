@@ -17,7 +17,10 @@
     <div class="head__live">
       <span class="head__dot" id="headDot"></span>
       <span class="head__txt" id="headTxt">simulator</span>
-      <div class="viewsel" id="viewSel" role="group" aria-label="What the stage shows">
+      <!-- toolbar, not group: ARIA's `group` is for objects that belong
+           together in a document outline, and these are a compact row of
+           function buttons, which is what `toolbar` describes. -->
+      <div class="viewsel" id="viewSel" role="toolbar" aria-label="What the stage shows">
         <button type="button" data-view="castle" aria-pressed="false"
                 title="The castle as it looks — glow, spill and bloom">Castle</button>
         <button type="button" data-view="pixels" aria-pressed="false"
@@ -190,7 +193,7 @@
       <section class="panel budget" id="budget">
         <div class="panel__hd">
           <h2>Budgets</h2>
-          <div class="budget__tabs" id="budTabs" role="group" aria-label="Which build">
+          <div class="budget__tabs" id="budTabs" role="toolbar" aria-label="Which build">
             <button type="button" data-bud="flash" aria-pressed="true"
                     title="Everything embedded in the 3.87 MB app partition.">Flash</button>
             <button type="button" data-bud="sd" aria-pressed="false"

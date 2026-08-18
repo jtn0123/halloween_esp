@@ -12,6 +12,7 @@
 import { RenderedAudio, type AudioMode } from "./audio.js";
 import { createBandEditor } from "./band_editor.js";
 import { initBudget } from "./budget.js";
+import { lightChrome, setStatus } from "./chrome_light.js";
 import { createCodecAb, type CodecAb } from "./codec_ab.js";
 import { deviceBridge } from "./device.js";
 import { defaultParams } from "./effects.js";
@@ -141,7 +142,7 @@ const budget = initBudget(SCENES);
 let deviceLine = "simulator";
 let deviceOk = true;
 function syncStatus(): void {
-  panels.setStatus(`${deviceLine} · `
+  setStatus(`${deviceLine} · `
     + `${audioMode === "rendered" ? "rendered audio" : "live synth"} · `
     + `${rendered.muted ? "muted" : "sounding"}`, deviceOk);
 }
@@ -356,7 +357,7 @@ function frame(now: number): void {
   stage.draw(f.zones, now / 1000, f.flash, f.flashColor);
   insets.draw(f.zones);
   panels.updateMeters(f.zones);
-  panels.updateShell(f.zones);
+  lightChrome(f.zones);
   wave.mirror(f.zones);
   panels.updateTransport(f.elapsed, state.scene);
   requestAnimationFrame(frame);

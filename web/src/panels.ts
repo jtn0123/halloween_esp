@@ -189,10 +189,6 @@ export class Panels {
   private readonly ticks = must("ticks");
   private readonly scrub = must("scrub");
   private readonly meters: Record<ZoneId, Meter>;
-  private readonly shell = document.getElementById("stageShell");
-  private readonly head = document.getElementById("head");
-  private readonly headTxt = document.getElementById("headTxt");
-  private readonly headDot = document.getElementById("headDot");
 
   /** The rows currently in the sheet, cached because the playhead highlight
    *  touches every one of them on every frame. Refreshed by `renderSheet`. */
@@ -259,15 +255,24 @@ export class Panels {
     // The bar across the top is the scene's own light — see scene_tint.ts.
     // Eight identically grey tiles made you read the word to find Séance;
     // a swatch answers "which is the green one" before you have read anything.
-    this.scenesEl.innerHTML = scenes.map((s, i) => `
+    this.scenesEl.innerHTML = scenes.map((s, i) => {
+      // Every conditional piece named before the markup rather than nested
+      // inside it. The template is then one flat line per element, which is
+      // the only way this stays readable at five interpolations a tile.
+      const secs = `${(s.dur / 1000).toFixed(0)}s`;
+      const loops = s.loop ? " ↻" : "";
+      const size = s.bytes ? ` · ${kb(s.bytes)}` : "";
+      const file = s.bytes ? `\n\n${s.file} — ${kb(s.bytes)}` : "";
+      const title = `${s.kind} · ${secs}${s.loop ? " · loops" : ""} — ${s.blurb}${file}`;
+      const tint = sceneTint(s, i === 0 ? 1 : 0.45);
+      return `
     <button class="scene" type="button" data-i="${i}" aria-pressed="${i === 0}"
-            title="${s.kind} · ${(s.dur / 1000).toFixed(0)}s${s.loop ? " · loops" : ""}`
-      + ` — ${s.blurb}${s.bytes ? `\n\n${s.file} — ${kb(s.bytes)}` : ""}">
-      <i class="scene__tint" style="background:${sceneTint(s, i === 0 ? 1 : 0.45)}"></i>
+            title="${title}">
+      <i class="scene__tint" style="background:${tint}"></i>
       <strong>${s.name}</strong>
-      <span class="scene__sz">${(s.dur / 1000).toFixed(0)}s${s.loop ? " ↻" : ""}`
-      + `${s.bytes ? ` · ${kb(s.bytes)}` : ""}</span>
-    </button>`).join("");
+      <span class="scene__sz">${secs}${loops}${size}</span>
+    </button>`;
+    }).join("");
 
     // The count only. What the show costs, and against which of the two
     // builds, is the Budgets panel's whole job now (budget.ts) — it was never
@@ -334,64 +339,6 @@ export class Panels {
       m.val.textContent = String(lum).padStart(3, " ") + "  "
         + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
     }
-  }
-
-  /**
-   * The chrome lights itself from the show.
-   *
-   * The stage panel's border and bloom take the mean of the three zones, and
-   * the masthead gets a low spill of the doorway's colour. Both are hue-only:
-   * luminance drives the strength, so a dim scene glows faintly in its own
-   * colour rather than washing out to grey. Costs one style write a frame.
-   */
-  updateShell(out: ZoneRender): void {
-    const zs = [out.towerL.avg, out.door.avg, out.towerR.avg];
-    const mean = [0, 1, 2].map(k =>
-      Math.min(1, ((zs[0]?.[k] ?? 0) + (zs[1]?.[k] ?? 0) + (zs[2]?.[k] ?? 0)) / 3));
-    const lum = Math.max(mean[0] ?? 0, mean[1] ?? 0, mean[2] ?? 0);
-    if (this.shell) {
-      const n = lum > 0.02 ? 1 / lum : 0;
-      const tint = `rgba(${Math.round((mean[0] ?? 0) * n * 255)},`
-        + `${Math.round((mean[1] ?? 0) * n * 255)},${Math.round((mean[2] ?? 0) * n * 255)},`
-        + `${(0.1 + Math.sqrt(lum) * 0.34).toFixed(3)})`;
-      this.shell.style.boxShadow =
-        `var(--shadow), 0 0 ${(22 + lum * 54).toFixed(0)}px -6px ${tint}`;
-      this.shell.style.borderColor = `color-mix(in srgb, ${tint} 60%, var(--line))`;
-    }
-    if (this.head) {
-      const d = out.door.avg;
-      const tint = `rgb(${Math.round(d[0] * 255)},${Math.round(d[1] * 255)},`
-        + `${Math.round(d[2] * 255)})`;
-      this.head.style.background = "radial-gradient(120% 260% at 22% 150%, "
-        + `color-mix(in srgb, ${tint} 16%, transparent), transparent 70%)`;
-      // The status line catches the tower's light too, so the masthead warms
-      // and cools with the show instead of sitting at one grey. Mixed INTO
-      // --muted rather than set outright: a literal rgb() bright enough to
-      // read on the night stage is unreadable on the light theme's ground.
-      if (this.headTxt) {
-        const l = out.towerL.avg;
-        const lit = Math.max(l[0], l[1], l[2]);
-        const tower = `rgb(${Math.round(l[0] * 255)},${Math.round(l[1] * 255)},`
-          + `${Math.round(l[2] * 255)})`;
-        this.headTxt.style.color =
-          `color-mix(in srgb, ${tower} ${(lit * 45).toFixed(0)}%, var(--muted))`;
-      }
-    }
-  }
-
-  /**
-   * The one live line in the masthead: which machine, what is sounding.
-   *
-   * `ok` drives the dot beside it. A green light next to "castle not
-   * answering" is worse than no light at all — it is the one place on the
-   * page someone glances at to decide whether the porch is alive.
-   */
-  setStatus(text: string, ok = true): void {
-    if (this.headTxt) this.headTxt.textContent = text;
-    if (!this.headDot) return;
-    const c = ok ? "var(--spirit)" : "var(--alarm)";
-    this.headDot.style.background = c;
-    this.headDot.style.boxShadow = `0 0 7px ${c}`;
   }
 
   /** Playhead, clock and the lit row in the sheet. The 700 ms window is a

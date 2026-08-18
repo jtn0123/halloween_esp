@@ -777,7 +777,10 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
     <div class="head__live">
       <span class="head__dot" id="headDot"></span>
       <span class="head__txt" id="headTxt">simulator</span>
-      <div class="viewsel" id="viewSel" role="group" aria-label="What the stage shows">
+      <!-- toolbar, not group: ARIA's `group` is for objects that belong
+           together in a document outline, and these are a compact row of
+           function buttons, which is what `toolbar` describes. -->
+      <div class="viewsel" id="viewSel" role="toolbar" aria-label="What the stage shows">
         <button type="button" data-view="castle" aria-pressed="false"
                 title="The castle as it looks — glow, spill and bloom">Castle</button>
         <button type="button" data-view="pixels" aria-pressed="false"
@@ -950,7 +953,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
       <section class="panel budget" id="budget">
         <div class="panel__hd">
           <h2>Budgets</h2>
-          <div class="budget__tabs" id="budTabs" role="group" aria-label="Which build">
+          <div class="budget__tabs" id="budTabs" role="toolbar" aria-label="Which build">
             <button type="button" data-bud="flash" aria-pressed="true"
                     title="Everything embedded in the 3.87 MB app partition.">Flash</button>
             <button type="button" data-bud="sd" aria-pressed="false"
@@ -1114,10 +1117,10 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
       /** Modelled decode spin-up, so the screen and the speaker agree. */
       this.latency = 70;
       for (const [sid, uri] of Object.entries(audio)) {
-        const el = new Audio(uri);
-        el.preload = "auto";
-        el.muted = true;
-        this.els.set(sid, el);
+        const el2 = new Audio(uri);
+        el2.preload = "auto";
+        el2.muted = true;
+        this.els.set(sid, el2);
       }
     }
     /** Rendered files are preferred when we have any; otherwise the synth. */
@@ -1132,19 +1135,19 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
     }
     /** Current playback position of a scene's file, in ms. */
     positionMs(sceneId) {
-      const el = this.els.get(sceneId);
-      return el ? el.currentTime * 1e3 : null;
+      const el2 = this.els.get(sceneId);
+      return el2 ? el2.currentTime * 1e3 : null;
     }
     stopAll() {
       this.clearFade();
-      for (const el of this.els.values()) {
-        el.pause();
-        el.currentTime = 0;
+      for (const el2 of this.els.values()) {
+        el2.pause();
+        el2.currentTime = 0;
       }
     }
     pauseAll() {
       this.clearFade();
-      for (const el of this.els.values()) el.pause();
+      for (const el2 of this.els.values()) el2.pause();
     }
     /**
      * Start (or resume) a scene's file at `fromMs`.
@@ -1155,34 +1158,34 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
      * ramp costs nothing and removes both.
      */
     play(sc, fromMs = 0) {
-      const el = this.els.get(sc.id);
-      if (!el) return false;
+      const el2 = this.els.get(sc.id);
+      if (!el2) return false;
       const target = Math.min(1, this.volume * (sc.volume ?? 0.8));
-      el.muted = this.muted;
-      el.loop = Boolean(sc.loop);
-      el.volume = 0;
+      el2.muted = this.muted;
+      el2.loop = Boolean(sc.loop);
+      el2.volume = 0;
       try {
-        el.currentTime = Math.max(0, fromMs) / 1e3;
+        el2.currentTime = Math.max(0, fromMs) / 1e3;
       } catch {
       }
       setTimeout(() => {
-        void el.play().catch(() => {
+        void el2.play().catch(() => {
         });
         this.clearFade();
         const step2 = target / 12;
         this.fadeTimer = setInterval(() => {
-          el.volume = Math.min(target, el.volume + step2);
-          if (el.volume >= target - 1e-6) this.clearFade();
+          el2.volume = Math.min(target, el2.volume + step2);
+          if (el2.volume >= target - 1e-6) this.clearFade();
         }, 15);
       }, this.latency);
       return true;
     }
     /** Drag a playing file to a new position, so light and sound stay locked. */
     seek(sceneId, ms) {
-      const el = this.els.get(sceneId);
-      if (!el) return;
+      const el2 = this.els.get(sceneId);
+      if (!el2) return;
       try {
-        el.currentTime = Math.max(0, ms) / 1e3;
+        el2.currentTime = Math.max(0, ms) / 1e3;
       } catch {
       }
     }
@@ -1195,10 +1198,10 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
     apply(scenes) {
       this.clearFade();
       for (const sc of scenes) {
-        const el = this.els.get(sc.id);
-        if (!el) continue;
-        el.muted = this.muted;
-        el.volume = Math.min(1, this.volume * (sc.volume ?? 0.8));
+        const el2 = this.els.get(sc.id);
+        if (!el2) continue;
+        el2.muted = this.muted;
+        el2.volume = Math.min(1, this.volume * (sc.volume ?? 0.8));
       }
     }
     clearFade() {
@@ -1540,9 +1543,9 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   var STRIP = ["towerL", "door", "towerR"];
   var kb = (n) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MB` : `${Math.round(n / 1024)} KB`;
   function must(id) {
-    const el = document.getElementById(id);
-    if (!el) throw new Error(`panels: missing #${id}`);
-    return el;
+    const el2 = document.getElementById(id);
+    if (!el2) throw new Error(`panels: missing #${id}`);
+    return el2;
   }
   function sheetRow(c, scene) {
     let op;
@@ -1615,10 +1618,6 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
       this.tc = must("tc");
       this.ticks = must("ticks");
       this.scrub = must("scrub");
-      this.shell = document.getElementById("stageShell");
-      this.head = document.getElementById("head");
-      this.headTxt = document.getElementById("headTxt");
-      this.headDot = document.getElementById("headDot");
       /** The rows currently in the sheet, cached because the playhead highlight
        *  touches every one of them on every frame. Refreshed by `renderSheet`. */
       this.rows = [];
@@ -1664,15 +1663,23 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
     renderScenes(scenes, onPick) {
       this.sceneList = scenes;
       this.onPick = onPick;
-      this.scenesEl.innerHTML = scenes.map((s, i) => `
-    <button class="scene" type="button" data-i="${i}" aria-pressed="${i === 0}"
-            title="${s.kind} \xB7 ${(s.dur / 1e3).toFixed(0)}s${s.loop ? " \xB7 loops" : ""} \u2014 ${s.blurb}${s.bytes ? `
+      this.scenesEl.innerHTML = scenes.map((s, i) => {
+        const secs = `${(s.dur / 1e3).toFixed(0)}s`;
+        const loops = s.loop ? " \u21BB" : "";
+        const size2 = s.bytes ? ` \xB7 ${kb(s.bytes)}` : "";
+        const file = s.bytes ? `
 
-${s.file} \u2014 ${kb(s.bytes)}` : ""}">
-      <i class="scene__tint" style="background:${sceneTint(s, i === 0 ? 1 : 0.45)}"></i>
+${s.file} \u2014 ${kb(s.bytes)}` : "";
+        const title = `${s.kind} \xB7 ${secs}${s.loop ? " \xB7 loops" : ""} \u2014 ${s.blurb}${file}`;
+        const tint = sceneTint(s, i === 0 ? 1 : 0.45);
+        return `
+    <button class="scene" type="button" data-i="${i}" aria-pressed="${i === 0}"
+            title="${title}">
+      <i class="scene__tint" style="background:${tint}"></i>
       <strong>${s.name}</strong>
-      <span class="scene__sz">${(s.dur / 1e3).toFixed(0)}s${s.loop ? " \u21BB" : ""}${s.bytes ? ` \xB7 ${kb(s.bytes)}` : ""}</span>
-    </button>`).join("");
+      <span class="scene__sz">${secs}${loops}${size2}</span>
+    </button>`;
+      }).join("");
       this.sceneCount.textContent = `${scenes.length} loaded`;
     }
     /** Re-tint the grid so the selected scene's swatch is the bright one. */
@@ -1724,50 +1731,6 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         m.val.textContent = String(lum).padStart(3, " ") + "  " + [r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("");
       }
     }
-    /**
-     * The chrome lights itself from the show.
-     *
-     * The stage panel's border and bloom take the mean of the three zones, and
-     * the masthead gets a low spill of the doorway's colour. Both are hue-only:
-     * luminance drives the strength, so a dim scene glows faintly in its own
-     * colour rather than washing out to grey. Costs one style write a frame.
-     */
-    updateShell(out) {
-      const zs = [out.towerL.avg, out.door.avg, out.towerR.avg];
-      const mean = [0, 1, 2].map((k) => Math.min(1, ((zs[0]?.[k] ?? 0) + (zs[1]?.[k] ?? 0) + (zs[2]?.[k] ?? 0)) / 3));
-      const lum = Math.max(mean[0] ?? 0, mean[1] ?? 0, mean[2] ?? 0);
-      if (this.shell) {
-        const n = lum > 0.02 ? 1 / lum : 0;
-        const tint = `rgba(${Math.round((mean[0] ?? 0) * n * 255)},${Math.round((mean[1] ?? 0) * n * 255)},${Math.round((mean[2] ?? 0) * n * 255)},${(0.1 + Math.sqrt(lum) * 0.34).toFixed(3)})`;
-        this.shell.style.boxShadow = `var(--shadow), 0 0 ${(22 + lum * 54).toFixed(0)}px -6px ${tint}`;
-        this.shell.style.borderColor = `color-mix(in srgb, ${tint} 60%, var(--line))`;
-      }
-      if (this.head) {
-        const d = out.door.avg;
-        const tint = `rgb(${Math.round(d[0] * 255)},${Math.round(d[1] * 255)},${Math.round(d[2] * 255)})`;
-        this.head.style.background = `radial-gradient(120% 260% at 22% 150%, color-mix(in srgb, ${tint} 16%, transparent), transparent 70%)`;
-        if (this.headTxt) {
-          const l = out.towerL.avg;
-          const lit = Math.max(l[0], l[1], l[2]);
-          const tower = `rgb(${Math.round(l[0] * 255)},${Math.round(l[1] * 255)},${Math.round(l[2] * 255)})`;
-          this.headTxt.style.color = `color-mix(in srgb, ${tower} ${(lit * 45).toFixed(0)}%, var(--muted))`;
-        }
-      }
-    }
-    /**
-     * The one live line in the masthead: which machine, what is sounding.
-     *
-     * `ok` drives the dot beside it. A green light next to "castle not
-     * answering" is worse than no light at all — it is the one place on the
-     * page someone glances at to decide whether the porch is alive.
-     */
-    setStatus(text, ok = true) {
-      if (this.headTxt) this.headTxt.textContent = text;
-      if (!this.headDot) return;
-      const c = ok ? "var(--spirit)" : "var(--alarm)";
-      this.headDot.style.background = c;
-      this.headDot.style.boxShadow = `0 0 7px ${c}`;
-    }
     /** Playhead, clock and the lit row in the sheet. The 700 ms window is a
      *  readability choice: a strike is over long before you can look at it. */
     updateTransport(elapsed, scene) {
@@ -1804,22 +1767,22 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     }
     /** Wire one slider to its handler and its readout. */
     bind(id, fn, fmt2) {
-      const el = must(id);
+      const el2 = must(id);
       const out = must(id + "O");
       const key = `castle.trim.${id}`;
       try {
         const saved = localStorage.getItem(key);
-        if (saved !== null && Number.isFinite(+saved)) el.value = saved;
+        if (saved !== null && Number.isFinite(+saved)) el2.value = saved;
       } catch {
       }
       const run = () => {
-        const v = +el.value;
+        const v = +el2.value;
         fn(v);
         out.textContent = fmt2(v);
       };
-      el.addEventListener("input", () => {
+      el2.addEventListener("input", () => {
         try {
-          localStorage.setItem(key, el.value);
+          localStorage.setItem(key, el2.value);
         } catch {
         }
         run();
@@ -1880,8 +1843,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       }
       onMix?.();
     };
-    const el = document.createElement("div");
-    el.className = "bandcfg";
+    const el2 = document.createElement("div");
+    el2.className = "bandcfg";
     for (const b of BANDS) {
       zone[b.name] = b.zone;
       sens[b.name] = DEFAULT_SENS;
@@ -1959,10 +1922,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       mix2.style.cssText = "display:inline-flex;gap:3px";
       mix2.append(mute, solo);
       row.append(swatch, name, zoneSel, slider, read, hits, mix2);
-      el.append(row);
+      el2.append(row);
     }
     return {
-      el,
+      el: el2,
       settings: () => ({ zone: { ...zone }, sensitivity: { ...sens } }),
       active: () => ({ ...on }),
       zones: () => ({ ...zone }),
@@ -2012,9 +1975,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     };
   }
   function must2(id) {
-    const el = document.getElementById(id);
-    if (!el) throw new Error(`budget: missing #${id}`);
-    return el;
+    const el2 = document.getElementById(id);
+    if (!el2) throw new Error(`budget: missing #${id}`);
+    return el2;
   }
   function initBudget(scenes) {
     const tabsEl = must2("budTabs");
@@ -2152,6 +2115,39 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     };
   }
 
+  // src/chrome_light.ts
+  var el = (id) => document.getElementById(id);
+  var shell = el("stageShell");
+  var head = el("head");
+  var headTxt = el("headTxt");
+  var headDot = el("headDot");
+  var byte = (v) => Math.round(Math.min(1, v) * 255);
+  function setStatus(text, ok = true) {
+    if (headTxt) headTxt.textContent = text;
+    if (!headDot) return;
+    const c = ok ? "var(--spirit)" : "var(--alarm)";
+    headDot.style.background = c;
+    headDot.style.boxShadow = `0 0 7px ${c}`;
+  }
+  function lightChrome(out) {
+    const zones = [out.towerL.avg, out.door.avg, out.towerR.avg];
+    const mean = [0, 1, 2].map((k) => Math.min(1, ((zones[0]?.[k] ?? 0) + (zones[1]?.[k] ?? 0) + (zones[2]?.[k] ?? 0)) / 3));
+    const lum = Math.max(mean[0] ?? 0, mean[1] ?? 0, mean[2] ?? 0);
+    if (shell) {
+      const n = lum > 0.02 ? 1 / lum : 0;
+      const tint = `rgba(${byte((mean[0] ?? 0) * n)},${byte((mean[1] ?? 0) * n)},${byte((mean[2] ?? 0) * n)},${(0.1 + Math.sqrt(lum) * 0.34).toFixed(3)})`;
+      shell.style.boxShadow = `var(--shadow), 0 0 ${(22 + lum * 54).toFixed(0)}px -6px ${tint}`;
+      shell.style.borderColor = `color-mix(in srgb, ${tint} 60%, var(--line))`;
+    }
+    if (!head) return;
+    const d = out.door.avg;
+    head.style.background = `radial-gradient(120% 260% at 22% 150%, color-mix(in srgb, rgb(${byte(d[0])},${byte(d[1])},${byte(d[2])}) 16%, transparent), transparent 70%)`;
+    if (!headTxt) return;
+    const l = out.towerL.avg;
+    const lit = Math.max(l[0], l[1], l[2]);
+    headTxt.style.color = `color-mix(in srgb, rgb(${byte(l[0])},${byte(l[1])},${byte(l[2])}) ${(lit * 45).toFixed(0)}%, var(--muted))`;
+  }
+
   // src/api.ts
   var QUICK = 3e4;
   var ENCODE = 5 * 6e4;
@@ -2284,8 +2280,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   // src/codec_ab.ts
   var kb2 = (n) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MB` : `${Math.round(n / 1024)} KB`;
   function createCodecAb(deps) {
-    const el = document.createElement("div");
-    el.className = "codecab";
+    const el2 = document.createElement("div");
+    el2.className = "codecab";
     const bar = document.createElement("div");
     bar.className = "codecab__bar";
     const run = document.createElement("button");
@@ -2298,7 +2294,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     const rowsEl = document.createElement("div");
     rowsEl.className = "codecab__rows";
     rowsEl.hidden = true;
-    el.append(bar, rowsEl);
+    el2.append(bar, rowsEl);
     const audio = new Audio();
     audio.muted = true;
     audio.loop = true;
@@ -2414,7 +2410,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     audio.addEventListener("error", () => {
       if (current) stop();
     });
-    return { el, reset, stop };
+    return { el: el2, reset, stop };
   }
 
   // src/device_panel.ts
@@ -2550,14 +2546,14 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     }
   }
   function toast(msg, isError = false) {
-    const el = document.createElement("div");
-    el.textContent = msg;
-    el.style.cssText = "position:fixed;right:12px;bottom:52px;z-index:41;padding:.4rem .7rem;border-radius:8px;font:12px system-ui;pointer-events:none;transition:opacity .4s;opacity:1;" + (isError ? "background:#5a1a2a;color:#ffd8e0;" : "background:#2a3a1a;color:#e0ffd0;");
-    document.body.appendChild(el);
+    const el2 = document.createElement("div");
+    el2.textContent = msg;
+    el2.style.cssText = "position:fixed;right:12px;bottom:52px;z-index:41;padding:.4rem .7rem;border-radius:8px;font:12px system-ui;pointer-events:none;transition:opacity .4s;opacity:1;" + (isError ? "background:#5a1a2a;color:#ffd8e0;" : "background:#2a3a1a;color:#e0ffd0;");
+    document.body.appendChild(el2);
     setTimeout(() => {
-      el.style.opacity = "0";
+      el2.style.opacity = "0";
     }, 1400);
-    setTimeout(() => el.remove(), 1900);
+    setTimeout(() => el2.remove(), 1900);
   }
   function post2(path, okMsg) {
     fetch(path, { method: "POST" }).then(
@@ -2730,18 +2726,18 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     const render = () => {
       const st = getState();
       host.innerHTML = `<table class="zd"><tr><th></th><th title="Effect for the centre pixel only">centre</th><th title="Composited over the base effect">overlay</th><th title="Poles for the crossfade effects">palette</th><th title="Seconds added to this zone's clock">phase</th></tr>` + ZONES2.map((z) => `<tr><td>${z}</td><td>${sel(["ring", ...EFFECT_CHOICES], st.centerEff[z] ?? "ring", "zdC", z)}</td><td>${sel(OVERLAY_NAMES, OVERLAY_NAMES[st.overlay[z]] ?? "none", "zdO", z)}</td><td>${sel(PALETTE_NAMES, PALETTE_NAMES[st.palette[z]] ?? "haunt", "zdP", z)}</td><td><input class="zdF" data-z="${z}" type="number" min="0" max="5" step="0.1" value="${st.phase[z]}" style="width:3.5rem"></td></tr>`).join("") + `</table><div><button id="zdYaml" type="button">Copy zones: YAML</button><span id="zdNote" class="muted"> edits preview only \u2014 paste into scenes.yaml to keep</span></div><pre id="zdOut" style="display:none"></pre>`;
-      host.querySelectorAll(".zdC").forEach((el) => el.addEventListener("change", () => {
+      host.querySelectorAll(".zdC").forEach((el2) => el2.addEventListener("change", () => {
         const st2 = getState();
-        st2.centerEff[el.dataset.z] = el.value === "ring" ? null : el.value;
+        st2.centerEff[el2.dataset.z] = el2.value === "ring" ? null : el2.value;
       }));
-      host.querySelectorAll(".zdO").forEach((el) => el.addEventListener("change", () => {
-        getState().overlay[el.dataset.z] = OVERLAY_NAMES.indexOf(el.value);
+      host.querySelectorAll(".zdO").forEach((el2) => el2.addEventListener("change", () => {
+        getState().overlay[el2.dataset.z] = OVERLAY_NAMES.indexOf(el2.value);
       }));
-      host.querySelectorAll(".zdP").forEach((el) => el.addEventListener("change", () => {
-        getState().palette[el.dataset.z] = PALETTE_NAMES.indexOf(el.value);
+      host.querySelectorAll(".zdP").forEach((el2) => el2.addEventListener("change", () => {
+        getState().palette[el2.dataset.z] = PALETTE_NAMES.indexOf(el2.value);
       }));
-      host.querySelectorAll(".zdF").forEach((el) => el.addEventListener("input", () => {
-        getState().phase[el.dataset.z] = Number(el.value) || 0;
+      host.querySelectorAll(".zdF").forEach((el2) => el2.addEventListener("input", () => {
+        getState().phase[el2.dataset.z] = Number(el2.value) || 0;
       }));
       host.querySelector("#zdYaml").addEventListener("click", () => {
         const st2 = getState();
@@ -2925,23 +2921,23 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   }
   function step(st, nowMs, P2, onAudio, onEnded) {
     const sc = st.scene;
-    let el = st.running ? nowMs - st.t0 : st.held;
-    if (el > sc.dur) {
+    let el2 = st.running ? nowMs - st.t0 : st.held;
+    if (el2 > sc.dur) {
       if (sc.loop) {
-        el %= sc.dur;
-        st.t0 = nowMs - el;
+        el2 %= sc.dur;
+        st.t0 = nowMs - el2;
         st.fired.clear();
       } else {
-        el = sc.dur;
-        st.held = el;
+        el2 = sc.dur;
+        st.held = el2;
         onEnded();
       }
     }
-    if (st.running) fireCues(st, el, onAudio);
+    if (st.running) fireCues(st, el2, onAudio);
     decayFlashes(st);
     const { flash, color } = dominantFlash(st);
     return {
-      elapsed: el,
+      elapsed: el2,
       zones: renderZones(st, nowMs / 1e3, P2),
       flash,
       flashColor: color
@@ -3851,7 +3847,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
         const tag = e.target?.tagName?.toLowerCase() ?? "";
         if (tag === "input" || tag === "textarea" || tag === "select") return;
         const step2 = e.shiftKey ? 5e3 : 1e3;
-        const el = this.elapsed();
+        const el2 = this.elapsed();
         switch (e.key) {
           case " ":
           case "k":
@@ -3860,11 +3856,11 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
             break;
           case "ArrowRight":
             e.preventDefault();
-            this.seekTo(el + step2);
+            this.seekTo(el2 + step2);
             break;
           case "ArrowLeft":
             e.preventDefault();
-            this.seekTo(el - step2);
+            this.seekTo(el2 - step2);
             break;
           case "Home":
             e.preventDefault();
@@ -3933,8 +3929,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
     "trkFadeOut"
   ];
   function initImportOpts(flashUsed) {
-    const el = (id) => document.getElementById(id);
-    const val = (id) => el(id)?.value.trim() ?? "";
+    const el2 = (id) => document.getElementById(id);
+    const val = (id) => el2(id)?.value.trim() ?? "";
     const values = () => ({
       id: val("trkId"),
       start: val("trkStart"),
@@ -3944,7 +3940,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       sample_rate: val("trkRate"),
       channels: val("trkCh"),
       format: val("trkFormat"),
-      normalize: !!el("trkNorm")?.checked,
+      normalize: !!el2("trkNorm")?.checked,
       fade_in: val("trkFadeIn"),
       fade_out: val("trkFadeOut")
     });
@@ -3954,7 +3950,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
       if (cap) cap.innerHTML = capacityHtml(o.bitrate, o.channels, flashUsed());
       const hint = document.getElementById("trkOptsHint");
       if (hint) hint.textContent = optsHint(o);
-      const br = el("trkBitrate");
+      const br = el2("trkBitrate");
       if (br) {
         const fmt2 = (o.format || "mp3").toLowerCase();
         br.disabled = LOSSLESS.includes(fmt2);
@@ -3972,10 +3968,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : ""}">
   function fillOptsFrom(t) {
     const o = t.opts || {};
     const set = (id, v) => {
-      const el = document.getElementById(id);
-      if (!el || v === void 0 || v === null || el.value === String(v)) return;
-      el.value = String(v);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
+      const el2 = document.getElementById(id);
+      if (!el2 || v === void 0 || v === null || el2.value === String(v)) return;
+      el2.value = String(v);
+      el2.dispatchEvent(new Event("input", { bubbles: true }));
     };
     set("trkId", "");
     set("trkBitrate", o.bitrate != null ? String(o.bitrate) : "");
@@ -4941,8 +4937,8 @@ ${lines.join("\n")}
     });
     function syncPlaying() {
       const id = preview.playing();
-      for (const el of Array.from(T.list.querySelectorAll(".trk"))) {
-        const rowEl = el;
+      for (const el2 of Array.from(T.list.querySelectorAll(".trk"))) {
+        const rowEl = el2;
         const on = rowEl.dataset["id"] === id;
         rowEl.classList.toggle("playing", on);
         const b = rowEl.querySelector("button[data-act='play']");
@@ -4964,14 +4960,14 @@ ${lines.join("\n")}
       deps.onList?.(T.tracks);
     }
     T.list.addEventListener("click", (e) => {
-      const el = e.target;
-      if (el?.closest("button")) return;
-      const id = el?.closest(".trk")?.dataset["id"];
+      const el2 = e.target;
+      if (el2?.closest("button")) return;
+      const id = el2?.closest(".trk")?.dataset["id"];
       if (!id) return;
       T.selected = id;
       const t = T.tracks.find((x) => x.id === id);
       if (t) fillOptsFrom(t);
-      if (el?.closest(".trk__mono")) {
+      if (el2?.closest(".trk__mono")) {
         const ch = byId("trkCh");
         ch.value = "2";
         ch.dispatchEvent(new Event("input", { bubbles: true }));
@@ -5210,11 +5206,11 @@ ${lines.join("\n")}
     return out;
   }
   function createStemsView(deps) {
-    const el = document.createElement("section");
-    el.className = "stems";
-    el.hidden = true;
-    const head = document.createElement("div");
-    head.className = "stems-head";
+    const el2 = document.createElement("section");
+    el2.className = "stems";
+    el2.hidden = true;
+    const head2 = document.createElement("div");
+    head2.className = "stems-head";
     const title = document.createElement("h3");
     title.textContent = "Voice / background split";
     const split = btn("Split voices");
@@ -5234,7 +5230,7 @@ ${lines.join("\n")}
     segBtns.right.title = segBtns.left.title.replace("This side", "The right side");
     segBtns.stack.title = "Both channels stacked in one strip \u2014 left grows up from the centre line, right grows down. Anything one-sided has bars on only one half.";
     seg.append(segBtns.left, segBtns.both, segBtns.right, segBtns.stack);
-    head.append(title, seg, split);
+    head2.append(title, seg, split);
     const note = document.createElement("p");
     note.className = "stems-note";
     const rows = {};
@@ -5263,7 +5259,7 @@ ${lines.join("\n")}
       body.append(row);
       rows[L.key] = { row, play: play2, cv, cap, audio };
     }
-    el.append(head, note, body);
+    el2.append(head2, note, body);
     let trackId = null;
     let data = null;
     let channel = "both";
@@ -5577,12 +5573,12 @@ ${lines.join("\n")}
     const onResize = () => drawAll();
     window.addEventListener("resize", onResize);
     return {
-      el,
+      el: el2,
       show(id) {
         token++;
         stop();
         trackId = id;
-        el.hidden = id === null;
+        el2.hidden = id === null;
         if (!id) {
           data = null;
           return;
@@ -5598,7 +5594,7 @@ ${lines.join("\n")}
         stop();
         window.removeEventListener("resize", onResize);
         void ctx?.close();
-        el.remove();
+        el2.remove();
       }
     };
   }
@@ -5613,15 +5609,15 @@ ${lines.join("\n")}
     }
   }
   function createStyleLab(onStyle) {
-    const el = document.createElement("details");
-    el.className = "stylelab";
-    el.style.cssText = "margin:6px 0;font:12px/1.7 var(--f-data),ui-monospace,monospace;color:var(--ink-2)";
-    el.open = true;
+    const el2 = document.createElement("details");
+    el2.className = "stylelab";
+    el2.style.cssText = "margin:6px 0;font:12px/1.7 var(--f-data),ui-monospace,monospace;color:var(--ink-2)";
+    el2.open = true;
     const sum = document.createElement("summary");
     sum.style.cursor = "pointer";
     sum.textContent = "Judge the lights \u2014 A/B engine test, flavours, knobs";
     sum.title = "Compare the light engine against the old flat look, and trim intensity/tails live. Applies to the audition and to the next Make/Update scene \u2014 the baked scenes on the left don't change until you re-export them.";
-    el.append(sum);
+    el2.append(sum);
     const row = (label) => {
       const r = document.createElement("div");
       r.className = "stylelab__row";
@@ -5650,7 +5646,7 @@ ${lines.join("\n")}
     });
     sayAb();
     abRow.append(ab);
-    el.append(abRow);
+    el2.append(abRow);
     const flavRow = row("flavour");
     const flavBoxes = [];
     const FLAVORS = [
@@ -5678,7 +5674,7 @@ ${lines.join("\n")}
     flavHint.style.cssText = "margin:1px 0 3px;color:var(--ink-3,#888);font-size:11px";
     flavHint.textContent = "drift shows over ~a minute \xB7 chorus fires only in loud chorus sections \xB7 swells need long sustained louds \u2014 audition a loud stretch of the song to see them";
     flavRow.append(flavHint);
-    el.append(flavRow);
+    el2.append(flavRow);
     const sliders = [];
     const knobRefs = [];
     const saveState = () => {
@@ -5724,7 +5720,7 @@ ${lines.join("\n")}
       knobRefs.push({ band, key, input: s });
       r.append(s, val);
     };
-    const head = row("");
+    const head2 = row("");
     const th = (label, title) => {
       const s = document.createElement("span");
       s.style.cssText = "width:134px;text-align:center;color:var(--ink-3,#888)";
@@ -5732,11 +5728,11 @@ ${lines.join("\n")}
       s.title = title;
       return s;
     };
-    head.append(
+    head2.append(
       th("brightness", "How hard this band's hits strike"),
       th("tail", "How long each hit rings out")
     );
-    el.append(head);
+    el2.append(head2);
     for (const b of BANDS) {
       const r = row(b.label);
       knob(
@@ -5755,7 +5751,7 @@ ${lines.join("\n")}
         2,
         `${b.label} tail length \u2014 \xD72 rings out twice as long`
       );
-      el.append(r);
+      el2.append(r);
     }
     const foot = row("");
     const reset = document.createElement("button");
@@ -5796,7 +5792,7 @@ ${lines.join("\n")}
       });
     });
     foot.append(reset, copy);
-    el.append(foot, out);
+    el2.append(foot, out);
     const saved = loadSaved();
     for (const k of knobRefs) {
       const v = saved.tweaks?.[k.band]?.[k.key];
@@ -5811,7 +5807,7 @@ ${lines.join("\n")}
         setFlavor(key, true);
       }
     });
-    return { el, reset: doReset };
+    return { el: el2, reset: doReset };
   }
 
   // src/waveform_view.ts
@@ -5820,8 +5816,8 @@ ${lines.join("\n")}
   var LANES = LANE * BAND_ORDER.length;
   var EDGE_SLOP = 7;
   var clamp2 = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  var readPalette = (el) => {
-    const cs = getComputedStyle(el);
+  var readPalette = (el2) => {
+    const cs = getComputedStyle(el2);
     const v = (name, fallback) => cs.getPropertyValue(name).trim() || fallback;
     return {
       accent: v("--accent", "#ff9d3c"),
@@ -5851,18 +5847,18 @@ ${lines.join("\n")}
       this.playhead = null;
       /** Stands in for the waveform — "no track selected", a failed fetch, etc. */
       this.message = "";
-      const el = document.createElement("canvas");
-      el.style.cssText = "display:block;width:100%;height:132px;cursor:crosshair;touch-action:none;border-radius:6px";
-      const ctx = el.getContext("2d");
+      const el2 = document.createElement("canvas");
+      el2.style.cssText = "display:block;width:100%;height:132px;cursor:crosshair;touch-action:none;border-radius:6px";
+      const ctx = el2.getContext("2d");
       if (!ctx) throw new Error("waveform: 2D canvas context unavailable");
-      this.el = el;
+      this.el = el2;
       this.g2 = ctx;
-      this.pal = readPalette(el);
+      this.pal = readPalette(el2);
       this.ro = new ResizeObserver(() => {
         this.resize();
         this.draw();
       });
-      this.ro.observe(el);
+      this.ro.observe(el2);
     }
     /**
      * Match the backing store to the element's CSS box at device resolution,
@@ -6068,10 +6064,10 @@ ${lines.join("\n")}
       push(clip) {
         if (!clip) return;
         const write = (id, value) => {
-          const el = document.getElementById(id);
-          if (!el) return;
-          el.value = value;
-          el.dispatchEvent(new Event("input", { bubbles: true }));
+          const el2 = document.getElementById(id);
+          if (!el2) return;
+          el2.value = value;
+          el2.dispatchEvent(new Event("input", { bubbles: true }));
         };
         write("trkStart", mmss2(clip.start));
         write("trkTake", (clip.end - clip.start).toFixed(1));
@@ -6488,7 +6484,7 @@ ${lines.join("\n")}
   var deviceLine = "simulator";
   var deviceOk = true;
   function syncStatus() {
-    panels.setStatus(`${deviceLine} \xB7 ${audioMode === "rendered" ? "rendered audio" : "live synth"} \xB7 ${rendered.muted ? "muted" : "sounding"}`, deviceOk);
+    setStatus(`${deviceLine} \xB7 ${audioMode === "rendered" ? "rendered audio" : "live synth"} \xB7 ${rendered.muted ? "muted" : "sounding"}`, deviceOk);
   }
   var transport = new Transport({
     state,
@@ -6678,7 +6674,7 @@ ${lines.join("\n")}
     stage.draw(f.zones, now / 1e3, f.flash, f.flashColor);
     insets.draw(f.zones);
     panels.updateMeters(f.zones);
-    panels.updateShell(f.zones);
+    lightChrome(f.zones);
     wave.mirror(f.zones);
     panels.updateTransport(f.elapsed, state.scene);
     requestAnimationFrame(frame);
