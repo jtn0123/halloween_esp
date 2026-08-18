@@ -26,10 +26,10 @@ concurrency:
 jobs:
   python:
     runs-on: ubuntu-latest
-    # Every timeout here has to clear the media-tools retry budget (~12.5 min
+    # Every timeout here has to clear the media-tools retry budget (~16.5 min
     # worst case) plus the job's own work, or a job that finished cleanly gets
     # failed by its own clock. That happened at 15 minutes on the first try.
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -53,7 +53,7 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -86,7 +86,7 @@ jobs:
 
   esphome:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
