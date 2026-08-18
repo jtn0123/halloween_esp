@@ -26,7 +26,10 @@ concurrency:
 jobs:
   python:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Every timeout here has to clear the media-tools retry budget (~12.5 min
+    # worst case) plus the job's own work, or a job that finished cleanly gets
+    # failed by its own clock. That happened at 15 minutes on the first try.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -14,6 +14,16 @@ description: Install ffmpeg and lame, and survive a bad Ubuntu mirror.
 # So each attempt is capped, a stall is treated as a failure, and the retry
 # starts from a clean package list. Three strikes and the job fails loudly,
 # which is a far better outcome than a queue that never drains.
+#
+# The caps are deliberately tight — 60s and 180s against healthy times of
+# ~12s and ~85s. A stalled mirror does not recover, so giving up on it early
+# makes the BAD case faster, not slower: the first observed stall burned 720s
+# before a retry succeeded in 93s, where a 240s cap would have finished the
+# whole thing in under six minutes. Worst case is now 3 x 240s plus 30s of
+# backoff, a little over twelve minutes, which is what the job timeouts in
+# ci.yml are sized against. Those two numbers have to stay in step: the first
+# version budgeted up to 36 minutes of retries inside a 15-minute job, so a
+# run that had already finished every step was failed by its own timeout.
 
 runs:
   using: composite
@@ -23,8 +33,8 @@ runs:
       run: |
         set -u
         for attempt in 1 2 3; do
-          if timeout 300 sudo apt-get update -qq \
-             && timeout 420 sudo apt-get install -y --no-install-recommends ffmpeg lame; then
+          if timeout 60 sudo apt-get update -qq \
+             && timeout 180 sudo apt-get install -y --no-install-recommends ffmpeg lame; then
             # `|| true`: GitHub runs composite bash with -o pipefail, and the
             # writer of a pipe that head closes early exits non-zero. Reporting
             # the version must not be able to fail a successful install.
@@ -44,7 +54,7 @@ runs:
                      /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend
           sudo dpkg --configure -a || true
           sudo rm -rf /var/lib/apt/lists/*
-          sleep $((attempt * 15))
+          sleep $((attempt * 10))
         done
         echo "::error::ffmpeg and lame could not be installed after three attempts"
         exit 1
