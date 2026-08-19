@@ -16,8 +16,10 @@ import { lightChrome, setStatus } from "./chrome_light.js";
 import { createCodecAb, type CodecAb } from "./codec_ab.js";
 import { deviceBridge } from "./device.js";
 import { defaultParams } from "./effects.js";
-import { JewelInsets } from "./insets.js";
+import { PixelInsets } from "./insets.js";
 import { createZoneDesigner } from "./zone_designer.js";
+import { loadRig, zoneLayout, ZONE_ORDER } from "./rig.js";
+import { createRigPanel } from "./rig_panel.js";
 import { Panels } from "./panels.js";
 import { createState, step } from "./show.js";
 import { Stage } from "./stage.js";
@@ -55,8 +57,19 @@ const state = createState(firstScene, performance.now());
 const canvas = document.getElementById("stage") as HTMLCanvasElement | null;
 if (!canvas) throw new Error("no #stage canvas in the page");
 const stage = new Stage(canvas);
-// The 21 real pixels as dots — the honest per-pixel view (see insets.ts).
-const insets = new JewelInsets(canvas);
+
+/* What is physically in each window. Everything that used to assume three
+   seven-pixel Jewels now asks this instead — the render loop, the pixel view
+   and the channel strip. See rig.ts. */
+const rig = loadRig();
+function applyRig(): void {
+  for (const z of ZONE_ORDER) state.layout[z] = zoneLayout(rig, z);
+  insets.setRig(rig);
+  panels.renderChannels(rig);
+}
+
+// Every real pixel as a dot, in the shape the fixture actually has.
+const insets = new PixelInsets(canvas, rig);
 // Live per-zone texture editing on the running preview.
 const designer = createZoneDesigner(() => state);
 
@@ -69,7 +82,7 @@ if (!kiosk) initStageView();
 
 /* ── Kiosk mode ─────────────────────────────────────────────────────────
    ?kiosk=1 strips the page to the stage alone — a wall tablet on the porch
-   showing the full 21-pixel render in sync with the real castle.
+   showing the full per-pixel render in sync with the real castle.
 
    Hiding the panels is not enough to make the stage fill the screen. The
    console column's `.col` wrapper is not a panel, so it survived, and a grid
@@ -81,8 +94,8 @@ if (!kiosk) initStageView();
    Width alone is not the answer either. Stage.draw scales the 800x520 design
    space by WIDTH (see resize()), so a box shorter than that ratio crops the
    castle's base off rather than letterboxing it — and full-width on a 1280
-   tablet makes the stage 816px tall, pushing the jewel row (the whole point
-   of a kiosk: the real 21 pixels, in sync with the porch) below the fold.
+   tablet makes the stage 816px tall, pushing the pixel row (the whole point
+   of a kiosk: every real pixel, in sync with the porch) below the fold.
 
    So the stage is given whichever of the two bounds binds first: the width it
    has, or the width the leftover HEIGHT allows at its own ratio. Explicitly,
@@ -129,6 +142,12 @@ let players: Players | null = null;
 // Panels wires the cue-sheet row clicks itself, so seeking is a constructor
 // dependency rather than a separate binding.
 const panels = new Panels((ms) => transport.seekTo(ms));
+
+/* Picking a fixture re-derives the layouts the render loop reads, so the
+   stage changes on the very next frame. The firmware still needs a reflash
+   before the castle agrees, which the panel says out loud. */
+createRigPanel(rig, { onChange: () => applyRig() });
+applyRig();
 
 /* What the show is allowed to cost, in both builds. Scene sizes are real
    whenever `make audio` has run; the imported library arrives later, once the

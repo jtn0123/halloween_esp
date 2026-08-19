@@ -18,6 +18,7 @@ import json
 from pathlib import Path
 
 import yaml
+from gen_rig import emit_lights, emit_rig_header
 from gen_show import emit_manifest_check, emit_show_playlist
 
 # The pulse expansion (what a `pulse:` stream MEANS) lives in
@@ -26,11 +27,14 @@ from gen_show import emit_manifest_check, emit_show_playlist
 # parity tests read the whole contract through this module.
 from pulse_dynamics import round3, section_gates  # noqa: F401 (re-export)
 from pulse_expand import DEFAULT_DECAY, WHITE, pulse_cues
+from rig_layout import zone_layouts
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "scenes" / "scenes.yaml"
 MARKERS = ROOT / "audio" / "markers.json"
 OUT = ROOT / "firmware" / "generated" / "scenes.yaml"
+RIG_OUT = ROOT / "firmware" / "generated" / "rig.h"
+LIGHTS_OUT = ROOT / "firmware" / "generated" / "lights.yaml"
 MEDIA_OUT = ROOT / "firmware" / "generated" / "media_files.yaml"
 AUDIO_FLASH = ROOT / "firmware" / "generated" / "audio_flash.yaml"
 AUDIO_SD = ROOT / "firmware" / "generated" / "audio_sd.yaml"
@@ -59,11 +63,23 @@ PALETTE_IDS = {"haunt": 0, "ember": 1, "moonlight": 2, "toxic": 3}
 FLASH_MODE_IDS = {"all": 0, "scatter": 1, "center": 2, "ring": 3}
 
 
-def zone_pixels(zones: list[dict], per: int) -> dict[str, tuple[int, int]]:
-    """Map each zone to its [first, last] index in the single pixel chain."""
+def zone_pixels(layouts: dict, zones: list[dict]) -> dict[str, tuple[int, int]]:
+    """Map each zone to its [first, last] index if they shared ONE chain.
+
+    Only meaningful for a rig whose zones are all the same colour type; the
+    device now drives a strip per zone (see `emit_lights`). Kept because the
+    ranges are still the thing you want when tracing a dark window on a
+    single-chain build. Counts come from the layouts, not `z["pixels"]` —
+    a zone that names a fixed-count fixture (ring12, jewel7) carries no
+    `pixels:` key at all, and reading the raw dict here is how the door's
+    range once printed 7 px worth while the strip drove 12.
+    """
     out = {}
-    for i, z in enumerate(zones):
-        out[z["id"]] = (i * per, (i + 1) * per - 1)
+    at = 0
+    for z in zones:
+        n = layouts[z["id"]].n
+        out[z["id"]] = (at, at + max(0, n - 1))
+        at += n
     return out
 
 
@@ -187,16 +203,22 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
     return lines
 
 
+
 def main() -> int:
     doc = yaml.safe_load(SRC.read_text())
     zones = doc["zones"]
     per = doc["hardware"]["pixels_per_zone"]
-    total = len(zones) * per
+    # A zone may now name its own fixture; `pixels_per_zone` is the fallback
+    # for one that does not, which is what keeps an unedited scenes.yaml
+    # building. See tools/rig_layout.py.
+    layouts = zone_layouts(zones, per)
+    total = sum(layouts[z["id"]].n for z in zones)
 
     out = [HEADER, ""]
-    out.append(f"# {len(zones)} zones x {per} pixels = {total} in the chain")
-    for zid, (lo, hi) in zone_pixels(zones, per).items():
-        out.append(f"#   {zid:<8} pixels {lo}-{hi}")
+    out.append(f"# {len(zones)} zones, {total} pixels — one strip each")
+    for zid, (lo, hi) in zone_pixels(layouts, zones).items():
+        out.append(f"#   {zid:<8} {layouts[zid].n:>2} px "
+                   f"(chain equivalent {lo}-{hi})")
     out.append("")
     out.append("script:")
 
@@ -370,7 +392,14 @@ def main() -> int:
     AUDIO_SD.write_text("\n".join(sd))
 
     n_cues = sum(len(s.get("cues") or []) for s in doc["scenes"])
-    print(f"wrote {OUT.relative_to(ROOT)} + {MEDIA_OUT.name}")
+    # Geometry the firmware indexes, and the strips that use it. Written
+    # from the same `layouts` the cue scripts above were emitted against, so
+    # a zone can never end up with cues aimed at pixels its strip lacks.
+    RIG_OUT.write_text(emit_rig_header(layouts, zones))
+    LIGHTS_OUT.write_text(emit_lights(layouts, zones, per))
+
+    print(f"wrote {OUT.relative_to(ROOT)} + {MEDIA_OUT.name} "
+          f"+ {RIG_OUT.name} + {LIGHTS_OUT.name}")
     print(f"  {len(doc['scenes'])} scenes, {n_cues} cues, {total} pixels")
     return 0
 

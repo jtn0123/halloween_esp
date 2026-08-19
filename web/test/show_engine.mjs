@@ -13,9 +13,10 @@
 
 import {
   createState, rebuildLightsAt, fireCues, decayFlashes, renderZones,
-  dominantFlash, step, ZONE_IDS, PIXELS_PER_ZONE,
+  dominantFlash, step, ZONE_IDS,
 } from "../dist/show.mjs";
 import { defaultParams } from "../dist/effects.mjs";
+import { fixture, layoutOf } from "../dist/rig.mjs";
 
 let pass = 0;
 const fails = [];
@@ -142,7 +143,7 @@ const P = defaultParams();
   rebuildLightsAt(st, sc, 0);
   const out = renderZones(st, 1.234, P);
   ok(Object.keys(out).length === 3, "every zone renders");
-  ok(out.towerL.pix.length === PIXELS_PER_ZONE, "seven pixels per zone");
+  ok(out.towerL.pix.length === 7, "a default zone renders its Jewel's seven pixels");
   const allInRange = ZONE_IDS.every(z =>
     out[z].pix.every(p => p.every(c => c >= 0 && c <= 1)));
   ok(allInRange, "channels stay inside 0..1");
@@ -150,6 +151,43 @@ const P = defaultParams();
   // Per-pixel seeding is what makes a flame move ACROSS a jewel.
   const distinct = new Set(out.towerL.pix.map(p => p.join(","))).size;
   ok(distinct > 1, "pixels within a zone differ — per-pixel seeding is live");
+}
+
+/* ── the rig decides how many pixels a zone has ──────────────────── */
+{
+  // Swapping a fixture must change the render, not just the picture of it:
+  // this is the difference between the desk previewing the castle and the
+  // desk previewing an assumption. See rig.ts.
+  const sc = scene({ base: { towerL: "candle", towerR: "candle", door: "candle" } });
+  const st = createState(sc, 0);
+  rebuildLightsAt(st, sc, 0);
+  st.layout.door = layoutOf(fixture("ring16"));
+  st.layout.towerR = layoutOf(fixture("none"));
+
+  const out = renderZones(st, 1.234, P);
+  ok(out.door.pix.length === 16, "a Ring 16 in the doorway renders sixteen pixels");
+  ok(out.towerL.pix.length === 7, "the other zones keep their own fixture");
+  ok(out.towerR.pix.length === 0, "an empty spot renders nothing");
+  // An empty zone must not poison the meters with NaN — the wash and the
+  // channel strip both average this.
+  ok(out.towerR.avg.every(v => v === 0), "an empty zone averages to black, not NaN");
+}
+
+/* ── a fixture with no middle has no centre pixel ────────────────── */
+{
+  // The centre role is what a Jewel's pixel 0 plays. A bare ring has no such
+  // pixel, and quietly using index 0 would put the ember core at whatever
+  // point of the circle happened to be first in the chain.
+  const jewel = layoutOf(fixture("jewel7"));
+  const ring = layoutOf(fixture("ring12"));
+  const wing = layoutOf(fixture("wing32"));
+  ok(jewel.center === 0, "the Jewel's centre is pixel 0");
+  ok(ring.center === null, "a Ring 12 has no centre pixel");
+  ok(ring.core.filter(Boolean).length >= 1,
+     "a centre strike on a ring still lands somewhere");
+  ok(wing.core.filter(Boolean).length >= 1 && wing.center === null,
+     "the FeatherWing has a core to strike but no single centre");
+  ok(wing.fallSteps === 4, "the 4x8 wing falls through four rows");
 }
 
 /* ── level scales the base but NOT the strike ────────────────────── */

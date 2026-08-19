@@ -11,8 +11,9 @@
 
 hardware:
   board: adafruit_feather_esp32s2
-  # 3 NeoPixel Jewels, 7 RGBW pixels each, in one chain.
-  # For the 8mm through-hole option instead: pixels_per_zone: 1, rgbw: false
+  # The FALLBACK pixel count, used by any zone that does not declare its own
+  # `fixture:` below. Every zone currently inherits it — three NeoPixel
+  # Jewels, 7 RGBW pixels each.
   pixels_per_zone: 7
   rgbw: true
   # Adafruit 8mm through-hole NeoPixels are RGB order, not GRB. Jewels are GRB.
@@ -36,10 +37,32 @@ hardware:
 show:
   gap_ms: 12000
 
+# One strip per zone, not one chain: an RGBW fixture and an RGB one cannot
+# share a data line (32 bits per pixel against 24). docs/WIRING.md §1.
+#
+# A zone may name what is physically in it, which overrides pixels_per_zone:
+#
+#   - {id: door, channel: 3, name: "...", pin: 16, fixture: ring16,
+#      pixels: 16, rgbw: false}
+#
+#   pin      GPIO carrying this zone's data. docs/WIRING.md §2.
+#   fixture  jewel7 | stick8 | ring12 | ring16 | wing32 | mini | none.
+#            Sets the geometry an overlay travels across — see
+#            tools/rig_layout.py, which bakes it into generated/rig.h.
+#   pixels   scatter fixtures only (`mini`); the rest know their own count.
+#   rgbw     whether this fixture has a white die. wing32 and mini never do.
+#
+# Do not hand-edit these to guess. The Rig panel in the cue desk previews a
+# change first and then emits this block along with the matching firmware
+# substitutions — which have to move together, or the cues aim at pixels the
+# strip does not have.
 zones:
-  - {id: towerL, channel: 1, name: "Tower window, stage left"}
-  - {id: towerR, channel: 2, name: "Tower window, stage right"}
-  - {id: door,   channel: 3, name: "Doorway, centre"}
+  - {id: towerL, channel: 1, name: "Tower window, stage left",
+     pin: 18, fixture: jewel7, rgbw: true}
+  - {id: towerR, channel: 2, name: "Tower window, stage right",
+     pin: 14, fixture: jewel7, rgbw: true}
+  - {id: door,   channel: 3, name: "Doorway, centre",
+     pin: 16, fixture: ring12, rgbw: true}
 
 # Palette poles the mansion effects crossfade between.
 palette:

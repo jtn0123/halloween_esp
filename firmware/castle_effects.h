@@ -148,20 +148,39 @@ inline Rgbw render(int eff, float t, float seed, float hue, bool soft, int pal =
   }
 }
 
+// ── Fixture geometry ────────────────────────────────────────────────────
+// What is actually in a window: how many pixels, which one is the middle,
+// and two normalised coordinates per pixel — where it sits around the loop a
+// chase travels, and how far down the path a meteor falls.
+//
+// The tables are GENERATED into generated/rig.h from tools/rig_layout.py, so
+// there is no layout arithmetic on the device at all. That is deliberate:
+// the browser (web/src/rig.ts) and the generator both compute this geometry,
+// and web/test/rig_parity.mjs proves they agree — a third hand-written copy
+// here would be a third thing to keep in step, and the one nobody can test.
+struct Fixture {
+  int n;
+  int center;        // -1 where the fixture has no middle (a bare ring)
+  int fall_steps;    // distinct heights, which sets how tall a drip is
+  const float *walk;
+  const float *fall;
+  const bool *core;  // which pixels a "centre" strike lands on
+};
+
 // ── Overlays — a second voice on top of any base effect ─────────────────
-// Per-pixel ROLES: a glint landing on one pixel, a point orbiting the ring,
-// a drip falling through. Compositing, not replacement — the candle keeps
-// burning under the sparkle. Formulas mirror web/src/effects.ts exactly;
-// a jewel is pixel 0 (centre) + pixels 1-6 (ring).
+// Per-pixel ROLES: a glint landing on one pixel, a point travelling the
+// fixture, a drip falling through. Compositing, not replacement — the candle
+// keeps burning under the sparkle. Formulas mirror web/src/effects.ts.
 
 enum Overlay : int { OV_NONE = 0, OV_SPARKLE = 1, OV_CHASE = 2, OV_METEOR = 3 };
 
-inline float ring_dist(float a, float pos) {
-  float d = fabsf(a - pos);
-  return fminf(d, 6.0f - d);
+// Shortest way between two points on a loop, in turns (0..0.5).
+inline float loop_dist(float a, float b) {
+  float d = fmodf(fabsf(a - b), 1.0f);
+  return fminf(d, 1.0f - d);
 }
 
-inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi) {
+inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi, const Fixture &fx) {
   if (ov == OV_SPARKLE) {
     float cell = floorf(t * 7.0f);
     float g = hashf(cell * 13.7f + p * 7.77f + zi * 3.1f);
@@ -173,24 +192,32 @@ inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi) {
     return c;
   }
   if (ov == OV_CHASE) {
-    float pos = fmodf(t * 0.45f + zi * 0.37f, 1.0f) * 6.0f;
-    if (p == 0) return Rgbw{c.r * 0.55f, c.g * 0.55f, c.b * 0.55f, c.w * 0.55f};
-    float boost = fmaxf(0.0f, 1.0f - ring_dist((float) (p - 1), pos) * 0.9f);
+    if (p == fx.center) return Rgbw{c.r * 0.55f, c.g * 0.55f, c.b * 0.55f, c.w * 0.55f};
+    float head = fmodf(t * 0.45f + zi * 0.37f, 1.0f);
+    // Width is set in PIXELS, not in turns, so the lit head stays one pixel
+    // wide whether it is going round six of them or sixteen.
+    float span = (float) (fx.center < 0 ? fx.n : fx.n - 1);
+    float boost = fmaxf(0.0f, 1.0f - loop_dist(fx.walk[p], head) * span * 0.9f);
     float k = 0.45f + 0.55f * boost;
     return Rgbw{c.r * k, c.g * k, c.b * k,
                 fminf(1.0f, c.w * k + 0.50f * boost * boost)};
   }
   if (ov == OV_METEOR) {
     float ph = fmodf(t / 2.6f + zi * 0.41f, 1.0f);
+    float rung = 1.0f / fmaxf(1.0f, (float) (fx.fall_steps - 1));
     if (ph < 0.12f) {
-      if (p != 0) return c;
+      // On a fixture with a middle the drip forms there, as it always has on
+      // the Jewels. On one without, it forms along the top edge instead.
+      bool forms = fx.center >= 0 ? (p == fx.center) : (fx.fall[p] < rung);
+      if (!forms) return c;
       float k = (0.12f - ph) / 0.12f;
       return Rgbw{c.r, c.g, c.b, fminf(1.0f, c.w + 0.80f * k)};
     }
-    if (p == 0) return c;
-    float fall = ((ph - 0.12f) / 0.88f) * 6.0f;
-    float fade = 1.0f - ((ph - 0.12f) / 0.88f) * 0.5f;
-    float boost = fmaxf(0.0f, 1.0f - ring_dist((float) (p - 1), fall) * 1.2f) * fade;
+    if (p == fx.center) return c;
+    float front = (ph - 0.12f) / 0.88f;
+    float fade = 1.0f - front * 0.5f;
+    float d = fabsf(fx.fall[p] - front);
+    float boost = fmaxf(0.0f, 1.0f - d / (rung * 1.5f)) * fade;
     return Rgbw{fminf(1.0f, c.r + 0.20f * boost), c.g,
                 fminf(1.0f, c.b + 0.25f * boost), fminf(1.0f, c.w + 0.60f * boost)};
   }
@@ -198,12 +225,14 @@ inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi) {
 }
 
 // ── Strike masks — which pixels a flash actually hits ───────────────────
-// 0 = whole jewel, 1 = fresh random scatter per strike (epoch changes),
-// 2 = centre only, 3 = ring only. Mirrors flashGate in effects.ts.
-inline float flash_gate(int mode, int p, int zi, int epoch) {
+// 0 = the whole fixture, 1 = a fresh random scatter per strike (the epoch
+// changes), 2 = core only, 3 = everything but the core. Mirrors flashGate in
+// effects.ts. "Core" is pixel 0 on a Jewel and whatever generated/rig.h
+// decided is the middle on a fixture that has no single centre.
+inline float flash_gate(int mode, int p, int zi, int epoch, const Fixture &fx) {
   if (mode == 1) return hashf(p * 9.13f + zi * 5.7f + epoch * 17.9f) > 0.45f ? 1.0f : 0.15f;
-  if (mode == 2) return p == 0 ? 1.0f : 0.1f;
-  if (mode == 3) return p == 0 ? 0.1f : 1.0f;
+  if (mode == 2) return fx.core[p] ? 1.0f : 0.1f;
+  if (mode == 3) return fx.core[p] ? 0.1f : 1.0f;
   return 1.0f;
 }
 

@@ -7,10 +7,10 @@
 # Timings are deltas between absolute cue times from the source file.
 
 
-# 3 zones x 7 pixels = 21 in the chain
-#   towerL   pixels 0-6
-#   towerR   pixels 7-13
-#   door     pixels 14-20
+# 3 zones, 26 pixels — one strip each
+#   towerL    7 px (chain equivalent 0-6)
+#   towerR    7 px (chain equivalent 7-13)
+#   door     12 px (chain equivalent 14-25)
 
 script:
   # ── Vigil (ambient) ─────────────────────────────────────

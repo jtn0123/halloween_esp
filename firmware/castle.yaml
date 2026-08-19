@@ -2,7 +2,10 @@
 #
 # Board:   Adafruit ESP32-S2 Feather (240 MHz, 4 MB flash, 2 MB PSRAM)
 # Audio:   MAX98357A I2S class-D amp -> 4 ohm speaker
-# Light:   3 x NeoPixel Jewel (7 RGBW each) = 21 pixels, one chain
+# Light:   one strip per zone, three zones. What is in each is set in
+#          scenes/scenes.yaml and generated into generated/lights.yaml —
+#          see docs/WIRING.md for the wiring and web/src/rig.ts for the desk
+#          panel that chooses it.
 #
 # Scene scripts and audio files are GENERATED from scenes/scenes.yaml.
 #   make generate    # rebuild firmware/generated/scenes.yaml
@@ -36,13 +39,29 @@ substitutions:
   # A0/A1/A3 are ADC2, which is unusable as an ADC while WiFi is on — but
   # these are plain digital signals, so that costs nothing. Avoided D13: it
   # also drives the onboard red LED, which would then flicker with the audio.
-  pin_led_data: "18"    # A0  -> 74AHCT125 -> 470R -> Jewel DIN
+  # One data pin per zone rather than one chain: an RGBW fixture and an RGB
+  # one cannot share a line, and separate pins mean swapping one fixture
+  # renumbers nothing else. docs/WIRING.md §1-2. A2 and A4 were the pins left
+  # free after the eInk wing; GPIO16 is safe for the same reason GPIO15 is —
+  # this board fits no 32 kHz crystal.
+  pin_towerL: "18"      # A0  -> 74AHCT125 1Y -> 470R -> tower L DIN
+  pin_door: "16"        # A2  -> 74AHCT125 2Y -> 470R -> doorway DIN
+  pin_towerR: "14"      # A4  -> 74AHCT125 3Y -> 470R -> tower R DIN
+  # Pixel count and colour type per zone. These MUST agree with the `zones:`
+  # block in scenes/scenes.yaml — that is what the cue scripts and the
+  # geometry tables in generated/rig.h were built against.
+  px_towerL: "7"
+  px_towerR: "7"
+  px_door: "12"
+  rgbw_towerL: "true"
+  rgbw_towerR: "true"
+  rgbw_door: "true"
   pin_pir: "17"         # A1  <- AM312 PIR out (3V3 logic)
   pin_i2s_dout: "15"    # A3  -> MAX98357A DIN
   pin_i2s_bclk: "11"    # D11 -> MAX98357A BCLK   (clear of the wing)
   pin_i2s_lrclk: "12"   # D12 -> MAX98357A LRC    (clear of the wing)
-  # Overridable by bench.yaml so the bare board can dry-run on its onboard pixel.
-  led_rgbw: "true"
+  # Both amps sit on those same three wires; the second one costs no GPIO.
+  # docs/WIRING.md §5.
 
 esphome:
   name: ${name}
@@ -51,7 +70,12 @@ esphome:
     build_flags:
       - '-DCASTLE_VERSION=\"${version}\"'
   includes:
+    # Order matters: rig.h and castle_pixels.h both need Fixture. ESPHome
+    # copies each of these into the build's src/ by basename, which is why
+    # generated/rig.h includes its neighbour flat rather than by path.
     - castle_effects.h
+    - generated/rig.h
+    - castle_pixels.h
     - flash_mode.h
     - boot_log.h
     - castle_health.h
@@ -79,10 +103,9 @@ esphome:
             }
     - priority: -100
       then:
-        - light.turn_on:
-            id: castle_leds
-            brightness: 100%
-            effect: Show
+        # Every strip at once — see lights_override in generated/lights.yaml.
+        # There is no single light id any more.
+        - script.execute: {id: lights_override, arg: "show"}
         - script.execute: scene_vigil
 
 esp32:
@@ -188,6 +211,9 @@ wifi:
 packages:
   # The generated scene scripts.
   scenes: !include generated/scenes.yaml
+  # The generated `light:` components — one strip per zone — plus the
+  # lights_override script that drives all of them together.
+  lights: !include generated/lights.yaml
   # Install-calibration knobs (mansion balance, per-zone trims).
   tuning: !include tuning.yaml
   # Build trees live off the internal disk — see the file for why, and for
@@ -318,79 +344,16 @@ media_player:
     # (extend appends, and appending to nothing is the one case where that
     # semantics does exactly what we want).
 
-light:
-  - platform: esp32_rmt_led_strip
-    id: castle_leds
-    name: "Castle pixels"
-    pin: GPIO${pin_led_data}
-    num_leds: 21
-    chipset: WS2812
-    rgb_order: GRB
-    is_rgbw: ${led_rgbw}
-    use_psram: true
-    default_transition_length: 0s
-    effects:
-      - addressable_lambda:
-          name: "Show"
-          update_interval: 16ms
-          lambda: |-
-            using namespace castle;
-            const int PER = 7;      // pixels per zone
-            const int NZ = 3;
-            float t = millis() / 1000.0f;
-            float hue = id(hue_balance).state;
-            bool soft = id(soften).state;
+# The `light:` components are GENERATED into generated/lights.yaml — one
+# strip per zone, because an RGBW fixture and an RGB one cannot share a data
+# line (32 bits per pixel against 24, and `is_rgbw` is per component). The
+# per-pixel loop that used to live here as a sixty-line lambda is now
+# castle_pixels.h, which a host compiler can check; see tests/test_firmware_cxx.py.
+#
+# Pin, count and colour type per zone come from the substitutions above, so
+# bench.yaml can still point a zone at the onboard pixel without touching the
+# generated file.
 
-            const float trims[3] = {(float) id(trim_towerl).state,
-                                    (float) id(trim_towerr).state,
-                                    (float) id(trim_door).state};
-
-            for (int z = 0; z < NZ; z++) {
-              // Strike decay, per zone: cues choose it (heartbeat snaps,
-              // toll blooms). Softened strikes fall slower and peak lower,
-              // turning a strobe into a swell.
-              float d0 = id(zone_flash_decay)[z];
-              float d = soft ? (1.0f - (1.0f - d0) * 0.35f) : d0;
-              if (id(zone_flash_target)[z] > 0.0f) {
-                // Attack phase: swell toward the peak, then hand to decay.
-                id(zone_flash)[z] += id(zone_flash_rise)[z];
-                if (id(zone_flash)[z] >= id(zone_flash_target)[z]) {
-                  id(zone_flash)[z] = id(zone_flash_target)[z];
-                  id(zone_flash_target)[z] = 0.0f;
-                }
-              } else {
-                id(zone_flash)[z] *= d;
-                if (id(zone_flash)[z] < 0.004f) id(zone_flash)[z] = 0.0f;
-              }
-              float fbase = id(zone_flash)[z] * (soft ? 0.55f : 0.92f);
-              const float *fc = &id(zone_flash_col)[z * 4];
-              float lv = id(zone_level)[z];
-              // Per-zone clock offset: the towers can breathe in anti-phase.
-              float tz = t + id(zone_phase)[z];
-              int pal = id(zone_palette)[z];
-              int ov = id(zone_overlay)[z];
-              int ring_eff = id(zone_effect)[z];
-              // Pixel 0 may play its own role (ember core, eyes in a dark
-              // window); -1 keeps the classic one-texture jewel.
-              int center_eff = id(zone_center)[z] >= 0 ? id(zone_center)[z] : ring_eff;
-              float trim = trims[z];
-
-              for (int p = 0; p < PER; p++) {
-                // Seed varies per pixel so flame moves across the jewel.
-                float seed = z * 4.7f + p * 1.31f;
-                Rgbw c = render(p == 0 ? center_eff : ring_eff, tz, seed, hue, soft, pal);
-                c = apply_overlay(ov, c, tz, p, z);
-                // Which pixels this strike lands on — scatter, centre, ring.
-                float f = fbase * flash_gate(id(zone_flash_mode)[z], p, z,
-                                             id(zone_flash_epoch)[z]);
-                float r = fminf(1.0f, c.r * lv + f * fc[0]) * trim;
-                float g = fminf(1.0f, c.g * lv + f * fc[1]) * trim;
-                float b = fminf(1.0f, c.b * lv + f * fc[2] * 0.96f) * trim;
-                float w = fminf(1.0f, c.w * lv + f * fc[3]) * trim;
-                it[z * PER + p] = Color(uint8_t(r * 255), uint8_t(g * 255),
-                                        uint8_t(b * 255), uint8_t(w * 255));
-              }
-            }
 
 binary_sensor:
   - platform: gpio

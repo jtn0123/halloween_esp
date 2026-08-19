@@ -31,8 +31,12 @@
 substitutions:
   name: castle-benchaudio
   friendly: Castle Audio Bench
-  pin_led_data: "33"    # onboard NeoPixel
-  led_rgbw: "false"
+  # The onboard pixel replaces tower L's strip: same pin substitution as
+  # before, now per zone. It plays tower L's pixel 0 and the rest of that
+  # zone falls off the end of a wire that is not there. The other two zones
+  # keep their real pins and clock into thin air, which costs nothing.
+  pin_towerL: "33"      # onboard NeoPixel
+  rgbw_towerL: "false"  # the onboard pixel is plain RGB
 
 packages:
   # The flash variant, not the core — see the note in bench.yaml.

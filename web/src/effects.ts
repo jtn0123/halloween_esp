@@ -9,6 +9,7 @@
  * a real 3000 K white emitter on the jewel, not a mix of the other three.
  */
 
+import type { Layout } from "./rig.js";
 import type { EffectName, Rgbw } from "./types.js";
 
 /**
@@ -215,13 +216,24 @@ export const overlayIndex = (name: string): number => {
   return i < 0 ? 0 : i;
 };
 
-/** Shortest way around the 6-pixel ring, in pixel units (0..3). */
-const ringDist = (a: number, pos: number): number => {
-  const d = Math.abs(a - pos);
-  return Math.min(d, 6 - d);
+/** Shortest way between two points on a loop measured in turns (0..0.5). */
+const loopDist = (a: number, b: number): number => {
+  const d = Math.abs(a - b) % 1;
+  return Math.min(d, 1 - d);
 };
 
-export function applyOverlay(ov: number, c: Rgbw, t: number, p: number, zi: number): Rgbw {
+/**
+ * Composite an overlay onto one pixel.
+ *
+ * `L` is what stops this function caring which fixture is in the window. A
+ * chase asks the layout where the pixel sits around the loop and a meteor
+ * asks how far down it is, so the same arithmetic orbits a Jewel's six-pixel
+ * ring, sweeps a Ring 16, and rakes across the FeatherWing's 4×8 — see
+ * `Layout` in rig.ts for how those two coordinates are built.
+ */
+export function applyOverlay(
+  ov: number, c: Rgbw, t: number, p: number, zi: number, L: Layout,
+): Rgbw {
   if (ov === 1) {           // sparkle: rare single-pixel glints
     const cell = Math.floor(t * 7);
     const g = hash(cell * 13.7 + p * 7.77 + zi * 3.1);
@@ -232,25 +244,37 @@ export function applyOverlay(ov: number, c: Rgbw, t: number, p: number, zi: numb
     }
     return c;
   }
-  if (ov === 2) {           // chase: a point of light orbiting the ring
-    const pos = ((t * 0.45 + zi * 0.37) % 1) * 6;
-    if (p === 0) return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3] * 0.55];
-    const boost = Math.max(0, 1 - ringDist(p - 1, pos) * 0.9);
+  if (ov === 2) {           // chase: a point of light travelling the fixture
+    if (p === L.center) return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3] * 0.55];
+    const head = (t * 0.45 + zi * 0.37) % 1;
+    // Width is set in PIXELS, not in turns, so the lit head stays one pixel
+    // wide whether it is going round six of them or sixteen.
+    const span = L.center === null ? L.n : L.n - 1;
+    const boost = Math.max(0, 1 - loopDist(L.walk[p] ?? 0, head) * span * 0.9);
     const k = 0.45 + 0.55 * boost;
     return [c[0] * k, c[1] * k, c[2] * k,
             Math.min(1, c[3] * k + 0.50 * boost * boost)];
   }
-  if (ov === 3) {           // meteor: a drip — centre flash, falls through the ring
+  if (ov === 3) {           // meteor: a drip forms at the top, then falls
     const ph = (t / 2.6 + zi * 0.41) % 1;
+    // One level of fall, used both as the head's height and as what counts
+    // as "the top" for the forming flash.
+    const rung = 1 / Math.max(1, L.fallSteps - 1);
     if (ph < 0.12) {
-      if (p !== 0) return c;
+      // On a fixture with a middle the drip forms there, as it always has on
+      // the Jewels. On one without, it forms along the top edge instead —
+      // there is no centre pixel to flash, and picking an arbitrary one puts
+      // the drip's source somewhere different every time the rig changes.
+      const forms = L.center !== null ? p === L.center : (L.fall[p] ?? 0) < rung;
+      if (!forms) return c;
       const k = (0.12 - ph) / 0.12;
       return [c[0], c[1], c[2], Math.min(1, c[3] + 0.80 * k)];
     }
-    if (p === 0) return c;
-    const fall = ((ph - 0.12) / 0.88) * 6;
-    const fade = 1 - ((ph - 0.12) / 0.88) * 0.5;
-    const boost = Math.max(0, 1 - ringDist(p - 1, fall) * 1.2) * fade;
+    if (p === L.center) return c;
+    const front = (ph - 0.12) / 0.88;
+    const fade = 1 - front * 0.5;
+    const d = Math.abs((L.fall[p] ?? 0) - front);
+    const boost = Math.max(0, 1 - d / (rung * 1.5)) * fade;
     return [Math.min(1, c[0] + 0.20 * boost), c[1], Math.min(1, c[2] + 0.25 * boost),
             Math.min(1, c[3] + 0.60 * boost)];
   }
@@ -268,9 +292,14 @@ export const flashModeIndex = (name: string): number => {
   return i < 0 ? 0 : i;
 };
 
-export function flashGate(mode: number, p: number, zi: number, epoch: number): number {
+export function flashGate(
+  mode: number, p: number, zi: number, epoch: number, L: Layout,
+): number {
   if (mode === 1) return hash(p * 9.13 + zi * 5.7 + epoch * 17.9) > 0.45 ? 1 : 0.15;
-  if (mode === 2) return p === 0 ? 1 : 0.1;
-  if (mode === 3) return p === 0 ? 0.1 : 1;
+  // "centre" and "ring" split the fixture by role rather than by index. On a
+  // Jewel that is pixel 0 against the other six, exactly as before; on a ring
+  // or a matrix it is whatever `Layout.core` decided the middle is.
+  if (mode === 2) return L.core[p] ? 1 : 0.1;
+  if (mode === 3) return L.core[p] ? 0.1 : 1;
   return 1;
 }

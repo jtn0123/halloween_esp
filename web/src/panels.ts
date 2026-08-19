@@ -12,6 +12,7 @@
  * from one template and a missing id is a build bug, not a runtime condition.
  */
 
+import { fixture, zonePixels, zoneRgbw, ZONE_PIN, type RigState } from "./rig.js";
 import { sceneTint } from "./scene_tint.js";
 import type { ZoneRender } from "./show.js";
 import type { Cue, Scene, ZoneId } from "./types.js";
@@ -42,21 +43,20 @@ export const SOUNDS: Record<string, SoundFile | undefined> = {
   whispers:  { sd: "04/003", label: "whispers.mp3" },
 };
 
-/** How the channel strip names each zone. `ch` is the physical output on the
- *  controller, and `px` its slice of the 21-pixel chain — between them they
- *  are what you are looking for when a window is dark. The ranges come from
- *  `zone_pixels()` in tools/gen_esphome.py: zone order × 7 pixels each. */
+/** How the channel strip names each zone. `ch` is the logical output; what
+ *  fixture is on it, which GPIO carries it and how many pixels it has all
+ *  come from the rig, because all three change when you swap a fixture —
+ *  see renderChannels below and rig.ts. */
 export interface Channel {
   id: ZoneId;
   ch: number;
   name: string;
-  px: string;
 }
 
 export const CHANNELS: readonly Channel[] = [
-  { id: "towerL", ch: 1, name: "Tower L", px: "0–6" },
-  { id: "towerR", ch: 2, name: "Tower R", px: "7–13" },
-  { id: "door",   ch: 3, name: "Doorway", px: "14–20" },
+  { id: "towerL", ch: 1, name: "Tower L" },
+  { id: "towerR", ch: 2, name: "Tower R" },
+  { id: "door",   ch: 3, name: "Doorway" },
 ];
 
 /** The strip reads left-to-right the way the castle stands, which is not the
@@ -169,6 +169,9 @@ export function toYaml(sc: Scene): string {
 interface Meter {
   sw: HTMLElement;
   val: HTMLElement;
+  /** The line under the zone name: fixture, pin and pixel count. Rewritten
+   *  whenever the rig changes, which the swatch above it never needs to be. */
+  sub: HTMLElement;
 }
 
 export class Panels {
@@ -209,14 +212,16 @@ export class Panels {
       return `
     <div class="chan">
       <div class="chan__sw" id="sw-${z.id}"></div>
-      <div class="chan__nm">${z.name}<small>ch ${z.ch} · px ${z.px}</small></div>
+      <div class="chan__nm">${z.name}<small id="sub-${z.id}"></small></div>
       <span class="chan__val" id="vl-${z.id}">—</span>
     </div>`;
     }).join("");
 
     const meters = {} as Record<ZoneId, Meter>;
     for (const z of CHANNELS) {
-      meters[z.id] = { sw: must(`sw-${z.id}`), val: must(`vl-${z.id}`) };
+      meters[z.id] = {
+        sw: must(`sw-${z.id}`), val: must(`vl-${z.id}`), sub: must(`sub-${z.id}`),
+      };
     }
     this.meters = meters;
 
@@ -319,6 +324,25 @@ export class Panels {
      the fastest way to see whether the light is following the audio. */
   renderTicks(scene: Scene): void {
     this.ticks.innerHTML = scene.cues.map(c => tickMark(c, scene.dur)).join("");
+  }
+
+  /**
+   * Re-label the strip for the rig that is now in the windows.
+   *
+   * Only the sub-line is rewritten. The swatches are the meters themselves
+   * and are looked up once in the constructor — rebuilding the strip here
+   * would leave `this.meters` pointing at detached nodes, and the whole strip
+   * would freeze at whatever colour it last had.
+   */
+  renderChannels(rig: RigState): void {
+    for (const z of CHANNELS) {
+      const fx = fixture(rig.zones[z.id].fixture);
+      const n = zonePixels(rig, z.id);
+      const kind = n === 0 ? "not wired"
+        : `${n}px ${zoneRgbw(rig, z.id) ? "RGBW" : "RGB"}`;
+      this.meters[z.id].sub.textContent =
+        `ch ${z.ch} · GPIO${ZONE_PIN[z.id]} · ${fx.name} · ${kind}`;
+    }
   }
 
   /** The channel meters. Level is the strongest channel rather than a

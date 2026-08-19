@@ -16,10 +16,10 @@ import {
   EFFECTS, effect, toScreen, pixelSeed, applyOverlay, flashGate,
   overlayIndex, paletteIndex, flashModeIndex, type EffectParams,
 } from "./effects.js";
+import { DEFAULT_RIG, fixture, layoutOf, type Layout } from "./rig.js";
 import type { Cue, EffectName, Rgbw, Scene, StrikeColor, ZoneId } from "./types.js";
 
 export const ZONE_IDS: readonly ZoneId[] = ["towerL", "towerR", "door"];
-export const PIXELS_PER_ZONE = 7;
 
 const WHITE: StrikeColor = [1, 1, 1, 1];
 const DEFAULT_DECAY = 0.90;
@@ -28,7 +28,8 @@ type PerZone<T> = Record<ZoneId, T>;
 const perZone = <T,>(make: () => T): PerZone<T> =>
   ({ towerL: make(), towerR: make(), door: make() });
 
-/** One zone's rendered output: seven pixels, plus their average for meters. */
+/** One zone's rendered output: every pixel of whatever fixture is in that
+ *  spot, plus their average for the meters and the castle wash. */
 export interface ZoneOutput {
   pix: Array<[number, number, number]>;
   avg: [number, number, number];
@@ -68,9 +69,17 @@ export interface ShowState {
   latency: number;
   soft: boolean;
 
-  /* Per-pixel texture — the "not all 7 the same" state. Every field mirrors
-     a firmware global; see the zone lambda in castle.yaml. */
-  /** Effect for pixel 0 only; null = same as the ring (the classic look). */
+  /** What fixture is in each spot, and therefore how many pixels the zone
+   *  has and how they sit in space. Set from the rig panel; the default is
+   *  the castle as built (three Jewels). Every overlay reads it, which is
+   *  what lets a chase orbit a Ring 16 instead of pretending it has six
+   *  pixels and a middle. */
+  layout: PerZone<Layout>;
+
+  /* Per-pixel texture — the "not every pixel the same" state. Every field
+     mirrors a firmware global; see the zone lambda in castle.yaml. */
+  /** Effect for the fixture's centre pixel only; null = the whole fixture
+   *  runs one texture (the classic look). */
   centerEff: PerZone<EffectName | null>;
   /** Overlay index (effects.OVERLAY_NAMES) composited over the base. */
   overlay: PerZone<number>;
@@ -100,6 +109,7 @@ export function createState(scene: Scene, now: number): ShowState {
     level: perZone(() => 1),
     latency: 70,
     soft: false,
+    layout: perZone(() => layoutOf(fixture(DEFAULT_RIG.zones.towerL.fixture))),
     centerEff: perZone<EffectName | null>(() => null),
     overlay: perZone(() => 0),
     palette: perZone(() => 0),
@@ -242,9 +252,10 @@ export function renderZones(st: ShowState, ts: number, P: EffectParams): ZoneRen
 
   ZONE_IDS.forEach((id, zi) => {
     const ringFn = effect(st.eff[id]) ?? EFFECTS.off;
-    // Pixel 0 may play a different role than the ring — ember core inside a
-    // candle ring, eyes in a dark window. null means the classic one-texture
-    // jewel.
+    // The centre pixel may play a different role than the rest — ember core
+    // inside a candle ring, eyes in a dark window. null means one texture
+    // across the whole fixture, and a fixture with no middle (a bare ring)
+    // never matches, so the base effect covers all of it.
     const centerFn = st.centerEff[id] ? effect(st.centerEff[id]!) : ringFn;
     const fBase = st.flash[id] * (st.soft ? 0.55 : 0.92);
     const fc = st.flashCol[id];
@@ -254,23 +265,27 @@ export function renderZones(st: ShowState, ts: number, P: EffectParams): ZoneRen
     const ov = st.overlay[id];
     const pix: Array<[number, number, number]> = [];
     const avg: [number, number, number] = [0, 0, 0];
+    const L = st.layout[id];
 
     const savedPal = P.pal;
     P.pal = pal;
-    for (let p = 0; p < PIXELS_PER_ZONE; p++) {
-      const fn = p === 0 ? centerFn : ringFn;
+    for (let p = 0; p < L.n; p++) {
+      const fn = p === L.center ? centerFn : ringFn;
       let c = fn(tz, pixelSeed(zi, p), P);
-      c = applyOverlay(ov, c, tz, p, zi);
-      const f = fBase * flashGate(st.flashMode[id], p, zi, st.flashEpoch[id]);
+      c = applyOverlay(ov, c, tz, p, zi, L);
+      const f = fBase * flashGate(st.flashMode[id], p, zi, st.flashEpoch[id], L);
       const lit: Rgbw = [c[0] * lv, c[1] * lv, c[2] * lv, c[3] * lv + f * fc[3]];
       const [sr, sg, sb] = toScreen(lit);
       const r = Math.min(1, sr * P.bright + f * fc[0]);
       const g = Math.min(1, sg * P.bright + f * fc[1]);
       const b = Math.min(1, sb * P.bright + f * fc[2] * 0.96);
       pix.push([r, g, b]);
-      avg[0] += r / PIXELS_PER_ZONE;
-      avg[1] += g / PIXELS_PER_ZONE;
-      avg[2] += b / PIXELS_PER_ZONE;
+      // Divided by the fixture's own count, so a zone holding a 32-pixel
+      // FeatherWing and one holding a 7-pixel Jewel still report comparable
+      // levels to the meters and the castle wash.
+      avg[0] += r / L.n;
+      avg[1] += g / L.n;
+      avg[2] += b / L.n;
     }
     P.pal = savedPal;
     out[id] = { pix, avg };

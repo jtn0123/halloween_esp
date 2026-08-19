@@ -19,7 +19,15 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import gen_esphome as ge  # noqa: E402
 import gen_previewer as gp  # noqa: E402
+import rig_layout as rl  # noqa: E402
 import yaml  # noqa: E402
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+
+#: Every path gen_esphome writes through, plus its two inputs. Redirected
+#: wholesale in setUp so a test run cannot touch the real firmware tree.
+OUTPUT_PATHS = ("SRC", "MARKERS", "OUT", "MEDIA_OUT", "AUDIO_FLASH",
+                "AUDIO_SD", "RIG_OUT", "LIGHTS_OUT")
 
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 ZIDS = [z["id"] for z in ZONES]
@@ -54,20 +62,29 @@ class TestZonePixels(unittest.TestCase):
     """Wrong pixel ranges mean a zone lights up its neighbour's jewel."""
 
     def test_ranges_are_contiguous_and_inclusive(self) -> None:
-        got = ge.zone_pixels(ZONES, 7)
+        got = ge.zone_pixels(rl.zone_layouts(ZONES, 7), ZONES)
         self.assertEqual(got["towerL"], (0, 6))
         self.assertEqual(got["towerR"], (7, 13))
         self.assertEqual(got["door"], (14, 20))
 
     def test_single_pixel_zones(self) -> None:
         """The 8mm through-hole build sets pixels_per_zone: 1 — no off-by-one."""
-        got = ge.zone_pixels(ZONES, 1)
+        got = ge.zone_pixels(rl.zone_layouts(ZONES, 1), ZONES)
         self.assertEqual([got[z] for z in ZIDS], [(0, 0), (1, 1), (2, 2)])
+
+    def test_fixture_zone_uses_its_own_count(self) -> None:
+        """A ring12 door is 12 px even though pixels_per_zone says 7 — the
+        count lives in the fixture, not in a `pixels:` key on the zone."""
+        zones = [{"id": "towerL"}, {"id": "towerR"},
+                 {"id": "door", "fixture": "ring12"}]
+        got = ge.zone_pixels(rl.zone_layouts(zones, 7), zones)
+        self.assertEqual(got["door"], (14, 25))
 
     def test_covers_the_whole_chain_without_gaps(self) -> None:
         per = 7
         covered = sorted(
-            i for lo, hi in ge.zone_pixels(ZONES, per).values()
+            i for lo, hi in ge.zone_pixels(rl.zone_layouts(ZONES, per),
+                                           ZONES).values()
             for i in range(lo, hi + 1))
         self.assertEqual(covered, list(range(len(ZONES) * per)))
 class TestEffectIds(unittest.TestCase):
@@ -314,21 +331,42 @@ class TestGenEsphomeMain(unittest.TestCase):
         # forgotten when it was added, and these tests then wrote their two
         # fixture scenes into the real firmware/generated/media_files.yaml —
         # which broke the next firmware build with "cannot find 01_a.mp3".
-        self._saved = (ge.SRC, ge.MARKERS, ge.OUT, ge.MEDIA_OUT,
-                       ge.AUDIO_FLASH, ge.AUDIO_SD, ge.ROOT)
+        # EVERY module-level output path, checked against the module rather
+        # than listed by hand — the list went stale twice (MEDIA_OUT when it
+        # was added, then RIG_OUT and LIGHTS_OUT), and both times these tests
+        # wrote their two fixture scenes into the real firmware/generated/.
+        # test_every_output_path_is_redirected below is what keeps it honest.
+        self._saved = {name: getattr(ge, name) for name in OUTPUT_PATHS}
+        self._saved["ROOT"] = ge.ROOT
         ge.ROOT = self.tmp
         ge.SRC = self.tmp / "scenes.yaml"
         ge.MARKERS = self.tmp / "markers.json"
-        ge.OUT = self.tmp / "generated" / "scenes.yaml"
-        ge.MEDIA_OUT = self.tmp / "generated" / "media_files.yaml"
-        ge.AUDIO_FLASH = self.tmp / "generated" / "audio_flash.yaml"
-        ge.AUDIO_SD = self.tmp / "generated" / "audio_sd.yaml"
+        for name in OUTPUT_PATHS:
+            if name in ("SRC", "MARKERS"):
+                continue
+            setattr(ge, name, self.tmp / "generated" / Path(getattr(ge, name)).name)
         ge.SRC.write_text(yaml.safe_dump(self.DOC))
 
     def tearDown(self) -> None:
-        (ge.SRC, ge.MARKERS, ge.OUT, ge.MEDIA_OUT,
-         ge.AUDIO_FLASH, ge.AUDIO_SD, ge.ROOT) = self._saved
+        for name, value in self._saved.items():
+            setattr(ge, name, value)
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_every_output_path_is_redirected(self) -> None:
+        """A new output added to gen_esphome must be added to OUTPUT_PATHS.
+
+        Without this the next one silently writes into the real
+        firmware/generated/ during a test run, which is how the last two got
+        noticed — by breaking the following build.
+        """
+        real = ROOT_DIR / "firmware" / "generated"
+        for name in dir(ge):
+            value = getattr(ge, name)
+            if not isinstance(value, Path) or name.startswith("_"):
+                continue
+            if value.is_relative_to(real):
+                self.fail(f"ge.{name} still points at the real tree "
+                          f"— add it to OUTPUT_PATHS")
 
     def test_writes_a_parseable_file_with_every_scene_and_a_stop_script(self) -> None:
         self.assertEqual(ge.main(), 0)
@@ -351,7 +389,10 @@ class TestGenEsphomeMain(unittest.TestCase):
         ge.main()
         text = ge.OUT.read_text()
         self.assertIn("DO NOT EDIT", text)
-        self.assertIn("door     pixels 14-20", text)
+        # Three strips now, so the ranges are what a SINGLE chain would have
+        # been — still the thing you want when tracing a dark window on a
+        # one-chain build. See zone_pixels in gen_esphome.py.
+        self.assertRegex(text, r"door\s+7 px \(chain equivalent 14-20\)")
 
     def test_missing_markers_file_still_generates(self) -> None:
         """`make generate` must work before `make audio` has ever run."""

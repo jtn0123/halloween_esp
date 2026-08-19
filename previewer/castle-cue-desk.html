@@ -693,6 +693,54 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   overflow: hidden;
 }
 
+/* ── Rig panel (rig_panel.ts) ─────────────────────────────────────────
+   Which fixture is in which window. Sits directly under Output because the
+   channel strip's pixel ranges are now derived from it — the two are one
+   thought, and separating them meant reading a range and then hunting for
+   what produced it. */
+.rig { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.rig th {
+  text-align: left; font-weight: 600; color: var(--muted);
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  padding: 0 6px 4px 0;
+}
+.rig td { padding: 3px 6px 3px 0; vertical-align: middle; }
+.rig select { max-width: 100%; }
+.rig__spot { white-space: nowrap; }
+/* The pin belongs next to the spot: when a window is dark, "which wire" is
+   the next question after "which window". */
+.rig__spot small {
+  display: block; color: var(--muted);
+  font: 10px var(--f-data); letter-spacing: .02em;
+}
+.rig__px { font: 12px var(--f-data); color: var(--ink-2); }
+.rig__fixed {
+  font: 11px var(--f-data); color: var(--muted);
+  border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 5px;
+}
+.rig__rgbw { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.rig .rigN { width: 3.2rem; }
+
+.rig__sum { margin: 8px 0 4px; font-size: 12.5px; color: var(--ink-2); }
+.rig__sum b { color: var(--ink); font-family: var(--f-data); }
+.rig__note {
+  margin: 4px 0; padding: 5px 8px; font-size: 12px;
+  border-radius: 6px; border-left: 3px solid var(--line-2);
+  background: var(--panel-2); color: var(--ink-2);
+}
+.rig__note--warn { border-left-color: var(--alarm); color: var(--ink); }
+
+.rig__acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.rig__acts .muted { font-size: 11.5px; }
+#rigOut {
+  margin: 8px 0 0; padding: 8px 10px; max-height: 260px; overflow: auto;
+  background: var(--panel-2); border: 1px solid var(--line-2);
+  border-radius: 8px; font: 11px/1.5 var(--f-data); white-space: pre;
+}
+/* `hidden` loses to any display rule, and every other fold on this page has
+   been bitten by exactly this — see .budget__pick. */
+#rigOut[hidden] { display: none; }
+
 /* Small screens — inlined after styles.css by tools/gen_previewer.py.
  *
  * The desk was designed for a desk; a phone gets the same page with the
@@ -772,7 +820,9 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   <header class="head" id="head">
     <div class="head__id">
       <h1>Castle Cue Desk</h1>
-      <span class="eyebrow" title="ESP32-S2 Feather · MAX98357A I²S amp · 3 NeoPixel Jewels, 7 RGBW pixels each">three zones &middot; 21 px</span>
+      <!-- Filled from the rig, because the pixel count stopped being a
+           constant the moment fixtures became swappable. See rig_panel.ts. -->
+      <span class="eyebrow" id="rigEyebrow">three zones</span>
     </div>
     <div class="head__live">
       <span class="head__dot" id="headDot"></span>
@@ -784,7 +834,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
         <button type="button" data-view="castle" aria-pressed="false"
                 title="The castle as it looks — glow, spill and bloom">Castle</button>
         <button type="button" data-view="pixels" aria-pressed="false"
-                title="The 21 real pixels, one dot each — the honest per-pixel view">Pixels</button>
+                title="Every real pixel as one dot, in the shape the fixture actually has — the honest per-pixel view">Pixels</button>
         <button type="button" data-view="both" aria-pressed="true"
                 title="Both at once">Both</button>
       </div>
@@ -878,6 +928,18 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
           <span class="note">mean per zone</span>
         </div>
         <div class="chans" id="chans"></div>
+      </section>
+
+      <!-- What is physically in each window. The desk used to assume three
+           NeoPixel Jewels because that is what is soldered; this is where
+           that assumption became data. Changing a row re-renders the stage,
+           the pixel view and the channel strip immediately — see rig.ts. -->
+      <section class="panel">
+        <div class="panel__hd">
+          <h2>Rig</h2>
+          <span class="note">one data pin per zone</span>
+        </div>
+        <div class="panel__bd" id="rigPanel"></div>
       </section>
 
       <section class="panel">
@@ -1266,6 +1328,247 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   }
   var BAND_HELP = "How often each zone pulses. An onset is a jump in level, not loudness \u2014 a kick drum registers, a sustained pad does not, however loud it is. The three bands are not comparable to each other: each has its own minimum spacing (low 0.16s, mid 0.11s, high 0.09s).";
 
+  // src/rig.ts
+  var ZONE_ORDER = ["towerL", "door", "towerR"];
+  var ZONE_PIN = { towerL: 18, door: 16, towerR: 14 };
+  var ZONE_DECL = ["towerL", "towerR", "door"];
+  var FIXTURES = [
+    {
+      id: "jewel7",
+      name: "Jewel 7",
+      full: "NeoPixel Jewel \u2014 7 \xD7 5050, centre + 6 ring",
+      count: 7,
+      layout: "hub",
+      own: 2
+    },
+    {
+      id: "stick8",
+      name: "Stick 8",
+      full: "NeoPixel Stick \u2014 8 \xD7 5050 in a row",
+      count: 8,
+      layout: "line",
+      own: 1
+    },
+    {
+      id: "ring12",
+      name: "Ring 12",
+      full: "NeoPixel Ring \u2014 12 \xD7 5050, no centre",
+      count: 12,
+      layout: "ring",
+      own: 1
+    },
+    {
+      id: "ring16",
+      name: "Ring 16",
+      full: "NeoPixel Ring \u2014 16 \xD7 5050, no centre",
+      count: 16,
+      layout: "ring",
+      own: 1
+    },
+    {
+      id: "wing32",
+      name: "Wing 4\xD78",
+      full: "NeoPixel FeatherWing \u2014 4\xD78 matrix, RGB only",
+      count: 32,
+      layout: "grid",
+      cols: 8,
+      rows: 4,
+      rgbOnly: true,
+      own: 1
+    },
+    {
+      id: "mini",
+      name: "Mini PCB",
+      full: "NeoPixel mini PCB singles, RGB only",
+      count: 3,
+      layout: "scatter",
+      rgbOnly: true,
+      own: 5,
+      maxCount: 5
+    },
+    {
+      id: "none",
+      name: "(empty)",
+      full: "Nothing wired to this channel yet",
+      count: 0,
+      layout: "scatter",
+      own: 3
+    }
+  ];
+  var fixture = (id) => FIXTURES.find((f) => f.id === id) ?? FIXTURES[FIXTURES.length - 1];
+  var ring = (n, out, w, f) => {
+    for (let i = 0; i < n; i++) {
+      const a = -Math.PI / 2 + i / n * Math.PI * 2;
+      out.push([0.5 + Math.cos(a) * 0.42, 0.5 + Math.sin(a) * 0.42]);
+      w.push(i / n);
+      f.push((Math.sin(a) + 1) / 2);
+    }
+  };
+  var layouts = /* @__PURE__ */ new Map();
+  function layoutOf(fx, count) {
+    const n = fx.maxCount ? Math.max(1, Math.min(fx.maxCount, count ?? fx.count)) : fx.count;
+    const key = `${fx.id}:${n}`;
+    const hit = layouts.get(key);
+    if (hit) return hit;
+    const pos = [];
+    const walk = [];
+    const fall = [];
+    let center = null;
+    if (n === 0) {
+    } else if (fx.layout === "hub") {
+      center = 0;
+      pos.push([0.5, 0.5]);
+      walk.push(0);
+      fall.push(0);
+      ring(n - 1, pos, walk, fall);
+    } else if (fx.layout === "ring") {
+      ring(n, pos, walk, fall);
+    } else if (fx.layout === "grid") {
+      const cols = fx.cols ?? 8;
+      const rows = fx.rows ?? Math.ceil(n / cols);
+      for (let i = 0; i < n; i++) {
+        const cx = i % cols;
+        const cy = Math.floor(i / cols);
+        pos.push([(cx + 0.5) / cols, (cy + 0.5) / rows]);
+        const up = cx % 2 === 1;
+        walk.push((cx + (up ? rows - 1 - cy : cy) / rows) / cols);
+        fall.push(rows === 1 ? 0 : cy / (rows - 1));
+      }
+    } else if (fx.layout === "line") {
+      for (let i = 0; i < n; i++) {
+        pos.push([n === 1 ? 0.5 : 0.06 + i / (n - 1) * 0.88, 0.5]);
+        walk.push(i / n);
+        fall.push(n === 1 ? 0 : i / (n - 1));
+      }
+    } else {
+      for (let i = 0; i < n; i++) {
+        pos.push([n === 1 ? 0.5 : 0.12 + i / (n - 1) * 0.76, 0.5]);
+        walk.push(i / n);
+        fall.push(n === 1 ? 0 : i / (n - 1));
+      }
+    }
+    const fallSteps = new Set(fall.map((v) => v.toFixed(3))).size;
+    const core = new Array(n).fill(false);
+    if (center !== null) {
+      core[center] = true;
+    } else if (n > 0) {
+      const byMiddle = pos.map((xy, i) => ({
+        i,
+        d: Math.round(Math.hypot((xy[0] ?? 0) - 0.5, (xy[1] ?? 0) - 0.5) * 1e6) / 1e6
+      })).sort((a, b) => a.d - b.d || a.i - b.i);
+      for (let j = 0; j < Math.max(1, Math.round(n / 7)); j++) {
+        const hit2 = byMiddle[j];
+        if (hit2) core[hit2.i] = true;
+      }
+    }
+    const out = { n, center, walk, fall, fallSteps, core, pos };
+    layouts.set(key, out);
+    return out;
+  }
+  var KEY = "castle.rig";
+  var DEFAULT_RIG = {
+    zones: {
+      towerL: { fixture: "jewel7" },
+      door: { fixture: "ring12" },
+      towerR: { fixture: "jewel7" }
+    },
+    rgbw: { jewel7: true, stick8: true, ring12: true, ring16: true }
+  };
+  var isSlot = (v) => typeof v === "object" && v !== null && typeof v.fixture === "string" && FIXTURES.some((f) => f.id === v.fixture);
+  function loadRig() {
+    const rig2 = {
+      zones: { ...DEFAULT_RIG.zones },
+      rgbw: { ...DEFAULT_RIG.rgbw }
+    };
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return rig2;
+      const saved = JSON.parse(raw);
+      for (const z of ZONE_ORDER) {
+        const s = saved.zones?.[z];
+        if (isSlot(s)) rig2.zones[z] = { fixture: s.fixture, ...s.count ? { count: s.count } : {} };
+      }
+      for (const [k, v] of Object.entries(saved.rgbw ?? {})) {
+        if (typeof v === "boolean") rig2.rgbw[k] = v;
+      }
+    } catch {
+    }
+    return rig2;
+  }
+  function saveRig(rig2) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(rig2));
+    } catch {
+    }
+  }
+  function zoneRgbw(rig2, z) {
+    const fx = fixture(rig2.zones[z].fixture);
+    return fx.rgbOnly ? false : rig2.rgbw[fx.id] ?? true;
+  }
+  function zoneLayout(rig2, z) {
+    const slot = rig2.zones[z];
+    return layoutOf(fixture(slot.fixture), slot.count);
+  }
+  var zonePixels = (rig2, z) => zoneLayout(rig2, z).n;
+  function rigPower(rig2) {
+    let amps = 0;
+    let pixels = 0;
+    for (const z of ZONE_ORDER) {
+      const n = zonePixels(rig2, z);
+      pixels += n;
+      amps += n * (zoneRgbw(rig2, z) ? 0.08 : 0.06);
+    }
+    return { amps, pixels };
+  }
+  var AUDIO_AMPS = 1.6;
+  function rigProblems(rig2) {
+    const out = [];
+    const used = /* @__PURE__ */ new Map();
+    for (const z of ZONE_ORDER) {
+      const id = rig2.zones[z].fixture;
+      if (id !== "none") used.set(id, (used.get(id) ?? 0) + 1);
+    }
+    for (const [id, n] of used) {
+      const fx = fixture(id);
+      if (n > fx.own) {
+        out.push({
+          level: "warn",
+          text: `${n} zones want a ${fx.name} and you own ${fx.own}.`
+        });
+      }
+    }
+    const live = ZONE_ORDER.filter((z) => zonePixels(rig2, z) > 0);
+    const kinds = new Set(live.map((z) => zoneRgbw(rig2, z)));
+    if (kinds.size > 1) {
+      out.push({
+        level: "info",
+        text: "Mixes RGBW and RGB, so these cannot share one data line \u2014 wire a pin per zone (docs/WIRING.md \xA71)."
+      });
+    }
+    const { amps, pixels } = rigPower(rig2);
+    const total = amps + AUDIO_AMPS;
+    if (total > 4) {
+      out.push({
+        level: "warn",
+        text: `${pixels} pixels peak at ${amps.toFixed(1)} A, ${total.toFixed(1)} A with both amps \u2014 needs a supply of 8 A or more.`
+      });
+    }
+    if (live.length === 0) {
+      out.push({ level: "warn", text: "Every zone is empty; nothing will light." });
+    }
+    return out;
+  }
+  function chainRanges(rig2) {
+    const out = {};
+    let at = 0;
+    for (const z of ZONE_DECL) {
+      const n = zonePixels(rig2, z);
+      out[z] = [at, at + Math.max(0, n - 1)];
+      at += n;
+    }
+    return out;
+  }
+
   // src/effects.ts
   var defaultParams = () => ({
     depth: 0.55,
@@ -1392,11 +1695,11 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
     const i = OVERLAY_NAMES.indexOf(name);
     return i < 0 ? 0 : i;
   };
-  var ringDist = (a, pos) => {
-    const d = Math.abs(a - pos);
-    return Math.min(d, 6 - d);
+  var loopDist = (a, b) => {
+    const d = Math.abs(a - b) % 1;
+    return Math.min(d, 1 - d);
   };
-  function applyOverlay(ov, c, t, p, zi) {
+  function applyOverlay(ov, c, t, p, zi, L) {
     if (ov === 1) {
       const cell = Math.floor(t * 7);
       const g = hash(cell * 13.7 + p * 7.77 + zi * 3.1);
@@ -1412,9 +1715,10 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
       return c;
     }
     if (ov === 2) {
-      const pos = (t * 0.45 + zi * 0.37) % 1 * 6;
-      if (p === 0) return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3] * 0.55];
-      const boost = Math.max(0, 1 - ringDist(p - 1, pos) * 0.9);
+      if (p === L.center) return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3] * 0.55];
+      const head2 = (t * 0.45 + zi * 0.37) % 1;
+      const span = L.center === null ? L.n : L.n - 1;
+      const boost = Math.max(0, 1 - loopDist(L.walk[p] ?? 0, head2) * span * 0.9);
       const k = 0.45 + 0.55 * boost;
       return [
         c[0] * k,
@@ -1425,15 +1729,18 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
     }
     if (ov === 3) {
       const ph = (t / 2.6 + zi * 0.41) % 1;
+      const rung = 1 / Math.max(1, L.fallSteps - 1);
       if (ph < 0.12) {
-        if (p !== 0) return c;
+        const forms = L.center !== null ? p === L.center : (L.fall[p] ?? 0) < rung;
+        if (!forms) return c;
         const k = (0.12 - ph) / 0.12;
         return [c[0], c[1], c[2], Math.min(1, c[3] + 0.8 * k)];
       }
-      if (p === 0) return c;
-      const fall = (ph - 0.12) / 0.88 * 6;
-      const fade = 1 - (ph - 0.12) / 0.88 * 0.5;
-      const boost = Math.max(0, 1 - ringDist(p - 1, fall) * 1.2) * fade;
+      if (p === L.center) return c;
+      const front = (ph - 0.12) / 0.88;
+      const fade = 1 - front * 0.5;
+      const d = Math.abs((L.fall[p] ?? 0) - front);
+      const boost = Math.max(0, 1 - d / (rung * 1.5)) * fade;
       return [
         Math.min(1, c[0] + 0.2 * boost),
         c[1],
@@ -1448,10 +1755,10 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
     const i = FLASH_MODES.indexOf(name);
     return i < 0 ? 0 : i;
   };
-  function flashGate(mode, p, zi, epoch) {
+  function flashGate(mode, p, zi, epoch, L) {
     if (mode === 1) return hash(p * 9.13 + zi * 5.7 + epoch * 17.9) > 0.45 ? 1 : 0.15;
-    if (mode === 2) return p === 0 ? 1 : 0.1;
-    if (mode === 3) return p === 0 ? 0.1 : 1;
+    if (mode === 2) return L.core[p] ? 1 : 0.1;
+    if (mode === 3) return L.core[p] ? 0.1 : 1;
     return 1;
   }
 
@@ -1536,9 +1843,9 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
     whispers: { sd: "04/003", label: "whispers.mp3" }
   };
   var CHANNELS = [
-    { id: "towerL", ch: 1, name: "Tower L", px: "0\u20136" },
-    { id: "towerR", ch: 2, name: "Tower R", px: "7\u201313" },
-    { id: "door", ch: 3, name: "Doorway", px: "14\u201320" }
+    { id: "towerL", ch: 1, name: "Tower L" },
+    { id: "towerR", ch: 2, name: "Tower R" },
+    { id: "door", ch: 3, name: "Doorway" }
   ];
   var STRIP = ["towerL", "door", "towerR"];
   var kb = (n) => n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MB` : `${Math.round(n / 1024)} KB`;
@@ -1629,13 +1936,17 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
         return `
     <div class="chan">
       <div class="chan__sw" id="sw-${z.id}"></div>
-      <div class="chan__nm">${z.name}<small>ch ${z.ch} \xB7 px ${z.px}</small></div>
+      <div class="chan__nm">${z.name}<small id="sub-${z.id}"></small></div>
       <span class="chan__val" id="vl-${z.id}">\u2014</span>
     </div>`;
       }).join("");
       const meters = {};
       for (const z of CHANNELS) {
-        meters[z.id] = { sw: must(`sw-${z.id}`), val: must(`vl-${z.id}`) };
+        meters[z.id] = {
+          sw: must(`sw-${z.id}`),
+          val: must(`vl-${z.id}`),
+          sub: must(`sub-${z.id}`)
+        };
       }
       this.meters = meters;
       this.sheet.addEventListener("click", (e) => {
@@ -1712,6 +2023,22 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
        the fastest way to see whether the light is following the audio. */
     renderTicks(scene) {
       this.ticks.innerHTML = scene.cues.map((c) => tickMark(c, scene.dur)).join("");
+    }
+    /**
+     * Re-label the strip for the rig that is now in the windows.
+     *
+     * Only the sub-line is rewritten. The swatches are the meters themselves
+     * and are looked up once in the constructor — rebuilding the strip here
+     * would leave `this.meters` pointing at detached nodes, and the whole strip
+     * would freeze at whatever colour it last had.
+     */
+    renderChannels(rig2) {
+      for (const z of CHANNELS) {
+        const fx = fixture(rig2.zones[z.id].fixture);
+        const n = zonePixels(rig2, z.id);
+        const kind = n === 0 ? "not wired" : `${n}px ${zoneRgbw(rig2, z.id) ? "RGBW" : "RGB"}`;
+        this.meters[z.id].sub.textContent = `ch ${z.ch} \xB7 GPIO${ZONE_PIN[z.id]} \xB7 ${fx.name} \xB7 ${kind}`;
+      }
     }
     /** The channel meters. Level is the strongest channel rather than a
      *  luminance mix, because that is what actually clips the LED driver — and
@@ -2629,24 +2956,36 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
   }
 
   // src/insets.ts
-  var ZONES = [
-    { id: "towerL", label: "tower L" },
-    { id: "door", label: "door \xB7 centre" },
-    { id: "towerR", label: "tower R" }
-  ];
-  var angle = (ringIndex) => -Math.PI / 2 + ringIndex * Math.PI / 3;
-  var JewelInsets = class {
-    constructor(anchor) {
+  var LABEL = {
+    towerL: "tower L",
+    door: "door \xB7 centre",
+    towerR: "tower R"
+  };
+  var W = 420;
+  var H = 146;
+  var FOOT = 30;
+  var PixelInsets = class {
+    constructor(anchor, rig2 = loadRig()) {
+      this.rig = rig2;
       this.canvas = document.createElement("canvas");
       this.canvas.id = "jewels";
-      this.canvas.title = "The 21 real pixels, one dot each \u2014 centre + ring per jewel";
       (anchor.closest(".stage") ?? anchor).insertAdjacentElement("afterend", this.canvas);
       const ctx = this.canvas.getContext("2d");
-      if (!ctx) throw new Error("no 2d context for jewel insets");
+      if (!ctx) throw new Error("no 2d context for the pixel insets");
       this.ctx = ctx;
+      this.retitle();
+    }
+    /** Follow a rig change on the next frame. */
+    setRig(rig2) {
+      this.rig = rig2;
+      this.retitle();
+    }
+    retitle() {
+      const parts = ZONE_ORDER.map((z) => `${LABEL[z]}: ${fixture(this.rig.zones[z].fixture).name}`);
+      const total = ZONE_ORDER.reduce((n, z) => n + zoneLayout(this.rig, z).n, 0);
+      this.canvas.title = `${total} real pixels, one dot each \u2014 ${parts.join(", ")}`;
     }
     draw(zones) {
-      const W = 420, H = 146;
       if (this.canvas.width !== W) {
         this.canvas.width = W;
         this.canvas.height = H;
@@ -2655,37 +2994,51 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       g.clearRect(0, 0, W, H);
       g.fillStyle = "#0d0a14";
       g.fillRect(0, 0, W, H);
-      ZONES.forEach((z, zi) => {
-        const cx = 70 + zi * 140;
-        const cy = 58;
-        const pix = zones[z.id].pix;
-        for (let p = 1; p < 7; p++) {
-          const [r2, gg2, b2] = pix[p] ?? [0, 0, 0];
-          const a = angle(p - 1);
-          this.dot(cx + Math.cos(a) * 30, cy + Math.sin(a) * 30, 11, r2, gg2, b2);
+      const cell = W / ZONE_ORDER.length;
+      ZONE_ORDER.forEach((z, zi) => {
+        const L = zoneLayout(this.rig, z);
+        const fx = fixture(this.rig.zones[z].fixture);
+        const box = { x: zi * cell + 6, y: 6, w: cell - 12, h: H - FOOT - 12 };
+        const pts = place(L, box);
+        if (L.n === 0) {
+          g.textAlign = "center";
+          g.fillStyle = "#4c4460";
+          g.font = "11px system-ui";
+          g.fillText("not wired", box.x + box.w / 2, box.y + box.h / 2 + 4);
+        } else {
+          const rad = Math.min(12, Math.max(2.5, minGap(pts) * 0.45));
+          const pix = zones[z].pix;
+          for (let p = 0; p < L.n; p++) if (!L.core[p]) this.dot(pts, p, rad, pix);
+          for (let p = 0; p < L.n; p++) if (L.core[p]) this.dot(pts, p, rad + 1, pix);
         }
-        const [r, gg, b] = pix[0] ?? [0, 0, 0];
-        this.dot(cx, cy, 12, r, gg, b);
+        const cx = box.x + box.w / 2;
         g.textAlign = "center";
         g.fillStyle = "#9a8fb0";
         g.font = "11px system-ui";
-        g.fillText(z.label, cx, H - 26);
-        const avg = zones[z.id].avg;
+        g.fillText(`${LABEL[z]} \xB7 ${fx.name}`, cx, H - 18);
+        const avg = zones[z].avg;
         g.fillStyle = "#6d6480";
         g.font = "10px ui-monospace, SFMono-Regular, Menlo, monospace";
         g.fillText(
           avg.slice(0, 3).map((v) => Math.round(Math.min(1, v) * 255).toString(16).padStart(2, "0")).join(""),
           cx,
-          H - 10
+          H - 5
         );
       });
     }
-    dot(x, y, rad, r, g0, b) {
+    dot(pts, p, rad, pix) {
+      const at = pts[p];
+      if (!at) return;
+      const [r, g0, b] = pix[p] ?? [0, 0, 0];
       const g = this.ctx;
+      const [x, y] = at;
       const lum = Math.max(r, g0, b);
       if (lum > 0.02) {
         const halo = g.createRadialGradient(x, y, rad * 0.3, x, y, rad * 2.2);
-        halo.addColorStop(0, `rgba(${r * 255 | 0},${g0 * 255 | 0},${b * 255 | 0},${0.55 * lum})`);
+        halo.addColorStop(
+          0,
+          `rgba(${r * 255 | 0},${g0 * 255 | 0},${b * 255 | 0},${0.55 * lum})`
+        );
         halo.addColorStop(1, "rgba(0,0,0,0)");
         g.fillStyle = halo;
         g.beginPath();
@@ -2700,9 +3053,43 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       g.stroke();
     }
   };
+  function place(L, box) {
+    if (L.n === 0) return [];
+    const aspect = naturalAspect(L);
+    const boxAspect = box.w / box.h;
+    const w = aspect >= boxAspect ? box.w : box.h * aspect;
+    const h = aspect >= boxAspect ? box.w / aspect : box.h;
+    const ox = box.x + (box.w - w) / 2;
+    const oy = box.y + (box.h - h) / 2;
+    return L.pos.map((p) => [ox + (p[0] ?? 0) * w, oy + (p[1] ?? 0) * h]);
+  }
+  function naturalAspect(L) {
+    let x0 = 1, x1 = 0, y0 = 1, y1 = 0;
+    for (const p of L.pos) {
+      x0 = Math.min(x0, p[0]);
+      x1 = Math.max(x1, p[0]);
+      y0 = Math.min(y0, p[1]);
+      y1 = Math.max(y1, p[1]);
+    }
+    const dx = Math.max(x1 - x0, 0.08);
+    const dy = Math.max(y1 - y0, 0.08);
+    return Math.min(6, dx / dy);
+  }
+  function minGap(pts) {
+    if (pts.length < 2) return 24;
+    let best = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const a = pts[i], b = pts[j];
+        if (!a || !b) continue;
+        best = Math.min(best, Math.hypot(a[0] - b[0], a[1] - b[1]));
+      }
+    }
+    return Number.isFinite(best) ? best : 24;
+  }
 
   // src/zone_designer.ts
-  var ZONES2 = ["towerL", "towerR", "door"];
+  var ZONES = ["towerL", "towerR", "door"];
   var EFFECT_CHOICES = [
     "off",
     "candle",
@@ -2725,7 +3112,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     const sel = (opts, cur, cls, z) => `<select class="${cls}" data-z="${z}">` + opts.map((o) => `<option${o === cur ? " selected" : ""}>${o}</option>`).join("") + `</select>`;
     const render = () => {
       const st = getState();
-      host.innerHTML = `<table class="zd"><tr><th></th><th title="Effect for the centre pixel only">centre</th><th title="Composited over the base effect">overlay</th><th title="Poles for the crossfade effects">palette</th><th title="Seconds added to this zone's clock">phase</th></tr>` + ZONES2.map((z) => `<tr><td>${z}</td><td>${sel(["ring", ...EFFECT_CHOICES], st.centerEff[z] ?? "ring", "zdC", z)}</td><td>${sel(OVERLAY_NAMES, OVERLAY_NAMES[st.overlay[z]] ?? "none", "zdO", z)}</td><td>${sel(PALETTE_NAMES, PALETTE_NAMES[st.palette[z]] ?? "haunt", "zdP", z)}</td><td><input class="zdF" data-z="${z}" type="number" min="0" max="5" step="0.1" value="${st.phase[z]}" style="width:3.5rem"></td></tr>`).join("") + `</table><div><button id="zdYaml" type="button">Copy zones: YAML</button><span id="zdNote" class="muted"> edits preview only \u2014 paste into scenes.yaml to keep</span></div><pre id="zdOut" style="display:none"></pre>`;
+      host.innerHTML = `<table class="zd"><tr><th></th><th title="Effect for the centre pixel only">centre</th><th title="Composited over the base effect">overlay</th><th title="Poles for the crossfade effects">palette</th><th title="Seconds added to this zone's clock">phase</th></tr>` + ZONES.map((z) => `<tr><td>${z}</td><td>${sel(["ring", ...EFFECT_CHOICES], st.centerEff[z] ?? "ring", "zdC", z)}</td><td>${sel(OVERLAY_NAMES, OVERLAY_NAMES[st.overlay[z]] ?? "none", "zdO", z)}</td><td>${sel(PALETTE_NAMES, PALETTE_NAMES[st.palette[z]] ?? "haunt", "zdP", z)}</td><td><input class="zdF" data-z="${z}" type="number" min="0" max="5" step="0.1" value="${st.phase[z]}" style="width:3.5rem"></td></tr>`).join("") + `</table><div><button id="zdYaml" type="button">Copy zones: YAML</button><span id="zdNote" class="muted"> edits preview only \u2014 paste into scenes.yaml to keep</span></div><pre id="zdOut" style="display:none"></pre>`;
       host.querySelectorAll(".zdC").forEach((el2) => el2.addEventListener("change", () => {
         const st2 = getState();
         st2.centerEff[el2.dataset.z] = el2.value === "ring" ? null : el2.value;
@@ -2742,7 +3129,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       host.querySelector("#zdYaml").addEventListener("click", () => {
         const st2 = getState();
         const lines = ["    zones:"];
-        for (const z of ZONES2) {
+        for (const z of ZONES) {
           const bits = [];
           if (st2.centerEff[z]) bits.push(`center: ${st2.centerEff[z]}`);
           if (st2.overlay[z]) bits.push(`overlay: ${OVERLAY_NAMES[st2.overlay[z]]}`);
@@ -2760,9 +3147,135 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     return { refresh: render };
   }
 
+  // src/rig_panel.ts
+  var SPOT = {
+    towerL: "Tower L",
+    door: "Doorway",
+    towerR: "Tower R"
+  };
+  function createRigPanel(rig2, hooks) {
+    const found = document.getElementById("rigPanel");
+    if (!found) return { refresh: () => {
+    } };
+    const host = found;
+    const opts = (cur) => FIXTURES.map((f) => `<option value="${f.id}" title="${f.full}"${f.id === cur ? " selected" : ""}>${f.name}${f.count ? ` \xB7 ${f.count}px` : ""}</option>`).join("");
+    const commit = () => {
+      saveRig(rig2);
+      hooks.onChange(rig2);
+      render();
+    };
+    function rowFor(z) {
+      const slot = rig2.zones[z];
+      const fx = fixture(slot.fixture);
+      const L = zoneLayout(rig2, z);
+      const rgbw2 = zoneRgbw(rig2, z);
+      const kind = fx.rgbOnly ? `<span class="rig__fixed" title="${fx.name} was only ever made RGB">RGB</span>` : `<label class="rig__rgbw" title="Tick if yours is the RGBW variant \u2014 it changes the packet from 24 to 32 bits per pixel"><input type="checkbox" class="rigW" data-z="${z}"${rgbw2 ? " checked" : ""}><span>RGBW</span></label>`;
+      const count = fx.maxCount ? `<input class="rigN" type="number" data-z="${z}" min="1" max="${fx.maxCount}" value="${L.n}" title="How many singles are in this spot">` : `<span class="rig__px">${L.n}px</span>`;
+      return `<tr><td class="rig__spot">${SPOT[z]}<small>GPIO${ZONE_PIN[z]}</small></td><td><select class="rigF" data-z="${z}">${opts(slot.fixture)}</select></td><td>${count}</td><td>${kind}</td></tr>`;
+    }
+    function retitleMasthead(pixels) {
+      const eyebrow = document.getElementById("rigEyebrow");
+      if (!eyebrow) return;
+      eyebrow.textContent = `three zones \xB7 ${pixels} px`;
+      eyebrow.title = "ESP32-S2 Feather \xB7 MAX98357A I\xB2S amp \xB7 " + ZONE_ORDER.map((z) => `${SPOT[z]}: ${fixture(rig2.zones[z].fixture).name}`).join(" \xB7 ");
+    }
+    function render() {
+      const { amps, pixels } = rigPower(rig2);
+      const total = amps + AUDIO_AMPS;
+      const problems = rigProblems(rig2);
+      retitleMasthead(pixels);
+      host.innerHTML = `<table class="rig"><thead><tr><th>Spot</th><th>Fixture</th><th>Pixels</th><th>Colour</th></tr></thead><tbody>` + ZONE_ORDER.map(rowFor).join("") + `</tbody></table><p class="rig__sum" id="rigSum">${pixels} pixels \xB7 <b>${amps.toFixed(1)} A</b> at full white, ${total.toFixed(1)} A with both amps</p>` + problems.map((p) => `<p class="rig__note rig__note--${p.level}">${p.text}</p>`).join("") + `<div class="rig__acts"><button id="rigYaml" type="button">Copy firmware config</button><span class="muted"> preview updates now; the castle needs <code>make generate &amp;&amp; make upload</code></span></div><pre id="rigOut" hidden></pre>`;
+      host.querySelectorAll(".rigF").forEach((el2) => el2.addEventListener("change", () => {
+        const z = el2.dataset["z"];
+        const fx = fixture(el2.value);
+        rig2.zones[z] = fx.maxCount ? { fixture: fx.id, count: Math.min(fx.maxCount, rig2.zones[z].count ?? fx.count) } : { fixture: fx.id };
+        commit();
+      }));
+      host.querySelectorAll(".rigW").forEach((el2) => el2.addEventListener("change", () => {
+        rig2.rgbw[rig2.zones[el2.dataset["z"]].fixture] = el2.checked;
+        commit();
+      }));
+      host.querySelectorAll(".rigN").forEach((el2) => el2.addEventListener("change", () => {
+        const z = el2.dataset["z"];
+        const max = fixture(rig2.zones[z].fixture).maxCount ?? 1;
+        rig2.zones[z] = {
+          fixture: rig2.zones[z].fixture,
+          count: Math.max(1, Math.min(max, Math.round(Number(el2.value) || 1)))
+        };
+        commit();
+      }));
+      host.querySelector("#rigYaml")?.addEventListener("click", () => {
+        const out = host.querySelector("#rigOut");
+        if (!out) return;
+        out.textContent = emitConfig(rig2);
+        out.hidden = false;
+        void navigator.clipboard?.writeText(out.textContent);
+      });
+    }
+    render();
+    return { refresh: render };
+  }
+  function emitConfig(rig2) {
+    const single = new Set(ZONE_DECL.filter((z) => zoneLayout(rig2, z).n > 0).map((z) => zoneRgbw(rig2, z))).size <= 1;
+    const ranges = chainRanges(rig2);
+    const lines = [
+      "# \u2500\u2500\u2500 scenes/scenes.yaml \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+      "# Replaces the whole `zones:` block. `pixels_per_zone` no longer",
+      "# applies once a zone declares its own count.",
+      "zones:"
+    ];
+    ZONE_DECL.forEach((z, i) => {
+      const fx = fixture(rig2.zones[z].fixture);
+      const L = zoneLayout(rig2, z);
+      lines.push(`  - {id: ${z}, channel: ${i + 1}, pin: ${ZONE_PIN[z]}, fixture: ${fx.id}, pixels: ${L.n}, rgbw: ${zoneRgbw(rig2, z)}}   # ${fx.full}`);
+    });
+    lines.push(
+      "",
+      "# \u2500\u2500\u2500 firmware/castle.yaml \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500",
+      "# One strip per zone. They cannot be merged into one chain unless every",
+      single ? "# zone is the same colour type \u2014 which, as configured here, they are." : "# zone is the same colour type, and this rig mixes RGBW with RGB.",
+      "light:"
+    );
+    for (const z of ZONE_DECL) {
+      const L = zoneLayout(rig2, z);
+      if (L.n === 0) {
+        lines.push(`  # ${z}: nothing wired \u2014 no strip emitted.`);
+        continue;
+      }
+      lines.push(
+        `  - platform: esp32_rmt_led_strip`,
+        `    id: zone_${z}`,
+        `    pin: GPIO${ZONE_PIN[z]}`,
+        `    num_leds: ${L.n}`,
+        `    chipset: WS2812`,
+        `    rgb_order: GRB`,
+        `    is_rgbw: ${zoneRgbw(rig2, z)}`,
+        `    use_psram: true`,
+        `    default_transition_length: 0s`
+      );
+    }
+    if (single) {
+      lines.push(
+        "",
+        "# Every zone is the same colour type, so ONE chain would also work:",
+        `#   num_leds: ${ZONE_DECL.reduce((n, z) => n + zoneLayout(rig2, z).n, 0)}`,
+        ...ZONE_DECL.map((z) => `#   ${z}: ${ranges[z][0]}\u2013${ranges[z][1]}`),
+        "# Three pins is still the better default: swapping one fixture then",
+        "# renumbers nothing else. See docs/WIRING.md \xA71."
+      );
+    }
+    const { amps } = rigPower(rig2);
+    lines.push(
+      "",
+      `# Peak draw ${amps.toFixed(1)} A for the pixels at full white, plus about`,
+      `# ${AUDIO_AMPS.toFixed(1)} A for the two amps. Size the 5 V supply above`,
+      `# ${Math.ceil((amps + AUDIO_AMPS) * 1.3)} A. See docs/WIRING.md \xA74.`
+    );
+    return lines.join("\n");
+  }
+
   // src/show.ts
   var ZONE_IDS = ["towerL", "towerR", "door"];
-  var PIXELS_PER_ZONE = 7;
   var WHITE = [1, 1, 1, 1];
   var DEFAULT_DECAY = 0.9;
   var perZone = (make) => ({ towerL: make(), towerR: make(), door: make() });
@@ -2782,6 +3295,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       level: perZone(() => 1),
       latency: 70,
       soft: false,
+      layout: perZone(() => layoutOf(fixture(DEFAULT_RIG.zones.towerL.fixture))),
       centerEff: perZone(() => null),
       overlay: perZone(() => 0),
       palette: perZone(() => 0),
@@ -2886,22 +3400,23 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       const ov = st.overlay[id];
       const pix = [];
       const avg = [0, 0, 0];
+      const L = st.layout[id];
       const savedPal = P2.pal;
       P2.pal = pal;
-      for (let p = 0; p < PIXELS_PER_ZONE; p++) {
-        const fn = p === 0 ? centerFn : ringFn;
+      for (let p = 0; p < L.n; p++) {
+        const fn = p === L.center ? centerFn : ringFn;
         let c = fn(tz, pixelSeed(zi, p), P2);
-        c = applyOverlay(ov, c, tz, p, zi);
-        const f = fBase * flashGate(st.flashMode[id], p, zi, st.flashEpoch[id]);
+        c = applyOverlay(ov, c, tz, p, zi, L);
+        const f = fBase * flashGate(st.flashMode[id], p, zi, st.flashEpoch[id], L);
         const lit = [c[0] * lv, c[1] * lv, c[2] * lv, c[3] * lv + f * fc[3]];
         const [sr, sg, sb] = toScreen(lit);
         const r = Math.min(1, sr * P2.bright + f * fc[0]);
         const g = Math.min(1, sg * P2.bright + f * fc[1]);
         const b = Math.min(1, sb * P2.bright + f * fc[2] * 0.96);
         pix.push([r, g, b]);
-        avg[0] += r / PIXELS_PER_ZONE;
-        avg[1] += g / PIXELS_PER_ZONE;
-        avg[2] += b / PIXELS_PER_ZONE;
+        avg[0] += r / L.n;
+        avg[1] += g / L.n;
+        avg[2] += b / L.n;
       }
       P2.pal = savedPal;
       out[id] = { pix, avg };
@@ -3172,7 +3687,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
   };
 
   // src/stage_view.ts
-  var KEY = "castle.stageView";
+  var KEY2 = "castle.stageView";
   var MODES = ["castle", "pixels", "both"];
   var isMode = (v) => v !== null && MODES.includes(v);
   function initStageView() {
@@ -3180,7 +3695,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     if (!sel) return;
     let mode = "both";
     try {
-      const saved = localStorage.getItem(KEY);
+      const saved = localStorage.getItem(KEY2);
       if (isMode(saved)) mode = saved;
     } catch {
     }
@@ -3195,7 +3710,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       if (!isMode(to ?? null)) return;
       mode = to;
       try {
-        localStorage.setItem(KEY, mode);
+        localStorage.setItem(KEY2, mode);
       } catch {
       }
       apply();
@@ -4111,7 +4626,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     for (const v of flux) mx = Math.max(mx, v);
     if (!mx) return [];
     const hits = [];
-    const minGap = minGapSec * sampleRate / hop;
+    const minGap2 = minGapSec * sampleRate / hop;
     const w = Math.max(3, Math.round(0.5 * sampleRate / hop));
     let last = -1e9;
     for (let i = 1; i < n - 1; i++) {
@@ -4122,7 +4637,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       }
       const thr = sum / c + 0.12 * mx;
       if (flux[i] < thr || flux[i] < flux[i - 1] || flux[i] < flux[i + 1]) continue;
-      if (i - last < minGap) continue;
+      if (i - last < minGap2) continue;
       hits.push([+(i * hop / sampleRate).toFixed(3), +(flux[i] / mx).toFixed(3)]);
       last = i;
     }
@@ -6451,7 +6966,13 @@ ${lines.join("\n")}
   var canvas = document.getElementById("stage");
   if (!canvas) throw new Error("no #stage canvas in the page");
   var stage = new Stage(canvas);
-  var insets = new JewelInsets(canvas);
+  var rig = loadRig();
+  function applyRig() {
+    for (const z of ZONE_ORDER) state.layout[z] = zoneLayout(rig, z);
+    insets.setRig(rig);
+    panels.renderChannels(rig);
+  }
+  var insets = new PixelInsets(canvas, rig);
   var designer = createZoneDesigner(() => state);
   var kiosk = new URLSearchParams(location.search).has("kiosk");
   if (!kiosk) initStageView();
@@ -6480,6 +7001,8 @@ ${lines.join("\n")}
   }
   var players = null;
   var panels = new Panels((ms) => transport.seekTo(ms));
+  createRigPanel(rig, { onChange: () => applyRig() });
+  applyRig();
   var budget = initBudget(SCENES);
   var deviceLine = "simulator";
   var deviceOk = true;
