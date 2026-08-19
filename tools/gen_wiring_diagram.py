@@ -148,7 +148,7 @@ header(LEFT, LH, "right")
 header(RIGHT, RH, "left")
 A(f'<text class="note" x="{FX+16}" y="{FY+FH-16}">Both headers end flush here</text>')
 
-net("v5", wire([(RH,py(7)),(1090,py(7)),(1090,RAIL)], "v5"))
+net("v5", wire([(RH,py(7)),(1040,py(7)),(1040,RAIL)], "v5"))
 net("gnd", wire([(LH,py(4)),(LH-44,py(4))], "gnd", width=3))
 A(gnd_sym(LH-44, py(4)))
 
@@ -156,14 +156,46 @@ A(gnd_sym(LH-44, py(4)))
 SX, SY, SW, SH = 484, 288, 142, 186
 A(box(SX, SY, SW, SH, "74AHCT125", "quad buffer"))
 A(f'<path class="notch" d="M{SX+SW/2-11} {SY} a11 11 0 0 0 22 0"/>')
-A(f'<text class="note" x="{SX+15}" y="{SY+74}">3.3 V in, 5 V out.</text>'
-  f'<text class="note" x="{SX+15}" y="{SY+90}">A pixel needs 3.5 V</text>'
-  f'<text class="note" x="{SX+15}" y="{SY+106}">to read a 1.</text>'
+A(f'<text class="note" x="{SX+SW/2}" y="{SY+86}" text-anchor="middle">3.3 V in → 5 V out</text>'
+  f'<text class="note" x="{SX+SW/2}" y="{SY+102}" text-anchor="middle">pin map far right →</text>'
   f'<text class="note" x="{SX+15}" y="{SY+178}">4OE→5 V, 4A→GND</text>')
 net("v5", wire([(SX+SW/2,SY),(SX+SW/2,RAIL)], "v5") + f'<circle class="pad pad--v5" cx="{SX+SW/2}" cy="{SY}" r="5"/>'
     + f'<text class="pinsub" x="{SX+SW/2+11}" y="{SY-11}">pin 14</text>')
 A(gnd_sym(SX+SW/2, SY+SH))
 A(f'<text class="pinsub" x="{SX+SW/2+15}" y="{SY+SH+20}">pin 7 · 1OE 2OE 3OE</text>')
+
+# ── The chip itself — what the schematic's 74AHCT125 box looks like in
+# your hand. Pins 1-7 down the left, 14-8 back up the right, notch at top.
+IX, IY, IW, IP = 1120, 128, 72, 24
+DIPL = [("1OE","gnd"),("1A","dL"),("1Y","dL"),("2OE","gnd"),("2A","dD"),
+        ("2Y","dD"),("GND","gnd")]                     # pins 1..7
+DIPR = [("VCC","v5"),("4OE","v5"),("4A","gnd"),("4Y",None),("3OE","gnd"),
+        ("3A","dR"),("3Y","dR")]                       # pins 14..8
+IH = 7*IP + 20
+A(f'<text class="modttl" x="{IX+IW/2}" y="{IY-32}" text-anchor="middle">THE CHIP ITSELF</text>')
+A(f'<text class="modsub" x="{IX+IW/2}" y="{IY-16}" text-anchor="middle">74AHCT125 · top view</text>')
+A(f'<rect class="mod" x="{IX}" y="{IY}" width="{IW}" height="{IH}" rx="8"/>')
+A(f'<path class="notch" d="M{IX+IW/2-9} {IY} a9 9 0 0 0 18 0"/>')
+for i in range(7):
+    yl = IY + 22 + i*IP
+    for onright, (nm, netid), num in ((0, DIPL[i], i+1), (1, DIPR[i], 14-i)):
+        bx = IX+IW if onright else IX-9
+        tx, anch = (IX+IW+16, "start") if onright else (IX-16, "end")
+        nx = IX+IW+42 if onright else IX-42
+        stub = f'<rect class="{"pad--"+netid if netid else "rpk"}" x="{bx}" y="{yl-3}" width="9" height="6"/>'
+        num_t = f'<text class="hnum" x="{tx}" y="{yl+4}" text-anchor="{anch}">{num}</text>'
+        name = (f'<text class="pinsub" x="{nx}" y="{yl+4}" text-anchor="{anch}"'
+                + (f' style="fill:var(--{netid})"' if netid else '')
+                + f'>{esc(nm)}{"" if netid else " · n/c"}</text>')
+        A(f'<g class="net" data-net="{netid}">{stub}{num_t}{name}</g>' if netid
+          else stub+num_t+name)
+CAP14 = ["Hold it notch-up — the indent",
+         "at the top: pin 1 is top-left;",
+         "numbers run down the left side,",
+         "1-7, back up the right, 8-14.",
+         "Some chips add a dot at pin 1."]
+for i, ln in enumerate(CAP14):
+    A(f'<text class="note" x="{IX+IW/2}" y="{IY+IH+24+i*15}" text-anchor="middle">{esc(ln)}</text>')
 
 # ── Fixtures ─────────────────────────────────────────────────────────────
 BX, BW, BH = 124, 300, 140
@@ -200,8 +232,8 @@ for by,name,n,kind,capt,vx,sy in FIX:
         + f'<g class="res">{resistor((vx+BX+BW)/2, cy, "470 Ω")}</g>')
 net("v5", wire([(V5B,RAIL),(V5B,py(9)+BH/2-52)], "v5"))
 for i,sy in enumerate((py(5),py(7),py(9))):
-    A(f'<text class="pinsub" x="{SX+SW+11}" y="{sy-10}">{["1A","2A","3A"][i]}</text>')
-    A(f'<text class="pinsub" x="{SX-11}" y="{sy-10}" text-anchor="end">{["1Y","2Y","3Y"][i]}</text>')
+    A(f'<text class="pinsub" x="{SX+SW+11}" y="{sy-10}">{["2 · 1A","5 · 2A","9 · 3A"][i]}</text>')
+    A(f'<text class="pinsub" x="{SX-11}" y="{sy-10}" text-anchor="end">{["1Y · 3","2Y · 6","3Y · 8"][i]}</text>')
 
 # ── Amplifiers ───────────────────────────────────────────────────────────
 # Each I2S signal is drawn as a BUS: one horizontal, a junction dot where it

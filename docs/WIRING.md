@@ -179,6 +179,13 @@ GND│7             8│3Y
    └───────────────┘
 ```
 
+The `∪` at the top is the **notch** — a half-moon indent moulded into one
+end of the package. That is how you orient it: hold the chip **notch-up**
+and pin 1 is **top-left**, with the numbers running *down* the left side
+(1-7) and back *up* the right (8-14). Some packages also mark pin 1 with a
+small dimple or dot in the corner. There is no other correct rotation —
+powered backwards, VCC and GND swap and the chip dies warm.
+
 | Wire | From | To |
 |---|---|---|
 | power | 5 V bus | pin 14 (VCC) |

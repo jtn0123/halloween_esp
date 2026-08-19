@@ -288,15 +288,38 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 <text class="hgpio" x="970" y="657" text-anchor="end">GPIO3</text>
 <text class="hnum" x="1004" y="650" text-anchor="middle">16</text>
 <text class="note" x="756" y="666">Both headers end flush here</text>
-<g class="net" data-net="v5"><path class="w w--v5" d="M984 376 L1090 376 L1090 56" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="net" data-net="v5"><path class="w w--v5" d="M984 376 L1040 376 L1040 56" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
 <g class="net" data-net="gnd"><path class="w w--gnd" d="M740 286 L696 286" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g>
 <g class="net" data-net="gnd"><line class="w w--gnd" x1="696" y1="286" x2="696" y2="299" stroke-width="3"/><line class="gb" x1="683" y1="299" x2="709" y2="299"/><line class="gb" x1="688" y1="304" x2="704" y2="304"/><line class="gb" x1="693" y1="309" x2="699" y2="309"/></g>
 <rect class="mod" x="484" y="288" width="142" height="186" rx="10"/><text class="modttl" x="500" y="315">74AHCT125</text><text class="modsub" x="500" y="333">quad buffer</text>
 <path class="notch" d="M544.0 288 a11 11 0 0 0 22 0"/>
-<text class="note" x="499" y="362">3.3 V in, 5 V out.</text><text class="note" x="499" y="378">A pixel needs 3.5 V</text><text class="note" x="499" y="394">to read a 1.</text><text class="note" x="499" y="466">4OE&#8594;5 V, 4A&#8594;GND</text>
+<text class="note" x="555.0" y="374" text-anchor="middle">3.3 V in &#8594; 5 V out</text><text class="note" x="555.0" y="390" text-anchor="middle">pin map far right &#8594;</text><text class="note" x="499" y="466">4OE&#8594;5 V, 4A&#8594;GND</text>
 <g class="net" data-net="v5"><path class="w w--v5" d="M555.0 288 L555.0 56" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--v5" cx="555.0" cy="288" r="5"/><text class="pinsub" x="566.0" y="277">pin 14</text></g>
 <g class="net" data-net="gnd"><line class="w w--gnd" x1="555.0" y1="474" x2="555.0" y2="487" stroke-width="3"/><line class="gb" x1="542.0" y1="487" x2="568.0" y2="487"/><line class="gb" x1="547.0" y1="492" x2="563.0" y2="492"/><line class="gb" x1="552.0" y1="497" x2="558.0" y2="497"/></g>
 <text class="pinsub" x="570.0" y="494">pin 7 &#183; 1OE 2OE 3OE</text>
+<text class="modttl" x="1156.0" y="96" text-anchor="middle">THE CHIP ITSELF</text>
+<text class="modsub" x="1156.0" y="112" text-anchor="middle">74AHCT125 &#183; top view</text>
+<rect class="mod" x="1120" y="128" width="72" height="188" rx="8"/>
+<path class="notch" d="M1147.0 128 a9 9 0 0 0 18 0"/>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="147" width="9" height="6"/><text class="hnum" x="1104" y="154" text-anchor="end">1</text><text class="pinsub" x="1078" y="154" text-anchor="end" style="fill:var(--gnd)">1OE</text></g>
+<g class="net" data-net="v5"><rect class="pad--v5" x="1192" y="147" width="9" height="6"/><text class="hnum" x="1208" y="154" text-anchor="start">14</text><text class="pinsub" x="1234" y="154" text-anchor="start" style="fill:var(--v5)">VCC</text></g>
+<g class="net" data-net="dL"><rect class="pad--dL" x="1111" y="171" width="9" height="6"/><text class="hnum" x="1104" y="178" text-anchor="end">2</text><text class="pinsub" x="1078" y="178" text-anchor="end" style="fill:var(--dL)">1A</text></g>
+<g class="net" data-net="v5"><rect class="pad--v5" x="1192" y="171" width="9" height="6"/><text class="hnum" x="1208" y="178" text-anchor="start">13</text><text class="pinsub" x="1234" y="178" text-anchor="start" style="fill:var(--v5)">4OE</text></g>
+<g class="net" data-net="dL"><rect class="pad--dL" x="1111" y="195" width="9" height="6"/><text class="hnum" x="1104" y="202" text-anchor="end">3</text><text class="pinsub" x="1078" y="202" text-anchor="end" style="fill:var(--dL)">1Y</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1192" y="195" width="9" height="6"/><text class="hnum" x="1208" y="202" text-anchor="start">12</text><text class="pinsub" x="1234" y="202" text-anchor="start" style="fill:var(--gnd)">4A</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="219" width="9" height="6"/><text class="hnum" x="1104" y="226" text-anchor="end">4</text><text class="pinsub" x="1078" y="226" text-anchor="end" style="fill:var(--gnd)">2OE</text></g>
+<rect class="rpk" x="1192" y="219" width="9" height="6"/><text class="hnum" x="1208" y="226" text-anchor="start">11</text><text class="pinsub" x="1234" y="226" text-anchor="start">4Y &#183; n/c</text>
+<g class="net" data-net="dD"><rect class="pad--dD" x="1111" y="243" width="9" height="6"/><text class="hnum" x="1104" y="250" text-anchor="end">5</text><text class="pinsub" x="1078" y="250" text-anchor="end" style="fill:var(--dD)">2A</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1192" y="243" width="9" height="6"/><text class="hnum" x="1208" y="250" text-anchor="start">10</text><text class="pinsub" x="1234" y="250" text-anchor="start" style="fill:var(--gnd)">3OE</text></g>
+<g class="net" data-net="dD"><rect class="pad--dD" x="1111" y="267" width="9" height="6"/><text class="hnum" x="1104" y="274" text-anchor="end">6</text><text class="pinsub" x="1078" y="274" text-anchor="end" style="fill:var(--dD)">2Y</text></g>
+<g class="net" data-net="dR"><rect class="pad--dR" x="1192" y="267" width="9" height="6"/><text class="hnum" x="1208" y="274" text-anchor="start">9</text><text class="pinsub" x="1234" y="274" text-anchor="start" style="fill:var(--dR)">3A</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="291" width="9" height="6"/><text class="hnum" x="1104" y="298" text-anchor="end">7</text><text class="pinsub" x="1078" y="298" text-anchor="end" style="fill:var(--gnd)">GND</text></g>
+<g class="net" data-net="dR"><rect class="pad--dR" x="1192" y="291" width="9" height="6"/><text class="hnum" x="1208" y="298" text-anchor="start">8</text><text class="pinsub" x="1234" y="298" text-anchor="start" style="fill:var(--dR)">3Y</text></g>
+<text class="note" x="1156.0" y="340" text-anchor="middle">Hold it notch-up &#8212; the indent</text>
+<text class="note" x="1156.0" y="355" text-anchor="middle">at the top: pin 1 is top-left;</text>
+<text class="note" x="1156.0" y="370" text-anchor="middle">numbers run down the left side,</text>
+<text class="note" x="1156.0" y="385" text-anchor="middle">1-7, back up the right, 8-14.</text>
+<text class="note" x="1156.0" y="400" text-anchor="middle">Some chips add a dot at pin 1.</text>
 <rect class="mod" x="124" y="104" width="300" height="140" rx="10"/><text class="modttl" x="140" y="131">Tower L</text><text class="modsub" x="140" y="149">Jewel 7 &#183; RGBW</text>
 <g class="pxg"><circle class="px" cx="330" cy="184.0" r="8"/><circle class="px" cx="330.0" cy="155.0" r="8"/><circle class="px" cx="355.1" cy="169.5" r="8"/><circle class="px" cx="355.1" cy="198.5" r="8"/><circle class="px" cx="330.0" cy="213.0" r="8"/><circle class="px" cx="304.9" cy="198.5" r="8"/><circle class="px" cx="304.9" cy="169.5" r="8"/></g>
 <circle class="pad pad--dL" cx="424" cy="174.0" r="5"/>
@@ -331,12 +354,12 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 <g class="net" data-net="v5"><line class="cwire" x1="100" y1="532" x2="100" y2="553.0"/><line class="cpl" x1="87" y1="553.0" x2="113" y2="553.0"/><line class="cpl" x1="87" y1="563.0" x2="113" y2="563.0"/><line class="cwire" x1="100" y1="563.0" x2="100" y2="584"/></g>
 <g class="net" data-net="dR"><path class="w w--dR" d="M740 436 L626 436" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dR" cx="626" cy="436" r="5"/><path class="w w--dR" d="M484 436 L462 436 L462 558.0 L424 558.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dR" cx="484" cy="436" r="5"/><g class="res"><rect class="rpk" x="428.0" y="551.0" width="30" height="14" rx="3"/><text class="rlbl" x="443.0" y="545.0" text-anchor="middle">470 &#937;</text></g></g>
 <g class="net" data-net="v5"><path class="w w--v5" d="M28 56 L28 454.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
-<text class="pinsub" x="637" y="306">1A</text>
-<text class="pinsub" x="473" y="306" text-anchor="end">1Y</text>
-<text class="pinsub" x="637" y="366">2A</text>
-<text class="pinsub" x="473" y="366" text-anchor="end">2Y</text>
-<text class="pinsub" x="637" y="426">3A</text>
-<text class="pinsub" x="473" y="426" text-anchor="end">3Y</text>
+<text class="pinsub" x="637" y="306">2 &#183; 1A</text>
+<text class="pinsub" x="473" y="306" text-anchor="end">1Y &#183; 3</text>
+<text class="pinsub" x="637" y="366">5 &#183; 2A</text>
+<text class="pinsub" x="473" y="366" text-anchor="end">2Y &#183; 6</text>
+<text class="pinsub" x="637" y="426">9 &#183; 3A</text>
+<text class="pinsub" x="473" y="426" text-anchor="end">3Y &#183; 8</text>
 <rect class="mod" x="470" y="792" width="190" height="128" rx="10"/><text class="modttl" x="486" y="819">Amp A</text>
 <text class="modsub fb-only" x="486" y="837">MAX98357A &#183; left channel</text><text class="modsub fl-only" x="486" y="837">MAX98357A &#183; (L+R)/2</text>
 <circle class="pad pad--i2s" cx="492" cy="792" r="4.5"/>
@@ -409,9 +432,9 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
       <tbody>
         <tr><td><span class="tag"><i class="sw" style="background:var(--v5)"></i>+5 V</span></td><td class="m">Supply +</td><td class="m">Rail &#8594; Feather USB, 74AHCT125 pin 14, both amp VIN, all three fixtures</td><td class="m">right</td></tr>
         <tr><td><span class="tag"><i class="sw" style="background:var(--gnd)"></i>GND</span></td><td class="m">Supply &#8722;</td><td class="m">Rail &#8594; Feather GND, pin 7 + 1OE 2OE 3OE, both amp GND, all three fixtures</td><td class="m">left</td></tr>
-        <tr><td><span class="tag"><i class="sw" style="background:var(--dL)"></i>Tower L</span></td><td class="m">A0 &#183; GPIO18</td><td class="m">1A &#8594; 1Y &#8594; 470 &#937; &#8594; DIN</td><td class="m">left</td></tr>
-        <tr><td><span class="tag"><i class="sw" style="background:var(--dD)"></i>Doorway</span></td><td class="m">A2 &#183; GPIO16</td><td class="m">2A &#8594; 2Y &#8594; 470 &#937; &#8594; DIN</td><td class="m">left</td></tr>
-        <tr><td><span class="tag"><i class="sw" style="background:var(--dR)"></i>Tower R</span></td><td class="m">A4 &#183; GPIO14</td><td class="m">3A &#8594; 3Y &#8594; 470 &#937; &#8594; DIN</td><td class="m">left</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--dL)"></i>Tower L</span></td><td class="m">A0 &#183; GPIO18</td><td class="m">1A (leg 2) &#8594; 1Y (leg 3) &#8594; 470 &#937; &#8594; DIN</td><td class="m">left</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--dD)"></i>Doorway</span></td><td class="m">A2 &#183; GPIO16</td><td class="m">2A (leg 5) &#8594; 2Y (leg 6) &#8594; 470 &#937; &#8594; DIN</td><td class="m">left</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--dR)"></i>Tower R</span></td><td class="m">A4 &#183; GPIO14</td><td class="m">3A (leg 9) &#8594; 3Y (leg 8) &#8594; 470 &#937; &#8594; DIN</td><td class="m">left</td></tr>
         <tr><td><span class="tag"><i class="sw" style="background:var(--i2s)"></i>DIN</span></td><td class="m">A3 &#183; GPIO15</td><td class="m">Amp A DIN, bridged to Amp B</td><td class="m">left</td></tr>
         <tr><td><span class="tag"><i class="sw" style="background:var(--i2s)"></i>BCLK</span></td><td class="m">D11 &#183; GPIO11</td><td class="m">Amp A BCLK, bridged to Amp B</td><td class="m">right</td></tr>
         <tr><td><span class="tag"><i class="sw" style="background:var(--i2s)"></i>LRC</span></td><td class="m">D12 &#183; GPIO12</td><td class="m">Amp A LRC, bridged to Amp B</td><td class="m">right</td></tr>
