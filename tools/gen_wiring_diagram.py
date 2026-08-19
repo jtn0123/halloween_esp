@@ -170,9 +170,12 @@ BX, BW, BH = 124, 300, 140
 V5B = 28
 # The rig as built for first light: two Jewels in the towers, the Ring 12
 # in the doorway. scenes/scenes.yaml `zones:` is the source of truth.
-FIX = [(104,"Tower L","dL","jewel","Jewel 7 · RGBW",456,py(5)),
-       (296,"Doorway","dD","ring12","Ring 12 · RGBW",440,py(7)),
-       (488,"Tower R","dR","jewel","Jewel 7 · RGBW",424,py(9))]
+# vx staggers the three verticals in the channel between the fixtures and
+# the shifter; each 470 Ω pill then centres on the last horizontal run into
+# DIN — the fixture end of the cable, where the guide says it belongs.
+FIX = [(104,"Tower L","dL","jewel","Jewel 7 · RGBW",478,py(5)),
+       (296,"Doorway","dD","ring12","Ring 12 · RGBW",470,py(7)),
+       (488,"Tower R","dR","jewel","Jewel 7 · RGBW",462,py(9))]
 for by,name,n,kind,capt,vx,sy in FIX:
     cy = by+BH/2
     A(box(BX, by, BW, BH, name, capt))
@@ -194,7 +197,7 @@ for by,name,n,kind,capt,vx,sy in FIX:
         + f'<circle class="pad pad--{n}" cx="{SX+SW}" cy="{sy}" r="5"/>'
         + wire([(SX,sy),(vx,sy),(vx,cy),(BX+BW,cy)], n)
         + f'<circle class="pad pad--{n}" cx="{SX}" cy="{sy}" r="5"/>'
-        + resistor((vx+BX+BW)/2, cy, "470 Ω"))
+        + f'<g class="res">{resistor((vx+BX+BW)/2, cy, "470 Ω")}</g>')
 net("v5", wire([(V5B,RAIL),(V5B,py(9)+BH/2-52)], "v5"))
 for i,sy in enumerate((py(5),py(7),py(9))):
     A(f'<text class="pinsub" x="{SX+SW+11}" y="{sy-10}">{["1A","2A","3A"][i]}</text>')
@@ -214,15 +217,19 @@ PADS_A = {"DIN":492,"LRC":516,"BCLK":540,"GAIN":564,"SD":588,"GND":612,"VIN":636
 PADS_B = {"DIN":922,"LRC":946,"BCLK":970,"GAIN":994,"SD":1018,"GND":1042,"VIN":1066}
 
 for ax, nm, pads in ((AMP_A,"Amp A",PADS_A), (AMP_B,"Amp B",PADS_B)):
-    A(box(ax, AY, AW, AH, nm, "MAX98357A · left channel"))
+    A(box(ax, AY, AW, AH, nm))
+    A(f'<text class="modsub fb-only" x="{ax+16}" y="{AY+45}">MAX98357A · left channel</text>'
+      f'<text class="modsub fl-only" x="{ax+16}" y="{AY+45}">MAX98357A · (L+R)/2</text>')
     for p_, x_ in pads.items():
         c = {"LRC":"i2s","BCLK":"i2s","DIN":"i2s","SD":"v5","VIN":"v5",
              "GND":"gnd","GAIN":"free"}[p_]
         A(f'<circle class="pad pad--{c}" cx="{x_}" cy="{AY}" r="4.5"/>')
         A(f'<text class="amppin" x="{x_}" y="{AY+16}" text-anchor="middle">{p_}</text>')
     net("v5", wire([(pads["VIN"],AY),(pads["VIN"],SPUR)], "v5"))
-    net("v5", wire([(pads["SD"],AY),(pads["SD"],SPUR)], "v5", width=2.4)
-        + resistor(pads["SD"], (AY+SPUR)/2, "100 kΩ", True, pads["SD"]+11, (AY+SPUR)/2+4))
+    net("v5", '<g class="res">'
+        + wire([(pads["SD"],AY),(pads["SD"],SPUR)], "v5", width=2.4)
+        + resistor(pads["SD"], (AY+SPUR)/2, "100 kΩ", True, pads["SD"]+11, (AY+SPUR)/2+4)
+        + '</g>')
     net("gnd", wire([(pads["GND"],AY+AH),(pads["GND"],AY+AH+16)], "gnd"))
     A(gnd_sym(pads["GND"], AY+AH+16))
     # Speaker, bridge-tied: both terminals swing, neither is ground.
@@ -238,7 +245,8 @@ for ax, nm, pads in ((AMP_A,"Amp A",PADS_A), (AMP_B,"Amp B",PADS_B)):
         + f'<text class="pinsub" x="{sx-10}" y="{AY+87}" text-anchor="end">\u2212</text>')
 
 A(f'<text class="note" x="{AMP_A}" y="{AY+AH+58}">The breakout\u2019s own pin row reads LRC BCLK DIN GAIN SD GND VIN; pads are placed here for routing.</text>')
-A(f'<text class="note" x="{AMP_A}" y="{AY+AH+74}">GAIN left open = 9 dB. SD pulled to 5 V selects the LEFT channel \u2014 full level on a mono stream.</text>')
+A(f'<text class="note fb-only" x="{AMP_A}" y="{AY+AH+74}">GAIN left open = 9 dB. SD pulled to 5 V selects the LEFT channel \u2014 full level on a mono stream.</text>')
+A(f'<text class="note fl-only" x="{AMP_A}" y="{AY+AH+74}">GAIN left open = 9 dB. SD left EMPTY = (L+R)/2 \u2014 both amps play the mono show, at most 6 dB quieter.</text>')
 
 # 5 V spur, hopping every signal drop that crosses it.
 drops = sorted([PADS_A[k] for k in ("DIN","LRC","BCLK")]

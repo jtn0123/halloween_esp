@@ -100,6 +100,8 @@ svg.schem{display:block;min-width:1120px;width:100%;height:auto}
 .buslbl{fill:var(--i2s);font:600 10.5px var(--f-data)}
 .net{transition:opacity .18s}
 [data-focus] .net{opacity:.09}
+[data-build="first"] .res,[data-build="first"] .fb-only{display:none}
+svg.schem:not([data-build="first"]) .fl-only{display:none}
 [data-focus="power"] .net[data-grp="power"],
 [data-focus="data"] .net[data-grp="data"],
 [data-focus="audio"] .net[data-grp="audio"]{opacity:1}
@@ -169,6 +171,9 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
       <i class="sw" style="background:var(--dL)"></i><i class="sw" style="background:var(--dD)"></i><i class="sw" style="background:var(--dR)"></i>Pixel data</button>
     <button class="chip" data-focus="audio" aria-pressed="false">
       <i class="sw" style="background:var(--i2s)"></i>Audio</button>
+    <span class="lbl" style="margin-left:18px">Build</span>
+    <button class="chip" data-build="" aria-pressed="true">Full</button>
+    <button class="chip" data-build="first" aria-pressed="false">First light &#183; no resistors</button>
   </div>
   <div class="sheet">
     <svg class="schem" id="schem" viewBox="0 0 1380 1030" role="img"
@@ -302,7 +307,7 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 <g class="net" data-net="gnd"><path class="w w--gnd" d="M124 200 L56 200" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
 <g class="net" data-net="gnd"><line class="w w--gnd" x1="56" y1="200" x2="56" y2="213" stroke-width="3"/><line class="gb" x1="43" y1="213" x2="69" y2="213"/><line class="gb" x1="48" y1="218" x2="64" y2="218"/><line class="gb" x1="53" y1="223" x2="59" y2="223"/></g>
 <g class="net" data-net="v5"><line class="cwire" x1="100" y1="148" x2="100" y2="169.0"/><line class="cpl" x1="87" y1="169.0" x2="113" y2="169.0"/><line class="cpl" x1="87" y1="179.0" x2="113" y2="179.0"/><line class="cwire" x1="100" y1="179.0" x2="100" y2="200"/></g>
-<g class="net" data-net="dL"><path class="w w--dL" d="M740 316 L626 316" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dL" cx="626" cy="316" r="5"/><path class="w w--dL" d="M484 316 L456 316 L456 174.0 L424 174.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dL" cx="484" cy="316" r="5"/><rect class="rpk" x="425.0" y="167.0" width="30" height="14" rx="3"/><text class="rlbl" x="440.0" y="161.0" text-anchor="middle">470 &#937;</text></g>
+<g class="net" data-net="dL"><path class="w w--dL" d="M740 316 L626 316" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dL" cx="626" cy="316" r="5"/><path class="w w--dL" d="M484 316 L478 316 L478 174.0 L424 174.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dL" cx="484" cy="316" r="5"/><g class="res"><rect class="rpk" x="436.0" y="167.0" width="30" height="14" rx="3"/><text class="rlbl" x="451.0" y="161.0" text-anchor="middle">470 &#937;</text></g></g>
 <rect class="mod" x="124" y="296" width="300" height="140" rx="10"/><text class="modttl" x="140" y="323">Doorway</text><text class="modsub" x="140" y="341">Ring 12 &#183; RGBW</text>
 <g class="pxg"><circle class="px" cx="330.0" cy="338.0" r="6.5"/><circle class="px" cx="349.0" cy="343.1" r="6.5"/><circle class="px" cx="362.9" cy="357.0" r="6.5"/><circle class="px" cx="368.0" cy="376.0" r="6.5"/><circle class="px" cx="362.9" cy="395.0" r="6.5"/><circle class="px" cx="349.0" cy="408.9" r="6.5"/><circle class="px" cx="330.0" cy="414.0" r="6.5"/><circle class="px" cx="311.0" cy="408.9" r="6.5"/><circle class="px" cx="297.1" cy="395.0" r="6.5"/><circle class="px" cx="292.0" cy="376.0" r="6.5"/><circle class="px" cx="297.1" cy="357.0" r="6.5"/><circle class="px" cx="311.0" cy="343.1" r="6.5"/></g>
 <circle class="pad pad--dD" cx="424" cy="366.0" r="5"/>
@@ -313,7 +318,7 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 <g class="net" data-net="gnd"><path class="w w--gnd" d="M124 392 L56 392" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
 <g class="net" data-net="gnd"><line class="w w--gnd" x1="56" y1="392" x2="56" y2="405" stroke-width="3"/><line class="gb" x1="43" y1="405" x2="69" y2="405"/><line class="gb" x1="48" y1="410" x2="64" y2="410"/><line class="gb" x1="53" y1="415" x2="59" y2="415"/></g>
 <g class="net" data-net="v5"><line class="cwire" x1="100" y1="340" x2="100" y2="361.0"/><line class="cpl" x1="87" y1="361.0" x2="113" y2="361.0"/><line class="cpl" x1="87" y1="371.0" x2="113" y2="371.0"/><line class="cwire" x1="100" y1="371.0" x2="100" y2="392"/></g>
-<g class="net" data-net="dD"><path class="w w--dD" d="M740 376 L626 376" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dD" cx="626" cy="376" r="5"/><path class="w w--dD" d="M484 376 L440 376 L440 366.0 L424 366.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dD" cx="484" cy="376" r="5"/><rect class="rpk" x="417.0" y="359.0" width="30" height="14" rx="3"/><text class="rlbl" x="432.0" y="353.0" text-anchor="middle">470 &#937;</text></g>
+<g class="net" data-net="dD"><path class="w w--dD" d="M740 376 L626 376" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dD" cx="626" cy="376" r="5"/><path class="w w--dD" d="M484 376 L470 376 L470 366.0 L424 366.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dD" cx="484" cy="376" r="5"/><g class="res"><rect class="rpk" x="432.0" y="359.0" width="30" height="14" rx="3"/><text class="rlbl" x="447.0" y="353.0" text-anchor="middle">470 &#937;</text></g></g>
 <rect class="mod" x="124" y="488" width="300" height="140" rx="10"/><text class="modttl" x="140" y="515">Tower R</text><text class="modsub" x="140" y="533">Jewel 7 &#183; RGBW</text>
 <g class="pxg"><circle class="px" cx="330" cy="568.0" r="8"/><circle class="px" cx="330.0" cy="539.0" r="8"/><circle class="px" cx="355.1" cy="553.5" r="8"/><circle class="px" cx="355.1" cy="582.5" r="8"/><circle class="px" cx="330.0" cy="597.0" r="8"/><circle class="px" cx="304.9" cy="582.5" r="8"/><circle class="px" cx="304.9" cy="553.5" r="8"/></g>
 <circle class="pad pad--dR" cx="424" cy="558.0" r="5"/>
@@ -324,7 +329,7 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 <g class="net" data-net="gnd"><path class="w w--gnd" d="M124 584 L56 584" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
 <g class="net" data-net="gnd"><line class="w w--gnd" x1="56" y1="584" x2="56" y2="597" stroke-width="3"/><line class="gb" x1="43" y1="597" x2="69" y2="597"/><line class="gb" x1="48" y1="602" x2="64" y2="602"/><line class="gb" x1="53" y1="607" x2="59" y2="607"/></g>
 <g class="net" data-net="v5"><line class="cwire" x1="100" y1="532" x2="100" y2="553.0"/><line class="cpl" x1="87" y1="553.0" x2="113" y2="553.0"/><line class="cpl" x1="87" y1="563.0" x2="113" y2="563.0"/><line class="cwire" x1="100" y1="563.0" x2="100" y2="584"/></g>
-<g class="net" data-net="dR"><path class="w w--dR" d="M740 436 L626 436" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dR" cx="626" cy="436" r="5"/><path class="w w--dR" d="M484 436 L424 436 L424 558.0 L424 558.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dR" cx="484" cy="436" r="5"/><rect class="rpk" x="409.0" y="551.0" width="30" height="14" rx="3"/><text class="rlbl" x="424.0" y="545.0" text-anchor="middle">470 &#937;</text></g>
+<g class="net" data-net="dR"><path class="w w--dR" d="M740 436 L626 436" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dR" cx="626" cy="436" r="5"/><path class="w w--dR" d="M484 436 L462 436 L462 558.0 L424 558.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dR" cx="484" cy="436" r="5"/><g class="res"><rect class="rpk" x="428.0" y="551.0" width="30" height="14" rx="3"/><text class="rlbl" x="443.0" y="545.0" text-anchor="middle">470 &#937;</text></g></g>
 <g class="net" data-net="v5"><path class="w w--v5" d="M28 56 L28 454.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
 <text class="pinsub" x="637" y="306">1A</text>
 <text class="pinsub" x="473" y="306" text-anchor="end">1Y</text>
@@ -332,7 +337,8 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 <text class="pinsub" x="473" y="366" text-anchor="end">2Y</text>
 <text class="pinsub" x="637" y="426">3A</text>
 <text class="pinsub" x="473" y="426" text-anchor="end">3Y</text>
-<rect class="mod" x="470" y="792" width="190" height="128" rx="10"/><text class="modttl" x="486" y="819">Amp A</text><text class="modsub" x="486" y="837">MAX98357A &#183; left channel</text>
+<rect class="mod" x="470" y="792" width="190" height="128" rx="10"/><text class="modttl" x="486" y="819">Amp A</text>
+<text class="modsub fb-only" x="486" y="837">MAX98357A &#183; left channel</text><text class="modsub fl-only" x="486" y="837">MAX98357A &#183; (L+R)/2</text>
 <circle class="pad pad--i2s" cx="492" cy="792" r="4.5"/>
 <text class="amppin" x="492" y="808" text-anchor="middle">DIN</text>
 <circle class="pad pad--i2s" cx="516" cy="792" r="4.5"/>
@@ -348,12 +354,13 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 <circle class="pad pad--v5" cx="636" cy="792" r="4.5"/>
 <text class="amppin" x="636" y="808" text-anchor="middle">VIN</text>
 <g class="net" data-net="v5"><path class="w w--v5" d="M636 792 L636 754" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
-<g class="net" data-net="v5"><path class="w w--v5" d="M588 792 L588 754" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><rect class="rpk" x="581" y="758.0" width="14" height="30" rx="3"/><text class="rlbl" x="599" y="777.0" text-anchor="start">100 k&#937;</text></g>
+<g class="net" data-net="v5"><g class="res"><path class="w w--v5" d="M588 792 L588 754" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><rect class="rpk" x="581" y="758.0" width="14" height="30" rx="3"/><text class="rlbl" x="599" y="777.0" text-anchor="start">100 k&#937;</text></g></g>
 <g class="net" data-net="gnd"><path class="w w--gnd" d="M612 920 L612 936" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
 <g class="net" data-net="gnd"><line class="w w--gnd" x1="612" y1="936" x2="612" y2="949" stroke-width="3"/><line class="gb" x1="599" y1="949" x2="625" y2="949"/><line class="gb" x1="604" y1="954" x2="620" y2="954"/><line class="gb" x1="609" y1="959" x2="615" y2="959"/></g>
 <path class="spk" d="M730 822 l0 68 -30 -20 -16 0 0 -28 16 0 z"/><path class="spkarc" d="M740 828 a26 26 0 0 1 0 56"/><text class="modsub" x="678" y="914">4 &#937; &#183; 3 W</text>
 <g class="net" data-net="spk"><path class="w w--spk" d="M660 842 L700 842" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path class="w w--spk" d="M660 874 L700 874" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--spk" cx="660" cy="842" r="4.5"/><circle class="pad pad--spk" cx="660" cy="874" r="4.5"/><text class="pinsub" x="650" y="838" text-anchor="end">+</text><text class="pinsub" x="650" y="879" text-anchor="end">&#8722;</text></g>
-<rect class="mod" x="900" y="792" width="190" height="128" rx="10"/><text class="modttl" x="916" y="819">Amp B</text><text class="modsub" x="916" y="837">MAX98357A &#183; left channel</text>
+<rect class="mod" x="900" y="792" width="190" height="128" rx="10"/><text class="modttl" x="916" y="819">Amp B</text>
+<text class="modsub fb-only" x="916" y="837">MAX98357A &#183; left channel</text><text class="modsub fl-only" x="916" y="837">MAX98357A &#183; (L+R)/2</text>
 <circle class="pad pad--i2s" cx="922" cy="792" r="4.5"/>
 <text class="amppin" x="922" y="808" text-anchor="middle">DIN</text>
 <circle class="pad pad--i2s" cx="946" cy="792" r="4.5"/>
@@ -369,13 +376,14 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 <circle class="pad pad--v5" cx="1066" cy="792" r="4.5"/>
 <text class="amppin" x="1066" y="808" text-anchor="middle">VIN</text>
 <g class="net" data-net="v5"><path class="w w--v5" d="M1066 792 L1066 754" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
-<g class="net" data-net="v5"><path class="w w--v5" d="M1018 792 L1018 754" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><rect class="rpk" x="1011" y="758.0" width="14" height="30" rx="3"/><text class="rlbl" x="1029" y="777.0" text-anchor="start">100 k&#937;</text></g>
+<g class="net" data-net="v5"><g class="res"><path class="w w--v5" d="M1018 792 L1018 754" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><rect class="rpk" x="1011" y="758.0" width="14" height="30" rx="3"/><text class="rlbl" x="1029" y="777.0" text-anchor="start">100 k&#937;</text></g></g>
 <g class="net" data-net="gnd"><path class="w w--gnd" d="M1042 920 L1042 936" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
 <g class="net" data-net="gnd"><line class="w w--gnd" x1="1042" y1="936" x2="1042" y2="949" stroke-width="3"/><line class="gb" x1="1029" y1="949" x2="1055" y2="949"/><line class="gb" x1="1034" y1="954" x2="1050" y2="954"/><line class="gb" x1="1039" y1="959" x2="1045" y2="959"/></g>
 <path class="spk" d="M1160 822 l0 68 -30 -20 -16 0 0 -28 16 0 z"/><path class="spkarc" d="M1170 828 a26 26 0 0 1 0 56"/><text class="modsub" x="1108" y="914">4 &#937; &#183; 3 W</text>
 <g class="net" data-net="spk"><path class="w w--spk" d="M1090 842 L1130 842" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path class="w w--spk" d="M1090 874 L1130 874" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--spk" cx="1090" cy="842" r="4.5"/><circle class="pad pad--spk" cx="1090" cy="874" r="4.5"/><text class="pinsub" x="1080" y="838" text-anchor="end">+</text><text class="pinsub" x="1080" y="879" text-anchor="end">&#8722;</text></g>
 <text class="note" x="470" y="978">The breakout&#8217;s own pin row reads LRC BCLK DIN GAIN SD GND VIN; pads are placed here for routing.</text>
-<text class="note" x="470" y="994">GAIN left open = 9 dB. SD pulled to 5 V selects the LEFT channel &#8212; full level on a mono stream.</text>
+<text class="note fb-only" x="470" y="994">GAIN left open = 9 dB. SD pulled to 5 V selects the LEFT channel &#8212; full level on a mono stream.</text>
+<text class="note fl-only" x="470" y="994">GAIN left open = 9 dB. SD left EMPTY = (L+R)/2 &#8212; both amps play the mono show, at most 6 dB quieter.</text>
 <g class="net" data-net="v5"><path class="w w--v5" d="M1320 56 L1320 754 L977 754 A7 7 0 0 0 963 754 L953 754 A7 7 0 0 0 939 754 L929 754 A7 7 0 0 0 915 754 L547 754 A7 7 0 0 0 533 754 L523 754 A7 7 0 0 0 509 754 L499 754 A7 7 0 0 0 485 754 L446 754" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
 <text class="raillbl raillbl--v5" x="1330" y="759">5 V SPUR</text>
 <g class="net" data-net="i2s"><path class="w w--i2s" d="M740 406 L712 406 L712 702" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>
@@ -410,7 +418,7 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
         <tr><td><span class="tag"><i class="sw" style="background:var(--v5)"></i>SD</span></td><td class="m">100 k&#937; &#8594; 5 V</td><td class="m">Both amps &#8212; selects <em>left</em>, which is full level on mono</td><td class="m">&#8212;</td></tr>
       </tbody>
     </table>
-    <p class="cap" style="margin-top:12px">No resistors in the parts box yet? For first light on the bench, both kinds are skippable: the 470 &#937;s damp cable reflections, and with every data lead under ~30 cm there are none worth damping &#8212; wire <code>1Y/2Y/3Y</code> straight to <code>DIN</code> and add the resistors (fixture end) when the leads grow into the castle. Leaving the amps' <code>SD</code> unconnected selects (L+R)/2, this show's mono at worst &#8722;6 dB &#8212; the 100 k&#937; to 5 V restores full level later. docs/WIRING.md &#167;0.</p>
+    <p class="cap" style="margin-top:12px">No resistors in the parts box yet? For first light on the bench, both kinds are skippable: the 470 &#937;s damp cable reflections, and with every data lead under ~30 cm there are none worth damping &#8212; wire <code>1Y/2Y/3Y</code> straight to <code>DIN</code> and add the resistors (fixture end) when the leads grow into the castle. Leaving the amps' <code>SD</code> unconnected selects (L+R)/2, this show's mono at worst &#8722;6 dB &#8212; the 100 k&#937; to 5 V restores full level later. The <em>First light</em> toggle above the schematic shows exactly this build. docs/WIRING.md &#167;0.</p>
   </div>
 
   <div class="card">
@@ -486,12 +494,20 @@ Full prose version: <code>docs/WIRING.md</code>.</footer>
   svg.querySelectorAll("g.net").forEach(function(g){
     g.setAttribute("data-grp",GRP[g.getAttribute("data-net")]||"");
   });
-  var chips=Array.prototype.slice.call(document.querySelectorAll(".chip"));
+  var chips=Array.prototype.slice.call(document.querySelectorAll(".chip[data-focus]"));
   chips.forEach(function(c){
     c.addEventListener("click",function(){
       var f=c.getAttribute("data-focus");
       chips.forEach(function(o){o.setAttribute("aria-pressed",String(o===c));});
       if(f){svg.setAttribute("data-focus",f);}else{svg.removeAttribute("data-focus");}
+    });
+  });
+  var modes=Array.prototype.slice.call(document.querySelectorAll(".chip[data-build]"));
+  modes.forEach(function(c){
+    c.addEventListener("click",function(){
+      var m=c.getAttribute("data-build");
+      modes.forEach(function(o){o.setAttribute("aria-pressed",String(o===c));});
+      if(m){svg.setAttribute("data-build",m);}else{svg.removeAttribute("data-build");}
     });
   });
 })();
