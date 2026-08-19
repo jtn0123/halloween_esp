@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import castle_link as cl  # noqa: E402
 import import_track as it  # noqa: E402
 import manifest as mf  # noqa: E402
 import studio  # noqa: E402
@@ -84,7 +85,12 @@ class ServerCase(unittest.TestCase):
         from unittest import mock
         cls.sandbox = Path(tempfile.mkdtemp(prefix="castle-tests-"))
         cls._sandbox_patches = [
-            mock.patch.dict(os.environ, {"CASTLE_TRACKS": str(cls.sandbox)}),
+            # CASTLE_HOST too: the studio now RELAYS unclaimed /api/* calls
+            # to the castle (castle_link.py), and a suite that resolved the
+            # real porch address from devices.toml would be driving live
+            # hardware from the tests. Port 1 refuses instantly.
+            mock.patch.dict(os.environ, {"CASTLE_TRACKS": str(cls.sandbox),
+                                         "CASTLE_HOST": "127.0.0.1:1"}),
             mock.patch.object(studio, "TRACKS", cls.sandbox),
             mock.patch.object(studio_tracks, "TRACKS", cls.sandbox),
             mock.patch.object(it, "TRACKS", cls.sandbox),
@@ -99,6 +105,7 @@ class ServerCase(unittest.TestCase):
         # globbing "*.mp3" made a WAV import vanish from the panel entirely.
         cls.wav = studio.TRACKS / f"{cls.WAV_ID}.wav"
         make_click_track(cls.wav, seconds=2.0)
+        cl._cache.clear()   # no live status leaking between test classes
         cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
         cls.port = cls.srv.server_address[1]
         cls.thread = threading.Thread(target=cls.srv.serve_forever, daemon=True)

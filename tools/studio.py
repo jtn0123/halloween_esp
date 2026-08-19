@@ -37,6 +37,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+import castle_link as cl
 import manifest as mf
 import stems as st
 import studio_http as sh
@@ -127,10 +128,13 @@ class Handler(sh.JsonHandler):
                 d["tracks"] = [track_info(p) for p in track_files()]
             return self.send_json(d)
         if path == "/api/status":
-            # The desk probes this to decide simulator-vs-device mode. A 404
-            # here was correct but noisy (a red line in every console). The
-            # studio answers, marked so device.ts knows it is NOT the castle.
-            return self.send_json({"studio": True})
+            # The desk probes this to decide simulator-vs-device mode. When
+            # the castle answers, relay ITS status — the desk then mirrors
+            # scenes to the hardware while audio stays on this machine
+            # (castle_link.py). Only with no castle in reach does the studio
+            # answer for itself, marked so device.ts knows it is NOT one.
+            live = cl.status()
+            return self.send_json(live or {"studio": True})
         if path == "/api/tracks":
             TRACKS.mkdir(exist_ok=True)
             return self.send_json({
@@ -177,6 +181,8 @@ class Handler(sh.JsonHandler):
             if p is None:
                 return self.send_json({"error": "not found"}, 404)
             return self.send_range(p, MIME[p.suffix.lstrip(".")])
+        if path.startswith("/api/"):
+            return self.relay("GET")
         self.send_json({"error": "not found"}, 404)
 
     def _delete(self):
@@ -189,6 +195,8 @@ class Handler(sh.JsonHandler):
                 mf.forget(tid)
                 return self.send_json({"ok": True, "removed": tid})
             return self.send_json({"error": "not found"}, 404)
+        if path.startswith("/api/"):
+            return self.relay("DELETE")
         self.send_json({"error": "not found"}, 404)
 
     def _post(self):
@@ -284,6 +292,11 @@ class Handler(sh.JsonHandler):
             threading.Thread(target=_restart, daemon=True).start()
             return
         if path == "/api/scene":
+            # ?s=<id> is the castle's fire-a-scene; a JSON body is the
+            # studio's own scenes.yaml editor. Same path, different verb.
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            if q.get("s"):
+                return self.relay("POST", raw)
             return self.do_scene(self.json_body(raw))
         if path == "/api/rebuild":
             with _lock:
@@ -293,7 +306,18 @@ class Handler(sh.JsonHandler):
             ok = ok1 and ok2 and ok3
             return self.send_json({"ok": ok, "log": (o1 + o2 + o3)[-4000:]},
                                   200 if ok else 500)
+        if path.startswith("/api/"):
+            return self.relay("POST", raw)
         self.send_json({"error": "not found"}, 404)
+
+    def relay(self, method: str, body: bytes = b"") -> None:
+        """Hand an unclaimed /api/* request to the castle, answer as it did."""
+        code, out, ctype = cl.forward(method, self.path, body)
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(out)))
+        self.end_headers()
+        self.wfile.write(out)
 
     def do_import(self, raw: bytes):
         ctype = self.headers.get("Content-Type", "")

@@ -144,10 +144,18 @@ class TestReads(ServerCase):
                 self.assertEqual(f.read(), self.wave.read_bytes(), bad)
 
     def test_unknown_routes_are_404_on_every_verb(self) -> None:
+        # Outside /api/ the studio still answers for itself. An unknown
+        # /api/* path is no longer a 404: it relays to the castle
+        # (castle_link.py), and with the fixture's dead CASTLE_HOST that
+        # surfaces as the bridge's 502 — asserted here so the relay-versus-
+        # 404 boundary stays deliberate on every verb.
         for method, data in (("GET", None), ("POST", b"{}"), ("DELETE", None)):
-            code, body = self.req(method, "/api/nope", data)
+            code, body = self.req(method, "/nope", data)
             self.assertEqual(code, 404, method)
             self.assertEqual(json.loads(body)["error"], "not found")
+            code, body = self.req(method, "/api/nope", data)
+            self.assertEqual(code, 502, method)
+            self.assertIn("castle", json.loads(body)["error"])
 
 
 class TestJobs(ServerCase):
