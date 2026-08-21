@@ -203,6 +203,9 @@ const device = deviceBridge({
     adopting = false;
   },
   onStatus: (line, ok) => { deviceLine = line; deviceOk = ok; syncStatus(); },
+  // The chip's SOUND switch. Pressing it is the consent the muted-by-default
+  // rule wants: route Mac unmutes this browser, route castle hushes it.
+  onSoundRoute: (local) => { if (rendered.muted === local) toggleMute(); },
 });
 panels.renderScenes(SCENES, (sc) => {
   transport.loadScene(sc, { play: state.running });
@@ -237,7 +240,13 @@ panels.bindSliders({
 
 /* ── Transport controls ── */
 
-document.getElementById("play")?.addEventListener("click", () => transport.toggle());
+document.getElementById("play")?.addEventListener("click", () => {
+  // ♪ Mac route: pressing Play IS the consent to sound. Without this the
+  // first play ran a silent light show and the operator hunted for the
+  // second, unrelated-looking MUTED button (dogfood 004).
+  if (localStorage.getItem("castleSoundRoute") !== "castle" && rendered.muted) toggleMute();
+  transport.toggle();
+});
 document.getElementById("restart")?.addEventListener("click", () => transport.restart());
 document.getElementById("stop")?.addEventListener("click", () => transport.blackout());
 

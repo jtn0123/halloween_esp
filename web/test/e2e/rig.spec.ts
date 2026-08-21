@@ -25,10 +25,11 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("the desk starts as the castle is actually built", async ({ page }) => {
-  // Three RGBW Jewels: what is soldered, and what scenes.yaml declares.
+  // Two RGBW Jewels + the Ring 12: what is soldered, and what scenes.yaml
+  // declares since the first-light rig landed.
   await expect(page.locator("#rigPanel select").first()).toHaveValue("jewel7");
-  await expect(page.locator("#rigSum")).toContainText("21 pixels");
-  await expect(page.locator("#rigEyebrow")).toHaveText("three zones · 21 px");
+  await expect(page.locator("#rigSum")).toContainText("26 pixels");
+  await expect(page.locator("#rigEyebrow")).toHaveText("three zones · 26 px");
 });
 
 test("swapping a fixture changes the channel strip and the masthead",
@@ -38,7 +39,7 @@ test("swapping a fixture changes the channel strip and the masthead",
     // you want when a window is dark.
     await expect(page.locator("#sub-towerL"))
       .toHaveText("ch 1 · GPIO18 · Ring 16 · 16px RGBW");
-    await expect(page.locator("#rigEyebrow")).toHaveText("three zones · 30 px");
+    await expect(page.locator("#rigEyebrow")).toHaveText("three zones · 35 px");
   });
 
 test("an RGB-only fixture offers no RGBW choice to get wrong",

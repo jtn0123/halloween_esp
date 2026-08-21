@@ -18,6 +18,9 @@ export interface RowCtx {
   selected: boolean;
   inShow: boolean;
   sounding: boolean;
+  /** true/false = is this file on the castle's SD card; null = no castle
+   *  answering, so the row stays quiet rather than claiming "not sent". */
+  onCastle: boolean | null;
 }
 
 export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
@@ -64,6 +67,7 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
   <div class="${cls}" data-id="${esc(t.id)}" title="Click to open the clip editor">
     <div class="trk__nm">${esc(t.id)}
       ${ctx.inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
+      ${ctx.onCastle ? `<span class="trk__badge" title="A copy of this file is on the castle's SD card">on castle ✓</span>` : ""}
       <small>${t.dur ?? "?"}s · ${t.kb} KB · ${fmt}</small>
       <small title="${esc(BAND_HELP)}">${esc(onsets)}</small>
       ${src ? `<small class="trk__src">from ${src}</small>` : ""}
@@ -75,6 +79,7 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
       <button data-act="scene" title="${ctx.inShow ? "Rewrite this scene from the track as it is now" : "Add this track to the show as a new scene"}"
         >${ctx.inShow ? "Update scene" : "Make scene"}</button>
       ${t.source ? `<button data-act="refresh" title="Rebuild from the remembered source using the options above">Re-import</button>` : ""}
+      ${ctx.onCastle !== null ? `<button data-act="send" title="Copy this file onto the castle's SD card over WiFi — it can then play on the castle with zero lag">${ctx.onCastle ? "Re-send" : "→ Castle"}</button>` : ""}
       <button data-act="del" class="danger">Delete</button>
     </div>
   </div>`;

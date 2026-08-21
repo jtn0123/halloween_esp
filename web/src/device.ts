@@ -94,12 +94,24 @@ export interface BridgeOpts {
    * default stands.
    */
   onStatus?: (line: string, ok: boolean) => void;
+  /**
+   * The chip's SOUND switch: one control that routes audio to this browser
+   * (true — castle speaker just went to volume 0) or to the castle (false —
+   * this browser should hush). Pressing the switch IS the consent the
+   * muted-by-default rule wants, so the desk may unmute on `true`.
+   */
+  onSoundRoute?: (local: boolean) => void;
 }
 
 export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   let live = false;
   let mirror = true;
   let lastVol = 70;
+  // Where sound comes out on wiring-day setups: this browser, or the castle's
+  // own amp. Survives reloads — an operator sets it once per bench session.
+  let soundRoute: "mac" | "castle" =
+    localStorage.getItem("castleSoundRoute") === "castle" ? "castle" : "mac";
+  let routeEnforced = false;
   const panel = new DevicePanel();
 
   const chip = document.createElement("div");
@@ -137,11 +149,15 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       `style="width:90px">` +
       `<label style="cursor:pointer;white-space:nowrap">` +
       `<input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}> on castle</label>` +
+      `<button id="devSnd" title="Where sound comes out. Lights always play on the castle." ` +
+      `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
+      `border-radius:6px;padding:.2rem .5rem;white-space:nowrap">` +
+      `♪ ${soundRoute === "mac" ? "Mac" : "Castle"}</button>` +
       `<button id="devStop" style="cursor:pointer;background:#3a2a55;` +
       `color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">■</button>` +
       `<button id="devMore" title="SD library, light, PIR, boot log" ` +
       `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
-      `border-radius:6px;padding:.2rem .5rem">☰</button>` +
+      `border-radius:6px;padding:.2rem .5rem">☰ SD</button>` +
       `</div>`;
 
     chip.querySelector<HTMLInputElement>("#devMirror")!
@@ -169,6 +185,34 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
         vol.value = String(to);
         post(`/api/volume?v=${to}`, to === 0 ? "muted" : `volume ${to}`);
       });
+
+    const snd = chip.querySelector<HTMLButtonElement>("#devSnd")!;
+    const applyRoute = (route: "mac" | "castle", announce: boolean) => {
+      soundRoute = route;
+      localStorage.setItem("castleSoundRoute", route);
+      snd.textContent = `♪ ${route === "mac" ? "Mac" : "Castle"}`;
+      if (route === "mac") {
+        // Hush the porch, sound the desk. Remember the amp level for the
+        // flip back so "Castle" restores what the hand last set.
+        if (Number(vol.value) > 0) lastVol = Number(vol.value);
+        vol.value = "0";
+        post("/api/volume?v=0", announce ? "sound: Mac — castle speaker off" : "castle speaker off");
+      } else {
+        const to = lastVol || 70;
+        vol.value = String(to);
+        post(`/api/volume?v=${to}`, `sound: castle — volume ${to}`);
+      }
+      if (announce) opts.onSoundRoute?.(route === "mac");
+    };
+    snd.addEventListener("click", () =>
+      applyRoute(soundRoute === "mac" ? "castle" : "mac", true));
+    // First contact: make the amp match the remembered route. Only the
+    // castle side — the desk's own muted-by-default rule still governs
+    // page load, so no browser audio starts without a press.
+    if (!routeEnforced) {
+      routeEnforced = true;
+      if (soundRoute === "mac" && (s.volume ?? 0) > 0) applyRoute("mac", false);
+    }
   };
 
   void probe().then((s) => {
