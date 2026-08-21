@@ -3,8 +3,7 @@
   "configurations": [
     {
       "name": "studio",
-      "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["tools/studio.py", "8765"],
+      "url": "http://localhost:8765",
       "port": 8765
     }
   ]

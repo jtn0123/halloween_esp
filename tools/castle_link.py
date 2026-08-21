@@ -30,6 +30,9 @@ import tomllib
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+import castle_native
 
 ROOT = Path(__file__).resolve().parents[1]
 DEVICES = ROOT / "devices.toml"
@@ -90,6 +93,10 @@ def status() -> dict | None:
     except (OSError, ValueError):
         data = None
     if not isinstance(data, dict):
+        # No HTTP server is what the flash build looks like — try the
+        # native API before declaring the castle down.
+        data = castle_native.status(host)
+    if not isinstance(data, dict):
         _cache["down"] = (time.monotonic(), {})
         return None
     _cache.pop("down", None)
@@ -119,4 +126,25 @@ def forward(method: str, path_and_query: str,
         return (e.code, e.read(),
                 e.headers.get("Content-Type") or "application/json")
     except OSError:
+        if _forward_native(host, method, path_and_query):
+            return 200, b'{"queued":true}', "application/json"
         return 502, b'{"error": "castle not reachable"}', "application/json"
+
+
+def _forward_native(host: str, method: str, path_and_query: str) -> bool:
+    """The flash build's translation of the desk's three POST verbs."""
+    if method != "POST":
+        return False
+    parts = urlsplit(path_and_query)
+    q = parse_qs(parts.query)
+    if parts.path == "/api/scene":
+        sid = (q.get("s") or [""])[0]
+        return bool(sid) and castle_native.scene(host, sid)
+    if parts.path == "/api/stop":
+        return castle_native.stop(host)
+    if parts.path == "/api/volume":
+        try:
+            return castle_native.volume(host, int((q.get("v") or [""])[0]))
+        except ValueError:
+            return False
+    return False

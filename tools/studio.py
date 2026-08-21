@@ -112,6 +112,9 @@ class Handler(sh.JsonHandler):
     def do_DELETE(self):
         self._guarded(self._delete)
 
+    def do_PUT(self):
+        self._guarded(self._put)
+
     def _get(self):
         path = urllib.parse.urlparse(self.path).path
         if path in ("/", "/index.html"):
@@ -310,6 +313,17 @@ class Handler(sh.JsonHandler):
             return self.relay("POST", raw)
         self.send_json({"error": "not found"}, 404)
 
+    def _put(self) -> None:
+        # The desk's "→ Castle" button: PUT /api/files/<name> with the track
+        # bytes. The studio owns no PUT routes of its own, so everything
+        # castle-shaped relays; castle_link enforces the reachability story.
+        path = urllib.parse.urlparse(self.path).path
+        if not path.startswith("/api/"):
+            return self.send_json({"error": "not found"}, 404)
+        n = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(n) if n else b""
+        return self.relay("PUT", body)
+
     def relay(self, method: str, body: bytes = b"") -> None:
         """Hand an unclaimed /api/* request to the castle, answer as it did."""
         code, out, ctype = cl.forward(method, self.path, body)
@@ -458,6 +472,10 @@ def main() -> int:
     # (--localhost is accepted as a no-op for old launchers and Playwright.)
     host = "0.0.0.0" if "--lan" in sys.argv else "127.0.0.1"
     TRACKS.mkdir(exist_ok=True)
+    # Warm the castle bridge before the first page load: the flash build's
+    # native-API leg needs a second to connect, and the desk only probes
+    # /api/status once.
+    cl.status()
     srv = ThreadingHTTPServer((host, port), Handler)
     print(f"cue desk studio  ->  http://127.0.0.1:{port}")
     if host == "0.0.0.0":
