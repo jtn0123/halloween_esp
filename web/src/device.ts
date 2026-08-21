@@ -30,6 +30,7 @@
 
 import { castleChanged, isCastleBusy, onCastleChanged, setCastleLive }
   from "./castle_bus.js";
+import { chipHtml, nowLine, sdText, wireChip } from "./device_chip.js";
 import { DevicePanel } from "./device_panel.js";
 
 /** What `deviceBridge()` hands back; every call is safe in simulator mode. */
@@ -78,18 +79,6 @@ async function probe(): Promise<Status | null> {
   }
 }
 
-/** "SD ok" / "no SD", or nothing at all when the answer isn't known. */
-const sdText = (s: Status): string =>
-  s.sd_mounted === undefined ? "" : s.sd_mounted ? " · SD ok" : " · no SD";
-
-/** The chip's richer version: how much room the card actually has. */
-const sdChip = (s: Status): string => {
-  if (s.sd_mounted === undefined) return "";
-  if (!s.sd_mounted) return " · no SD";
-  return s.sd_free_kb
-    ? ` · SD ${(s.sd_free_kb / 1048576).toFixed(1)} GB free` : " · SD ok";
-};
-
 /** Where toasts stack: one fixed column above the dock, newest at the
  *  bottom. Two toasts a second apart used to print on the same pixels
  *  (J2-3); now they stack, identical text is not repeated while it is still
@@ -99,10 +88,7 @@ function toastHost(): HTMLDivElement {
   let host = document.getElementById("toasts") as HTMLDivElement | null;
   if (!host) {
     host = document.createElement("div");
-    host.id = "toasts";
-    host.style.cssText =
-      "position:fixed;right:12px;bottom:84px;z-index:41;display:flex;" +
-      "flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none";
+    host.id = "toasts";              // styled in previewer/panels.css
     document.body.appendChild(host);
   }
   return host;
@@ -118,10 +104,7 @@ export function toast(msg: string, isError = false): void {
   while (host.children.length >= TOAST_MAX) host.firstElementChild?.remove();
   const el = document.createElement("div");
   el.textContent = msg;
-  el.style.cssText =
-    "padding:.4rem .7rem;border-radius:8px;font:12px system-ui;max-width:60vw;" +
-    "transition:opacity .4s;opacity:1;" +
-    (isError ? "background:#5a1a2a;color:#ffd8e0;" : "background:#2a3a1a;color:#e0ffd0;");
+  el.className = isError ? "toast toast--err" : "toast";
   host.appendChild(el);
   setTimeout(() => { el.style.opacity = "0"; }, isError ? 3200 : 1400);
   setTimeout(() => el.remove(), isError ? 3700 : 1900);
@@ -231,12 +214,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   const panel = new DevicePanel(dock);
 
   const chip = document.createElement("div");
-  chip.id = "deviceChip";
-  chip.style.cssText =
-    "display:none;" +
-    "background:#241a38;color:#e8e0f0;border:1px solid #503a75;" +
-    "border-radius:10px;padding:.5rem .75rem;font:13px system-ui;" +
-    "box-shadow:0 4px 16px rgba(0,0,0,.5)";
+  chip.id = "deviceChip";          // styled in previewer/panels.css; hidden until contact
   dock.appendChild(chip);
 
   // True while the last poll answered. The masthead must not flip back to
@@ -248,7 +226,9 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
 
   /** POST, toast, then re-poll — the chip shows what the click did about a
    *  second later (queued action + main-loop tick) instead of after 15 s. */
-  const act = (path: string, okMsg: string): void => { void castleAct(path, okMsg); };
+  const act = (path: string, okMsg: string, quiet = false): void => {
+    void castleAct(path, okMsg, { quiet });
+  };
   // Anything anywhere in the desk that changed the castle (card-row Play,
   // the panel's ▶/delete/light/PIR) lands here — one re-poll for all of it.
   onCastleChanged(() => { void refresh(); });
@@ -311,8 +291,12 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       // flip back so "Castle" restores what the hand last set.
       if (vol && Number(vol.value) > 0) lastVol = Number(vol.value);
       if (vol) vol.value = "0";
+      // Unannounced = merely enforcing the remembered route at first
+      // contact: the POST goes, the toast does not — on every page open
+      // "castle speaker off" read like something had just happened (J3-3).
       act("/api/volume?v=0",
-          announce ? "sound: Mac — castle speaker off" : "castle speaker off");
+          announce ? "sound: Mac — castle speaker off" : "castle speaker off",
+          !announce);
     } else {
       const to = lastVol || 70;
       if (vol) vol.value = String(to);
@@ -338,8 +322,8 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   };
 
   const render = (s: Status): void => {
-    chip.style.display = "block";
-    chip.style.opacity = "1";
+    chip.classList.add("live");
+    chip.classList.remove("down");
     const wasDown = !lastOk;
     lastOk = true;
     lastVol = s.volume ?? lastVol;
@@ -347,64 +331,23 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     sayStatus(s);
     // Back from the dead: the open panel was showing "stopped answering".
     if (wasDown) panel.refresh();
-    // A track can play with no scene (the card rows, the panel's ▶) — the
-    // chip must say so, not "idle" (caught live against the emulator).
-    const bits = [s.scene && s.scene !== "stop" ? s.scene : "", s.track ?? ""]
-      .filter(Boolean);
-    const playing = bits.length ? `▶ ${bits.join(" · ")}` : "idle";
     lastSeen = new Date();
-    lastPlaying = playing;
-    chip.innerHTML =
-      `<div>🏰 castle v${s.version}${sdChip(s)} · ` +
-      `<span id="devNow" style="color:#b8a8d8">${playing}</span></div>` +
-      `<div style="margin-top:.25rem;display:flex;align-items:center;gap:.4rem">` +
-      `<button id="devSnd" ` +
-      `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
-      `border-radius:6px;padding:.2rem .5rem;white-space:nowrap"></button>` +
-      `<button id="devMute" title="Mute the castle speaker" ` +
-      `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
-      `border-radius:6px;padding:.15rem .45rem">${lastVol === 0 ? "🔇" : "🔊"}</button>` +
-      `<input id="devVol" type="range" min="0" max="100" value="${lastVol}" ` +
-      `style="width:90px">` +
-      `<label style="cursor:pointer;white-space:nowrap" ` +
-      `title="Also fire scene picks on the real castle">` +
-      `<input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}> on castle</label>` +
-      `<button id="devStop" title="Stop the castle: audio and scene" ` +
-      `style="cursor:pointer;background:#3a2a55;` +
-      `color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">■</button>` +
-      `<button id="devMore" title="The castle's own controls: SD library, show, light, motion sensor, boot log" ` +
-      `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
-      `border-radius:6px;padding:.2rem .5rem">🏰 Castle</button>` +
-      `</div>`;
-
-    chip.querySelector<HTMLInputElement>("#devMirror")!
-      .addEventListener("change", (e) => {
-        mirror = (e.target as HTMLInputElement).checked;
-        sayStatus(s);   // the masthead says whether picks reach the porch
-      });
-    chip.querySelector<HTMLButtonElement>("#devStop")!
-      .addEventListener("click", () => act("/api/stop", "stop"));
-    chip.querySelector<HTMLButtonElement>("#devMore")!
-      .addEventListener("click", () => panel.toggle());
-    chip.querySelector<HTMLButtonElement>("#devSnd")!
-      .addEventListener("click", () =>
-        applyRoute(soundRoute === "mac" ? "castle" : "mac", true));
-
-    let volTimer: number | undefined;
-    const vol = chip.querySelector<HTMLInputElement>("#devVol")!;
-    vol.addEventListener("input", () => {
-      clearTimeout(volTimer);
-      volTimer = window.setTimeout(
-        () => act(`/api/volume?v=${vol.value}`, `volume ${vol.value}`), 150);
-    });
-    chip.querySelector<HTMLButtonElement>("#devMute")!
-      .addEventListener("click", () => {
+    lastPlaying = nowLine(s);
+    chip.innerHTML = chipHtml(s, lastVol, mirror);
+    wireChip(chip, {
+      mirror: (on) => { mirror = on; sayStatus(s); },   // the masthead says whether picks reach the porch
+      stop: () => act("/api/stop", "stop"),
+      more: () => panel.toggle(),
+      route: () => applyRoute(soundRoute === "mac" ? "castle" : "mac", true),
+      volume: (v) => act(`/api/volume?v=${v}`, `volume ${v}`),
+      mute: (vol) => {
         // Mute is volume 0 with memory — the device has no separate flag.
         const to = Number(vol.value) === 0 ? (lastVol || 70) : 0;
         if (to === 0) lastVol = Number(vol.value);
         vol.value = String(to);
         act(`/api/volume?v=${to}`, to === 0 ? "muted" : `volume ${to}`);
-      });
+      },
+    });
 
     // First contact: make the amp match the remembered route. Only the
     // castle side — the desk's own muted-by-default rule still governs
@@ -428,7 +371,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     // A castle busy swallowing a multi-MB send is not a castle that left:
     // its one httpd task answers the poll when the bytes are down.
     if (isCastleBusy()) return;
-    chip.style.opacity = "0.4";      // castle stopped answering
+    chip.classList.add("down");      // text dims; the ground stays opaque (J3-2)
     lastOk = false;
     if (lastStatus) sayStatus(lastStatus);
     // The controls that would lie: ■/volume/mute/mirror act on a castle
