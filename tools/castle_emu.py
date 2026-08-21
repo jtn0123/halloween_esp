@@ -8,15 +8,25 @@ relay → castle — runs end-to-end on the Mac with zero hardware:
     .venv/bin/python tools/castle_emu.py 8093 &
     CASTLE_HOST=127.0.0.1:8093 .venv/bin/python tools/studio.py
 
+Three files: this one is the castle's STATE (the card directory, the
+mirrored show state, the pending-action mailbox and its 200 ms tick);
+castle_emu_http.py is the handlers; castle_emu_wire.py is the byte-level
+port of sd_web.h's routing/decoding/validation that the contract test
+holds to the C.
+
 Fidelity notes, each mirrored from sd_web.h on purpose:
   - POSTs answer {"queued":true} immediately; the state changes ~200 ms
     later (the device's pending-action mailbox + main-loop interval). A UI
     that reads state right after a click sees the OLD state, exactly as it
     would on the porch.
+  - The mailbox is ONE slot: two commands inside the same 200 ms tick and
+    only the later one runs (set_pending overwrites). A colour-picker drag
+    lands its last colour; a stop-then-scene inside a tick loses the stop.
   - /api/volume takes digits only, 0..100 — atoi("abc")-is-0 was dogfood
     ISSUE-007.
   - /api/scene 404s an unknown id — {"queued":true} for a typo was 008.
-  - Filenames are one path component, nothing hidden, same safe_name rule.
+  - Filenames are one path component, nothing hidden, same safe_name rule,
+    measured in BYTES as the board measures them.
   - --wedge replays the pre-v5.22 firmware defect: while a track plays,
     every request stalls. Lets the desk's "castle not answering" path be
     rehearsed without flashing the old build.
@@ -28,16 +38,16 @@ uploads and deletes are real files, so a send can be verified with ls.
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import re
 import shutil
 import tempfile
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlsplit
+
+import castle_emu_wire as wire
+from castle_emu_http import Handler
 
 #: The device applies queued actions on its main-loop interval.
 APPLY_DELAY_S = 0.2
@@ -69,8 +79,9 @@ def show_scene_ids(path: Path | None = None) -> list[str] | None:
 
 
 def safe_name(n: str) -> bool:
-    """One path component, nothing hidden — sd_web.h's rule verbatim."""
-    return bool(n) and len(n) < 100 and n[0] != "." and "/" not in n and ".." not in n
+    """One path component, nothing hidden — sd_web.h's rule, on the UTF-8
+    bytes the board would see."""
+    return wire.safe_name(n.encode("utf-8", "surrogateescape"))
 
 
 class _State:
@@ -92,12 +103,15 @@ class CastleEmu(ThreadingHTTPServer):
     """The emulated castle. Construct with port 0 to get an ephemeral port."""
 
     daemon_threads = True
+    # The desk polls, the studio relays and a fuzz storms; a 5-deep backlog
+    # (the Python default) turns bursts into refused connects.
+    request_queue_size = 64
 
     def __init__(self, port: int = 0, sd_dir: Path | None = None,
                  scenes: list[str] | None = None, version: str = "5.23",
                  wedge: bool = False, sd_mounted: bool = True,
                  serial: bool = False) -> None:
-        super().__init__(("127.0.0.1", port), _Handler)
+        super().__init__(("127.0.0.1", port), Handler)
         self.state = _State()
         self.sd_dir = sd_dir or Path(tempfile.mkdtemp(prefix="castle-emu-sd-"))
         self.sd_dir.mkdir(parents=True, exist_ok=True)
@@ -110,7 +124,9 @@ class CastleEmu(ThreadingHTTPServer):
         # (the status poll included) until it finishes. --serial rehearses
         # that; the default threads so the bench stays snappy.
         self.serial = threading.Lock() if serial else None
-        self._pending: list[tuple[str, str]] = []
+        #: set_pending's single slot: (action, arg) or None.
+        self._pending: tuple[str, str] | None = None
+        self.applied: list[tuple[str, str]] = []   # what the tick ran, for tests
         threading.Thread(target=self._ticker, daemon=True,
                          name="castle-emu-tick").start()
 
@@ -125,19 +141,23 @@ class CastleEmu(ThreadingHTTPServer):
     # -- the pending-action mailbox ---------------------------------------
 
     def queue(self, action: str, arg: str) -> None:
+        """set_pending(): the newest command replaces whatever waited."""
         with self.state.lock:
-            self._pending.append((action, arg))
+            self._pending = (action, arg)
 
     def _ticker(self) -> None:
         while True:
             time.sleep(APPLY_DELAY_S)
             with self.state.lock:
-                batch, self._pending = self._pending, []
+                taken, self._pending = self._pending, None
                 st = self.state
                 if st.track and time.monotonic() > st.track_ends:
                     st.track = ""          # the song ended on its own
-            for action, arg in batch:
-                self._apply(action, arg)
+            if taken is not None:
+                try:
+                    self._apply(*taken)
+                finally:
+                    self.applied.append(taken)
 
     def _apply(self, action: str, arg: str) -> None:
         st = self.state
@@ -170,6 +190,9 @@ class CastleEmu(ThreadingHTTPServer):
                     st.pir["cooldown_s"] = int(cool)
                 if scene:
                     st.pir["scene"] = scene
+            elif action == "RESTART":
+                st.boot = time.monotonic()
+                st.scene, st.track, st.show_on = "", "", False
 
     def status_json(self) -> dict[str, object]:
         st = self.state
@@ -192,181 +215,24 @@ class CastleEmu(ThreadingHTTPServer):
                         "scene": st.pir["scene"]},
             }
 
-
-class _Handler(BaseHTTPRequestHandler):
-    server: CastleEmu  # type: ignore[assignment]  # narrowed for handlers
-
-    # -- plumbing ----------------------------------------------------------
-
-    def log_message(self, fmt: str, *args: object) -> None:
-        pass  # tests and background use; the port banner is enough
-
-    def handle(self) -> None:
-        if self.server.serial is None:
-            return super().handle()
-        with self.server.serial:
-            super().handle()
-
-    def _json(self, body: dict[str, object] | list[object]) -> None:
-        raw = json.dumps(body).encode()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
-
-    def _err(self, code: int, msg: str) -> None:
-        raw = msg.encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "text/plain")
-        self.send_header("Content-Length", str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
-
-    def _q(self, key: str) -> str:
-        qs = parse_qs(urlsplit(self.path).query)
-        return (qs.get(key) or [""])[0]
-
-    def _wedge(self) -> None:
-        """Pre-v5.22: the single HTTP task is busy streaming the song."""
-        if not self.server.wedge:
-            return
-        while True:
-            with self.server.state.lock:
-                playing = bool(self.server.state.track)
-            if not playing:
-                return
-            time.sleep(0.25)
-
-    # -- GET ---------------------------------------------------------------
-
-    def do_GET(self) -> None:
-        self._wedge()
-        path = urlsplit(self.path).path
-        if path == "/api/status":
-            return self._json(self.server.status_json())
-        if path == "/api/health":
-            return self._json({"boots": 3, "crashes": 0,
-                               "last_reset": "power-on", "was_crash": False})
-        if path == "/api/files":
-            return self._list()
-        if path == "/api/bootlog":
-            return self._err(200, "boot log: 2 lines, 0 dropped\n[I][emu] up\n")
-        if path == "/api/blackout":          # registered for GET too: bookmarkable
-            self.server.queue("BLACKOUT", "")
-            return self._json({"queued": True})
-        if path.startswith("/sd/"):
-            return self._sd_get(path)
-        self._err(404, "not found")
-
-    def _list(self) -> None:
-        if not self.server.sd_mounted:
-            return self._err(503, "no SD card")
-        out: list[object] = []
-        for p in sorted(self.server.sd_dir.iterdir()):
-            if p.name.startswith("."):
-                continue
-            out.append({"name": p.name,
-                        "size": p.stat().st_size if p.is_file() else 0,
-                        "dir": p.is_dir()})
-        self._json(out)
-
-    def _sd_get(self, path: str) -> None:
-        name = unquote(path[len("/sd/"):])
-        # Serving is nested-path capable on the device; keep the same guard.
-        if ".." in name or name.startswith("/") or not name:
-            return self._err(400, "bad path")
-        f = self.server.sd_dir / name
-        if not f.is_file():
-            return self._err(404, "no such file")
-        raw = f.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", "application/octet-stream")
-        self.send_header("Content-Length", str(len(raw)))
-        self.end_headers()
-        self.wfile.write(raw)
-
-    # -- POST: show control, all queued ------------------------------------
-
-    def do_POST(self) -> None:
-        self._wedge()
-        path = urlsplit(self.path).path
-        if path == "/api/play":
-            f = self._q("f")
-            if not safe_name(f):
-                return self._err(400, "need ?f=<file>")
-            self.server.queue("PLAY", f)
-        elif path == "/api/scene":
-            s = self._q("s")
-            if not s:
-                return self._err(400, "need ?s=<scene>")
-            if self.server.scenes and s not in self.server.scenes:
-                return self._err(404, "unknown scene")
-            self.server.queue("SCENE", s)
-        elif path == "/api/stop":
-            self.server.queue("STOP", "")
-        elif path == "/api/blackout":
-            self.server.queue("BLACKOUT", "")
-        elif path == "/api/volume":
-            v = self._q("v")
-            if not re.fullmatch(r"[0-9]{1,3}", v) or int(v) > 100:
-                return self._err(400, "need ?v=0..100")
-            self.server.queue("VOLUME", v)
-        elif path == "/api/light":
-            c = self._q("c")
-            if not re.fullmatch(r"[0-9a-fA-F]{6}", c) and c not in ("show", "off"):
-                return self._err(400, "need ?c=RRGGBB, show, or off")
-            self.server.queue("LIGHT", c)
-        elif path == "/api/pir":
-            armed, cool, scene = self._q("armed"), self._q("cooldown"), self._q("scene")
-            if not (armed or cool or scene):
-                return self._err(400, "need armed=, cooldown= or scene=")
-            self.server.queue("PIRCFG", f"{armed}|{cool}|{scene}")
-        elif path in ("/api/show/start", "/api/show/stop"):
-            self.server.queue("SHOW", "1" if path.endswith("start") else "0")
-        else:
-            return self._err(404, "not found")
-        self._json({"queued": True})
-
-    # -- PUT/DELETE: the card ----------------------------------------------
-
-    def do_PUT(self) -> None:
-        self._wedge()
-        path = urlsplit(self.path).path
-        sub = ""
-        for prefix, d in (("/api/site/", "site"), ("/api/scenes/", "scenes"),
-                          ("/api/files/", "")):
-            if path.startswith(prefix):
-                name, sub = unquote(path[len(prefix):]), d
-                break
-        else:
-            return self._err(404, "not found")
-        if not self.server.sd_mounted:
-            return self._err(503, "no SD card")
-        if not safe_name(name):
-            return self._err(400, "bad filename")
-        body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
-        dest = self.server.sd_dir / sub if sub else self.server.sd_dir
-        dest.mkdir(parents=True, exist_ok=True)
-        (dest / name).write_bytes(body)
-        card = f"/sd/{sub}/{name}" if sub else f"/sd/{name}"
-        self._json({"path": card, "bytes": len(body)})
-
-    def do_DELETE(self) -> None:
-        self._wedge()
-        path = urlsplit(self.path).path
-        if not path.startswith("/api/files/"):
-            return self._err(404, "not found")
-        if not self.server.sd_mounted:
-            return self._err(503, "no SD card")
-        name = unquote(path[len("/api/files/"):])
-        if not safe_name(name):
-            return self._err(400, "bad filename")
-        f = self.server.sd_dir / name
-        if not f.is_file():
-            return self._err(404, "no such file")
-        f.unlink()
-        self._json({"deleted": True})
+    def status_text(self) -> str:
+        """h_status's snprintf template, strings unescaped like the C —
+        a track name with a '"' breaks the JSON on the board, and here."""
+        s = self.status_json()
+        pir = s["pir"]
+        assert isinstance(pir, dict)
+        b = {True: "true", False: "false"}
+        i, t = (lambda k: int(str(s[k]))), (lambda k: str(s[k]))
+        return ('{"version":"%s","compiled":"%s","uptime_s":%d,'
+                '"sd_mounted":%s,"psram_free_kb":%d,"heap_free_kb":%d,'
+                '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
+                '"volume":%d,"scene":"%s","track":"%s","show_on":%s,'
+                '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
+                % (t("version"), t("compiled"), i("uptime_s"),
+                   b[bool(s["sd_mounted"])], i("psram_free_kb"), i("heap_free_kb"),
+                   i("sd_total_kb"), i("sd_free_kb"), t("missing"),
+                   i("volume"), t("scene"), t("track"), b[bool(s["show_on"])],
+                   b[bool(pir["armed"])], int(pir["cooldown_s"]), str(pir["scene"])))
 
 
 def _seed(card: Path) -> None:

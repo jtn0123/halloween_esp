@@ -49,20 +49,24 @@ class _Link:
         self.states: dict[int, Any] = {}
         self.version = ""
         self.connected = False
-        threading.Thread(target=self._run, daemon=True,
-                         name="castle-native").start()
+        self.closing = False
+        self._wake = asyncio.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True,
+                                       name="castle-native")
+        self.thread.start()
 
     def _run(self) -> None:
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self._main())
 
     async def _main(self) -> None:
-        while True:
-            dropped = asyncio.Event()
+        self._wake = asyncio.Event()
+        while not self.closing:
+            self._wake.clear()
 
             async def on_stop(expected: bool) -> None:
                 self.connected = False
-                dropped.set()
+                self._wake.set()
 
             try:
                 api = aioesphomeapi.APIClient(self.host, PORT, None)
@@ -75,10 +79,23 @@ class _Link:
                     lambda s: self.states.__setitem__(s.key, s))
                 self.api = api
                 self.connected = True
-                await dropped.wait()
+                await self._wake.wait()            # until dropped or closed
             except Exception:
                 self.connected = False
-            await asyncio.sleep(_RETRY_S)
+            if self.closing:
+                break
+            self._wake.clear()
+            try:
+                await asyncio.wait_for(self._wake.wait(), _RETRY_S)
+            except TimeoutError:
+                pass
+
+    def close(self) -> None:
+        """End the thread: no more reconnects. Tests only — the studio keeps
+        its links for life."""
+        self.closing = True
+        self.connected = False
+        self.loop.call_soon_threadsafe(self._wake.set)
 
     # -- called from the studio's threads ---------------------------------
 
@@ -100,6 +117,16 @@ class _Link:
     def _text(self, object_id: str) -> str:
         s = self.states.get(self.keys.get(object_id, -1))
         return str(getattr(s, "state", "") or "")
+
+
+def close_all() -> None:
+    """Drop every link and join its thread (test teardown)."""
+    with _lock:
+        links = list(_links.values())
+        _links.clear()
+    for ln in links:
+        ln.close()
+        ln.thread.join(timeout=2)
 
 
 def _get(host: str) -> _Link:
