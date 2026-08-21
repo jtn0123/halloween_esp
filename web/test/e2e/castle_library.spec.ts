@@ -2,8 +2,8 @@
  * The merged library: one list that answers "what is WHERE" (dogfood
  * 005/006). Local tracks are real (the studio serves the seeded scratch
  * library); the castle is played by page.route so the card's contents are a
- * controlled fact. Only castle-shaped endpoints are stubbed — /api/tracks
- * and /api/track/<id> pass through to the real studio, so a Sync moves the
+ * controlled fact. Only castle-shaped endpoints are stubbed — /studio/tracks
+ * and /studio/track/<id> pass through to the real studio, so a Sync moves the
  * actual bytes the actual endpoint serves.
  */
 
@@ -53,21 +53,24 @@ async function stubCard(page: Page, files: SdFile[],
     if (["/api/play", "/api/stop", "/api/volume", "/api/scene"].includes(p)
         && method === "POST")
       return route.fulfill({ json: { queued: true } });
-    if (p === "/api/tracks" && inShow.length > 0) {
-      // The real library, with chosen tracks marked as in the show — scene
-      // membership is what Sync sends, and the scratch scenes.yaml is empty.
-      const real = await (await route.fetch()).json();
-      return route.fulfill({ json: { ...real, scenes: inShow } });
-    }
     return route.fallback();
   });
+  if (inShow.length > 0) {
+    // The real library, with chosen tracks marked as in the show — scene
+    // membership is what Sync sends, and the scratch scenes.yaml is empty.
+    // Its own route: the studio's list lives under /studio/, not /api/.
+    await page.route("**/studio/tracks", async (route) => {
+      const real = await (await route.fetch()).json();
+      return route.fulfill({ json: { ...real, scenes: inShow } });
+    });
+  }
   return calls;
 }
 
 /** The track's exact on-disk size, from the real studio — a stub that
  *  guesses would render every "current" copy as stale. */
 async function realBytes(page: Page, id: string): Promise<number> {
-  const r = await (await page.request.get("/api/tracks")).json() as
+  const r = await (await page.request.get("/studio/tracks")).json() as
     { tracks: { id: string; bytes: number }[] };
   return r.tracks.find((t) => t.id === id)!.bytes;
 }
@@ -167,7 +170,7 @@ test("⬇ to Mac pulls a card file through the real import gate", async ({ page 
   // follows the pull decodes and analyses genuinely.
   await page.route("**/api/card/pulled_song.mp3", async (route) => {
     const real = await route.fetch({
-      url: new URL(`/api/track/${MP3_ID}`, route.request().url()).toString() });
+      url: new URL(`/studio/track/${MP3_ID}`, route.request().url()).toString() });
     return route.fulfill({ body: await real.body(),
                            contentType: "audio/mpeg" });
   });
@@ -197,7 +200,7 @@ test("a track whose import failed cannot be sent, and Sync skips it", async ({ p
                    title: "", imported: "", opts: {}, notes: "",
                    error: "ffmpeg could not convert it" };
   await stubCard(page, [{ name: "e2e_broken.mp3", size: 300000, dir: false }]);
-  await page.route("**/api/tracks", async (route) => {
+  await page.route("**/studio/tracks", async (route) => {
     const real = await (await route.fetch()).json() as { tracks: unknown[] };
     return route.fulfill({ json: { tracks: [...real.tracks, BROKEN],
                                    scenes: ["e2e_broken", MP3_ID] } });

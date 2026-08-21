@@ -8,16 +8,11 @@ panel can actually do those things on your own machine.
 
     make studio          -> http://127.0.0.1:8765
 
-Endpoints (all JSON, all local-only):
-
-    GET    /api/tracks              list imported tracks + their onsets
-    POST   /api/import              {url} or multipart file  -> import
-    DELETE /api/tracks/<id>         remove a track (?scene=1: its scene too)
-    POST   /api/scene               add/replace a scene in scenes.yaml
-    POST   /api/rebuild             re-run audio + generators
-    GET    /api/track/<id>          stream a track to audition (ext optional)
-    GET    /api/card/<name>         pull a file off the castle's SD card
-    GET    /remote                  the castle's own phone remote, relayed
+Routes — the full table is docs/API.md. In one line: what the studio OWNS
+lives under /studio/... ; /api/... is the castle's and relays to it untouched
+(castle_link.py), except /api/status, which the studio answers for itself
+when no castle is in reach. Old /api/ spellings of the studio routes are
+aliases for one release (STUDIO_ROUTES below).
 
 Binds to 127.0.0.1 by default. This drives ffmpeg and yt-dlp on your machine
 and edits files in the repo; `--lan` opens it to the local network for the
@@ -55,7 +50,8 @@ from studio_tracks import (
     parse_sensitivity,
     source_copies,
     track_files,
-    track_info,
+    track_info,  # noqa: F401 — re-exported for tests
+    track_infos,
     track_path,
 )
 
@@ -132,6 +128,32 @@ def safe_id(raw: str) -> str | None:
     return tid if tid and all(c.isalnum() or c == "_" for c in tid) else None
 
 
+#: The studio's own route families. "/api/<x>" for any of these is the OLD
+#: spelling (v5.23 and earlier), rewritten to "/studio/<x>" for one release
+#: so a desk built before the move keeps working; every other /api/* path
+#: is the castle's and relays untouched (/api/scene?s=<id> included).
+STUDIO_ROUTES = frozenset((
+    "tracks", "import", "job", "refresh", "track", "waveform", "stems",
+    "stem", "compare", "probe", "server", "scene", "rebuild", "card"))
+_deprecated_seen: set[str] = set()
+
+
+def studio_path(raw: str) -> str:
+    """The request's path (no query), an old /api/ spelling of a studio
+    route rewritten to its /studio/ home — logged once per route."""
+    url = urllib.parse.urlparse(raw)
+    path = url.path
+    head = path[5:].split("/", 1)[0] if path.startswith("/api/") else ""
+    if head not in STUDIO_ROUTES or (
+            head == "scene" and urllib.parse.parse_qs(url.query).get("s")):
+        return path
+    if head not in _deprecated_seen:
+        _deprecated_seen.add(head)
+        sys.stderr.write(f"  DEPRECATED: /api/{head} is now /studio/{head} "
+                         "(docs/API.md) — the alias goes away next release\n")
+    return "/studio/" + path[5:]
+
+
 class Handler(sh.JsonHandler):
     # ── routes ──
     def do_GET(self):
@@ -147,7 +169,7 @@ class Handler(sh.JsonHandler):
         self._guarded(self._put)
 
     def _get(self):
-        path = urllib.parse.urlparse(self.path).path
+        path = studio_path(self.path)
         if path in ("/", "/index.html"):
             # A sandboxed studio serves the page ITS rebuilds wrote (so
             # "Reload the desk" shows the sandbox's scenes), the repo's
@@ -155,20 +177,20 @@ class Handler(sh.JsonHandler):
             page = bp.PREVIEW_HTML if bp.sandboxed() and bp.PREVIEW_HTML.exists() else HTML
             if not page.exists():
                 return self.send_json({"error": "previewer not built"}, 404)
-            return self.send_bytes(page.read_bytes(), "text/html; charset=utf-8")
+            return self.send_file(page, "text/html; charset=utf-8")
         if path == "/remote":
             # The castle's own phone remote (firmware/sd_web_remote.h) — four
             # thumb buttons that live in flash. Relayed so the address on
             # the desk's link works from any phone on the LAN (JB1-8).
             return self.relay("GET")
-        if path.startswith("/api/job/"):
+        if path.startswith("/studio/job/"):
             job = _runner.get(Path(path).name)
             if job is None:
                 return self.send_json({"error": "no such job"}, 404)
             d = job.as_dict()
             if d["done"]:
                 TRACKS.mkdir(exist_ok=True)
-                d["tracks"] = [track_info(p) for p in track_files()]
+                d["tracks"] = track_infos(track_files())
             return self.send_json(d)
         if path == "/api/status":
             # The desk probes this to decide simulator-vs-device mode. When
@@ -178,42 +200,42 @@ class Handler(sh.JsonHandler):
             # answer for itself, marked so device.ts knows it is NOT one.
             live = cl.status()
             return self.send_json(live or {"studio": True})
-        if path == "/api/tracks":
+        if path == "/studio/tracks":
             TRACKS.mkdir(exist_ok=True)
             return self.send_json({
-                "tracks": [track_info(p) for p in track_files()],
+                "tracks": track_infos(track_files()),
                 "scenes": [s for s in scene_ids()],
             })
-        if path.startswith("/api/waveform/"):
+        if path.startswith("/studio/waveform/"):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             sens = parse_sensitivity(q)
             p = track_path(Path(path).name)    # name-stripped: no traversal
             if p is None:
                 return self.send_json({"error": "no such track"}, 404)
             return self.send_json(sm.waveform(p, sensitivity=sens))
-        if path.startswith("/api/stems/"):
+        if path.startswith("/studio/stems/"):
             # Cached nine-way analysis (layer x channel), written by the
             # split job — never derived inside a GET, which would stall the
             # panel for the length of nine STFTs.
             out = st.analysis(Path(path).name)
             return self.send_json(out, 200 if out.get("ok") else 404)
-        if path.startswith("/api/stem/"):
-            # /api/stem/<tid>/<layer> — the stem mp3s; `combined` has no file
-            # here because the original track already streams via /api/track.
+        if path.startswith("/studio/stem/"):
+            # /studio/stem/<tid>/<layer> — the stem mp3s; `combined` has no file
+            # here because the original track already streams via /studio/track.
             parts = path.split("/")
             p = st.stem_file(parts[-2], parts[-1]) if len(parts) >= 5 else None
             if p is None:
                 return self.send_json({"error": "no such stem"}, 404)
             return self.send_range(p, "audio/mpeg")
-        if path.startswith("/api/compare/"):
-            # /api/compare/<token>/<codec>
+        if path.startswith("/studio/compare/"):
+            # /studio/compare/<token>/<codec>
             parts = path.split("/")
             p = sm.compare_file(parts[-2], parts[-1]) if len(parts) >= 5 else None
             if p is None:
                 return self.send_json({"error": "no such comparison"}, 404)
             return self.send_range(p, MIME.get(p.suffix.lstrip("."),
                                                "application/octet-stream"))
-        if path.startswith("/api/track/"):
+        if path.startswith("/studio/track/"):
             # Path(...).name strips any directory part, so a traversal
             # like ../../etc/passwd cannot escape TRACKS. That call IS
             # the guard — a `p.parent == TRACKS` check here would be
@@ -224,16 +246,21 @@ class Handler(sh.JsonHandler):
             if p is None:
                 return self.send_json({"error": "not found"}, 404)
             return self.send_range(p, MIME[p.suffix.lstrip(".")])
-        if path.startswith("/api/card/"):
-            # Pull leg: the castle serves card bytes at /sd/<name>.
-            return self.relay("GET", to="/sd/" + path[len("/api/card/"):])
+        if path.startswith("/studio/card/"):
+            # Pull leg: the castle serves card bytes at /sd/<name>. Name-
+            # stripped like every other file route — the raw suffix used to
+            # go through, and "../api/status" reached any GET on the castle.
+            name = Path(path[len("/studio/card/"):]).name
+            if not name:
+                return self.send_json({"error": "no file name"}, 400)
+            return self.relay("GET", to="/sd/" + name)
         if path.startswith("/api/"):
             return self.relay("GET")
         self.send_json({"error": "not found"}, 404)
 
     def _delete(self):
-        path = urllib.parse.urlparse(self.path).path
-        if path.startswith("/api/tracks/"):
+        path = studio_path(self.path)
+        if path.startswith("/studio/tracks/"):
             tid = Path(path).name
             p = track_path(tid)            # name-stripped above
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -262,11 +289,11 @@ class Handler(sh.JsonHandler):
         self.send_json({"error": "not found"}, 404)
 
     def _post(self):
-        path = urllib.parse.urlparse(self.path).path
+        path = studio_path(self.path)
         raw = self.body()
-        if path == "/api/import":
+        if path == "/studio/import":
             return self.do_import(raw)
-        if path == "/api/import/async":
+        if path == "/studio/import/async":
             req = self.json_body(raw)
             src = (req.get("url") or "").strip()
             if not src.startswith(("http://", "https://")):
@@ -277,7 +304,7 @@ class Handler(sh.JsonHandler):
             args = [PY, str(ROOT / "tools" / "import_track.py"), src]
             args += opt_args(req)
             return self.send_json(_runner.start(args).as_dict())
-        if path == "/api/stems":
+        if path == "/studio/stems":
             # Demucs split as a background job — ~25 s on the GPU is far too
             # long to hold an HTTP request open, and the JobRunner already
             # knows how to babysit a child process.
@@ -289,7 +316,7 @@ class Handler(sh.JsonHandler):
             if req.get("force"):
                 args.append("--force")
             return self.send_json(_runner.start(args).as_dict())
-        if path == "/api/refresh":
+        if path == "/studio/refresh":
             # Rebuild a track from its remembered source, with any option
             # overridden. This is why the manifest exists.
             req = self.json_body(raw)
@@ -300,11 +327,11 @@ class Handler(sh.JsonHandler):
             args += opt_args(req, OPT_KEYS[1:-1])      # no id, no notes
             with _lock:
                 ok, out = run(args)
-            tracks = [track_info(p) for p in track_files()]
+            tracks = track_infos(track_files())
             return self.send_json({"ok": True, "log": out, "tracks": tracks}
                                   if ok else failed(out, tracks=tracks),
                                   200 if ok else 500)
-        if path == "/api/compare":
+        if path == "/studio/compare":
             req = self.json_body(raw)
             # .name-strip like every other track route — without it this was
             # an arbitrary-read: "../../x" resolved, encoded, and streamed.
@@ -324,29 +351,27 @@ class Handler(sh.JsonHandler):
             with _lock:
                 out = sm.compare(p, opts, token=f"{p.stem}-{int(time.time())}")
             return self.send_json(out, 200 if out.get("ok") else 500)
-        if path == "/api/probe":
+        if path == "/studio/probe":
             req = self.json_body(raw)
             out = sm.probe((req.get("url") or "").strip())
             # A bad or unreadable link is the caller's problem: 400, not 200.
             return self.send_json(out, 200 if out.get("ok") else 400)
-        if path == "/api/server/stop":
+        if path == "/studio/server/stop":
             # Answer first, then shut down — otherwise the page sees the
             # socket die and reports a network error instead of "stopped".
             self.send_json({"ok": True, "stopping": True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
-        if path == "/api/server/restart":
+        if path == "/studio/server/restart":
             self.send_json({"ok": True, "restarting": True})
             threading.Thread(target=_restart, daemon=True).start()
             return
-        if path == "/api/scene":
-            # ?s=<id> is the castle's fire-a-scene; a JSON body is the
-            # studio's own scenes.yaml editor. Same path, different verb.
-            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            if q.get("s"):
-                return self.relay("POST", raw)
+        if path == "/studio/scene":
+            # The studio's scenes.yaml editor (JSON body). /api/scene?s=<id>
+            # is the castle's fire-a-scene and never lands here —
+            # studio_path keeps it on the relay.
             return self.do_scene(self.json_body(raw))
-        if path == "/api/rebuild":
+        if path == "/studio/rebuild":
             ok, log = ss.rebuild(_lock, run, PY, ROOT)
             return self.send_json({"ok": ok, "log": log}, 200 if ok else 500)
         if path.startswith("/api/"):
@@ -357,14 +382,14 @@ class Handler(sh.JsonHandler):
         # The desk's "→ Castle" button: PUT /api/files/<name> with the track
         # bytes. The studio owns no PUT routes of its own, so everything
         # castle-shaped relays; castle_link enforces the reachability story.
-        path = urllib.parse.urlparse(self.path).path
+        path = studio_path(self.path)
         if not path.startswith("/api/"):
             return self.send_json({"error": "not found"}, 404)
         return self.relay("PUT", self.body())
 
     def relay(self, method: str, body: bytes = b"",
               to: str | None = None) -> None:
-        """Hand an unclaimed /api/* request to the castle, answer as it did."""
+        """Hand a castle-shaped /api/* request to the castle, answer as it did."""
         code, out, ctype = cl.forward(method, to or self.path, body)
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -412,7 +437,7 @@ class Handler(sh.JsonHandler):
         with _lock:
             ok, out = run(args)
         shutil.rmtree(TRACKS / "_upload", ignore_errors=True)
-        tracks = [track_info(p) for p in track_files()]
+        tracks = track_infos(track_files())
         return self.send_json({"ok": True, "log": out, "tracks": tracks}
                               if ok else failed(out, tracks=tracks),
                               200 if ok else 500)

@@ -3,7 +3,7 @@
  *
  * The panel's one hard promise is honesty: what you audition is what the
  * export writes — knobs and flavours ship, the B engine and the mute
- * buttons never do. Every test here intercepts the real /api/scene POST
+ * buttons never do. Every test here intercepts the real /studio/scene POST
  * and reads the YAML the browser actually sent, because that string is the
  * contract with the Python generators the fuzz suite guards.
  */
@@ -34,7 +34,7 @@ async function openLab(page: Page): Promise<void> {
 /** Click "Make scene" with the write stubbed; resolve the YAML it posted. */
 async function exportedYaml(page: Page): Promise<string> {
   let yaml = "";
-  await page.route("**/api/scene", async (route: Route) => {
+  await page.route("**/studio/scene", async (route: Route) => {
     yaml = (route.request().postDataJSON() as { yaml: string }).yaml;
     await route.fulfill({
       status: 200, contentType: "application/json",
@@ -44,7 +44,7 @@ async function exportedYaml(page: Page): Promise<string> {
   });
   await row(page, MP3).locator('button[data-act="scene"]').click();
   await expect(page.locator("#trkNote")).toContainText("scenes.yaml");
-  await page.unroute("**/api/scene");
+  await page.unroute("**/studio/scene");
   expect(yaml).not.toBe("");
   return yaml;
 }

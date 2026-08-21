@@ -15,6 +15,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import build_paths as bp
+import scene_schema
 import yaml
 
 Runner = Callable[[list[str]], tuple[bool, str]]
@@ -29,6 +30,17 @@ def scene_ids(scenes: Path) -> list[str]:
         # broken, here's the parse error" are very different situations.
         print(f"WARNING: could not parse {scenes}: {e}")
         return []
+
+
+def zone_ids(scenes: Path) -> list[str] | None:
+    """The show's zone names, or None when the file cannot say (a scenes
+    file without a zones block, or one that does not parse)."""
+    try:
+        doc = yaml.safe_load(scenes.read_text())
+        zones = doc.get("zones") if isinstance(doc, dict) else None
+        return [z["id"] for z in zones] if zones else None
+    except Exception:
+        return None
 
 
 def rebuild(lock: threading.Lock, run: Runner, py: str,
@@ -118,6 +130,16 @@ def splice(scenes: Path, req: dict, lock: threading.Lock, run: Runner,
     if (not isinstance(parsed, list) or len(parsed) != 1
             or not isinstance(parsed[0], dict) or parsed[0].get("id") != sid):
         return {"error": f"expected exactly one scene with id {sid!r}"}, 400
+    # And it must be a SCENE — known effects, cues inside its length, the
+    # keys the generators read. A block that parses but says `effect: glow`
+    # used to splice cleanly and fail inside the re-render, where the only
+    # trace was the log tail (grade report B4). Each problem is one line
+    # the desk can show next to the field.
+    errors = scene_schema.validate(parsed[0], zone_ids(scenes))
+    if errors:
+        return {"error": f"scene {sid!r} has {len(errors)} problem"
+                         f"{'s' if len(errors) > 1 else ''}: {errors[0]}",
+                "errors": errors}, 400
     pat = block_pattern(sid)
     with lock:
         # Read-modify-write under the lock: two concurrent saves used to

@@ -35,7 +35,7 @@ process.env.CASTLE_TRACKS = TRACKS;
 /* Scene writes redirect too. Without this the sandbox had a hole: a test
    clicking "Make scene" wrote the user's REAL scenes/scenes.yaml — which
    actually happened once (2026-08-13, a stray ghostbusters scene, reverted).
-   The suite intercepts /api/scene client-side, but the server-side guard is
+   The suite intercepts /studio/scene client-side, but the server-side guard is
    the one that cannot be forgotten by a new spec. */
 const SCENES_FILE = join(TRACKS, "scenes.yaml");
 process.env.CASTLE_SCENES = SCENES_FILE;
@@ -70,8 +70,10 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 
   webServer: {
-    command: `../.venv/bin/python ../tools/studio.py ${PORT} --localhost`,
-    url: `http://127.0.0.1:${PORT}/api/tracks`,
+    // CASTLE_PY names the interpreter (a worktree sharing the main
+    // checkout's venv, CI's runner python); the project venv otherwise.
+    command: `${process.env.CASTLE_PY ?? "../.venv/bin/python"} ../tools/studio.py ${PORT} --localhost`,
+    url: `http://127.0.0.1:${PORT}/studio/tracks`,
     // A studio the user is already running is pointed at their real tracks,
     // which is exactly what this suite must not touch.
     reuseExistingServer: false,

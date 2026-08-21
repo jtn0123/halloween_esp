@@ -7,11 +7,12 @@
  * server failed at paint time, in whichever panel happened to touch it
  * first. Now the contract lives in ONE file, next to the timeouts.
  *
- * Deliberately NOT here: the castle's own /api endpoints (device.ts,
- * device_panel.ts). Same paths, different machine, different semantics —
- * the studio authors the show, the device performs it — and keeping the
- * two contracts in separate files is what stops a call site from silently
- * talking to the wrong one.
+ * Deliberately NOT here: the castle's own /api/* endpoints (device.ts,
+ * device_panel.ts). The studio owns /studio/* and relays /api/* to the
+ * castle untouched (docs/API.md) — the studio authors the show, the device
+ * performs it — and keeping the two contracts in separate files, under
+ * separate prefixes, is what stops a call site from silently talking to
+ * the wrong one.
  *
  * Application failures (ok:false) are returned, not thrown: the call sites
  * own their wording, and the server's `log` tail is part of the message.
@@ -64,7 +65,7 @@ export interface StemChannel {
   onsets: Record<string, [number, number][]>;
 }
 
-/** /api/stems/<id>: three layers × three channels, plus freshness. */
+/** /studio/stems/<id>: three layers × three channels, plus freshness. */
 export interface StemsResponse {
   ok: boolean;
   error?: string;
@@ -81,7 +82,7 @@ export interface CompareResponse {
   ok: boolean; error?: string; reference?: string; codecs?: CodecRow[];
 }
 
-/** One background import, as /api/import/async and /api/job/<id> report it. */
+/** One background import, as /studio/import/async and /studio/job/<id> report it. */
 export interface JobResponse {
   id: string;
   /** queued | fetching | converting | analysing | done | failed */
@@ -121,28 +122,28 @@ const post = (body: unknown): RequestInit => ({
 
 export const api = {
   tracks: (): Promise<TracksResponse> =>
-    call("/api/tracks"),
+    call("/studio/tracks"),
   tracksFresh: (): Promise<TracksResponse> =>
-    call("/api/tracks", { cache: "no-store" }),
+    call("/studio/tracks", { cache: "no-store" }),
 
   /** `withScene`: also take its scene out of scenes.yaml and re-render. */
   remove: (id: string, withScene = false): Promise<ActionResponse> =>
-    call(`/api/tracks/${encodeURIComponent(id)}${withScene ? "?scene=1" : ""}`,
+    call(`/studio/tracks/${encodeURIComponent(id)}${withScene ? "?scene=1" : ""}`,
          { method: "DELETE" }, withScene ? ENCODE : QUICK),
 
   importUrl: (req: object): Promise<ActionResponse> =>
-    call("/api/import", post(req), IMPORT),
+    call("/studio/import", post(req), IMPORT),
 
   /** Start a background URL import; poll `job()` for progress. */
   importAsync: (req: object): Promise<JobResponse> =>
-    call("/api/import/async", post(req)),
+    call("/studio/import/async", post(req)),
   job: (id: string): Promise<JobResponse> =>
-    call(`/api/job/${encodeURIComponent(id)}`),
+    call(`/studio/job/${encodeURIComponent(id)}`),
 
   importFile: (file: File, opts: unknown): Promise<ActionResponse> => {
     const fd = new FormData();
     fd.append("file", file);
-    return call("/api/import", {
+    return call("/studio/import", {
       method: "POST",
       headers: { "X-Import-Opts": JSON.stringify(opts) },
       body: fd,
@@ -150,14 +151,14 @@ export const api = {
   },
 
   refresh: (req: object): Promise<ActionResponse> =>
-    call("/api/refresh", post(req), IMPORT),
+    call("/studio/refresh", post(req), IMPORT),
 
   /** status too, because a 404 here is an ordinary outcome (track deleted
    *  under the panel) that deserves its own sentence, not a red error. */
   waveform: async (id: string, query = ""):
       Promise<{ status: number; body: WaveformResponse | null }> => {
     const res = await fetch(
-      `/api/waveform/${encodeURIComponent(id)}${query ? `?${query}` : ""}`,
+      `/studio/waveform/${encodeURIComponent(id)}${query ? `?${query}` : ""}`,
       { signal: AbortSignal.timeout(ENCODE) });
     return {
       status: res.status,
@@ -169,7 +170,7 @@ export const api = {
    *  renders (a Split button), not an error it reports. */
   stems: async (id: string):
       Promise<{ status: number; body: StemsResponse | null }> => {
-    const res = await fetch(`/api/stems/${encodeURIComponent(id)}`,
+    const res = await fetch(`/studio/stems/${encodeURIComponent(id)}`,
       { signal: AbortSignal.timeout(QUICK) });
     try {
       return { status: res.status, body: await res.json() as StemsResponse };
@@ -179,16 +180,16 @@ export const api = {
   },
   /** Start a background Demucs split; poll `job()` for progress. */
   stemsSplit: (id: string, force = false): Promise<JobResponse> =>
-    call("/api/stems", post({ id, force })),
+    call("/studio/stems", post({ id, force })),
 
   scene: (id: string, yaml: string): Promise<ActionResponse> =>
-    call("/api/scene", post({ id, yaml }), ENCODE),
+    call("/studio/scene", post({ id, yaml }), ENCODE),
 
   compare: (req: object): Promise<CompareResponse> =>
-    call("/api/compare", post(req), ENCODE),
+    call("/studio/compare", post(req), ENCODE),
 
   serverStop: (): Promise<ActionResponse> =>
-    call("/api/server/stop", { method: "POST" }),
+    call("/studio/server/stop", { method: "POST" }),
   serverRestart: (): Promise<ActionResponse> =>
-    call("/api/server/restart", { method: "POST" }),
+    call("/studio/server/restart", { method: "POST" }),
 };

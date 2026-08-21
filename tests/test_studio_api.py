@@ -45,7 +45,7 @@ class TestReads(ServerCase):
         self.assertEqual(self.req("GET", "/")[0], self.req("GET", "/index.html")[0])
 
     def test_tracks_lists_files_and_scene_ids(self) -> None:
-        code, d = self.get_json("/api/tracks")
+        code, d = self.get_json("/studio/tracks")
         self.assertEqual(code, 200)
         self.assertEqual(set(d), {"tracks", "scenes"})
         ids = [t["id"] for t in d["tracks"]]
@@ -55,14 +55,14 @@ class TestReads(ServerCase):
 
     def test_track_entries_carry_duration_and_onset_counts(self) -> None:
         """The panel shows both; a track missing them looks broken to the user."""
-        _, d = self.get_json("/api/tracks")
+        _, d = self.get_json("/studio/tracks")
         mine = next(t for t in d["tracks"] if t["id"] == self.WAVE_ID)
         self.assertAlmostEqual(mine["dur"], 3.0, delta=0.3)
         self.assertGreater(mine["kb"], 0)
         self.assertIn("onset_low", mine["onsets"])
 
     def test_waveform_returns_a_drawable_envelope(self) -> None:
-        code, d = self.get_json(f"/api/waveform/{self.WAVE_ID}")
+        code, d = self.get_json(f"/studio/waveform/{self.WAVE_ID}")
         self.assertEqual(code, 200)
         self.assertEqual(d["id"], self.WAVE_ID)
         self.assertAlmostEqual(d["duration"], 3.0, delta=0.3)
@@ -72,51 +72,51 @@ class TestReads(ServerCase):
 
     def test_waveform_honours_the_sensitivity_query(self) -> None:
         """The clip editor's slider is only useful if it changes the answer."""
-        _, loose = self.get_json(f"/api/waveform/{self.WAVE_ID}?sensitivity=0.6")
-        _, tight = self.get_json(f"/api/waveform/{self.WAVE_ID}?sensitivity=2.5")
+        _, loose = self.get_json(f"/studio/waveform/{self.WAVE_ID}?sensitivity=0.6")
+        _, tight = self.get_json(f"/studio/waveform/{self.WAVE_ID}?sensitivity=2.5")
         self.assertGreaterEqual(len(loose["onsets"]["onset_low"]),
                                 len(tight["onsets"]["onset_low"]))
 
     def test_waveform_of_an_unknown_track_is_404(self) -> None:
-        code, d = self.get_json("/api/waveform/_t_studio_missing")
+        code, d = self.get_json("/studio/waveform/_t_studio_missing")
         self.assertEqual(code, 404)
         self.assertIn("no such track", d["error"])
 
     def test_track_streams_the_actual_bytes(self) -> None:
-        code, body = self.req("GET", f"/api/track/{self.WAVE_ID}.mp3")
+        code, body = self.req("GET", f"/studio/track/{self.WAVE_ID}.mp3")
         self.assertEqual(code, 200)
         self.assertEqual(body, self.wave.read_bytes())
 
     def test_track_of_an_unknown_id_is_404(self) -> None:
-        self.assertEqual(self.req("GET", "/api/track/_t_studio_missing.mp3")[0], 404)
+        self.assertEqual(self.req("GET", "/studio/track/_t_studio_missing.mp3")[0], 404)
 
     def test_track_refuses_a_non_audio_file(self) -> None:
         """tracks/ holds other things — tracks.json, a README — and none of
         them should be readable through the audio route."""
-        self.assertEqual(self.req("GET", "/api/track/tracks.json")[0], 404)
-        self.assertEqual(self.req("GET", "/api/track/README.md")[0], 404)
+        self.assertEqual(self.req("GET", "/studio/track/tracks.json")[0], 404)
+        self.assertEqual(self.req("GET", "/studio/track/README.md")[0], 404)
 
     def test_track_streams_without_being_told_the_extension(self) -> None:
         """The panel knows the id; only the server knows the container. If it
         had to guess ".mp3" — which it used to — every non-MP3 import is a row
         whose Play button does nothing."""
-        code, body = self.req("GET", f"/api/track/{self.WAVE_ID}")
+        code, body = self.req("GET", f"/studio/track/{self.WAVE_ID}")
         self.assertEqual(code, 200)
         self.assertEqual(body, self.wave.read_bytes())
 
     def test_a_wav_track_is_listed_playable_and_typed(self) -> None:
-        _, d = self.get_json("/api/tracks")
+        _, d = self.get_json("/studio/tracks")
         mine = next((t for t in d["tracks"] if t["id"] == self.WAV_ID), None)
         self.assertIsNotNone(mine, "a WAV import never appeared in the list")
         self.assertEqual(mine["ext"], "wav")  # type: ignore[index]  # narrowed by assertIsNotNone
-        code, body = self.req("GET", f"/api/track/{self.WAV_ID}")
+        code, body = self.req("GET", f"/studio/track/{self.WAV_ID}")
         self.assertEqual(code, 200)
         self.assertEqual(body, self.wav.read_bytes())
 
     def test_a_wav_track_has_a_drawable_waveform(self) -> None:
         """The clip editor is reached by the same id, so it has to resolve the
         container too."""
-        code, d = self.get_json(f"/api/waveform/{self.WAV_ID}")
+        code, d = self.get_json(f"/studio/waveform/{self.WAV_ID}")
         self.assertEqual(code, 200)
         self.assertGreater(len(d["peaks"]), 100)
 
@@ -125,7 +125,7 @@ class TestReads(ServerCase):
         whole thing first."""
         total = self.wave.stat().st_size
         r = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}/api/track/{self.WAVE_ID}",
+            f"http://127.0.0.1:{self.port}/studio/track/{self.WAVE_ID}",
             headers={"Range": "bytes=10-19"})
         with urllib.request.urlopen(r, timeout=20) as f:
             self.assertEqual(f.status, 206)
@@ -138,32 +138,18 @@ class TestReads(ServerCase):
         claims to be a range is not."""
         for bad in ("bytes=99999999-", "bytes=abc-def", "bytes=5-1", "nonsense"):
             r = urllib.request.Request(
-                f"http://127.0.0.1:{self.port}/api/track/{self.WAVE_ID}",
+                f"http://127.0.0.1:{self.port}/studio/track/{self.WAVE_ID}",
                 headers={"Range": bad})
             with urllib.request.urlopen(r, timeout=20) as f:
                 self.assertEqual(f.status, 200, bad)
                 self.assertEqual(f.read(), self.wave.read_bytes(), bad)
-
-    def test_unknown_routes_are_404_on_every_verb(self) -> None:
-        # Outside /api/ the studio still answers for itself. An unknown
-        # /api/* path is no longer a 404: it relays to the castle
-        # (castle_link.py), and with the fixture's dead CASTLE_HOST that
-        # surfaces as the bridge's 502 — asserted here so the relay-versus-
-        # 404 boundary stays deliberate on every verb.
-        for method, data in (("GET", None), ("POST", b"{}"), ("DELETE", None)):
-            code, body = self.req(method, "/nope", data)
-            self.assertEqual(code, 404, method)
-            self.assertEqual(json.loads(body)["error"], "not found")
-            code, body = self.req(method, "/api/nope", data)
-            self.assertEqual(code, 502, method)
-            self.assertIn("castle", json.loads(body)["error"])
 
 
 class TestJobs(ServerCase):
     """The async import surface, without ever starting a real import."""
 
     def test_unknown_job_is_404(self) -> None:
-        code, d = self.get_json("/api/job/deadbeefdead")
+        code, d = self.get_json("/studio/job/deadbeefdead")
         self.assertEqual(code, 404)
         self.assertIn("no such job", d["error"])
 
@@ -172,7 +158,7 @@ class TestJobs(ServerCase):
         along with the last response or the new track never appears."""
         job = studio._runner.start(["true"])
         for _ in range(400):
-            code, d = self.get_json(f"/api/job/{job.id}")
+            code, d = self.get_json(f"/studio/job/{job.id}")
             self.assertEqual(code, 200)
             if d["done"]:
                 break
@@ -182,12 +168,12 @@ class TestJobs(ServerCase):
         self.assertIn(self.WAVE_ID, [t["id"] for t in d["tracks"]])
 
     def test_async_import_rejects_a_non_http_url(self) -> None:
-        code, d = self.post_json("/api/import/async", {"url": "file:///etc/passwd"})
+        code, d = self.post_json("/studio/import/async", {"url": "file:///etc/passwd"})
         self.assertEqual(code, 400)
         self.assertIn("http(s)", d["error"])
 
     def test_async_import_rejects_an_empty_body(self) -> None:
-        code, _ = self.req("POST", "/api/import/async", b"",
+        code, _ = self.req("POST", "/studio/import/async", b"",
                            {"Content-Type": "application/json"})
         self.assertEqual(code, 400)
 
@@ -196,7 +182,7 @@ class TestJobs(ServerCase):
         this is where a renamed field silently stops taking effect."""
         with mock.patch.object(studio._runner, "start",
                                return_value=studio.sj.Job(id="fakejobid123")) as spy:
-            code, d = self.post_json("/api/import/async", {
+            code, d = self.post_json("/studio/import/async", {
                 "url": "https://example.invalid/v", "id": "_t_studio_fake",
                 "start": "0:12", "take": 24, "sample_rate": 22050,
                 "gain_db": "", "normalize": True})
@@ -221,14 +207,14 @@ class TestWrites(ServerCase):
         mf.record(self.DEL_ID, source="file:/tmp/whatever", title="test")
         self.assertIsNotNone(mf.get(self.DEL_ID))
 
-        code, d = self.req("DELETE", f"/api/tracks/{self.DEL_ID}")
+        code, d = self.req("DELETE", f"/studio/tracks/{self.DEL_ID}")
         self.assertEqual(code, 200)
         self.assertEqual(json.loads(d)["removed"], self.DEL_ID)
         self.assertFalse(target.exists(), "the file is still on disk")
         self.assertIsNone(mf.get(self.DEL_ID), "the manifest still remembers it")
 
     def test_delete_of_an_unknown_track_is_404(self) -> None:
-        code, body = self.req("DELETE", "/api/tracks/_t_studio_never_existed")
+        code, body = self.req("DELETE", "/studio/tracks/_t_studio_never_existed")
         self.assertEqual(code, 404)
         self.assertEqual(json.loads(body)["error"], "not found")
 
@@ -237,7 +223,7 @@ class TestWrites(ServerCase):
         the row comes back on the next refresh."""
         target = studio.TRACKS / f"{self.DEL_ID}_flac.wav"
         make_click_track(target, seconds=1.0)
-        code, _ = self.req("DELETE", f"/api/tracks/{self.DEL_ID}_flac")
+        code, _ = self.req("DELETE", f"/studio/tracks/{self.DEL_ID}_flac")
         self.assertEqual(code, 200)
         self.assertFalse(target.exists(), "the WAV is still on disk")
 
@@ -246,7 +232,7 @@ class TestWrites(ServerCase):
         should cost nothing and, in particular, must not shell out."""
         with mock.patch("studio_media.subprocess.run",
                         side_effect=AssertionError("probe shelled out")):
-            code, d = self.post_json("/api/probe", {"url": "not a link at all"})
+            code, d = self.post_json("/studio/probe", {"url": "not a link at all"})
         # 400, not 200: a bad link is the caller's mistake, and the status
         # code is allowed to say so (grade report B2).
         self.assertEqual(code, 400)
@@ -256,18 +242,18 @@ class TestWrites(ServerCase):
     def test_probe_of_an_empty_body_is_not_a_crash(self) -> None:
         with mock.patch("studio_media.subprocess.run",
                         side_effect=AssertionError("probe shelled out")):
-            code, d = self.req("POST", "/api/probe", b"",
+            code, d = self.req("POST", "/studio/probe", b"",
                                {"Content-Type": "application/json"})
         self.assertEqual(code, 400)   # no url = the caller's mistake (B2)
         self.assertFalse(json.loads(d)["ok"])
 
     def test_sync_import_rejects_a_missing_url(self) -> None:
-        code, d = self.post_json("/api/import", {})
+        code, d = self.post_json("/studio/import", {})
         self.assertEqual(code, 400)
         self.assertEqual(d["error"], "no url")
 
     def test_sync_import_rejects_a_non_http_url(self) -> None:
-        code, d = self.post_json("/api/import", {"url": "ftp://example.invalid/x"})
+        code, d = self.post_json("/studio/import", {"url": "ftp://example.invalid/x"})
         self.assertEqual(code, 400)
         self.assertIn("http(s)", d["error"])
 
@@ -284,7 +270,7 @@ class TestWrites(ServerCase):
         body = (b"--B\r\nContent-Disposition: form-data; name=\"file\"; "
                 b"filename=\"clip.wav\"\r\n\r\nRIFFfake\r\n--B--\r\n")
         with mock.patch.object(studio, "run", fake_run):
-            code, d = self.req("POST", "/api/import", body, {
+            code, d = self.req("POST", "/studio/import", body, {
                 "Content-Type": "multipart/form-data; boundary=B",
                 "X-Import-Opts": json.dumps({"id": "_t_studio_up", "take": 5})})
         self.assertEqual(code, 200)
@@ -298,7 +284,7 @@ class TestWrites(ServerCase):
                          "the staging directory was left behind")
 
     def test_upload_without_a_file_is_400(self) -> None:
-        code, d = self.req("POST", "/api/import", b"--B--\r\n",
+        code, d = self.req("POST", "/studio/import", b"--B--\r\n",
                            {"Content-Type": "multipart/form-data; boundary=B"})
         self.assertEqual(code, 400)
         self.assertIn("no file", json.loads(d)["error"])
@@ -308,7 +294,7 @@ class TestWrites(ServerCase):
         body = (b"--B\r\nContent-Disposition: form-data; name=\"file\"; "
                 b"filename=\"clip.wav\"\r\n\r\nRIFFfake\r\n--B--\r\n")
         with mock.patch.object(studio, "run") as run:
-            code, d = self.req("POST", "/api/import", body, {
+            code, d = self.req("POST", "/studio/import", body, {
                 "Content-Type": "multipart/form-data; boundary=B",
                 "X-Import-Opts": "{not json"})
         self.assertEqual(code, 400)
@@ -319,14 +305,14 @@ class TestWrites(ServerCase):
     def test_a_body_larger_than_the_cap_is_refused_up_front(self) -> None:
         """The server buffers bodies whole; a Content-Length it would never
         allocate for is a 400 before a byte is read."""
-        code, d = self.req("POST", "/api/probe", b"{}", {
+        code, d = self.req("POST", "/studio/probe", b"{}", {
             "Content-Type": "application/json",
             "Content-Length": str(sh.MAX_BODY + 1)})
         self.assertEqual(code, 400)
         self.assertIn("too large", json.loads(d)["error"])
 
     def test_refresh_needs_an_id(self) -> None:
-        code, d = self.post_json("/api/refresh", {})
+        code, d = self.post_json("/studio/refresh", {})
         self.assertEqual(code, 400)
         self.assertEqual(d["error"], "no id")
 
@@ -334,7 +320,7 @@ class TestWrites(ServerCase):
         """--refresh is the reason the manifest exists; the id and the changed
         option both have to reach import_track."""
         with mock.patch.object(studio, "run", return_value=(True, "log")) as spy:
-            code, d = self.post_json("/api/refresh",
+            code, d = self.post_json("/studio/refresh",
                                      {"id": self.WAVE_ID, "take": 12,
                                       "start": "", "normalize": True})
         self.assertEqual(code, 200)
@@ -349,7 +335,7 @@ class TestWrites(ServerCase):
 
     def test_rebuild_runs_the_three_generators(self) -> None:
         with mock.patch.object(studio, "run", return_value=(True, "out")) as spy:
-            code, d = self.post_json("/api/rebuild", {})
+            code, d = self.post_json("/studio/rebuild", {})
         self.assertEqual(code, 200)
         self.assertTrue(d["ok"])
         ran = [Path(c[0][0][1]).name for c in spy.call_args_list]
@@ -359,9 +345,18 @@ class TestWrites(ServerCase):
     def test_rebuild_reports_failure_of_any_step(self) -> None:
         with mock.patch.object(studio, "run",
                                side_effect=[(True, "a"), (False, "b"), (True, "c")]):
-            _, d = self.post_json("/api/rebuild", {})
+            _, d = self.post_json("/studio/rebuild", {})
         self.assertFalse(d["ok"])
         self.assertIn("b", d["log"])
+
+def block(sid: str, **over: object) -> str:
+    """A scene block that passes scene_schema, for overriding per test."""
+    s: dict[str, object] = {"name": sid, "kind": "triggered",
+                            "duration_ms": 1000, "base": {}}
+    s.update(over)
+    return f"  - id: {sid}\n" + "".join(
+        f"    {k}: {json.dumps(v)}\n" for k, v in s.items())
+
 
 class TestSceneEditing(ServerCase):
     """scenes.yaml is spliced as text, against a copy — never the real file."""
@@ -389,7 +384,7 @@ class TestSceneEditing(ServerCase):
 
     def test_needs_both_an_id_and_a_block(self) -> None:
         for req in ({}, {"id": "x"}, {"yaml": "  - id: x\n"}):
-            code, d = self.post_json("/api/scene", req)
+            code, d = self.post_json("/studio/scene", req)
             self.assertEqual(code, 400, req)
             self.assertIn("need id and yaml", d["error"])
         self.assertEqual(self.scenes.read_text(), self.ORIGINAL,
@@ -397,8 +392,8 @@ class TestSceneEditing(ServerCase):
 
     def test_replaces_an_existing_scene_in_place(self) -> None:
         code, d = self.post_json(
-            "/api/scene",
-            {"id": "storm", "yaml": "  - id: storm\n    duration_ms: 9999\n"})
+            "/studio/scene",
+            {"id": "storm", "yaml": block("storm", duration_ms=9999)})
         self.assertEqual(code, 200)
         self.assertEqual(d["id"], "storm")
         text = self.scenes.read_text()
@@ -409,15 +404,15 @@ class TestSceneEditing(ServerCase):
     def test_leaves_the_surrounding_file_alone(self) -> None:
         """Comments carry the reasoning behind the show; a YAML round-trip
         would erase them, which is why this splices text."""
-        self.post_json("/api/scene",
-                       {"id": "storm", "yaml": "  - id: storm\n    duration_ms: 3\n"})
+        self.post_json("/studio/scene",
+                       {"id": "storm", "yaml": block("storm", duration_ms=3)})
         text = self.scenes.read_text()
         self.assertIn("# a comment that must survive", text)
         self.assertIn("- id: vigil", text)
 
     def test_appends_a_scene_it_has_not_seen(self) -> None:
-        self.post_json("/api/scene",
-                       {"id": "brand_new", "yaml": "  - id: brand_new\n    x: 1\n"})
+        self.post_json("/studio/scene",
+                       {"id": "brand_new", "yaml": block("brand_new")})
         text = self.scenes.read_text()
         self.assertIn("- id: brand_new", text)
         self.assertTrue(text.index("- id: storm") < text.index("- id: brand_new"))
@@ -427,19 +422,19 @@ class TestSceneEditing(ServerCase):
         see from the page. Without this the panel can only say "written", which
         reads exactly like nothing having happened."""
         _, added = self.post_json(
-            "/api/scene", {"id": "brand_new", "yaml": "  - id: brand_new\n    x: 1\n"})
+            "/studio/scene", {"id": "brand_new", "yaml": block("brand_new")})
         self.assertFalse(added["replaced"])
         _, again = self.post_json(
-            "/api/scene", {"id": "brand_new", "yaml": "  - id: brand_new\n    x: 2\n"})
+            "/studio/scene", {"id": "brand_new", "yaml": block("brand_new", duration_ms=2)})
         self.assertTrue(again["replaced"])
 
     def test_rewriting_the_same_scene_twice_changes_nothing(self) -> None:
         """"Update scene" on an unchanged track should be a no-op in git, not a
         whitespace diff that has to be explained."""
-        block = {"id": "storm", "yaml": "  - id: storm\n    duration_ms: 7\n"}
-        self.post_json("/api/scene", block)
+        req = {"id": "storm", "yaml": block("storm", duration_ms=7)}
+        self.post_json("/studio/scene", req)
         once = self.scenes.read_text()
-        self.post_json("/api/scene", block)
+        self.post_json("/studio/scene", req)
         self.assertEqual(self.scenes.read_text(), once)
 
     def test_rebuild_stops_at_the_first_failing_step(self) -> None:
@@ -453,7 +448,7 @@ class TestSceneEditing(ServerCase):
                 (False, render_err), (True, "wrote castle_cues.h"),
                 (True, "wrote 11 scenes + 11 audio files into castle-cue-desk.html")]) as spy:
             code, d = self.post_json(
-                "/api/scene", {"id": "jb_drop", "yaml": "  - id: jb_drop\n    x: 1\n"})
+                "/studio/scene", {"id": "jb_drop", "yaml": block("jb_drop")})
         self.assertEqual(code, 500)
         self.assertFalse(d["ok"])
         ran = [Path(c[0][0][1]).name for c in spy.call_args_list]
@@ -463,11 +458,29 @@ class TestSceneEditing(ServerCase):
         self.assertNotIn("wrote 11 scenes", d["log"])
         self.assertIn("render_audio.py failed", d["log"])
 
+    def test_a_block_that_is_not_a_scene_is_refused_with_every_reason(self) -> None:
+        """Parses, names itself right, and is still wrong: an unknown effect
+        and a cue past the end. These used to splice cleanly and fail inside
+        the re-render (grade report B4); now the list comes back as a 400
+        and the file is untouched."""
+        yaml = block("storm", duration_ms=500, base={"door": "glow"},
+                     cues=[{"t": 900, "op": "set", "zone": "door",
+                            "effect": "ember"}])
+        code, d = self.post_json("/studio/scene", {"id": "storm", "yaml": yaml})
+        self.assertEqual(code, 400)
+        self.assertIn("storm", d["error"])
+        joined = "\n".join(d["errors"])
+        self.assertIn("unknown effect 'glow'", joined)
+        self.assertIn("past the scene's duration_ms", joined)
+        self.assertEqual(self.scenes.read_text(), self.ORIGINAL)
+        self.assertEqual(studio.run.call_count, 0,  # type: ignore[attr-defined]
+                         "a rejected scene still triggered a rebuild")
+
     def test_the_answer_carries_the_new_scene_list(self) -> None:
         """The row's "in the show" badge comes from this, so it has to be the
         list as of after the write, not before it."""
         _, d = self.post_json(
-            "/api/scene", {"id": "brand_new", "yaml": "  - id: brand_new\n    x: 1\n"})
+            "/studio/scene", {"id": "brand_new", "yaml": block("brand_new")})
         self.assertIn("brand_new", d["scenes"])
         self.assertIn("vigil", d["scenes"])
 

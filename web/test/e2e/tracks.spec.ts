@@ -51,7 +51,7 @@ test("a WAV import is listed, typed and playable", async ({ page }) => {
   // No bitrate for a lossless container; "?kbps" reads as a failed import.
   await expect(row(page, WAV).locator("small").first()).not.toContainText("kbps");
 
-  const res = await page.request.get(`/api/track/${WAV}`);
+  const res = await page.request.get(`/studio/track/${WAV}`);
   expect(res.status()).toBe(200);
   expect(res.headers()["content-type"]).toBe("audio/wav");
 });
@@ -160,7 +160,7 @@ test("Delete removes the track and closes the editor on it", async ({ page }) =>
   // The editor was open on it; leaving it up would show a track that is gone.
   await expect(page.locator("#trkWave")).toBeHidden();
   // Gone from the server too, not just from the DOM.
-  expect((await page.request.get(`/api/track/${DOOMED}`)).status()).toBe(404);
+  expect((await page.request.get(`/studio/track/${DOOMED}`)).status()).toBe(404);
 });
 
 test("Make scene reports what it did, and the row says so afterwards",
@@ -168,7 +168,7 @@ test("Make scene reports what it did, and the row says so afterwards",
     // The write itself is covered by tests/test_studio_api.py against a
     // scratch scenes.yaml. What is under test here is the half that made the
     // button look broken: no busy state, and no visible result.
-    await page.route("**/api/scene", async route => {
+    await page.route("**/studio/scene", async route => {
       await new Promise(r => setTimeout(r, 400));   // a real one takes seconds
       await route.fulfill({
         status: 200,
@@ -304,11 +304,11 @@ test("a URL import shows live progress and lands in the list", async ({ page }) 
   // real yt-dlp path can't run in a test; the wiring is what broke (A8 —
   // the async pipeline shipped with no caller at all).
   let polls = 0;
-  await page.route("**/api/import/async", (r) => r.fulfill({ json: {
+  await page.route("**/studio/import/async", (r) => r.fulfill({ json: {
     id: "j1", phase: "queued", percent: 0, detail: "", error: null,
     done: false, log: [],
   } }));
-  await page.route("**/api/job/j1", (r) => {
+  await page.route("**/studio/job/j1", (r) => {
     polls += 1;
     const stages = [
       { phase: "fetching", percent: 40, detail: "12.4MB", done: false },
@@ -332,7 +332,7 @@ test("a URL import shows live progress and lands in the list", async ({ page }) 
 
 test("an import the server refuses fails with its reason, not a spinner",
     async ({ page }) => {
-  await page.route("**/api/import/async", (r) => r.fulfill({
+  await page.route("**/studio/import/async", (r) => r.fulfill({
     status: 400, json: { error: "id: letters, digits and _ only" },
   }));
   await page.locator("#trkUrl").fill("https://example.com/x");

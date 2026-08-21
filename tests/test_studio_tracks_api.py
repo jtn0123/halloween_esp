@@ -3,8 +3,10 @@
 Delete of an in-show track taking its scene with it, --no-normalize reaching
 the importer, one-line reasons on failure, a dropped file's original kept
 beside the library so Re-import has something to work from, and the
-castle's phone remote relayed at /remote. test_studio_api.py is at the LOC
-cap; this file is its continuation.
+castle's phone remote relayed at /remote — and the route boundary: what
+the studio owns (/studio/*), what it relays (/api/*), and the one-release
+aliases between them. test_studio_api.py is at the LOC cap; this file is
+its continuation.
 """
 
 from __future__ import annotations
@@ -39,20 +41,20 @@ class TestImportOptions(ServerCase):
         """All three import paths only ever added --normalize; an unchecked
         box was silently ignored and the row then said "normalised"."""
         with mock.patch.object(studio, "run", return_value=(True, "log")) as spy:
-            self.post_json("/api/refresh", {"id": self.WAVE_ID, "normalize": False})
+            self.post_json("/studio/refresh", {"id": self.WAVE_ID, "normalize": False})
         self.assertIn("--no-normalize", spy.call_args[0][0])
         self.assertNotIn("--normalize", spy.call_args[0][0])
 
     def test_an_absent_normalize_leaves_the_remembered_choice(self) -> None:
         with mock.patch.object(studio, "run", return_value=(True, "log")) as spy:
-            self.post_json("/api/refresh", {"id": self.WAVE_ID, "take": 3})
+            self.post_json("/studio/refresh", {"id": self.WAVE_ID, "take": 3})
         argv = spy.call_args[0][0]
         self.assertNotIn("--normalize", argv)
         self.assertNotIn("--no-normalize", argv)
 
     def test_refresh_forwards_format_and_fades(self) -> None:
         with mock.patch.object(studio, "run", return_value=(True, "log")) as spy:
-            self.post_json("/api/refresh", {"id": self.WAVE_ID, "format": "wav",
+            self.post_json("/studio/refresh", {"id": self.WAVE_ID, "format": "wav",
                                             "fade_in": 0.5, "fade_out": "1"})
         argv = spy.call_args[0][0]
         for flag in ("--format", "--fade-in", "--fade-out"):
@@ -60,7 +62,7 @@ class TestImportOptions(ServerCase):
 
     def test_a_failed_refresh_carries_one_line_reason_not_a_traceback(self) -> None:
         with mock.patch.object(studio, "run", return_value=(False, TRACEBACK)):
-            code, d = self.post_json("/api/refresh", {"id": self.WAVE_ID})
+            code, d = self.post_json("/studio/refresh", {"id": self.WAVE_ID})
         self.assertEqual(code, 500)
         self.assertFalse(d["ok"])
         self.assertEqual(d["reason"], "ffmpeg failed (exit 1)")
@@ -72,7 +74,7 @@ class TestImportOptions(ServerCase):
         body = (b"--B\r\nContent-Disposition: form-data; name=\"file\"; "
                 b"filename=\"clip.wav\"\r\n\r\nRIFFfake\r\n--B--\r\n")
         with mock.patch.object(studio, "run", return_value=(True, "ok")) as spy:
-            code, _ = self.req("POST", "/api/import", body, {
+            code, _ = self.req("POST", "/studio/import", body, {
                 "Content-Type": "multipart/form-data; boundary=B"})
         self.assertEqual(code, 200)
         self.assertIn("--keep-source", spy.call_args[0][0])
@@ -83,7 +85,7 @@ class TestSourceMissing(ServerCase):
         mf.record(self.WAVE_ID, source="file:/nowhere/at/all.wav")
         mf.record(self.WAV_ID, source="https://example.com/x")
         try:
-            _, d = self.get_json("/api/tracks")
+            _, d = self.get_json("/studio/tracks")
             by = {t["id"]: t for t in d["tracks"]}
             self.assertTrue(by[self.WAVE_ID]["source_missing"])
             self.assertFalse(by[self.WAV_ID]["source_missing"])
@@ -124,19 +126,19 @@ class TestDeleteWithScene(ServerCase):
         mf.forget(self.DEL_ID)
 
     def test_plain_delete_leaves_the_scene_alone(self) -> None:
-        code, d = self.req("DELETE", f"/api/tracks/{self.DEL_ID}")
+        code, d = self.req("DELETE", f"/studio/tracks/{self.DEL_ID}")
         self.assertEqual(code, 200)
         self.assertNotIn("scene_removed", json.loads(d))
         self.assertIn(f"- id: {self.DEL_ID}", self.scenes.read_text())
         self.run_spy.assert_not_called()
 
     def test_delete_takes_the_kept_original_with_it(self) -> None:
-        self.req("DELETE", f"/api/tracks/{self.DEL_ID}")
+        self.req("DELETE", f"/studio/tracks/{self.DEL_ID}")
         self.assertEqual(studio_tracks.source_copies(self.DEL_ID), [])
         self.assertIsNone(mf.get(self.DEL_ID))
 
     def test_delete_with_scene_removes_the_block_and_rebuilds(self) -> None:
-        code, raw = self.req("DELETE", f"/api/tracks/{self.DEL_ID}?scene=1")
+        code, raw = self.req("DELETE", f"/studio/tracks/{self.DEL_ID}?scene=1")
         d = json.loads(raw)
         self.assertEqual(code, 200, d)
         self.assertTrue(d["ok"])
@@ -158,10 +160,10 @@ class TestDeleteWithScene(ServerCase):
         a failed import or a hand-deleted file leaves. A plain DELETE is a
         404 (nothing to delete); ?scene=1 takes the orphan out (JB2-5a)."""
         self.track.unlink()
-        code, _ = self.req("DELETE", f"/api/tracks/{self.DEL_ID}")
+        code, _ = self.req("DELETE", f"/studio/tracks/{self.DEL_ID}")
         self.assertEqual(code, 404)
         self.run_spy.assert_not_called()
-        code, raw = self.req("DELETE", f"/api/tracks/{self.DEL_ID}?scene=1")
+        code, raw = self.req("DELETE", f"/studio/tracks/{self.DEL_ID}?scene=1")
         d = json.loads(raw)
         self.assertEqual(code, 200, d)
         self.assertTrue(d["scene_removed"])
@@ -174,11 +176,81 @@ class TestDeleteWithScene(ServerCase):
 
     def test_delete_with_scene_of_a_track_not_in_the_show_is_harmless(self) -> None:
         self.scenes.write_text("scenes:\n  - id: vigil\n    duration_ms: 1\n")
-        code, raw = self.req("DELETE", f"/api/tracks/{self.DEL_ID}?scene=1")
+        code, raw = self.req("DELETE", f"/studio/tracks/{self.DEL_ID}?scene=1")
         d = json.loads(raw)
         self.assertEqual(code, 200)
         self.assertFalse(d["scene_removed"])
         self.run_spy.assert_not_called()
+
+
+class TestRouteBoundary(ServerCase):
+    """/studio/* is the studio's, /api/* is the castle's — on every verb."""
+
+    def test_unknown_studio_routes_are_404_and_unknown_api_routes_relay(self) -> None:
+        # A typo'd studio route can no longer silently become a castle
+        # call: outside /api/ the studio answers 404 for itself, and an
+        # unknown /api/* path relays (castle_link.py) — with the fixture's
+        # dead CASTLE_HOST that surfaces as the bridge's 502.
+        for method, data in (("GET", None), ("POST", b"{}"), ("DELETE", None),
+                             ("PUT", b"x")):
+            for path in ("/nope", "/studio/nope", "/studio/tracks/../nope"):
+                code, body = self.req(method, path, data)
+                self.assertEqual(code, 404, (method, path))
+                self.assertEqual(json.loads(body)["error"], "not found")
+            code, body = self.req(method, "/api/nope", data)
+            self.assertEqual(code, 502, method)
+            self.assertIn("castle", json.loads(body)["error"])
+
+    def test_old_api_spellings_still_answer_for_one_release(self) -> None:
+        """A desk built before the move keeps working; the alias is logged
+        once per route, not once per request."""
+        studio._deprecated_seen.clear()
+        with mock.patch("sys.stderr") as err:
+            code, d = self.get_json("/api/tracks")
+            self.assertEqual(code, 200)
+            self.assertIn(self.WAVE_ID, [t["id"] for t in d["tracks"]])
+            self.assertEqual(self.req("GET", f"/api/track/{self.WAVE_ID}")[0], 200)
+            self.assertEqual(self.req("GET", "/api/waveform/_t_nope")[0], 404)
+            self.assertEqual(self.req("GET", "/api/job/nope")[0], 404)
+            self.get_json("/api/tracks")
+        notes = [c.args[0] for c in err.write.call_args_list
+                 if "DEPRECATED" in c.args[0]]
+        self.assertEqual(len([n for n in notes if "/api/tracks" in n]), 1)
+        self.assertTrue(all("/studio/" in n for n in notes))
+
+    def test_the_castles_fire_a_scene_is_not_the_studios_editor(self) -> None:
+        """/api/scene?s=<id> is the castle's; only the JSON-body spelling
+        aliases to /studio/scene. Same old path, two different owners."""
+        code, body = self.req("POST", "/api/scene?s=vigil", b"")
+        self.assertEqual(code, 502)
+        self.assertIn("castle", json.loads(body)["error"])
+        code, d = self.post_json("/api/scene", {})
+        self.assertEqual(code, 400)
+        self.assertIn("need id and yaml", d["error"])
+
+    def test_status_stays_at_api_status_and_marks_the_studio(self) -> None:
+        """The desk's mode probe never moves: no castle in reach, the studio
+        answers for itself and says so (device.ts reads the marker)."""
+        code, d = self.get_json("/api/status")
+        self.assertEqual((code, d), (200, {"studio": True}))
+        self.assertEqual(self.req("GET", "/studio/status")[0], 404)
+
+    def test_card_pull_relays_the_file_name_only(self) -> None:
+        """/studio/card/<name> is the one relay that builds a castle path,
+        so it is name-stripped like every other file route (grade report
+        E1): "../api/status" must not reach any GET on the castle."""
+        with mock.patch.object(studio.cl, "forward",
+                               return_value=(200, b"x", "audio/mpeg")) as fw:
+            self.assertEqual(self.req("GET", "/studio/card/song.mp3")[0], 200)
+            self.assertEqual(fw.call_args[0][:2], ("GET", "/sd/song.mp3"))
+            self.req("GET", "/studio/card/../api/status")
+            self.assertEqual(fw.call_args[0][1], "/sd/status")
+            self.req("GET", "/api/card/a/../b.mp3")          # the alias too
+            self.assertEqual(fw.call_args[0][1], "/sd/b.mp3")
+            code, body = self.req("GET", "/studio/card/")
+            self.assertEqual(code, 400)
+            self.assertIn("no file name", json.loads(body)["error"])
+            self.assertEqual(fw.call_count, 3, "an empty name still relayed")
 
 
 class TestRemoteRelay(ServerCase):

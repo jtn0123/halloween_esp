@@ -99,7 +99,7 @@ export interface FakeCastle {
 
 /**
  * Route every castle-shaped /api/* call to an in-memory castle; the studio's
- * own endpoints (/api/tracks, /api/track/<id>, imports, scenes) fall through
+ * own endpoints (/studio/tracks, /studio/track/<id>, imports, scenes) fall through
  * to the real server, so a Sync moves real bytes the real server serves.
  */
 export async function fakeCastle(page: Page, files: SdFile[] = [],
@@ -163,7 +163,7 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
 /** The track's exact on-disk size from the real studio, so a card copy can
  *  be made current (same bytes) or stale (any other number) on purpose. */
 export async function realBytes(page: Page, id: string): Promise<number> {
-  const r = await (await page.request.get("/api/tracks")).json() as
+  const r = await (await page.request.get("/studio/tracks")).json() as
     { tracks: { id: string; bytes: number }[] };
   return r.tracks.find((t) => t.id === id)!.bytes;
 }

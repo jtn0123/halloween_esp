@@ -29,6 +29,7 @@ from gen_show import emit_manifest_check, emit_show_playlist
 from pulse_dynamics import round3, section_gates  # noqa: F401 (re-export)
 from pulse_expand import DEFAULT_DECAY, WHITE, pulse_cues
 from rig_layout import zone_layouts
+from scene_schema import validate as validate_scene
 
 ROOT = Path(__file__).resolve().parent.parent
 # Source and outputs both follow build_paths.py: a sandboxed studio (its own
@@ -228,6 +229,15 @@ def main() -> int:
     markers = json.loads(MARKERS.read_text()) if MARKERS.exists() else {}
     if not markers:
         print("note: no audio/markers.json — run `make audio` first; no beat pulses")
+    # The same checks the studio runs before a splice (scene_schema), so a
+    # hand-edited scenes.yaml fails here with every problem listed, not one
+    # SystemExit per rebuild.
+    zone_ids = [z["id"] for z in zones]
+    for scene in doc["scenes"]:
+        problems = validate_scene(scene, zone_ids)
+        if problems:
+            sid = scene.get("id", "?") if isinstance(scene, dict) else "?"
+            raise SystemExit(f"scene {sid}: " + "\n  ".join(problems))
     for i, scene in enumerate(doc["scenes"], start=1):
         out.extend(emit_scene(scene, zones, i, markers))
 

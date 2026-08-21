@@ -421,6 +421,23 @@ class TestGenEsphomeMain(unittest.TestCase):
         then = yaml.safe_load(ge.OUT.read_text())["script"][1]["then"]
         self.assertIn({"delay": "250ms"}, then)
 
+    def test_a_scene_the_schema_rejects_stops_the_build_with_every_reason(self) -> None:
+        """scene_schema runs before a byte is emitted — the same checks the
+        studio applies to a splice — so a hand-edited scenes.yaml fails with
+        the whole list, named by scene, and writes nothing."""
+        doc = dict(self.DOC, scenes=[
+            scene(id="a"),
+            scene(id="bad", duration_ms=100, base={"door": "glow"},
+                  cues=[{"t": 900, "op": "set", "zone": "door", "effect": "ember"}])])
+        ge.SRC.write_text(yaml.safe_dump(doc))
+        with self.assertRaises(SystemExit) as cm:
+            ge.main()
+        msg = str(cm.exception)
+        self.assertTrue(msg.startswith("scene bad:"), msg)
+        self.assertIn("unknown effect 'glow'", msg)
+        self.assertIn("past the scene's duration_ms", msg)
+        self.assertFalse(ge.OUT.exists(), "a rejected show was still written")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

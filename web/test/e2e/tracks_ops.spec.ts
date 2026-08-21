@@ -32,10 +32,10 @@ async function dragClip(page: Page, from = 0.3, to = 0.6): Promise<void> {
   await expect(page.locator("#trkStart")).not.toHaveValue("");
 }
 
-/** /api/tracks with each entry passed through `patch`; the real list otherwise. */
+/** /studio/tracks with each entry passed through `patch`; the real list otherwise. */
 async function patchTracks(page: Page, patch: (t: Record<string, unknown>) => Record<string, unknown>,
                            scenes?: (s: string[]) => string[]): Promise<void> {
-  await page.route("**/api/tracks", async (route: Route) => {
+  await page.route("**/studio/tracks", async (route: Route) => {
     if (route.request().method() !== "GET") return route.fallback();
     const res = await route.fetch();
     const body = await res.json() as { tracks: Record<string, unknown>[]; scenes: string[] };
@@ -64,7 +64,7 @@ test.beforeEach(async ({ page }) => {
 test("a drop does not inherit the clip editor's trim from another track",
   async ({ page }) => {
     let opts: Record<string, string> | null = null;
-    await page.route("**/api/import", async (route) => {
+    await page.route("**/studio/import", async (route) => {
       opts = JSON.parse(route.request().headers()["x-import-opts"] ?? "{}");
       await route.fulfill({ json: { ok: true, tracks: [] } });
     });
@@ -82,7 +82,7 @@ test("a drop does not inherit the clip editor's trim from another track",
 
 test("a typed trim DOES reach a drop, and is consumed by it", async ({ page }) => {
   let opts: Record<string, string> | null = null;
-  await page.route("**/api/import", async (route) => {
+  await page.route("**/studio/import", async (route) => {
     opts = JSON.parse(route.request().headers()["x-import-opts"] ?? "{}");
     await route.fulfill({ json: { ok: true, tracks: [] } });
   });
@@ -104,7 +104,7 @@ test("Re-import on the open track offsets START by the remembered start and forw
       ? { ...t, source: "https://example.com/x",
           opts: { start: "0:30", take: "10", channels: 1, fade_in: 0.5 } } : t);
     let body: Record<string, unknown> | null = null;
-    await page.route("**/api/refresh", async (route) => {
+    await page.route("**/studio/refresh", async (route) => {
       body = route.request().postDataJSON();
       await route.fulfill({ json: { ok: true, tracks: [] } });
     });
@@ -128,7 +128,7 @@ test("Re-import on the open track offsets START by the remembered start and forw
 test("Re-import on another row ignores the editor's trim", async ({ page }) => {
   await patchTracks(page, t => ({ ...t, source: "https://example.com/x" }));
   let body: Record<string, unknown> | null = null;
-  await page.route("**/api/refresh", async (route) => {
+  await page.route("**/studio/refresh", async (route) => {
     body = route.request().postDataJSON();
     await route.fulfill({ json: { ok: true, tracks: [] } });
   });
@@ -145,7 +145,7 @@ test("Re-import on another row ignores the editor's trim", async ({ page }) => {
 
 test("a failed import shows the studio's one-line reason, never a traceback",
   async ({ page }) => {
-    await page.route("**/api/import", (route) => route.fulfill({
+    await page.route("**/studio/import", (route) => route.fulfill({
       status: 500, json: { ok: false, reason: "ffmpeg failed (exit 1)",
         log: "Traceback (most recent call last):\nsubprocess.CalledProcessError: …" },
     }));
@@ -174,7 +174,7 @@ test("deleting a track the show uses asks about its scene and takes it out",
   async ({ page }) => {
     await patchTracks(page, t => t, s => [...s, WAV]);
     let deleted = "";
-    await page.route(`**/api/tracks/${WAV}?scene=1`, async (route) => {
+    await page.route(`**/studio/tracks/${WAV}?scene=1`, async (route) => {
       deleted = route.request().url();
       await route.fulfill({ json: { ok: true, removed: WAV, scene_removed: true,
                                     scenes: [], log: "" } });
@@ -193,7 +193,7 @@ test("deleting a track the show uses asks about its scene and takes it out",
 test("Make scene refuses a track with no playable audio instead of writing NaN",
   async ({ page }) => {
     let wrote = false;
-    await page.route("**/api/scene", (route) => { wrote = true; return route.fulfill({ json: { ok: true } }); });
+    await page.route("**/studio/scene", (route) => { wrote = true; return route.fulfill({ json: { ok: true } }); });
     await patchTracks(page, t => t["id"] === MP3 ? { ...t, dur: undefined } : t);
     await act(page, MP3, "scene").click();
     await expect(page.locator("#trkNote")).toContainText("no playable audio");
@@ -204,7 +204,7 @@ test("Make scene refuses a track with no playable audio instead of writing NaN",
 test("a row with a job in flight cannot be deleted or re-imported, and other work keeps its own line",
   async ({ page }) => {
     await patchTracks(page, t => ({ ...t, source: "https://example.com/x" }));
-    await page.route("**/api/scene", async (route) => {
+    await page.route("**/studio/scene", async (route) => {
       await new Promise(r => setTimeout(r, 900));
       await route.fulfill({ json: { ok: true, id: MP3, replaced: false, scenes: [MP3], log: "" } });
     });
@@ -224,7 +224,7 @@ test("a row with a job in flight cannot be deleted or re-imported, and other wor
 
 test("the library says it is loading, not EMPTY, before the first answer",
   async ({ page }) => {
-    await page.route("**/api/tracks", async (route) => {
+    await page.route("**/studio/tracks", async (route) => {
       await new Promise(r => setTimeout(r, 800));
       await route.continue();
     });

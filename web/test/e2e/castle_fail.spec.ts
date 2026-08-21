@@ -13,7 +13,7 @@ const row = (id: string) => `.trk[data-id="${id}"]`;
 
 /** The real library with the chosen tracks marked as in the show. */
 async function inShow(page: import("@playwright/test").Page, ids: string[]): Promise<void> {
-  await page.route("**/api/tracks", async (route) => {
+  await page.route("**/studio/tracks", async (route) => {
     const real = await (await route.fetch()).json() as { tracks: unknown[] };
     return route.fulfill({ json: { ...real, scenes: ids } });
   });
