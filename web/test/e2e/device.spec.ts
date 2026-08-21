@@ -207,7 +207,10 @@ function flakyCastle(page: import("@playwright/test").Page,
     const method = route.request().method();
     calls.push(`${method} ${url.pathname}${url.search}`);
     const down = () => route.fulfill({ status: 502, json: { error: "castle not reachable" } });
-    if (url.pathname === "/api/status") return up ? route.fulfill({ json: status }) : down();
+    // The real studio answers a castle-less probe 200 {"studio":true}, not
+    // 502 — the shape the panel once rendered as "vundefined" (J2-1/J2-6).
+    if (url.pathname === "/api/status")
+      return route.fulfill({ json: up ? status : { studio: true } });
     if (url.pathname === "/api/files") return up ? route.fulfill({ json: FILES }) : down();
     if (method === "POST" && deadPosts) return down();
     return route.fulfill({ json: { queued: true } });
@@ -247,6 +250,34 @@ test("the masthead keeps saying 'not answering' across a ♪ toggle", async ({ p
   await expect(page.locator("#headTxt")).toContainText("castle not answering");
   await expect(page.locator("#headTxt")).toContainText("sound: castle");
   await expect(page.locator("#headTxt")).not.toContainText("v5.3");
+  // J2-2: ♪ to Castle while down must not light the volume controls up.
+  await page.locator(".transport #sndRoute").click();
+  await page.locator(".transport #sndRoute").click();
+  await expect(page.locator("#sndRoute").first()).toHaveText("♪ Castle");
+  await expect(page.locator("#devVol")).toBeDisabled();
+  await expect(page.locator("#devMute")).toBeDisabled();
+  // The dimmed chip says when it last heard from the castle, not a live ▶.
+  await expect(page.locator("#devNow")).toContainText("last seen");
+  // J2-1: the panel must not invent a control panel from {"studio":true}.
+  await page.locator("#devMore").click();
+  await expect(page.locator("#devicePanel")).toContainText("castle stopped answering");
+  await expect(page.locator("#devicePanel")).not.toContainText("vundefined");
+});
+
+test("error toasts stack instead of overprinting, and never repeat", async ({ page }) => {
+  // J2-3: two failures a second apart used to land on the same pixels.
+  const castle = flakyCastle(page);
+  await page.goto("/");
+  await expect(page.locator("#deviceChip")).toBeVisible();
+  castle.set(true, true);
+  await page.locator("button.scene", { hasText: "Storm" }).first().click();
+  await page.locator("button.scene", { hasText: "Vigil" }).first().click();
+  await page.locator("button.scene", { hasText: "Vigil" }).first().click();
+  const toasts = page.locator("#toasts > div");
+  await expect(toasts).toHaveCount(2);          // identical text folded
+  const boxes = await toasts.evaluateAll((els) =>
+    els.map((e) => e.getBoundingClientRect().top));
+  expect(boxes[0]).not.toEqual(boxes[1]);
 });
 
 test("a failed action says why, in the castle's words", async ({ page }) => {
