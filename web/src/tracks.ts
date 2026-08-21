@@ -16,7 +16,9 @@ import { api } from "./api.js";
 import { startEta } from "./eta.js";
 import type { BandEditor } from "./band_editor.js";
 import { fillOptsFrom, initImportOpts } from "./import_opts.js";
-import { cardName, fetchCardSet, sendToCastle } from "./track_send.js";
+import { cardRowsHtml, renderSyncButton, sendAction, watchCard,
+         wireCardActions } from "./track_card.js";
+import { cardName, fetchCard } from "./track_send.js";
 import { trackRowHtml } from "./track_rows.js";
 import { wireUrlImport } from "./track_import_url.js";
 import { detectOnsets, loudnessEnvelope } from "./onsets.js";
@@ -122,10 +124,10 @@ export function initTracks(deps: TracksDeps): TracksApi {
     selected: null as string | null,
     /** Last list drawn, so a redraw does not need another round trip. */
     tracks: [] as TrackInfo[],
-    /** Filenames on the castle's SD card, or null when no castle answers.
-     *  Feeds the "on castle" badge and the send button — the reconcile the
-     *  two-library setup was missing (dogfood 005/006). */
-    onCard: null as Set<string> | null,
+    /** name → bytes on the castle's SD card, or null when no castle answers.
+     *  Feeds the "on castle" badge, the card-only rows and the Sync button —
+     *  the reconcile the two-library setup was missing (dogfood 005/006). */
+    onCard: null as Map<string, number> | null,
   };
   const say = (msg: string, err?: boolean): void => {
     T.note.textContent = msg;
@@ -147,9 +149,6 @@ export function initTracks(deps: TracksDeps): TracksApi {
     T.note.append(b);
   };
   const val = (id: string): string => byId<HTMLInputElement>(id).value.trim();
-  /* Roughly what the scenes already in the show cost in flash, at ≈96k mono.
-     The readout wants "how much room is left", which is that subtracted from
-     the partition. */
   /* What the scenes already in the show cost in flash.
      The rendered size, now that scenes carry it. This used to estimate from
      duration at ≈96k mono, which was both redundant and wrong the moment a
@@ -214,24 +213,32 @@ export function initTracks(deps: TracksDeps): TracksApi {
     }
   }
 
-  /** Refresh the on-card set; a redraw follows so badges track reality. */
+  /** Refresh the on-card map; a redraw follows so badges track reality. */
   async function loadCard(): Promise<void> {
-    T.onCard = await fetchCardSet();
+    T.onCard = await fetchCard();
     drawTracks(undefined);
   }
   void loadCard();
+  /** Both libraries at once — what track_card.ts renders and syncs from. */
+  const cardCtx = () => ({ tracks: T.tracks, sceneIds: T.sceneIds, card: T.onCard });
+  wireCardActions({ list: T.list, syncBtn: byId<HTMLButtonElement>("trkSync"),
+                    ctx: cardCtx, say, reloadCard: loadCard });
+  watchCard({ active: () => T.mode === "studio", card: () => T.onCard,
+              apply: c => { T.onCard = c; drawTracks(undefined); } });
 
   function drawTracks(tracks: TrackInfo[] | undefined): void {
     if (tracks) T.tracks = tracks;
     const playingId = preview.playing();
     // The row markup lives in track_rows.ts (500-line cap; the seam is
-    // "how a row looks" vs "what clicking it does").
+    // "how a row looks" vs "what clicking it does"). Card-only rows and the
+    // Sync button follow the same redraw so the merged view never goes stale.
     T.list.innerHTML = T.tracks.map(t => trackRowHtml(t, {
       selected: T.selected === t.id,
       inShow: T.sceneIds.has(t.id),
       sounding: playingId === t.id,
       onCastle: T.onCard === null ? null : T.onCard.has(cardName(t)),
-    })).join("");
+    })).join("") + cardRowsHtml(cardCtx());
+    renderSyncButton(byId<HTMLButtonElement>("trkSync"), cardCtx());
     const n = T.tracks.length;
     T.count.textContent = n === 0 ? "empty" : `${n} imported`;
     deps.onList?.(T.tracks);
@@ -261,6 +268,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
 
   T.list.addEventListener("click", async e => {
     const btn = (e.target as HTMLElement | null)?.closest("button"); if (!btn) return;
+    if (btn.dataset["cardact"]) return;   // card-only rows: track_card.ts owns them
     // Every button is rendered inside a .trk carrying the id, so the row and
     // the attribute are both there or the markup above is broken.
     const id = btn.closest<HTMLElement>(".trk")!.dataset["id"] ?? "";
@@ -268,13 +276,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
       preview.toggle(id);
     } else if (btn.dataset["act"] === "send") {
       const t = T.tracks.find(x => x.id === id);
-      if (!t) return;
-      btn.textContent = "sending…";
-      (btn as HTMLButtonElement).disabled = true;
-      const res = await sendToCastle(t);
-      say(res.msg, !res.ok);
-      if (res.ok) { await loadCard(); return; }
-      drawTracks(undefined);
+      if (t) await sendAction(btn as HTMLButtonElement, t, say, loadCard);
     } else if (btn.dataset["act"] === "del") {
       if (!confirm(`Delete track "${id}"? The file is removed from tracks/.`)) return;
       if (preview.playing() === id) preview.stop();
@@ -385,6 +387,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
     preview.stop();                  // the file it was streaming just went away
     T.mode = "static";
     T.tracks = [];
+    byId<HTMLButtonElement>("trkSync").hidden = true;
     T.modeEl.textContent = "read-only · studio not running";
     byId("trkServer").hidden = true;
     byId("trkOffline").hidden = false;

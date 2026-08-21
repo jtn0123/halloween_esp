@@ -333,6 +333,9 @@
         <div class="trk-lib__hd">
           <span>Library</span>
           <span class="note" id="trkCount"></span>
+          <!-- One press sends every in-show track the card is missing.
+               Hidden until a castle answers; track_card.ts keeps it honest. -->
+          <button id="trkSync" type="button" class="trk-sync" hidden></button>
         </div>
         <div class="trk-list" id="trkList"></div>
         <p class="trk-lib__ft">Drop an audio file anywhere on this panel to analyse it without importing.</p>

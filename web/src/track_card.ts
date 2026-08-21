@@ -1,0 +1,156 @@
+/**
+ * The merged library view: one list that answers "what is WHERE".
+ *
+ * Local tracks get their badge in track_rows.ts. This module owns the other
+ * half of the reconciliation (dogfood 006): files that exist only on the
+ * castle's SD card appear as rows of their own at the bottom of the same
+ * list — playable and deletable in place — instead of hiding behind the
+ * corner chip. And it owns the Sync button: one press sends every track the
+ * show needs that the card does not have, with per-file progress.
+ */
+
+import { esc } from "./track_rows.js";
+import { cardName, fetchCard, sendToCastle } from "./track_send.js";
+import { toast } from "./device.js";
+import type { TrackInfo } from "./tracks.js";
+
+/** What both renderers need to know about the two libraries. */
+export interface CardCtx {
+  tracks: readonly TrackInfo[];
+  sceneIds: ReadonlySet<string>;
+  /** name → bytes on the card; null = no castle answering. */
+  card: ReadonlyMap<string, number> | null;
+}
+
+const AUDIO = /\.(mp3|wav|flac|opus)$/i;
+
+/** Card files with no local twin, i.e. the rows only this module shows. */
+export function cardOnly(ctx: CardCtx): { name: string; size: number }[] {
+  if (!ctx.card) return [];
+  const local = new Set(ctx.tracks.map(cardName));
+  return [...ctx.card.entries()]
+    .filter(([n]) => AUDIO.test(n) && !local.has(n))
+    .map(([name, size]) => ({ name, size }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** In-show tracks the card is missing — what Sync would send. */
+export function syncPlan(ctx: CardCtx): TrackInfo[] {
+  if (!ctx.card) return [];
+  const card = ctx.card;
+  return ctx.tracks.filter(t => ctx.sceneIds.has(t.id) && !card.has(cardName(t)));
+}
+
+/** Rows for the card-only files; "" when there are none to show. */
+export function cardRowsHtml(ctx: CardCtx): string {
+  const rows = cardOnly(ctx);
+  if (rows.length === 0) return "";
+  return `<div class="trk-cardhd" title="Files on the castle's SD card that `
+    + `have no copy in this library">On the castle's card only</div>`
+    + rows.map(f => `
+  <div class="trk trk--card" data-card="${esc(f.name)}">
+    <div class="trk__nm">🏰 ${esc(f.name)}
+      <small>${(f.size / 1024) | 0} KB · castle only</small>
+    </div>
+    <div class="trk__act">
+      <button data-cardact="play" title="Play this file on the castle's speaker">Play on castle</button>
+      <button data-cardact="del" class="danger" title="Delete from the SD card">Delete</button>
+    </div>
+  </div>`).join("");
+}
+
+/** Keep the Sync button telling the truth. Call on every list redraw. */
+export function renderSyncButton(btn: HTMLButtonElement, ctx: CardCtx): void {
+  if (ctx.card === null) {           // no castle: the button would only lie
+    btn.hidden = true;
+    return;
+  }
+  const missing = syncPlan(ctx);
+  btn.hidden = false;
+  btn.disabled = missing.length === 0;
+  btn.textContent = missing.length === 0
+    ? "show is on the card ✓"
+    : `Sync show → castle (${missing.length})`;
+  btn.title = missing.length === 0
+    ? "Every track the show uses is already on the castle's SD card"
+    : `Send to the castle's card: ${missing.map(t => t.id).join(", ")}`;
+}
+
+/** The row's "→ Castle" button, with live percent while the bytes move. */
+export async function sendAction(btn: HTMLButtonElement, t: TrackInfo,
+                                 say: (m: string, err?: boolean) => void,
+                                 reloadCard: () => Promise<void>): Promise<void> {
+  btn.disabled = true;
+  const res = await sendToCastle(t, pct => { btn.textContent = `sending ${pct}%`; });
+  say(res.msg, !res.ok);
+  await reloadCard();               // redraw fixes the label either way
+}
+
+/** Keep the card view honest over time: a castle that comes online after
+ *  page load, or files dropped through the panel, show up within a poll.
+ *  Applies (and so redraws) ONLY on a real change — an unconditional
+ *  redraw every tick would eat clicks mid-flight (the suite's old flake). */
+export function watchCard(deps: {
+  active: () => boolean;
+  card: () => ReadonlyMap<string, number> | null;
+  apply: (card: Map<string, number> | null) => void;
+}, intervalMs = 20_000): void {
+  const key = (m: ReadonlyMap<string, number> | null): string =>
+    m === null ? "-" : JSON.stringify([...m.entries()].sort());
+  window.setInterval(() => {
+    if (!deps.active()) return;
+    void fetchCard().then(now => {
+      if (key(now) !== key(deps.card())) deps.apply(now);
+    });
+  }, intervalMs);
+}
+
+export interface CardActionDeps {
+  list: HTMLElement;
+  syncBtn: HTMLButtonElement;
+  ctx: () => CardCtx;
+  say: (m: string, err?: boolean) => void;
+  reloadCard: () => Promise<void>;
+}
+
+/** One-time wiring for the Sync button and the card-only rows. */
+export function wireCardActions(deps: CardActionDeps): void {
+  deps.syncBtn.addEventListener("click", async () => {
+    const plan = syncPlan(deps.ctx());
+    if (plan.length === 0) return;
+    deps.syncBtn.disabled = true;
+    let sent = 0;
+    for (const [i, t] of plan.entries()) {
+      const label = `Sending ${i + 1}/${plan.length}: ${t.id}`;
+      deps.say(`${label}…`);
+      const res = await sendToCastle(t, pct => deps.say(`${label} — ${pct}%`));
+      if (!res.ok) {           // say why and stop; a silent half-sync is worse
+        deps.say(res.msg, true);
+        await deps.reloadCard();
+        return;
+      }
+      sent++;
+    }
+    deps.say(`Show synced — ${sent} track${sent === 1 ? "" : "s"} sent to the castle.`);
+    await deps.reloadCard();
+  });
+
+  deps.list.addEventListener("click", async (e) => {
+    const btn = (e.target as HTMLElement | null)?.closest<HTMLButtonElement>("[data-cardact]");
+    if (!btn) return;
+    const name = btn.closest<HTMLElement>(".trk")?.dataset["card"] ?? "";
+    if (!name) return;
+    if (btn.dataset["cardact"] === "play") {
+      const r = await fetch(`/api/play?f=${encodeURIComponent(name)}`,
+                            { method: "POST" }).catch(() => null);
+      toast(r?.ok ? `playing ${name} on the castle` : "play failed", !r?.ok);
+    } else if (btn.dataset["cardact"] === "del") {
+      if (!confirm(`Delete ${name} from the castle's SD card?`)) return;
+      const r = await fetch(`/api/files/${encodeURIComponent(name)}`,
+                            { method: "DELETE" }).catch(() => null);
+      deps.say(r?.ok ? `Deleted ${name} from the card.`
+                     : `Could not delete ${name}.`, !r?.ok);
+      await deps.reloadCard();
+    }
+  });
+}

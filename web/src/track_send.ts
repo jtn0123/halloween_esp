@@ -16,30 +16,49 @@ export function cardName(t: TrackInfo): string {
   return `${t.id}.${(t.ext || t.opts?.format || "mp3").toLowerCase()}`;
 }
 
-/** Filenames on the castle's SD card, or null when no castle answers —
- *  absence of a castle must not read as "not on the card". */
-export async function fetchCardSet(): Promise<Set<string> | null> {
+/** Filename → size in bytes for everything on the castle's SD card, or null
+ *  when no castle answers — absence of a castle must not read as "not on
+ *  the card". */
+export async function fetchCard(): Promise<Map<string, number> | null> {
   try {
     const r = await fetch("/api/files");
     if (!r.ok) throw new Error(String(r.status));
-    const files = (await r.json()) as { name: string; dir: boolean }[];
-    return new Set(files.filter(f => !f.dir).map(f => f.name));
+    const files = (await r.json()) as { name: string; size: number; dir: boolean }[];
+    return new Map(files.filter(f => !f.dir).map(f => [f.name, f.size]));
   } catch {
     return null;
   }
 }
 
+/** PUT one blob to the card, reporting upload progress 0–100. XHR rather
+ *  than fetch: a WiFi send to an ESP32 takes long enough that a frozen
+ *  button reads as a dead one, and fetch cannot see upload progress. */
+function putWithProgress(name: string, blob: Blob,
+                         onProgress?: (pct: number) => void): Promise<boolean> {
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", `/api/files/${encodeURIComponent(name)}`);
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) onProgress?.(Math.round(100 * e.loaded / e.total));
+    });
+    xhr.addEventListener("load", () => resolve(xhr.status >= 200 && xhr.status < 300));
+    xhr.addEventListener("error", () => resolve(false));
+    xhr.send(blob);
+  });
+}
+
 /** Copy one track's bytes onto the card. Returns the toastable outcome. */
-export async function sendToCastle(t: TrackInfo):
+export async function sendToCastle(t: TrackInfo,
+                                   onProgress?: (pct: number) => void):
     Promise<{ ok: boolean; msg: string }> {
   try {
-    const blob = await (await fetch(`/api/track/${encodeURIComponent(t.id)}`)).blob();
-    const r = await fetch(`/api/files/${encodeURIComponent(cardName(t))}`,
-                          { method: "PUT", body: blob });
-    return r.ok
-      ? { ok: true, msg: `\u201c${t.id}\u201d is on the castle's card.` }
-      : { ok: false, msg: `Send failed (${r.status}) \u2014 is the castle awake?` };
+    const r = await fetch(`/api/track/${encodeURIComponent(t.id)}`);
+    if (!r.ok) throw new Error(String(r.status));
+    const ok = await putWithProgress(cardName(t), await r.blob(), onProgress);
+    return ok
+      ? { ok: true, msg: `“${t.id}” is on the castle's card.` }
+      : { ok: false, msg: `Send of “${t.id}” failed — is the castle awake?` };
   } catch {
-    return { ok: false, msg: "Send failed \u2014 no castle answering." };
+    return { ok: false, msg: "Send failed — no castle answering." };
   }
 }
