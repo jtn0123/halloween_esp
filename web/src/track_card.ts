@@ -9,9 +9,10 @@
  * show needs that the card does not have, with per-file progress.
  */
 
+import { onCastlePresence } from "./castle_bus.js";
 import { esc } from "./track_rows.js";
-import { cardName, cardState, fetchCard, sendToCastle } from "./track_send.js";
-import { toast } from "./device.js";
+import { cardName, cardState, fetchCard, sendable, sendToCastle } from "./track_send.js";
+import { castleAct } from "./device.js";
 import type { TrackInfo } from "./tracks.js";
 
 /** What both renderers need to know about the two libraries. */
@@ -43,7 +44,7 @@ export function syncPlan(ctx: CardCtx): TrackInfo[] {
   if (!ctx.card) return [];
   const card = ctx.card;
   return ctx.tracks.filter(t =>
-    ctx.sceneIds.has(t.id) && cardState(t, card) !== "current");
+    ctx.sceneIds.has(t.id) && sendable(t) && cardState(t, card) !== "current");
 }
 
 /** Rows for the card-only files; "" when there are none to show. */
@@ -103,12 +104,17 @@ export function watchCard(deps: {
 }, intervalMs = 20_000): void {
   const key = (m: ReadonlyMap<string, number> | null): string =>
     m === null ? "-" : JSON.stringify([...m.entries()].sort());
-  window.setInterval(() => {
+  const poll = (): void => {
     if (!deps.active()) return;
     void fetchCard().then(now => {
       if (key(now) !== key(deps.card())) deps.apply(now);
     });
-  }, intervalMs);
+  };
+  window.setInterval(poll, intervalMs);
+  // The chip's probe and this list must agree about whether a castle is
+  // there: the moment device.ts sees it arrive or leave, re-read the card
+  // rather than letting the two halves disagree for up to a poll (J1-3).
+  onCastlePresence(() => poll());
 }
 
 export interface CardActionDeps {
@@ -149,9 +155,9 @@ export function wireCardActions(deps: CardActionDeps): void {
     const name = btn.closest<HTMLElement>(".trk")?.dataset["card"] ?? "";
     if (!name) return;
     if (btn.dataset["cardact"] === "play") {
-      const r = await fetch(`/api/play?f=${encodeURIComponent(name)}`,
-                            { method: "POST" }).catch(() => null);
-      toast(r?.ok ? `playing ${name} on the castle` : "play failed", !r?.ok);
+      // Through castleAct: the chip re-polls, so it says ▶ not "idle".
+      await castleAct(`/api/play?f=${encodeURIComponent(name)}`,
+                      `playing ${name} on the castle`);
     } else if (btn.dataset["cardact"] === "pull" && deps.importFile) {
       btn.disabled = true;
       btn.textContent = "pulling…";

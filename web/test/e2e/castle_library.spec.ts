@@ -188,3 +188,25 @@ test("a → Castle send updates the row to Re-send", async ({ page }) => {
     page.locator(`.trk[data-id="${MP3_ID}"] button[data-act='send']`))
     .toHaveText("Re-send");
 });
+
+test("a track whose import failed cannot be sent, and Sync skips it", async ({ page }) => {
+  // J1-2: a failed import used to leave a 0-byte track that read "stale on
+  // castle ⚠ / Update castle" — and Update/Sync would have PUT 0 bytes over
+  // the card's good copy.
+  const BROKEN = { id: "e2e_broken", ext: "mp3", kb: 0, bytes: 0, source: "",
+                   title: "", imported: "", opts: {}, notes: "",
+                   error: "ffmpeg could not convert it" };
+  await stubCard(page, [{ name: "e2e_broken.mp3", size: 300000, dir: false }]);
+  await page.route("**/api/tracks", async (route) => {
+    const real = await (await route.fetch()).json() as { tracks: unknown[] };
+    return route.fulfill({ json: { tracks: [...real.tracks, BROKEN],
+                                   scenes: ["e2e_broken", MP3_ID] } });
+  });
+  await page.goto("/");
+  const row = page.locator(".trk[data-id='e2e_broken']");
+  await expect(row.locator(".trk__broken")).toHaveText("import failed ⚠");
+  await expect(row.locator("button[data-act='send']")).toHaveCount(0);
+  await expect(row.locator(".trk__badge", { hasText: "stale" })).toHaveCount(0);
+  // Only the real in-show track counts; the broken one is not "missing".
+  await expect(page.locator("#trkSync")).toHaveText("Sync show → castle (1)");
+});

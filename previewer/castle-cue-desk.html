@@ -1563,8 +1563,8 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
         });
       }
     }
-    const live = ZONE_ORDER.filter((z) => zonePixels(rig2, z) > 0);
-    const kinds = new Set(live.map((z) => zoneRgbw(rig2, z)));
+    const live2 = ZONE_ORDER.filter((z) => zonePixels(rig2, z) > 0);
+    const kinds = new Set(live2.map((z) => zoneRgbw(rig2, z)));
     if (kinds.size > 1) {
       out.push({
         level: "info",
@@ -1579,7 +1579,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
         text: `${pixels} pixels peak at ${amps.toFixed(1)} A, ${total.toFixed(1)} A with both amps \u2014 needs a supply of 8 A or more.`
       });
     }
-    if (live.length === 0) {
+    if (live2.length === 0) {
       out.push({ level: "warn", text: "Every zone is empty; nothing will light." });
     }
     return out;
@@ -2092,15 +2092,15 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       this.tc.textContent = (Math.min(elapsed, scene.dur) / 1e3).toFixed(2) + " / " + (scene.dur / 1e3).toFixed(2) + " s" + (scene.loop ? " \u21BB" : "");
       this.scrub.setAttribute("aria-valuenow", String(Math.round(pct)));
       this.scrub.setAttribute("aria-valuetext", (elapsed / 1e3).toFixed(1) + " seconds");
-      let live = -1;
+      let live2 = -1;
       scene.cues.forEach((c, i) => {
         const row = this.rows[i];
         if (!row) return;
         const on = elapsed >= c.t && elapsed < c.t + 700;
         row.classList.toggle("on", on);
-        if (on) live = i;
+        if (on) live2 = i;
       });
-      this.followCue(live);
+      this.followCue(live2);
     }
     /**
      * Keep the lit row inside the capped scroll box.
@@ -2654,7 +2654,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     audio.preload = "auto";
     let rows = [];
     let current = null;
-    let busy = false;
+    let busy2 = false;
     let epoch = 0;
     function stop() {
       epoch++;
@@ -2721,8 +2721,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         note.textContent = "Pick a track first.";
         return;
       }
-      if (busy) return;
-      busy = true;
+      if (busy2) return;
+      busy2 = true;
       reset();
       run.disabled = true;
       run.textContent = "Encoding\u2026";
@@ -2755,7 +2755,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       } catch (err) {
         note.textContent = `Could not encode \u2014 ${String(err)}`;
       } finally {
-        busy = false;
+        busy2 = false;
         run.disabled = false;
         run.textContent = "Compare codecs";
       }
@@ -2765,6 +2765,33 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     });
     return { el: el2, reset, stop };
   }
+
+  // src/castle_bus.ts
+  var presenceFns = /* @__PURE__ */ new Set();
+  var changedFns = /* @__PURE__ */ new Set();
+  var live = false;
+  var busy = 0;
+  function setCastleLive(now) {
+    if (now === live) return;
+    live = now;
+    for (const f of presenceFns) f(now);
+  }
+  function onCastlePresence(f) {
+    presenceFns.add(f);
+  }
+  function castleChanged() {
+    for (const f of changedFns) f();
+  }
+  function onCastleChanged(f) {
+    changedFns.add(f);
+  }
+  function castleBusy(p) {
+    busy++;
+    return p.finally(() => {
+      busy--;
+    });
+  }
+  var isCastleBusy = () => busy > 0;
 
   // src/device_panel.ts
   var sceneIds = () => {
@@ -2792,6 +2819,12 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       this.root.style.display = this.open ? "block" : "none";
       if (this.open) void this.render();
     }
+    /** Redraw if open — device.ts calls this when the castle goes quiet or
+     *  comes back, so the panel cannot keep showing a file list and an uptime
+     *  from a castle that is no longer there (pass 1, J1-4). */
+    refresh() {
+      if (this.open) void this.render();
+    }
     async render() {
       let st;
       let files = [];
@@ -2803,39 +2836,58 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         return;
       }
       const tracks2 = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
-      this.body.innerHTML = `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f"><b>\u{1F3F0} v${st.version}</b> \xB7 up ${fmtUptime(st.uptime_s)} \xB7 ${st.psram_free_kb} KB PSRAM free` + (st.sd_free_kb ? ` \xB7 card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f"><button id="dpPlaylist" title="Every scene in order with dark gaps, looping until stopped \u2014 the whole evening on one button" style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;background:${st.show_on ? "#7a2a2a" : "#2a5537"};color:inherit">${st.show_on ? "\u25A0 stop the show" : "\u25B6 start the show"}</button>` + (st.show_on && st.scene ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;display:flex;gap:.5rem;align-items:center">\u{1F4A1} <input id="dpColor" type="color" value="#ff8c1e" title="Park the pixels on a colour" style="cursor:pointer"><button id="dpShow" title="Hand the pixels back to the scene engine" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">resume show</button><button id="dpOff" style="cursor:pointer;background:none;color:#9a8fb0;border:1px solid #35264f;border-radius:6px;padding:.2rem .5rem">off</button></div><div style="max-height:180px;overflow:auto" id="dpFiles">` + (tracks2.length ? tracks2.map((f, i) => `<div style="display:flex;gap:.4rem;align-items:center;padding:.3rem .8rem"><button data-play="${i}" title="Play on the castle" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .5rem">\u25B6</button><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}</span><small style="color:#9a8fb0">${kb3(f.size)}</small><button data-del="${i}" title="Delete from the card" style="cursor:pointer;background:none;color:#9a8fb0;border:0">\u2715</button></div>`).join("") : `<div style="padding:.5rem .8rem;color:#9a8fb0">${st.sd_mounted ? "no tracks on the card \u2014 tools/sd_sync.py push" : "no SD card"}</div>`) + `</div><div style="padding:.5rem .8rem;border-top:1px solid #35264f" title="What the motion sensor triggers">\u{1F463} <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> <select id="dpPirScene">` + sceneIds().map((s) => `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") + `</select> <input id="dpPirCool" type="number" min="5" max="600" step="5" value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="cooldown seconds">s</div><div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed #503a75;color:#9a8fb0;text-align:center">drop audio files here to upload</div><div style="padding:.4rem .8rem;border-top:1px solid #35264f"><button id="dpLog" style="cursor:pointer;background:none;border:0;color:#9a8fb0">boot log \u25B8</button><pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre></div>`;
+      this.body.innerHTML = `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f;display:flex;align-items:center;gap:.4rem"><span style="flex:1"><b>\u{1F3F0} v${st.version}</b> \xB7 up ${fmtUptime(st.uptime_s)}` + (st.sd_free_kb ? ` \xB7 card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") + ` <small title="Free working memory (PSRAM) \u2014 what the SD turntable runs on">\xB7 ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span><button id="dpClose" title="Close this panel" aria-label="Close" style="cursor:pointer;background:none;border:0;color:#9a8fb0;font-size:14px;padding:0 .2rem">\u2715</button></div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f"><button id="dpPlaylist" title="Every scene in order with dark gaps, looping until stopped \u2014 the whole evening on one button" style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;background:${st.show_on ? "#7a2a2a" : "#2a5537"};color:inherit">${st.show_on ? "\u25A0 stop the show" : "\u25B6 start the show"}</button>` + (st.show_on && st.scene ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;display:flex;gap:.5rem;align-items:center" title="Park every pixel on one colour, or give them back to the show">\u{1F4A1} <small style="color:#9a8fb0">lights</small> <input id="dpColor" type="color" value="#ff8c1e" title="Park the pixels on a colour" style="cursor:pointer"><button id="dpShow" title="Hand the pixels back to the scene engine" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">resume show</button><button id="dpOff" style="cursor:pointer;background:none;color:#9a8fb0;border:1px solid #35264f;border-radius:6px;padding:.2rem .5rem">off</button></div><div style="max-height:180px;overflow:auto" id="dpFiles">` + (tracks2.length ? tracks2.map((f, i) => `<div style="display:flex;gap:.4rem;align-items:center;padding:.3rem .8rem"><button data-play="${i}" title="Play on the castle" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .5rem">\u25B6</button><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}</span><small style="color:#9a8fb0">${kb3(f.size)}</small><button data-del="${i}" title="Delete from the card" style="cursor:pointer;background:none;color:#9a8fb0;border:0">\u2715</button></div>`).join("") : `<div style="padding:.5rem .8rem;color:#9a8fb0">${st.sd_mounted ? "no tracks on the card yet \u2014 drop audio below, or press \u2192 Castle on a track in the Library" : "no SD card"}</div>`) + `</div><div style="padding:.5rem .8rem;border-top:1px solid #35264f" title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">\u{1F463} <small style="color:#9a8fb0">motion sensor</small> <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> <select id="dpPirScene">` + sceneIds().map((s) => `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") + `</select> <input id="dpPirCool" type="number" min="5" max="600" step="5" value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="Cooldown: seconds before the sensor can fire again"><small style="color:#9a8fb0"> s between triggers</small></div><div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed #503a75;color:#9a8fb0;text-align:center">drop audio files here to upload</div><div style="padding:.4rem .8rem;border-top:1px solid #35264f"><button id="dpLog" style="cursor:pointer;background:none;border:0;color:#9a8fb0">boot log \u25B8</button><pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre></div>`;
+      this.body.querySelector("#dpClose").addEventListener("click", () => this.toggle());
       this.body.querySelector("#dpPlaylist").addEventListener("click", () => {
-        void fetch(`/api/show/${st.show_on ? "stop" : "start"}`, { method: "POST" }).then(() => new Promise((r) => setTimeout(r, 600))).then(() => this.render());
+        void castleAct(
+          `/api/show/${st.show_on ? "stop" : "start"}`,
+          st.show_on ? "show stopped" : "show started"
+        ).then(() => new Promise((r) => setTimeout(r, 600))).then(() => this.render());
       });
       this.body.querySelector("#dpColor").addEventListener("input", (e) => {
         const hex = e.target.value.slice(1);
-        void fetch(`/api/light?c=${hex}`, { method: "POST" });
+        void castleAct(`/api/light?c=${hex}`, `lights #${hex}`, { quiet: true });
       });
-      this.body.querySelector("#dpShow").addEventListener("click", () => void fetch("/api/light?c=show", { method: "POST" }));
-      this.body.querySelector("#dpOff").addEventListener("click", () => void fetch("/api/light?c=off", { method: "POST" }));
+      this.body.querySelector("#dpShow").addEventListener("click", () => void castleAct("/api/light?c=show", "lights back to the show"));
+      this.body.querySelector("#dpOff").addEventListener("click", () => void castleAct("/api/light?c=off", "lights off"));
       this.body.querySelectorAll("[data-play]").forEach((b) => b.addEventListener("click", () => {
         const f = tracks2[Number(b.dataset.play)];
         if (f === void 0) return;
-        void fetch(`/api/play?f=${encodeURIComponent(f.name)}`, { method: "POST" });
+        void castleAct(
+          `/api/play?f=${encodeURIComponent(f.name)}`,
+          `playing ${f.name} on the castle`
+        );
       }));
       this.body.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => {
         const f = tracks2[Number(b.dataset.del)];
         if (f === void 0) return;
-        if (!confirm(`Delete ${f.name} from the card?`)) return;
-        void fetch(`/api/files/${encodeURIComponent(f.name)}`, { method: "DELETE" }).then(() => this.render());
+        if (!confirm(`Delete ${f.name} from the castle's SD card?`)) return;
+        void castleAct(
+          `/api/files/${encodeURIComponent(f.name)}`,
+          `deleted ${f.name} from the card`,
+          { method: "DELETE" }
+        ).then((ok) => {
+          if (ok) void this.render();
+        });
       }));
-      this.body.querySelector("#dpPirArm").addEventListener("change", (e) => void fetch(
-        `/api/pir?armed=${e.target.checked ? 1 : 0}`,
-        { method: "POST" }
-      ));
-      this.body.querySelector("#dpPirScene").addEventListener("change", (e) => void fetch(
-        `/api/pir?scene=${encodeURIComponent(e.target.value)}`,
-        { method: "POST" }
-      ));
-      this.body.querySelector("#dpPirCool").addEventListener("change", (e) => void fetch(
-        `/api/pir?cooldown=${e.target.value}`,
-        { method: "POST" }
-      ));
+      this.body.querySelector("#dpPirArm").addEventListener("change", (e) => {
+        const on = e.target.checked;
+        void castleAct(
+          `/api/pir?armed=${on ? 1 : 0}`,
+          on ? "motion sensor armed" : "motion sensor off"
+        );
+      });
+      this.body.querySelector("#dpPirScene").addEventListener("change", (e) => {
+        const sc = e.target.value;
+        void castleAct(
+          `/api/pir?scene=${encodeURIComponent(sc)}`,
+          `motion sensor plays ${sc}`
+        );
+      });
+      this.body.querySelector("#dpPirCool").addEventListener("change", (e) => {
+        const v = e.target.value;
+        void castleAct(`/api/pir?cooldown=${v}`, `motion cooldown ${v} s`);
+      });
       const drop = this.body.querySelector("#dpDrop");
       drop.addEventListener("dragover", (e) => {
         e.preventDefault();
@@ -2877,7 +2929,9 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
   };
 
   // src/device.ts
-  var PROBE_TIMEOUT_MS = 1500;
+  var PROBE_TIMEOUT_MS = 2500;
+  var RETRY_MS = 5e3;
+  var POLL_MS = 15e3;
   async function probe() {
     try {
       const r = await fetch("/api/status", {
@@ -2903,11 +2957,49 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     document.body.appendChild(el2);
     setTimeout(() => {
       el2.style.opacity = "0";
-    }, 1400);
-    setTimeout(() => el2.remove(), 1900);
+    }, isError ? 3200 : 1400);
+    setTimeout(() => el2.remove(), isError ? 3700 : 1900);
+  }
+  async function failReason(r) {
+    if (r.status === 502) return "castle not reachable";
+    if (r.status === 504) return "castle did not answer in time";
+    try {
+      const text = (await r.text()).trim();
+      if (text.startsWith("{")) {
+        const j = JSON.parse(text);
+        return j.error || `HTTP ${r.status}`;
+      }
+      return text.slice(0, 80) || `HTTP ${r.status}`;
+    } catch {
+      return `HTTP ${r.status}`;
+    }
+  }
+  async function castleAct(path, okMsg, opts = {}) {
+    let r;
+    try {
+      r = await fetch(path, { method: opts.method ?? "POST" });
+    } catch {
+      toast(`${okMsg} failed \u2014 no answer from the castle`, true);
+      return false;
+    }
+    if (!r.ok) {
+      toast(`${okMsg} failed \u2014 ${await failReason(r)}`, true);
+      return false;
+    }
+    if (!opts.quiet) toast(okMsg);
+    castleChangedSoon();
+    return true;
+  }
+  var changedTimer;
+  function castleChangedSoon() {
+    clearTimeout(changedTimer);
+    changedTimer = window.setTimeout(() => {
+      changedTimer = void 0;
+      castleChanged();
+    }, 900);
   }
   function deviceBridge(opts = {}) {
-    let live = false;
+    let live2 = false;
     let mirror = true;
     let lastVol = 70;
     let soundRoute = localStorage.getItem("castleSoundRoute") === "castle" ? "castle" : "mac";
@@ -2921,15 +3013,13 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     chip.id = "deviceChip";
     chip.style.cssText = "display:none;background:#241a38;color:#e8e0f0;border:1px solid #503a75;border-radius:10px;padding:.5rem .75rem;font:13px system-ui;box-shadow:0 4px 16px rgba(0,0,0,.5)";
     dock.appendChild(chip);
-    function act(path, okMsg) {
-      fetch(path, { method: "POST" }).then(
-        (r) => {
-          r.ok ? toast(okMsg) : toast(`${okMsg} failed`, true);
-          if (r.ok) window.setTimeout(() => void refresh(), 900);
-        },
-        () => toast(`${okMsg} failed`, true)
-      );
-    }
+    let lastOk = true;
+    const act = (path, okMsg) => {
+      void castleAct(path, okMsg);
+    };
+    onCastleChanged(() => {
+      void refresh();
+    });
     let routeBtn = null;
     function mountRouteBtn() {
       const muteEl = document.getElementById("mute");
@@ -2980,13 +3070,23 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       if (lastStatus) sayStatus(lastStatus);
       if (announce) opts.onSoundRoute?.(route === "mac");
     }
-    const sayStatus = (s) => opts.onStatus?.(`castle v${s.version}${sdText(s)} \xB7 ${mirror ? "mirroring" : "not mirroring"} \xB7 sound: ${soundRoute === "mac" ? "Mac" : "castle"}`, true);
+    const sayStatus = (s) => {
+      const route = ` \xB7 sound: ${soundRoute === "mac" ? "Mac" : "castle"}`;
+      if (!lastOk) {
+        opts.onStatus?.(`castle not answering${route}`, false);
+        return;
+      }
+      opts.onStatus?.(`castle v${s.version}${sdText(s)} \xB7 ${mirror ? "mirroring" : "not mirroring"}` + route, true);
+    };
     const render = (s) => {
       chip.style.display = "block";
       chip.style.opacity = "1";
+      const wasDown = !lastOk;
+      lastOk = true;
       lastVol = s.volume ?? lastVol;
       lastStatus = s;
       sayStatus(s);
+      if (wasDown) panel.refresh();
       const bits = [s.scene && s.scene !== "stop" ? s.scene : "", s.track ?? ""].filter(Boolean);
       const playing = bits.length ? `\u25B6 ${bits.join(" \xB7 ")}` : "idle";
       chip.innerHTML = `<div>\u{1F3F0} castle v${s.version}${sdChip(s)} \xB7 <span id="devNow" style="color:#b8a8d8">${playing}</span></div><div style="margin-top:.25rem;display:flex;align-items:center;gap:.4rem"><button id="devSnd" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem;white-space:nowrap"></button><button id="devMute" title="Mute the castle speaker" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .45rem">${lastVol === 0 ? "\u{1F507}" : "\u{1F50A}"}</button><input id="devVol" type="range" min="0" max="100" value="${lastVol}" style="width:90px"><label style="cursor:pointer;white-space:nowrap" title="Also fire scene picks on the real castle"><input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}> on castle</label><button id="devStop" title="Stop the castle: audio and scene" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u25A0</button><button id="devMore" title="The castle's own controls: SD library, show, light, motion sensor, boot log" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u{1F3F0} Castle</button></div>`;
@@ -3019,28 +3119,57 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       syncRouteUI();
     };
     async function refresh() {
+      if (!live2) return;
       const now = await probe();
-      if (now !== null) render(now);
-      else {
-        chip.style.opacity = "0.4";
-        opts.onStatus?.("castle not answering", false);
+      if (now !== null) {
+        render(now);
+        setCastleLive(true);
+        return;
       }
+      if (isCastleBusy()) return;
+      chip.style.opacity = "0.4";
+      lastOk = false;
+      if (lastStatus) sayStatus(lastStatus);
+      for (const id of ["devStop", "devVol", "devMute", "devMirror"]) {
+        const el2 = chip.querySelector(`#${id}`);
+        if (el2) el2.disabled = true;
+      }
+      panel.refresh();
+      setCastleLive(false);
     }
-    void probe().then((s) => {
-      if (s === null) return;
-      live = true;
+    function firstContact(s) {
+      live2 = true;
       render(s);
       mountRouteBtn();
+      setCastleLive(true);
       if (s.scene && s.scene !== "stop") opts.adoptScene?.(s.scene);
-      setInterval(() => void refresh(), 15e3);
+      setInterval(() => void refresh(), POLL_MS);
+    }
+    void probe().then((s) => {
+      if (s !== null) {
+        firstContact(s);
+        return;
+      }
+      const retry = window.setInterval(() => {
+        if (live2) {
+          clearInterval(retry);
+          return;
+        }
+        void probe().then((now) => {
+          if (now !== null && !live2) {
+            clearInterval(retry);
+            firstContact(now);
+          }
+        });
+      }, RETRY_MS);
     });
     return {
       scene(id) {
-        if (!live || !mirror) return;
+        if (!live2 || !mirror) return;
         act(`/api/scene?s=${encodeURIComponent(id)}`, `scene ${id}`);
       },
       stop() {
-        if (!live) return;
+        if (!live2) return;
         act("/api/stop", "stop");
       }
     };
@@ -4599,6 +4728,87 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     }
   }
 
+  // src/track_send.ts
+  var sendable = (t) => !t.error && (t.bytes === void 0 || t.bytes > 0);
+  function cardName(t) {
+    return `${t.id}.${(t.ext || t.opts?.format || "mp3").toLowerCase()}`;
+  }
+  async function fetchCard() {
+    try {
+      const r = await fetch("/api/files");
+      if (!r.ok) throw new Error(String(r.status));
+      const files = await r.json();
+      return new Map(files.filter((f) => !f.dir).map((f) => [f.name, f.size]));
+    } catch {
+      return null;
+    }
+  }
+  function cardState(t, card) {
+    if (card === null) return null;
+    if (!sendable(t)) return null;
+    const size2 = card.get(cardName(t));
+    if (size2 === void 0) return "absent";
+    if (t.bytes === void 0) return "current";
+    return size2 === t.bytes ? "current" : "stale";
+  }
+  async function freeKb() {
+    try {
+      const r = await fetch("/api/status");
+      if (!r.ok) return null;
+      const s = await r.json();
+      return typeof s.sd_free_kb === "number" && s.sd_free_kb > 0 ? s.sd_free_kb : null;
+    } catch {
+      return null;
+    }
+  }
+  function putWithProgress(name, blob, onProgress) {
+    return castleBusy(new Promise((resolve) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", `/api/files/${encodeURIComponent(name)}`);
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) onProgress?.(Math.round(100 * e.loaded / e.total));
+      });
+      xhr.addEventListener("load", () => {
+        if (xhr.status === 504) return resolve(-2);
+        if (xhr.status < 200 || xhr.status >= 300) return resolve(-1);
+        try {
+          resolve(JSON.parse(xhr.responseText).bytes ?? -1);
+        } catch {
+          resolve(-1);
+        }
+      });
+      xhr.addEventListener("error", () => resolve(-1));
+      xhr.send(blob);
+    }));
+  }
+  async function sendToCastle(t, onProgress) {
+    if (!sendable(t)) {
+      return { ok: false, msg: `\u201C${t.id}\u201D has no usable audio (its import failed) \u2014 nothing to send. Re-import it first.` };
+    }
+    try {
+      const r = await fetch(`/api/track/${encodeURIComponent(t.id)}`);
+      if (!r.ok) throw new Error(String(r.status));
+      const blob = await r.blob();
+      if (blob.size === 0) {
+        return { ok: false, msg: `\u201C${t.id}\u201D is an empty file \u2014 nothing to send.` };
+      }
+      const free = await freeKb();
+      if (free !== null && blob.size / 1024 > free) {
+        return { ok: false, msg: `No room on the card for \u201C${t.id}\u201D \u2014 it needs ${Math.round(blob.size / 1024)} KB and the card has ${free} KB free.` };
+      }
+      const wrote = await putWithProgress(cardName(t), blob, onProgress);
+      if (wrote === blob.size) {
+        return { ok: true, msg: `\u201C${t.id}\u201D is on the castle's card \u2014 ${Math.round(blob.size / 1024)} KB, verified.` };
+      }
+      if (wrote >= 0) {
+        return { ok: false, msg: `Send of \u201C${t.id}\u201D landed short \u2014 the castle wrote ${wrote} of ${blob.size} bytes. Send it again.` };
+      }
+      return wrote === -2 ? { ok: false, msg: `The castle took \u201C${t.id}\u201D but did not confirm in time \u2014 it may well be on the card. The list below will say; do not re-send until it does.` } : { ok: false, msg: `Send of \u201C${t.id}\u201D failed \u2014 is the castle awake?` };
+    } catch {
+      return { ok: false, msg: "Send failed \u2014 no castle answering." };
+    }
+  }
+
   // src/track_rows.ts
   var ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
   var esc = (s) => String(s).replace(/[&<>"]/g, (c) => ESCAPES[c]);
@@ -4624,12 +4834,14 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       ctx.selected ? "sel" : "",
       ctx.sounding ? "playing" : ""
     ].filter(Boolean).join(" ");
+    const broken = !sendable(t);
     return `
   <div class="${cls}" data-id="${esc(t.id)}" title="Click to open the clip editor">
     <div class="trk__nm">${esc(t.id)}
       ${ctx.inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
       ${ctx.onCastle === "current" ? `<span class="trk__badge" title="The castle's SD card holds this exact file \u2014 byte count verified">on castle \u2713</span>` : ""}
       ${ctx.onCastle === "stale" ? `<span class="trk__badge" style="color:var(--warn,#e0a34a)" title="The card's copy is DIFFERENT bytes \u2014 this track changed since it was sent. Press Update castle.">stale on castle \u26A0</span>` : ""}
+      ${broken ? `<span class="trk__badge trk__broken" style="color:var(--err,#ff6b5a)" title="${esc(t.error || "The file is empty")} \u2014 re-import it (or delete it). It cannot be sent to the castle.">import failed \u26A0</span>` : ""}
       <small>${t.dur ?? "?"}s \xB7 ${t.kb} KB \xB7 ${fmt2}</small>
       <small title="${esc(BAND_HELP)}">${esc(onsets)}</small>
       ${src ? `<small class="trk__src">from ${src}</small>` : ""}
@@ -4641,79 +4853,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       <button data-act="scene" title="${ctx.inShow ? "Rewrite this scene from the track as it is now" : "Add this track to the show as a new scene"}"
         >${ctx.inShow ? "Update scene" : "Make scene"}</button>
       ${t.source ? `<button data-act="refresh" title="Rebuild from the remembered source using the options above">Re-import</button>` : ""}
-      ${ctx.onCastle !== null ? `<button data-act="send" title="Copy this file onto the castle's SD card over WiFi \u2014 it can then play on the castle with zero lag">${ctx.onCastle === "stale" ? "Update castle" : ctx.onCastle === "current" ? "Re-send" : "\u2192 Castle"}</button>` : ""}
+      ${ctx.onCastle !== null && !broken ? `<button data-act="send" title="Copy this file onto the castle's SD card over WiFi \u2014 it can then play on the castle with zero lag">${ctx.onCastle === "stale" ? "Update castle" : ctx.onCastle === "current" ? "Re-send" : "\u2192 Castle"}</button>` : ""}
       <button data-act="del" class="danger">Delete</button>
     </div>
   </div>`;
-  }
-
-  // src/track_send.ts
-  function cardName(t) {
-    return `${t.id}.${(t.ext || t.opts?.format || "mp3").toLowerCase()}`;
-  }
-  async function fetchCard() {
-    try {
-      const r = await fetch("/api/files");
-      if (!r.ok) throw new Error(String(r.status));
-      const files = await r.json();
-      return new Map(files.filter((f) => !f.dir).map((f) => [f.name, f.size]));
-    } catch {
-      return null;
-    }
-  }
-  function cardState(t, card) {
-    if (card === null) return null;
-    const size2 = card.get(cardName(t));
-    if (size2 === void 0) return "absent";
-    if (t.bytes === void 0) return "current";
-    return size2 === t.bytes ? "current" : "stale";
-  }
-  async function freeKb() {
-    try {
-      const r = await fetch("/api/status");
-      if (!r.ok) return null;
-      const s = await r.json();
-      return typeof s.sd_free_kb === "number" && s.sd_free_kb > 0 ? s.sd_free_kb : null;
-    } catch {
-      return null;
-    }
-  }
-  function putWithProgress(name, blob, onProgress) {
-    return new Promise((resolve) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("PUT", `/api/files/${encodeURIComponent(name)}`);
-      xhr.upload.addEventListener("progress", (e) => {
-        if (e.lengthComputable) onProgress?.(Math.round(100 * e.loaded / e.total));
-      });
-      xhr.addEventListener("load", () => {
-        if (xhr.status < 200 || xhr.status >= 300) return resolve(-1);
-        try {
-          resolve(JSON.parse(xhr.responseText).bytes ?? -1);
-        } catch {
-          resolve(-1);
-        }
-      });
-      xhr.addEventListener("error", () => resolve(-1));
-      xhr.send(blob);
-    });
-  }
-  async function sendToCastle(t, onProgress) {
-    try {
-      const r = await fetch(`/api/track/${encodeURIComponent(t.id)}`);
-      if (!r.ok) throw new Error(String(r.status));
-      const blob = await r.blob();
-      const free = await freeKb();
-      if (free !== null && blob.size / 1024 > free) {
-        return { ok: false, msg: `No room on the card for \u201C${t.id}\u201D \u2014 it needs ${Math.round(blob.size / 1024)} KB and the card has ${free} KB free.` };
-      }
-      const wrote = await putWithProgress(cardName(t), blob, onProgress);
-      if (wrote === blob.size) {
-        return { ok: true, msg: `\u201C${t.id}\u201D is on the castle's card \u2014 ${Math.round(blob.size / 1024)} KB, verified.` };
-      }
-      return wrote >= 0 ? { ok: false, msg: `Send of \u201C${t.id}\u201D landed short \u2014 the castle wrote ${wrote} of ${blob.size} bytes. Send it again.` } : { ok: false, msg: `Send of \u201C${t.id}\u201D failed \u2014 is the castle awake?` };
-    } catch {
-      return { ok: false, msg: "Send failed \u2014 no castle answering." };
-    }
   }
 
   // src/track_card.ts
@@ -4726,7 +4869,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
   function syncPlan(ctx) {
     if (!ctx.card) return [];
     const card = ctx.card;
-    return ctx.tracks.filter((t) => ctx.sceneIds.has(t.id) && cardState(t, card) !== "current");
+    return ctx.tracks.filter((t) => ctx.sceneIds.has(t.id) && sendable(t) && cardState(t, card) !== "current");
   }
   function cardRowsHtml(ctx) {
     const rows = cardOnly(ctx);
@@ -4764,12 +4907,14 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
   }
   function watchCard(deps, intervalMs = 2e4) {
     const key = (m) => m === null ? "-" : JSON.stringify([...m.entries()].sort());
-    window.setInterval(() => {
+    const poll = () => {
       if (!deps.active()) return;
       void fetchCard().then((now) => {
         if (key(now) !== key(deps.card())) deps.apply(now);
       });
-    }, intervalMs);
+    };
+    window.setInterval(poll, intervalMs);
+    onCastlePresence(() => poll());
   }
   function wireCardActions(deps) {
     deps.syncBtn.addEventListener("click", async () => {
@@ -4797,11 +4942,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       const name = btn2.closest(".trk")?.dataset["card"] ?? "";
       if (!name) return;
       if (btn2.dataset["cardact"] === "play") {
-        const r = await fetch(
+        await castleAct(
           `/api/play?f=${encodeURIComponent(name)}`,
-          { method: "POST" }
-        ).catch(() => null);
-        toast(r?.ok ? `playing ${name} on the castle` : "play failed", !r?.ok);
+          `playing ${name} on the castle`
+        );
       } else if (btn2.dataset["cardact"] === "pull" && deps.importFile) {
         btn2.disabled = true;
         btn2.textContent = "pulling\u2026";

@@ -21,6 +21,8 @@
  * soldered pixel plays its part in the corner of the room.
  */
 
+import { castleAct } from "./device.js";
+
 interface SdFile {
   name: string;
   size: number;
@@ -86,6 +88,13 @@ export class DevicePanel {
     if (this.open) void this.render();
   }
 
+  /** Redraw if open — device.ts calls this when the castle goes quiet or
+   *  comes back, so the panel cannot keep showing a file list and an uptime
+   *  from a castle that is no longer there (pass 1, J1-4). */
+  refresh(): void {
+    if (this.open) void this.render();
+  }
+
   private async render(): Promise<void> {
     let st: DeviceStatus;
     let files: SdFile[] = [];
@@ -100,11 +109,16 @@ export class DevicePanel {
     const tracks = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
 
     this.body.innerHTML =
-      `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f">` +
-      `<b>🏰 v${st.version}</b> · up ${fmtUptime(st.uptime_s)} · ` +
-      `${st.psram_free_kb} KB PSRAM free` +
+      `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f;` +
+      `display:flex;align-items:center;gap:.4rem">` +
+      `<span style="flex:1"><b>🏰 v${st.version}</b> · up ${fmtUptime(st.uptime_s)}` +
       (st.sd_free_kb
         ? ` · card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") +
+      ` <small title="Free working memory (PSRAM) — what the SD turntable runs on">` +
+      `· ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span>` +
+      `<button id="dpClose" title="Close this panel" aria-label="Close" ` +
+      `style="cursor:pointer;background:none;border:0;color:#9a8fb0;` +
+      `font-size:14px;padding:0 .2rem">✕</button>` +
       `</div>` +
       `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f">` +
       `<button id="dpPlaylist" title="Every scene in order with dark gaps, ` +
@@ -116,8 +130,10 @@ export class DevicePanel {
         ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") +
       `</div>` +
       `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;` +
-      `display:flex;gap:.5rem;align-items:center">` +
-      `💡 <input id="dpColor" type="color" value="#ff8c1e" ` +
+      `display:flex;gap:.5rem;align-items:center" ` +
+      `title="Park every pixel on one colour, or give them back to the show">` +
+      `💡 <small style="color:#9a8fb0">lights</small> ` +
+      `<input id="dpColor" type="color" value="#ff8c1e" ` +
       `title="Park the pixels on a colour" style="cursor:pointer">` +
       `<button id="dpShow" title="Hand the pixels back to the scene engine" ` +
       `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
@@ -141,17 +157,22 @@ export class DevicePanel {
             `style="cursor:pointer;background:none;color:#9a8fb0;border:0">✕</button>` +
             `</div>`).join("")
         : `<div style="padding:.5rem .8rem;color:#9a8fb0">` +
-          `${st.sd_mounted ? "no tracks on the card — tools/sd_sync.py push" : "no SD card"}</div>`) +
+          `${st.sd_mounted
+            ? "no tracks on the card yet — drop audio below, or press → Castle on a track in the Library"
+            : "no SD card"}</div>`) +
       `</div>` +
       `<div style="padding:.5rem .8rem;border-top:1px solid #35264f" ` +
-      `title="What the motion sensor triggers">` +
-      `👣 <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
+      `title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">` +
+      `👣 <small style="color:#9a8fb0">motion sensor</small> ` +
+      `<label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
       `<select id="dpPirScene">` +
       sceneIds().map((s) =>
         `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") +
       `</select> ` +
       `<input id="dpPirCool" type="number" min="5" max="600" step="5" ` +
-      `value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="cooldown seconds">s` +
+      `value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" ` +
+      `title="Cooldown: seconds before the sensor can fire again">` +
+      `<small style="color:#9a8fb0"> s between triggers</small>` +
       `</div>` +
       `<div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed #503a75;` +
       `color:#9a8fb0;text-align:center">drop audio files here to upload</div>` +
@@ -162,12 +183,20 @@ export class DevicePanel {
       `font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre>` +
       `</div>`;
 
+    this.body.querySelector<HTMLButtonElement>("#dpClose")!
+      .addEventListener("click", () => this.toggle());
+
+    // Every control below goes through castleAct (device.ts): toast with
+    // the castle's reason on failure, and a chip re-poll on success — the
+    // panel used to fire-and-forget, so a 404 delete still "succeeded" and
+    // the chip said "idle" while the castle played (pass 1, J1-6/J1-7).
     // The playlist toggle re-renders after the queued action lands (the
     // 200 ms bridge plus a beat), so the button reflects the device's own
     // idea of the show, not the click's.
     this.body.querySelector<HTMLButtonElement>("#dpPlaylist")!
       .addEventListener("click", () => {
-        void fetch(`/api/show/${st.show_on ? "stop" : "start"}`, { method: "POST" })
+        void castleAct(`/api/show/${st.show_on ? "stop" : "start"}`,
+                       st.show_on ? "show stopped" : "show started")
           .then(() => new Promise(r => setTimeout(r, 600)))
           .then(() => this.render());
       });
@@ -177,20 +206,22 @@ export class DevicePanel {
     this.body.querySelector<HTMLInputElement>("#dpColor")!
       .addEventListener("input", (e) => {
         const hex = (e.target as HTMLInputElement).value.slice(1);
-        void fetch(`/api/light?c=${hex}`, { method: "POST" });
+        // quiet: the picker fires continuously while the hand drags.
+        void castleAct(`/api/light?c=${hex}`, `lights #${hex}`, { quiet: true });
       });
     this.body.querySelector<HTMLButtonElement>("#dpShow")!
       .addEventListener("click", () =>
-        void fetch("/api/light?c=show", { method: "POST" }));
+        void castleAct("/api/light?c=show", "lights back to the show"));
     this.body.querySelector<HTMLButtonElement>("#dpOff")!
       .addEventListener("click", () =>
-        void fetch("/api/light?c=off", { method: "POST" }));
+        void castleAct("/api/light?c=off", "lights off"));
 
     this.body.querySelectorAll<HTMLButtonElement>("[data-play]").forEach((b) =>
       b.addEventListener("click", () => {
         const f = tracks[Number(b.dataset.play)];
         if (f === undefined) return;
-        void fetch(`/api/play?f=${encodeURIComponent(f.name)}`, { method: "POST" });
+        void castleAct(`/api/play?f=${encodeURIComponent(f.name)}`,
+                       `playing ${f.name} on the castle`);
       }));
 
     this.body.querySelectorAll<HTMLButtonElement>("[data-del]").forEach((b) =>
@@ -199,25 +230,31 @@ export class DevicePanel {
         if (f === undefined) return;
         // A deliberate two-step: deleting from a 30 GB card is cheap to undo
         // (push again), but "the show's track vanished on Halloween" is not.
-        if (!confirm(`Delete ${f.name} from the card?`)) return;
-        void fetch(`/api/files/${encodeURIComponent(f.name)}`, { method: "DELETE" })
-          .then(() => this.render());
+        if (!confirm(`Delete ${f.name} from the castle's SD card?`)) return;
+        void castleAct(`/api/files/${encodeURIComponent(f.name)}`,
+                       `deleted ${f.name} from the card`, { method: "DELETE" })
+          .then((ok) => { if (ok) void this.render(); });
       }));
 
     // PIR settings: each control posts just its own field; the device's
     // main loop applies them to the persisted entities.
     this.body.querySelector<HTMLInputElement>("#dpPirArm")!
-      .addEventListener("change", (e) =>
-        void fetch(`/api/pir?armed=${(e.target as HTMLInputElement).checked ? 1 : 0}`,
-                   { method: "POST" }));
+      .addEventListener("change", (e) => {
+        const on = (e.target as HTMLInputElement).checked;
+        void castleAct(`/api/pir?armed=${on ? 1 : 0}`,
+                       on ? "motion sensor armed" : "motion sensor off");
+      });
     this.body.querySelector<HTMLSelectElement>("#dpPirScene")!
-      .addEventListener("change", (e) =>
-        void fetch(`/api/pir?scene=${encodeURIComponent((e.target as HTMLSelectElement).value)}`,
-                   { method: "POST" }));
+      .addEventListener("change", (e) => {
+        const sc = (e.target as HTMLSelectElement).value;
+        void castleAct(`/api/pir?scene=${encodeURIComponent(sc)}`,
+                       `motion sensor plays ${sc}`);
+      });
     this.body.querySelector<HTMLInputElement>("#dpPirCool")!
-      .addEventListener("change", (e) =>
-        void fetch(`/api/pir?cooldown=${(e.target as HTMLInputElement).value}`,
-                   { method: "POST" }));
+      .addEventListener("change", (e) => {
+        const v = (e.target as HTMLInputElement).value;
+        void castleAct(`/api/pir?cooldown=${v}`, `motion cooldown ${v} s`);
+      });
 
     // Drag-drop upload: the last terminal-only workflow, gone. Files land in
     // the card root, same as tools/sd_sync.py push.

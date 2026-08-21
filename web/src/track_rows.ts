@@ -7,6 +7,7 @@
  */
 
 import { BAND_HELP, bandSummary } from "./bands.js";
+import { sendable } from "./track_send.js";
 import type { TrackInfo } from "./tracks.js";
 
 const ESCAPES: Record<string, string> =
@@ -64,12 +65,17 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
       : esc(t.source.replace(/^file:/, "").split("/").pop());
   const cls = ["trk", ctx.selected ? "sel" : "",
                ctx.sounding ? "playing" : ""].filter(Boolean).join(" ");
+  // A track whose import failed has no bytes worth anything: no castle
+  // button (it would PUT nothing over the card's good copy), and a badge
+  // that says what happened instead of "stale" (pass 1, J1-2).
+  const broken = !sendable(t);
   return `
   <div class="${cls}" data-id="${esc(t.id)}" title="Click to open the clip editor">
     <div class="trk__nm">${esc(t.id)}
       ${ctx.inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
       ${ctx.onCastle === "current" ? `<span class="trk__badge" title="The castle's SD card holds this exact file — byte count verified">on castle ✓</span>` : ""}
       ${ctx.onCastle === "stale" ? `<span class="trk__badge" style="color:var(--warn,#e0a34a)" title="The card's copy is DIFFERENT bytes — this track changed since it was sent. Press Update castle.">stale on castle ⚠</span>` : ""}
+      ${broken ? `<span class="trk__badge trk__broken" style="color:var(--err,#ff6b5a)" title="${esc(t.error || "The file is empty")} — re-import it (or delete it). It cannot be sent to the castle.">import failed ⚠</span>` : ""}
       <small>${t.dur ?? "?"}s · ${t.kb} KB · ${fmt}</small>
       <small title="${esc(BAND_HELP)}">${esc(onsets)}</small>
       ${src ? `<small class="trk__src">from ${src}</small>` : ""}
@@ -81,7 +87,7 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
       <button data-act="scene" title="${ctx.inShow ? "Rewrite this scene from the track as it is now" : "Add this track to the show as a new scene"}"
         >${ctx.inShow ? "Update scene" : "Make scene"}</button>
       ${t.source ? `<button data-act="refresh" title="Rebuild from the remembered source using the options above">Re-import</button>` : ""}
-      ${ctx.onCastle !== null ? `<button data-act="send" title="Copy this file onto the castle's SD card over WiFi — it can then play on the castle with zero lag">${
+      ${ctx.onCastle !== null && !broken ? `<button data-act="send" title="Copy this file onto the castle's SD card over WiFi — it can then play on the castle with zero lag">${
         ctx.onCastle === "stale" ? "Update castle"
         : ctx.onCastle === "current" ? "Re-send" : "→ Castle"}</button>` : ""}
       <button data-act="del" class="danger">Delete</button>

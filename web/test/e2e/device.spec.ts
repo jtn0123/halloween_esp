@@ -191,3 +191,102 @@ test("the boot log is one tap away", async ({ page }) => {
   await page.locator("#dpLog").click();
   await expect(page.locator("#dpLogOut")).toContainText("boot log: 2 lines");
 });
+
+/* ── Pass-1 judge findings: the states that used to lie ─────────────────── */
+
+/** A castle that can be switched off mid-test: status (and, when `deadPosts`
+ *  is set, every POST) answers the studio's 502 once `up` is false. */
+function flakyCastle(page: import("@playwright/test").Page,
+                     status: Record<string, unknown> = STATUS):
+    { calls: string[]; set: (up: boolean, deadPosts?: boolean) => void } {
+  const calls: string[] = [];
+  let up = true;
+  let deadPosts = false;
+  void page.route("**/api/**", (route) => {
+    const url = new URL(route.request().url());
+    const method = route.request().method();
+    calls.push(`${method} ${url.pathname}${url.search}`);
+    const down = () => route.fulfill({ status: 502, json: { error: "castle not reachable" } });
+    if (url.pathname === "/api/status") return up ? route.fulfill({ json: status }) : down();
+    if (url.pathname === "/api/files") return up ? route.fulfill({ json: FILES }) : down();
+    if (method === "POST" && deadPosts) return down();
+    return route.fulfill({ json: { queued: true } });
+  });
+  return { calls, set: (u, d = false) => { up = u; deadPosts = d; } };
+}
+
+test("a castle that boots after the page loads still gets its chip", async ({ page }) => {
+  // J1-3: the probe used to run once; a castle absent at load meant
+  // simulator for the whole session while the library grew castle buttons.
+  const castle = flakyCastle(page);
+  castle.set(false);
+  await page.goto("/");
+  await page.waitForTimeout(1500);
+  await expect(page.locator("#deviceChip")).toBeHidden();
+  await expect(page.locator("#headTxt")).toContainText("simulator");
+  castle.set(true);
+  // The desk re-probes every 5 s while no castle answers.
+  await expect(page.locator("#deviceChip")).toBeVisible({ timeout: 9000 });
+  await expect(page.locator(".transport #sndRoute")).toBeVisible();
+  await expect(page.locator("#headTxt")).toContainText("castle v5.3");
+});
+
+test("the masthead keeps saying 'not answering' across a ♪ toggle", async ({ page }) => {
+  // J1-4: toggling ♪ (or the mirror box) re-said the LAST GOOD status with
+  // a green dot while the castle was dead and the volume POST had failed.
+  const castle = flakyCastle(page);
+  await page.goto("/");
+  await expect(page.locator("#headTxt")).toContainText("castle v5.3");
+  castle.set(false);
+  // A successful action re-polls ~1 s later — that poll finds the castle gone.
+  await page.locator("#devStop").click();
+  await expect(page.locator("#headTxt")).toContainText("castle not answering");
+  await expect(page.locator("#devStop")).toBeDisabled();
+  castle.set(false, true);
+  await page.locator(".transport #sndRoute").click();
+  await expect(page.locator("#headTxt")).toContainText("castle not answering");
+  await expect(page.locator("#headTxt")).toContainText("sound: castle");
+  await expect(page.locator("#headTxt")).not.toContainText("v5.3");
+});
+
+test("a failed action says why, in the castle's words", async ({ page }) => {
+  // J1-6: "scene seance failed" could not tell a typo from a dead castle.
+  await page.route("**/api/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/status") return route.fulfill({ json: STATUS });
+    if (url.pathname === "/api/files") return route.fulfill({ json: FILES });
+    if (url.pathname === "/api/scene")
+      return route.fulfill({ status: 404, contentType: "text/plain", body: "unknown scene" });
+    return route.fulfill({ json: { queued: true } });
+  });
+  await page.goto("/");
+  await expect(page.locator("#deviceChip")).toBeVisible();
+  await page.locator("button.scene", { hasText: "Storm" }).first().click();
+  await expect(page.getByText(/scene storm failed — unknown scene/)).toBeVisible();
+});
+
+test("Play on a card-only row moves the chip off 'idle'", async ({ page }) => {
+  // J1-7: the library's Play on castle and the panel's ▶ bypassed the
+  // chip's re-poll, so it said "idle" while the castle played.
+  let track = "";
+  await page.route("**/api/**", (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/status")
+      return route.fulfill({ json: { ...STATUS, scene: "", track } });
+    if (url.pathname === "/api/files") return route.fulfill({ json: FILES });
+    if (url.pathname === "/api/play") {
+      track = url.searchParams.get("f") ?? "";
+      return route.fulfill({ json: { queued: true } });
+    }
+    return route.fallback();
+  });
+  await page.goto("/");
+  await expect(page.locator("#devNow")).toHaveText("idle");
+  await page.locator(".trk--card[data-card='ghostbusters.mp3'] [data-cardact='play']").click();
+  await expect(page.locator("#devNow")).toHaveText("▶ ghostbusters.mp3");
+  // The panel's own ▶ goes the same way.
+  track = "";
+  await page.locator("#devMore").click();
+  await page.locator("#devicePanel [data-play]").first().click();
+  await expect(page.locator("#devNow")).toHaveText("▶ wicked_winds.mp3");
+});
