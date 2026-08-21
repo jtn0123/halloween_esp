@@ -59,8 +59,10 @@ _cache: dict[str, tuple[float, dict]] = {}
 def castle_host() -> str | None:
     """The castle's address, or None when nothing is configured."""
     env = os.environ.get("CASTLE_HOST")
-    if env:
-        return env
+    if env is not None:
+        # Set-but-empty means "explicitly no castle" — the e2e suite uses it
+        # so a live device on the LAN cannot flip test expectations.
+        return env or None
     try:
         doc = tomllib.loads(DEVICES.read_text())
     except (OSError, tomllib.TOMLDecodeError):

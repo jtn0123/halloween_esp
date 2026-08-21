@@ -75,7 +75,9 @@ export default defineConfig({
     // A studio the user is already running is pointed at their real tracks,
     // which is exactly what this suite must not touch.
     reuseExistingServer: false,
-    env: { CASTLE_TRACKS: TRACKS, CASTLE_SCENES: SCENES_FILE },
+    // CASTLE_HOST="" = explicitly castle-less: the stubs in the specs are the
+    // only castle, whether or not the real one is awake on the LAN.
+    env: { CASTLE_TRACKS: TRACKS, CASTLE_SCENES: SCENES_FILE, CASTLE_HOST: "" },
     stdout: "pipe",
     stderr: "pipe",
     timeout: 30_000,
