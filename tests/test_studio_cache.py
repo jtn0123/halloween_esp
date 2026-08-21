@@ -58,6 +58,25 @@ class TestTrackInfoFromManifest(unittest.TestCase):
         self.assertIn("onset_low", first["onsets"])
         self.assertTrue(all(isinstance(v, int) for v in first["onsets"].values()))
 
+    def test_track_infos_reads_the_manifest_once_for_the_listing(self) -> None:
+        """/api/tracks used to load tracks.json once PER TRACK."""
+        b = self.tmp / "_t_cache_b.wav"
+        make_click_track(b, seconds=2.0)
+        stt.track_info(self.track)
+        stt.track_info(b)                     # both cached in the manifest now
+        with mock.patch.object(stt.mf, "load", wraps=stt.mf.load) as ld:
+            rows, n = self.decodes(lambda: stt.track_infos([self.track, b]))
+        self.assertEqual(ld.call_count, 1)
+        self.assertEqual(n, 0)
+        self.assertEqual([r["id"] for r in rows], ["_t_cache_a", "_t_cache_b"])
+        self.assertEqual(rows, [stt.track_info(self.track), stt.track_info(b)])
+
+    def test_track_infos_fills_an_unknown_track_like_track_info(self) -> None:
+        rows, n = self.decodes(lambda: stt.track_infos([self.track]))
+        self.assertEqual(n, 1)
+        self.assertIn("dur", rows[0])
+        self.assertEqual(rows[0], stt.track_info(self.track))
+
     def test_write_back_does_not_clobber_provenance(self) -> None:
         mf.record("_t_cache_a", source="file:/x.wav", title="X",
                   opts={"take": 2}, notes="keep me")
@@ -106,12 +125,20 @@ class TestWaveformCache(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.track = self.tmp / "_t_wave.mp3"
         make_mp3(self.track, seconds=2.0)
-        sm._WAVES.clear()
-        self.addCleanup(sm._WAVES.clear)
+        for store in (sm._WAVES, sm._DECODED):
+            store.clear()
+            self.addCleanup(store.clear)
 
     def decodes(self, fn):
         real = sm.ana.load_audio
         with mock.patch.object(sm.ana, "load_audio", side_effect=real) as m:
+            out = fn()
+        return out, m.call_count
+
+    def analyses(self, fn):
+        """Onset passes — the part of the answer the knob actually changes."""
+        real = sm.ana.analyze_full
+        with mock.patch.object(sm.ana, "analyze_full", side_effect=real) as m:
             out = fn()
         return out, m.call_count
 
@@ -123,13 +150,17 @@ class TestWaveformCache(unittest.TestCase):
         self.assertEqual(a, b)
 
     def test_sensitivity_is_part_of_the_key(self) -> None:
+        """A new knob value is a new onset pass (but no new decode — the
+        two-level cache, tests/test_studio_media.py)."""
         sm.waveform(self.track, sensitivity=1.1)
-        _, n = self.decodes(lambda: sm.waveform(self.track, sensitivity=0.6))
-        self.assertGreater(n, 0)
-        _, n = self.decodes(lambda: sm.waveform(
+        _, n = self.analyses(lambda: sm.waveform(self.track, sensitivity=0.6))
+        self.assertEqual(n, 1)
+        _, n = self.analyses(lambda: sm.waveform(
             self.track, sensitivity={"onset_low": 1.1, "onset_mid": 1.1,
                                      "onset_high": 1.1}))
-        self.assertGreater(n, 0)
+        self.assertEqual(n, 1)
+        _, n = self.analyses(lambda: sm.waveform(self.track, sensitivity=0.6))
+        self.assertEqual(n, 0)
 
     def test_a_rewritten_file_misses(self) -> None:
         sm.waveform(self.track)

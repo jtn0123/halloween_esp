@@ -100,7 +100,9 @@ by `make preview` from `web/src/`). Behind it, `tools/studio.py` adds what a
 static page cannot do: the **Tracks** panel imports audio (a file, or a link via
 yt-dlp), shows onsets and waveforms, auditions clips, writes scenes into
 `scenes/scenes.yaml`, and sends files to the castle's SD card when one answers.
-`--lan` opens it to the phone/iPad remote; leave it off otherwise.
+`--lan` opens it to the phone/iPad remote; leave it off otherwise. The route
+table — what the studio owns (`/studio/…`) and what it relays to the castle
+(`/api/…`) — is [docs/API.md](docs/API.md).
 
 Three environment variables sandbox it: `CASTLE_TRACKS` (track library
 directory), `CASTLE_SCENES` (the scenes file it may write), `CASTLE_HOST`
@@ -119,6 +121,10 @@ make check      # tests + lint + guards + tsc + node suites (what CI runs)
 make e2e        # Playwright against the real studio (CASTLE_E2E_PORT=8821 to run two)
 make coverage   # non-gating coverage report     make audit  # pip-audit, non-gating
 ```
+
+The four implementations of the show's arithmetic (Python generators, TS
+effects, C++ firmware, host-compiled dump) are kept bit-exact by seeded fuzz —
+[docs/PARITY.md](docs/PARITY.md) is the contract and what to do when it goes red.
 
 Every file is held to 500 lines (`tools/check_loc.py`, prose included). The
 commit hook is `git config core.hooksPath githooks`. A git worktree needs its

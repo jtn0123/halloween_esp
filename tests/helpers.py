@@ -9,9 +9,21 @@ what came back, shared by test_synth_voices.py and test_synth_pieces.py.
 
 from __future__ import annotations
 
+import os
 import sys
 import wave
 from pathlib import Path
+
+# Hermetic suite, by construction. The emulator workflow (CLAUDE.md) has you
+# export CASTLE_HOST / CASTLE_TRACKS in the very shell you then run `make
+# test` from, and six tests used to go red on that alone. The sandbox knobs
+# are cleared HERE, before any tools module reads them at import time
+# (studio_tracks.TRACKS is bound at import), and every case that needs one
+# sets it explicitly. unittest discovery loads test_analysis.py — which
+# imports this — before any other module, so the whole run sees a clean env.
+SANDBOX_ENV = ("CASTLE_HOST", "CASTLE_TRACKS", "CASTLE_SCENES", "CASTLE_BUILD")
+for _k in SANDBOX_ENV:
+    os.environ.pop(_k, None)
 
 import numpy as np
 

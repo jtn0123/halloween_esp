@@ -148,46 +148,85 @@ def waveform(path: Path, sensitivity: float | dict = 1.1,
     picture is to see where the transients are so you can line a selection up
     with them, and RMS smooths exactly that away.
     """
-    key = (str(path), path.stat().st_mtime_ns,
-           json.dumps(sensitivity, sort_keys=True), buckets)
+    mtime = path.stat().st_mtime_ns
+    key = (str(path), mtime, json.dumps(sensitivity, sort_keys=True), buckets)
     hit = _WAVES.get(key)
     if hit is not None:
         _WAVES.move_to_end(key)
         return hit
-    out = _waveform(path, sensitivity, buckets)
+    out = _waveform(_decoded(path, mtime, buckets), sensitivity)
     _WAVES[key] = out
     while len(_WAVES) > KEEP_WAVES:
         _WAVES.popitem(last=False)
     return out
 
 
-def _waveform(path: Path, sensitivity: float | dict, buckets: int) -> dict:
-    x = ana.load_audio(path)
-    dur = len(x) / ana.SR
+# The knob-independent part of a waveform — decode, stereo, peaks and the
+# loudness envelope (~70% of the work) — keyed by (path, mtime, buckets).
+# A sensitivity nudge used to pay for all of it again; only the onset pass
+# above depends on the knob. Smaller than _WAVES: one entry is a whole
+# decoded track in RAM, and the editor has one or two open at a time.
+KEEP_DECODED = 8
+
+
+class Decoded:
+    """One track, decoded once: what every sensitivity shares."""
+
+    __slots__ = ("env", "id", "peaks", "stereo", "x")
+
+    def __init__(self, path: Path, buckets: int) -> None:
+        self.id = path.stem
+        self.x = ana.load_audio(path)
+        x = self.x
+        if len(x) == 0:
+            self.stereo = None
+            self.peaks: list[float] = []
+            self.env: list[list[float]] = []
+            return
+        n = min(buckets, len(x))
+        edges = np.linspace(0, len(x), n + 1).astype(int)
+        peaks = [float(np.abs(x[a:b]).max()) if b > a else 0.0
+                 for a, b in itertools.pairwise(edges)]
+        top = max(peaks) or 1.0
+        self.peaks = [round(p / top, 4) for p in peaks]
+        # Stereo alongside the mono: onsets carry their pan as a third
+        # element, which the audition uses to route hits between the towers.
+        self.stereo = ana.load_stereo(path)
+        # Full-range loudness over time, alongside the onsets. Onsets say
+        # WHEN something hit; this says how big the music is right now,
+        # which is what lets a generated scene dim for the spoken verse and
+        # bloom for the chorus instead of holding one level for three
+        # minutes.
+        env = ana.envelope(x, bands=[("onset_full", 20, 16000, 0.0)])
+        self.env = [[round(t, 3), v] for t, v in env.get("level_full", [])]
+
+
+_DECODED: collections.OrderedDict[tuple, Decoded] = collections.OrderedDict()
+
+
+def _decoded(path: Path, mtime: int, buckets: int) -> Decoded:
+    key = (str(path), mtime, buckets)
+    hit = _DECODED.get(key)
+    if hit is not None:
+        _DECODED.move_to_end(key)
+        return hit
+    dec = Decoded(path, buckets)
+    _DECODED[key] = dec
+    while len(_DECODED) > KEEP_DECODED:
+        _DECODED.popitem(last=False)
+    return dec
+
+
+def _waveform(dec: Decoded, sensitivity: float | dict) -> dict:
+    x = dec.x
     if len(x) == 0:
-        return {"id": path.stem, "duration": 0.0, "peaks": [], "onsets": {}}
-
-    n = min(buckets, len(x))
-    edges = np.linspace(0, len(x), n + 1).astype(int)
-    peaks = [float(np.abs(x[a:b]).max()) if b > a else 0.0
-             for a, b in itertools.pairwise(edges)]
-    top = max(peaks) or 1.0
-    peaks = [round(p / top, 4) for p in peaks]
-
-    # Stereo alongside the mono: onsets carry their pan as a third element,
-    # which the audition uses to route hits between the towers.
-    marks = ana.analyze_full(x, sensitivity=sensitivity,
-                             stereo=ana.load_stereo(path))
-    # Full-range loudness over time, alongside the onsets. Onsets say WHEN
-    # something hit; this says how big the music is right now, which is what
-    # lets a generated scene dim for the spoken verse and bloom for the
-    # chorus instead of holding one level for three minutes.
-    env = ana.envelope(x, bands=[("onset_full", 20, 16000, 0.0)])
+        return {"id": dec.id, "duration": 0.0, "peaks": [], "onsets": {}}
+    marks = ana.analyze_full(x, sensitivity=sensitivity, stereo=dec.stereo)
     return {
-        "id": path.stem,
-        "duration": round(dur, 3),
-        "peaks": peaks,
+        "id": dec.id,
+        "duration": round(len(x) / ana.SR, 3),
+        "peaks": dec.peaks,
         "onsets": {k: [[round(h[0], 3), *h[1:]] for h in v_]
                    for k, v_ in marks.items()},
-        "env": [[round(t, 3), v] for t, v in env.get("level_full", [])],
+        "env": dec.env,
     }

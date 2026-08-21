@@ -10,7 +10,7 @@ YAML := firmware/castle_flash.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: test lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage audit lock sd-build sd-upload
+.PHONY: test lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload
 
 help:
 	@echo "Halloween Castle"
@@ -35,6 +35,7 @@ help:
 	@echo "                  CASTLE_E2E_PORT=8821 make e2e   to run beside another suite"
 	@echo "  make check-all  every check, including the browser tests"
 	@echo "  make coverage   unit tests under coverage.py, report on tools/ (non-gating)"
+	@echo "  make coverage-gate  the same, failing under $(COVERAGE_MIN)% (what CI enforces)"
 	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
 	@echo "  make lock       refreeze requirements.lock from .venv"
 	@echo "  make clean      drop firmware/.esphome and rendered wavs"
@@ -47,6 +48,7 @@ setup:
 	$(PY_SETUP) -m venv .venv
 	.venv/bin/python -m pip install --quiet --upgrade pip
 	.venv/bin/pip install --quiet -r requirements.txt -r requirements-dev.txt
+	@git config core.hooksPath githooks && echo "pre-commit hook: githooks/"
 	@echo "ready. 'make build' next."
 
 audio:
@@ -103,11 +105,17 @@ bench-audio-logs:
 test:
 	@$(PY) -m unittest discover -s tests -q
 
-# Where the unit suite reaches and where it does not. Informational — no
-# threshold fails it; the number is for deciding what to test next.
+# Where the unit suite reaches and where it does not. Informational here —
+# the number is for deciding what to test next. `coverage-gate` is the same
+# run with the floor CI enforces (COVERAGE_MIN); raise it as coverage lands.
+COVERAGE_MIN := 72
 coverage:
 	@$(PY) -m coverage run --source=tools -m unittest discover -s tests -q
 	@$(PY) -m coverage report --include='tools/*' --skip-empty
+
+coverage-gate: coverage
+	@$(PY) -m coverage report --include='tools/*' --skip-empty \
+		--fail-under=$(COVERAGE_MIN) > /dev/null && echo "coverage >= $(COVERAGE_MIN)%"
 
 # Known advisories against what the venv actually has. Non-gating: the hits
 # so far are in ESPHome's build toolchain (platformio -> starlette, which never
@@ -128,8 +136,8 @@ lock:
 # Lint + type-check the Python half; config lives in pyproject.toml. The TS
 # half's equivalent is the tsc line in `check`.
 lint:
-	@.venv/bin/ruff check tools tests
-	@.venv/bin/mypy tools tests
+	@$(PY) -m ruff check tools tests
+	@$(PY) -m mypy tools tests
 
 check: test lint
 	@$(PY) tools/check_image.py castle-sd

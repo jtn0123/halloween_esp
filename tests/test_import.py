@@ -285,8 +285,11 @@ class TestRenderIntegration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
+        # Rendered INTO the tempdir, never the user's tracks/: the scene
+        # below points at the absolute path, so nothing here needs the real
+        # library and nothing is left behind if the class dies mid-run.
         cls.tmp = Path(tempfile.mkdtemp())
-        cls.track = ROOT / "tracks" / "_test_integration.mp3"
+        cls.track = cls.tmp / "_test_integration.mp3"
         src = cls.tmp / "src.wav"
         make_click_track(src, seconds=6.0, bpm=120.0)
         it.convert(src, cls.track, {
@@ -302,7 +305,7 @@ class TestRenderIntegration(unittest.TestCase):
     def scene(self) -> dict:
         return {
             "id": "_test_integration", "duration_ms": 6000, "loop": True,
-            "audio_file": "tracks/_test_integration.mp3",
+            "audio_file": str(self.track),
             "pulse": [{"synth": "onset_low", "zone": "door", "intensity": 0.55}],
         }
 

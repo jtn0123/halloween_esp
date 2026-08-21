@@ -40,14 +40,17 @@ jobs:
       - uses: ./.github/actions/media-tools
       # yt-dlp: two tests assert the import toolchain is present and that
       # probe/import guards reject junk BEFORE shelling out to it.
-      - run: pip install pyyaml numpy scipy yt-dlp
-      - run: pip install -r requirements-dev.txt
+      # The lock IS what was tested locally (frozen from the 3.13 venv by `make lock`).
+      - run: pip install -r requirements.lock
       - name: lint
         run: ruff check tools tests
       - name: type check
         run: mypy tools tests
-      - name: unit tests
-        run: python -m unittest discover -s tests -q
+      # The unit suite runs under coverage.py so the number is a ratchet,
+      # not a report: the floor is the Makefile's COVERAGE_MIN (72% of
+      # tools/ as of 2026-08-21); raise it there as coverage lands.
+      - name: unit tests (coverage-gated)
+        run: make coverage-gate PY=python
       - name: LOC cap
         run: python tools/check_loc.py
       # Advisories against the locked venv. Informational only — see the

@@ -9,6 +9,9 @@ what the endpoints MEAN; this is how bytes get on and off the socket.
 
 from __future__ import annotations
 
+import collections
+import gzip
+import hashlib
 import json
 import sys
 from http.server import BaseHTTPRequestHandler
@@ -42,11 +45,51 @@ class JsonHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_bytes(self, body: bytes, ctype: str):
-        self.send_response(200)
+    def send_bytes(self, body: bytes, ctype: str, *, etag: str | None = None):
+        """Whole-body response. HTML (the 2.4 MB desk page) is served the
+        way the firmware already serves it: gzipped when the browser can
+        take it, and with a validator so a reload is a 304, not a resend.
+        Everything else stays `no-store`, which is right for API JSON.
+
+        `etag` is the validator; send_file() derives it from the file's
+        (mtime, size) without reading the file. Left None, an HTML body
+        gets one from its content hash so the old `send_bytes(read_bytes())`
+        call site gains the behaviour unchanged."""
+        if etag is None and ctype.startswith("text/html"):
+            etag = content_etag(body)
+        if etag is None:
+            self._send_plain(body, ctype, 200, [("Cache-Control", "no-store")])
+            return
+        if etag_matches(self.headers.get("If-None-Match"), etag):
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
+        hdrs = [("ETag", etag), ("Cache-Control", "no-cache"),
+                ("Vary", "Accept-Encoding")]
+        if accepts_gzip(self.headers.get("Accept-Encoding")):
+            body = gzipped(etag, body)
+            hdrs.append(("Content-Encoding", "gzip"))
+        self._send_plain(body, ctype, 200, hdrs)
+
+    def send_file(self, p: Path, ctype: str):
+        """send_bytes for a file on disk: the validator is "<mtime>-<size>",
+        so a matching If-None-Match answers 304 without reading the file."""
+        st = p.stat()
+        etag = f'"{st.st_mtime_ns}-{st.st_size}"'
+        if etag_matches(self.headers.get("If-None-Match"), etag):
+            self.send_bytes(b"", ctype, etag=etag)
+            return
+        self.send_bytes(p.read_bytes(), ctype, etag=etag)
+
+    def _send_plain(self, body: bytes, ctype: str, code: int,
+                    extra: list[tuple[str, str]]) -> None:
+        self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        for k, v in extra:
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
@@ -132,6 +175,56 @@ class JsonHandler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self.send_json({"ok": False,
                             "error": f"{type(e).__name__}: {e}"}, 500)
+
+
+# Compressed copies of recent bodies, keyed by their ETag — one entry is the
+# desk page, a second appears only while a rebuild is in flight. Bounded so
+# an unusual caller cannot grow it.
+_GZ: collections.OrderedDict[str, bytes] = collections.OrderedDict()
+KEEP_GZ = 4
+
+
+def gzipped(etag: str, body: bytes) -> bytes:
+    hit = _GZ.get(etag)
+    if hit is None:
+        hit = gzip.compress(body, 6)
+        _GZ[etag] = hit
+        while len(_GZ) > KEEP_GZ:
+            _GZ.popitem(last=False)
+    else:
+        _GZ.move_to_end(etag)
+    return hit
+
+
+def content_etag(body: bytes) -> str:
+    """A validator for a body with no file behind it: hash plus length."""
+    return f'"{hashlib.blake2b(body, digest_size=8).hexdigest()}-{len(body)}"'
+
+
+def accepts_gzip(header: str | None) -> bool:
+    """`gzip` named in Accept-Encoding with a non-zero q (or no q at all)."""
+    for part in (header or "").split(","):
+        enc, _, params = part.strip().partition(";")
+        if enc.strip().lower() not in ("gzip", "*"):
+            continue
+        q = params.strip().lower().removeprefix("q=").strip() if params else ""
+        try:
+            return float(q) > 0 if q else True
+        except ValueError:
+            return False
+    return False
+
+
+def etag_matches(header: str | None, etag: str) -> bool:
+    """If-None-Match: `*`, or a list of (possibly weak) validators."""
+    if not header:
+        return False
+    if header.strip() == "*":
+        return True
+    for cand in header.split(","):
+        if cand.strip().removeprefix("W/") == etag:
+            return True
+    return False
 
 
 def parse_multipart(raw: bytes, ctype: str) -> tuple[str, bytes]:

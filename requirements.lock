@@ -6,6 +6,7 @@ anyio==4.14.2
 argcomplete==3.7.2
 ast_serialize==0.8.0
 async_interrupt==1.2.2
+backports.zstd==1.7.0
 bitarray==3.10.1
 bitstring==4.4.0
 bleak==2.1.1
@@ -59,7 +60,7 @@ pip-requirements-parser==32.0.1
 pip_audit==2.10.1
 platformdirs==4.11.0
 platformio==6.1.19
-protobuf==7.35.1
+protobuf==7.36.0
 psutil==7.2.2
 puremagic==2.2.0
 py-serializable==2.1.0
@@ -86,8 +87,8 @@ rich==15.0.0
 rich-click==1.9.8
 ruamel.yaml==0.19.1
 ruamel.yaml.clib==0.2.15
-ruff==0.16.3
-scipy==1.18.0
+ruff==0.16.4
+scipy==1.18.1
 segno==1.6.6
 semantic-version==2.10.0
 smp==4.1.0

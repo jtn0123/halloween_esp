@@ -97,13 +97,26 @@ def source_missing(source: str) -> bool:
     return source.startswith("file:") and not Path(source[len("file:"):]).exists()
 
 
-def track_info(p: Path) -> dict:
+def track_infos(paths: list[Path]) -> list[dict]:
+    """track_info for a whole listing, reading tracks.json ONCE.
+
+    /api/tracks used to load and parse the manifest once per track; that is
+    nothing at two tracks and a file read per row at twenty. The route
+    should call this rather than mapping track_info over the listing."""
+    data = mf.load()
+    return [track_info(p, data.get(p.stem) or {}) for p in paths]
+
+
+def track_info(p: Path, meta: dict | None = None) -> dict:
     """Everything the Tracks panel needs, including where the file came from.
 
     The manifest is the cheap part — read it even if decoding fails, so a
-    broken file still shows its source and can be re-imported.
+    broken file still shows its source and can be re-imported. `meta` is
+    this track's manifest entry when the caller already holds the whole
+    file (track_infos); left None, it is looked up here as before.
     """
-    meta = mf.get(p.stem) or {}
+    if meta is None:
+        meta = mf.get(p.stem) or {}
     info = {
         "id": p.stem,
         # The panel needs this to write `audio_file:` into a scene. Without it
