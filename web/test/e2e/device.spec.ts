@@ -108,10 +108,65 @@ test("the panel lists the card and plays a track on the castle", async ({ page }
 });
 
 test("the volume slider starts where the amp actually is", async ({ page }) => {
+  // Route castle: the chip's slider (the only one now — the panel's twin
+  // slider is gone on purpose) has to open at the device's real level.
+  await page.addInitScript(() => localStorage.setItem("castleSoundRoute", "castle"));
   await stubCastle(page);
   await page.goto("/");
-  await page.locator("#devMore").click();
-  await expect(page.locator("#dpVol")).toHaveValue("40");
+  await expect(page.locator("#devVol")).toHaveValue("40");
+  await expect(page.locator("#devVol")).toBeEnabled();
+});
+
+test("♪ Mac hushes the castle and locks its volume controls", async ({ page }) => {
+  // Default route is Mac: on first contact the desk turns the castle's amp
+  // to 0, and the controls for the speaker it just silenced go inert — a
+  // live slider here could silently un-hush the porch (route-aware volume).
+  const calls = await stubCastle(page);
+  await page.goto("/");
+  await expect(page.locator("#devVol")).toBeDisabled();
+  await expect(page.locator("#devMute")).toBeDisabled();
+  await expect.poll(() => calls.filter((c) => c.includes("/api/volume?v=0")).length)
+    .toBeGreaterThan(0);
+});
+
+test("the ♪ switch lives next to Play and flips the route both ways", async ({ page }) => {
+  // Dogfood 004/006: where sound comes out is decided when Play is pressed,
+  // so the switch has to be in the transport, not only down in the corner.
+  const calls = await stubCastle(page);
+  await page.goto("/");
+  const route = page.locator(".transport #sndRoute");
+  await expect(route).toHaveText("♪ Mac");
+  await route.click();
+  await expect(route).toHaveText("♪ Castle");
+  // Flipping to castle restores the amp to the remembered level (40)…
+  await expect.poll(() => calls.filter((c) => c.includes("/api/volume?v=40")).length)
+    .toBeGreaterThan(0);
+  await expect(page.locator("#devVol")).toBeEnabled();
+  // …and the chip's own ♪ button says the same thing (one switch, two homes).
+  await expect(page.locator("#devSnd")).toHaveText("♪ Castle");
+});
+
+test("an action re-polls status instead of waiting out the slow cycle", async ({ page }) => {
+  const calls = await stubCastle(page);
+  await page.goto("/");
+  await expect(page.locator("#deviceChip")).toBeVisible();
+  const polls = (): number => calls.filter((c) => c.startsWith("GET /api/status")).length;
+  const before = polls();
+  await page.locator("#devStop").click();
+  // act() schedules a refresh ~0.9 s after the POST lands — far inside the
+  // 15 s poll, which is the whole point.
+  await expect.poll(polls, { timeout: 5000 }).toBeGreaterThan(before);
+});
+
+test("a bare track play shows on the chip, not 'idle'", async ({ page }) => {
+  // /api/play sets a track and no scene (the card rows, the panel's ▶). The
+  // chip keyed on scene alone and called this "idle" — caught live against
+  // the emulator.
+  await page.route("**/api/status", (route) =>
+    route.fulfill({ json: { ...STATUS, scene: "", track: "ghostbusters.mp3" } }));
+  await page.route("**/api/files", (route) => route.fulfill({ json: FILES }));
+  await page.goto("/");
+  await expect(page.locator("#devNow")).toHaveText("▶ ghostbusters.mp3");
 });
 
 test("the light override parks a colour and hands the show back", async ({ page }) => {

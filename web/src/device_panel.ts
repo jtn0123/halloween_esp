@@ -10,9 +10,10 @@
  *
  * What it offers:
  *   - status: firmware version, uptime, free PSRAM (the SD turntable's budget)
- *   - volume: one slider, debounced, straight to the amp
  *   - the SD library: play any track on the castle speaker, delete with care
  *   - the boot log: the invisible early-boot window, one tap away
+ * Volume lives on the chip (device.ts) alone — the same slider twice was
+ * the scatter the dogfood pass called out, and two sliders drift.
  *
  * The intended way to use it with the stage: leave the desk's own audio muted
  * (it is by default), press play here — the castle makes the sound, the canvas
@@ -108,10 +109,6 @@ export class DevicePanel {
       (st.show_on && st.scene
         ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") +
       `</div>` +
-      `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f">` +
-      `🔊 <input id="dpVol" type="range" min="0" max="100" ` +
-      `value="${st.volume ?? 70}" style="width:200px;vertical-align:middle">` +
-      `</div>` +
       `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;` +
       `display:flex;gap:.5rem;align-items:center">` +
       `💡 <input id="dpColor" type="color" value="#ff8c1e" ` +
@@ -167,17 +164,6 @@ export class DevicePanel {
         void fetch(`/api/show/${st.show_on ? "stop" : "start"}`, { method: "POST" })
           .then(() => new Promise(r => setTimeout(r, 600)))
           .then(() => this.render());
-      });
-
-    // Volume: debounced so a slider drag is a handful of POSTs, not hundreds.
-    let volTimer: number | undefined;
-    this.body.querySelector<HTMLInputElement>("#dpVol")!
-      .addEventListener("input", (e) => {
-        const v = (e.target as HTMLInputElement).value;
-        clearTimeout(volTimer);
-        volTimer = window.setTimeout(() => {
-          void fetch(`/api/volume?v=${v}`, { method: "POST" });
-        }, 150);
       });
 
     // The light override: a colour parks the chain (today: the one onboard
