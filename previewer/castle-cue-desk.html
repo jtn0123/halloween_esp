@@ -707,6 +707,48 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   gap: 6px;
 }
 
+/* The chip: the dock's collapsed face (device_chip.ts renders it). Hidden
+   until the first contact; `.down` dims the words, never the ground — the
+   library used to bleed through an opacity-faded chip. */
+#deviceChip {
+  display: none;
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  padding: .5rem .75rem;
+  font: 13px system-ui;
+  box-shadow: var(--shadow);
+}
+#deviceChip.live { display: block; }
+#deviceChip.down > * { opacity: .45; }
+#deviceChip.down #devNow { font-style: italic; }
+#devNow { color: var(--ink-2); }
+#deviceChip .chip__row {
+  margin-top: .25rem; display: flex; align-items: center; gap: .4rem;
+}
+#deviceChip .chip__btn {
+  cursor: pointer; background: var(--panel); color: inherit;
+  border: 1px solid var(--line); border-radius: 6px; padding: .2rem .5rem;
+  white-space: nowrap; font: inherit;
+}
+#deviceChip .chip__btn:disabled { cursor: default; opacity: .5; }
+#deviceChip #devVol { width: 90px; }
+#deviceChip .chip__mirror { cursor: pointer; white-space: nowrap; }
+
+/* Toasts stack in one column above the dock (device.ts toast()). */
+#toasts {
+  position: fixed; right: 12px; bottom: 84px; z-index: 41;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  pointer-events: none;
+}
+.toast {
+  padding: .4rem .7rem; border-radius: 8px; font: 12px system-ui; max-width: 60vw;
+  transition: opacity .4s; opacity: 1;
+  background: var(--spirit); color: #fff;
+}
+.toast--err { background: var(--alarm); color: #fff; }
+
 #devicePanel {
   width: 290px;
   background: var(--panel-2);
@@ -2797,6 +2839,35 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
   }
   var isCastleBusy = () => busy > 0;
 
+  // src/device_chip.ts
+  var sdText = (s) => s.sd_mounted === void 0 ? "" : s.sd_mounted ? " \xB7 SD ok" : " \xB7 no SD";
+  var sdChip = (s) => {
+    if (s.sd_mounted === void 0) return "";
+    if (!s.sd_mounted) return " \xB7 no SD";
+    return s.sd_free_kb ? ` \xB7 SD ${(s.sd_free_kb / 1048576).toFixed(1)} GB free` : " \xB7 SD ok";
+  };
+  function nowLine(s) {
+    const bits = [s.scene && s.scene !== "stop" ? s.scene : "", s.track ?? ""].filter(Boolean);
+    return bits.length ? `\u25B6 ${bits.join(" \xB7 ")}` : "idle";
+  }
+  function chipHtml(s, vol, mirror) {
+    return `<div>\u{1F3F0} castle v${s.version}${sdChip(s)} \xB7 <span id="devNow">${nowLine(s)}</span></div><div class="chip__row"><button id="devSnd" class="chip__btn"></button><button id="devMute" class="chip__btn" title="Mute the castle speaker">${vol === 0 ? "\u{1F507}" : "\u{1F50A}"}</button><input id="devVol" type="range" min="0" max="100" value="${vol}"><label class="chip__mirror" title="Also fire scene picks on the real castle"><input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}> on castle</label><button id="devStop" class="chip__btn" title="Stop the castle: audio and scene">\u25A0</button><button id="devMore" class="chip__btn" title="The castle's own controls: SD library, show, light, motion sensor, boot log">\u{1F3F0} Castle</button></div>`;
+  }
+  function wireChip(chip, h) {
+    const q = (id) => chip.querySelector(`#${id}`);
+    q("devMirror").addEventListener("change", (e) => h.mirror(e.target.checked));
+    q("devStop").addEventListener("click", () => h.stop());
+    q("devMore").addEventListener("click", () => h.more());
+    q("devSnd").addEventListener("click", () => h.route());
+    const vol = q("devVol");
+    let volTimer;
+    vol.addEventListener("input", () => {
+      clearTimeout(volTimer);
+      volTimer = window.setTimeout(() => h.volume(Number(vol.value)), 150);
+    });
+    q("devMute").addEventListener("click", () => h.mute(vol));
+  }
+
   // src/device_panel.ts
   var sceneIds = () => {
     const gen = window.CASTLE_GEN;
@@ -2837,12 +2908,12 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         if (st.studio || !st.version) throw new Error("no castle");
         if (st.sd_mounted) files = await getJson("/api/files");
       } catch {
-        this.body.innerHTML = `<div style="padding:.6rem .8rem;display:flex;align-items:center;gap:.4rem"><span style="flex:1">castle stopped answering</span><button id="dpClose" title="Close this panel" aria-label="Close" style="cursor:pointer;background:none;border:0;color:#9a8fb0;font-size:14px;padding:0 .2rem">\u2715</button></div>`;
+        this.body.innerHTML = `<div style="padding:.6rem .8rem;display:flex;align-items:center;gap:.4rem"><span style="flex:1">castle stopped answering</span><button id="dpClose" title="Close this panel" aria-label="Close" style="cursor:pointer;background:none;border:0;color:var(--muted);font-size:14px;padding:0 .2rem">\u2715</button></div>`;
         this.body.querySelector("#dpClose").addEventListener("click", () => this.toggle());
         return;
       }
       const tracks2 = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
-      this.body.innerHTML = `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f;display:flex;align-items:center;gap:.4rem"><span style="flex:1"><b>\u{1F3F0} v${st.version}</b> \xB7 up ${fmtUptime(st.uptime_s)}` + (st.sd_free_kb ? ` \xB7 card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") + ` <small title="Free working memory (PSRAM) \u2014 what the SD turntable runs on">\xB7 ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span><button id="dpClose" title="Close this panel" aria-label="Close" style="cursor:pointer;background:none;border:0;color:#9a8fb0;font-size:14px;padding:0 .2rem">\u2715</button></div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f"><button id="dpPlaylist" title="Every scene in order with dark gaps, looping until stopped \u2014 the whole evening on one button" style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;background:${st.show_on ? "#7a2a2a" : "#2a5537"};color:inherit">${st.show_on ? "\u25A0 stop the show" : "\u25B6 start the show"}</button>` + (st.show_on && st.scene ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;display:flex;gap:.5rem;align-items:center" title="Park every pixel on one colour, or give them back to the show">\u{1F4A1} <small style="color:#9a8fb0">lights</small> <input id="dpColor" type="color" value="#ff8c1e" title="Park the pixels on a colour" style="cursor:pointer"><button id="dpShow" title="Hand the pixels back to the scene engine" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">resume show</button><button id="dpOff" style="cursor:pointer;background:none;color:#9a8fb0;border:1px solid #35264f;border-radius:6px;padding:.2rem .5rem">off</button></div><div style="max-height:180px;overflow:auto" id="dpFiles">` + (tracks2.length && st.bridged ? `<div style="padding:.5rem .8rem;color:#9a8fb0">${tracks2.length} track${tracks2.length === 1 ? "" : "s"} on the card \u2014 see the Library below (\u{1F3F0} rows and badges)</div>` : tracks2.length ? tracks2.map((f, i) => `<div style="display:flex;gap:.4rem;align-items:center;padding:.3rem .8rem"><button data-play="${i}" title="Play on the castle" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .5rem">\u25B6</button><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}</span><small style="color:#9a8fb0">${kb3(f.size)}</small><button data-del="${i}" title="Delete from the card" style="cursor:pointer;background:none;color:#9a8fb0;border:0">\u2715</button></div>`).join("") : `<div style="padding:.5rem .8rem;color:#9a8fb0">${st.sd_mounted ? "no tracks on the card yet \u2014 drop audio below, or press \u2192 Castle on a track in the Library" : "no SD card"}</div>`) + `</div><div style="padding:.5rem .8rem;border-top:1px solid #35264f" title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">\u{1F463} <small style="color:#9a8fb0">motion sensor</small> <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> <select id="dpPirScene">` + sceneIds().map((s) => `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") + `</select> <input id="dpPirCool" type="number" min="5" max="600" step="5" value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="Cooldown: seconds before the sensor can fire again"><small style="color:#9a8fb0"> s between triggers</small></div><div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed #503a75;color:#9a8fb0;text-align:center">drop audio files here to upload</div><div style="padding:.4rem .8rem;border-top:1px solid #35264f"><button id="dpLog" style="cursor:pointer;background:none;border:0;color:#9a8fb0">boot log \u25B8</button><pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre></div>`;
+      this.body.innerHTML = `<div style="padding:.6rem .8rem;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:.4rem"><span style="flex:1"><b>\u{1F3F0} v${st.version}</b> \xB7 up ${fmtUptime(st.uptime_s)}` + (st.sd_free_kb ? ` \xB7 card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") + ` <small title="Free working memory (PSRAM) \u2014 what the SD turntable runs on">\xB7 ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span><button id="dpClose" title="Close this panel" aria-label="Close" style="cursor:pointer;background:none;border:0;color:var(--muted);font-size:14px;padding:0 .2rem">\u2715</button></div><div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2)"><button id="dpPlaylist" title="Every scene in order with dark gaps, looping until stopped \u2014 the whole evening on one button" style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;background:${st.show_on ? "var(--alarm)" : "var(--spirit)"};color:#fff">${st.show_on ? "\u25A0 stop the show" : "\u25B6 start the show"}</button>` + (st.show_on && st.scene ? ` <small style="color:var(--muted)">now: ${st.scene}</small>` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2);display:flex;gap:.5rem;align-items:center" title="Park every pixel on one colour, or give them back to the show">\u{1F4A1} <small style="color:var(--muted)">lights</small> <input id="dpColor" type="color" value="#ff8c1e" title="Park the pixels on a colour" style="cursor:pointer"><button id="dpShow" title="Hand the pixels back to the scene engine" style="cursor:pointer;background:var(--panel);color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">resume show</button><button id="dpOff" style="cursor:pointer;background:none;color:var(--muted);border:1px solid var(--line-2);border-radius:6px;padding:.2rem .5rem">off</button></div><div style="max-height:180px;overflow:auto" id="dpFiles">` + (tracks2.length && st.bridged ? `<div style="padding:.5rem .8rem;color:var(--muted)">${tracks2.length} track${tracks2.length === 1 ? "" : "s"} on the card \u2014 see the Library below (\u{1F3F0} rows and badges)</div>` : tracks2.length ? tracks2.map((f, i) => `<div style="display:flex;gap:.4rem;align-items:center;padding:.3rem .8rem"><button data-play="${i}" title="Play on the castle" style="cursor:pointer;background:var(--panel);color:inherit;border:0;border-radius:6px;padding:.15rem .5rem">\u25B6</button><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}</span><small style="color:var(--muted)">${kb3(f.size)}</small><button data-del="${i}" title="Delete from the card" style="cursor:pointer;background:none;color:var(--muted);border:0">\u2715</button></div>`).join("") : `<div style="padding:.5rem .8rem;color:var(--muted)">${st.sd_mounted ? "no tracks on the card yet \u2014 drop audio below, or press \u2192 Castle on a track in the Library" : "no SD card"}</div>`) + `</div><div style="padding:.5rem .8rem;border-top:1px solid var(--line-2)" title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">\u{1F463} <small style="color:var(--muted)">motion sensor</small> <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> <select id="dpPirScene">` + sceneIds().map((s) => `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") + `</select> <input id="dpPirCool" type="number" min="5" max="600" step="5" value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="Cooldown: seconds before the sensor can fire again"><small style="color:var(--muted)"> s between triggers</small></div><div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed var(--line-2);color:var(--muted);text-align:center">drop audio files here to upload</div><div style="padding:.4rem .8rem;border-top:1px solid var(--line-2)"><button id="dpLog" style="cursor:pointer;background:none;border:0;color:var(--muted)">boot log \u25B8</button><pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre></div>`;
       this.body.querySelector("#dpClose").addEventListener("click", () => this.toggle());
       this.body.querySelector("#dpPlaylist").addEventListener("click", () => {
         void castleAct(
@@ -2897,14 +2968,14 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       const drop = this.body.querySelector("#dpDrop");
       drop.addEventListener("dragover", (e) => {
         e.preventDefault();
-        drop.style.color = "#e8e0f0";
+        drop.style.color = "var(--ink)";
       });
       drop.addEventListener("dragleave", () => {
-        drop.style.color = "#9a8fb0";
+        drop.style.color = "var(--muted)";
       });
       drop.addEventListener("drop", async (e) => {
         e.preventDefault();
-        drop.style.color = "#9a8fb0";
+        drop.style.color = "var(--muted)";
         for (const f of Array.from(e.dataTransfer?.files ?? [])) {
           drop.textContent = `uploading ${f.name} (${f.size / 1024 | 0} KB)\u2026`;
           const r = await fetch(
@@ -2950,19 +3021,12 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       return null;
     }
   }
-  var sdText = (s) => s.sd_mounted === void 0 ? "" : s.sd_mounted ? " \xB7 SD ok" : " \xB7 no SD";
-  var sdChip = (s) => {
-    if (s.sd_mounted === void 0) return "";
-    if (!s.sd_mounted) return " \xB7 no SD";
-    return s.sd_free_kb ? ` \xB7 SD ${(s.sd_free_kb / 1048576).toFixed(1)} GB free` : " \xB7 SD ok";
-  };
   var TOAST_MAX = 3;
   function toastHost() {
     let host = document.getElementById("toasts");
     if (!host) {
       host = document.createElement("div");
       host.id = "toasts";
-      host.style.cssText = "position:fixed;right:12px;bottom:84px;z-index:41;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none";
       document.body.appendChild(host);
     }
     return host;
@@ -2975,7 +3039,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     while (host.children.length >= TOAST_MAX) host.firstElementChild?.remove();
     const el2 = document.createElement("div");
     el2.textContent = msg;
-    el2.style.cssText = "padding:.4rem .7rem;border-radius:8px;font:12px system-ui;max-width:60vw;transition:opacity .4s;opacity:1;" + (isError ? "background:#5a1a2a;color:#ffd8e0;" : "background:#2a3a1a;color:#e0ffd0;");
+    el2.className = isError ? "toast toast--err" : "toast";
     host.appendChild(el2);
     setTimeout(() => {
       el2.style.opacity = "0";
@@ -3035,13 +3099,12 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     const panel = new DevicePanel(dock);
     const chip = document.createElement("div");
     chip.id = "deviceChip";
-    chip.style.cssText = "display:none;background:#241a38;color:#e8e0f0;border:1px solid #503a75;border-radius:10px;padding:.5rem .75rem;font:13px system-ui;box-shadow:0 4px 16px rgba(0,0,0,.5)";
     dock.appendChild(chip);
     let lastOk = true;
     let lastSeen = null;
     let lastPlaying = "idle";
-    const act = (path, okMsg) => {
-      void castleAct(path, okMsg);
+    const act = (path, okMsg, quiet = false) => {
+      void castleAct(path, okMsg, { quiet });
     };
     onCastleChanged(() => {
       void refresh();
@@ -3089,7 +3152,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         if (vol) vol.value = "0";
         act(
           "/api/volume?v=0",
-          announce ? "sound: Mac \u2014 castle speaker off" : "castle speaker off"
+          announce ? "sound: Mac \u2014 castle speaker off" : "castle speaker off",
+          !announce
         );
       } else {
         const to = lastVol || 70;
@@ -3109,40 +3173,33 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       opts.onStatus?.(`castle v${s.version}${sdText(s)} \xB7 ${mirror ? "mirroring" : "not mirroring"}` + route, true);
     };
     const render = (s) => {
-      chip.style.display = "block";
-      chip.style.opacity = "1";
+      chip.classList.add("live");
+      chip.classList.remove("down");
       const wasDown = !lastOk;
       lastOk = true;
       lastVol = s.volume ?? lastVol;
       lastStatus = s;
       sayStatus(s);
       if (wasDown) panel.refresh();
-      const bits = [s.scene && s.scene !== "stop" ? s.scene : "", s.track ?? ""].filter(Boolean);
-      const playing = bits.length ? `\u25B6 ${bits.join(" \xB7 ")}` : "idle";
       lastSeen = /* @__PURE__ */ new Date();
-      lastPlaying = playing;
-      chip.innerHTML = `<div>\u{1F3F0} castle v${s.version}${sdChip(s)} \xB7 <span id="devNow" style="color:#b8a8d8">${playing}</span></div><div style="margin-top:.25rem;display:flex;align-items:center;gap:.4rem"><button id="devSnd" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem;white-space:nowrap"></button><button id="devMute" title="Mute the castle speaker" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .45rem">${lastVol === 0 ? "\u{1F507}" : "\u{1F50A}"}</button><input id="devVol" type="range" min="0" max="100" value="${lastVol}" style="width:90px"><label style="cursor:pointer;white-space:nowrap" title="Also fire scene picks on the real castle"><input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}> on castle</label><button id="devStop" title="Stop the castle: audio and scene" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u25A0</button><button id="devMore" title="The castle's own controls: SD library, show, light, motion sensor, boot log" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u{1F3F0} Castle</button></div>`;
-      chip.querySelector("#devMirror").addEventListener("change", (e) => {
-        mirror = e.target.checked;
-        sayStatus(s);
-      });
-      chip.querySelector("#devStop").addEventListener("click", () => act("/api/stop", "stop"));
-      chip.querySelector("#devMore").addEventListener("click", () => panel.toggle());
-      chip.querySelector("#devSnd").addEventListener("click", () => applyRoute(soundRoute === "mac" ? "castle" : "mac", true));
-      let volTimer;
-      const vol = chip.querySelector("#devVol");
-      vol.addEventListener("input", () => {
-        clearTimeout(volTimer);
-        volTimer = window.setTimeout(
-          () => act(`/api/volume?v=${vol.value}`, `volume ${vol.value}`),
-          150
-        );
-      });
-      chip.querySelector("#devMute").addEventListener("click", () => {
-        const to = Number(vol.value) === 0 ? lastVol || 70 : 0;
-        if (to === 0) lastVol = Number(vol.value);
-        vol.value = String(to);
-        act(`/api/volume?v=${to}`, to === 0 ? "muted" : `volume ${to}`);
+      lastPlaying = nowLine(s);
+      chip.innerHTML = chipHtml(s, lastVol, mirror);
+      wireChip(chip, {
+        mirror: (on) => {
+          mirror = on;
+          sayStatus(s);
+        },
+        // the masthead says whether picks reach the porch
+        stop: () => act("/api/stop", "stop"),
+        more: () => panel.toggle(),
+        route: () => applyRoute(soundRoute === "mac" ? "castle" : "mac", true),
+        volume: (v) => act(`/api/volume?v=${v}`, `volume ${v}`),
+        mute: (vol) => {
+          const to = Number(vol.value) === 0 ? lastVol || 70 : 0;
+          if (to === 0) lastVol = Number(vol.value);
+          vol.value = String(to);
+          act(`/api/volume?v=${to}`, to === 0 ? "muted" : `volume ${to}`);
+        }
       });
       if (!routeEnforced) {
         routeEnforced = true;
@@ -3159,7 +3216,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         return;
       }
       if (isCastleBusy()) return;
-      chip.style.opacity = "0.4";
+      chip.classList.add("down");
       lastOk = false;
       if (lastStatus) sayStatus(lastStatus);
       syncRouteUI();
@@ -5012,59 +5069,6 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     return reloadCard;
   }
 
-  // src/track_import_url.ts
-  var PHASE_TEXT = {
-    queued: "waiting for the previous job",
-    fetching: "downloading",
-    converting: "converting with ffmpeg",
-    analysing: "detecting beats"
-  };
-  function wireUrlImport({ say, opts, drawTracks }) {
-    const btn2 = document.getElementById("trkGet");
-    const urlBox = document.getElementById("trkUrl");
-    btn2.addEventListener("click", () => void (async () => {
-      const url = urlBox.value.trim();
-      if (!url) return say("Paste a link first.", true);
-      btn2.disabled = true;
-      say("Importing\u2026");
-      let tail = null;
-      try {
-        let job = await api.importAsync(Object.assign({ url }, opts()));
-        if (!job.id) {
-          return say(`Import failed \u2014 ${job.error ?? "the studio refused the request"}`, true);
-        }
-        for (let i = 0; i < 1200 && !job.done; i++) {
-          await new Promise((r) => setTimeout(r, 800));
-          job = await api.job(job.id);
-          if (job.phase === "fetching" || job.phase === "queued") {
-            const pct = job.percent > 0 ? ` ${Math.round(job.percent)}%` : "";
-            say(`Importing \u2014 ${PHASE_TEXT[job.phase] ?? job.phase}${pct}${job.detail ? ` \xB7 ${job.detail}` : ""}`);
-          } else if (!job.done) {
-            tail ?? (tail = startEta(
-              "import-tail",
-              "Importing \u2014 converting and detecting beats",
-              null
-            ));
-            say(tail.line());
-          }
-        }
-        if (job.phase === "done") {
-          tail?.stop(true);
-          if (job.tracks) drawTracks(job.tracks);
-          say("Imported. Press Play to hear it, or \u201CMake scene\u201D to wire it into the show.");
-          urlBox.value = "";
-        } else {
-          say(`Import failed \u2014 ${job.error || job.log.slice(-3).join(" ") || "gave up waiting"}`, true);
-        }
-      } catch (err) {
-        say(`Import failed \u2014 ${String(err)}`, true);
-      } finally {
-        tail?.stop();
-        btn2.disabled = false;
-      }
-    })());
-  }
-
   // src/onsets.ts
   var BANDS2 = [
     ["onset_low", 20, 200, 0.16],
@@ -5174,59 +5178,6 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       if (hits.length) out[name] = hits;
     }
     return out;
-  }
-
-  // src/preview.ts
-  var VOLUME = 0.7;
-  function createPreview(deps) {
-    const audio = new Audio();
-    audio.preload = "none";
-    audio.muted = true;
-    let current = null;
-    let epoch = 0;
-    const settle = (id) => {
-      current = id;
-      deps.onChange(id);
-    };
-    function stop() {
-      epoch++;
-      audio.pause();
-      audio.muted = true;
-      if (current !== null) settle(null);
-    }
-    function toggle(id) {
-      if (current === id) return stop();
-      stop();
-      const mine = ++epoch;
-      deps.onClaim?.();
-      audio.src = `/api/track/${encodeURIComponent(id)}`;
-      audio.currentTime = 0;
-      audio.muted = false;
-      audio.volume = VOLUME;
-      settle(id);
-      void audio.play().catch(() => {
-        if (mine !== epoch) return;
-        stop();
-        deps.onError(`Could not play \u201C${id}\u201D.`);
-      });
-    }
-    audio.addEventListener("ended", () => stop());
-    audio.addEventListener("error", () => {
-      const id = current;
-      if (id === null) return;
-      stop();
-      deps.onError(`Could not load audio for \u201C${id}\u201D.`);
-    });
-    return {
-      toggle,
-      stop,
-      playing: () => current,
-      destroy() {
-        stop();
-        audio.removeAttribute("src");
-        audio.load();
-      }
-    };
   }
 
   // src/band_style.ts
@@ -5747,7 +5698,7 @@ ${lines.join("\n")}
     towerR: TIERS[0].towersLevel,
     door: TIERS[0].doorLevel
   };
-  var VOLUME2 = 0.7;
+  var VOLUME = 0.7;
   function sceneFromTrack(data, clip, zones = {}, active = {}) {
     const start = clip?.start ?? 0;
     const end = clip?.end ?? data.duration;
@@ -5758,7 +5709,7 @@ ${lines.join("\n")}
       kind: "audition",
       dur,
       loop: true,
-      volume: VOLUME2,
+      volume: VOLUME,
       blurb: "Live preview of the clip you have selected. The lights are the onsets detected in this region \u2014 the same ones the scene would use.",
       base: BASE,
       levels: LEVELS,
@@ -5785,7 +5736,7 @@ ${lines.join("\n")}
       `  - id: ${id}`,
       `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}`,
       `    kind: custom`,
-      `    volume: ${VOLUME2}`,
+      `    volume: ${VOLUME}`,
       `    duration_ms: ${Math.round((dur ?? NaN) * 1e3)}`,
       `    loop: true`,
       `    blurb: >`,
@@ -5847,6 +5798,153 @@ ${lines.join("\n")}
       }
     }
     return L.join("\n");
+  }
+
+  // src/track_drop.ts
+  function wireDrop(drop, take) {
+    ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => {
+      e.preventDefault();
+      drop.classList.add("over");
+    }));
+    ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => {
+      e.preventDefault();
+      drop.classList.remove("over");
+    }));
+    drop.addEventListener("click", () => {
+      const inp = document.createElement("input");
+      inp.type = "file";
+      inp.accept = "audio/*";
+      inp.onchange = () => {
+        const f = inp.files?.[0];
+        if (f) take(f);
+      };
+      inp.click();
+    });
+    drop.addEventListener("drop", (e) => {
+      const f = e.dataTransfer?.files[0];
+      if (f) take(f);
+    });
+  }
+  async function analyseLocally(file, wantId, bands2) {
+    const buf = await file.arrayBuffer();
+    const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    const ctx = new Offline(1, 44100, 44100);
+    const audio = await ctx.decodeAudioData(buf);
+    const marks = await detectOnsets(audio);
+    const id = (wantId || file.name.replace(/\.[^.]+$/, "")).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 32);
+    const counts = Object.fromEntries(Object.entries(marks).map(([k, v]) => [k, v.length]));
+    const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || "mp3").toLowerCase();
+    const env2 = loudnessEnvelope(audio.getChannelData(0), audio.sampleRate);
+    const block = sceneYaml(id, audio.duration, counts, ext, bands2, env2);
+    const kb4 = Math.round(audio.duration * 96 * 1e3 / 8 / 1024);
+    const summary = `${file.name}: ${audio.duration.toFixed(1)}s, ~${kb4} KB at 96 kbps. ` + Object.entries(counts).map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" \xB7 ") + `. Copy the block below, save the file into tracks/${id}.${ext}, then run make audio.`;
+    return { id, ext, block, summary };
+  }
+
+  // src/track_import_url.ts
+  var PHASE_TEXT = {
+    queued: "waiting for the previous job",
+    fetching: "downloading",
+    converting: "converting with ffmpeg",
+    analysing: "detecting beats"
+  };
+  function wireUrlImport({ say, opts, drawTracks }) {
+    const btn2 = document.getElementById("trkGet");
+    const urlBox = document.getElementById("trkUrl");
+    btn2.addEventListener("click", () => void (async () => {
+      const url = urlBox.value.trim();
+      if (!url) return say("Paste a link first.", true);
+      btn2.disabled = true;
+      say("Importing\u2026");
+      let tail = null;
+      try {
+        let job = await api.importAsync(Object.assign({ url }, opts()));
+        if (!job.id) {
+          return say(`Import failed \u2014 ${job.error ?? "the studio refused the request"}`, true);
+        }
+        for (let i = 0; i < 1200 && !job.done; i++) {
+          await new Promise((r) => setTimeout(r, 800));
+          job = await api.job(job.id);
+          if (job.phase === "fetching" || job.phase === "queued") {
+            const pct = job.percent > 0 ? ` ${Math.round(job.percent)}%` : "";
+            say(`Importing \u2014 ${PHASE_TEXT[job.phase] ?? job.phase}${pct}${job.detail ? ` \xB7 ${job.detail}` : ""}`);
+          } else if (!job.done) {
+            tail ?? (tail = startEta(
+              "import-tail",
+              "Importing \u2014 converting and detecting beats",
+              null
+            ));
+            say(tail.line());
+          }
+        }
+        if (job.phase === "done") {
+          tail?.stop(true);
+          if (job.tracks) drawTracks(job.tracks);
+          say("Imported. Press Play to hear it, or \u201CMake scene\u201D to wire it into the show.");
+          urlBox.value = "";
+        } else {
+          say(`Import failed \u2014 ${job.error || job.log.slice(-3).join(" ") || "gave up waiting"}`, true);
+        }
+      } catch (err) {
+        say(`Import failed \u2014 ${String(err)}`, true);
+      } finally {
+        tail?.stop();
+        btn2.disabled = false;
+      }
+    })());
+  }
+
+  // src/preview.ts
+  var VOLUME2 = 0.7;
+  function createPreview(deps) {
+    const audio = new Audio();
+    audio.preload = "none";
+    audio.muted = true;
+    let current = null;
+    let epoch = 0;
+    const settle = (id) => {
+      current = id;
+      deps.onChange(id);
+    };
+    function stop() {
+      epoch++;
+      audio.pause();
+      audio.muted = true;
+      if (current !== null) settle(null);
+    }
+    function toggle(id) {
+      if (current === id) return stop();
+      stop();
+      const mine = ++epoch;
+      deps.onClaim?.();
+      audio.src = `/api/track/${encodeURIComponent(id)}`;
+      audio.currentTime = 0;
+      audio.muted = false;
+      audio.volume = VOLUME2;
+      settle(id);
+      void audio.play().catch(() => {
+        if (mine !== epoch) return;
+        stop();
+        deps.onError(`Could not play \u201C${id}\u201D.`);
+      });
+    }
+    audio.addEventListener("ended", () => stop());
+    audio.addEventListener("error", () => {
+      const id = current;
+      if (id === null) return;
+      stop();
+      deps.onError(`Could not load audio for \u201C${id}\u201D.`);
+    });
+    return {
+      toggle,
+      stop,
+      playing: () => current,
+      destroy() {
+        stop();
+        audio.removeAttribute("src");
+        audio.load();
+      }
+    };
   }
 
   // src/tracks.ts
@@ -6109,29 +6207,7 @@ ${lines.join("\n")}
       goOffline("Restart didn't come back within 15 s \u2014 relaunch with Castle Cue Desk.command.");
     });
     wireUrlImport({ say, opts, drawTracks });
-    const drop = byId("trkDrop");
-    ["dragenter", "dragover"].forEach((ev) => drop.addEventListener(ev, (e) => {
-      e.preventDefault();
-      drop.classList.add("over");
-    }));
-    ["dragleave", "drop"].forEach((ev) => drop.addEventListener(ev, (e) => {
-      e.preventDefault();
-      drop.classList.remove("over");
-    }));
-    drop.addEventListener("click", () => {
-      const inp = document.createElement("input");
-      inp.type = "file";
-      inp.accept = "audio/*";
-      inp.onchange = () => {
-        const f = inp.files?.[0];
-        if (f) void takeFile(f);
-      };
-      inp.click();
-    });
-    drop.addEventListener("drop", (e) => {
-      const f = e.dataTransfer?.files[0];
-      if (f) void takeFile(f);
-    });
+    wireDrop(byId("trkDrop"), (f) => void takeFile(f));
     async function takeFile(file) {
       if (T.mode === "studio") {
         say(`Uploading ${file.name}\u2026`);
@@ -6148,20 +6224,10 @@ ${lines.join("\n")}
       }
       say(`Analysing ${file.name} in the browser\u2026`);
       try {
-        const buf = await file.arrayBuffer();
-        const Offline = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-        const ctx = new Offline(1, 44100, 44100);
-        const audio = await ctx.decodeAudioData(buf);
-        const marks = await detectOnsets(audio);
-        const id = (opts().id || file.name.replace(/\.[^.]+$/, "")).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 32);
-        const counts = Object.fromEntries(Object.entries(marks).map(([k, v]) => [k, v.length]));
-        const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || "mp3").toLowerCase();
-        const env2 = loudnessEnvelope(audio.getChannelData(0), audio.sampleRate);
-        const block = sceneYaml(id, audio.duration, counts, ext, deps.bands, env2);
+        const a = await analyseLocally(file, opts().id, deps.bands);
         T.yaml.hidden = false;
-        T.yaml.textContent = block;
-        const kb4 = Math.round(audio.duration * 96 * 1e3 / 8 / 1024);
-        say(`${file.name}: ${audio.duration.toFixed(1)}s, ~${kb4} KB at 96 kbps. ` + Object.entries(counts).map(([k, n]) => `${k.replace("onset_", "")} ${n}`).join(" \xB7 ") + `. Copy the block below, save the file into tracks/${id}.${ext}, then run make audio.`);
+        T.yaml.textContent = a.block;
+        say(a.summary);
       } catch (err) {
         say(`Could not read that file \u2014 ${String(err)}`, true);
       }

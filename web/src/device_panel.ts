@@ -115,7 +115,7 @@ export class DevicePanel {
         `<div style="padding:.6rem .8rem;display:flex;align-items:center;gap:.4rem">` +
         `<span style="flex:1">castle stopped answering</span>` +
         `<button id="dpClose" title="Close this panel" aria-label="Close" ` +
-        `style="cursor:pointer;background:none;border:0;color:#9a8fb0;` +
+        `style="cursor:pointer;background:none;border:0;color:var(--muted);` +
         `font-size:14px;padding:0 .2rem">✕</button></div>`;
       this.body.querySelector<HTMLButtonElement>("#dpClose")!
         .addEventListener("click", () => this.toggle());
@@ -124,7 +124,7 @@ export class DevicePanel {
     const tracks = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
 
     this.body.innerHTML =
-      `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f;` +
+      `<div style="padding:.6rem .8rem;border-bottom:1px solid var(--line-2);` +
       `display:flex;align-items:center;gap:.4rem">` +
       `<span style="flex:1"><b>🏰 v${st.version}</b> · up ${fmtUptime(st.uptime_s)}` +
       (st.sd_free_kb
@@ -132,36 +132,36 @@ export class DevicePanel {
       ` <small title="Free working memory (PSRAM) — what the SD turntable runs on">` +
       `· ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span>` +
       `<button id="dpClose" title="Close this panel" aria-label="Close" ` +
-      `style="cursor:pointer;background:none;border:0;color:#9a8fb0;` +
+      `style="cursor:pointer;background:none;border:0;color:var(--muted);` +
       `font-size:14px;padding:0 .2rem">✕</button>` +
       `</div>` +
-      `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f">` +
+      `<div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2)">` +
       `<button id="dpPlaylist" title="Every scene in order with dark gaps, ` +
       `looping until stopped — the whole evening on one button" ` +
       `style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;` +
-      `background:${st.show_on ? "#7a2a2a" : "#2a5537"};color:inherit">` +
+      `background:${st.show_on ? "var(--alarm)" : "var(--spirit)"};color:#fff">` +
       `${st.show_on ? "■ stop the show" : "▶ start the show"}</button>` +
       (st.show_on && st.scene
-        ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") +
+        ? ` <small style="color:var(--muted)">now: ${st.scene}</small>` : "") +
       `</div>` +
-      `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;` +
+      `<div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2);` +
       `display:flex;gap:.5rem;align-items:center" ` +
       `title="Park every pixel on one colour, or give them back to the show">` +
-      `💡 <small style="color:#9a8fb0">lights</small> ` +
+      `💡 <small style="color:var(--muted)">lights</small> ` +
       `<input id="dpColor" type="color" value="#ff8c1e" ` +
       `title="Park the pixels on a colour" style="cursor:pointer">` +
       `<button id="dpShow" title="Hand the pixels back to the scene engine" ` +
-      `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
+      `style="cursor:pointer;background:var(--panel);color:inherit;border:0;` +
       `border-radius:6px;padding:.2rem .5rem">resume show</button>` +
       `<button id="dpOff" style="cursor:pointer;background:none;` +
-      `color:#9a8fb0;border:1px solid #35264f;border-radius:6px;` +
+      `color:var(--muted);border:1px solid var(--line-2);border-radius:6px;` +
       `padding:.2rem .5rem">off</button>` +
       `</div>` +
       `<div style="max-height:180px;overflow:auto" id="dpFiles">` +
       (tracks.length && st.bridged
         // Through the studio the merged Library below already lists every
         // card file with Play/⬇/Delete — two lists of one card drift.
-        ? `<div style="padding:.5rem .8rem;color:#9a8fb0">${tracks.length} ` +
+        ? `<div style="padding:.5rem .8rem;color:var(--muted)">${tracks.length} ` +
           `track${tracks.length === 1 ? "" : "s"} on the card — see the ` +
           `Library below (🏰 rows and badges)</div>`
         : tracks.length
@@ -169,22 +169,22 @@ export class DevicePanel {
             `<div style="display:flex;gap:.4rem;align-items:center;` +
             `padding:.3rem .8rem">` +
             `<button data-play="${i}" title="Play on the castle" ` +
-            `style="cursor:pointer;background:#3a2a55;color:inherit;border:0;` +
+            `style="cursor:pointer;background:var(--panel);color:inherit;border:0;` +
             `border-radius:6px;padding:.15rem .5rem">▶</button>` +
             `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;` +
             `white-space:nowrap" title="${f.name}">${f.name}</span>` +
-            `<small style="color:#9a8fb0">${kb(f.size)}</small>` +
+            `<small style="color:var(--muted)">${kb(f.size)}</small>` +
             `<button data-del="${i}" title="Delete from the card" ` +
-            `style="cursor:pointer;background:none;color:#9a8fb0;border:0">✕</button>` +
+            `style="cursor:pointer;background:none;color:var(--muted);border:0">✕</button>` +
             `</div>`).join("")
-        : `<div style="padding:.5rem .8rem;color:#9a8fb0">` +
+        : `<div style="padding:.5rem .8rem;color:var(--muted)">` +
           `${st.sd_mounted
             ? "no tracks on the card yet — drop audio below, or press → Castle on a track in the Library"
             : "no SD card"}</div>`) +
       `</div>` +
-      `<div style="padding:.5rem .8rem;border-top:1px solid #35264f" ` +
+      `<div style="padding:.5rem .8rem;border-top:1px solid var(--line-2)" ` +
       `title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">` +
-      `👣 <small style="color:#9a8fb0">motion sensor</small> ` +
+      `👣 <small style="color:var(--muted)">motion sensor</small> ` +
       `<label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
       `<select id="dpPirScene">` +
       sceneIds().map((s) =>
@@ -193,13 +193,13 @@ export class DevicePanel {
       `<input id="dpPirCool" type="number" min="5" max="600" step="5" ` +
       `value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" ` +
       `title="Cooldown: seconds before the sensor can fire again">` +
-      `<small style="color:#9a8fb0"> s between triggers</small>` +
+      `<small style="color:var(--muted)"> s between triggers</small>` +
       `</div>` +
-      `<div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed #503a75;` +
-      `color:#9a8fb0;text-align:center">drop audio files here to upload</div>` +
-      `<div style="padding:.4rem .8rem;border-top:1px solid #35264f">` +
+      `<div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed var(--line-2);` +
+      `color:var(--muted);text-align:center">drop audio files here to upload</div>` +
+      `<div style="padding:.4rem .8rem;border-top:1px solid var(--line-2)">` +
       `<button id="dpLog" style="cursor:pointer;background:none;border:0;` +
-      `color:#9a8fb0">boot log ▸</button>` +
+      `color:var(--muted)">boot log ▸</button>` +
       `<pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;` +
       `font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre>` +
       `</div>`;
@@ -283,12 +283,12 @@ export class DevicePanel {
     const drop = this.body.querySelector<HTMLDivElement>("#dpDrop")!;
     drop.addEventListener("dragover", (e) => {
       e.preventDefault();
-      drop.style.color = "#e8e0f0";
+      drop.style.color = "var(--ink)";
     });
-    drop.addEventListener("dragleave", () => { drop.style.color = "#9a8fb0"; });
+    drop.addEventListener("dragleave", () => { drop.style.color = "var(--muted)"; });
     drop.addEventListener("drop", async (e) => {
       e.preventDefault();
-      drop.style.color = "#9a8fb0";
+      drop.style.color = "var(--muted)";
       for (const f of Array.from(e.dataTransfer?.files ?? [])) {
         drop.textContent = `uploading ${f.name} (${(f.size / 1024) | 0} KB)…`;
         const r = await fetch(`/api/files/${encodeURIComponent(f.name)}`,

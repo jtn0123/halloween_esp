@@ -210,6 +210,48 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   gap: 6px;
 }
 
+/* The chip: the dock's collapsed face (device_chip.ts renders it). Hidden
+   until the first contact; `.down` dims the words, never the ground — the
+   library used to bleed through an opacity-faded chip. */
+#deviceChip {
+  display: none;
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  padding: .5rem .75rem;
+  font: 13px system-ui;
+  box-shadow: var(--shadow);
+}
+#deviceChip.live { display: block; }
+#deviceChip.down > * { opacity: .45; }
+#deviceChip.down #devNow { font-style: italic; }
+#devNow { color: var(--ink-2); }
+#deviceChip .chip__row {
+  margin-top: .25rem; display: flex; align-items: center; gap: .4rem;
+}
+#deviceChip .chip__btn {
+  cursor: pointer; background: var(--panel); color: inherit;
+  border: 1px solid var(--line); border-radius: 6px; padding: .2rem .5rem;
+  white-space: nowrap; font: inherit;
+}
+#deviceChip .chip__btn:disabled { cursor: default; opacity: .5; }
+#deviceChip #devVol { width: 90px; }
+#deviceChip .chip__mirror { cursor: pointer; white-space: nowrap; }
+
+/* Toasts stack in one column above the dock (device.ts toast()). */
+#toasts {
+  position: fixed; right: 12px; bottom: 84px; z-index: 41;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  pointer-events: none;
+}
+.toast {
+  padding: .4rem .7rem; border-radius: 8px; font: 12px system-ui; max-width: 60vw;
+  transition: opacity .4s; opacity: 1;
+  background: var(--spirit); color: #fff;
+}
+.toast--err { background: var(--alarm); color: #fff; }
+
 #devicePanel {
   width: 290px;
   background: var(--panel-2);

@@ -13,18 +13,40 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test, expect } from "@playwright/test";
 
 const ROOT = resolve(__dirname, "../../..");
 const PY = join(ROOT, ".venv", "bin", "python");
-const EMU_PORT = Number(process.env.CASTLE_E2E_EMU_PORT || 8797);
-const STUDIO_PORT = Number(process.env.CASTLE_E2E_BRIDGE_PORT || 8798);
-const STUDIO = `http://127.0.0.1:${STUDIO_PORT}`;
 
+/** Ports: CASTLE_E2E_BRIDGE_PORTS="<emu>,<studio>" pins them (a CI lane
+ *  that wants determinism); otherwise each is whatever the OS has free right
+ *  now, so two lanes — or a stale run — cannot collide. */
+async function freePort(): Promise<number> {
+  return new Promise((ok, fail) => {
+    const srv = createServer();
+    srv.once("error", fail);
+    srv.listen(0, "127.0.0.1", () => {
+      const addr = srv.address();
+      const port = typeof addr === "object" && addr ? addr.port : 0;
+      srv.close(() => ok(port));
+    });
+  });
+}
+async function pickPorts(): Promise<[number, number]> {
+  const pinned = (process.env.CASTLE_E2E_BRIDGE_PORTS || "").split(",").map(Number);
+  if (pinned.length === 2 && pinned.every((n) => n > 0)) return [pinned[0]!, pinned[1]!];
+  return [await freePort(), await freePort()];
+}
+
+let EMU_PORT = 0;
+let STUDIO = "";
 let emu: ChildProcess | undefined;
 let studio: ChildProcess | undefined;
+/** Everything the studio printed — asserted quiet at the end. */
+let studioLog = "";
 
 async function waitFor(url: string, pred: (r: Response) => Promise<boolean>,
                        ms = 15000): Promise<void> {
@@ -43,11 +65,16 @@ function startEmu(): ChildProcess {
 }
 
 test.beforeAll(async () => {
+  const [emuPort, studioPort] = await pickPorts();
+  EMU_PORT = emuPort;
+  STUDIO = `http://127.0.0.1:${studioPort}`;
   emu = startEmu();
-  studio = spawn(PY, [join(ROOT, "tools", "studio.py"), String(STUDIO_PORT), "--localhost"], {
-    stdio: "ignore",
+  studio = spawn(PY, ["-u", join(ROOT, "tools", "studio.py"), String(studioPort), "--localhost"], {
+    stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, CASTLE_HOST: `127.0.0.1:${EMU_PORT}` },
   });
+  studio.stdout?.on("data", (d: Buffer) => { studioLog += d.toString(); });
+  studio.stderr?.on("data", (d: Buffer) => { studioLog += d.toString(); });
   await waitFor(`${STUDIO}/api/status`,
                 async (r) => r.ok && !("studio" in await r.json()));
 });
@@ -85,4 +112,10 @@ test("castle dies behind the real studio: masthead, chip and panel all say so", 
   await waitFor(`${STUDIO}/api/status`, async (r) => !("studio" in await r.json()));
   await expect(page.locator("#headTxt")).toContainText("castle v5.23", { timeout: 20000 });
   await expect(page.locator("#devStop")).toBeEnabled();
+
+  // The whole episode — castle up, down, up — must leave a QUIET studio:
+  // no native-leg "Error resolving host:port" every 5 s, no tracebacks.
+  // (J2-8 / J3-5: the log-noise class stays closed.)
+  expect(studioLog).not.toMatch(/Error resolving|Traceback/);
+  expect(studioLog).toContain("GET /api/status");
 });
