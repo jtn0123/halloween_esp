@@ -44,14 +44,27 @@ def secs(v: str) -> float:
     return out
 
 
-def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
-    """Download audio only. Returns (file, title as the source named it)."""
+def _ytdlp() -> str:
+    """The venv's yt-dlp when present, else the system one.
+
+    YouTube deliberately breaks stale clients (403s, SABR-only sessions), and
+    Homebrew's formula trails releases by weeks — pip does not. So the venv
+    copy, updated with `pip install -U yt-dlp`, wins when it exists.
+    """
+    local = Path(sys.executable).with_name("yt-dlp")
+    if local.exists():
+        return str(local)
     if not shutil.which("yt-dlp"):
         raise SystemExit("yt-dlp not installed — `brew install yt-dlp`")
+    return "yt-dlp"
+
+
+def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
+    """Download audio only. Returns (file, title as the source named it)."""
     print(f"fetching {url}")
     try:
         r = subprocess.run(
-            ["yt-dlp", "-x", "--audio-format", "mp3", "--audio-quality", "0",
+            [_ytdlp(), "-x", "--audio-format", "mp3", "--audio-quality", "0",
              "--no-playlist", "-o", str(dest / "%(title)s.%(ext)s"), url],
             capture_output=True, text=True, check=False,  # handled below
             timeout=900,   # a hung download must not wedge the studio's lock

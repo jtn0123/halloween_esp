@@ -293,24 +293,26 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 <g class="net" data-net="gnd"><line class="w w--gnd" x1="696" y1="286" x2="696" y2="299" stroke-width="3"/><line class="gb" x1="683" y1="299" x2="709" y2="299"/><line class="gb" x1="688" y1="304" x2="704" y2="304"/><line class="gb" x1="693" y1="309" x2="699" y2="309"/></g>
 <rect class="mod" x="484" y="288" width="142" height="186" rx="10"/><text class="modttl" x="500" y="315">74AHCT125</text><text class="modsub" x="500" y="333">quad buffer</text>
 <path class="notch" d="M544.0 288 a11 11 0 0 0 22 0"/>
-<text class="note" x="555.0" y="374" text-anchor="middle">3.3 V in &#8594; 5 V out</text><text class="note" x="555.0" y="390" text-anchor="middle">pin map far right &#8594;</text><text class="note" x="499" y="466">4OE&#8594;5 V, 4A&#8594;GND</text>
+<text class="note" x="555.0" y="374" text-anchor="middle">3.3 V in &#8594; 5 V out</text><text class="note" x="555.0" y="390" text-anchor="middle">pin map far right &#8594;</text><text class="note" x="499" y="452">unused ch 4, parked:</text>
+<text class="note" x="499" y="466">13&#8594;5 V &#183; 12&#8594;GND &#183; 11 n/c</text>
 <g class="net" data-net="v5"><path class="w w--v5" d="M555.0 288 L555.0 56" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--v5" cx="555.0" cy="288" r="5"/><text class="pinsub" x="566.0" y="277">pin 14</text></g>
 <g class="net" data-net="gnd"><line class="w w--gnd" x1="555.0" y1="474" x2="555.0" y2="487" stroke-width="3"/><line class="gb" x1="542.0" y1="487" x2="568.0" y2="487"/><line class="gb" x1="547.0" y1="492" x2="563.0" y2="492"/><line class="gb" x1="552.0" y1="497" x2="558.0" y2="497"/></g>
-<text class="pinsub" x="570.0" y="494">pin 7 &#183; 1OE 2OE 3OE</text>
+<text class="pinsub" x="570.0" y="490" style="fill:var(--warn);font-weight:600">4 legs to GND: 7 &#183; 1 &#183; 4 &#183; 10</text>
+<text class="pinsub" x="570.0" y="504">(GND + 1OE 2OE 3OE &#8212; a floating OE mutes its channel)</text>
 <text class="modttl" x="1156.0" y="96" text-anchor="middle">THE CHIP ITSELF</text>
 <text class="modsub" x="1156.0" y="112" text-anchor="middle">74AHCT125 &#183; top view</text>
 <rect class="mod" x="1120" y="128" width="72" height="188" rx="8"/>
 <path class="notch" d="M1147.0 128 a9 9 0 0 0 18 0"/>
-<g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="147" width="9" height="6"/><text class="hnum" x="1104" y="154" text-anchor="end">1</text><text class="pinsub" x="1078" y="154" text-anchor="end" style="fill:var(--gnd)">1OE</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="147" width="9" height="6"/><text class="hnum" x="1104" y="154" text-anchor="end">1</text><text class="pinsub" x="1078" y="154" text-anchor="end" style="fill:var(--gnd)">1OE &#8594; GND</text></g>
 <g class="net" data-net="v5"><rect class="pad--v5" x="1192" y="147" width="9" height="6"/><text class="hnum" x="1208" y="154" text-anchor="start">14</text><text class="pinsub" x="1234" y="154" text-anchor="start" style="fill:var(--v5)">VCC</text></g>
 <g class="net" data-net="dL"><rect class="pad--dL" x="1111" y="171" width="9" height="6"/><text class="hnum" x="1104" y="178" text-anchor="end">2</text><text class="pinsub" x="1078" y="178" text-anchor="end" style="fill:var(--dL)">1A</text></g>
 <g class="net" data-net="v5"><rect class="pad--v5" x="1192" y="171" width="9" height="6"/><text class="hnum" x="1208" y="178" text-anchor="start">13</text><text class="pinsub" x="1234" y="178" text-anchor="start" style="fill:var(--v5)">4OE</text></g>
 <g class="net" data-net="dL"><rect class="pad--dL" x="1111" y="195" width="9" height="6"/><text class="hnum" x="1104" y="202" text-anchor="end">3</text><text class="pinsub" x="1078" y="202" text-anchor="end" style="fill:var(--dL)">1Y</text></g>
 <g class="net" data-net="gnd"><rect class="pad--gnd" x="1192" y="195" width="9" height="6"/><text class="hnum" x="1208" y="202" text-anchor="start">12</text><text class="pinsub" x="1234" y="202" text-anchor="start" style="fill:var(--gnd)">4A</text></g>
-<g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="219" width="9" height="6"/><text class="hnum" x="1104" y="226" text-anchor="end">4</text><text class="pinsub" x="1078" y="226" text-anchor="end" style="fill:var(--gnd)">2OE</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="219" width="9" height="6"/><text class="hnum" x="1104" y="226" text-anchor="end">4</text><text class="pinsub" x="1078" y="226" text-anchor="end" style="fill:var(--gnd)">2OE &#8594; GND</text></g>
 <rect class="rpk" x="1192" y="219" width="9" height="6"/><text class="hnum" x="1208" y="226" text-anchor="start">11</text><text class="pinsub" x="1234" y="226" text-anchor="start">4Y &#183; n/c</text>
 <g class="net" data-net="dD"><rect class="pad--dD" x="1111" y="243" width="9" height="6"/><text class="hnum" x="1104" y="250" text-anchor="end">5</text><text class="pinsub" x="1078" y="250" text-anchor="end" style="fill:var(--dD)">2A</text></g>
-<g class="net" data-net="gnd"><rect class="pad--gnd" x="1192" y="243" width="9" height="6"/><text class="hnum" x="1208" y="250" text-anchor="start">10</text><text class="pinsub" x="1234" y="250" text-anchor="start" style="fill:var(--gnd)">3OE</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1192" y="243" width="9" height="6"/><text class="hnum" x="1208" y="250" text-anchor="start">10</text><text class="pinsub" x="1234" y="250" text-anchor="start" style="fill:var(--gnd)">3OE &#8594; GND</text></g>
 <g class="net" data-net="dD"><rect class="pad--dD" x="1111" y="267" width="9" height="6"/><text class="hnum" x="1104" y="274" text-anchor="end">6</text><text class="pinsub" x="1078" y="274" text-anchor="end" style="fill:var(--dD)">2Y</text></g>
 <g class="net" data-net="dR"><rect class="pad--dR" x="1192" y="267" width="9" height="6"/><text class="hnum" x="1208" y="274" text-anchor="start">9</text><text class="pinsub" x="1234" y="274" text-anchor="start" style="fill:var(--dR)">3A</text></g>
 <g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="291" width="9" height="6"/><text class="hnum" x="1104" y="298" text-anchor="end">7</text><text class="pinsub" x="1078" y="298" text-anchor="end" style="fill:var(--gnd)">GND</text></g>
@@ -320,6 +322,8 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 <text class="note" x="1156.0" y="370" text-anchor="middle">numbers run down the left side,</text>
 <text class="note" x="1156.0" y="385" text-anchor="middle">1-7, back up the right, 8-14.</text>
 <text class="note" x="1156.0" y="400" text-anchor="middle">Some chips add a dot at pin 1.</text>
+<text class="note" x="1156.0" y="422" text-anchor="middle" style="fill:var(--warn)">Meter check: pins 1, 4, 10 must read</text>
+<text class="note" x="1156.0" y="437" text-anchor="middle" style="fill:var(--warn)">0.00 V. ~1 V = floating = channel muted.</text>
 <rect class="mod" x="124" y="104" width="300" height="140" rx="10"/><text class="modttl" x="140" y="131">Tower L</text><text class="modsub" x="140" y="149">Jewel 7 &#183; RGBW</text>
 <g class="pxg"><circle class="px" cx="330" cy="184.0" r="8"/><circle class="px" cx="330.0" cy="155.0" r="8"/><circle class="px" cx="355.1" cy="169.5" r="8"/><circle class="px" cx="355.1" cy="198.5" r="8"/><circle class="px" cx="330.0" cy="213.0" r="8"/><circle class="px" cx="304.9" cy="198.5" r="8"/><circle class="px" cx="304.9" cy="169.5" r="8"/></g>
 <circle class="pad pad--dL" cx="424" cy="174.0" r="5"/>
@@ -469,8 +473,15 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 </div>
 
 <section>
-  <h2 style="margin-bottom:16px">Three ways this goes wrong</h2>
+  <h2 style="margin-bottom:16px">Four ways this goes wrong</h2>
   <div class="warns">
+    <div class="warn"><div class="k">No data</div><div>
+      <h3>Frozen bright garbage means no data ever arrived</h3>
+      <p>A pixel that gets 5 V but never a valid frame powers up showing <em>random</em> contents
+      &#8212; a blinding, frozen mix of colours and white, different on every pixel. One fixture all
+      lit, another with a single lit LED: that is noise, not a fault map. If the picture has not
+      changed since power-on, stop debugging fixtures and firmware &#8212; walk the data path instead:
+      OE legs to ground, 5 V on pin 14, A0/A2/A4 into 1A/2A/3A, and one shared ground.</p></div></div>
     <div class="warn"><div class="k">Ground</div><div>
       <h3>One ground, or nothing works</h3>
       <p>ESP32, level shifter, both amps and the LED supply must all share a ground. A data line
