@@ -108,7 +108,7 @@ class CastleEmu(ThreadingHTTPServer):
     request_queue_size = 64
 
     def __init__(self, port: int = 0, sd_dir: Path | None = None,
-                 scenes: list[str] | None = None, version: str = "5.23",
+                 scenes: list[str] | None = None, version: str = "5.24",
                  wedge: bool = False, sd_mounted: bool = True,
                  serial: bool = False) -> None:
         super().__init__(("127.0.0.1", port), Handler)
