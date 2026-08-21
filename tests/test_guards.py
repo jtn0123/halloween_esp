@@ -47,11 +47,12 @@ class TestLocCheck(unittest.TestCase):
         for path in check_loc.EXEMPT_PATHS:
             self.assertNotIn(path, measured, f"{path} should be exempt")
 
-    def test_prose_is_exempt(self) -> None:
-        """A long design document is not the same problem as a long module."""
-        self.assertIn(".md", check_loc.EXEMPT_SUFFIX)
+    def test_prose_is_in_scope(self) -> None:
+        """Docs are held to the cap too: the design record reached 1194 lines
+        while only code was measured. Suffix no longer buys an exemption."""
         measured = {rel for _n, rel, _o in check_loc.measure()}
-        self.assertFalse([r for r in measured if r.endswith(".md")])
+        self.assertIn("PROJECT_NOTES.md", measured)
+        self.assertTrue([r for r in measured if r.endswith(".md")])
 
     def test_the_repo_currently_passes(self) -> None:
         """If this fails, something needs splitting — that is the whole point."""

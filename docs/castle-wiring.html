@@ -1,60 +1,27 @@
 <title>Castle Rig Wiring</title>
 <style>
-:root{
-  --ground:#EDF0EE; --panel:#F8FAF9; --panel-2:#E4E9E6; --line:#CBD5D0; --line-2:#B3C1BB;
-  --ink:#16211D; --ink-2:#4B5A54; --ink-3:#75847E;
-  --copper:#9A6520; --copper-hi:#C08843;
-  --v5:#C4372B; --gnd:#5F726B; --dL:#B87415; --dD:#1F6E9E; --dR:#3F7F35; --i2s:#7A4BAB; --spk:#9A6520;
-  --warn:#B0431C; --warnbg:#F6E7DF;
-  --pcb:#DDE5E1; --pcbstroke:#B3C1BB; --pxfill:#C3CEC9;
-  --f-disp:"Avenir Next Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
-  --f-body:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
-  --f-data:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
-}
-@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --ground:#0B1210; --panel:#111B18; --panel-2:#17231F; --line:#22322C; --line-2:#31443C;
-  --ink:#DDE6E2; --ink-2:#9BAAA4; --ink-3:#6D7C76;
-  --copper:#C08843; --copper-hi:#DCA45B;
-  --v5:#E0574B; --gnd:#869891; --dL:#E8A33D; --dD:#4E9FD4; --dR:#74B26A; --i2s:#A97BD6; --spk:#C08843;
-  --warn:#E0793F; --warnbg:#241812;
-  --pcb:#17231F; --pcbstroke:#31443C; --pxfill:#31443C;
-}}
-:root[data-theme="dark"]{
-  --ground:#0B1210; --panel:#111B18; --panel-2:#17231F; --line:#22322C; --line-2:#31443C;
-  --ink:#DDE6E2; --ink-2:#9BAAA4; --ink-3:#6D7C76;
-  --copper:#C08843; --copper-hi:#DCA45B;
-  --v5:#E0574B; --gnd:#869891; --dL:#E8A33D; --dD:#4E9FD4; --dR:#74B26A; --i2s:#A97BD6; --spk:#C08843;
-  --warn:#E0793F; --warnbg:#241812;
-  --pcb:#17231F; --pcbstroke:#31443C; --pxfill:#31443C;
-}
+:root{ --ground:#EDF0EE; --panel:#F8FAF9; --panel-2:#E4E9E6; --line:#CBD5D0; --line-2:#B3C1BB; --ink:#16211D; --ink-2:#4B5A54; --ink-3:#75847E; --copper:#9A6520; --copper-hi:#C08843; --v5:#C4372B; --gnd:#5F726B; --dL:#B87415; --dD:#1F6E9E; --dR:#3F7F35; --i2s:#7A4BAB; --spk:#9A6520; --warn:#B0431C; --warnbg:#F6E7DF; --pcb:#DDE5E1; --pcbstroke:#B3C1BB; --pxfill:#C3CEC9; --f-disp:"Avenir Next Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif; --f-body:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif; --f-data:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace; }
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){ --ground:#0B1210; --panel:#111B18; --panel-2:#17231F; --line:#22322C; --line-2:#31443C; --ink:#DDE6E2; --ink-2:#9BAAA4; --ink-3:#6D7C76; --copper:#C08843; --copper-hi:#DCA45B; --v5:#E0574B; --gnd:#869891; --dL:#E8A33D; --dD:#4E9FD4; --dR:#74B26A; --i2s:#A97BD6; --spk:#C08843; --warn:#E0793F; --warnbg:#241812; --pcb:#17231F; --pcbstroke:#31443C; --pxfill:#31443C; }}
+:root[data-theme="dark"]{ --ground:#0B1210; --panel:#111B18; --panel-2:#17231F; --line:#22322C; --line-2:#31443C; --ink:#DDE6E2; --ink-2:#9BAAA4; --ink-3:#6D7C76; --copper:#C08843; --copper-hi:#DCA45B; --v5:#E0574B; --gnd:#869891; --dL:#E8A33D; --dD:#4E9FD4; --dR:#74B26A; --i2s:#A97BD6; --spk:#C08843; --warn:#E0793F; --warnbg:#241812; --pcb:#17231F; --pcbstroke:#31443C; --pxfill:#31443C; }
 *{box-sizing:border-box}
-body{margin:0;background:var(--ground);color:var(--ink);font:16px/1.6 var(--f-body);
-  -webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--ground);color:var(--ink);font:16px/1.6 var(--f-body); -webkit-font-smoothing:antialiased}
 .page{max-width:1400px;margin:0 auto;padding:40px 28px 72px;display:flex;flex-direction:column;gap:40px}
-
 h1,h2,.eyebrow,.modttl{font-family:var(--f-disp);text-transform:uppercase;letter-spacing:.055em}
 h1{font-size:clamp(30px,4.4vw,52px);font-weight:700;margin:0;line-height:1.02;text-wrap:balance}
 h2{font-size:19px;font-weight:600;margin:0;color:var(--ink)}
 .eyebrow{font-size:11.5px;font-weight:600;color:var(--copper);letter-spacing:.18em;margin:0 0 12px}
 .lede{max-width:64ch;margin:14px 0 0;color:var(--ink-2);font-size:17px}
 .lede b{color:var(--ink);font-weight:600}
-
 header{border-bottom:1px solid var(--line);padding-bottom:28px}
 .spec{display:flex;flex-wrap:wrap;gap:8px 26px;margin-top:20px;font:12.5px/1 var(--f-data);color:var(--ink-3)}
 .spec b{color:var(--ink-2);font-weight:500}
-
-/* &#9472;&#9472; Filter toolbar &#9472;&#9472; */
 .tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
 .tools .lbl{font:11.5px var(--f-disp);text-transform:uppercase;letter-spacing:.16em;color:var(--ink-3);margin-right:6px}
-.chip{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:999px;
-  border:1px solid var(--line-2);background:var(--panel);color:var(--ink-2);
-  font:12.5px/1 var(--f-data);cursor:pointer;transition:.14s}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:999px; border:1px solid var(--line-2);background:var(--panel);color:var(--ink-2); font:12.5px/1 var(--f-data);cursor:pointer;transition:.14s}
 .chip:hover{border-color:var(--copper);color:var(--ink)}
 .chip:focus-visible{outline:2px solid var(--copper-hi);outline-offset:2px}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
 .chip .sw{width:11px;height:11px;border-radius:3px;flex:none}
-
-/* &#9472;&#9472; Schematic &#9472;&#9472; */
 .sheet{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px;overflow-x:auto}
 svg.schem{display:block;min-width:1120px;width:100%;height:auto}
 .mod{fill:var(--pcb);stroke:var(--pcbstroke);stroke-width:1.5}
@@ -105,15 +72,12 @@ svg.schem:not([data-build="first"]) .fl-only{display:none}
 [data-focus="power"] .net[data-grp="power"],
 [data-focus="data"] .net[data-grp="data"],
 [data-focus="audio"] .net[data-grp="audio"]{opacity:1}
-
-/* &#9472;&#9472; Content blocks &#9472;&#9472; */
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:28px}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px}
 .card h2{margin-bottom:4px}
 .card .cap{color:var(--ink-3);font-size:13.5px;margin:0 0 16px}
 table{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
-th{text-align:left;font:600 10.5px var(--f-disp);text-transform:uppercase;letter-spacing:.14em;
-  color:var(--ink-3);padding:0 10px 8px 0;border-bottom:1px solid var(--line)}
+th{text-align:left;font:600 10.5px var(--f-disp);text-transform:uppercase;letter-spacing:.14em; color:var(--ink-3);padding:0 10px 8px 0;border-bottom:1px solid var(--line)}
 td{padding:8px 10px 8px 0;border-bottom:1px solid var(--line);vertical-align:top}
 tbody tr:last-child td{border-bottom:0}
 td.m,th.m{font-family:var(--f-data);font-size:12.5px}
@@ -121,21 +85,14 @@ td.num{text-align:right;font-family:var(--f-data);font-variant-numeric:tabular-n
 .tag{display:inline-flex;align-items:center;gap:6px;font:11.5px var(--f-data);color:var(--ink-2);white-space:nowrap}
 .tag .sw{width:9px;height:9px;border-radius:2px;flex:none}
 tfoot td{border-top:1.5px solid var(--line-2);font-weight:600;color:var(--ink);padding-top:11px}
-
 .warns{display:grid;gap:14px}
-.warn{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;
-  background:var(--warnbg);border:1px solid color-mix(in srgb,var(--warn) 34%,transparent);
-  border-radius:12px;padding:16px 18px}
-.warn .k{font:600 10.5px var(--f-disp);letter-spacing:.14em;text-transform:uppercase;color:var(--warn);
-  writing-mode:vertical-rl;transform:rotate(180deg);align-self:stretch;text-align:center}
+.warn{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start; background:var(--warnbg);border:1px solid color-mix(in srgb,var(--warn) 34%,transparent); border-radius:12px;padding:16px 18px}
+.warn .k{font:600 10.5px var(--f-disp);letter-spacing:.14em;text-transform:uppercase;color:var(--warn); writing-mode:vertical-rl;transform:rotate(180deg);align-self:stretch;text-align:center}
 .warn h3{margin:0 0 5px;font-size:15px;font-weight:650;color:var(--ink)}
 .warn p{margin:0;font-size:14px;color:var(--ink-2)}
-
 ol.steps{list-style:none;counter-reset:s;margin:0;padding:0;display:grid;gap:12px}
-ol.steps li{counter-increment:s;display:grid;grid-template-columns:30px 1fr;gap:14px;
-  font-size:14.5px;color:var(--ink-2)}
-ol.steps li::before{content:counter(s,decimal-leading-zero);font:600 12px var(--f-data);
-  color:var(--copper);padding-top:3px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:30px 1fr;gap:14px; font-size:14.5px;color:var(--ink-2)}
+ol.steps li::before{content:counter(s,decimal-leading-zero);font:600 12px var(--f-data); color:var(--copper);padding-top:3px}
 ol.steps b{color:var(--ink);font-weight:600}
 code{font:12.5px var(--f-data);background:var(--panel-2);padding:1.5px 5px;border-radius:4px;color:var(--ink)}
 footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font-size:13px}
@@ -143,7 +100,6 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 </style>
 
 <div class="page">
-
 <header>
   <p class="eyebrow">Halloween castle &#183; build reference</p>
   <h1>Three light zones,<br>two speakers, one Feather</h1>
@@ -160,7 +116,6 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
     <span><b>Pinout</b> Adafruit Feather ESP32-S2 rev C</span>
   </div>
 </header>
-
 <section>
   <div class="tools" role="toolbar" aria-label="Highlight one net">
     <span class="lbl">Trace</span>
@@ -425,7 +380,6 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
 </svg>
   </div>
 </section>
-
 <div class="grid2">
   <div class="card">
     <h2>Net list</h2>
@@ -447,7 +401,6 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
     </table>
     <p class="cap" style="margin-top:12px">No resistors in the parts box yet? For first light on the bench, both kinds are skippable: the 470 &#937;s damp cable reflections, and with every data lead under ~30 cm there are none worth damping &#8212; wire <code>1Y/2Y/3Y</code> straight to <code>DIN</code> and add the resistors (fixture end) when the leads grow into the castle. Leaving the amps' <code>SD</code> unconnected selects (L+R)/2, this show's mono at worst &#8722;6 dB &#8212; the 100 k&#937; to 5 V restores full level later. The <em>First light</em> toggle above the schematic shows exactly this build. docs/WIRING.md &#167;0.</p>
   </div>
-
   <div class="card">
     <h2>Power at full white</h2>
     <p class="cap">Sized for a lightning cue, which drives every zone to white at once.
@@ -471,7 +424,6 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
     18&#8211;20 AWG, a 1000 &#181;F cap at each, and a 5 A fuse on the bus.</p>
   </div>
 </div>
-
 <section>
   <h2 style="margin-bottom:16px">Four ways this goes wrong</h2>
   <div class="warns">
@@ -500,7 +452,6 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
       Feather's <code>USB</code> pin; that trace is sized for the board. (One exception: the 26-pixel first-light rig on a 2 A+ wall brick &#8212; docs/WIRING.md &#167;0. The full castle, never.)</p></div></div>
   </div>
 </section>
-
 <section class="card">
   <h2>Build order</h2>
   <p class="cap">Each step proves the one before it.</p>
@@ -514,35 +465,18 @@ footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font
     <li><b>Measure the real peak.</b> Run Storm with a meter on the 5 V bus and compare it against the desk's estimate before you close the enclosure.</li>
   </ol>
 </section>
-
 <footer>Pin assignments verified against the Adafruit ESP32-S2 Feather pinout and the config already
 running on this castle. Channel-select thresholds from the MAX98357A datasheet.
 Full prose version: <code>docs/WIRING.md</code>.</footer>
-
 </div>
-
 <script>
 (function(){
-  var GRP={v5:"power",gnd:"power",dL:"data",dD:"data",dR:"data",i2s:"audio",spk:"audio"};
-  var svg=document.getElementById("schem");
-  svg.querySelectorAll("g.net").forEach(function(g){
-    g.setAttribute("data-grp",GRP[g.getAttribute("data-net")]||"");
-  });
-  var chips=Array.prototype.slice.call(document.querySelectorAll(".chip[data-focus]"));
-  chips.forEach(function(c){
-    c.addEventListener("click",function(){
-      var f=c.getAttribute("data-focus");
-      chips.forEach(function(o){o.setAttribute("aria-pressed",String(o===c));});
-      if(f){svg.setAttribute("data-focus",f);}else{svg.removeAttribute("data-focus");}
-    });
-  });
-  var modes=Array.prototype.slice.call(document.querySelectorAll(".chip[data-build]"));
-  modes.forEach(function(c){
-    c.addEventListener("click",function(){
-      var m=c.getAttribute("data-build");
-      modes.forEach(function(o){o.setAttribute("aria-pressed",String(o===c));});
-      if(m){svg.setAttribute("data-build",m);}else{svg.removeAttribute("data-build");}
-    });
-  });
+var GRP={v5:"power",gnd:"power",dL:"data",dD:"data",dR:"data",i2s:"audio",spk:"audio"},svg=document.getElementById("schem");
+svg.querySelectorAll("g.net").forEach(function(g){g.setAttribute("data-grp",GRP[g.getAttribute("data-net")]||"");});
+function wire(sel,attr){var chips=Array.prototype.slice.call(document.querySelectorAll(sel));
+  chips.forEach(function(c){c.addEventListener("click",function(){var v=c.getAttribute(attr);
+    chips.forEach(function(o){o.setAttribute("aria-pressed",String(o===c));});
+    if(v){svg.setAttribute(attr,v);}else{svg.removeAttribute(attr);}});});}
+wire(".chip[data-focus]","data-focus");wire(".chip[data-build]","data-build");
 })();
 </script>

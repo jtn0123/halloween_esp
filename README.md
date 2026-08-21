@@ -5,7 +5,8 @@ a doorway — driven by an ESP32-S2 Feather running ESPHome. Addressable RGBW pi
 pre-rendered spooky audio, and a cue engine that keeps the two in step.
 
 See [PROJECT_NOTES.md](PROJECT_NOTES.md) for the design record and the hardware
-research behind every choice here.
+research behind every choice here — it is an index; the record itself lives in
+parts under [`docs/notes/`](docs/notes/).
 
 ---
 
