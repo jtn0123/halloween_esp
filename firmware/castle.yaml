@@ -20,7 +20,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.18"
+  version: "5.22"
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
   #
@@ -55,7 +55,7 @@ substitutions:
   px_door: "12"
   rgbw_towerL: "true"
   rgbw_towerR: "true"
-  rgbw_door: "true"
+  rgbw_door: "false"
   pin_pir: "17"         # A1  <- AM312 PIR out (3V3 logic)
   pin_i2s_dout: "15"    # A3  -> MAX98357A DIN
   pin_i2s_bclk: "11"    # D11 -> MAX98357A BCLK   (clear of the wing)
@@ -66,6 +66,13 @@ substitutions:
 esphome:
   name: ${name}
   friendly_name: ${friendly}
+  # Surfaces ${version} over the NATIVE API (device_info.project_version).
+  # The studio's fallback bridge leg read the esphome framework version
+  # instead and the desk displayed "castle v2026.7.4" — a lie with the
+  # right font. HTTP /api/status always had it; now both legs agree.
+  project:
+    name: jtn.halloween-castle
+    version: ${version}
   platformio_options:
     build_flags:
       - '-DCASTLE_VERSION=\"${version}\"'
@@ -134,6 +141,10 @@ esp32:
       # previous image. That is the whole safety net for flashing a device
       # that is not in the room — see the api: on_client_connected below.
       CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE: "y"
+      # Keep the RMT refill ISR runnable while the flash cache is off
+      # (WiFi/NVS writes). Without it, strips after the first lose the race
+      # and frames truncate at the 4-pixel double-buffer boundary.
+      CONFIG_RMT_ISR_IRAM_SAFE: "y"
   # Default dual-OTA layout: two 1.75 MB app slots. Audio at 48 kbps keeps the
   # image inside one, which is what buys OTA back — see the ota: block below.
 

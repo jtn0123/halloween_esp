@@ -121,7 +121,16 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
             "    chipset: WS2812",
             f"    rgb_order: {z.get('rgb_order', 'GRB')}",
             f"    is_rgbw: ${{rgbw_{zid}}}",
-            "    use_psram: true",
+            # 64, explicitly: ESPHome's S2 default is 192, but the S2's RMT
+            # has 256 symbols TOTAL (4 blocks x 64). At 192 the first strip
+            # takes 3 blocks and every later strip fails to allocate — one
+            # clean zone, two dead ones (bench-diagnosed 2026-08-19).
+            "    rmt_symbols: 64",
+            # Internal RAM, deliberately: the strip buffer is under 50 bytes,
+            # and the RMT refill ISR must be able to read it during flash-cache
+            # blackouts. PSRAM there truncated frames at 4 px on every strip
+            # after the first (bench-diagnosed 2026-08-19).
+            "    use_psram: false",
             "    default_transition_length: 0s",
             "    effects:",
             "      - addressable_lambda:",

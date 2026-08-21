@@ -213,7 +213,8 @@ export function emitConfig(rig: RigState): string {
       `    chipset: WS2812`,
       `    rgb_order: GRB`,
       `    is_rgbw: ${zoneRgbw(rig, z)}`,
-      `    use_psram: true`,
+      `    rmt_symbols: 64`,
+      `    use_psram: false`,
       `    default_transition_length: 0s`,
     );
   }
