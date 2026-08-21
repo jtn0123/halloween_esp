@@ -108,7 +108,7 @@ class CastleEmu(ThreadingHTTPServer):
     request_queue_size = 64
 
     def __init__(self, port: int = 0, sd_dir: Path | None = None,
-                 scenes: list[str] | None = None, version: str = "5.24",
+                 scenes: list[str] | None = None, version: str = "5.25",
                  wedge: bool = False, sd_mounted: bool = True,
                  serial: bool = False) -> None:
         super().__init__(("127.0.0.1", port), Handler)
@@ -118,6 +118,9 @@ class CastleEmu(ThreadingHTTPServer):
         self.scenes = (scenes if scenes is not None
                        else show_scene_ids() or list(DEFAULT_SCENES))
         self.version = version
+        #: h_status's "missing": the boot manifest's comma-separated list of
+        #: scene files the card lacks. Tests set it to rehearse the escaping.
+        self.missing = ""
         self.wedge = wedge
         self.sd_mounted = sd_mounted
         # The real httpd is ONE task: a long PUT holds every other request
@@ -207,7 +210,7 @@ class CastleEmu(ThreadingHTTPServer):
                 "psram_free_kb": 1800, "heap_free_kb": 96,
                 "sd_total_kb": du.total // 1024 if self.sd_mounted else 0,
                 "sd_free_kb": du.free // 1024 if self.sd_mounted else 0,
-                "missing": "",
+                "missing": self.missing,
                 "volume": st.volume, "scene": st.scene, "track": st.track,
                 "show_on": st.show_on,
                 "pir": {"armed": st.pir["armed"],
@@ -216,13 +219,14 @@ class CastleEmu(ThreadingHTTPServer):
             }
 
     def status_text(self) -> str:
-        """h_status's snprintf template, strings unescaped like the C —
-        a track name with a '"' breaks the JSON on the board, and here."""
+        """h_status's template: numbers through the same formats, strings
+        through json_escape — the C mirrors Python's json.dumps table, so a
+        '"' in the track or the missing list goes out escaped on both."""
         s = self.status_json()
         pir = s["pir"]
         assert isinstance(pir, dict)
         b = {True: "true", False: "false"}
-        i, t = (lambda k: int(str(s[k]))), (lambda k: str(s[k]))
+        i, t = (lambda k: int(str(s[k]))), (lambda k: wire.json_escape(str(s[k])))
         return ('{"version":"%s","compiled":"%s","uptime_s":%d,'
                 '"sd_mounted":%s,"psram_free_kb":%d,"heap_free_kb":%d,'
                 '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
@@ -232,7 +236,9 @@ class CastleEmu(ThreadingHTTPServer):
                    b[bool(s["sd_mounted"])], i("psram_free_kb"), i("heap_free_kb"),
                    i("sd_total_kb"), i("sd_free_kb"), t("missing"),
                    i("volume"), t("scene"), t("track"), b[bool(s["show_on"])],
-                   b[bool(pir["armed"])], int(pir["cooldown_s"]), str(pir["scene"])))
+                   b[bool(pir["armed"])], int(pir["cooldown_s"]),
+                   wire.json_escape(str(pir["scene"]))))
+
 
 
 def _seed(card: Path) -> None:

@@ -1,6 +1,6 @@
 // The control half of the castle's web server (the serving half is
-// sd_web_site.h): manage the SD card from the Mac, drive the show from any
-// browser, flash new firmware, and read the device's own health.
+// sd_web_site.h, the firmware flasher sd_web_ota.h): manage the SD card from
+// the Mac, drive the show from any browser, and read the device's own health.
 //
 // TWO KINDS OF WORK, TWO RULES:
 //
@@ -23,7 +23,6 @@
 #include <esp_http_server.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
-#include <esp_ota_ops.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <algorithm>
@@ -34,6 +33,7 @@
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <cerrno>
 #include <cstdio>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -80,8 +80,9 @@ inline bool safe_name(const std::string &n) {
   if (n.empty() || n.size() >= 100 || n[0] == '.' ||
       n.find('/') != std::string::npos || n.find("..") != std::string::npos)
     return false;
-  // Names are snprintf'd raw into /api/files and /api/status JSON; a quote,
-  // backslash or control byte there breaks every client's parse.
+  // Names go out inside /api/files and /api/status JSON. json_escape keeps
+  // the parse alive whatever the card holds; this keeps a quote, backslash
+  // or control byte from ever getting ONTO the card through us.
   for (unsigned char c : n)
     if (c < 0x20 || c == 0x7f || c == '"' || c == '\\') return false;
   return true;
@@ -105,6 +106,37 @@ inline esp_err_t reply_err(httpd_req_t *req, const char *status, const char *msg
   httpd_resp_set_status(req, status);
   httpd_resp_set_type(req, "text/plain");
   return httpd_resp_send(req, msg, HTTPD_RESP_USE_STRLEN);
+}
+
+/// The strings in /api/status and the names in /api/files are device-sourced
+/// (card filenames, the boot manifest's missing list, a scene id) and go out
+/// inside JSON string literals. safe_name keeps quotes out of anything the
+/// desk uploads, but a file the Mac wrote straight onto the card is not the
+/// desk's doing — so escape at the exit instead of trusting the entrance.
+/// Same table as Python's json.dumps, which is what the emulator uses.
+inline std::string json_escape(const std::string &s) {
+  std::string out;
+  out.reserve(s.size() + 8);
+  for (unsigned char c : s) {
+    switch (c) {
+      case '"': out += "\\\""; break;
+      case '\\': out += "\\\\"; break;
+      case '\n': out += "\\n"; break;
+      case '\r': out += "\\r"; break;
+      case '\t': out += "\\t"; break;
+      case '\b': out += "\\b"; break;
+      case '\f': out += "\\f"; break;
+      default:
+        if (c < 0x20) {
+          char u[8];
+          snprintf(u, sizeof(u), "\\u%04x", c);
+          out += u;
+        } else {
+          out.push_back((char) c);
+        }
+    }
+  }
+  return out;
 }
 
 inline std::string query_param(httpd_req_t *req, const char *key) {
@@ -143,26 +175,35 @@ inline esp_err_t h_status(httpd_req_t *req) {
   }
   unsigned sd_total = 0, sd_free = 0;
   sd_space_kb(sd_total, sd_free);
-  char buf[760];
+  // Numbers through snprintf, strings through json_escape into a
+  // std::string: a fixed buffer truncated silently when the boot manifest
+  // listed more than a few missing files, and every client's parse died.
+  char buf[240];
   snprintf(buf, sizeof(buf),
            "{\"version\":\"%s\",\"compiled\":\"%s %s\",\"uptime_s\":%lld,"
            "\"sd_mounted\":%s,\"psram_free_kb\":%u,\"heap_free_kb\":%u,"
-           "\"sd_total_kb\":%u,\"sd_free_kb\":%u,"
-           "\"missing\":\"%s\","
-           "\"volume\":%d,\"scene\":\"%s\",\"track\":\"%s\",\"show_on\":%s,"
-           "\"pir\":{\"armed\":%s,\"cooldown_s\":%d,\"scene\":\"%s\"}}",
+           "\"sd_total_kb\":%u,\"sd_free_kb\":%u,\"missing\":\"",
            CASTLE_VERSION, __DATE__, __TIME__,
            (long long) (esp_timer_get_time() / 1000000),
            castle_sd::g_mounted ? "true" : "false",
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
-           sd_total, sd_free,
-           missing.c_str(),
-           g_volume.load(), scene.c_str(), track.c_str(),
+           sd_total, sd_free);
+  std::string out = buf;
+  out += json_escape(missing);
+  snprintf(buf, sizeof(buf), "\",\"volume\":%d,\"scene\":\"", g_volume.load());
+  out += buf;
+  out += json_escape(scene);
+  out += "\",\"track\":\"";
+  out += json_escape(track);
+  snprintf(buf, sizeof(buf),
+           "\",\"show_on\":%s,\"pir\":{\"armed\":%s,\"cooldown_s\":%d,\"scene\":\"",
            g_show_on.load() ? "true" : "false",
-           g_pir_armed.load() ? "true" : "false", g_pir_cooldown.load(),
-           pir_scene.c_str());
-  return reply_json(req, buf);
+           g_pir_armed.load() ? "true" : "false", g_pir_cooldown.load());
+  out += buf;
+  out += json_escape(pir_scene);
+  out += "\"}}";
+  return reply_json(req, out);
 }
 
 // ── /api/health — the season-long counters ──────────────────────────────
@@ -183,27 +224,49 @@ inline esp_err_t h_list(httpd_req_t *req) {
   DIR *d = opendir("/sd");
   if (d == nullptr) return reply_err(req, "500 Internal Server Error", "opendir failed");
   std::string out = "[";
+  unsigned skipped = 0;
   struct dirent *e;
   while ((e = readdir(d)) != nullptr) {
     if (e->d_name[0] == '.') continue;
+    // A name safe_name refuses is one the desk could never have uploaded
+    // and /api/play could never be asked for — the Mac wrote it straight
+    // onto the card. Counted, not listed: the desk should not offer a
+    // track the castle will then refuse by name.
+    if (!safe_name(e->d_name)) { skipped++; continue; }
     char full[300];
     snprintf(full, sizeof(full), "/sd/%s", e->d_name);
     struct stat st{};
     long size = (stat(full, &st) == 0) ? (long) st.st_size : -1;
-    char item[200];
-    snprintf(item, sizeof(item), "%s{\"name\":\"%s\",\"size\":%ld,\"dir\":%s}",
-             out.size() > 1 ? "," : "", e->d_name, size,
+    char tail[48];
+    snprintf(tail, sizeof(tail), "\",\"size\":%ld,\"dir\":%s}", size,
              (e->d_type == DT_DIR) ? "true" : "false");
-    out += item;
+    if (out.size() > 1) out += ",";
+    out += "{\"name\":\"";
+    out += json_escape(e->d_name);
+    out += tail;
   }
   closedir(d);
+  // One trailing {"skipped":N} element, only when N > 0. Every reader of
+  // this array filters on name/dir, so an element with neither is invisible
+  // to them — and visible to anyone wondering why a file is not listed.
+  if (skipped > 0) {
+    char t[40];
+    snprintf(t, sizeof(t), "%s{\"skipped\":%u}", out.size() > 1 ? "," : "", skipped);
+    out += t;
+  }
   out += "]";
   return reply_json(req, out);
 }
 
 // ── uploads: PUT /api/files/<name>, /api/site/<name>, /api/scenes/<name> ─
+/// Into `<path>.part` first; the real name changes hands only once every
+/// byte is on the card. A WiFi drop at 80% of a re-send used to take the
+/// PREVIOUS good copy down with it (the old code opened the real name for
+/// writing and unlinked it on failure). The studio side was fixed for this
+/// class in 3ccdd8b; this is the device side.
 inline esp_err_t write_body(httpd_req_t *req, const char *path) {
-  FILE *f = fopen(path, "wb");
+  const std::string part = std::string(path) + ".part";
+  FILE *f = fopen(part.c_str(), "wb");
   if (f == nullptr) return reply_err(req, "500 Internal Server Error", "cannot create file");
   static constexpr size_t CHUNK = 8192;
   char *buf = (char *) malloc(CHUNK);
@@ -228,9 +291,17 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
   free(buf);
   fclose(f);
   if (!ok) {
-    unlink(path);  // a half-written MP3 is worse than a missing one
+    unlink(part.c_str());  // the sidecar only; whatever `path` held still plays
     ESP_LOGE(TAG, "upload of %s failed at %u bytes", path, (unsigned) written);
     return reply_err(req, "500 Internal Server Error", "short write");
+  }
+  // FAT's rename refuses to overwrite, so the old copy goes first. The
+  // window between the two calls is a missing file, never a torn one.
+  unlink(path);
+  if (rename(part.c_str(), path) != 0) {
+    ESP_LOGE(TAG, "rename %s -> %s failed (errno %d)", part.c_str(), path, errno);
+    unlink(part.c_str());
+    return reply_err(req, "500 Internal Server Error", "rename failed");
   }
   ESP_LOGI(TAG, "uploaded %s (%u KB)", path, (unsigned) (written / 1024));
   char body[220];
@@ -332,77 +403,6 @@ inline esp_err_t h_pir(httpd_req_t *req) {
   return reply_json(req, "{\"queued\":true}");
 }
 
-// ── PUT /api/ota — new firmware over plain HTTP ─────────────────────────
-// The web-only update path: no esphome CLI, no Mac — any browser or curl can
-// deliver a .bin. Written straight into the inactive OTA slot; the reboot is
-// queued through the main loop so the HTTP reply gets out first. The
-// bootloader's rollback net still applies: an image that never confirms
-// itself (API connect) is reverted on the next reboot.
-inline esp_err_t h_ota(httpd_req_t *req) {
-  const esp_partition_t *part = esp_ota_get_next_update_partition(nullptr);
-  if (part == nullptr) return reply_err(req, "500 Internal Server Error", "no OTA slot");
-  if (req->content_len < 65536 || req->content_len > part->size)
-    return reply_err(req, "400 Bad Request", "implausible image size");
-
-  // Nothing else may touch the SPI bus or burn CPU while flash is being
-  // written — the v5.12 upload watchdogged twice, with audio already
-  // stopped, because the eInk panel picked that moment to refresh.
-  castle_sd::g_quiesce = true;
-
-  esp_ota_handle_t ota;
-  // SEQUENTIAL_WRITES, not the image size: passing a size makes ota_begin
-  // erase the whole 1.75 MB partition in one synchronous burn — several
-  // seconds with the flash cache suspended, which starves the idle task and
-  // trips the task watchdog. (boots:4 crashes:1 last_reset:"task-watchdog"
-  // — the health endpoint's first real case was this very handler.)
-  // Sequential mode erases each block just before writing it: same result,
-  // watchdog-sized pauses.
-  if (esp_ota_begin(part, OTA_WITH_SEQUENTIAL_WRITES, &ota) != ESP_OK) {
-    castle_sd::g_quiesce = false;
-    return reply_err(req, "500 Internal Server Error", "ota begin failed");
-  }
-
-  static constexpr size_t CHUNK = 8192;
-  char *buf = (char *) malloc(CHUNK);
-  size_t remaining = req->content_len;
-  bool first = true, ok = buf != nullptr;
-  while (ok && remaining > 0) {
-    int got = httpd_req_recv(req, buf, remaining < CHUNK ? remaining : CHUNK);
-    if (got <= 0) { ok = false; break; }
-    if (first) {
-      first = false;
-      if ((uint8_t) buf[0] != 0xE9) { ok = false; break; }   // app image magic
-    }
-    if (esp_ota_write(ota, buf, got) != ESP_OK) { ok = false; break; }
-    remaining -= got;
-    // Breathe. Every flash write suspends the cache, blocking every task
-    // that executes from flash — including the watched main loop. Sequential
-    // erase alone did not fix the watchdog (boots:6 crashes:2 says so);
-    // back-to-back writes starve it just as well. One tick per chunk lets
-    // the loop run and feed its own watchdog. ~140 chunks × 10 ms adds a
-    // polite 1.5 s to the flash; the alternative is a reboot at 60%.
-    vTaskDelay(1);
-  }
-  free(buf);
-  if (!ok || esp_ota_end(ota) != ESP_OK) {
-    ESP_LOGE(TAG, "web OTA failed with %u bytes left", (unsigned) remaining);
-    castle_sd::g_quiesce = false;
-    return reply_err(req, "500 Internal Server Error", "ota write failed");
-  }
-  if (esp_ota_set_boot_partition(part) != ESP_OK) {
-    castle_sd::g_quiesce = false;
-    return reply_err(req, "500 Internal Server Error", "could not select slot");
-  }
-  ESP_LOGI(TAG, "web OTA complete (%u bytes) — rebooting", (unsigned) req->content_len);
-  // Reply BEFORE queueing the restart, and give lwip a beat to flush the
-  // segment — the first live test flashed perfectly but rebooted with the
-  // response still in the TCP buffer, so the client saw only a timeout.
-  esp_err_t r = reply_json(req, "{\"flashed\":true,\"rebooting\":true}");
-  vTaskDelay(pdMS_TO_TICKS(250));
-  set_pending(RESTART, "");
-  return r;
-}
-
 // ── /api/bootlog — the ring buffer, as text ─────────────────────────────
 inline esp_err_t h_bootlog(httpd_req_t *req) {
   httpd_resp_set_type(req, "text/plain");
@@ -430,6 +430,7 @@ inline esp_err_t h_bootlog(httpd_req_t *req) {
 
 }  // namespace castle_web
 
+#include "sd_web_ota.h"
 #include "sd_web_site.h"
 #include "sd_web_remote.h"
 

@@ -15,6 +15,8 @@ would silently disagree with the board on exactly the inputs a fuzz throws.
 
 from __future__ import annotations
 
+import json
+
 #: esp_http_server's request-line ceiling (HTTPD_MAX_URI_LEN). Longer → 414.
 MAX_URI = 512
 #: query_param()'s stack buffers in sd_web.h: the whole query string, and
@@ -192,3 +194,11 @@ def query_param(raw_target: bytes, key: str) -> bytes:
             break
         pos = amp + 1
     return b""
+
+
+def json_escape(s: str) -> str:
+    """sd_web.h json_escape: the body of a JSON string literal. The C
+    escapes '"', '\\', \\b \\f \\n \\r \\t and \\u00XX for the other
+    control bytes, and passes everything else (UTF-8, DEL) through raw —
+    exactly json.dumps's non-ASCII-preserving table, so this IS json.dumps."""
+    return json.dumps(s, ensure_ascii=False)[1:-1]

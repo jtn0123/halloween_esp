@@ -1,7 +1,7 @@
 """The emulator held to the firmware — by reading the firmware.
 
-firmware/sd_web.h (+ sd_web_site.h, sd_web_remote.h, sd_web_state.h) is the
-contract the studio speaks to; tools/castle_emu*.py is the stand-in every
+firmware/sd_web.h (+ sd_web_ota.h, sd_web_site.h, sd_web_remote.h,
+sd_web_state.h) is the contract the studio speaks to; tools/castle_emu*.py is the stand-in every
 hardware-free test drives. The two can only be trusted together if a change
 to either is caught here. So these tests PARSE the C at test time — the
 reg() table, every reply_err() string per handler, safe_name's rule,
@@ -31,6 +31,7 @@ import castle_emu_wire as wire
 
 FW = ROOT / "firmware"
 SD_WEB = (FW / "sd_web.h").read_text()
+SD_OTA = (FW / "sd_web_ota.h").read_text()
 SD_SITE = (FW / "sd_web_site.h").read_text()
 SD_REMOTE = (FW / "sd_web_remote.h").read_text()
 SD_STATE = (FW / "sd_web_state.h").read_text()
@@ -39,7 +40,7 @@ EMU_HTTP = (ROOT / "tools" / "castle_emu_http.py").read_text()
 #: reply_err strings the emulator has no way to produce: flash, heap and
 #: FAT failures of the real board. Everything else must be mirrored.
 HARDWARE_ONLY = {"no memory", "opendir failed", "no OTA slot",
-                 "ota begin failed", "could not select slot"}
+                 "ota begin failed", "ota end failed", "could not select slot"}
 
 
 def c_functions(*sources: str) -> dict[str, str]:
@@ -72,7 +73,7 @@ def firmware_routes() -> list[tuple[str, str, str]]:
             re.findall(r'reg\("([^"]+)", HTTP_(\w+), (\w+)\);', SD_WEB)]
 
 
-FUNCS = c_functions(SD_WEB, SD_SITE, SD_REMOTE)
+FUNCS = c_functions(SD_WEB, SD_OTA, SD_SITE, SD_REMOTE)
 
 
 def grab(pattern: str, text: str, group: int = 1) -> str:
@@ -177,10 +178,10 @@ class TestNameRules(unittest.TestCase):
         self.assertTrue(wire.safe_name("é".encode() * 40))
 
     def test_safe_name_refuses_what_would_break_the_json(self) -> None:
-        """h_list/h_status snprintf names raw into JSON: a quote, a
-        backslash, a control byte or DEL in a name would make /api/files
-        and /api/status unparseable for every client, so safe_name says no
-        at the door. High bytes (UTF-8) and spaces stay welcome."""
+        """A quote, a backslash, a control byte or DEL never gets ONTO the
+        card through us: safe_name says no at the door (and since v5.25
+        json_escape keeps the parse alive for names that got there another
+        way). High bytes (UTF-8) and spaces stay welcome."""
         for bad in (b'a"b.mp3', b"a\\b.mp3", b"a\tb", b"a\nb", b"a\rb", b"\x00",
                     b"ab\x00cd.mp3", b"a\x1fb", b"a\x7fb", b'"', b"\\"):
             self.assertFalse(wire.safe_name(bad), repr(bad))
@@ -317,11 +318,11 @@ class TestWireBehaviour(unittest.TestCase):
         self.assertNotIn(("VOLUME", "11"), self.emu.applied[-3:])
 
     def test_a_quote_in_a_name_is_refused_so_the_list_json_survives(self) -> None:
-        """Names are snprintf'd into JSON unescaped (sd_web.h h_list/h_status),
-        so safe_name refuses '"', '\\' and control bytes at the door: the
+        """safe_name refuses '"', '\\' and control bytes at the door: the
         PUT is a 400 "bad filename" and GET /api/files stays parseable.
         (v5.23 admitted them and one such file broke the list for every
-        client — firmware/pending/README.md has the history.)"""
+        client; v5.25 also escapes at the exit — see the JSON tests in
+        tests/test_castle_emu.py.)"""
         for enc in ("a%22b.mp3", "a%5Cb.mp3", "a%09b.mp3", "a%7Fb.mp3", "a%00b.mp3"):
             code, out = self.call("PUT", f"/api/files/{enc}", b"x")
             self.assertEqual((code, out), (400, b"bad filename"), enc)

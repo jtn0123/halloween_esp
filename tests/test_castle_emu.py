@@ -10,7 +10,9 @@ a device on the bench.
 
 from __future__ import annotations
 
+import http.client
 import json
+import re
 import sys
 import tempfile
 import time
@@ -23,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 import castle_emu
+import castle_emu_wire as wire
 import castle_link
 
 
@@ -211,6 +214,93 @@ class TestCardRoundTrip(EmuCase):
         self.assertEqual(self.http("DELETE", "/api/files/e2e_song.mp3")[0], 404)
 
 
+class TestAtomicUpload(EmuCase):
+    """sd_web.h write_body: `<name>.part`, then unlink + rename. The
+    studio side got this in 3ccdd8b; the card side in v5.25 (B1)."""
+
+    def test_a_short_upload_leaves_the_previous_copy_intact(self) -> None:
+        good = b"\xff\xfb" + b"G" * 3000
+        code, _ = self.http("PUT", "/api/files/keep.mp3", good)
+        self.assertEqual(code, 200)
+        # Declare 5000 bytes, send 1000, hang up: the board's recv times out.
+        c = http.client.HTTPConnection("127.0.0.1", self.emu.port, timeout=10)
+        c.putrequest("PUT", "/api/files/keep.mp3")
+        c.putheader("Content-Length", "5000")
+        c.endheaders()
+        c.send(b"\xff\xfb" + b"B" * 998)
+        c.sock.shutdown(1)  # type: ignore[union-attr]
+        r = c.getresponse()
+        self.assertEqual((r.status, r.read()), (500, b"short write"))
+        c.close()
+        self.assertEqual((self.card / "keep.mp3").read_bytes(), good)
+        self.assertFalse((self.card / "keep.mp3.part").exists())
+        self.assertEqual(self.http("GET", "/sd/keep.mp3")[1], good)
+
+    def test_a_full_upload_replaces_the_old_copy(self) -> None:
+        self.http("PUT", "/api/files/swap.mp3", b"\xff\xfbold")
+        code, body = self.http("PUT", "/api/files/swap.mp3", b"\xff\xfbnewer")
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(body)["bytes"], 7)
+        self.assertEqual((self.card / "swap.mp3").read_bytes(), b"\xff\xfbnewer")
+        self.assertFalse((self.card / "swap.mp3.part").exists())
+
+
+class TestJsonEscaping(EmuCase):
+    """sd_web.h json_escape + h_list's skip (B3): names the Mac put on the
+    card without going through PUT, and a '"' in status strings, must not
+    break the parse for every client."""
+
+    def test_a_quoted_name_placed_on_the_card_does_not_break_the_list(self) -> None:
+        (self.card / 'say "boo".mp3').write_bytes(b"x")
+        (self.card / "back\\slash.mp3").write_bytes(b"y")
+        (self.card / "plain.mp3").write_bytes(b"z")
+        try:
+            code, out = self.http("GET", "/api/files")
+            self.assertEqual(code, 200)
+            files = json.loads(out)                 # the whole point: it parses
+            names = [f["name"] for f in files if "name" in f]
+            self.assertIn("plain.mp3", names)
+            self.assertNotIn('say "boo".mp3', names)
+            self.assertNotIn("back\\slash.mp3", names)
+            self.assertEqual([f for f in files if "skipped" in f], [{"skipped": 2}])
+        finally:
+            (self.card / 'say "boo".mp3').unlink()
+            (self.card / "back\\slash.mp3").unlink()
+            (self.card / "plain.mp3").unlink()
+        files = json.loads(self.http("GET", "/api/files")[1])
+        self.assertFalse(any("skipped" in f for f in files))   # none → no trailer
+
+    def test_status_escapes_a_quote_in_missing_and_track(self) -> None:
+        self.emu.missing = 'a"b.mp3,c\\d.mp3'
+        with self.emu.state.lock:
+            self.emu.state.track = 'say "boo".mp3'
+        try:
+            st = self.status()
+        finally:
+            self.emu.missing = ""
+            with self.emu.state.lock:
+                self.emu.state.track = ""
+        self.assertEqual(st["missing"], 'a"b.mp3,c\\d.mp3')
+        self.assertEqual(st["track"], 'say "boo".mp3')
+
+    def test_the_escape_table_is_the_firmwares(self) -> None:
+        """Read sd_web.h json_escape: every `case` it handles is one
+        json.dumps short-escapes, and the fallback is \\u%04x below 0x20."""
+        src = (Path(__file__).resolve().parent.parent / "firmware" / "sd_web.h").read_text()
+        body = src[src.index("inline std::string json_escape"):]
+        body = body[:body.index("\n}\n")]
+        cases = set(re.findall(r"case '(\\?.)': out \+= \"(\\\\.+?)\"; break;", body))
+        self.assertEqual(cases, {('"', '\\\\\\"'), ("\\\\", "\\\\\\\\"),
+                                 ("\\n", "\\\\n"), ("\\r", "\\\\r"), ("\\t", "\\\\t"),
+                                 ("\\b", "\\\\b"), ("\\f", "\\\\f")})
+        self.assertIn("if (c < 0x20)", body)
+        self.assertIn('"\\\\u%04x"', body)
+        # and the Python half really is json.dumps' table for those bytes
+        for ch in '"\\\n\r\t\b\f\x01\x1f\x7fé':
+            self.assertEqual(json.loads('"' + wire.json_escape(ch) + '"'), ch)
+        self.assertEqual(wire.json_escape("\x7f"), "\x7f")   # DEL passes raw, as in the C
+
+
 class TestBridge(EmuCase):
     """castle_link → emulator: the studio's relay leg, no hardware."""
 
@@ -230,7 +320,7 @@ class TestBridge(EmuCase):
         st = castle_link.status()
         self.assertIsNotNone(st)
         assert st is not None
-        self.assertEqual(st["version"], "5.24")
+        self.assertEqual(st["version"], "5.25")
         self.assertEqual(st["bridged"], f"127.0.0.1:{self.emu.port}")
 
     def test_dead_primary_falls_through_to_a_live_fallback(self) -> None:

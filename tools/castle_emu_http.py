@@ -10,10 +10,13 @@ Fidelity choices worth knowing when a test surprises you:
   - The handler socket times out after RECV_WAIT_S like the httpd's
     recv_wait_timeout: a PUT whose body stops arriving is unlinked and
     answered 500 "short write", not left hanging.
-  - /api/files and /api/status build their JSON with the firmware's own
-    snprintf templates — unescaped. A filename holding '"' breaks the
-    listing on the board, so it breaks it here too (firmware bug, reported
-    with tests/test_firmware_contract.py; safe_name is where the fix goes).
+  - /api/files and /api/status build their JSON like the firmware: numbers
+    through the same formats, strings through json_escape (json.dumps's
+    table on both sides). A file the Mac wrote straight onto the card with
+    a name safe_name would refuse is counted in a trailing {"skipped":N}
+    element of /api/files, not listed — the desk could never play it.
+  - PUT writes `<name>.part` and renames over the old copy only once every
+    byte is in; a short upload leaves the PREVIOUS file exactly as it was.
   - Unknown path → 404, known path with the wrong verb → 405, request line
     over 512 bytes → 414: esp_http_server's verdicts and its own text.
 """
@@ -166,16 +169,23 @@ class Handler(BaseHTTPRequestHandler):
         if not self.server.sd_mounted:
             return self._err(503, "no SD card")
         items = []
+        skipped = 0
         for p in sorted(self.server.sd_dir.iterdir()):
             if p.name.startswith("."):
+                continue
+            if not wire.safe_name(p.name.encode("utf-8", "surrogateescape")):
+                skipped += 1          # the Mac's doing, not the desk's: counted
                 continue
             try:                      # stat() failing is size -1 on the board
                 size = p.stat().st_size if p.is_file() else 0
             except OSError:
                 size = -1
-            # The firmware's snprintf template, name unescaped (see module doc).
+            # The firmware's template: name through json_escape, the rest raw.
             items.append('{"name":"%s","size":%d,"dir":%s}'
-                         % (p.name, size, "true" if p.is_dir() else "false"))
+                         % (wire.json_escape(p.name), size,
+                            "true" if p.is_dir() else "false"))
+        if skipped:
+            items.append('{"skipped":%d}' % skipped)
         self._raw(200, ("[" + ",".join(items) + "]").encode("utf-8", "surrogateescape"),
                   "application/json")
 
@@ -302,8 +312,12 @@ class Handler(BaseHTTPRequestHandler):
         dest = self.server.sd_dir / sub if sub else self.server.sd_dir
         dest.mkdir(parents=True, exist_ok=True)
         target = dest / wire.fs_name(name)
+        # write_body: into the sidecar, then unlink + rename (FAT's rename
+        # will not overwrite). A short upload costs the sidecar only; the
+        # previous copy of `target` is untouched.
+        part = target.with_name(target.name + ".part")
         try:
-            f = open(target, "wb")
+            f = open(part, "wb")
         except OSError:
             return self._err(500, "cannot create file")
         written = 0
@@ -315,8 +329,14 @@ class Handler(BaseHTTPRequestHandler):
             except (TimeoutError, OSError):
                 pass
         if written != n:
-            target.unlink(missing_ok=True)   # a half-written MP3 is worse than none
+            part.unlink(missing_ok=True)     # the sidecar only
             return self._err(500, "short write")
+        try:
+            target.unlink(missing_ok=True)
+            part.rename(target)
+        except OSError:
+            part.unlink(missing_ok=True)
+            return self._err(500, "rename failed")
         card = f"/sd/{sub}/{target.name}" if sub else f"/sd/{target.name}"
         self._json({"path": card, "bytes": written})
 

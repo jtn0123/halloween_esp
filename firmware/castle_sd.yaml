@@ -8,10 +8,11 @@
 #   make sd-upload     flash it
 #
 # HOW IT WORKS: ESPHome has no SD component and its audio pipeline cannot read
-# a filesystem. But `audio::AudioFile` is just {pointer, length, type} and
-# `SpeakerMediaPlayer::play_file()` is public — so sd_audio.h mounts the card
-# over SPI, reads a whole file into PSRAM, and hands it to the ordinary
-# decoder. See firmware/sd_audio.h for what that does and does not buy you.
+# a filesystem — but it can read a URL. sd_audio.h mounts the card over SPI
+# at /sd, sd_web_site.h serves any file on it at GET /sd/<path>, and playing
+# a card file is the ordinary media_player URL call pointed at loopback:
+# http://127.0.0.1:8080/sd/<file>. True streaming, no PSRAM cap. See
+# firmware/sd_audio.h for the whole story.
 #
 # THE PART THAT IS NOT PROVEN: nobody has published ESPHome SD audio on an
 # ESP32-S2, and the two well-known ESP32 audio libraries decline to support
@@ -103,6 +104,7 @@ esphome:
     - sd_web_state.h
     - sd_web_stream.h
     - sd_web.h
+    - sd_web_ota.h
     - sd_web_site.h
     - sd_web_remote.h
     - castle_eink.h
@@ -170,10 +172,9 @@ output:
     id: sram_cs_park
     pin: GPIO${sram_cs}
 
-# Play a card file the OLD way: whole file into PSRAM, then decode. The
-# normal path is now streaming (see the PLAY action in the interval below and
-# sd_web_site.h) — this stays as the deliberate fallback for the day the
-# loopback stream misbehaves, reachable via the "Play SD file" button.
+# Play a card file by name from the "Play SD file" button — the same
+# loopback stream the PLAY action in the interval below uses (sd_web_site.h),
+# just reachable without a browser: set the `SD file` text, press the button.
 script:
   # #26: boot self-test — every zone flashes R, G, B, W in turn, riding the
   # strike machinery over whatever scene is starting. No tone on purpose:
@@ -212,17 +213,15 @@ script:
       path: string
     then:
       - lambda: |-
-          // Stop first: a new load frees the PSRAM buffer the decoder may
-          // still be reading. Stopping before the (100+ ms) load starts gives
-          // the pipeline time to let go of the old buffer.
-          id(castle_media)->make_call()
-              .set_command(esphome::media_player::MEDIA_PLAYER_COMMAND_STOP)
-              .set_announcement(true)
-              .perform();
-          // The read happens on its own task — a megabyte over SPI takes the
-          // better part of a second, and the main loop must keep the lights
-          // moving. The 200 ms interval below picks up the finished file.
-          castle_sd::start_load(path.c_str());
+          // STREAMED off the card through our own server over loopback —
+          // identical to what the web PLAY action does (interval below).
+          // The PSRAM load-then-decode path this once took is gone
+          // (sd_audio.h); there is no second way to play a card file.
+          auto call = id(castle_media)->make_call();
+          call.set_media_url("http://127.0.0.1:8080/sd/" + path);
+          call.set_announcement(true);
+          call.perform();
+          id(current_track).publish_state(path);
 
 # The bridge between the web server's httpd task and ESPHome's main loop.
 # HTTP handlers only *record* play/scene/stop requests (scripts and the media
@@ -367,6 +366,6 @@ text:
     id: sd_path
     optimistic: true
     mode: text
-    # Relative to the card root: sd_audio.h prefixes /sd/.
+    # Relative to the card root: play_sd prefixes /sd/ (the loopback URL).
     initial_value: "test.mp3"
     entity_category: config
