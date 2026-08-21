@@ -30,7 +30,10 @@ import analyze as ana
 import manifest as mf
 
 ROOT = Path(__file__).resolve().parent.parent
-TRACKS = ROOT / "tracks"
+# CASTLE_TRACKS is the whole sandbox story (see playwright.config.ts): the
+# studio honored it but this subprocess wrote to the real tracks/ anyway —
+# an e2e import quietly landed files in (or over!) the user's library.
+TRACKS = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks"))
 BITRATE = 96          # matches hardware.audio.bitrate in scenes.yaml
 BUDGET = 2.9 * 1024 * 1024
 

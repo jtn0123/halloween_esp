@@ -139,3 +139,22 @@ class TestImageCheck(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestTracksSandbox(unittest.TestCase):
+    """CASTLE_TRACKS must redirect EVERY writer of tracks/, subprocesses
+    included. import_track.py honored only the hardcoded repo path while the
+    studio honored the env — so a sandboxed e2e import landed files in (or
+    over) the user's real library. Caught 2026-08-20 by the pull test."""
+
+    def test_import_track_honors_the_sandbox(self) -> None:
+        import os
+        import subprocess
+        out = subprocess.run(
+            [sys.executable, "-c",
+             "import import_track; print(import_track.TRACKS)"],
+            cwd=str(ROOT / "tools"),
+            env={**os.environ, "CASTLE_TRACKS": "/tmp/castle-sandbox-guard"},
+            capture_output=True, text=True, check=False)
+        self.assertEqual(out.stdout.strip(), "/tmp/castle-sandbox-guard",
+                         out.stderr)
