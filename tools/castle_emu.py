@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import tempfile
@@ -43,7 +44,26 @@ APPLY_DELAY_S = 0.2
 #: Rough playback clock: 96 kbps MP3 is ~12 kB of file per second.
 BYTES_PER_S = 12000
 
+#: Used only when no scenes.yaml can be found — the firmware seeds its list
+#: from the generated show, so the emulator reads the same source of truth
+#: (CASTLE_SCENES, else the repo's scenes/scenes.yaml) and 404s exactly the
+#: ids the real castle would.
 DEFAULT_SCENES = ["vigil", "storm", "arrival", "stop"]
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def show_scene_ids(path: Path | None = None) -> list[str] | None:
+    """Scene ids from a scenes.yaml — CASTLE_SCENES, else the repo's — or
+    None when there is no readable show to seed from."""
+    import yaml
+    src = path or Path(os.environ.get("CASTLE_SCENES")
+                       or ROOT / "scenes" / "scenes.yaml")
+    try:
+        doc = yaml.safe_load(src.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return None
+    ids = [str(sc["id"]) for sc in doc.get("scenes", []) if "id" in sc]
+    return [*ids, "stop"] if ids else None
 
 
 def safe_name(n: str) -> bool:
@@ -73,15 +93,21 @@ class CastleEmu(ThreadingHTTPServer):
 
     def __init__(self, port: int = 0, sd_dir: Path | None = None,
                  scenes: list[str] | None = None, version: str = "5.23",
-                 wedge: bool = False, sd_mounted: bool = True) -> None:
+                 wedge: bool = False, sd_mounted: bool = True,
+                 serial: bool = False) -> None:
         super().__init__(("127.0.0.1", port), _Handler)
         self.state = _State()
         self.sd_dir = sd_dir or Path(tempfile.mkdtemp(prefix="castle-emu-sd-"))
         self.sd_dir.mkdir(parents=True, exist_ok=True)
-        self.scenes = scenes if scenes is not None else list(DEFAULT_SCENES)
+        self.scenes = (scenes if scenes is not None
+                       else show_scene_ids() or list(DEFAULT_SCENES))
         self.version = version
         self.wedge = wedge
         self.sd_mounted = sd_mounted
+        # The real httpd is ONE task: a long PUT holds every other request
+        # (the status poll included) until it finishes. --serial rehearses
+        # that; the default threads so the bench stays snappy.
+        self.serial = threading.Lock() if serial else None
         self._pending: list[tuple[str, str]] = []
         threading.Thread(target=self._ticker, daemon=True,
                          name="castle-emu-tick").start()
@@ -173,6 +199,12 @@ class _Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: object) -> None:
         pass  # tests and background use; the port banner is enough
 
+    def handle(self) -> None:
+        if self.server.serial is None:
+            return super().handle()
+        with self.server.serial:
+            super().handle()
+
     def _json(self, body: dict[str, object] | list[object]) -> None:
         raw = json.dumps(body).encode()
         self.send_response(200)
@@ -218,6 +250,9 @@ class _Handler(BaseHTTPRequestHandler):
             return self._list()
         if path == "/api/bootlog":
             return self._err(200, "boot log: 2 lines, 0 dropped\n[I][emu] up\n")
+        if path == "/api/blackout":          # registered for GET too: bookmarkable
+            self.server.queue("BLACKOUT", "")
+            return self._json({"queued": True})
         if path.startswith("/sd/"):
             return self._sd_get(path)
         self._err(404, "not found")
@@ -350,13 +385,25 @@ def main() -> None:
                     help="replay the pre-v5.22 wedge: stall requests while playing")
     ap.add_argument("--no-sd", action="store_true",
                     help="pretend the card is missing")
+    ap.add_argument("--serial", action="store_true",
+                    help="one request at a time, like the device's single httpd task")
+    ap.add_argument("--scenes", default=None,
+                    help="scene ids: a comma list, or a scenes.yaml "
+                         "(default: $CASTLE_SCENES, else scenes/scenes.yaml)")
     args = ap.parse_args()
+    scenes: list[str] | None = None
+    if args.scenes:
+        scenes = (show_scene_ids(Path(args.scenes)) if args.scenes.endswith(".yaml")
+                  else [x.strip() for x in args.scenes.split(",") if x.strip()])
     emu = CastleEmu(port=args.port, sd_dir=args.dir, wedge=args.wedge,
-                    sd_mounted=not args.no_sd)
+                    sd_mounted=not args.no_sd, serial=args.serial,
+                    scenes=scenes)
     if args.dir is None:
         _seed(emu.sd_dir)
     print(f"castle emulator on http://127.0.0.1:{emu.port}  card={emu.sd_dir}"
-          + ("  [WEDGE MODE]" if args.wedge else ""))
+          + ("  [WEDGE MODE]" if args.wedge else "")
+          + ("  [SERIAL]" if args.serial else ""))
+    print(f"  scenes: {', '.join(emu.scenes)}")
     print(f"  point the studio at it:  CASTLE_HOST=127.0.0.1:{emu.port}")
     emu.serve_forever()
 

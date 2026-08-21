@@ -23,12 +23,11 @@ Who the castle is, in order:
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import time
 import tomllib
-import urllib.error
-import urllib.request
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
@@ -37,11 +36,22 @@ import castle_native
 ROOT = Path(__file__).resolve().parents[1]
 DEVICES = ROOT / "devices.toml"
 
-#: One WiFi round-trip to a busy ESP32. Long enough for a slow answer,
-#: short enough that a dead castle cannot wedge the desk's own probe
-#: (device.ts gives the whole thing 1500 ms — the cached path is what
-#: usually answers inside that).
+#: One WiFi round-trip to a busy ESP32: the read budget for the quick verbs
+#: (status, the POSTs). Long enough for a slow answer, short enough that a
+#: wedged castle cannot hold the desk's own probe hostage.
 TIMEOUT_S = 2.0
+
+#: Connecting to a LAN address takes milliseconds or never happens — a dead
+#: IP costs the whole value PER HOST, so the probe keeps it short (the desk
+#: gives its own probe 2500 ms and re-probes while it waits; device.ts).
+PROBE_CONNECT_S = 1.0
+
+#: Per-verb READ budgets. A 2.4 MB PUT at WiFi-to-SD speed holds the
+#: castle's single httpd task for many seconds, and it acks only after the
+#: last byte hit the card — the 2 s that fits a POST reported every large
+#: send as "castle not reachable" (pass 1, J1-8).
+READ_BUDGET_S = {"PUT": 60.0, "DELETE": 30.0, "SD_GET": 60.0,
+                 "FILES_GET": 5.0}
 
 #: The desk polls status continuously; the castle should not pay for every
 #: poll. Fresh enough that "PLAYING" in the chip tracks reality.
@@ -113,11 +123,12 @@ def status() -> dict | None:
     data, good = None, hosts[0]
     for host in hosts:
         try:
-            with urllib.request.urlopen(
-                    f"http://{host}/api/status", timeout=TIMEOUT_S) as r:
-                data, good = json.loads(r.read()), host
+            code, raw, _ = _call(host, "GET", "/api/status", b"",
+                                 PROBE_CONNECT_S, TIMEOUT_S)
+            if code == 200:
+                data, good = json.loads(raw), host
                 break
-        except (OSError, ValueError):
+        except (OSError, http.client.HTTPException, ValueError):
             continue
     if not isinstance(data, dict):
         # No HTTP server is what the flash build looks like — try the
@@ -134,39 +145,101 @@ def status() -> dict | None:
     return data
 
 
+class Unreachable(OSError):
+    """Could not connect: the body never left — trying elsewhere is safe."""
+
+
+class Stalled(OSError):
+    """Connected, then no complete answer: the request MAY have landed."""
+
+
+def _call(host: str, method: str, path: str, body: bytes,
+          connect_s: float, read_s: float) -> tuple[int, bytes, str]:
+    """One HTTP exchange with a connect budget and a separate read budget.
+
+    urllib's single timeout governed every socket op, so the 2 s that suits
+    a status poll also judged a multi-megabyte PUT. Raises Unreachable when
+    the connect fails (nothing sent) and Stalled for anything after that.
+    """
+    conn = http.client.HTTPConnection(host, timeout=connect_s)
+    try:
+        try:
+            conn.connect()
+        except OSError as e:
+            raise Unreachable(str(e)) from e
+        try:
+            if conn.sock is not None:
+                conn.sock.settimeout(read_s)
+            conn.request(method, path, body=body or None)
+            r = conn.getresponse()
+            return (r.status, r.read(),
+                    r.getheader("Content-Type") or "application/json")
+        except (OSError, http.client.HTTPException) as e:
+            raise Stalled(str(e)) from e
+    finally:
+        conn.close()
+
+
+def _read_budget(method: str, path: str) -> float:
+    if method == "PUT":
+        return READ_BUDGET_S["PUT"]
+    if method == "DELETE":
+        return READ_BUDGET_S["DELETE"]
+    if method == "GET" and path.startswith("/sd/"):
+        return READ_BUDGET_S["SD_GET"]
+    if method == "GET" and path.startswith("/api/files"):
+        return READ_BUDGET_S["FILES_GET"]
+    return TIMEOUT_S
+
+
 def forward(method: str, path_and_query: str,
             body: bytes = b"") -> tuple[int, bytes, str]:
     """Relay one request to the castle verbatim.
 
     Returns (status code, body, content-type). A castle error page comes
     back as-is — the desk's toasts already know how to say "failed" — and
-    an unreachable castle is a 502, not an exception.
+    an unreachable castle is a 502, not an exception. A castle that took
+    the request and then went quiet is a 504: the bytes may have landed,
+    so they are NOT replayed to the next host (a PUT re-sent in full to a
+    fallback address of the same castle is the pass-1 J1-8 finding).
     """
     hosts = castle_hosts()
     if not hosts:
         return 502, b'{"error": "no castle configured"}', "application/json"
+    read_s = _read_budget(method, path_and_query)
     for host in hosts:
-        req = urllib.request.Request(f"http://{host}{path_and_query}",
-                                     data=body or None, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
-                _cache["up"] = (time.monotonic(), {"host": host})
-                return (r.status or 200, r.read(),
-                        r.headers.get("Content-Type") or "application/json")
-        except urllib.error.HTTPError as e:
-            # The castle ANSWERED — its verdict stands, no fallback needed.
-            return (e.code, e.read(),
-                    e.headers.get("Content-Type") or "application/json")
-        except OSError:
+            code, out, ctype = _call(host, method, path_and_query, body,
+                                     TIMEOUT_S, read_s)
+        except Unreachable:
             continue
+        except Stalled:
+            if method == "GET":
+                continue       # nothing changed anywhere; the next host may do
+            return (504, json.dumps({"error": "castle took the request but "
+                    "did not answer in time — it may have landed; check "
+                    "before sending again"}).encode(), "application/json")
+        # The castle ANSWERED — its verdict stands, error or not.
+        if 200 <= code < 300:
+            _cache["up"] = (time.monotonic(), {"host": host})
+            if method != "GET":
+                # The desk re-polls ~1 s after a click; a status cached
+                # BEFORE the click would hand it the old world (J1-5).
+                _cache.pop("status", None)
+        return code, out, ctype
     if _forward_native(hosts[0], method, path_and_query):
+        _cache.pop("status", None)
         return 200, b'{"queued":true}', "application/json"
     return 502, b'{"error": "castle not reachable"}', "application/json"
 
 
 def _forward_native(host: str, method: str, path_and_query: str) -> bool:
-    """The flash build's translation of the desk's three POST verbs."""
-    if method != "POST":
+    """The flash build's translation of the desk's three POST verbs.
+
+    Only with a live native session: a dead castle must 502 for EVERY verb,
+    and the stubs below cannot tell "nothing to press" from "pressed".
+    """
+    if method != "POST" or not castle_native.connected(host):
         return False
     parts = urlsplit(path_and_query)
     q = parse_qs(parts.query)

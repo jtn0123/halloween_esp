@@ -15,6 +15,7 @@ import sys
 import tempfile
 import time
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -123,6 +124,50 @@ class TestQueuedSemantics(EmuCase):
             _wait(lambda: self.status()["track"] == "wicked_winds.mp3"))
         self.http("POST", "/api/stop")
         self.assertTrue(_wait(lambda: self.status()["track"] == ""))
+
+
+class TestShowNightRoutes(EmuCase):
+    def test_blackout_is_bookmarkable(self) -> None:
+        """sd_web.h registers /api/blackout for GET as well as POST."""
+        self.http("POST", "/api/scene?s=storm")
+        self.assertTrue(_wait(lambda: self.status()["scene"] == "storm"))
+        code, body = self.http("GET", "/api/blackout")
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(body), {"queued": True})
+        self.assertTrue(_wait(lambda: self.status()["scene"] == ""))
+
+
+class TestSceneSeeding(unittest.TestCase):
+    """The emulator knows the SAME scene ids the firmware would: the show's
+    scenes.yaml, not a hard-coded four (pass-1 J1-10 — five of nine desk
+    picks 404ed on the bench)."""
+
+    def test_ids_come_from_a_scenes_yaml(self) -> None:
+        tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
+        tmp.write_text("scenes:\n  - id: seance\n  - id: crypt\n")
+        self.assertEqual(castle_emu.show_scene_ids(tmp), ["seance", "crypt", "stop"])
+
+    def test_castle_scenes_env_is_honoured(self) -> None:
+        tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
+        tmp.write_text("scenes:\n  - id: only_this\n")
+        with unittest.mock.patch.dict(castle_emu.os.environ, {"CASTLE_SCENES": str(tmp)}):
+            emu = castle_emu.CastleEmu(port=0)
+        self.addCleanup(emu.server_close)
+        self.assertEqual(emu.scenes, ["only_this", "stop"])
+
+    def test_unreadable_show_falls_back_to_the_defaults(self) -> None:
+        self.assertIsNone(castle_emu.show_scene_ids(Path("/no/such/scenes.yaml")))
+        with unittest.mock.patch.dict(castle_emu.os.environ,
+                                      {"CASTLE_SCENES": "/no/such/scenes.yaml"}):
+            emu = castle_emu.CastleEmu(port=0)
+        self.addCleanup(emu.server_close)
+        self.assertEqual(emu.scenes, castle_emu.DEFAULT_SCENES)
+
+    def test_the_repo_show_seeds_the_default_emulator(self) -> None:
+        ids = castle_emu.show_scene_ids()
+        assert ids is not None
+        self.assertIn("vigil", ids)
+        self.assertGreater(len(ids), 5)
 
 
 class TestCardRoundTrip(EmuCase):

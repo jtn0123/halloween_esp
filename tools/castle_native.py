@@ -104,6 +104,17 @@ def _get(host: str) -> _Link:
         return _links[host]
 
 
+def connected(host: str) -> bool:
+    """Is the native leg actually talking to `host` right now?
+
+    The bridge asks this BEFORE translating a verb: a castle that serves no
+    HTTP and has no native session is simply down, and every verb must say
+    so. (Pass 1 of the dogfood found Stop answering 200 "queued" to a dead
+    castle, because the stub's key lookups all came back empty.)
+    """
+    return _get(host).connected
+
+
 def status(host: str) -> dict[str, Any] | None:
     """The desk's status shape, from native entity state; None if offline."""
     ln = _get(host)
@@ -140,6 +151,10 @@ def stop(host: str) -> bool:
     """The desk's Stop: halt audio, then blackout the zones."""
     ln = _get(host)
     media, blackout = ln.keys.get("castle_audio"), ln.keys.get("blackout")
+    # Nothing to press means nothing was stopped: False, never a vacuous
+    # True — "press ■, see ✓, castle keeps blaring" is the worst night.
+    if not ln.connected or (media is None and blackout is None):
+        return False
     ok = True
     if media is not None:
         ok &= ln._submit(lambda api: api.media_player_command(
