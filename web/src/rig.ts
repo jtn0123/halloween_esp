@@ -237,15 +237,17 @@ export interface RigState {
 
 const KEY = "castle.rig";
 
-/** The rig as built today: three RGBW Jewels, one chain. Matches scenes.yaml
- *  so a desk with no saved rig previews the castle that exists. */
+/** The rig as built today: two RGBW Jewels in the towers and an RGB Ring 12
+ *  in the doorway, a pin per zone. Matches the `zones:` block in scenes.yaml
+ *  (`rgbw: false` on the door) so a desk with no saved rig previews the
+ *  castle that exists — including that the ring has no white die. */
 export const DEFAULT_RIG: RigState = {
   zones: {
     towerL: { fixture: "jewel7" },
     door: { fixture: "ring12" },
     towerR: { fixture: "jewel7" },
   },
-  rgbw: { jewel7: true, stick8: true, ring12: true, ring16: true },
+  rgbw: { jewel7: true, stick8: true, ring12: false, ring16: true },
 };
 
 const isSlot = (v: unknown): v is Slot =>

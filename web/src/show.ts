@@ -16,7 +16,7 @@ import {
   EFFECTS, effect, toScreen, pixelSeed, applyOverlay, flashGate,
   overlayIndex, paletteIndex, flashModeIndex, type EffectParams,
 } from "./effects.js";
-import { DEFAULT_RIG, fixture, layoutOf, type Layout } from "./rig.js";
+import { DEFAULT_RIG, zoneLayout, zoneRgbw, type Layout } from "./rig.js";
 import type { Cue, EffectName, Rgbw, Scene, StrikeColor, ZoneId } from "./types.js";
 
 export const ZONE_IDS: readonly ZoneId[] = ["towerL", "towerR", "door"];
@@ -27,6 +27,8 @@ const DEFAULT_DECAY = 0.90;
 type PerZone<T> = Record<ZoneId, T>;
 const perZone = <T,>(make: () => T): PerZone<T> =>
   ({ towerL: make(), towerR: make(), door: make() });
+const byZone = <T,>(make: (id: ZoneId) => T): PerZone<T> =>
+  ({ towerL: make("towerL"), towerR: make("towerR"), door: make("door") });
 
 /** One zone's rendered output: every pixel of whatever fixture is in that
  *  spot, plus their average for the meters and the castle wash. */
@@ -71,10 +73,15 @@ export interface ShowState {
 
   /** What fixture is in each spot, and therefore how many pixels the zone
    *  has and how they sit in space. Set from the rig panel; the default is
-   *  the castle as built (three Jewels). Every overlay reads it, which is
+   *  the castle as built (DEFAULT_RIG). Every overlay reads it, which is
    *  what lets a chase orbit a Ring 16 instead of pretending it has six
    *  pixels and a middle. */
   layout: PerZone<Layout>;
+  /** Whether the fixture in each spot has a white die. On the device an RGB
+   *  strip simply drops the W byte (`is_rgbw: false`), so a candle's warm
+   *  body never reaches a Ring 12 — and the preview must not paint it. Set
+   *  from the rig alongside `layout`; the default is the castle as built. */
+  rgbw: PerZone<boolean>;
 
   /* Per-pixel texture — the "not every pixel the same" state. Every field
      mirrors a firmware global; see the zone lambda in castle.yaml. */
@@ -109,7 +116,8 @@ export function createState(scene: Scene, now: number): ShowState {
     level: perZone(() => 1),
     latency: 70,
     soft: false,
-    layout: perZone(() => layoutOf(fixture(DEFAULT_RIG.zones.towerL.fixture))),
+    layout: byZone((id) => zoneLayout(DEFAULT_RIG, id)),
+    rgbw: byZone((id) => zoneRgbw(DEFAULT_RIG, id)),
     centerEff: perZone<EffectName | null>(() => null),
     overlay: perZone(() => 0),
     palette: perZone(() => 0),
@@ -274,7 +282,10 @@ export function renderZones(st: ShowState, ts: number, P: EffectParams): ZoneRen
       let c = fn(tz, pixelSeed(zi, p), P);
       c = applyOverlay(ov, c, tz, p, zi, L);
       const f = fBase * flashGate(st.flashMode[id], p, zi, st.flashEpoch[id], L);
-      const lit: Rgbw = [c[0] * lv, c[1] * lv, c[2] * lv, c[3] * lv + f * fc[3]];
+      // An RGB fixture has no white die: the device drops the W byte on the
+      // way out (is_rgbw: false), so the screen drops it here too.
+      const w = st.rgbw[id] ? c[3] * lv + f * fc[3] : 0;
+      const lit: Rgbw = [c[0] * lv, c[1] * lv, c[2] * lv, w];
       const [sr, sg, sb] = toScreen(lit);
       const r = Math.min(1, sr * P.bright + f * fc[0]);
       const g = Math.min(1, sg * P.bright + f * fc[1]);
@@ -319,6 +330,7 @@ export function step(
 ): Frame {
   const sc = st.scene;
   let el = st.running ? nowMs - st.t0 : st.held;
+  let ended = false;
 
   if (el > sc.dur) {
     if (sc.loop) {
@@ -328,11 +340,16 @@ export function step(
     } else {
       el = sc.dur;
       st.held = el;
-      onEnded();
+      ended = true;
     }
   }
 
+  // Cues first, then the end signal: the transport stops the show in
+  // onEnded, and a cue sitting on the scene's last millisecond must still
+  // land in the frame that reaches it — the device fires it (no tail delay
+  // is emitted when the last cue is at the end; see gen_esphome.py).
   if (st.running) fireCues(st, el, onAudio);
+  if (ended) onEnded();
   decayFlashes(st);
 
   const { flash, color } = dominantFlash(st);

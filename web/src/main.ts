@@ -18,7 +18,7 @@ import { deviceBridge } from "./device.js";
 import { defaultParams } from "./effects.js";
 import { PixelInsets } from "./insets.js";
 import { createZoneDesigner } from "./zone_designer.js";
-import { loadRig, zoneLayout, ZONE_ORDER } from "./rig.js";
+import { loadRig, zoneLayout, zoneRgbw, ZONE_ORDER } from "./rig.js";
 import { createRigPanel } from "./rig_panel.js";
 import { Panels } from "./panels.js";
 import { createState, step } from "./show.js";
@@ -63,7 +63,10 @@ const stage = new Stage(canvas);
    and the channel strip. See rig.ts. */
 const rig = loadRig();
 function applyRig(): void {
-  for (const z of ZONE_ORDER) state.layout[z] = zoneLayout(rig, z);
+  for (const z of ZONE_ORDER) {
+    state.layout[z] = zoneLayout(rig, z);
+    state.rgbw[z] = zoneRgbw(rig, z);   // an RGB strip drops W on the device; so does the screen
+  }
   insets.setRig(rig);
   panels.renderChannels(rig);
 }

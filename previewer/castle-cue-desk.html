@@ -1244,6 +1244,11 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
     constructor(audio) {
       this.els = /* @__PURE__ */ new Map();
       this.fadeTimer = null;
+      /** The pending start: play() waits out `latency` before the element runs.
+       *  Stop/pause/another play inside that window must cancel it, or the file
+       *  starts AFTER the Stop — and a scene switched within the window starts
+       *  both files (the outgoing one late). */
+      this.startTimer = null;
       /** Master level, 0..1. Scene `volume` multiplies on top of this. */
       this.volume = 0.6;
       /** Starts muted. Nothing here should make noise you did not ask for. */
@@ -1273,6 +1278,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
       return el2 ? el2.currentTime * 1e3 : null;
     }
     stopAll() {
+      this.cancelStart();
       this.clearFade();
       for (const el2 of this.els.values()) {
         el2.pause();
@@ -1280,6 +1286,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
       }
     }
     pauseAll() {
+      this.cancelStart();
       this.clearFade();
       for (const el2 of this.els.values()) el2.pause();
     }
@@ -1294,6 +1301,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
     play(sc, fromMs = 0) {
       const el2 = this.els.get(sc.id);
       if (!el2) return false;
+      this.cancelStart();
       const target = Math.min(1, this.volume * (sc.volume ?? 0.8));
       el2.muted = this.muted;
       el2.loop = Boolean(sc.loop);
@@ -1302,7 +1310,8 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
         el2.currentTime = Math.max(0, fromMs) / 1e3;
       } catch {
       }
-      setTimeout(() => {
+      this.startTimer = setTimeout(() => {
+        this.startTimer = null;
         void el2.play().catch(() => {
         });
         this.clearFade();
@@ -1336,6 +1345,12 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
         if (!el2) continue;
         el2.muted = this.muted;
         el2.volume = Math.min(1, this.volume * (sc.volume ?? 0.8));
+      }
+    }
+    cancelStart() {
+      if (this.startTimer !== null) {
+        clearTimeout(this.startTimer);
+        this.startTimer = null;
       }
     }
     clearFade() {
@@ -1544,7 +1559,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
       door: { fixture: "ring12" },
       towerR: { fixture: "jewel7" }
     },
-    rgbw: { jewel7: true, stick8: true, ring12: true, ring16: true }
+    rgbw: { jewel7: true, stick8: true, ring12: false, ring16: true }
   };
   var isSlot = (v) => typeof v === "object" && v !== null && typeof v.fixture === "string" && FIXTURES.some((f) => f.id === v.fixture);
   function loadRig() {
@@ -2838,6 +2853,13 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     });
   }
   var isCastleBusy = () => busy > 0;
+  var cardFns = /* @__PURE__ */ new Set();
+  function cardChanged() {
+    for (const f of cardFns) f();
+  }
+  function onCardChanged(f) {
+    cardFns.add(f);
+  }
 
   // src/device_chip.ts
   var sdText = (s) => s.sd_mounted === void 0 ? "" : s.sd_mounted ? " \xB7 SD ok" : " \xB7 no SD";
@@ -2913,7 +2935,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         return;
       }
       const tracks2 = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
-      this.body.innerHTML = `<div style="padding:.6rem .8rem;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:.4rem"><span style="flex:1"><b>\u{1F3F0} v${st.version}</b> \xB7 up ${fmtUptime(st.uptime_s)}` + (st.sd_free_kb ? ` \xB7 card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") + ` <small title="Free working memory (PSRAM) \u2014 what the SD turntable runs on">\xB7 ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span><button id="dpClose" title="Close this panel" aria-label="Close" style="cursor:pointer;background:none;border:0;color:var(--muted);font-size:14px;padding:0 .2rem">\u2715</button></div><div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2)"><button id="dpPlaylist" title="Every scene in order with dark gaps, looping until stopped \u2014 the whole evening on one button" style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;background:${st.show_on ? "var(--alarm)" : "var(--spirit)"};color:#fff">${st.show_on ? "\u25A0 stop the show" : "\u25B6 start the show"}</button>` + (st.show_on && st.scene ? ` <small style="color:var(--muted)">now: ${st.scene}</small>` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2);display:flex;gap:.5rem;align-items:center" title="Park every pixel on one colour, or give them back to the show">\u{1F4A1} <small style="color:var(--muted)">lights</small> <input id="dpColor" type="color" value="#ff8c1e" title="Park the pixels on a colour" style="cursor:pointer"><button id="dpShow" title="Hand the pixels back to the scene engine" style="cursor:pointer;background:var(--panel);color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">resume show</button><button id="dpOff" style="cursor:pointer;background:none;color:var(--muted);border:1px solid var(--line-2);border-radius:6px;padding:.2rem .5rem">off</button></div><div style="max-height:180px;overflow:auto" id="dpFiles">` + (tracks2.length && st.bridged ? `<div style="padding:.5rem .8rem;color:var(--muted)">${tracks2.length} track${tracks2.length === 1 ? "" : "s"} on the card \u2014 see the Library below (\u{1F3F0} rows and badges)</div>` : tracks2.length ? tracks2.map((f, i) => `<div style="display:flex;gap:.4rem;align-items:center;padding:.3rem .8rem"><button data-play="${i}" title="Play on the castle" style="cursor:pointer;background:var(--panel);color:inherit;border:0;border-radius:6px;padding:.15rem .5rem">\u25B6</button><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}</span><small style="color:var(--muted)">${kb3(f.size)}</small><button data-del="${i}" title="Delete from the card" style="cursor:pointer;background:none;color:var(--muted);border:0">\u2715</button></div>`).join("") : `<div style="padding:.5rem .8rem;color:var(--muted)">${st.sd_mounted ? "no tracks on the card yet \u2014 drop audio below, or press \u2192 Castle on a track in the Library" : "no SD card"}</div>`) + `</div><div style="padding:.5rem .8rem;border-top:1px solid var(--line-2)" title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">\u{1F463} <small style="color:var(--muted)">motion sensor</small> <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> <select id="dpPirScene">` + sceneIds().map((s) => `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") + `</select> <input id="dpPirCool" type="number" min="5" max="600" step="5" value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="Cooldown: seconds before the sensor can fire again"><small style="color:var(--muted)"> s between triggers</small></div><div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed var(--line-2);color:var(--muted);text-align:center">drop audio files here to upload</div><div style="padding:.4rem .8rem;border-top:1px solid var(--line-2)"><button id="dpLog" style="cursor:pointer;background:none;border:0;color:var(--muted)">boot log \u25B8</button><pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre></div>`;
+      this.body.innerHTML = `<div style="padding:.6rem .8rem;border-bottom:1px solid var(--line-2);display:flex;align-items:center;gap:.4rem"><span style="flex:1"><b>\u{1F3F0} v${st.version}</b> \xB7 up ${fmtUptime(st.uptime_s)}` + (st.sd_free_kb ? ` \xB7 card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") + ` <small title="Free working memory (PSRAM) \u2014 what the SD turntable runs on">\xB7 ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span><button id="dpClose" title="Close this panel" aria-label="Close" style="cursor:pointer;background:none;border:0;color:var(--muted);font-size:14px;padding:0 .2rem">\u2715</button></div><div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2)"><button id="dpPlaylist" title="Every scene in order with dark gaps, looping until stopped \u2014 the whole evening on one button" style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;background:${st.show_on ? "var(--alarm)" : "var(--spirit)"};color:#fff">${st.show_on ? "\u25A0 stop the show" : "\u25B6 start the show"}</button>` + (st.show_on && st.scene ? ` <small style="color:var(--muted)">now: ${st.scene}</small>` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2);display:flex;gap:.5rem;align-items:center" title="Park every pixel on one colour, or give them back to the show">\u{1F4A1} <small style="color:var(--muted)">lights</small> <input id="dpColor" type="color" value="#ff8c1e" title="Park the pixels on a colour" style="cursor:pointer"><button id="dpShow" title="Hand the pixels back to the scene engine" style="cursor:pointer;background:var(--panel);color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">resume show</button><button id="dpOff" style="cursor:pointer;background:none;color:var(--muted);border:1px solid var(--line-2);border-radius:6px;padding:.2rem .5rem">off</button></div><div style="max-height:180px;overflow:auto" id="dpFiles">` + (tracks2.length && st.bridged ? `<div style="padding:.5rem .8rem;color:var(--muted)">${tracks2.length} track${tracks2.length === 1 ? "" : "s"} on the card \u2014 see the Library below (\u{1F3F0} rows and badges)</div>` : tracks2.length ? tracks2.map((f, i) => `<div style="display:flex;gap:.4rem;align-items:center;padding:.3rem .8rem"><button data-play="${i}" title="Play on the castle" style="cursor:pointer;background:var(--panel);color:inherit;border:0;border-radius:6px;padding:.15rem .5rem">\u25B6</button><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}</span><small style="color:var(--muted)">${kb3(f.size)}</small><button data-del="${i}" title="Delete from the card" style="cursor:pointer;background:none;color:var(--muted);border:0">\u2715</button></div>`).join("") : `<div style="padding:.5rem .8rem;color:var(--muted)">${st.sd_mounted ? "no tracks on the card yet \u2014 drop audio below, or press \u2192 Castle on a track in the Library" : "no SD card"}</div>`) + `</div><div style="padding:.5rem .8rem;border-top:1px solid var(--line-2)" title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">\u{1F463} <small style="color:var(--muted)">motion sensor</small> <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> <select id="dpPirScene" title="Which scene the motion sensor plays">` + sceneIds().map((s) => `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") + `</select> <input id="dpPirCool" type="number" min="5" max="600" step="5" value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="Cooldown: seconds before the sensor can fire again"><small style="color:var(--muted)"> s between triggers</small></div><div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed var(--line-2);color:var(--muted);text-align:center">drop audio files here to upload</div><div style="padding:.4rem .8rem;border-top:1px solid var(--line-2)"><button id="dpLog" style="cursor:pointer;background:none;border:0;color:var(--muted)">boot log \u25B8</button><pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre></div>`;
       this.body.querySelector("#dpClose").addEventListener("click", () => this.toggle());
       this.body.querySelector("#dpPlaylist").addEventListener("click", () => {
         void castleAct(
@@ -2944,7 +2966,10 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
           `deleted ${f.name} from the card`,
           { method: "DELETE" }
         ).then((ok) => {
-          if (ok) void this.render();
+          if (ok) {
+            cardChanged();
+            void this.render();
+          }
         });
       }));
       this.body.querySelector("#dpPirArm").addEventListener("change", (e) => {
@@ -2984,6 +3009,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
           );
           drop.textContent = r.ok ? `\u2713 ${f.name}` : `\u2717 ${f.name} failed`;
         }
+        cardChanged();
         void this.render();
       });
       const logBtn = this.body.querySelector("#dpLog");
@@ -3260,7 +3286,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         act(`/api/scene?s=${encodeURIComponent(id)}`, `scene ${id}`);
       },
       stop() {
-        if (!live2) return;
+        if (!live2 || !mirror) return;
         act("/api/stop", "stop");
       }
     };
@@ -3482,7 +3508,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       const rgbw2 = zoneRgbw(rig2, z);
       const kind = fx.rgbOnly ? `<span class="rig__fixed" title="${fx.name} was only ever made RGB">RGB</span>` : `<label class="rig__rgbw" title="Tick if yours is the RGBW variant \u2014 it changes the packet from 24 to 32 bits per pixel"><input type="checkbox" class="rigW" data-z="${z}"${rgbw2 ? " checked" : ""}><span>RGBW</span></label>`;
       const count = fx.maxCount ? `<input class="rigN" type="number" data-z="${z}" min="1" max="${fx.maxCount}" value="${L.n}" title="How many singles are in this spot">` : `<span class="rig__px">${L.n}px</span>`;
-      return `<tr><td class="rig__spot">${SPOT[z]}<small>GPIO${ZONE_PIN[z]}</small></td><td><select class="rigF" data-z="${z}">${opts(slot.fixture)}</select></td><td>${count}</td><td>${kind}</td></tr>`;
+      return `<tr><td class="rig__spot">${SPOT[z]}<small>GPIO${ZONE_PIN[z]}</small></td><td><select class="rigF" data-z="${z}" title="Which fixture is in the ${SPOT[z]} spot">${opts(slot.fixture)}</select></td><td>${count}</td><td>${kind}</td></tr>`;
     }
     function retitleMasthead(pixels) {
       const eyebrow = document.getElementById("rigEyebrow");
@@ -3591,6 +3617,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
   var WHITE = [1, 1, 1, 1];
   var DEFAULT_DECAY = 0.9;
   var perZone = (make) => ({ towerL: make(), towerR: make(), door: make() });
+  var byZone = (make) => ({ towerL: make("towerL"), towerR: make("towerR"), door: make("door") });
   function createState(scene, now) {
     return {
       scene,
@@ -3607,7 +3634,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       level: perZone(() => 1),
       latency: 70,
       soft: false,
-      layout: perZone(() => layoutOf(fixture(DEFAULT_RIG.zones.towerL.fixture))),
+      layout: byZone((id) => zoneLayout(DEFAULT_RIG, id)),
+      rgbw: byZone((id) => zoneRgbw(DEFAULT_RIG, id)),
       centerEff: perZone(() => null),
       overlay: perZone(() => 0),
       palette: perZone(() => 0),
@@ -3720,7 +3748,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         let c = fn(tz, pixelSeed(zi, p), P2);
         c = applyOverlay(ov, c, tz, p, zi, L);
         const f = fBase * flashGate(st.flashMode[id], p, zi, st.flashEpoch[id], L);
-        const lit = [c[0] * lv, c[1] * lv, c[2] * lv, c[3] * lv + f * fc[3]];
+        const w = st.rgbw[id] ? c[3] * lv + f * fc[3] : 0;
+        const lit = [c[0] * lv, c[1] * lv, c[2] * lv, w];
         const [sr, sg, sb] = toScreen(lit);
         const r = Math.min(1, sr * P2.bright + f * fc[0]);
         const g = Math.min(1, sg * P2.bright + f * fc[1]);
@@ -3749,6 +3778,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
   function step(st, nowMs, P2, onAudio, onEnded) {
     const sc = st.scene;
     let el2 = st.running ? nowMs - st.t0 : st.held;
+    let ended = false;
     if (el2 > sc.dur) {
       if (sc.loop) {
         el2 %= sc.dur;
@@ -3757,10 +3787,11 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       } else {
         el2 = sc.dur;
         st.held = el2;
-        onEnded();
+        ended = true;
       }
     }
     if (st.running) fireCues(st, el2, onAudio);
+    if (ended) onEnded();
     decayFlashes(st);
     const { flash, color } = dominantFlash(st);
     return {
@@ -4626,6 +4657,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       this.d.synth.newShowBus();
       this.d.rendered.stopAll();
       this.d.synth.stopWind();
+      this.d.onBlackout?.();
     }
     restart() {
       this.loadScene(this.st.scene, { play: this.st.running });
@@ -5006,6 +5038,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     };
     window.setInterval(poll, intervalMs);
     onCastlePresence(() => poll());
+    onCardChanged(() => poll());
   }
   function wireCardActions(deps) {
     deps.syncBtn.addEventListener("click", async () => {
@@ -7522,7 +7555,10 @@ ${lines.join("\n")}
   var stage = new Stage(canvas);
   var rig = loadRig();
   function applyRig() {
-    for (const z of ZONE_ORDER) state.layout[z] = zoneLayout(rig, z);
+    for (const z of ZONE_ORDER) {
+      state.layout[z] = zoneLayout(rig, z);
+      state.rgbw[z] = zoneRgbw(rig, z);
+    }
     insets.setRig(rig);
     panels.renderChannels(rig);
   }
@@ -7580,7 +7616,10 @@ ${lines.join("\n")}
       players?.tracks.stopPreview();
       players?.codecs.stop();
     },
-    isExternalPlaying: () => players?.tracks.previewing() ?? false
+    isExternalPlaying: () => players?.tracks.previewing() ?? false,
+    // ■ Stop / Esc reach the castle too (when one is mirroring): the desk
+    // fired the scene on the porch, so the desk's own Stop must end it.
+    onBlackout: () => device.stop()
   });
   var adopting = false;
   var device = deviceBridge({

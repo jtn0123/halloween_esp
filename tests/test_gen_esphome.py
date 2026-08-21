@@ -385,6 +385,21 @@ class TestGenEsphomeMain(unittest.TestCase):
             self.assertIn(f"id(zone_effect)[{i}] = 0;", lam)
             self.assertIn(f"id(zone_flash)[{i}] = 0.0f;", lam)
 
+    def test_blackout_clears_the_centre_role_and_overlay_too(self) -> None:
+        """zone_effect = 0 alone is not dark. The render loop draws the centre
+        pixel from zone_center when one is set, and every overlay adds light
+        on top of a black base (sparkle glints, a meteor's white drip, the
+        chase's white head) — so a stop that left those standing kept vigil's
+        centre embers lit and the door sparkling through the playlist gap."""
+        ge.main()
+        doc = yaml.safe_load(ge.OUT.read_text())
+        lam = next(s for s in doc["script"]
+                   if s["id"] == "scene_stop")["then"][0]["lambda"]
+        for i in range(len(ZONES)):
+            self.assertIn(f"id(zone_center)[{i}] = -1;", lam)
+            self.assertIn(f"id(zone_overlay)[{i}] = 0;", lam)
+            self.assertIn(f"id(zone_flash_target)[{i}] = 0.0f;", lam)
+
     def test_pixel_map_is_written_into_the_header_comment(self) -> None:
         ge.main()
         text = ge.OUT.read_text()

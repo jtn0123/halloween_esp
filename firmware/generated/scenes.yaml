@@ -2818,7 +2818,7 @@ script:
   - id: scene_stop
     mode: restart
     then:
-      - lambda: 'id(zone_effect)[0] = 0; id(zone_flash)[0] = 0.0f; id(zone_effect)[1] = 0; id(zone_flash)[1] = 0.0f; id(zone_effect)[2] = 0; id(zone_flash)[2] = 0.0f;'
+      - lambda: 'id(zone_effect)[0] = 0; id(zone_center)[0] = -1; id(zone_overlay)[0] = 0; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_effect)[1] = 0; id(zone_center)[1] = -1; id(zone_overlay)[1] = 0; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_effect)[2] = 0; id(zone_center)[2] = -1; id(zone_overlay)[2] = 0; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f;'
       - media_player.stop:
       - text_sensor.template.publish:
           id: current_scene

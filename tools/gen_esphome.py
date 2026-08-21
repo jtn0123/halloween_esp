@@ -229,12 +229,23 @@ def main() -> int:
         out.extend(emit_scene(scene, zones, i, markers))
 
     # A single stop script, so "blackout" is one call from anywhere.
+    #
+    # It clears the whole per-zone texture, not just the base effect. The
+    # render loop draws the centre pixel from zone_center whenever that is
+    # set, and composites the overlay on top of whatever the base is — so a
+    # stop that only zeroed zone_effect left vigil's centre embers burning
+    # and the door still sparkling, on a castle that was supposed to be dark
+    # (tests/cxx/render_check.cpp shows sparkle/meteor/chase all ADD light
+    # to a black base). A pending strike swell is cancelled for the same
+    # reason: it would otherwise climb, then fall, after the stop.
     out.append("  # ── Blackout ─────────────────────────────────────")
     out.append("  - id: scene_stop")
     out.append("    mode: restart")
     out.append("    then:")
     stop = " ".join(
-        f"id(zone_effect)[{i}] = 0; id(zone_flash)[{i}] = 0.0f;" for i in range(len(zones))
+        f"id(zone_effect)[{i}] = 0; id(zone_center)[{i}] = -1;"
+        f" id(zone_overlay)[{i}] = 0; id(zone_flash)[{i}] = 0.0f;"
+        f" id(zone_flash_target)[{i}] = 0.0f;" for i in range(len(zones))
     )
     out.append(f"      - lambda: '{stop}'")
     out.append("      - media_player.stop:")
