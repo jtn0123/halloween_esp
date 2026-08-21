@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -71,7 +72,7 @@ class CastleEmu(ThreadingHTTPServer):
     daemon_threads = True
 
     def __init__(self, port: int = 0, sd_dir: Path | None = None,
-                 scenes: list[str] | None = None, version: str = "5.22",
+                 scenes: list[str] | None = None, version: str = "5.23",
                  wedge: bool = False, sd_mounted: bool = True) -> None:
         super().__init__(("127.0.0.1", port), _Handler)
         self.state = _State()
@@ -144,12 +145,18 @@ class CastleEmu(ThreadingHTTPServer):
 
     def status_json(self) -> dict[str, object]:
         st = self.state
+        # Real numbers from the disk under the card dir — the point is that
+        # the field EXISTS and is honest, same as v5.23's esp_vfs_fat_info.
+        du = shutil.disk_usage(self.sd_dir)
         with st.lock:
             return {
                 "version": self.version, "compiled": "emulated",
                 "uptime_s": int(time.monotonic() - st.boot),
                 "sd_mounted": self.sd_mounted,
-                "psram_free_kb": 1800, "heap_free_kb": 96, "missing": "",
+                "psram_free_kb": 1800, "heap_free_kb": 96,
+                "sd_total_kb": du.total // 1024 if self.sd_mounted else 0,
+                "sd_free_kb": du.free // 1024 if self.sd_mounted else 0,
+                "missing": "",
                 "volume": st.volume, "scene": st.scene, "track": st.track,
                 "show_on": st.show_on,
                 "pir": {"armed": st.pir["armed"],

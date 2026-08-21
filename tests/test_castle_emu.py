@@ -73,10 +73,11 @@ class TestStatusShape(EmuCase):
         of these; a missing one renders as a lie (dogfood ISSUE-001)."""
         st = self.status()
         for key in ("version", "uptime_s", "sd_mounted", "psram_free_kb",
-                    "heap_free_kb", "volume", "scene", "track", "show_on",
-                    "pir"):
+                    "heap_free_kb", "sd_total_kb", "sd_free_kb", "volume",
+                    "scene", "track", "show_on", "pir"):
             self.assertIn(key, st)
         self.assertEqual(st["sd_mounted"], True)
+        self.assertGreater(st["sd_free_kb"], 0)   # v5.23: the card reports room
         for key in ("armed", "cooldown_s", "scene"):
             self.assertIn(key, st["pir"])
 
@@ -160,8 +161,25 @@ class TestBridge(EmuCase):
         st = castle_link.status()
         self.assertIsNotNone(st)
         assert st is not None
-        self.assertEqual(st["version"], "5.22")
+        self.assertEqual(st["version"], "5.23")
         self.assertEqual(st["bridged"], f"127.0.0.1:{self.emu.port}")
+
+    def test_dead_primary_falls_through_to_a_live_fallback(self) -> None:
+        """CASTLE_HOST can list addresses; a re-leased IP must not kill the
+        bridge while a fallback still answers (devices.toml `fallbacks`)."""
+        castle_link.os.environ["CASTLE_HOST"] = \
+            f"127.0.0.1:1,127.0.0.1:{self.emu.port}"
+        castle_link._cache.clear()
+        st = castle_link.status()
+        self.assertIsNotNone(st)
+        assert st is not None
+        self.assertEqual(st["bridged"], f"127.0.0.1:{self.emu.port}")
+        # Commands ride the same fallback.
+        code, _, _ = castle_link.forward("POST", "/api/volume?v=55")
+        self.assertEqual(code, 200)
+        # The live host is remembered and tried first from now on.
+        self.assertEqual(castle_link.castle_hosts()[0],
+                         f"127.0.0.1:{self.emu.port}")
 
     def test_forward_relays_verdicts_verbatim(self) -> None:
         code, _, _ = castle_link.forward("POST", "/api/volume?v=40")

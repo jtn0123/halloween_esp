@@ -56,21 +56,43 @@ _DOWN_TTL_S = 3.0
 _cache: dict[str, tuple[float, dict]] = {}
 
 
-def castle_host() -> str | None:
-    """The castle's address, or None when nothing is configured."""
+def castle_hosts() -> list[str]:
+    """Every address worth trying, best first.
+
+    CASTLE_HOST may hold a comma-separated list; devices.toml entries may
+    carry `fallbacks = [...]` beside `host`. Until the DHCP reservation
+    exists, a router re-leasing the castle's IP silently killed the bridge —
+    the fallback list is the belt to that suspender. Whichever host last
+    answered is remembered and tried first.
+    """
     env = os.environ.get("CASTLE_HOST")
     if env is not None:
         # Set-but-empty means "explicitly no castle" — the e2e suite uses it
         # so a live device on the LAN cannot flip test expectations.
-        return env or None
-    try:
-        doc = tomllib.loads(DEVICES.read_text())
-    except (OSError, tomllib.TOMLDecodeError):
-        return None
-    for entry in doc.values():
-        if isinstance(entry, dict) and entry.get("host"):
-            return str(entry["host"])
-    return None
+        hosts = [h.strip() for h in env.split(",") if h.strip()]
+    else:
+        hosts = []
+        try:
+            doc = tomllib.loads(DEVICES.read_text())
+        except (OSError, tomllib.TOMLDecodeError):
+            doc = {}
+        for entry in doc.values():
+            if isinstance(entry, dict) and entry.get("host"):
+                hosts.append(str(entry["host"]))
+                hosts.extend(str(h) for h in entry.get("fallbacks", []))
+    up = _cache.get("up")
+    if up:
+        h = str(up[1].get("host", ""))
+        if h in hosts:
+            hosts.remove(h)
+            hosts.insert(0, h)
+    return hosts
+
+
+def castle_host() -> str | None:
+    """The castle's current best address, or None when none is configured."""
+    hosts = castle_hosts()
+    return hosts[0] if hosts else None
 
 
 def status() -> dict | None:
@@ -85,24 +107,29 @@ def status() -> dict | None:
     down = _cache.get("down")
     if down and time.monotonic() - down[0] < _DOWN_TTL_S:
         return None
-    host = castle_host()
-    if host is None:
+    hosts = castle_hosts()
+    if not hosts:
         return None
-    try:
-        with urllib.request.urlopen(
-                f"http://{host}/api/status", timeout=TIMEOUT_S) as r:
-            data = json.loads(r.read())
-    except (OSError, ValueError):
-        data = None
+    data, good = None, hosts[0]
+    for host in hosts:
+        try:
+            with urllib.request.urlopen(
+                    f"http://{host}/api/status", timeout=TIMEOUT_S) as r:
+                data, good = json.loads(r.read()), host
+                break
+        except (OSError, ValueError):
+            continue
     if not isinstance(data, dict):
         # No HTTP server is what the flash build looks like — try the
-        # native API before declaring the castle down.
-        data = castle_native.status(host)
+        # native API before declaring the castle down. Primary only: a
+        # native _Link per dead fallback would leak reconnect threads.
+        data = castle_native.status(hosts[0])
     if not isinstance(data, dict):
         _cache["down"] = (time.monotonic(), {})
         return None
     _cache.pop("down", None)
-    data["bridged"] = host
+    _cache["up"] = (time.monotonic(), {"host": good})
+    data["bridged"] = good
     _cache["status"] = (time.monotonic(), data)
     return data
 
@@ -115,22 +142,26 @@ def forward(method: str, path_and_query: str,
     back as-is — the desk's toasts already know how to say "failed" — and
     an unreachable castle is a 502, not an exception.
     """
-    host = castle_host()
-    if host is None:
+    hosts = castle_hosts()
+    if not hosts:
         return 502, b'{"error": "no castle configured"}', "application/json"
-    req = urllib.request.Request(f"http://{host}{path_and_query}",
-                                 data=body or None, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
-            return (r.status or 200, r.read(),
-                    r.headers.get("Content-Type") or "application/json")
-    except urllib.error.HTTPError as e:
-        return (e.code, e.read(),
-                e.headers.get("Content-Type") or "application/json")
-    except OSError:
-        if _forward_native(host, method, path_and_query):
-            return 200, b'{"queued":true}', "application/json"
-        return 502, b'{"error": "castle not reachable"}', "application/json"
+    for host in hosts:
+        req = urllib.request.Request(f"http://{host}{path_and_query}",
+                                     data=body or None, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+                _cache["up"] = (time.monotonic(), {"host": host})
+                return (r.status or 200, r.read(),
+                        r.headers.get("Content-Type") or "application/json")
+        except urllib.error.HTTPError as e:
+            # The castle ANSWERED — its verdict stands, no fallback needed.
+            return (e.code, e.read(),
+                    e.headers.get("Content-Type") or "application/json")
+        except OSError:
+            continue
+    if _forward_native(hosts[0], method, path_and_query):
+        return 200, b'{"queued":true}', "application/json"
+    return 502, b'{"error": "castle not reachable"}', "application/json"
 
 
 def _forward_native(host: str, method: str, path_and_query: str) -> bool:

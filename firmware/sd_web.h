@@ -110,6 +110,24 @@ inline std::string query_param(httpd_req_t *req, const char *key) {
 }
 
 // ── /api/status ─────────────────────────────────────────────────────────
+/// Card capacity, cached: f_getfree walks the FAT when FSINFO is stale,
+/// which can cost seconds on a big card — not a price every 15 s poll
+/// should pay. A minute of staleness on "GB free" costs nothing.
+inline void sd_space_kb(unsigned &total, unsigned &free_) {
+  static int64_t at = -60 * 1000000LL;
+  static unsigned t = 0, f = 0;
+  if (castle_sd::g_mounted && esp_timer_get_time() - at > 60 * 1000000LL) {
+    uint64_t tb = 0, fb = 0;
+    if (esp_vfs_fat_info("/sd", &tb, &fb) == ESP_OK) {
+      t = (unsigned) (tb / 1024);
+      f = (unsigned) (fb / 1024);
+    }
+    at = esp_timer_get_time();
+  }
+  total = castle_sd::g_mounted ? t : 0;
+  free_ = castle_sd::g_mounted ? f : 0;
+}
+
 inline esp_err_t h_status(httpd_req_t *req) {
   std::string scene, track, pir_scene, missing;
   {
@@ -117,10 +135,13 @@ inline esp_err_t h_status(httpd_req_t *req) {
     scene = g_scene; track = g_track; pir_scene = g_pir_scene;
     missing = g_missing;
   }
-  char buf[680];
+  unsigned sd_total = 0, sd_free = 0;
+  sd_space_kb(sd_total, sd_free);
+  char buf[760];
   snprintf(buf, sizeof(buf),
            "{\"version\":\"%s\",\"compiled\":\"%s %s\",\"uptime_s\":%lld,"
            "\"sd_mounted\":%s,\"psram_free_kb\":%u,\"heap_free_kb\":%u,"
+           "\"sd_total_kb\":%u,\"sd_free_kb\":%u,"
            "\"missing\":\"%s\","
            "\"volume\":%d,\"scene\":\"%s\",\"track\":\"%s\",\"show_on\":%s,"
            "\"pir\":{\"armed\":%s,\"cooldown_s\":%d,\"scene\":\"%s\"}}",
@@ -129,6 +150,7 @@ inline esp_err_t h_status(httpd_req_t *req) {
            castle_sd::g_mounted ? "true" : "false",
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
+           sd_total, sd_free,
            missing.c_str(),
            g_volume.load(), scene.c_str(), track.c_str(),
            g_show_on.load() ? "true" : "false",
