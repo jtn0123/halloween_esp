@@ -363,7 +363,6 @@ class TestWrites(ServerCase):
         self.assertFalse(d["ok"])
         self.assertIn("b", d["log"])
 
-
 class TestSceneEditing(ServerCase):
     """scenes.yaml is spliced as text, against a copy — never the real file."""
 
@@ -442,6 +441,27 @@ class TestSceneEditing(ServerCase):
         once = self.scenes.read_text()
         self.post_json("/api/scene", block)
         self.assertEqual(self.scenes.read_text(), once)
+
+    def test_rebuild_stops_at_the_first_failing_step(self) -> None:
+        """A failed render used to be followed by gen_esphome and
+        gen_previewer anyway, and the operator's one-line reason came from
+        the previewer's SUCCESS line — "Scene write failed — wrote 11
+        scenes…" (judge B, JB2-3)."""
+        render_err = ("scene    length   mp3   file\n"
+                      "ERROR: scene jb_drop: no such audio_file tracks/jb_drop.mp3\n")
+        with mock.patch.object(studio, "run", side_effect=[
+                (False, render_err), (True, "wrote castle_cues.h"),
+                (True, "wrote 11 scenes + 11 audio files into castle-cue-desk.html")]) as spy:
+            code, d = self.post_json(
+                "/api/scene", {"id": "jb_drop", "yaml": "  - id: jb_drop\n    x: 1\n"})
+        self.assertEqual(code, 500)
+        self.assertFalse(d["ok"])
+        ran = [Path(c[0][0][1]).name for c in spy.call_args_list]
+        self.assertEqual(ran, ["render_audio.py"], "the later steps ran after a failure")
+        self.assertEqual(d["reason"],
+                         "scene jb_drop: no such audio_file tracks/jb_drop.mp3")
+        self.assertNotIn("wrote 11 scenes", d["log"])
+        self.assertIn("render_audio.py failed", d["log"])
 
     def test_the_answer_carries_the_new_scene_list(self) -> None:
         """The row's "in the show" badge comes from this, so it has to be the

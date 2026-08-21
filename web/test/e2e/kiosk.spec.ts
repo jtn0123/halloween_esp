@@ -122,6 +122,31 @@ test("kiosk follows the castle: a new scene, then idle", async ({ page }) => {
   expect(castle.hits("/api/stop")).toBe(0);
 });
 
+/** Lit pixels on the jewel row: a socket that is off draws rgb(30,30,30),
+ *  the labels are lavender greys — anything brighter than 200 is a light. */
+const litJewels = (page: import("@playwright/test").Page): Promise<number> =>
+  page.evaluate(() => {
+    const c = document.getElementById("jewels") as HTMLCanvasElement;
+    const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (Math.max(d[i]!, d[i + 1]!, d[i + 2]!) > 200) n++;
+    return n;
+  });
+
+test("kiosk meeting an idle porch is dark, not the default scene at frame 0", async ({ page }) => {
+  const castle = await fakeCastle(page, [], { scene: "" });
+  await page.goto("/?kiosk=1");
+  await expect(page.locator("#deviceChip")).toHaveClass(/live/);
+  await expect(page.locator("#playLabel")).toHaveText("Play");
+  await expect.poll(() => litJewels(page)).toBe(0);
+  // And it still wakes with the porch.
+  castle.status["scene"] = "storm";
+  await expect(page.locator("#stageNote")).toContainText("Storm");
+  await expect(page.locator("#playLabel")).toHaveText("Pause");
+  await expect.poll(() => litJewels(page)).toBeGreaterThan(0);
+  expect(castle.hits("/api/scene")).toBe(0);
+});
+
 test("kiosk says since when the castle stopped answering", async ({ page }) => {
   const castle = await fakeCastle(page, [], { scene: "storm" });
   await page.goto("/?kiosk=1");

@@ -39,15 +39,25 @@ def rebuild(lock: threading.Lock, run: Runner, py: str,
     studio (CASTLE_SCENES) renders beside its own scenes file — see
     build_paths.py — and the log says so, because "the audio re-rendered"
     with the repo's files untouched reads as a lie otherwise.
+
+    Stops at the first failing step. Running the generators after a failed
+    render built firmware and a preview from stale markers, and the reason
+    shown to the operator was the previewer's SUCCESS line — "Scene write
+    failed — wrote 11 scenes…" (judge B, JB2-3). The failing step's output
+    is the tail of the log, so studio_jobs.reason() reads the real cause.
     """
-    with lock:
-        ok1, o1 = run([py, str(root / "tools" / "render_audio.py")])
-        ok2, o2 = run([py, str(root / "tools" / "gen_esphome.py")])
-        ok3, o3 = run([py, str(root / "tools" / "gen_previewer.py")])
     note = (f"sandbox: rendered under {bp.BUILD} — the repo's audio/, "
             f"firmware/generated/ and previewer are untouched\n"
             if bp.sandboxed() else "")
-    return ok1 and ok2 and ok3, (note + o1 + o2 + o3)[-4000:]
+    log = note
+    with lock:
+        for tool in ("render_audio.py", "gen_esphome.py", "gen_previewer.py"):
+            ok, out = run([py, str(root / "tools" / tool)])
+            log += out
+            if not ok:
+                log += f"\n{tool} failed — the later steps were not run\n"
+                return False, log[-4000:]
+    return True, log[-4000:]
 
 
 def block_pattern(sid: str) -> re.Pattern[str]:

@@ -138,6 +138,23 @@ class TestShowNightRoutes(EmuCase):
         self.assertTrue(_wait(lambda: self.status()["scene"] == ""))
 
 
+class TestRemotePage(EmuCase):
+    def test_remote_is_the_firmware_page_byte_for_byte(self) -> None:
+        """sd_web_remote.h embeds the phone remote in flash; the emulator
+        serves the same bytes, lifted from the C raw string, so the relay
+        and an e2e can exercise the real page (JB2-6)."""
+        code, body = self.http("GET", "/remote")
+        self.assertEqual(code, 200)
+        page = body.decode()
+        header = (Path(__file__).resolve().parent.parent / "firmware"
+                  / "sd_web_remote.h").read_text()
+        start = header.index('R"HTML(') + len('R"HTML(')
+        self.assertEqual(page, header[start:header.index(')HTML"', start)])
+        for needle in ("<title>Castle Remote</title>", "id=show", "id=ambient",
+                       "id=scare", "id=black", "/api/status"):
+            self.assertIn(needle, page)
+
+
 class TestSceneSeeding(unittest.TestCase):
     """The emulator knows the SAME scene ids the firmware would: the show's
     scenes.yaml, not a hard-coded four (pass-1 J1-10 — five of nine desk

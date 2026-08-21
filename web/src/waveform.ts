@@ -22,6 +22,7 @@ import { createStyleLab } from "./style_lab.js";
 import { sections } from "./track_lights.js";
 import { EDGE_SLOP, WaveView, type WaveClip, type WaveData } from "./waveform_view.js";
 import { clock, loadClip, onsetTimes, saveClip, snapClip } from "./wave_clip.js";
+import { trimOwner } from "./import_opts.js";
 import { initOptsBridge } from "./wave_opts_bridge.js";
 import { buildWaveChrome } from "./wave_chrome.js";
 
@@ -122,6 +123,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     () => view.data?.duration ?? null,
     (c) => { clip = c; sync(); },
     (msg) => say(msg),
+    () => syncLight(),
   );
   const pushOpts = (): void => { if (trackId) bridge.push(clip, trackId); };
 
@@ -138,10 +140,15 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     const d = view.data;
     const partial = !!(clip && d && (clip.start > 0.05 || clip.end < d.duration - 0.05));
     hint.hidden = !partial;
+    // After an import has consumed START/LENGTH they are blank, and "set
+    // from it" would be a lie (JB2-5c): say what puts them back.
+    const stamped = !!trackId && trimOwner() === trackId;
     hint.textContent = partial
       ? "This selection is for listening and for placing the lights. The castle "
         + "plays the whole file — to keep only this part, press Re-import on the "
-        + "track's row (START/LENGTH above are set from it)."
+        + "track's row " + (stamped
+          ? "(START/LENGTH above are set from it)."
+          : "— START/LENGTH above are blank now; nudge a handle to set them from it again.")
       : "";
   }
 

@@ -106,6 +106,12 @@ export interface TracksApi {
   previewing: () => boolean;
 }
 
+/** Is this page on the laptop that runs the studio? Restart / Stop-server
+ *  belong to that machine alone: a phone on the LAN pressing Stop would take
+ *  the server out from under everyone (JB1-7). */
+export const servedLocally = (): boolean =>
+  /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+
 export function initTracks(deps: TracksDeps): TracksApi {
   const SCENES = deps.scenes;
 
@@ -158,7 +164,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
     .then(d => {
       if (!d.tracks && !d.scenes) return Promise.reject(new Error("no list"));
       T.mode = "studio"; T.modeEl.textContent = "studio · connected";
-      byId("trkServer").hidden = false;
+      byId("trkServer").hidden = !servedLocally();
       T.sceneIds = new Set(d.scenes || []);
       T.loaded = true;
       drawTracks(d.tracks);

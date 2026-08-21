@@ -236,14 +236,17 @@ class Handler(sh.JsonHandler):
         if path.startswith("/api/tracks/"):
             tid = Path(path).name
             p = track_path(tid)            # name-stripped above
-            if p is None:
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            # ?scene=1 with the file already gone: the scene is an orphan
+            # and taking it out is the whole point (judge B, JB2-5a).
+            if p is None and not q.get("scene"):
                 return self.send_json({"error": "not found"}, 404)
-            p.unlink()
+            if p is not None:
+                p.unlink()
             for kept in source_copies(tid):
                 kept.unlink()
             mf.forget(tid)
-            body: dict = {"ok": True, "removed": tid}
-            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            body: dict = {"ok": True, "removed": tid, "file_missing": p is None}
             if q.get("scene"):
                 # The track was IN THE SHOW and the operator chose to take
                 # its scene out with it, rather than leave scenes.yaml

@@ -30,17 +30,24 @@ export interface OptsBridge {
  * @param getDur   duration of the loaded track, or null when none is.
  * @param onTyped  a human edited the inputs into a valid clip — adopt it.
  * @param say      the editor's status line, for the clamp note.
+ * @param onBlank  the inputs were blanked under the editor (an import
+ *                 consumed them) — its hint must stop claiming they are set.
  */
 export function initOptsBridge(
   getDur: () => number | null,
   onTyped: (clip: WaveClip, clamped: boolean) => void,
   say: (msg: string) => void,
+  onBlank?: () => void,
 ): OptsBridge {
+  const get = (id: string): string =>
+    (document.getElementById(id) as HTMLInputElement | null)?.value ?? "";
   const adoptTyped = (e: Event): void => {
     const dur = getDur();
-    if (!e.isTrusted || dur === null) return;
-    const get = (id: string): string =>
-      (document.getElementById(id) as HTMLInputElement | null)?.value ?? "";
+    if (!e.isTrusted) {
+      if (get("trkStart") === "" && get("trkTake") === "") onBlank?.();
+      return;
+    }
+    if (dur === null) return;
     const start = Math.max(0, Math.min(dur - 0.1, parseClock(get("trkStart")) ?? 0));
     const takeRaw = get("trkTake");
     const take = takeRaw === "" || takeRaw === "all"

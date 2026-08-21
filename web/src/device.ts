@@ -424,6 +424,10 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     mountRouteBtn();
     setCastleLive(true);
     if (s.scene && s.scene !== "stop") opts.adoptScene?.(s.scene);
+    // A follower meeting an IDLE porch is told so: the kiosk otherwise sat
+    // on the default scene, paused at frame 0, until the castle had been
+    // seen playing once (judge B, JB2-5b). The desk keeps its default.
+    else if (opts.follow) opts.adoptScene?.("");
     // A slow poll keeps the chip honest (version after an OTA, card pulled,
     // a scene the PIR fired while nobody was looking); actions re-poll
     // themselves sooner via castleAct().

@@ -91,12 +91,13 @@ if (kiosk) installKiosk();
    The Tracks panel's studio strip names its host from the address bar, not
    a constant (it read "127.0.0.1:8765" while served on :8766 — JB1-9), and
    its Restart / Stop-server buttons are for the laptop running it: on a
-   phone reached over the LAN they would stop the server under everyone. */
+   phone reached over the LAN they would stop the server under everyone —
+   tracks.ts keeps them hidden there (servedLocally). Hidden, not removed:
+   the first cut removed the element and initTracks then threw on its id,
+   so every LAN phone read "studio not running" (judge B, JB2-1). */
 {
   const host = document.querySelector<HTMLElement>(".trk-srvtxt b");
   if (host) host.textContent = location.host;
-  const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
-  if (!loopback) document.getElementById("trkServer")?.remove();
 }
 
 /* The three sound sources are built AFTER the transport that needs to stop

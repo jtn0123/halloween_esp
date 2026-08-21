@@ -5,7 +5,18 @@ static RAM headroom (see castle.yaml sdkconfig notes); apply with the next
 firmware session, recompile, and update tools/castle_emu_wire.py in step
 (tests/test_firmware_contract.py parses sd_web.h and will flag drift).
 
-Nothing pending. Applied in v5.24:
+Pending for the next firmware session (found by judge B, pass 2; no
+source under firmware/ was edited for them — both need a recompile/reflash):
+
+- qr_castle — `make generate` so firmware/generated/qr_castle.h encodes
+  `http://<castle>/remote` (tools/gen_qr.py's default already says so); the
+  flashed eInk QR still lands on the 2.4 MB desk instead of the phone remote.
+- sd_web_remote.h `api()` — add `.catch(sync)` so a tap at a dead castle does
+  not leave an unhandled "Failed to fetch" in the phone's console; the
+  emulator now serves this page byte-for-byte (tools/castle_emu_http.py), so
+  web/test/e2e/remote.spec.ts exercises whatever the C says.
+
+Applied in v5.24:
 
 - json_names — safe_name (sd_web.h) now refuses `"`, `\`, DEL and control
   bytes (< 0x20), because h_list/h_status snprintf names raw into JSON and

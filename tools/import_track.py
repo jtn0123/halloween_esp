@@ -227,6 +227,14 @@ def keep_source(src: Path, tid: str) -> Path:
     return kept.resolve()
 
 
+def _same_file(a: Path, b: Path) -> bool:
+    """Do the two paths name one file on disk? (Absent paths never do.)"""
+    try:
+        return a.exists() and b.exists() and a.samefile(b)
+    except OSError:
+        return False
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="Import audio into tracks/, remembering where it came from.")
@@ -408,10 +416,13 @@ def _import(args: argparse.Namespace, o: dict, source: str, is_url: bool,
     dur = len(x) / ana.SR
     size = out.stat().st_size
     # A refresh that changed the container leaves the old one behind, and
-    # track_path() would keep finding it first. One file per id.
+    # track_path() would keep finding it first. One file per id — but never
+    # the source itself: `import_track.py tracks/foo.wav --id foo` used to
+    # convert the original and then delete it (judge B, JB2-2).
     for other in AUDIO_EXT:
-        if other != o["format"]:
-            (TRACKS / f"{tid}.{other}").unlink(missing_ok=True)
+        stale = TRACKS / f"{tid}.{other}"
+        if other != o["format"] and not _same_file(stale, src):
+            stale.unlink(missing_ok=True)
     if args.keep_source and not is_url:
         source = f"file:{keep_source(src, tid)}"
     # stereo= so import-time markers carry pan, same as the studio's live

@@ -103,7 +103,7 @@ class TestSerial(ModeCase):
         cl._cache.clear()
         st = cl.status()
         assert st is not None
-        self.assertEqual(st["version"], "5.23")
+        self.assertEqual(st["version"], "5.24")
         self.assertEqual(cl.forward("POST", "/api/volume?v=33")[0], 200)
         self.assertTrue(wait_for(lambda: emu.state.volume == 33))
 

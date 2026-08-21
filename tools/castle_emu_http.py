@@ -21,6 +21,7 @@ Fidelity choices worth knowing when a test surprises you:
 from __future__ import annotations
 
 import json
+import re
 import time
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -45,8 +46,21 @@ _TYPES = {".html": "text/html; charset=utf-8", ".js": "application/javascript",
           ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
           ".json": "application/json", ".mp3": "audio/mpeg", ".wav": "audio/wav"}
 
-REMOTE_PAGE = ("<!doctype html><meta charset=utf-8><title>Castle Remote</title>"
-               "<p>emulated remote — four buttons on the real one</p>")
+#: firmware/sd_web_remote.h kRemotePage, byte for byte — the phone remote
+#: is embedded in flash, so the emulator lifts it out of the C raw string
+#: rather than keeping a placeholder nobody could test against (JB2-6).
+_REMOTE_H = Path(__file__).resolve().parent.parent / "firmware" / "sd_web_remote.h"
+
+
+def _remote_page() -> str:
+    m = re.search(r'kRemotePage\[\] = R"HTML\((.*?)\)HTML";',
+                  _REMOTE_H.read_text(), re.DOTALL)
+    if not m:
+        raise RuntimeError(f"no kRemotePage raw string in {_REMOTE_H}")
+    return m.group(1)
+
+
+REMOTE_PAGE = _remote_page()
 FALLBACK_PAGE = ("<!doctype html><meta charset=utf-8><title>Castle</title>"
                  "<h1>Castle</h1><p>emulated fallback page</p>")
 

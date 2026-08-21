@@ -153,6 +153,25 @@ class TestDeleteWithScene(ServerCase):
                                "gen_previewer.py"])
         self.assertFalse(self.track.exists())
 
+    def test_delete_with_scene_removes_an_orphan_whose_file_is_gone(self) -> None:
+        """The file already gone, the scene still in scenes.yaml — the state
+        a failed import or a hand-deleted file leaves. A plain DELETE is a
+        404 (nothing to delete); ?scene=1 takes the orphan out (JB2-5a)."""
+        self.track.unlink()
+        code, _ = self.req("DELETE", f"/api/tracks/{self.DEL_ID}")
+        self.assertEqual(code, 404)
+        self.run_spy.assert_not_called()
+        code, raw = self.req("DELETE", f"/api/tracks/{self.DEL_ID}?scene=1")
+        d = json.loads(raw)
+        self.assertEqual(code, 200, d)
+        self.assertTrue(d["scene_removed"])
+        self.assertTrue(d["file_missing"])
+        self.assertEqual(d["scenes"], ["vigil", "storm"])
+        self.assertNotIn(self.DEL_ID, self.scenes.read_text())
+        self.assertEqual(studio_tracks.source_copies(self.DEL_ID), [])
+        self.assertIsNone(mf.get(self.DEL_ID))
+        self.assertTrue(self.run_spy.called)
+
     def test_delete_with_scene_of_a_track_not_in_the_show_is_harmless(self) -> None:
         self.scenes.write_text("scenes:\n  - id: vigil\n    duration_ms: 1\n")
         code, raw = self.req("DELETE", f"/api/tracks/{self.DEL_ID}?scene=1")
