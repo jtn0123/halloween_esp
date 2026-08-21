@@ -25,6 +25,11 @@ select = [
     "EXE",             # shebang/executable-bit agreement
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# Every test bootstraps sys.path before importing tools/ — the imports HAVE
+# to follow the insert. Saying so once here beats 78 identical noqa comments.
+"tests/*" = ["E402"]
+
 [tool.mypy]
 python_version = "3.13"
 files = ["tools", "tests"]

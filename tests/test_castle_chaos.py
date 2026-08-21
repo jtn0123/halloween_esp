@@ -11,7 +11,7 @@ checked across the whole sequence rather than one failure at a time:
   * every call returns inside its documented budget (measured)
   * CASTLE_HOST "" is "no castle", and a live host listed last still wins
 
-Budgets are patched small (TIMEOUT_S 0.3 s) so the suite stays quick; the
+Budgets are patched small (TIMEOUT_S 0.1 s) so the suite stays quick; the
 arithmetic asserted is the same the real numbers obey.
 """
 
@@ -31,11 +31,11 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import castle_link as cl  # noqa: E402
+import castle_link as cl
 
 DEAD = "127.0.0.1:1"
-FAST = 0.3       # the patched TIMEOUT_S / read budgets
-SLACK = 0.6      # thread scheduling + connect on loopback
+FAST = 0.1       # the patched TIMEOUT_S / read budgets
+SLACK = 0.6      # thread scheduling + connect on loopback (6x the budget)
 
 
 class Scripted(BaseHTTPRequestHandler):
@@ -95,7 +95,11 @@ class ScriptedCastle(ThreadingHTTPServer):
         self.seen: list[tuple[str, str, int]] = []
         self.release = threading.Event()
         self.lock = threading.Lock()
-        threading.Thread(target=self.serve_forever, daemon=True).start()
+        # poll_interval: shutdown() waits for the serve loop to notice, and
+        # the default 0.5 s was most of the suite's wall time — every test
+        # stops one or two of these.
+        threading.Thread(target=self.serve_forever, kwargs={"poll_interval": 0.02},
+                         daemon=True).start()
 
     @property
     def host(self) -> str:
@@ -216,8 +220,12 @@ class TestNoReplay(ChaosCase):
                          [("PUT", "/api/files/song.mp3", 10)])
 
     def test_slow_ack_inside_the_budget_is_a_plain_200(self) -> None:
-        self.castle.program("slow:0.15")
-        self.assertEqual(cl.forward("PUT", "/api/files/song.mp3", b"x")[0], 200)
+        # A wider budget for this one test: the ack has to land INSIDE it,
+        # and 0.15 s against FAST would be a coin-toss on a busy machine.
+        with mock.patch.object(cl, "TIMEOUT_S", 0.5), \
+                mock.patch.dict(cl.READ_BUDGET_S, {"PUT": 0.5}):
+            self.castle.program("slow:0.15")
+            self.assertEqual(cl.forward("PUT", "/api/files/song.mp3", b"x")[0], 200)
 
     def test_a_stalled_post_never_reaches_the_native_leg(self) -> None:
         """Even for a native-capable (port-less) host: a stall means the

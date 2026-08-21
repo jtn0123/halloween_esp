@@ -24,8 +24,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import synth as S  # noqa: E402
-from helpers import MARKER_SYNTHS, peak, render_synth, rms, window_peaks  # noqa: E402
+import synth as S
+from helpers import MARKER_SYNTHS, peak, render_synth, rms, window_peaks
 
 
 class TestPlace(unittest.TestCase):

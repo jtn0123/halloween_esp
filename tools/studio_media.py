@@ -8,6 +8,7 @@ them testable without standing anything up.
 
 from __future__ import annotations
 
+import collections
 import itertools
 import json
 import shutil
@@ -129,13 +130,38 @@ def cc_codecs() -> tuple[str, ...]:
     return cc.CODECS
 
 
-def waveform(path: Path, sensitivity: float = 1.1, buckets: int = PEAKS) -> dict:
-    """Peak envelope plus detected onsets, for the clip editor.
+# Finished waveforms, keyed by (path, mtime_ns, sensitivity, buckets). The
+# clip editor asks for the same track again every time it opens, and the
+# audition re-asks at each sensitivity nudge; the answer is ~0.8 s of decode
+# + STFT each time and changes only when the file or the knob does. The mtime
+# in the key is the staleness rule — a re-import is a new file. Bounded so a
+# long session with a big library cannot grow it without limit.
+_WAVES: collections.OrderedDict[tuple, dict] = collections.OrderedDict()
+KEEP_WAVES = 32
+
+
+def waveform(path: Path, sensitivity: float | dict = 1.1,
+             buckets: int = PEAKS) -> dict:
+    """Peak envelope plus detected onsets, for the clip editor — cached.
 
     Peaks are absolute maxima per bucket rather than RMS: the point of the
     picture is to see where the transients are so you can line a selection up
     with them, and RMS smooths exactly that away.
     """
+    key = (str(path), path.stat().st_mtime_ns,
+           json.dumps(sensitivity, sort_keys=True), buckets)
+    hit = _WAVES.get(key)
+    if hit is not None:
+        _WAVES.move_to_end(key)
+        return hit
+    out = _waveform(path, sensitivity, buckets)
+    _WAVES[key] = out
+    while len(_WAVES) > KEEP_WAVES:
+        _WAVES.popitem(last=False)
+    return out
+
+
+def _waveform(path: Path, sensitivity: float | dict, buckets: int) -> dict:
     x = ana.load_audio(path)
     dur = len(x) / ana.SR
     if len(x) == 0:

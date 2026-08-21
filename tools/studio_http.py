@@ -19,6 +19,13 @@ class BadRequest(Exception):
     """A client mistake the boundary turns into a 400 instead of a traceback."""
 
 
+# Request bodies are buffered whole (the multipart path needs the file in
+# RAM to find the part). Nothing legitimate is anywhere near this — the
+# biggest import is a few tens of MB — and without a ceiling one header
+# could ask the server to allocate whatever the client claims.
+MAX_BODY = 512 * 1024 * 1024
+
+
 class JsonHandler(BaseHTTPRequestHandler):
     """The transport half of the studio's Handler."""
 
@@ -52,8 +59,7 @@ class JsonHandler(BaseHTTPRequestHandler):
         3 MB first. Only the one-range form is handled — that is all a media
         element ever asks for — and anything else falls back to the whole file.
         """
-        data = p.read_bytes()
-        total = len(data)
+        total = p.stat().st_size
         rng = (self.headers.get("Range") or "").strip()
         lo, hi = 0, total - 1
         partial = False
@@ -70,7 +76,11 @@ class JsonHandler(BaseHTTPRequestHandler):
         hi = min(hi, total - 1)
         if not partial or lo > hi:
             lo, hi, partial = 0, total - 1, False
-        chunk = data[lo:hi + 1]
+        # Only the bytes asked for leave the disk: the old read_bytes() pulled
+        # a whole four-minute import into RAM to answer a 64 KB probe.
+        with p.open("rb") as fh:
+            fh.seek(lo)
+            chunk = fh.read(hi + 1 - lo)
         self.send_response(206 if partial else 200)
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
@@ -82,7 +92,17 @@ class JsonHandler(BaseHTTPRequestHandler):
         self.wfile.write(chunk)
 
     def body(self) -> bytes:
-        return self.rfile.read(int(self.headers.get("Content-Length", 0) or 0))
+        try:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            raise BadRequest("Content-Length is not a number") from None
+        if n > MAX_BODY:
+            # Unread body bytes would be parsed as the next request on a
+            # kept-alive connection; drop it after the 400.
+            self.close_connection = True
+            raise BadRequest(f"request body too large ({n} bytes; "
+                             f"the limit is {MAX_BODY})")
+        return self.rfile.read(n) if n > 0 else b""
 
     def json_body(self, raw: bytes) -> dict:
         """The request body as a dict, or a 400 — not a dead connection.

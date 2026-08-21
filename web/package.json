@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "Browser cue desk for the Halloween castle \u2014 TypeScript sources",
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --format=iife --target=es2020 --outfile=dist/bundle.js",
+    "build": "esbuild src/main.ts --bundle --minify --format=iife --target=es2020 --outfile=dist/bundle.js",
     "watch": "npm run build -- --watch",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test",

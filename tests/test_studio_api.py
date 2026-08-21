@@ -20,10 +20,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import manifest as mf  # noqa: E402
-import studio  # noqa: E402
-from helpers import make_click_track  # noqa: E402
-from studio_case import ServerCase, make_mp3  # noqa: E402
+import manifest as mf
+import studio
+import studio_http as sh
+from helpers import make_click_track
+from studio_case import ServerCase, make_mp3
 
 
 class TestReads(ServerCase):
@@ -301,6 +302,28 @@ class TestWrites(ServerCase):
                            {"Content-Type": "multipart/form-data; boundary=B"})
         self.assertEqual(code, 400)
         self.assertIn("no file", json.loads(d)["error"])
+
+    def test_malformed_upload_options_are_a_400_not_a_traceback(self) -> None:
+        """X-Import-Opts goes through the same JSON boundary as a body."""
+        body = (b"--B\r\nContent-Disposition: form-data; name=\"file\"; "
+                b"filename=\"clip.wav\"\r\n\r\nRIFFfake\r\n--B--\r\n")
+        with mock.patch.object(studio, "run") as run:
+            code, d = self.req("POST", "/api/import", body, {
+                "Content-Type": "multipart/form-data; boundary=B",
+                "X-Import-Opts": "{not json"})
+        self.assertEqual(code, 400)
+        self.assertIn("not valid JSON", json.loads(d)["error"])
+        run.assert_not_called()
+        self.assertFalse((studio.TRACKS / "_upload").exists())
+
+    def test_a_body_larger_than_the_cap_is_refused_up_front(self) -> None:
+        """The server buffers bodies whole; a Content-Length it would never
+        allocate for is a 400 before a byte is read."""
+        code, d = self.req("POST", "/api/probe", b"{}", {
+            "Content-Type": "application/json",
+            "Content-Length": str(sh.MAX_BODY + 1)})
+        self.assertEqual(code, 400)
+        self.assertIn("too large", json.loads(d)["error"])
 
     def test_refresh_needs_an_id(self) -> None:
         code, d = self.post_json("/api/refresh", {})

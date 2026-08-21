@@ -26,9 +26,9 @@ from typing import ClassVar
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import gen_esphome as ge  # noqa: E402
-import gen_previewer as gp  # noqa: E402
-import yaml  # noqa: E402
+import gen_esphome as ge
+import gen_previewer as gp
+import yaml
 
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 ZIDS = [z["id"] for z in ZONES]

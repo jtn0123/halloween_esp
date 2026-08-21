@@ -22,7 +22,7 @@ from typing import ClassVar
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import studio_jobs as sj  # noqa: E402
+import studio_jobs as sj
 
 
 def setUpModule() -> None:

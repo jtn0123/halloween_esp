@@ -20,9 +20,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import analyze as ana  # noqa: E402
-import codec_compare as cc  # noqa: E402
-from helpers import make_click_track  # noqa: E402
+import analyze as ana
+import codec_compare as cc
+from helpers import make_click_track
 
 OPTS = {"start": 0, "take": 3.0, "fade_in": None, "fade_out": None,
         "normalize": False, "gain_db": None, "bitrate": 96,

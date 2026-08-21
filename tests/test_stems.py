@@ -21,8 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import numpy as np  # noqa: E402
-import stems  # noqa: E402
+import numpy as np
+import stems
 
 
 def write_left_clicks(path: Path, seconds: float = 6.0, sr: int = 44100) -> int:

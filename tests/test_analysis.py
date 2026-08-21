@@ -20,9 +20,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import analyze as ana  # noqa: E402
-import import_track as it  # noqa: E402
-from helpers import make_click_track  # noqa: E402
+import analyze as ana
+import import_track as it
+from helpers import make_click_track
 
 
 class TestOnsetDetection(unittest.TestCase):

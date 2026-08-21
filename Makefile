@@ -1,8 +1,16 @@
-PY := .venv/bin/python
+# The project venv when it exists, else whatever python3 is on PATH (CI
+# installs into the runner's interpreter). `make setup` names .venv outright
+# below — this fallback must never point a fresh install at the system python.
+PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 ESPHOME := .venv/bin/esphome
 YAML := firmware/castle_flash.yaml
+# The documented target; pyproject/CI/mypy all say 3.13. Found on PATH rather
+# than at one Homebrew path, which is not where every machine keeps it.
+# Recursive (=), not :=, so the lookup — and the error — only happen when
+# `make setup` expands it, not on every make invocation.
+PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: test lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean
+.PHONY: test lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage audit lock sd-build sd-upload
 
 help:
 	@echo "Halloween Castle"
@@ -20,14 +28,24 @@ help:
 	@echo "  make bench-audio  measure decode load on the bare board (no speakers)"
 	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
 	@echo "  make studio     serve the cue desk with track management (localhost)"
+	@echo "  make test       python unit tests (~1 min)"
+	@echo "  make lint       ruff + mypy over tools/ and tests/"
+	@echo "  make check      test + lint + image/LOC guards + tsc + node suites"
 	@echo "  make e2e        browser tests (needs: cd web && npx playwright install chromium)"
+	@echo "                  CASTLE_E2E_PORT=8821 make e2e   to run beside another suite"
 	@echo "  make check-all  every check, including the browser tests"
+	@echo "  make coverage   unit tests under coverage.py, report on tools/ (non-gating)"
+	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
+	@echo "  make lock       refreeze requirements.lock from .venv"
+	@echo "  make clean      drop firmware/.esphome and rendered wavs"
+	@echo "  make sd-build / sd-upload   EXPERIMENTAL microSD variant (PROJECT_NOTES §12.9)"
+	@echo "  make bench-audio-logs       tail the bench-audio build's logs"
 	@echo ""
 	@echo "scenes/scenes.yaml is the source of truth for audio, cues AND the previewer."
 
 setup:
-	/opt/homebrew/bin/python3.13 -m venv .venv
-	$(PY) -m pip install --quiet --upgrade pip
+	$(PY_SETUP) -m venv .venv
+	.venv/bin/python -m pip install --quiet --upgrade pip
 	.venv/bin/pip install --quiet -r requirements.txt -r requirements-dev.txt
 	@echo "ready. 'make build' next."
 
@@ -84,6 +102,28 @@ bench-audio-logs:
 
 test:
 	@$(PY) -m unittest discover -s tests -q
+
+# Where the unit suite reaches and where it does not. Informational — no
+# threshold fails it; the number is for deciding what to test next.
+coverage:
+	@$(PY) -m coverage run --source=tools -m unittest discover -s tests -q
+	@$(PY) -m coverage report --include='tools/*' --skip-empty
+
+# Known advisories against what the venv actually has. Non-gating: the hits
+# so far are in ESPHome's build toolchain (platformio -> starlette, which never
+# sees network input here — ignored by id below) and cryptography 49, which
+# the esphome pin drags in and a pin bump will clear. Re-run after `make lock`.
+STARLETTE_TOOLCHAIN_ONLY := PYSEC-2026-161 PYSEC-2026-248 PYSEC-2026-249 PYSEC-2026-2280 PYSEC-2026-2281
+audit:
+	@$(PY) -m pip_audit -r requirements.lock --no-deps --progress-spinner off \
+		$(foreach v,$(STARLETTE_TOOLCHAIN_ONLY),--ignore-vuln $(v)) \
+		|| echo "(advisories above are informational — see the comment on this target)"
+
+# The lock is the venv as it is: every package, pinned. requirements.txt says
+# what the project needs; this says exactly what was tested.
+lock:
+	@$(PY) -m pip freeze --exclude-editable > requirements.lock
+	@echo "requirements.lock: $$(wc -l < requirements.lock) pins"
 
 # Lint + type-check the Python half; config lives in pyproject.toml. The TS
 # half's equivalent is the tsc line in `check`.

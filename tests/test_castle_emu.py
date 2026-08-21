@@ -62,7 +62,8 @@ class EmuCase(unittest.TestCase):
             with urllib.request.urlopen(req, timeout=3) as r:
                 return r.status, r.read()
         except urllib.error.HTTPError as e:
-            return e.code, e.read()
+            with e:
+                return e.code, e.read()
 
     def status(self) -> dict:
         return json.loads(self.http("GET", "/api/status")[1])

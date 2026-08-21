@@ -24,11 +24,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import gen_esphome as ge  # noqa: E402
-import gen_previewer as gp  # noqa: E402
-import gen_rig  # noqa: E402
-import rig_layout as rl  # noqa: E402
-import yaml  # noqa: E402
+import gen_esphome as ge
+import gen_previewer as gp
+import gen_rig
+import rig_layout as rl
+import yaml
 
 SEED = 20260820
 CASES = 40

@@ -28,3 +28,6 @@ web/blob-report/
 # Local analysis artifacts
 .coverage
 dogfood-output/
+# The scene editor's backup and scratch files.
+scenes/*.bak
+scenes/*.tmp

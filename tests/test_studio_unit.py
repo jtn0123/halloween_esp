@@ -26,8 +26,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import studio  # noqa: E402
-import studio_http as sh  # noqa: E402
+import studio
+import studio_http as sh
 
 
 class Quiet(studio.Handler):

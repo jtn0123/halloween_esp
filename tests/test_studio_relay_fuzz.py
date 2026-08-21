@@ -22,9 +22,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import castle_emu  # noqa: E402
-import castle_link as cl  # noqa: E402
-from studio_case import ServerCase  # noqa: E402
+import castle_emu
+import castle_link as cl
+from studio_case import ServerCase
 
 TRAVERSAL = ["..%2F..%2Fetc%2Fpasswd", "%2Fetc%2Fpasswd", "..", "../x",
              "a%2F..%2F..%2Fx", ".hidden", "scenes%2F..%2Fsecret", "",
@@ -90,7 +90,8 @@ class TestCardPull(RelayCase):
             with urllib.request.urlopen(r, timeout=10) as f:
                 hdrs, code = dict(f.headers), f.status
         except urllib.error.HTTPError as e:
-            hdrs, code = dict(e.headers), e.code
+            with e:
+                hdrs, code = dict(e.headers), e.code
         self.assertEqual(code, 404)
         self.assertNotIn("X-Injected", hdrs)
 

@@ -23,12 +23,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import castle_link as cl  # noqa: E402
-import import_track as it  # noqa: E402
-import manifest as mf  # noqa: E402
-import studio  # noqa: E402
-import studio_tracks  # noqa: E402
-from helpers import make_click_track  # noqa: E402
+import castle_link as cl
+import import_track as it
+import manifest as mf
+import studio
+import studio_tracks
+from helpers import make_click_track
 
 CONVERT_OPTS = {"start": 0, "take": None, "fade_in": None, "fade_out": None,
                 "bitrate": 96, "channels": 1, "sample_rate": 44100,
@@ -133,7 +133,8 @@ class ServerCase(unittest.TestCase):
             with urllib.request.urlopen(r, timeout=20) as f:
                 return f.status, f.read()
         except urllib.error.HTTPError as e:
-            return e.code, e.read()
+            with e:                 # closed, or unittest warns on GC
+                return e.code, e.read()
 
     def get_json(self, path: str) -> tuple[int, dict]:
         code, body = self.req("GET", path)

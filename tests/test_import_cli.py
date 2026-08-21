@@ -24,9 +24,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import import_track as it  # noqa: E402
-import manifest as mf  # noqa: E402
-from helpers import make_click_track  # noqa: E402
+import import_track as it
+import manifest as mf
+from helpers import make_click_track
 
 
 class CliCase(unittest.TestCase):

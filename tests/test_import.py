@@ -19,15 +19,15 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import json  # noqa: E402  (sys.path bootstrap above must run first)
-import subprocess  # noqa: E402
+import json
+import subprocess
 
-import analyze as ana  # noqa: E402
-import import_track as it  # noqa: E402
-import manifest as mf  # noqa: E402
-import render_audio as ra  # noqa: E402
-import yaml  # noqa: E402
-from helpers import make_click_track  # noqa: E402
+import analyze as ana
+import import_track as it
+import manifest as mf
+import render_audio as ra
+import yaml
+from helpers import make_click_track
 
 
 class TestTimeParsing(unittest.TestCase):

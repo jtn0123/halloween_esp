@@ -25,7 +25,6 @@ phone/iPad remote — do that only on a network you control.
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -63,7 +62,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # must not be able to edit the real show. Unset means the real file.
 SCENES = Path(os.environ.get("CASTLE_SCENES") or (ROOT / "scenes" / "scenes.yaml"))
 HTML = ROOT / "previewer" / "castle-cue-desk.html"
-PY = str(ROOT / ".venv" / "bin" / "python")
+# The interpreter running this server is the one its children run under —
+# whichever venv that is. The hardcoded .venv/bin/python broke the moment
+# the studio was launched from anywhere else.
+PY = sys.executable
 
 _lock = threading.Lock()          # ffmpeg/yt-dlp jobs are serialised
 _runner = sj.JobRunner()          # long imports run in the background
@@ -319,9 +321,7 @@ class Handler(sh.JsonHandler):
         path = urllib.parse.urlparse(self.path).path
         if not path.startswith("/api/"):
             return self.send_json({"error": "not found"}, 404)
-        n = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(n) if n else b""
-        return self.relay("PUT", body)
+        return self.relay("PUT", self.body())
 
     def relay(self, method: str, body: bytes = b"",
               to: str | None = None) -> None:
@@ -351,12 +351,16 @@ class Handler(sh.JsonHandler):
             fname, data = sh.parse_multipart(raw, ctype)
             if not data:
                 return self.send_json({"error": "no file in upload"}, 400)
+            # Through json_body: malformed options are the client's mistake
+            # (400), not a traceback and a dead socket. Before the staging
+            # write, so a rejected upload leaves nothing behind.
+            req = self.json_body(
+                (self.headers.get("X-Import-Opts") or "{}").encode())
             tmp = TRACKS / "_upload"
             tmp.mkdir(exist_ok=True)
             src = tmp / (fname or "upload.bin")
             src.write_bytes(data)
             args.append(str(src))
-            req = json.loads(self.headers.get("X-Import-Opts") or "{}")
 
         if req.get("id") and safe_id(str(req["id"])) is None:
             return self.send_json({"error": "id: letters, digits and _ only"}, 400)

@@ -18,8 +18,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import analyze as ana  # noqa: E402
-import synth  # noqa: E402
+import analyze as ana
+import synth
 
 # Long enough that every fade knee in wind/drone (they reference dur - 1.5 and
 # dur - 3.0) is still in order, short enough that the whole registry renders in

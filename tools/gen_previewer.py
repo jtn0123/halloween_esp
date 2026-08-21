@@ -218,8 +218,11 @@ def inject_bundle(html: str) -> str:
         sys.exit("web/node_modules missing — run `cd web && npm install` first")
 
     r = subprocess.run(
-        ["npx", "esbuild", "src/main.ts", "--bundle", "--format=iife",
-         "--target=es2020", "--outfile=dist/bundle.js"],
+        # --minify: the page is re-sent on every studio restart and every
+        # phone load, and the unminified bundle was a quarter of it. Debug
+        # against `npm run watch`'s dist/bundle.js, not the spliced page.
+        ["npx", "esbuild", "src/main.ts", "--bundle", "--minify",
+         "--format=iife", "--target=es2020", "--outfile=dist/bundle.js"],
         cwd=WEB, capture_output=True, text=True, check=False,  # handled below
     )
     if r.returncode != 0:

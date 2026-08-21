@@ -107,6 +107,10 @@ def track_info(p: Path) -> dict:
         "opts": meta.get("opts", {}),
         "notes": meta.get("notes", ""),
     }
+    cached = _from_manifest(meta, p.stat().st_size)
+    if cached is not None:
+        info.update(cached)
+        return info
     try:
         x = ana.load_audio(p)
         marks = ana.analyze(x)
@@ -115,4 +119,31 @@ def track_info(p: Path) -> dict:
         return info
     info["dur"] = round(len(x) / ana.SR, 2)
     info["onsets"] = {k: len(v) for k, v in marks.items()}
+    # Remember the answer beside the provenance, so the next /api/tracks
+    # reads it instead of decoding the library again (it was linear in the
+    # number of tracks, every call). `bytes` is the staleness check.
+    mf.patch(p.stem,
+             audio={**meta.get("audio", {}), "duration": info["dur"],
+                    "bytes": info["bytes"]},
+             onsets=info["onsets"])
     return info
+
+
+def _from_manifest(meta: dict, size: int) -> dict | None:
+    """The decode-free answer, if the manifest has one for THIS file.
+
+    import_track.py records duration, byte size and per-band onset counts
+    at import time; the size doubles as the staleness check, so a file
+    replaced out of band (same id, different bytes) is decoded afresh. The
+    import's level_* entries (envelope points for beatless bands) are not
+    onsets and are left out, matching what a live analysis reports.
+    """
+    audio = meta.get("audio") or {}
+    onsets = meta.get("onsets")
+    if "duration" not in audio or not isinstance(onsets, dict):
+        return None
+    if audio.get("bytes") != size:
+        return None
+    return {"dur": round(float(audio["duration"]), 2),
+            "onsets": {k: int(v) for k, v in onsets.items()
+                       if k.startswith("onset_")}}

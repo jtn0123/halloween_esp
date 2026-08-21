@@ -23,9 +23,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import gen_rig  # noqa: E402
-import rig_layout as rl  # noqa: E402
-import yaml  # noqa: E402
+import gen_rig
+import rig_layout as rl
+import yaml
 
 DOC = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
 ZONES: list[dict] = DOC["zones"]

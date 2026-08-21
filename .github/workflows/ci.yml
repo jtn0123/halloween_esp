@@ -50,6 +50,11 @@ jobs:
         run: python -m unittest discover -s tests -q
       - name: LOC cap
         run: python tools/check_loc.py
+      # Advisories against the locked venv. Informational only — see the
+      # `audit` target's comment in the Makefile for what is ignored and why.
+      - name: pip-audit (non-gating)
+        continue-on-error: true
+        run: make audit PY=python
 
   web:
     runs-on: ubuntu-latest

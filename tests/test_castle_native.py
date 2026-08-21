@@ -23,7 +23,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import castle_native as cn  # noqa: E402
+import castle_native as cn
 
 
 class FakeEntity:

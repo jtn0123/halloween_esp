@@ -21,8 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import check_image  # noqa: E402
-import check_loc  # noqa: E402
+import check_image
+import check_loc
 
 
 class TestLocCheck(unittest.TestCase):

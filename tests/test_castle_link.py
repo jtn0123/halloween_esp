@@ -27,8 +27,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import castle_link as cl  # noqa: E402
-from studio_case import ServerCase  # noqa: E402
+import castle_link as cl
+from studio_case import ServerCase
 
 DEAD = "127.0.0.1:1"   # nothing listens; connect refuses instantly
 

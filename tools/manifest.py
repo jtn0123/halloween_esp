@@ -112,6 +112,21 @@ def get(tid: str) -> dict | None:
     return load().get(tid)
 
 
+def patch(tid: str, **fields: dict) -> None:
+    """Merge a few fields into one entry, leaving everything else alone.
+
+    The studio fills in `audio`/`onsets` for a track whose entry lacks them
+    (hand-copied files, manifests from before the fields existed) so that
+    /api/tracks never has to decode the same file twice. A track with no
+    entry at all gets a bare one — its provenance is unknown, and this does
+    not pretend otherwise.
+    """
+    with _locked():
+        data = load()
+        data.setdefault(tid, {}).update(fields)
+        save(data)
+
+
 def forget(tid: str) -> None:
     with _locked():
         data = load()

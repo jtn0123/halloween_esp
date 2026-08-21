@@ -25,8 +25,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import render_audio as ra  # noqa: E402
-import synth  # noqa: E402
+import render_audio as ra
+import synth
 
 CFG = {"sample_rate": 44100, "bitrate": 96, "channels": 1}
 
