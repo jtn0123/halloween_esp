@@ -692,11 +692,20 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   background: var(--panel, #0d101c); border-radius: 6px; cursor: pointer;
 }
 
-#devicePanel {
+/* One castle home: the dock owns the corner; the chip is its collapsed
+   face, #devicePanel its expanded one (device.ts builds both into it). */
+#castleDock {
   position: fixed;
   right: 12px;
-  bottom: 96px;
-  z-index: 39;
+  bottom: 12px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+#devicePanel {
   width: 290px;
   background: var(--panel-2);
   color: var(--ink);
@@ -808,14 +817,13 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   .trk__act { flex-wrap: wrap; }
   .trk__act button { min-height: 40px; }
 
-  /* The device chrome is fixed-position with inline styles; these bounds
-     override just enough that neither can outgrow the viewport. */
-  #deviceChip { left: 12px; right: 12px !important; max-width: none; }
+  /* The castle dock owns the corner now (chip + panel are its children,
+     see panels.css) — bound the DOCK to the viewport and let the chip's
+     control row wrap instead of running off a phone's edge. */
+  #castleDock { left: 12px; right: 12px; align-items: stretch; }
+  #deviceChip > div { flex-wrap: wrap; }
   #devicePanel {
     width: auto !important;
-    left: 12px;
-    right: 12px !important;
-    bottom: 110px !important;
     max-height: 60vh;
     overflow-y: auto;
   }
@@ -2771,13 +2779,13 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     return await r.json();
   }
   var DevicePanel = class {
-    constructor() {
+    constructor(parent) {
       this.open = false;
       this.root = document.createElement("div");
       this.root.id = "devicePanel";
       this.body = document.createElement("div");
       this.root.appendChild(this.body);
-      document.body.appendChild(this.root);
+      (parent ?? document.body).appendChild(this.root);
     }
     toggle() {
       this.open = !this.open;
@@ -2795,7 +2803,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         return;
       }
       const tracks2 = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
-      this.body.innerHTML = `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f"><b>\u{1F3F0} v${st.version}</b> \xB7 up ${fmtUptime(st.uptime_s)} \xB7 ${st.psram_free_kb} KB PSRAM free</div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f"><button id="dpPlaylist" title="Every scene in order with dark gaps, looping until stopped \u2014 the whole evening on one button" style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;background:${st.show_on ? "#7a2a2a" : "#2a5537"};color:inherit">${st.show_on ? "\u25A0 stop the show" : "\u25B6 start the show"}</button>` + (st.show_on && st.scene ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;display:flex;gap:.5rem;align-items:center">\u{1F4A1} <input id="dpColor" type="color" value="#ff8c1e" title="Park the pixels on a colour" style="cursor:pointer"><button id="dpShow" title="Hand the pixels back to the scene engine" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">resume show</button><button id="dpOff" style="cursor:pointer;background:none;color:#9a8fb0;border:1px solid #35264f;border-radius:6px;padding:.2rem .5rem">off</button></div><div style="max-height:180px;overflow:auto" id="dpFiles">` + (tracks2.length ? tracks2.map((f, i) => `<div style="display:flex;gap:.4rem;align-items:center;padding:.3rem .8rem"><button data-play="${i}" title="Play on the castle" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .5rem">\u25B6</button><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}</span><small style="color:#9a8fb0">${kb3(f.size)}</small><button data-del="${i}" title="Delete from the card" style="cursor:pointer;background:none;color:#9a8fb0;border:0">\u2715</button></div>`).join("") : `<div style="padding:.5rem .8rem;color:#9a8fb0">${st.sd_mounted ? "no tracks on the card \u2014 tools/sd_sync.py push" : "no SD card"}</div>`) + `</div><div style="padding:.5rem .8rem;border-top:1px solid #35264f" title="What the motion sensor triggers">\u{1F463} <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> <select id="dpPirScene">` + sceneIds().map((s) => `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") + `</select> <input id="dpPirCool" type="number" min="5" max="600" step="5" value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="cooldown seconds">s</div><div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed #503a75;color:#9a8fb0;text-align:center">drop audio files here to upload</div><div style="padding:.4rem .8rem;border-top:1px solid #35264f"><button id="dpLog" style="cursor:pointer;background:none;border:0;color:#9a8fb0">boot log \u25B8</button><pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre></div>`;
+      this.body.innerHTML = `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f"><b>\u{1F3F0} v${st.version}</b> \xB7 up ${fmtUptime(st.uptime_s)} \xB7 ${st.psram_free_kb} KB PSRAM free` + (st.sd_free_kb ? ` \xB7 card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f"><button id="dpPlaylist" title="Every scene in order with dark gaps, looping until stopped \u2014 the whole evening on one button" style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;background:${st.show_on ? "#7a2a2a" : "#2a5537"};color:inherit">${st.show_on ? "\u25A0 stop the show" : "\u25B6 start the show"}</button>` + (st.show_on && st.scene ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;display:flex;gap:.5rem;align-items:center">\u{1F4A1} <input id="dpColor" type="color" value="#ff8c1e" title="Park the pixels on a colour" style="cursor:pointer"><button id="dpShow" title="Hand the pixels back to the scene engine" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">resume show</button><button id="dpOff" style="cursor:pointer;background:none;color:#9a8fb0;border:1px solid #35264f;border-radius:6px;padding:.2rem .5rem">off</button></div><div style="max-height:180px;overflow:auto" id="dpFiles">` + (tracks2.length ? tracks2.map((f, i) => `<div style="display:flex;gap:.4rem;align-items:center;padding:.3rem .8rem"><button data-play="${i}" title="Play on the castle" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .5rem">\u25B6</button><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}</span><small style="color:#9a8fb0">${kb3(f.size)}</small><button data-del="${i}" title="Delete from the card" style="cursor:pointer;background:none;color:#9a8fb0;border:0">\u2715</button></div>`).join("") : `<div style="padding:.5rem .8rem;color:#9a8fb0">${st.sd_mounted ? "no tracks on the card \u2014 tools/sd_sync.py push" : "no SD card"}</div>`) + `</div><div style="padding:.5rem .8rem;border-top:1px solid #35264f" title="What the motion sensor triggers">\u{1F463} <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> <select id="dpPirScene">` + sceneIds().map((s) => `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") + `</select> <input id="dpPirCool" type="number" min="5" max="600" step="5" value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="cooldown seconds">s</div><div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed #503a75;color:#9a8fb0;text-align:center">drop audio files here to upload</div><div style="padding:.4rem .8rem;border-top:1px solid #35264f"><button id="dpLog" style="cursor:pointer;background:none;border:0;color:#9a8fb0">boot log \u25B8</button><pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre></div>`;
       this.body.querySelector("#dpPlaylist").addEventListener("click", () => {
         void fetch(`/api/show/${st.show_on ? "stop" : "start"}`, { method: "POST" }).then(() => new Promise((r) => setTimeout(r, 600))).then(() => this.render());
       });
@@ -2883,6 +2891,11 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     }
   }
   var sdText = (s) => s.sd_mounted === void 0 ? "" : s.sd_mounted ? " \xB7 SD ok" : " \xB7 no SD";
+  var sdChip = (s) => {
+    if (s.sd_mounted === void 0) return "";
+    if (!s.sd_mounted) return " \xB7 no SD";
+    return s.sd_free_kb ? ` \xB7 SD ${(s.sd_free_kb / 1048576).toFixed(1)} GB free` : " \xB7 SD ok";
+  };
   function toast(msg, isError = false) {
     const el2 = document.createElement("div");
     el2.textContent = msg;
@@ -2899,11 +2912,15 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     let lastVol = 70;
     let soundRoute = localStorage.getItem("castleSoundRoute") === "castle" ? "castle" : "mac";
     let routeEnforced = false;
-    const panel = new DevicePanel();
+    let lastStatus = null;
+    const dock = document.createElement("div");
+    dock.id = "castleDock";
+    document.body.appendChild(dock);
+    const panel = new DevicePanel(dock);
     const chip = document.createElement("div");
     chip.id = "deviceChip";
-    chip.style.cssText = "position:fixed;right:12px;bottom:12px;z-index:40;display:none;background:#241a38;color:#e8e0f0;border:1px solid #503a75;border-radius:10px;padding:.5rem .75rem;font:13px system-ui;box-shadow:0 4px 16px rgba(0,0,0,.5)";
-    document.body.appendChild(chip);
+    chip.style.cssText = "display:none;background:#241a38;color:#e8e0f0;border:1px solid #503a75;border-radius:10px;padding:.5rem .75rem;font:13px system-ui;box-shadow:0 4px 16px rgba(0,0,0,.5)";
+    dock.appendChild(chip);
     function act(path, okMsg) {
       fetch(path, { method: "POST" }).then(
         (r) => {
@@ -2960,17 +2977,19 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         act(`/api/volume?v=${to}`, `sound: castle \u2014 volume ${to}`);
       }
       syncRouteUI();
+      if (lastStatus) sayStatus(lastStatus);
       if (announce) opts.onSoundRoute?.(route === "mac");
     }
-    const sayStatus = (s) => opts.onStatus?.(`castle v${s.version}${sdText(s)} \xB7 ${mirror ? "mirroring" : "not mirroring"}`, true);
+    const sayStatus = (s) => opts.onStatus?.(`castle v${s.version}${sdText(s)} \xB7 ${mirror ? "mirroring" : "not mirroring"} \xB7 sound: ${soundRoute === "mac" ? "Mac" : "castle"}`, true);
     const render = (s) => {
       chip.style.display = "block";
       chip.style.opacity = "1";
       lastVol = s.volume ?? lastVol;
+      lastStatus = s;
       sayStatus(s);
       const bits = [s.scene && s.scene !== "stop" ? s.scene : "", s.track ?? ""].filter(Boolean);
       const playing = bits.length ? `\u25B6 ${bits.join(" \xB7 ")}` : "idle";
-      chip.innerHTML = `<div>\u{1F3F0} castle v${s.version}${sdText(s)} \xB7 <span id="devNow" style="color:#b8a8d8">${playing}</span></div><div style="margin-top:.25rem;display:flex;align-items:center;gap:.4rem"><button id="devSnd" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem;white-space:nowrap"></button><button id="devMute" title="Mute the castle speaker" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .45rem">${lastVol === 0 ? "\u{1F507}" : "\u{1F50A}"}</button><input id="devVol" type="range" min="0" max="100" value="${lastVol}" style="width:90px"><label style="cursor:pointer;white-space:nowrap" title="Also fire scene picks on the real castle"><input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}> on castle</label><button id="devStop" title="Stop the castle: audio and scene" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u25A0</button><button id="devMore" title="The castle's own controls: SD library, show, light, motion sensor, boot log" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u{1F3F0} Castle</button></div>`;
+      chip.innerHTML = `<div>\u{1F3F0} castle v${s.version}${sdChip(s)} \xB7 <span id="devNow" style="color:#b8a8d8">${playing}</span></div><div style="margin-top:.25rem;display:flex;align-items:center;gap:.4rem"><button id="devSnd" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem;white-space:nowrap"></button><button id="devMute" title="Mute the castle speaker" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .45rem">${lastVol === 0 ? "\u{1F507}" : "\u{1F50A}"}</button><input id="devVol" type="range" min="0" max="100" value="${lastVol}" style="width:90px"><label style="cursor:pointer;white-space:nowrap" title="Also fire scene picks on the real castle"><input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}> on castle</label><button id="devStop" title="Stop the castle: audio and scene" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u25A0</button><button id="devMore" title="The castle's own controls: SD library, show, light, motion sensor, boot log" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u{1F3F0} Castle</button></div>`;
       chip.querySelector("#devMirror").addEventListener("change", (e) => {
         mirror = e.target.checked;
         sayStatus(s);
@@ -4609,7 +4628,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
   <div class="${cls}" data-id="${esc(t.id)}" title="Click to open the clip editor">
     <div class="trk__nm">${esc(t.id)}
       ${ctx.inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
-      ${ctx.onCastle ? `<span class="trk__badge" title="A copy of this file is on the castle's SD card">on castle \u2713</span>` : ""}
+      ${ctx.onCastle === "current" ? `<span class="trk__badge" title="The castle's SD card holds this exact file \u2014 byte count verified">on castle \u2713</span>` : ""}
+      ${ctx.onCastle === "stale" ? `<span class="trk__badge" style="color:var(--warn,#e0a34a)" title="The card's copy is DIFFERENT bytes \u2014 this track changed since it was sent. Press Update castle.">stale on castle \u26A0</span>` : ""}
       <small>${t.dur ?? "?"}s \xB7 ${t.kb} KB \xB7 ${fmt2}</small>
       <small title="${esc(BAND_HELP)}">${esc(onsets)}</small>
       ${src ? `<small class="trk__src">from ${src}</small>` : ""}
@@ -4621,7 +4641,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       <button data-act="scene" title="${ctx.inShow ? "Rewrite this scene from the track as it is now" : "Add this track to the show as a new scene"}"
         >${ctx.inShow ? "Update scene" : "Make scene"}</button>
       ${t.source ? `<button data-act="refresh" title="Rebuild from the remembered source using the options above">Re-import</button>` : ""}
-      ${ctx.onCastle !== null ? `<button data-act="send" title="Copy this file onto the castle's SD card over WiFi \u2014 it can then play on the castle with zero lag">${ctx.onCastle ? "Re-send" : "\u2192 Castle"}</button>` : ""}
+      ${ctx.onCastle !== null ? `<button data-act="send" title="Copy this file onto the castle's SD card over WiFi \u2014 it can then play on the castle with zero lag">${ctx.onCastle === "stale" ? "Update castle" : ctx.onCastle === "current" ? "Re-send" : "\u2192 Castle"}</button>` : ""}
       <button data-act="del" class="danger">Delete</button>
     </div>
   </div>`;
@@ -4641,6 +4661,23 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       return null;
     }
   }
+  function cardState(t, card) {
+    if (card === null) return null;
+    const size2 = card.get(cardName(t));
+    if (size2 === void 0) return "absent";
+    if (t.bytes === void 0) return "current";
+    return size2 === t.bytes ? "current" : "stale";
+  }
+  async function freeKb() {
+    try {
+      const r = await fetch("/api/status");
+      if (!r.ok) return null;
+      const s = await r.json();
+      return typeof s.sd_free_kb === "number" && s.sd_free_kb > 0 ? s.sd_free_kb : null;
+    } catch {
+      return null;
+    }
+  }
   function putWithProgress(name, blob, onProgress) {
     return new Promise((resolve) => {
       const xhr = new XMLHttpRequest();
@@ -4648,8 +4685,15 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       xhr.upload.addEventListener("progress", (e) => {
         if (e.lengthComputable) onProgress?.(Math.round(100 * e.loaded / e.total));
       });
-      xhr.addEventListener("load", () => resolve(xhr.status >= 200 && xhr.status < 300));
-      xhr.addEventListener("error", () => resolve(false));
+      xhr.addEventListener("load", () => {
+        if (xhr.status < 200 || xhr.status >= 300) return resolve(-1);
+        try {
+          resolve(JSON.parse(xhr.responseText).bytes ?? -1);
+        } catch {
+          resolve(-1);
+        }
+      });
+      xhr.addEventListener("error", () => resolve(-1));
       xhr.send(blob);
     });
   }
@@ -4657,8 +4701,16 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     try {
       const r = await fetch(`/api/track/${encodeURIComponent(t.id)}`);
       if (!r.ok) throw new Error(String(r.status));
-      const ok = await putWithProgress(cardName(t), await r.blob(), onProgress);
-      return ok ? { ok: true, msg: `\u201C${t.id}\u201D is on the castle's card.` } : { ok: false, msg: `Send of \u201C${t.id}\u201D failed \u2014 is the castle awake?` };
+      const blob = await r.blob();
+      const free = await freeKb();
+      if (free !== null && blob.size / 1024 > free) {
+        return { ok: false, msg: `No room on the card for \u201C${t.id}\u201D \u2014 it needs ${Math.round(blob.size / 1024)} KB and the card has ${free} KB free.` };
+      }
+      const wrote = await putWithProgress(cardName(t), blob, onProgress);
+      if (wrote === blob.size) {
+        return { ok: true, msg: `\u201C${t.id}\u201D is on the castle's card \u2014 ${Math.round(blob.size / 1024)} KB, verified.` };
+      }
+      return wrote >= 0 ? { ok: false, msg: `Send of \u201C${t.id}\u201D landed short \u2014 the castle wrote ${wrote} of ${blob.size} bytes. Send it again.` } : { ok: false, msg: `Send of \u201C${t.id}\u201D failed \u2014 is the castle awake?` };
     } catch {
       return { ok: false, msg: "Send failed \u2014 no castle answering." };
     }
@@ -4674,7 +4726,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
   function syncPlan(ctx) {
     if (!ctx.card) return [];
     const card = ctx.card;
-    return ctx.tracks.filter((t) => ctx.sceneIds.has(t.id) && !card.has(cardName(t)));
+    return ctx.tracks.filter((t) => ctx.sceneIds.has(t.id) && cardState(t, card) !== "current");
   }
   function cardRowsHtml(ctx) {
     const rows = cardOnly(ctx);
@@ -4686,6 +4738,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     </div>
     <div class="trk__act">
       <button data-cardact="play" title="Play this file on the castle's speaker">Play on castle</button>
+      ${ctx.canPull ? `<button data-cardact="pull" title="Copy this file off the card into the Mac library \u2014 it gets imported and analysed like any drop">\u2B07 to Mac</button>` : ""}
       <button data-cardact="del" class="danger" title="Delete from the SD card">Delete</button>
     </div>
   </div>`).join("");
@@ -4749,6 +4802,18 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
           { method: "POST" }
         ).catch(() => null);
         toast(r?.ok ? `playing ${name} on the castle` : "play failed", !r?.ok);
+      } else if (btn2.dataset["cardact"] === "pull" && deps.importFile) {
+        btn2.disabled = true;
+        btn2.textContent = "pulling\u2026";
+        const r = await fetch(`/api/card/${encodeURIComponent(name)}`).catch(() => null);
+        if (!r?.ok) {
+          deps.say(`Could not pull ${name} off the card \u2014 is the castle awake?`, true);
+          btn2.disabled = false;
+          btn2.textContent = "\u2B07 to Mac";
+          return;
+        }
+        await deps.importFile(new File([await r.blob()], name));
+        await deps.reloadCard();
       } else if (btn2.dataset["cardact"] === "del") {
         if (!confirm(`Delete ${name} from the castle's SD card?`)) return;
         const r = await fetch(
@@ -5615,9 +5680,8 @@ ${lines.join("\n")}
       selected: null,
       /** Last list drawn, so a redraw does not need another round trip. */
       tracks: [],
-      /** name → bytes on the castle's SD card, or null when no castle answers.
-       *  Feeds the "on castle" badge, the card-only rows and the Sync button —
-       *  the reconcile the two-library setup was missing (dogfood 005/006). */
+      /** name → bytes on the castle's SD card; null when no castle answers.
+       *  Feeds badges, card-only rows and Sync (dogfood 005/006). */
       onCard: null
     };
     const say = (msg, err) => {
@@ -5680,13 +5744,19 @@ ${lines.join("\n")}
       drawTracks(void 0);
     }
     void loadCard();
-    const cardCtx = () => ({ tracks: T.tracks, sceneIds: T.sceneIds, card: T.onCard });
+    const cardCtx = () => ({
+      tracks: T.tracks,
+      sceneIds: T.sceneIds,
+      card: T.onCard,
+      canPull: T.mode === "studio"
+    });
     wireCardActions({
       list: T.list,
       syncBtn: byId("trkSync"),
       ctx: cardCtx,
       say,
-      reloadCard: loadCard
+      reloadCard: loadCard,
+      importFile: (f) => takeFile(f)
     });
     watchCard({
       active: () => T.mode === "studio",
@@ -5703,7 +5773,7 @@ ${lines.join("\n")}
         selected: T.selected === t.id,
         inShow: T.sceneIds.has(t.id),
         sounding: playingId === t.id,
-        onCastle: T.onCard === null ? null : T.onCard.has(cardName(t))
+        onCastle: cardState(t, T.onCard)
       })).join("") + cardRowsHtml(cardCtx());
       renderSyncButton(byId("trkSync"), cardCtx());
       const n = T.tracks.length;

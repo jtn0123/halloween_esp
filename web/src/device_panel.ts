@@ -32,6 +32,8 @@ interface DeviceStatus {
   uptime_s: number;
   sd_mounted: boolean;
   psram_free_kb: number;
+  /** KB free on the card — v5.23+. */
+  sd_free_kb?: number;
   /** 0–100, mirrored from the media player; older firmware omits it. */
   volume?: number;
   /** Motion-sensor config, mirrored from the pir_* entities. */
@@ -66,14 +68,16 @@ export class DevicePanel {
   private body: HTMLDivElement;
   private open = false;
 
-  constructor() {
+  constructor(parent?: HTMLElement) {
     this.root = document.createElement("div");
     // Styled in previewer/panels.css — as tokens, so the panel follows the
     // light theme instead of hardcoding its own dark one (grade report C7).
+    // Lives inside the castle dock when device.ts provides one, so chip and
+    // panel are one widget rather than two floating boxes.
     this.root.id = "devicePanel";
     this.body = document.createElement("div");
     this.root.appendChild(this.body);
-    document.body.appendChild(this.root);
+    (parent ?? document.body).appendChild(this.root);
   }
 
   toggle(): void {
@@ -99,6 +103,8 @@ export class DevicePanel {
       `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f">` +
       `<b>🏰 v${st.version}</b> · up ${fmtUptime(st.uptime_s)} · ` +
       `${st.psram_free_kb} KB PSRAM free` +
+      (st.sd_free_kb
+        ? ` · card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") +
       `</div>` +
       `<div style="padding:.5rem .8rem;border-bottom:1px solid #35264f">` +
       `<button id="dpPlaylist" title="Every scene in order with dark gaps, ` +

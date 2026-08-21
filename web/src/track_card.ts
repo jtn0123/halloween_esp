@@ -10,7 +10,7 @@
  */
 
 import { esc } from "./track_rows.js";
-import { cardName, fetchCard, sendToCastle } from "./track_send.js";
+import { cardName, cardState, fetchCard, sendToCastle } from "./track_send.js";
 import { toast } from "./device.js";
 import type { TrackInfo } from "./tracks.js";
 
@@ -20,6 +20,8 @@ export interface CardCtx {
   sceneIds: ReadonlySet<string>;
   /** name → bytes on the card; null = no castle answering. */
   card: ReadonlyMap<string, number> | null;
+  /** Studio mode: pulling a card file INTO the Mac library is possible. */
+  canPull: boolean;
 }
 
 const AUDIO = /\.(mp3|wav|flac|opus)$/i;
@@ -34,11 +36,14 @@ export function cardOnly(ctx: CardCtx): { name: string; size: number }[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** In-show tracks the card is missing — what Sync would send. */
+/** In-show tracks the card is missing OR holding stale — what Sync sends.
+ *  Stale counts: a re-imported track whose old bytes still sit on the card
+ *  would play the wrong version on Halloween. */
 export function syncPlan(ctx: CardCtx): TrackInfo[] {
   if (!ctx.card) return [];
   const card = ctx.card;
-  return ctx.tracks.filter(t => ctx.sceneIds.has(t.id) && !card.has(cardName(t)));
+  return ctx.tracks.filter(t =>
+    ctx.sceneIds.has(t.id) && cardState(t, card) !== "current");
 }
 
 /** Rows for the card-only files; "" when there are none to show. */
@@ -54,6 +59,7 @@ export function cardRowsHtml(ctx: CardCtx): string {
     </div>
     <div class="trk__act">
       <button data-cardact="play" title="Play this file on the castle's speaker">Play on castle</button>
+      ${ctx.canPull ? `<button data-cardact="pull" title="Copy this file off the card into the Mac library — it gets imported and analysed like any drop">⬇ to Mac</button>` : ""}
       <button data-cardact="del" class="danger" title="Delete from the SD card">Delete</button>
     </div>
   </div>`).join("");
@@ -111,6 +117,8 @@ export interface CardActionDeps {
   ctx: () => CardCtx;
   say: (m: string, err?: boolean) => void;
   reloadCard: () => Promise<void>;
+  /** The tracks panel's own import path — what ⬇ to Mac hands the file to. */
+  importFile?: (f: File) => Promise<void>;
 }
 
 /** One-time wiring for the Sync button and the card-only rows. */
@@ -144,6 +152,21 @@ export function wireCardActions(deps: CardActionDeps): void {
       const r = await fetch(`/api/play?f=${encodeURIComponent(name)}`,
                             { method: "POST" }).catch(() => null);
       toast(r?.ok ? `playing ${name} on the castle` : "play failed", !r?.ok);
+    } else if (btn.dataset["cardact"] === "pull" && deps.importFile) {
+      btn.disabled = true;
+      btn.textContent = "pulling…";
+      const r = await fetch(`/api/card/${encodeURIComponent(name)}`)
+        .catch(() => null);
+      if (!r?.ok) {
+        deps.say(`Could not pull ${name} off the card — is the castle awake?`, true);
+        btn.disabled = false;
+        btn.textContent = "⬇ to Mac";
+        return;
+      }
+      // Through the normal import gate: converted, analysed, remembered —
+      // a pulled file is a first-class track, not a stray copy.
+      await deps.importFile(new File([await r.blob()], name));
+      await deps.reloadCard();
     } else if (btn.dataset["cardact"] === "del") {
       if (!confirm(`Delete ${name} from the castle's SD card?`)) return;
       const r = await fetch(`/api/files/${encodeURIComponent(name)}`,

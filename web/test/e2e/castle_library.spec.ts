@@ -36,8 +36,13 @@ async function stubCard(page: Page, files: SdFile[],
       return route.fulfill({ json: files });
     if (p.startsWith("/api/files/") && method === "PUT") {
       const name = decodeURIComponent(p.slice("/api/files/".length));
-      files.push({ name, size: 1024, dir: false });
-      return route.fulfill({ json: { path: `/sd/${name}`, bytes: 1024 } });
+      // Record the REAL byte count — the desk verifies it against what it
+      // sent, and the stale check compares it on the next listing.
+      const size = route.request().postDataBuffer()?.length ?? 0;
+      const i = files.findIndex((f) => f.name === name);
+      if (i >= 0) files.splice(i, 1);
+      files.push({ name, size, dir: false });
+      return route.fulfill({ json: { path: `/sd/${name}`, bytes: size } });
     }
     if (p.startsWith("/api/files/") && method === "DELETE") {
       const name = decodeURIComponent(p.slice("/api/files/".length));
@@ -59,8 +64,17 @@ async function stubCard(page: Page, files: SdFile[],
   return calls;
 }
 
+/** The track's exact on-disk size, from the real studio — a stub that
+ *  guesses would render every "current" copy as stale. */
+async function realBytes(page: Page, id: string): Promise<number> {
+  const r = await (await page.request.get("/api/tracks")).json() as
+    { tracks: { id: string; bytes: number }[] };
+  return r.tracks.find((t) => t.id === id)!.bytes;
+}
+
 test("every local track says whether the castle has it", async ({ page }) => {
-  await stubCard(page, [{ name: `${MP3_ID}.mp3`, size: 48000, dir: false }]);
+  await stubCard(page,
+    [{ name: `${MP3_ID}.mp3`, size: await realBytes(page, MP3_ID), dir: false }]);
   await page.goto("/");
   const has = page.locator(`.trk[data-id="${MP3_ID}"]`);
   const hasNot = page.locator(`.trk[data-id="${WAV_ID}"]`);
@@ -127,6 +141,40 @@ test("sync sends exactly what the show is missing, then reports done", async ({ 
   // The card now has it, so the button stands down.
   await expect(sync).toHaveText("show is on the card ✓");
   await expect(sync).toBeDisabled();
+});
+
+test("a card copy with different bytes reads STALE, and Sync re-sends it", async ({ page }) => {
+  // The card holds SOMETHING under this track's name, but not these bytes —
+  // a re-import since the send. "on castle ✓" here would play the wrong
+  // version on Halloween; the row must say stale and Sync must count it.
+  await stubCard(page, [{ name: `${MP3_ID}.mp3`, size: 999, dir: false }], [MP3_ID]);
+  await page.goto("/");
+  const row = page.locator(`.trk[data-id="${MP3_ID}"]`);
+  await expect(row.locator(".trk__badge", { hasText: "stale" })).toBeVisible();
+  await expect(row.locator("button[data-act='send']")).toHaveText("Update castle");
+  const sync = page.locator("#trkSync");
+  await expect(sync).toHaveText("Sync show → castle (1)");
+  await sync.click();
+  // The re-send replaces the stale copy with the real bytes → all current.
+  await expect(sync).toHaveText("show is on the card ✓");
+  await expect(row.locator(".trk__badge", { hasText: "on castle ✓" })).toBeVisible();
+});
+
+test("⬇ to Mac pulls a card file through the real import gate", async ({ page }) => {
+  const files = [{ name: "pulled_song.mp3", size: 48000, dir: false }];
+  await stubCard(page, files);
+  // The "card file" is real audio (the studio's own MP3), so the import that
+  // follows the pull decodes and analyses genuinely.
+  await page.route("**/api/card/pulled_song.mp3", async (route) => {
+    const real = await route.fetch({
+      url: new URL(`/api/track/${MP3_ID}`, route.request().url()).toString() });
+    return route.fulfill({ body: await real.body(),
+                           contentType: "audio/mpeg" });
+  });
+  await page.goto("/");
+  await page.locator(".trk--card[data-card='pulled_song.mp3'] [data-cardact='pull']").click();
+  // A first-class local track appears, analysed like any drop.
+  await expect(page.locator(".trk[data-id='pulled_song']")).toBeVisible({ timeout: 20000 });
 });
 
 test("a → Castle send updates the row to Re-send", async ({ page }) => {

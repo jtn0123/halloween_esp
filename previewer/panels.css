@@ -195,11 +195,20 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   background: var(--panel, #0d101c); border-radius: 6px; cursor: pointer;
 }
 
-#devicePanel {
+/* One castle home: the dock owns the corner; the chip is its collapsed
+   face, #devicePanel its expanded one (device.ts builds both into it). */
+#castleDock {
   position: fixed;
   right: 12px;
-  bottom: 96px;
-  z-index: 39;
+  bottom: 12px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+#devicePanel {
   width: 290px;
   background: var(--panel-2);
   color: var(--ink);

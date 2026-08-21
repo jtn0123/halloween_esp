@@ -18,7 +18,7 @@ import type { BandEditor } from "./band_editor.js";
 import { fillOptsFrom, initImportOpts } from "./import_opts.js";
 import { cardRowsHtml, renderSyncButton, sendAction, watchCard,
          wireCardActions } from "./track_card.js";
-import { cardName, fetchCard } from "./track_send.js";
+import { cardState, fetchCard } from "./track_send.js";
 import { trackRowHtml } from "./track_rows.js";
 import { wireUrlImport } from "./track_import_url.js";
 import { detectOnsets, loudnessEnvelope } from "./onsets.js";
@@ -48,6 +48,8 @@ export interface TrackInfo {
   ext?: string;
   /** File size on disk, kilobytes. */
   kb: number;
+  /** Exact size in bytes — what proves a card copy current vs stale. */
+  bytes?: number;
   /** Duration in seconds; missing if ffprobe could not say. */
   dur?: number;
   /** Where it came from — a URL, or `file:<name>` for a dropped file. */
@@ -124,9 +126,8 @@ export function initTracks(deps: TracksDeps): TracksApi {
     selected: null as string | null,
     /** Last list drawn, so a redraw does not need another round trip. */
     tracks: [] as TrackInfo[],
-    /** name → bytes on the castle's SD card, or null when no castle answers.
-     *  Feeds the "on castle" badge, the card-only rows and the Sync button —
-     *  the reconcile the two-library setup was missing (dogfood 005/006). */
+    /** name → bytes on the castle's SD card; null when no castle answers.
+     *  Feeds badges, card-only rows and Sync (dogfood 005/006). */
     onCard: null as Map<string, number> | null,
   };
   const say = (msg: string, err?: boolean): void => {
@@ -220,23 +221,24 @@ export function initTracks(deps: TracksDeps): TracksApi {
   }
   void loadCard();
   /** Both libraries at once — what track_card.ts renders and syncs from. */
-  const cardCtx = () => ({ tracks: T.tracks, sceneIds: T.sceneIds, card: T.onCard });
+  const cardCtx = () => ({ tracks: T.tracks, sceneIds: T.sceneIds,
+                           card: T.onCard, canPull: T.mode === "studio" });
   wireCardActions({ list: T.list, syncBtn: byId<HTMLButtonElement>("trkSync"),
-                    ctx: cardCtx, say, reloadCard: loadCard });
+                    ctx: cardCtx, say, reloadCard: loadCard,
+                    importFile: f => takeFile(f) });
   watchCard({ active: () => T.mode === "studio", card: () => T.onCard,
               apply: c => { T.onCard = c; drawTracks(undefined); } });
 
   function drawTracks(tracks: TrackInfo[] | undefined): void {
     if (tracks) T.tracks = tracks;
     const playingId = preview.playing();
-    // The row markup lives in track_rows.ts (500-line cap; the seam is
-    // "how a row looks" vs "what clicking it does"). Card-only rows and the
-    // Sync button follow the same redraw so the merged view never goes stale.
+    // Row markup lives in track_rows.ts; card-only rows and the Sync button
+    // follow the same redraw so the merged view never goes stale.
     T.list.innerHTML = T.tracks.map(t => trackRowHtml(t, {
       selected: T.selected === t.id,
       inShow: T.sceneIds.has(t.id),
       sounding: playingId === t.id,
-      onCastle: T.onCard === null ? null : T.onCard.has(cardName(t)),
+      onCastle: cardState(t, T.onCard),
     })).join("") + cardRowsHtml(cardCtx());
     renderSyncButton(byId<HTMLButtonElement>("trkSync"), cardCtx());
     const n = T.tracks.length;

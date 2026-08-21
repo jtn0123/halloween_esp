@@ -43,6 +43,8 @@ interface Status {
   /** Absent on the native-API fallback — render as unknown, never as "no SD"
    *  (dogfood 001: the fallback's missing field displayed as a lie). */
   sd_mounted?: boolean;
+  /** KB free on the card — v5.23+; older firmware omits it. */
+  sd_free_kb?: number;
   volume?: number;
   scene?: string;
   track?: string;
@@ -69,6 +71,14 @@ async function probe(): Promise<Status | null> {
 /** "SD ok" / "no SD", or nothing at all when the answer isn't known. */
 const sdText = (s: Status): string =>
   s.sd_mounted === undefined ? "" : s.sd_mounted ? " · SD ok" : " · no SD";
+
+/** The chip's richer version: how much room the card actually has. */
+const sdChip = (s: Status): string => {
+  if (s.sd_mounted === undefined) return "";
+  if (!s.sd_mounted) return " · no SD";
+  return s.sd_free_kb
+    ? ` · SD ${(s.sd_free_kb / 1048576).toFixed(1)} GB free` : " · SD ok";
+};
 
 /** One small transient message near the chip. The device queues actions, so
  *  "queued" IS the honest success state — see the interval in castle_sd.yaml. */
@@ -115,16 +125,24 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   let soundRoute: "mac" | "castle" =
     localStorage.getItem("castleSoundRoute") === "castle" ? "castle" : "mac";
   let routeEnforced = false;
-  const panel = new DevicePanel();
+  let lastStatus: Status | null = null;
+
+  // One castle home: the dock owns the corner, the chip is its collapsed
+  // face and the panel its expanded one — a single widget, not a chip PLUS
+  // a separate floating box (the last of the dogfood's "scatterbrained").
+  const dock = document.createElement("div");
+  dock.id = "castleDock";
+  document.body.appendChild(dock);
+  const panel = new DevicePanel(dock);
 
   const chip = document.createElement("div");
   chip.id = "deviceChip";
   chip.style.cssText =
-    "position:fixed;right:12px;bottom:12px;z-index:40;display:none;" +
+    "display:none;" +
     "background:#241a38;color:#e8e0f0;border:1px solid #503a75;" +
     "border-radius:10px;padding:.5rem .75rem;font:13px system-ui;" +
     "box-shadow:0 4px 16px rgba(0,0,0,.5)";
-  document.body.appendChild(chip);
+  dock.appendChild(chip);
 
   /** POST, toast, then re-poll — the chip shows what the click did about a
    *  second later (queued action + main-loop tick) instead of after 15 s. */
@@ -198,6 +216,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       act(`/api/volume?v=${to}`, `sound: castle — volume ${to}`);
     }
     syncRouteUI();
+    if (lastStatus) sayStatus(lastStatus);   // the masthead names the route
     if (announce) opts.onSoundRoute?.(route === "mac");
   }
 
@@ -207,12 +226,14 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
    *  value, which is not what the hand on it just asked for. */
   const sayStatus = (s: Status): void =>
     opts.onStatus?.(`castle v${s.version}${sdText(s)}`
-      + ` · ${mirror ? "mirroring" : "not mirroring"}`, true);
+      + ` · ${mirror ? "mirroring" : "not mirroring"}`
+      + ` · sound: ${soundRoute === "mac" ? "Mac" : "castle"}`, true);
 
   const render = (s: Status): void => {
     chip.style.display = "block";
     chip.style.opacity = "1";
     lastVol = s.volume ?? lastVol;
+    lastStatus = s;
     sayStatus(s);
     // A track can play with no scene (the card rows, the panel's ▶) — the
     // chip must say so, not "idle" (caught live against the emulator).
@@ -220,7 +241,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       .filter(Boolean);
     const playing = bits.length ? `▶ ${bits.join(" · ")}` : "idle";
     chip.innerHTML =
-      `<div>🏰 castle v${s.version}${sdText(s)} · ` +
+      `<div>🏰 castle v${s.version}${sdChip(s)} · ` +
       `<span id="devNow" style="color:#b8a8d8">${playing}</span></div>` +
       `<div style="margin-top:.25rem;display:flex;align-items:center;gap:.4rem">` +
       `<button id="devSnd" ` +

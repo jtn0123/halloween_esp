@@ -50,14 +50,13 @@
   .trk__act { flex-wrap: wrap; }
   .trk__act button { min-height: 40px; }
 
-  /* The device chrome is fixed-position with inline styles; these bounds
-     override just enough that neither can outgrow the viewport. */
-  #deviceChip { left: 12px; right: 12px !important; max-width: none; }
+  /* The castle dock owns the corner now (chip + panel are its children,
+     see panels.css) — bound the DOCK to the viewport and let the chip's
+     control row wrap instead of running off a phone's edge. */
+  #castleDock { left: 12px; right: 12px; align-items: stretch; }
+  #deviceChip > div { flex-wrap: wrap; }
   #devicePanel {
     width: auto !important;
-    left: 12px;
-    right: 12px !important;
-    bottom: 110px !important;
     max-height: 60vh;
     overflow-y: auto;
   }

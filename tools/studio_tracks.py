@@ -98,6 +98,9 @@ def track_info(p: Path) -> dict:
         # does not exist for every non-MP3 import.
         "ext": p.suffix.lstrip("."),
         "kb": p.stat().st_size // 1024,
+        # Exact size, so the desk can tell a CURRENT card copy from a STALE
+        # one (re-imported since it was sent) by comparing against /api/files.
+        "bytes": p.stat().st_size,
         "source": meta.get("source", ""),
         "title": meta.get("title", ""),
         "imported": meta.get("imported", ""),

@@ -15,8 +15,8 @@ Endpoints (all JSON, all local-only):
     DELETE /api/tracks/<id>         remove a track
     POST   /api/scene               add/replace a scene in scenes.yaml
     POST   /api/rebuild             re-run audio + generators
-    GET    /api/track/<id>          stream a track for the browser to audition
-                                    (extension optional — the server owns it)
+    GET    /api/track/<id>          stream a track to audition (ext optional)
+    GET    /api/card/<name>         pull a file off the castle's SD card
 
 Binds to 127.0.0.1 by default. This drives ffmpeg and yt-dlp on your machine
 and edits files in the repo; `--lan` opens it to the local network for the
@@ -184,6 +184,9 @@ class Handler(sh.JsonHandler):
             if p is None:
                 return self.send_json({"error": "not found"}, 404)
             return self.send_range(p, MIME[p.suffix.lstrip(".")])
+        if path.startswith("/api/card/"):
+            # Pull leg: the castle serves card bytes at /sd/<name>.
+            return self.relay("GET", to="/sd/" + path[len("/api/card/"):])
         if path.startswith("/api/"):
             return self.relay("GET")
         self.send_json({"error": "not found"}, 404)
@@ -324,9 +327,10 @@ class Handler(sh.JsonHandler):
         body = self.rfile.read(n) if n else b""
         return self.relay("PUT", body)
 
-    def relay(self, method: str, body: bytes = b"") -> None:
+    def relay(self, method: str, body: bytes = b"",
+              to: str | None = None) -> None:
         """Hand an unclaimed /api/* request to the castle, answer as it did."""
-        code, out, ctype = cl.forward(method, self.path, body)
+        code, out, ctype = cl.forward(method, to or self.path, body)
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(out)))
