@@ -65,3 +65,105 @@ export const playing = (page: Page, urlPart = ""): Promise<number> =>
   page.evaluate(
     `${ALL}.filter(a => !a.paused && a.src.includes(${JSON.stringify(urlPart)})).length`,
   ) as Promise<number>;
+
+/* ── A pretend castle, shared by the castle-facing specs ─────────────── */
+
+export interface SdFile { name: string; size: number; dir: boolean }
+
+/** What /api/status answers. Specs override fields per test. */
+export const CASTLE_STATUS = {
+  version: "5.23", compiled: "test", uptime_s: 4210, sd_mounted: true,
+  psram_free_kb: 1500, heap_free_kb: 70, sd_free_kb: 10_000_000, volume: 40,
+  scene: "", track: "",
+  pir: { armed: false, cooldown_s: 60, scene: "approach" },
+  show_on: false,
+};
+
+export interface FakeCastle {
+  /** Every request the desk made: "METHOD /path?query". */
+  calls: string[];
+  /** Mutable status — the next poll answers with it. */
+  status: Record<string, unknown>;
+  /** Mutable card listing; PUT/DELETE edit it unless `putBytes` says otherwise. */
+  files: SdFile[];
+  /** Answer PUTs with this many bytes instead of the true count (-1 = 500,
+   *  -2 = 504 "took it but never acked"). Reset to null for honesty. */
+  putBytes: number | null | ((name: string, real: number) => number | null);
+  /** Extra latency on every castle answer, ms. */
+  delay: number;
+  /** Castle gone: status becomes the studio's {studio:true}, the rest 502. */
+  up: boolean;
+  /** How many calls mention `part`. */
+  hits(part: string): number;
+}
+
+/**
+ * Route every castle-shaped /api/* call to an in-memory castle; the studio's
+ * own endpoints (/api/tracks, /api/track/<id>, imports, scenes) fall through
+ * to the real server, so a Sync moves real bytes the real server serves.
+ */
+export async function fakeCastle(page: Page, files: SdFile[] = [],
+                                 status: Record<string, unknown> = {}):
+    Promise<FakeCastle> {
+  const c: FakeCastle = {
+    calls: [], status: { ...CASTLE_STATUS, ...status }, files,
+    putBytes: null, delay: 0, up: true,
+    hits: (part) => c.calls.filter((x) => x.includes(part)).length,
+  };
+  const CASTLE = /^\/api\/(status|files|play|stop|volume|scene|light|pir|show|bootlog|card)\b/;
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    const p = url.pathname;
+    const method = route.request().method();
+    if (!CASTLE.test(p)) return route.fallback();
+    c.calls.push(`${method} ${p}${url.search}`);
+    if (c.delay) await new Promise((r) => setTimeout(r, c.delay));
+    if (p === "/api/status") {
+      return route.fulfill({ json: c.up ? c.status : { studio: true } });
+    }
+    if (!c.up) return route.fulfill({ status: 502, json: { error: "castle not reachable" } });
+    if (p === "/api/files" && method === "GET") return route.fulfill({ json: c.files });
+    if (p.startsWith("/api/files/") && method === "PUT") {
+      const name = decodeURIComponent(p.slice("/api/files/".length));
+      const real = route.request().postDataBuffer()?.length ?? 0;
+      const said = typeof c.putBytes === "function" ? c.putBytes(name, real)
+        : c.putBytes ?? real;
+      if (said === -1) return route.fulfill({ status: 500, body: "write failed" });
+      if (said === -2) return route.fulfill({ status: 504, json: { error: "castle did not answer in time" } });
+      const i = c.files.findIndex((f) => f.name === name);
+      if (i >= 0) c.files.splice(i, 1);
+      c.files.push({ name, size: said, dir: false });
+      return route.fulfill({ json: { path: `/sd/${name}`, bytes: said } });
+    }
+    if (p.startsWith("/api/files/") && method === "DELETE") {
+      const name = decodeURIComponent(p.slice("/api/files/".length));
+      const i = c.files.findIndex((f) => f.name === name);
+      if (i >= 0) c.files.splice(i, 1);
+      return route.fulfill({ json: { deleted: true } });
+    }
+    if (p === "/api/bootlog") return route.fulfill({ body: "boot log: 1 line\n[I][app] up\n" });
+    if (p === "/api/scene") c.status["scene"] = url.searchParams.get("s") ?? "";
+    if (p === "/api/stop") { c.status["scene"] = ""; c.status["track"] = ""; }
+    if (p === "/api/play") c.status["track"] = url.searchParams.get("f") ?? "";
+    if (p === "/api/volume") c.status["volume"] = Number(url.searchParams.get("v"));
+    if (p === "/api/show/start") c.status["show_on"] = true;
+    if (p === "/api/show/stop") c.status["show_on"] = false;
+    if (p === "/api/pir") {
+      const pir = { ...(c.status["pir"] as Record<string, unknown>) };
+      if (url.searchParams.has("armed")) pir["armed"] = url.searchParams.get("armed") === "1";
+      if (url.searchParams.has("scene")) pir["scene"] = url.searchParams.get("scene");
+      if (url.searchParams.has("cooldown")) pir["cooldown_s"] = Number(url.searchParams.get("cooldown"));
+      c.status["pir"] = pir;
+    }
+    return route.fulfill({ json: { queued: true } });
+  });
+  return c;
+}
+
+/** The track's exact on-disk size from the real studio, so a card copy can
+ *  be made current (same bytes) or stale (any other number) on purpose. */
+export async function realBytes(page: Page, id: string): Promise<number> {
+  const r = await (await page.request.get("/api/tracks")).json() as
+    { tracks: { id: string; bytes: number }[] };
+  return r.tracks.find((t) => t.id === id)!.bytes;
+}

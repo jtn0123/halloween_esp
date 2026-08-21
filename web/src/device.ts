@@ -37,7 +37,8 @@ import { DevicePanel } from "./device_panel.js";
 export interface DeviceLink {
   /** Fire scene `id` on the castle, if one is listening and mirroring is on. */
   scene(id: string): void;
-  /** Stop castle audio + scene. */
+  /** Stop castle audio + scene — mirrored like a scene pick, so mirroring
+   *  off keeps Stop local too. */
   stop(): void;
 }
 
@@ -419,7 +420,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       act(`/api/scene?s=${encodeURIComponent(id)}`, `scene ${id}`);
     },
     stop(): void {
-      if (!live) return;
+      if (!live || !mirror) return;
       act("/api/stop", "stop");
     },
   };

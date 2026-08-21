@@ -57,3 +57,15 @@ export function castleBusy<T>(p: Promise<T>): Promise<T> {
 }
 
 export const isCastleBusy = (): boolean => busy > 0;
+
+/* The card's CONTENTS changed by a path the library did not drive — the
+   panel's drop-upload or its ✕ delete. The merged Library re-reads the
+   card at once instead of at its next 20 s poll, so a file dropped in the
+   corner shows up in the list below while the hand is still there. */
+const cardFns = new Set<Fn>();
+export function cardChanged(): void {
+  for (const f of cardFns) f();
+}
+export function onCardChanged(f: Fn): void {
+  cardFns.add(f);
+}

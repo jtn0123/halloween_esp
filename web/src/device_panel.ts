@@ -21,6 +21,7 @@
  * soldered pixel plays its part in the corner of the room.
  */
 
+import { cardChanged } from "./castle_bus.js";
 import { castleAct } from "./device.js";
 
 interface SdFile {
@@ -186,7 +187,7 @@ export class DevicePanel {
       `title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">` +
       `👣 <small style="color:var(--muted)">motion sensor</small> ` +
       `<label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
-      `<select id="dpPirScene">` +
+      `<select id="dpPirScene" title="Which scene the motion sensor plays">` +
       sceneIds().map((s) =>
         `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") +
       `</select> ` +
@@ -255,7 +256,7 @@ export class DevicePanel {
         if (!confirm(`Delete ${f.name} from the castle's SD card?`)) return;
         void castleAct(`/api/files/${encodeURIComponent(f.name)}`,
                        `deleted ${f.name} from the card`, { method: "DELETE" })
-          .then((ok) => { if (ok) void this.render(); });
+          .then((ok) => { if (ok) { cardChanged(); void this.render(); } });
       }));
 
     // PIR settings: each control posts just its own field; the device's
@@ -295,6 +296,7 @@ export class DevicePanel {
                               { method: "PUT", body: f });
         drop.textContent = r.ok ? `✓ ${f.name}` : `✗ ${f.name} failed`;
       }
+      cardChanged();                 // the Library below re-reads the card now
       void this.render();
     });
 

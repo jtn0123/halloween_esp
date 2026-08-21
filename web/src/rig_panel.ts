@@ -78,7 +78,8 @@ export function createRigPanel(rig: RigState, hooks: RigHooks): RigPanel {
 
     return `<tr>`
       + `<td class="rig__spot">${SPOT[z]}<small>GPIO${ZONE_PIN[z]}</small></td>`
-      + `<td><select class="rigF" data-z="${z}">${opts(slot.fixture)}</select></td>`
+      + `<td><select class="rigF" data-z="${z}" `
+      + `title="Which fixture is in the ${SPOT[z]} spot">${opts(slot.fixture)}</select></td>`
       + `<td>${count}</td>`
       + `<td>${kind}</td></tr>`;
   }

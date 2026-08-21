@@ -182,6 +182,9 @@ const transport = new Transport({
     players?.codecs.stop();
   },
   isExternalPlaying: () => players?.tracks.previewing() ?? false,
+  // ■ Stop / Esc reach the castle too (when one is mirroring): the desk
+  // fired the scene on the porch, so the desk's own Stop must end it.
+  onBlackout: () => device.stop(),
 });
 
 /* ── Chrome ── */

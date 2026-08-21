@@ -9,7 +9,7 @@
  * show needs that the card does not have, with per-file progress.
  */
 
-import { onCastlePresence } from "./castle_bus.js";
+import { onCardChanged, onCastlePresence } from "./castle_bus.js";
 import { esc } from "./track_rows.js";
 import { cardName, cardState, fetchCard, sendable, sendToCastle } from "./track_send.js";
 import { castleAct, failReason } from "./device.js";
@@ -115,6 +115,9 @@ export function watchCard(deps: {
   // there: the moment device.ts sees it arrive or leave, re-read the card
   // rather than letting the two halves disagree for up to a poll (J1-3).
   onCastlePresence(() => poll());
+  // …and a file dropped or deleted through the castle panel is a card
+  // change the list must show now, not at the next poll.
+  onCardChanged(() => poll());
 }
 
 export interface CardActionDeps {
