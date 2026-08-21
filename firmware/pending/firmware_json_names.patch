@@ -1,0 +1,23 @@
+UNAPPLIED — firmware is frozen. sd_web.h safe_name() admits '"', '\' and
+control bytes; h_list (sd_web.h:~170) and h_status (sd_web.h:~135) snprintf
+names raw into JSON, so PUT /api/files/a%22b.mp3 (or a card written on a
+Mac with such a name) makes GET /api/files unparseable for the desk, and
+POST /api/play?f=<such name> poisons /api/status "track". Emulator
+reproduces it (tests/test_firmware_contract.py::test_list_json_breaks_on_a_quote_in_a_name_like_the_board).
+Zero static-RAM fix (stack only); if applied, update tools/castle_emu_wire.py
+safe_name() the same way — the contract test will flag the drift until you do.
+
+--- a/firmware/sd_web.h
++++ b/firmware/sd_web.h
+@@ inline bool safe_name(const std::string &n) {
+-  return !n.empty() && n.size() < 100 && n[0] != '.' &&
+-         n.find('/') == std::string::npos && n.find("..") == std::string::npos;
++  if (n.empty() || n.size() >= 100 || n[0] == '.' ||
++      n.find('/') != std::string::npos || n.find("..") != std::string::npos)
++    return false;
++  // Names are snprintf'd raw into /api/files and /api/status JSON; a quote,
++  // backslash or control byte there breaks every client's parse.
++  for (unsigned char c : n)
++    if (c < 0x20 || c == '"' || c == '\\') return false;
++  return true;
+ }
