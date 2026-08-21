@@ -61,10 +61,12 @@ from pathlib import Path
 root = os.environ["CASTLE_ROOT"]
 sys.path.insert(0, os.path.join(root, "tools"))
 sys.path.insert(0, os.path.join(root, "tests"))
+# Read before the imports: tests/helpers.py clears CASTLE_TRACKS at import
+# so the unittest suite stays hermetic; the seeder must grab it first.
+dest = Path(os.environ["CASTLE_TRACKS"])
 import import_track as it
 from helpers import make_click_track
 
-dest = Path(os.environ["CASTLE_TRACKS"])
 dest.mkdir(parents=True, exist_ok=True)
 tmp = Path(tempfile.mkdtemp())
 try:

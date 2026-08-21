@@ -92,6 +92,11 @@ function toastHost(): HTMLDivElement {
   if (!host) {
     host = document.createElement("div");
     host.id = "toasts";              // styled in previewer/panels.css
+    // A live region: a screen reader hears "scene failed — …" the way a
+    // sighted operator sees it (grade report C1). Polite for the host;
+    // each error toast is its own role="alert" so it interrupts.
+    host.setAttribute("role", "status");
+    host.setAttribute("aria-live", "polite");
     document.body.appendChild(host);
   }
   return host;
@@ -108,6 +113,7 @@ export function toast(msg: string, isError = false): void {
   const el = document.createElement("div");
   el.textContent = msg;
   el.className = isError ? "toast toast--err" : "toast";
+  if (isError) el.setAttribute("role", "alert");
   host.appendChild(el);
   setTimeout(() => { el.style.opacity = "0"; }, isError ? 3200 : 1400);
   setTimeout(() => el.remove(), isError ? 3700 : 1900);

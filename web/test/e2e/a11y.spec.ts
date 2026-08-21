@@ -63,6 +63,25 @@ test("every visible control has an accessible name — desk, chip and panel", as
   expect(await page.evaluate(UNNAMED)).toEqual([]);
 });
 
+test("toasts and the masthead line are live regions", async ({ page }) => {
+  await fakeCastle(page);
+  await page.goto("/");
+  await expect(page.locator("#deviceChip")).toBeVisible();
+  // The masthead's status line is the one line that changes under a screen
+  // reader's feet without a button press of its own.
+  await expect(page.locator("#headTxt")).toHaveAttribute("aria-live", "polite");
+  await page.locator("#devStop").click();                  // a success toast
+  const host = page.locator("#toasts");
+  await expect(host).toHaveAttribute("role", "status");
+  await expect(host).toHaveAttribute("aria-live", "polite");
+  await expect(host.locator(".toast").first()).toBeVisible();
+  // A failure interrupts: the castle refuses, the toast is an alert.
+  await page.route("**/api/stop", (route) =>
+    route.fulfill({ status: 502, body: "castle not reachable" }));
+  await page.locator("#devStop").click();
+  await expect(host.locator(".toast--err").first()).toHaveAttribute("role", "alert");
+});
+
 test("Tab walks the transport in reading order, ♪ switch included", async ({ page }) => {
   await fakeCastle(page);
   await page.goto("/");

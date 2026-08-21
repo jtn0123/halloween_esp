@@ -113,105 +113,85 @@ export class DevicePanel {
       if (st.sd_mounted) files = await getJson<SdFile[]>("/api/files");
     } catch {
       this.body.innerHTML =
-        `<div style="padding:.6rem .8rem;display:flex;align-items:center;gap:.4rem">` +
-        `<span style="flex:1">castle stopped answering</span>` +
-        `<button id="dpClose" title="Close this panel" aria-label="Close" ` +
-        `style="cursor:pointer;background:none;border:0;color:var(--muted);` +
-        `font-size:14px;padding:0 .2rem">✕</button></div>`;
+        `<div class="dp__hd"><span class="dp__grow">castle stopped answering</span>` +
+        `<button id="dpClose" class="dp__x" title="Close this panel" aria-label="Close">✕</button></div>`;
       this.body.querySelector<HTMLButtonElement>("#dpClose")!
         .addEventListener("click", () => this.toggle());
       return;
     }
     const tracks = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
 
+    // Class names only — the rules are previewer/panels.css's .dp__* block,
+    // so theme and phone CSS reach every row (grade report C2).
     this.body.innerHTML =
-      `<div style="padding:.6rem .8rem;border-bottom:1px solid var(--line-2);` +
-      `display:flex;align-items:center;gap:.4rem">` +
-      `<span style="flex:1"><b>🏰 v${st.version}</b> · up ${fmtUptime(st.uptime_s)}` +
+      `<div class="dp__hd">` +
+      `<span class="dp__grow"><b>🏰 v${st.version}</b> · up ${fmtUptime(st.uptime_s)}` +
       (st.sd_free_kb
         ? ` · card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") +
       ` <small title="Free working memory (PSRAM) — what the SD turntable runs on">` +
       `· ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span>` +
-      `<button id="dpClose" title="Close this panel" aria-label="Close" ` +
-      `style="cursor:pointer;background:none;border:0;color:var(--muted);` +
-      `font-size:14px;padding:0 .2rem">✕</button>` +
+      `<button id="dpClose" class="dp__x" title="Close this panel" aria-label="Close">✕</button>` +
       `</div>` +
-      `<div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2);` +
-      `display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">` +
-      `<button id="dpPlaylist" title="Every scene in order with dark gaps, ` +
-      `looping until stopped — the whole evening on one button" ` +
-      `style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;` +
-      `background:${st.show_on ? "var(--alarm)" : "var(--spirit)"};color:#fff">` +
+      `<div class="dp__row">` +
+      `<button id="dpPlaylist" class="dp__go${st.show_on ? " dp__go--on" : ""}" ` +
+      `title="Every scene in order with dark gaps, ` +
+      `looping until stopped — the whole evening on one button">` +
       `${st.show_on ? "■ stop the show" : "▶ start the show"}</button>` +
       (st.show_on && st.scene
-        ? ` <small style="color:var(--muted)">now: ${st.scene}</small>` : "") +
+        ? ` <small class="dp__muted">now: ${st.scene}</small>` : "") +
       // The castle serves a four-button page of its own (firmware/
       // sd_web_remote.h) — the thing to hand a phone on the porch. Nothing
       // linked to it (JB1-8); now the panel does.
-      `<a id="dpRemote" href="/remote" target="_blank" rel="noopener" ` +
+      `<a id="dpRemote" class="dp__link" href="/remote" target="_blank" rel="noopener" ` +
       `title="The castle's own phone page: ambient, scare, stop and the evening ` +
-      `show on four thumb-sized buttons. Opens in a new tab" ` +
-      `style="margin-left:auto;color:var(--cool);text-decoration:none;` +
-      `white-space:nowrap">📱 phone remote</a>` +
+      `show on four thumb-sized buttons. Opens in a new tab">📱 phone remote</a>` +
       `</div>` +
-      `<div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2);` +
-      `display:flex;gap:.5rem;align-items:center" ` +
+      `<div class="dp__lights" ` +
       `title="Park every pixel on one colour, or give them back to the show">` +
-      `💡 <small style="color:var(--muted)">lights</small> ` +
-      `<input id="dpColor" type="color" value="#ff8c1e" ` +
-      `title="Park the pixels on a colour" style="cursor:pointer">` +
-      `<button id="dpShow" title="Hand the pixels back to the scene engine" ` +
-      `style="cursor:pointer;background:var(--panel);color:inherit;border:0;` +
-      `border-radius:6px;padding:.2rem .5rem">resume show</button>` +
-      `<button id="dpOff" style="cursor:pointer;background:none;` +
-      `color:var(--muted);border:1px solid var(--line-2);border-radius:6px;` +
-      `padding:.2rem .5rem">off</button>` +
+      `💡 <small class="dp__muted">lights</small> ` +
+      `<input id="dpColor" class="dp__color" type="color" value="#ff8c1e" ` +
+      `title="Park the pixels on a colour">` +
+      `<button id="dpShow" class="dp__btn" title="Hand the pixels back to the scene engine">` +
+      `resume show</button>` +
+      `<button id="dpOff" class="dp__ghost">off</button>` +
       `</div>` +
-      `<div style="max-height:180px;overflow:auto" id="dpFiles">` +
+      `<div class="dp__files" id="dpFiles">` +
       (tracks.length && st.bridged
         // Through the studio the merged Library below already lists every
         // card file with Play/⬇/Delete — two lists of one card drift.
-        ? `<div style="padding:.5rem .8rem;color:var(--muted)">${tracks.length} ` +
+        ? `<div class="dp__note">${tracks.length} ` +
           `track${tracks.length === 1 ? "" : "s"} on the card — see the ` +
           `Library below (🏰 rows and badges)</div>`
         : tracks.length
         ? tracks.map((f, i) =>
-            `<div style="display:flex;gap:.4rem;align-items:center;` +
-            `padding:.3rem .8rem">` +
-            `<button data-play="${i}" title="Play on the castle" ` +
-            `style="cursor:pointer;background:var(--panel);color:inherit;border:0;` +
-            `border-radius:6px;padding:.15rem .5rem">▶</button>` +
-            `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;` +
-            `white-space:nowrap" title="${f.name}">${f.name}</span>` +
-            `<small style="color:var(--muted)">${kb(f.size)}</small>` +
-            `<button data-del="${i}" title="Delete from the card" ` +
-            `style="cursor:pointer;background:none;color:var(--muted);border:0">✕</button>` +
+            `<div class="dp__file">` +
+            `<button data-play="${i}" class="dp__btn dp__btn--sm" title="Play on the castle">▶</button>` +
+            `<span class="dp__file-nm" title="${f.name}">${f.name}</span>` +
+            `<small class="dp__muted">${kb(f.size)}</small>` +
+            `<button data-del="${i}" class="dp__del" title="Delete from the card">✕</button>` +
             `</div>`).join("")
-        : `<div style="padding:.5rem .8rem;color:var(--muted)">` +
+        : `<div class="dp__note">` +
           `${st.sd_mounted
             ? "no tracks on the card yet — drop audio below, or press → Castle on a track in the Library"
             : "no SD card"}</div>`) +
       `</div>` +
-      `<div style="padding:.5rem .8rem;border-top:1px solid var(--line-2)" ` +
+      `<div class="dp__pir" ` +
       `title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">` +
-      `👣 <small style="color:var(--muted)">motion sensor</small> ` +
+      `👣 <small class="dp__muted">motion sensor</small> ` +
       `<label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
       `<select id="dpPirScene" title="Which scene the motion sensor plays">` +
       sceneIds().map((s) =>
         `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") +
       `</select> ` +
-      `<input id="dpPirCool" type="number" min="5" max="600" step="5" ` +
-      `value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" ` +
+      `<input id="dpPirCool" class="dp__cool" type="number" min="5" max="600" step="5" ` +
+      `value="${st.pir?.cooldown_s ?? 60}" ` +
       `title="Cooldown: seconds before the sensor can fire again">` +
-      `<small style="color:var(--muted)"> s between triggers</small>` +
+      `<small class="dp__muted"> s between triggers</small>` +
       `</div>` +
-      `<div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed var(--line-2);` +
-      `color:var(--muted);text-align:center">drop audio files here to upload</div>` +
-      `<div style="padding:.4rem .8rem;border-top:1px solid var(--line-2)">` +
-      `<button id="dpLog" style="cursor:pointer;background:none;border:0;` +
-      `color:var(--muted)">boot log ▸</button>` +
-      `<pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;` +
-      `font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre>` +
+      `<div id="dpDrop" class="dp__drop">drop audio files here to upload</div>` +
+      `<div class="dp__foot">` +
+      `<button id="dpLog" class="dp__logbtn">boot log ▸</button>` +
+      `<pre id="dpLogOut" class="dp__log" hidden></pre>` +
       `</div>`;
 
     this.body.querySelector<HTMLButtonElement>("#dpClose")!
@@ -293,12 +273,12 @@ export class DevicePanel {
     const drop = this.body.querySelector<HTMLDivElement>("#dpDrop")!;
     drop.addEventListener("dragover", (e) => {
       e.preventDefault();
-      drop.style.color = "var(--ink)";
+      drop.classList.add("dp__drop--over");
     });
-    drop.addEventListener("dragleave", () => { drop.style.color = "var(--muted)"; });
+    drop.addEventListener("dragleave", () => drop.classList.remove("dp__drop--over"));
     drop.addEventListener("drop", async (e) => {
       e.preventDefault();
-      drop.style.color = "var(--muted)";
+      drop.classList.remove("dp__drop--over");
       for (const f of Array.from(e.dataTransfer?.files ?? [])) {
         drop.textContent = `uploading ${f.name} (${(f.size / 1024) | 0} KB)…`;
         const r = await fetch(`/api/files/${encodeURIComponent(f.name)}`,
@@ -312,8 +292,8 @@ export class DevicePanel {
     const logBtn = this.body.querySelector<HTMLButtonElement>("#dpLog")!;
     const logOut = this.body.querySelector<HTMLPreElement>("#dpLogOut")!;
     logBtn.addEventListener("click", async () => {
-      const showing = logOut.style.display !== "none";
-      logOut.style.display = showing ? "none" : "block";
+      const showing = !logOut.hidden;
+      logOut.hidden = showing;
       logBtn.textContent = showing ? "boot log ▸" : "boot log ▾";
       if (!showing) {
         logOut.textContent = "loading…";

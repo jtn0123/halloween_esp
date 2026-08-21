@@ -52,18 +52,15 @@ function loadSaved(): SavedLab {
 
 /** @param onStyle re-expand the audition after any change here. */
 export function createStyleLab(onStyle: () => void): StyleLab {
-  // Styling is inline: previewer/styles.css sits exactly at the 500-line cap,
-  // and this panel owns its whole DOM the way waveform.ts's chrome does.
+  // Styled by class in previewer/panels.css (.stylelab*) — this panel owns
+  // its whole DOM the way waveform.ts's chrome does, but not its colours.
   const el = document.createElement("details");
   el.className = "stylelab";
-  el.style.cssText = "margin:6px 0;font:12px/1.7 var(--f-data),ui-monospace,"
-    + "monospace;color:var(--ink-2)";
   // Open by default: this panel was invisible in practice — a collapsed fold
   // labelled "Style lab" told nobody that the A/B lives here. Discoverable
   // first, foldable after.
   el.open = true;
   const sum = document.createElement("summary");
-  sum.style.cursor = "pointer";
   // Operator words on the outside (JB1-9): what you can do to the look.
   // The engine A/B and the code export are developer tools and live in
   // the fold at the bottom, named as such.
@@ -77,10 +74,8 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   const row = (label: string): HTMLDivElement => {
     const r = document.createElement("div");
     r.className = "stylelab__row";
-    r.style.cssText = "display:flex;align-items:center;gap:8px;margin:3px 0";
     const s = document.createElement("span");
     s.className = "stylelab__nm";
-    s.style.cssText = "min-width:3.5em";
     s.textContent = label;
     r.append(s);
     return r;
@@ -123,7 +118,7 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   ];
   for (const [key, label, title] of FLAVORS) {
     const wrap = document.createElement("label");
-    wrap.style.cssText = "display:inline-flex;align-items:center;gap:3px;cursor:pointer";
+    wrap.className = "stylelab__flav";
     wrap.title = title;
     const box = document.createElement("input");
     box.type = "checkbox";
@@ -145,8 +140,6 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   // one-word-per-line column on a phone (JB1-7).
   const flavHint = document.createElement("div");
   flavHint.className = "stylelab__flavhint";
-  flavHint.style.cssText = "margin:0 0 4px;color:var(--ink-3,#888);font-size:12px;"
-    + "line-height:1.5";
   flavHint.textContent = "drift shows over ~a minute · chorus fires only in "
     + "loud chorus sections · swells need long sustained louds — audition a "
     + "loud stretch of the song to see them";
@@ -179,7 +172,6 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     const s = document.createElement("input");
     s.type = "range";
     s.className = "stylelab__knob";
-    s.style.cssText = "width:90px";
     s.min = String(min);
     s.max = String(max);
     s.step = "0.05";
@@ -204,9 +196,7 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   const head = row("");
   const th = (label: string, title: string): HTMLSpanElement => {
     const s = document.createElement("span");
-    // 90px slider + its "×1.00" readout: match that span so the two labels
-    // sit over their own columns.
-    s.style.cssText = "width:134px;text-align:center;color:var(--ink-3,#888)";
+    s.className = "stylelab__th";
     s.textContent = label;
     s.title = title;
     return s;
@@ -232,9 +222,7 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   reset.title = "Neutral brightness and tails, no flavours, engine A";
   const dev = document.createElement("details");
   dev.className = "stylelab__dev";
-  dev.style.cssText = "margin-top:4px";
   const devSum = document.createElement("summary");
-  devSum.style.cssText = "cursor:pointer;color:var(--ink-3,#888)";
   devSum.textContent = "developer — compare light engines, copy the style as code";
   devSum.title = "Tools for working on the light engine itself, not on a show";
   dev.append(devSum);
@@ -246,8 +234,6 @@ export function createStyleLab(onStyle: () => void): StyleLab {
              + "them as code, for making them the project-wide default.";
   const out = document.createElement("pre");
   out.className = "stylelab__ts";
-  out.style.cssText = "max-height:14em;overflow:auto;font-size:10px;"
-    + "background:var(--panel-2);padding:6px;border-radius:6px";
   out.hidden = true;
 
   const doReset = (): void => {

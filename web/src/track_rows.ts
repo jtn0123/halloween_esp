@@ -49,7 +49,7 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
   const canReimport = !!t.source && !t.source_missing;
   const monoBadge = mono
     ? `<span class="trk__mono" style="color:${monoInShow
-        ? "var(--err,#ff6b5a)" : "var(--warn,#e0a34a)"};cursor:pointer;`
+        ? "var(--alarm)" : "var(--warn)"};cursor:pointer;`
       + `text-decoration:underline dotted" title="Mono import: the towers `
       + `cannot answer left/right without stereo.${monoInShow
         ? " THIS TRACK IS IN THE SHOW — the audience hears it mono." : ""} `
@@ -88,8 +88,8 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
     <div class="trk__nm">${esc(t.id)}
       ${ctx.inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
       ${ctx.onCastle === "current" ? `<span class="trk__badge" title="The castle's SD card holds this exact file — byte count verified">on castle ✓</span>` : ""}
-      ${ctx.onCastle === "stale" ? `<span class="trk__badge" style="color:var(--warn,#e0a34a)" title="The card's copy is DIFFERENT bytes — this track changed since it was sent. Press Update castle.">stale on castle ⚠</span>` : ""}
-      ${broken ? `<span class="trk__badge trk__broken" style="color:var(--err,#ff6b5a)" title="${esc(t.error || "The file is empty")} — re-import it (or delete it). It cannot be sent to the castle.">import failed ⚠</span>` : ""}
+      ${ctx.onCastle === "stale" ? `<span class="trk__badge" style="color:var(--warn)" title="The card's copy is DIFFERENT bytes — this track changed since it was sent. Press Update castle.">stale on castle ⚠</span>` : ""}
+      ${broken ? `<span class="trk__badge trk__broken" style="color:var(--alarm)" title="${esc(t.error || "The file is empty")} — re-import it (or delete it). It cannot be sent to the castle.">import failed ⚠</span>` : ""}
       <small>${t.dur ?? "?"}s · ${t.kb} KB · ${fmt}</small>
       <small title="${esc(BAND_HELP)}">${esc(onsets)}</small>
       ${src ? `<small class="trk__src">from ${src}</small>` : ""}

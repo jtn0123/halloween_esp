@@ -3,8 +3,8 @@
  * The desk was designed for a desk; a phone gets the same page with the
  * grid collapsed, tap targets grown, and anything wide scrolling inside its
  * own box instead of dragging the whole page sideways. The device chip and
- * panel (device.ts / device_panel.ts carry their own inline styles) are
- * given width bounds here so they never overflow a 375 px screen.
+ * panel (panels.css #deviceChip / .dp__*) are given width bounds here so
+ * they never overflow a 375 px screen.
  */
 
 @media (max-width: 760px) {
@@ -15,12 +15,10 @@
   .head h1 { font-size: 26px; }
   .head__live { width: 100%; }
   .viewsel { margin-left: auto; }
-  .viewsel button { min-height: 34px; }
 
   /* Three sliders across a phone is about 100px each — enough to drag, but
      only if they are not also paying for the desktop gap between them. */
   .ctrls__row { gap: 7px; }
-  .budget__tabs button { min-height: 30px; }
 
   /* One column — the desktop two-column split needs 1040px anyway, but the
      inner grids (scene tiles, slider rows) also tighten here. */
@@ -70,7 +68,7 @@
   /* The studio strip gets its own line under the Tracks title, and its
      buttons keep the 44px floor like every other control during a show. */
   .trk-panel .panel__hd .trk-server { width: 100%; justify-content: flex-start; }
-  .trk-srvbtn button { min-height: 40px; }
+  .trk-srvbtn button { min-height: 44px; }
 
   /* Track rows: the class is .trk (not .trk-row — the first draft of this
      rule styled a selector that does not exist, and RE-IMPORT/DELETE fell off
@@ -78,7 +76,7 @@
      below at full width. */
   .trk { grid-template-columns: 1fr; }
   .trk__act { flex-wrap: wrap; }
-  .trk__act button { min-height: 40px; }
+  .trk__act button { min-height: 44px; }
 
   /* The castle dock owns the corner now (chip + panel are its children,
      see panels.css) — bound the DOCK to the viewport and let the chip's
@@ -102,9 +100,9 @@
    the row from 620px down — this only lets the select take the slack). */
 @media (max-width: 480px) {
   .bandcfg__zone { min-width: 7em; }
-  /* Two knobs and two readouts per band: the 90px sliders (inline, from
-     style_lab.ts) pushed the tail column off a 375px screen. */
-  .stylelab__knob { width: 54px !important; }
+  /* Two knobs and two readouts per band: the 90px sliders (panels.css
+     .stylelab__knob) pushed the tail column off a 375px screen. */
+  .stylelab__knob { width: 54px; }
 }
 
 /* Phones held sideways still get the single column but keep the stage big. */

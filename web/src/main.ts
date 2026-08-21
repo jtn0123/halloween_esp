@@ -55,6 +55,14 @@ const firstScene = SCENES[0];
 if (!firstScene) throw new Error("cue desk needs at least one scene");
 
 const state = createState(firstScene, performance.now());
+// The frame loop's "something changed, paint" flag — declared up here because
+// applyRig() and the transport set it long before the loop exists (see the
+// Frame loop section for the rule it drives).
+let dirty = true;
+let settle = false;
+const markDirty = (): void => { dirty = true; };
+const draws = { frames: 0 };
+(window as unknown as { __castleDraws: typeof draws }).__castleDraws = draws;
 const canvas = document.getElementById("stage") as HTMLCanvasElement | null;
 if (!canvas) throw new Error("no #stage canvas in the page");
 const stage = new Stage(canvas);
@@ -70,6 +78,7 @@ function applyRig(): void {
   }
   insets.setRig(rig);
   panels.renderChannels(rig);
+  markDirty();
 }
 
 // Every real pixel as a dot, in the shape the fixture actually has.
@@ -141,6 +150,7 @@ const transport = new Transport({
   state, rendered, synth,
   getMode: () => audioMode,
   onSceneChange: (sc) => {
+    markDirty();
     panels.renderSheet(sc);
     panels.renderTicks(sc);
     panels.renderSceneInfo(sc);
@@ -155,7 +165,7 @@ const transport = new Transport({
   isExternalPlaying: () => players?.tracks.previewing() ?? false,
   // ■ Stop / Esc reach the castle too (when one is mirroring): the desk
   // fired the scene on the porch, so the desk's own Stop must end it.
-  onBlackout: () => device.stop(),
+  onBlackout: () => { markDirty(); device.stop(); },   // a dark stage is a repaint too
 });
 
 /* ── Chrome ── */
@@ -368,7 +378,24 @@ const tracks = initTracks({
 });
 players = { wave, tracks, codecs };
 
-/* ── Frame loop ── */
+/* ── Frame loop ──────────────────────────────────────────────────────────
+   A stopped desk should cost nothing (grade report G3). Once the show is
+   stopped, no clip is being auditioned and the flash has decayed, nothing
+   on screen changes between frames — so the paint is skipped until
+   something marks the scene dirty (any slider, click or key, a rig change,
+   a scene load, a scrub drag) or the show runs again. One extra frame is
+   always painted after activity ends, so the meters and stage settle on the
+   final state rather than the last moving one. A hidden tab paints nothing
+   and repaints once when it comes back. `step` still runs every frame: it
+   owns the clock and the cue sounds, which must not stall in a background
+   tab. window.__castleDraws counts paints, so a test can assert the loop
+   idles after Stop. */
+for (const ev of ["input", "change", "click", "keydown"] as const) {
+  document.addEventListener(ev, markDirty, true);
+}
+scrub?.addEventListener("pointermove", markDirty);
+document.addEventListener("visibilitychange", markDirty);
+
 function frame(now: number): void {
   const f = step(
     state, now, P,
@@ -380,12 +407,18 @@ function frame(now: number): void {
     () => transport.setPlaying(false),
   );
 
-  stage.draw(f.zones, now / 1000, f.flash, f.flashColor);
-  insets.draw(f.zones);
-  panels.updateMeters(f.zones);
-  lightChrome(f.zones);
-  wave.mirror(f.zones);
-  panels.updateTransport(f.elapsed, state.scene);
+  const active = state.running || sceneBeforeAudition !== null || f.flash > 0;
+  if (!document.hidden && (active || dirty || settle)) {
+    stage.draw(f.zones, now / 1000, f.flash, f.flashColor);
+    insets.draw(f.zones);
+    panels.updateMeters(f.zones);
+    lightChrome(f.zones);
+    wave.mirror(f.zones);
+    panels.updateTransport(f.elapsed, state.scene);
+    draws.frames++;
+    settle = active || dirty;          // one more paint after the last change
+    dirty = false;
+  }
   requestAnimationFrame(frame);
 }
 
