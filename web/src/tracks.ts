@@ -16,9 +16,8 @@ import { api } from "./api.js";
 import { startEta } from "./eta.js";
 import type { BandEditor } from "./band_editor.js";
 import { fillOptsFrom, initImportOpts } from "./import_opts.js";
-import { cardRowsHtml, renderSyncButton, sendAction, watchCard,
-         wireCardActions } from "./track_card.js";
-import { cardState, fetchCard } from "./track_send.js";
+import { cardRowsHtml, mountCard, renderSyncButton, sendAction } from "./track_card.js";
+import { cardState } from "./track_send.js";
 import { trackRowHtml } from "./track_rows.js";
 import { wireUrlImport } from "./track_import_url.js";
 import { detectOnsets, loudnessEnvelope } from "./onsets.js";
@@ -214,20 +213,14 @@ export function initTracks(deps: TracksDeps): TracksApi {
     }
   }
 
-  /** Refresh the on-card map; a redraw follows so badges track reality. */
-  async function loadCard(): Promise<void> {
-    T.onCard = await fetchCard();
-    drawTracks(undefined);
-  }
-  void loadCard();
-  /** Both libraries at once — what track_card.ts renders and syncs from. */
+  // The castle's card: badges, card-only rows, Sync — track_card.ts owns
+  // the wiring; this panel only lends it the list and the redraw.
   const cardCtx = () => ({ tracks: T.tracks, sceneIds: T.sceneIds,
                            card: T.onCard, canPull: T.mode === "studio" });
-  wireCardActions({ list: T.list, syncBtn: byId<HTMLButtonElement>("trkSync"),
-                    ctx: cardCtx, say, reloadCard: loadCard,
-                    importFile: f => takeFile(f) });
-  watchCard({ active: () => T.mode === "studio", card: () => T.onCard,
-              apply: c => { T.onCard = c; drawTracks(undefined); } });
+  const loadCard = mountCard({
+    list: T.list, syncBtn: byId<HTMLButtonElement>("trkSync"), ctx: cardCtx,
+    say, importFile: f => takeFile(f), active: () => T.mode === "studio",
+    apply: c => { T.onCard = c; drawTracks(undefined); } });
 
   function drawTracks(tracks: TrackInfo[] | undefined): void {
     if (tracks) T.tracks = tracks;

@@ -57,7 +57,9 @@
   #deviceChip > div { flex-wrap: wrap; }
   #devicePanel {
     width: auto !important;
-    max-height: 60vh;
+    /* Half the phone at most: the stage and transport must stay reachable
+       behind an open castle panel. Scrolls inside. */
+    max-height: 50vh;
     overflow-y: auto;
   }
   #jewels { max-width: 100%; }

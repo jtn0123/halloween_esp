@@ -67,7 +67,9 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
    Every band is clickable, and so is every legend row — on the card view the
    used bands are hairlines, which is the honest picture and unclickable. */
 .budget .panel__hd { align-items: center; }
-.budget__tabs { display: flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+/* Above the fixed castle dock (z 40), which sits over this strip at
+   1280×900 — the tabs stay clickable and readable whatever the dock does. */
+.budget__tabs { display: flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; position: relative; z-index: 41; background: var(--panel); }
 .budget__tabs button {
   font-family: var(--f-data); font-size: 9.5px; letter-spacing: .1em;
   text-transform: uppercase; padding: 4px 11px; border: 0; cursor: pointer;

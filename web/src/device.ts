@@ -90,17 +90,39 @@ const sdChip = (s: Status): string => {
     ? ` · SD ${(s.sd_free_kb / 1048576).toFixed(1)} GB free` : " · SD ok";
 };
 
+/** Where toasts stack: one fixed column above the dock, newest at the
+ *  bottom. Two toasts a second apart used to print on the same pixels
+ *  (J2-3); now they stack, identical text is not repeated while it is still
+ *  showing, and only the last few stay on screen. */
+const TOAST_MAX = 3;
+function toastHost(): HTMLDivElement {
+  let host = document.getElementById("toasts") as HTMLDivElement | null;
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "toasts";
+    host.style.cssText =
+      "position:fixed;right:12px;bottom:84px;z-index:41;display:flex;" +
+      "flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none";
+    document.body.appendChild(host);
+  }
+  return host;
+}
+
 /** One small transient message near the chip. The device queues actions, so
  *  "queued" IS the honest success state — see the interval in castle_sd.yaml. */
 export function toast(msg: string, isError = false): void {
+  const host = toastHost();
+  for (const live of Array.from(host.children)) {
+    if (live.textContent === msg) return;       // already saying exactly this
+  }
+  while (host.children.length >= TOAST_MAX) host.firstElementChild?.remove();
   const el = document.createElement("div");
   el.textContent = msg;
   el.style.cssText =
-    "position:fixed;right:12px;bottom:52px;z-index:41;padding:.4rem .7rem;" +
-    "border-radius:8px;font:12px system-ui;pointer-events:none;" +
+    "padding:.4rem .7rem;border-radius:8px;font:12px system-ui;max-width:60vw;" +
     "transition:opacity .4s;opacity:1;" +
     (isError ? "background:#5a1a2a;color:#ffd8e0;" : "background:#2a3a1a;color:#e0ffd0;");
-  document.body.appendChild(el);
+  host.appendChild(el);
   setTimeout(() => { el.style.opacity = "0"; }, isError ? 3200 : 1400);
   setTimeout(() => el.remove(), isError ? 3700 : 1900);
 }
@@ -109,7 +131,7 @@ export function toast(msg: string, isError = false): void {
  *  short plain text ("unknown scene", "need ?v=0..100", "no SD card"), the
  *  studio's relay answers JSON {"error": ...}. "failed" alone cannot tell a
  *  typo from a dead castle (pass 1, J1-6). */
-async function failReason(r: Response): Promise<string> {
+export async function failReason(r: Response): Promise<string> {
   if (r.status === 502) return "castle not reachable";
   if (r.status === 504) return "castle did not answer in time";
   try {
@@ -136,15 +158,20 @@ export interface ActOpts {
  *  the desk goes through here: the chip, the panel, the library rows. */
 export async function castleAct(path: string, okMsg: string,
                                 opts: ActOpts = {}): Promise<boolean> {
+  // Re-poll after EVERY outcome: a failure is news too — it is usually how
+  // the desk first learns the castle went away, and the masthead/chip
+  // should say so within a second rather than at the next 15 s poll.
   let r: Response;
   try {
     r = await fetch(path, { method: opts.method ?? "POST" });
   } catch {
     toast(`${okMsg} failed — no answer from the castle`, true);
+    castleChangedSoon();
     return false;
   }
   if (!r.ok) {
     toast(`${okMsg} failed — ${await failReason(r)}`, true);
+    castleChangedSoon();
     return false;
   }
   if (!opts.quiet) toast(okMsg);
@@ -216,6 +243,8 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   // a healthy line just because ♪ or the mirror box was toggled while the
   // castle is down (pass 1, J1-4) — the last GOOD status is not the truth.
   let lastOk = true;
+  let lastSeen: Date | null = null;
+  let lastPlaying = "idle";
 
   /** POST, toast, then re-poll — the chip shows what the click did about a
    *  second later (queued action + main-loop tick) instead of after 15 s. */
@@ -255,16 +284,22 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     }
     // The castle-volume controls govern a speaker that ♪ Mac just silenced —
     // disable them rather than let a stray drag un-hush it (route-aware).
+    // …and a castle that is not answering has no volume to set (J2-2):
+    // flipping ♪ to Castle while it is down must not light the slider up.
     const hushed = soundRoute === "mac";
     const vol = chip.querySelector<HTMLInputElement>("#devVol");
     const muteB = chip.querySelector<HTMLButtonElement>("#devMute");
     if (vol) {
-      vol.disabled = hushed;
-      vol.title = hushed
-        ? "Castle speaker is off while sound plays on the Mac (♪ switch)"
+      vol.disabled = hushed || !lastOk;
+      vol.title = !lastOk ? "Castle not answering"
+        : hushed ? "Castle speaker is off while sound plays on the Mac (♪ switch)"
         : "Castle speaker volume";
     }
-    if (muteB) muteB.disabled = hushed;
+    if (muteB) muteB.disabled = hushed || !lastOk;
+    for (const id of ["devStop", "devMirror"]) {
+      const el = chip.querySelector<HTMLInputElement | HTMLButtonElement>(`#${id}`);
+      if (el) el.disabled = !lastOk;
+    }
   }
 
   function applyRoute(route: "mac" | "castle", announce: boolean): void {
@@ -317,6 +352,8 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     const bits = [s.scene && s.scene !== "stop" ? s.scene : "", s.track ?? ""]
       .filter(Boolean);
     const playing = bits.length ? `▶ ${bits.join(" · ")}` : "idle";
+    lastSeen = new Date();
+    lastPlaying = playing;
     chip.innerHTML =
       `<div>🏰 castle v${s.version}${sdChip(s)} · ` +
       `<span id="devNow" style="color:#b8a8d8">${playing}</span></div>` +
@@ -395,11 +432,14 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     lastOk = false;
     if (lastStatus) sayStatus(lastStatus);
     // The controls that would lie: ■/volume/mute/mirror act on a castle
-    // that is not there. ♪ stays — where sound comes out is this desk's
-    // own decision — and 🏰 opens a panel that says what happened.
-    for (const id of ["devStop", "devVol", "devMute", "devMirror"]) {
-      const el = chip.querySelector<HTMLInputElement | HTMLButtonElement>(`#${id}`);
-      if (el) el.disabled = true;
+    // that is not there (syncRouteUI reads lastOk). ♪ stays — where sound
+    // comes out is this desk's own decision — and 🏰 opens a panel that
+    // says what happened. The ▶ line is from the past, and says so.
+    syncRouteUI();
+    const nowEl = chip.querySelector<HTMLElement>("#devNow");
+    if (nowEl && lastSeen) {
+      nowEl.textContent = `last seen ${lastSeen.toLocaleTimeString([], { timeStyle: "short" })}`;
+      nowEl.title = `What the castle said then: ${lastPlaying}`;
     }
     panel.refresh();
     setCastleLive(false);

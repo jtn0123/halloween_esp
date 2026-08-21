@@ -44,6 +44,11 @@ interface DeviceStatus {
   show_on?: boolean;
   /** Current scene id, "" when idle. */
   scene?: string;
+  /** The studio answering FOR a castle it cannot reach — not a castle. */
+  studio?: boolean;
+  /** Set by the studio's relay: this status came through the bridge, and
+   *  the desk's merged Library is on the same page. */
+  bridged?: string;
 }
 
 /** Scene ids for the PIR select — read from the page's own generated data,
@@ -100,10 +105,20 @@ export class DevicePanel {
     let files: SdFile[] = [];
     try {
       st = await getJson<DeviceStatus>("/api/status");
+      // The studio answers a castle-less probe 200 {"studio":true}: an
+      // empty object that rendered as "vundefined · NaN MB · no SD card"
+      // — a plausible, invented control panel (J2-1). Treat it as down.
+      if (st.studio || !st.version) throw new Error("no castle");
       if (st.sd_mounted) files = await getJson<SdFile[]>("/api/files");
     } catch {
       this.body.innerHTML =
-        `<div style="padding:.8rem">castle stopped answering</div>`;
+        `<div style="padding:.6rem .8rem;display:flex;align-items:center;gap:.4rem">` +
+        `<span style="flex:1">castle stopped answering</span>` +
+        `<button id="dpClose" title="Close this panel" aria-label="Close" ` +
+        `style="cursor:pointer;background:none;border:0;color:#9a8fb0;` +
+        `font-size:14px;padding:0 .2rem">✕</button></div>`;
+      this.body.querySelector<HTMLButtonElement>("#dpClose")!
+        .addEventListener("click", () => this.toggle());
       return;
     }
     const tracks = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
@@ -143,7 +158,13 @@ export class DevicePanel {
       `padding:.2rem .5rem">off</button>` +
       `</div>` +
       `<div style="max-height:180px;overflow:auto" id="dpFiles">` +
-      (tracks.length
+      (tracks.length && st.bridged
+        // Through the studio the merged Library below already lists every
+        // card file with Play/⬇/Delete — two lists of one card drift.
+        ? `<div style="padding:.5rem .8rem;color:#9a8fb0">${tracks.length} ` +
+          `track${tracks.length === 1 ? "" : "s"} on the card — see the ` +
+          `Library below (🏰 rows and badges)</div>`
+        : tracks.length
         ? tracks.map((f, i) =>
             `<div style="display:flex;gap:.4rem;align-items:center;` +
             `padding:.3rem .8rem">` +
@@ -206,8 +227,9 @@ export class DevicePanel {
     this.body.querySelector<HTMLInputElement>("#dpColor")!
       .addEventListener("input", (e) => {
         const hex = (e.target as HTMLInputElement).value.slice(1);
-        // quiet: the picker fires continuously while the hand drags.
-        void castleAct(`/api/light?c=${hex}`, `lights #${hex}`, { quiet: true });
+        // quiet: the picker fires continuously while the hand drags; the
+        // fixed wording lets toast() fold a whole drag's failures into one.
+        void castleAct(`/api/light?c=${hex}`, "lights colour", { quiet: true });
       });
     this.body.querySelector<HTMLButtonElement>("#dpShow")!
       .addEventListener("click", () =>

@@ -12,7 +12,7 @@
 import { onCastlePresence } from "./castle_bus.js";
 import { esc } from "./track_rows.js";
 import { cardName, cardState, fetchCard, sendable, sendToCastle } from "./track_send.js";
-import { castleAct } from "./device.js";
+import { castleAct, failReason } from "./device.js";
 import type { TrackInfo } from "./tracks.js";
 
 /** What both renderers need to know about the two libraries. */
@@ -164,7 +164,8 @@ export function wireCardActions(deps: CardActionDeps): void {
       const r = await fetch(`/api/card/${encodeURIComponent(name)}`)
         .catch(() => null);
       if (!r?.ok) {
-        deps.say(`Could not pull ${name} off the card — is the castle awake?`, true);
+        deps.say(`Could not pull ${name} off the card — `
+          + `${r ? await failReason(r) : "no answer from the castle"}.`, true);
         btn.disabled = false;
         btn.textContent = "⬇ to Mac";
         return;
@@ -175,11 +176,27 @@ export function wireCardActions(deps: CardActionDeps): void {
       await deps.reloadCard();
     } else if (btn.dataset["cardact"] === "del") {
       if (!confirm(`Delete ${name} from the castle's SD card?`)) return;
-      const r = await fetch(`/api/files/${encodeURIComponent(name)}`,
-                            { method: "DELETE" }).catch(() => null);
-      deps.say(r?.ok ? `Deleted ${name} from the card.`
-                     : `Could not delete ${name}.`, !r?.ok);
+      // castleAct: the reason on failure (404 "no such file" vs a dead
+      // castle read the same before), the chip re-poll on success.
+      const ok = await castleAct(`/api/files/${encodeURIComponent(name)}`,
+                                 `deleted ${name} from the card`, { method: "DELETE" });
+      deps.say(ok ? `Deleted ${name} from the card.`
+                  : `Could not delete ${name} — see the message by the castle chip.`, !ok);
       await deps.reloadCard();
     }
   });
+}
+
+/** Everything the Tracks panel hands the card half, in one call: the
+ *  first read, the action wiring, the presence/poll watcher. Returns the
+ *  reload function so the panel's own handlers (→ Castle) can use it. */
+export function mountCard(deps: Omit<CardActionDeps, "reloadCard"> & {
+  active: () => boolean;
+  apply: (card: Map<string, number> | null) => void;
+}): () => Promise<void> {
+  const reloadCard = async (): Promise<void> => deps.apply(await fetchCard());
+  void reloadCard();
+  wireCardActions({ ...deps, reloadCard });
+  watchCard({ active: deps.active, card: () => deps.ctx().card, apply: deps.apply });
+  return reloadCard;
 }

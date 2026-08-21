@@ -564,7 +564,9 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
    Every band is clickable, and so is every legend row — on the card view the
    used bands are hairlines, which is the honest picture and unclickable. */
 .budget .panel__hd { align-items: center; }
-.budget__tabs { display: flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+/* Above the fixed castle dock (z 40), which sits over this strip at
+   1280×900 — the tabs stay clickable and readable whatever the dock does. */
+.budget__tabs { display: flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; position: relative; z-index: 41; background: var(--panel); }
 .budget__tabs button {
   font-family: var(--f-data); font-size: 9.5px; letter-spacing: .1em;
   text-transform: uppercase; padding: 4px 11px; border: 0; cursor: pointer;
@@ -824,7 +826,9 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   #deviceChip > div { flex-wrap: wrap; }
   #devicePanel {
     width: auto !important;
-    max-height: 60vh;
+    /* Half the phone at most: the stage and transport must stay reachable
+       behind an open castle panel. Scrolls inside. */
+    max-height: 50vh;
     overflow-y: auto;
   }
   #jewels { max-width: 100%; }
@@ -2830,13 +2834,15 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       let files = [];
       try {
         st = await getJson("/api/status");
+        if (st.studio || !st.version) throw new Error("no castle");
         if (st.sd_mounted) files = await getJson("/api/files");
       } catch {
-        this.body.innerHTML = `<div style="padding:.8rem">castle stopped answering</div>`;
+        this.body.innerHTML = `<div style="padding:.6rem .8rem;display:flex;align-items:center;gap:.4rem"><span style="flex:1">castle stopped answering</span><button id="dpClose" title="Close this panel" aria-label="Close" style="cursor:pointer;background:none;border:0;color:#9a8fb0;font-size:14px;padding:0 .2rem">\u2715</button></div>`;
+        this.body.querySelector("#dpClose").addEventListener("click", () => this.toggle());
         return;
       }
       const tracks2 = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
-      this.body.innerHTML = `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f;display:flex;align-items:center;gap:.4rem"><span style="flex:1"><b>\u{1F3F0} v${st.version}</b> \xB7 up ${fmtUptime(st.uptime_s)}` + (st.sd_free_kb ? ` \xB7 card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") + ` <small title="Free working memory (PSRAM) \u2014 what the SD turntable runs on">\xB7 ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span><button id="dpClose" title="Close this panel" aria-label="Close" style="cursor:pointer;background:none;border:0;color:#9a8fb0;font-size:14px;padding:0 .2rem">\u2715</button></div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f"><button id="dpPlaylist" title="Every scene in order with dark gaps, looping until stopped \u2014 the whole evening on one button" style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;background:${st.show_on ? "#7a2a2a" : "#2a5537"};color:inherit">${st.show_on ? "\u25A0 stop the show" : "\u25B6 start the show"}</button>` + (st.show_on && st.scene ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;display:flex;gap:.5rem;align-items:center" title="Park every pixel on one colour, or give them back to the show">\u{1F4A1} <small style="color:#9a8fb0">lights</small> <input id="dpColor" type="color" value="#ff8c1e" title="Park the pixels on a colour" style="cursor:pointer"><button id="dpShow" title="Hand the pixels back to the scene engine" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">resume show</button><button id="dpOff" style="cursor:pointer;background:none;color:#9a8fb0;border:1px solid #35264f;border-radius:6px;padding:.2rem .5rem">off</button></div><div style="max-height:180px;overflow:auto" id="dpFiles">` + (tracks2.length ? tracks2.map((f, i) => `<div style="display:flex;gap:.4rem;align-items:center;padding:.3rem .8rem"><button data-play="${i}" title="Play on the castle" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .5rem">\u25B6</button><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}</span><small style="color:#9a8fb0">${kb3(f.size)}</small><button data-del="${i}" title="Delete from the card" style="cursor:pointer;background:none;color:#9a8fb0;border:0">\u2715</button></div>`).join("") : `<div style="padding:.5rem .8rem;color:#9a8fb0">${st.sd_mounted ? "no tracks on the card yet \u2014 drop audio below, or press \u2192 Castle on a track in the Library" : "no SD card"}</div>`) + `</div><div style="padding:.5rem .8rem;border-top:1px solid #35264f" title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">\u{1F463} <small style="color:#9a8fb0">motion sensor</small> <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> <select id="dpPirScene">` + sceneIds().map((s) => `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") + `</select> <input id="dpPirCool" type="number" min="5" max="600" step="5" value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="Cooldown: seconds before the sensor can fire again"><small style="color:#9a8fb0"> s between triggers</small></div><div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed #503a75;color:#9a8fb0;text-align:center">drop audio files here to upload</div><div style="padding:.4rem .8rem;border-top:1px solid #35264f"><button id="dpLog" style="cursor:pointer;background:none;border:0;color:#9a8fb0">boot log \u25B8</button><pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre></div>`;
+      this.body.innerHTML = `<div style="padding:.6rem .8rem;border-bottom:1px solid #35264f;display:flex;align-items:center;gap:.4rem"><span style="flex:1"><b>\u{1F3F0} v${st.version}</b> \xB7 up ${fmtUptime(st.uptime_s)}` + (st.sd_free_kb ? ` \xB7 card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") + ` <small title="Free working memory (PSRAM) \u2014 what the SD turntable runs on">\xB7 ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span><button id="dpClose" title="Close this panel" aria-label="Close" style="cursor:pointer;background:none;border:0;color:#9a8fb0;font-size:14px;padding:0 .2rem">\u2715</button></div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f"><button id="dpPlaylist" title="Every scene in order with dark gaps, looping until stopped \u2014 the whole evening on one button" style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;background:${st.show_on ? "#7a2a2a" : "#2a5537"};color:inherit">${st.show_on ? "\u25A0 stop the show" : "\u25B6 start the show"}</button>` + (st.show_on && st.scene ? ` <small style="color:#9a8fb0">now: ${st.scene}</small>` : "") + `</div><div style="padding:.5rem .8rem;border-bottom:1px solid #35264f;display:flex;gap:.5rem;align-items:center" title="Park every pixel on one colour, or give them back to the show">\u{1F4A1} <small style="color:#9a8fb0">lights</small> <input id="dpColor" type="color" value="#ff8c1e" title="Park the pixels on a colour" style="cursor:pointer"><button id="dpShow" title="Hand the pixels back to the scene engine" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">resume show</button><button id="dpOff" style="cursor:pointer;background:none;color:#9a8fb0;border:1px solid #35264f;border-radius:6px;padding:.2rem .5rem">off</button></div><div style="max-height:180px;overflow:auto" id="dpFiles">` + (tracks2.length && st.bridged ? `<div style="padding:.5rem .8rem;color:#9a8fb0">${tracks2.length} track${tracks2.length === 1 ? "" : "s"} on the card \u2014 see the Library below (\u{1F3F0} rows and badges)</div>` : tracks2.length ? tracks2.map((f, i) => `<div style="display:flex;gap:.4rem;align-items:center;padding:.3rem .8rem"><button data-play="${i}" title="Play on the castle" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .5rem">\u25B6</button><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}</span><small style="color:#9a8fb0">${kb3(f.size)}</small><button data-del="${i}" title="Delete from the card" style="cursor:pointer;background:none;color:#9a8fb0;border:0">\u2715</button></div>`).join("") : `<div style="padding:.5rem .8rem;color:#9a8fb0">${st.sd_mounted ? "no tracks on the card yet \u2014 drop audio below, or press \u2192 Castle on a track in the Library" : "no SD card"}</div>`) + `</div><div style="padding:.5rem .8rem;border-top:1px solid #35264f" title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">\u{1F463} <small style="color:#9a8fb0">motion sensor</small> <label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> <select id="dpPirScene">` + sceneIds().map((s) => `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") + `</select> <input id="dpPirCool" type="number" min="5" max="600" step="5" value="${st.pir?.cooldown_s ?? 60}" style="width:3.5rem" title="Cooldown: seconds before the sensor can fire again"><small style="color:#9a8fb0"> s between triggers</small></div><div id="dpDrop" style="padding:.4rem .8rem;border-top:1px dashed #503a75;color:#9a8fb0;text-align:center">drop audio files here to upload</div><div style="padding:.4rem .8rem;border-top:1px solid #35264f"><button id="dpLog" style="cursor:pointer;background:none;border:0;color:#9a8fb0">boot log \u25B8</button><pre id="dpLogOut" style="display:none;max-height:160px;overflow:auto;font-size:11px;white-space:pre-wrap;margin:.4rem 0 0"></pre></div>`;
       this.body.querySelector("#dpClose").addEventListener("click", () => this.toggle());
       this.body.querySelector("#dpPlaylist").addEventListener("click", () => {
         void castleAct(
@@ -2846,7 +2852,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       });
       this.body.querySelector("#dpColor").addEventListener("input", (e) => {
         const hex = e.target.value.slice(1);
-        void castleAct(`/api/light?c=${hex}`, `lights #${hex}`, { quiet: true });
+        void castleAct(`/api/light?c=${hex}`, "lights colour", { quiet: true });
       });
       this.body.querySelector("#dpShow").addEventListener("click", () => void castleAct("/api/light?c=show", "lights back to the show"));
       this.body.querySelector("#dpOff").addEventListener("click", () => void castleAct("/api/light?c=off", "lights off"));
@@ -2950,11 +2956,27 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     if (!s.sd_mounted) return " \xB7 no SD";
     return s.sd_free_kb ? ` \xB7 SD ${(s.sd_free_kb / 1048576).toFixed(1)} GB free` : " \xB7 SD ok";
   };
+  var TOAST_MAX = 3;
+  function toastHost() {
+    let host = document.getElementById("toasts");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "toasts";
+      host.style.cssText = "position:fixed;right:12px;bottom:84px;z-index:41;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none";
+      document.body.appendChild(host);
+    }
+    return host;
+  }
   function toast(msg, isError = false) {
+    const host = toastHost();
+    for (const live2 of Array.from(host.children)) {
+      if (live2.textContent === msg) return;
+    }
+    while (host.children.length >= TOAST_MAX) host.firstElementChild?.remove();
     const el2 = document.createElement("div");
     el2.textContent = msg;
-    el2.style.cssText = "position:fixed;right:12px;bottom:52px;z-index:41;padding:.4rem .7rem;border-radius:8px;font:12px system-ui;pointer-events:none;transition:opacity .4s;opacity:1;" + (isError ? "background:#5a1a2a;color:#ffd8e0;" : "background:#2a3a1a;color:#e0ffd0;");
-    document.body.appendChild(el2);
+    el2.style.cssText = "padding:.4rem .7rem;border-radius:8px;font:12px system-ui;max-width:60vw;transition:opacity .4s;opacity:1;" + (isError ? "background:#5a1a2a;color:#ffd8e0;" : "background:#2a3a1a;color:#e0ffd0;");
+    host.appendChild(el2);
     setTimeout(() => {
       el2.style.opacity = "0";
     }, isError ? 3200 : 1400);
@@ -2980,10 +3002,12 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       r = await fetch(path, { method: opts.method ?? "POST" });
     } catch {
       toast(`${okMsg} failed \u2014 no answer from the castle`, true);
+      castleChangedSoon();
       return false;
     }
     if (!r.ok) {
       toast(`${okMsg} failed \u2014 ${await failReason(r)}`, true);
+      castleChangedSoon();
       return false;
     }
     if (!opts.quiet) toast(okMsg);
@@ -3014,6 +3038,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
     chip.style.cssText = "display:none;background:#241a38;color:#e8e0f0;border:1px solid #503a75;border-radius:10px;padding:.5rem .75rem;font:13px system-ui;box-shadow:0 4px 16px rgba(0,0,0,.5)";
     dock.appendChild(chip);
     let lastOk = true;
+    let lastSeen = null;
+    let lastPlaying = "idle";
     const act = (path, okMsg) => {
       void castleAct(path, okMsg);
     };
@@ -3045,10 +3071,14 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       const vol = chip.querySelector("#devVol");
       const muteB = chip.querySelector("#devMute");
       if (vol) {
-        vol.disabled = hushed;
-        vol.title = hushed ? "Castle speaker is off while sound plays on the Mac (\u266A switch)" : "Castle speaker volume";
+        vol.disabled = hushed || !lastOk;
+        vol.title = !lastOk ? "Castle not answering" : hushed ? "Castle speaker is off while sound plays on the Mac (\u266A switch)" : "Castle speaker volume";
       }
-      if (muteB) muteB.disabled = hushed;
+      if (muteB) muteB.disabled = hushed || !lastOk;
+      for (const id of ["devStop", "devMirror"]) {
+        const el2 = chip.querySelector(`#${id}`);
+        if (el2) el2.disabled = !lastOk;
+      }
     }
     function applyRoute(route, announce) {
       soundRoute = route;
@@ -3089,6 +3119,8 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       if (wasDown) panel.refresh();
       const bits = [s.scene && s.scene !== "stop" ? s.scene : "", s.track ?? ""].filter(Boolean);
       const playing = bits.length ? `\u25B6 ${bits.join(" \xB7 ")}` : "idle";
+      lastSeen = /* @__PURE__ */ new Date();
+      lastPlaying = playing;
       chip.innerHTML = `<div>\u{1F3F0} castle v${s.version}${sdChip(s)} \xB7 <span id="devNow" style="color:#b8a8d8">${playing}</span></div><div style="margin-top:.25rem;display:flex;align-items:center;gap:.4rem"><button id="devSnd" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem;white-space:nowrap"></button><button id="devMute" title="Mute the castle speaker" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.15rem .45rem">${lastVol === 0 ? "\u{1F507}" : "\u{1F50A}"}</button><input id="devVol" type="range" min="0" max="100" value="${lastVol}" style="width:90px"><label style="cursor:pointer;white-space:nowrap" title="Also fire scene picks on the real castle"><input type="checkbox" id="devMirror" ${mirror ? "checked" : ""}> on castle</label><button id="devStop" title="Stop the castle: audio and scene" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u25A0</button><button id="devMore" title="The castle's own controls: SD library, show, light, motion sensor, boot log" style="cursor:pointer;background:#3a2a55;color:inherit;border:0;border-radius:6px;padding:.2rem .5rem">\u{1F3F0} Castle</button></div>`;
       chip.querySelector("#devMirror").addEventListener("change", (e) => {
         mirror = e.target.checked;
@@ -3130,9 +3162,11 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
       chip.style.opacity = "0.4";
       lastOk = false;
       if (lastStatus) sayStatus(lastStatus);
-      for (const id of ["devStop", "devVol", "devMute", "devMirror"]) {
-        const el2 = chip.querySelector(`#${id}`);
-        if (el2) el2.disabled = true;
+      syncRouteUI();
+      const nowEl = chip.querySelector("#devNow");
+      if (nowEl && lastSeen) {
+        nowEl.textContent = `last seen ${lastSeen.toLocaleTimeString([], { timeStyle: "short" })}`;
+        nowEl.title = `What the castle said then: ${lastPlaying}`;
       }
       panel.refresh();
       setCastleLive(false);
@@ -4951,7 +4985,7 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         btn2.textContent = "pulling\u2026";
         const r = await fetch(`/api/card/${encodeURIComponent(name)}`).catch(() => null);
         if (!r?.ok) {
-          deps.say(`Could not pull ${name} off the card \u2014 is the castle awake?`, true);
+          deps.say(`Could not pull ${name} off the card \u2014 ${r ? await failReason(r) : "no answer from the castle"}.`, true);
           btn2.disabled = false;
           btn2.textContent = "\u2B07 to Mac";
           return;
@@ -4960,14 +4994,22 @@ ${s.file} \u2014 ${kb(s.bytes)}` : "";
         await deps.reloadCard();
       } else if (btn2.dataset["cardact"] === "del") {
         if (!confirm(`Delete ${name} from the castle's SD card?`)) return;
-        const r = await fetch(
+        const ok = await castleAct(
           `/api/files/${encodeURIComponent(name)}`,
+          `deleted ${name} from the card`,
           { method: "DELETE" }
-        ).catch(() => null);
-        deps.say(r?.ok ? `Deleted ${name} from the card.` : `Could not delete ${name}.`, !r?.ok);
+        );
+        deps.say(ok ? `Deleted ${name} from the card.` : `Could not delete ${name} \u2014 see the message by the castle chip.`, !ok);
         await deps.reloadCard();
       }
     });
+  }
+  function mountCard(deps) {
+    const reloadCard = async () => deps.apply(await fetchCard());
+    void reloadCard();
+    wireCardActions({ ...deps, reloadCard });
+    watchCard({ active: deps.active, card: () => deps.ctx().card, apply: deps.apply });
+    return reloadCard;
   }
 
   // src/track_import_url.ts
@@ -5883,28 +5925,19 @@ ${lines.join("\n")}
         b.classList.toggle("on", on);
       }
     }
-    async function loadCard() {
-      T.onCard = await fetchCard();
-      drawTracks(void 0);
-    }
-    void loadCard();
     const cardCtx = () => ({
       tracks: T.tracks,
       sceneIds: T.sceneIds,
       card: T.onCard,
       canPull: T.mode === "studio"
     });
-    wireCardActions({
+    const loadCard = mountCard({
       list: T.list,
       syncBtn: byId("trkSync"),
       ctx: cardCtx,
       say,
-      reloadCard: loadCard,
-      importFile: (f) => takeFile(f)
-    });
-    watchCard({
+      importFile: (f) => takeFile(f),
       active: () => T.mode === "studio",
-      card: () => T.onCard,
       apply: (c) => {
         T.onCard = c;
         drawTracks(void 0);
