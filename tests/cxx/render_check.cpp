@@ -221,13 +221,31 @@ static void check_zone_writes(const Fixture &fx, int zi, const char *name, uint3
       for (int i = 0; i < n * 4; i++) CHECK(out[i] == 0, "%s trim 0 wrote %d", name, out[i]);
   }
 
-  // Blackout: effect off, no strike -> every byte zero, whatever else is set.
+  // Blackout is what scene_stop sets (generated/scenes.yaml): effect off,
+  // centre off, OVERLAY OFF, no strike -> every byte zero, whatever level,
+  // trim and hue say. The overlay must be cleared too: sparkle, chase and
+  // meteor ADD white, so any of them on an OFF base can still light a pixel
+  // (the old sin-hash just happened not to glint at this t; the integer
+  // hash does), and the next check pins that down so nobody "simplifies"
+  // scene_stop to effect-only.
   std::memset(buf.data(), CANARY, buf.size());
   Probe dark{0.0f, 0.0f, 0.0f, {1, 1, 1, 1}};
-  ZoneIo io = make_io(dark, 1.0f, 0.5f, 1.0f, EFF_OFF, -1, OV_SPARKLE, 0, 0, 0, false);
+  ZoneIo io = make_io(dark, 1.0f, 0.5f, 1.0f, EFF_OFF, -1, OV_NONE, 0, 0, 0, false);
   render_zone(out, zi, fx, 1e6f, io);
   for (int i = 0; i < n * 4; i++) CHECK(out[i] == 0, "%s blackout byte %d", name, out[i]);
   for (int i = 0; i < guard; i++) CHECK(out[n * 4 + i] == CANARY, "%s blackout overrun", name);
+  if (n > 0) {
+    bool lit = false;
+    for (int ov = OV_SPARKLE; ov <= OV_METEOR && !lit; ov++) {
+      ZoneIo glint = make_io(dark, 1.0f, 0.5f, 1.0f, EFF_OFF, -1, ov, 0, 0, 0, false);
+      for (int k = 0; k < 64 && !lit; k++) {
+        render_zone(out, zi, fx, (float) k * 0.37f, glint);
+        for (int i = 0; i < n * 4; i++) lit |= out[i] != 0;
+      }
+    }
+    CHECK(lit, "%s: no overlay ever lights an OFF base — scene_stop's overlay reset is now "
+               "redundant; fine, but re-read the blackout comment above", name);
+  }
 
   // Full white strike, mode all, trim 1, dark base: every pixel is the
   // strike alone — 0.92 of full (the hard-strike ceiling), blue a further

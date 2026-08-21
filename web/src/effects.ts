@@ -56,20 +56,56 @@ export const paletteIndex = (name: string): number => {
   return i < 0 ? 0 : i;
 };
 
+/* ── Noise primitives ──────────────────────────────────────────────────
+   Every random-looking thing the castle does — the flame, a blink, a glint,
+   a scatter strike — comes from ONE integer hash over INTEGER coordinates,
+   and firmware/castle_effects.h runs the very same bit operations. That is
+   what lets this screen draw the porch frame for frame: the old
+   frac(sin(n*127.1)*43758.5) could not be computed to the same digits in
+   float32 and double, so the desk and the castle only ever agreed about the
+   distribution, never the frame.
+
+   mix32 is lowbias32 (Chris Wellons): a full-avalanche 32-bit bijection, so
+   consecutive lattice cells and neighbouring pixels land anywhere in 0..1.
+   The result keeps 24 bits, which a float32 holds exactly — so the number
+   the firmware computes and the number below are the SAME double. Math.imul
+   and >>> 0 keep every step in uint32 arithmetic, as the C does. */
+
+export function mix32(n: number): number {
+  let x = n >>> 0;
+  x ^= x >>> 16;
+  x = Math.imul(x, 0x7feb352d);
+  x ^= x >>> 15;
+  x = Math.imul(x, 0x846ca68b);
+  x ^= x >>> 16;
+  return x >>> 0;
+}
+
+const unit01 = (h: number): number => (h >>> 8) / 16777216;
+
+/** Noise at one lattice point (the vnoise cell index). `| 0` is the C's
+ *  int32 cast: the same two's-complement bits for the same integer. */
+export const hashi = (i: number): number => unit01(mix32(i | 0));
+
+/** Noise at a triple of small integer coordinates — a time cell, a pixel and
+ *  a zone for the sparkle; a pixel, a zone and a strike epoch for the scatter. */
+export const hash3 = (a: number, b: number, c: number): number =>
+  unit01(mix32(mix32(mix32(a | 0) + (b | 0)) + (c | 0)));
+
+/** A hash of a real number, for desk-only scenery (the stage's star field).
+ *  Quantised to 1/1024 so nearby reals give unrelated values; the EFFECTS
+ *  never call this — they hash integer cells, as the firmware does. */
+export const hash = (n: number): number => hashi(Math.round(n * 1024));
+
 /* ── Smoothed value noise — the flame's whole personality ──────────────
    A flame flickers coherently; per-frame random reads as a loose connection,
    which is why this is interpolated rather than sampled. */
-
-export function hash(n: number): number {
-  const s = Math.sin(n * 127.1) * 43758.5453;
-  return s - Math.floor(s);
-}
 
 export function vnoise(x: number): number {
   const i = Math.floor(x);
   const f = x - i;
   const u = f * f * (3 - 2 * f);
-  return hash(i) * (1 - u) + hash(i + 1) * u;
+  return hashi(i) * (1 - u) + hashi(i + 1) * u;
 }
 
 export function fbm(x: number): number {
@@ -236,7 +272,7 @@ export function applyOverlay(
 ): Rgbw {
   if (ov === 1) {           // sparkle: rare single-pixel glints
     const cell = Math.floor(t * 7);
-    const g = hash(cell * 13.7 + p * 7.77 + zi * 3.1);
+    const g = hash3(cell, p, zi);
     if (g > 0.93) {
       const k = (g - 0.93) / 0.07;
       return [Math.min(1, c[0] + 0.30 * k), Math.min(1, c[1] + 0.30 * k),
@@ -295,7 +331,7 @@ export const flashModeIndex = (name: string): number => {
 export function flashGate(
   mode: number, p: number, zi: number, epoch: number, L: Layout,
 ): number {
-  if (mode === 1) return hash(p * 9.13 + zi * 5.7 + epoch * 17.9) > 0.45 ? 1 : 0.15;
+  if (mode === 1) return hash3(p, zi, epoch) > 0.45 ? 1 : 0.15;
   // "centre" and "ring" split the fixture by role rather than by index. On a
   // Jewel that is pixel 0 against the other six, exactly as before; on a ring
   // or a matrix it is whatever `Layout.core` decided the middle is.

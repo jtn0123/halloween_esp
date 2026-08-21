@@ -47,18 +47,28 @@ int main(int argc, char **argv) {
     std::printf("{\"kind\":\"zone\",\"zi\":%d,\"n\":%d,\"center\":%d,\"fall_steps\":%d}\n",
                 z, RIG[z].n, RIG[z].center, RIG[z].fall_steps);
 
-  // Noise primitives at integer and fractional arguments across the range
-  // the effects reach: t*speed + seed*k, with t up to a few hours.
+  // Noise primitives. hashi at the lattice cells vnoise reaches (t*speed +
+  // seed*k, t up to a few hours, plus the negative side and the int32 rim),
+  // hash3 at the (cell, pixel, zone) / (pixel, zone, epoch) triples the
+  // overlays and gates build, and vnoise/fbm at real arguments.
   for (int i = 0; i < 400; i++) {
-    float x;
+    int32_t k;
     switch (i % 4) {
-      case 0: x = (float) ((next_u32() >> 16) % 64); break;              // small ints
-      case 1: x = (float) ((next_u32() >> 16) % 200000); break;          // large ints
-      case 2: x = frand() * 40.0f; break;                        // small real
-      default: x = frand() * 60000.0f; break;                    // hours out
+      case 0: k = (int32_t) ((next_u32() >> 16) % 64); break;             // small ints
+      case 1: k = (int32_t) ((next_u32() >> 8) % 2000000); break;         // hours out
+      case 2: k = -(int32_t) ((next_u32() >> 16) % 1000); break;          // below zero
+      default: k = (int32_t) (next_u32() ^ 0x80000000u); break;           // anywhere in int32
     }
-    std::printf("{\"kind\":\"noise\",\"x\":%.9g,\"hash\":%.9g,\"vnoise\":%.9g,\"fbm\":%.9g}\n",
-                x, hashf(x), vnoise(x), fbm(x));
+    const int32_t a = (int32_t) ((next_u32() >> 8) % 300000);   // a time cell
+    const int32_t b = (int32_t) ((next_u32() >> 16) % 64);      // a pixel
+    const int32_t c = (int32_t) ((next_u32() >> 16) % 1000);    // a zone / an epoch
+    const float x = (i & 1) ? frand() * 40.0f : frand() * 60000.0f;
+    // hashi/hash3 are 24-bit fractions: %.17g prints the float's exact value,
+    // so the reader can demand the desk's double be the SAME number.
+    std::printf("{\"kind\":\"noise\",\"k\":%ld,\"hashi\":%.17g,\"a\":%ld,\"b\":%ld,\"c\":%ld,"
+                "\"hash3\":%.17g,\"x\":%.9g,\"vnoise\":%.9g,\"fbm\":%.9g}\n",
+                (long) k, hashi(k), (long) a, (long) b, (long) c, hash3(a, b, c),
+                x, vnoise(x), fbm(x));
   }
 
   for (int i = 0; i < cases; i++) {

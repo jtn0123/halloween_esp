@@ -21,9 +21,9 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import castle_emu  # noqa: E402
-import castle_emu_http  # noqa: E402
-from castle_fuzz import Fuzzer, raw_request  # noqa: E402
+import castle_emu
+import castle_emu_http
+from castle_fuzz import Fuzzer, raw_request
 
 SEED = int(os.environ.get("CASTLE_FUZZ_SEED", "1"))
 
@@ -113,24 +113,28 @@ class TestBodies(FuzzCase):
 
 
 class TestNulAndOddNames(FuzzCase):
-    """The firmware's url_decode can mint a NUL; C then truncates there."""
+    """The firmware's url_decode can mint a NUL. Since v5.24 safe_name
+    refuses control bytes at the door (they would break the /api/files
+    JSON), so a NUL never reaches fopen — it is a 400, not a truncated name."""
 
-    def test_nul_only_name_is_cannot_create_file(self) -> None:
-        """PUT /api/files/%zz → safe_name("\\0") passes, fopen("/sd/") fails."""
+    def test_nul_only_name_is_bad_filename(self) -> None:
+        """PUT /api/files/%zz → url_decode mints "\\0", safe_name says no."""
         code, body, _ = self.req("PUT", "/api/files/%zz", body=b"x")
-        self.assertEqual((code, body), (500, b"cannot create file"))
+        self.assertEqual((code, body), (400, b"bad filename"))
 
-    def test_nul_truncates_the_stored_name(self) -> None:
+    def test_nul_inside_a_name_is_refused_not_truncated(self) -> None:
+        """v5.23 stored "ab%zzcd.mp3" as /sd/ab (C truncated at the NUL);
+        now nothing is written and nothing is left to delete."""
         code, body, _ = self.req("PUT", "/api/files/ab%zzcd.mp3", body=b"x")
-        self.assertEqual(code, 200)
-        self.assertEqual(json.loads(body)["path"], "/sd/ab")
-        self.assertTrue((self.card / "ab").is_file())
-        self.assertEqual(self.req("DELETE", "/api/files/ab%00cd")[0], 200)
+        self.assertEqual((code, body), (400, b"bad filename"))
+        self.assertFalse((self.card / "ab").exists())
+        self.assertEqual(self.req("DELETE", "/api/files/ab%00cd")[0], 400)
 
     def test_nul_in_play_does_not_kill_the_ticker(self) -> None:
         """Regression: the old emulator's ticker died on Path("\\0") and
-        never applied another command — a silent, permanent hang."""
-        self.assertEqual(self.req("POST", "/api/play?f=%00")[0], 200)
+        never applied another command — a silent, permanent hang. The name
+        is now refused before it is queued, and the ticker keeps going."""
+        self.assertEqual(self.req("POST", "/api/play?f=%00")[0], 400)
         self.assertEqual(self.req("POST", "/api/volume?v=42")[0], 200)
         deadline = time.monotonic() + 2
         while time.monotonic() < deadline:

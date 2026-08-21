@@ -77,8 +77,14 @@ inline std::string url_decode(const char *s) {
 /// A filename from a URL is untrusted input even on a porch prop. One path
 /// component only: no slashes, no "..", nothing hidden.
 inline bool safe_name(const std::string &n) {
-  return !n.empty() && n.size() < 100 && n[0] != '.' &&
-         n.find('/') == std::string::npos && n.find("..") == std::string::npos;
+  if (n.empty() || n.size() >= 100 || n[0] == '.' ||
+      n.find('/') != std::string::npos || n.find("..") != std::string::npos)
+    return false;
+  // Names are snprintf'd raw into /api/files and /api/status JSON; a quote,
+  // backslash or control byte there breaks every client's parse.
+  for (unsigned char c : n)
+    if (c < 0x20 || c == 0x7f || c == '"' || c == '\\') return false;
+  return true;
 }
 
 /// The filename after a fixed prefix like "/api/files/".

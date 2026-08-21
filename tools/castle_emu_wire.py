@@ -130,10 +130,13 @@ def _hexval(b: int) -> int:
 
 
 def safe_name(n: bytes) -> bool:
-    """One path component, nothing hidden — sd_web.h safe_name on the raw
-    bytes, NUL included (the C length counts it)."""
-    return (bool(n) and len(n) < NAME_MAX and n[0:1] != b"."
-            and b"/" not in n and b".." not in n)
+    """One path component, nothing hidden, nothing that breaks the JSON it
+    is later printed into — sd_web.h safe_name on the raw bytes. Control
+    bytes (NUL included — the C length counts it), DEL, '"' and '\\' are
+    refused because h_list/h_status snprintf names into JSON unescaped."""
+    if not n or len(n) >= NAME_MAX or n[0:1] == b"." or b"/" in n or b".." in n:
+        return False
+    return not any(c < 0x20 or c == 0x7F or c in (0x22, 0x5C) for c in n)
 
 
 def safe_subpath(p: bytes) -> bool:

@@ -25,9 +25,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import castle_emu  # noqa: E402
-import castle_emu_http  # noqa: E402
-import castle_emu_wire as wire  # noqa: E402
+import castle_emu
+import castle_emu_http
+import castle_emu_wire as wire
 
 FW = ROOT / "firmware"
 SD_WEB = (FW / "sd_web.h").read_text()
@@ -125,12 +125,21 @@ class TestNameRules(unittest.TestCase):
 
     def ref_safe_name(self):
         body = FUNCS["safe_name"]
-        limit = int(grab(r"n\.size\(\) < (\d+)", body))
-        lead = grab(r"n\[0\] != '(.)'", body).encode()
+        limit = int(grab(r"n\.size\(\) >= (\d+)", body))
+        lead = grab(r"n\[0\] == '(.)'", body).encode()
         finds = [f.encode() for f in re.findall(r"""n\.find\(["'](.+?)["']\)""", body)]
+        # The per-byte loop: `c < 0x20` and each `c == <literal>`, read off
+        # the C so a new forbidden byte in the firmware fails here first.
+        below = int(grab(r"c < (0x[0-9a-fA-F]+)", body), 16)
+        bad = set()
+        for lit in re.findall(r"c == (0x[0-9a-fA-F]+|'[^']+')", body):
+            bad.add(int(lit, 16) if lit.startswith("0x")
+                    else ord(lit[1:-1].encode().decode("unicode_escape")))
         self.assertEqual(limit, wire.NAME_MAX)
+        self.assertEqual(bad, {0x7F, ord('"'), ord("\\")})
         return lambda n: (bool(n) and len(n) < limit and n[:1] != lead
-                          and all(f not in n for f in finds))
+                          and all(f not in n for f in finds)
+                          and all(c >= below and c not in bad for c in n))
 
     def ref_safe_subpath(self):
         body = FUNCS["safe_subpath"]
@@ -143,10 +152,11 @@ class TestNameRules(unittest.TestCase):
 
     def corpus(self, seed: int = 7) -> list[bytes]:
         rng = random.Random(seed)
-        alphabet = b"ab./\\?%+ \x00\xc3\xa9\"'"
+        alphabet = b"ab./\\?%+ \x00\xc3\xa9\"'\t\x1f\x7f"
         out = [b"", b".", b"..", b"a", b"a/b", b"/a", b".a", b"a..b", b"a" * 99,
                b"a" * 100, b"a" * 140, b"a" * 141, b"\xc3\xa9" * 50, b"\x00",
-               b"a\x00/..", b"..\\x", b"a?b"]
+               b"a\x00/..", b"..\\x", b"a?b", b'a"b.mp3', b"a\\b.mp3", b"a\tb",
+               b"a\x1fb", b"a\x7fb", b"a b", b"a'b", b"\xc3\xa9.mp3", b"a\x80b"]
         out += [bytes(rng.choice(alphabet) for _ in range(rng.randint(0, 150)))
                 for _ in range(1500)]
         return out
@@ -165,6 +175,18 @@ class TestNameRules(unittest.TestCase):
         """60 accented characters are 120 UTF-8 bytes: the board says no."""
         self.assertFalse(wire.safe_name("é".encode() * 60))
         self.assertTrue(wire.safe_name("é".encode() * 40))
+
+    def test_safe_name_refuses_what_would_break_the_json(self) -> None:
+        """h_list/h_status snprintf names raw into JSON: a quote, a
+        backslash, a control byte or DEL in a name would make /api/files
+        and /api/status unparseable for every client, so safe_name says no
+        at the door. High bytes (UTF-8) and spaces stay welcome."""
+        for bad in (b'a"b.mp3', b"a\\b.mp3", b"a\tb", b"a\nb", b"a\rb", b"\x00",
+                    b"ab\x00cd.mp3", b"a\x1fb", b"a\x7fb", b'"', b"\\"):
+            self.assertFalse(wire.safe_name(bad), repr(bad))
+        for good in (b"a b.mp3", b"a'b.mp3", "é.mp3".encode(), b"a\x80b",
+                     b"x-y_z (1).mp3", b"a~b", b"a\xffb"):
+            self.assertTrue(wire.safe_name(good), repr(good))
 
     def test_query_param_buffers_are_the_firmwares(self) -> None:
         body = FUNCS["query_param"]
@@ -294,23 +316,25 @@ class TestWireBehaviour(unittest.TestCase):
         self.assertEqual(json.loads(self.call("GET", "/api/status")[1])["volume"], 33)
         self.assertNotIn(("VOLUME", "11"), self.emu.applied[-3:])
 
-    def test_list_json_breaks_on_a_quote_in_a_name_like_the_board(self) -> None:
-        """FIRMWARE BUG (sd_web.h h_list/h_status): names are snprintf'd
-        into JSON unescaped, and safe_name admits '"' and '\\'. A file
-        called a"b.mp3 makes GET /api/files unparseable for every client.
-        The emulator reproduces it so the desk can be tested against the
-        truth; the one-line fix is in the report (reject '"' and '\\' in
-        safe_name — no RAM cost)."""
-        code, _ = self.call("PUT", "/api/files/a%22b.mp3", b"x")
+    def test_a_quote_in_a_name_is_refused_so_the_list_json_survives(self) -> None:
+        """Names are snprintf'd into JSON unescaped (sd_web.h h_list/h_status),
+        so safe_name refuses '"', '\\' and control bytes at the door: the
+        PUT is a 400 "bad filename" and GET /api/files stays parseable.
+        (v5.23 admitted them and one such file broke the list for every
+        client — firmware/pending/README.md has the history.)"""
+        for enc in ("a%22b.mp3", "a%5Cb.mp3", "a%09b.mp3", "a%7Fb.mp3", "a%00b.mp3"):
+            code, out = self.call("PUT", f"/api/files/{enc}", b"x")
+            self.assertEqual((code, out), (400, b"bad filename"), enc)
+        for enc in ("a%22b.mp3", "a%5Cb.mp3"):
+            code, out = self.call("POST", f"/api/play?f={enc}")
+            self.assertEqual((code, out), (400, b"need ?f=<file>"), enc)
+        code, out = self.call("GET", "/api/files")
         self.assertEqual(code, 200)
-        try:
-            code, out = self.call("GET", "/api/files")
-            self.assertEqual(code, 200)
-            with self.assertRaises(json.JSONDecodeError):
-                json.loads(out)
-        finally:
-            (self.card / 'a"b.mp3').unlink()
-
+        names = [e["name"] for e in json.loads(out)]
+        self.assertFalse(any('"' in n or "\\" in n for n in names), names)
+        code, out = self.call("GET", "/api/status")
+        self.assertEqual(code, 200)
+        json.loads(out)
 
 if __name__ == "__main__":
     unittest.main()

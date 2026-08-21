@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cmath>
+#include <cstdint>
 
 namespace castle {
 
@@ -33,18 +34,47 @@ struct Rgbw {
   float r, g, b, w;
 };
 
-// Smoothed value noise. A flame flickers coherently; per-frame random reads as
-// a loose connection, which is why this is interpolated rather than sampled.
-inline float hashf(float n) {
-  float s = sinf(n * 127.1f) * 43758.5453f;
-  return s - floorf(s);
+// ── Noise primitives ────────────────────────────────────────────────────
+// Every random-looking thing the castle does — the flame, a blink, a glint, a
+// scatter strike — comes from ONE integer hash over INTEGER coordinates, and
+// web/src/effects.ts runs the very same bit operations. That is what lets the
+// browser draw the porch frame for frame: the old frac(sin(n*127.1)*43758.5)
+// could not be computed to the same digits in float32 and double, so the desk
+// and the castle only ever agreed about the distribution, never the frame.
+//
+// mix32 is lowbias32 (Chris Wellons): a full-avalanche 32-bit bijection, so
+// consecutive lattice cells and neighbouring pixels land anywhere in 0..1.
+// The result keeps 24 bits, which a float32 holds exactly — the same bits
+// the desk's double sees. Inputs are cast through int32 (two's complement on
+// the wire, `| 0` in JS); the arguments the effects reach stay far inside
+// that range (a week of uptime at the fastest flame is a few million).
+inline uint32_t mix32(uint32_t x) {
+  x ^= x >> 16;
+  x *= 0x7feb352dU;
+  x ^= x >> 15;
+  x *= 0x846ca68bU;
+  x ^= x >> 16;
+  return x;
 }
 
+inline float unit01(uint32_t h) { return (float) (h >> 8) * (1.0f / 16777216.0f); }
+
+// Noise at one lattice point (the vnoise cell index).
+inline float hashi(int32_t i) { return unit01(mix32((uint32_t) i)); }
+
+// Noise at a triple of small integer coordinates — a time cell, a pixel and
+// a zone for the sparkle; a pixel, a zone and a strike epoch for the scatter.
+inline float hash3(int32_t a, int32_t b, int32_t c) {
+  return unit01(mix32(mix32(mix32((uint32_t) a) + (uint32_t) b) + (uint32_t) c));
+}
+
+// Smoothed value noise. A flame flickers coherently; per-frame random reads as
+// a loose connection, which is why this is interpolated rather than sampled.
 inline float vnoise(float x) {
-  float i = floorf(x);
-  float f = x - i;
+  int32_t i = (int32_t) floorf(x);
+  float f = x - (float) i;
   float u = f * f * (3.0f - 2.0f * f);
-  return hashf(i) * (1.0f - u) + hashf(i + 1.0f) * u;
+  return hashi(i) * (1.0f - u) + hashi(i + 1) * u;
 }
 
 inline float fbm(float x) {
@@ -182,8 +212,8 @@ inline float loop_dist(float a, float b) {
 
 inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi, const Fixture &fx) {
   if (ov == OV_SPARKLE) {
-    float cell = floorf(t * 7.0f);
-    float g = hashf(cell * 13.7f + p * 7.77f + zi * 3.1f);
+    int32_t cell = (int32_t) floorf(t * 7.0f);
+    float g = hash3(cell, p, zi);
     if (g > 0.93f) {
       float k = (g - 0.93f) / 0.07f;
       return Rgbw{fminf(1.0f, c.r + 0.30f * k), fminf(1.0f, c.g + 0.30f * k),
@@ -230,7 +260,7 @@ inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi, const Fixture 
 // effects.ts. "Core" is pixel 0 on a Jewel and whatever generated/rig.h
 // decided is the middle on a fixture that has no single centre.
 inline float flash_gate(int mode, int p, int zi, int epoch, const Fixture &fx) {
-  if (mode == 1) return hashf(p * 9.13f + zi * 5.7f + epoch * 17.9f) > 0.45f ? 1.0f : 0.15f;
+  if (mode == 1) return hash3(p, zi, epoch) > 0.45f ? 1.0f : 0.15f;
   if (mode == 2) return fx.core[p] ? 1.0f : 0.1f;
   if (mode == 3) return fx.core[p] ? 0.1f : 1.0f;
   return 1.0f;
