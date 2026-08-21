@@ -16,6 +16,7 @@ import { api } from "./api.js";
 import { startEta } from "./eta.js";
 import type { BandEditor } from "./band_editor.js";
 import { fillOptsFrom, initImportOpts } from "./import_opts.js";
+import { cardName, fetchCardSet, sendToCastle } from "./track_send.js";
 import { trackRowHtml } from "./track_rows.js";
 import { wireUrlImport } from "./track_import_url.js";
 import { detectOnsets, loudnessEnvelope } from "./onsets.js";
@@ -121,6 +122,10 @@ export function initTracks(deps: TracksDeps): TracksApi {
     selected: null as string | null,
     /** Last list drawn, so a redraw does not need another round trip. */
     tracks: [] as TrackInfo[],
+    /** Filenames on the castle's SD card, or null when no castle answers.
+     *  Feeds the "on castle" badge and the send button — the reconcile the
+     *  two-library setup was missing (dogfood 005/006). */
+    onCard: null as Set<string> | null,
   };
   const say = (msg: string, err?: boolean): void => {
     T.note.textContent = msg;
@@ -209,6 +214,13 @@ export function initTracks(deps: TracksDeps): TracksApi {
     }
   }
 
+  /** Refresh the on-card set; a redraw follows so badges track reality. */
+  async function loadCard(): Promise<void> {
+    T.onCard = await fetchCardSet();
+    drawTracks(undefined);
+  }
+  void loadCard();
+
   function drawTracks(tracks: TrackInfo[] | undefined): void {
     if (tracks) T.tracks = tracks;
     const playingId = preview.playing();
@@ -218,6 +230,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
       selected: T.selected === t.id,
       inShow: T.sceneIds.has(t.id),
       sounding: playingId === t.id,
+      onCastle: T.onCard === null ? null : T.onCard.has(cardName(t)),
     })).join("");
     const n = T.tracks.length;
     T.count.textContent = n === 0 ? "empty" : `${n} imported`;
@@ -253,6 +266,15 @@ export function initTracks(deps: TracksDeps): TracksApi {
     const id = btn.closest<HTMLElement>(".trk")!.dataset["id"] ?? "";
     if (btn.dataset["act"] === "play") {
       preview.toggle(id);
+    } else if (btn.dataset["act"] === "send") {
+      const t = T.tracks.find(x => x.id === id);
+      if (!t) return;
+      btn.textContent = "sending…";
+      (btn as HTMLButtonElement).disabled = true;
+      const res = await sendToCastle(t);
+      say(res.msg, !res.ok);
+      if (res.ok) { await loadCard(); return; }
+      drawTracks(undefined);
     } else if (btn.dataset["act"] === "del") {
       if (!confirm(`Delete track "${id}"? The file is removed from tracks/.`)) return;
       if (preview.playing() === id) preview.stop();

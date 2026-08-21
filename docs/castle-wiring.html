@@ -1,0 +1,548 @@
+<title>Castle Rig Wiring</title>
+<style>
+:root{
+  --ground:#EDF0EE; --panel:#F8FAF9; --panel-2:#E4E9E6; --line:#CBD5D0; --line-2:#B3C1BB;
+  --ink:#16211D; --ink-2:#4B5A54; --ink-3:#75847E;
+  --copper:#9A6520; --copper-hi:#C08843;
+  --v5:#C4372B; --gnd:#5F726B; --dL:#B87415; --dD:#1F6E9E; --dR:#3F7F35; --i2s:#7A4BAB; --spk:#9A6520;
+  --warn:#B0431C; --warnbg:#F6E7DF;
+  --pcb:#DDE5E1; --pcbstroke:#B3C1BB; --pxfill:#C3CEC9;
+  --f-disp:"Avenir Next Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
+  --f-body:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --f-data:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0B1210; --panel:#111B18; --panel-2:#17231F; --line:#22322C; --line-2:#31443C;
+  --ink:#DDE6E2; --ink-2:#9BAAA4; --ink-3:#6D7C76;
+  --copper:#C08843; --copper-hi:#DCA45B;
+  --v5:#E0574B; --gnd:#869891; --dL:#E8A33D; --dD:#4E9FD4; --dR:#74B26A; --i2s:#A97BD6; --spk:#C08843;
+  --warn:#E0793F; --warnbg:#241812;
+  --pcb:#17231F; --pcbstroke:#31443C; --pxfill:#31443C;
+}}
+:root[data-theme="dark"]{
+  --ground:#0B1210; --panel:#111B18; --panel-2:#17231F; --line:#22322C; --line-2:#31443C;
+  --ink:#DDE6E2; --ink-2:#9BAAA4; --ink-3:#6D7C76;
+  --copper:#C08843; --copper-hi:#DCA45B;
+  --v5:#E0574B; --gnd:#869891; --dL:#E8A33D; --dD:#4E9FD4; --dR:#74B26A; --i2s:#A97BD6; --spk:#C08843;
+  --warn:#E0793F; --warnbg:#241812;
+  --pcb:#17231F; --pcbstroke:#31443C; --pxfill:#31443C;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:16px/1.6 var(--f-body);
+  -webkit-font-smoothing:antialiased}
+.page{max-width:1400px;margin:0 auto;padding:40px 28px 72px;display:flex;flex-direction:column;gap:40px}
+
+h1,h2,.eyebrow,.modttl{font-family:var(--f-disp);text-transform:uppercase;letter-spacing:.055em}
+h1{font-size:clamp(30px,4.4vw,52px);font-weight:700;margin:0;line-height:1.02;text-wrap:balance}
+h2{font-size:19px;font-weight:600;margin:0;color:var(--ink)}
+.eyebrow{font-size:11.5px;font-weight:600;color:var(--copper);letter-spacing:.18em;margin:0 0 12px}
+.lede{max-width:64ch;margin:14px 0 0;color:var(--ink-2);font-size:17px}
+.lede b{color:var(--ink);font-weight:600}
+
+header{border-bottom:1px solid var(--line);padding-bottom:28px}
+.spec{display:flex;flex-wrap:wrap;gap:8px 26px;margin-top:20px;font:12.5px/1 var(--f-data);color:var(--ink-3)}
+.spec b{color:var(--ink-2);font-weight:500}
+
+/* &#9472;&#9472; Filter toolbar &#9472;&#9472; */
+.tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.tools .lbl{font:11.5px var(--f-disp);text-transform:uppercase;letter-spacing:.16em;color:var(--ink-3);margin-right:6px}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:999px;
+  border:1px solid var(--line-2);background:var(--panel);color:var(--ink-2);
+  font:12.5px/1 var(--f-data);cursor:pointer;transition:.14s}
+.chip:hover{border-color:var(--copper);color:var(--ink)}
+.chip:focus-visible{outline:2px solid var(--copper-hi);outline-offset:2px}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--ground);border-color:var(--ink)}
+.chip .sw{width:11px;height:11px;border-radius:3px;flex:none}
+
+/* &#9472;&#9472; Schematic &#9472;&#9472; */
+.sheet{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:8px;overflow-x:auto}
+svg.schem{display:block;min-width:1120px;width:100%;height:auto}
+.mod{fill:var(--pcb);stroke:var(--pcbstroke);stroke-width:1.5}
+.modttl{fill:var(--ink);font-size:15px;font-weight:600;letter-spacing:.05em}
+.modttl--sm{font-size:12.5px;fill:var(--copper);letter-spacing:.12em}
+.modsub{fill:var(--ink-3);font:11.5px var(--f-data)}
+.note{fill:var(--ink-3);font:11.5px/1.4 var(--f-body)}
+.claimed{fill:var(--ink-3);font:10.5px var(--f-data);opacity:.72}
+.mod--legend{fill:none;stroke:var(--line-2);stroke-dasharray:4 4}
+.notch{fill:none;stroke:var(--pcbstroke);stroke-width:1.5}
+.pinlbl{fill:var(--ink);font:600 12px var(--f-data)}
+.pinsub{fill:var(--ink-3);font:10.5px var(--f-data)}
+.pad{fill:var(--copper);stroke:var(--panel);stroke-width:1.5}
+.pad--off{fill:var(--ink-3);opacity:.5}
+.px{fill:var(--pxfill);stroke:var(--pcbstroke);stroke-width:1}
+.pxg{opacity:.9}
+.rpk{fill:var(--panel-2);stroke:var(--copper);stroke-width:1.4}
+.rlbl{fill:var(--ink-2);font:10.5px var(--f-data)}
+.cpl{stroke:var(--v5);stroke-width:2.4;stroke-linecap:round}
+.cwire{stroke:var(--v5);stroke-width:2}
+.spk{fill:var(--pcb);stroke:var(--copper);stroke-width:1.6;stroke-linejoin:round}
+.spkarc{fill:none;stroke:var(--copper);stroke-width:1.6;opacity:.6}
+.raillbl{font:600 11.5px var(--f-disp);letter-spacing:.18em;text-transform:uppercase}
+.raillbl--v5{fill:var(--v5)} .raillbl--gnd{fill:var(--gnd)}
+.w{stroke-linecap:round}
+.w--v5{stroke:var(--v5)} .w--gnd{stroke:var(--gnd)} .w--dL{stroke:var(--dL)}
+.w--dD{stroke:var(--dD)} .w--dR{stroke:var(--dR)} .w--i2s{stroke:var(--i2s)} .w--spk{stroke:var(--spk)}
+.pad--v5{fill:var(--v5)} .pad--gnd{fill:var(--gnd)} .pad--dL{fill:var(--dL)}
+.pad--dD{fill:var(--dD)} .pad--dR{fill:var(--dR)} .pad--i2s{fill:var(--i2s)}
+.hdr{fill:var(--panel-2);stroke:var(--line-2);stroke-width:1}
+.usbc{fill:var(--panel-2);stroke:var(--pcbstroke);stroke-width:1.5}
+.hpin{fill:var(--ink-3);font:600 11px var(--f-data)}
+.hpin--on{fill:var(--ink);font-size:11.5px}
+.hgpio{fill:var(--ink-3);font:9.5px var(--f-data);opacity:.82}
+.hnum{fill:var(--ink-3);font:8.5px var(--f-data);opacity:.5}
+.gb{stroke:var(--gnd);stroke-width:2.4;stroke-linecap:round}
+.pad--claim{fill:var(--ink-3);opacity:.45}
+.pad--free{fill:var(--panel-2);stroke:var(--line-2);stroke-width:1.5}
+.pad--i2s{fill:var(--i2s)}
+.pad--spk{fill:var(--spk)}
+.amppin{fill:var(--ink-3);font:8.5px var(--f-data)}
+.jn{fill:var(--i2s)}
+.buslbl{fill:var(--i2s);font:600 10.5px var(--f-data)}
+.net{transition:opacity .18s}
+[data-focus] .net{opacity:.09}
+[data-build="first"] .res,[data-build="first"] .fb-only{display:none}
+svg.schem:not([data-build="first"]) .fl-only{display:none}
+[data-focus="power"] .net[data-grp="power"],
+[data-focus="data"] .net[data-grp="data"],
+[data-focus="audio"] .net[data-grp="audio"]{opacity:1}
+
+/* &#9472;&#9472; Content blocks &#9472;&#9472; */
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:28px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px 24px}
+.card h2{margin-bottom:4px}
+.card .cap{color:var(--ink-3);font-size:13.5px;margin:0 0 16px}
+table{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
+th{text-align:left;font:600 10.5px var(--f-disp);text-transform:uppercase;letter-spacing:.14em;
+  color:var(--ink-3);padding:0 10px 8px 0;border-bottom:1px solid var(--line)}
+td{padding:8px 10px 8px 0;border-bottom:1px solid var(--line);vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+td.m,th.m{font-family:var(--f-data);font-size:12.5px}
+td.num{text-align:right;font-family:var(--f-data);font-variant-numeric:tabular-nums}
+.tag{display:inline-flex;align-items:center;gap:6px;font:11.5px var(--f-data);color:var(--ink-2);white-space:nowrap}
+.tag .sw{width:9px;height:9px;border-radius:2px;flex:none}
+tfoot td{border-top:1.5px solid var(--line-2);font-weight:600;color:var(--ink);padding-top:11px}
+
+.warns{display:grid;gap:14px}
+.warn{display:grid;grid-template-columns:auto 1fr;gap:14px;align-items:start;
+  background:var(--warnbg);border:1px solid color-mix(in srgb,var(--warn) 34%,transparent);
+  border-radius:12px;padding:16px 18px}
+.warn .k{font:600 10.5px var(--f-disp);letter-spacing:.14em;text-transform:uppercase;color:var(--warn);
+  writing-mode:vertical-rl;transform:rotate(180deg);align-self:stretch;text-align:center}
+.warn h3{margin:0 0 5px;font-size:15px;font-weight:650;color:var(--ink)}
+.warn p{margin:0;font-size:14px;color:var(--ink-2)}
+
+ol.steps{list-style:none;counter-reset:s;margin:0;padding:0;display:grid;gap:12px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:30px 1fr;gap:14px;
+  font-size:14.5px;color:var(--ink-2)}
+ol.steps li::before{content:counter(s,decimal-leading-zero);font:600 12px var(--f-data);
+  color:var(--copper);padding-top:3px}
+ol.steps b{color:var(--ink);font-weight:600}
+code{font:12.5px var(--f-data);background:var(--panel-2);padding:1.5px 5px;border-radius:4px;color:var(--ink)}
+footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-3);font-size:13px}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="page">
+
+<header>
+  <p class="eyebrow">Halloween castle &#183; build reference</p>
+  <h1>Three light zones,<br>two speakers, one Feather</h1>
+  <p class="lede">Drawn to the board&#8217;s real header layout &#8212; <b>16 positions on the
+  left, 12 on the right</b>, both ending flush at the far end, so you can count down to the
+  pin you want. Each light zone gets its own data pin, because an RGBW fixture and an RGB one
+  physically cannot share a wire. Both amplifiers ride the same three I&#178;S lines and cost
+  no extra GPIO &#8212; though two of those three are on the opposite header from the third.</p>
+  <div class="spec">
+    <span><b>Board</b> Adafruit ESP32-S2 Feather</span>
+    <span><b>Stacked</b> 2.13&#8243; eInk + microSD wing</span>
+    <span><b>Supply</b> 5 V &#183; 8 A minimum</span>
+    <span><b>Shifter</b> 74AHCT125 &#183; 3 of 4 channels</span>
+    <span><b>Pinout</b> Adafruit Feather ESP32-S2 rev C</span>
+  </div>
+</header>
+
+<section>
+  <div class="tools" role="toolbar" aria-label="Highlight one net">
+    <span class="lbl">Trace</span>
+    <button class="chip" data-focus="" aria-pressed="true">Everything</button>
+    <button class="chip" data-focus="power" aria-pressed="false">
+      <i class="sw" style="background:var(--v5)"></i><i class="sw" style="background:var(--gnd)"></i>Power</button>
+    <button class="chip" data-focus="data" aria-pressed="false">
+      <i class="sw" style="background:var(--dL)"></i><i class="sw" style="background:var(--dD)"></i><i class="sw" style="background:var(--dR)"></i>Pixel data</button>
+    <button class="chip" data-focus="audio" aria-pressed="false">
+      <i class="sw" style="background:var(--i2s)"></i>Audio</button>
+    <span class="lbl" style="margin-left:18px">Build</span>
+    <button class="chip" data-build="" aria-pressed="true">Full</button>
+    <button class="chip" data-build="first" aria-pressed="false">First light &#183; no resistors</button>
+  </div>
+  <div class="sheet">
+    <svg class="schem" id="schem" viewBox="0 0 1380 1030" role="img"
+         aria-label="Wiring schematic: a 5 volt rail across the top and a ground rail across the bottom, with the ESP32-S2 Feather, a 74AHCT125 level shifter, three NeoPixel fixtures and two MAX98357A amplifiers connected between them.">
+<g class="net" data-net="v5"><line class="w w--v5" x1="52" y1="56" x2="1334" y2="56" stroke-width="5"/><text class="raillbl raillbl--v5" x="56" y="42">+5 V BUS</text></g>
+<rect class="mod" x="740" y="104" width="244" height="578" rx="10"/><text class="modttl" x="756" y="131">ESP32-S2 Feather</text><text class="modsub" x="756" y="149">eInk + SD wing stacked</text>
+<rect class="usbc" x="836.0" y="91" width="52" height="16" rx="5"/><text class="pinsub" x="862.0" y="85" text-anchor="middle">USB-C</text>
+<rect class="hdr" x="731" y="182" width="18" height="478" rx="6"/>
+<rect class="hdr" x="975" y="302" width="18" height="358" rx="6"/>
+<circle class="pad pad--free" cx="740" cy="196" r="5"/>
+<text class="hpin" x="754" y="194" text-anchor="start">RST</text>
+<text class="hnum" x="720" y="200" text-anchor="middle">1</text>
+<circle class="pad pad--free" cx="740" cy="226" r="5"/>
+<text class="hpin" x="754" y="224" text-anchor="start">3.3V</text>
+<text class="hnum" x="720" y="230" text-anchor="middle">2</text>
+<circle class="pad pad--free" cx="740" cy="256" r="5"/>
+<text class="hpin" x="754" y="254" text-anchor="start">3.3V</text>
+<text class="hnum" x="720" y="260" text-anchor="middle">3</text>
+<circle class="pad pad--gnd" cx="740" cy="286" r="5"/>
+<text class="hpin hpin--on" x="754" y="284" text-anchor="start">GND</text>
+<text class="hnum" x="720" y="290" text-anchor="middle">4</text>
+<circle class="pad pad--dL" cx="740" cy="316" r="5"/>
+<text class="hpin hpin--on" x="754" y="314" text-anchor="start">A0</text>
+<text class="hgpio" x="754" y="327" text-anchor="start">GPIO18</text>
+<text class="hnum" x="720" y="320" text-anchor="middle">5</text>
+<circle class="pad pad--claim" cx="740" cy="346" r="5"/>
+<text class="hpin" x="754" y="344" text-anchor="start">A1</text>
+<text class="hgpio" x="754" y="357" text-anchor="start">GPIO17 &#183; PIR</text>
+<text class="hnum" x="720" y="350" text-anchor="middle">6</text>
+<circle class="pad pad--dD" cx="740" cy="376" r="5"/>
+<text class="hpin hpin--on" x="754" y="374" text-anchor="start">A2</text>
+<text class="hgpio" x="754" y="387" text-anchor="start">GPIO16</text>
+<text class="hnum" x="720" y="380" text-anchor="middle">7</text>
+<circle class="pad pad--i2s" cx="740" cy="406" r="5"/>
+<text class="hpin hpin--on" x="754" y="404" text-anchor="start">A3</text>
+<text class="hgpio" x="754" y="417" text-anchor="start">GPIO15</text>
+<text class="hnum" x="720" y="410" text-anchor="middle">8</text>
+<circle class="pad pad--dR" cx="740" cy="436" r="5"/>
+<text class="hpin hpin--on" x="754" y="434" text-anchor="start">A4</text>
+<text class="hgpio" x="754" y="447" text-anchor="start">GPIO14</text>
+<text class="hnum" x="720" y="440" text-anchor="middle">9</text>
+<circle class="pad pad--free" cx="740" cy="466" r="5"/>
+<text class="hpin" x="754" y="464" text-anchor="start">A5</text>
+<text class="hgpio" x="754" y="477" text-anchor="start">GPIO8</text>
+<text class="hnum" x="720" y="470" text-anchor="middle">10</text>
+<circle class="pad pad--claim" cx="740" cy="496" r="5"/>
+<text class="hpin" x="754" y="494" text-anchor="start">SCK</text>
+<text class="hgpio" x="754" y="507" text-anchor="start">GPIO36 &#183; wing</text>
+<text class="hnum" x="720" y="500" text-anchor="middle">11</text>
+<circle class="pad pad--claim" cx="740" cy="526" r="5"/>
+<text class="hpin" x="754" y="524" text-anchor="start">MOSI</text>
+<text class="hgpio" x="754" y="537" text-anchor="start">GPIO35 &#183; wing</text>
+<text class="hnum" x="720" y="530" text-anchor="middle">12</text>
+<circle class="pad pad--claim" cx="740" cy="556" r="5"/>
+<text class="hpin" x="754" y="554" text-anchor="start">MISO</text>
+<text class="hgpio" x="754" y="567" text-anchor="start">GPIO37 &#183; wing</text>
+<text class="hnum" x="720" y="560" text-anchor="middle">13</text>
+<circle class="pad pad--free" cx="740" cy="586" r="5"/>
+<text class="hpin" x="754" y="584" text-anchor="start">RX</text>
+<text class="hgpio" x="754" y="597" text-anchor="start">GPIO38</text>
+<text class="hnum" x="720" y="590" text-anchor="middle">14</text>
+<circle class="pad pad--free" cx="740" cy="616" r="5"/>
+<text class="hpin" x="754" y="614" text-anchor="start">TX</text>
+<text class="hgpio" x="754" y="627" text-anchor="start">GPIO39</text>
+<text class="hnum" x="720" y="620" text-anchor="middle">15</text>
+<circle class="pad pad--free" cx="740" cy="646" r="5"/>
+<text class="hpin" x="754" y="644" text-anchor="start">DEBUG_TX</text>
+<text class="hnum" x="720" y="650" text-anchor="middle">16</text>
+<circle class="pad pad--free" cx="984" cy="316" r="5"/>
+<text class="hpin" x="970" y="314" text-anchor="end">BAT</text>
+<text class="hnum" x="1004" y="320" text-anchor="middle">5</text>
+<circle class="pad pad--free" cx="984" cy="346" r="5"/>
+<text class="hpin" x="970" y="344" text-anchor="end">EN</text>
+<text class="hnum" x="1004" y="350" text-anchor="middle">6</text>
+<circle class="pad pad--v5" cx="984" cy="376" r="5"/>
+<text class="hpin hpin--on" x="970" y="374" text-anchor="end">USB</text>
+<text class="hnum" x="1004" y="380" text-anchor="middle">7</text>
+<circle class="pad pad--claim" cx="984" cy="406" r="5"/>
+<text class="hpin" x="970" y="404" text-anchor="end">D13</text>
+<text class="hgpio" x="970" y="417" text-anchor="end">GPIO13 &#183; red LED</text>
+<text class="hnum" x="1004" y="410" text-anchor="middle">8</text>
+<circle class="pad pad--i2s" cx="984" cy="436" r="5"/>
+<text class="hpin hpin--on" x="970" y="434" text-anchor="end">D12</text>
+<text class="hgpio" x="970" y="447" text-anchor="end">GPIO12</text>
+<text class="hnum" x="1004" y="440" text-anchor="middle">9</text>
+<circle class="pad pad--i2s" cx="984" cy="466" r="5"/>
+<text class="hpin hpin--on" x="970" y="464" text-anchor="end">D11</text>
+<text class="hgpio" x="970" y="477" text-anchor="end">GPIO11</text>
+<text class="hnum" x="1004" y="470" text-anchor="middle">10</text>
+<circle class="pad pad--claim" cx="984" cy="496" r="5"/>
+<text class="hpin" x="970" y="494" text-anchor="end">D10</text>
+<text class="hgpio" x="970" y="507" text-anchor="end">GPIO10 &#183; eInk D/C</text>
+<text class="hnum" x="1004" y="500" text-anchor="middle">11</text>
+<circle class="pad pad--claim" cx="984" cy="526" r="5"/>
+<text class="hpin" x="970" y="524" text-anchor="end">D9</text>
+<text class="hgpio" x="970" y="537" text-anchor="end">GPIO9 &#183; eInk CS</text>
+<text class="hnum" x="1004" y="530" text-anchor="middle">12</text>
+<circle class="pad pad--claim" cx="984" cy="556" r="5"/>
+<text class="hpin" x="970" y="554" text-anchor="end">D6</text>
+<text class="hgpio" x="970" y="567" text-anchor="end">GPIO6 &#183; SRAM CS</text>
+<text class="hnum" x="1004" y="560" text-anchor="middle">13</text>
+<circle class="pad pad--claim" cx="984" cy="586" r="5"/>
+<text class="hpin" x="970" y="584" text-anchor="end">D5</text>
+<text class="hgpio" x="970" y="597" text-anchor="end">GPIO5 &#183; SD CS</text>
+<text class="hnum" x="1004" y="590" text-anchor="middle">14</text>
+<circle class="pad pad--free" cx="984" cy="616" r="5"/>
+<text class="hpin" x="970" y="614" text-anchor="end">SCL</text>
+<text class="hgpio" x="970" y="627" text-anchor="end">GPIO4</text>
+<text class="hnum" x="1004" y="620" text-anchor="middle">15</text>
+<circle class="pad pad--free" cx="984" cy="646" r="5"/>
+<text class="hpin" x="970" y="644" text-anchor="end">SDA</text>
+<text class="hgpio" x="970" y="657" text-anchor="end">GPIO3</text>
+<text class="hnum" x="1004" y="650" text-anchor="middle">16</text>
+<text class="note" x="756" y="666">Both headers end flush here</text>
+<g class="net" data-net="v5"><path class="w w--v5" d="M984 376 L1040 376 L1040 56" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="net" data-net="gnd"><path class="w w--gnd" d="M740 286 L696 286" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="net" data-net="gnd"><line class="w w--gnd" x1="696" y1="286" x2="696" y2="299" stroke-width="3"/><line class="gb" x1="683" y1="299" x2="709" y2="299"/><line class="gb" x1="688" y1="304" x2="704" y2="304"/><line class="gb" x1="693" y1="309" x2="699" y2="309"/></g>
+<rect class="mod" x="484" y="288" width="142" height="186" rx="10"/><text class="modttl" x="500" y="315">74AHCT125</text><text class="modsub" x="500" y="333">quad buffer</text>
+<path class="notch" d="M544.0 288 a11 11 0 0 0 22 0"/>
+<text class="note" x="555.0" y="374" text-anchor="middle">3.3 V in &#8594; 5 V out</text><text class="note" x="555.0" y="390" text-anchor="middle">pin map far right &#8594;</text><text class="note" x="499" y="452">unused ch 4, parked:</text>
+<text class="note" x="499" y="466">13&#8594;5 V &#183; 12&#8594;GND &#183; 11 n/c</text>
+<g class="net" data-net="v5"><path class="w w--v5" d="M555.0 288 L555.0 56" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--v5" cx="555.0" cy="288" r="5"/><text class="pinsub" x="566.0" y="277">pin 14</text></g>
+<g class="net" data-net="gnd"><line class="w w--gnd" x1="555.0" y1="474" x2="555.0" y2="487" stroke-width="3"/><line class="gb" x1="542.0" y1="487" x2="568.0" y2="487"/><line class="gb" x1="547.0" y1="492" x2="563.0" y2="492"/><line class="gb" x1="552.0" y1="497" x2="558.0" y2="497"/></g>
+<text class="pinsub" x="570.0" y="490" style="fill:var(--warn);font-weight:600">4 legs to GND: 7 &#183; 1 &#183; 4 &#183; 10</text>
+<text class="pinsub" x="570.0" y="504">(GND + 1OE 2OE 3OE &#8212; a floating OE mutes its channel)</text>
+<text class="modttl" x="1156.0" y="96" text-anchor="middle">THE CHIP ITSELF</text>
+<text class="modsub" x="1156.0" y="112" text-anchor="middle">74AHCT125 &#183; top view</text>
+<rect class="mod" x="1120" y="128" width="72" height="188" rx="8"/>
+<path class="notch" d="M1147.0 128 a9 9 0 0 0 18 0"/>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="147" width="9" height="6"/><text class="hnum" x="1104" y="154" text-anchor="end">1</text><text class="pinsub" x="1078" y="154" text-anchor="end" style="fill:var(--gnd)">1OE &#8594; GND</text></g>
+<g class="net" data-net="v5"><rect class="pad--v5" x="1192" y="147" width="9" height="6"/><text class="hnum" x="1208" y="154" text-anchor="start">14</text><text class="pinsub" x="1234" y="154" text-anchor="start" style="fill:var(--v5)">VCC</text></g>
+<g class="net" data-net="dL"><rect class="pad--dL" x="1111" y="171" width="9" height="6"/><text class="hnum" x="1104" y="178" text-anchor="end">2</text><text class="pinsub" x="1078" y="178" text-anchor="end" style="fill:var(--dL)">1A</text></g>
+<g class="net" data-net="v5"><rect class="pad--v5" x="1192" y="171" width="9" height="6"/><text class="hnum" x="1208" y="178" text-anchor="start">13</text><text class="pinsub" x="1234" y="178" text-anchor="start" style="fill:var(--v5)">4OE</text></g>
+<g class="net" data-net="dL"><rect class="pad--dL" x="1111" y="195" width="9" height="6"/><text class="hnum" x="1104" y="202" text-anchor="end">3</text><text class="pinsub" x="1078" y="202" text-anchor="end" style="fill:var(--dL)">1Y</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1192" y="195" width="9" height="6"/><text class="hnum" x="1208" y="202" text-anchor="start">12</text><text class="pinsub" x="1234" y="202" text-anchor="start" style="fill:var(--gnd)">4A</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="219" width="9" height="6"/><text class="hnum" x="1104" y="226" text-anchor="end">4</text><text class="pinsub" x="1078" y="226" text-anchor="end" style="fill:var(--gnd)">2OE &#8594; GND</text></g>
+<rect class="rpk" x="1192" y="219" width="9" height="6"/><text class="hnum" x="1208" y="226" text-anchor="start">11</text><text class="pinsub" x="1234" y="226" text-anchor="start">4Y &#183; n/c</text>
+<g class="net" data-net="dD"><rect class="pad--dD" x="1111" y="243" width="9" height="6"/><text class="hnum" x="1104" y="250" text-anchor="end">5</text><text class="pinsub" x="1078" y="250" text-anchor="end" style="fill:var(--dD)">2A</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1192" y="243" width="9" height="6"/><text class="hnum" x="1208" y="250" text-anchor="start">10</text><text class="pinsub" x="1234" y="250" text-anchor="start" style="fill:var(--gnd)">3OE &#8594; GND</text></g>
+<g class="net" data-net="dD"><rect class="pad--dD" x="1111" y="267" width="9" height="6"/><text class="hnum" x="1104" y="274" text-anchor="end">6</text><text class="pinsub" x="1078" y="274" text-anchor="end" style="fill:var(--dD)">2Y</text></g>
+<g class="net" data-net="dR"><rect class="pad--dR" x="1192" y="267" width="9" height="6"/><text class="hnum" x="1208" y="274" text-anchor="start">9</text><text class="pinsub" x="1234" y="274" text-anchor="start" style="fill:var(--dR)">3A</text></g>
+<g class="net" data-net="gnd"><rect class="pad--gnd" x="1111" y="291" width="9" height="6"/><text class="hnum" x="1104" y="298" text-anchor="end">7</text><text class="pinsub" x="1078" y="298" text-anchor="end" style="fill:var(--gnd)">GND</text></g>
+<g class="net" data-net="dR"><rect class="pad--dR" x="1192" y="291" width="9" height="6"/><text class="hnum" x="1208" y="298" text-anchor="start">8</text><text class="pinsub" x="1234" y="298" text-anchor="start" style="fill:var(--dR)">3Y</text></g>
+<text class="note" x="1156.0" y="340" text-anchor="middle">Hold it notch-up &#8212; the indent</text>
+<text class="note" x="1156.0" y="355" text-anchor="middle">at the top: pin 1 is top-left;</text>
+<text class="note" x="1156.0" y="370" text-anchor="middle">numbers run down the left side,</text>
+<text class="note" x="1156.0" y="385" text-anchor="middle">1-7, back up the right, 8-14.</text>
+<text class="note" x="1156.0" y="400" text-anchor="middle">Some chips add a dot at pin 1.</text>
+<text class="note" x="1156.0" y="422" text-anchor="middle" style="fill:var(--warn)">Meter check: pins 1, 4, 10 must read</text>
+<text class="note" x="1156.0" y="437" text-anchor="middle" style="fill:var(--warn)">0.00 V. ~1 V = floating = channel muted.</text>
+<rect class="mod" x="124" y="104" width="300" height="140" rx="10"/><text class="modttl" x="140" y="131">Tower L</text><text class="modsub" x="140" y="149">Jewel 7 &#183; RGBW</text>
+<g class="pxg"><circle class="px" cx="330" cy="184.0" r="8"/><circle class="px" cx="330.0" cy="155.0" r="8"/><circle class="px" cx="355.1" cy="169.5" r="8"/><circle class="px" cx="355.1" cy="198.5" r="8"/><circle class="px" cx="330.0" cy="213.0" r="8"/><circle class="px" cx="304.9" cy="198.5" r="8"/><circle class="px" cx="304.9" cy="169.5" r="8"/></g>
+<circle class="pad pad--dL" cx="424" cy="174.0" r="5"/>
+<text class="pinlbl" x="412" y="166.0" text-anchor="end">DIN</text>
+<g class="net" data-net="v5"><circle class="pad pad--v5" cx="124" cy="148" r="5"/><path class="w w--v5" d="M124 148 L28 148" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><text class="pinlbl" x="136" y="140">5 V</text></g>
+<circle class="pad pad--gnd" cx="124" cy="200" r="5"/>
+<text class="pinlbl" x="136" y="192">GND</text>
+<g class="net" data-net="gnd"><path class="w w--gnd" d="M124 200 L56 200" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="net" data-net="gnd"><line class="w w--gnd" x1="56" y1="200" x2="56" y2="213" stroke-width="3"/><line class="gb" x1="43" y1="213" x2="69" y2="213"/><line class="gb" x1="48" y1="218" x2="64" y2="218"/><line class="gb" x1="53" y1="223" x2="59" y2="223"/></g>
+<g class="net" data-net="v5"><line class="cwire" x1="100" y1="148" x2="100" y2="169.0"/><line class="cpl" x1="87" y1="169.0" x2="113" y2="169.0"/><line class="cpl" x1="87" y1="179.0" x2="113" y2="179.0"/><line class="cwire" x1="100" y1="179.0" x2="100" y2="200"/></g>
+<g class="net" data-net="dL"><path class="w w--dL" d="M740 316 L626 316" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dL" cx="626" cy="316" r="5"/><path class="w w--dL" d="M484 316 L478 316 L478 174.0 L424 174.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dL" cx="484" cy="316" r="5"/><g class="res"><rect class="rpk" x="436.0" y="167.0" width="30" height="14" rx="3"/><text class="rlbl" x="451.0" y="161.0" text-anchor="middle">470 &#937;</text></g></g>
+<rect class="mod" x="124" y="296" width="300" height="140" rx="10"/><text class="modttl" x="140" y="323">Doorway</text><text class="modsub" x="140" y="341">Ring 12 &#183; RGBW</text>
+<g class="pxg"><circle class="px" cx="330.0" cy="338.0" r="6.5"/><circle class="px" cx="349.0" cy="343.1" r="6.5"/><circle class="px" cx="362.9" cy="357.0" r="6.5"/><circle class="px" cx="368.0" cy="376.0" r="6.5"/><circle class="px" cx="362.9" cy="395.0" r="6.5"/><circle class="px" cx="349.0" cy="408.9" r="6.5"/><circle class="px" cx="330.0" cy="414.0" r="6.5"/><circle class="px" cx="311.0" cy="408.9" r="6.5"/><circle class="px" cx="297.1" cy="395.0" r="6.5"/><circle class="px" cx="292.0" cy="376.0" r="6.5"/><circle class="px" cx="297.1" cy="357.0" r="6.5"/><circle class="px" cx="311.0" cy="343.1" r="6.5"/></g>
+<circle class="pad pad--dD" cx="424" cy="366.0" r="5"/>
+<text class="pinlbl" x="412" y="358.0" text-anchor="end">DIN</text>
+<g class="net" data-net="v5"><circle class="pad pad--v5" cx="124" cy="340" r="5"/><path class="w w--v5" d="M124 340 L28 340" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><text class="pinlbl" x="136" y="332">5 V</text></g>
+<circle class="pad pad--gnd" cx="124" cy="392" r="5"/>
+<text class="pinlbl" x="136" y="384">GND</text>
+<g class="net" data-net="gnd"><path class="w w--gnd" d="M124 392 L56 392" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="net" data-net="gnd"><line class="w w--gnd" x1="56" y1="392" x2="56" y2="405" stroke-width="3"/><line class="gb" x1="43" y1="405" x2="69" y2="405"/><line class="gb" x1="48" y1="410" x2="64" y2="410"/><line class="gb" x1="53" y1="415" x2="59" y2="415"/></g>
+<g class="net" data-net="v5"><line class="cwire" x1="100" y1="340" x2="100" y2="361.0"/><line class="cpl" x1="87" y1="361.0" x2="113" y2="361.0"/><line class="cpl" x1="87" y1="371.0" x2="113" y2="371.0"/><line class="cwire" x1="100" y1="371.0" x2="100" y2="392"/></g>
+<g class="net" data-net="dD"><path class="w w--dD" d="M740 376 L626 376" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dD" cx="626" cy="376" r="5"/><path class="w w--dD" d="M484 376 L470 376 L470 366.0 L424 366.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dD" cx="484" cy="376" r="5"/><g class="res"><rect class="rpk" x="432.0" y="359.0" width="30" height="14" rx="3"/><text class="rlbl" x="447.0" y="353.0" text-anchor="middle">470 &#937;</text></g></g>
+<rect class="mod" x="124" y="488" width="300" height="140" rx="10"/><text class="modttl" x="140" y="515">Tower R</text><text class="modsub" x="140" y="533">Jewel 7 &#183; RGBW</text>
+<g class="pxg"><circle class="px" cx="330" cy="568.0" r="8"/><circle class="px" cx="330.0" cy="539.0" r="8"/><circle class="px" cx="355.1" cy="553.5" r="8"/><circle class="px" cx="355.1" cy="582.5" r="8"/><circle class="px" cx="330.0" cy="597.0" r="8"/><circle class="px" cx="304.9" cy="582.5" r="8"/><circle class="px" cx="304.9" cy="553.5" r="8"/></g>
+<circle class="pad pad--dR" cx="424" cy="558.0" r="5"/>
+<text class="pinlbl" x="412" y="550.0" text-anchor="end">DIN</text>
+<g class="net" data-net="v5"><circle class="pad pad--v5" cx="124" cy="532" r="5"/><path class="w w--v5" d="M124 532 L28 532" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><text class="pinlbl" x="136" y="524">5 V</text></g>
+<circle class="pad pad--gnd" cx="124" cy="584" r="5"/>
+<text class="pinlbl" x="136" y="576">GND</text>
+<g class="net" data-net="gnd"><path class="w w--gnd" d="M124 584 L56 584" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="net" data-net="gnd"><line class="w w--gnd" x1="56" y1="584" x2="56" y2="597" stroke-width="3"/><line class="gb" x1="43" y1="597" x2="69" y2="597"/><line class="gb" x1="48" y1="602" x2="64" y2="602"/><line class="gb" x1="53" y1="607" x2="59" y2="607"/></g>
+<g class="net" data-net="v5"><line class="cwire" x1="100" y1="532" x2="100" y2="553.0"/><line class="cpl" x1="87" y1="553.0" x2="113" y2="553.0"/><line class="cpl" x1="87" y1="563.0" x2="113" y2="563.0"/><line class="cwire" x1="100" y1="563.0" x2="100" y2="584"/></g>
+<g class="net" data-net="dR"><path class="w w--dR" d="M740 436 L626 436" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dR" cx="626" cy="436" r="5"/><path class="w w--dR" d="M484 436 L462 436 L462 558.0 L424 558.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--dR" cx="484" cy="436" r="5"/><g class="res"><rect class="rpk" x="428.0" y="551.0" width="30" height="14" rx="3"/><text class="rlbl" x="443.0" y="545.0" text-anchor="middle">470 &#937;</text></g></g>
+<g class="net" data-net="v5"><path class="w w--v5" d="M28 56 L28 454.0" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<text class="pinsub" x="637" y="306">2 &#183; 1A</text>
+<text class="pinsub" x="473" y="306" text-anchor="end">1Y &#183; 3</text>
+<text class="pinsub" x="637" y="366">5 &#183; 2A</text>
+<text class="pinsub" x="473" y="366" text-anchor="end">2Y &#183; 6</text>
+<text class="pinsub" x="637" y="426">9 &#183; 3A</text>
+<text class="pinsub" x="473" y="426" text-anchor="end">3Y &#183; 8</text>
+<rect class="mod" x="470" y="792" width="190" height="128" rx="10"/><text class="modttl" x="486" y="819">Amp A</text>
+<text class="modsub fb-only" x="486" y="837">MAX98357A &#183; left channel</text><text class="modsub fl-only" x="486" y="837">MAX98357A &#183; (L+R)/2</text>
+<circle class="pad pad--i2s" cx="492" cy="792" r="4.5"/>
+<text class="amppin" x="492" y="808" text-anchor="middle">DIN</text>
+<circle class="pad pad--i2s" cx="516" cy="792" r="4.5"/>
+<text class="amppin" x="516" y="808" text-anchor="middle">LRC</text>
+<circle class="pad pad--i2s" cx="540" cy="792" r="4.5"/>
+<text class="amppin" x="540" y="808" text-anchor="middle">BCLK</text>
+<circle class="pad pad--free" cx="564" cy="792" r="4.5"/>
+<text class="amppin" x="564" y="808" text-anchor="middle">GAIN</text>
+<circle class="pad pad--v5" cx="588" cy="792" r="4.5"/>
+<text class="amppin" x="588" y="808" text-anchor="middle">SD</text>
+<circle class="pad pad--gnd" cx="612" cy="792" r="4.5"/>
+<text class="amppin" x="612" y="808" text-anchor="middle">GND</text>
+<circle class="pad pad--v5" cx="636" cy="792" r="4.5"/>
+<text class="amppin" x="636" y="808" text-anchor="middle">VIN</text>
+<g class="net" data-net="v5"><path class="w w--v5" d="M636 792 L636 754" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="net" data-net="v5"><g class="res"><path class="w w--v5" d="M588 792 L588 754" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><rect class="rpk" x="581" y="758.0" width="14" height="30" rx="3"/><text class="rlbl" x="599" y="777.0" text-anchor="start">100 k&#937;</text></g></g>
+<g class="net" data-net="gnd"><path class="w w--gnd" d="M612 920 L612 936" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="net" data-net="gnd"><line class="w w--gnd" x1="612" y1="936" x2="612" y2="949" stroke-width="3"/><line class="gb" x1="599" y1="949" x2="625" y2="949"/><line class="gb" x1="604" y1="954" x2="620" y2="954"/><line class="gb" x1="609" y1="959" x2="615" y2="959"/></g>
+<path class="spk" d="M730 822 l0 68 -30 -20 -16 0 0 -28 16 0 z"/><path class="spkarc" d="M740 828 a26 26 0 0 1 0 56"/><text class="modsub" x="678" y="914">4 &#937; &#183; 3 W</text>
+<g class="net" data-net="spk"><path class="w w--spk" d="M660 842 L700 842" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path class="w w--spk" d="M660 874 L700 874" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--spk" cx="660" cy="842" r="4.5"/><circle class="pad pad--spk" cx="660" cy="874" r="4.5"/><text class="pinsub" x="650" y="838" text-anchor="end">+</text><text class="pinsub" x="650" y="879" text-anchor="end">&#8722;</text></g>
+<rect class="mod" x="900" y="792" width="190" height="128" rx="10"/><text class="modttl" x="916" y="819">Amp B</text>
+<text class="modsub fb-only" x="916" y="837">MAX98357A &#183; left channel</text><text class="modsub fl-only" x="916" y="837">MAX98357A &#183; (L+R)/2</text>
+<circle class="pad pad--i2s" cx="922" cy="792" r="4.5"/>
+<text class="amppin" x="922" y="808" text-anchor="middle">DIN</text>
+<circle class="pad pad--i2s" cx="946" cy="792" r="4.5"/>
+<text class="amppin" x="946" y="808" text-anchor="middle">LRC</text>
+<circle class="pad pad--i2s" cx="970" cy="792" r="4.5"/>
+<text class="amppin" x="970" y="808" text-anchor="middle">BCLK</text>
+<circle class="pad pad--free" cx="994" cy="792" r="4.5"/>
+<text class="amppin" x="994" y="808" text-anchor="middle">GAIN</text>
+<circle class="pad pad--v5" cx="1018" cy="792" r="4.5"/>
+<text class="amppin" x="1018" y="808" text-anchor="middle">SD</text>
+<circle class="pad pad--gnd" cx="1042" cy="792" r="4.5"/>
+<text class="amppin" x="1042" y="808" text-anchor="middle">GND</text>
+<circle class="pad pad--v5" cx="1066" cy="792" r="4.5"/>
+<text class="amppin" x="1066" y="808" text-anchor="middle">VIN</text>
+<g class="net" data-net="v5"><path class="w w--v5" d="M1066 792 L1066 754" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="net" data-net="v5"><g class="res"><path class="w w--v5" d="M1018 792 L1018 754" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><rect class="rpk" x="1011" y="758.0" width="14" height="30" rx="3"/><text class="rlbl" x="1029" y="777.0" text-anchor="start">100 k&#937;</text></g></g>
+<g class="net" data-net="gnd"><path class="w w--gnd" d="M1042 920 L1042 936" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<g class="net" data-net="gnd"><line class="w w--gnd" x1="1042" y1="936" x2="1042" y2="949" stroke-width="3"/><line class="gb" x1="1029" y1="949" x2="1055" y2="949"/><line class="gb" x1="1034" y1="954" x2="1050" y2="954"/><line class="gb" x1="1039" y1="959" x2="1045" y2="959"/></g>
+<path class="spk" d="M1160 822 l0 68 -30 -20 -16 0 0 -28 16 0 z"/><path class="spkarc" d="M1170 828 a26 26 0 0 1 0 56"/><text class="modsub" x="1108" y="914">4 &#937; &#183; 3 W</text>
+<g class="net" data-net="spk"><path class="w w--spk" d="M1090 842 L1130 842" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path class="w w--spk" d="M1090 874 L1130 874" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle class="pad pad--spk" cx="1090" cy="842" r="4.5"/><circle class="pad pad--spk" cx="1090" cy="874" r="4.5"/><text class="pinsub" x="1080" y="838" text-anchor="end">+</text><text class="pinsub" x="1080" y="879" text-anchor="end">&#8722;</text></g>
+<text class="note" x="470" y="978">The breakout&#8217;s own pin row reads LRC BCLK DIN GAIN SD GND VIN; pads are placed here for routing.</text>
+<text class="note fb-only" x="470" y="994">GAIN left open = 9 dB. SD pulled to 5 V selects the LEFT channel &#8212; full level on a mono stream.</text>
+<text class="note fl-only" x="470" y="994">GAIN left open = 9 dB. SD left EMPTY = (L+R)/2 &#8212; both amps play the mono show, at most 6 dB quieter.</text>
+<g class="net" data-net="v5"><path class="w w--v5" d="M1320 56 L1320 754 L977 754 A7 7 0 0 0 963 754 L953 754 A7 7 0 0 0 939 754 L929 754 A7 7 0 0 0 915 754 L547 754 A7 7 0 0 0 533 754 L523 754 A7 7 0 0 0 509 754 L499 754 A7 7 0 0 0 485 754 L446 754" fill="none" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/></g>
+<text class="raillbl raillbl--v5" x="1330" y="759">5 V SPUR</text>
+<g class="net" data-net="i2s"><path class="w w--i2s" d="M740 406 L712 406 L712 702" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>
+
+<g class="net" data-net="i2s"><path class="w w--i2s" d="M492 702 L509 702 A7 7 0 0 1 523 702 L533 702 A7 7 0 0 1 547 702 L922 702" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path class="w w--i2s" d="M492 702 L492 792" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path class="w w--i2s" d="M922 702 L922 792" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle class="jn" cx="492" cy="702" r="4"/><circle class="jn" cx="922" cy="702" r="4"/><text class="buslbl" x="484" y="706" text-anchor="end">DIN</text></g>
+<g class="net" data-net="i2s"><path class="w w--i2s" d="M984 466 L1150 466 L1150 720" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>
+
+<g class="net" data-net="i2s"><path class="w w--i2s" d="M540 720 L915 720 A7 7 0 0 1 929 720 L939 720 A7 7 0 0 1 953 720 L1150 720" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path class="w w--i2s" d="M540 720 L540 792" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path class="w w--i2s" d="M970 720 L970 792" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle class="jn" cx="540" cy="720" r="4"/><circle class="jn" cx="970" cy="720" r="4"/><text class="buslbl" x="532" y="724" text-anchor="end">BCLK</text></g>
+<g class="net" data-net="i2s"><path class="w w--i2s" d="M984 436 L1180 436 L1180 738" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></g>
+
+<g class="net" data-net="i2s"><path class="w w--i2s" d="M516 738 L533 738 A7 7 0 0 1 547 738 L915 738 A7 7 0 0 1 929 738 L963 738 A7 7 0 0 1 977 738 L1180 738" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path class="w w--i2s" d="M516 738 L516 792" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path class="w w--i2s" d="M946 738 L946 792" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle class="jn" cx="516" cy="738" r="4"/><circle class="jn" cx="946" cy="738" r="4"/><text class="buslbl" x="508" y="742" text-anchor="end">LRC</text></g>
+</svg>
+  </div>
+</section>
+
+<div class="grid2">
+  <div class="card">
+    <h2>Net list</h2>
+    <p class="cap">Every connection, and which physical header the pin is on. The schematic
+    above is drawn to the board's real header layout &#8212; count pin positions from the USB end.</p>
+    <table>
+      <thead><tr><th>Net</th><th class="m">From</th><th class="m">To</th><th>Header</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--v5)"></i>+5 V</span></td><td class="m">Supply +</td><td class="m">Rail &#8594; Feather USB, 74AHCT125 pin 14, both amp VIN, all three fixtures</td><td class="m">right</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--gnd)"></i>GND</span></td><td class="m">Supply &#8722;</td><td class="m">Rail &#8594; Feather GND, pin 7 + 1OE 2OE 3OE, both amp GND, all three fixtures</td><td class="m">left</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--dL)"></i>Tower L</span></td><td class="m">A0 &#183; GPIO18</td><td class="m">1A (leg 2) &#8594; 1Y (leg 3) &#8594; 470 &#937; &#8594; DIN</td><td class="m">left</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--dD)"></i>Doorway</span></td><td class="m">A2 &#183; GPIO16</td><td class="m">2A (leg 5) &#8594; 2Y (leg 6) &#8594; 470 &#937; &#8594; DIN</td><td class="m">left</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--dR)"></i>Tower R</span></td><td class="m">A4 &#183; GPIO14</td><td class="m">3A (leg 9) &#8594; 3Y (leg 8) &#8594; 470 &#937; &#8594; DIN</td><td class="m">left</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--i2s)"></i>DIN</span></td><td class="m">A3 &#183; GPIO15</td><td class="m">Amp A DIN, bridged to Amp B</td><td class="m">left</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--i2s)"></i>BCLK</span></td><td class="m">D11 &#183; GPIO11</td><td class="m">Amp A BCLK, bridged to Amp B</td><td class="m">right</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--i2s)"></i>LRC</span></td><td class="m">D12 &#183; GPIO12</td><td class="m">Amp A LRC, bridged to Amp B</td><td class="m">right</td></tr>
+        <tr><td><span class="tag"><i class="sw" style="background:var(--v5)"></i>SD</span></td><td class="m">100 k&#937; &#8594; 5 V</td><td class="m">Both amps &#8212; selects <em>left</em>, which is full level on mono</td><td class="m">&#8212;</td></tr>
+      </tbody>
+    </table>
+    <p class="cap" style="margin-top:12px">No resistors in the parts box yet? For first light on the bench, both kinds are skippable: the 470 &#937;s damp cable reflections, and with every data lead under ~30 cm there are none worth damping &#8212; wire <code>1Y/2Y/3Y</code> straight to <code>DIN</code> and add the resistors (fixture end) when the leads grow into the castle. Leaving the amps' <code>SD</code> unconnected selects (L+R)/2, this show's mono at worst &#8722;6 dB &#8212; the 100 k&#937; to 5 V restores full level later. The <em>First light</em> toggle above the schematic shows exactly this build. docs/WIRING.md &#167;0.</p>
+  </div>
+
+  <div class="card">
+    <h2>Power at full white</h2>
+    <p class="cap">Sized for a lightning cue, which drives every zone to white at once.
+    The average is a quarter of this; the peak is what browns out the board.</p>
+    <table>
+      <thead><tr><th>Fixture</th><th class="num">Px</th><th class="num">RGB</th><th class="num">RGBW</th></tr></thead>
+      <tbody>
+        <tr><td>Jewel 7</td><td class="num">7</td><td class="num">0.42 A</td><td class="num">0.56 A</td></tr>
+        <tr><td>Stick 8</td><td class="num">8</td><td class="num">0.48 A</td><td class="num">0.64 A</td></tr>
+        <tr><td>Ring 12</td><td class="num">12</td><td class="num">0.72 A</td><td class="num">0.96 A</td></tr>
+        <tr><td>Ring 16</td><td class="num">16</td><td class="num">0.96 A</td><td class="num">1.28 A</td></tr>
+        <tr><td>FeatherWing 4&#215;8</td><td class="num">32</td><td class="num">1.92 A</td><td class="num">&#8212;</td></tr>
+        <tr><td>Mini PCB &#215;5</td><td class="num">5</td><td class="num">0.30 A</td><td class="num">&#8212;</td></tr>
+        <tr><td>Two amplifiers</td><td class="num">&#8212;</td><td class="num" colspan="2">1.6 A</td></tr>
+      </tbody>
+      <tfoot>
+        <tr><td>Heaviest rig you can build</td><td class="num">60</td><td class="num" colspan="2">5.8 A</td></tr>
+      </tfoot>
+    </table>
+    <p class="cap" style="margin:16px 0 0">Star the 5 V runs from the supply to each fixture &#8212;
+    18&#8211;20 AWG, a 1000 &#181;F cap at each, and a 5 A fuse on the bus.</p>
+  </div>
+</div>
+
+<section>
+  <h2 style="margin-bottom:16px">Four ways this goes wrong</h2>
+  <div class="warns">
+    <div class="warn"><div class="k">No data</div><div>
+      <h3>Frozen bright garbage means no data ever arrived</h3>
+      <p>A pixel that gets 5 V but never a valid frame powers up showing <em>random</em> contents
+      &#8212; a blinding, frozen mix of colours and white, different on every pixel. One fixture all
+      lit, another with a single lit LED: that is noise, not a fault map. If the picture has not
+      changed since power-on, stop debugging fixtures and firmware &#8212; walk the data path instead:
+      OE legs to ground, 5 V on pin 14, A0/A2/A4 into 1A/2A/3A, and one shared ground.</p></div></div>
+    <div class="warn"><div class="k">Ground</div><div>
+      <h3>One ground, or nothing works</h3>
+      <p>ESP32, level shifter, both amps and the LED supply must all share a ground. A data line
+      is a voltage <em>relative to ground</em>; two subsystems with unjoined grounds have no shared
+      idea of what &ldquo;high&rdquo; means. This is the usual cause of random flicker, and it looks
+      exactly like a software bug.</p></div></div>
+    <div class="warn"><div class="k">Colour</div><div>
+      <h3>RGBW and RGB cannot share a chain</h3>
+      <p>An RGBW pixel takes 32 bits, an RGB pixel 24, and a chain is one shift register with no
+      framing &#8212; so one RGB fixture halfway down an RGBW chain shifts every downstream bit by eight.
+      Your FeatherWing 4&#215;8 and mini PCBs are RGB-only. That is why each zone gets its own pin.</p></div></div>
+    <div class="warn"><div class="k">Supply</div><div>
+      <h3>An underpowered rig crashes, it doesn't dim</h3>
+      <p>A strike pulls the worst case for about 150 ms. On a small supply that sag resets the
+      ESP32 mid-scene &#8212; so the castle fails only during the good bits. Do not run pixels off the
+      Feather's <code>USB</code> pin; that trace is sized for the board. (One exception: the 26-pixel first-light rig on a 2 A+ wall brick &#8212; docs/WIRING.md &#167;0. The full castle, never.)</p></div></div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Build order</h2>
+  <p class="cap">Each step proves the one before it.</p>
+  <ol class="steps">
+    <li><b>Grounds first.</b> Supply, Feather, shifter, both amps. Check continuity before anything is powered.</li>
+    <li><b>Power the shifter alone.</b> 5 V on pin 14, GND on pin 7, and 1OE/2OE/3OE to ground. Confirm 5 V at pin 14.</li>
+    <li><b>One zone.</b> Tower L only: GPIO18 &#8594; 1A, 1Y &#8594; 470 &#937; &#8594; DIN, plus 5 V, GND and the capacitor. You already know what a working Jewel looks like, so this is the honest test of the shifter.</li>
+    <li><b>The other two.</b> Same pattern on GPIO16 and GPIO14. Set the rig in the cue desk first so the firmware knows the counts.</li>
+    <li><b>One amp.</b> <code>SD</code> to 5 V through 100 k&#937;. Play a scene and confirm <em>full</em> volume, not a quiet one.</li>
+    <li><b>The second amp.</b> The same three signal wires, tapped off the first. Both should now be equally loud.</li>
+    <li><b>Measure the real peak.</b> Run Storm with a meter on the 5 V bus and compare it against the desk's estimate before you close the enclosure.</li>
+  </ol>
+</section>
+
+<footer>Pin assignments verified against the Adafruit ESP32-S2 Feather pinout and the config already
+running on this castle. Channel-select thresholds from the MAX98357A datasheet.
+Full prose version: <code>docs/WIRING.md</code>.</footer>
+
+</div>
+
+<script>
+(function(){
+  var GRP={v5:"power",gnd:"power",dL:"data",dD:"data",dR:"data",i2s:"audio",spk:"audio"};
+  var svg=document.getElementById("schem");
+  svg.querySelectorAll("g.net").forEach(function(g){
+    g.setAttribute("data-grp",GRP[g.getAttribute("data-net")]||"");
+  });
+  var chips=Array.prototype.slice.call(document.querySelectorAll(".chip[data-focus]"));
+  chips.forEach(function(c){
+    c.addEventListener("click",function(){
+      var f=c.getAttribute("data-focus");
+      chips.forEach(function(o){o.setAttribute("aria-pressed",String(o===c));});
+      if(f){svg.setAttribute("data-focus",f);}else{svg.removeAttribute("data-focus");}
+    });
+  });
+  var modes=Array.prototype.slice.call(document.querySelectorAll(".chip[data-build]"));
+  modes.forEach(function(c){
+    c.addEventListener("click",function(){
+      var m=c.getAttribute("data-build");
+      modes.forEach(function(o){o.setAttribute("aria-pressed",String(o===c));});
+      if(m){svg.setAttribute("data-build",m);}else{svg.removeAttribute("data-build");}
+    });
+  });
+})();
+</script>

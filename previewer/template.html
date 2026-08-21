@@ -12,7 +12,9 @@
   <header class="head" id="head">
     <div class="head__id">
       <h1>Castle Cue Desk</h1>
-      <span class="eyebrow" title="ESP32-S2 Feather · MAX98357A I²S amp · 3 NeoPixel Jewels, 7 RGBW pixels each">three zones &middot; 21 px</span>
+      <!-- Filled from the rig, because the pixel count stopped being a
+           constant the moment fixtures became swappable. See rig_panel.ts. -->
+      <span class="eyebrow" id="rigEyebrow">three zones</span>
     </div>
     <div class="head__live">
       <span class="head__dot" id="headDot"></span>
@@ -24,7 +26,7 @@
         <button type="button" data-view="castle" aria-pressed="false"
                 title="The castle as it looks — glow, spill and bloom">Castle</button>
         <button type="button" data-view="pixels" aria-pressed="false"
-                title="The 21 real pixels, one dot each — the honest per-pixel view">Pixels</button>
+                title="Every real pixel as one dot, in the shape the fixture actually has — the honest per-pixel view">Pixels</button>
         <button type="button" data-view="both" aria-pressed="true"
                 title="Both at once">Both</button>
       </div>
@@ -118,6 +120,18 @@
           <span class="note">mean per zone</span>
         </div>
         <div class="chans" id="chans"></div>
+      </section>
+
+      <!-- What is physically in each window. The desk used to assume three
+           NeoPixel Jewels because that is what is soldered; this is where
+           that assumption became data. Changing a row re-renders the stage,
+           the pixel view and the channel strip immediately — see rig.ts. -->
+      <section class="panel">
+        <div class="panel__hd">
+          <h2>Rig</h2>
+          <span class="note">one data pin per zone</span>
+        </div>
+        <div class="panel__bd" id="rigPanel"></div>
       </section>
 
       <section class="panel">

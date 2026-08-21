@@ -195,3 +195,51 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   box-shadow: 0 6px 24px rgba(0, 0, 0, .55);
   overflow: hidden;
 }
+
+/* ── Rig panel (rig_panel.ts) ─────────────────────────────────────────
+   Which fixture is in which window. Sits directly under Output because the
+   channel strip's pixel ranges are now derived from it — the two are one
+   thought, and separating them meant reading a range and then hunting for
+   what produced it. */
+.rig { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.rig th {
+  text-align: left; font-weight: 600; color: var(--muted);
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  padding: 0 6px 4px 0;
+}
+.rig td { padding: 3px 6px 3px 0; vertical-align: middle; }
+.rig select { max-width: 100%; }
+.rig__spot { white-space: nowrap; }
+/* The pin belongs next to the spot: when a window is dark, "which wire" is
+   the next question after "which window". */
+.rig__spot small {
+  display: block; color: var(--muted);
+  font: 10px var(--f-data); letter-spacing: .02em;
+}
+.rig__px { font: 12px var(--f-data); color: var(--ink-2); }
+.rig__fixed {
+  font: 11px var(--f-data); color: var(--muted);
+  border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 5px;
+}
+.rig__rgbw { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
+.rig .rigN { width: 3.2rem; }
+
+.rig__sum { margin: 8px 0 4px; font-size: 12.5px; color: var(--ink-2); }
+.rig__sum b { color: var(--ink); font-family: var(--f-data); }
+.rig__note {
+  margin: 4px 0; padding: 5px 8px; font-size: 12px;
+  border-radius: 6px; border-left: 3px solid var(--line-2);
+  background: var(--panel-2); color: var(--ink-2);
+}
+.rig__note--warn { border-left-color: var(--alarm); color: var(--ink); }
+
+.rig__acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.rig__acts .muted { font-size: 11.5px; }
+#rigOut {
+  margin: 8px 0 0; padding: 8px 10px; max-height: 260px; overflow: auto;
+  background: var(--panel-2); border: 1px solid var(--line-2);
+  border-radius: 8px; font: 11px/1.5 var(--f-data); white-space: pre;
+}
+/* `hidden` loses to any display rule, and every other fold on this page has
+   been bitten by exactly this — see .budget__pick. */
+#rigOut[hidden] { display: none; }

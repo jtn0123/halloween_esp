@@ -11,15 +11,19 @@
 #   - the ONBOARD NeoPixel (GPIO33) plays pixel 0 of towerL — you can watch
 #     the candle flicker, strikes and palette changes on the board itself.
 #
-# The onboard pixel is plain RGB, so led_rgbw is overridden; the chain is
-# still driven as 21 pixels and the 20 that don't exist fall off the end of
-# the wire harmlessly.
+# The onboard pixel is plain RGB, so tower L's colour type is overridden. Its
+# other six pixels, and the two zones nothing is wired to, clock out into
+# unconnected pins harmlessly.
 
 substitutions:
   name: castle-bench
   friendly: Castle Bench
-  pin_led_data: "33"    # onboard NeoPixel
-  led_rgbw: "false"
+  # The onboard pixel replaces tower L's strip: same pin substitution as
+  # before, now per zone. It plays tower L's pixel 0 and the rest of that
+  # zone falls off the end of a wire that is not there. The other two zones
+  # keep their real pins and clock into thin air, which costs nothing.
+  pin_towerL: "33"      # onboard NeoPixel
+  rgbw_towerL: "false"  # the onboard pixel is plain RGB
 
 packages:
   # The flash variant, not the core: the bench needs `sfx` + embedded audio

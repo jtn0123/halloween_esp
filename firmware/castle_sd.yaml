@@ -30,8 +30,12 @@ substitutions:
   # WHEN THE JEWELS ARE SOLDERED: wire their DIN (via the 74AHCT125) to A0,
   # then flash firmware/castle_sd_jewels.yaml — it overrides these two lines
   # and nothing else.
-  pin_led_data: "33"
-  led_rgbw: "false"
+  # The onboard pixel replaces tower L's strip: same pin substitution as
+  # before, now per zone. It plays tower L's pixel 0 and the rest of that
+  # zone falls off the end of a wire that is not there. The other two zones
+  # keep their real pins and clock into thin air, which costs nothing.
+  pin_towerL: "33"      # onboard NeoPixel
+  rgbw_towerL: "false"  # the onboard pixel is plain RGB
 
   # ── SD pins: Adafruit 2.13" eInk FeatherWing (4128 / 4195 / 4814) ────
   # Adafruit documents one convention for the whole eInk FeatherWing family —
@@ -96,6 +100,8 @@ esp32:
 esphome:
   includes:
     - sd_audio.h
+    - sd_web_state.h
+    - sd_web_stream.h
     - sd_web.h
     - sd_web_site.h
     - sd_web_remote.h
@@ -123,6 +129,9 @@ esphome:
             // Started whether or not the card mounted: the server is also how
             // you find out the card is missing without walking to the castle.
             castle_web::start();
+            // The web layer 404s unknown scene ids instead of queueing lies —
+            // this is where it learns which ids are real.
+            castle_web::set_scene_ids(id(pir_scene).traits.get_options());
             // The status panel — after the mount attempt so it can join the
             // SD's SPI bus rather than race it. Also fine with no card.
             castle_eink::begin(CASTLE_VERSION, ${eink_cs}, ${eink_dc},
@@ -236,7 +245,7 @@ interval:
             // STREAMED off the card through our own server over loopback —
             // no PSRAM cap, start is near-instant. See sd_web_site.h.
             auto call = id(castle_media)->make_call();
-            call.set_media_url("http://127.0.0.1/sd/" + act.arg);
+            call.set_media_url("http://127.0.0.1:8080/sd/" + act.arg);
             call.set_announcement(true);
             call.perform();
             id(current_track).publish_state(act.arg);
@@ -247,24 +256,11 @@ interval:
             call.set_volume(atoi(act.arg.c_str()) / 100.0f);
             call.perform();
           } else if (act.type == castle_web::LIGHT) {
-            // Manual override for the chain — today that is the one onboard
-            // pixel (it plays towerL pixel 0), later all three jewels.
-            if (act.arg == "off") {
-              id(castle_leds).turn_off().perform();
-            } else if (act.arg == "show") {
-              auto call = id(castle_leds).turn_on();
-              call.set_effect("Show");
-              call.perform();
-            } else {
-              long v = strtol(act.arg.c_str(), nullptr, 16);
-              auto call = id(castle_leds).turn_on();
-              call.set_effect("None");   // park on the colour, no animation
-              call.set_brightness(1.0f);
-              call.set_rgb(((v >> 16) & 0xFF) / 255.0f,
-                           ((v >> 8) & 0xFF) / 255.0f,
-                           (v & 0xFF) / 255.0f);
-              call.perform();
-            }
+            // Manual override for every strip. "off", "show", or six hex
+            // digits to park on a colour. One script rather than a list of
+            // ids here, because the zone list lives in scenes.yaml and is
+            // generated into lights_override.
+            id(lights_override)->execute(act.arg);
           } else if (act.type == castle_web::SCENE) {
             id(run_scene)->execute(act.arg);
           } else if (act.type == castle_web::PIRCFG) {
@@ -300,7 +296,7 @@ interval:
             // #25: the panic switch. Show, scene, audio, pixels — off.
             id(show_playlist)->stop();
             id(scene_stop)->execute();
-            id(castle_leds).turn_off().perform();
+            id(lights_override)->execute("off");
           } else if (act.type == castle_web::RESTART) {
             // Queued by the web OTA so its HTTP reply gets out first.
             esphome::App.safe_reboot();
