@@ -130,8 +130,15 @@ esphome:
             // you find out the card is missing without walking to the castle.
             castle_web::start();
             // The web layer 404s unknown scene ids instead of queueing lies —
-            // this is where it learns which ids are real.
-            castle_web::set_scene_ids(id(pir_scene).traits.get_options());
+            // this is where it learns which ids are real. Element-wise copy:
+            // get_options() returns FixedVector<const char*> on current
+            // ESPHome (std::vector<std::string> before) — emplace takes both.
+            {
+              std::vector<std::string> scene_ids;
+              for (const auto &opt : id(pir_scene).traits.get_options())
+                scene_ids.emplace_back(opt);
+              castle_web::set_scene_ids(std::move(scene_ids));
+            }
             // The status panel — after the mount attempt so it can join the
             // SD's SPI bus rather than race it. Also fine with no card.
             castle_eink::begin(CASTLE_VERSION, ${eink_cs}, ${eink_dc},

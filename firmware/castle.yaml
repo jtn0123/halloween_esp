@@ -145,6 +145,31 @@ esp32:
       # (WiFi/NVS writes). Without it, strips after the first lose the race
       # and frames truncate at the 4-pixel double-buffer boundary.
       CONFIG_RMT_ISR_IRAM_SAFE: "y"
+      # ── The dram0 diet ────────────────────────────────────────────────
+      # IDF 5.5's frameworks overflowed the S2's static-RAM segment by
+      # ~7 KB and v5.23 refused to link. Everything below buys it back:
+      # mdns off (~3 KB, see the mdns: block), softAP off (~1.3 KB), the
+      # eInk framebuffer moved to PSRAM (4 KB, castle_eink.h), and the
+      # small cuts here. It links at 99.99% — dram0 has ~20 BYTES spare,
+      # so the next framework bump will hit the wall again. Next levers,
+      # in order: WPA3-SAE off (ONLY after confirming the router accepts
+      # WPA2), and hunting libmesh's ~3.5 KB of never-used mesh state.
+      # (WiFi static RX buffers were tried and reverted: they live in
+      # heap, so cutting them slowed uploads and freed nothing static.)
+      #
+      # No `ap:` fallback any more (see the wifi block) — strip the softAP
+      # half of the stack with it: station-only is the whole use of this radio.
+      CONFIG_ESP_WIFI_SOFTAP_SUPPORT: "n"
+      # WPS never had a button on this porch; its supplicant state was more
+      # of the same static RAM.
+      CONFIG_ESP_WIFI_ENABLE_WPS: "n"
+      # .local resolution through lwIP's DNS — the S2 can't do mDNS at all
+      # (HARDWARE_FINDINGS), so this was table space for queries that can
+      # never be asked.
+      CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES: "n"
+      # OWE is WPA3's OPEN-network encryption; this castle joins a PSK
+      # network. WPA2/WPA3-PSK association is untouched.
+      CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA: "n"
   # Default dual-OTA layout: two 1.75 MB app slots. Audio at 48 kbps keeps the
   # image inside one, which is what buys OTA back — see the ota: block below.
 
@@ -179,6 +204,13 @@ logger:
   # This board has no other way to get a boot log.
   hardware_uart: UART0
 
+# mDNS has NEVER worked on the ESP32-S2 (HARDWARE_FINDINGS; devices.toml
+# holds the address instead), yet the responder still shipped in every image
+# — ~3 KB of the very static RAM the linker just ran out of, spent
+# advertising a name nothing can resolve.
+mdns:
+  disabled: true
+
 api:
   # No API client is NORMAL for this device — its real interface is its own
   # web server, and Home Assistant is optional. The default here (15 min)
@@ -205,13 +237,12 @@ ota:
 wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-  ap:
-    ssid: "${friendly} Setup"
 
-# captive_portal removed: it embeds a web UI for entering WiFi credentials,
-# and the image has to fit a 1.75 MB OTA slot. The `ap:` fallback above still
-# comes up if WiFi fails, so the device is still recoverable — you just join
-# its network and reflash rather than filling in a form.
+# captive_portal removed (it wouldn't fit the 1.75 MB OTA slot) and now the
+# `ap:` fallback is gone too: softAP support was the last ~1 KB the full
+# dram0 segment needed back (IDF 5.5 overflow — see the sdkconfig notes).
+# Recovery story without it: the castle lives at arm's reach, so a lost
+# network means a USB cable and `esphome run`, not a walk to a rooftop.
 
 # NOTE: this file is the CORE, not a buildable target. It deliberately
 # defines no `sfx` audio dispatch and no media files — every variant composes
