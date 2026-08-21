@@ -18,6 +18,7 @@ import { deviceBridge } from "./device.js";
 import { defaultParams } from "./effects.js";
 import { PixelInsets } from "./insets.js";
 import { createZoneDesigner } from "./zone_designer.js";
+import { installKiosk, isKiosk, kioskCastle, KIOSK_POLL_MS } from "./kiosk.js";
 import { loadRig, zoneLayout, zoneRgbw, ZONE_ORDER } from "./rig.js";
 import { createRigPanel } from "./rig_panel.js";
 import { Panels } from "./panels.js";
@@ -76,60 +77,26 @@ const insets = new PixelInsets(canvas, rig);
 // Live per-zone texture editing on the running preview.
 const designer = createZoneDesigner(() => state);
 
-const kiosk = new URLSearchParams(location.search).has("kiosk");
+const kiosk = isKiosk();
 // Which of the two the masthead toggle is showing. CSS only; both keep
 // drawing. Not in kiosk: there is no toggle on screen to undo it with, and a
 // wall tablet inheriting "pixels only" from whoever last used the browser
 // would show the porch a row of dots and no castle.
 if (!kiosk) initStageView();
+// ?kiosk=1: the stage alone, dark, with nothing on screen that could drive
+// the castle. What that strips and why is kiosk.ts's business.
+if (kiosk) installKiosk();
 
-/* ── Kiosk mode ─────────────────────────────────────────────────────────
-   ?kiosk=1 strips the page to the stage alone — a wall tablet on the porch
-   showing the full per-pixel render in sync with the real castle.
-
-   Hiding the panels is not enough to make the stage fill the screen. The
-   console column's `.col` wrapper is not a panel, so it survived, and a grid
-   track sized `minmax(320px,1fr)` goes on reserving its share whether or not
-   anything is left inside it — the stage came out at 58% of a 1280px tablet
-   with dead space beside it. The grid has to collapse, and `.desk`'s reading
-   width has to go with it, or a wall display just gets wider margins.
-
-   Width alone is not the answer either. Stage.draw scales the 800x520 design
-   space by WIDTH (see resize()), so a box shorter than that ratio crops the
-   castle's base off rather than letterboxing it — and full-width on a 1280
-   tablet makes the stage 816px tall, pushing the pixel row (the whole point
-   of a kiosk: every real pixel, in sync with the porch) below the fold.
-
-   So the stage is given whichever of the two bounds binds first: the width it
-   has, or the width the leftover HEIGHT allows at its own ratio. Explicitly,
-   not by flexing — a flex-sized box with `width: auto` takes its base from
-   the canvas's intrinsic size, which Stage.resize then writes back from the
-   box, and the circle settles somewhere different depending on when it is
-   measured. Once it settled at 58% in a fresh browser and 78% in a warm one. */
-if (kiosk) {
-  const css = document.createElement("style");
-  // The only chrome left below the stage: #jewels, 420px wide at 420:146,
-  // plus its .4rem top margin. Reserve it so the row is never below the fold.
-  css.textContent = `
-    body.kiosk { --jewel-row: 153px; }
-    body.kiosk .desk { max-width: none; padding: 0; }
-    body.kiosk .grid { grid-template-columns: 1fr; gap: 0; }
-    body.kiosk .col:not(:has(#stage)) { display: none; }
-    body.kiosk section.panel { display: none; }
-    body.kiosk section.panel:has(#stage) {
-      display: flex; flex-direction: column; justify-content: center;
-      height: 100vh; max-width: none; border: 0; border-radius: 0;
-    }
-    body.kiosk .stage {
-      flex: none; margin: 0 auto;
-      width: min(100%, calc((100vh - var(--jewel-row)) * 800 / 520));
-    }
-    body.kiosk .panel__hd, body.kiosk .transport, body.kiosk .hint,
-    body.kiosk section.panel:has(#stage) details,
-    body.kiosk header, body.kiosk .foot { display: none; }
-  `;
-  document.head.appendChild(css);
-  document.body.classList.add("kiosk");
+/* ── Where this page is served from ────────────────────────────────────
+   The Tracks panel's studio strip names its host from the address bar, not
+   a constant (it read "127.0.0.1:8765" while served on :8766 — JB1-9), and
+   its Restart / Stop-server buttons are for the laptop running it: on a
+   phone reached over the LAN they would stop the server under everyone. */
+{
+  const host = document.querySelector<HTMLElement>(".trk-srvtxt b");
+  if (host) host.textContent = location.host;
+  const loopback = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+  if (!loopback) document.getElementById("trkServer")?.remove();
 }
 
 /* The three sound sources are built AFTER the transport that needs to stop
@@ -202,13 +169,33 @@ const transport = new Transport({
 let adopting = false;
 const device = deviceBridge({
   adoptScene: (id) => {
+    // The kiosk FOLLOWS the castle: an empty id is the porch going idle,
+    // and the wall tablet goes dark with it. The desk is only ever handed
+    // a real scene, once, at first contact.
+    if (!id) { if (kiosk) transport.blackout(); return; }
     const i = SCENES.findIndex((s) => s.id === id);
-    if (i < 0 || SCENES[i] === state.scene) return;
-    adopting = true;
-    document.querySelector<HTMLElement>(`.scene[data-i="${i}"]`)?.click();
-    adopting = false;
+    const sc = SCENES[i];
+    if (!sc) return;
+    if (sc !== state.scene) {
+      adopting = true;
+      document.querySelector<HTMLElement>(`.scene[data-i="${i}"]`)?.click();
+      adopting = false;
+    }
+    // A kiosk adopting a scene the castle is RUNNING must run it too —
+    // loaded at frame 0 and paused, the tablet was never in sync (JB1-2).
+    // The desk keeps its own rule: nothing plays until someone presses Play.
+    if (kiosk && !state.running) transport.loadScene(sc, { play: true });
   },
-  onStatus: (line, ok) => { deviceLine = line; deviceOk = ok; syncStatus(); },
+  onStatus: (line, ok) => {
+    deviceLine = line; deviceOk = ok; syncStatus();
+    if (kiosk) kioskCastle(ok);
+  },
+  // The card's size, for the SD budget — a measured ceiling beats the
+  // assumed one, whenever a castle is there to report it.
+  onCard: (totalKb) => budget.setCard(totalKb),
+  // A kiosk is a display, not a console: nothing it does may reach the
+  // porch, and it asks often enough to follow what the porch is doing.
+  ...(kiosk ? { mirror: false, follow: true, pollMs: KIOSK_POLL_MS } : {}),
   // The chip's SOUND switch. Pressing it is the consent the muted-by-default
   // rule wants: route Mac unmutes this browser, route castle hushes it.
   onSoundRoute: (local) => { if (rendered.muted === local) toggleMute(); },
@@ -283,10 +270,14 @@ muteBtn?.addEventListener("click", toggleMute);
 syncMuteUI();
 synth.setMuted(rendered.muted);
 
-transport.bindKeys(toggleMute, (i) => {
-  const b = document.querySelector<HTMLElement>(`.scene[data-i="${i}"]`);
-  b?.click();
-});
+// Not in kiosk: a wall tablet's keyboard (or a cat on it) must not be able
+// to pick scenes — which, with mirroring, fires them on the porch.
+if (!kiosk) {
+  transport.bindKeys(toggleMute, (i) => {
+    const b = document.querySelector<HTMLElement>(`.scene[data-i="${i}"]`);
+    b?.click();
+  });
+}
 
 /* ── Rendered vs live synth ──
    With no rendered files there is nothing to switch to, so the toggle is

@@ -49,6 +49,8 @@ interface Status {
   sd_mounted?: boolean;
   /** KB free on the card — v5.23+; older firmware omits it. */
   sd_free_kb?: number;
+  /** The card's size in KB — v5.23+. The SD budget reads it (JB1-11). */
+  sd_total_kb?: number;
   volume?: number;
   scene?: string;
   track?: string;
@@ -175,9 +177,22 @@ function castleChangedSoon(): void {
 }
 
 export interface BridgeOpts {
-  /** Called once, on first contact, with the scene the castle is running —
-   *  so the desk can open showing reality instead of the default. */
+  /** Called on first contact with the scene the castle is running — so the
+   *  desk can open showing reality instead of the default. With `follow`
+   *  it is also called on every later change, "" meaning the castle went
+   *  idle. */
   adoptScene?: (sceneId: string) => void;
+  /** Keep adopting after first contact (the kiosk: a display that tracks
+   *  the porch). Default false — the desk's operator picks their own. */
+  follow?: boolean;
+  /** Start with mirroring off: nothing this page does reaches the castle
+   *  until the chip's "on castle" box is ticked. The kiosk passes false. */
+  mirror?: boolean;
+  /** How often to re-poll once live. Default POLL_MS. */
+  pollMs?: number;
+  /** The card's reported size, KB, on every answer — null when the castle
+   *  does not say (older firmware, no card) or has stopped answering. */
+  onCard?: (totalKb: number | null) => void;
   /**
    * The device half of the masthead's status line — "castle v1.4 · SD ok ·
    * mirroring", or "castle not answering" once it stops replying. `ok` is
@@ -197,8 +212,11 @@ export interface BridgeOpts {
 
 export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   let live = false;
-  let mirror = true;
+  let mirror = opts.mirror ?? true;
   let lastVol = 70;
+  // The scene the castle was last seen running ("" = idle); null before
+  // first contact. Only `follow` acts on a change.
+  let followed: string | null = null;
   // Where sound comes out on wiring-day setups: this browser, or the castle's
   // own amp. Survives reloads — an operator sets it once per bench session.
   let soundRoute: "mac" | "castle" =
@@ -330,6 +348,13 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     lastVol = s.volume ?? lastVol;
     lastStatus = s;
     sayStatus(s);
+    opts.onCard?.(s.sd_total_kb || null);
+    const running = s.scene && s.scene !== "stop" ? s.scene : "";
+    if (followed === null) followed = running;          // firstContact adopts
+    else if (opts.follow && running !== followed) {
+      followed = running;
+      opts.adoptScene?.(running);
+    }
     // Back from the dead: the open panel was showing "stopped answering".
     if (wasDown) panel.refresh();
     lastSeen = new Date();
@@ -375,6 +400,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     chip.classList.add("down");      // text dims; the ground stays opaque (J3-2)
     lastOk = false;
     if (lastStatus) sayStatus(lastStatus);
+    opts.onCard?.(null);
     // The controls that would lie: ■/volume/mute/mirror act on a castle
     // that is not there (syncRouteUI reads lastOk). ♪ stays — where sound
     // comes out is this desk's own decision — and 🏰 opens a panel that
@@ -401,7 +427,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     // A slow poll keeps the chip honest (version after an OTA, card pulled,
     // a scene the PIR fired while nobody was looking); actions re-poll
     // themselves sooner via castleAct().
-    setInterval(() => void refresh(), POLL_MS);
+    setInterval(() => void refresh(), opts.pollMs ?? POLL_MS);
   }
 
   void probe().then((s) => {

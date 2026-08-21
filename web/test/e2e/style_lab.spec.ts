@@ -23,7 +23,11 @@ async function openLab(page: Page): Promise<void> {
   await row(page, MP3).locator(".trk__nm").click();
   await expect(page.locator("#trkWave")).toContainText(/start 0:00/);
   // The lab ships unfolded — it was undiscoverable as a closed <details>.
-  // Clicking the summary here would fold it shut, so just assert.
+  // Clicking the summary here would fold it shut, so just assert. The
+  // engine A/B is a developer tool, and lives one fold further in.
+  await expect(lab(page).locator(".stylelab__flav-drift")).toBeVisible();
+  await expect(lab(page).locator(".stylelab__ab")).toBeHidden();
+  await lab(page).locator(".stylelab__dev > summary").click();
   await expect(lab(page).locator(".stylelab__ab")).toBeVisible();
 }
 

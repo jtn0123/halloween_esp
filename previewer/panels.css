@@ -311,3 +311,16 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
 /* `hidden` loses to any display rule, and every other fold on this page has
    been bitten by exactly this — see .budget__pick. */
 #rigOut[hidden] { display: none; }
+
+/* Band editor (band_editor.ts): mute and solo are states, and read as such.
+   Under 620px the seven-column row stacks — name + window, the slider on its
+   own line, then the readouts and mix buttons — instead of clipping the
+   sensitivity readout and hit counts off the right edge (JB1-7). */
+.bandcfg__mute.on { border-color: var(--alarm); color: var(--alarm); }
+.bandcfg__solo.on { border-color: var(--spirit); color: var(--spirit); }
+@media (max-width: 620px) {
+  .bandcfg__row { display: flex; flex-wrap: wrap; gap: 6px 9px; }
+  .bandcfg__zone { flex: 1 1 auto; }
+  .bandcfg__sens { flex: 1 1 100%; }
+  .bandcfg__hits { margin-left: auto; }
+}

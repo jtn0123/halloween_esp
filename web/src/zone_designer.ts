@@ -54,8 +54,10 @@ export function createZoneDesigner(getState: () => ShowState): ZoneDesigner {
         `<td><input class="zdF" data-z="${z}" type="number" min="0" max="5" step="0.1"` +
         ` value="${st.phase[z]}" style="width:3.5rem"></td></tr>`).join("") +
       `</table>` +
-      `<div><button id="zdYaml" type="button">Copy zones: YAML</button>` +
-      `<span id="zdNote" class="muted"> edits preview only — paste into scenes.yaml to keep</span></div>` +
+      `<div><button id="zdYaml" type="button" title="Copies this scene's zone settings ` +
+      `as the zones: block for scenes/scenes.yaml">Copy these zone settings</button>` +
+      `<span id="zdNote" class="muted"> edits the preview only — paste into ` +
+      `scenes.yaml (the Scenes file) to keep</span></div>` +
       `<pre id="zdOut" style="display:none"></pre>`;
 
     host.querySelectorAll<HTMLSelectElement>(".zdC").forEach((el) =>

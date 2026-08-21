@@ -136,7 +136,8 @@ export class DevicePanel {
       `style="cursor:pointer;background:none;border:0;color:var(--muted);` +
       `font-size:14px;padding:0 .2rem">✕</button>` +
       `</div>` +
-      `<div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2)">` +
+      `<div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2);` +
+      `display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">` +
       `<button id="dpPlaylist" title="Every scene in order with dark gaps, ` +
       `looping until stopped — the whole evening on one button" ` +
       `style="cursor:pointer;border:0;border-radius:6px;padding:.25rem .7rem;` +
@@ -144,6 +145,14 @@ export class DevicePanel {
       `${st.show_on ? "■ stop the show" : "▶ start the show"}</button>` +
       (st.show_on && st.scene
         ? ` <small style="color:var(--muted)">now: ${st.scene}</small>` : "") +
+      // The castle serves a four-button page of its own (firmware/
+      // sd_web_remote.h) — the thing to hand a phone on the porch. Nothing
+      // linked to it (JB1-8); now the panel does.
+      `<a id="dpRemote" href="/remote" target="_blank" rel="noopener" ` +
+      `title="The castle's own phone page: ambient, scare, stop and the evening ` +
+      `show on four thumb-sized buttons. Opens in a new tab" ` +
+      `style="margin-left:auto;color:var(--cool);text-decoration:none;` +
+      `white-space:nowrap">📱 phone remote</a>` +
       `</div>` +
       `<div style="padding:.5rem .8rem;border-bottom:1px solid var(--line-2);` +
       `display:flex;gap:.5rem;align-items:center" ` +

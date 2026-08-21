@@ -64,11 +64,14 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   el.open = true;
   const sum = document.createElement("summary");
   sum.style.cursor = "pointer";
-  sum.textContent = "Judge the lights — A/B engine test, flavours, knobs";
-  sum.title = "Compare the light engine against the old flat look, and trim "
-            + "intensity/tails live. Applies to the audition and to the next "
-            + "Make/Update scene — the baked scenes on the left don't change "
-            + "until you re-export them.";
+  // Operator words on the outside (JB1-9): what you can do to the look.
+  // The engine A/B and the code export are developer tools and live in
+  // the fold at the bottom, named as such.
+  sum.textContent = "Light style — flavours, brightness and tails";
+  sum.title = "Shape how the lights follow this track: optional flavours, "
+            + "and how hard and how long each band strikes. Applies to the "
+            + "audition and to the next Make/Update scene — the baked scenes "
+            + "on the left don't change until you re-export them.";
   el.append(sum);
 
   const row = (label: string): HTMLDivElement => {
@@ -105,7 +108,6 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   });
   sayAb();
   abRow.append(ab);
-  el.append(abRow);
 
   /* ── Flavours: taste features, default off, judged via the A/B above.
      Turning one on colours the audition AND the next export. ── */
@@ -135,16 +137,20 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     wrap.append(box, document.createTextNode(label));
     flavRow.append(wrap);
   }
+  el.append(flavRow);
   // Expectations, or the boxes read as dead (round 2: a tester turned all
   // three on, auditioned ten seconds of ambience, and measured no change —
-  // correctly, because nothing they gate had happened yet).
+  // correctly, because nothing they gate had happened yet). Its own
+  // paragraph under the row: inside the flex row it collapsed to a
+  // one-word-per-line column on a phone (JB1-7).
   const flavHint = document.createElement("div");
-  flavHint.style.cssText = "margin:1px 0 3px;color:var(--ink-3,#888);font-size:11px";
+  flavHint.className = "stylelab__flavhint";
+  flavHint.style.cssText = "margin:0 0 4px;color:var(--ink-3,#888);font-size:12px;"
+    + "line-height:1.5";
   flavHint.textContent = "drift shows over ~a minute · chorus fires only in "
     + "loud chorus sections · swells need long sustained louds — audition a "
     + "loud stretch of the song to see them";
-  flavRow.append(flavHint);
-  el.append(flavRow);
+  el.append(flavHint);
 
   /* ── Knobs ── */
   const sliders: HTMLInputElement[] = [];
@@ -218,12 +224,20 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     el.append(r);
   }
 
-  /* ── Reset + copy ── */
+  /* ── Reset, then the developer fold: engine A/B and the code export ── */
   const foot = row("");
   const reset = document.createElement("button");
   reset.type = "button";
   reset.textContent = "Reset";
-  reset.title = "Neutral knobs, engine A";
+  reset.title = "Neutral brightness and tails, no flavours, engine A";
+  const dev = document.createElement("details");
+  dev.className = "stylelab__dev";
+  dev.style.cssText = "margin-top:4px";
+  const devSum = document.createElement("summary");
+  devSum.style.cssText = "cursor:pointer;color:var(--ink-3,#888)";
+  devSum.textContent = "developer — compare light engines, copy the style as code";
+  devSum.title = "Tools for working on the light engine itself, not on a show";
+  dev.append(devSum);
   const copy = document.createElement("button");
   copy.type = "button";
   copy.textContent = "Copy as TS";
@@ -257,8 +271,11 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     out.hidden = false;                      // visible even if the copy fails
     void navigator.clipboard?.writeText(ts).catch(() => { /* shown below */ });
   });
-  foot.append(reset, copy);
-  el.append(foot, out);
+  foot.append(reset);
+  const devFoot = row("");
+  devFoot.append(copy);
+  dev.append(abRow, devFoot, out);
+  el.append(foot, dev);
 
   // Restore last session's knobs and flavours — the settings someone spent
   // ten minutes finding must not evaporate on reload.

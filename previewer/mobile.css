@@ -28,9 +28,39 @@
   .chan { grid-template-columns: 22px 1fr auto; gap: 8px; padding: 12px 10px; }
 
   /* Fingers, not cursors: the WCAG floor is 44px; every control that matters
-     during a show gets at least that. */
+     during a show gets at least that — and so does everything a thumb can
+     reach on the chip, in the castle panel, in the selects and tabs (JB1-7:
+     chip buttons were 25–29px, zone/fixture selects 19px). */
   .transport button, .scene, .codecab__bar button { min-height: 44px; }
   input[type="range"] { min-height: 32px; }
+  #deviceChip .chip__btn, #devicePanel button, #devicePanel select,
+  #devicePanel input:not([type=checkbox]):not([type=range]),
+  select, .budget__tabs button, .viewsel button, .trk-srvbtn button,
+  .trk__act button, .bandcfg__mute, .bandcfg__solo, .rig input[type=number],
+  .stylelab button, .stylelab__ab, #rigYaml, #zdYaml, .zd input,
+  .foot-fold summary, .sheet-fold summary, .trim-fold summary, .stylelab summary,
+  #trkOpts summary { min-height: 44px; }
+  #deviceChip .chip__mirror, #dpPirArm { min-height: 44px; display: inline-flex; align-items: center; }
+  #deviceChip .chip__btn, .bandcfg__mute, .bandcfg__solo { min-width: 44px; }
+  /* Readable, too: the desk's 9.5–11px data captions are for a desk at
+     arm's length; a phone held in the dark gets a floor — 13px for prose,
+     12px for the tabular captions that have to share a tile or a row.
+     `.desk :is()` so one rule outranks every per-element size in styles.css
+     and panels.css (:is() carries its most specific argument's weight). */
+  .desk :is(.hint, .muted, .note, .panel__hd .note, .scenes-blurb, .foot,
+    .trk-cap, .trk-note, .trk-hintline, .trk-lib__ft, .trk-opts label, .ctrl .hint,
+    .budget__pickblurb, .budget__note, .codecab__note, .stylelab__flavhint,
+    .rig__acts .muted, summary, .trim-fold__hint, .trk-srvtxt, .trk-opts-hint,
+    .bandcfg__row, .bandcfg__zone, .zd, .stylelab, .chan__val, .ctrl output,
+    .ctrl--tight label, .ctrl--tight output) { font-size: 13px; }
+  .desk :is(small, kbd, legend, th, pre, .tag, .btn, .eyebrow, .head__txt,
+    .panel__hd h2, .scene__sz, .sheet-count, .trk-sync, .trk__mono, .chan__nm small,
+    .viewsel button, .budget__tabs button, .trk-srvbtn button, .trk__act button,
+    .budget__pickmeta, .budget__row span, .budget__row b, table.sheet,
+    .transport .tc, .stylelab__val, .codecab__bar button, .trk-lib__hd span) { font-size: 12px; }
+  #deviceChip, .toast { font-size: 13px; }
+  .head__id { flex-wrap: wrap; gap: 4px 12px; }
+  .eyebrow { white-space: normal; }
 
   /* Wide things scroll inside their own box — the page never pans. */
   .sheet-fold table, .src pre, #zdOut { display: block; overflow-x: auto; }
@@ -57,12 +87,24 @@
   #deviceChip > div { flex-wrap: wrap; }
   #devicePanel {
     width: auto !important;
-    /* Half the phone at most: the stage and transport must stay reachable
+    /* Under half the phone: the stage and transport must stay reachable
        behind an open castle panel. Scrolls inside. */
-    max-height: 50vh;
+    max-height: 46vh;
     overflow-y: auto;
   }
   #jewels { max-width: 100%; }
+  /* The studio host line is data, not a control: let it wrap. */
+  .trk-srvtxt { white-space: normal; }
+}
+
+/* Below 480px the band editor's window select and the mix buttons share one
+   line with the name; the slider has the next to itself (panels.css stacks
+   the row from 620px down — this only lets the select take the slack). */
+@media (max-width: 480px) {
+  .bandcfg__zone { min-width: 7em; }
+  /* Two knobs and two readouts per band: the 90px sliders (inline, from
+     style_lab.ts) pushed the tail column off a 375px screen. */
+  .stylelab__knob { width: 54px !important; }
 }
 
 /* Phones held sideways still get the single column but keep the stage big. */

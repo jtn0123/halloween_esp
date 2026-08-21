@@ -56,14 +56,25 @@ export function createBandEditor(onChange: () => void,
   const zone = {} as Record<BandName, ZoneId>;
   const sens = {} as Record<BandName, number>;
   const found = {} as Record<BandName, HTMLElement>;
+  // Mixing-console state: each band's own mute, plus at most one solo that
+  // overrides them. Two things, kept as two — a solo spelled as "mute the
+  // others" lit the M of every other band and never the S (JB1-11).
   const on = {} as Record<BandName, boolean>;
+  let solo: BandName | null = null;
   const muteBtns = {} as Record<BandName, HTMLButtonElement>;
+  const soloBtns = {} as Record<BandName, HTMLButtonElement>;
   const rows = {} as Record<BandName, HTMLElement>;
+
+  /** Does the audition play this band right now. */
+  const audible = (b: BandName): boolean => solo ? solo === b : on[b];
 
   const syncMix = (): void => {
     for (const b of BANDS) {
       muteBtns[b.name].classList.toggle("on", !on[b.name]);
-      rows[b.name].style.opacity = on[b.name] ? "" : "0.45";
+      muteBtns[b.name].setAttribute("aria-pressed", String(!on[b.name]));
+      soloBtns[b.name].classList.toggle("on", solo === b.name);
+      soloBtns[b.name].setAttribute("aria-pressed", String(solo === b.name));
+      rows[b.name].style.opacity = audible(b.name) ? "" : "0.45";
     }
     onMix?.();
   };
@@ -83,6 +94,7 @@ export function createBandEditor(onChange: () => void,
     const swatch = document.createElement("i");
     swatch.className = "bandcfg__dot";
     swatch.style.background = b.ink;
+    swatch.title = `${b.label} band — drawn in this colour on the waveform above`;
 
     const name = document.createElement("span");
     name.className = "bandcfg__nm";
@@ -90,14 +102,17 @@ export function createBandEditor(onChange: () => void,
     name.title = `${b.lo}–${b.hi} Hz · hits no closer together than ${b.minGap}s`;
 
     // Zone. A select rather than free text: there are exactly three lamps,
-    // and a typo here would produce a scene that renders nothing.
+    // and a typo here would produce a scene that renders nothing. Labelled
+    // as the porch calls them — "towerL"/"towerR" both clipped to "tower"
+    // in the select (JB1-9), and the one control that decides which window
+    // a beat hits could not be read.
     const zoneSel = document.createElement("select");
     zoneSel.className = "bandcfg__zone";
-    zoneSel.title = `Which zone the ${b.label} band lights`;
+    zoneSel.title = `Which window the ${b.label} band lights`;
     for (const ch of CHANNELS) {
       const o = document.createElement("option");
       o.value = ch.id;
-      o.textContent = ch.id;
+      o.textContent = ch.name;
       zoneSel.append(o);
     }
     zoneSel.value = b.zone;
@@ -143,6 +158,7 @@ export function createBandEditor(onChange: () => void,
     // Inline like the style lab's chrome: styles.css is at the 500-line cap.
     mute.style.cssText = "min-width:1.8em;padding:1px 4px";
     mute.textContent = "M";
+    mute.setAttribute("aria-pressed", "false");
     mute.title = `Mute the ${b.label} band in the audition (export unaffected)`;
     mute.addEventListener("click", () => {
       on[b.name] = !on[b.name];
@@ -150,15 +166,16 @@ export function createBandEditor(onChange: () => void,
     });
     muteBtns[b.name] = mute;
 
-    const solo = document.createElement("button");
-    solo.type = "button";
-    solo.className = "bandcfg__solo";
-    solo.style.cssText = "min-width:1.8em;padding:1px 4px";
-    solo.textContent = "S";
-    solo.title = `Audition only the ${b.label} band — press again to hear all`;
-    solo.addEventListener("click", () => {
-      const already = on[b.name] && BANDS.every(x => x.name === b.name || !on[x.name]);
-      for (const x of BANDS) on[x.name] = already ? true : x.name === b.name;
+    const soloBtn = document.createElement("button");
+    soloBtn.type = "button";
+    soloBtn.className = "bandcfg__solo";
+    soloBtn.style.cssText = "min-width:1.8em;padding:1px 4px";
+    soloBtn.textContent = "S";
+    soloBtn.setAttribute("aria-pressed", "false");
+    soloBtn.title = `Audition only the ${b.label} band — press again to hear all`;
+    soloBtns[b.name] = soloBtn;
+    soloBtn.addEventListener("click", () => {
+      solo = solo === b.name ? null : b.name;
       syncMix();
     });
 
@@ -166,7 +183,7 @@ export function createBandEditor(onChange: () => void,
     const mix = document.createElement("span");
     mix.className = "bandcfg__mix";
     mix.style.cssText = "display:inline-flex;gap:3px";
-    mix.append(mute, solo);
+    mix.append(mute, soloBtn);
     row.append(swatch, name, zoneSel, slider, read, hits, mix);
     el.append(row);
   }
@@ -174,7 +191,8 @@ export function createBandEditor(onChange: () => void,
   return {
     el,
     settings: () => ({ zone: { ...zone }, sensitivity: { ...sens } }),
-    active: () => ({ ...on }),
+    active: () => Object.fromEntries(BANDS.map(b => [b.name, audible(b.name)])) as
+      Record<BandName, boolean>,
     zones: () => ({ ...zone }),
     query: () => BANDS
       .map(b => `sens_${b.label}=${encodeURIComponent(sens[b.name].toFixed(2))}`)

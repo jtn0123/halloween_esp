@@ -116,9 +116,13 @@ export function createRigPanel(rig: RigState, hooks: RigHooks): RigPanel {
       + problems.map((p) =>
         `<p class="rig__note rig__note--${p.level}">${p.text}</p>`).join("")
       + `<div class="rig__acts">`
-      + `<button id="rigYaml" type="button">Copy firmware config</button>`
-      + `<span class="muted"> preview updates now; the castle needs `
-      + `<code>make generate &amp;&amp; make upload</code></span></div>`
+      + `<button id="rigYaml" type="button" title="Copies the two config blocks `
+      + `that make the castle agree with this preview: the zones: block for `
+      + `scenes/scenes.yaml and the light: blocks for firmware/castle.yaml. `
+      + `Then: make generate &amp;&amp; make upload">Copy settings for the castle</button>`
+      + `<span class="muted" title="The firmware carries its own pixel counts, so `
+      + `the castle only agrees after a reflash: make generate &amp;&amp; make upload">`
+      + ` the preview changes now; the castle after its next reflash</span></div>`
       + `<pre id="rigOut" hidden></pre>`;
 
     host.querySelectorAll<HTMLSelectElement>(".rigF").forEach((el) =>
