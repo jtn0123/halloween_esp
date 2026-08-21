@@ -26,6 +26,11 @@
 #include <esp_ota_ops.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <algorithm>
+#include <vector>
+
+#include "sd_web_state.h"
+#include "sd_web_stream.h"
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -44,58 +49,11 @@ namespace castle_web {
 static const char *const TAG = "castle_web";
 
 inline httpd_handle_t g_server = nullptr;
-
-// ── pending action, handed from httpd task to the main loop ─────────────
-enum ActionType {
-  NONE = 0, PLAY = 1, SCENE = 2, STOP = 3, VOLUME = 4, LIGHT = 5,
-  PIRCFG = 6, RESTART = 7, SHOW = 8,   // arg "1" starts the playlist, "0" stops
-  BLACKOUT = 9,                        // #25: everything off, NOW
-};
-struct Action {
-  int type{NONE};
-  std::string arg;
-};
-inline std::mutex g_mu;
-inline Action g_pending{};
-
-inline void set_pending(int type, std::string arg) {
-  std::lock_guard<std::mutex> lk(g_mu);
-  g_pending = {type, std::move(arg)};
-}
-/// Called by the YAML interval on the main loop. Returns NONE most of the time.
-inline Action take_pending() {
-  std::lock_guard<std::mutex> lk(g_mu);
-  Action a = g_pending;
-  g_pending = {NONE, ""};
-  return a;
-}
-
-// ── state mirrored FROM the main loop, readable by handlers ─────────────
-inline std::atomic<int> g_volume{70};
-inline std::atomic<bool> g_pir_armed{true};
-inline std::atomic<int> g_pir_cooldown{60};
-inline std::atomic<bool> g_show_on{false};   // is the playlist running
-inline std::mutex g_state_mu;
-inline std::string g_scene;        // current scene id, "" until one runs
-inline std::string g_track;        // current audio track, "" when idle
-inline std::string g_pir_scene;    // what motion triggers
-// #29: scene audio files the boot manifest check could not find on the
-// card, comma-separated; empty = all present (the overwhelmingly normal
-// case). Set once at boot by the generated manifest_check script.
-inline std::string g_missing;
-
-inline void set_missing(const std::string &csv) {
-  std::lock_guard<std::mutex> lk(g_state_mu);
-  g_missing = csv;
-}
-
-inline void mirror_show_state(const std::string &scene, const std::string &track,
-                              const std::string &pir_scene) {
-  std::lock_guard<std::mutex> lk(g_state_mu);
-  g_scene = scene;
-  g_track = track;
-  g_pir_scene = pir_scene;
-}
+// Scene ids the firmware actually has, seeded at boot from the pir_scene
+// select (castle_sd.yaml). Empty means "not seeded yet" — then /api/scene
+// falls back to accepting anything, which only lasts the first seconds.
+inline std::vector<std::string> g_scene_ids;
+inline void set_scene_ids(std::vector<std::string> ids) { g_scene_ids = std::move(ids); }
 
 // ── helpers ─────────────────────────────────────────────────────────────
 
@@ -296,6 +254,11 @@ inline esp_err_t h_play(httpd_req_t *req) {
 inline esp_err_t h_scene(httpd_req_t *req) {
   std::string s = query_param(req, "s");
   if (s.empty()) return reply_err(req, "400 Bad Request", "need ?s=<scene>");
+  // {"queued":true} for a scene that does not exist is a lie the desk then
+  // toasts as success. The id list is seeded at boot from pir_scene's options.
+  if (!g_scene_ids.empty() &&
+      std::find(g_scene_ids.begin(), g_scene_ids.end(), s) == g_scene_ids.end())
+    return reply_err(req, "404 Not Found", "unknown scene");
   set_pending(SCENE, s);
   return reply_json(req, "{\"queued\":true}");
 }
@@ -310,7 +273,11 @@ inline esp_err_t h_stop(httpd_req_t *req) {
 
 inline esp_err_t h_volume(httpd_req_t *req) {
   std::string v = query_param(req, "v");
-  int pct = v.empty() ? -1 : atoi(v.c_str());
+  // Digits only. atoi("abc") is 0, which turned a malformed request into a
+  // silent mute — the kind of "worked, but wrong" a fuzz pass exists to find.
+  const bool digits = !v.empty() && v.size() <= 3 &&
+      v.find_first_not_of("0123456789") == std::string::npos;
+  int pct = digits ? atoi(v.c_str()) : -1;
   if (pct < 0 || pct > 100) return reply_err(req, "400 Bad Request", "need ?v=0..100");
   set_pending(VOLUME, std::to_string(pct));
   return reply_json(req, "{\"queued\":true}");
@@ -488,6 +455,9 @@ inline void start() {
   reg("/api/ota", HTTP_PUT, h_ota);
   reg("/api/bootlog", HTTP_GET, h_bootlog);
   reg("/sd/*", HTTP_GET, h_sd_get);
+  // Playback must never queue behind the control plane — the decoder pulls
+  // its audio through this second server. See sd_web_stream.h.
+  castle_stream::start(h_sd_get);
   reg("/site/*", HTTP_GET, h_site);
   reg("/", HTTP_GET, h_root);
   ESP_LOGI(TAG, "web server up on port %d", cfg.server_port);

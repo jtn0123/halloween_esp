@@ -385,7 +385,7 @@ def main() -> int:
           "            return;",
           "          }",
           "          auto call = id(castle_media)->make_call();",
-          "          call.set_media_url(\"http://127.0.0.1/sd/scenes/\" + track + \".mp3\");",
+          "          call.set_media_url(\"http://127.0.0.1:8080/sd/scenes/\" + track + \".mp3\");",
           "          call.set_announcement(true);",
           "          call.perform();", ""]
     sd += emit_manifest_check(doc)

@@ -100,6 +100,8 @@ esp32:
 esphome:
   includes:
     - sd_audio.h
+    - sd_web_state.h
+    - sd_web_stream.h
     - sd_web.h
     - sd_web_site.h
     - sd_web_remote.h
@@ -127,6 +129,9 @@ esphome:
             // Started whether or not the card mounted: the server is also how
             // you find out the card is missing without walking to the castle.
             castle_web::start();
+            // The web layer 404s unknown scene ids instead of queueing lies —
+            // this is where it learns which ids are real.
+            castle_web::set_scene_ids(id(pir_scene).traits.get_options());
             // The status panel — after the mount attempt so it can join the
             // SD's SPI bus rather than race it. Also fine with no card.
             castle_eink::begin(CASTLE_VERSION, ${eink_cs}, ${eink_dc},
@@ -240,7 +245,7 @@ interval:
             // STREAMED off the card through our own server over loopback —
             // no PSRAM cap, start is near-instant. See sd_web_site.h.
             auto call = id(castle_media)->make_call();
-            call.set_media_url("http://127.0.0.1/sd/" + act.arg);
+            call.set_media_url("http://127.0.0.1:8080/sd/" + act.arg);
             call.set_announcement(true);
             call.perform();
             id(current_track).publish_state(act.arg);
