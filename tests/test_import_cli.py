@@ -107,6 +107,30 @@ class TestImportFromFile(CliCase):
         with self.assertRaises(SystemExit):
             self.run_cli("--id", "x")
 
+    def test_a_failed_convert_leaves_no_track_behind(self) -> None:
+        """Pass-1 J1-2: ffmpeg opens its output before it knows the input is
+        junk, so a failed import used to leave a 0-byte track the desk then
+        offered to send to the castle."""
+        junk = self.tmp / "junk.mp3"
+        junk.write_bytes(b"this is not audio" * 100)
+        with self.assertRaises(SystemExit) as cm:
+            self.run_cli(str(junk), "--id", "junk")
+        self.assertIn("playable audio", str(cm.exception))
+        self.assertEqual(sorted(p.name for p in it.TRACKS.iterdir()), [])
+        self.assertIsNone(mf.get("junk"))
+
+    def test_a_failed_refresh_keeps_the_good_copy(self) -> None:
+        self.run_cli(str(self.src), "--id", "keep")
+        out = it.TRACKS / "keep.mp3"
+        before = out.read_bytes()
+        # The remembered source turns to junk underneath the re-import.
+        self.src.write_bytes(b"not audio any more")
+        with self.assertRaises(SystemExit):
+            self.run_cli("--refresh", "keep")
+        self.assertEqual(out.read_bytes(), before)
+        self.assertEqual(sorted(p.name for p in it.TRACKS.iterdir()
+                                if p.name.endswith(".part")), [])
+
 
 class TestOptions(CliCase):
     def test_take_and_bitrate_are_applied_and_remembered(self) -> None:

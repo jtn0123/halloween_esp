@@ -173,18 +173,29 @@ def convert(src: Path, out: Path, o: dict) -> None:
     else:
         cmd += ["-b:a", f"{o['bitrate']}k"]
 
-    cmd.append(str(out))
+    # Encode BESIDE the destination, then rename: ffmpeg opens its output
+    # before it knows the input is garbage, so a failed import used to leave
+    # a 0-byte track that the desk then offered to send to the castle — and
+    # a failed re-import truncated the good copy it was meant to replace.
+    part = out.with_name(out.name + ".part")
+    # ffmpeg picks the muxer from the extension, and ".part" is not one.
+    cmd += ["-f", {"wav": "wav", "flac": "flac", "opus": "opus"}.get(fmt, "mp3"),
+            str(part)]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, check=False,
                            timeout=300)
     except subprocess.TimeoutExpired:
+        part.unlink(missing_ok=True)
         raise SystemExit(f"ffmpeg stalled encoding {out.name} — "
                          "gave up after 5 minutes") from None
-    if r.returncode != 0:
+    if r.returncode != 0 or not part.exists() or part.stat().st_size == 0:
+        part.unlink(missing_ok=True)
         # ffmpeg's own last line names the actual problem; a traceback does not.
         tail = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
-        raise SystemExit(f"ffmpeg could not write {out.name}: "
-                         f"{tail[-1] if tail else f'exit {r.returncode}'}")
+        raise SystemExit(f"{src.name} doesn't look like playable audio — "
+                         f"ffmpeg could not convert it "
+                         f"({tail[-1] if tail else f'exit {r.returncode}'})")
+    os.replace(part, out)
 
 
 FRAME = 0.016          # the light engine's tick, matching the firmware
@@ -402,6 +413,16 @@ def main() -> int:
     tmp = TRACKS / f"_incoming_{os.getpid()}"
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True, exist_ok=True)
+    try:
+        return _import(args, o, source, is_url, tmp, prev)
+    finally:
+        # Whatever happened, the scratch dir goes — a failed import used to
+        # leave _incoming_<pid> behind next to the library.
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _import(args: argparse.Namespace, o: dict, source: str, is_url: bool,
+            tmp: Path, prev: dict | None) -> int:
     title = (prev or {}).get("title", "")
     if is_url:
         src, title = fetch_url(source, tmp)
@@ -425,7 +446,6 @@ def main() -> int:
     conv["start"] = secs(o["start"]) if o["start"] else 0
     conv["take"] = secs(o["take"]) if o["take"] else None
     convert(src, out, conv)
-    shutil.rmtree(tmp, ignore_errors=True)
 
     x = ana.load_audio(out)
     dur = len(x) / ana.SR
