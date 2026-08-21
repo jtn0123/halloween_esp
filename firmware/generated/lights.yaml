@@ -15,7 +15,8 @@ light:
     chipset: WS2812
     rgb_order: GRB
     is_rgbw: ${rgbw_towerL}
-    use_psram: true
+    rmt_symbols: 64
+    use_psram: false
     default_transition_length: 0s
     effects:
       - addressable_lambda:
@@ -50,7 +51,8 @@ light:
     chipset: WS2812
     rgb_order: GRB
     is_rgbw: ${rgbw_towerR}
-    use_psram: true
+    rmt_symbols: 64
+    use_psram: false
     default_transition_length: 0s
     effects:
       - addressable_lambda:
@@ -85,7 +87,8 @@ light:
     chipset: WS2812
     rgb_order: GRB
     is_rgbw: ${rgbw_door}
-    use_psram: true
+    rmt_symbols: 64
+    use_psram: false
     default_transition_length: 0s
     effects:
       - addressable_lambda:
@@ -111,7 +114,7 @@ light:
             for (int p = 0; p < fx.n; p++)
               it[p] = Color(buf[p * 4], buf[p * 4 + 1],
                             buf[p * 4 + 2], buf[p * 4 + 3]);
-    # door: ring12 — 12 px, rgbw true, GPIO16
+    # door: ring12 — 12 px, rgbw false, GPIO16
 
 script:
   - id: lights_override

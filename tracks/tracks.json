@@ -66,18 +66,18 @@
   "the_ballad_of_the_witches__road_": {
     "audio": {
       "bitrate": 96,
-      "bytes": 1843871,
+      "bytes": 2407176,
       "channels": 2,
-      "duration": 153.58,
+      "duration": 200.54,
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-14T19:54:27",
+    "imported": "2026-08-19T22:34:11",
     "notes": "",
     "onsets": {
-      "onset_high": 149,
-      "onset_low": 267,
-      "onset_mid": 181
+      "onset_high": 211,
+      "onset_low": 213,
+      "onset_mid": 256
     },
     "opts": {
       "bitrate": 96,
@@ -89,11 +89,11 @@
       "normalize": true,
       "sample_rate": 44100,
       "sensitivity": 1.1,
-      "start": "0:00",
-      "take": "153.6"
+      "start": "0",
+      "take": null
     },
-    "source": "https://youtu.be/Cy2zEONyAWE?list=RDCy2zEONyAWE",
-    "title": "The Ballad of the Witches' Road (Agatha Through Time Version) (From \uff02Agatha All Along\uff02)"
+    "source": "https://www.youtube.com/watch?v=VnjYeJ5blxo",
+    "title": "The Ballad of the Witches' Road (Sacred Chant Version) (From \uff02Agatha All Along\uff02)"
   },
   "the_citizens_of_halloween___this": {
     "audio": {
@@ -104,7 +104,7 @@
       "format": "mp3",
       "sample_rate": 44100
     },
-    "imported": "2026-08-14T19:54:42",
+    "imported": "2026-08-19T22:31:31",
     "notes": "",
     "onsets": {
       "onset_high": 296,

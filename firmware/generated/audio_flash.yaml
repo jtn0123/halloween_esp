@@ -26,5 +26,6 @@ script:
           else if (track == "06_visitation") f = id(snd_visitation);
           else if (track == "07_approach") f = id(snd_approach);
           else if (track == "08_crypt") f = id(snd_crypt);
+          else if (track == "09_the_citizens_of_halloween___this") f = id(snd_the_citizens_of_halloween___this);
           if (f != nullptr) id(castle_media)->play_file(f, true, false);
           else ESP_LOGW("castle", "no embedded audio for '%s'", track.c_str());

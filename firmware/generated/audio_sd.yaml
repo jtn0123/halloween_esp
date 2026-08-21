@@ -23,7 +23,7 @@ script:
             return;
           }
           auto call = id(castle_media)->make_call();
-          call.set_media_url("http://127.0.0.1/sd/scenes/" + track + ".mp3");
+          call.set_media_url("http://127.0.0.1:8080/sd/scenes/" + track + ".mp3");
           call.set_announcement(true);
           call.perform();
 
@@ -41,7 +41,8 @@ script:
           if (stat("/sd/scenes/06_visitation.mp3", &st) != 0) missing += missing.empty() ? "06_visitation.mp3" : ",06_visitation.mp3";
           if (stat("/sd/scenes/07_approach.mp3", &st) != 0) missing += missing.empty() ? "07_approach.mp3" : ",07_approach.mp3";
           if (stat("/sd/scenes/08_crypt.mp3", &st) != 0) missing += missing.empty() ? "08_crypt.mp3" : ",08_crypt.mp3";
+          if (stat("/sd/scenes/09_the_citizens_of_halloween___this.mp3", &st) != 0) missing += missing.empty() ? "09_the_citizens_of_halloween___this.mp3" : ",09_the_citizens_of_halloween___this.mp3";
           castle_web::set_missing(missing);
           if (!missing.empty())
             ESP_LOGW("castle", "MISSING scene audio: %s", missing.c_str());
-          else ESP_LOGI("castle", "manifest: all %d scene files present", 8);
+          else ESP_LOGI("castle", "manifest: all %d scene files present", 9);
