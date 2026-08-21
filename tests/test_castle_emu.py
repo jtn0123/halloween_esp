@@ -155,6 +155,12 @@ class TestSceneSeeding(unittest.TestCase):
         self.addCleanup(emu.server_close)
         self.assertEqual(emu.scenes, ["only_this", "stop"])
 
+    def test_an_empty_show_falls_back_too(self) -> None:
+        """'scenes:' with nothing under it is what the e2e sandbox writes."""
+        tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
+        tmp.write_text("scenes:\n")
+        self.assertIsNone(castle_emu.show_scene_ids(tmp))
+
     def test_unreadable_show_falls_back_to_the_defaults(self) -> None:
         self.assertIsNone(castle_emu.show_scene_ids(Path("/no/such/scenes.yaml")))
         with unittest.mock.patch.dict(castle_emu.os.environ,

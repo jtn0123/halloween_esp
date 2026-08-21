@@ -186,6 +186,27 @@ class TestStatusAndForward(unittest.TestCase):
         cl.status()
         self.assertEqual(FakeCastle.seen.count("GET /api/status"), 2)
 
+    def test_an_answered_request_clears_the_down_cache(self) -> None:
+        """J2-4: a probe that failed while the castle rebooted must not keep
+        saying "down" for 3 s after the castle plainly served a click —
+        the desk's own 0.9 s re-poll would flip it to 'not answering'."""
+        cl._cache["down"] = (time.monotonic(), {})
+        code, _, _ = cl.forward("POST", "/api/scene?s=vigil")
+        self.assertEqual(code, 200)
+        self.assertNotIn("down", cl._cache)
+        self.assertIsNotNone(cl.status())
+
+    def test_native_leg_is_skipped_for_hosts_with_a_port(self) -> None:
+        """J2-8: "host:port" names an HTTP server; aioesphomeapi cannot
+        resolve it and would log "Error resolving" every 5 s forever."""
+        self.assertFalse(cl.native_host("127.0.0.1:8093"))
+        self.assertTrue(cl.native_host("castle.lan"))
+        with mock.patch.object(cl.castle_native, "connected") as conn:
+            os.environ["CASTLE_HOST"] = DEAD
+            cl._cache.clear()
+            self.assertEqual(cl.forward("POST", "/api/stop")[0], 502)
+        conn.assert_not_called()
+
     def test_a_plain_get_keeps_the_cached_status(self) -> None:
         cl.status()
         cl.forward("GET", "/api/files")

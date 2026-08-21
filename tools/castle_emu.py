@@ -62,7 +62,9 @@ def show_scene_ids(path: Path | None = None) -> list[str] | None:
         doc = yaml.safe_load(src.read_text()) or {}
     except (OSError, yaml.YAMLError):
         return None
-    ids = [str(sc["id"]) for sc in doc.get("scenes", []) if "id" in sc]
+    # "scenes:" with nothing under it parses to None — an empty sandbox
+    # show (the e2e suite's) must seed the defaults, not crash the emulator.
+    ids = [str(sc["id"]) for sc in (doc.get("scenes") or []) if "id" in sc]
     return [*ids, "stop"] if ids else None
 
 

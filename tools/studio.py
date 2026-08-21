@@ -43,6 +43,7 @@ import stems as st
 import studio_http as sh
 import studio_jobs as sj
 import studio_media as sm
+import studio_scenes as ss
 
 # Re-exported: TRACKS and these helpers are the track vocabulary, and
 # callers (including the tests) reach for them through this module.
@@ -305,13 +306,8 @@ class Handler(sh.JsonHandler):
                 return self.relay("POST", raw)
             return self.do_scene(self.json_body(raw))
         if path == "/api/rebuild":
-            with _lock:
-                ok1, o1 = run([PY, str(ROOT / "tools" / "render_audio.py")])
-                ok2, o2 = run([PY, str(ROOT / "tools" / "gen_esphome.py")])
-                ok3, o3 = run([PY, str(ROOT / "tools" / "gen_previewer.py")])
-            ok = ok1 and ok2 and ok3
-            return self.send_json({"ok": ok, "log": (o1 + o2 + o3)[-4000:]},
-                                  200 if ok else 500)
+            ok, log = ss.rebuild(_lock, run, PY, ROOT)
+            return self.send_json({"ok": ok, "log": log}, 200 if ok else 500)
         if path.startswith("/api/"):
             return self.relay("POST", raw)
         self.send_json({"error": "not found"}, 404)
@@ -382,77 +378,13 @@ class Handler(sh.JsonHandler):
                               200 if ok else 500)
 
     def do_scene(self, req: dict):
-        """Insert or replace a scene block in scenes.yaml.
-
-        Text splicing, not a YAML round-trip: scenes.yaml is a hand-authored
-        file full of comments that carry the reasoning behind the show, and
-        dumping it back through a YAML serialiser would erase all of them.
-        """
-        block = (req.get("yaml") or "").rstrip()
-        sid = (req.get("id") or "").strip()
-        if not block or not sid:
-            return self.send_json({"error": "need id and yaml"}, 400)
-        # The block must PARSE, and must be the one scene it claims to be —
-        # scenes.yaml is the hand-authored source of truth for the whole
-        # show, and a malformed splice used to corrupt it permanently (the
-        # UI then showed "no scenes" instead of an error).
-        import yaml as _yaml
-        try:
-            parsed = _yaml.safe_load(block)
-        except _yaml.YAMLError as e:
-            return self.send_json({"error": f"scene is not valid YAML: {e}"}, 400)
-        if (not isinstance(parsed, list) or len(parsed) != 1
-                or not isinstance(parsed[0], dict) or parsed[0].get("id") != sid):
-            return self.send_json(
-                {"error": f"expected exactly one scene with id {sid!r}"}, 400)
-        import re
-        pat = re.compile(rf"^  - id: {re.escape(sid)}\n(?:.*\n)*?(?=^  - id: |\Z)", re.MULTILINE)
-        with _lock:
-            # Read-modify-write under the lock: two concurrent saves used to
-            # interleave here and one silently lost.
-            before = SCENES.read_text()
-            replaced = bool(pat.search(before))
-            if replaced:
-                # lambda: a plain-string replacement treats backslashes as
-                # group escapes and mangles the block (gen_previewer.py
-                # documents this exact trap).
-                raw = pat.sub(lambda _: block + "\n\n", before)
-            else:
-                raw = before.rstrip() + "\n\n" + block + "\n"
-            # Exactly one trailing newline either way. Replacing the last
-            # scene in the file leaves a blank line behind otherwise — stable
-            # rather than growing, but it shows up as a diff on a write that
-            # changed nothing.
-            # Keep the pre-edit text, then replace atomically: a crash
-            # mid-write must never be able to truncate the show.
-            SCENES.with_suffix(".yaml.bak").write_text(before)
-            tmp = SCENES.with_suffix(".yaml.tmp")
-            tmp.write_text(raw.rstrip() + "\n")
-            os.replace(tmp, SCENES)
-        with _lock:
-            ok1, o1 = run([PY, str(ROOT / "tools" / "render_audio.py")])
-            ok2, o2 = run([PY, str(ROOT / "tools" / "gen_esphome.py")])
-            ok3, o3 = run([PY, str(ROOT / "tools" / "gen_previewer.py")])
-        # `replaced` and `scenes` are what let the panel say what actually
-        # happened instead of "written", which is indistinguishable from
-        # nothing having happened at all.
-        ok = ok1 and ok2 and ok3
-        return self.send_json({"ok": ok, "id": sid,
-                               "replaced": replaced, "scenes": scene_ids(),
-                               "log": (o1 + o2 + o3)[-4000:]},
-                              200 if ok else 500)
+        """Insert or replace a scene in scenes.yaml — studio_scenes.splice."""
+        body, code = ss.splice(SCENES, req, _lock, run, PY, ROOT)
+        return self.send_json(body, code)
 
 
 def scene_ids() -> list[str]:
-    import yaml
-    try:
-        doc = yaml.safe_load(SCENES.read_text())
-        return [s["id"] for s in doc.get("scenes", [])]
-    except Exception as e:
-        # But it must not be SILENT either: "no scenes" and "the file is
-        # broken, here's the parse error" are very different situations.
-        print(f"WARNING: could not parse {SCENES}: {e}")
-        return []
+    return ss.scene_ids(SCENES)
 
 
 def lan_ip() -> str:

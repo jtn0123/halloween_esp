@@ -17,10 +17,15 @@ timeout.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from typing import Any
 
 import aioesphomeapi
+
+# The client narrates every reconnect attempt at INFO/ERROR; in a studio
+# that is one line per 5 s per dead castle, forever. Real trouble is WARNING+.
+logging.getLogger("aioesphomeapi").setLevel(logging.WARNING)
 
 PORT = 6053
 #: One command round-trip; castle_link's own TIMEOUT_S guards the HTTP leg.

@@ -99,6 +99,18 @@ def castle_hosts() -> list[str]:
     return hosts
 
 
+def native_host(host: str) -> bool:
+    """Is the native leg worth trying for this address?
+
+    The native API lives on 6053 whatever the HTTP port is; a host written
+    WITH a port ("127.0.0.1:8093" — every emulator, every bench studio)
+    names an HTTP server on purpose, and handing "host:port" to
+    aioesphomeapi only bought a reconnect thread logging "Error resolving"
+    every 5 s for the life of the studio (J2-8).
+    """
+    return ":" not in host
+
+
 def castle_host() -> str | None:
     """The castle's current best address, or None when none is configured."""
     hosts = castle_hosts()
@@ -130,7 +142,7 @@ def status() -> dict | None:
                 break
         except (OSError, http.client.HTTPException, ValueError):
             continue
-    if not isinstance(data, dict):
+    if not isinstance(data, dict) and native_host(hosts[0]):
         # No HTTP server is what the flash build looks like — try the
         # native API before declaring the castle down. Primary only: a
         # native _Link per dead fallback would leak reconnect threads.
@@ -219,7 +231,11 @@ def forward(method: str, path_and_query: str,
             return (504, json.dumps({"error": "castle took the request but "
                     "did not answer in time — it may have landed; check "
                     "before sending again"}).encode(), "application/json")
-        # The castle ANSWERED — its verdict stands, error or not.
+        # The castle ANSWERED — its verdict stands, error or not — and an
+        # answer of ANY kind proves it is up: a probe that failed while it
+        # was rebooting must not keep reporting it dead for 3 s after a
+        # click it plainly served (J2-4).
+        _cache.pop("down", None)
         if 200 <= code < 300:
             _cache["up"] = (time.monotonic(), {"host": host})
             if method != "GET":
@@ -229,6 +245,7 @@ def forward(method: str, path_and_query: str,
         return code, out, ctype
     if _forward_native(hosts[0], method, path_and_query):
         _cache.pop("status", None)
+        _cache.pop("down", None)
         return 200, b'{"queued":true}', "application/json"
     return 502, b'{"error": "castle not reachable"}', "application/json"
 
@@ -239,7 +256,9 @@ def _forward_native(host: str, method: str, path_and_query: str) -> bool:
     Only with a live native session: a dead castle must 502 for EVERY verb,
     and the stubs below cannot tell "nothing to press" from "pressed".
     """
-    if method != "POST" or not castle_native.connected(host):
+    if method != "POST" or not native_host(host):
+        return False
+    if not castle_native.connected(host):
         return False
     parts = urlsplit(path_and_query)
     q = parse_qs(parts.query)
