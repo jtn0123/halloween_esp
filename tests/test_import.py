@@ -6,12 +6,16 @@ scene block, and the render that consumes it.
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import shutil
 import sys
 import tempfile
 import unittest
 import wave
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -28,6 +32,11 @@ import manifest as mf
 import render_audio as ra
 import yaml
 from helpers import make_click_track
+
+#: The format half of an import's options — what every convert() test uses.
+CONVERT_DEFAULTS = {"fade_in": None, "fade_out": None, "bitrate": 96,
+                    "channels": 1, "sample_rate": 44100, "normalize": False,
+                    "gain_db": None}
 
 
 class TestTimeParsing(unittest.TestCase):
@@ -351,3 +360,59 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestKeepSourceAndCutGuards(unittest.TestCase):
+    """Judge B, JB1-1/JB1-3: a start past the end made a 358-byte "track"
+    plus a traceback; a dropped file's staging copy vanished, so Re-import
+    had nothing to rebuild from."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.src = self.tmp / "src.wav"
+        make_click_track(self.src, seconds=3.0)
+        self.p_tracks = mock.patch.object(it, "TRACKS", self.tmp / "lib")
+        self.p_tracks.start()
+        (self.tmp / "lib").mkdir()
+
+    def tearDown(self) -> None:
+        self.p_tracks.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_probe_duration_reads_the_source(self) -> None:
+        d = it.probe_duration(self.src)
+        self.assertIsNotNone(d)
+        self.assertAlmostEqual(d or 0, 3.0, delta=0.1)
+        self.assertIsNone(it.probe_duration(self.tmp / "missing.wav"))
+
+    def test_keep_source_copies_beside_the_library_once(self) -> None:
+        kept = it.keep_source(self.src, "tid")
+        self.assertEqual(kept, (self.tmp / "lib" / "_src" / "tid.wav").resolve())
+        self.assertEqual(kept.read_bytes(), self.src.read_bytes())
+        # Keeping the kept copy again is a no-op, not a self-copy error.
+        self.assertEqual(it.keep_source(kept, "tid"), kept)
+
+    def test_a_start_past_the_end_is_refused_in_one_line(self) -> None:
+        ns = argparse.Namespace(refresh=None, id="late", notes="",
+                                keep_source=False)
+        o = {**CONVERT_DEFAULTS, "start": "1:00", "take": None,
+             "sensitivity": 1.1, "format": "mp3"}
+        with self.assertRaises(SystemExit) as cm:
+            it._import(ns, o, str(self.src), False, self.tmp / "scratch", None)
+        self.assertIn("past the end", str(cm.exception))
+        self.assertIn("src.wav", str(cm.exception))
+        self.assertFalse((self.tmp / "lib" / "late.mp3").exists(),
+                         "a broken row was left behind")
+
+    def test_keep_source_is_what_the_manifest_remembers(self) -> None:
+        ns = argparse.Namespace(refresh=None, id="kept", notes="",
+                                keep_source=True)
+        o = {**CONVERT_DEFAULTS, "start": "0", "take": None,
+             "sensitivity": 1.1, "format": "mp3"}
+        with mock.patch.object(mf, "PATH", self.tmp / "lib" / "tracks.json"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            it._import(ns, o, str(self.src), False, self.tmp / "scratch", None)
+            entry = mf.get("kept") or {}
+        self.assertEqual(entry["source"],
+                         f"file:{(self.tmp / 'lib' / '_src' / 'kept.wav').resolve()}")
+        self.assertTrue((self.tmp / "lib" / "kept.mp3").exists())

@@ -28,11 +28,14 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze
+import build_paths as bp
 import synth
 
 ROOT = Path(__file__).resolve().parent.parent
-SCENES = ROOT / "scenes" / "scenes.yaml"
-OUT = ROOT / "audio"
+# Both redirectable (build_paths.py): a sandboxed studio renders beside its
+# own scenes file, never into the repo's audio/.
+SCENES = bp.SCENES
+OUT = bp.AUDIO
 
 TARGET_PEAK = 0.89   # leaves headroom for the MP3 encoder's overshoot
 
@@ -72,7 +75,7 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
     # the synths use, so `pulse:` streams work identically either way.
     track = scene.get("audio_file")
     if track:
-        path = ROOT / track
+        path = bp.track_source(track)
         if not path.exists():
             raise SystemExit(f"scene {scene['id']}: no such audio_file {track}")
         x = analyze.load_audio(path, sr)
@@ -179,7 +182,7 @@ def main() -> int:
 
     doc = yaml.safe_load(SCENES.read_text())
     cfg = doc["hardware"]["audio"]
-    OUT.mkdir(exist_ok=True)
+    OUT.mkdir(parents=True, exist_ok=True)
     if not args.only:
         render_chirp(cfg)
 

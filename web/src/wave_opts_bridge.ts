@@ -8,14 +8,22 @@
  * cannot tell a drag from a keystroke); typing into them moves the clip
  * (isTrusted-filtered, so the loop cannot chase its own tail — round-1
  * user test: LENGTH said 0.1 while the editor said 2:33).
+ *
+ * Every write is stamped with the track it describes (import_opts.ts
+ * setTrimOwner), and the inputs are blanked when the editor moves to
+ * another track or closes — so a later drop or Re-import of a DIFFERENT
+ * track cannot inherit this one's trim (judge B, JB1-1).
  */
 
+import { clearTrim, setTrimOwner } from "./import_opts.js";
 import { clock, mmss, parseClock } from "./wave_clip.js";
 import type { WaveClip } from "./waveform_view.js";
 
 export interface OptsBridge {
-  /** Mirror the clip into trkStart/trkTake. */
-  push(clip: WaveClip | null): void;
+  /** Mirror the clip into trkStart/trkTake, stamped as `id`'s. */
+  push(clip: WaveClip | null, id: string): void;
+  /** Blank them — the editor no longer describes anything. */
+  clear(): void;
 }
 
 /**
@@ -50,16 +58,18 @@ export function initOptsBridge(
   }
 
   return {
-    push(clip: WaveClip | null): void {
+    push(clip: WaveClip | null, id: string): void {
       if (!clip) return;
-      const write = (id: string, value: string): void => {
-        const el = document.getElementById(id) as HTMLInputElement | null;
+      const write = (inputId: string, value: string): void => {
+        const el = document.getElementById(inputId) as HTMLInputElement | null;
         if (!el) return;
         el.value = value;
         el.dispatchEvent(new Event("input", { bubbles: true }));
       };
       write("trkStart", mmss(clip.start));
       write("trkTake", (clip.end - clip.start).toFixed(1));
+      setTrimOwner(id);
     },
+    clear: clearTrim,
   };
 }

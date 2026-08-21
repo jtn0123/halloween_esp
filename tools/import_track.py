@@ -28,6 +28,10 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana
 import manifest as mf
+from import_scene import FRAME as FRAME
+from import_scene import fit_to_density as fit_to_density
+from import_scene import scene_block as scene_block
+from studio_tracks import AUDIO_EXT, SRC_DIR
 
 ROOT = Path(__file__).resolve().parent.parent
 # CASTLE_TRACKS is the whole sandbox story (see playwright.config.ts): the
@@ -198,101 +202,29 @@ def convert(src: Path, out: Path, o: dict) -> None:
     os.replace(part, out)
 
 
-FRAME = 0.016          # the light engine's tick, matching the firmware
+def probe_duration(src: Path) -> float | None:
+    """The source's length in seconds by ffprobe, or None if it cannot say."""
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", str(src)],
+            capture_output=True, text=True, check=False, timeout=60)
+        return float(r.stdout.strip()) if r.returncode == 0 else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
 
 
-def fit_to_density(hits: list, fallback: float) -> tuple[float, float]:
-    """Choose a decay and an intensity scale that suit how busy a band is.
-
-    The built-in scenes' decay constants were tuned against Crypt's 48 bpm
-    heartbeat — gaps of 1.25 s. Reuse them on a track that hits every 0.24 s
-    and the flash is still at ~29% when the next one lands: the zone saturates
-    and reads as a continuous smear rather than as pulses. Which is precisely
-    the way an imported track stops "making sense".
-
-    So the decay is solved from the material: fall to ~10% by the time the
-    next hit is due. And dense bands get their intensity pulled down, because
-    a lot of overlapping pulses sum to a floor that never returns to dark.
-
-    Returns (decay_per_frame, intensity_scale).
-    """
-    if len(hits) < 3:
-        return fallback, 1.0
-
-    gaps = sorted(hits[i + 1][0] - hits[i][0] for i in range(len(hits) - 1))
-    median_gap = gaps[len(gaps) // 2]
-    if median_gap <= 0:
-        return fallback, 1.0
-
-    # d^frames = 0.1  ->  d = 0.1 ** (1/frames)
-    frames = max(1.0, median_gap / FRAME)
-    decay = 0.1 ** (1.0 / frames)
-    # Floor at 0.78: faster than that is a single-frame blink nobody sees.
-    # Ceiling at the scene's own value, so sparse material keeps its bloom.
-    decay = max(0.78, min(fallback, decay))
-
-    # Below ~0.5 s between hits, back the level off so they stay distinct.
-    scale = 1.0 if median_gap >= 0.5 else max(0.45, median_gap / 0.5)
-    return round(decay, 3), round(scale, 2)
-
-
-def scene_block(tid: str, dur: float, marks: dict, ext: str = "mp3") -> str:
-    """A ready-to-paste scene, wired to whatever the analyser actually found."""
-    zones = {"onset_low": "door", "onset_mid": "towerL", "onset_high": "towerR"}
-    colors = {
-        "onset_low":  "[1.0, 0.12, 0.02, 0.0]",
-        "onset_mid":  "[0.66, 0.10, 1.0, 0.05]",
-        "onset_high": "[0.30, 1.0, 0.55, 0.0]",
-    }
-    decays = {"onset_low": 0.86, "onset_mid": 0.92, "onset_high": 0.94}
-    lines = [
-        f"  - id: {tid}",
-        f"    name: {tid.replace('_', ' ').title()}",
-        "    kind: custom",
-        "    volume: 0.7",
-        f"    duration_ms: {int(dur * 1000)}",
-        "    loop: true",
-        "    blurb: >",
-        f"      Imported track {tid}. Light cues are onset-detected from the",
-        "      audio itself, so they follow whatever the track actually does.",
-        f"    audio_file: tracks/{tid}.{ext}",
-        "    base: {towerL: chill, towerR: chill, door: ember}",
-        "    levels: {towerL: 0.4, towerR: 0.4, door: 0.5}",
-        "    pulse:",
-    ]
-    for band, hits in marks.items():
-        if not hits:
-            continue
-        base = band.replace("level_", "onset_")
-        z = zones.get(base, "door")
-        col = colors.get(base, "[1,1,1,1]")
-
-        if band.startswith("level_"):
-            # An envelope wants to GLIDE, not pulse. Its samples arrive at a
-            # steady 6 Hz, so a decay that empties between them would chop a
-            # smooth swell into a stutter. 0.90 leaves roughly half the level
-            # standing when the next sample lands, which reads as breathing.
-            lines.append(
-                f"      - {{synth: {band}, zone: {z}, intensity: 0.5, "
-                f"decay: 0.90, color: {col}}}"
-                f"   # {len(hits)} level samples — no beat here, so the zone "
-                f"follows loudness instead"
-            )
-            continue
-
-        decay, scale = fit_to_density(hits, decays.get(band, 0.9))
-        intensity = round(0.55 * scale, 3)
-        rate = len(hits) / dur * 60 if dur else 0
-        note = f"{len(hits)} onsets, {rate:.0f}/min"
-        if scale < 1.0:
-            note += " — dense, so eased back to stay distinct"
-        lines.append(
-            f"      - {{synth: {band}, zone: {z}, intensity: {intensity}, "
-            f"decay: {decay}, color: {col}}}"
-            f"   # {note}"
-        )
-    lines.append("    cues: []")
-    return "\n".join(lines)
+def keep_source(src: Path, tid: str) -> Path:
+    """Copy a throwaway local source to tracks/_src/<tid><ext>, so a later
+    --refresh has something to rebuild from. Already there: left alone."""
+    kept_dir = TRACKS / SRC_DIR
+    kept_dir.mkdir(parents=True, exist_ok=True)
+    kept = kept_dir / f"{tid}{src.suffix.lower()}"
+    if src.resolve() != kept.resolve():
+        for old in kept_dir.glob(f"{tid}.*"):
+            old.unlink()
+        shutil.copy2(src, kept)
+    return kept.resolve()
 
 
 def main() -> int:
@@ -308,6 +240,10 @@ def main() -> int:
                          "used last time")
     ap.add_argument("--list", action="store_true", help="show imported tracks")
     ap.add_argument("--notes", default="", help="free-text note on the track")
+    ap.add_argument("--keep-source", action="store_true",
+                    help="copy a local source file into tracks/_src/ and "
+                         "remember THAT as the source — for a file that is "
+                         "about to be deleted (the studio's upload staging)")
 
     g = ap.add_argument_group("trim")
     g.add_argument("--start", help="skip in, e.g. 0:12")
@@ -394,7 +330,9 @@ def main() -> int:
     }
     for k in list(o):
         v = getattr(args, k, None)
-        if v not in (None, False):
+        # `is not`, not `not in (None, False)`: 0.0 == False, and an explicit
+        # --fade-in 0 is how a remembered fade gets cleared on a refresh.
+        if v is not None and v is not False:
             o[k] = v
     # normalize is tri-state (None = keep the remembered/default value), and
     # an explicit --no-normalize is a False the loop above would drop.
@@ -429,7 +367,10 @@ def _import(args: argparse.Namespace, o: dict, source: str, is_url: bool,
     else:
         src = Path(source)
     if not src.exists():
-        raise SystemExit(f"no such file: {src}")
+        # The basename, not the path: an operator can act on "drop it
+        # again", not on /private/tmp/…/_upload/x.wav (JB1-3).
+        raise SystemExit(f"no such file: {src.name} — the remembered source "
+                         "is gone; import it again from the original")
 
     tid = args.refresh or args.id or "".join(
         c if c.isalnum() else "_" for c in src.stem.lower()
@@ -445,11 +386,34 @@ def _import(args: argparse.Namespace, o: dict, source: str, is_url: bool,
     conv = dict(o)
     conv["start"] = secs(o["start"]) if o["start"] else 0
     conv["take"] = secs(o["take"]) if o["take"] else None
+    # A start past the end is the commonest way to get a 358-byte "track":
+    # ffmpeg happily writes a header and nothing else. Refuse up front, in
+    # the operator's own units (JB1-1).
+    src_dur = probe_duration(src)
+    if src_dur is not None and conv["start"] >= src_dur:
+        raise SystemExit(f"start {o['start']} is past the end of {src.name} "
+                         f"({src_dur:.0f}s long)")
     convert(src, out, conv)
 
-    x = ana.load_audio(out)
+    try:
+        x = ana.load_audio(out)
+        if len(x) < ana.SR // 10:
+            raise ValueError("the cut came out (nearly) empty")
+    except Exception as e:
+        # Never leave a broken row behind: the desk would offer to send it
+        # to the castle. One line, no traceback.
+        out.unlink(missing_ok=True)
+        raise SystemExit(f"{src.name}: {e} — check start/length against "
+                         f"the source") from None
     dur = len(x) / ana.SR
     size = out.stat().st_size
+    # A refresh that changed the container leaves the old one behind, and
+    # track_path() would keep finding it first. One file per id.
+    for other in AUDIO_EXT:
+        if other != o["format"]:
+            (TRACKS / f"{tid}.{other}").unlink(missing_ok=True)
+    if args.keep_source and not is_url:
+        source = f"file:{keep_source(src, tid)}"
     # stereo= so import-time markers carry pan, same as the studio's live
     # analysis — otherwise the pasteable scene block and the desk disagree.
     marks = ana.analyze_full(x, sensitivity=o["sensitivity"],
@@ -457,7 +421,8 @@ def _import(args: argparse.Namespace, o: dict, source: str, is_url: bool,
 
     mf.record(
         tid,
-        source=source if is_url else f"file:{Path(source).resolve()}",
+        source=source if is_url or source.startswith("file:")
+               else f"file:{Path(source).resolve()}",
         title=title, opts=o, notes=args.notes,
         audio={"duration": round(dur, 2), "bytes": size, "format": o["format"],
                "channels": o["channels"], "sample_rate": o["sample_rate"],

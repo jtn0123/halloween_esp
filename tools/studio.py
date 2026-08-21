@@ -12,11 +12,12 @@ Endpoints (all JSON, all local-only):
 
     GET    /api/tracks              list imported tracks + their onsets
     POST   /api/import              {url} or multipart file  -> import
-    DELETE /api/tracks/<id>         remove a track
+    DELETE /api/tracks/<id>         remove a track (?scene=1: its scene too)
     POST   /api/scene               add/replace a scene in scenes.yaml
     POST   /api/rebuild             re-run audio + generators
     GET    /api/track/<id>          stream a track to audition (ext optional)
     GET    /api/card/<name>         pull a file off the castle's SD card
+    GET    /remote                  the castle's own phone remote, relayed
 
 Binds to 127.0.0.1 by default. This drives ffmpeg and yt-dlp on your machine
 and edits files in the repo; `--lan` opens it to the local network for the
@@ -36,6 +37,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+import build_paths as bp
 import castle_link as cl
 import manifest as mf
 import stems as st
@@ -51,6 +53,7 @@ from studio_tracks import (
     MIME,
     TRACKS,
     parse_sensitivity,
+    source_copies,
     track_files,
     track_info,
     track_path,
@@ -60,7 +63,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # CASTLE_SCENES redirects scene writes the way CASTLE_TRACKS redirects the
 # track library — a sandboxed studio (tests, UX sessions on a scratch copy)
 # must not be able to edit the real show. Unset means the real file.
-SCENES = Path(os.environ.get("CASTLE_SCENES") or (ROOT / "scenes" / "scenes.yaml"))
+SCENES = bp.SCENES
 HTML = ROOT / "previewer" / "castle-cue-desk.html"
 # The interpreter running this server is the one its children run under —
 # whichever venv that is. The hardcoded .venv/bin/python broke the moment
@@ -93,6 +96,31 @@ def run(cmd: list[str], timeout: int = 900) -> tuple[bool, str]:
     return p.returncode == 0, (p.stdout + p.stderr)[-4000:]
 
 
+#: The option row as the import command wants it; normalize is tri-state
+#: (True/False/absent), since an unchecked "match loudness" must reach
+#: import_track as --no-normalize — it used to be silently dropped (JB1-6).
+OPT_KEYS = ("id", "start", "take", "sensitivity", "bitrate", "sample_rate",
+            "channels", "format", "gain_db", "fade_in", "fade_out", "notes")
+
+
+def opt_args(req: dict, keys: tuple[str, ...] = OPT_KEYS) -> list[str]:
+    args: list[str] = []
+    for k in keys:
+        v = req.get(k)
+        if v not in (None, ""):
+            args += [f"--{k.replace('_', '-')}", str(v)]
+    if req.get("normalize") is True:
+        args.append("--normalize")
+    elif req.get("normalize") is False:
+        args.append("--no-normalize")
+    return args
+
+
+def failed(log: str, **extra) -> dict:
+    """A failure body: the log tail for the curious, one reason for the row."""
+    return {"ok": False, "log": log, "reason": sj.reason(log), **extra}
+
+
 def safe_id(raw: str) -> str | None:
     """A track id as the importer would mint it — or None.
 
@@ -121,9 +149,18 @@ class Handler(sh.JsonHandler):
     def _get(self):
         path = urllib.parse.urlparse(self.path).path
         if path in ("/", "/index.html"):
-            if not HTML.exists():
+            # A sandboxed studio serves the page ITS rebuilds wrote (so
+            # "Reload the desk" shows the sandbox's scenes), the repo's
+            # build until it has one.
+            page = bp.PREVIEW_HTML if bp.sandboxed() and bp.PREVIEW_HTML.exists() else HTML
+            if not page.exists():
                 return self.send_json({"error": "previewer not built"}, 404)
-            return self.send_bytes(HTML.read_bytes(), "text/html; charset=utf-8")
+            return self.send_bytes(page.read_bytes(), "text/html; charset=utf-8")
+        if path == "/remote":
+            # The castle's own phone remote (firmware/sd_web_remote.h) — four
+            # thumb buttons that live in flash. Relayed so the address on
+            # the desk's link works from any phone on the LAN (JB1-8).
+            return self.relay("GET")
         if path.startswith("/api/job/"):
             job = _runner.get(Path(path).name)
             if job is None:
@@ -199,11 +236,24 @@ class Handler(sh.JsonHandler):
         if path.startswith("/api/tracks/"):
             tid = Path(path).name
             p = track_path(tid)            # name-stripped above
-            if p is not None:
-                p.unlink()
-                mf.forget(tid)
-                return self.send_json({"ok": True, "removed": tid})
-            return self.send_json({"error": "not found"}, 404)
+            if p is None:
+                return self.send_json({"error": "not found"}, 404)
+            p.unlink()
+            for kept in source_copies(tid):
+                kept.unlink()
+            mf.forget(tid)
+            body: dict = {"ok": True, "removed": tid}
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            if q.get("scene"):
+                # The track was IN THE SHOW and the operator chose to take
+                # its scene out with it, rather than leave scenes.yaml
+                # pointing at a file that is gone (JB1-6).
+                res, _code = ss.remove(SCENES, tid, _lock, run, PY, ROOT)
+                body.update(scene_removed=res.get("removed", False),
+                            scenes=res.get("scenes", []), log=res.get("log", ""))
+                if not res.get("ok"):
+                    body.update(failed(res.get("log", "")))
+            return self.send_json(body, 200 if body["ok"] else 500)
         if path.startswith("/api/"):
             return self.relay("DELETE")
         self.send_json({"error": "not found"}, 404)
@@ -222,14 +272,7 @@ class Handler(sh.JsonHandler):
                 return self.send_json(
                     {"error": "id: letters, digits and _ only"}, 400)
             args = [PY, str(ROOT / "tools" / "import_track.py"), src]
-            for k in ("id", "start", "take", "sensitivity", "bitrate",
-                      "sample_rate", "channels", "format", "gain_db",
-                      "fade_in", "fade_out", "notes"):
-                v = req.get(k)
-                if v not in (None, ""):
-                    args += [f"--{k.replace('_', '-')}", str(v)]
-            if req.get("normalize"):
-                args.append("--normalize")
+            args += opt_args(req)
             return self.send_json(_runner.start(args).as_dict())
         if path == "/api/stems":
             # Demucs split as a background job — ~25 s on the GPU is far too
@@ -251,19 +294,12 @@ class Handler(sh.JsonHandler):
             if tid is None:
                 return self.send_json({"error": "no id"}, 400)
             args = [PY, str(ROOT / "tools" / "import_track.py"), "--refresh", tid]
-            for k in ("start", "take", "sensitivity", "bitrate",
-                      "sample_rate", "channels", "format", "gain_db",
-                      "fade_in", "fade_out"):
-                v = req.get(k)
-                if v not in (None, ""):
-                    args += [f"--{k.replace('_', '-')}", str(v)]
-            if req.get("normalize"):
-                args.append("--normalize")
+            args += opt_args(req, OPT_KEYS[1:-1])      # no id, no notes
             with _lock:
                 ok, out = run(args)
-            return self.send_json({"ok": ok, "log": out,
-                                   "tracks": [track_info(p)
-                                              for p in track_files()]},
+            tracks = [track_info(p) for p in track_files()]
+            return self.send_json({"ok": True, "log": out, "tracks": tracks}
+                                  if ok else failed(out, tracks=tracks),
                                   200 if ok else 500)
         if path == "/api/compare":
             req = self.json_body(raw)
@@ -360,30 +396,29 @@ class Handler(sh.JsonHandler):
             tmp.mkdir(exist_ok=True)
             src = tmp / (fname or "upload.bin")
             src.write_bytes(data)
-            args.append(str(src))
+            # The staging copy is gone the moment this returns, so the
+            # importer keeps the original beside the library (tracks/_src/)
+            # and remembers THAT as the source — or Re-import could never
+            # work for a dropped or card-pulled file (JB1-3).
+            args += [str(src), "--keep-source"]
 
         if req.get("id") and safe_id(str(req["id"])) is None:
             return self.send_json({"error": "id: letters, digits and _ only"}, 400)
-        for k in ("id", "start", "take", "sensitivity", "bitrate",
-                  "sample_rate", "channels", "format", "gain_db",
-                      "fade_in", "fade_out", "notes"):
-            v = req.get(k)
-            if v not in (None, ""):
-                args += [f"--{k.replace('_', '-')}", str(v)]
-        if req.get("normalize"):
-            args.append("--normalize")
+        args += opt_args(req)
 
         with _lock:
             ok, out = run(args)
         shutil.rmtree(TRACKS / "_upload", ignore_errors=True)
-        return self.send_json({"ok": ok, "log": out,
-                               "tracks": [track_info(p)
-                                          for p in track_files()]},
+        tracks = [track_info(p) for p in track_files()]
+        return self.send_json({"ok": True, "log": out, "tracks": tracks}
+                              if ok else failed(out, tracks=tracks),
                               200 if ok else 500)
 
     def do_scene(self, req: dict):
         """Insert or replace a scene in scenes.yaml — studio_scenes.splice."""
         body, code = ss.splice(SCENES, req, _lock, run, PY, ROOT)
+        if not body.get("ok") and body.get("log"):
+            body["reason"] = sj.reason(body["log"])
         return self.send_json(body, code)
 
 

@@ -31,15 +31,19 @@ from pathlib import Path
 # the firmware generator rather than duplicated a third time — one pair of
 # implementations (Python here, TS in track_lights.ts) is a parity burden;
 # three was how the last drift happened.
+import build_paths as bp
 import pulse_dynamics as pd
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
-SRC = ROOT / "scenes" / "scenes.yaml"
-MARKERS_FILE = ROOT / "audio" / "markers.json"
+# What is read from the show and what is written follow build_paths.py, so
+# a sandboxed studio's rebuild lands beside its own scenes file. The
+# template, styles and bundle are the repo's — they are inputs, not show.
+SRC = bp.SCENES
+MARKERS_FILE = bp.AUDIO / "markers.json"
 TEMPLATE = ROOT / "previewer" / "template.html"
-HTML = ROOT / "previewer" / "castle-cue-desk.html"
-AUDIO = ROOT / "audio"
+HTML = bp.PREVIEW_HTML
+AUDIO = bp.AUDIO
 WEB = ROOT / "web"
 BUNDLE = WEB / "dist" / "bundle.js"
 STYLES = ROOT / "previewer" / "styles.css"
@@ -292,11 +296,12 @@ def main() -> int:
 
     html = inject_styles(html)
     html = inject_bundle(html)
+    HTML.parent.mkdir(parents=True, exist_ok=True)
     HTML.write_text(html)
 
     kb = sum(len(v) for v in audio.values()) // 1024
     print(f"wrote {len(scenes)} scenes + {len(audio)} audio files (~{kb} KB base64) "
-          f"into {HTML.relative_to(ROOT)}")
+          f"into {bp.rel(HTML)}")
     return 0
 
 

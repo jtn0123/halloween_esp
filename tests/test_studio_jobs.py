@@ -306,3 +306,46 @@ class TestJobRunner(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestExplainBeyondYtDlp(unittest.TestCase):
+    """Judge B, JB1-10: ffmpeg and demucs failures reached the operator as
+    "import failed (exit 1)" or as a raw traceback with an absolute path."""
+
+    TRACEBACK: ClassVar[list] = [
+        "Traceback (most recent call last):",
+        "  File \"tools/import_track.py\", line 450, in _import",
+        "    x = ana.load_audio(out)",
+        ("subprocess.CalledProcessError: Command '['ffmpeg', '-v', 'quiet', "
+         "'-i', '/private/tmp/x/jb_drop.mp3']' returned non-zero exit status 1."),
+    ]
+
+    def test_a_traceback_names_the_program_that_failed(self) -> None:
+        self.assertEqual(sj.JobRunner._explain(self.TRACEBACK),
+                         "ffmpeg failed (exit 1)")
+
+    def test_the_last_meaningful_line_is_the_fallback(self) -> None:
+        """import_track's own SystemExit sentences are already for a person;
+        they must come through instead of the generic exit code."""
+        log = ["fetching x", "[download] 100% of 1MiB",
+               ("clip.wav doesn't look like playable audio — ffmpeg could not "
+                "convert it (exit 1)")]
+        self.assertEqual(sj.JobRunner._explain(log), log[-1])
+
+    def test_paths_come_back_as_basenames(self) -> None:
+        self.assertEqual(
+            sj.JobRunner._explain(["no such file: /private/tmp/abc/_upload/jb.wav"]),
+            "no such file: jb.wav")
+        self.assertEqual(sj.basenames("see https://youtu.be/abc/def then /a/b/c.wav"),
+                         "see https://youtu.be/abc/def then c.wav")
+
+    def test_missing_demucs_and_ffmpeg_are_sentences(self) -> None:
+        self.assertIn("Demucs is not installed",
+                      sj.JobRunner._explain(["ModuleNotFoundError: No module named 'demucs'"]))
+        self.assertIn("ffmpeg is not installed", sj.JobRunner._explain(
+            ["FileNotFoundError: [Errno 2] No such file or directory: 'ffmpeg'"]))
+
+    def test_reason_takes_the_sync_paths_whole_output(self) -> None:
+        text = "x\n\n" + "\n".join(self.TRACEBACK) + "\n"
+        self.assertEqual(sj.reason(text), "ffmpeg failed (exit 1)")
+        self.assertEqual(sj.reason(""), "")

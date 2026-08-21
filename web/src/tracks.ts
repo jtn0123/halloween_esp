@@ -12,17 +12,17 @@
  *           block to paste.
  */
 
-import { api } from "./api.js";
-import { startEta } from "./eta.js";
+import { api, why } from "./api.js";
 import type { BandEditor } from "./band_editor.js";
-import { fillOptsFrom, initImportOpts } from "./import_opts.js";
+import { clearTrim, fillOptsFrom, forImport, initImportOpts } from "./import_opts.js";
 import { cardRowsHtml, mountCard, renderSyncButton, sendAction } from "./track_card.js";
 import { cardState } from "./track_send.js";
 import { trackRowHtml } from "./track_rows.js";
 import { analyseLocally, wireDrop } from "./track_drop.js";
 import { wireUrlImport } from "./track_import_url.js";
+import { deleteTrack, makeScene, reimportTrack } from "./track_ops.js";
+import { createStatus } from "./track_status.js";
 import { createPreview } from "./preview.js";
-import { sceneYaml } from "./track_scene.js";
 import type { Scene } from "./types.js";
 
 /** The import options row, as tools/studio.py remembers them per track. */
@@ -51,8 +51,11 @@ export interface TrackInfo {
   bytes?: number;
   /** Duration in seconds; missing if ffprobe could not say. */
   dur?: number;
-  /** Where it came from — a URL, or `file:<name>` for a dropped file. */
+  /** Where it came from — a URL, or `file:<path>` (tracks/_src/<id>.<ext>
+   *  for a dropped or card-pulled file, kept so Re-import can work). */
   source: string;
+  /** A file: source whose file has since gone — no Re-import possible. */
+  source_missing?: boolean;
   title: string;
   imported: string;
   opts: TrackOpts;
@@ -114,7 +117,6 @@ export function initTracks(deps: TracksDeps): TracksApi {
 
   const T = {
     mode: "static" as "static" | "studio",
-    note: byId("trkNote"),
     list: byId("trkList"),
     count: byId("trkCount"),
     yaml: byId("trkYaml"),
@@ -125,30 +127,20 @@ export function initTracks(deps: TracksDeps): TracksApi {
     selected: null as string | null,
     /** Last list drawn, so a redraw does not need another round trip. */
     tracks: [] as TrackInfo[],
+    /** The first /api/tracks answer has landed. Until then the library
+     *  says "loading", not EMPTY, and the card's files are not drawn as
+     *  "castle only" — which read as "my songs are gone" (JB1-5). */
+    loaded: false,
+    /** id → act in flight on that row (scene | refresh | del). */
+    busy: new Map<string, string>(),
     /** name → bytes on the castle's SD card; null when no castle answers.
      *  Feeds badges, card-only rows and Sync (dogfood 005/006). */
     onCard: null as Map<string, number> | null,
   };
-  const say = (msg: string, err?: boolean): void => {
-    T.note.textContent = msg;
-    T.note.classList.toggle("err", !!err);
-  };
-  /**
-   * A result the page cannot show without being rebuilt, plus the button that
-   * rebuilds it. The scenes and their audio are baked into this HTML by
-   * gen_previewer, so a new scene genuinely is not here until a reload — and
-   * an auto-reload would throw away whatever the user was in the middle of.
-   */
-  const sayReload = (msg: string): void => {
-    say(msg + " ");
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "trk-reload";
-    b.textContent = "Reload the desk";
-    b.addEventListener("click", () => location.reload());
-    T.note.append(b);
-  };
-  const val = (id: string): string => byId<HTMLInputElement>(id).value.trim();
+  // One headline plus a line per operation in flight — concurrent jobs
+  // used to overwrite each other's progress (track_status.ts).
+  const status = createStatus(byId("trkNote"));
+  const say = status.say;
   /* What the scenes already in the show cost in flash.
      The rendered size, now that scenes carry it. This used to estimate from
      duration at ≈96k mono, which was both redundant and wrong the moment a
@@ -164,14 +156,17 @@ export function initTracks(deps: TracksDeps): TracksApi {
 
   void api.tracks()
     .then(d => {
-      if (!d.tracks && !d.scenes) return Promise.reject(new Error("no list")); T.mode = "studio"; T.modeEl.textContent = "studio · connected";
-                 byId("trkServer").hidden = false;
-                 T.sceneIds = new Set(d.scenes || []);
-                 drawTracks(d.tracks);
-                 say("Import by link or drop a file. Press Play to hear a track, "
-                   + "or click its row to trim it."); })
+      if (!d.tracks && !d.scenes) return Promise.reject(new Error("no list"));
+      T.mode = "studio"; T.modeEl.textContent = "studio · connected";
+      byId("trkServer").hidden = false;
+      T.sceneIds = new Set(d.scenes || []);
+      T.loaded = true;
+      drawTracks(d.tracks);
+      say("Import by link or drop a file. Press Play to hear a track, "
+        + "or click its row to trim it."); })
     .catch(() => {
       T.mode = "static";
+      T.loaded = true;
       T.modeEl.textContent = "read-only · studio not running";
       byId("trkOffline").hidden = false;
       const url = byId<HTMLInputElement>("trkUrl");
@@ -232,10 +227,12 @@ export function initTracks(deps: TracksDeps): TracksApi {
       inShow: T.sceneIds.has(t.id),
       sounding: playingId === t.id,
       onCastle: cardState(t, T.onCard),
-    })).join("") + cardRowsHtml(cardCtx());
+      busy: T.busy.get(t.id) ?? null,
+    })).join("") + (T.loaded ? cardRowsHtml(cardCtx()) : "");
     renderSyncButton(byId<HTMLButtonElement>("trkSync"), cardCtx());
     const n = T.tracks.length;
-    T.count.textContent = n === 0 ? "empty" : `${n} imported`;
+    T.count.textContent = !T.loaded ? "loading library…"
+      : n === 0 ? "empty" : `${n} imported`;
     deps.onList?.(T.tracks);
   }
 
@@ -261,107 +258,32 @@ export function initTracks(deps: TracksDeps): TracksApi {
     deps.onSelect?.(id);
   });
 
+  // The slow three — Delete, Re-import, Make/Update scene — live in
+  // track_ops.ts with their busy states and status lines.
+  const ops = {
+    T, status, say, drawTracks: (t?: TrackInfo[]) => drawTracks(t),
+    refresh: () => refresh(), deps, opts, preview, yaml: T.yaml,
+  };
   T.list.addEventListener("click", async e => {
     const btn = (e.target as HTMLElement | null)?.closest("button"); if (!btn) return;
     if (btn.dataset["cardact"]) return;   // card-only rows: track_card.ts owns them
     // Every button is rendered inside a .trk carrying the id, so the row and
     // the attribute are both there or the markup above is broken.
     const id = btn.closest<HTMLElement>(".trk")!.dataset["id"] ?? "";
-    if (btn.dataset["act"] === "play") {
+    const act = btn.dataset["act"];
+    if (act === "play") {
       preview.toggle(id);
-    } else if (btn.dataset["act"] === "send") {
+    } else if (act === "send") {
       const t = T.tracks.find(x => x.id === id);
       if (t) await sendAction(btn as HTMLButtonElement, t, say, loadCard);
-    } else if (btn.dataset["act"] === "del") {
-      if (!confirm(`Delete track "${id}"? The file is removed from tracks/.`)) return;
-      if (preview.playing() === id) preview.stop();
-      try {
-        const r = await api.remove(id);
-        say(r.ok ? `Deleted ${id}.` : `Could not delete ${id}.`, !r.ok);
-      } catch (err) {
-        say(`Could not delete ${id} — ${String(err)}`, true);
-      }
-      if (T.selected === id) { T.selected = null; deps.onSelect?.(null); }
-      refresh();
-    } else if (btn.dataset["act"] === "refresh") {
-      // Rebuild from the remembered source. Anything left blank in the option
-      // row keeps whatever was used last time.
-      // Re-import must use THIS row's settings even when a different track
-      // (or none) is open in the editor — a leftover panel state silently
-      // rebuilding the wrong way was round 1's nastiest trap.
-      if (T.selected !== id) {
-        const t = T.tracks.find(x => x.id === id);
-        if (t) fillOptsFrom(t);
-      }
-      const o = opts();
-      const eta = startEta("reimport", `Re-importing ${id} from its remembered source`, say);
-      // Busy state on the button itself: a re-import takes seconds, and a
-      // button that looks dead for that long reads as broken (round 1).
-      btn.disabled = true;
-      const label = btn.textContent;
-      btn.textContent = "Working…";
-      try {
-        const r = await api.refresh({
-          id, start: o.start, take: o.take, sensitivity: o.sensitivity,
-          bitrate: val("trkBitrate"),
-          sample_rate: val("trkRate"),
-          channels: val("trkCh"),
-          normalize: byId<HTMLInputElement>("trkNorm").checked,
-        });
-        if (r.ok) {
-          drawTracks(r.tracks);
-          // Say what came OUT, not just that something happened: fourteen
-          // silent seconds ending in an unchanged row read as a dead button.
-          const after = (r.tracks || []).find(x => x.id === id);
-          const ch = after?.opts?.channels === 2 ? "stereo" : "mono";
-          say(`Re-imported ${id} — ${ch}.`
-            + (ch === "mono"
-              ? " Still mono: click its mono ⚠ badge (or set CHANNELS to"
-                + " stereo in Options) and Re-import again."
-              : ""));
-        }
-        else say(`Re-import failed — ${(r.log || r.error || "").slice(-400)}`, true);
-        eta.stop(r.ok);
-      } finally {
-        eta.stop();
-        btn.disabled = false;
-        if (label !== null) btn.textContent = label;
-      }
-    } else {
-      // Re-rendering the whole show takes seconds — longer than anyone waits
-      // before deciding a button is broken. Say so on the button itself.
-      const label = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = "Working…";
-      try {
-        const r = await api.tracks();
-        // The list was just refetched from the same server that drew the row, so
-        // a miss here means the track vanished mid-click — let it throw.
-        const t = (r.tracks || []).find(x => x.id === id)!;
-        // The loudness envelope drives the scene's quiet/verse/chorus set
-        // cues. Missing it degrades to one standing look, not to a failure.
-        const wf = await api.waveform(id).then(w => w.body).catch(() => null);
-        const block = sceneYaml(id, t.dur, t.onsets || {}, t.ext, deps.bands, wf?.env);
-        T.yaml.hidden = false; T.yaml.textContent = block;
-        const eta = startEta("scene",
-          `Writing scene "${id}" into scenes.yaml and re-rendering the show`, say);
-        const res = await api.scene(id, block).finally(() => eta.stop());
-        if (!res.ok) {
-          say(`Scene write failed — ${(res.log || res.error || "").slice(-300)}`, true);
-          return;
-        }
-        eta.stop(true);
-        // The row now says "in the show", which is the visible proof the click
-        // did something. The page's own scene list is baked in at generate
-        // time, so it needs a reload — offered, not forced.
-        T.sceneIds = new Set(res.scenes || [...T.sceneIds, id]);
-        drawTracks(undefined);
-        sayReload(`Scene "${id}" ${res.replaced ? "updated" : "added"} in scenes.yaml `
-                + `and the audio re-rendered.`);
-      } finally {
-        btn.disabled = false;
-        if (label !== null) btn.textContent = label;
-      }
+    } else if (T.busy.has(id)) {
+      return;                            // its row is already working
+    } else if (act === "del") {
+      await deleteTrack(ops, id);
+    } else if (act === "refresh") {
+      await reimportTrack(ops, id);
+    } else if (act === "scene") {
+      await makeScene(ops, id);
     }
   });
 
@@ -423,7 +345,14 @@ export function initTracks(deps: TracksDeps): TracksApi {
   // URL imports live in track_import_url.ts — the one flow that talks to
   // the background job runner, with yt-dlp's own download ETA and a learned
   // one for the convert/analyse tail.
-  wireUrlImport({ say, opts, drawTracks });
+  // Trim values the clip editor wrote belong to ITS track — a new import
+  // takes only what a person typed (forImport), and consumes it.
+  const importOpts = () => forImport(opts());
+  const consumed = (): void => {
+    clearTrim();
+    byId<HTMLInputElement>("trkId").value = "";
+  };
+  wireUrlImport({ say, status, opts: importOpts, drawTracks, imported: consumed });
 
   /* ── Drag and drop ── track_drop.ts owns the zone and the no-server
      analysis; this panel only decides studio-vs-static. */
@@ -431,19 +360,22 @@ export function initTracks(deps: TracksDeps): TracksApi {
 
   async function takeFile(file: File): Promise<void> {
     if (T.mode === "studio") {
-      say(`Uploading ${file.name}…`);
+      const progress = status.slot(`import:${file.name}`);
+      progress(`Uploading ${file.name}…`);
       try {
-        const r = await api.importFile(file, opts());
-        if (r.ok) { drawTracks(r.tracks);
+        const r = await api.importFile(file, importOpts());
+        if (r.ok) { drawTracks(r.tracks); consumed();
                     say("Imported. Press Play to hear it, or “Make scene” to wire it in."); }
-        else say(`Import failed — ${(r.log || r.error || "").slice(-400)}`, true);
-      } catch (err) { say(`Import failed — ${String(err)}`, true); }
+        else { if (r.tracks) drawTracks(r.tracks);
+               say(`Import of ${file.name} failed — ${why(r)}`, true); }
+      } catch (err) { say(`Import of ${file.name} failed — ${String(err)}`, true); }
+      finally { status.clear(`import:${file.name}`); }
       return;
     }
     // Static mode: analyse right here.
     say(`Analysing ${file.name} in the browser…`);
     try {
-      const a = await analyseLocally(file, opts().id, deps.bands);
+      const a = await analyseLocally(file, importOpts().id, deps.bands);
       T.yaml.hidden = false; T.yaml.textContent = a.block;
       say(a.summary);
     } catch (err) { say(`Could not read that file — ${String(err)}`, true); }

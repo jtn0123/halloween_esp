@@ -218,7 +218,7 @@ test("each band gets its own zone and its own threshold", async ({ page }) => {
 
   // Reassigning a zone follows through to the summary line.
   await rows.nth(0).locator(".bandcfg__zone").selectOption("towerR");
-  await expect(page.locator("#trkWave p:not(.stems-note)")).toContainText("towerR");
+  await expect(page.locator("#trkWave p:not(.stems-note):not(.wave__trimhint)")).toContainText("towerR");
 });
 
 test("Snap to beat moves the clip onto detected onsets", async ({ page }) => {
@@ -238,7 +238,7 @@ test("Snap to beat moves the clip onto detected onsets", async ({ page }) => {
   await snap.click();
   // Either it moved the edit, or both ends were already on a beat. Both are
   // correct outcomes; silently doing nothing without saying so is not.
-  await expect(page.locator("#trkWave p:not(.stems-note)"))
+  await expect(page.locator("#trkWave p:not(.stems-note):not(.wave__trimhint)"))
     .toHaveText(/Snapped to the nearest onsets|Already on a beat/);
 });
 

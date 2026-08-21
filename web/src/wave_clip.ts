@@ -54,3 +54,41 @@ export function saveClip(id: string, c: WaveClip | null,
     }
   } catch { /* private mode: selections stay session-only */ }
 }
+
+/* ── Loop points ──
+   A looping scene whose seam lands mid-note clicks every time round. The
+   fix is to put both ends on a transient, which the detector has already
+   found — so this is a search, not a guess. */
+
+/** Every onset in the analysis, in time order, across all bands. */
+export function onsetTimes(
+  onsets: Readonly<Record<string, ReadonlyArray<readonly [number, ...unknown[]]> | undefined>>,
+): number[] {
+  const t: number[] = [];
+  for (const hits of Object.values(onsets)) for (const h of hits ?? []) t.push(h[0]);
+  return t.sort((a, z) => a - z);
+}
+
+/** Nearest of `times` to `sec`, or `sec` itself if none is within reach. */
+const nearest = (times: number[], sec: number, within: number): number => {
+  let best = sec, gap = within;
+  for (const t of times) {
+    const d = Math.abs(t - sec);
+    if (d < gap) { gap = d; best = t; }
+  }
+  return best;
+};
+
+/**
+ * The clip with both ends nudged onto the nearest onsets. Half a second is
+ * about as far as an edit can move before it stops being the edit asked
+ * for; a snap that would collapse the clip leaves the end where it was.
+ */
+export function snapClip(times: number[], clip: WaveClip,
+                         within = 0.5): { clip: WaveClip; moved: number } {
+  const start = nearest(times, clip.start, within);
+  let end = nearest(times, clip.end, within);
+  if (end - start < 0.25) end = clip.end;
+  const moved = Math.abs(start - clip.start) + Math.abs(end - clip.end);
+  return { clip: { start, end }, moved };
+}

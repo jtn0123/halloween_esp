@@ -70,6 +70,14 @@ def parse_sensitivity(q: dict) -> float | dict:
     return per
 
 
+SRC_DIR = "_src"     # kept originals of dropped/pulled files, beside the library
+
+
+def source_copies(tid: str) -> list[Path]:
+    """The kept original(s) for a track — what Delete must take with it."""
+    return sorted((TRACKS / SRC_DIR).glob(f"{tid}.*"))
+
+
 def track_path(tid: str) -> Path | None:
     """Resolve a bare track id to the file that holds it.
 
@@ -82,6 +90,11 @@ def track_path(tid: str) -> Path | None:
         if p.exists():
             return p
     return None
+
+
+def source_missing(source: str) -> bool:
+    """True for a file: source whose file is no longer there."""
+    return source.startswith("file:") and not Path(source[len("file:"):]).exists()
 
 
 def track_info(p: Path) -> dict:
@@ -102,6 +115,11 @@ def track_info(p: Path) -> dict:
         # one (re-imported since it was sent) by comparing against /api/files.
         "bytes": p.stat().st_size,
         "source": meta.get("source", ""),
+        # A dropped file's original lives in tracks/_src/ (import_track
+        # --keep-source); one that was imported from a path that has since
+        # gone cannot be re-imported, and the panel must say so instead of
+        # offering a button that fails with an absolute path (JB1-3).
+        "source_missing": source_missing(meta.get("source", "")),
         "title": meta.get("title", ""),
         "imported": meta.get("imported", ""),
         "opts": meta.get("opts", {}),

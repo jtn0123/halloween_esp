@@ -146,3 +146,27 @@ if (fails.length) {
   process.exit(1);
 }
 console.log("PASS");
+
+/* ── Loop points and failure wording (judge B, JB1-4/JB1-10) ──────────── */
+import { onsetTimes, snapClip } from "../dist/wave_clip.mjs";
+import { why } from "../dist/api.mjs";
+{
+  const times = onsetTimes({ onset_low: [[1.0, 0.5], [3.0, 0.4]], onset_mid: [[2.0, 0.3]],
+                             onset_high: undefined });
+  ok(JSON.stringify(times) === "[1,2,3]", "onsetTimes merges bands in time order");
+  const r = snapClip(times, { start: 0.9, end: 3.2 });
+  ok(r.clip.start === 1 && r.clip.end === 3, "both ends snap to the nearest onset");
+  ok(Math.abs(r.moved - 0.3) < 1e-9, "and the total movement is reported");
+  ok(snapClip(times, { start: 1, end: 3 }).moved === 0, "already on a beat: nothing moves");
+  const far = snapClip(times, { start: 10, end: 12 });
+  ok(far.clip.start === 10 && far.clip.end === 12, "nothing within half a second: left alone");
+  const tight = snapClip([1.0, 1.1], { start: 0.95, end: 1.15 });
+  ok(tight.clip.end === 1.15, "a snap that would collapse the clip keeps the end");
+}
+{
+  ok(why({ reason: "ffmpeg failed (exit 1)", log: "Traceback…" }) === "ffmpeg failed (exit 1)",
+     "the server's one-line reason wins");
+  ok(why({ error: "no id" }) === "no id", "then the error field");
+  ok(why({ log: "a\n  b\nlast line\n\n" }) === "last line", "then the last non-blank log line");
+  ok(why({}) === "no reason given", "and something, never an empty string");
+}

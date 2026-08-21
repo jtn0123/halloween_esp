@@ -27,11 +27,24 @@ export interface TracksResponse { tracks?: TrackInfo[]; scenes?: string[] }
 export interface ActionResponse {
   ok: boolean;
   error?: string;
-  /** Tail of the underlying tool's output — the human-readable "why". */
+  /** Tail of the underlying tool's output, for the curious. */
   log?: string;
+  /** The server's one-line verdict on a failure (studio_jobs.reason):
+   *  the last meaningful line, basenames not paths, never a traceback. */
+  reason?: string;
   tracks?: TrackInfo[];
   scenes?: string[];
   replaced?: boolean;
+  /** DELETE ?scene=1: whether a scene block was taken out with the track. */
+  scene_removed?: boolean;
+}
+
+/** The one line to show a person for a failed action. */
+export function why(r: { reason?: string; error?: string; log?: string }): string {
+  if (r.reason) return r.reason;
+  if (r.error) return r.error;
+  const lines = (r.log || "").split("\n").map(l => l.trim()).filter(Boolean);
+  return lines[lines.length - 1] ?? "no reason given";
 }
 
 export interface WaveformResponse {
@@ -112,8 +125,10 @@ export const api = {
   tracksFresh: (): Promise<TracksResponse> =>
     call("/api/tracks", { cache: "no-store" }),
 
-  remove: (id: string): Promise<ActionResponse> =>
-    call(`/api/tracks/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** `withScene`: also take its scene out of scenes.yaml and re-render. */
+  remove: (id: string, withScene = false): Promise<ActionResponse> =>
+    call(`/api/tracks/${encodeURIComponent(id)}${withScene ? "?scene=1" : ""}`,
+         { method: "DELETE" }, withScene ? ENCODE : QUICK),
 
   importUrl: (req: object): Promise<ActionResponse> =>
     call("/api/import", post(req), IMPORT),

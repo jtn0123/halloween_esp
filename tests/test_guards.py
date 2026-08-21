@@ -159,3 +159,72 @@ class TestTracksSandbox(unittest.TestCase):
             capture_output=True, text=True, check=False)
         self.assertEqual(out.stdout.strip(), "/tmp/castle-sandbox-guard",
                          out.stderr)
+
+
+class TestScenesSandbox(unittest.TestCase):
+    """CASTLE_SCENES must redirect EVERY reader and writer of the show —
+    the three generators the studio runs after a splice included. The splice
+    honoured it while render_audio/gen_esphome/gen_previewer read the real
+    scenes/scenes.yaml and rewrote audio/, firmware/generated/ and the
+    previewer page (judge B, JB1-12). build_paths.py is the one answer."""
+
+    #: The repo artefacts a sandboxed rebuild must never touch.
+    GUARDED = ("scenes/scenes.yaml", "audio/markers.json",
+               "previewer/castle-cue-desk.html",
+               "firmware/generated/scenes.yaml",
+               "firmware/generated/media_files.yaml")
+
+    def _stamp(self) -> dict[str, float]:
+        return {rel: (ROOT / rel).stat().st_mtime_ns
+                for rel in self.GUARDED if (ROOT / rel).exists()}
+
+    def test_generators_resolve_their_paths_inside_the_sandbox(self) -> None:
+        import os
+        import subprocess
+        out = subprocess.run(
+            [sys.executable, "-c",
+             ("import render_audio as r, gen_esphome as e, gen_previewer as p;"
+              "print(r.SCENES, r.OUT, e.SRC, e.OUT, p.SRC, p.HTML, p.AUDIO)")],
+            cwd=str(ROOT / "tools"),
+            env={**os.environ, "CASTLE_SCENES": "/tmp/castle-sb/scenes.yaml"},
+            capture_output=True, text=True, check=False)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        for p in out.stdout.split():
+            self.assertTrue(p.startswith("/tmp/castle-sb/"), p)
+
+    def test_a_sandboxed_rebuild_touches_nothing_outside_the_sandbox(self) -> None:
+        """The real thing, end to end: a one-scene show in a scratch dir,
+        all three generators run as the studio runs them, and the repo's
+        artefacts keep their mtimes to the nanosecond."""
+        import os
+        import subprocess
+
+        import yaml
+        sb = Path(tempfile.mkdtemp(prefix="castle-scenes-sb-"))
+        try:
+            doc = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
+            doc["scenes"] = [{
+                "id": "sb_probe", "name": "Probe", "kind": "custom",
+                "volume": 0.5, "duration_ms": 1200, "loop": False, "blurb": "x",
+                "base": {"towerL": "chill", "towerR": "chill", "door": "ember"},
+                "levels": {"towerL": 0.4, "towerR": 0.4, "door": 0.5},
+                "score": [{"t": 0.0, "synth": "wind", "dur": 1.0}], "cues": []}]
+            (sb / "scenes.yaml").write_text(yaml.safe_dump(doc, sort_keys=False))
+            env = {**os.environ, "CASTLE_SCENES": str(sb / "scenes.yaml"),
+                   "CASTLE_TRACKS": str(sb / "tracks")}
+            before = self._stamp()
+            for script in ("render_audio.py", "gen_esphome.py", "gen_previewer.py"):
+                r = subprocess.run([sys.executable, str(ROOT / "tools" / script)],
+                                   env=env, capture_output=True, text=True,
+                                   check=False)
+                self.assertEqual(r.returncode, 0, f"{script}: {r.stdout}{r.stderr}")
+            self.assertEqual(self._stamp(), before, "a repo artefact was rewritten")
+            built = {str(p.relative_to(sb)) for p in sb.rglob("*") if p.is_file()}
+            for rel in ("_build/audio/01_sb_probe.mp3", "_build/audio/markers.json",
+                        "_build/firmware/generated/scenes.yaml",
+                        "_build/previewer/castle-cue-desk.html"):
+                self.assertIn(rel, built)
+            self.assertIn("sb_probe", (sb / "_build" / "previewer"
+                                       / "castle-cue-desk.html").read_text())
+        finally:
+            shutil.rmtree(sb, ignore_errors=True)

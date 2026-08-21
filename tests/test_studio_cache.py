@@ -52,8 +52,8 @@ class TestTrackInfoFromManifest(unittest.TestCase):
         self.assertEqual(n2, 0)
         self.assertEqual(first, second)
         self.assertEqual(set(first), {"id", "ext", "kb", "bytes", "source",
-                                      "title", "imported", "opts", "notes",
-                                      "dur", "onsets"})
+                                      "source_missing", "title", "imported",
+                                      "opts", "notes", "dur", "onsets"})
         self.assertAlmostEqual(first["dur"], 2.0, delta=0.3)
         self.assertIn("onset_low", first["onsets"])
         self.assertTrue(all(isinstance(v, int) for v in first["onsets"].values()))

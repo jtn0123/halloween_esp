@@ -15,9 +15,9 @@
  * tick is a sound the current pipeline never saw.
  */
 
-import { api, type StemChannel, type StemsResponse } from "./api.js";
-import { BANDS } from "./bands.js";
+import { api, type StemsResponse } from "./api.js";
 import { startEta, type EtaHandle } from "./eta.js";
+import { drawSingle, drawStacked } from "./stems_draw.js";
 
 export interface StemsDeps {
   /** Fired when a stem starts playing, so the host can stop its audition. */
@@ -48,9 +48,10 @@ const LAYERS: readonly { key: Layer; label: string; hint: string; ink: string }[
     hint: "the original file, untouched — what the castle plays" },
 ];
 
-/** A channel onset with no mono ("both") onset within this window was never
- *  seen by the pipeline. 90 ms is just past the detector's own frame jitter. */
-const MISS_WINDOW = 0.09;
+/** Demucs jobs in flight, by track. Switching tracks used to abandon the
+ *  poll and re-enable "Split voices" — a second Demucs run on the same
+ *  track was one click away (JB1-10). The job outlives the view of it. */
+const inflight = new Map<string, { jobId: string; eta: EtaHandle }>();
 
 const btn = (label: string): HTMLButtonElement => {
   const b = document.createElement("button");
@@ -58,19 +59,6 @@ const btn = (label: string): HTMLButtonElement => {
   b.textContent = label;
   return b;
 };
-
-/** Onsets in `chan` that have no counterpart in `other` — the generic form
- *  behind both audits: channel-vs-mono, and left-vs-right in the stacked view. */
-function missedTimes(chan: StemChannel, other: StemChannel | undefined,
-                     band: string): number[] {
-  const seen = (other?.onsets[band] ?? []).map(h => h[0]).sort((a, z) => a - z);
-  const out: number[] = [];
-  for (const [t] of chan.onsets[band] ?? []) {
-    // seen is sorted and short; a linear probe is cheaper than being clever.
-    if (!seen.some(s => Math.abs(s - t) <= MISS_WINDOW)) out.push(t);
-  }
-  return out;
-}
 
 export function createStemsView(deps: StemsDeps): StemsApi {
   const el = document.createElement("section");
@@ -199,100 +187,14 @@ export function createStemsView(deps: StemsDeps): StemsApi {
     g.scale(dpr, dpr);
     const ink = LAYERS.find(l => l.key === layer)!.ink;
 
-    if (channel === "stack") drawStacked(g, layer, w, h, ink);
-    else drawSingle(g, layer, w, h, ink);
+    const L = chans.left, R = chans.right, one = chans[channel];
+    if (channel === "stack" && L && R) r.cap.textContent = drawStacked(g, L, R, dur, w, h, ink);
+    else if (one) r.cap.textContent = drawSingle(g, one, chans.both, dur, channel, w, h, ink);
 
     if (playing === layer) {
       g.fillStyle = "#fff";
       g.fillRect(rows[layer].audio.currentTime / dur * w, 0, 1.5, h);
     }
-  }
-
-  function drawSingle(g: CanvasRenderingContext2D, layer: Layer,
-                      w: number, h: number, ink: string): void {
-    const d = data?.layers?.[layer]?.[channel];
-    const mono = data?.layers?.[layer]?.both;
-    const dur = data?.duration ?? 1;
-    if (!d) return;
-    const peakH = h - 14;
-    g.fillStyle = ink;
-    g.globalAlpha = 0.85;
-    const n = d.peaks.length || 1;
-    for (let i = 0; i < n; i++) {
-      const bh = Math.max(1, (d.peaks[i] ?? 0) * peakH);
-      g.fillRect(i / n * w, (peakH - bh) / 2 + 2, Math.max(1, w / n - 0.4), bh);
-    }
-    g.globalAlpha = 1;
-    let missed = 0;
-    for (const b of BANDS) {
-      g.fillStyle = b.ink;
-      for (const [t] of d.onsets[b.name] ?? [])
-        g.fillRect(t / dur * w, h - 11, 1.5, 9);
-      if (channel !== "both") {
-        // The audit marks: this channel heard it, the pipeline did not.
-        // Along the TOP edge, opposite the band ticks — full-height bars
-        // drowned the waveform on real music (hundreds of them).
-        g.fillStyle = "#fff";
-        for (const t of missedTimes(d, mono, b.name)) {
-          g.fillRect(t / dur * w, 1, 1.5, 8);
-          missed++;
-        }
-      }
-    }
-    const total = Object.values(d.onsets).reduce((s, v) => s + v.length, 0);
-    rows[layer].cap.textContent = channel === "both"
-      ? `${total} hits — the pipeline's own picture`
-      : `${total} hits · ${missed === 0 ? "all seen by mono analysis"
-          : `${missed} the mono analysis missed`}`;
-  }
-
-  /** Left grows up from the centre line, right grows down. The two halves
-   *  are scaled by each channel's TRUE level rather than its own normalised
-   *  peaks — a channel that is genuinely quieter must look quieter, or the
-   *  view answers the wrong question. */
-  function drawStacked(g: CanvasRenderingContext2D, layer: Layer,
-                       w: number, h: number, ink: string): void {
-    const L = data?.layers?.[layer]?.left;
-    const R = data?.layers?.[layer]?.right;
-    const dur = data?.duration ?? 1;
-    if (!L || !R) return;
-    const mid = h / 2;
-    const half = mid - 10;             // room for the tick lanes at each edge
-    const top = Math.max(L.level, R.level) || 1;
-
-    const halfBars = (d: StemChannel, dir: -1 | 1, alpha: number): void => {
-      const scale = (d.level / top) * half;
-      const n = d.peaks.length || 1;
-      g.globalAlpha = alpha;
-      g.fillStyle = ink;
-      for (let i = 0; i < n; i++) {
-        const bh = Math.max(1, (d.peaks[i] ?? 0) * scale);
-        g.fillRect(i / n * w, dir < 0 ? mid - bh : mid,
-                   Math.max(1, w / n - 0.4), bh);
-      }
-      g.globalAlpha = 1;
-    };
-    halfBars(L, -1, 0.9);
-    halfBars(R, 1, 0.55);              // dimmer, so the halves read apart
-    g.fillStyle = "rgba(255,255,255,0.35)";
-    g.fillRect(0, mid - 0.5, w, 1);
-
-    // One-sided hits: white ticks on the half that heard them alone.
-    let lOnly = 0, rOnly = 0;
-    for (const b of BANDS) {
-      g.fillStyle = "#fff";
-      for (const t of missedTimes(L, R, b.name)) {
-        g.fillRect(t / dur * w, 1, 1.5, 8);
-        lOnly++;
-      }
-      for (const t of missedTimes(R, L, b.name)) {
-        g.fillRect(t / dur * w, h - 9, 1.5, 8);
-        rOnly++;
-      }
-    }
-    rows[layer].cap.textContent = lOnly === 0 && rOnly === 0
-      ? "left and right hit together everywhere"
-      : `${lOnly} left-only · ${rOnly} right-only hits (white ticks, top/bottom)`;
   }
 
   const drawAll = (): void => { for (const L of LAYERS) draw(L.key); };
@@ -393,32 +295,45 @@ export function createStemsView(deps: StemsDeps): StemsApi {
     say(msg);
   }
 
-  async function poll(jobId: string, eta: EtaHandle): Promise<void> {
-    const mine = token;
+  /** Follow `id`'s split to the end, whichever track the panel is showing
+   *  meanwhile; only the UI updates are gated on it being the current one. */
+  async function poll(id: string, jobId: string, eta: EtaHandle): Promise<void> {
+    const showing = (): boolean => trackId === id;
     for (let i = 0; i < 400; i++) {
       await new Promise(r => setTimeout(r, 1500));
-      if (mine !== token) { eta.stop(); return; }
       let job;
       try { job = await api.job(jobId); }
       catch { continue; }              // one dropped poll is not a failure
-      if (!job.done) { say(eta.line()); continue; }
+      if (!job.done) { if (showing()) say(eta.line()); continue; }
+      inflight.delete(id);
       if (job.phase === "failed") {
         eta.stop();
-        empty("Split failed — " + (job.error || "see the studio log."));
-        note.classList.add("err");
+        if (showing()) {
+          empty("Split failed — " + (job.error || "see the studio log."));
+          note.classList.add("err");
+        }
         return;
       }
       eta.stop(true);                  // a finished split teaches the next ETA
-      await load();
+      if (showing()) await load();
       return;
     }
+    inflight.delete(id);
     eta.stop();
-    empty("Split is taking too long — check the studio terminal.");
+    if (showing()) empty("Split is taking too long — check the studio terminal.");
+  }
+
+  /** A job already running on this track: say so, keep Split off. */
+  function reflectInflight(): void {
+    const job = trackId ? inflight.get(trackId) : undefined;
+    if (!job) return;
+    split.disabled = true;
+    say(job.eta.line());
   }
 
   split.addEventListener("click", () => {
     const id = trackId;
-    if (!id) return;
+    if (!id || inflight.has(id)) return;
     void (async () => {
       split.disabled = true;
       // The split's cost scales with the track's length, so the learned rate
@@ -435,7 +350,8 @@ export function createStemsView(deps: StemsDeps): StemsApi {
           empty(job.error || "The studio refused the split.");
           return;
         }
-        void poll(job.id, eta);
+        inflight.set(id, { jobId: job.id, eta });
+        void poll(id, job.id, eta);
       } catch (err) {
         eta.stop();
         empty(`Could not reach the studio — ${String(err)}`);
@@ -453,9 +369,10 @@ export function createStemsView(deps: StemsDeps): StemsApi {
       if (r.status === 404 || !r.body?.ok) {
         empty("Not split yet. Splitting shows which hits are sung and which "
           + "side they live on — the castle still plays the combined file.");
-        return;
+      } else {
+        ready(r.body);
       }
-      ready(r.body);
+      reflectInflight();
     } catch (err) {
       if (mine === token) empty(`Could not reach the studio — ${String(err)}`);
     }
@@ -467,7 +384,7 @@ export function createStemsView(deps: StemsDeps): StemsApi {
   return {
     el,
     show(id: string | null): void {
-      token++;                         // cancel any poll on the old track
+      token++;                         // orphan a load still in flight
       stop();
       trackId = id;
       el.hidden = id === null;
