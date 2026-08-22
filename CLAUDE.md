@@ -45,8 +45,8 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
 - ruff + mypy clean (`pyproject.toml`); tsc `--noEmit` clean for `web/`.
 - `make check` green before handing work back. Never skip or disable a test
   to get there — fix it or list it as follow-up work.
-- The e2e suite (108 tests) needs a built page (`make preview`) and
-  `cd web && npx playwright install chromium`.
+- The e2e suite (`cd web && npx playwright test --list` for the count) needs
+  a built page (`make preview`) and `cd web && npx playwright install chromium`.
 
 ## Sandboxing — never touch the real library or show from tests/tools
 

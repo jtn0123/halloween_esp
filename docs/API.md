@@ -19,7 +19,8 @@ line, on tool failures). An unknown `/studio/*` path is a 404; an unknown
 
 | Method | Path | Does |
 |---|---|---|
-| GET | `/`, `/index.html` | the built previewer page |
+| GET | `/`, `/index.html` | the built previewer page, **lean**: the inlined scene audio is rewritten to `/studio/scene-audio/<id>` links at serve time (always — loopback included; `previewer/castle-cue-desk.html` on disk stays the portable inlined build) |
+| GET | `/studio/scene-audio/<id>` | a scene's rendered mp3, from the audio/ the served page was built from (Range honoured) |
 | GET | `/studio/tracks` | `{tracks: [...], scenes: [ids]}` — the library |
 | DELETE | `/studio/tracks/<id>[?scene=1]` | remove a track (`?scene=1`: its scene too, then rebuild) |
 | POST | `/studio/import` | `{url}` JSON, or multipart file + `X-Import-Opts` — blocking import |

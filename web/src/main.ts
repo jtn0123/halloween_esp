@@ -9,12 +9,15 @@
  * module instead.
  */
 
-import { RenderedAudio, type AudioMode } from "./audio.js";
+import { RenderedAudio } from "./audio.js";
 import { createBandEditor } from "./band_editor.js";
 import { initBudget } from "./budget.js";
 import { lightChrome, setStatus } from "./chrome_light.js";
 import { createCodecAb, type CodecAb } from "./codec_ab.js";
+import { auditioning, initialMode, transition,
+         type DeskEvent, type DeskMode } from "./desk_mode.js";
 import { deviceBridge } from "./device.js";
+import { el, input, val } from "./dom.js";
 import { defaultParams } from "./effects.js";
 import { PixelInsets } from "./insets.js";
 import { createZoneDesigner } from "./zone_designer.js";
@@ -49,7 +52,18 @@ const rendered = new RenderedAudio(GEN.audio);
 const synth = new Synth();
 synth.params = P;
 
-let audioMode: AudioMode = rendered.defaultMode;
+/* ── The one value that says what the desk is doing ────────────────────
+   Sound source, audition/adoption phase, the clip's preview scene, the
+   selected track, and the players once they exist. The rules that move it
+   are desk_mode.ts's transition(), tested under node; `dispatch` applies
+   one event and loads whatever scene the rule says must follow. */
+interface Players { wave: WaveformApi; tracks: TracksApi; codecs: CodecAb }
+let mode: DeskMode<Players> = initialMode(rendered.defaultMode);
+function dispatch(e: DeskEvent<Players>): void {
+  const t = transition(mode, e);
+  mode = t.mode;
+  if (t.load) transport.loadScene(t.load);
+}
 
 const firstScene = SCENES[0];
 if (!firstScene) throw new Error("cue desk needs at least one scene");
@@ -63,7 +77,7 @@ let settle = false;
 const markDirty = (): void => { dirty = true; };
 const draws = { frames: 0 };
 (window as unknown as { __castleDraws: typeof draws }).__castleDraws = draws;
-const canvas = document.getElementById("stage") as HTMLCanvasElement | null;
+const canvas = el<HTMLCanvasElement>("stage");
 if (!canvas) throw new Error("no #stage canvas in the page");
 const stage = new Stage(canvas);
 
@@ -110,14 +124,11 @@ if (kiosk) installKiosk();
 }
 
 /* The three sound sources are built AFTER the transport that needs to stop
-   them, so they live behind a holder that is honestly null until then. The
-   previous spelling closed over the consts directly with `?.` guards — but
-   esbuild hoists top-level const to var, TypeScript typed them non-nullable,
-   and nothing stopped a future edit from dropping a guard. This exact class
-   of bug once took out 26 tests (grade report C3); now the compiler enforces
-   every access. */
-interface Players { wave: WaveformApi; tracks: TracksApi; codecs: CodecAb }
-let players: Players | null = null;
+   them, so `mode.players` is honestly null until then. The previous spelling
+   closed over the consts directly with `?.` guards — but esbuild hoists
+   top-level const to var, TypeScript typed them non-nullable, and nothing
+   stopped a future edit from dropping a guard. This exact class of bug once
+   took out 26 tests (grade report C3); now the compiler enforces every access. */
 
 // Panels wires the cue-sheet row clicks itself, so seeking is a constructor
 // dependency rather than a separate binding.
@@ -142,13 +153,13 @@ let deviceLine = "simulator";
 let deviceOk = true;
 function syncStatus(): void {
   setStatus(`${deviceLine} · `
-    + `${audioMode === "rendered" ? "rendered audio" : "live synth"} · `
+    + `${mode.source === "rendered" ? "rendered audio" : "live synth"} · `
     + `${rendered.muted ? "muted" : "sounding"}`, deviceOk);
 }
 
 const transport = new Transport({
   state, rendered, synth,
-  getMode: () => audioMode,
+  getMode: () => mode.source,
   onSceneChange: (sc) => {
     markDirty();
     panels.renderSheet(sc);
@@ -156,13 +167,13 @@ const transport = new Transport({
     panels.renderSceneInfo(sc);
   },
   // syncUI runs during THIS construction (loadScene → setPlaying), before
-  // `players` is assigned — the null then is real, typed, and a no-op.
+  // the players exist — the null then is real, typed, and a no-op.
   stopExternal: () => {
-    players?.wave.stop();
-    players?.tracks.stopPreview();
-    players?.codecs.stop();
+    mode.players?.wave.stop();
+    mode.players?.tracks.stopPreview();
+    mode.players?.codecs.stop();
   },
-  isExternalPlaying: () => players?.tracks.previewing() ?? false,
+  isExternalPlaying: () => mode.players?.tracks.previewing() ?? false,
   // ■ Stop / Esc reach the castle too (when one is mirroring): the desk
   // fired the scene on the porch, so the desk's own Stop must end it.
   onBlackout: () => { markDirty(); device.stop(); },   // a dark stage is a repaint too
@@ -174,10 +185,9 @@ const transport = new Transport({
 // When this page is served from the castle itself, the pick also fires the
 // scene on the hardware — see device.ts for the probe that decides.
 //
-// `adopting` guards the loop: on load the desk ADOPTS the castle's current
-// scene by clicking its button, and that click must not mirror back — the
-// castle is already running it, and a re-fire would restart it audibly.
-let adopting = false;
+// The "adopting" phase guards the loop: on load the desk ADOPTS the castle's
+// current scene by picking its tile, and that pick must not mirror back —
+// the castle is already running it, and a re-fire would restart it audibly.
 const device = deviceBridge({
   adoptScene: (id) => {
     // The kiosk FOLLOWS the castle: an empty id is the porch going idle,
@@ -188,9 +198,9 @@ const device = deviceBridge({
     const sc = SCENES[i];
     if (!sc) return;
     if (sc !== state.scene) {
-      adopting = true;
-      document.querySelector<HTMLElement>(`.scene[data-i="${i}"]`)?.click();
-      adopting = false;
+      dispatch({ type: "adopt-start" });
+      panels.selectScene(i);
+      dispatch({ type: "adopt-end" });
     }
     // A kiosk adopting a scene the castle is RUNNING must run it too —
     // loaded at frame 0 and paused, the tablet was never in sync (JB1-2).
@@ -214,7 +224,7 @@ const device = deviceBridge({
 panels.renderScenes(SCENES, (sc) => {
   transport.loadScene(sc, { play: state.running });
   designer.refresh();
-  if (!adopting) device.scene(sc.id);
+  if (mode.phase.kind !== "adopting") device.scene(sc.id);
 });
 
 panels.bindSliders({
@@ -234,8 +244,8 @@ panels.bindSliders({
   soft: (on) => { state.soft = on; P.soft = on; },
   renderedAudio: (useRendered) => {
     const wasPlaying = state.running;
-    audioMode = useRendered ? "rendered" : "synth";
-    if (audioMode === "rendered") synth.stopWind(0.4);
+    dispatch({ type: "source", source: useRendered ? "rendered" : "synth" });
+    if (mode.source === "rendered") synth.stopWind(0.4);
     rendered.stopAll();
     transport.loadScene(state.scene, { play: wasPlaying });
     syncStatus();
@@ -244,24 +254,24 @@ panels.bindSliders({
 
 /* ── Transport controls ── */
 
-document.getElementById("play")?.addEventListener("click", () => {
+el("play")?.addEventListener("click", () => {
   // ♪ Mac route: pressing Play IS the consent to sound. Without this the
   // first play ran a silent light show and the operator hunted for the
   // second, unrelated-looking MUTED button (dogfood 004).
   if (localStorage.getItem("castleSoundRoute") !== "castle" && rendered.muted) toggleMute();
   transport.toggle();
 });
-document.getElementById("restart")?.addEventListener("click", () => transport.restart());
-document.getElementById("stop")?.addEventListener("click", () => transport.blackout());
+el("restart")?.addEventListener("click", () => transport.restart());
+el("stop")?.addEventListener("click", () => transport.blackout());
 
-const scrub = document.getElementById("scrub");
+const scrub = el("scrub");
 if (scrub) transport.bindScrub(scrub);
 
 /* ── Mute ──────────────────────────────────────────────────────────────
    Muted by default, always. Mute is the element's own `muted` flag rather
    than volume 0, because volume is also written by the fade-in and the
    master slider — a volume-based mute is one stray write from being undone. */
-const muteBtn = document.getElementById("mute");
+const muteBtn = el("mute");
 function syncMuteUI(): void {
   syncStatus();
   if (!muteBtn) return;
@@ -284,19 +294,16 @@ synth.setMuted(rendered.muted);
 // Not in kiosk: a wall tablet's keyboard (or a cat on it) must not be able
 // to pick scenes — which, with mirroring, fires them on the porch.
 if (!kiosk) {
-  transport.bindKeys(toggleMute, (i) => {
-    const b = document.querySelector<HTMLElement>(`.scene[data-i="${i}"]`);
-    b?.click();
-  });
+  transport.bindKeys(toggleMute, (i) => panels.selectScene(i));
 }
 
 /* ── Rendered vs live synth ──
    With no rendered files there is nothing to switch to, so the toggle is
    disabled rather than silently doing nothing. */
-const modeEl = document.getElementById("renderedAudio") as HTMLInputElement | null;
+const modeEl = input("renderedAudio");
 if (modeEl) {
   if (rendered.count === 0) { modeEl.checked = false; modeEl.disabled = true; }
-  audioMode = modeEl.checked ? "rendered" : "synth";
+  dispatch({ type: "source", source: modeEl.checked ? "rendered" : "synth" });
 }
 
 /* ── Tracks panel and clip editor ──────────────────────────────────────
@@ -305,62 +312,50 @@ if (modeEl) {
    is the actual question when picking 20 seconds out of a song. */
 /* While a clip is being auditioned the stage shows *that clip's* lights,
    built from its own onsets, and the scene that was loaded before is put back
-   when the audition stops. Seeking inside the previously loaded scene — which
-   is what this did — showed the old scene's lights against the new track's
-   audio, which reads as the detection being broken. */
-let previewScene: Scene | null = null;
-let sceneBeforeAudition: Scene | null = null;
+   when the audition stops (mode.phase "audition" / `before`). Seeking inside
+   the previously loaded scene — which is what this did — showed the old
+   scene's lights against the new track's audio, which reads as the detection
+   being broken. */
 
 /* Which zone each band lights and how hard it has to hit. Created here rather
    than inside either panel because both read it: the clip editor mounts it and
    re-analyses on change, and the scene generator writes it out. */
-const bands = createBandEditor(() => players?.wave.reanalyse(),
+const bands = createBandEditor(() => mode.players?.wave.reanalyse(),
                                // Mute/solo: same analysis, different mix —
                                // rebuild the audition without re-fetching.
-                               () => players?.wave.resync());
+                               () => mode.players?.wave.resync());
 
 /* Hearing what each codec costs, on the clip that is actually selected. It
    needs the clip from the editor and the encoder settings from the options
    row, which is why it is assembled here and not inside either. */
-let selectedTrack: string | null = null;
 const codecs = createCodecAb({
   target: () => {
-    const c = players?.wave.clip();
-    if (!selectedTrack || !c) return null;
-    return { id: selectedTrack, start: c.start, take: c.end - c.start };
+    const c = mode.players?.wave.clip();
+    if (!mode.track || !c) return null;
+    return { id: mode.track, start: c.start, take: c.end - c.start };
   },
-  opts: () => {
-    const v = (id: string): string =>
-      (document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? "";
-    return { bitrate: v("trkBitrate"), channels: v("trkCh"), sample_rate: v("trkRate") };
-  },
-  onClaim: () => { players?.wave.stop(); players?.tracks.stopPreview(); },
+  opts: () => ({ bitrate: val("trkBitrate"), channels: val("trkCh"),
+                 sample_rate: val("trkRate") }),
+  onClaim: () => { mode.players?.wave.stop(); mode.players?.tracks.stopPreview(); },
 });
 
 const wave = initWaveform({
   bands,
   codecs,
-  onClipChange: (clip, data) => {
-    previewScene = data
-      ? sceneFromTrack(data, clip, bands.zones(), bands.active()) : null;
-    // Already auditioning: adopt the new selection without stopping.
-    if (sceneBeforeAudition && previewScene) transport.loadScene(previewScene);
-  },
+  // The clip (or its bands) changed: rebuild the preview scene. Already
+  // auditioning, the rule loads it without stopping — see transition().
+  onClipChange: (clip, data) => dispatch({
+    type: "clip",
+    preview: data ? sceneFromTrack(data, clip, bands.zones(), bands.active()) : null,
+  }),
   onAudition: (playing, positionMs) => {
-    if (!playing) {
-      const back = sceneBeforeAudition;
-      sceneBeforeAudition = null;
-      if (back) transport.loadScene(back);
-      return;
-    }
+    // Stopping puts back the scene the audition displaced, if it did.
+    if (!playing) { dispatch({ type: "audition-stop" }); return; }
     // The region audition and the row preview are two audio elements; only one
     // of them should ever be making noise.
     tracks.stopPreview();
     codecs.stop();
-    if (!sceneBeforeAudition && previewScene) {
-      sceneBeforeAudition = state.scene;
-      transport.loadScene(previewScene);
-    }
+    dispatch({ type: "audition-start", current: state.scene });
     // The audition element is the audio; the show engine only supplies light,
     // with its clock pulled along by the player.
     transport.syncTo(positionMs);
@@ -369,14 +364,14 @@ const wave = initWaveform({
 const tracks = initTracks({
   scenes: SCENES,
   bands,
-  onSelect: (id) => { selectedTrack = id; wave.show(id); },
+  onSelect: (id) => { dispatch({ type: "select", track: id }); wave.show(id); },
   onAudioClaim: () => wave.stop(),
   onPreviewState: () => transport.refreshUI(),
   // The library is the SD build's biggest number, and it only exists once
   // the studio has answered — so the budget card learns it here.
   onList: (list) => budget.setTracks(list),
 });
-players = { wave, tracks, codecs };
+dispatch({ type: "ready", players: { wave, tracks, codecs } });
 
 /* ── Frame loop ──────────────────────────────────────────────────────────
    A stopped desk should cost nothing (grade report G3). Once the show is
@@ -402,12 +397,12 @@ function frame(now: number): void {
     (snd) => {
       // Rendered mode plays one pre-mixed file; per-cue synthesis is only
       // meaningful when the live synth is the source.
-      if (audioMode === "synth") window.setTimeout(() => synth.play(snd), state.latency);
+      if (mode.source === "synth") window.setTimeout(() => synth.play(snd), state.latency);
     },
     () => transport.setPlaying(false),
   );
 
-  const active = state.running || sceneBeforeAudition !== null || f.flash > 0;
+  const active = state.running || auditioning(mode) || f.flash > 0;
   if (!document.hidden && (active || dirty || settle)) {
     stage.draw(f.zones, now / 1000, f.flash, f.flashColor);
     insets.draw(f.zones);

@@ -33,9 +33,18 @@ select = [
 [tool.mypy]
 python_version = "3.13"
 files = ["tools", "tests"]
+# Default mypy skips the bodies of unannotated functions, which is most of
+# tools/. These three are the cheap half of strictness: check every body,
+# refuse an Any leaking out through a typed return, and drop ignores that
+# no longer ignore anything. disallow_untyped_defs is the next step, per
+# module, once the bodies are clean.
+check_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
 # The analysis/synth stack sits on scipy (no stubs shipped) and the device
 # tools on esphome's transitive deps; missing stubs there are noise, not
 # signal.
 [[tool.mypy.overrides]]
 module = ["scipy.*", "aioesphomeapi.*", "PIL.*", "esphome.*", "segno.*"]
 ignore_missing_imports = true
+

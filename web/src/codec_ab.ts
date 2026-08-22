@@ -20,13 +20,8 @@
 import { api } from "./api.js";
 import { startEta } from "./eta.js";
 
-export interface CodecRow {
-  codec: string;
-  bytes: number;
-  /** Spectral distance from the lossless reference, dB. 0 for the reference. */
-  db: number;
-  url: string;
-}
+export type { CodecRow } from "./types.js";
+import type { CodecRow } from "./types.js";
 
 export interface CodecAbDeps {
   /** The track to encode, and which piece of it. Null when nothing is picked. */

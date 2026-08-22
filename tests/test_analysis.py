@@ -239,7 +239,7 @@ class TestDensityFitting(unittest.TestCase):
 
     def residual(self, decay: float, gap: float) -> float:
         """How much of a flash survives to the next hit."""
-        return decay ** (gap / it.FRAME)
+        return float(decay ** (gap / it.FRAME))
 
     def test_dense_material_decays_faster(self) -> None:
         decay, _ = it.fit_to_density(self.hits(0.24), 0.92)

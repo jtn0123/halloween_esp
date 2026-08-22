@@ -23,6 +23,7 @@ Skipped, not failed, where no host C++ compiler exists.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -44,7 +45,13 @@ def build(src: Path, out: Path) -> subprocess.CompletedProcess[str]:
                           capture_output=True, text=True, check=False)
 
 
-@unittest.skipIf(COMPILER is None, "no host C++ compiler")
+#: Locally a missing compiler is a skip. In CI it is a failure: the runner
+#: image losing g++ would otherwise turn the only firmware-executing tests
+#: into a green tick that tests nothing.
+IN_CI = bool(os.environ.get("CI"))
+
+
+@unittest.skipIf(COMPILER is None and not IN_CI, "no host C++ compiler")
 class TestFirmwareRenderPath(unittest.TestCase):
     tmp: ClassVar[str]
     check: ClassVar[Path]
@@ -54,6 +61,9 @@ class TestFirmwareRenderPath(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
+        if COMPILER is None:
+            raise AssertionError("CI is set and no host C++ compiler (clang++/g++) "
+                                 "is on PATH — the firmware harness must run in CI")
         cls.tmp = tempfile.mkdtemp()
         cls.check = Path(cls.tmp) / "render_check"
         cls.dump = Path(cls.tmp) / "parity_dump"

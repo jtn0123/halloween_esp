@@ -239,7 +239,12 @@ def parse_multipart(raw: bytes, ctype: str) -> tuple[str, bytes]:
             continue
         name = head.decode("utf-8", "replace").split("filename=")[1]
         name = name.split('"')[1] if '"' in name else name.strip()
+        name = Path(name).name
+        # Path("..").name is ".." — the staging path would be tracks/_upload/..
+        # (= tracks/) and write_bytes would 500. Say 400 here instead.
+        if name in ("", ".", ".."):
+            raise BadRequest(f"upload filename {name!r} is not a file name")
         # Strip exactly the CRLF before the boundary — rstrip(b"\r\n-")
         # also ate any REAL trailing 0x2D/0x0D/0x0A bytes of the file.
-        return Path(name).name, data[:-2] if data.endswith(b"\r\n") else data
+        return name, data[:-2] if data.endswith(b"\r\n") else data
     return "", b""

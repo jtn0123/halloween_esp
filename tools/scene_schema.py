@@ -23,15 +23,16 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import effect_vocab as ev
+
 REQUIRED = ("id", "name", "kind", "duration_ms", "base")
 CUE_OPS = ("set", "strike")
 ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
 def _vocab() -> dict[str, set[str]]:
-    import gen_esphome as ge
-    return {"effect": set(ge.EFFECT_IDS), "overlay": set(ge.OVERLAY_IDS),
-            "palette": set(ge.PALETTE_IDS), "pixels": set(ge.FLASH_MODE_IDS)}
+    return {"effect": set(ev.EFFECT_IDS), "overlay": set(ev.OVERLAY_IDS),
+            "palette": set(ev.PALETTE_IDS), "pixels": set(ev.FLASH_MODE_IDS)}
 
 
 def _num(v: Any) -> bool:

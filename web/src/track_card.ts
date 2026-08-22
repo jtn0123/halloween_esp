@@ -12,8 +12,9 @@
 import { onCardChanged, onCastlePresence } from "./castle_bus.js";
 import { esc } from "./track_rows.js";
 import { cardName, cardState, fetchCard, sendable, sendToCastle } from "./track_send.js";
+import { api } from "./api.js";
 import { castleAct, failReason } from "./device.js";
-import type { TrackInfo } from "./tracks.js";
+import type { TrackInfo } from "./types.js";
 
 /** What both renderers need to know about the two libraries. */
 export interface CardCtx {
@@ -164,8 +165,7 @@ export function wireCardActions(deps: CardActionDeps): void {
     } else if (btn.dataset["cardact"] === "pull" && deps.importFile) {
       btn.disabled = true;
       btn.textContent = "pulling…";
-      const r = await fetch(`/api/card/${encodeURIComponent(name)}`)
-        .catch(() => null);
+      const r = await api.cardFile(name).catch(() => null);
       if (!r?.ok) {
         deps.say(`Could not pull ${name} off the card — `
           + `${r ? await failReason(r) : "no answer from the castle"}.`, true);

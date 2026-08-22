@@ -92,10 +92,14 @@ test("kiosk with a castle: no dock, no toasts, keys inert, the scene RUNS", asyn
   await expect(page.locator("#deviceChip")).toBeHidden();
   // Nothing the tablet does reaches the porch: not the keyboard, not the
   // adoption itself.
+  const tc = () => page.locator("#tc").textContent();
+  const tcBefore = await tc();
   await page.keyboard.press("2");
   await page.keyboard.press("Escape");
   await page.keyboard.press("Space");
-  await page.waitForTimeout(400);
+  // Key handlers run before press() returns; the clock still moving
+  // afterwards is the show carrying on — not stopped, not re-cued.
+  await expect.poll(tc).not.toBe(tcBefore);
   await expect(page.locator("#stageNote")).toContainText("Storm");
   await expect(page.locator("#playLabel")).toHaveText("Pause");
   expect(castle.hits("/api/scene")).toBe(0);

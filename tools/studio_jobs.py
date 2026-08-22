@@ -14,6 +14,7 @@ and a progress bar does not need sub-second latency.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import subprocess
 import threading
@@ -50,11 +51,20 @@ class Job:
 
 
 class JobRunner:
-    """One import at a time; ffmpeg and yt-dlp are not worth interleaving."""
+    """Background jobs, serialised with the studio's synchronous encodes.
 
-    def __init__(self) -> None:
+    `gate` is the studio's encode lock (tools/studio.py `_lock`): a job
+    holds it for the life of its child, so an async import, a sync import
+    and a rebuild take turns at ffmpeg instead of racing for the CPU. A job
+    waiting on the gate stays "queued" — the page can see it is in line,
+    not hung. None (the default) means no serialisation, which is what the
+    unit tests and any other embedder get unless they ask.
+    """
+
+    def __init__(self, gate: threading.Lock | None = None) -> None:
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
+        self._gate = gate
 
     def get(self, job_id: str) -> Job | None:
         with self._lock:
@@ -73,6 +83,10 @@ class JobRunner:
         return job
 
     def _run(self, job: Job, argv: list[str]) -> None:
+        with self._gate or contextlib.nullcontext():
+            self._run_child(job, argv)
+
+    def _run_child(self, job: Job, argv: list[str]) -> None:
         job.phase = "fetching"
         try:
             # Context-managed so the child's stdout is closed deterministically.
@@ -204,3 +218,21 @@ def reason(text: str) -> str:
     """The one-line verdict for a tool's whole output (the sync paths)."""
     return JobRunner._explain([ln.rstrip() for ln in text.splitlines()
                                if ln.strip()])
+
+
+# ── the importer's CLI flags — shared by import, async import and refresh ──
+OPT_KEYS = ("id", "start", "take", "sensitivity", "bitrate", "sample_rate",
+            "channels", "format", "gain_db", "fade_in", "fade_out", "notes")
+
+
+def opt_args(req: dict, keys: tuple[str, ...] = OPT_KEYS) -> list[str]:
+    args: list[str] = []
+    for k in keys:
+        v = req.get(k)
+        if v not in (None, ""):
+            args.append(f"--{k.replace('_', '-')}={v}")   # `=`: a value can't become a flag
+    if req.get("normalize") is True:
+        args.append("--normalize")
+    elif req.get("normalize") is False:
+        args.append("--no-normalize")
+    return args

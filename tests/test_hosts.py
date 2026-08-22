@@ -100,6 +100,41 @@ class TestResolve(unittest.TestCase):
         self.assertEqual(hosts.resolve(), "10.0.0.7")
 
 
+class TestCandidates(TestResolve):
+    """The ordered list castle_link walks: env -> entry host -> fallbacks."""
+
+    def test_table_order_is_entry_then_its_fallbacks(self) -> None:
+        self.assertEqual(hosts.candidates(), ["10.0.0.7", "10.0.0.8", "10.0.0.9"])
+
+    def test_env_is_a_comma_list_and_names_expand(self) -> None:
+        os.environ["CASTLE_HOST"] = "1.1.1.1, porch ,127.0.0.1:8093"
+        self.assertEqual(hosts.candidates(),
+                         ["1.1.1.1", "10.0.0.7", "10.0.0.8", "127.0.0.1:8093"])
+
+    def test_empty_env_means_no_castle(self) -> None:
+        os.environ["CASTLE_HOST"] = ""
+        self.assertEqual(hosts.candidates(), [])
+
+    def test_an_explicit_name_expands_and_an_ip_stands_alone(self) -> None:
+        os.environ["CASTLE_HOST"] = "9.9.9.9"
+        self.assertEqual(hosts.candidates("porch"), ["10.0.0.7", "10.0.0.8"])
+        self.assertEqual(hosts.candidates("10.5.5.5"), ["10.5.5.5"])
+
+    def test_resolve_is_the_first_candidate(self) -> None:
+        for env in ("bench", "1.2.3.4,porch", None):
+            if env is None:
+                os.environ.pop("CASTLE_HOST", None)
+            else:
+                os.environ["CASTLE_HOST"] = env
+            self.assertEqual(hosts.resolve(), hosts.candidates()[0], env)
+
+    def test_no_file_is_an_empty_list(self) -> None:
+        self.toml.unlink()
+        self.assertEqual(hosts.candidates(), [])
+        (self.toml).write_text("host = = =\n")
+        self.assertEqual(hosts.candidates(), [])
+
+
 class TestMaybeHost(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="castle-hosts-"))

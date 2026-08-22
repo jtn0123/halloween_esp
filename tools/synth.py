@@ -36,7 +36,7 @@ Voice = np.ndarray | tuple[np.ndarray, list[tuple[float, float]]]
 
 def nt(semitones: float) -> float:
     """Semitones relative to A3 (220 Hz)."""
-    return 220.0 * (2.0 ** (semitones / 12.0))
+    return float(220.0 * (2.0 ** (semitones / 12.0)))
 
 
 def _t(n: int) -> np.ndarray:
@@ -49,7 +49,7 @@ def _noise(n: int, rng: np.random.Generator) -> np.ndarray:
 
 def _lp(x: np.ndarray, hz: float, order: int = 2) -> np.ndarray:
     sos = signal.butter(order, min(hz, SR / 2 - 100), "lowpass", fs=SR, output="sos")
-    return signal.sosfilt(sos, x)
+    return np.asarray(signal.sosfilt(sos, x))
 
 
 def _bp(x: np.ndarray, hz: float, q: float = 2.0) -> np.ndarray:
@@ -57,7 +57,7 @@ def _bp(x: np.ndarray, hz: float, q: float = 2.0) -> np.ndarray:
     bw = max(hz / q, 20.0)
     lo, hi = max(20.0, hz - bw / 2), min(SR / 2 - 100, hz + bw / 2)
     sos = signal.butter(2, [lo, hi], "bandpass", fs=SR, output="sos")
-    return signal.sosfilt(sos, x)
+    return np.asarray(signal.sosfilt(sos, x))
 
 
 def _sweep_lp(x: np.ndarray, f0: float, f1: float, blocks: int = 48) -> np.ndarray:
@@ -98,7 +98,7 @@ def pipe(f: float, dur: float, vel: float, stops: float = STOPS) -> np.ndarray:
     hold = max(atk + 0.05, dur - rel)
     env = np.interp(t, [0, atk, hold, dur], [0.0, 1.0, 1.0, 0.0])
     trem = 1.0 + TREM_DEPTH * np.sin(2 * np.pi * TREM_HZ * t)
-    return out * env * trem * vel
+    return np.asarray(out * env * trem * vel)
 
 
 def piano(f: float, dur: float, vel: float) -> np.ndarray:
@@ -153,7 +153,7 @@ def wind(dur: float, rng: np.random.Generator) -> np.ndarray:
     # the tail never fades and a looping bed clicks on every pass.
     up, down = min(2.5, dur / 2), max(dur - 1.5, dur / 2)
     fade = np.interp(t, [0, up, down, dur], [0.0, 1.0, 1.0, 0.0])
-    return out * swell * fade * 0.10
+    return np.asarray(out * swell * fade * 0.10)
 
 
 def thunder(rng: np.random.Generator) -> np.ndarray:
@@ -177,7 +177,7 @@ def creak(rng: np.random.Generator) -> np.ndarray:
     f = np.repeat(rng.uniform(70, 160, steps), int(np.ceil(n / steps)))[:n]
     saw = 2.0 * (np.cumsum(f) / SR % 1.0) - 1.0
     out = _bp(saw, 760, q=7)
-    return out * np.interp(t, [0, 0.06, dur], [0.0, 1.0, 0.0]) ** 1.4 * 0.30
+    return np.asarray(out * np.interp(t, [0, 0.06, dur], [0.0, 1.0, 0.0]) ** 1.4 * 0.30)
 
 
 def shriek(rng: np.random.Generator) -> np.ndarray:
@@ -195,7 +195,7 @@ def shriek(rng: np.random.Generator) -> np.ndarray:
         if b <= a:
             continue
         out[a:b] = _bp(src[max(0, a - 256):b], centres[i], q=9)[-(b - a):]
-    return out * np.interp(t, [0, 0.04, dur], [0.0, 1.0, 0.0]) ** 1.3 * 0.34
+    return np.asarray(out * np.interp(t, [0, 0.04, dur], [0.0, 1.0, 0.0]) ** 1.3 * 0.34)
 
 
 def heartbeat(dur: float, rng: np.random.Generator) -> Voice:
@@ -247,7 +247,7 @@ def drone(dur: float) -> np.ndarray:
     # np.interp gets a non-monotonic xp and the tail never fades.
     up, down = min(3.0, dur / 2), max(dur - 3.0, dur / 2)
     fade = np.interp(t, [0, up, down, dur], [0.0, 1.0, 1.0, 0.0])
-    return out * wander * fade * 0.16
+    return np.asarray(out * wander * fade * 0.16)
 
 
 def whispers(dur: float, rng: np.random.Generator) -> Voice:
@@ -379,7 +379,7 @@ def apply_reverb(x: np.ndarray, wet: float, rng: np.random.Generator) -> np.ndar
     peak = np.max(np.abs(tail))
     if peak > 0:
         tail /= peak
-    return x + wet * tail * np.max(np.abs(x) + 1e-9)
+    return np.asarray(x + wet * tail * np.max(np.abs(x) + 1e-9))
 
 
 def limit(x: np.ndarray, ceiling: float = 0.89) -> np.ndarray:
@@ -403,7 +403,7 @@ def limit(x: np.ndarray, ceiling: float = 0.89) -> np.ndarray:
     pad = smooth // 2
     padded = np.pad(gain, pad, mode="edge")
     gain = np.convolve(padded, np.ones(smooth) / smooth, mode="same")[pad:pad + len(env)]
-    return np.clip(x * gain, -1.0, 1.0)
+    return np.asarray(np.clip(x * gain, -1.0, 1.0))
 
 
 SYNTHS: dict[str, Callable[..., Voice]] = {

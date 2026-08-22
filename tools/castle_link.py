@@ -25,16 +25,13 @@ from __future__ import annotations
 
 import http.client
 import json
-import os
 import time
-import tomllib
-from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import castle_native
+import hosts as hosts_mod
 
-ROOT = Path(__file__).resolve().parents[1]
-DEVICES = ROOT / "devices.toml"
+#: devices.toml lives behind hosts.py now (hosts.DEVICES); patch it there.
 
 #: One WiFi round-trip to a busy ESP32: the read budget for the quick verbs
 #: (status, the POSTs). Long enough for a slow answer, short enough that a
@@ -69,27 +66,13 @@ _cache: dict[str, tuple[float, dict]] = {}
 def castle_hosts() -> list[str]:
     """Every address worth trying, best first.
 
-    CASTLE_HOST may hold a comma-separated list; devices.toml entries may
-    carry `fallbacks = [...]` beside `host`. Until the DHCP reservation
-    exists, a router re-leasing the castle's IP silently killed the bridge —
-    the fallback list is the belt to that suspender. Whichever host last
-    answered is remembered and tried first.
+    The ordered list is hosts.candidates() — CASTLE_HOST (comma list; empty
+    means no castle), else every devices.toml entry's `host` + `fallbacks`.
+    Until the DHCP reservation exists, a router re-leasing the castle's IP
+    silently killed the bridge — the fallback list is the belt to that
+    suspender. Whichever host last answered is remembered and tried first.
     """
-    env = os.environ.get("CASTLE_HOST")
-    if env is not None:
-        # Set-but-empty means "explicitly no castle" — the e2e suite uses it
-        # so a live device on the LAN cannot flip test expectations.
-        hosts = [h.strip() for h in env.split(",") if h.strip()]
-    else:
-        hosts = []
-        try:
-            doc = tomllib.loads(DEVICES.read_text())
-        except (OSError, tomllib.TOMLDecodeError):
-            doc = {}
-        for entry in doc.values():
-            if isinstance(entry, dict) and entry.get("host"):
-                hosts.append(str(entry["host"]))
-                hosts.extend(str(h) for h in entry.get("fallbacks", []))
+    hosts = hosts_mod.candidates()
     up = _cache.get("up")
     if up:
         h = str(up[1].get("host", ""))

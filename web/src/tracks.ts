@@ -25,46 +25,10 @@ import { createStatus } from "./track_status.js";
 import { createPreview } from "./preview.js";
 import type { Scene } from "./types.js";
 
-/** The import options row, as tools/studio.py remembers them per track. */
-export interface TrackOpts {
-  id?: string;
-  start?: string;
-  take?: string;
-  sensitivity?: string;
-  bitrate?: number;
-  sample_rate?: number;
-  channels?: number;
-  format?: string;
-  normalize?: boolean;
-  fade_in?: number | string | null;
-  fade_out?: number | string | null;
-}
-
-/** One entry from `GET /api/tracks`. */
-export interface TrackInfo {
-  id: string;
-  /** Container it landed in: mp3 | wav | flac | opus. */
-  ext?: string;
-  /** File size on disk, kilobytes. */
-  kb: number;
-  /** Exact size in bytes — what proves a card copy current vs stale. */
-  bytes?: number;
-  /** Duration in seconds; missing if ffprobe could not say. */
-  dur?: number;
-  /** Where it came from — a URL, or `file:<path>` (tracks/_src/<id>.<ext>
-   *  for a dropped or card-pulled file, kept so Re-import can work). */
-  source: string;
-  /** A file: source whose file has since gone — no Re-import possible. */
-  source_missing?: boolean;
-  title: string;
-  imported: string;
-  opts: TrackOpts;
-  notes: string;
-  /** Band name -> how many onsets were found in it. */
-  onsets?: Record<string, number>;
-  error?: string;
-}
-
+// Moved to types.ts (the transport must not import from its consumers);
+// re-exported so the panel modules keep their old import path.
+export type { TrackInfo, TrackOpts } from "./types.js";
+import type { TrackInfo } from "./types.js";
 
 export interface TracksDeps {
   /** The show as loaded, for the capacity readout's "alongside the current show". */

@@ -7,12 +7,14 @@
  * server failed at paint time, in whichever panel happened to touch it
  * first. Now the contract lives in ONE file, next to the timeouts.
  *
- * Deliberately NOT here: the castle's own /api/* endpoints (device.ts,
+ * Mostly NOT here: the castle's own /api/* endpoints (device.ts,
  * device_panel.ts). The studio owns /studio/* and relays /api/* to the
  * castle untouched (docs/API.md) — the studio authors the show, the device
  * performs it — and keeping the two contracts in separate files, under
  * separate prefixes, is what stops a call site from silently talking to
- * the wrong one.
+ * the wrong one. The two castle reads the Tracks panel makes to reconcile
+ * the library with the card (`castleFiles`, `castleStatus`) sit at the
+ * bottom, named for what they are, so track_send.ts has no raw fetch.
  *
  * Application failures (ok:false) are returned, not thrown: the call sites
  * own their wording, and the server's `log` tail is part of the message.
@@ -20,8 +22,7 @@
  * or a non-JSON reply.
  */
 
-import type { CodecRow } from "./codec_ab.js";
-import type { TrackInfo } from "./tracks.js";
+import type { CodecRow, SdFile, TrackInfo } from "./types.js";
 
 export interface TracksResponse { tracks?: TrackInfo[]; scenes?: string[] }
 
@@ -192,4 +193,33 @@ export const api = {
     call("/studio/server/stop", { method: "POST" }),
   serverRestart: (): Promise<ActionResponse> =>
     call("/studio/server/restart", { method: "POST" }),
+
+  /** A track's bytes, for sending to the card. Throws on any non-2xx. */
+  trackBytes: async (id: string): Promise<Blob> => {
+    const r = await fetch(`/studio/track/${encodeURIComponent(id)}`,
+                          { signal: AbortSignal.timeout(ENCODE) });
+    if (!r.ok) throw new Error(String(r.status));
+    return r.blob();
+  },
+  /** A file off the castle's card, relayed by the studio. The raw Response:
+   *  the caller words a 404 differently from a dead castle (failReason). */
+  cardFile: (name: string): Promise<Response> =>
+    fetch(`/studio/card/${encodeURIComponent(name)}`,
+          { signal: AbortSignal.timeout(ENCODE) }),
+
+  /* ── the castle, through the page's origin (relayed or local) ── */
+
+  /** The card listing. Throws when no castle answers. */
+  castleFiles: async (): Promise<SdFile[]> => {
+    const r = await fetch("/api/files", { signal: AbortSignal.timeout(QUICK) });
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json() as Promise<SdFile[]>;
+  },
+  /** The castle's status line — here only for `sd_free_kb`; device.ts owns
+   *  the probe that decides simulator-vs-device. */
+  castleStatus: async (): Promise<{ sd_free_kb?: number }> => {
+    const r = await fetch("/api/status", { signal: AbortSignal.timeout(QUICK) });
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json() as Promise<{ sd_free_kb?: number }>;
+  },
 };

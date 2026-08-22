@@ -77,9 +77,10 @@ test("a 504 says the castle may have it, and does not re-send on its own", async
   await page.locator(`${row(MP3_ID)} button[data-act='send']`).click();
   await expect(page.locator("#trkNote")).toContainText("did not confirm in time");
   await expect(page.locator("#trkNote")).toContainText("do not re-send until it does");
-  await page.waitForTimeout(400);
-  expect(castle.hits(`PUT /api/files/${MP3_ID}`)).toBe(1);
+  // The button reading "→ Castle" again is the end of the send routine: any
+  // retry it was going to make is in the log by then.
   await expect(page.locator(`${row(MP3_ID)} button[data-act='send']`)).toHaveText("→ Castle");
+  expect(castle.hits(`PUT /api/files/${MP3_ID}`)).toBe(1);
 });
 
 test("a send the card cannot hold is refused before a byte moves", async ({ page }) => {
@@ -111,9 +112,13 @@ test("the card watcher redraws only on a real change, and never under a focused 
   const before = await polls();
 
   // One watcher tick with nothing changed: a poll, no redraw, focus intact.
+  // The tick's /api/files answer is the observable; the compare runs in its
+  // microtasks, so by the next round trip a redraw would have happened —
+  // and the second tick's total of exactly one below would catch it too.
+  const answered = page.waitForResponse((r) => r.url().endsWith("/api/files"));
   await page.clock.fastForward(21_000);
   await expect.poll(polls).toBeGreaterThan(before);
-  await page.waitForTimeout(200);
+  await answered;
   expect(await redraws()).toBe(0);
   expect(await page.evaluate(() => document.activeElement?.getAttribute("data-act"))).toBe("scene");
 
@@ -140,9 +145,10 @@ test("the ♪ route survives a reload without re-hushing the castle", async ({ p
   await expect(page.locator(".transport #sndRoute")).toHaveText("♪ Castle");
   await expect(page.locator("#devVol")).toBeEnabled();
   await expect(page.locator("#headTxt")).toContainText("sound: castle");
-  await page.waitForTimeout(500);
-  expect(castle.hits("/api/volume")).toBe(0);        // nothing to enforce
+  // The slider taking the castle's 40 is the first render landing — the
+  // same render that enforces a route, so nothing is still on its way.
   await expect(page.locator("#devVol")).toHaveValue("40");
+  expect(castle.hits("/api/volume")).toBe(0);        // nothing to enforce
 });
 
 test("a castle that dies mid-session takes its badges and Sync with it", async ({ page }) => {

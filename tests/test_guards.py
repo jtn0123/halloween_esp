@@ -12,6 +12,8 @@ as a pass. Hence these.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import shutil
 import sys
 import tempfile
@@ -76,7 +78,9 @@ class TestImageCheck(unittest.TestCase):
         argv = sys.argv
         try:
             sys.argv = ["check_image.py", "_no_such_device_"]
-            self.assertEqual(check_image.main(), 0)
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(check_image.main(), 0)
+            self.assertIn("no built image", out.getvalue())
         finally:
             sys.argv = argv
 
@@ -111,8 +115,10 @@ class TestImageCheck(unittest.TestCase):
             argv = sys.argv
             try:
                 sys.argv = ["check_image.py", "big"]
-                self.assertEqual(check_image.main(), 1,
-                                 "an oversized image must fail the check")
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    self.assertEqual(check_image.main(), 1,
+                                     "an oversized image must fail the check")
+                self.assertIn("FAIL — over 97% of the slot", out.getvalue())
             finally:
                 sys.argv = argv
                 check_image.find_image = orig
@@ -130,7 +136,9 @@ class TestImageCheck(unittest.TestCase):
             argv = sys.argv
             try:
                 sys.argv = ["check_image.py", "small"]
-                self.assertEqual(check_image.main(), 0)
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    self.assertEqual(check_image.main(), 0)
+                self.assertIn("50.0%", out.getvalue())
             finally:
                 sys.argv = argv
                 check_image.find_image = orig

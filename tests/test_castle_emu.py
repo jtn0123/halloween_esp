@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import re
 import sys
 import tempfile
@@ -69,7 +70,7 @@ class EmuCase(unittest.TestCase):
                 return e.code, e.read()
 
     def status(self) -> dict:
-        return json.loads(self.http("GET", "/api/status")[1])
+        return dict(json.loads(self.http("GET", "/api/status")[1]))
 
 
 class TestStatusShape(EmuCase):
@@ -216,7 +217,7 @@ class TestCardRoundTrip(EmuCase):
 
 class TestAtomicUpload(EmuCase):
     """sd_web.h write_body: `<name>.part`, then unlink + rename. The
-    studio side got this in 3ccdd8b; the card side in v5.25 (B1)."""
+    studio side got this in 3ccdd8b; the card side in v5.27 (B1)."""
 
     def test_a_short_upload_leaves_the_previous_copy_intact(self) -> None:
         good = b"\xff\xfb" + b"G" * 3000
@@ -228,7 +229,7 @@ class TestAtomicUpload(EmuCase):
         c.putheader("Content-Length", "5000")
         c.endheaders()
         c.send(b"\xff\xfb" + b"B" * 998)
-        c.sock.shutdown(1)  # type: ignore[union-attr]
+        c.sock.shutdown(1)
         r = c.getresponse()
         self.assertEqual((r.status, r.read()), (500, b"short write"))
         c.close()
@@ -305,28 +306,28 @@ class TestBridge(EmuCase):
     """castle_link → emulator: the studio's relay leg, no hardware."""
 
     def setUp(self) -> None:
-        self._env = castle_link.os.environ.get("CASTLE_HOST")
-        castle_link.os.environ["CASTLE_HOST"] = f"127.0.0.1:{self.emu.port}"
+        self._env = os.environ.get("CASTLE_HOST")
+        os.environ["CASTLE_HOST"] = f"127.0.0.1:{self.emu.port}"
         castle_link._cache.clear()
 
     def tearDown(self) -> None:
         if self._env is None:
-            castle_link.os.environ.pop("CASTLE_HOST", None)
+            os.environ.pop("CASTLE_HOST", None)
         else:
-            castle_link.os.environ["CASTLE_HOST"] = self._env
+            os.environ["CASTLE_HOST"] = self._env
         castle_link._cache.clear()
 
     def test_status_arrives_bridged(self) -> None:
         st = castle_link.status()
         self.assertIsNotNone(st)
         assert st is not None
-        self.assertEqual(st["version"], "5.25")
+        self.assertEqual(st["version"], "5.27")
         self.assertEqual(st["bridged"], f"127.0.0.1:{self.emu.port}")
 
     def test_dead_primary_falls_through_to_a_live_fallback(self) -> None:
         """CASTLE_HOST can list addresses; a re-leased IP must not kill the
         bridge while a fallback still answers (devices.toml `fallbacks`)."""
-        castle_link.os.environ["CASTLE_HOST"] = \
+        os.environ["CASTLE_HOST"] = \
             f"127.0.0.1:1,127.0.0.1:{self.emu.port}"
         castle_link._cache.clear()
         st = castle_link.status()

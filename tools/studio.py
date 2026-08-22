@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
-"""Local companion server for the cue desk.
+"""Local companion server for the cue desk (`make studio` -> 127.0.0.1:8765).
 
-The previewer is a single static HTML file, which is exactly what makes it
-portable — but a static file cannot run yt-dlp, cannot write to tracks/, and
-cannot edit scenes.yaml. This puts a small server behind it so the Tracks
-panel can actually do those things on your own machine.
+The previewer is one static HTML file; this small server is what lets its
+Tracks panel run yt-dlp/ffmpeg, write tracks/, and edit scenes.yaml. Routes:
+docs/API.md. What the studio OWNS lives under /studio/...; /api/... is the
+castle's and relays to it untouched (castle_link.py) — except /api/status,
+answered here when no castle is in reach. Old /api/ spellings of studio
+routes are aliases for one release (STUDIO_ROUTES below).
 
-    make studio          -> http://127.0.0.1:8765
-
-Routes — the full table is docs/API.md. In one line: what the studio OWNS
-lives under /studio/... ; /api/... is the castle's and relays to it untouched
-(castle_link.py), except /api/status, which the studio answers for itself
-when no castle is in reach. Old /api/ spellings of the studio routes are
-aliases for one release (STUDIO_ROUTES below).
-
-Binds to 127.0.0.1 by default. This drives ffmpeg and yt-dlp on your machine
-and edits files in the repo; `--lan` opens it to the local network for the
-phone/iPad remote — do that only on a network you control.
+Binds to 127.0.0.1 by default; `--lan` opens it to the local network for
+the phone/iPad remote — only on a network you control: a LAN visitor can
+import and delete tracks, rewrite scenes.yaml, push to the castle and stop
+the server, with no login.
 """
 
 from __future__ import annotations
@@ -34,10 +29,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import build_paths as bp
 import castle_link as cl
+import gen_previewer as gp
 import manifest as mf
+import netguard as ng
 import stems as st
 import studio_http as sh
 import studio_jobs as sj
+from studio_jobs import OPT_KEYS, opt_args  # the importer's CLI flags, one place
 import studio_media as sm
 import studio_scenes as ss
 
@@ -67,23 +65,19 @@ HTML = ROOT / "previewer" / "castle-cue-desk.html"
 PY = sys.executable
 
 _lock = threading.Lock()          # ffmpeg/yt-dlp jobs are serialised
-_runner = sj.JobRunner()          # long imports run in the background
+_runner = sj.JobRunner(gate=_lock)  # background jobs queue behind the same lock
 
 
 def _restart() -> None:
-    """Replace this process with a fresh copy of itself.
-
-    os.execv keeps the same PID, so whatever launched us — a double-clicked
-    launcher, or launchd — neither notices nor needs to re-parent anything.
-    """
+    """Replace this process with a fresh copy of itself. os.execv keeps the
+    PID, so whatever launched us (a launcher, launchd) notices nothing."""
     time.sleep(0.4)               # let the HTTP response actually go out
     os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
 def run(cmd: list[str], timeout: int = 900) -> tuple[bool, str]:
-    # The ceiling matters more than its exact value: these run holding
-    # _lock, so one hung ffmpeg/yt-dlp used to wedge every later import
-    # and rebuild for the life of the process.
+    # The ceiling matters more than its value: these run holding _lock, so
+    # one hung ffmpeg/yt-dlp used to wedge every later import and rebuild.
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, check=False,
                            timeout=timeout)
@@ -92,24 +86,6 @@ def run(cmd: list[str], timeout: int = 900) -> tuple[bool, str]:
     return p.returncode == 0, (p.stdout + p.stderr)[-4000:]
 
 
-#: The option row as the import command wants it; normalize is tri-state
-#: (True/False/absent), since an unchecked "match loudness" must reach
-#: import_track as --no-normalize — it used to be silently dropped (JB1-6).
-OPT_KEYS = ("id", "start", "take", "sensitivity", "bitrate", "sample_rate",
-            "channels", "format", "gain_db", "fade_in", "fade_out", "notes")
-
-
-def opt_args(req: dict, keys: tuple[str, ...] = OPT_KEYS) -> list[str]:
-    args: list[str] = []
-    for k in keys:
-        v = req.get(k)
-        if v not in (None, ""):
-            args += [f"--{k.replace('_', '-')}", str(v)]
-    if req.get("normalize") is True:
-        args.append("--normalize")
-    elif req.get("normalize") is False:
-        args.append("--no-normalize")
-    return args
 
 
 def failed(log: str, **extra) -> dict:
@@ -126,6 +102,15 @@ def safe_id(raw: str) -> str | None:
     import_track's error output."""
     tid = (raw or "").strip()
     return tid if tid and all(c.isalnum() or c == "_" for c in tid) else None
+
+
+def served() -> tuple[Path, Path]:
+    """The page the studio serves and the audio/ it was built from — a
+    sandbox's own build once it has one, the repo's until then; always both,
+    so the lean page's /studio/scene-audio/ links resolve to its own files."""
+    if bp.sandboxed() and bp.PREVIEW_HTML.exists():
+        return bp.PREVIEW_HTML, bp.AUDIO
+    return HTML, ROOT / "audio"
 
 
 #: The studio's own route families. "/api/<x>" for any of these is the OLD
@@ -171,13 +156,17 @@ class Handler(sh.JsonHandler):
     def _get(self):
         path = studio_path(self.path)
         if path in ("/", "/index.html"):
-            # A sandboxed studio serves the page ITS rebuilds wrote (so
-            # "Reload the desk" shows the sandbox's scenes), the repo's
-            # build until it has one.
-            page = bp.PREVIEW_HTML if bp.sandboxed() and bp.PREVIEW_HTML.exists() else HTML
+            # Lean: inlined audio rewritten to /studio/scene-audio/ links.
+            page, _ = served()
             if not page.exists():
                 return self.send_json({"error": "previewer not built"}, 404)
-            return self.send_file(page, "text/html; charset=utf-8")
+            body, etag = gp.lean_page(page)
+            return self.send_bytes(body, "text/html; charset=utf-8", etag=etag)
+        if path.startswith("/studio/scene-audio/"):
+            p = gp.scene_audio(served()[1], Path(path).name)
+            if p is None:
+                return self.send_json({"error": "no such scene audio"}, 404)
+            return self.send_range(p, "audio/mpeg")
         if path == "/remote":
             # The castle's own phone remote (firmware/sd_web_remote.h) — four
             # thumb buttons that live in flash. Relayed so the address on
@@ -204,7 +193,7 @@ class Handler(sh.JsonHandler):
             TRACKS.mkdir(exist_ok=True)
             return self.send_json({
                 "tracks": track_infos(track_files()),
-                "scenes": [s for s in scene_ids()],
+                "scenes": scene_ids(),
             })
         if path.startswith("/studio/waveform/"):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
@@ -298,16 +287,15 @@ class Handler(sh.JsonHandler):
             src = (req.get("url") or "").strip()
             if not src.startswith(("http://", "https://")):
                 return self.send_json({"error": "url must be http(s)"}, 400)
+            if (why := ng.refuse_reason(src, self.client_address[0])):
+                return self.send_json({"error": why}, 400)
             if req.get("id") and safe_id(req["id"]) is None:
-                return self.send_json(
-                    {"error": "id: letters, digits and _ only"}, 400)
-            args = [PY, str(ROOT / "tools" / "import_track.py"), src]
-            args += opt_args(req)
+                return self.send_json({"error": "id: letters, digits and _ only"}, 400)
+            args = [PY, str(ROOT / "tools" / "import_track.py"), src, *opt_args(req)]
             return self.send_json(_runner.start(args).as_dict())
         if path == "/studio/stems":
-            # Demucs split as a background job — ~25 s on the GPU is far too
-            # long to hold an HTTP request open, and the JobRunner already
-            # knows how to babysit a child process.
+            # Demucs split as a background job — ~25 s on the GPU is too long
+            # to hold a request open; the JobRunner babysits child processes.
             req = self.json_body(raw)
             tid = safe_id(req.get("id") or "")
             if tid is None or track_path(tid) is None:
@@ -317,8 +305,7 @@ class Handler(sh.JsonHandler):
                 args.append("--force")
             return self.send_json(_runner.start(args).as_dict())
         if path == "/studio/refresh":
-            # Rebuild a track from its remembered source, with any option
-            # overridden. This is why the manifest exists.
+            # Rebuild a track from its remembered source, options overridden.
             req = self.json_body(raw)
             tid = safe_id(req.get("id") or "")
             if tid is None:
@@ -349,13 +336,16 @@ class Handler(sh.JsonHandler):
             }
             # ffmpeg four times over; serialise with every other encode job.
             with _lock:
-                out = sm.compare(p, opts, token=f"{p.stem}-{int(time.time())}")
-            return self.send_json(out, 200 if out.get("ok") else 500)
+                res = sm.compare(p, opts, token=f"{p.stem}-{int(time.time())}")
+            return self.send_json(res, 200 if res.get("ok") else 500)
         if path == "/studio/probe":
             req = self.json_body(raw)
-            out = sm.probe((req.get("url") or "").strip())
+            url = (req.get("url") or "").strip()
+            if (why := ng.refuse_reason(url, self.client_address[0])):
+                return self.send_json({"error": why}, 400)
+            res = sm.probe(url)
             # A bad or unreadable link is the caller's problem: 400, not 200.
-            return self.send_json(out, 200 if out.get("ok") else 400)
+            return self.send_json(res, 200 if res.get("ok") else 400)
         if path == "/studio/server/stop":
             # Answer first, then shut down — otherwise the page sees the
             # socket die and reports a network error instead of "stopped".
@@ -367,9 +357,8 @@ class Handler(sh.JsonHandler):
             threading.Thread(target=_restart, daemon=True).start()
             return
         if path == "/studio/scene":
-            # The studio's scenes.yaml editor (JSON body). /api/scene?s=<id>
-            # is the castle's fire-a-scene and never lands here —
-            # studio_path keeps it on the relay.
+            # The studio's scenes.yaml editor (JSON body). /api/scene?s=<id> is
+            # the castle's fire-a-scene; studio_path keeps it on the relay.
             return self.do_scene(self.json_body(raw))
         if path == "/studio/rebuild":
             ok, log = ss.rebuild(_lock, run, PY, ROOT)
@@ -378,24 +367,21 @@ class Handler(sh.JsonHandler):
             return self.relay("POST", raw)
         self.send_json({"error": "not found"}, 404)
 
-    def _put(self) -> None:
+    def _put(self):
         # The desk's "→ Castle" button: PUT /api/files/<name> with the track
         # bytes. The studio owns no PUT routes of its own, so everything
         # castle-shaped relays; castle_link enforces the reachability story.
         path = studio_path(self.path)
         if not path.startswith("/api/"):
             return self.send_json({"error": "not found"}, 404)
-        return self.relay("PUT", self.body())
+        self.relay("PUT", self.body())
+        return
 
     def relay(self, method: str, body: bytes = b"",
               to: str | None = None) -> None:
         """Hand a castle-shaped /api/* request to the castle, answer as it did."""
         code, out, ctype = cl.forward(method, to or self.path, body)
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(out)))
-        self.end_headers()
-        self.wfile.write(out)
+        self._send_plain(out, ctype, code, [])
 
     def do_import(self, raw: bytes):
         ctype = self.headers.get("Content-Type", "")
@@ -409,6 +395,8 @@ class Handler(sh.JsonHandler):
                 return self.send_json({"error": "no url"}, 400)
             if not src.startswith(("http://", "https://")):
                 return self.send_json({"error": "url must be http(s)"}, 400)
+            if (why := ng.refuse_reason(src, self.client_address[0])):
+                return self.send_json({"error": why}, 400)
             args.append(src)
         else:
             # multipart upload: pull out the single file part

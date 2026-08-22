@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -90,6 +91,29 @@ def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
     if not got:
         raise SystemExit("yt-dlp produced no audio file")
     return got[-1], got[-1].stem
+
+
+_NUM = re.compile(r"^\d+(?:\.\d+)?$")
+
+
+def time_arg(raw: str) -> str:
+    """`12`, `1:05` or `1:02:03` — what `secs()` reads. Anything else (a
+    flag-shaped "-x", a word, 1:99) is refused before it reaches ffmpeg."""
+    parts = raw.strip().split(":")
+    ok = (1 <= len(parts) <= 3 and all(_NUM.match(p) for p in parts)
+          and all(float(p) < 60 for p in parts[1:]))
+    if not ok:
+        raise argparse.ArgumentTypeError(
+            f"not a time: {raw!r} — use seconds (24) or m:ss (0:12)")
+    return raw.strip()
+
+
+def text_arg(raw: str) -> str:
+    """Free text that must not look like an option (the studio passes it as
+    `--notes=<v>`; a value starting with '-' is refused even so)."""
+    if raw.startswith("-"):
+        raise argparse.ArgumentTypeError(f"{raw!r} looks like an option, not text")
+    return raw
 
 
 def sensitivity_arg(raw: str):
@@ -247,15 +271,16 @@ def main() -> int:
                          "source; any option you pass overrides what was "
                          "used last time")
     ap.add_argument("--list", action="store_true", help="show imported tracks")
-    ap.add_argument("--notes", default="", help="free-text note on the track")
+    ap.add_argument("--notes", default="", type=text_arg,
+                    help="free-text note on the track")
     ap.add_argument("--keep-source", action="store_true",
                     help="copy a local source file into tracks/_src/ and "
                          "remember THAT as the source — for a file that is "
                          "about to be deleted (the studio's upload staging)")
 
     g = ap.add_argument_group("trim")
-    g.add_argument("--start", help="skip in, e.g. 0:12")
-    g.add_argument("--take", help="seconds to keep, e.g. 24")
+    g.add_argument("--start", type=time_arg, help="skip in, e.g. 0:12")
+    g.add_argument("--take", type=time_arg, help="seconds to keep, e.g. 24")
     g.add_argument("--fade-in", type=float, help="seconds of fade at the head")
     g.add_argument("--fade-out", type=float, help="seconds of fade at the tail")
 

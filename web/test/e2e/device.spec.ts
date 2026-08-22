@@ -43,11 +43,14 @@ async function stubCastle(page: import("@playwright/test").Page): Promise<string
 }
 
 test("without a castle answering, no device chrome appears", async ({ page }) => {
+  // The probe is one /api/status; the studio answers it castle-less. Once
+  // that answer is in, the chip's fate is decided.
+  const probed = page.waitForResponse((r) => r.url().includes("/api/status"));
   await page.goto("/");
   await expect(page.locator("#stage")).toBeVisible();
-  // The probe times out at 1.5 s; give it room to have failed.
-  await page.waitForTimeout(2000);
+  await probed;
   await expect(page.locator("#deviceChip")).toBeHidden();
+  await expect(page.locator("#headTxt")).toContainText("simulator");
 });
 
 test("served by the castle, the chip appears and mirrors scenes", async ({ page }) => {
@@ -87,7 +90,8 @@ test("mirroring off means scene picks stay local", async ({ page }) => {
   await expect(page.locator("#deviceChip")).toBeVisible();
   await page.locator("#devMirror").uncheck();
   await page.locator("button.scene", { hasText: "Storm" }).first().click();
-  await page.waitForTimeout(300);
+  // The pick lands locally (the stage names it) and posts nothing.
+  await expect(page.locator("#stageNote")).toContainText("Storm");
   expect(calls.filter((c) => c.includes("/api/scene"))).toHaveLength(0);
 });
 
@@ -223,8 +227,9 @@ test("a castle that boots after the page loads still gets its chip", async ({ pa
   // simulator for the whole session while the library grew castle buttons.
   const castle = flakyCastle(page);
   castle.set(false);
+  const probed = page.waitForResponse((r) => r.url().includes("/api/status"));
   await page.goto("/");
-  await page.waitForTimeout(1500);
+  await probed;                                   // the first probe has answered "no"
   await expect(page.locator("#deviceChip")).toBeHidden();
   await expect(page.locator("#headTxt")).toContainText("simulator");
   castle.set(true);

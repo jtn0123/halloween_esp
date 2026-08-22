@@ -42,7 +42,7 @@ class Scripted(BaseHTTPRequestHandler):
     """Pops one behaviour per request from the server's script; the last
     entry repeats. Records every (method, path, body-length) it consumed."""
 
-    server: ScriptedCastle  # type: ignore[assignment]
+    server: ScriptedCastle
 
     def log_message(self, fmt, *a):
         pass

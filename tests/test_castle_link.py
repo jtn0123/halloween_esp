@@ -9,6 +9,7 @@ the same env for every other studio test, for the same reason.)
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
@@ -28,6 +29,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import castle_link as cl
+import hosts
 from studio_case import ServerCase
 
 DEAD = "127.0.0.1:1"   # nothing listens; connect refuses instantly
@@ -75,7 +77,10 @@ class SlowCastle(FakeCastle):
         body = self.rfile.read(n)
         SlowCastle.puts.append(len(body))
         time.sleep(SlowCastle.put_delay)
-        self._answer({"path": self.path, "bytes": len(body)})
+        # The stalled-PUT tests hang up before the ack; a late write to a
+        # closed socket is the point, not a traceback on the test's stderr.
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+            self._answer({"path": self.path, "bytes": len(body)})
 
 
 def start_fake_castle(
@@ -94,7 +99,7 @@ class TestCastleHost(unittest.TestCase):
         env = mock.patch.dict(os.environ, {}, clear=False)
         env.start()
         self.addCleanup(env.stop)
-        dev = mock.patch.object(cl, "DEVICES", self.tmp / "devices.toml")
+        dev = mock.patch.object(hosts, "DEVICES", self.tmp / "devices.toml")
         dev.start()
         self.addCleanup(dev.stop)
         os.environ.pop("CASTLE_HOST", None)
@@ -111,6 +116,17 @@ class TestCastleHost(unittest.TestCase):
 
     def test_no_file_means_no_castle(self) -> None:
         self.assertIsNone(cl.castle_host())
+
+    def test_hosts_is_the_shared_candidate_list_with_fallbacks(self) -> None:
+        """One resolver: what castle_link walks IS hosts.candidates()."""
+        (self.tmp / "devices.toml").write_text(
+            '[castle]\nhost = "1.2.3.4"\nfallbacks = ["1.2.3.5"]\n')
+        self.assertEqual(cl.castle_hosts(), ["1.2.3.4", "1.2.3.5"])
+        self.assertEqual(cl.castle_hosts(), hosts.candidates())
+        os.environ["CASTLE_HOST"] = "castle,9.9.9.9"
+        self.assertEqual(cl.castle_hosts(), ["1.2.3.4", "1.2.3.5", "9.9.9.9"])
+        os.environ["CASTLE_HOST"] = ""
+        self.assertEqual(cl.castle_hosts(), [])
 
     def test_malformed_toml_means_no_castle_not_a_traceback(self) -> None:
         (self.tmp / "devices.toml").write_text("host = = =\n")
@@ -156,7 +172,7 @@ class TestStatusAndForward(unittest.TestCase):
 
     def test_forward_without_a_castle_is_a_502(self) -> None:
         os.environ.pop("CASTLE_HOST")
-        with mock.patch.object(cl, "DEVICES", Path("/no/such/devices.toml")):
+        with mock.patch.object(hosts, "DEVICES", Path("/no/such/devices.toml")):
             code, body, _ = cl.forward("POST", "/api/stop")
         self.assertEqual(code, 502)
         self.assertIn("no castle", body.decode())

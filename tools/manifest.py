@@ -63,7 +63,7 @@ def load() -> dict:
     if not PATH.exists():
         return {}
     try:
-        return json.loads(PATH.read_text())
+        return dict(json.loads(PATH.read_text()))
     except json.JSONDecodeError:
         # A half-written manifest used to read as "no tracks were ever
         # imported" — and the NEXT save then persisted that empty dict,

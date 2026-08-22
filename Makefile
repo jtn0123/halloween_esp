@@ -10,7 +10,7 @@ YAML := firmware/castle_flash.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: test lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload
+.PHONY: test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload
 
 help:
 	@echo "Halloween Castle"
@@ -29,6 +29,7 @@ help:
 	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
 	@echo "  make studio     serve the cue desk with track management (localhost)"
 	@echo "  make test       python unit tests (~1 min)"
+	@echo "  make test-fast  the same minus the chaos/relay/fuzz suites (inner loop)"
 	@echo "  make lint       ruff + mypy over tools/ and tests/"
 	@echo "  make check      test + lint + image/LOC guards + tsc + node suites"
 	@echo "  make e2e        browser tests (needs: cd web && npx playwright install chromium)"
@@ -104,6 +105,15 @@ bench-audio-logs:
 
 test:
 	@$(PY) -m unittest discover -s tests -q
+
+# The inner loop: everything except the suites that exist to wait — the
+# castle chaos/relay/protocol fuzz and the generator fuzz spend their time
+# in deliberate timeouts and random documents. `make test` before handing
+# work back; this while you are still typing.
+SLOW_SUITES := chaos|relay|fuzz
+test-fast:
+	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \
+		| sed 's/\.py$$//; s/^/tests./')
 
 # Where the unit suite reaches and where it does not. Informational here —
 # the number is for deciding what to test next. `coverage-gate` is the same

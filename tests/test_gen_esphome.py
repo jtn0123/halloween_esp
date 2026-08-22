@@ -7,6 +7,8 @@ which is the part most likely to be quietly wrong.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import shutil
 import sys
 import tempfile
@@ -46,7 +48,7 @@ def scene(**over: object) -> dict:
 
 def parse_script(lines: list[str]) -> dict:
     """emit_scene's lines are a YAML fragment; load them the way ESPHome would."""
-    return yaml.safe_load("script:\n" + "\n".join(lines))["script"][0]
+    return dict(yaml.safe_load("script:\n" + "\n".join(lines))["script"][0])
 
 
 def cue_lambdas(lines: list[str]) -> list[str]:
@@ -127,11 +129,14 @@ class TestPulseCues(unittest.TestCase):
     def test_synth_without_markers_is_skipped_not_fatal(self) -> None:
         """A silent stream should degrade to no light, not break the build."""
         s = scene(pulse=[{"synth": "absent", "zone": "door"}])
-        self.assertEqual(ge.pulse_cues(s, self.MARKS), [])
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(ge.pulse_cues(s, self.MARKS), [])
+        self.assertIn("no markers for synth 'absent'", out.getvalue())
 
     def test_scene_with_no_markers_at_all(self) -> None:
         s = scene(pulse=[{"synth": "heart"}])
-        self.assertEqual(ge.pulse_cues(s, {}), [])
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(ge.pulse_cues(s, {}), [])
 
     def test_single_zone(self) -> None:
         s = scene(pulse=[{"synth": "heart", "zone": "door"}])
@@ -337,6 +342,8 @@ class TestGenEsphomeMain(unittest.TestCase):
         # wrote their two fixture scenes into the real firmware/generated/.
         # test_every_output_path_is_redirected below is what keeps it honest.
         self._saved = {name: getattr(ge, name) for name in OUTPUT_PATHS}
+        # The generator narrates ("wrote …", "note: …"); keep -q output clean.
+        self.out = self.enterContext(contextlib.redirect_stdout(io.StringIO()))
         self._saved["ROOT"] = ge.ROOT
         ge.ROOT = self.tmp
         ge.SRC = self.tmp / "scenes.yaml"
@@ -370,6 +377,7 @@ class TestGenEsphomeMain(unittest.TestCase):
 
     def test_writes_a_parseable_file_with_every_scene_and_a_stop_script(self) -> None:
         self.assertEqual(ge.main(), 0)
+        self.assertIn("wrote ", self.out.getvalue())
         doc = yaml.safe_load(ge.OUT.read_text())
         self.assertEqual([s["id"] for s in doc["script"]],
                          ["scene_a", "scene_b", "scene_stop", "run_scene",

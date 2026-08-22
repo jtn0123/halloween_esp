@@ -34,7 +34,10 @@ export class RenderedAudio {
   /** Modelled decode spin-up, so the screen and the speaker agree. */
   latency = 70;
 
-  /** `audio` maps scene id -> `data:audio/mpeg;base64,…` from GEN. */
+  /** `audio` maps scene id -> a source the element can take: the
+   *  `data:audio/mpeg;base64,…` the portable build inlines, or the
+   *  `/studio/scene-audio/<id>` URL the studio's lean page serves instead
+   *  (same bytes, fetched when played). Nothing here tells them apart. */
   constructor(audio: Readonly<Record<string, string>>) {
     for (const [sid, uri] of Object.entries(audio)) {
       const el = new Audio(uri);

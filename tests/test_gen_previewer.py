@@ -39,7 +39,7 @@ def scene(**over: object) -> dict:
 
 def parse_script(lines: list[str]) -> dict:
     """emit_scene's lines are a YAML fragment; load them the way ESPHome would."""
-    return yaml.safe_load("script:\n" + "\n".join(lines))["script"][0]
+    return dict(yaml.safe_load("script:\n" + "\n".join(lines))["script"][0])
 
 
 def cue_lambdas(lines: list[str]) -> list[str]:

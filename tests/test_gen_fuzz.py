@@ -12,6 +12,8 @@ red run is reproducible and the seed is in the failure message.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import random
 import re
@@ -156,6 +158,8 @@ class TestGeneratorFuzz(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
         self._saved = {name: getattr(ge, name) for name in OUTPUT_PATHS}
+        # The generator narrates ("wrote …", "note: …"); keep -q output clean.
+        self.out = self.enterContext(contextlib.redirect_stdout(io.StringIO()))
         self._saved["ROOT"] = ge.ROOT
         ge.ROOT = self.tmp
         ge.SRC = self.tmp / "scenes.yaml"

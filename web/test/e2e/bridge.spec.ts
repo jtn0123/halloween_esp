@@ -13,32 +13,21 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test, expect } from "@playwright/test";
+import { lanePort } from "./ports.js";
 
 const ROOT = resolve(__dirname, "../../..");
 const PY = join(ROOT, ".venv", "bin", "python");
 
-/** Ports: CASTLE_E2E_BRIDGE_PORTS="<emu>,<studio>" pins them (a CI lane
- *  that wants determinism); otherwise each is whatever the OS has free right
- *  now, so two lanes — or a stale run — cannot collide. */
-async function freePort(): Promise<number> {
-  return new Promise((ok, fail) => {
-    const srv = createServer();
-    srv.once("error", fail);
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address();
-      const port = typeof addr === "object" && addr ? addr.port : 0;
-      srv.close(() => ok(port));
-    });
-  });
-}
+/** Ports: CASTLE_E2E_BRIDGE_PORTS="<emu>,<studio>" pins them outright;
+ *  otherwise the lane's CASTLE_E2E_PORT +1 / +2 (a free port if taken), so
+ *  two lanes — or a stale run — cannot collide. */
 async function pickPorts(): Promise<[number, number]> {
   const pinned = (process.env.CASTLE_E2E_BRIDGE_PORTS || "").split(",").map(Number);
   if (pinned.length === 2 && pinned.every((n) => n > 0)) return [pinned[0]!, pinned[1]!];
-  return [await freePort(), await freePort()];
+  return [await lanePort(1), await lanePort(2)];
 }
 
 let EMU_PORT = 0;
@@ -87,7 +76,7 @@ test.afterAll(() => {
 test("castle dies behind the real studio: masthead, chip and panel all say so", async ({ page }) => {
   await page.goto(`${STUDIO}/`);
   await expect(page.locator("#deviceChip")).toBeVisible();
-  await expect(page.locator("#headTxt")).toContainText("castle v5.25");
+  await expect(page.locator("#headTxt")).toContainText("castle v5.27");
   // A real scene pick reaches the emulator through the relay.
   await page.locator("button.scene", { hasText: "Storm" }).first().click();
   await expect.poll(async () =>
@@ -110,7 +99,7 @@ test("castle dies behind the real studio: masthead, chip and panel all say so", 
   // And it comes back: the desk recovers on its own.
   emu = startEmu();
   await waitFor(`${STUDIO}/api/status`, async (r) => !("studio" in await r.json()));
-  await expect(page.locator("#headTxt")).toContainText("castle v5.25", { timeout: 20000 });
+  await expect(page.locator("#headTxt")).toContainText("castle v5.27", { timeout: 20000 });
   await expect(page.locator("#devStop")).toBeEnabled();
 
   // The whole episode — castle up, down, up — must leave a QUIET studio:

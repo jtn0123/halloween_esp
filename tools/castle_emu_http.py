@@ -69,7 +69,7 @@ FALLBACK_PAGE = ("<!doctype html><meta charset=utf-8><title>Castle</title>"
 
 
 class Handler(BaseHTTPRequestHandler):
-    server: CastleEmu  # type: ignore[assignment]  # narrowed for handlers
+    server: CastleEmu  # narrowed for handlers
     timeout = RECV_WAIT_S
 
     # -- plumbing ----------------------------------------------------------

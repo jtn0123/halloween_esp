@@ -57,8 +57,8 @@ class TestImportOptions(ServerCase):
             self.post_json("/studio/refresh", {"id": self.WAVE_ID, "format": "wav",
                                             "fade_in": 0.5, "fade_out": "1"})
         argv = spy.call_args[0][0]
-        for flag in ("--format", "--fade-in", "--fade-out"):
-            self.assertIn(flag, argv)
+        for flag in ("--format=", "--fade-in=", "--fade-out="):
+            self.assertTrue(any(a.startswith(flag) for a in argv), flag)
 
     def test_a_failed_refresh_carries_one_line_reason_not_a_traceback(self) -> None:
         with mock.patch.object(studio, "run", return_value=(False, TRACEBACK)):

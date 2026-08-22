@@ -8,9 +8,9 @@
  * castle itself the same paths are simply local.
  */
 
+import { api } from "./api.js";
 import { castleBusy } from "./castle_bus.js";
-// Type-only, so the tracks ↔ track_send cycle stays erased at build time.
-import type { TrackInfo } from "./tracks.js";
+import type { TrackInfo } from "./types.js";
 
 /** Can this track go to the card at all? A failed import leaves a row with
  *  `error` set and no bytes; sending THAT would overwrite the card's good
@@ -28,9 +28,7 @@ export function cardName(t: TrackInfo): string {
  *  the card". */
 export async function fetchCard(): Promise<Map<string, number> | null> {
   try {
-    const r = await fetch("/api/files");
-    if (!r.ok) throw new Error(String(r.status));
-    const files = (await r.json()) as { name: string; size: number; dir: boolean }[];
+    const files = await api.castleFiles();
     return new Map(files.filter(f => !f.dir).map(f => [f.name, f.size]));
   } catch {
     return null;
@@ -55,9 +53,7 @@ export function cardState(t: TrackInfo,
  *  without the field) can't say. */
 async function freeKb(): Promise<number | null> {
   try {
-    const r = await fetch("/api/status");
-    if (!r.ok) return null;
-    const s = (await r.json()) as { sd_free_kb?: number };
+    const s = await api.castleStatus();
     return typeof s.sd_free_kb === "number" && s.sd_free_kb > 0
       ? s.sd_free_kb : null;
   } catch {
@@ -104,9 +100,7 @@ export async function sendToCastle(t: TrackInfo,
       + `failed) — nothing to send. Re-import it first.` };
   }
   try {
-    const r = await fetch(`/api/track/${encodeURIComponent(t.id)}`);
-    if (!r.ok) throw new Error(String(r.status));
-    const blob = await r.blob();
+    const blob = await api.trackBytes(t.id);
     if (blob.size === 0) {
       return { ok: false, msg: `“${t.id}” is an empty file — nothing to send.` };
     }

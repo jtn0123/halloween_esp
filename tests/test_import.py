@@ -79,7 +79,7 @@ class TestConvert(unittest.TestCase):
             ["ffprobe", "-v", "quiet", "-print_format", "json",
              "-show_streams", "-show_format", str(p)],
             capture_output=True, text=True, check=True).stdout
-        return json.loads(out)
+        return dict(json.loads(out))
 
     def test_produces_mono_44k(self) -> None:
         out = self.tmp / "a.mp3"
@@ -224,7 +224,9 @@ class TestManifest(unittest.TestCase):
     def test_corrupt_file_is_survivable(self) -> None:
         mf.PATH.parent.mkdir(parents=True, exist_ok=True)
         mf.PATH.write_text("{not json")
-        self.assertEqual(mf.load(), {})
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(mf.load(), {})
+        self.assertIn("WARNING: tracks.json was not valid JSON", out.getvalue())
 
 
 class TestSceneBlock(unittest.TestCase):
@@ -239,7 +241,7 @@ class TestSceneBlock(unittest.TestCase):
 
     def parse(self, block: str) -> dict:
         doc = yaml.safe_load("scenes:\n" + block)
-        return doc["scenes"][0]
+        return dict(doc["scenes"][0])
 
     def test_is_valid_yaml(self) -> None:
         sc = self.parse(it.scene_block("my_track", 20.0, self.marks))

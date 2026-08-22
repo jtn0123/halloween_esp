@@ -136,11 +136,8 @@ test("auditioning a clip drives the stage from that clip", async ({ page }) => {
   // And the lights actually move: sample the meter and require it to change.
   const meter = () => page.locator("#vl-door").textContent();
   const seen = new Set<string>();
-  for (let i = 0; i < 12; i++) {
-    seen.add((await meter()) ?? "");
-    await page.waitForTimeout(120);
-  }
-  expect(seen.size).toBeGreaterThan(1);
+  await expect.poll(async () => { seen.add((await meter()) ?? ""); return seen.size; })
+    .toBeGreaterThan(1);
 
   await audition.click();
   await expect(page.locator("#stageNote")).toHaveText(stageBefore ?? "");
@@ -279,13 +276,12 @@ test("codec comparison encodes the clip and switches without losing position",
     await picks.filter({ hasText: "MP3" }).click();
     await expect(picks.filter({ hasText: "MP3" })).toHaveClass(/on/);
     await expect.poll(() => playing(page, "/api/compare/")).toBe(1);
-    await page.waitForTimeout(1200);
 
     const at = () => page.evaluate(`
       [...(window.__media || [])].filter(a => a.src.includes("/api/compare/"))
         .map(a => a.currentTime).pop() ?? 0`) as Promise<number>;
+    await expect.poll(at).toBeGreaterThan(0.3);   // well into the clip before the switch
     const before = await at();
-    expect(before).toBeGreaterThan(0.3);
 
     await picks.filter({ hasText: "FLAC" }).click();
     await expect(picks.filter({ hasText: "FLAC" })).toHaveClass(/on/);

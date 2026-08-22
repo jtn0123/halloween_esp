@@ -46,7 +46,7 @@ def pixels_for(cfg: dict, vel: float) -> str:
     Thresholds are shared with track_lights.ts and gen_previewer.py.
     """
     if not cfg.get("pixels_by_vel"):
-        return cfg.get("pixels", "all")
+        return str(cfg.get("pixels", "all"))
     return "center" if vel < 0.40 else ("scatter" if vel < 0.72 else "all")
 
 

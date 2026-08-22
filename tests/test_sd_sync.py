@@ -220,7 +220,7 @@ class TestMain(SdCase):
 
     def main(self, *argv: str) -> int:
         with mock.patch.object(sys, "argv", ["sd_sync.py", *argv]):
-            return self.run_quiet(sd_sync.main)
+            return int(self.run_quiet(sd_sync.main))
 
     def test_no_command_prints_usage(self) -> None:
         self.assertEqual(self.main(), 2)

@@ -6,7 +6,7 @@
  * staying honest on a phone.
  */
 
-import { test, expect, sounding, fakeCastle, realBytes } from "./fixtures.js";
+import { test, expect, sounding, playing, fakeCastle, realBytes } from "./fixtures.js";
 import { MP3_ID } from "./global-setup.js";
 
 const MP3_ROW = `.trk[data-id="${MP3_ID}"]`;
@@ -25,12 +25,12 @@ test("on load the desk adopts the castle's scene without re-firing it", async ({
   // Adopting does not start the desk's own audio either.
   await expect(page.locator("#playLabel")).toHaveText("Play");
   expect(await sounding(page)).toBe(0);
-  await page.waitForTimeout(400);
-  expect(castle.hits("/api/scene")).toBe(0);
 
-  // A real pick afterwards does go to the castle.
+  // A real pick afterwards does go to the castle — and is the ONLY scene
+  // call in the log: the adoption before it posted nothing.
   await page.locator("button.scene", { hasText: "Vigil" }).first().click();
   await expect.poll(() => castle.hits("/api/scene?s=vigil")).toBe(1);
+  expect(castle.hits("/api/scene")).toBe(1);
 });
 
 test("kiosk mode follows the castle's scene and keeps the stage whole", async ({ page }) => {
@@ -39,7 +39,8 @@ test("kiosk mode follows the castle's scene and keeps the stage whole", async ({
   await page.goto("/?kiosk=1");
   await expect(page.locator("#stage")).toBeVisible();
   await expect(page.locator("#stageNote")).toContainText("Storm");
-  await page.waitForTimeout(300);
+  // Adopted AND running is the end of first contact; nothing was posted.
+  await expect(page.locator("#playLabel")).toHaveText("Pause");
   expect(castle.hits("/api/scene")).toBe(0);
   // The dock is still there for a glance at the porch, but nothing about it
   // may push the wall tablet's page sideways.
@@ -76,8 +77,8 @@ test("♪ Castle: Play runs the lights and the browser stays muted", async ({ pa
   await expect(page.locator("#mute")).toHaveText("Muted");
   await expect(page.locator("#headTxt")).toContainText("muted");
   await expect(page.locator("#headTxt")).toContainText("sound: castle");
-  // Give the modelled latency time to start the file; it must start muted.
-  await page.waitForTimeout(300);
+  // The modelled latency starts the file a moment later; it starts muted.
+  await expect.poll(() => playing(page)).toBeGreaterThan(0);
   expect(await sounding(page)).toBe(0);
 
   // Flipping to Mac mid-show is the consent: the browser unmutes; flipping
@@ -113,8 +114,11 @@ test("Stop and Esc reach the castle while mirroring, and stay local when not",
 
   await page.locator("#devMirror").uncheck();
   await page.locator("#play").click();
+  await expect(page.locator("#playLabel")).toHaveText("Pause");
   await page.locator("#stop").click();
-  await page.waitForTimeout(300);
+  // Stop is handled in the click: the local transport flips and any mirror
+  // POST is already in flight by the time the label reads Play.
+  await expect(page.locator("#playLabel")).toHaveText("Play");
   expect(castle.hits("POST /api/stop")).toBe(2);
 });
 
@@ -127,7 +131,8 @@ test("mirroring can be switched off and on mid-show without stopping it", async 
 
   await page.locator("#devMirror").uncheck();
   await page.locator("button.scene", { hasText: "Storm" }).first().click();
-  await page.waitForTimeout(300);
+  // The pick lands locally (the stage names it) and posts nothing.
+  await expect(page.locator("#stageNote")).toContainText("Storm");
   expect(castle.hits("/api/scene")).toBe(0);
   await expect(page.locator("#playLabel")).toHaveText("Pause");   // still running
   await expect(page.locator("#headTxt")).toContainText("not mirroring");

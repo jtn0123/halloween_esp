@@ -206,5 +206,24 @@ class TestSendFile(unittest.TestCase):
         self.assertNotEqual(hdrs["etag"], old)
 
 
+class TestMultipartNames(unittest.TestCase):
+    """Path("..").name is ".." — a filename the staging dir must never see."""
+
+    @staticmethod
+    def body(filename: str) -> bytes:
+        return (b"--B\r\nContent-Disposition: form-data; name=\"file\"; "
+                b'filename="' + filename.encode() + b'"\r\n\r\nx\r\n--B--\r\n')
+
+    def test_dot_dot_empty_and_dot_are_400_not_500(self) -> None:
+        for name in ("..", ".", "", "a/.."):
+            with self.assertRaises(sh.BadRequest, msg=name):
+                sh.parse_multipart(self.body(name), "multipart/form-data; boundary=B")
+
+    def test_a_real_name_still_parses(self) -> None:
+        self.assertEqual(sh.parse_multipart(self.body("../x.wav"),
+                                            "multipart/form-data; boundary=B"),
+                         ("x.wav", b"x"))
+
+
 if __name__ == "__main__":
     unittest.main()

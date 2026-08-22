@@ -150,7 +150,7 @@ class TestTremulant(unittest.TestCase):
         """The gain stage, recovered by dividing out the raw rank sum. Only
         sampled away from the carrier's zero crossings, where it is stable."""
         keep = np.abs(self.carrier) > 0.3 * peak(self.carrier)
-        return self.out[keep] / self.carrier[keep]
+        return np.asarray(self.out[keep] / self.carrier[keep])
 
     def test_the_recovered_gain_is_never_negative(self) -> None:
         self.assertGreaterEqual(self.gain().min(), -1e-9,

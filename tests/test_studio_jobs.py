@@ -13,6 +13,7 @@ subprocesses are `true`, `false`, and short python one-liners.
 from __future__ import annotations
 
 import sys
+import threading
 import time
 import unittest
 import warnings
@@ -251,6 +252,31 @@ class TestJobRunner(unittest.TestCase):
 
     def test_get_of_an_unknown_id_is_none(self) -> None:
         self.assertIsNone(self.runner.get("nosuchjob"))
+
+    def test_a_gated_job_waits_for_the_studio_lock(self) -> None:
+        """The studio's sync encodes and the background jobs take turns:
+        while the gate is held the job sits queued, and it runs the moment
+        the gate is released."""
+        gate = threading.Lock()
+        runner = sj.JobRunner(gate=gate)
+        with gate:
+            job = runner.start(["true"])
+            time.sleep(0.15)
+            self.assertEqual(job.phase, "queued")
+        self.assertEqual(wait_done(job).phase, "done")
+
+    def test_a_gated_job_holds_the_gate_while_its_child_runs(self) -> None:
+        gate = threading.Lock()
+        runner = sj.JobRunner(gate=gate)
+        job = runner.start(["sleep", "0.3"])
+        time.sleep(0.1)
+        self.assertFalse(gate.acquire(blocking=False), "gate free mid-job")
+        wait_done(job)
+        self.assertTrue(gate.acquire(blocking=False))
+        gate.release()
+
+    def test_no_gate_is_the_default(self) -> None:
+        self.assertIsNone(sj.JobRunner()._gate)
 
     def test_a_successful_command_ends_done_at_100(self) -> None:
         job = wait_done(self.runner.start(["true"]))

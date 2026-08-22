@@ -11,25 +11,13 @@
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test, expect } from "@playwright/test";
+import { lanePort } from "./ports.js";
 
 const ROOT = resolve(__dirname, "../../..");
 const PY = join(ROOT, ".venv", "bin", "python");
-
-async function freePort(): Promise<number> {
-  return new Promise((ok, fail) => {
-    const srv = createServer();
-    srv.once("error", fail);
-    srv.listen(0, "127.0.0.1", () => {
-      const addr = srv.address();
-      const port = typeof addr === "object" && addr ? addr.port : 0;
-      srv.close(() => ok(port));
-    });
-  });
-}
 
 let STUDIO = "";
 let emu: ChildProcess | undefined;
@@ -49,8 +37,9 @@ const castleScene = async (): Promise<string> =>
   ((await (await fetch(`${STUDIO}/api/status`)).json()) as { scene: string }).scene;
 
 test.beforeAll(async () => {
-  const emuPort = await freePort();
-  const studioPort = await freePort();
+  // The lane's CASTLE_E2E_PORT +3 / +4 (bridge.spec.ts holds +1 / +2).
+  const emuPort = await lanePort(3);
+  const studioPort = await lanePort(4);
   STUDIO = `http://127.0.0.1:${studioPort}`;
   const card = mkdtempSync(join(tmpdir(), "castle-e2e-remote-card-"));
   emu = spawn(PY, [join(ROOT, "tools", "castle_emu.py"), String(emuPort), "--dir", card],
@@ -79,7 +68,7 @@ test("the real remote page, relayed by the studio, drives the castle", async ({ 
     expect((await btn.boundingBox())!.height).toBeGreaterThan(120);
   }
   // Its status line is the emulator's /api/status through the relay.
-  await expect(page.locator("#st")).toContainText("v5.25");
+  await expect(page.locator("#st")).toContainText("v5.27");
   await expect(page.locator("#showTxt")).toHaveText("start the show");
 
   await page.locator("#ambient").click();

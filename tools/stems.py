@@ -95,8 +95,8 @@ def fresh(tid: str) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     st = src.stat()
-    return (meta.get("src_bytes") == st.st_size
-            and meta.get("src_mtime") == int(st.st_mtime))
+    return bool(meta.get("src_bytes") == st.st_size
+                and meta.get("src_mtime") == int(st.st_mtime))
 
 
 def analysis(tid: str) -> dict:
@@ -112,7 +112,7 @@ def analysis(tid: str) -> dict:
     if not p.exists():
         return {"ok": False, "error": "not split yet"}
     try:
-        out = json.loads(p.read_text())
+        out: dict = json.loads(p.read_text())
     except (OSError, json.JSONDecodeError) as e:
         return {"ok": False, "error": f"stems analysis unreadable: {e}"}
     out["ok"] = True

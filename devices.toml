@@ -7,10 +7,10 @@
 # device a DHCP reservation in the router and record the address here once.
 
 [castle-sd]
-host = "10.27.27.142"
+host = "10.27.27.238"
 # Tried in order when `host` stops answering (castle_link.castle_hosts) —
 # the safety net until the DHCP reservation below actually exists.
-fallbacks = ["10.27.27.7"]
+fallbacks = ["10.27.27.142", "10.27.27.7"]
 # 2026-08-19: the .7 reservation was never actually created in UniFi; this
 # is the lease the router hands the board today. Make the reservation and
 # point this back at it when you get a minute.

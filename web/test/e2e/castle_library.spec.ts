@@ -168,7 +168,7 @@ test("⬇ to Mac pulls a card file through the real import gate", async ({ page 
   await stubCard(page, files);
   // The "card file" is real audio (the studio's own MP3), so the import that
   // follows the pull decodes and analyses genuinely.
-  await page.route("**/api/card/pulled_song.mp3", async (route) => {
+  await page.route("**/studio/card/pulled_song.mp3", async (route) => {
     const real = await route.fetch({
       url: new URL(`/studio/track/${MP3_ID}`, route.request().url()).toString() });
     return route.fulfill({ body: await real.body(),

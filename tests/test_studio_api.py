@@ -192,8 +192,8 @@ class TestJobs(ServerCase):
         self.assertEqual(argv[0], studio.PY)
         self.assertTrue(argv[1].endswith("import_track.py"))
         self.assertEqual(argv[2], "https://example.invalid/v")
-        self.assertIn("--start", argv)
-        self.assertIn("--sample-rate", argv)      # underscores become dashes
+        self.assertTrue(any(a.startswith("--start=") for a in argv))
+        self.assertTrue(any(a.startswith("--sample-rate=") for a in argv))      # underscores become dashes
         self.assertIn("--normalize", argv)
         self.assertNotIn("--gain-db", argv, "an empty option was passed through")
 
@@ -278,7 +278,7 @@ class TestWrites(ServerCase):
         self.assertTrue(d["ok"])
         self.assertEqual(d["log"], "pretend log")
         self.assertEqual(calls[1], b"RIFFfake")
-        self.assertIn("--take", calls[0])
+        self.assertTrue(any(a.startswith("--take=") for a in calls[0]))
         self.assertTrue(calls[0][2].endswith("clip.wav"))
         self.assertFalse((studio.TRACKS / "_upload").exists(),
                          "the staging directory was left behind")
@@ -328,9 +328,9 @@ class TestWrites(ServerCase):
         argv = spy.call_args[0][0]
         self.assertIn("--refresh", argv)
         self.assertIn(self.WAVE_ID, argv)
-        self.assertIn("--take", argv)
+        self.assertTrue(any(a.startswith("--take=") for a in argv))
         self.assertIn("--normalize", argv)
-        self.assertNotIn("--start", argv)
+        self.assertFalse(any(a.startswith("--start=") for a in argv))
         self.assertIn(self.WAVE_ID, [t["id"] for t in d["tracks"]])
 
     def test_rebuild_runs_the_three_generators(self) -> None:

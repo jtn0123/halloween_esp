@@ -66,7 +66,7 @@ def spectral_db(ref: np.ndarray, got: np.ndarray, sr: int = ana.SR) -> float:
                                 noverlap=ana.WIN - ana.HOP)
         # Floor at -100 dB so silence does not turn into a division by zero
         # and dominate the mean with meaningless numbers.
-        return 20 * np.log10(np.abs(z) + 1e-5)
+        return np.asarray(20 * np.log10(np.abs(z) + 1e-5))
 
     a, b = spec(ref), spec(got)
     m = min(a.shape[1], b.shape[1])

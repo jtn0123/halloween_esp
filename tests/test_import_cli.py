@@ -125,6 +125,29 @@ class TestImportFromFile(CliCase):
         with self.assertRaises(SystemExit):
             self.run_cli(str(self.tmp / "nope.wav"), "--id", "x")
 
+    def test_flag_shaped_and_nonsense_times_are_refused_by_argparse(self) -> None:
+        """`start: "-x"` from the studio used to reach ffmpeg as an option;
+        now argparse refuses it (exit 2) before anything runs."""
+        for opt, val in (("--start", "-x"), ("--take", "--force"),
+                         ("--start", "abc"), ("--take", "1:99"), ("--start", "")):
+            with self.assertRaises(SystemExit, msg=f"{opt} {val!r}") as cm, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.run_cli(str(self.src), f"{opt}={val}")
+            self.assertEqual(cm.exception.code, 2, f"{opt} {val!r}")
+
+    def test_times_are_accepted_as_seconds_or_colon_forms(self) -> None:
+        for raw in ("12", "0.5", "0:12", "1:02:03", "12:34.5"):
+            self.assertEqual(it.time_arg(raw), raw)
+
+    def test_notes_may_not_start_with_a_dash(self) -> None:
+        with self.assertRaises(SystemExit) as cm, \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.run_cli(str(self.src), "--notes=--force")
+        self.assertEqual(cm.exception.code, 2)
+        code, _ = self.run_cli(str(self.src), "--id", "noted", "--notes=loud - keep")
+        self.assertEqual(code, 0)
+        self.assertEqual((mf.get("noted") or {})["notes"], "loud - keep")
+
     def test_no_source_fails(self) -> None:
         with self.assertRaises(SystemExit):
             self.run_cli("--id", "x")

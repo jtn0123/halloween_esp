@@ -100,7 +100,10 @@ by `make preview` from `web/src/`). Behind it, `tools/studio.py` adds what a
 static page cannot do: the **Tracks** panel imports audio (a file, or a link via
 yt-dlp), shows onsets and waveforms, auditions clips, writes scenes into
 `scenes/scenes.yaml`, and sends files to the castle's SD card when one answers.
-`--lan` opens it to the phone/iPad remote; leave it off otherwise. The route
+`--lan` opens it to the phone/iPad remote; leave it off otherwise — a LAN
+visitor has the whole desk, not a read-only view: they can import and delete
+tracks, rewrite `scenes/scenes.yaml`, send files to the castle and stop the
+server (`POST /studio/server/stop`), with no login. The route
 table — what the studio owns (`/studio/…`) and what it relays to the castle
 (`/api/…`) — is [docs/API.md](docs/API.md).
 
@@ -126,9 +129,11 @@ The four implementations of the show's arithmetic (Python generators, TS
 effects, C++ firmware, host-compiled dump) are kept bit-exact by seeded fuzz —
 [docs/PARITY.md](docs/PARITY.md) is the contract and what to do when it goes red.
 
-Every file is held to 500 lines (`tools/check_loc.py`, prose included). The
-commit hook is `git config core.hooksPath githooks`. A git worktree needs its
-own `.venv` and `web/node_modules`, or symlinks back to the main checkout's.
+Every file is held to 500 lines (`tools/check_loc.py`, prose included).
+`make setup` installs the commit hook (`git config core.hooksPath githooks`).
+A git worktree needs its own `.venv` and `web/node_modules`, or symlinks back
+to the main checkout's. The short version of all of this is
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
