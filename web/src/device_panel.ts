@@ -31,6 +31,13 @@ const STRIPS = ZONE_ORDER;
  *  re-render, not a reload. 100 % on a tower is a lot of LED in a dark room. */
 let testPct = 100;
 const PCTS = [25, 50, 75, 100] as const;
+/** The bench patterns, on every strip at once — each answers a different
+ *  question than a solid colour does. Names match gen_rig's TEST_EFFECTS. */
+const PATTERNS: readonly (readonly [string, string])[] = [
+  ["bars", "R G B repeating: colour order, pixel count, dead pixels"],
+  ["chase", "One dot walking: where it stops is where the data stops"],
+  ["ends", "First pixel red, last blue: which end the data goes in"],
+];
 
 interface SdFile {
   name: string;
@@ -181,6 +188,11 @@ export class DevicePanel {
             `title="${z}: ${label === "off" ? "off" : label === "W" ? "white channel" : "solid " + label}">` +
             `${label}</button>`)
           .join("") + `</span>`).join(" ") +
+      `<span class="dp__strip" title="Patterns run on every strip at once">` +
+      `<small>patterns</small>` +
+      PATTERNS.map(([spec, why]) =>
+        `<button class="dp__ghost dp__btn--sm" data-zl=":${spec}" title="${why}">` +
+        `${spec}</button>`).join("") + `</span>` +
       `</div>` +
       `<div class="dp__files" id="dpFiles">` +
       (tracks.length && st.bridged
@@ -256,8 +268,8 @@ export class DevicePanel {
         void castleAct("/api/light?c=off", "lights off"));
     this.body.querySelectorAll<HTMLButtonElement>("[data-zl]").forEach((b) =>
       b.addEventListener("click", () => {
-        const spec = b.dataset.zl!;
-        const arg = spec.endsWith(":off") ? spec : `${spec}@${testPct}`;
+        const spec = b.dataset.zl!.replace(/^:/, "");   // ":bars" = all strips
+        const arg = spec.endsWith("off") ? spec : `${spec}@${testPct}`;
         void castleAct(`/api/light?c=${arg}`, `strip ${arg}`);
       }));
     this.body.querySelectorAll<HTMLButtonElement>("[data-pct]").forEach((b) =>

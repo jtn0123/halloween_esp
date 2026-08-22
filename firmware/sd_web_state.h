@@ -68,7 +68,8 @@ inline void mirror_show_state(const std::string &scene, const std::string &track
   g_pir_scene = pir_scene;
 }
 
-// /api/light?c= — "RRGGBB" | "white" | "show" | "off", optionally "<zone>:"
+// /api/light?c= — "RRGGBB" | "white" | "bars" | "chase" | "ends" | "show" |
+// "off" (the three named patterns are the bench effects in gen_rig), "<zone>:"
 // in front to drive ONE strip (the desk's channel test: which data line is
 // dead) and "@<1..100>" behind for brightness. Shape only; lights_override
 // knows the real zone ids. The emulator mirrors this byte for byte
@@ -92,7 +93,8 @@ inline bool light_spec_ok(const std::string &c) {
     return false;
   const bool hex6 = spec.size() == 6 &&
       spec.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
-  return hex6 || spec == "white" || spec == "show" || spec == "off";
+  return hex6 || spec == "white" || spec == "show" || spec == "off" ||
+         spec == "bars" || spec == "chase" || spec == "ends";
 }
 
 }  // namespace castle_web

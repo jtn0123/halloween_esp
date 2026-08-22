@@ -241,7 +241,9 @@ class TestValidatorConstants(unittest.TestCase):
                       (b"towerL:ff00", False), (b"x" * 17 + b":show", False), (b"", False),
                       (b"white", True), (b"towerR:white@25", True), (b"ff0000@100", True),
                       (b"ff0000@0", False), (b"ff0000@101", False), (b"ff0000@", False),
-                      (b"ff0000@5x", False), (b"show@50", True)):
+                      (b"ff0000@5x", False), (b"show@50", True),
+                      (b"bars", True), (b"towerL:chase@75", True), (b"ends", True),
+                      (b"sparkle", False), (b"door:bars@0", False)):
             self.assertEqual(castle_emu_http.light_spec_ok(c), ok, c)
         pat = r"content_len < (\d+) \|\| req->content_len > ([\w>-]+)"
         self.assertEqual(int(grab(pat, FUNCS["h_ota"], 1)), castle_emu_http.OTA_MIN)

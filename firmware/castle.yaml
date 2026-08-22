@@ -20,7 +20,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.31"
+  version: "5.32"
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
   #

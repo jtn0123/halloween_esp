@@ -84,7 +84,7 @@ def light_spec_ok(c: bytes) -> bool:
         if not pct.isdigit() or len(pct) > 3 or not 1 <= int(pct) <= 100:
             return False
     hex6 = len(spec) == 6 and all(chr(b) in "0123456789abcdefABCDEF" for b in spec)
-    return hex6 or spec in (b"white", b"show", b"off")
+    return hex6 or spec in (b"white", b"bars", b"chase", b"ends", b"show", b"off")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -300,7 +300,7 @@ class Handler(BaseHTTPRequestHandler):
     def h_light(self, raw: bytes) -> None:
         c = wire.query_param(raw, "c")
         if not light_spec_ok(c):
-            return self._err(400, "need ?c=[zone:]RRGGBB|white|show|off[@pct]")
+            return self._err(400, "need ?c=[zone:]RRGGBB|white|bars|chase|ends|show|off[@pct]")
         self.server.queue("LIGHT", c.decode())
         self._json({"queued": True})
 

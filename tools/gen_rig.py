@@ -85,6 +85,52 @@ def emit_rig_header(layouts: dict[str, Layout], zones: list[dict]) -> str:
     return "\n".join(out) + "\n"
 
 
+# ── Bench patterns ────────────────────────────────────────────────────
+# Three test effects on every strip, driven by /api/light?c=<zone>:<name>
+# and the desk's strip-test row. A solid colour answers "is this line
+# alive"; these answer the questions that come next — how many pixels
+# arrive, in what order, with which colour first, and where a chain dies.
+# Deliberately NO static buffers (the Show effect's `buf` is the only one
+# the S2's dram0 can afford) and no scene state: they draw from `it` and
+# millis() alone, so they are safe to leave running while you go and look.
+TEST_EFFECTS = [
+    "      - addressable_lambda:",
+    '          name: "Test Bars"',
+    "          update_interval: 500ms",
+    "          lambda: |-",
+    "            // Red, green, blue repeating. Wrong first colour means",
+    "            // rgb_order is wrong; a gap means a dead pixel; count the",
+    "            // triplets to see how many pixels actually arrive.",
+    "            for (int p = 0; p < it.size(); p++) {",
+    "              const int k = p % 3;",
+    "              it[p] = Color(k == 0 ? 255 : 0, k == 1 ? 255 : 0,",
+    "                            k == 2 ? 255 : 0, 0);",
+    "            }",
+    "      - addressable_lambda:",
+    '          name: "Test Chase"',
+    "          update_interval: 100ms",
+    "          lambda: |-",
+    "            // One white dot walking the chain, ~4 px/s. Where it stops",
+    "            // is where the data stops: a cut wire, a cold joint, or the",
+    "            // pixel that died. It wraps, so watch one full lap.",
+    "            const int n = it.size() > 0 ? it.size() : 1;",
+    "            const int at = (millis() / 250) % n;",
+    "            for (int p = 0; p < it.size(); p++)",
+    "              it[p] = p == at ? Color(255, 255, 255, 255) : Color(0, 0, 0, 0);",
+    "      - addressable_lambda:",
+    '          name: "Test Ends"',
+    "          update_interval: 500ms",
+    "          lambda: |-",
+    "            // First pixel red, last blue, the rest dim. Which end lights",
+    "            // red is the end the data goes in — the answer when a jewel",
+    "            // is mounted upside down and the centre pixel looks wrong.",
+    "            for (int p = 0; p < it.size(); p++)",
+    "              it[p] = Color(24, 24, 24, 0);",
+    "            if (it.size() > 0) it[0] = Color(255, 0, 0, 0);",
+    "            if (it.size() > 1) it[it.size() - 1] = Color(0, 0, 255, 0);",
+]
+
+
 def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
     """One `light:` component per zone, each rendering itself.
 
@@ -156,6 +202,7 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
             "            for (int p = 0; p < fx.n; p++)",
             "              it[p] = Color(buf[p * 4], buf[p * 4 + 1],",
             "                            buf[p * 4 + 2], buf[p * 4 + 3]);",
+            *TEST_EFFECTS,
         ]
         out.append(f"    # {zid}: {z.get('fixture', f'{per} uniform')} "
                    f"— {lay.n} px, rgbw {rgbw}, GPIO{pin}")
@@ -200,6 +247,10 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
         "            call.set_brightness(bright);",
         '            if (spec == "show") {',
         '              call.set_effect("Show");',
+        '            } else if (spec == "bars" || spec == "chase" || spec == "ends") {',
+        "              // The bench patterns, one effect each (TEST_EFFECTS).",
+        '              call.set_effect(spec == "bars" ? "Test Bars"',
+        '                              : spec == "chase" ? "Test Chase" : "Test Ends");',
         '            } else if (spec == "white") {',
         "              // The white LED itself on an RGBW fixture; an RGB one",
         "              // mixes it. Tests the one channel a colour never lights.",
