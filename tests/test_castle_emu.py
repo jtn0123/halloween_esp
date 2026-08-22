@@ -321,7 +321,7 @@ class TestBridge(EmuCase):
         st = castle_link.status()
         self.assertIsNotNone(st)
         assert st is not None
-        self.assertEqual(st["version"], "5.30")
+        self.assertEqual(st["version"], "5.31")
         self.assertEqual(st["bridged"], f"127.0.0.1:{self.emu.port}")
 
     def test_dead_primary_falls_through_to_a_live_fallback(self) -> None:

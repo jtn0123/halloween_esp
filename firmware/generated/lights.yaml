@@ -125,28 +125,42 @@ script:
       - lambda: |-
           esphome::light::LightState *zones[] = {id(zone_towerL), id(zone_towerR), id(zone_door)};
           const char *names[] = {"towerL", "towerR", "door"};
-          // "<zone>:<spec>" drives one strip — the desk's channel test.
+          const bool rgbw[] = {true, true, false};
+          // "[zone:]spec[@pct]": spec = RRGGBB | white | off | show; one
+          // strip when a zone is named (the desk's channel test), pct 1..100.
           std::string spec = arg, only;
           const auto colon = arg.find(':');
           if (colon != std::string::npos) {
             only = arg.substr(0, colon); spec = arg.substr(colon + 1);
+          }
+          float bright = 1.0f;
+          const auto at = spec.find('@');
+          if (at != std::string::npos) {
+            bright = atoi(spec.c_str() + at + 1) / 100.0f; spec.resize(at);
           }
           for (size_t i = 0; i < 3; i++) {
             if (!only.empty() && only != names[i]) continue;
             auto *z = zones[i];
             if (spec == "off") { z->turn_off().perform(); continue; }
             auto call = z->turn_on();
-            call.set_brightness(1.0f);
+            call.set_brightness(bright);
             if (spec == "show") {
               call.set_effect("Show");
+            } else if (spec == "white") {
+              // The white LED itself on an RGBW fixture; an RGB one
+              // mixes it. Tests the one channel a colour never lights.
+              call.set_effect("None");
+              if (rgbw[i]) call.set_rgbw(0.0f, 0.0f, 0.0f, 1.0f);
+              else call.set_rgb(1.0f, 1.0f, 1.0f);
             } else {
-              // Park on a colour with no animation — the manual
-              // override the phone remote offers.
+              // Park on a colour, no animation. White channel OFF:
+              // left alone it kept whatever the effect last wrote,
+              // and 'red' came out pink on the jewels (2026-08-21).
               long v = strtol(spec.c_str(), nullptr, 16);
               call.set_effect("None");
-              call.set_rgb(((v >> 16) & 0xFF) / 255.0f,
-                           ((v >> 8) & 0xFF) / 255.0f,
-                           (v & 0xFF) / 255.0f);
+              call.set_rgbw(((v >> 16) & 0xFF) / 255.0f,
+                            ((v >> 8) & 0xFF) / 255.0f,
+                            (v & 0xFF) / 255.0f, 0.0f);
             }
             call.perform();
           }

@@ -25,18 +25,12 @@ substitutions:
   friendly: Castle SD
 
   # ── ONBOARD pixel, for now ───────────────────────────────────────────
-  # No external jewels are soldered yet, so drive the Feather's own NeoPixel
-  # (GPIO33, plain RGB) exactly like bench.yaml does: it plays pixel 0 of
-  # towerL and the 20 pixels that don't exist fall off the end of the wire.
-  # WHEN THE JEWELS ARE SOLDERED: wire their DIN (via the 74AHCT125) to A0,
-  # then flash firmware/castle_sd_jewels.yaml — it overrides these two lines
-  # and nothing else.
-  # The onboard pixel replaces tower L's strip: same pin substitution as
-  # before, now per zone. It plays tower L's pixel 0 and the rest of that
-  # zone falls off the end of a wire that is not there. The other two zones
-  # keep their real pins and clock into thin air, which costs nothing.
-  pin_towerL: "33"      # onboard NeoPixel
-  rgbw_towerL: "false"  # the onboard pixel is plain RGB
+  # The real rig: every zone on the pins castle.yaml declares (tower L on
+  # A0/GPIO18 through the 74AHCT125). Until 2026-08-21 this file still
+  # carried bench.yaml's `pin_towerL: "33"` (the onboard NeoPixel, plain
+  # RGB) from before the jewels were soldered — so the porch build lit the
+  # Feather's own pixel as tower L and the left jewel got no data at all.
+  # Bench work belongs in bench*.yaml, never here.
 
   # ── SD pins: Adafruit 2.13" eInk FeatherWing (4128 / 4195 / 4814) ────
   # Adafruit documents one convention for the whole eInk FeatherWing family —

@@ -68,14 +68,23 @@ inline void mirror_show_state(const std::string &scene, const std::string &track
   g_pir_scene = pir_scene;
 }
 
-// /api/light?c= — "RRGGBB" | "show" | "off", optionally "<zone>:" in front
-// to drive ONE strip (the desk's channel test: which data line is dead).
-// Shape only; lights_override knows the real zone ids. The emulator mirrors
-// this byte for byte (castle_emu_http.light_spec_ok).
+// /api/light?c= — "RRGGBB" | "white" | "show" | "off", optionally "<zone>:"
+// in front to drive ONE strip (the desk's channel test: which data line is
+// dead) and "@<1..100>" behind for brightness. Shape only; lights_override
+// knows the real zone ids. The emulator mirrors this byte for byte
+// (castle_emu_http.light_spec_ok).
 inline bool light_spec_ok(const std::string &c) {
   const auto colon = c.find(':');
   const std::string zone = colon == std::string::npos ? "" : c.substr(0, colon);
-  const std::string spec = colon == std::string::npos ? c : c.substr(colon + 1);
+  std::string spec = colon == std::string::npos ? c : c.substr(colon + 1);
+  const auto at = spec.find('@');
+  if (at != std::string::npos) {
+    const std::string pct = spec.substr(at + 1);
+    const bool digits = !pct.empty() && pct.size() <= 3 &&
+        pct.find_first_not_of("0123456789") == std::string::npos;
+    if (!digits || atoi(pct.c_str()) < 1 || atoi(pct.c_str()) > 100) return false;
+    spec.resize(at);
+  }
   if (colon != std::string::npos &&
       (zone.empty() || zone.size() > 16 ||
        zone.find_first_not_of("abcdefghijklmnopqrstuvwxyz"
@@ -83,7 +92,7 @@ inline bool light_spec_ok(const std::string &c) {
     return false;
   const bool hex6 = spec.size() == 6 &&
       spec.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
-  return hex6 || spec == "show" || spec == "off";
+  return hex6 || spec == "white" || spec == "show" || spec == "off";
 }
 
 }  // namespace castle_web

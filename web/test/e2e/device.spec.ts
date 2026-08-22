@@ -188,9 +188,18 @@ test("the light override parks a colour and hands the show back", async ({ page 
     .toBeGreaterThan(0);
   // The strip test drives one data line: "<zone>:<colour>".
   await page.locator("[data-zl='door:00ff00']").click();
-  await expect.poll(() => calls.filter((c) => c.includes("/api/light?c=door:00ff00")).length)
+  await expect.poll(() => calls.filter((c) => c.includes("/api/light?c=door:00ff00@100")).length)
     .toBe(1);
   await expect(page.locator("[data-zl]")).toHaveCount(15);   // 3 strips × R G B W off
+  // Brightness applies to the strip test and the picker; "off" carries none.
+  await page.locator("[data-pct='25']").click();
+  await page.locator("[data-zl='towerL:white']").click();
+  await expect.poll(() => calls.filter((c) => c.includes("c=towerL:white@25")).length).toBe(1);
+  await page.locator("#dpColor").fill("#123456");
+  await expect.poll(() => calls.filter((c) => c.includes("c=123456@25")).length).toBeGreaterThan(0);
+  await page.locator("[data-zl='towerR:off']").click();
+  await expect.poll(() => calls.filter((c) => c.includes("c=towerR:off")).length).toBe(1);
+  expect(calls.some((c) => c.includes("towerR:off@"))).toBe(false);
 });
 
 test("the boot log is one tap away", async ({ page }) => {

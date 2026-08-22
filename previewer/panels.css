@@ -394,3 +394,4 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   .bandcfg__sens { flex: 1 1 100%; }
   .bandcfg__hits { margin-left: auto; }
 }
+.dp__ghost[aria-pressed="true"] { color: inherit; border-color: var(--spirit); }

@@ -27,6 +27,10 @@ import { ZONE_ORDER } from "./rig.js";
 
 /** The strips in porch order (left, door, right) for the per-line test. */
 const STRIPS = ZONE_ORDER;
+/** Brightness for the strip test and the colour picker; survives a
+ *  re-render, not a reload. 100 % on a tower is a lot of LED in a dark room. */
+let testPct = 100;
+const PCTS = [25, 50, 75, 100] as const;
 
 interface SdFile {
   name: string;
@@ -165,12 +169,17 @@ export class DevicePanel {
       `<div class="dp__lights dp__strips" ` +
       `title="Drive ONE strip with a solid colour — finds the dead data line">` +
       `🔌 <small class="dp__muted">strip test</small> ` +
+      `<span class="dp__strip" title="Brightness for the strip test and the colour picker">` +
+      PCTS.map((p) =>
+        `<button class="dp__ghost dp__btn--sm" data-pct="${p}" ` +
+        `aria-pressed="${p === testPct}">${p}%</button>`).join("") + `</span> ` +
       STRIPS.map((z) =>
         `<span class="dp__strip"><small>${z}</small> ` +
-        [["ff0000", "R"], ["00ff00", "G"], ["0000ff", "B"], ["ffffff", "W"], ["off", "off"]]
+        [["ff0000", "R"], ["00ff00", "G"], ["0000ff", "B"], ["white", "W"], ["off", "off"]]
           .map(([spec, label]) =>
             `<button class="dp__ghost dp__btn--sm" data-zl="${z}:${spec}" ` +
-            `title="${z}: ${label === "off" ? "off" : "solid " + label}">${label}</button>`)
+            `title="${z}: ${label === "off" ? "off" : label === "W" ? "white channel" : "solid " + label}">` +
+            `${label}</button>`)
           .join("") + `</span>`).join(" ") +
       `</div>` +
       `<div class="dp__files" id="dpFiles">` +
@@ -237,7 +246,7 @@ export class DevicePanel {
         const hex = (e.target as HTMLInputElement).value.slice(1);
         // quiet: the picker fires continuously while the hand drags; the
         // fixed wording lets toast() fold a whole drag's failures into one.
-        void castleAct(`/api/light?c=${hex}`, "lights colour", { quiet: true });
+        void castleAct(`/api/light?c=${hex}@${testPct}`, "lights colour", { quiet: true });
       });
     this.body.querySelector<HTMLButtonElement>("#dpShow")!
       .addEventListener("click", () =>
@@ -246,8 +255,17 @@ export class DevicePanel {
       .addEventListener("click", () =>
         void castleAct("/api/light?c=off", "lights off"));
     this.body.querySelectorAll<HTMLButtonElement>("[data-zl]").forEach((b) =>
-      b.addEventListener("click", () =>
-        void castleAct(`/api/light?c=${b.dataset.zl}`, `strip ${b.dataset.zl}`)));
+      b.addEventListener("click", () => {
+        const spec = b.dataset.zl!;
+        const arg = spec.endsWith(":off") ? spec : `${spec}@${testPct}`;
+        void castleAct(`/api/light?c=${arg}`, `strip ${arg}`);
+      }));
+    this.body.querySelectorAll<HTMLButtonElement>("[data-pct]").forEach((b) =>
+      b.addEventListener("click", () => {
+        testPct = Number(b.dataset.pct);
+        this.body.querySelectorAll<HTMLButtonElement>("[data-pct]").forEach((o) =>
+          o.setAttribute("aria-pressed", String(o === b)));
+      }));
 
     this.body.querySelectorAll<HTMLButtonElement>("[data-play]").forEach((b) =>
       b.addEventListener("click", () => {
