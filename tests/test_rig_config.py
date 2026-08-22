@@ -111,6 +111,46 @@ class TestEmittedStrips(unittest.TestCase):
             self.assertIn(f"id(zone_{z['id']})", text)
 
 
+class TestRmtBudget(unittest.TestCase):
+    """The S2 has 256 RMT symbols and no DMA. Overspend and a strip goes dark
+       (it happened, 2026-08-19); underspend a long strip and its refill ISR
+       runs to a 40 us deadline, which is a garbled pixel now and then."""
+
+    def zones(self, **symbols: int) -> list[dict]:
+        return [{**z, **({"rmt_symbols": symbols[z["id"]]} if z["id"] in symbols else {})}
+                for z in ZONES]
+
+    def test_a_zone_gets_one_block_unless_it_asks(self) -> None:
+        self.assertEqual([s["rmt_symbols"] for s in strips()],
+                         [gen_rig.RMT_BLOCK] * len(LIVE))
+
+    def test_a_long_strip_can_be_given_a_second_block(self) -> None:
+        zones = self.zones(door=128)
+        lights = yaml.safe_load(gen_rig.emit_lights(LAYOUTS, zones, PER))["light"]
+        got = {s["id"]: s["rmt_symbols"] for s in lights}
+        self.assertEqual(got["zone_door"], 128)
+        self.assertEqual(got["zone_towerL"], 64)
+
+    def test_the_leftover_blocks_are_stated(self) -> None:
+        """The SD build's status pixel needs one of them, so the number is
+           not decoration — it is the reason that pixel can exist."""
+        self.assertIn("192 of 256 symbols spent, 1 block(s) spare",
+                      gen_rig.emit_lights(LAYOUTS, ZONES, PER))
+        self.assertIn("256 of 256 symbols spent, 0 block(s) spare",
+                      gen_rig.emit_lights(LAYOUTS, self.zones(door=128), PER))
+
+    def test_overspending_the_peripheral_stops_the_build(self) -> None:
+        with self.assertRaises(SystemExit) as e:
+            gen_rig.emit_lights(LAYOUTS, self.zones(door=128, towerL=128), PER)
+        self.assertIn("ESP32-S2 has 256", str(e.exception))
+
+    def test_a_half_block_is_refused(self) -> None:
+        for bad in (96, 32, 0):
+            with self.assertRaises(SystemExit) as e:
+                gen_rig.emit_lights(LAYOUTS, self.zones(door=bad), PER)
+            self.assertIn("multiple of 64", str(e.exception))
+
+
 class TestGeneratedFilesAreFresh(unittest.TestCase):
     """What the firmware was built from must be what scenes.yaml says now."""
 

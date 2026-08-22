@@ -131,6 +131,40 @@ TEST_EFFECTS = [
 ]
 
 
+# The ESP32-S2's whole RMT peripheral: 4 channels, 64 symbols of memory each,
+# 256 in total, no DMA. A channel that asks for more takes the next channel's
+# block, which is how the 192-symbol default once left strips 2 and 3 dead
+# (bench-diagnosed 2026-08-19). A bigger block is not a luxury either: the
+# refill ISR must top the block up every half-block — 32 symbols is 40 us of
+# WS2812 bits — and a late refill is a garbled pixel. So it is a budget, and
+# this is where it is spent and checked. The SD build's status pixel takes one
+# block, so leave RMT_BLOCK spare if it is in play (see castle_sd.yaml).
+RMT_TOTAL_SYMBOLS = 256
+RMT_BLOCK = 64
+
+
+def rmt_symbols(z: dict) -> int:
+    """A zone's RMT memory. Whole blocks only — the hardware has no other
+       granularity — and the longest strip is the one worth spending on."""
+    n = int(z.get("rmt_symbols", RMT_BLOCK))
+    if n % RMT_BLOCK or n < RMT_BLOCK:
+        raise SystemExit(f"zone {z['id']}: rmt_symbols must be a multiple of "
+                         f"{RMT_BLOCK} (the S2 allocates whole blocks), got {n}")
+    return n
+
+
+def check_rmt_budget(zones: list[dict], layouts: dict[str, Layout]) -> int:
+    """Spend no more than the peripheral has; return what is left over."""
+    live = [z for z in zones if layouts[z["id"]].n > 0]
+    spent = sum(rmt_symbols(z) for z in live)
+    if spent > RMT_TOTAL_SYMBOLS:
+        raise SystemExit(
+            f"RMT budget: {len(live)} strips ask for {spent} symbols, the "
+            f"ESP32-S2 has {RMT_TOTAL_SYMBOLS}. Strips past the limit get no "
+            f"channel and stay dark. Lower a zone's rmt_symbols.")
+    return RMT_TOTAL_SYMBOLS - spent
+
+
 def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
     """One `light:` component per zone, each rendering itself.
 
@@ -167,11 +201,10 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
             "    chipset: WS2812",
             f"    rgb_order: {z.get('rgb_order', 'GRB')}",
             f"    is_rgbw: ${{rgbw_{zid}}}",
-            # 64, explicitly: ESPHome's S2 default is 192, but the S2's RMT
-            # has 256 symbols TOTAL (4 blocks x 64). At 192 the first strip
-            # takes 3 blocks and every later strip fails to allocate — one
-            # clean zone, two dead ones (bench-diagnosed 2026-08-19).
-            "    rmt_symbols: 64",
+            # Explicit, and budgeted: see RMT_TOTAL_SYMBOLS above for why
+            # ESPHome's S2 default of 192 leaves two strips dark, and why a
+            # long strip may be worth a second block.
+            f"    rmt_symbols: {rmt_symbols(z)}",
             # Internal RAM, deliberately: the strip buffer is under 50 bytes,
             # and the RMT refill ISR must be able to read it during flash-cache
             # blackouts. PSRAM there truncated frames at 4 px on every strip
@@ -211,6 +244,10 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
     # sequence want to talk to "the pixels", and with a strip per zone that is
     # no longer a single `id()`. Generated rather than hand-written in
     # castle_sd.yaml so the zone list stays in exactly one place.
+    spare = check_rmt_budget(zones, layouts)
+    out.append(f"# RMT: {RMT_TOTAL_SYMBOLS - spare} of {RMT_TOTAL_SYMBOLS} "
+               f"symbols spent, {spare // RMT_BLOCK} block(s) spare "
+               f"(the SD build's status pixel needs one).")
     live = [z["id"] for z in zones if layouts[z["id"]].n > 0]
     zone_rgbw = {z["id"]: bool(z.get("rgbw", True)) for z in zones}
     out += [
