@@ -193,7 +193,10 @@ const device = deviceBridge({
     // The kiosk FOLLOWS the castle: an empty id is the porch going idle,
     // and the wall tablet goes dark with it. The desk is only ever handed
     // a real scene, once, at first contact.
-    if (!id) { if (kiosk) transport.blackout(); return; }
+    if (!id) {
+      if (kiosk) transport.blackout();
+      return;
+    }
     const i = SCENES.findIndex((s) => s.id === id);
     const sc = SCENES[i];
     if (!sc) return;

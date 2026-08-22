@@ -86,7 +86,10 @@ export function loudnessEnvelope(
     env[i] = Math.log1p(Math.sqrt(s / hop) * 50);
   }
   let lo = Infinity, hi = -Infinity;
-  for (const v of env) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  for (const v of env) {
+    if (v < lo) lo = v;
+    if (v > hi) hi = v;
+  }
   if (hi - lo < 1e-9) return [];
   const step = Math.max(1, Math.round(sampleRate / hop / hz));
   const out: [number, number][] = [];

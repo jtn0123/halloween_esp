@@ -304,7 +304,10 @@ export function createStemsView(deps: StemsDeps): StemsApi {
       let job;
       try { job = await api.job(jobId); }
       catch { continue; }              // one dropped poll is not a failure
-      if (!job.done) { if (showing()) say(eta.line()); continue; }
+      if (!job.done) {
+        if (showing()) say(eta.line());
+        continue;
+      }
       inflight.delete(id);
       if (job.phase === "failed") {
         eta.stop();

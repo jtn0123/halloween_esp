@@ -125,9 +125,14 @@ jobs:
         run: python tools/render_audio.py
       - name: generate
         run: python tools/gen_esphome.py
-      - name: fake secrets            # validation needs names, not real keys
+      # Validation needs the KEYS to resolve, not real credentials — and a
+      # literal here reads as a hardcoded password to anything scanning the
+      # repo, so the value comes from the run rather than from the file.
+      - name: fake secrets
+        env:
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          printf 'wifi_ssid: "ci"\nwifi_password: "ci-password"\n' \
+          printf 'wifi_ssid: "ci"\nwifi_password: "%s"\n' "$RUN" \
             > firmware/secrets.yaml
       # No `> /dev/null`: esphome prints its ERRORS to stdout, and piping it
       # away turned every validation failure into a bare "exit code 2".
