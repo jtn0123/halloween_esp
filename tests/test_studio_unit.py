@@ -184,3 +184,27 @@ class TestServerStop(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestLogScrub(unittest.TestCase):
+    """A request line reaches the console as one line of ours, not two.
+
+    The handler logs whatever was asked for, and a URL can carry a carriage
+    return — which, written through, forges a second log entry under our name.
+    """
+
+    def test_control_characters_become_escapes(self) -> None:
+        got = sh.scrub("GET /a\r\n200 OK\x00 HTTP/1.1")
+        self.assertNotIn("\n", got)
+        self.assertNotIn("\r", got)
+        self.assertIn("\\r\\n", got)
+        self.assertIn("\\x00", got)
+
+    def test_ordinary_lines_are_untouched(self) -> None:
+        self.assertEqual(sh.scrub('GET /studio/tracks HTTP/1.1" 200 -'),
+                         'GET /studio/tracks HTTP/1.1" 200 -')
+
+    def test_one_request_cannot_scroll_the_console(self) -> None:
+        got = sh.scrub("GET /" + "a" * 5000)
+        self.assertLessEqual(len(got), 301)
+        self.assertTrue(got.endswith("…"))

@@ -18,6 +18,18 @@ from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 
+def scrub(line: str, limit: int = 300) -> str:
+    """A line of ours, with the caller's control characters taken out.
+
+    Anything that reaches the console after passing through a request —
+    a path, a header, a filename — comes through here first: newlines and
+    carriage returns become escapes rather than new log lines, and the whole
+    thing is capped so one request cannot scroll the console.
+    """
+    out = "".join(ch if ch.isprintable() else repr(ch)[1:-1] for ch in line)
+    return out if len(out) <= limit else out[:limit] + "…"
+
+
 class BadRequest(Exception):
     """A client mistake the boundary turns into a 400 instead of a traceback."""
 
@@ -35,7 +47,10 @@ class JsonHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *a):              # quieter console
-        sys.stderr.write("  %s\n" % (fmt % a))
+        # The request line is whatever the client sent, control bytes and
+        # all. Written straight through, a carriage return in a URL forges
+        # a second log line — someone else's tidy "200 OK" under our name.
+        sys.stderr.write("  %s\n" % scrub(fmt % a))
 
     def send_json(self, obj, code=200):
         body = json.dumps(obj).encode()
