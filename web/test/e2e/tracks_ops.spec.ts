@@ -11,7 +11,7 @@
  * wiring.
  */
 
-import { type Page, type Route } from "@playwright/test";
+import { type Locator, type Page, type Route } from "@playwright/test";
 import { test, expect } from "./fixtures.js";
 
 const MP3 = "e2e_beats";
@@ -22,6 +22,26 @@ const act = (page: Page, id: string, action: string) =>
   row(page, id).locator(`button[data-act="${action}"]`);
 
 /** Drag a region out on the waveform so the editor writes START/LENGTH. */
+/** An element's box once it has stopped moving.
+ *
+ *  Opening the clip editor scrolls it into view with `behavior: "smooth"`, so
+ *  for a few frames the canvas is somewhere between where it was and where it
+ *  will be. Measuring then and pressing the mouse at those coordinates put the
+ *  gesture outside the canvas: no selection, and the clip stayed at its full
+ *  length — which is what the offset test saw, intermittently, depending on
+ *  how the scroll animation lined up with the test.
+ */
+async function settledBox(loc: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+  let last = await loc.boundingBox();
+  await expect.poll(async () => {
+    const now = await loc.boundingBox();
+    const still = !!now && !!last && now.x === last.x && now.y === last.y;
+    last = now;
+    return still;
+  }).toBe(true);
+  return last!;
+}
+
 async function dragClip(page: Page, from = 0.3, to = 0.6): Promise<void> {
   const canvas = page.locator("#trkWave canvas:not(.stems-strip)");
   // The canvas is on screen BEFORE the audio is decoded, and a drag then maps
@@ -31,10 +51,16 @@ async function dragClip(page: Page, from = 0.3, to = 0.6): Promise<void> {
   // Audition enables only once the waveform has data — the same signal
   // tracks.spec waits on before ITS drag.
   await expect(page.getByRole("button", { name: "Audition" })).toBeEnabled();
-  const box = (await canvas.boundingBox())!;
-  await page.mouse.move(box.x + box.width * from, box.y + box.height / 2);
+  const box = await settledBox(canvas);
+  // hover({position}) rather than mouse.move(absolute): it runs Playwright's
+  // actionability checks first, so the press waits until the canvas is where
+  // it will stay AND is the thing under that point. Absolute coordinates
+  // pressed whatever happened to be on top — a toast, the dock — and the
+  // canvas never saw the gesture, leaving the clip at its full length.
+  const y = box.height / 2;
+  await canvas.hover({ position: { x: box.width * from, y } });
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width * to, box.y + box.height / 2);
+  await canvas.hover({ position: { x: box.width * to, y } });
   await page.mouse.up();
   // Wait on the READOUT, which is written from the clip and from nothing else.
   // #trkStart was the wrong thing to watch: a track whose remembered options
