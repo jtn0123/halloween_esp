@@ -166,3 +166,19 @@ test("a castle that dies mid-session takes its badges and Sync with it", async (
   await expect(page.locator(".trk__badge", { hasText: "on castle" })).toHaveCount(0);
   await expect(page.locator("button[data-act='send']")).toHaveCount(0);
 });
+
+test("a castle back from a reboot is hushed again while sound is on the Mac", async ({ page }) => {
+  // speaker_hush is not persisted on the castle: a reboot comes back with
+  // the amp at the boot scene's own level. The route is the desk's decision,
+  // so the desk restates it the moment the castle answers again.
+  const castle = await fakeCastle(page);
+  await page.goto("/");
+  await expect.poll(() => castle.hits("/api/volume?v=0")).toBe(1);   // first contact
+  castle.up = false;
+  await page.locator("#devStop").click();                            // re-poll finds it gone
+  await expect(page.locator("#headTxt")).toContainText("castle not answering");
+  castle.up = true;
+  // The slow poll (15 s) is what notices a castle nobody is acting on.
+  await expect.poll(() => castle.hits("/api/volume?v=0"), { timeout: 25_000 }).toBe(2);
+  await expect(page.locator("#headTxt")).toContainText("sound: Mac");
+});

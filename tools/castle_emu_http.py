@@ -68,6 +68,21 @@ FALLBACK_PAGE = ("<!doctype html><meta charset=utf-8><title>Castle</title>"
                  "<h1>Castle</h1><p>emulated fallback page</p>")
 
 
+_ZONE_CHARS = set(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+
+
+def light_spec_ok(c: bytes) -> bool:
+    """sd_web_state.h light_spec_ok, byte for byte: "RRGGBB"|show|off with an
+    optional "<zone>:" prefix that drives one strip (the desk's channel test)."""
+    zone, sep, spec = c.partition(b":")
+    if not sep:
+        zone, spec = b"", c
+    elif not zone or len(zone) > 16 or any(b not in _ZONE_CHARS for b in zone):
+        return False
+    hex6 = len(spec) == 6 and all(chr(b) in "0123456789abcdefABCDEF" for b in spec)
+    return hex6 or spec in (b"show", b"off")
+
+
 class Handler(BaseHTTPRequestHandler):
     server: CastleEmu  # narrowed for handlers
     timeout = RECV_WAIT_S
@@ -280,9 +295,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def h_light(self, raw: bytes) -> None:
         c = wire.query_param(raw, "c")
-        hex6 = len(c) == 6 and all(chr(b) in "0123456789abcdefABCDEF" for b in c)
-        if not hex6 and c not in (b"show", b"off"):
-            return self._err(400, "need ?c=RRGGBB, show, or off")
+        if not light_spec_ok(c):
+            return self._err(400, "need ?c=[zone:]RRGGBB, show, or off")
         self.server.queue("LIGHT", c.decode())
         self._json({"queued": True})
 

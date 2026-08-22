@@ -221,8 +221,13 @@ class TestGeneratorFuzz(unittest.TestCase):
         self.assertEqual(ge.main(), 0)
         out = yaml.safe_load(ge.OUT.read_text())
         ids = [s["id"] for s in out["script"]]
-        self.assertEqual(ids[:len(doc["scenes"])], [f"scene_{s['id']}" for s in doc["scenes"]])
-        self.assertEqual(ids[len(doc["scenes"]):], ["scene_stop", "run_scene", "show_playlist"])
+        # Long scenes continue in cont_<id>_N scripts (gen_esphome.CHUNK);
+        # the heads keep the document's order, the fixed scripts follow.
+        heads = [i for i in ids if not i.startswith("cont_")]
+        self.assertEqual(heads[:len(doc["scenes"])], [f"scene_{s['id']}" for s in doc["scenes"]])
+        self.assertEqual(heads[len(doc["scenes"]):], ["scene_stop", "run_scene", "show_playlist"])
+        for sc in out["script"]:          # and no chain is ever deep again
+            self.assertLessEqual(len(sc["then"]), ge.CHUNK, sc["id"])
         self.assertEqual(out["select"][0]["options"][:-1], [s["id"] for s in doc["scenes"]])
         for path in (ge.AUDIO_FLASH, ge.AUDIO_SD, ge.LIGHTS_OUT, ge.MEDIA_OUT):
             yaml.load(path.read_text(), Loader=EsphomeLoader)

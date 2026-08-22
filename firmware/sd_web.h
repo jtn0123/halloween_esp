@@ -384,9 +384,8 @@ inline esp_err_t h_volume(httpd_req_t *req) {
 
 inline esp_err_t h_light(httpd_req_t *req) {
   std::string c = query_param(req, "c");
-  bool hex6 = c.size() == 6 && c.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
-  if (!hex6 && c != "show" && c != "off")
-    return reply_err(req, "400 Bad Request", "need ?c=RRGGBB, show, or off");
+  if (!light_spec_ok(c))    // RRGGBB|show|off, optionally "<zone>:" first
+    return reply_err(req, "400 Bad Request", "need ?c=[zone:]RRGGBB, show, or off");
   set_pending(LIGHT, c);
   return reply_json(req, "{\"queued\":true}");
 }

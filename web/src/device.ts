@@ -396,7 +396,12 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     if (!live) return;
     const now = await probe();
     if (now !== null) {
+      // Back after a reboot: the castle forgot the hush (speaker_hush is
+      // not persisted) and its boot scene set the amp to its own level.
+      // The route is this desk's decision, so the desk restates it.
+      const back = !lastOk;
       render(now);
+      if (back && soundRoute === "mac") act("/api/volume?v=0", "castle speaker off", true);
       setCastleLive(true);
       return;
     }

@@ -186,6 +186,11 @@ test("the light override parks a colour and hands the show back", async ({ page 
   await page.locator("#dpOff").click();
   await expect.poll(() => calls.filter((c) => c.includes("c=off")).length)
     .toBeGreaterThan(0);
+  // The strip test drives one data line: "<zone>:<colour>".
+  await page.locator("[data-zl='door:00ff00']").click();
+  await expect.poll(() => calls.filter((c) => c.includes("/api/light?c=door:00ff00")).length)
+    .toBe(1);
+  await expect(page.locator("[data-zl]")).toHaveCount(15);   // 3 strips × R G B W off
 });
 
 test("the boot log is one tap away", async ({ page }) => {

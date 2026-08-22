@@ -258,8 +258,12 @@ interval:
           } else if (act.type == castle_web::STOP) {
             id(scene_stop)->execute();
           } else if (act.type == castle_web::VOLUME) {
+            // 0 is the desk's hush (sound routed to the Mac): remembered so
+            // scene scripts keep quiet too — see speaker_hush in castle.yaml.
+            const int pct = atoi(act.arg.c_str());
+            id(speaker_hush) = pct == 0;
             auto call = id(castle_media)->make_call();
-            call.set_volume(atoi(act.arg.c_str()) / 100.0f);
+            call.set_volume(pct / 100.0f);
             call.perform();
           } else if (act.type == castle_web::LIGHT) {
             // Manual override for every strip. "off", "show", or six hex

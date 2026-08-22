@@ -35,9 +35,9 @@ import netguard as ng
 import stems as st
 import studio_http as sh
 import studio_jobs as sj
-from studio_jobs import OPT_KEYS, opt_args  # the importer's CLI flags, one place
 import studio_media as sm
 import studio_scenes as ss
+from studio_jobs import OPT_KEYS, opt_args  # the importer's CLI flags, one place
 
 # Re-exported: TRACKS and these helpers are the track vocabulary, and
 # callers (including the tests) reach for them through this module.

@@ -124,16 +124,25 @@ script:
     then:
       - lambda: |-
           esphome::light::LightState *zones[] = {id(zone_towerL), id(zone_towerR), id(zone_door)};
-          for (auto *z : zones) {
-            if (arg == "off") { z->turn_off().perform(); continue; }
+          const char *names[] = {"towerL", "towerR", "door"};
+          // "<zone>:<spec>" drives one strip — the desk's channel test.
+          std::string spec = arg, only;
+          const auto colon = arg.find(':');
+          if (colon != std::string::npos) {
+            only = arg.substr(0, colon); spec = arg.substr(colon + 1);
+          }
+          for (size_t i = 0; i < 3; i++) {
+            if (!only.empty() && only != names[i]) continue;
+            auto *z = zones[i];
+            if (spec == "off") { z->turn_off().perform(); continue; }
             auto call = z->turn_on();
             call.set_brightness(1.0f);
-            if (arg == "show") {
+            if (spec == "show") {
               call.set_effect("Show");
             } else {
               // Park on a colour with no animation — the manual
               // override the phone remote offers.
-              long v = strtol(arg.c_str(), nullptr, 16);
+              long v = strtol(spec.c_str(), nullptr, 16);
               call.set_effect("None");
               call.set_rgb(((v >> 16) & 0xFF) / 255.0f,
                            ((v >> 8) & 0xFF) / 255.0f,

@@ -55,6 +55,6 @@ it is the editor above. The table is `STUDIO_ROUTES` in `tools/studio.py`.
 | PUT | `/api/files/<name>`, `/api/site/<name>`, `/api/scenes/<name>` | write a file to the card (body = bytes) |
 | DELETE | `/api/files/<name>` | remove a card file |
 | POST | `/api/play?f=`, `/api/stop`, `/api/scene?s=`, `/api/volume?v=` | transport |
-| POST | `/api/show/start`, `/api/show/stop`, `/api/blackout`, `/api/light?c=`, `/api/pir?…` | show / lights / PIR |
+| POST | `/api/show/start`, `/api/show/stop`, `/api/blackout`, `/api/light?c=[zone:]RRGGBB|show|off`, `/api/pir?…` | show / lights / PIR |
 | PUT | `/api/ota` | firmware image |
 | GET | `/remote` | the castle's phone remote page |

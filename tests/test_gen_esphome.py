@@ -317,7 +317,8 @@ class TestEmitScene(unittest.TestCase):
                                          {"probe": {"h": [[100, 1.0], [200, 0.5]]}}))
         self.assertEqual(got["id"], "scene_probe")
         self.assertEqual(got["mode"], "restart")
-        self.assertEqual(got["then"][3]["media_player.volume_set"], 0.45)
+        vol = got["then"][3]["lambda"]          # scene level, unless hushed
+        self.assertIn("id(speaker_hush) ? 0.0f : 0.45f", vol)
 class TestGenEsphomeMain(unittest.TestCase):
     """End to end: a scenes.yaml on disk becomes a loadable ESPHome file."""
 

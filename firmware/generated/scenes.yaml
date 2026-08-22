@@ -22,7 +22,10 @@ script:
           id: current_scene
           state: 'vigil'
       - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_center)[0] = 2; id(zone_overlay)[0] = 0; id(zone_palette)[0] = 0; id(zone_phase)[0] = 0.00f; id(zone_flash_mode)[0] = 0; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_center)[1] = 2; id(zone_overlay)[1] = 0; id(zone_palette)[1] = 0; id(zone_phase)[1] = 1.70f; id(zone_flash_mode)[1] = 0; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_center)[2] = -1; id(zone_overlay)[2] = 1; id(zone_palette)[2] = 0; id(zone_phase)[2] = 0.00f; id(zone_flash_mode)[2] = 0; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
-      - media_player.volume_set: 0.45
+      - lambda: |-
+          auto call = id(castle_media)->make_call();
+          call.set_volume(id(speaker_hush) ? 0.0f : 0.45f);
+          call.perform();
       - script.execute:
           id: sfx
           track: '01_vigil'
@@ -38,7 +41,10 @@ script:
           id: current_scene
           state: 'storm'
       - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_center)[0] = -1; id(zone_overlay)[0] = 0; id(zone_palette)[0] = 0; id(zone_phase)[0] = 0.00f; id(zone_flash_mode)[0] = 0; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_center)[1] = -1; id(zone_overlay)[1] = 0; id(zone_palette)[1] = 0; id(zone_phase)[1] = 0.00f; id(zone_flash_mode)[1] = 0; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_center)[2] = -1; id(zone_overlay)[2] = 0; id(zone_palette)[2] = 0; id(zone_phase)[2] = 0.00f; id(zone_flash_mode)[2] = 0; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
-      - media_player.volume_set: 1.0
+      - lambda: |-
+          auto call = id(castle_media)->make_call();
+          call.set_volume(id(speaker_hush) ? 0.0f : 1.0f);
+          call.perform();
       - script.execute:
           id: sfx
           track: '02_storm'
@@ -69,7 +75,10 @@ script:
           id: current_scene
           state: 'seance'
       - lambda: 'id(zone_effect)[0] = 6; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_center)[0] = -1; id(zone_overlay)[0] = 0; id(zone_palette)[0] = 0; id(zone_phase)[0] = 0.90f; id(zone_flash_mode)[0] = 0; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 6; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_center)[1] = -1; id(zone_overlay)[1] = 0; id(zone_palette)[1] = 0; id(zone_phase)[1] = 0.00f; id(zone_flash_mode)[1] = 0; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 9; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_center)[2] = -1; id(zone_overlay)[2] = 2; id(zone_palette)[2] = 0; id(zone_phase)[2] = 0.00f; id(zone_flash_mode)[2] = 0; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
-      - media_player.volume_set: 0.6
+      - lambda: |-
+          auto call = id(castle_media)->make_call();
+          call.set_volume(id(speaker_hush) ? 0.0f : 0.6f);
+          call.perform();
       - script.execute:
           id: sfx
           track: '03_seance'
@@ -106,7 +115,10 @@ script:
           id: current_scene
           state: 'ballroom'
       - lambda: 'id(zone_effect)[0] = 8; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_center)[0] = -1; id(zone_overlay)[0] = 1; id(zone_palette)[0] = 0; id(zone_phase)[0] = 0.00f; id(zone_flash_mode)[0] = 0; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 8; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_center)[1] = -1; id(zone_overlay)[1] = 1; id(zone_palette)[1] = 0; id(zone_phase)[1] = 2.30f; id(zone_flash_mode)[1] = 0; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 8; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_center)[2] = -1; id(zone_overlay)[2] = 0; id(zone_palette)[2] = 0; id(zone_phase)[2] = 0.00f; id(zone_flash_mode)[2] = 0; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
-      - media_player.volume_set: 0.55
+      - lambda: |-
+          auto call = id(castle_media)->make_call();
+          call.set_volume(id(speaker_hush) ? 0.0f : 0.55f);
+          call.perform();
       - script.execute:
           id: sfx
           track: '04_ballroom'
@@ -141,7 +153,10 @@ script:
           id: current_scene
           state: 'descent'
       - lambda: 'id(zone_effect)[0] = 9; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_center)[0] = -1; id(zone_overlay)[0] = 3; id(zone_palette)[0] = 2; id(zone_phase)[0] = 0.00f; id(zone_flash_mode)[0] = 0; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 9; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_center)[1] = -1; id(zone_overlay)[1] = 3; id(zone_palette)[1] = 2; id(zone_phase)[1] = 1.30f; id(zone_flash_mode)[1] = 0; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 0; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_center)[2] = -1; id(zone_overlay)[2] = 0; id(zone_palette)[2] = 0; id(zone_phase)[2] = 0.00f; id(zone_flash_mode)[2] = 0; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
-      - media_player.volume_set: 0.85
+      - lambda: |-
+          auto call = id(castle_media)->make_call();
+          call.set_volume(id(speaker_hush) ? 0.0f : 0.85f);
+          call.perform();
       - script.execute:
           id: sfx
           track: '05_descent'
@@ -171,6 +186,11 @@ script:
       - lambda: 'id(zone_effect)[2] = 3;'
       - delay: 4300ms
       - lambda: 'id(zone_effect)[0] = 9;'
+      - script.execute: cont_descent_1
+
+  - id: cont_descent_1
+    mode: restart
+    then:
       - delay: 400ms
       - lambda: 'id(zone_effect)[1] = 9;'
       - delay: 600ms
@@ -186,7 +206,10 @@ script:
           id: current_scene
           state: 'visitation'
       - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_center)[0] = -1; id(zone_overlay)[0] = 0; id(zone_palette)[0] = 0; id(zone_phase)[0] = 0.00f; id(zone_flash_mode)[0] = 0; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_center)[1] = -1; id(zone_overlay)[1] = 0; id(zone_palette)[1] = 0; id(zone_phase)[1] = 0.00f; id(zone_flash_mode)[1] = 0; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_center)[2] = -1; id(zone_overlay)[2] = 0; id(zone_palette)[2] = 0; id(zone_phase)[2] = 0.00f; id(zone_flash_mode)[2] = 0; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
-      - media_player.volume_set: 0.75
+      - lambda: |-
+          auto call = id(castle_media)->make_call();
+          call.set_volume(id(speaker_hush) ? 0.0f : 0.75f);
+          call.perform();
       - script.execute:
           id: sfx
           track: '06_visitation'
@@ -211,7 +234,10 @@ script:
           id: current_scene
           state: 'approach'
       - lambda: 'id(zone_effect)[0] = 1; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 1.00f; id(zone_center)[0] = -1; id(zone_overlay)[0] = 0; id(zone_palette)[0] = 0; id(zone_phase)[0] = 0.00f; id(zone_flash_mode)[0] = 0; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 1; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 1.00f; id(zone_center)[1] = -1; id(zone_overlay)[1] = 0; id(zone_palette)[1] = 0; id(zone_phase)[1] = 0.00f; id(zone_flash_mode)[1] = 0; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_center)[2] = -1; id(zone_overlay)[2] = 0; id(zone_palette)[2] = 0; id(zone_phase)[2] = 0.00f; id(zone_flash_mode)[2] = 0; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
-      - media_player.volume_set: 1.0
+      - lambda: |-
+          auto call = id(castle_media)->make_call();
+          call.set_volume(id(speaker_hush) ? 0.0f : 1.0f);
+          call.perform();
       - script.execute:
           id: sfx
           track: '07_approach'
@@ -239,7 +265,10 @@ script:
           id: current_scene
           state: 'crypt'
       - lambda: 'id(zone_effect)[0] = 9; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 0.35f; id(zone_center)[0] = -1; id(zone_overlay)[0] = 0; id(zone_palette)[0] = 0; id(zone_phase)[0] = 0.00f; id(zone_flash_mode)[0] = 0; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 9; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 0.35f; id(zone_center)[1] = -1; id(zone_overlay)[1] = 0; id(zone_palette)[1] = 0; id(zone_phase)[1] = 1.10f; id(zone_flash_mode)[1] = 0; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 12; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 1.00f; id(zone_center)[2] = 2; id(zone_overlay)[2] = 0; id(zone_palette)[2] = 0; id(zone_phase)[2] = 0.00f; id(zone_flash_mode)[2] = 0; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
-      - media_player.volume_set: 0.7
+      - lambda: |-
+          auto call = id(castle_media)->make_call();
+          call.set_volume(id(speaker_hush) ? 0.0f : 0.7f);
+          call.perform();
       - script.execute:
           id: sfx
           track: '08_crypt'
@@ -269,6 +298,11 @@ script:
       - delay: 199ms
       - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8652f; id(zone_flash_mode)[2] = 2; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9101f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9101f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
+      - script.execute: cont_crypt_1
+
+  - id: cont_crypt_1
+    mode: restart
+    then:
       - delay: 180ms
       - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8652f; id(zone_flash_mode)[2] = 2; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9101f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9101f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
@@ -300,6 +334,11 @@ script:
       - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8652f; id(zone_flash_mode)[2] = 2; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9101f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9101f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
       - delay: 180ms
+      - script.execute: cont_crypt_2
+
+  - id: cont_crypt_2
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8652f; id(zone_flash_mode)[2] = 2; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9101f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9101f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
       - delay: 953ms
@@ -331,6 +370,11 @@ script:
       - lambda: 'id(zone_effect)[1] = 5; id(zone_level)[1] = 0.18f;'    # …it moved
       - delay: 105ms
       - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8652f; id(zone_flash_mode)[2] = 2; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
+      - script.execute: cont_crypt_3
+
+  - id: cont_crypt_3
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9101f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9101f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
       - delay: 1022ms
       - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8652f; id(zone_flash_mode)[2] = 2; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
@@ -362,6 +406,11 @@ script:
       - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8652f; id(zone_flash_mode)[2] = 2; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9101f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9101f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
       - delay: 180ms
+      - script.execute: cont_crypt_4
+
+  - id: cont_crypt_4
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8652f; id(zone_flash_mode)[2] = 2; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9101f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9101f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
       - delay: 1051ms
@@ -393,6 +442,11 @@ script:
       - lambda: 'id(zone_flash)[2] = 0.850f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8652f; id(zone_flash_mode)[2] = 2; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.100f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9101f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.100f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9101f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
       - delay: 180ms
+      - script.execute: cont_crypt_5
+
+  - id: cont_crypt_5
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[2] = 0.468f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8652f; id(zone_flash_mode)[2] = 2; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.03f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.00f;'    # heartbeat
       - lambda: 'id(zone_flash)[0] = 0.055f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9101f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.05f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.00f; id(zone_flash)[1] = 0.055f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9101f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.05f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.00f;'    # heartbeat
       - delay: 1113ms
@@ -410,7 +464,10 @@ script:
           id: current_scene
           state: 'the_citizens_of_halloween___this'
       - lambda: 'id(zone_effect)[0] = 9; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.9f; id(zone_level)[0] = 0.40f; id(zone_center)[0] = 2; id(zone_overlay)[0] = 0; id(zone_palette)[0] = 0; id(zone_phase)[0] = 0.00f; id(zone_flash_mode)[0] = 0; id(zone_flash_col)[0] = 1.0f; id(zone_flash_col)[1] = 1.0f; id(zone_flash_col)[2] = 1.0f; id(zone_flash_col)[3] = 1.0f; id(zone_effect)[1] = 9; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9f; id(zone_level)[1] = 0.40f; id(zone_center)[1] = 2; id(zone_overlay)[1] = 0; id(zone_palette)[1] = 2; id(zone_phase)[1] = 1.30f; id(zone_flash_mode)[1] = 0; id(zone_flash_col)[4] = 1.0f; id(zone_flash_col)[5] = 1.0f; id(zone_flash_col)[6] = 1.0f; id(zone_flash_col)[7] = 1.0f; id(zone_effect)[2] = 2; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9f; id(zone_level)[2] = 0.50f; id(zone_center)[2] = -1; id(zone_overlay)[2] = 1; id(zone_palette)[2] = 1; id(zone_phase)[2] = 0.00f; id(zone_flash_mode)[2] = 0; id(zone_flash_col)[8] = 1.0f; id(zone_flash_col)[9] = 1.0f; id(zone_flash_col)[10] = 1.0f; id(zone_flash_col)[11] = 1.0f;'
-      - media_player.volume_set: 0.7
+      - lambda: |-
+          auto call = id(castle_media)->make_call();
+          call.set_volume(id(speaker_hush) ? 0.0f : 0.7f);
+          call.perform();
       - script.execute:
           id: sfx
           track: '09_the_citizens_of_halloween___this'
@@ -440,6 +497,11 @@ script:
       - delay: 708ms
       - lambda: 'id(zone_flash)[2] = 0.711f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 0; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.97f; id(zone_flash_col)[9] = 0.38f; id(zone_flash_col)[10] = 0.06f; id(zone_flash_col)[11] = 0.08f; id(zone_flash)[0] = 0.711f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.8711f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 0.97f; id(zone_flash_col)[1] = 0.38f; id(zone_flash_col)[2] = 0.06f; id(zone_flash_col)[3] = 0.08f; id(zone_flash)[1] = 0.711f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.8711f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 0.97f; id(zone_flash_col)[5] = 0.38f; id(zone_flash_col)[6] = 0.06f; id(zone_flash_col)[7] = 0.08f;'    # onset_low
       - delay: 708ms
+      - script.execute: cont_the_citizens_of_halloween___this_1
+
+  - id: cont_the_citizens_of_halloween___this_1
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[2] = 0.668f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 0; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.39f; id(zone_flash_col)[10] = 0.02f; id(zone_flash_col)[11] = 0.08f;'    # onset_low
       - delay: 731ms
       - lambda: 'id(zone_flash)[2] = 0.531f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.30f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.06f;'    # onset_low
@@ -471,6 +533,11 @@ script:
       - lambda: 'id(zone_flash)[2] = 0.516f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.34f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.06f;'    # onset_low
       - delay: 383ms
       - lambda: 'id(zone_flash)[2] = 0.560f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.95f; id(zone_flash_col)[9] = 0.30f; id(zone_flash_col)[10] = 0.10f; id(zone_flash_col)[11] = 0.07f;'    # onset_low
+      - script.execute: cont_the_citizens_of_halloween___this_2
+
+  - id: cont_the_citizens_of_halloween___this_2
+    mode: restart
+    then:
       - delay: 708ms
       - lambda: 'id(zone_flash)[2] = 0.575f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.36f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.07f;'    # onset_low
       - delay: 1480ms
@@ -502,6 +569,11 @@ script:
       - delay: 720ms
       - lambda: 'id(zone_flash_target)[0] = 0.514f; id(zone_flash_rise)[0] = 0.0914f; id(zone_flash_decay)[0] = 0.9312f; id(zone_flash_mode)[0] = 1; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.10f; id(zone_flash_col)[2] = 0.81f; id(zone_flash_col)[3] = 0.08f;'    # onset_mid
       - delay: 731ms
+      - script.execute: cont_the_citizens_of_halloween___this_3
+
+  - id: cont_the_citizens_of_halloween___this_3
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[2] = 0.549f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.35f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.07f;'    # onset_low
       - delay: 673ms
       - lambda: 'id(zone_flash)[2] = 0.608f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.33f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.07f;'    # onset_low
@@ -533,6 +605,11 @@ script:
       - lambda: 'id(zone_flash)[2] = 0.671f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 0; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.39f; id(zone_flash_col)[10] = 0.02f; id(zone_flash_col)[11] = 0.08f;'    # onset_low
       - delay: 1474ms
       - lambda: 'id(zone_flash)[2] = 0.527f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.94f; id(zone_flash_col)[9] = 0.28f; id(zone_flash_col)[10] = 0.11f; id(zone_flash_col)[11] = 0.06f;'    # onset_low
+      - script.execute: cont_the_citizens_of_halloween___this_4
+
+  - id: cont_the_citizens_of_halloween___this_4
+    mode: restart
+    then:
       - delay: 1405ms
       - lambda: 'id(zone_flash)[2] = 0.700f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 0; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.40f; id(zone_flash_col)[10] = 0.02f; id(zone_flash_col)[11] = 0.08f; id(zone_flash)[0] = 0.700f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.8711f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.40f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.08f; id(zone_flash)[1] = 0.700f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.8711f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.40f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.08f;'    # onset_low
       - delay: 3599ms
@@ -564,6 +641,11 @@ script:
       - delay: 674ms
       - lambda: 'id(zone_flash)[2] = 0.635f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.9462f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.22f; id(zone_flash_col)[9] = 0.98f; id(zone_flash_col)[10] = 0.73f; id(zone_flash_col)[11] = 0.13f;'    # onset_high
       - delay: 162ms
+      - script.execute: cont_the_citizens_of_halloween___this_5
+
+  - id: cont_the_citizens_of_halloween___this_5
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[2] = 0.527f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.35f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.06f;'    # onset_low
       - delay: 12ms
       - lambda: 'id(zone_flash_target)[1] = 0.563f; id(zone_flash_rise)[1] = 0.1001f; id(zone_flash_decay)[1] = 0.9312f; id(zone_flash_mode)[1] = 1; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 0.87f; id(zone_flash_col)[5] = 0.11f; id(zone_flash_col)[6] = 0.89f; id(zone_flash_col)[7] = 0.08f;'    # onset_mid
@@ -595,6 +677,11 @@ script:
       - delay: 1439ms
       - lambda: 'id(zone_flash)[2] = 0.686f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 0; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.37f; id(zone_flash_col)[10] = 0.02f; id(zone_flash_col)[11] = 0.08f; id(zone_flash)[0] = 0.686f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.8711f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 1.00f; id(zone_flash_col)[1] = 0.37f; id(zone_flash_col)[2] = 0.02f; id(zone_flash_col)[3] = 0.08f; id(zone_flash)[1] = 0.686f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.8711f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 1.00f; id(zone_flash_col)[5] = 0.37f; id(zone_flash_col)[6] = 0.02f; id(zone_flash_col)[7] = 0.08f;'    # onset_low
       - delay: 1428ms
+      - script.execute: cont_the_citizens_of_halloween___this_6
+
+  - id: cont_the_citizens_of_halloween___this_6
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[2] = 0.516f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.34f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.06f;'    # onset_low
       - delay: 1428ms
       - lambda: 'id(zone_flash)[2] = 0.576f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.95f; id(zone_flash_col)[9] = 0.30f; id(zone_flash_col)[10] = 0.09f; id(zone_flash_col)[11] = 0.07f;'    # onset_low
@@ -626,6 +713,11 @@ script:
       - delay: 719ms
       - lambda: 'id(zone_flash_target)[1] = 0.644f; id(zone_flash_rise)[1] = 0.1145f; id(zone_flash_decay)[1] = 0.9312f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 0.91f; id(zone_flash_col)[5] = 0.12f; id(zone_flash_col)[6] = 0.88f; id(zone_flash_col)[7] = 0.10f;'    # onset_mid
       - delay: 709ms
+      - script.execute: cont_the_citizens_of_halloween___this_7
+
+  - id: cont_the_citizens_of_halloween___this_7
+    mode: restart
+    then:
       - lambda: 'id(zone_flash_target)[1] = 0.509f; id(zone_flash_rise)[1] = 0.0905f; id(zone_flash_decay)[1] = 0.9312f; id(zone_flash_mode)[1] = 1; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 0.73f; id(zone_flash_col)[5] = 0.14f; id(zone_flash_col)[6] = 0.91f; id(zone_flash_col)[7] = 0.08f;'    # onset_mid
       - delay: 11ms
       - lambda: 'id(zone_flash)[2] = 0.634f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 0; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.96f; id(zone_flash_col)[9] = 0.34f; id(zone_flash_col)[10] = 0.08f; id(zone_flash_col)[11] = 0.07f;'    # onset_low
@@ -657,6 +749,11 @@ script:
       - delay: 616ms
       - lambda: 'id(zone_flash)[1] = 0.585f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9462f; id(zone_flash_mode)[1] = 1; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 0.21f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 0.63f; id(zone_flash_col)[7] = 0.12f;'    # onset_high
       - delay: 93ms
+      - script.execute: cont_the_citizens_of_halloween___this_8
+
+  - id: cont_the_citizens_of_halloween___this_8
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[2] = 0.570f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.95f; id(zone_flash_col)[9] = 0.30f; id(zone_flash_col)[10] = 0.10f; id(zone_flash_col)[11] = 0.07f;'    # onset_low
       - delay: 1079ms
       - lambda: 'id(zone_flash_target)[0] = 0.601f; id(zone_flash_rise)[0] = 0.1068f; id(zone_flash_decay)[0] = 0.9312f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 0.81f; id(zone_flash_col)[1] = 0.14f; id(zone_flash_col)[2] = 0.89f; id(zone_flash_col)[3] = 0.09f;'    # onset_mid
@@ -688,6 +785,11 @@ script:
       - lambda: 'id(zone_flash)[2] = 0.560f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.95f; id(zone_flash_col)[9] = 0.30f; id(zone_flash_col)[10] = 0.10f; id(zone_flash_col)[11] = 0.07f;'    # onset_low
       - delay: 604ms
       - lambda: 'id(zone_flash)[1] = 0.663f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.9462f; id(zone_flash_mode)[1] = 1; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 0.23f; id(zone_flash_col)[5] = 1.00f; id(zone_flash_col)[6] = 0.67f; id(zone_flash_col)[7] = 0.14f;'    # onset_high
+      - script.execute: cont_the_citizens_of_halloween___this_9
+
+  - id: cont_the_citizens_of_halloween___this_9
+    mode: restart
+    then:
       - delay: 151ms
       - lambda: 'id(zone_flash)[2] = 0.544f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.30f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.06f;'    # onset_low
       - delay: 685ms
@@ -719,6 +821,11 @@ script:
       - lambda: 'id(zone_flash)[2] = 0.696f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 0; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.38f; id(zone_flash_col)[10] = 0.02f; id(zone_flash_col)[11] = 0.08f;'    # onset_low
       - delay: 708ms
       - lambda: 'id(zone_flash)[2] = 0.744f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 0; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.98f; id(zone_flash_col)[9] = 0.39f; id(zone_flash_col)[10] = 0.05f; id(zone_flash_col)[11] = 0.09f; id(zone_flash)[0] = 0.744f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.8711f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 0.98f; id(zone_flash_col)[1] = 0.39f; id(zone_flash_col)[2] = 0.05f; id(zone_flash_col)[3] = 0.09f; id(zone_flash)[1] = 0.744f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.8711f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 0.98f; id(zone_flash_col)[5] = 0.39f; id(zone_flash_col)[6] = 0.05f; id(zone_flash_col)[7] = 0.09f;'    # onset_low
+      - script.execute: cont_the_citizens_of_halloween___this_10
+
+  - id: cont_the_citizens_of_halloween___this_10
+    mode: restart
+    then:
       - delay: 697ms
       - lambda: 'id(zone_flash)[2] = 0.600f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.37f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.07f;'    # onset_low
       - delay: 221ms
@@ -750,6 +857,11 @@ script:
       - delay: 357ms
       - lambda: 'id(zone_effect)[0] = 6; id(zone_level)[0] = 0.70f;'    # verse
       - lambda: 'id(zone_effect)[1] = 6; id(zone_level)[1] = 0.70f;'    # verse
+      - script.execute: cont_the_citizens_of_halloween___this_11
+
+  - id: cont_the_citizens_of_halloween___this_11
+    mode: restart
+    then:
       - lambda: 'id(zone_effect)[2] = 2; id(zone_level)[2] = 0.80f;'    # verse
       - delay: 317ms
       - lambda: 'id(zone_flash_target)[0] = 0.561f; id(zone_flash_rise)[0] = 0.0997f; id(zone_flash_decay)[0] = 0.9312f; id(zone_flash_mode)[0] = 1; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 0.78f; id(zone_flash_col)[1] = 0.14f; id(zone_flash_col)[2] = 0.90f; id(zone_flash_col)[3] = 0.08f;'    # onset_mid
@@ -781,6 +893,11 @@ script:
       - delay: 1405ms
       - lambda: 'id(zone_flash_target)[1] = 0.552f; id(zone_flash_rise)[1] = 0.0981f; id(zone_flash_decay)[1] = 0.9312f; id(zone_flash_mode)[1] = 1; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 0.77f; id(zone_flash_col)[5] = 0.14f; id(zone_flash_col)[6] = 0.90f; id(zone_flash_col)[7] = 0.08f;'    # onset_mid
       - delay: 766ms
+      - script.execute: cont_the_citizens_of_halloween___this_12
+
+  - id: cont_the_citizens_of_halloween___this_12
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[2] = 0.519f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.94f; id(zone_flash_col)[9] = 0.28f; id(zone_flash_col)[10] = 0.11f; id(zone_flash_col)[11] = 0.06f;'    # onset_low
       - delay: 1347ms
       - lambda: 'id(zone_effect)[0] = 9; id(zone_level)[0] = 0.40f;'    # hush
@@ -812,6 +929,11 @@ script:
       - lambda: 'id(zone_effect)[0] = 9; id(zone_level)[0] = 0.18f;'    # predim
       - lambda: 'id(zone_effect)[1] = 9; id(zone_level)[1] = 0.18f;'    # predim
       - lambda: 'id(zone_effect)[2] = 2; id(zone_level)[2] = 0.23f;'    # predim
+      - script.execute: cont_the_citizens_of_halloween___this_13
+
+  - id: cont_the_citizens_of_halloween___this_13
+    mode: restart
+    then:
       - delay: 450ms
       - lambda: 'id(zone_effect)[0] = 8; id(zone_level)[0] = 0.95f;'    # chorus
       - lambda: 'id(zone_effect)[1] = 8; id(zone_level)[1] = 0.95f;'    # chorus
@@ -843,6 +965,11 @@ script:
       - delay: 743ms
       - lambda: 'id(zone_flash)[2] = 0.729f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 0; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.98f; id(zone_flash_col)[9] = 0.39f; id(zone_flash_col)[10] = 0.05f; id(zone_flash_col)[11] = 0.09f; id(zone_flash)[0] = 0.729f; id(zone_flash_target)[0] = 0.0f; id(zone_flash_decay)[0] = 0.8711f; id(zone_flash_mode)[0] = 0; id(zone_flash_epoch)[0] = (id(zone_flash_epoch)[0] + 1) % 1000; id(zone_flash_col)[0] = 0.98f; id(zone_flash_col)[1] = 0.39f; id(zone_flash_col)[2] = 0.05f; id(zone_flash_col)[3] = 0.09f; id(zone_flash)[1] = 0.729f; id(zone_flash_target)[1] = 0.0f; id(zone_flash_decay)[1] = 0.8711f; id(zone_flash_mode)[1] = 0; id(zone_flash_epoch)[1] = (id(zone_flash_epoch)[1] + 1) % 1000; id(zone_flash_col)[4] = 0.98f; id(zone_flash_col)[5] = 0.39f; id(zone_flash_col)[6] = 0.05f; id(zone_flash_col)[7] = 0.09f;'    # onset_low
       - delay: 732ms
+      - script.execute: cont_the_citizens_of_halloween___this_14
+
+  - id: cont_the_citizens_of_halloween___this_14
+    mode: restart
+    then:
       - lambda: 'id(zone_flash)[2] = 0.642f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 0; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 1.00f; id(zone_flash_col)[9] = 0.38f; id(zone_flash_col)[10] = 0.01f; id(zone_flash_col)[11] = 0.08f;'    # onset_low
       - delay: 1428ms
       - lambda: 'id(zone_flash)[2] = 0.584f; id(zone_flash_target)[2] = 0.0f; id(zone_flash_decay)[2] = 0.8711f; id(zone_flash_mode)[2] = 1; id(zone_flash_epoch)[2] = (id(zone_flash_epoch)[2] + 1) % 1000; id(zone_flash_col)[8] = 0.95f; id(zone_flash_col)[9] = 0.31f; id(zone_flash_col)[10] = 0.09f; id(zone_flash_col)[11] = 0.07f;'    # onset_low
@@ -890,15 +1017,37 @@ script:
           // Stop every scene script first. Without this a looping
           // scene's pending delay re-fires AFTER the new scene starts
           // and takes the stage back — two loops fighting forever.
+          // Continuations too (cont_*): a scene is several short
+          // scripts, see CHUNK — the one mid-delay may be any of them.
           id(scene_vigil)->stop();
           id(scene_storm)->stop();
           id(scene_seance)->stop();
           id(scene_ballroom)->stop();
           id(scene_descent)->stop();
+          id(cont_descent_1)->stop();
           id(scene_visitation)->stop();
           id(scene_approach)->stop();
           id(scene_crypt)->stop();
+          id(cont_crypt_1)->stop();
+          id(cont_crypt_2)->stop();
+          id(cont_crypt_3)->stop();
+          id(cont_crypt_4)->stop();
+          id(cont_crypt_5)->stop();
           id(scene_the_citizens_of_halloween___this)->stop();
+          id(cont_the_citizens_of_halloween___this_1)->stop();
+          id(cont_the_citizens_of_halloween___this_2)->stop();
+          id(cont_the_citizens_of_halloween___this_3)->stop();
+          id(cont_the_citizens_of_halloween___this_4)->stop();
+          id(cont_the_citizens_of_halloween___this_5)->stop();
+          id(cont_the_citizens_of_halloween___this_6)->stop();
+          id(cont_the_citizens_of_halloween___this_7)->stop();
+          id(cont_the_citizens_of_halloween___this_8)->stop();
+          id(cont_the_citizens_of_halloween___this_9)->stop();
+          id(cont_the_citizens_of_halloween___this_10)->stop();
+          id(cont_the_citizens_of_halloween___this_11)->stop();
+          id(cont_the_citizens_of_halloween___this_12)->stop();
+          id(cont_the_citizens_of_halloween___this_13)->stop();
+          id(cont_the_citizens_of_halloween___this_14)->stop();
           if (scene == "vigil") id(scene_vigil)->execute();
           else if (scene == "storm") id(scene_storm)->execute();
           else if (scene == "seance") id(scene_seance)->execute();

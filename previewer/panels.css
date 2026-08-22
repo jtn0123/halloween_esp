@@ -273,6 +273,9 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
 }
 .dp__row { padding: .5rem .8rem; gap: .6rem; flex-wrap: wrap; }
 .dp__lights { padding: .5rem .8rem; gap: .5rem; }
+.dp__strips { flex-wrap: wrap; }
+.dp__strip { display: inline-flex; align-items: center; gap: .15rem; white-space: nowrap; }
+.dp__strip small { color: var(--muted); margin-right: .15rem; }
 .dp__grow { flex: 1; }
 .dp__muted { color: var(--muted); }
 .dp__x, .dp__del, .dp__logbtn {

@@ -231,7 +231,14 @@ class TestValidatorConstants(unittest.TestCase):
     def test_volume_light_and_ota_limits(self) -> None:
         self.assertIn("v.size() <= 3", FUNCS["h_volume"])
         self.assertIn("pct > 100", FUNCS["h_volume"])
-        self.assertIn("c.size() == 6", FUNCS["h_light"])
+        self.assertIn("light_spec_ok(c)", FUNCS["h_light"])
+        # The validator lives in sd_web_state.h; its shape is pinned by example.
+        self.assertIn("spec.size() == 6", SD_STATE)
+        self.assertIn("zone.size() > 16", SD_STATE)
+        for c, ok in ((b"ff0000", True), (b"show", True), (b"towerL:off", True),
+                      (b"door:00FF00", True), (b":ff0000", False), (b"tower-L:ff0000", False),
+                      (b"towerL:ff00", False), (b"x" * 17 + b":show", False), (b"", False)):
+            self.assertEqual(castle_emu_http.light_spec_ok(c), ok, c)
         pat = r"content_len < (\d+) \|\| req->content_len > ([\w>-]+)"
         self.assertEqual(int(grab(pat, FUNCS["h_ota"], 1)), castle_emu_http.OTA_MIN)
         self.assertEqual(grab(pat, FUNCS["h_ota"], 2), "part->size")   # the slot

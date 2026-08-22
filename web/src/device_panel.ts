@@ -23,6 +23,10 @@
 
 import { cardChanged } from "./castle_bus.js";
 import { castleAct } from "./device.js";
+import { ZONE_ORDER } from "./rig.js";
+
+/** The strips in porch order (left, door, right) for the per-line test. */
+const STRIPS = ZONE_ORDER;
 
 interface SdFile {
   name: string;
@@ -155,6 +159,20 @@ export class DevicePanel {
       `resume show</button>` +
       `<button id="dpOff" class="dp__ghost">off</button>` +
       `</div>` +
+      // One strip at a time: which data line is dead, which one strobes.
+      // Plain colours, no effect engine in the way — a strip that will not
+      // show solid red here is a wiring/shifter/power problem, not a scene.
+      `<div class="dp__lights dp__strips" ` +
+      `title="Drive ONE strip with a solid colour — finds the dead data line">` +
+      `🔌 <small class="dp__muted">strip test</small> ` +
+      STRIPS.map((z) =>
+        `<span class="dp__strip"><small>${z}</small> ` +
+        [["ff0000", "R"], ["00ff00", "G"], ["0000ff", "B"], ["ffffff", "W"], ["off", "off"]]
+          .map(([spec, label]) =>
+            `<button class="dp__ghost dp__btn--sm" data-zl="${z}:${spec}" ` +
+            `title="${z}: ${label === "off" ? "off" : "solid " + label}">${label}</button>`)
+          .join("") + `</span>`).join(" ") +
+      `</div>` +
       `<div class="dp__files" id="dpFiles">` +
       (tracks.length && st.bridged
         // Through the studio the merged Library below already lists every
@@ -227,6 +245,9 @@ export class DevicePanel {
     this.body.querySelector<HTMLButtonElement>("#dpOff")!
       .addEventListener("click", () =>
         void castleAct("/api/light?c=off", "lights off"));
+    this.body.querySelectorAll<HTMLButtonElement>("[data-zl]").forEach((b) =>
+      b.addEventListener("click", () =>
+        void castleAct(`/api/light?c=${b.dataset.zl}`, `strip ${b.dataset.zl}`)));
 
     this.body.querySelectorAll<HTMLButtonElement>("[data-play]").forEach((b) =>
       b.addEventListener("click", () => {

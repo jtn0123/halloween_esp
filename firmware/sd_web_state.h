@@ -68,4 +68,22 @@ inline void mirror_show_state(const std::string &scene, const std::string &track
   g_pir_scene = pir_scene;
 }
 
+// /api/light?c= — "RRGGBB" | "show" | "off", optionally "<zone>:" in front
+// to drive ONE strip (the desk's channel test: which data line is dead).
+// Shape only; lights_override knows the real zone ids. The emulator mirrors
+// this byte for byte (castle_emu_http.light_spec_ok).
+inline bool light_spec_ok(const std::string &c) {
+  const auto colon = c.find(':');
+  const std::string zone = colon == std::string::npos ? "" : c.substr(0, colon);
+  const std::string spec = colon == std::string::npos ? c : c.substr(colon + 1);
+  if (colon != std::string::npos &&
+      (zone.empty() || zone.size() > 16 ||
+       zone.find_first_not_of("abcdefghijklmnopqrstuvwxyz"
+                              "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_") != std::string::npos))
+    return false;
+  const bool hex6 = spec.size() == 6 &&
+      spec.find_first_not_of("0123456789abcdefABCDEF") == std::string::npos;
+  return hex6 || spec == "show" || spec == "off";
+}
+
 }  // namespace castle_web

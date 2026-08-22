@@ -87,16 +87,53 @@ def eff_id(name: str, scene_id: str) -> int:
 
 
 
+# ESPHome stops and polls a script by walking its action chain RECURSIVELY
+# (Action::stop_complex -> next_->stop_complex -> ...), one stack frame per
+# action, on the 8 KB loop task. run_scene stops every scene script before it
+# starts the next, so a 457-action scene took the castle down on every scene
+# switch (v5.27, 2026-08-21 — PANIC, then the rollback counter). No script may
+# be long: a scene is a head script plus `cont_<id>_N` continuations of at
+# most CHUNK actions, each chained to the next by its final action. The
+# delays inside a continuation are untouched, so the timeline is identical.
+CHUNK = 32
+
+
+def chunked(sid: str, items: list[list[str]], loop: bool) -> list[str]:
+    """Lay `items` (one YAML list item each) out as head + continuations."""
+    step = CHUNK - 1                       # room for the chaining execute
+    starts = list(range(0, max(len(items), 1), step))
+    out: list[str] = []
+    for k, lo in enumerate(starts):
+        last = k == len(starts) - 1
+        out.append(f"  - id: {'scene_' + sid if k == 0 else f'cont_{sid}_{k}'}")
+        out.append("    mode: restart")
+        out.append("    then:")
+        for item in items[lo:lo + step]:
+            out.extend(item)
+        if not last:
+            out.append(f"      - script.execute: cont_{sid}_{k + 1}")
+        elif loop:
+            out.append(f"      - script.execute: scene_{sid}")
+        out.append("")
+    return out
+
+
 def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[str]:
     zone_ids = [z["id"] for z in zones]
     sid = scene["id"]
-    lines: list[str] = []
-    a = lines.append
+    lines: list[str] = [
+        f"  # ── {scene['name']} ({scene['kind']}) " + "─" * max(0, 42 - len(scene["name"]))]
 
-    a(f"  # ── {scene['name']} ({scene['kind']}) " + "─" * max(0, 42 - len(scene["name"])))
-    a(f"  - id: scene_{sid}")
-    a("    mode: restart")
-    a("    then:")
+    # Body actions, one YAML list item each; `chunked` lays them out.
+    items: list[list[str]] = []
+
+    def a(line: str) -> None:
+        """Start a new action item (a `      - ` line) or extend the last."""
+        if line.startswith("      - "):
+            items.append([line])
+        else:
+            items[-1].append(line)
+
     a(f"      - logger.log: 'scene {sid}'")
     # Everyone downstream — the web page's chip, Home Assistant, the tools —
     # learns what is running from this one sensor.
@@ -132,7 +169,14 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
 
     sets = " ".join(zone_sets(i, z) for i, z in enumerate(zone_ids))
     a(f"      - lambda: '{sets}'")
-    a(f"      - media_player.volume_set: {scene.get('volume', 0.8)}")
+    # The scene's own level — unless the desk has hushed the porch (sound
+    # routed to the Mac): then the amp stays at 0 however many scenes start.
+    # A lambda rather than `media_player.volume_set: !lambda` so the file
+    # stays plain YAML for every tool that loads it with safe_load.
+    a("      - lambda: |-")
+    a("          auto call = id(castle_media)->make_call();")
+    a(f"          call.set_volume(id(speaker_hush) ? 0.0f : {float(scene.get('volume', 0.8))}f);")
+    a("          call.perform();")
     # Audio goes through the generated `sfx` dispatch script rather than a
     # direct play action, because the two builds implement it differently:
     # the flash build plays the embedded file, the SD build streams the same
@@ -198,9 +242,7 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
     tail = scene["duration_ms"] - prev
     if tail > 0:
         a(f"      - delay: {tail}ms")
-    if scene.get("loop"):
-        a(f"      - script.execute: scene_{sid}")
-    a("")
+    lines.extend(chunked(sid, items, bool(scene.get("loop"))))
     return lines
 
 
@@ -235,8 +277,11 @@ def main() -> int:
         if problems:
             sid = scene.get("id", "?") if isinstance(scene, dict) else "?"
             raise SystemExit(f"scene {sid}: " + "\n  ".join(problems))
+    script_ids: list[str] = []          # every scene script, continuations too
     for i, scene in enumerate(doc["scenes"], start=1):
-        out.extend(emit_scene(scene, zones, i, markers))
+        lines = emit_scene(scene, zones, i, markers)
+        script_ids += [ln[len("  - id: "):] for ln in lines if ln.startswith("  - id: ")]
+        out.extend(lines)
 
     # A single stop script, so "blackout" is one call from anywhere.
     #
@@ -280,8 +325,9 @@ def main() -> int:
     out.append("          // Stop every scene script first. Without this a looping")
     out.append("          // scene's pending delay re-fires AFTER the new scene starts")
     out.append("          // and takes the stage back — two loops fighting forever.")
-    out.extend(f"          id(scene_{scene['id']})->stop();"
-               for scene in doc["scenes"])
+    out.append("          // Continuations too (cont_*): a scene is several short")
+    out.append("          // scripts, see CHUNK — the one mid-delay may be any of them.")
+    out.extend(f"          id({sid})->stop();" for sid in script_ids)
     for j, scene in enumerate(doc["scenes"]):
         kw = "if" if j == 0 else "else if"
         out.append(f"          {kw} (scene == \"{scene['id']}\") "
