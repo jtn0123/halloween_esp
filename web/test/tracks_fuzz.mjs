@@ -29,7 +29,10 @@ const ok = (c, m) => { if (c) pass++; else if (fails.length < 40) fails.push(m);
 
 /* Deterministic PRNG so a failure reproduces. */
 let seed = 0x5eed;
-const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+const rnd = () => {
+  seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+  return seed / 0x7fffffff;
+};
 const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
 const maybe = (p, v) => (rnd() < p ? v : undefined);
 
@@ -120,7 +123,7 @@ for (let round = 0; round < ROUNDS; round++) {
   // Card-only rows.
   if (c === null) ok(only.length === 0, "no castle → no card-only rows");
   else {
-    const local = new Set(tracks.map(cardName));
+    const local = new Set(tracks.map((t) => cardName(t)));
     for (const f of only) {
       ok(/\.(mp3|wav|flac|opus)$/i.test(f.name), `card-only rows are audio (${f.name})`);
       ok(!local.has(f.name), `card-only rows have no local twin (${f.name})`);

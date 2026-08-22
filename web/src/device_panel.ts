@@ -33,6 +33,18 @@ let testPct = 100;
 const PCTS = [25, 50, 75, 100] as const;
 /** The bench patterns, on every strip at once — each answers a different
  *  question than a solid colour does. Names match gen_rig's TEST_EFFECTS. */
+/** The colour buttons on every strip row: what to send, what to print. */
+const CHANNELS: readonly (readonly [string, string])[] = [
+  ["ff0000", "R"], ["00ff00", "G"], ["0000ff", "B"], ["white", "W"], ["off", "off"],
+];
+
+/** What one strip-test button promises, for its tooltip. */
+function stripTitle(zone: string, label: string): string {
+  if (label === "off") return `${zone}: off`;
+  if (label === "W") return `${zone}: white channel`;
+  return `${zone}: solid ${label}`;
+}
+
 const PATTERNS: readonly (readonly [string, string])[] = [
   ["bars", "R G B repeating: colour order, pixel count, dead pixels"],
   ["chase", "One dot walking: where it stops is where the data stops"],
@@ -183,11 +195,10 @@ export class DevicePanel {
         `aria-pressed="${p === testPct}">${p}%</button>`).join("") + `</span> ` +
       STRIPS.map((z) =>
         `<span class="dp__strip"><small>${z}</small> ` +
-        [["ff0000", "R"], ["00ff00", "G"], ["0000ff", "B"], ["white", "W"], ["off", "off"]]
+        CHANNELS
           .map(([spec, label]) =>
             `<button class="dp__ghost dp__btn--sm" data-zl="${z}:${spec}" ` +
-            `title="${z}: ${label === "off" ? "off" : label === "W" ? "white channel" : "solid " + label}">` +
-            `${label}</button>`)
+            `title="${stripTitle(z, label)}">${label}</button>`)
           .join("") + `</span>`).join(" ") +
       `<span class="dp__strip" title="Patterns run on every strip at once">` +
       `<small>patterns</small>` +

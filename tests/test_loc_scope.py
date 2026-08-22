@@ -47,8 +47,8 @@ class TestScope(unittest.TestCase):
         """Suffix spread is the honest signal that nothing is being skipped:
         at least these kinds must appear among the measured files."""
         kinds = {Path(r).suffix for r in self.measured}
-        self.assertTrue({".md", ".html", ".yaml", ".css", ".py", ".ts",
-                         ".json"} <= kinds, kinds)
+        self.assertLessEqual({".md", ".html", ".yaml", ".css", ".py", ".ts",
+                              ".json"}, kinds)
 
     def test_hand_written_json_is_measured(self) -> None:
         """JSON is data, but hand-written JSON is still a file someone edits."""

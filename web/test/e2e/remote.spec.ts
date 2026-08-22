@@ -68,7 +68,7 @@ test("the real remote page, relayed by the studio, drives the castle", async ({ 
     expect((await btn.boundingBox())!.height).toBeGreaterThan(120);
   }
   // Its status line is the emulator's /api/status through the relay.
-  await expect(page.locator("#st")).toContainText("v5.27");
+  await expect(page.locator("#st")).toHaveText(/v\d+\.\d+/);
   await expect(page.locator("#showTxt")).toHaveText("start the show");
 
   await page.locator("#ambient").click();

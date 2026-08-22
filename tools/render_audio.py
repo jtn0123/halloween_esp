@@ -29,6 +29,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze
 import build_paths as bp
+import manifest as mf
 import synth
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -77,7 +78,20 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
     if track:
         path = bp.track_source(track)
         if not path.exists():
-            raise SystemExit(f"scene {scene['id']}: no such audio_file {track}")
+            # tracks/ is gitignored — the music is the user's — so a fresh
+            # clone or CI has the scene but not its song. That is a fact about
+            # the machine, and the rest of the scene (synth score, cue times,
+            # length) still renders, which keeps every downstream step honest:
+            # the mp3 exists, the flash build embeds it, the show is the right
+            # shape. An audio_file nobody ever imported is a typo, and still
+            # stops the render — tracks/tracks.json is what tells them apart.
+            if not known_track(track):
+                raise SystemExit(f"scene {scene['id']}: no such audio_file "
+                                 f"{track} — not on disk, and no record of it "
+                                 f"in tracks/tracks.json either")
+            NOT_HERE.append(scene["id"])
+            track = None
+    if track:
         x = analyze.load_audio(path, sr)
         gain = float(scene.get("track_gain", 1.0))
         synth._place(buf, x * gain, float(scene.get("track_at", 0.0)))
@@ -174,6 +188,19 @@ def render_chirp(cfg: dict) -> None:
     wav.unlink()
 
 
+#: Scenes rendered WITHOUT their imported song, because it is not on this
+#: machine. Named in the summary — a quiet scene must never be a surprise.
+NOT_HERE: list[str] = []
+
+
+def known_track(track: str) -> bool:
+    """Is this an import the manifest has a record of? tracks/tracks.json is
+       tracked; the audio beside it is not, so the manifest is the only way to
+       tell 'you have not imported this here' from 'that name is a typo'."""
+    tid = Path(track).stem
+    return mf.get(tid) is not None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="render just this scene id")
@@ -195,6 +222,7 @@ def main() -> int:
     total = 0
     all_markers: dict[str, dict[str, list]] = {}
     produced = {"00_chirp.mp3"}
+    NOT_HERE.clear()
     print(f"{'scene':<12} {'length':>8} {'mp3':>9}   file")
     print("-" * 52)
     for i, scene in enumerate(doc["scenes"], start=1):
@@ -218,6 +246,9 @@ def main() -> int:
 
     print("-" * 52)
     print(f"{'total':<12} {'':>8} {total/1024:>8.0f}K")
+    if NOT_HERE:
+        print(f"note: {len(NOT_HERE)} scene(s) rendered WITHOUT their imported "
+              f"song — it is not on this machine: {', '.join(NOT_HERE)}")
     if not args.only:  # partial renders must not clobber other scenes' markers
         # A full render owns the numbered files: a scene deleted from the
         # show renumbers the rest, and 11_foo.mp3 beside 10_foo.mp3 in the

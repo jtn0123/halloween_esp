@@ -38,7 +38,10 @@ text = "no host key — not a device"
 '''
 
 
-class TestResolve(unittest.TestCase):
+class HostCase(unittest.TestCase):
+    """A devices.toml of our own and an environment we can scribble on: both
+       classes below want the same two, and the resolver reads both."""
+
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="castle-hosts-"))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
@@ -52,12 +55,28 @@ class TestResolve(unittest.TestCase):
         self.addCleanup(e.stop)
         os.environ.pop("CASTLE_HOST", None)
 
+    def host_env(self, value: str | None) -> None:
+        """CASTLE_HOST for the rest of this test. Set through patch.dict, not
+           by writing os.environ, so an assertion that raises still leaves the
+           process's environment as it found it — setUp's outer patch is the
+           belt, this is the braces."""
+        env = mock.patch.dict(
+            os.environ, {} if value is None else {"CASTLE_HOST": value},
+            clear=False)
+        env.start()
+        if value is None:
+            os.environ.pop("CASTLE_HOST", None)
+        self.addCleanup(env.stop)
+
+
+class TestResolve(HostCase):
+
     def test_an_explicit_ip_wins_over_everything(self) -> None:
-        os.environ["CASTLE_HOST"] = "10.9.9.9"
+        self.host_env("10.9.9.9")
         self.assertEqual(hosts.resolve("192.168.1.5"), "192.168.1.5")
 
     def test_an_explicit_name_is_looked_up_in_the_table(self) -> None:
-        os.environ["CASTLE_HOST"] = "10.9.9.9"
+        self.host_env("10.9.9.9")
         self.assertEqual(hosts.resolve("bench"), "10.0.0.9")
 
     def test_an_unknown_name_says_what_is_known(self) -> None:
@@ -68,17 +87,17 @@ class TestResolve(unittest.TestCase):
         self.assertIn("bench", str(cm.exception))
 
     def test_env_ip_beats_the_table(self) -> None:
-        os.environ["CASTLE_HOST"] = "10.9.9.9"
+        self.host_env("10.9.9.9")
         self.assertEqual(hosts.resolve(), "10.9.9.9")
 
     def test_env_name_is_looked_up_in_the_table(self) -> None:
-        os.environ["CASTLE_HOST"] = "bench"
+        self.host_env("bench")
         self.assertEqual(hosts.resolve(), "10.0.0.9")
 
     def test_env_hostname_passes_through_unchanged(self) -> None:
         # castle_link accepts host:port and comma lists; the resolver must
         # not mangle a value it does not recognise.
-        os.environ["CASTLE_HOST"] = "127.0.0.1:8093"
+        self.host_env("127.0.0.1:8093")
         self.assertEqual(hosts.resolve(), "127.0.0.1:8093")
 
     def test_first_table_entry_is_the_default(self) -> None:
@@ -96,7 +115,7 @@ class TestResolve(unittest.TestCase):
         self.assertIn("devices.toml", str(cm.exception))
 
     def test_empty_env_falls_through_to_the_table(self) -> None:
-        os.environ["CASTLE_HOST"] = ""
+        self.host_env("")
         self.assertEqual(hosts.resolve(), "10.0.0.7")
 
 
@@ -107,25 +126,25 @@ class TestCandidates(TestResolve):
         self.assertEqual(hosts.candidates(), ["10.0.0.7", "10.0.0.8", "10.0.0.9"])
 
     def test_env_is_a_comma_list_and_names_expand(self) -> None:
-        os.environ["CASTLE_HOST"] = "1.1.1.1, porch ,127.0.0.1:8093"
+        self.host_env("1.1.1.1, porch ,127.0.0.1:8093")
         self.assertEqual(hosts.candidates(),
                          ["1.1.1.1", "10.0.0.7", "10.0.0.8", "127.0.0.1:8093"])
 
     def test_empty_env_means_no_castle(self) -> None:
-        os.environ["CASTLE_HOST"] = ""
+        self.host_env("")
         self.assertEqual(hosts.candidates(), [])
 
     def test_an_explicit_name_expands_and_an_ip_stands_alone(self) -> None:
-        os.environ["CASTLE_HOST"] = "9.9.9.9"
+        self.host_env("9.9.9.9")
         self.assertEqual(hosts.candidates("porch"), ["10.0.0.7", "10.0.0.8"])
         self.assertEqual(hosts.candidates("10.5.5.5"), ["10.5.5.5"])
 
     def test_resolve_is_the_first_candidate(self) -> None:
         for env in ("bench", "1.2.3.4,porch", None):
             if env is None:
-                os.environ.pop("CASTLE_HOST", None)
+                self.host_env(None)
             else:
-                os.environ["CASTLE_HOST"] = env
+                self.host_env(env)
             self.assertEqual(hosts.resolve(), hosts.candidates()[0], env)
 
     def test_no_file_is_an_empty_list(self) -> None:
@@ -135,19 +154,7 @@ class TestCandidates(TestResolve):
         self.assertEqual(hosts.candidates(), [])
 
 
-class TestMaybeHost(unittest.TestCase):
-    def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp(prefix="castle-hosts-"))
-        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
-        (self.tmp / "devices.toml").write_text(TABLE)
-        p = mock.patch.object(hosts, "DEVICES", self.tmp / "devices.toml")
-        p.start()
-        self.addCleanup(p.stop)
-        e = mock.patch.dict(os.environ, {}, clear=False)
-        e.start()
-        self.addCleanup(e.stop)
-        os.environ.pop("CASTLE_HOST", None)
-
+class TestMaybeHost(HostCase):
     def test_a_leading_command_keeps_argv_and_resolves_the_default(self) -> None:
         self.assertEqual(hosts.maybe_host(["status"]), ("10.0.0.7", ["status"]))
         self.assertEqual(hosts.maybe_host(["push", "a.mp3"]),
@@ -158,7 +165,7 @@ class TestMaybeHost(unittest.TestCase):
         self.assertEqual(hosts.maybe_host(["bench", "ls"]), ("10.0.0.9", ["ls"]))
 
     def test_no_argv_at_all_still_resolves(self) -> None:
-        os.environ["CASTLE_HOST"] = "10.2.2.2"
+        self.host_env("10.2.2.2")
         self.assertEqual(hosts.maybe_host([]), ("10.2.2.2", []))
 
     def test_every_tool_command_is_known(self) -> None:

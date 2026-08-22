@@ -123,12 +123,18 @@ STUDIO_ROUTES = frozenset((
 _deprecated_seen: set[str] = set()
 
 
+#: The castle's own prefix. Studio routes moved out from under it (they are
+#: /studio/* now), and these two spellings are compared often enough that the
+#: literal was drifting between them.
+API = "/api/"
+
+
 def studio_path(raw: str) -> str:
     """The request's path (no query), an old /api/ spelling of a studio
     route rewritten to its /studio/ home — logged once per route."""
     url = urllib.parse.urlparse(raw)
     path = url.path
-    head = path[5:].split("/", 1)[0] if path.startswith("/api/") else ""
+    head = path[len(API):].split("/", 1)[0] if path.startswith(API) else ""
     if head not in STUDIO_ROUTES or (
             head == "scene" and urllib.parse.parse_qs(url.query).get("s")):
         return path
@@ -243,7 +249,7 @@ class Handler(sh.JsonHandler):
             if not name:
                 return self.send_json({"error": "no file name"}, 400)
             return self.relay("GET", to="/sd/" + name)
-        if path.startswith("/api/"):
+        if path.startswith(API):
             return self.relay("GET")
         self.send_json({"error": "not found"}, 404)
 
@@ -273,7 +279,7 @@ class Handler(sh.JsonHandler):
                 if not res.get("ok"):
                     body.update(failed(res.get("log", "")))
             return self.send_json(body, 200 if body["ok"] else 500)
-        if path.startswith("/api/"):
+        if path.startswith(API):
             return self.relay("DELETE")
         self.send_json({"error": "not found"}, 404)
 
@@ -363,7 +369,7 @@ class Handler(sh.JsonHandler):
         if path == "/studio/rebuild":
             ok, log = ss.rebuild(_lock, run, PY, ROOT)
             return self.send_json({"ok": ok, "log": log}, 200 if ok else 500)
-        if path.startswith("/api/"):
+        if path.startswith(API):
             return self.relay("POST", raw)
         self.send_json({"error": "not found"}, 404)
 
@@ -372,7 +378,7 @@ class Handler(sh.JsonHandler):
         # bytes. The studio owns no PUT routes of its own, so everything
         # castle-shaped relays; castle_link enforces the reachability story.
         path = studio_path(self.path)
-        if not path.startswith("/api/"):
+        if not path.startswith(API):
             return self.send_json({"error": "not found"}, 404)
         self.relay("PUT", self.body())
         return

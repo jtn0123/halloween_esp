@@ -79,6 +79,12 @@ jobs:
         run: |
           python3 -m venv .venv
           .venv/bin/pip install --quiet numpy scipy pyyaml
+      # audio/*.mp3 are gitignored, and show_sim checks every scene has one.
+      # Seconds to render, and it keeps that check real in CI instead of
+      # skipped. The one scene built on the user's own import renders without
+      # it (tracks/ is theirs, not the repo's) and says so.
+      - name: render scene audio
+        run: .venv/bin/python tools/render_audio.py
       - run: npm ci
         working-directory: web
       - run: npx tsc --noEmit

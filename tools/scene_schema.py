@@ -122,23 +122,40 @@ def _check_cue(i: int, c: Any, length: int | None, zones: set[str] | None,
         _color(f"{w}.color", c["color"], errs)
 
 
-def _check_pulse(i: int, p: Any, zones: set[str] | None,
-                 vocab: dict[str, set[str]], errs: list[str]) -> None:
-    w = f"pulse[{i}]"
-    if not isinstance(p, dict):
-        errs.append(f"{w}: must be a mapping")
-        return
-    if not isinstance(p.get("synth"), str) or not p["synth"]:
-        errs.append(f"{w}: needs a synth (the marker stream it follows)")
+def _pulse_zones(w: str, p: dict, zones: set[str] | None,
+                 errs: list[str]) -> None:
+    """Where a pulse lands: one zone, or lists of them."""
     if "zone" in p:
         _zone(f"{w}.zone", p["zone"], zones, errs)
     for k in ("zones", "boost_targets"):
+        if k not in p:
+            continue
+        if not isinstance(p[k], list):
+            errs.append(f"{w}.{k}: must be a list of zones")
+            continue
+        for z in p[k]:
+            _zone(f"{w}.{k}", z, zones, errs)
+
+
+def _pulse_colors(w: str, p: dict, errs: list[str]) -> None:
+    """A pulse's colours: two named ones, plus an optional palette to pick
+       from. A `colors:` that is present but empty is a mistake worth a
+       message — the render would silently fall back to white."""
+    for k in ("color", "color_hot"):
         if k in p:
-            if not isinstance(p[k], list):
-                errs.append(f"{w}.{k}: must be a list of zones")
-            else:
-                for z in p[k]:
-                    _zone(f"{w}.{k}", z, zones, errs)
+            _color(f"{w}.{k}", p[k], errs)
+    if "colors" not in p:
+        return
+    if not isinstance(p["colors"], list) or not p["colors"]:
+        errs.append(f"{w}.colors: must be a non-empty list of colours")
+        return
+    for c in p["colors"]:
+        _color(f"{w}.colors", c, errs)
+
+
+def _pulse_shape(w: str, p: dict, vocab: dict[str, set[str]],
+                 errs: list[str]) -> None:
+    """How hard it hits and how it falls."""
     if "pixels" in p:
         _in(f"{w}.pixels", p["pixels"], "pixels", vocab, errs)
     if "intensity" in p:
@@ -148,15 +165,19 @@ def _check_pulse(i: int, p: Any, zones: set[str] | None,
     errs.extend(f"{w}.{k}: must be a number of ms >= 0, got {p[k]!r}"
                 for k in ("ms", "attack_ms")
                 if k in p and (not _num(p[k]) or p[k] < 0))
-    for k in ("color", "color_hot"):
-        if k in p:
-            _color(f"{w}.{k}", p[k], errs)
-    if "colors" in p:
-        if not isinstance(p["colors"], list) or not p["colors"]:
-            errs.append(f"{w}.colors: must be a non-empty list of colours")
-        else:
-            for c in p["colors"]:
-                _color(f"{w}.colors", c, errs)
+
+
+def _check_pulse(i: int, p: Any, zones: set[str] | None,
+                 vocab: dict[str, set[str]], errs: list[str]) -> None:
+    w = f"pulse[{i}]"
+    if not isinstance(p, dict):
+        errs.append(f"{w}: must be a mapping")
+        return
+    if not isinstance(p.get("synth"), str) or not p["synth"]:
+        errs.append(f"{w}: needs a synth (the marker stream it follows)")
+    _pulse_zones(w, p, zones, errs)
+    _pulse_shape(w, p, vocab, errs)
+    _pulse_colors(w, p, errs)
 
 
 def validate(scene: Any, zones: list[str] | None = None) -> list[str]:

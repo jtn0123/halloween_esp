@@ -211,7 +211,7 @@ class TestGeneratorFuzz(unittest.TestCase):
             self.assertEqual(sorted(c["t"] for c in prev["cues"] if c["bus"] == "LED"), want)
             for c in prev["cues"]:
                 if c["op"] == "strike" and c.get("targets"):
-                    self.assertTrue(set(c["targets"]) <= set(ZIDS))
+                    self.assertLessEqual(set(c["targets"]), set(ZIDS))
             self.assertEqual(prev["loop"], bool(scene.get("loop")))
             self.assertEqual(prev["dur"], scene["duration_ms"])
 

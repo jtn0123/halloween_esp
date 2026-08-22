@@ -208,7 +208,13 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   flex-direction: column;
   align-items: flex-end;
   gap: 6px;
+  /* The column is as tall as whatever it holds, and an open panel makes that
+     most of the window. Only the chip and the panel themselves should catch
+     a click; the empty space beside them belongs to the page (a track row
+     under the dock became unclickable when the strip test arrived). */
+  pointer-events: none;
 }
+#castleDock > * { pointer-events: auto; }
 
 /* The chip: the dock's collapsed face (device_chip.ts renders it). Hidden
    until the first contact; `.down` dims the words, never the ground — the
@@ -254,6 +260,8 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
 
 #devicePanel {
   width: 290px;
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
   background: var(--panel-2);
   color: var(--ink);
   border: 1px solid var(--line-2);
@@ -261,7 +269,6 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   font: 13px system-ui;
   display: none;
   box-shadow: 0 6px 24px rgba(0, 0, 0, .55);
-  overflow: hidden;
 }
 /* The panel's rows (device_panel.ts renders them as innerHTML with these
    class names only — grade report C2): header, show row, lights row, the

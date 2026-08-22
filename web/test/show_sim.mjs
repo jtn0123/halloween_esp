@@ -23,7 +23,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createState, rebuildLightsAt, renderZones, step, ZONE_IDS,
@@ -164,17 +164,41 @@ function simulate(sc, { layout, P, soft, latency, jitter, rnd, tag }) {
 /* ── every real scene, on the rig scenes.yaml declares ── */
 const P0 = defaultParams();
 let totalFrames = 0;
+// tracks/ is gitignored — the music is the user's — so a scene built on an
+// import cannot be rendered on a fresh clone or in CI. The manifest beside it
+// IS tracked, which is how a "you have not imported this here" is told from a
+// typo: the file-presence checks are skipped for the first and enforced for
+// the second. `make audio` is what fills audio/ in the first place.
+const KNOWN = new Set(Object.keys(
+  JSON.parse(readFileSync(join(ROOT, "tracks", "tracks.json"), "utf8"))));
+const notHere = [];
 for (const sc of scenes) {
   const file = join(ROOT, "audio", sc.file);
-  ok(existsSync(file), `${sc.id}: rendered audio ${sc.file} missing under audio/`);
+  // The RENDER always has to be there — `make audio` produces one per scene
+  // either way, minus the layer it cannot have. Only the SOURCE song gets a
+  // pass, and only when the manifest says it is an import someone made
+  // elsewhere; an audio_file nothing knows about is still a failure.
+  ok(existsSync(file), `${sc.id}: rendered audio ${sc.file} missing under audio/ (make audio)`);
   if (sc.audio_file) {
-    ok(existsSync(join(ROOT, sc.audio_file)), `${sc.id}: audio_file ${sc.audio_file} missing`);
+    const src = sc.audio_file.replace(/^tracks\//, "").replace(/\.\w+$/, "");
+    if (existsSync(join(ROOT, sc.audio_file))) {
+      /* the machine has the song */
+    } else if (KNOWN.has(src)) {
+      notHere.push(sc.id);
+    } else {
+      ok(false, `${sc.id}: audio_file ${sc.audio_file} missing, and tracks.json has no record of it`);
+    }
   }
   ok(ZONE_IDS.every((z) => z in sc.base), `${sc.id}: base is missing a zone`);
   const { frames } = simulate(sc, {
     layout: rigLayout, P: P0, soft: false, latency: 70, jitter: false, tag: sc.id,
   });
   totalFrames += frames;
+}
+
+if (notHere.length) {
+  console.log(`note: ${notHere.length} scene(s) built on imports this machine `
+    + `does not have — audio files not checked: ${notHere.join(", ")}`);
 }
 
 /* ── fuzz: random rigs, params, jitter ── */

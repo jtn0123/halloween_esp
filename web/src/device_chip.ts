@@ -18,8 +18,10 @@ export interface ChipStatus {
 }
 
 /** "SD ok" / "no SD", or nothing at all when the answer isn't known. */
-export const sdText = (s: ChipStatus): string =>
-  s.sd_mounted === undefined ? "" : s.sd_mounted ? " · SD ok" : " · no SD";
+export const sdText = (s: ChipStatus): string => {
+  if (s.sd_mounted === undefined) return "";
+  return s.sd_mounted ? " · SD ok" : " · no SD";
+};
 
 /** The chip's richer version: how much room the card actually has. */
 export const sdChip = (s: ChipStatus): string => {

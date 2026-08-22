@@ -195,8 +195,11 @@ _EXC = re.compile(r"^([A-Za-z_][\w.]*(?:Error|Exception|Exit|Interrupt))(?::\s*(
 _CMD = re.compile(r"Command '\['([^']+)'")
 _EXIT = re.compile(r"exit status (-?\d+)")
 #: An absolute path prefix — everything up to and including the last slash —
-#: but not the // of a URL.
-_PATH = re.compile(r"(?<![:/\w])/(?:[^/\s'\"]+/)+")
+#: but not the // of a URL. POSSESSIVE (`++`): the group can never give a
+#: segment back, so a long unterminated path costs one pass instead of
+#: exponential backtracking. Nothing after the group needs those characters,
+#: so the match is unchanged — see tests/test_studio_unit.py.
+_PATH = re.compile(r"(?<![:/\w])/(?:[^/\s'\"]+/)++")
 
 
 def _exception_line(name: str, rest: str | None) -> str:

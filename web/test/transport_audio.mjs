@@ -244,6 +244,7 @@ media.length = 0;
 /* ── The row preview ────────────────────────────────────────────────── */
 media.length = 0;
 {
+  /** @type {{change: (string|null)[], err: string[], claim: number}} */
   const ev = { change: [], err: [], claim: 0 };
   const p = createPreview({
     onChange: (id) => ev.change.push(id),
@@ -251,7 +252,7 @@ media.length = 0;
     onClaim: () => ev.claim++,
   });
   const a = media[0];
-  ok(a && a.muted === true && a.paused, "the preview element is built muted and stopped");
+  ok(a?.muted === true && a.paused, "the preview element is built muted and stopped");
   ok(p.playing() === null, "nothing plays at first");
 
   p.toggle("one");

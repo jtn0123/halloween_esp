@@ -13,6 +13,7 @@
 #include "castle_pixels.h"
 #include "generated/rig.h"
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -75,28 +76,40 @@ static SynthFixture make_fixture(int n, int center, int fall_steps, bool ring) {
   return s;
 }
 
-static const float TIMES[] = {0.0f, 1e-3f, 0.017f, 1.234f, 60.0f, 3600.0f,
-                              86400.0f, 1e6f, 1e7f, -5.0f};
-static const float HUES[] = {0.0f, 0.5f, 1.0f, -1.0f, 2.0f};
-static const int PALS[] = {0, 1, 2, 3, -1, 4, 99};
+// std::array, not C-style: these are indexed with a modulus below, and the
+// container is the only thing that knows its own length.
+static constexpr std::array<float, 10> TIMES = {0.0f, 1e-3f, 0.017f, 1.234f,
+    60.0f, 3600.0f, 86400.0f, 1e6f, 1e7f, -5.0f};
+static constexpr std::array<float, 5> HUES = {0.0f, 0.5f, 1.0f, -1.0f, 2.0f};
+static constexpr std::array<int, 7> PALS = {0, 1, 2, 3, -1, 4, 99};
 
 // ── 1. render(): every effect id, in range and out, stays finite & 0..1 ──
+/// One (effect, time, hue, palette, softness) across every pixel seed.
+static void check_render_seeds(int eff, float t, float hue, int pal, bool soft) {
+  for (int zi = 0; zi < 3; zi++)
+    for (int p = 0; p < 32; p += 5) {
+      const float seed = zi * 4.7f + p * 1.31f;
+      const Rgbw c = render(eff, t, seed, hue, soft, pal);
+      CHECK(unit4(c), "render eff=%d t=%g hue=%g pal=%d soft=%d -> "
+            "%g %g %g %g", eff, t, hue, pal, (int) soft, c.r, c.g, c.b, c.w);
+      if (eff <= 0 || eff > 12)
+        CHECK(c.r == 0 && c.g == 0 && c.b == 0 && c.w == 0,
+              "eff %d must be black", eff);
+    }
+}
+
+/// Every palette and both softness settings, for one effect at one moment.
+static void check_render_palettes(int eff, float t, float hue) {
+  for (int pal : PALS)
+    for (int soft = 0; soft < 2; soft++)
+      check_render_seeds(eff, t, hue, pal, soft != 0);
+}
+
 static void check_render() {
   for (int eff = -2; eff <= 14; eff++)
     for (float t : TIMES)
       for (float hue : HUES)
-        for (int pal : PALS)
-          for (int soft = 0; soft < 2; soft++)
-            for (int zi = 0; zi < 3; zi++)
-              for (int p = 0; p < 32; p += 5) {
-                float seed = zi * 4.7f + p * 1.31f;
-                Rgbw c = render(eff, t, seed, hue, soft != 0, pal);
-                CHECK(unit4(c), "render eff=%d t=%g hue=%g pal=%d soft=%d -> "
-                      "%g %g %g %g", eff, t, hue, pal, soft, c.r, c.g, c.b, c.w);
-                if (eff <= 0 || eff > 12)
-                  CHECK(c.r == 0 && c.g == 0 && c.b == 0 && c.w == 0,
-                        "eff %d must be black", eff);
-              }
+        check_render_palettes(eff, t, hue);
   // Something must actually light for every real effect.
   for (int eff = 1; eff <= 12; eff++) {
     float total = 0;
@@ -175,15 +188,15 @@ static void check_zone_writes(const Fixture &fx, int zi, const char *name, uint3
     Probe pr{frand() * 1.5f, 0.0f, 0.0f, {frand(), frand(), frand(), frand()}};
     const float level = (iter % 7 == 0) ? 0.0f : (iter % 7 == 1) ? 2.0f : frand();
     const float trim = (iter % 5 == 0) ? 0.0f : (iter % 5 == 1) ? 1.0f : 0.1f + 0.9f * frand();
-    const float hue = HUES[iter % 5];
-    const int eff = (int) ((next() >> 16) % 15) - 1;
-    const int center = (int) ((next() >> 16) % 15) - 2;
-    const int ov = (int) ((next() >> 16) % 5);
-    const int pal = PALS[(next() >> 16) % 7];
-    const int mode = (int) ((next() >> 16) % 5);
-    const int epoch = (int) ((next() >> 16) % 1000);
+    const float hue = HUES[iter % HUES.size()];
+    const auto eff = (int) ((next() >> 16) % 15) - 1;
+    const auto center = (int) ((next() >> 16) % 15) - 2;
+    const auto ov = (int) ((next() >> 16) % 5);
+    const int pal = PALS[(next() >> 16) % PALS.size()];
+    const auto mode = (int) ((next() >> 16) % 5);
+    const auto epoch = (int) ((next() >> 16) % 1000);
     const bool soft = ((next() >> 16) & 1) != 0;
-    const float t = TIMES[(next() >> 16) % 10];
+    const float t = TIMES[(next() >> 16) % TIMES.size()];
     const float phase = (iter % 3 == 0) ? 0.0f : frand() * 5.0f;
     ZoneIo io = make_io(pr, level, hue, trim, eff, center, ov, pal, mode, epoch, soft,
                         0.9f, phase);
@@ -196,7 +209,8 @@ static void check_zone_writes(const Fixture &fx, int zi, const char *name, uint3
     // pieces the loop composes, so a clamp that goes missing in render_zone
     // shows up as a byte mismatch rather than as silent wraparound.
     const float fbase = pr.flash * (soft ? 0.55f : 0.92f);
-    const int ring_eff = eff, center_eff = center >= 0 ? center : ring_eff;
+    const int ring_eff = eff;
+    const int center_eff = center >= 0 ? center : ring_eff;
     for (int p = 0; p < n; p++) {
       const float sd = zi * 4.7f + p * 1.31f;
       Rgbw c = render(p == fx.center ? center_eff : ring_eff, t + phase, sd, hue, soft, pal);
@@ -316,7 +330,7 @@ static void check_flash_envelope() {
 
 // ── 5. the generated rig itself ─────────────────────────────────────────
 static void check_rig_tables() {
-  const int nz = (int) (sizeof(RIG) / sizeof(RIG[0]));
+  const auto nz = (int) (sizeof(RIG) / sizeof(RIG[0]));
   int biggest = 0;
   for (int z = 0; z < nz; z++) {
     const Fixture &fx = RIG[z];
@@ -341,14 +355,21 @@ int main(int argc, char **argv) {
   check_render();
   check_flash_envelope();
 
-  const int nz = (int) (sizeof(RIG) / sizeof(RIG[0]));
+  const auto nz = (int) (sizeof(RIG) / sizeof(RIG[0]));
   for (int z = 0; z < nz; z++) {
     char name[32];
     std::snprintf(name, sizeof name, "rig[%d]", z);
     check_overlays(RIG[z], name);
     check_zone_writes(RIG[z], z, name, seed + z);
   }
-  struct { int n, center, steps; bool ring; const char *name; } synth[] = {
+  struct Synth {
+    int n;
+    int center;
+    int steps;
+    bool ring;
+    const char *name;
+  };
+  const Synth synth[] = {
       {16, -1, 9, true, "ring16"}, {8, -1, 8, false, "stick8"},
       {32, -1, 4, false, "wing32"}, {1, -1, 1, false, "mini1"},
       {5, -1, 5, false, "mini5"}, {0, -1, 0, false, "none"},

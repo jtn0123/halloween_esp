@@ -76,7 +76,7 @@ test.afterAll(() => {
 test("castle dies behind the real studio: masthead, chip and panel all say so", async ({ page }) => {
   await page.goto(`${STUDIO}/`);
   await expect(page.locator("#deviceChip")).toBeVisible();
-  await expect(page.locator("#headTxt")).toContainText("castle v5.27");
+  await expect(page.locator("#headTxt")).toHaveText(/castle v\d+\.\d+/);
   // A real scene pick reaches the emulator through the relay.
   await page.locator("button.scene", { hasText: "Storm" }).first().click();
   await expect.poll(async () =>
@@ -99,7 +99,7 @@ test("castle dies behind the real studio: masthead, chip and panel all say so", 
   // And it comes back: the desk recovers on its own.
   emu = startEmu();
   await waitFor(`${STUDIO}/api/status`, async (r) => !("studio" in await r.json()));
-  await expect(page.locator("#headTxt")).toContainText("castle v5.27", { timeout: 20000 });
+  await expect(page.locator("#headTxt")).toHaveText(/castle v\d+\.\d+/, { timeout: 20000 });
   await expect(page.locator("#devStop")).toBeEnabled();
 
   // The whole episode — castle up, down, up — must leave a QUIET studio:

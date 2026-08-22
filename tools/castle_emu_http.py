@@ -43,11 +43,13 @@ RECV_WAIT_S = 5.0
 OTA_MIN = 65536
 OTA_SLOT = 0x1C0000
 CHUNK = 8192
+#: The one content type the API answers with — sd_web.h reply_json().
+JSON_MIME = "application/json"
 
 #: sd_web_site.h content_type(): suffix → MIME.
 _TYPES = {".html": "text/html; charset=utf-8", ".js": "application/javascript",
           ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
-          ".json": "application/json", ".mp3": "audio/mpeg", ".wav": "audio/wav"}
+          ".json": JSON_MIME, ".mp3": "audio/mpeg", ".wav": "audio/wav"}
 
 #: firmware/sd_web_remote.h kRemotePage, byte for byte — the phone remote
 #: is embedded in flash, so the emulator lifts it out of the C raw string
@@ -103,7 +105,7 @@ class Handler(BaseHTTPRequestHandler):
             super().handle()
 
     def _json(self, body: dict[str, object] | list[object]) -> None:
-        self._raw(200, json.dumps(body).encode(), "application/json")
+        self._raw(200, json.dumps(body).encode(), JSON_MIME)
 
     def _raw(self, code: int, raw: bytes, ctype: str,
              extra: dict[str, str] | None = None) -> None:
@@ -178,9 +180,9 @@ class Handler(BaseHTTPRequestHandler):
     def h_status(self, raw: bytes) -> None:
         # surrogateescape: a track named by raw bytes goes out as raw bytes
         self._raw(200, self.server.status_text().encode("utf-8", "surrogateescape"),
-                  "application/json")
+                  JSON_MIME)
 
-    def h_health(self, raw: bytes) -> None:
+    def h_health(self, _raw: bytes) -> None:
         self._json({"boots": 3, "crashes": 0,
                     "last_reset": "power-on", "was_crash": False})
 
@@ -344,7 +346,7 @@ class Handler(BaseHTTPRequestHandler):
                 for chunk in self._body_chunks(n):
                     f.write(chunk)
                     written += len(chunk)
-            except (TimeoutError, OSError):
+            except OSError:            # TimeoutError is one of these
                 pass
         if written != n:
             part.unlink(missing_ok=True)     # the sidecar only

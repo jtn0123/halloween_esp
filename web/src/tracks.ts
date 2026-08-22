@@ -23,12 +23,12 @@ import { wireUrlImport } from "./track_import_url.js";
 import { deleteTrack, makeScene, reimportTrack } from "./track_ops.js";
 import { createStatus } from "./track_status.js";
 import { createPreview } from "./preview.js";
-import type { Scene } from "./types.js";
+
 
 // Moved to types.ts (the transport must not import from its consumers);
 // re-exported so the panel modules keep their old import path.
 export type { TrackInfo, TrackOpts } from "./types.js";
-import type { TrackInfo } from "./types.js";
+import type { Scene, TrackInfo } from "./types.js";
 
 export interface TracksDeps {
   /** The show as loaded, for the capacity readout's "alongside the current show". */
@@ -126,7 +126,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
 
   void api.tracks()
     .then(d => {
-      if (!d.tracks && !d.scenes) return Promise.reject(new Error("no list"));
+      if (!d.tracks && !d.scenes) throw new Error("no list");
       T.mode = "studio"; T.modeEl.textContent = "studio · connected";
       byId("trkServer").hidden = !servedLocally();
       T.sceneIds = new Set(d.scenes || []);

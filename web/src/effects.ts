@@ -85,12 +85,17 @@ const unit01 = (h: number): number => (h >>> 8) / 16777216;
 
 /** Noise at one lattice point (the vnoise cell index). `| 0` is the C's
  *  int32 cast: the same two's-complement bits for the same integer. */
-export const hashi = (i: number): number => unit01(mix32(i | 0));
+// `| 0` is NOT a truncation here and Math.trunc is not a substitute: it is
+// JS's ToInt32, the two's-complement WRAP that mirrors the firmware's
+// `(uint32_t) int32_t` cast (castle_effects.h hashi/hash3). Math.trunc leaves
+// 2^31 as 2^31 where the device sees -2^31, and the frame-exact parity
+// contract in docs/PARITY.md breaks. Left as is, deliberately.
+export const hashi = (i: number): number => unit01(mix32(i | 0)); // NOSONAR
 
 /** Noise at a triple of small integer coordinates — a time cell, a pixel and
  *  a zone for the sparkle; a pixel, a zone and a strike epoch for the scatter. */
 export const hash3 = (a: number, b: number, c: number): number =>
-  unit01(mix32(mix32(mix32(a | 0) + (b | 0)) + (c | 0)));
+  unit01(mix32(mix32(mix32(a | 0) + (b | 0)) + (c | 0))); // NOSONAR — see hashi
 
 /** A hash of a real number, for desk-only scenery (the stage's star field).
  *  Quantised to 1/1024 so nearby reals give unrelated values; the EFFECTS

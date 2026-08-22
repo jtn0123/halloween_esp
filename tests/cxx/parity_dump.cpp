@@ -19,6 +19,7 @@
 #include "generated/rig.h"
 
 #include <cstdint>
+#include <iterator>
 #include <cstdio>
 #include <cstdlib>
 
@@ -40,7 +41,7 @@ static void print4(const char *key, const Rgbw &c) {
 int main(int argc, char **argv) {
   g_rng = argc > 1 ? (uint32_t) std::strtoul(argv[1], nullptr, 10) : 7u;
   const int cases = argc > 2 ? std::atoi(argv[2]) : 3000;
-  const int nz = (int) (sizeof(RIG) / sizeof(RIG[0]));
+  const auto nz = (int) std::size(RIG);
 
   // Zone geometry, so the reader can check it is comparing like with like.
   for (int z = 0; z < nz; z++)
@@ -72,8 +73,8 @@ int main(int argc, char **argv) {
   }
 
   for (int i = 0; i < cases; i++) {
-    const int eff = (int) ((next_u32() >> 16) % 13);
-    const int pal = (int) ((next_u32() >> 16) % 4);
+    const auto eff = (int) ((next_u32() >> 16) % 13);
+    const auto pal = (int) ((next_u32() >> 16) % 4);
     const float hue = (i % 9 == 0) ? 0.0f : (i % 9 == 1) ? 1.0f : frand();
     const bool soft = ((next_u32() >> 16) & 1) != 0;
     float t;
@@ -83,13 +84,13 @@ int main(int argc, char **argv) {
       case 2: t = frand() * 36000.0f; break;        // an evening
       default: t = (float) ((next_u32() >> 16) % 4096) / 64.0f; break;  // 16 ms frames
     }
-    const int zi = (int) ((next_u32() >> 16) % nz);
+    const auto zi = (int) ((next_u32() >> 16) % nz);
     const Fixture &fx = RIG[zi];
     if (fx.n == 0) continue;
-    const int p = (int) ((next_u32() >> 16) % fx.n);
-    const int ov = (int) ((next_u32() >> 16) % 4);
-    const int mode = (int) ((next_u32() >> 16) % 4);
-    const int epoch = (int) ((next_u32() >> 16) % 1000);
+    const auto p = (int) ((next_u32() >> 16) % fx.n);
+    const auto ov = (int) ((next_u32() >> 16) % 4);
+    const auto mode = (int) ((next_u32() >> 16) % 4);
+    const auto epoch = (int) ((next_u32() >> 16) % 1000);
     const float seed = zi * 4.7f + p * 1.31f;
 
     const Rgbw base = render(eff, t, seed, hue, soft, pal);

@@ -57,7 +57,7 @@ export function cardRowsHtml(ctx: CardCtx): string {
     + rows.map(f => `
   <div class="trk trk--card" data-card="${esc(f.name)}">
     <div class="trk__nm">🏰 ${esc(f.name)}
-      <small>${(f.size / 1024) | 0} KB · castle only</small>
+      <small>${Math.trunc(f.size / 1024)} KB · castle only</small>
     </div>
     <div class="trk__act">
       <button data-cardact="play" title="Play this file on the castle's speaker">Play on castle</button>
@@ -104,7 +104,8 @@ export function watchCard(deps: {
   apply: (card: Map<string, number> | null) => void;
 }, intervalMs = 20_000): void {
   const key = (m: ReadonlyMap<string, number> | null): string =>
-    m === null ? "-" : JSON.stringify([...m.entries()].sort());
+    m === null ? "-" : JSON.stringify(
+      [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])));
   const poll = (): void => {
     if (!deps.active()) return;
     void fetchCard().then(now => {
