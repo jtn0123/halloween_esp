@@ -69,8 +69,11 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   pushed the S2 build to the **static-RAM cliff** (~20 bytes of headroom at
   one point; see the sdkconfig notes in `firmware/castle.yaml`). Firmware
   changes must be RAM-neutral: stack-only, PSRAM for buffers, no new statics.
-- RMT on the S2: `rmt_symbols` must be 64 per strip; the default kills strips
-  2 and 3.
+- RMT on the S2: 4 channels x 64 symbols, 256 in total, no DMA — a budget
+  `tools/gen_rig.py` spends per zone and refuses to overspend. ESPHome's
+  default of 192 for one strip kills strips 2 and 3.
+- The door ring corrupts a frame now and then: `docs/ISSUE-ring-flicker.md`
+  has what is already ruled out (with evidence) and the next tests.
 - The desk's effects (`web/src/effects.ts`) and `firmware/castle_effects.h`
   share an integer hash and are checked frame-exact (`web/test/firmware_parity.mjs`,
   `tests/cxx/`). Change both or neither. The whole parity contract — every

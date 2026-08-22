@@ -30,6 +30,11 @@ belongs to; start a new part when one nears the cap.
 | [04 — Build: microSD, pins, audio capacity, benchmark, logs](docs/notes/04-build-sd-pins-audio-bench.md) | §12.9–§12.14 | microSD audio — what's true and what it costs; the eInk FeatherWing taking three pins; audio capacity numbers; the on-board MP3 decode benchmark and its results; getting logs off the board; build trees moved off the internal disk (§12.12, filed after §12.14) |
 | [05 — Decision log and roadmap](docs/notes/05-decisions-and-roadmap.md) | §13–§14 | Every decision with date and rationale; the agreed roadmap and standing work |
 
+**Open issue:** [the door ring flickers](docs/ISSUE-ring-flicker.md) — one
+corrupted frame now and then on the 12 px ring, narrowed to its own signal
+path (everything upstream of the pad is ruled out, with evidence). Read it
+before re-deriving the theories; it also lists the next tests in order.
+
 ### Quick section finder
 
 | § | Topic | File |
