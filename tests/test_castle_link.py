@@ -29,6 +29,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import castle_link as cl
+import castle_native as cn
 import hosts
 from studio_case import ServerCase
 
@@ -348,3 +349,35 @@ class TestStudioBridge(ServerCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNativeLegIsOptional(unittest.TestCase):
+    """aioesphomeapi is a nicety, not a dependency.
+
+    The native leg exists for the all-in-flash build, which serves no HTTP.
+    Everything else — the porch's SD build, the emulator, every test — is
+    reached over port 80, so a studio whose environment lacks the library
+    must still start and still relay. It did not: the import was top-level
+    and took the whole server down with it (CI, 2026-08-22).
+    """
+
+    def setUp(self) -> None:
+        p = mock.patch.object(cn, "aioesphomeapi", None)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_the_leg_reports_itself_unavailable(self) -> None:
+        self.assertFalse(cn.available())
+        self.assertFalse(cn.connected("10.0.0.1"))
+
+    def test_every_verb_declines_instead_of_raising(self) -> None:
+        self.assertIsNone(cn.status("10.0.0.1"))
+        self.assertFalse(cn.scene("10.0.0.1", "vigil"))
+        self.assertFalse(cn.stop("10.0.0.1"))
+        self.assertFalse(cn.volume("10.0.0.1", 40))
+
+    def test_no_connection_is_ever_opened(self) -> None:
+        """The guards come BEFORE _get, so no thread and no socket."""
+        cn.status("10.0.0.1")
+        cn.scene("10.0.0.1", "vigil")
+        self.assertEqual(cn._links, {})

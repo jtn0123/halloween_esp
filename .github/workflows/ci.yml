@@ -42,6 +42,16 @@ jobs:
       # probe/import guards reject junk BEFORE shelling out to it.
       # The lock IS what was tested locally (frozen from the 3.13 venv by `make lock`).
       - run: pip install -r requirements.lock
+      # esbuild: the sandbox guard runs all three generators end to end, and
+      # gen_previewer.py bundles web/src through it. Without node_modules that
+      # test fails on the environment rather than on the guard it exists for.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
       - name: lint
         run: ruff check tools tests
       - name: type check

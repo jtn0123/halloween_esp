@@ -21,7 +21,16 @@ import logging
 import threading
 from typing import Any
 
-import aioesphomeapi
+try:
+    import aioesphomeapi
+except ModuleNotFoundError:      # pragma: no cover — exercised by CI, not here
+    # OPTIONAL. This leg only matters for the all-in-flash build, which serves
+    # no HTTP; the SD build on the porch, the emulator and every test reach the
+    # castle over port 80. A studio without the library still serves the desk
+    # and relays everything — it just cannot talk to a flash-only castle, and
+    # `connected()` says so rather than the import taking the server down
+    # (CI installs numpy/scipy/pyyaml and nothing else, and hit exactly that).
+    aioesphomeapi = None         # type: ignore[assignment]
 
 # The client narrates every reconnect attempt at INFO/ERROR; in a studio
 # that is one line per 5 s per dead castle, forever. Real trouble is WARNING+.
@@ -129,6 +138,11 @@ def close_all() -> None:
         ln.thread.join(timeout=2)
 
 
+def available() -> bool:
+    """Is the native leg even possible here? False without aioesphomeapi."""
+    return aioesphomeapi is not None
+
+
 def _get(host: str) -> _Link:
     with _lock:
         if host not in _links:
@@ -144,11 +158,13 @@ def connected(host: str) -> bool:
     so. (Pass 1 of the dogfood found Stop answering 200 "queued" to a dead
     castle, because the stub's key lookups all came back empty.)
     """
-    return _get(host).connected
+    return available() and _get(host).connected
 
 
 def status(host: str) -> dict[str, Any] | None:
     """The desk's status shape, from native entity state; None if offline."""
+    if not available():
+        return None
     ln = _get(host)
     if not ln.connected:
         return None
@@ -172,6 +188,8 @@ def status(host: str) -> dict[str, Any] | None:
 
 def scene(host: str, scene_id: str) -> bool:
     """Press the firmware's scene__<id> button."""
+    if not available():
+        return False
     ln = _get(host)
     key = ln.keys.get(f"scene__{scene_id}")
     if key is None:
@@ -181,6 +199,8 @@ def scene(host: str, scene_id: str) -> bool:
 
 def stop(host: str) -> bool:
     """The desk's Stop: halt audio, then blackout the zones."""
+    if not available():
+        return False
     ln = _get(host)
     media, blackout = ln.keys.get("castle_audio"), ln.keys.get("blackout")
     # Nothing to press means nothing was stopped: False, never a vacuous
@@ -198,6 +218,8 @@ def stop(host: str) -> bool:
 
 def volume(host: str, pct: int) -> bool:
     """0-100, same contract as the SD build's /api/volume."""
+    if not available():
+        return False
     ln = _get(host)
     key = ln.keys.get("castle_audio")
     if key is None or not 0 <= pct <= 100:
