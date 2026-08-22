@@ -441,6 +441,10 @@ inline void start() {
   if (g_server != nullptr) return;
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.server_port = 80;
+  // Its share of the 16-socket pool: desk polls, one upload, the phone
+  // remote. The stream server keeps 2 (sd_web_stream.h), the API and the
+  // player's loopback fetch take the rest.
+  cfg.max_open_sockets = 4;
   cfg.uri_match_fn = httpd_uri_match_wildcard;
   // MUST exceed the reg() count below (23 today). At 20, the LAST THREE
   // registrations failed silently on the device — /sd/* (the very URL the
