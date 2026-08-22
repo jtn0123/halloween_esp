@@ -15,6 +15,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -26,8 +27,10 @@ from typing import ClassVar
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+import effect_vocab as ev
 import gen_esphome as ge
 import gen_previewer as gp
+import pulse_dynamics as pd
 import yaml
 
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
@@ -64,7 +67,7 @@ def esphome_strikes(scene: dict, markers: dict) -> list[tuple]:
     return sorted(
         (c["t"], tuple(c["targets"] or ZIDS), c["intensity"],
          tuple(float(v) for v in c["color"]), c["decay"])
-        for c in ge.pulse_cues(scene, markers))
+        for c in pd.thin_pulses(ge.pulse_cues(scene, markers)))
 
 
 def previewer_strikes(scene: dict, markers: dict, idx: int = 1) -> list[tuple]:
@@ -152,7 +155,7 @@ class TestPulseParity(unittest.TestCase):
             with self.subTest(scene=scene["id"]):
                 with contextlib.redirect_stdout(io.StringIO()):
                     a = [(c["t"], tuple(c["targets"] or zids), c["intensity"])
-                         for c in ge.pulse_cues(scene, markers)]
+                         for c in pd.thin_pulses(ge.pulse_cues(scene, markers))]
                 b = [(c["t"], tuple(c.get("targets") or zids), c["intensity"])
                      for c in gp.to_previewer(scene, i, raw, markers)["cues"]
                      if c["op"] == "strike" and "intensity" in c]
@@ -259,7 +262,7 @@ class TestGenPreviewerMain(unittest.TestCase):
 
     def gen(self, html: str) -> dict:
         body = html.split(gp.START, 1)[1].split(gp.END, 1)[0]
-        return json.loads(body.split("=", 1)[1].rsplit(";", 1)[0])
+        return dict(json.loads(body.split("=", 1)[1].rsplit(";", 1)[0]))
 
     def test_scenes_land_in_the_page_in_previewer_shape(self) -> None:
         data = self.gen(self.run_main())
@@ -418,6 +421,56 @@ class TestPulseDynamicsParity(unittest.TestCase):
         b = previewer_strikes(PULSE_SCENE, MARKERS)
         self.assertEqual(a, b)
         self.assertEqual(len(a), 14)
+
+
+class TestVocabularyAgreement(unittest.TestCase):
+    """tools/effect_vocab.py against the two copies a Python test can't import.
+
+    The TS (web/src/effects.ts, types.ts) and C++ (firmware/castle_effects.h)
+    vocabularies are parsed from their source text — the technique
+    test_firmware_contract.py uses — so nothing here is hand-copied.
+    """
+
+    TS = (ROOT / "web" / "src" / "effects.ts").read_text()
+    TYPES = (ROOT / "web" / "src" / "types.ts").read_text()
+    CXX = (ROOT / "firmware" / "castle_effects.h").read_text()
+
+    @staticmethod
+    def ts_array(text: str, name: str) -> list[str]:
+        m = re.search(rf"export const {name} = \[([^\]]*)\] as const", text)
+        assert m, name
+        return re.findall(r'"(\w+)"', m.group(1))
+
+    def test_python_generators_share_the_vocab(self) -> None:
+        self.assertIs(ge.EFFECT_IDS, ev.EFFECT_IDS)
+        self.assertEqual(set(ge.EFFECT_IDS), gp.KNOWN_EFFECTS)
+        for table in (ev.EFFECT_IDS, ev.OVERLAY_IDS, ev.PALETTE_IDS, ev.FLASH_MODE_IDS):
+            self.assertEqual(list(table.values()), list(range(len(table))), table)
+
+    def test_effects_ts_implements_exactly_the_vocab(self) -> None:
+        body = self.TS.split("export const EFFECTS:", 1)[1].split("\n};", 1)[0]
+        impl = re.findall(r"^  (\w+): \(", body, re.MULTILINE)
+        self.assertEqual(set(impl), set(ev.EFFECT_IDS))
+        union = self.TYPES.split("export type EffectName =", 1)[1].split(";", 1)[0]
+        self.assertEqual(re.findall(r'"(\w+)"', union), list(ev.EFFECT_IDS))
+
+    def test_effects_ts_name_arrays_match_in_order(self) -> None:
+        self.assertEqual(self.ts_array(self.TS, "OVERLAY_NAMES"), list(ev.OVERLAY_IDS))
+        self.assertEqual(self.ts_array(self.TS, "PALETTE_NAMES"), list(ev.PALETTE_IDS))
+        self.assertEqual(self.ts_array(self.TS, "FLASH_MODES"), list(ev.FLASH_MODE_IDS))
+
+    def test_firmware_enums_match_names_and_ids(self) -> None:
+        eff = {n.lower(): int(i) for n, i in
+               re.findall(r"EFF_(\w+) = (\d+)", self.CXX)}
+        self.assertEqual(eff, ev.EFFECT_IDS)
+        ov = {n.lower(): int(i) for n, i in
+              re.findall(r"OV_(\w+) = (\d+)", self.CXX)}
+        self.assertEqual(ov, ev.OVERLAY_IDS)
+        pal = self.CXX.split("constexpr float PALETTES[", 1)[1].split("};", 1)[0]
+        self.assertEqual(re.findall(r"//\s*(\w+)", pal), list(ev.PALETTE_IDS))
+        # Strike masks are ints 0..3 in C (no enum); the gate must know each.
+        modes = {int(m) for m in re.findall(r"mode == (\d)", self.CXX)} | {0}
+        self.assertEqual(modes, set(ev.FLASH_MODE_IDS.values()))
 
 
 if __name__ == "__main__":

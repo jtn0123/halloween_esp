@@ -34,6 +34,7 @@ from pathlib import Path
 import build_paths as bp
 import pulse_dynamics as pd
 import yaml
+from effect_vocab import KNOWN_EFFECTS  # one vocabulary for every generator
 
 ROOT = Path(__file__).resolve().parent.parent
 # What is read from the show and what is written follow build_paths.py, so
@@ -58,10 +59,6 @@ BUNDLE_MARK = "/* @BUNDLE"
 STYLE_MARK = "/* @STYLES"
 
 # Must match firmware/castle_effects.h and tools/gen_esphome.py.
-KNOWN_EFFECTS = {
-    "off", "candle", "ember", "furnace", "spirit", "eyes",
-    "seance", "wisp", "mansion", "chill", "throb", "strobe", "blood",
-}
 
 
 def scene_yaml_slice(text: str, sid: str) -> str:
@@ -133,6 +130,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
     # ms) and web/src/track_lights.ts — keep all three in lockstep.
     scene_marks = markers.get(sid, {})
     gates = pd.section_gates(scene)
+    pulses: list[dict] = []           # capped with pd.thin_pulses below
     for pcfg in scene.get("pulse") or []:
         beats = scene_marks.get(pcfg["synth"], [])
         zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
@@ -181,7 +179,10 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
                          or pd.is_accent(vels, i))):
                 c["targets"] = c["targets"] + [z for z in pcfg["boost_targets"]
                                                if z not in c["targets"]]
-            cues.append(c)
+            pulses.append(c)
+    # Same cap as gen_esphome (PULSE_CAP): the desk must show the hits the
+    # device will actually play, not the 1,200 its RAM cannot hold.
+    cues.extend(pd.thin_pulses(pulses))
     cues.sort(key=lambda c: c["t"])
 
     for eff in scene["base"].values():
@@ -208,6 +209,45 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
                  if (AUDIO / f"{idx:02d}_{sid}.mp3").exists() else 0,
         "yaml": scene_yaml_slice(raw, sid),
     }
+
+
+# ── The lean page the studio serves ──────────────────────────────────
+# The committed build inlines the rendered audio as data URIs so the file is
+# portable: open it from disk, publish it as an artifact, copy it to the
+# card. Served by the studio that portability buys nothing and costs every
+# phone on the LAN ~1.9 MB of base64 it may never play — so the studio serves
+# the lean rewrite instead: the same page, each data URI replaced by a
+# /studio/scene-audio/<id> link the studio answers with Range support from
+# the audio/ directory the page was built from. Same bytes, fetched when
+# played. The rewrite happens at serve time, cached by the page's (mtime,
+# size), so `make preview` keeps one artefact and one source of truth.
+AUDIO_ROUTE = "/studio/scene-audio/"
+_DATA_URI = re.compile(r'"([A-Za-z0-9_]+)": ?"data:audio/mpeg;base64,[A-Za-z0-9+/=]*"')
+_lean_cache: dict[tuple[str, int, int], bytes] = {}
+
+
+def lean(html: str) -> str:
+    """The page with every inlined scene audio swapped for its URL."""
+    return _DATA_URI.sub(lambda m: f'"{m[1]}": "{AUDIO_ROUTE}{m[1]}"', html)
+
+
+def lean_page(page: Path) -> tuple[bytes, str]:
+    """(body, etag) of the lean rewrite of `page`, computed once per
+    (mtime, size) — the rewrite is one pass over ~2.4 MB, not per request."""
+    st = page.stat()
+    key = (str(page), st.st_mtime_ns, st.st_size)
+    if key not in _lean_cache:
+        _lean_cache.clear()
+        _lean_cache[key] = lean(page.read_text()).encode()
+    return _lean_cache[key], f'"{st.st_mtime_ns}-{st.st_size}-lean"'
+
+
+def scene_audio(audio_dir: Path, sid: str) -> Path | None:
+    """The rendered file for scene `sid` in `audio_dir` (NN_<sid>.mp3), or
+    None. The id is matched as a whole name: no separators, no traversal."""
+    if not re.fullmatch(r"[A-Za-z0-9_]+", sid):
+        return None
+    return next(iter(sorted(audio_dir.glob(f"[0-9][0-9]_{sid}.mp3"))), None)
 
 
 def inject_bundle(html: str) -> str:
