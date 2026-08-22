@@ -101,3 +101,25 @@ test("a castle without its card says so, and the library makes no claims", async
   // Sending is impossible too: the chip's empty card is not a destination.
   expect(castle.hits("PUT /api/files")).toBe(0);
 });
+
+test("what the castle says is printed, never executed", async ({ page }) => {
+  // The chip and the panel are built with innerHTML, and everything in them
+  // is the CASTLE's word: a version string, a scene id, and file names read
+  // off an SD card that anyone with the card (or the unauthenticated PUT the
+  // security note accepts) can write to. A name is a name, not markup.
+  const bomb = `<img src=x onerror="window.__x=1">`;
+  const castle = await fakeCastle(page,
+    [{ name: `${bomb}.mp3`, size: 1024, dir: false }],
+    { version: bomb, scene: bomb, track: bomb });
+  await page.goto("/");
+  await expect(page.locator("#deviceChip")).toBeVisible();
+  await page.locator("#devMore").click();
+  await expect(page.locator(".dp__file-nm")).toBeVisible();
+  // The payload arrived — the panel and chip are showing the castle's strings…
+  await expect(page.locator(".dp__file-nm")).toContainText("onerror");
+  await expect(page.locator("#devNow")).toContainText("onerror");
+  // …as text. No element was made from it, and nothing ran.
+  expect(await page.locator("#castleDock img, #devicePanel img").count()).toBe(0);
+  expect(await page.evaluate(() => (window as unknown as { __x?: number }).__x)).toBeUndefined();
+  expect(castle.hits("/api/status")).toBeGreaterThan(0);
+});

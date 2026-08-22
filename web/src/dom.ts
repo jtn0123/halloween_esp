@@ -22,3 +22,17 @@ export function req<T extends HTMLElement = HTMLElement>(id: string, who = "desk
 }
 
 export const val = (id: string): string => input(id)?.value.trim() ?? "";
+
+/** Text into markup. Everything the desk splices into innerHTML that came
+ *  from OUTSIDE it — a track name, a file name off the castle's card, the
+ *  castle's own version string — goes through here first. A name is a name,
+ *  not an element (web/test/e2e/castle_panel.spec.ts holds that line).
+ *
+ *  Lives in the leaf module because three unrelated panels need it and none
+ *  of them should have to import another panel to get it.
+ */
+const ESCAPES: Record<string, string> =
+  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+
+export const esc = (s: unknown): string =>
+  String(s).replace(/[&<>"]/g, c => ESCAPES[c] as string);

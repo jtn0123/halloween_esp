@@ -10,7 +10,7 @@
  */
 
 import { onCardChanged, onCastlePresence } from "./castle_bus.js";
-import { esc } from "./track_rows.js";
+import { esc } from "./dom.js";
 import { cardName, cardState, fetchCard, sendable, sendToCastle } from "./track_send.js";
 import { api } from "./api.js";
 import { castleAct, failReason } from "./device.js";

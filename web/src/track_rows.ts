@@ -6,16 +6,13 @@
  * building — everything this needs arrives in the context argument.
  */
 
+import { esc } from "./dom.js";
 import { BAND_HELP, bandSummary } from "./bands.js";
 import { sendable } from "./track_send.js";
 import type { TrackInfo } from "./tracks.js";
 
-const ESCAPES: Record<string, string> =
-  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
-export const esc = (s: unknown): string =>
-  String(s).replace(/[&<>"]/g, c => ESCAPES[c] as string);
 
-export /** What the send button says, given where the file already is. */
+/** What the send button says, given where the file already is. */
 function sendLabel(onCastle: "current" | "stale" | "absent"): string {
   if (onCastle === "stale") return "Update castle";
   return onCastle === "current" ? "Re-send" : "→ Castle";

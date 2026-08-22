@@ -8,6 +8,8 @@
  * so the chip follows the light/dark theme like the rest of the desk.
  */
 
+import { esc } from "./dom.js";
+
 /** The slice of /api/status the chip reads (device.ts owns the full type). */
 export interface ChipStatus {
   version: string;
@@ -39,10 +41,15 @@ export function nowLine(s: ChipStatus): string {
   return bits.length ? `▶ ${bits.join(" · ")}` : "idle";
 }
 
+/** nowLine as MARKUP. Everything in it is the castle's word — a scene id, and
+ *  a track name taken from a card anyone can write to — and it is spliced
+ *  into the chip with innerHTML, so it is escaped on the way. */
+export const nowLineHtml = (s: ChipStatus): string => esc(nowLine(s));
+
 export function chipHtml(s: ChipStatus, vol: number, mirror: boolean): string {
   return (
-    `<div>🏰 castle v${s.version}${sdChip(s)} · ` +
-    `<span id="devNow">${nowLine(s)}</span></div>` +
+    `<div>🏰 castle v${esc(s.version)}${sdChip(s)} · ` +
+    `<span id="devNow">${nowLineHtml(s)}</span></div>` +
     `<div class="chip__row">` +
     `<button id="devSnd" class="chip__btn"></button>` +
     `<button id="devMute" class="chip__btn" title="Mute the castle speaker">` +

@@ -14,6 +14,7 @@ live in is an import detail that stops here.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import analyze as ana
@@ -78,13 +79,29 @@ def source_copies(tid: str) -> list[Path]:
     return sorted((TRACKS / SRC_DIR).glob(f"{tid}.*"))
 
 
+#: What an id may contain, matching what import_track will WRITE (letters,
+#: digits, underscore — see its explicit-id guard). Spelled here as well so
+#: the read path is guarded at its own choke point rather than relying on
+#: every caller to have stripped the name first: an id becomes a filename,
+#: and a filename with a separator or a parent hop in it is not an id.
+ID_RE = re.compile(r"^\w{1,64}$", re.ASCII)
+
+
+def valid_id(tid: str) -> bool:
+    """Is `tid` a track id, rather than something wearing one's clothes?"""
+    return bool(ID_RE.match(tid))
+
+
 def track_path(tid: str) -> Path | None:
     """Resolve a bare track id to the file that holds it.
 
     The id is the contract everywhere else — scenes, the manifest, the panel —
     and the extension is an import detail. Callers pass the id and get back
-    whichever container it happens to live in, or None.
+    whichever container it happens to live in, or None. An id that is not one
+    resolves to nothing at all, whatever it was hoping to reach.
     """
+    if not valid_id(tid):
+        return None
     for e in AUDIO_EXT:
         p = TRACKS / f"{tid}.{e}"
         if p.exists():

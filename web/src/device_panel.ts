@@ -22,6 +22,7 @@
  */
 
 import { cardChanged } from "./castle_bus.js";
+import { esc } from "./dom.js";
 import { castleAct } from "./device.js";
 import { ZONE_ORDER } from "./rig.js";
 
@@ -64,7 +65,7 @@ function cardFiles(tracks: SdFile[], mounted: boolean | undefined): string {
     return tracks.map((f, i) =>
       `<div class="dp__file">` +
       `<button data-play="${i}" class="dp__btn dp__btn--sm" title="Play on the castle">▶</button>` +
-      `<span class="dp__file-nm" title="${f.name}">${f.name}</span>` +
+      `<span class="dp__file-nm" title="${esc(f.name)}">${esc(f.name)}</span>` +
       `<small class="dp__muted">${kb(f.size)}</small>` +
       `<button data-del="${i}" class="dp__del" title="Delete from the card">✕</button>` +
       `</div>`).join("");
@@ -170,7 +171,7 @@ export class DevicePanel {
     // so theme and phone CSS reach every row (grade report C2).
     this.body.innerHTML =
       `<div class="dp__hd">` +
-      `<span class="dp__grow"><b>🏰 v${st.version}</b> · up ${fmtUptime(st.uptime_s)}` +
+      `<span class="dp__grow"><b>🏰 v${esc(st.version)}</b> · up ${fmtUptime(st.uptime_s)}` +
       (st.sd_free_kb
         ? ` · card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") +
       ` <small title="Free working memory (PSRAM) — what the SD turntable runs on">` +
@@ -183,7 +184,7 @@ export class DevicePanel {
       `looping until stopped — the whole evening on one button">` +
       `${st.show_on ? "■ stop the show" : "▶ start the show"}</button>` +
       (st.show_on && st.scene
-        ? ` <small class="dp__muted">now: ${st.scene}</small>` : "") +
+        ? ` <small class="dp__muted">now: ${esc(st.scene)}</small>` : "") +
       // The castle serves a four-button page of its own (firmware/
       // sd_web_remote.h) — the thing to hand a phone on the porch. Nothing
       // linked to it (JB1-8); now the panel does.
