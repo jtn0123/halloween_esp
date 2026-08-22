@@ -174,7 +174,8 @@ export class DevicePanel {
       // Plain colours, no effect engine in the way — a strip that will not
       // show solid red here is a wiring/shifter/power problem, not a scene.
       `<div class="dp__lights dp__strips" ` +
-      `title="Drive ONE strip with a solid colour — finds the dead data line">` +
+      `title="Drive ONE strip with a solid colour — finds the dead data line. ` +
+      `Any test stops the scene first, so nothing else is touching the pixels">` +
       `🔌 <small class="dp__muted">strip test</small> ` +
       `<span class="dp__strip" title="Brightness for the strip test and the colour picker">` +
       PCTS.map((p) =>

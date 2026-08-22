@@ -113,6 +113,15 @@ esphome:
     # pixels dark and its opening scene never started, and nothing said so.
     - priority: -200
       then:
+        # "I just rebooted", in one pixel: the first thing written to the
+        # onboard NeoPixel, which clears its power-up garbage. The 2 s status
+        # interval turns it off a moment later if all is well.
+        - light.turn_on:
+            id: status_pixel
+            brightness: 25%
+            red: 0%
+            green: 20%
+            blue: 100%
         # Park the eInk and SRAM chip selects HIGH before touching the bus.
         - output.turn_on: eink_cs_park
         - output.turn_on: sram_cs_park
@@ -146,14 +155,36 @@ esphome:
         - script.execute: boot_selftest
 
 # The onboard pixel is dark until its power rail (GPIO21) is driven high —
-# same as bench.yaml. Harmless once the real jewels take over: GPIO21 is clear
-# of the eInk wing and everything else on this build.
+# same as bench.yaml. The rail stays on so the status pixel below can write.
 switch:
   - platform: gpio
     id: neopixel_power
     pin: GPIO21
     restore_mode: ALWAYS_ON
     internal: true
+
+# ── The onboard NeoPixel: DEVICE STATUS ONLY ─────────────────────────
+# Appended to the generated strips (packages merge lists by appending), so it
+# is allocated an RMT channel LAST and can never take one the show needs.
+# It has no zone in scenes.yaml, which is what keeps it out of the show: no
+# scene script and no /api/light can address it. Between status changes it is
+# written once and then silent, so it costs the strips nothing.
+#
+# Until v5.31 this pixel WAS tower L (a bench leftover); with that gone and
+# the rail still powered, it sat holding whatever garbage it woke up with.
+light:
+  - platform: esp32_rmt_led_strip
+    id: status_pixel
+    name: "Status pixel"
+    pin: GPIO33
+    num_leds: 1
+    chipset: WS2812
+    rgb_order: GRB
+    is_rgbw: false
+    rmt_symbols: 64
+    use_psram: false
+    default_transition_length: 0s
+    restore_mode: ALWAYS_OFF
 
 # Held deselected for the life of the device — see the note in substitutions.
 # These chip selects are active-low, so deselected means driven HIGH, which is
@@ -222,6 +253,29 @@ script:
 # player are not thread-safe off the loop); this picks them up and runs them.
 # 200 ms of latency on a button press is imperceptible next to an MP3 spin-up.
 interval:
+  - interval: 2s
+    then:
+      - lambda: |-
+          // The status pixel: blue while booting (written in on_boot, cleared
+          // here once there is nothing to say), amber while an OTA burns
+          // flash, red for a missing card, dark otherwise. Only a CHANGE
+          // writes, so the RMT channel is idle between events.
+          static uint8_t shown = 0xFF;
+          const uint8_t want = castle_sd::g_quiesce ? 1
+                             : (castle_sd::g_mounted ? 0 : 2);
+          if (want != shown) {
+            shown = want;
+            if (want == 0) {
+              id(status_pixel).turn_off().perform();
+            } else {
+              auto call = id(status_pixel).turn_on();
+              call.set_brightness(0.25f);
+              if (want == 1) call.set_rgb(1.0f, 0.55f, 0.0f);   // updating
+              else call.set_rgb(1.0f, 0.0f, 0.0f);              // no card
+              call.perform();
+            }
+          }
+
   - interval: 200ms
     then:
       - lambda: |-
@@ -260,10 +314,20 @@ interval:
             call.set_volume(pct / 100.0f);
             call.perform();
           } else if (act.type == castle_web::LIGHT) {
-            // Manual override for every strip. "off", "show", or six hex
-            // digits to park on a colour. One script rather than a list of
-            // ids here, because the zone list lives in scenes.yaml and is
-            // generated into lights_override.
+            // Manual override for every strip (or one, "<zone>:"): a colour,
+            // a bench pattern, "off", or "show" to hand the pixels back. One
+            // script rather than a list of ids here, because the zone list
+            // lives in scenes.yaml and is generated into lights_override.
+            //
+            // Anything but "show" stops the scene first. A looping scene
+            // re-runs its audio every 30 s (Vigil), and the SD read + SPI
+            // burst that goes with it starves the RMT refill ISR: two or
+            // three pixels on the longest strip flick to a wrong colour and
+            // back, which reads as a hardware fault while you are staring at
+            // a test pattern (reported 2026-08-21, the 12 px ring). A hex
+            // colour can never spell "show" — s, h, o and w are not digits.
+            if (act.arg.find("show") == std::string::npos)
+              id(scene_stop)->execute();
             id(lights_override)->execute(act.arg);
           } else if (act.type == castle_web::SCENE) {
             id(run_scene)->execute(act.arg);
