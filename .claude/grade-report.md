@@ -38,14 +38,14 @@ The layering is real and mostly acyclic: `studio.py` routes, `studio_http.py` by
 - **Effort:** M
 - **Grade lift:** B+ → A− (removes the one structural ambiguity everything else is built around)
 
-#### A2 — Four copies of the effect vocabulary, synchronised by comment
+#### ~~A2~~ ✓ done 2026-08-21 — Four copies of the effect vocabulary, synchronised by comment
 - **Where:** `tools/gen_previewer.py:60-64`, `tools/gen_esphome.py:54-63,89-92`, `web/src/effects.ts:136`, `firmware/castle_effects.h`
 - **What's wrong:** `gen_previewer` claims to match `gen_esphome` which has no `KNOWN_EFFECTS`; validation differs per generator (`SystemExit` vs skip). Adding an effect is a four-file edit with no single test that all four agree on the *name list*.
 - **Fix:** One `tools/effect_vocab.py` (names+ids) imported by both generators; `tests/test_generator_parity.py` asserts it equals the names parsed from `effects.ts` and the enum in `castle_effects.h` (same technique as `test_firmware_contract.py`).
 - **Effort:** S
 - **Grade lift:** B+ → B+ (closes a drift path the parity fuzz only catches indirectly)
 
-#### A3 — Two devices.toml resolvers
+#### ~~A3~~ ✓ done 2026-08-21 — Two devices.toml resolvers
 - **Where:** `tools/hosts.py:20-45`, `tools/castle_link.py:69-99`
 - **What's wrong:** `hosts.py` documents itself as the one resolver; `castle_link` re-parses the file with a different precedence (fallbacks, last-good host), so CLI tools and the studio can disagree about which castle is "the" castle.
 - **Fix:** Have `castle_link.castle_hosts()` call a new `hosts.candidates()` that returns the ordered list (env → entry host → fallbacks); `hosts.resolve` becomes `candidates()[0]`.
@@ -59,14 +59,14 @@ The layering is real and mostly acyclic: `studio.py` routes, `studio_http.py` by
 - **Effort:** S
 - **Grade lift:** B+ → B+ (removes the largest dead block and a misleading design doc)
 
-#### A5 — `api.ts` is not the only doorway and takes its types from panels
+#### ~~A5~~ ✓ done 2026-08-21 — `api.ts` is not the only doorway and takes its types from panels
 - **Where:** `web/src/api.ts:22-23`; `web/src/track_send.ts:31,58,107`; `web/src/track_card.ts:167`
 - **What's wrong:** Three raw `fetch` sites talk to studio/castle routes outside `api.ts`/`device.ts`, and the transport layer imports `TrackInfo`/`CodecRow` from the consumers.
 - **Fix:** Move the two interfaces to `types.ts` (re-export from old homes); add `api.castleFiles()/castleStatus()/trackBytes()` and `api.cardFile()` wrappers and call them.
 - **Effort:** S
 - **Grade lift:** B+ → B+
 
-#### A6 — Tracked 2.37 MB generated page (A3 from 08-16, still open)
+#### A6 (owner decision: the generated page is the published/SD-card deliverable — left tracked) — Tracked 2.37 MB generated page (A3 from 08-16, still open)
 - **Where:** `previewer/castle-cue-desk.html` (2,374,807 B; 1.87 MB base64 audio; 55 revisions); `tools/check_loc.py:33-37` exempts it as generated
 - **What's wrong:** Every `make preview` commits another incompressible ~2 MB; the repo already treats it as a build artefact (`bp.PREVIEW_HTML`).
 - **Fix:** gitignore it, have `make studio`/CI build it; if a portable single-file deliverable is wanted, publish it as a release asset.
@@ -107,7 +107,7 @@ Much of the 08-16 list landed and landed well: `/api/tracks` reads `dur/onsets` 
 - **Effort:** M
 - **Grade lift:** B+ → A−
 
-#### B5 — `JobRunner` jobs bypass `_lock`; "one import at a time" is only a docstring
+#### ~~B5~~ ✓ done 2026-08-21 — `JobRunner` jobs bypass `_lock`; "one import at a time" is only a docstring
 - **Where:** `tools/studio_jobs.py:52-73`, `tools/studio.py:73,277-279,288-291` vs `:301-302,412-413`
 - **What's wrong:** `/api/import/async` and `/api/stems` spawn children without `_lock`, so an async import, a sync import, and a rebuild can run ffmpeg concurrently; correctness holds (flock'd manifest, per-PID dirs) but the CPU/serialisation story the lock promises does not.
 - **Fix:** Either give `JobRunner` a `gate: threading.Lock` it acquires in `_run` (pass `_lock`), or fix the docstrings to say "background jobs are not serialised with sync encodes" — pick and test.
@@ -141,7 +141,7 @@ The typing discipline is still the real thing: `web/tsconfig.json` keeps `strict
 - **Effort:** M
 - **Grade lift:** B+ → A− (the styling-discipline gap the judges named twice)
 
-#### C3 — Audition/preview state is still six module-level flags
+#### ~~C3~~ ✓ done 2026-08-21 — Audition/preview state is still six module-level flags
 - **Where:** `web/src/main.ts:52` `audioMode`, `:111` `players`, `:170` `adopting`, `:301-302` `previewScene`/`sceneBeforeAudition`, `:315` `selectedTrack`.
 - **What's wrong:** Unchanged from the last report's C1; the rewrite that was supposed to dissolve it didn't happen, and the desk was polished on top of it.
 - **Fix:** `desk_mode.ts` with a discriminated union + `transition()`, unit-tested in `web/test/`; `main.ts` keeps one `let mode`.
@@ -162,7 +162,7 @@ The typing discipline is still the real thing: `web/tsconfig.json` keeps `strict
 - **Effort:** S
 - **Grade lift:** B+ → B+ (mobile polish)
 
-#### C6 — `main.ts` still drives panels by selector; no shared DOM accessor
+#### ~~C6~~ ✓ done 2026-08-21 — `main.ts` still drives panels by selector; no shared DOM accessor
 - **Where:** `web/src/main.ts:182,278` (`.scene[data-i]`), 80 `getElementById`/`querySelector` calls across modules, `main.ts:324` cast-and-trim inline.
 - **Fix:** `panels.selectScene(i)`; leaf `dom.ts` (`el`, `input`, `req`) migrated opportunistically.
 - **Effort:** S
@@ -202,14 +202,14 @@ The typing discipline is still the real thing: `web/tsconfig.json` keeps `strict
 - **Effort:** S
 - **Grade lift:** B+ → B+ (turns information into a ratchet)
 
-#### D5 — The C++ host harness silently skips where no compiler exists [both]
+#### ~~D5~~ ✓ done 2026-08-21 — The C++ host harness silently skips where no compiler exists [both]
 - **Where:** `tests/test_firmware_cxx.py:37-38,48` — `@unittest.skipIf(COMPILER is None, …)`
 - **What's wrong:** Ubuntu runners have g++, so CI is fine today, but a runner image change would turn the only firmware-executing tests into a skip with a green tick.
 - **Fix:** Make the skip an error when `CI` is set.
 - **Effort:** S
 - **Grade lift:** B+ → B+
 
-#### D6 — Test output still prints WARNINGs on a green run [BE]
+#### ~~D6~~ ✓ done 2026-08-21 — Test output still prints WARNINGs on a green run [BE]
 - **Where:** `tests/test_studio_cache.py`/manifest tests — three `WARNING: tracks.json was not valid JSON — moved to …corrupt-…` lines, `FAIL — over 97% of the slot.` (measured in the run log)
 - **What's wrong:** D4 of the last report, still open.
 - **Fix:** `redirect_stdout` and assert on the text.
@@ -229,21 +229,21 @@ Input handling is consistently right: `studio_http.py:26,94-119` caps bodies at 
 - **Effort:** S
 - **Grade lift:** B+ → A− (makes the guard uniform)
 
-#### E2 — Import values that start with `-` reach argparse as flags [BE]
+#### ~~E2~~ ✓ done 2026-08-21 — Import values that start with `-` reach argparse as flags [BE]
 - **Where:** `tools/studio.py:109-111` (`opt_args`), `tools/import_track.py:250,257-258`
 - **What's wrong:** `notes: "--force"` or `start: "-x"` becomes an option token; the worst outcome is a 500 from argparse, not execution, but it is an unvalidated edge.
 - **Fix:** Validate `start`/`take` as numbers/`m:ss` server-side and pass `--notes=<v>` with `=`.
 - **Effort:** S
 - **Grade lift:** B+ → B+
 
-#### E3 — URL import will fetch any http(s) target, including LAN/loopback [BE]
+#### ~~E3~~ ✓ done 2026-08-21 — URL import will fetch any http(s) target, including LAN/loopback [BE]
 - **Where:** `tools/studio.py:385-387`, `:329` (`/api/probe`)
 - **What's wrong:** E3 from the prior report remains: yt-dlp/ffmpeg will happily probe `http://192.168.1.1/…` on the host's behalf. Defence-in-depth only given the accepted position.
 - **Fix:** Resolve the host and refuse private/loopback ranges unless `--lan` is off and the caller is 127.0.0.1.
 - **Effort:** S
 - **Grade lift:** B+ → B+
 
-#### E4 — Upload filename `..` survives `Path().name` [BE]
+#### ~~E4~~ ✓ done 2026-08-21 — Upload filename `..` survives `Path().name` [BE]
 - **Where:** `tools/studio_http.py:151` → `tools/studio.py:400` (`tmp / (fname or "upload.bin")`)
 - **What's wrong:** `Path("..").name == ".."`, so the staging path is `_upload/..` (= `TRACKS`), and `write_bytes` fails with a 500 rather than a 400. No escape, just an ungraceful edge.
 - **Fix:** Reject names in `{"", ".", ".."}` in `parse_multipart`.
@@ -263,7 +263,7 @@ Input handling is consistently right: `studio_http.py:26,94-119` caps bodies at 
 - **Effort:** S
 - **Grade lift:** B → B+ (the lock becomes what CI tests)
 
-#### F2 — esphome 2026.7.4 → 2026.8.0 (clears cryptography 49 advisory)
+#### F2 (trialled 2026-08-21: 2026.8.0 overflows dram0 by 16 B — held) — esphome 2026.7.4 → 2026.8.0 (clears cryptography 49 advisory)
 - **Where:** `requirements.txt:10`, `ci.yml:104`, `requirements.lock` cryptography==49.0.0
 - **What's wrong:** One known advisory in the venv is fixable by the pin bump; the S2 static-RAM cliff (`castle.yaml:148-158`) is the honest reason it's held, so this is a decision with a rebuild, not neglect.
 - **Fix:** Bump on a branch, `make validate` ×4, compile once, check link margin; if dram0 overflows, apply the "next levers" the YAML already lists.
@@ -277,7 +277,7 @@ Input handling is consistently right: `studio_http.py:26,94-119` caps bodies at 
 - **Effort:** S / M
 - **Grade lift:** B → B+
 
-#### F4 — `aioesphomeapi~=45.7` six patch releases behind; dependabot PRs not landing
+#### F4 (not movable: esphome pins aioesphomeapi exactly; tracks the esphome pin) — `aioesphomeapi~=45.7` six patch releases behind; dependabot PRs not landing
 - **Where:** `requirements.txt:12`, `requirements.lock`
 - **What's wrong:** Dependabot is configured but the floor hasn't moved since the last report — check the open-PR queue.
 - **Fix:** Merge/close the queue; consider monthly for pip.
@@ -311,14 +311,14 @@ Measured against a sandboxed studio (port 8877, copied tracks): `/api/tracks` 1.
 - **Effort:** S
 - **Grade lift:** B → B
 
-#### G4 — 1.87 MB of base64 audio inlined for nine scenes
+#### ~~G4~~ ✓ done 2026-08-21 — 1.87 MB of base64 audio inlined for nine scenes
 - **Where:** `tools/gen_previewer.py:270-276`; `previewer/castle-cue-desk.html`
 - **What's wrong:** 79% of the page is audio the LAN phone may never play; the "portable single file" property is sound for the file artefact but not for the studio-served case.
 - **Fix:** `gen_previewer --lean` (or studio-side strip) that replaces data URIs with `/api/scene-audio/<id>` URLs served by `send_range`; keep inlining for the committed/portable build.
 - **Effort:** M
 - **Grade lift:** B → B+ (only matters for `--lan`)
 
-#### G5 — Unit suite 59 s for 613 tests
+#### ~~G5~~ ✓ done 2026-08-21 — Unit suite 59 s for 613 tests
 - **Where:** `Makefile:103-104`; heavy files `tests/test_studio_api.py` (real server per class), `tests/test_castle_chaos.py`
 - **What's wrong:** 3.3× slower than 08-16 at 1.5× the tests; the pre-commit hook runs lint only, so this is the `make check` floor.
 - **Fix:** Run `python -m unittest -v 2>&1 | sort by duration` once, move real-server classes to `setUpClass` servers where they are per-test, and add `make test-fast` excluding chaos/e2e-ish suites for the inner loop.
@@ -345,21 +345,21 @@ The two biggest prior gaps are closed and accurate: `README.md:92-127` now has "
 - **Effort:** S
 - **Grade lift:** B+ → A−
 
-#### H3 — CLAUDE.md's e2e count is stale
+#### ~~H3~~ ✓ done 2026-08-21 — CLAUDE.md's e2e count is stale
 - **Where:** `CLAUDE.md:47` "(108 tests)" vs 131 `test(` in `web/test/e2e/*.spec.ts`
 - **What's wrong:** Hard-coded counts rot; it already has.
 - **Fix:** Drop the number or say "`npx playwright test --list`".
 - **Effort:** S
 - **Grade lift:** B+ → B+
 
-#### H4 — `--lan` exposure is stated but not enumerated
+#### ~~H4~~ ✓ done 2026-08-21 — `--lan` exposure is stated but not enumerated
 - **Where:** `README.md:103`, `tools/studio.py:22-24`
 - **What's wrong:** "Do that only on a network you control" is right, but a reader can't tell that a LAN visitor can import/delete tracks, rewrite `scenes.yaml`, and `POST /api/server/stop`. Acceptable for the porch; should be one explicit sentence.
 - **Fix:** Add the sentence to README "The cue desk" and the docstring.
 - **Effort:** S
 - **Grade lift:** B+ → B+
 
-#### H5 — No CONTRIBUTING / hook-install step in the onboarding path
+#### ~~H5~~ ✓ done 2026-08-21 — No CONTRIBUTING / hook-install step in the onboarding path
 - **Where:** `README.md:123-125` mentions the hook; no `CONTRIBUTING.md`; `make setup` does not run `git config core.hooksPath githooks`
 - **What's wrong:** Minor for a one-owner repo; the dev section covers most of it.
 - **Fix:** Add the hooksPath line to `make setup`.
@@ -386,7 +386,7 @@ The loop is fast and the gates are real: `tsc --noEmit` 1.0 s, esbuild 13 ms, `n
 - **Effort:** S
 - **Grade lift:** A− → A (worktrees are the daily workflow here)
 
-#### I3 — mypy runs without any strictness flags
+#### ~~I3~~ ✓ done 2026-08-21 — mypy runs without any strictness flags
 - **Where:** `pyproject.toml:32-40` — `files` + `ignore_missing_imports` overrides only; no `strict`, `disallow_untyped_defs`, `warn_return_any`, `warn_unused_ignores`.
 - **What's wrong:** The comment says it brings tools/tests "up to the same standard" as tsc, but default mypy skips bodies of unannotated functions, so a large part of `tools/` is effectively unchecked.
 - **Fix:** Turn on `warn_unused_ignores`, `warn_return_any`, `check_untyped_defs` first (cheap), then `disallow_untyped_defs` per module via overrides.
@@ -399,7 +399,7 @@ The loop is fast and the gates are real: `tsc --noEmit` 1.0 s, esbuild 13 ms, `n
 - **Effort:** S
 - **Grade lift:** A− → A− (keeps the one output you read clean; old D4)
 
-#### I5 — 14 `waitForTimeout` sleeps in the e2e suite
+#### ~~I5~~ ✓ done 2026-08-21 — 14 `waitForTimeout` sleeps in the e2e suite
 - **Where:** `grep -c waitForTimeout web/test/e2e/*.spec.ts` = 14; `bridge.spec.ts` fixes ports 8797/8798 with no collision check (J3-5).
 - **What's wrong:** Timed sleeps are where a 2-minute suite grows flaky on a slower CI runner; the two extra fixed ports can collide with a second lane.
 - **Fix:** Replace sleeps with `expect.poll`/`waitForFunction` on the observable; derive bridge ports from `CASTLE_E2E_PORT+1/+2`.

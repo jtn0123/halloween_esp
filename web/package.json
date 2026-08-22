@@ -2,7 +2,7 @@
   "name": "castle-cue-desk",
   "private": true,
   "version": "1.0.0",
-  "description": "Browser cue desk for the Halloween castle \u2014 TypeScript sources",
+  "description": "Browser cue desk for the Halloween castle — TypeScript sources",
   "scripts": {
     "build": "esbuild src/main.ts --bundle --minify --format=iife --target=es2020 --outfile=dist/bundle.js",
     "watch": "npm run build -- --watch",
@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "esbuild": "^0.25.0",
-    "typescript": "^5.7.0"
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   }
 }
