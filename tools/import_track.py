@@ -29,6 +29,8 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana
 import manifest as mf
+from import_fetch import fetch_url as fetch_url
+from import_fetch import is_web_url as is_web_url
 from import_scene import FRAME as FRAME
 from import_scene import fit_to_density as fit_to_density
 from import_scene import scene_block as scene_block
@@ -50,47 +52,6 @@ def secs(v: str) -> float:
     for p in parts:
         out = out * 60 + p
     return out
-
-
-def _ytdlp() -> str:
-    """The venv's yt-dlp when present, else the system one.
-
-    YouTube deliberately breaks stale clients (403s, SABR-only sessions), and
-    Homebrew's formula trails releases by weeks — pip does not. So the venv
-    copy, updated with `pip install -U yt-dlp`, wins when it exists.
-    """
-    local = Path(sys.executable).with_name("yt-dlp")
-    if local.exists():
-        return str(local)
-    if not shutil.which("yt-dlp"):
-        raise SystemExit("yt-dlp not installed — `brew install yt-dlp`")
-    return "yt-dlp"
-
-
-def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
-    """Download audio only. Returns (file, title as the source named it)."""
-    print(f"fetching {url}")
-    try:
-        r = subprocess.run(
-            [_ytdlp(), "-x", "--audio-format", "mp3", "--audio-quality", "0",
-             "--no-playlist", "-o", str(dest / "%(title)s.%(ext)s"), url],
-            capture_output=True, text=True, check=False,  # handled below
-            timeout=900,   # a hung download must not wedge the studio's lock
-        )
-    except subprocess.TimeoutExpired:
-        raise SystemExit("gave up after 15 minutes — the download stalled. "
-                         "Try the link again, or a different source.") from None
-    if r.returncode != 0:
-        # yt-dlp's own last lines say WHY ("Video unavailable", a bot check…).
-        # check=True here dumped a raw CalledProcessError traceback into the
-        # studio's red banner, which no one can act on (round-3 user test).
-        tail = [ln for ln in (r.stderr or r.stdout or "").splitlines()
-                if ln.strip()][-3:]
-        raise SystemExit("could not fetch that link:\n" + "\n".join(tail))
-    got = sorted(dest.glob("*.mp3"), key=lambda p: p.stat().st_mtime)
-    if not got:
-        raise SystemExit("yt-dlp produced no audio file")
-    return got[-1], got[-1].stem
 
 
 _NUM = re.compile(r"^\d+(?:\.\d+)?$")
@@ -376,7 +337,12 @@ def main() -> int:
     if not source:
         raise SystemExit("need a source (file or URL)")
     source = source.removeprefix("file:")
-    is_url = "://" in source
+    is_url = is_web_url(source)
+    # A source that wanted to be a URL and is not one never becomes a path:
+    # "ftp://…" or "--config-location=http://…" would otherwise be opened as a
+    # local file name, which is a confusing way to fail at best.
+    if not is_url and "://" in source:
+        raise SystemExit(f"not a link this can fetch: {source!r} — http(s) only")
 
     # Per-run scratch dir. A shared one races: two imports at once, and the
     # first to finish deletes the other's half-downloaded file out from under

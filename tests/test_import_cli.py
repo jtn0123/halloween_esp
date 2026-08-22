@@ -15,15 +15,18 @@ from __future__ import annotations
 import contextlib
 import io
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import import_fetch as imf
 import import_track as it
 import manifest as mf
 from helpers import make_click_track
@@ -258,3 +261,50 @@ class TestListAndAnalyze(CliCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestUrlIsAUrl(unittest.TestCase):
+    """The studio passes the browser's source string to yt-dlp as an argument.
+
+    `"://" in source` was the old test for "is this a link", and a value that
+    starts with a dash passes it — at which point yt-dlp reads the whole thing
+    as one of its own options rather than as something to download.
+    `--config-location=http://…` is the sharp end of that.
+    """
+
+    def test_http_and_https_links_are_links(self) -> None:
+        for url in ("http://example.test/a.mp3",
+                    "https://example.test/watch?v=x",
+                    "HTTPS://Example.test/A"):
+            self.assertTrue(it.is_web_url(url), url)
+
+    def test_an_option_wearing_a_url_is_not(self) -> None:
+        for bad in ("--config-location=http://evil.test/x",
+                    "-o/tmp/x http://evil.test",
+                    "--exec=curl http://evil.test"):
+            self.assertFalse(it.is_web_url(bad), bad)
+
+    def test_other_schemes_and_paths_are_not(self) -> None:
+        for bad in ("ftp://x.test/a", "file:///etc/passwd", "/Users/j/a.mp3",
+                    "a.mp3", "https://", ""):
+            self.assertFalse(it.is_web_url(bad), bad)
+
+    def test_fetch_refuses_before_it_spawns_anything(self) -> None:
+        """The guard is in fetch_url too, not only at the call site."""
+        with mock.patch.object(imf.subprocess, "run") as run, \
+                tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(SystemExit) as e:
+                it.fetch_url("--config-location=http://evil.test/x", Path(td))
+            self.assertIn("http(s) only", str(e.exception))
+            run.assert_not_called()
+
+    def test_a_real_link_is_passed_after_a_double_dash(self) -> None:
+        """`--` closes the option list, so a link can never become a flag."""
+        with mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"), \
+                mock.patch.object(imf.subprocess, "run") as run, \
+                tempfile.TemporaryDirectory() as td:
+            run.return_value = subprocess.CompletedProcess([], 1, "", "nope")
+            with contextlib.suppress(SystemExit):
+                it.fetch_url("https://example.test/a", Path(td))
+            argv = run.call_args[0][0]
+            self.assertEqual(argv[-2:], ["--", "https://example.test/a"])
