@@ -13,6 +13,7 @@ from __future__ import annotations
 import http.client
 import json
 import re
+import shutil
 import sys
 import tempfile
 import time
@@ -355,3 +356,40 @@ class TestBridge(HostEnv, EmuCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestShowFileGuard(unittest.TestCase):
+    """CASTLE_SCENES is a path from outside, so it is checked before it is
+    opened: a real file, with a YAML name, resolved first."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="castle-show-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def test_a_yaml_file_is_a_show(self) -> None:
+        p = self.tmp / "scenes.yaml"
+        p.write_text("scenes:\n  - {id: vigil}\n")
+        self.assertEqual(castle_emu.a_show_file(p), p.resolve())
+        self.assertEqual(castle_emu.show_scene_ids(p), ["vigil", "stop"])
+
+    def test_a_directory_is_not(self) -> None:
+        d = self.tmp / "scenes.yaml"
+        d.mkdir()
+        self.assertIsNone(castle_emu.a_show_file(d))
+        self.assertIsNone(castle_emu.show_scene_ids(d))
+
+    def test_something_that_is_not_yaml_is_not(self) -> None:
+        p = self.tmp / "passwd"
+        p.write_text("root:x:0:0\n")
+        self.assertIsNone(castle_emu.a_show_file(p))
+        self.assertIsNone(castle_emu.show_scene_ids(p))
+
+    def test_a_parent_hop_is_resolved_before_it_is_used(self) -> None:
+        (self.tmp / "sub").mkdir()
+        p = self.tmp / "scenes.yaml"
+        p.write_text("scenes:\n  - {id: storm}\n")
+        hop = self.tmp / "sub" / ".." / "scenes.yaml"
+        self.assertEqual(castle_emu.a_show_file(hop), p.resolve())
+
+    def test_a_missing_file_is_not_a_show(self) -> None:
+        self.assertIsNone(castle_emu.a_show_file(self.tmp / "nope.yaml"))

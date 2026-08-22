@@ -60,7 +60,7 @@ export async function analyseLocally(file: File, wantId: string,
   // Static mode cannot convert anything, so the scene has to point at the
   // container the file already is — not at the .mp3 the studio would have
   // made of it.
-  const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || "mp3").toLowerCase();
+  const ext = (/\.([a-z0-9]+)$/i.exec(file.name)?.[1] || "mp3").toLowerCase();
   const env = loudnessEnvelope(audio.getChannelData(0), audio.sampleRate);
   const block = sceneYaml(id, audio.duration, counts, ext, bands, env);
   const kb = Math.round(audio.duration * 96 * 1000 / 8 / 1024);

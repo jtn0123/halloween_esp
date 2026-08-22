@@ -201,6 +201,25 @@ def known_track(track: str) -> bool:
     return mf.get(tid) is not None
 
 
+def render_one(scene: dict, i: int, cfg: dict, keep_wav: bool) -> tuple[int, dict]:
+    """Render scene `i` to NN_<id>.mp3 and report (bytes, markers).
+
+    The WAV is the encoder's input and nothing else's, so it goes again
+    unless --wav asked to keep it.
+    """
+    buf, markers = render_scene(scene, cfg)
+    stem = f"{i:02d}_{scene['id']}"
+    wav, mp3 = OUT / f"{stem}.wav", OUT / f"{stem}.mp3"
+    write_wav(wav, buf, cfg["sample_rate"])
+    encode_mp3(wav, mp3, cfg["bitrate"])
+    if not keep_wav:
+        wav.unlink()
+    size = mp3.stat().st_size
+    print(f"{scene['id']:<12} {len(buf)/cfg['sample_rate']:>7.1f}s "
+          f"{size/1024:>8.0f}K   {mp3.name}")
+    return size, markers
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="render just this scene id")
@@ -228,21 +247,11 @@ def main() -> int:
     for i, scene in enumerate(doc["scenes"], start=1):
         if args.only and scene["id"] != args.only:
             continue
-        buf, markers = render_scene(scene, cfg)
+        size, markers = render_one(scene, i, cfg, args.wav)
         if markers:
             all_markers[scene["id"]] = markers
-        stem = f"{i:02d}_{scene['id']}"
-        wav = OUT / f"{stem}.wav"
-        mp3 = OUT / f"{stem}.mp3"
-        write_wav(wav, buf, cfg["sample_rate"])
-        encode_mp3(wav, mp3, cfg["bitrate"])
-        if not args.wav:
-            wav.unlink()
-        size = mp3.stat().st_size
         total += size
-        produced.add(mp3.name)
-        print(f"{scene['id']:<12} {len(buf)/cfg['sample_rate']:>7.1f}s "
-              f"{size/1024:>8.0f}K   {mp3.name}")
+        produced.add(f"{i:02d}_{scene['id']}.mp3")
 
     print("-" * 52)
     print(f"{'total':<12} {'':>8} {total/1024:>8.0f}K")

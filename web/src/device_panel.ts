@@ -58,6 +58,11 @@ interface SdFile {
   dir: boolean;
 }
 
+/** "5 tracks on the card", pointing at the Library that lists them all. */
+const cardSummary = (n: number): string =>
+  `<div class="dp__note">${n} track${n === 1 ? "" : "s"} on the card — ` +
+  `see the Library below (🏰 rows and badges)</div>`;
+
 /** The card's file list, or a line saying why there isn't one. Lifted out of
  *  the panel's markup: it was the tail of a three-deep ternary. */
 function cardFiles(tracks: SdFile[], mounted: boolean | undefined): string {
@@ -226,12 +231,10 @@ export class DevicePanel {
         `${spec}</button>`).join("") + `</span>` +
       `</div>` +
       `<div class="dp__files" id="dpFiles">` +
+      // Through the studio the merged Library below already lists every card
+      // file with Play/⬇/Delete — two lists of one card drift.
       (tracks.length && st.bridged
-        // Through the studio the merged Library below already lists every
-        // card file with Play/⬇/Delete — two lists of one card drift.
-        ? `<div class="dp__note">${tracks.length} ` +
-          `track${tracks.length === 1 ? "" : "s"} on the card — see the ` +
-          `Library below (🏰 rows and badges)</div>`
+        ? cardSummary(tracks.length)
         : cardFiles(tracks, st.sd_mounted)) +
       `</div>` +
       `<div class="dp__pir" ` +

@@ -12,10 +12,16 @@ import { sendable } from "./track_send.js";
 import type { TrackInfo } from "./tracks.js";
 
 
-/** What the send button says, given where the file already is. */
-function sendLabel(onCastle: "current" | "stale" | "absent"): string {
-  if (onCastle === "stale") return "Update castle";
-  return onCastle === "current" ? "Re-send" : "→ Castle";
+/** The → Castle button, or nothing when there is no castle to send to. */
+function sendButton(onCastle: "current" | "stale" | "absent" | null,
+                    broken: boolean, busy: string | null): string {
+  if (onCastle === null || broken) return "";
+  let label = "→ Castle";
+  if (onCastle === "stale") label = "Update castle";
+  else if (onCastle === "current") label = "Re-send";
+  return `<button data-act="send"${busy ? " disabled" : ""} title="Copy this `
+    + `file onto the castle's SD card over WiFi — it can then play on the `
+    + `castle with zero lag">${label}</button>`;
 }
 
 interface RowCtx {
@@ -106,8 +112,7 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
                       : "Add this track to the show as a new scene (the whole file; trim with Re-import first if you want only a part)")}
       ${canReimport ? op("refresh", "Re-import",
         "Rebuild from the remembered source using the options above — START/LENGTH from the clip editor when it is open on this track") : ""}
-      ${ctx.onCastle !== null && !broken ? `<button data-act="send"${busy ? " disabled" : ""} title="Copy this file onto the castle's SD card over WiFi — it can then play on the castle with zero lag">${
-        sendLabel(ctx.onCastle)}</button>` : ""}
+      ${sendButton(ctx.onCastle, broken, busy)}
       ${op("del", "Delete", ctx.inShow ? "Remove the file — and, if you choose, its scene from the show" : "Remove the file from the library", "danger")}
     </div>
   </div>`;

@@ -93,8 +93,11 @@ def emit_rig_header(layouts: dict[str, Layout], zones: list[dict]) -> str:
 # Deliberately NO static buffers (the Show effect's `buf` is the only one
 # the S2's dram0 can afford) and no scene state: they draw from `it` and
 # millis() alone, so they are safe to leave running while you go and look.
+#: How every strip effect starts. Four of them, so it is written once.
+EFFECT = "      - addressable_lambda:"
+
 TEST_EFFECTS = [
-    "      - addressable_lambda:",
+    EFFECT,
     '          name: "Test Bars"',
     "          update_interval: 500ms",
     "          lambda: |-",
@@ -106,7 +109,7 @@ TEST_EFFECTS = [
     "              it[p] = Color(k == 0 ? 255 : 0, k == 1 ? 255 : 0,",
     "                            k == 2 ? 255 : 0, 0);",
     "            }",
-    "      - addressable_lambda:",
+    EFFECT,
     '          name: "Test Chase"',
     "          update_interval: 100ms",
     "          lambda: |-",
@@ -117,7 +120,7 @@ TEST_EFFECTS = [
     "            const int at = (millis() / 250) % n;",
     "            for (int p = 0; p < it.size(); p++)",
     "              it[p] = p == at ? Color(255, 255, 255, 255) : Color(0, 0, 0, 0);",
-    "      - addressable_lambda:",
+    EFFECT,
     '          name: "Test Ends"',
     "          update_interval: 500ms",
     "          lambda: |-",
@@ -212,7 +215,7 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
             "    use_psram: false",
             "    default_transition_length: 0s",
             "    effects:",
-            "      - addressable_lambda:",
+            EFFECT,
             '          name: "Show"',
             "          update_interval: 16ms",
             "          lambda: |-",

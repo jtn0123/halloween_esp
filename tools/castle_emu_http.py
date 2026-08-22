@@ -84,9 +84,8 @@ def light_spec_ok(c: bytes) -> bool:
     elif not zone or len(zone) > 16 or any(b not in _ZONE_CHARS for b in zone):
         return False
     spec, at, pct = spec.partition(b"@")
-    if at:
-        if not pct.isdigit() or len(pct) > 3 or not 1 <= int(pct) <= 100:
-            return False
+    if at and (not pct.isdigit() or len(pct) > 3 or not 1 <= int(pct) <= 100):
+        return False
     hex6 = len(spec) == 6 and all(chr(b) in "0123456789abcdefABCDEF" for b in spec)
     return hex6 or spec in (b"white", b"bars", b"chase", b"ends", b"show", b"off")
 
@@ -387,7 +386,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self._err(500, "ota write failed")
                 first = False
                 got += len(chunk)
-        except (TimeoutError, OSError):
+        except OSError:            # TimeoutError is one of these
             pass
         if got != n:
             return self._err(500, "ota write failed")
