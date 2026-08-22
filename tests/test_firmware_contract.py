@@ -60,12 +60,24 @@ def reply_errs(body: str) -> set[tuple[int, str]]:
             re.findall(r'reply_err\(req, "(\d{3}) [^"]*", "([^"]*)"\)', body)}
 
 
+#: Module-level string constants in the emulator, so a message spelled once
+#: and reused (NO_SD) reads the same to this contract as a bare literal.
+EMU_CONSTS: dict[str, str] = dict(
+    re.findall(r'^([A-Z][A-Z0-9_]*) = "([^"]*)"', EMU_HTTP, re.MULTILINE))
+
+
 def emu_errs(handler: str) -> set[tuple[int, str]]:
-    """Every self._err(code, "msg") inside one emulator handler method."""
+    """Every self._err(code, msg) inside one emulator handler method, with a
+       named constant resolved to the string it holds."""
     m = re.search(rf"    def {handler}\(self.*?(?=\n    def |\Z)", EMU_HTTP, re.DOTALL)
     assert m, f"emulator has no {handler}"
-    return {(int(c), msg) for c, msg in
-            re.findall(r'self\._err\((\d{3}), "([^"]*)"\)', m.group(0))}
+    out: set[tuple[int, str]] = set()
+    for code, msg in re.findall(r'self\._err\((\d{3}), (?:"([^"]*)")\)', m.group(0)):
+        out.add((int(code), msg))
+    for code, name in re.findall(r"self\._err\((\d{3}), ([A-Z][A-Z0-9_]*)\)", m.group(0)):
+        assert name in EMU_CONSTS, f"{handler}: unknown constant {name}"
+        out.add((int(code), EMU_CONSTS[name]))
+    return out
 
 
 def firmware_routes() -> list[tuple[str, str, str]]:
@@ -117,7 +129,10 @@ class TestErrorStrings(unittest.TestCase):
 
     def test_no_emulator_error_string_is_invented(self) -> None:
         all_fw = set().union(*(reply_errs(b) for b in FUNCS.values()))
-        for c, msg in re.findall(r'self\._err\((\d{3}), "([^"]*)"\)', EMU_HTTP):
+        spelled = re.findall(r'self\._err\((\d{3}), "([^"]*)"\)', EMU_HTTP)
+        named = [(c, EMU_CONSTS[n]) for c, n in
+                 re.findall(r"self\._err\((\d{3}), ([A-Z][A-Z0-9_]*)\)", EMU_HTTP)]
+        for c, msg in spelled + named:
             self.assertIn((int(c), msg), all_fw)
 
 

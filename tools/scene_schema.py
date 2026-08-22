@@ -27,7 +27,7 @@ import effect_vocab as ev
 
 REQUIRED = ("id", "name", "kind", "duration_ms", "base")
 CUE_OPS = ("set", "strike")
-ID_RE = re.compile(r"^[A-Za-z0-9_]+$")
+ID_RE = re.compile(r"^\w+$", re.ASCII)   # \w, but not the Unicode half
 
 
 def _vocab() -> dict[str, set[str]]:
@@ -180,17 +180,9 @@ def _check_pulse(i: int, p: Any, zones: set[str] | None,
     _pulse_colors(w, p, errs)
 
 
-def validate(scene: Any, zones: list[str] | None = None) -> list[str]:
-    """Every way `scene` is not a scene — [] when it is one.
-
-    `zones` is the show's zone list when the caller knows it; without it,
-    zone names are only checked for shape.
-    """
-    errs: list[str] = []
-    if not isinstance(scene, dict):
-        return ["scene must be a mapping"]
-    vocab = _vocab()
-    zs = set(zones) if zones is not None else None
+def _scene_head(scene: dict, errs: list[str]) -> int | None:
+    """id, name, kind, duration, volume, loop, audio_file — the scalars.
+       Returns the scene's length in ms when it has a usable one."""
     errs.extend(f"missing required key {k!r}" for k in REQUIRED if k not in scene)
     sid = scene.get("id")
     if "id" in scene and (not isinstance(sid, str) or not ID_RE.match(sid)):
@@ -198,13 +190,6 @@ def validate(scene: Any, zones: list[str] | None = None) -> list[str]:
     errs.extend(f"{k}: must be a non-empty string" for k in ("name", "kind")
                 if k in scene and (not isinstance(scene[k], str)
                                    or not scene[k].strip()))
-    length: int | None = None
-    if "duration_ms" in scene:
-        d = scene["duration_ms"]
-        if not _num(d) or d <= 0 or int(d) != d:
-            errs.append(f"duration_ms: must be a whole number of ms > 0, got {d!r}")
-        else:
-            length = int(d)
     if "volume" in scene:
         _unit("volume", scene["volume"], errs)
     if "loop" in scene and not isinstance(scene["loop"], bool):
@@ -214,51 +199,85 @@ def validate(scene: Any, zones: list[str] | None = None) -> list[str]:
         if (not isinstance(af, str) or not af or af.startswith("/")
                 or ".." in af.split("/")):
             errs.append(f"audio_file: must be a relative path, got {af!r}")
-    base = scene.get("base")
-    if "base" in scene:
-        if not isinstance(base, dict):
-            errs.append("base: must map each zone to an effect")
-        else:
-            for z, e in base.items():
-                _zone("base", z, zs, errs)
-                _effect(f"base.{z}", e, vocab, errs)
+    if "duration_ms" not in scene:
+        return None
+    d = scene["duration_ms"]
+    if not _num(d) or d <= 0 or int(d) != d:
+        errs.append(f"duration_ms: must be a whole number of ms > 0, got {d!r}")
+        return None
+    return int(d)
+
+
+def _mapping(name: str, value: Any, complaint: str, errs: list[str]) -> bool:
+    """`value` is a mapping, or one error saying what it should have been."""
+    if isinstance(value, dict):
+        return True
+    errs.append(f"{name}: {complaint}")
+    return False
+
+
+def _scene_zones(scene: dict, zs: set[str] | None,
+                 vocab: dict[str, set[str]], errs: list[str]) -> None:
+    """base, levels and zones: three maps keyed by zone, each with its own
+       idea of what a value is."""
+    if "base" in scene and _mapping(
+            "base", scene["base"], "must map each zone to an effect", errs):
+        for z, e in scene["base"].items():
+            _zone("base", z, zs, errs)
+            _effect(f"base.{z}", e, vocab, errs)
     levels = scene.get("levels")
-    if levels is not None:
-        if not isinstance(levels, dict):
-            errs.append("levels: must map zones to a level")
-        else:
-            for z, v in levels.items():
-                _zone("levels", z, zs, errs)
-                _unit(f"levels.{z}", v, errs)
+    if levels is not None and _mapping(
+            "levels", levels, "must map zones to a level", errs):
+        for z, v in levels.items():
+            _zone("levels", z, zs, errs)
+            _unit(f"levels.{z}", v, errs)
     zd = scene.get("zones")
-    if zd is not None:
-        if not isinstance(zd, dict):
-            errs.append("zones: must map zones to their texture")
-        else:
-            for z, d in zd.items():
-                _zone("zones", z, zs, errs)
-                if not isinstance(d, dict):
-                    errs.append(f"zones.{z}: must be a mapping")
-                    continue
-                if "center" in d:
-                    _effect(f"zones.{z}.center", d["center"], vocab, errs)
-                for k in ("overlay", "palette"):
-                    if k in d:
-                        _in(f"zones.{z}.{k}", d[k], k, vocab, errs)
-                if "phase" in d and not _num(d["phase"]):
-                    errs.append(f"zones.{z}.phase: must be a number")
+    if zd is not None and _mapping(
+            "zones", zd, "must map zones to their texture", errs):
+        for z, d in zd.items():
+            _zone("zones", z, zs, errs)
+            _zone_texture(z, d, vocab, errs)
+
+
+def _zone_texture(z: str, d: Any, vocab: dict[str, set[str]],
+                  errs: list[str]) -> None:
+    """One zone's entry under `zones:` — centre effect, overlay, palette, phase."""
+    if not _mapping(f"zones.{z}", d, "must be a mapping", errs):
+        return
+    if "center" in d:
+        _effect(f"zones.{z}.center", d["center"], vocab, errs)
+    for k in ("overlay", "palette"):
+        if k in d:
+            _in(f"zones.{z}.{k}", d[k], k, vocab, errs)
+    if "phase" in d and not _num(d["phase"]):
+        errs.append(f"zones.{z}.phase: must be a number")
+
+
+def validate(scene: Any, zones: list[str] | None = None) -> list[str]:
+    """Every way `scene` is not a scene — [] when it is one.
+
+    `zones` is the show's zone list when the caller knows it; without it,
+    zone names are only checked for shape.
+    """
+    if not isinstance(scene, dict):
+        return ["scene must be a mapping"]
+    errs: list[str] = []
+    vocab = _vocab()
+    zs = set(zones) if zones is not None else None
+    length = _scene_head(scene, errs)
+    _scene_zones(scene, zs, vocab, errs)
     cues = scene.get("cues")
     if cues is not None:
-        if not isinstance(cues, list):
-            errs.append("cues: must be a list")
-        else:
+        if isinstance(cues, list):
             for i, c in enumerate(cues):
                 _check_cue(i, c, length, zs, vocab, errs)
+        else:
+            errs.append("cues: must be a list")
     pulse = scene.get("pulse")
     if pulse is not None:
-        if not isinstance(pulse, list):
-            errs.append("pulse: must be a list")
+        if isinstance(pulse, list):
+            for i, pl in enumerate(pulse):
+                _check_pulse(i, pl, zs, vocab, errs)
         else:
-            for i, p in enumerate(pulse):
-                _check_pulse(i, p, zs, vocab, errs)
+            errs.append("pulse: must be a list")
     return errs

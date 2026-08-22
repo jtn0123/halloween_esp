@@ -31,7 +31,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import castle_link as cl
 import castle_native as cn
 import hosts
-from studio_case import ServerCase
+from studio_case import HostEnv, ServerCase
 
 DEAD = "127.0.0.1:1"   # nothing listens; connect refuses instantly
 
@@ -92,7 +92,7 @@ def start_fake_castle(
     return srv, f"127.0.0.1:{srv.server_address[1]}"
 
 
-class TestCastleHost(unittest.TestCase):
+class TestCastleHost(HostEnv, unittest.TestCase):
     """Resolution order: env, then the first devices.toml entry, then None."""
 
     def setUp(self) -> None:
@@ -107,7 +107,7 @@ class TestCastleHost(unittest.TestCase):
 
     def test_env_wins_over_the_file(self) -> None:
         (self.tmp / "devices.toml").write_text('[a]\nhost = "1.2.3.4"\n')
-        os.environ["CASTLE_HOST"] = "9.9.9.9"
+        self.host_env("9.9.9.9")
         self.assertEqual(cl.castle_host(), "9.9.9.9")
 
     def test_first_toml_entry_with_a_host(self) -> None:
@@ -124,9 +124,9 @@ class TestCastleHost(unittest.TestCase):
             '[castle]\nhost = "1.2.3.4"\nfallbacks = ["1.2.3.5"]\n')
         self.assertEqual(cl.castle_hosts(), ["1.2.3.4", "1.2.3.5"])
         self.assertEqual(cl.castle_hosts(), hosts.candidates())
-        os.environ["CASTLE_HOST"] = "castle,9.9.9.9"
+        self.host_env("castle,9.9.9.9")
         self.assertEqual(cl.castle_hosts(), ["1.2.3.4", "1.2.3.5", "9.9.9.9"])
-        os.environ["CASTLE_HOST"] = ""
+        self.host_env("")
         self.assertEqual(cl.castle_hosts(), [])
 
     def test_malformed_toml_means_no_castle_not_a_traceback(self) -> None:
@@ -134,7 +134,7 @@ class TestCastleHost(unittest.TestCase):
         self.assertIsNone(cl.castle_host())
 
 
-class TestStatusAndForward(unittest.TestCase):
+class TestStatusAndForward(HostEnv, unittest.TestCase):
     """status() and forward() against a castle the test owns."""
 
     def setUp(self) -> None:
@@ -159,7 +159,7 @@ class TestStatusAndForward(unittest.TestCase):
         self.assertEqual(FakeCastle.seen.count("GET /api/status"), 1)
 
     def test_dead_castle_is_none_and_remembered(self) -> None:
-        os.environ["CASTLE_HOST"] = DEAD
+        self.host_env(DEAD)
         cl._cache.clear()
         self.assertIsNone(cl.status())
         # The second miss must come from the down-cache, not another connect.
@@ -182,7 +182,7 @@ class TestStatusAndForward(unittest.TestCase):
         """Pass-1 J1-1: Stop answered 200 "queued" to a castle that was not
         there, because the native stub's empty key dict made it vacuously
         true. Nothing is reachable here; nothing may claim to be queued."""
-        os.environ["CASTLE_HOST"] = DEAD
+        self.host_env(DEAD)
         cl._cache.clear()
         for method, path, body in (("POST", "/api/stop", b""),
                                    ("POST", "/api/scene?s=vigil", b""),
@@ -219,7 +219,7 @@ class TestStatusAndForward(unittest.TestCase):
         self.assertFalse(cl.native_host("127.0.0.1:8093"))
         self.assertTrue(cl.native_host("castle.lan"))
         with mock.patch.object(cl.castle_native, "connected") as conn:
-            os.environ["CASTLE_HOST"] = DEAD
+            self.host_env(DEAD)
             cl._cache.clear()
             self.assertEqual(cl.forward("POST", "/api/stop")[0], 502)
         conn.assert_not_called()
@@ -231,7 +231,7 @@ class TestStatusAndForward(unittest.TestCase):
         self.assertEqual(FakeCastle.seen.count("GET /api/status"), 1)
 
 
-class TestSlowCard(unittest.TestCase):
+class TestSlowCard(HostEnv, unittest.TestCase):
     """Pass-1 J1-8: PUT budgets and no replay once the bytes have gone."""
 
     def setUp(self) -> None:
@@ -274,7 +274,7 @@ class TestSlowCard(unittest.TestCase):
         self.assertEqual(code, 200)
 
 
-class TestStudioBridge(ServerCase):
+class TestStudioBridge(HostEnv, ServerCase):
     """The studio's routes, with a fake castle behind them."""
 
     castle: ThreadingHTTPServer
@@ -292,12 +292,12 @@ class TestStudioBridge(ServerCase):
         super().tearDownClass()
 
     def setUp(self) -> None:
-        os.environ["CASTLE_HOST"] = self.castle_host
+        self.host_env(self.castle_host)
         cl._cache.clear()
         FakeCastle.seen = []
 
     def tearDown(self) -> None:
-        os.environ["CASTLE_HOST"] = DEAD
+        self.host_env(DEAD)
         cl._cache.clear()
 
     def get(self, path: str) -> tuple[int, dict]:
@@ -317,7 +317,7 @@ class TestStudioBridge(ServerCase):
         self.assertNotIn("studio", s)   # this is what flips the desk's mode
 
     def test_status_falls_back_to_the_studio_marker(self) -> None:
-        os.environ["CASTLE_HOST"] = DEAD
+        self.host_env(DEAD)
         cl._cache.clear()
         _, s = self.get("/api/status")
         self.assertEqual(s, {"studio": True})

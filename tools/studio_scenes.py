@@ -74,8 +74,12 @@ def rebuild(lock: threading.Lock, run: Runner, py: str,
 
 def block_pattern(sid: str) -> re.Pattern[str]:
     """One scene's block: from its `- id:` line to the next one (or EOF)."""
-    return re.compile(rf"^  - id: {re.escape(sid)}\n(?:.*\n)*?(?=^  - id: |\Z)",
-                      re.MULTILINE)
+    # `(?:(?!^  - id: ).*\n)*+` — possessive, and each line decides for
+    # itself whether it belongs to this block. The lazy `(?:.*\n)*?` it
+    # replaces could backtrack line by line across a long file (Sonar S5852).
+    return re.compile(
+        rf"^  - id: {re.escape(sid)}\n(?:(?!^  - id: ).*\n)*+",
+        re.MULTILINE)
 
 
 def _write(scenes: Path, before: str, raw: str) -> None:

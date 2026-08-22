@@ -24,12 +24,24 @@ const act = (page: Page, id: string, action: string) =>
 /** Drag a region out on the waveform so the editor writes START/LENGTH. */
 async function dragClip(page: Page, from = 0.3, to = 0.6): Promise<void> {
   const canvas = page.locator("#trkWave canvas:not(.stems-strip)");
+  // The canvas is on screen BEFORE the audio is decoded, and a drag then maps
+  // every pixel to 0 s: #trkStart fills in with 0:00.0, this helper's old
+  // "not empty" wait was satisfied, and the caller's arithmetic quietly used
+  // a zero (CI, slower than a warm laptop, hit it on the offset test).
+  // Audition enables only once the waveform has data — the same signal
+  // tracks.spec waits on before ITS drag.
+  await expect(page.getByRole("button", { name: "Audition" })).toBeEnabled();
   const box = (await canvas.boundingBox())!;
   await page.mouse.move(box.x + box.width * from, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * to, box.y + box.height / 2);
   await page.mouse.up();
-  await expect(page.locator("#trkStart")).not.toHaveValue("");
+  // Wait on the READOUT, which is written from the clip and from nothing else.
+  // #trkStart was the wrong thing to watch: a track whose remembered options
+  // already carry a start shows that number before anything is dragged, so
+  // "not empty" — and even "not zero" — passed on the old value and the caller
+  // asserted against a clip that had not landed (CI, and once locally).
+  await expect(page.locator(".wave__readout")).toHaveText(/start 0:0*[1-9]/);
 }
 
 /** /studio/tracks with each entry passed through `patch`; the real list otherwise. */

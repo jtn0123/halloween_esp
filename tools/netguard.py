@@ -51,7 +51,7 @@ def resolve(host: str) -> list[IPAddress]:
         pass
     try:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    except (socket.gaierror, UnicodeError, OSError):
+    except (UnicodeError, OSError):        # gaierror is an OSError
         return []
     out: list[IPAddress] = []
     for info in infos:

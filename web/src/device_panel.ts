@@ -57,6 +57,24 @@ interface SdFile {
   dir: boolean;
 }
 
+/** The card's file list, or a line saying why there isn't one. Lifted out of
+ *  the panel's markup: it was the tail of a three-deep ternary. */
+function cardFiles(tracks: SdFile[], mounted: boolean | undefined): string {
+  if (tracks.length) {
+    return tracks.map((f, i) =>
+      `<div class="dp__file">` +
+      `<button data-play="${i}" class="dp__btn dp__btn--sm" title="Play on the castle">▶</button>` +
+      `<span class="dp__file-nm" title="${f.name}">${f.name}</span>` +
+      `<small class="dp__muted">${kb(f.size)}</small>` +
+      `<button data-del="${i}" class="dp__del" title="Delete from the card">✕</button>` +
+      `</div>`).join("");
+  }
+  const why = mounted
+    ? "no tracks on the card yet — drop audio below, or press → Castle on a track in the Library"
+    : "no SD card";
+  return `<div class="dp__note">${why}</div>`;
+}
+
 interface DeviceStatus {
   version: string;
   uptime_s: number;
@@ -213,18 +231,7 @@ export class DevicePanel {
         ? `<div class="dp__note">${tracks.length} ` +
           `track${tracks.length === 1 ? "" : "s"} on the card — see the ` +
           `Library below (🏰 rows and badges)</div>`
-        : tracks.length
-        ? tracks.map((f, i) =>
-            `<div class="dp__file">` +
-            `<button data-play="${i}" class="dp__btn dp__btn--sm" title="Play on the castle">▶</button>` +
-            `<span class="dp__file-nm" title="${f.name}">${f.name}</span>` +
-            `<small class="dp__muted">${kb(f.size)}</small>` +
-            `<button data-del="${i}" class="dp__del" title="Delete from the card">✕</button>` +
-            `</div>`).join("")
-        : `<div class="dp__note">` +
-          `${st.sd_mounted
-            ? "no tracks on the card yet — drop audio below, or press → Castle on a track in the Library"
-            : "no SD card"}</div>`) +
+        : cardFiles(tracks, st.sd_mounted)) +
       `</div>` +
       `<div class="dp__pir" ` +
       `title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">` +

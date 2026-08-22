@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import helpers  # noqa: F401  (clears CASTLE_* so the env here is ours)
 import hosts
+from studio_case import HostEnv
 
 TABLE = '''
 # comments and non-device tables are ignored
@@ -38,7 +39,7 @@ text = "no host key — not a device"
 '''
 
 
-class HostCase(unittest.TestCase):
+class HostCase(HostEnv, unittest.TestCase):
     """A devices.toml of our own and an environment we can scribble on: both
        classes below want the same two, and the resolver reads both."""
 
@@ -54,19 +55,6 @@ class HostCase(unittest.TestCase):
         e.start()
         self.addCleanup(e.stop)
         os.environ.pop("CASTLE_HOST", None)
-
-    def host_env(self, value: str | None) -> None:
-        """CASTLE_HOST for the rest of this test. Set through patch.dict, not
-           by writing os.environ, so an assertion that raises still leaves the
-           process's environment as it found it — setUp's outer patch is the
-           belt, this is the braces."""
-        env = mock.patch.dict(
-            os.environ, {} if value is None else {"CASTLE_HOST": value},
-            clear=False)
-        env.start()
-        if value is None:
-            os.environ.pop("CASTLE_HOST", None)
-        self.addCleanup(env.stop)
 
 
 class TestResolve(HostCase):

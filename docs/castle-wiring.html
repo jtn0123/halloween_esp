@@ -472,11 +472,12 @@ Full prose version: <code>docs/WIRING.md</code>.</footer>
 <script>
 (function(){
 var GRP={v5:"power",gnd:"power",dL:"data",dD:"data",dR:"data",i2s:"audio",spk:"audio"},svg=document.getElementById("schem");
-svg.querySelectorAll("g.net").forEach(function(g){g.setAttribute("data-grp",GRP[g.getAttribute("data-net")]||"");});
-function wire(sel,attr){var chips=Array.prototype.slice.call(document.querySelectorAll(sel));
-  chips.forEach(function(c){c.addEventListener("click",function(){var v=c.getAttribute(attr);
+svg.querySelectorAll("g.net").forEach(function(g){g.dataset.grp=GRP[g.dataset.net]||"";});
+/* `key` is the dataset name ("focus"); the SVG carries it as data-focus. */
+function wire(sel,key){var chips=Array.prototype.slice.call(document.querySelectorAll(sel));
+  chips.forEach(function(c){c.addEventListener("click",function(){var v=c.dataset[key];
     chips.forEach(function(o){o.setAttribute("aria-pressed",String(o===c));});
-    if(v){svg.setAttribute(attr,v);}else{svg.removeAttribute(attr);}});});}
-wire(".chip[data-focus]","data-focus");wire(".chip[data-build]","data-build");
+    if(v){svg.dataset[key]=v;}else{delete svg.dataset[key];}});});}
+wire(".chip[data-focus]","focus");wire(".chip[data-build]","build");
 })();
 </script>

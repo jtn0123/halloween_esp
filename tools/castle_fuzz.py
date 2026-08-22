@@ -136,7 +136,7 @@ def _connect(host: str, port: int, timeout: float) -> socket.socket:
     for attempt in range(20):
         try:
             return socket.create_connection((host, port), timeout=timeout)
-        except (ConnectionResetError, ConnectionRefusedError, OSError):
+        except OSError:      # both refusals and resets are OSErrors
             if attempt == 19:
                 raise
             time.sleep(0.05 * (attempt + 1))

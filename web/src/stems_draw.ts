@@ -59,10 +59,11 @@ export function drawSingle(g: CanvasRenderingContext2D, d: StemChannel,
     }
   }
   const total = Object.values(d.onsets).reduce((s, v) => s + v.length, 0);
-  return channel === "both"
-    ? `${total} hits — the pipeline's own picture`
-    : `${total} hits · ${missed === 0 ? "all seen by mono analysis"
-        : `${missed} the mono analysis missed`}`;
+  if (channel === "both") return `${total} hits — the pipeline's own picture`;
+  const seen = missed === 0
+    ? "all seen by mono analysis"
+    : `${missed} the mono analysis missed`;
+  return `${total} hits · ${seen}`;
 }
 
 /** Left grows up from the centre line, right grows down. The two halves

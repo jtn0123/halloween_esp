@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -44,6 +45,25 @@ def make_mp3(dest: Path, seconds: float = 3.0) -> None:
         it.convert(src, dest, dict(CONVERT_OPTS))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+class HostEnv:
+    """`self.host_env("10.0.0.7")` — CASTLE_HOST for one test, put back after.
+
+    Every suite that touches the resolver was writing os.environ by hand and
+    restoring it in tearDown (or forgetting to). patch.dict restores even when
+    an assertion raises mid-test, and addCleanup runs in reverse order, so the
+    outer patch a setUp installs still wins.
+    """
+
+    def host_env(self, value: str | None) -> None:
+        env = mock.patch.dict(
+            os.environ, {} if value is None else {"CASTLE_HOST": value},
+            clear=False)
+        env.start()
+        if value is None:
+            os.environ.pop("CASTLE_HOST", None)
+        self.addCleanup(env.stop)      # type: ignore[attr-defined]
 
 
 class Quiet(studio.Handler):
@@ -82,7 +102,6 @@ class ServerCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        from unittest import mock
         cls.sandbox = Path(tempfile.mkdtemp(prefix="castle-tests-"))
         cls._sandbox_patches = [
             # CASTLE_HOST too: the studio now RELAYS unclaimed /api/* calls

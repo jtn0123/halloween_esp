@@ -45,6 +45,8 @@ OTA_SLOT = 0x1C0000
 CHUNK = 8192
 #: The one content type the API answers with — sd_web.h reply_json().
 JSON_MIME = "application/json"
+#: sd_web.h's 503 for every route that needs the card, spelled once.
+NO_SD = "no SD card"
 
 #: sd_web_site.h content_type(): suffix → MIME.
 _TYPES = {".html": "text/html; charset=utf-8", ".js": "application/javascript",
@@ -188,7 +190,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def h_list(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
-            return self._err(503, "no SD card")
+            return self._err(503, NO_SD)
         items = []
         skipped = 0
         for p in sorted(self.server.sd_dir.iterdir()):
@@ -210,10 +212,10 @@ class Handler(BaseHTTPRequestHandler):
         self._raw(200, ("[" + ",".join(items) + "]").encode("utf-8", "surrogateescape"),
                   "application/json")
 
-    def h_bootlog(self, raw: bytes) -> None:
+    def h_bootlog(self, _raw: bytes) -> None:
         self._raw(200, b"boot log: 2 lines, 0 dropped\n[I][emu] up\n", "text/plain")
 
-    def h_remote(self, raw: bytes) -> None:
+    def h_remote(self, _raw: bytes) -> None:
         self._raw(200, REMOTE_PAGE.encode(), "text/html; charset=utf-8")
 
     def _subpath(self, raw: bytes, prefix: bytes) -> bytes:
@@ -232,7 +234,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def h_sd_get(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
-            return self._err(503, "no SD card")
+            return self._err(503, NO_SD)
         rel = self._subpath(raw, b"/sd/")
         if not wire.safe_subpath(rel):
             return self._err(400, "bad path")
@@ -247,7 +249,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.server.sd_mounted or not self._send_file(f):
             return self._err(404, "not on card")
 
-    def h_root(self, raw: bytes) -> None:
+    def h_root(self, _raw: bytes) -> None:
         site = self.server.sd_dir / "site"
         if self.server.sd_mounted and (
                 self._send_file(site / "index.html.gz", "gzip", _TYPES[".html"])
@@ -274,7 +276,7 @@ class Handler(BaseHTTPRequestHandler):
         self.server.queue("SCENE", wire.fs_name(s))
         self._json({"queued": True})
 
-    def h_stop(self, raw: bytes) -> None:
+    def h_stop(self, _raw: bytes) -> None:
         self.server.queue("STOP", "")
         self._json({"queued": True})
 
@@ -317,7 +319,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def h_put(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
-            return self._err(503, "no SD card")
+            return self._err(503, NO_SD)
         sub, prefix = "", b"/api/files/"
         if raw.startswith(b"/api/site/"):
             sub, prefix = "site", b"/api/site/"
@@ -362,7 +364,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def h_delete(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
-            return self._err(503, "no SD card")
+            return self._err(503, NO_SD)
         name = wire.name_from_uri(raw, b"/api/files/")
         if not wire.safe_name(name):
             return self._err(400, "bad filename")
@@ -372,7 +374,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._err(404, "no such file")
         self._json({"deleted": True})
 
-    def h_ota(self, raw: bytes) -> None:
+    def h_ota(self, _raw: bytes) -> None:
         n = self._content_len()
         if n is None:
             return self._idf(400)

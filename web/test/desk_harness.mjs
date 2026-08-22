@@ -81,7 +81,7 @@ export class FakeAudio {
     return Promise.reject(new Error(this.playMode));
   }
   pause() { this.log.push([clock.now(), "pause"]); this.paused = true; }
-  load() {}
+  load() { /* the real element re-fetches src; this fake reads it directly */ }
   removeAttribute(n) { if (n === "src") this.src = ""; }
   addEventListener(ev, fn) {
     if (!this.listeners.has(ev)) this.listeners.set(ev, []);

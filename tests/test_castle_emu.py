@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import http.client
 import json
-import os
 import re
 import sys
 import tempfile
@@ -24,10 +23,12 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))      # studio_case
 
 import castle_emu
 import castle_emu_wire as wire
 import castle_link
+from studio_case import HostEnv
 
 
 def _wait(cond, timeout_s: float = 2.0) -> bool:
@@ -82,7 +83,7 @@ class TestStatusShape(EmuCase):
                     "heap_free_kb", "sd_total_kb", "sd_free_kb", "volume",
                     "scene", "track", "show_on", "pir"):
             self.assertIn(key, st)
-        self.assertEqual(st["sd_mounted"], True)
+        self.assertTrue(st["sd_mounted"])
         self.assertGreater(st["sd_free_kb"], 0)   # v5.23: the card reports room
         for key in ("armed", "cooldown_s", "scene"):
             self.assertIn(key, st["pir"])
@@ -302,20 +303,13 @@ class TestJsonEscaping(EmuCase):
         self.assertEqual(wire.json_escape("\x7f"), "\x7f")   # DEL passes raw, as in the C
 
 
-class TestBridge(EmuCase):
+class TestBridge(HostEnv, EmuCase):
     """castle_link → emulator: the studio's relay leg, no hardware."""
 
     def setUp(self) -> None:
-        self._env = os.environ.get("CASTLE_HOST")
-        os.environ["CASTLE_HOST"] = f"127.0.0.1:{self.emu.port}"
+        self.host_env(f"127.0.0.1:{self.emu.port}")
         castle_link._cache.clear()
-
-    def tearDown(self) -> None:
-        if self._env is None:
-            os.environ.pop("CASTLE_HOST", None)
-        else:
-            os.environ["CASTLE_HOST"] = self._env
-        castle_link._cache.clear()
+        self.addCleanup(castle_link._cache.clear)
 
     def test_status_arrives_bridged(self) -> None:
         st = castle_link.status()
@@ -327,8 +321,7 @@ class TestBridge(EmuCase):
     def test_dead_primary_falls_through_to_a_live_fallback(self) -> None:
         """CASTLE_HOST can list addresses; a re-leased IP must not kill the
         bridge while a fallback still answers (devices.toml `fallbacks`)."""
-        os.environ["CASTLE_HOST"] = \
-            f"127.0.0.1:1,127.0.0.1:{self.emu.port}"
+        self.host_env(f"127.0.0.1:1,127.0.0.1:{self.emu.port}")
         castle_link._cache.clear()
         st = castle_link.status()
         self.assertIsNotNone(st)

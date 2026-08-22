@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from itertools import pairwise
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -93,23 +94,23 @@ class TestChunking(unittest.TestCase):
                "scenes": [scene]}
         # Every output path redirected — main() writes rig.h, lights.yaml
         # and the audio dispatch too, and the real ones are tracked files.
-        names = ("SRC", "MARKERS", "OUT", "MEDIA_OUT", "AUDIO_FLASH",
-                 "AUDIO_SD", "RIG_OUT", "LIGHTS_OUT", "ROOT")
-        saved = {n: getattr(ge, n) for n in names}
+        names = ("MEDIA_OUT", "AUDIO_FLASH", "AUDIO_SD", "RIG_OUT", "LIGHTS_OUT", "OUT")
         with tempfile.TemporaryDirectory() as td, \
-                contextlib.redirect_stdout(io.StringIO()):
+                contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.ExitStack() as stack:
             tmp = Path(td)
             (tmp / "generated").mkdir()
+            # Every output path redirected, restored by the stack even if an
+            # assertion raises — the real ones are tracked files.
             for n in names:
-                setattr(ge, n, tmp / "generated" / Path(getattr(ge, n)).name)
-            ge.ROOT, ge.SRC, ge.MARKERS = tmp, tmp / "scenes.yaml", tmp / "m.json"
-            try:
-                ge.SRC.write_text(yaml.safe_dump(doc))
-                self.assertEqual(ge.main(), 0)
-                out = yaml.safe_load(ge.OUT.read_text())["script"]
-            finally:
-                for n, v in saved.items():
-                    setattr(ge, n, v)
+                stack.enter_context(mock.patch.object(
+                    ge, n, tmp / "generated" / Path(getattr(ge, n)).name))
+            for n, v in (("ROOT", tmp), ("SRC", tmp / "scenes.yaml"),
+                         ("MARKERS", tmp / "m.json")):
+                stack.enter_context(mock.patch.object(ge, n, v))
+            ge.SRC.write_text(yaml.safe_dump(doc))
+            self.assertEqual(ge.main(), 0)
+            out = yaml.safe_load(ge.OUT.read_text())["script"]
         body = next(s for s in out if s["id"] == "run_scene")["then"][0]["lambda"]
         ids = [s["id"] for s in out if s["id"].startswith(("scene_epic", "cont_epic_"))]
         self.assertGreater(len(ids), 5)

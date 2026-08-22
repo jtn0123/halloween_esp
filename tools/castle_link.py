@@ -36,6 +36,8 @@ import hosts as hosts_mod
 #: One WiFi round-trip to a busy ESP32: the read budget for the quick verbs
 #: (status, the POSTs). Long enough for a slow answer, short enough that a
 #: wedged castle cannot hold the desk's own probe hostage.
+#: What the castle answers with, and what we answer for it when it cannot.
+JSON_MIME = "application/json"
 TIMEOUT_S = 2.0
 
 #: Connecting to a LAN address takes milliseconds or never happens — a dead
@@ -168,7 +170,7 @@ def _call(host: str, method: str, path: str, body: bytes,
             conn.request(method, path, body=body or None)
             r = conn.getresponse()
             return (r.status, r.read(),
-                    r.getheader("Content-Type") or "application/json")
+                    r.getheader("Content-Type") or JSON_MIME)
         except (OSError, http.client.HTTPException) as e:
             raise Stalled(str(e)) from e
     finally:
@@ -200,7 +202,7 @@ def forward(method: str, path_and_query: str,
     """
     hosts = castle_hosts()
     if not hosts:
-        return 502, b'{"error": "no castle configured"}', "application/json"
+        return 502, b'{"error": "no castle configured"}', JSON_MIME
     read_s = _read_budget(method, path_and_query)
     for host in hosts:
         try:
@@ -213,7 +215,7 @@ def forward(method: str, path_and_query: str,
                 continue       # nothing changed anywhere; the next host may do
             return (504, json.dumps({"error": "castle took the request but "
                     "did not answer in time — it may have landed; check "
-                    "before sending again"}).encode(), "application/json")
+                    "before sending again"}).encode(), JSON_MIME)
         # The castle ANSWERED — its verdict stands, error or not — and an
         # answer of ANY kind proves it is up: a probe that failed while it
         # was rebooting must not keep reporting it dead for 3 s after a
@@ -229,8 +231,8 @@ def forward(method: str, path_and_query: str,
     if _forward_native(hosts[0], method, path_and_query):
         _cache.pop("status", None)
         _cache.pop("down", None)
-        return 200, b'{"queued":true}', "application/json"
-    return 502, b'{"error": "castle not reachable"}', "application/json"
+        return 200, b'{"queued":true}', JSON_MIME
+    return 502, b'{"error": "castle not reachable"}', JSON_MIME
 
 
 def _forward_native(host: str, method: str, path_and_query: str) -> bool:

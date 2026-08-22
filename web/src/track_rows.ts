@@ -15,7 +15,13 @@ const ESCAPES: Record<string, string> =
 export const esc = (s: unknown): string =>
   String(s).replace(/[&<>"]/g, c => ESCAPES[c] as string);
 
-export interface RowCtx {
+export /** What the send button says, given where the file already is. */
+function sendLabel(onCastle: "current" | "stale" | "absent"): string {
+  if (onCastle === "stale") return "Update castle";
+  return onCastle === "current" ? "Re-send" : "→ Castle";
+}
+
+interface RowCtx {
   selected: boolean;
   inShow: boolean;
   sounding: boolean;
@@ -104,8 +110,7 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
       ${canReimport ? op("refresh", "Re-import",
         "Rebuild from the remembered source using the options above — START/LENGTH from the clip editor when it is open on this track") : ""}
       ${ctx.onCastle !== null && !broken ? `<button data-act="send"${busy ? " disabled" : ""} title="Copy this file onto the castle's SD card over WiFi — it can then play on the castle with zero lag">${
-        ctx.onCastle === "stale" ? "Update castle"
-        : ctx.onCastle === "current" ? "Re-send" : "→ Castle"}</button>` : ""}
+        sendLabel(ctx.onCastle)}</button>` : ""}
       ${op("del", "Delete", ctx.inShow ? "Remove the file — and, if you choose, its scene from the show" : "Remove the file from the library", "danger")}
     </div>
   </div>`;

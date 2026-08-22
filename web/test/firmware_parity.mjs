@@ -91,8 +91,19 @@ const rows = run.stdout.trim().split("\n").map((l) => JSON.parse(l));
       generator baked rig.h from, so read the same block it read. ── */
 const scenesYaml = readFileSync(join(ROOT, "scenes", "scenes.yaml"), "utf8");
 const zoneBlock = scenesYaml.split(/^zones:\s*$/m)[1].split(/^\S/m)[0];
-const zones = [...zoneBlock.matchAll(/\{id:\s*(\w+)[^}]*?fixture:\s*(\w+)[^}]*?(?:pixels:\s*(\d+))?[^}]*\}/g)]
-  .map((m) => ({ id: m[1], fixture: m[2], pixels: m[3] ? Number(m[3]) : undefined }));
+// One entry at a time, then each field out of it: three lazy `[^}]*?` runs in
+// a single pattern can hand characters back and forth, which is the shape that
+// goes super-linear on an entry that never closes (Sonar S5852). A brace-free
+// body, matched once, cannot backtrack at all.
+const zones = [...zoneBlock.matchAll(/\{([^{}]*)\}/g)].map((m) => {
+  const body = m[1];
+  const id = /\bid:\s*(\w+)/.exec(body);
+  const fixture = /\bfixture:\s*(\w+)/.exec(body);
+  const pixels = /\bpixels:\s*(\d+)/.exec(body);
+  return id && fixture
+    ? { id: id[1], fixture: fixture[1], pixels: pixels ? Number(pixels[1]) : undefined }
+    : null;
+}).filter((z) => z !== null);
 const layouts = zones.map((z) => layoutOf(fixture(z.fixture), z.pixels));
 
 let pass = 0;

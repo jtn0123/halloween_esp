@@ -222,7 +222,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
 # played. The rewrite happens at serve time, cached by the page's (mtime,
 # size), so `make preview` keeps one artefact and one source of truth.
 AUDIO_ROUTE = "/studio/scene-audio/"
-_DATA_URI = re.compile(r'"([A-Za-z0-9_]+)": ?"data:audio/mpeg;base64,[A-Za-z0-9+/=]*"')
+_DATA_URI = re.compile(r'"(\w+)": ?"data:audio/mpeg;base64,[A-Za-z0-9+/=]*"')
 _lean_cache: dict[tuple[str, int, int], bytes] = {}
 
 

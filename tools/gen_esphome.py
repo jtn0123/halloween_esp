@@ -97,6 +97,9 @@ def eff_id(name: str, scene_id: str) -> int:
 # delays inside a continuation are untouched, so the timeline is identical.
 CHUNK = 32
 
+#: The opener of every generated multi-line lambda action.
+LAMBDA = "      - lambda: |-"
+
 
 def chunked(sid: str, items: list[list[str]], loop: bool) -> list[str]:
     """Lay `items` (one YAML list item each) out as head + continuations."""
@@ -173,7 +176,7 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
     # routed to the Mac): then the amp stays at 0 however many scenes start.
     # A lambda rather than `media_player.volume_set: !lambda` so the file
     # stays plain YAML for every tool that loads it with safe_load.
-    a("      - lambda: |-")
+    a(LAMBDA)
     a("          auto call = id(castle_media)->make_call();")
     a(f"          call.set_volume(id(speaker_hush) ? 0.0f : {float(scene.get('volume', 0.8))}f);")
     a("          call.perform();")
@@ -321,7 +324,7 @@ def main() -> int:
     out.append("    parameters:")
     out.append("      scene: string")
     out.append("    then:")
-    out.append("      - lambda: |-")
+    out.append(LAMBDA)
     out.append("          // Stop every scene script first. Without this a looping")
     out.append("          // scene's pending delay re-fires AFTER the new scene starts")
     out.append("          // and takes the stage back — two loops fighting forever.")
@@ -425,7 +428,7 @@ def main() -> int:
              "      - text_sensor.template.publish:",
              "          id: current_track",
              "          state: !lambda 'return track;'",
-             "      - lambda: |-",
+             LAMBDA,
              "          esphome::audio::AudioFile *f = nullptr;"]
     for i, scene in enumerate(doc["scenes"], start=1):
         kw = "if" if i == 1 else "else if"
@@ -445,7 +448,7 @@ def main() -> int:
           "      - text_sensor.template.publish:",
           "          id: current_track",
           "          state: !lambda 'return track;'",
-          "      - lambda: |-",
+          LAMBDA,
           "          if (!castle_sd::g_mounted) {",
           "            ESP_LOGW(\"castle\", \"no SD card — playing the fallback chirp\");",
           "            id(castle_media)->play_file(id(snd_chirp), true, false);",
