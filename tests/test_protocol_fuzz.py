@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -23,6 +25,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import castle_emu
 import castle_emu_http
+import castle_fuzz
 from castle_fuzz import Fuzzer, raw_request
 
 SEED = int(os.environ.get("CASTLE_FUZZ_SEED", "1"))
@@ -163,3 +166,57 @@ class TestNulAndOddNames(FuzzCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSlowRead(unittest.TestCase):
+    """A body still arriving when our clock runs out is load, not a verdict.
+
+    Half a JSON body reads exactly like a malformed one. CI (slower than a
+    laptop, and running the storm at the same time) hit that on 2026-08-22 and
+    the suite reported "unparseable JSON" for a response the emulator had every
+    intention of finishing.
+    """
+
+    def serve_and_stall(self, head: bytes, wait: float = 2.0) -> int:
+        srv = socket.socket()
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(4)
+        self.addCleanup(srv.close)
+
+        def serve() -> None:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            with conn:
+                conn.sendall(head)
+                time.sleep(wait)
+
+        threading.Thread(target=serve, daemon=True).start()
+        return int(srv.getsockname()[1])
+
+    def test_a_half_sent_body_is_a_slow_read_not_a_bad_one(self) -> None:
+        port = self.serve_and_stall(
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+            b"Content-Length: 40\r\n\r\n{\"version\":")
+        with self.assertRaises(castle_fuzz.SlowRead):
+            castle_fuzz.raw_request("127.0.0.1", port, "GET", "/api/status",
+                                    timeout=0.4)
+
+    def test_headers_that_never_finish_are_a_slow_read_too(self) -> None:
+        port = self.serve_and_stall(b"HTTP/1.1 200 OK\r\nContent-Type: app")
+        with self.assertRaises(castle_fuzz.SlowRead):
+            castle_fuzz.raw_request("127.0.0.1", port, "GET", "/api/status",
+                                    timeout=0.4)
+
+    def test_a_complete_answer_is_never_a_slow_read(self) -> None:
+        """The teeth stay in: a finished body parses, timer or no timer."""
+        body = b'{"ok":true}'
+        port = self.serve_and_stall(
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+            b"Content-Length: %d\r\n\r\n%s" % (len(body), body), wait=0.05)
+        code, got, hdr = castle_fuzz.raw_request(
+            "127.0.0.1", port, "GET", "/api/status", timeout=1.0)
+        self.assertEqual((code, got), (200, body))
+        self.assertEqual(hdr["content-type"], "application/json")

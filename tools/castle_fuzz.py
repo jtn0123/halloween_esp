@@ -78,6 +78,14 @@ def poisoned_text(n: bytes) -> bool:
     return False
 
 
+class SlowRead(Exception):
+    """The response was still arriving when our socket timer fired.
+
+    Load, not a verdict — the caller retries. A server that is genuinely stuck
+    keeps doing it, and the retries run out.
+    """
+
+
 def raw_request(host: str, port: int, method: str, target: str,
                 body: bytes = b"", headers: dict[str, str] | None = None,
                 declared: int | None = None, send_fraction: float = 1.0,
@@ -105,10 +113,14 @@ def raw_request(host: str, port: int, method: str, target: str,
                 s.shutdown(socket.SHUT_WR)
         except OSError:
             pass     # the server may reply-and-close before the body is in
+        timed_out = False
         while True:
             try:
                 chunk = s.recv(65536)
-            except (ConnectionResetError, BrokenPipeError, TimeoutError):
+            except TimeoutError:
+                timed_out = True
+                break
+            except (ConnectionResetError, BrokenPipeError):
                 break
             if not chunk:
                 break
@@ -122,11 +134,20 @@ def raw_request(host: str, port: int, method: str, target: str,
         return 0, b"", {}
     if not data.startswith(b"HTTP/"):
         raise Violation(f"garbage reply to {method} {target!r}: {data[:80]!r}")
-    head_b, _, payload = data.partition(b"\r\n\r\n")
+    head_b, sep, payload = data.partition(b"\r\n\r\n")
     lines = head_b.split(b"\r\n")
     code = int(lines[0].split()[1])
     hdr = {k.strip().lower(): v.strip() for k, v in
            (ln.decode("latin-1").partition(":")[::2] for ln in lines[1:])}
+    # Our own clock running out mid-answer is not the server's verdict. Half a
+    # JSON body reads exactly like a malformed one, and under CI load that is
+    # what it was reported as (2026-08-22): "unparseable JSON" for a body the
+    # emulator had every intention of finishing. Say which it was.
+    declared_len = hdr.get("content-length")
+    short = declared_len is not None and len(payload) < int(declared_len)
+    if timed_out and (not sep or short):
+        raise SlowRead(f"{method} {target!r}: read timed out after "
+                       f"{len(data)} bytes")
     return code, payload, hdr
 
 
@@ -204,7 +225,17 @@ class Fuzzer:
                 raise Violation(f"seed={self.seed} poll → {code} {body[:60]!r}")
 
     def req(self, method: str, target: str, **kw) -> tuple[int, bytes, dict[str, str]]:
-        code, body, hdr = raw_request(self.host, self.port, method, target, **kw)
+        # A read that timed out mid-answer is our clock, not the server's
+        # behaviour; a storm on a slow runner produces a few. Three in a row
+        # on one request is the server, and says so.
+        for attempt in range(3):
+            try:
+                code, body, hdr = raw_request(self.host, self.port, method,
+                                              target, **kw)
+                break
+            except SlowRead as slow:
+                if attempt == 2:
+                    raise Violation(f"seed={self.seed} {slow}") from None
         with self.lock:
             self.sent += 1
             self.codes[code] = self.codes.get(code, 0) + 1
