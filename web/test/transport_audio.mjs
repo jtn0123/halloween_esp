@@ -123,6 +123,7 @@ media.length = 0;
   const state = createState(A, clock.now());
   let mode = "rendered";
   let external = false;
+  /** @type {{stopExternal: number, sceneChange: (string|null)[], blackout: number}} */
   const calls = { stopExternal: 0, sceneChange: [], blackout: 0 };
   const tr = new Transport({
     state, rendered, synth,

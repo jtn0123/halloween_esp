@@ -160,7 +160,7 @@ class JobRunner:
                 return basenames(line.split("ERROR:", 1)[-1].strip() or line)
         for line in reversed(log):
             m = _EXC.match(line)
-            if m:
+            if m and m.group(1).endswith(_EXC_TAIL):
                 return basenames(_exception_line(m.group(1), m.group(2)))
         for line in reversed(log):
             if line.strip() and not line[:1].isspace() \
@@ -191,7 +191,9 @@ KNOWN: list[tuple[str, str]] = [
 
 #: "subprocess.CalledProcessError: Command '['ffmpeg', …]' returned non-zero
 #: exit status 1." and friends — the LAST line of a traceback.
-_EXC = re.compile(r"^([A-Za-z_][\w.]*(?:Error|Exception|Exit|Interrupt))(?::\s*(.*))?$")
+_EXC = re.compile(r"^([A-Za-z_][\w.]*)(?::\s*(.*))?$")
+#: What makes a dotted name an exception's name rather than any old line.
+_EXC_TAIL = ("Error", "Exception", "Exit", "Interrupt")
 _CMD = re.compile(r"Command '\['([^']+)'")
 _EXIT = re.compile(r"exit status (-?\d+)")
 #: An absolute path prefix — everything up to and including the last slash —

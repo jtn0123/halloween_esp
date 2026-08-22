@@ -39,7 +39,7 @@ test("a LAN phone's scene audio is linked, not inlined — and plays", async ({ 
   const players = await page.evaluate(() =>
     [...(window as unknown as { __media: HTMLMediaElement[] }).__media]
       .map((a) => a.src).filter((s) => s.includes("/studio/scene-audio/")));
-  expect(players.length).toBe(srcs.length);
+  expect(players).toHaveLength(srcs.length);
 
   // The route serves real audio with Range support, from the LAN hostname
   // (fetched in the page: the browser is what knows studio.lan).

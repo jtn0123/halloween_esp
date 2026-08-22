@@ -161,9 +161,8 @@ import { why } from "../dist/api.mjs";
   const far = snapClip(times, { start: 10, end: 12 });
   ok(far.clip.start === 10 && far.clip.end === 12, "nothing within half a second: left alone");
   const tight = snapClip([1.0, 1.1], { start: 0.95, end: 1.15 });
-  ok(tight.clip.end === 1.15, "a snap that would collapse the clip keeps the end");
-}
-{
+  ok(Math.abs(tight.clip.end - 1.15) < 1e-9, "a snap that would collapse the clip keeps the end");
+
   ok(why({ reason: "ffmpeg failed (exit 1)", log: "Traceback…" }) === "ffmpeg failed (exit 1)",
      "the server's one-line reason wins");
   ok(why({ error: "no id" }) === "no id", "then the error field");

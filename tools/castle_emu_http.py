@@ -280,15 +280,15 @@ class Handler(BaseHTTPRequestHandler):
         self.server.queue("STOP", "")
         self._json({"queued": True})
 
-    def h_show_start(self, raw: bytes) -> None:
+    def h_show_start(self, _raw: bytes) -> None:
         self.server.queue("SHOW", "1")
         self._json({"queued": True})
 
-    def h_show_stop(self, raw: bytes) -> None:
+    def h_show_stop(self, _raw: bytes) -> None:
         self.server.queue("SHOW", "0")
         self._json({"queued": True})
 
-    def h_blackout(self, raw: bytes) -> None:
+    def h_blackout(self, _raw: bytes) -> None:
         self.server.queue("BLACKOUT", "")
         self._json({"queued": True})
 

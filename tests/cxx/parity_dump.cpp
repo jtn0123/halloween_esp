@@ -25,10 +25,18 @@
 
 using namespace castle;
 
-static uint32_t g_rng = 1;
 // LCG: only the high bits are used by callers — the low bits of a
-// power-of-two LCG cycle with a period of a few steps.
+// power-of-two LCG cycle with a period of a few steps. The state is the
+// generator's own; `seed_rng` is the only way in.
+static uint32_t &rng_state() {
+  static uint32_t state = 1;
+  return state;
+}
+
+static void seed_rng(uint32_t seed) { rng_state() = seed; }
+
 static uint32_t next_u32() {
+  uint32_t &g_rng = rng_state();
   g_rng = g_rng * 1664525u + 1013904223u;
   return g_rng;
 }
@@ -39,7 +47,7 @@ static void print4(const char *key, const Rgbw &c) {
 }
 
 int main(int argc, char **argv) {
-  g_rng = argc > 1 ? (uint32_t) std::strtoul(argv[1], nullptr, 10) : 7u;
+  seed_rng(argc > 1 ? (uint32_t) std::strtoul(argv[1], nullptr, 10) : 7u);
   const int cases = argc > 2 ? std::atoi(argv[2]) : 3000;
   const auto nz = (int) std::size(RIG);
 

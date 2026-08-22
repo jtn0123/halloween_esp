@@ -99,6 +99,11 @@ CHUNK = 32
 
 #: The opener of every generated multi-line lambda action.
 LAMBDA = "      - lambda: |-"
+#: A script's two fixed lines. `restart` throughout: a scene re-fired while it
+#: is running starts again rather than stacking a second copy on the strips.
+MODE_RESTART = "    mode: restart"
+THEN = "    then:"
+SCRIPT_HEAD = (MODE_RESTART, THEN)
 
 
 def chunked(sid: str, items: list[list[str]], loop: bool) -> list[str]:
@@ -109,8 +114,7 @@ def chunked(sid: str, items: list[list[str]], loop: bool) -> list[str]:
     for k, lo in enumerate(starts):
         last = k == len(starts) - 1
         out.append(f"  - id: {'scene_' + sid if k == 0 else f'cont_{sid}_{k}'}")
-        out.append("    mode: restart")
-        out.append("    then:")
+        out.extend(SCRIPT_HEAD)
         for item in items[lo:lo + step]:
             out.extend(item)
         if not last:
@@ -298,8 +302,7 @@ def main() -> int:
     # reason: it would otherwise climb, then fall, after the stop.
     out.append("  # ── Blackout ─────────────────────────────────────")
     out.append("  - id: scene_stop")
-    out.append("    mode: restart")
-    out.append("    then:")
+    out.extend(SCRIPT_HEAD)
     stop = " ".join(
         f"id(zone_effect)[{i}] = 0; id(zone_center)[{i}] = -1;"
         f" id(zone_overlay)[{i}] = 0; id(zone_flash)[{i}] = 0.0f;"
@@ -320,10 +323,10 @@ def main() -> int:
     # Generated so a new scene is automatically reachable everywhere.
     out.append("  # ── Dispatch by name ─────────────────────────────")
     out.append("  - id: run_scene")
-    out.append("    mode: restart")
+    out.append(MODE_RESTART)
     out.append("    parameters:")
     out.append("      scene: string")
-    out.append("    then:")
+    out.append(THEN)
     out.append(LAMBDA)
     out.append("          // Stop every scene script first. Without this a looping")
     out.append("          // scene's pending delay re-fires AFTER the new scene starts")
@@ -421,10 +424,10 @@ def main() -> int:
     # (the only file the SD build keeps in flash) says so audibly.
     flash = [HEADER, "", "script:",
              "  - id: sfx",
-             "    mode: restart",
+             MODE_RESTART,
              "    parameters:",
              "      track: string",
-             "    then:",
+             THEN,
              "      - text_sensor.template.publish:",
              "          id: current_track",
              "          state: !lambda 'return track;'",
@@ -441,10 +444,10 @@ def main() -> int:
 
     sd = [HEADER, "", "script:",
           "  - id: sfx",
-          "    mode: restart",
+          MODE_RESTART,
           "    parameters:",
           "      track: string",
-          "    then:",
+          THEN,
           "      - text_sensor.template.publish:",
           "          id: current_track",
           "          state: !lambda 'return track;'",

@@ -27,7 +27,7 @@ const ok = (cond, msg) => { if (cond) pass++; else fails.push(msg); };
 /* scenes.yaml's zones, read the way the generator reads them */
 const text = readFileSync(join(ROOT, "scenes", "scenes.yaml"), "utf8");
 const block = text.split(/^zones:\s*$/m)[1].split(/^\S/m)[0];
-const declared = [...block.matchAll(/\{([^}]*)\}/g)].map((m) => {
+const declared = [...block.matchAll(/\{([^{}]*)\}/g)].map((m) => {
   const kv = {};
   for (const part of m[1].split(",")) {
     const i = part.indexOf(":");

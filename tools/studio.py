@@ -381,7 +381,6 @@ class Handler(sh.JsonHandler):
         if not path.startswith(API):
             return self.send_json({"error": "not found"}, 404)
         self.relay("PUT", self.body())
-        return
 
     def relay(self, method: str, body: bytes = b"",
               to: str | None = None) -> None:

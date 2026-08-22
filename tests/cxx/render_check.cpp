@@ -122,41 +122,69 @@ static void check_render() {
 }
 
 // ── 2. overlays and gates: in range, identity for unknown ids ────────────
-static void check_overlays(const Fixture &fx, const char *name) {
-  const Rgbw bases[] = {{0, 0, 0, 0}, {1, 1, 1, 1}, {0.34f, 0.05f, 0, 1}, {0.2f, 0.9f, 0.4f, 0.3f}};
-  for (int ov = -1; ov <= 5; ov++)
-    for (float t : TIMES)
-      for (int zi = 0; zi < 3; zi++)
-        for (int p = 0; p < fx.n; p++)
-          for (const Rgbw &b : bases) {
-            Rgbw c = apply_overlay(ov, b, t, p, zi, fx);
-            CHECK(unit4(c), "%s overlay=%d t=%g p=%d -> %g %g %g %g", name, ov, t, p,
-                  c.r, c.g, c.b, c.w);
-            if (ov < 1 || ov > 3)
-              CHECK(c.r == b.r && c.g == b.g && c.b == b.b && c.w == b.w,
-                    "%s overlay %d must be identity", name, ov);
-          }
-  for (int mode = -1; mode <= 5; mode++)
-    for (int epoch = 0; epoch < 1000; epoch += 333)
-      for (int zi = 0; zi < 3; zi++)
-        for (int p = 0; p < fx.n; p++) {
-          float g = flash_gate(mode, p, zi, epoch, fx);
-          CHECK(unit(g), "%s gate mode=%d -> %g", name, mode, g);
-          if (mode < 1 || mode > 3) CHECK(g == 1.0f, "%s gate %d must be 1", name, mode);
-          if (mode == 2 || mode == 3) CHECK(g == 1.0f || g == 0.1f, "%s gate core", name);
-          if (mode == 1) CHECK(g == 1.0f || g == 0.15f, "%s gate scatter", name);
-        }
-  // centre/ring strikes are complementary, and each lights at least one pixel.
-  if (fx.n > 0) {
-    int core = 0;
-    for (int p = 0; p < fx.n; p++) {
-      bool c2 = flash_gate(2, p, 0, 0, fx) == 1.0f;
-      bool c3 = flash_gate(3, p, 0, 0, fx) == 1.0f;
-      CHECK(c2 != c3, "%s pixel %d is both core and ring", name, p);
-      core += c2;
+
+/// Every pixel and base colour for one (overlay, time, zone).
+template <size_t N>
+static void check_overlay_pixels(const Fixture &fx, const char *name, int ov,
+                                 float t, int zi, const Rgbw (&bases)[N]) {
+  for (int p = 0; p < fx.n; p++)
+    for (const Rgbw &b : bases) {
+      const Rgbw c = apply_overlay(ov, b, t, p, zi, fx);
+      CHECK(unit4(c), "%s overlay=%d t=%g p=%d -> %g %g %g %g", name, ov, t, p,
+            c.r, c.g, c.b, c.w);
+      if (ov < 1 || ov > 3)
+        CHECK(c.r == b.r && c.g == b.g && c.b == b.b && c.w == b.w,
+              "%s overlay %d must be identity", name, ov);
     }
-    CHECK(core >= 1, "%s has no core pixel to strike", name);
+}
+
+/// Every pixel for one (gate mode, epoch, zone).
+static void check_gate_pixels(const Fixture &fx, const char *name, int mode,
+                              int epoch, int zi) {
+  for (int p = 0; p < fx.n; p++) {
+    const float g = flash_gate(mode, p, zi, epoch, fx);
+    CHECK(unit(g), "%s gate mode=%d -> %g", name, mode, g);
+    if (mode < 1 || mode > 3) CHECK(g == 1.0f, "%s gate %d must be 1", name, mode);
+    if (mode == 2 || mode == 3) CHECK(g == 1.0f || g == 0.1f, "%s gate core", name);
+    if (mode == 1) CHECK(g == 1.0f || g == 0.15f, "%s gate scatter", name);
   }
+}
+
+/// One overlay id over every base colour, pixel and moment.
+static void check_overlay_id(const Fixture &fx, const char *name, int ov) {
+  static const Rgbw BASES[] = {{0, 0, 0, 0}, {1, 1, 1, 1},
+                               {0.34f, 0.05f, 0, 1}, {0.2f, 0.9f, 0.4f, 0.3f}};
+  for (float t : TIMES)
+    for (int zi = 0; zi < 3; zi++)
+      check_overlay_pixels(fx, name, ov, t, zi, BASES);
+}
+
+/// One gate mode: in range everywhere, and identity outside the real ids.
+static void check_gate_mode(const Fixture &fx, const char *name, int mode) {
+  for (int epoch = 0; epoch < 1000; epoch += 333)
+    for (int zi = 0; zi < 3; zi++)
+      check_gate_pixels(fx, name, mode, epoch, zi);
+}
+
+/// Centre and ring strikes are complementary, and each lights a pixel.
+static void check_gate_halves(const Fixture &fx, const char *name) {
+  if (fx.n <= 0) return;
+  int core = 0;
+  for (int p = 0; p < fx.n; p++) {
+    const bool is_core = flash_gate(2, p, 0, 0, fx) == 1.0f;
+    const bool is_ring = flash_gate(3, p, 0, 0, fx) == 1.0f;
+    CHECK(is_core != is_ring, "%s pixel %d is both core and ring", name, p);
+    core += is_core ? 1 : 0;
+  }
+  CHECK(core >= 1, "%s has no core pixel to strike", name);
+}
+
+static void check_overlays(const Fixture &fx, const char *name) {
+  for (int ov = -1; ov <= 5; ov++)
+    check_overlay_id(fx, name, ov);
+  for (int mode = -1; mode <= 5; mode++)
+    check_gate_mode(fx, name, mode);
+  check_gate_halves(fx, name);
 }
 
 // ── 3. render_zone(): writes exactly n*4 bytes, never past them ──────────
@@ -172,6 +200,21 @@ static ZoneIo make_io(Probe &pr, float level, float hue, float trim, int eff,
                       float decay = 0.90f, float phase = 0.0f) {
   return ZoneIo{&pr.flash, &pr.target, &pr.rise, decay, pr.col,
                 level, phase, trim, hue, eff, center, ov, pal, mode, epoch, soft};
+}
+
+/// Does ANY overlay, at any moment, put light on an OFF base? The blackout
+/// check above depends on the answer being yes — see the comment there.
+static bool any_overlay_lights(uint8_t *out, int zi, const Fixture &fx, int n,
+                               Probe &dark) {
+  for (int ov = OV_SPARKLE; ov <= OV_METEOR; ov++) {
+    ZoneIo glint = make_io(dark, 1.0f, 0.5f, 1.0f, EFF_OFF, -1, ov, 0, 0, 0, false);
+    for (int k = 0; k < 64; k++) {
+      render_zone(out, zi, fx, (float) k * 0.37f, glint);
+      for (int i = 0; i < n * 4; i++)
+        if (out[i] != 0) return true;
+    }
+  }
+  return false;
 }
 
 static void check_zone_writes(const Fixture &fx, int zi, const char *name, uint32_t seed) {
@@ -249,16 +292,9 @@ static void check_zone_writes(const Fixture &fx, int zi, const char *name, uint3
   for (int i = 0; i < n * 4; i++) CHECK(out[i] == 0, "%s blackout byte %d", name, out[i]);
   for (int i = 0; i < guard; i++) CHECK(out[n * 4 + i] == CANARY, "%s blackout overrun", name);
   if (n > 0) {
-    bool lit = false;
-    for (int ov = OV_SPARKLE; ov <= OV_METEOR && !lit; ov++) {
-      ZoneIo glint = make_io(dark, 1.0f, 0.5f, 1.0f, EFF_OFF, -1, ov, 0, 0, 0, false);
-      for (int k = 0; k < 64 && !lit; k++) {
-        render_zone(out, zi, fx, (float) k * 0.37f, glint);
-        for (int i = 0; i < n * 4; i++) lit |= out[i] != 0;
-      }
-    }
-    CHECK(lit, "%s: no overlay ever lights an OFF base — scene_stop's overlay reset is now "
-               "redundant; fine, but re-read the blackout comment above", name);
+    CHECK(any_overlay_lights(out, zi, fx, n, dark),
+          "%s: no overlay ever lights an OFF base — scene_stop's overlay reset is now "
+          "redundant; fine, but re-read the blackout comment above", name);
   }
 
   // Full white strike, mode all, trim 1, dark base: every pixel is the
