@@ -1,7 +1,22 @@
 // EXTRACTED VERBATIM from the pre-migration inline script.
-// The reference the TypeScript port is checked against. Do not edit.
+// The reference the TypeScript port is checked against. Do not edit —
+// with ONE deliberate exception, re-pinned 2026-08-21 for firmware v5.24:
+//
+//   `hash` was frac(sin(n*127.1)*43758.5453). The firmware could not compute
+//   that to the same digits in float32, so the desk never matched the porch
+//   frame for frame. Both sides now use the integer mix below (lowbias32 on
+//   the lattice cell, 24-bit result). It is written out here INDEPENDENTLY
+//   — not imported from the port — so a typo in effects.ts's mix32 still
+//   fails effects_equivalence.mjs. vnoise, fbm and every effect formula
+//   beneath them are still the verbatim original.
   /* ── Smoothed value noise — the flame's whole personality ────────── */
-  const hash = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); };
+  const hash = n => {
+    let x = (n | 0) >>> 0;
+    x ^= x >>> 16; x = Math.imul(x, 0x7feb352d) >>> 0;
+    x ^= x >>> 15; x = Math.imul(x, 0x846ca68b) >>> 0;
+    x ^= x >>> 16;
+    return (x >>> 8) / 16777216;
+  };
   const vnoise = x => { const i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f); return hash(i) * (1 - u) + hash(i + 1) * u; };
   const fbm = x => 0.55 * vnoise(x) + 0.30 * vnoise(x * 2.13 + 11.3) + 0.15 * vnoise(x * 4.31 + 27.7);
 

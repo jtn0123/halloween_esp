@@ -27,6 +27,12 @@ inline void start(esp_err_t (*sd_get)(httpd_req_t *)) {
   cfg.uri_match_fn = httpd_uri_match_wildcard;
   cfg.stack_size = 6144;
   cfg.lru_purge_enable = true;
+  // Socket budget (LWIP_MAX_SOCKETS is 16, castle.yaml): the default 7 per
+  // server, twice, plus the player's own loopback fetch and the API blew the
+  // pool — accept() failed with ENFILE, the reader saw 'connection reset'
+  // and port 80 refused everything for the length of the song (v5.26 on
+  // the bench). This server only ever has the player on it.
+  cfg.max_open_sockets = 2;
   if (httpd_start(&g_stream, &cfg) == ESP_OK) {
     httpd_uri_t u{};
     u.uri = "/sd/*";

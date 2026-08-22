@@ -5,6 +5,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    assignees: [jtn0123]
     groups:
       python-minor-and-patch:
         update-types:
@@ -16,6 +17,7 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    assignees: [jtn0123]
     groups:
       npm-minor-and-patch:
         update-types:
@@ -27,3 +29,4 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    assignees: [jtn0123]

@@ -119,6 +119,64 @@ export interface ZoneDetail {
 /** The block spliced in between the @GEN-DATA markers. */
 export interface GeneratedData {
   scenes: Scene[];
-  /** Scene id -> `data:audio/mpeg;base64,…` */
+  /** Scene id -> `data:audio/mpeg;base64,…` in the portable build, or a
+   *  `/studio/scene-audio/<id>` URL when the studio serves the lean page. */
   audio: Record<string, string>;
 }
+
+/* ── Wire types the studio and castle speak ────────────────────────────
+   Here rather than in the panels that display them, so api.ts (the
+   transport) never imports from its own consumers. The old homes
+   (tracks.ts, codec_ab.ts) re-export them. */
+
+/** The import options row, as tools/studio.py remembers them per track. */
+export interface TrackOpts {
+  id?: string;
+  start?: string;
+  take?: string;
+  sensitivity?: string;
+  bitrate?: number;
+  sample_rate?: number;
+  channels?: number;
+  format?: string;
+  normalize?: boolean;
+  fade_in?: number | string | null;
+  fade_out?: number | string | null;
+}
+
+/** One entry from `GET /studio/tracks`. */
+export interface TrackInfo {
+  id: string;
+  /** Container it landed in: mp3 | wav | flac | opus. */
+  ext?: string;
+  /** File size on disk, kilobytes. */
+  kb: number;
+  /** Exact size in bytes — what proves a card copy current vs stale. */
+  bytes?: number;
+  /** Duration in seconds; missing if ffprobe could not say. */
+  dur?: number;
+  /** Where it came from — a URL, or `file:<path>` (tracks/_src/<id>.<ext>
+   *  for a dropped or card-pulled file, kept so Re-import can work). */
+  source: string;
+  /** A file: source whose file has since gone — no Re-import possible. */
+  source_missing?: boolean;
+  title: string;
+  imported: string;
+  opts: TrackOpts;
+  notes: string;
+  /** Band name -> how many onsets were found in it. */
+  onsets?: Record<string, number>;
+  error?: string;
+}
+
+/** One row of a codec A/B (`POST /studio/compare`). */
+export interface CodecRow {
+  codec: string;
+  bytes: number;
+  /** Spectral distance from the lossless reference, dB. 0 for the reference. */
+  db: number;
+  url: string;
+}
+
+/** One entry of the castle's card listing (`GET /api/files`). */
+export interface SdFile { name: string; size: number; dir: boolean }

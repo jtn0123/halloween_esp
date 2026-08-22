@@ -51,7 +51,7 @@ test("a WAV import is listed, typed and playable", async ({ page }) => {
   // No bitrate for a lossless container; "?kbps" reads as a failed import.
   await expect(row(page, WAV).locator("small").first()).not.toContainText("kbps");
 
-  const res = await page.request.get(`/api/track/${WAV}`);
+  const res = await page.request.get(`/studio/track/${WAV}`);
   expect(res.status()).toBe(200);
   expect(res.headers()["content-type"]).toBe("audio/wav");
 });
@@ -136,11 +136,8 @@ test("auditioning a clip drives the stage from that clip", async ({ page }) => {
   // And the lights actually move: sample the meter and require it to change.
   const meter = () => page.locator("#vl-door").textContent();
   const seen = new Set<string>();
-  for (let i = 0; i < 12; i++) {
-    seen.add((await meter()) ?? "");
-    await page.waitForTimeout(120);
-  }
-  expect(seen.size).toBeGreaterThan(1);
+  await expect.poll(async () => { seen.add((await meter()) ?? ""); return seen.size; })
+    .toBeGreaterThan(1);
 
   await audition.click();
   await expect(page.locator("#stageNote")).toHaveText(stageBefore ?? "");
@@ -160,7 +157,7 @@ test("Delete removes the track and closes the editor on it", async ({ page }) =>
   // The editor was open on it; leaving it up would show a track that is gone.
   await expect(page.locator("#trkWave")).toBeHidden();
   // Gone from the server too, not just from the DOM.
-  expect((await page.request.get(`/api/track/${DOOMED}`)).status()).toBe(404);
+  expect((await page.request.get(`/studio/track/${DOOMED}`)).status()).toBe(404);
 });
 
 test("Make scene reports what it did, and the row says so afterwards",
@@ -168,7 +165,7 @@ test("Make scene reports what it did, and the row says so afterwards",
     // The write itself is covered by tests/test_studio_api.py against a
     // scratch scenes.yaml. What is under test here is the half that made the
     // button look broken: no busy state, and no visible result.
-    await page.route("**/api/scene", async route => {
+    await page.route("**/studio/scene", async route => {
       await new Promise(r => setTimeout(r, 400));   // a real one takes seconds
       await route.fulfill({
         status: 200,
@@ -218,7 +215,7 @@ test("each band gets its own zone and its own threshold", async ({ page }) => {
 
   // Reassigning a zone follows through to the summary line.
   await rows.nth(0).locator(".bandcfg__zone").selectOption("towerR");
-  await expect(page.locator("#trkWave p:not(.stems-note)")).toContainText("towerR");
+  await expect(page.locator("#trkWave p:not(.stems-note):not(.wave__trimhint)")).toContainText("towerR");
 });
 
 test("Snap to beat moves the clip onto detected onsets", async ({ page }) => {
@@ -238,7 +235,7 @@ test("Snap to beat moves the clip onto detected onsets", async ({ page }) => {
   await snap.click();
   // Either it moved the edit, or both ends were already on a beat. Both are
   // correct outcomes; silently doing nothing without saying so is not.
-  await expect(page.locator("#trkWave p:not(.stems-note)"))
+  await expect(page.locator("#trkWave p:not(.stems-note):not(.wave__trimhint)"))
     .toHaveText(/Snapped to the nearest onsets|Already on a beat/);
 });
 
@@ -279,13 +276,12 @@ test("codec comparison encodes the clip and switches without losing position",
     await picks.filter({ hasText: "MP3" }).click();
     await expect(picks.filter({ hasText: "MP3" })).toHaveClass(/on/);
     await expect.poll(() => playing(page, "/api/compare/")).toBe(1);
-    await page.waitForTimeout(1200);
 
     const at = () => page.evaluate(`
       [...(window.__media || [])].filter(a => a.src.includes("/api/compare/"))
         .map(a => a.currentTime).pop() ?? 0`) as Promise<number>;
+    await expect.poll(at).toBeGreaterThan(0.3);   // well into the clip before the switch
     const before = await at();
-    expect(before).toBeGreaterThan(0.3);
 
     await picks.filter({ hasText: "FLAC" }).click();
     await expect(picks.filter({ hasText: "FLAC" })).toHaveClass(/on/);
@@ -304,11 +300,11 @@ test("a URL import shows live progress and lands in the list", async ({ page }) 
   // real yt-dlp path can't run in a test; the wiring is what broke (A8 —
   // the async pipeline shipped with no caller at all).
   let polls = 0;
-  await page.route("**/api/import/async", (r) => r.fulfill({ json: {
+  await page.route("**/studio/import/async", (r) => r.fulfill({ json: {
     id: "j1", phase: "queued", percent: 0, detail: "", error: null,
     done: false, log: [],
   } }));
-  await page.route("**/api/job/j1", (r) => {
+  await page.route("**/studio/job/j1", (r) => {
     polls += 1;
     const stages = [
       { phase: "fetching", percent: 40, detail: "12.4MB", done: false },
@@ -332,7 +328,7 @@ test("a URL import shows live progress and lands in the list", async ({ page }) 
 
 test("an import the server refuses fails with its reason, not a spinner",
     async ({ page }) => {
-  await page.route("**/api/import/async", (r) => r.fulfill({
+  await page.route("**/studio/import/async", (r) => r.fulfill({
     status: 400, json: { error: "id: letters, digits and _ only" },
   }));
   await page.locator("#trkUrl").fill("https://example.com/x");

@@ -173,6 +173,13 @@ export function initImportOpts(flashUsed: () => number): OptsForm {
       document.getElementById(id)?.addEventListener(ev, sync);
     }
   }
+  // A human keystroke in either trim box makes the values theirs. isTrusted
+  // is what separates it from the clip editor's synthetic writes.
+  for (const t of TRIM_IDS) {
+    document.getElementById(t)?.addEventListener("input", e => {
+      if (e.isTrusted) setTrimOwner(null);
+    });
+  }
   sync();
   return { values, sync };
 }
@@ -220,4 +227,47 @@ export function fillOptsFrom(t: TrackInfo): void {
     const sel = document.getElementById(id) as HTMLSelectElement | null;
     if (sel && sel.value === "") set(id, dflt);
   }
+}
+
+/* ── Who wrote START/LENGTH ─────────────────────────────────────────────
+   The two trim inputs are shared by every import path AND the clip editor,
+   which writes them as you drag. Without a record of who wrote them, a drop
+   of song B inherited song A's trim (judge B, JB1-1: a 358-byte file and a
+   traceback). So the editor stamps the inputs with the track they describe,
+   a human keystroke clears the stamp, and an import only ever takes values
+   a human typed. */
+
+const TRIM_IDS = ["trkStart", "trkTake"] as const;
+const trimEl = (id: string): HTMLInputElement | null =>
+  document.getElementById(id) as HTMLInputElement | null;
+
+/** The track id the clip editor wrote the trim for, or null: typed/blank. */
+export const trimOwner = (): string | null =>
+  trimEl("trkStart")?.dataset["owner"] || null;
+
+/** Stamp (or unstamp) the trim inputs as the editor's. */
+export function setTrimOwner(id: string | null): void {
+  for (const t of TRIM_IDS) {
+    const el = trimEl(t);
+    if (!el) continue;
+    if (id) el.dataset["owner"] = id; else delete el.dataset["owner"];
+  }
+}
+
+/** Blank START/LENGTH and drop the stamp — on row change and after an
+ *  import has consumed them. Synthetic events, so the editor ignores it. */
+export function clearTrim(): void {
+  for (const t of TRIM_IDS) {
+    const el = trimEl(t);
+    if (!el) continue;
+    el.value = "";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  setTrimOwner(null);
+}
+
+/** The option row as a NEW import may use it: the editor's trim is another
+ *  track's business and is dropped; a typed one is kept. */
+export function forImport(o: ImportOpts): ImportOpts {
+  return trimOwner() ? { ...o, start: "", take: "" } : o;
 }

@@ -12,9 +12,10 @@
  * + beat detection) has no server-side progress, so a learned ETA covers it.
  */
 
-import { api } from "./api.js";
+import { api, why } from "./api.js";
 import { startEta, type EtaHandle } from "./eta.js";
 import type { ImportOpts } from "./import_opts.js";
+import type { TrackStatus } from "./track_status.js";
 import type { TrackInfo } from "./tracks.js";
 
 const PHASE_TEXT: Record<string, string> = {
@@ -26,12 +27,17 @@ const PHASE_TEXT: Record<string, string> = {
 
 export interface UrlImportDeps {
   say(msg: string, err?: boolean): void;
+  /** Progress goes on the import's own line, so a scene write or a
+   *  re-import running at the same time cannot overwrite it (JB1-10). */
+  status: TrackStatus;
   /** The Options row, as the import request wants it. */
   opts(): ImportOpts;
   drawTracks(tracks?: TrackInfo[]): void;
+  /** A track landed: the options it used are consumed. */
+  imported?(): void;
 }
 
-export function wireUrlImport({ say, opts, drawTracks }: UrlImportDeps): void {
+export function wireUrlImport({ say, status, opts, drawTracks, imported }: UrlImportDeps): void {
   const btn = document.getElementById("trkGet") as HTMLButtonElement;
   const urlBox = document.getElementById("trkUrl") as HTMLInputElement;
 
@@ -39,7 +45,8 @@ export function wireUrlImport({ say, opts, drawTracks }: UrlImportDeps): void {
     const url = urlBox.value.trim();
     if (!url) return say("Paste a link first.", true);
     btn.disabled = true;
-    say("Importing…");
+    const progress = status.slot("import:url");
+    progress("Importing…");
     /** Times the post-download tail, which reports no progress of its own. */
     let tail: EtaHandle | null = null;
     try {
@@ -54,26 +61,28 @@ export function wireUrlImport({ say, opts, drawTracks }: UrlImportDeps): void {
         job = await api.job(job.id);
         if (job.phase === "fetching" || job.phase === "queued") {
           const pct = job.percent > 0 ? ` ${Math.round(job.percent)}%` : "";
-          say(`Importing — ${PHASE_TEXT[job.phase] ?? job.phase}${pct}`
+          progress(`Importing — ${PHASE_TEXT[job.phase] ?? job.phase}${pct}`
             + `${job.detail ? ` · ${job.detail}` : ""}`);
         } else if (!job.done) {
           tail ??= startEta("import-tail",
             "Importing — converting and detecting beats", null);
-          say(tail.line());
+          progress(tail.line());
         }
       }
       if (job.phase === "done") {
         tail?.stop(true);
         if (job.tracks) drawTracks(job.tracks);
+        imported?.();
         say("Imported. Press Play to hear it, or “Make scene” to wire it into the show.");
         urlBox.value = "";
       } else {
-        say(`Import failed — ${job.error || job.log.slice(-3).join(" ")
+        say(`Import failed — ${job.error || why({ log: job.log.join("\n") })
              || "gave up waiting"}`, true);
       }
     } catch (err) { say(`Import failed — ${String(err)}`, true); }
     finally {
       tail?.stop();
+      status.clear("import:url");
       btn.disabled = false;
     }
   })());

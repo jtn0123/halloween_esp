@@ -11,6 +11,8 @@ own rather than the shared one in test_studio_api: the point is that it dies.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import shutil
 import sys
@@ -26,8 +28,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import studio  # noqa: E402
-import studio_http as sh  # noqa: E402
+import studio
+import studio_http as sh
 
 
 class Quiet(studio.Handler):
@@ -60,8 +62,14 @@ class TestPureHelpers(unittest.TestCase):
 
     def test_scene_ids_survives_an_unreadable_file(self) -> None:
         """A half-edited scenes.yaml must not take the whole panel down."""
-        with mock.patch.object(studio, "SCENES", ROOT / "no" / "such.yaml"):
+        out = io.StringIO()
+        with mock.patch.object(studio, "SCENES", ROOT / "no" / "such.yaml"), \
+                contextlib.redirect_stdout(out):
             self.assertEqual(studio.scene_ids(), [])
+        # Not silent either: the panel says WHY it is empty — and the
+        # suite's own output stays clean (the line used to print after OK).
+        self.assertIn("WARNING: could not parse", out.getvalue())
+        self.assertIn("such.yaml", out.getvalue())
 
     def test_lan_ip_is_a_dotted_quad(self) -> None:
         ip = studio.lan_ip()
@@ -82,6 +90,32 @@ class TestPureHelpers(unittest.TestCase):
             self.assertNotIn("dur", info)
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestStudioPath(unittest.TestCase):
+    """The alias table: old /api/ spellings land on /studio/, nothing else moves."""
+
+    def test_studio_routes_are_rewritten(self) -> None:
+        for old, new in (("/api/tracks", "/studio/tracks"),
+                         ("/api/tracks/x?scene=1", "/studio/tracks/x"),
+                         ("/api/import/async", "/studio/import/async"),
+                         ("/api/scene", "/studio/scene"),
+                         ("/api/card/a.mp3", "/studio/card/a.mp3"),
+                         ("/api/server/stop", "/studio/server/stop")):
+            self.assertEqual(studio.studio_path(old), new, old)
+
+    def test_castle_routes_and_studio_routes_pass_through(self) -> None:
+        for same in ("/api/status", "/api/files/x.mp3", "/api/scene?s=vigil",
+                     "/api/play?f=x.mp3", "/studio/tracks", "/remote", "/"):
+            self.assertEqual(studio.studio_path(same),
+                             same.split("?")[0], same)
+
+    def test_every_studio_route_family_is_in_the_table(self) -> None:
+        """docs/API.md and the handler agree on what the studio owns."""
+        self.assertEqual(studio.STUDIO_ROUTES, {
+            "tracks", "import", "job", "refresh", "track", "waveform",
+            "stems", "stem", "compare", "probe", "server", "scene",
+            "rebuild", "card"})
 
 
 class TestMultipart(unittest.TestCase):
@@ -134,7 +168,7 @@ class TestServerStop(unittest.TestCase):
         t = threading.Thread(target=srv.serve_forever, daemon=True)
         t.start()
         try:
-            r = urllib.request.Request(f"http://127.0.0.1:{port}/api/server/stop",
+            r = urllib.request.Request(f"http://127.0.0.1:{port}/studio/server/stop",
                                        data=b"{}", method="POST",
                                        headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(r, timeout=10) as f:
@@ -150,3 +184,27 @@ class TestServerStop(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestLogScrub(unittest.TestCase):
+    """A request line reaches the console as one line of ours, not two.
+
+    The handler logs whatever was asked for, and a URL can carry a carriage
+    return — which, written through, forges a second log entry under our name.
+    """
+
+    def test_control_characters_become_escapes(self) -> None:
+        got = sh.scrub("GET /a\r\n200 OK\x00 HTTP/1.1")
+        self.assertNotIn("\n", got)
+        self.assertNotIn("\r", got)
+        self.assertIn("\\r\\n", got)
+        self.assertIn("\\x00", got)
+
+    def test_ordinary_lines_are_untouched(self) -> None:
+        self.assertEqual(sh.scrub('GET /studio/tracks HTTP/1.1" 200 -'),
+                         'GET /studio/tracks HTTP/1.1" 200 -')
+
+    def test_one_request_cannot_scroll_the_console(self) -> None:
+        got = sh.scrub("GET /" + "a" * 5000)
+        self.assertLessEqual(len(got), 301)
+        self.assertTrue(got.endswith("…"))

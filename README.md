@@ -5,7 +5,8 @@ a doorway — driven by an ESP32-S2 Feather running ESPHome. Addressable RGBW pi
 pre-rendered spooky audio, and a cue engine that keeps the two in step.
 
 See [PROJECT_NOTES.md](PROJECT_NOTES.md) for the design record and the hardware
-research behind every choice here.
+research behind every choice here — it is an index; the record itself lives in
+parts under [`docs/notes/`](docs/notes/).
 
 ---
 
@@ -38,7 +39,7 @@ is to play it. This raises the quality ceiling rather than lowering it.
 |---|---|
 | MCU | Adafruit ESP32-S2 Feather — 240 MHz, 4 MB flash, 2 MB PSRAM |
 | Audio | MAX98357A I2S class-D amp ([adafruit 3006](https://www.adafruit.com/product/3006)) → 4 Ω speaker |
-| Light | 3 × NeoPixel Jewel, 7 RGBW pixels each = 21 in one chain |
+| Light | 2 × NeoPixel Jewel 7 RGBW (towers) + NeoPixel Ring 12 RGB (door) — three zones, 26 pixels; see [docs/WIRING.md](docs/WIRING.md) |
 | Sensor | AM312 PIR on the walkway |
 
 I2S and RMT are separate peripherals on the ESP32-S2, so audio and pixels never
@@ -67,8 +68,8 @@ If you are **not** stacking the wing, those three signals can move back to
 D5/D6/D10 by editing the substitutions at the top of `firmware/castle.yaml` —
 nothing else refers to them.
 
-Put a 1000 µF capacitor across 5 V/GND at the pixels. With 21 RGBW pixels the
-worst case (a full-white lightning strike) is ~1.5 A, so **split the 5 V supply
+Put a 1000 µF capacitor across 5 V/GND at the pixels. With 26 pixels the
+worst case (a full-white lightning strike) is ~2 A, so **split the 5 V supply
 before the Feather** rather than drawing it all through its USB trace.
 
 ---
@@ -83,7 +84,56 @@ make build      # compile
 make upload     # flash over USB
 ```
 
-Copy `firmware/secrets.yaml` and set real WiFi credentials before flashing.
+Copy `firmware/secrets.yaml.example` to `firmware/secrets.yaml` and set real
+WiFi credentials before flashing. `make help` lists every target.
+
+---
+
+## The cue desk
+
+```bash
+make studio     # http://127.0.0.1:8765 — the previewer plus a local server
+```
+
+The previewer is one static HTML file (`previewer/castle-cue-desk.html`, built
+by `make preview` from `web/src/`). Behind it, `tools/studio.py` adds what a
+static page cannot do: the **Tracks** panel imports audio (a file, or a link via
+yt-dlp), shows onsets and waveforms, auditions clips, writes scenes into
+`scenes/scenes.yaml`, and sends files to the castle's SD card when one answers.
+`--lan` opens it to the phone/iPad remote; leave it off otherwise — a LAN
+visitor has the whole desk, not a read-only view: they can import and delete
+tracks, rewrite `scenes/scenes.yaml`, send files to the castle and stop the
+server (`POST /studio/server/stop`), with no login. The route
+table — what the studio owns (`/studio/…`) and what it relays to the castle
+(`/api/…`) — is [docs/API.md](docs/API.md).
+
+Three environment variables sandbox it: `CASTLE_TRACKS` (track library
+directory), `CASTLE_SCENES` (the scenes file it may write), `CASTLE_HOST`
+(the castle's address; set-but-empty means "no castle"). The tests set all
+three so a run can never touch the real show. `tools/castle_emu.py 8093` plus
+`CASTLE_HOST=127.0.0.1:8093` gives the whole desk→studio→castle chain with no
+hardware at all.
+
+---
+
+## Development
+
+```bash
+make test       # python unit tests         make lint   # ruff + mypy
+make check      # tests + lint + guards + tsc + node suites (what CI runs)
+make e2e        # Playwright against the real studio (CASTLE_E2E_PORT=8821 to run two)
+make coverage   # non-gating coverage report     make audit  # pip-audit, non-gating
+```
+
+The four implementations of the show's arithmetic (Python generators, TS
+effects, C++ firmware, host-compiled dump) are kept bit-exact by seeded fuzz —
+[docs/PARITY.md](docs/PARITY.md) is the contract and what to do when it goes red.
+
+Every file is held to 500 lines (`tools/check_loc.py`, prose included).
+`make setup` installs the commit hook (`git config core.hooksPath githooks`).
+A git worktree needs its own `.venv` and `web/node_modules`, or symlinks back
+to the main checkout's. The short version of all of this is
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 

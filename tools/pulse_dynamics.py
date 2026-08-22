@@ -134,7 +134,7 @@ def drift_base(colors: list, i: int, t_ms: int) -> list:
     """Twin of driftBase in track_lights.ts."""
     n = len(colors)
     if n < 2:
-        return colors[0]
+        return list(colors[0])
     p = (t_ms / 1000.0 % DRIFT_PERIOD_S) / DRIFT_PERIOD_S
     pos = (i + p * n) % n
     k = int(pos)
@@ -153,3 +153,25 @@ TAKEOVER_COLORS = [
     [1.0, 0.0, 0.35, 0.0],    # hot rose
 ]
 TAKEOVER_HOT = [1.0, 0.75, 0.1, 0.12]
+
+#: ESPHome keeps ~20 bytes of STATIC RAM per generated action, and the S2's
+#: DRAM segment is full (firmware/castle.yaml, the dram0 diet). A 4-minute
+#: track carries 1,200+ pulse hits = 2,400 actions = 32 KB — v5.25 did not
+#: boot. Each scene keeps its strongest PULSE_CAP pulse hits, in time order;
+#: hand-written cues are never thinned. BOTH generators apply it (device and
+#: preview), so the desk shows exactly what the porch will do. Raising this
+#: costs device RAM; the lasting fix is a cue table in flash (see
+#: firmware/pending/README.md).
+PULSE_CAP = 200
+
+
+def thin_pulses(cues: list[dict], cap: int = PULSE_CAP) -> list[dict]:
+    """The `cap` strongest pulse cues (intensity, then earlier), time-ordered."""
+    if len(cues) <= cap:
+        return cues
+    ranked = sorted(enumerate(cues),
+                    key=lambda ic: (-float(ic[1].get("intensity", 0.0)),
+                                    ic[1]["t"], ic[0]))
+    keep = sorted(ranked[:cap], key=lambda ic: (ic[1]["t"], ic[0]))
+    return [c for _, c in keep]
+

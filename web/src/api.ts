@@ -7,11 +7,14 @@
  * server failed at paint time, in whichever panel happened to touch it
  * first. Now the contract lives in ONE file, next to the timeouts.
  *
- * Deliberately NOT here: the castle's own /api endpoints (device.ts,
- * device_panel.ts). Same paths, different machine, different semantics —
- * the studio authors the show, the device performs it — and keeping the
- * two contracts in separate files is what stops a call site from silently
- * talking to the wrong one.
+ * Mostly NOT here: the castle's own /api/* endpoints (device.ts,
+ * device_panel.ts). The studio owns /studio/* and relays /api/* to the
+ * castle untouched (docs/API.md) — the studio authors the show, the device
+ * performs it — and keeping the two contracts in separate files, under
+ * separate prefixes, is what stops a call site from silently talking to
+ * the wrong one. The two castle reads the Tracks panel makes to reconcile
+ * the library with the card (`castleFiles`, `castleStatus`) sit at the
+ * bottom, named for what they are, so track_send.ts has no raw fetch.
  *
  * Application failures (ok:false) are returned, not thrown: the call sites
  * own their wording, and the server's `log` tail is part of the message.
@@ -19,19 +22,31 @@
  * or a non-JSON reply.
  */
 
-import type { CodecRow } from "./codec_ab.js";
-import type { TrackInfo } from "./tracks.js";
+import type { CodecRow, SdFile, TrackInfo } from "./types.js";
 
 export interface TracksResponse { tracks?: TrackInfo[]; scenes?: string[] }
 
 export interface ActionResponse {
   ok: boolean;
   error?: string;
-  /** Tail of the underlying tool's output — the human-readable "why". */
+  /** Tail of the underlying tool's output, for the curious. */
   log?: string;
+  /** The server's one-line verdict on a failure (studio_jobs.reason):
+   *  the last meaningful line, basenames not paths, never a traceback. */
+  reason?: string;
   tracks?: TrackInfo[];
   scenes?: string[];
   replaced?: boolean;
+  /** DELETE ?scene=1: whether a scene block was taken out with the track. */
+  scene_removed?: boolean;
+}
+
+/** The one line to show a person for a failed action. */
+export function why(r: { reason?: string; error?: string; log?: string }): string {
+  if (r.reason) return r.reason;
+  if (r.error) return r.error;
+  const lines = (r.log || "").split("\n").map(l => l.trim()).filter(Boolean);
+  return lines[lines.length - 1] ?? "no reason given";
 }
 
 export interface WaveformResponse {
@@ -51,7 +66,7 @@ export interface StemChannel {
   onsets: Record<string, [number, number][]>;
 }
 
-/** /api/stems/<id>: three layers × three channels, plus freshness. */
+/** /studio/stems/<id>: three layers × three channels, plus freshness. */
 export interface StemsResponse {
   ok: boolean;
   error?: string;
@@ -68,7 +83,7 @@ export interface CompareResponse {
   ok: boolean; error?: string; reference?: string; codecs?: CodecRow[];
 }
 
-/** One background import, as /api/import/async and /api/job/<id> report it. */
+/** One background import, as /studio/import/async and /studio/job/<id> report it. */
 export interface JobResponse {
   id: string;
   /** queued | fetching | converting | analysing | done | failed */
@@ -108,26 +123,28 @@ const post = (body: unknown): RequestInit => ({
 
 export const api = {
   tracks: (): Promise<TracksResponse> =>
-    call("/api/tracks"),
+    call("/studio/tracks"),
   tracksFresh: (): Promise<TracksResponse> =>
-    call("/api/tracks", { cache: "no-store" }),
+    call("/studio/tracks", { cache: "no-store" }),
 
-  remove: (id: string): Promise<ActionResponse> =>
-    call(`/api/tracks/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  /** `withScene`: also take its scene out of scenes.yaml and re-render. */
+  remove: (id: string, withScene = false): Promise<ActionResponse> =>
+    call(`/studio/tracks/${encodeURIComponent(id)}${withScene ? "?scene=1" : ""}`,
+         { method: "DELETE" }, withScene ? ENCODE : QUICK),
 
   importUrl: (req: object): Promise<ActionResponse> =>
-    call("/api/import", post(req), IMPORT),
+    call("/studio/import", post(req), IMPORT),
 
   /** Start a background URL import; poll `job()` for progress. */
   importAsync: (req: object): Promise<JobResponse> =>
-    call("/api/import/async", post(req)),
+    call("/studio/import/async", post(req)),
   job: (id: string): Promise<JobResponse> =>
-    call(`/api/job/${encodeURIComponent(id)}`),
+    call(`/studio/job/${encodeURIComponent(id)}`),
 
   importFile: (file: File, opts: unknown): Promise<ActionResponse> => {
     const fd = new FormData();
     fd.append("file", file);
-    return call("/api/import", {
+    return call("/studio/import", {
       method: "POST",
       headers: { "X-Import-Opts": JSON.stringify(opts) },
       body: fd,
@@ -135,14 +152,14 @@ export const api = {
   },
 
   refresh: (req: object): Promise<ActionResponse> =>
-    call("/api/refresh", post(req), IMPORT),
+    call("/studio/refresh", post(req), IMPORT),
 
   /** status too, because a 404 here is an ordinary outcome (track deleted
    *  under the panel) that deserves its own sentence, not a red error. */
   waveform: async (id: string, query = ""):
       Promise<{ status: number; body: WaveformResponse | null }> => {
     const res = await fetch(
-      `/api/waveform/${encodeURIComponent(id)}${query ? `?${query}` : ""}`,
+      `/studio/waveform/${encodeURIComponent(id)}${query ? `?${query}` : ""}`,
       { signal: AbortSignal.timeout(ENCODE) });
     return {
       status: res.status,
@@ -154,7 +171,7 @@ export const api = {
    *  renders (a Split button), not an error it reports. */
   stems: async (id: string):
       Promise<{ status: number; body: StemsResponse | null }> => {
-    const res = await fetch(`/api/stems/${encodeURIComponent(id)}`,
+    const res = await fetch(`/studio/stems/${encodeURIComponent(id)}`,
       { signal: AbortSignal.timeout(QUICK) });
     try {
       return { status: res.status, body: await res.json() as StemsResponse };
@@ -164,16 +181,45 @@ export const api = {
   },
   /** Start a background Demucs split; poll `job()` for progress. */
   stemsSplit: (id: string, force = false): Promise<JobResponse> =>
-    call("/api/stems", post({ id, force })),
+    call("/studio/stems", post({ id, force })),
 
   scene: (id: string, yaml: string): Promise<ActionResponse> =>
-    call("/api/scene", post({ id, yaml }), ENCODE),
+    call("/studio/scene", post({ id, yaml }), ENCODE),
 
   compare: (req: object): Promise<CompareResponse> =>
-    call("/api/compare", post(req), ENCODE),
+    call("/studio/compare", post(req), ENCODE),
 
   serverStop: (): Promise<ActionResponse> =>
-    call("/api/server/stop", { method: "POST" }),
+    call("/studio/server/stop", { method: "POST" }),
   serverRestart: (): Promise<ActionResponse> =>
-    call("/api/server/restart", { method: "POST" }),
+    call("/studio/server/restart", { method: "POST" }),
+
+  /** A track's bytes, for sending to the card. Throws on any non-2xx. */
+  trackBytes: async (id: string): Promise<Blob> => {
+    const r = await fetch(`/studio/track/${encodeURIComponent(id)}`,
+                          { signal: AbortSignal.timeout(ENCODE) });
+    if (!r.ok) throw new Error(String(r.status));
+    return r.blob();
+  },
+  /** A file off the castle's card, relayed by the studio. The raw Response:
+   *  the caller words a 404 differently from a dead castle (failReason). */
+  cardFile: (name: string): Promise<Response> =>
+    fetch(`/studio/card/${encodeURIComponent(name)}`,
+          { signal: AbortSignal.timeout(ENCODE) }),
+
+  /* ── the castle, through the page's origin (relayed or local) ── */
+
+  /** The card listing. Throws when no castle answers. */
+  castleFiles: async (): Promise<SdFile[]> => {
+    const r = await fetch("/api/files", { signal: AbortSignal.timeout(QUICK) });
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json() as Promise<SdFile[]>;
+  },
+  /** The castle's status line — here only for `sd_free_kb`; device.ts owns
+   *  the probe that decides simulator-vs-device. */
+  castleStatus: async (): Promise<{ sd_free_kb?: number }> => {
+    const r = await fetch("/api/status", { signal: AbortSignal.timeout(QUICK) });
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json() as Promise<{ sd_free_kb?: number }>;
+  },
 };

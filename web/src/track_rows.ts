@@ -6,21 +6,36 @@
  * building — everything this needs arrives in the context argument.
  */
 
+import { esc } from "./dom.js";
 import { BAND_HELP, bandSummary } from "./bands.js";
+import { sendable } from "./track_send.js";
 import type { TrackInfo } from "./tracks.js";
 
-const ESCAPES: Record<string, string> =
-  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
-export const esc = (s: unknown): string =>
-  String(s).replace(/[&<>"]/g, c => ESCAPES[c] as string);
 
-export interface RowCtx {
+/** The → Castle button, or nothing when there is no castle to send to. */
+function sendButton(onCastle: "current" | "stale" | "absent" | null,
+                    broken: boolean, busy: string | null): string {
+  if (onCastle === null || broken) return "";
+  let label = "→ Castle";
+  if (onCastle === "stale") label = "Update castle";
+  else if (onCastle === "current") label = "Re-send";
+  return `<button data-act="send"${busy ? " disabled" : ""} title="Copy this `
+    + `file onto the castle's SD card over WiFi — it can then play on the `
+    + `castle with zero lag">${label}</button>`;
+}
+
+interface RowCtx {
   selected: boolean;
   inShow: boolean;
   sounding: boolean;
-  /** true/false = is this file on the castle's SD card; null = no castle
-   *  answering, so the row stays quiet rather than claiming "not sent". */
-  onCastle: boolean | null;
+  /** The card's copy vs this file: current (same bytes), stale (differs —
+   *  re-imported since it was sent), absent; null = no castle answering,
+   *  so the row stays quiet rather than claiming "not sent". */
+  onCastle: "current" | "stale" | "absent" | null;
+  /** An operation in flight on this row (scene | refresh | del): its
+   *  button says "Working…" and the others that would collide are off —
+   *  a Delete during its own scene render was possible (JB1-10). */
+  busy?: string | null;
 }
 
 export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
@@ -37,13 +52,19 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
   // will actually hear.
   const mono = o.channels !== 2;
   const monoInShow = mono && ctx.inShow;
+  // Re-import needs a source to rebuild from. A dropped file's original is
+  // kept in tracks/_src/ now; one whose file has since gone gets no button
+  // and honest advice instead of a red absolute path (JB1-3).
+  const canReimport = !!t.source && !t.source_missing;
   const monoBadge = mono
     ? `<span class="trk__mono" style="color:${monoInShow
-        ? "var(--err,#ff6b5a)" : "var(--warn,#e0a34a)"};cursor:pointer;`
+        ? "var(--alarm)" : "var(--warn)"};cursor:pointer;`
       + `text-decoration:underline dotted" title="Mono import: the towers `
       + `cannot answer left/right without stereo.${monoInShow
         ? " THIS TRACK IS IN THE SHOW — the audience hears it mono." : ""} `
-      + `Click here to set stereo, then press Re-import.">`
+      + (canReimport ? `Click here to set stereo, then press Re-import.`
+         : `Its original file is gone, so it cannot be re-imported — drop `
+           + `the file again with CHANNELS set to stereo.`) + `">`
       + `mono ⚠${monoInShow ? " in the show" : ""}</span>`
     : "stereo";
   const fmt = [ext.toUpperCase(),
@@ -63,11 +84,21 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
       : esc(t.source.replace(/^file:/, "").split("/").pop());
   const cls = ["trk", ctx.selected ? "sel" : "",
                ctx.sounding ? "playing" : ""].filter(Boolean).join(" ");
+  // A track whose import failed has no bytes worth anything: no castle
+  // button (it would PUT nothing over the card's good copy), and a badge
+  // that says what happened instead of "stale" (pass 1, J1-2).
+  const broken = !sendable(t);
+  const busy = ctx.busy ?? null;
+  const op = (act: string, label: string, title: string, cls = ""): string =>
+    `<button data-act="${act}" class="${cls}" title="${esc(title)}"`
+    + `${busy ? " disabled" : ""}>${busy === act ? "Working…" : label}</button>`;
   return `
   <div class="${cls}" data-id="${esc(t.id)}" title="Click to open the clip editor">
     <div class="trk__nm">${esc(t.id)}
       ${ctx.inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
-      ${ctx.onCastle ? `<span class="trk__badge" title="A copy of this file is on the castle's SD card">on castle ✓</span>` : ""}
+      ${ctx.onCastle === "current" ? `<span class="trk__badge" title="The castle's SD card holds this exact file — byte count verified">on castle ✓</span>` : ""}
+      ${ctx.onCastle === "stale" ? `<span class="trk__badge" style="color:var(--warn)" title="The card's copy is DIFFERENT bytes — this track changed since it was sent. Press Update castle.">stale on castle ⚠</span>` : ""}
+      ${broken ? `<span class="trk__badge trk__broken" style="color:var(--alarm)" title="${esc(t.error || "The file is empty")} — re-import it (or delete it). It cannot be sent to the castle.">import failed ⚠</span>` : ""}
       <small>${t.dur ?? "?"}s · ${t.kb} KB · ${fmt}</small>
       <small title="${esc(BAND_HELP)}">${esc(onsets)}</small>
       ${src ? `<small class="trk__src">from ${src}</small>` : ""}
@@ -76,11 +107,13 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
     <div class="trk__act">
       <button data-act="play" class="${ctx.sounding ? "on" : ""}"
               title="Listen to the whole file — audio only, no lights. To see the light show, click the row and press Audition in the editor.">${ctx.sounding ? "Stop" : "Play"}</button>
-      <button data-act="scene" title="${ctx.inShow ? "Rewrite this scene from the track as it is now" : "Add this track to the show as a new scene"}"
-        >${ctx.inShow ? "Update scene" : "Make scene"}</button>
-      ${t.source ? `<button data-act="refresh" title="Rebuild from the remembered source using the options above">Re-import</button>` : ""}
-      ${ctx.onCastle !== null ? `<button data-act="send" title="Copy this file onto the castle's SD card over WiFi — it can then play on the castle with zero lag">${ctx.onCastle ? "Re-send" : "→ Castle"}</button>` : ""}
-      <button data-act="del" class="danger">Delete</button>
+      ${op("scene", ctx.inShow ? "Update scene" : "Make scene",
+           ctx.inShow ? "Rewrite this scene from the track as it is now. The scene plays the WHOLE file — a trim in the clip editor reaches the castle through Re-import."
+                      : "Add this track to the show as a new scene (the whole file; trim with Re-import first if you want only a part)")}
+      ${canReimport ? op("refresh", "Re-import",
+        "Rebuild from the remembered source using the options above — START/LENGTH from the clip editor when it is open on this track") : ""}
+      ${sendButton(ctx.onCastle, broken, busy)}
+      ${op("del", "Delete", ctx.inShow ? "Remove the file — and, if you choose, its scene from the show" : "Remove the file from the library", "danger")}
     </div>
   </div>`;
 }

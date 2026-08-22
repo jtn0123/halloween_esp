@@ -18,7 +18,7 @@
     </div>
     <div class="head__live">
       <span class="head__dot" id="headDot"></span>
-      <span class="head__txt" id="headTxt">simulator</span>
+      <span class="head__txt" id="headTxt" aria-live="polite">simulator</span>
       <!-- toolbar, not group: ARIA's `group` is for objects that belong
            together in a document outline, and these are a compact row of
            function buttons, which is what `toolbar` describes. -->
@@ -64,10 +64,13 @@
           </div>
           <span class="tc" id="tc">0.00 / 0.00 s</span>
         </div>
-        <p class="hint">
-          <kbd>Space</kbd> play/pause · <kbd>&larr;</kbd><kbd>&rarr;</kbd> seek 1 s
-          (<kbd>Shift</kbd> 5 s) · <kbd>R</kbd> restart · <kbd>M</kbd> mute ·
-          <kbd>Esc</kbd> blackout. <strong>Scene audio starts muted</strong> &mdash; it plays
+        <p class="hint" id="keyHint">
+          <kbd>Space</kbd>/<kbd>K</kbd> play/pause · <kbd>&larr;</kbd><kbd>&rarr;</kbd> seek 1 s
+          (<kbd>Shift</kbd> 5 s) · <kbd>Home</kbd> start · <kbd>R</kbd> restart ·
+          <kbd>M</kbd> mute · <kbd>1</kbd>&ndash;<kbd>9</kbd> pick a scene ·
+          <kbd>Esc</kbd> blackout. While a castle is mirroring (the chip's
+          &ldquo;on castle&rdquo; box), <kbd>1</kbd>&ndash;<kbd>9</kbd> and <kbd>Esc</kbd>
+          drive the porch too. <strong>Scene audio starts muted</strong> &mdash; it plays
           only after you press play <em>and</em> unmute. Track Play and Audition
           buttons are their own consent: pressing one always sounds.
         </p>
@@ -333,9 +336,12 @@
         <div class="trk-lib__hd">
           <span>Library</span>
           <span class="note" id="trkCount"></span>
+          <!-- One press sends every in-show track the card is missing.
+               Hidden until a castle answers; track_card.ts keeps it honest. -->
+          <button id="trkSync" type="button" class="trk-sync" hidden></button>
         </div>
         <div class="trk-list" id="trkList"></div>
-        <p class="trk-lib__ft">Drop an audio file anywhere on this panel to analyse it without importing.</p>
+        <p class="trk-lib__ft">Drop an audio file on the Drop box to import it (with the studio running) or to analyse it here without importing.</p>
       </div>
     </div>
   </section>
@@ -343,7 +349,7 @@
   <footer class="foot">
     <details class="foot-fold">
       <summary>What this desk is, how faithful it is, and why thunder fires first</summary>
-      <p><strong>What it is.</strong> Tune the show on screen before anything gets flashed. Cue sheets here are the source of truth &mdash; they generate the ESPHome config, so what you hear is what ships. The hardware behind it: an <b>ESP32-S2</b> Feather, a <b>MAX98357A</b> I²S amp, and three NeoPixel Jewels of seven RGBW pixels each.</p>
+      <p><strong>What it is.</strong> Tune the show on screen before anything gets flashed. Cue sheets here are the source of truth &mdash; they generate the ESPHome config, so what you hear is what ships. The hardware behind it: an <b>ESP32-S2</b> Feather, a <b>MAX98357A</b> I²S amp, and one NeoPixel fixture per window &mdash; the Rig panel says which (out of the box: a 7-pixel RGBW Jewel in each tower and a 12-pixel RGB Ring at the door).</p>
       <p><strong>How faithful this is.</strong> The effect maths, per-pixel seeds and cue timings are the firmware's own (ported line for line from <code>castle_effects.h</code> and generated from <code>scenes.yaml</code>), and the rendered audio is byte-identical to what ships in flash. What the screen cannot promise is pixel gamma: WS2812-family LEDs diverge from sRGB hardest at exactly the low brightness where flicker lives, so budget one retune pass when the jewels arrive.</p>
       <p><strong>Why thunder fires before the flash.</strong> Light beats sound to an observer in the real world, so leading with audio is physically right &mdash; and it conveniently swallows the playback trigger latency.</p>
     </details>

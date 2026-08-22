@@ -39,11 +39,11 @@ def api(ip: str, method: str, path: str, body: bytes | None = None,
         timeout: float = 60) -> bytes:
     req = urllib.request.Request(f"http://{ip}{path}", data=body, method=method)
     with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.read()
+        return bytes(r.read())
 
 
 def listing(ip: str) -> list[dict]:
-    return json.loads(api(ip, "GET", "/api/files"))
+    return list(json.loads(api(ip, "GET", "/api/files")))
 
 
 def upload(ip: str, route: str, name: str, data: bytes, timeout: float = 600) -> None:

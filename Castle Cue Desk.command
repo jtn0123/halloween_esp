@@ -22,22 +22,26 @@ if curl -s -m 2 "http://127.0.0.1:$PORT/api/tracks" >/dev/null 2>&1; then
   exit 0
 fi
 
-if [ ! -x .venv/bin/python ]; then
-  echo "No .venv found. Run 'make setup' once, then try again."
+# The project venv when it exists, else the python3 on PATH — the same rule
+# the Makefile and the commit hook use, so a checkout sharing another
+# clone's venv via CASTLE_PY still opens.
+PY=${CASTLE_PY:-$(command -v .venv/bin/python || command -v python3)}
+if [ -z "$PY" ] || ! "$PY" -c "import numpy, yaml" 2>/dev/null; then
+  echo "No usable python found (.venv missing?). Run 'make setup' once, then try again."
   read -r -p "Press return to close." _
   exit 1
 fi
 
 # Make sure the page exists and matches the current scenes before serving it.
 echo "Building the previewer..."
-.venv/bin/python tools/gen_previewer.py || {
+"$PY" tools/gen_previewer.py || {
   echo "Build failed — see above."
   read -r -p "Press return to close." _
   exit 1
 }
 
 echo "Starting the cue desk on $URL"
-.venv/bin/python tools/studio.py "$PORT" &
+"$PY" tools/studio.py "$PORT" &
 SERVER_PID=$!
 
 # Wait for it to answer before opening the browser, so the page never loads

@@ -8,6 +8,8 @@ failing, the hole is open again.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
 import tempfile
@@ -19,9 +21,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import manifest as mf  # noqa: E402
-import studio  # noqa: E402
-from studio_case import ServerCase  # noqa: E402
+import manifest as mf
+import studio
+from studio_case import ServerCase
 
 
 class TestIdGuards(unittest.TestCase):
@@ -85,7 +87,9 @@ class TestManifestSafety(unittest.TestCase):
 
     def test_corrupt_manifest_is_moved_aside_not_erased(self) -> None:
         mf.PATH.write_text('{"chant": {truncated')
-        self.assertEqual(mf.load(), {})
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(mf.load(), {})
+        self.assertIn("moved to tracks.json.corrupt-", out.getvalue())
         survivors = list(self.tmp.glob("tracks.json.corrupt-*"))
         self.assertEqual(len(survivors), 1, "the damaged file must survive")
         self.assertIn("truncated", survivors[0].read_text())
@@ -100,7 +104,9 @@ class TestManifestSafety(unittest.TestCase):
         """The old failure: corrupt -> load()=={} -> next save persists {}.
         Now the corrupt original is still on disk to recover from."""
         mf.PATH.write_text("not json at all")
-        mf.record("fresh", source="file:/y")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            mf.record("fresh", source="file:/y")
+        self.assertIn("WARNING", out.getvalue())
         self.assertEqual(list(json.loads(mf.PATH.read_text())), ["fresh"])
         self.assertTrue(list(self.tmp.glob("tracks.json.corrupt-*")))
 

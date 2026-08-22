@@ -21,7 +21,7 @@ import segno
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "firmware" / "generated" / "qr_castle.h"
-DEFAULT_URL = "http://10.27.27.7/"
+DEFAULT_URL = "http://10.27.27.7/remote"
 
 
 def main() -> int:

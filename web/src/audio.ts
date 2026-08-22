@@ -21,6 +21,11 @@ export type AudioMode = "rendered" | "synth";
 export class RenderedAudio {
   private els = new Map<string, HTMLAudioElement>();
   private fadeTimer: ReturnType<typeof setInterval> | null = null;
+  /** The pending start: play() waits out `latency` before the element runs.
+   *  Stop/pause/another play inside that window must cancel it, or the file
+   *  starts AFTER the Stop — and a scene switched within the window starts
+   *  both files (the outgoing one late). */
+  private startTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Master level, 0..1. Scene `volume` multiplies on top of this. */
   volume = 0.6;
@@ -29,7 +34,10 @@ export class RenderedAudio {
   /** Modelled decode spin-up, so the screen and the speaker agree. */
   latency = 70;
 
-  /** `audio` maps scene id -> `data:audio/mpeg;base64,…` from GEN. */
+  /** `audio` maps scene id -> a source the element can take: the
+   *  `data:audio/mpeg;base64,…` the portable build inlines, or the
+   *  `/studio/scene-audio/<id>` URL the studio's lean page serves instead
+   *  (same bytes, fetched when played). Nothing here tells them apart. */
   constructor(audio: Readonly<Record<string, string>>) {
     for (const [sid, uri] of Object.entries(audio)) {
       const el = new Audio(uri);
@@ -59,6 +67,7 @@ export class RenderedAudio {
   }
 
   stopAll(): void {
+    this.cancelStart();
     this.clearFade();
     for (const el of this.els.values()) {
       el.pause();
@@ -67,6 +76,7 @@ export class RenderedAudio {
   }
 
   pauseAll(): void {
+    this.cancelStart();
     this.clearFade();
     for (const el of this.els.values()) el.pause();
   }
@@ -83,6 +93,7 @@ export class RenderedAudio {
     const el = this.els.get(sc.id);
     if (!el) return false;
 
+    this.cancelStart();
     const target = Math.min(1, this.volume * (sc.volume ?? 0.8));
     el.muted = this.muted;             // authoritative, independent of the fade
     el.loop = Boolean(sc.loop);
@@ -94,7 +105,8 @@ export class RenderedAudio {
       // which is a better outcome than refusing to play at all.
     }
 
-    setTimeout(() => {
+    this.startTimer = setTimeout(() => {
+      this.startTimer = null;
       void el.play().catch(() => {
         // Autoplay policy, or the element was torn down mid-flight. Either
         // way there is nothing useful to do and nothing worth logging.
@@ -134,6 +146,13 @@ export class RenderedAudio {
       if (!el) continue;
       el.muted = this.muted;
       el.volume = Math.min(1, this.volume * (sc.volume ?? 0.8));
+    }
+  }
+
+  private cancelStart(): void {
+    if (this.startTimer !== null) {
+      clearTimeout(this.startTimer);
+      this.startTimer = null;
     }
   }
 

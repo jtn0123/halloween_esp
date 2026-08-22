@@ -7,6 +7,8 @@ which is the part most likely to be quietly wrong.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import shutil
 import sys
 import tempfile
@@ -17,10 +19,10 @@ from typing import ClassVar
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import gen_esphome as ge  # noqa: E402
-import gen_previewer as gp  # noqa: E402
-import rig_layout as rl  # noqa: E402
-import yaml  # noqa: E402
+import gen_esphome as ge
+import gen_previewer as gp
+import rig_layout as rl
+import yaml
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 
@@ -46,7 +48,7 @@ def scene(**over: object) -> dict:
 
 def parse_script(lines: list[str]) -> dict:
     """emit_scene's lines are a YAML fragment; load them the way ESPHome would."""
-    return yaml.safe_load("script:\n" + "\n".join(lines))["script"][0]
+    return dict(yaml.safe_load("script:\n" + "\n".join(lines))["script"][0])
 
 
 def cue_lambdas(lines: list[str]) -> list[str]:
@@ -127,11 +129,14 @@ class TestPulseCues(unittest.TestCase):
     def test_synth_without_markers_is_skipped_not_fatal(self) -> None:
         """A silent stream should degrade to no light, not break the build."""
         s = scene(pulse=[{"synth": "absent", "zone": "door"}])
-        self.assertEqual(ge.pulse_cues(s, self.MARKS), [])
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(ge.pulse_cues(s, self.MARKS), [])
+        self.assertIn("no markers for synth 'absent'", out.getvalue())
 
     def test_scene_with_no_markers_at_all(self) -> None:
         s = scene(pulse=[{"synth": "heart"}])
-        self.assertEqual(ge.pulse_cues(s, {}), [])
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(ge.pulse_cues(s, {}), [])
 
     def test_single_zone(self) -> None:
         s = scene(pulse=[{"synth": "heart", "zone": "door"}])
@@ -312,7 +317,8 @@ class TestEmitScene(unittest.TestCase):
                                          {"probe": {"h": [[100, 1.0], [200, 0.5]]}}))
         self.assertEqual(got["id"], "scene_probe")
         self.assertEqual(got["mode"], "restart")
-        self.assertEqual(got["then"][3]["media_player.volume_set"], 0.45)
+        vol = got["then"][3]["lambda"]          # scene level, unless hushed
+        self.assertIn("id(speaker_hush) ? 0.0f : 0.45f", vol)
 class TestGenEsphomeMain(unittest.TestCase):
     """End to end: a scenes.yaml on disk becomes a loadable ESPHome file."""
 
@@ -337,6 +343,8 @@ class TestGenEsphomeMain(unittest.TestCase):
         # wrote their two fixture scenes into the real firmware/generated/.
         # test_every_output_path_is_redirected below is what keeps it honest.
         self._saved = {name: getattr(ge, name) for name in OUTPUT_PATHS}
+        # The generator narrates ("wrote …", "note: …"); keep -q output clean.
+        self.out = self.enterContext(contextlib.redirect_stdout(io.StringIO()))
         self._saved["ROOT"] = ge.ROOT
         ge.ROOT = self.tmp
         ge.SRC = self.tmp / "scenes.yaml"
@@ -370,6 +378,7 @@ class TestGenEsphomeMain(unittest.TestCase):
 
     def test_writes_a_parseable_file_with_every_scene_and_a_stop_script(self) -> None:
         self.assertEqual(ge.main(), 0)
+        self.assertIn("wrote ", self.out.getvalue())
         doc = yaml.safe_load(ge.OUT.read_text())
         self.assertEqual([s["id"] for s in doc["script"]],
                          ["scene_a", "scene_b", "scene_stop", "run_scene",
@@ -384,6 +393,21 @@ class TestGenEsphomeMain(unittest.TestCase):
         for i in range(len(ZONES)):
             self.assertIn(f"id(zone_effect)[{i}] = 0;", lam)
             self.assertIn(f"id(zone_flash)[{i}] = 0.0f;", lam)
+
+    def test_blackout_clears_the_centre_role_and_overlay_too(self) -> None:
+        """zone_effect = 0 alone is not dark. The render loop draws the centre
+        pixel from zone_center when one is set, and every overlay adds light
+        on top of a black base (sparkle glints, a meteor's white drip, the
+        chase's white head) — so a stop that left those standing kept vigil's
+        centre embers lit and the door sparkling through the playlist gap."""
+        ge.main()
+        doc = yaml.safe_load(ge.OUT.read_text())
+        lam = next(s for s in doc["script"]
+                   if s["id"] == "scene_stop")["then"][0]["lambda"]
+        for i in range(len(ZONES)):
+            self.assertIn(f"id(zone_center)[{i}] = -1;", lam)
+            self.assertIn(f"id(zone_overlay)[{i}] = 0;", lam)
+            self.assertIn(f"id(zone_flash_target)[{i}] = 0.0f;", lam)
 
     def test_pixel_map_is_written_into_the_header_comment(self) -> None:
         ge.main()
@@ -405,6 +429,23 @@ class TestGenEsphomeMain(unittest.TestCase):
         ge.main()
         then = yaml.safe_load(ge.OUT.read_text())["script"][1]["then"]
         self.assertIn({"delay": "250ms"}, then)
+
+    def test_a_scene_the_schema_rejects_stops_the_build_with_every_reason(self) -> None:
+        """scene_schema runs before a byte is emitted — the same checks the
+        studio applies to a splice — so a hand-edited scenes.yaml fails with
+        the whole list, named by scene, and writes nothing."""
+        doc = dict(self.DOC, scenes=[
+            scene(id="a"),
+            scene(id="bad", duration_ms=100, base={"door": "glow"},
+                  cues=[{"t": 900, "op": "set", "zone": "door", "effect": "ember"}])])
+        ge.SRC.write_text(yaml.safe_dump(doc))
+        with self.assertRaises(SystemExit) as cm:
+            ge.main()
+        msg = str(cm.exception)
+        self.assertTrue(msg.startswith("scene bad:"), msg)
+        self.assertIn("unknown effect 'glow'", msg)
+        self.assertIn("past the scene's duration_ms", msg)
+        self.assertFalse(ge.OUT.exists(), "a rejected show was still written")
 
 
 if __name__ == "__main__":

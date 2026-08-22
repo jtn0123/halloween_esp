@@ -12,6 +12,7 @@
  * from one template and a missing id is a build bug, not a runtime condition.
  */
 
+import { req } from "./dom.js";
 import { fixture, zonePixels, zoneRgbw, ZONE_PIN, type RigState } from "./rig.js";
 import { sceneTint } from "./scene_tint.js";
 import type { ZoneRender } from "./show.js";
@@ -89,11 +90,7 @@ export interface SliderHandlers {
 const kb = (n: number): string =>
   n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(2)} MB` : `${Math.round(n / 1024)} KB`;
 
-function must<T extends HTMLElement = HTMLElement>(id: string): T {
-  const el = document.getElementById(id);
-  if (!el) throw new Error(`panels: missing #${id}`);
-  return el as T;
-}
+const must = <T extends HTMLElement = HTMLElement>(id: string): T => req<T>(id, "panels");
 
 /** One row of the cue sheet. AUD rows name the file that will play; LED rows
  *  read as "zone → effect", which is the shorthand the scene file uses. */
@@ -283,6 +280,15 @@ export class Panels {
     // builds, is the Budgets panel's whole job now (budget.ts) — it was never
     // going to fit in a parenthesised percentage.
     this.sceneCount.textContent = `${scenes.length} loaded`;
+  }
+
+  /** Pick scene `index` exactly as a click on its tile would — the same
+   *  delegated handler runs, so aria-pressed, the tint and `onPick` all
+   *  follow. Out of range is a no-op. The two callers that used to reach
+   *  into the grid by selector (keyboard 1–9, adopting the castle's scene)
+   *  now ask here, and the grid's markup stays this file's business. */
+  selectScene(index: number): void {
+    this.scenesEl.querySelector<HTMLElement>(`.scene[data-i="${index}"]`)?.click();
   }
 
   /** Re-tint the grid so the selected scene's swatch is the bright one. */

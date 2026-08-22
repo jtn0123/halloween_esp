@@ -19,8 +19,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import gen_previewer as gp  # noqa: E402
-import yaml  # noqa: E402
+import gen_previewer as gp
+import yaml
 
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 ZIDS = [z["id"] for z in ZONES]
@@ -39,7 +39,7 @@ def scene(**over: object) -> dict:
 
 def parse_script(lines: list[str]) -> dict:
     """emit_scene's lines are a YAML fragment; load them the way ESPHome would."""
-    return yaml.safe_load("script:\n" + "\n".join(lines))["script"][0]
+    return dict(yaml.safe_load("script:\n" + "\n".join(lines))["script"][0])
 
 
 def cue_lambdas(lines: list[str]) -> list[str]:

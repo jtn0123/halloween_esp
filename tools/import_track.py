@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,9 +29,18 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana
 import manifest as mf
+from import_fetch import fetch_url as fetch_url
+from import_fetch import is_web_url as is_web_url
+from import_scene import FRAME as FRAME
+from import_scene import fit_to_density as fit_to_density
+from import_scene import scene_block as scene_block
+from studio_tracks import AUDIO_EXT, SRC_DIR
 
 ROOT = Path(__file__).resolve().parent.parent
-TRACKS = ROOT / "tracks"
+# CASTLE_TRACKS is the whole sandbox story (see playwright.config.ts): the
+# studio honored it but this subprocess wrote to the real tracks/ anyway —
+# an e2e import quietly landed files in (or over!) the user's library.
+TRACKS = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks"))
 BITRATE = 96          # matches hardware.audio.bitrate in scenes.yaml
 BUDGET = 2.9 * 1024 * 1024
 
@@ -44,45 +54,27 @@ def secs(v: str) -> float:
     return out
 
 
-def _ytdlp() -> str:
-    """The venv's yt-dlp when present, else the system one.
-
-    YouTube deliberately breaks stale clients (403s, SABR-only sessions), and
-    Homebrew's formula trails releases by weeks — pip does not. So the venv
-    copy, updated with `pip install -U yt-dlp`, wins when it exists.
-    """
-    local = Path(sys.executable).with_name("yt-dlp")
-    if local.exists():
-        return str(local)
-    if not shutil.which("yt-dlp"):
-        raise SystemExit("yt-dlp not installed — `brew install yt-dlp`")
-    return "yt-dlp"
+_NUM = re.compile(r"^\d+(?:\.\d+)?$")
 
 
-def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
-    """Download audio only. Returns (file, title as the source named it)."""
-    print(f"fetching {url}")
-    try:
-        r = subprocess.run(
-            [_ytdlp(), "-x", "--audio-format", "mp3", "--audio-quality", "0",
-             "--no-playlist", "-o", str(dest / "%(title)s.%(ext)s"), url],
-            capture_output=True, text=True, check=False,  # handled below
-            timeout=900,   # a hung download must not wedge the studio's lock
-        )
-    except subprocess.TimeoutExpired:
-        raise SystemExit("gave up after 15 minutes — the download stalled. "
-                         "Try the link again, or a different source.") from None
-    if r.returncode != 0:
-        # yt-dlp's own last lines say WHY ("Video unavailable", a bot check…).
-        # check=True here dumped a raw CalledProcessError traceback into the
-        # studio's red banner, which no one can act on (round-3 user test).
-        tail = [ln for ln in (r.stderr or r.stdout or "").splitlines()
-                if ln.strip()][-3:]
-        raise SystemExit("could not fetch that link:\n" + "\n".join(tail))
-    got = sorted(dest.glob("*.mp3"), key=lambda p: p.stat().st_mtime)
-    if not got:
-        raise SystemExit("yt-dlp produced no audio file")
-    return got[-1], got[-1].stem
+def time_arg(raw: str) -> str:
+    """`12`, `1:05` or `1:02:03` — what `secs()` reads. Anything else (a
+    flag-shaped "-x", a word, 1:99) is refused before it reaches ffmpeg."""
+    parts = raw.strip().split(":")
+    ok = (1 <= len(parts) <= 3 and all(_NUM.match(p) for p in parts)
+          and all(float(p) < 60 for p in parts[1:]))
+    if not ok:
+        raise argparse.ArgumentTypeError(
+            f"not a time: {raw!r} — use seconds (24) or m:ss (0:12)")
+    return raw.strip()
+
+
+def text_arg(raw: str) -> str:
+    """Free text that must not look like an option (the studio passes it as
+    `--notes=<v>`; a value starting with '-' is refused even so)."""
+    if raw.startswith("-"):
+        raise argparse.ArgumentTypeError(f"{raw!r} looks like an option, not text")
+    return raw
 
 
 def sensitivity_arg(raw: str):
@@ -170,115 +162,62 @@ def convert(src: Path, out: Path, o: dict) -> None:
     else:
         cmd += ["-b:a", f"{o['bitrate']}k"]
 
-    cmd.append(str(out))
+    # Encode BESIDE the destination, then rename: ffmpeg opens its output
+    # before it knows the input is garbage, so a failed import used to leave
+    # a 0-byte track that the desk then offered to send to the castle — and
+    # a failed re-import truncated the good copy it was meant to replace.
+    part = out.with_name(out.name + ".part")
+    # ffmpeg picks the muxer from the extension, and ".part" is not one.
+    cmd += ["-f", {"wav": "wav", "flac": "flac", "opus": "opus"}.get(fmt, "mp3"),
+            str(part)]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, check=False,
                            timeout=300)
     except subprocess.TimeoutExpired:
+        part.unlink(missing_ok=True)
         raise SystemExit(f"ffmpeg stalled encoding {out.name} — "
                          "gave up after 5 minutes") from None
-    if r.returncode != 0:
+    if r.returncode != 0 or not part.exists() or part.stat().st_size == 0:
+        part.unlink(missing_ok=True)
         # ffmpeg's own last line names the actual problem; a traceback does not.
         tail = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
-        raise SystemExit(f"ffmpeg could not write {out.name}: "
-                         f"{tail[-1] if tail else f'exit {r.returncode}'}")
+        raise SystemExit(f"{src.name} doesn't look like playable audio — "
+                         f"ffmpeg could not convert it "
+                         f"({tail[-1] if tail else f'exit {r.returncode}'})")
+    os.replace(part, out)
 
 
-FRAME = 0.016          # the light engine's tick, matching the firmware
+def probe_duration(src: Path) -> float | None:
+    """The source's length in seconds by ffprobe, or None if it cannot say."""
+    try:
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nw=1:nk=1", str(src)],
+            capture_output=True, text=True, check=False, timeout=60)
+        return float(r.stdout.strip()) if r.returncode == 0 else None
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        return None
 
 
-def fit_to_density(hits: list, fallback: float) -> tuple[float, float]:
-    """Choose a decay and an intensity scale that suit how busy a band is.
-
-    The built-in scenes' decay constants were tuned against Crypt's 48 bpm
-    heartbeat — gaps of 1.25 s. Reuse them on a track that hits every 0.24 s
-    and the flash is still at ~29% when the next one lands: the zone saturates
-    and reads as a continuous smear rather than as pulses. Which is precisely
-    the way an imported track stops "making sense".
-
-    So the decay is solved from the material: fall to ~10% by the time the
-    next hit is due. And dense bands get their intensity pulled down, because
-    a lot of overlapping pulses sum to a floor that never returns to dark.
-
-    Returns (decay_per_frame, intensity_scale).
-    """
-    if len(hits) < 3:
-        return fallback, 1.0
-
-    gaps = sorted(hits[i + 1][0] - hits[i][0] for i in range(len(hits) - 1))
-    median_gap = gaps[len(gaps) // 2]
-    if median_gap <= 0:
-        return fallback, 1.0
-
-    # d^frames = 0.1  ->  d = 0.1 ** (1/frames)
-    frames = max(1.0, median_gap / FRAME)
-    decay = 0.1 ** (1.0 / frames)
-    # Floor at 0.78: faster than that is a single-frame blink nobody sees.
-    # Ceiling at the scene's own value, so sparse material keeps its bloom.
-    decay = max(0.78, min(fallback, decay))
-
-    # Below ~0.5 s between hits, back the level off so they stay distinct.
-    scale = 1.0 if median_gap >= 0.5 else max(0.45, median_gap / 0.5)
-    return round(decay, 3), round(scale, 2)
+def keep_source(src: Path, tid: str) -> Path:
+    """Copy a throwaway local source to tracks/_src/<tid><ext>, so a later
+    --refresh has something to rebuild from. Already there: left alone."""
+    kept_dir = TRACKS / SRC_DIR
+    kept_dir.mkdir(parents=True, exist_ok=True)
+    kept = kept_dir / f"{tid}{src.suffix.lower()}"
+    if src.resolve() != kept.resolve():
+        for old in kept_dir.glob(f"{tid}.*"):
+            old.unlink()
+        shutil.copy2(src, kept)
+    return kept.resolve()
 
 
-def scene_block(tid: str, dur: float, marks: dict, ext: str = "mp3") -> str:
-    """A ready-to-paste scene, wired to whatever the analyser actually found."""
-    zones = {"onset_low": "door", "onset_mid": "towerL", "onset_high": "towerR"}
-    colors = {
-        "onset_low":  "[1.0, 0.12, 0.02, 0.0]",
-        "onset_mid":  "[0.66, 0.10, 1.0, 0.05]",
-        "onset_high": "[0.30, 1.0, 0.55, 0.0]",
-    }
-    decays = {"onset_low": 0.86, "onset_mid": 0.92, "onset_high": 0.94}
-    lines = [
-        f"  - id: {tid}",
-        f"    name: {tid.replace('_', ' ').title()}",
-        "    kind: custom",
-        "    volume: 0.7",
-        f"    duration_ms: {int(dur * 1000)}",
-        "    loop: true",
-        "    blurb: >",
-        f"      Imported track {tid}. Light cues are onset-detected from the",
-        "      audio itself, so they follow whatever the track actually does.",
-        f"    audio_file: tracks/{tid}.{ext}",
-        "    base: {towerL: chill, towerR: chill, door: ember}",
-        "    levels: {towerL: 0.4, towerR: 0.4, door: 0.5}",
-        "    pulse:",
-    ]
-    for band, hits in marks.items():
-        if not hits:
-            continue
-        base = band.replace("level_", "onset_")
-        z = zones.get(base, "door")
-        col = colors.get(base, "[1,1,1,1]")
-
-        if band.startswith("level_"):
-            # An envelope wants to GLIDE, not pulse. Its samples arrive at a
-            # steady 6 Hz, so a decay that empties between them would chop a
-            # smooth swell into a stutter. 0.90 leaves roughly half the level
-            # standing when the next sample lands, which reads as breathing.
-            lines.append(
-                f"      - {{synth: {band}, zone: {z}, intensity: 0.5, "
-                f"decay: 0.90, color: {col}}}"
-                f"   # {len(hits)} level samples — no beat here, so the zone "
-                f"follows loudness instead"
-            )
-            continue
-
-        decay, scale = fit_to_density(hits, decays.get(band, 0.9))
-        intensity = round(0.55 * scale, 3)
-        rate = len(hits) / dur * 60 if dur else 0
-        note = f"{len(hits)} onsets, {rate:.0f}/min"
-        if scale < 1.0:
-            note += " — dense, so eased back to stay distinct"
-        lines.append(
-            f"      - {{synth: {band}, zone: {z}, intensity: {intensity}, "
-            f"decay: {decay}, color: {col}}}"
-            f"   # {note}"
-        )
-    lines.append("    cues: []")
-    return "\n".join(lines)
+def _same_file(a: Path, b: Path) -> bool:
+    """Do the two paths name one file on disk? (Absent paths never do.)"""
+    try:
+        return a.exists() and b.exists() and a.samefile(b)
+    except OSError:
+        return False
 
 
 def main() -> int:
@@ -293,11 +232,16 @@ def main() -> int:
                          "source; any option you pass overrides what was "
                          "used last time")
     ap.add_argument("--list", action="store_true", help="show imported tracks")
-    ap.add_argument("--notes", default="", help="free-text note on the track")
+    ap.add_argument("--notes", default="", type=text_arg,
+                    help="free-text note on the track")
+    ap.add_argument("--keep-source", action="store_true",
+                    help="copy a local source file into tracks/_src/ and "
+                         "remember THAT as the source — for a file that is "
+                         "about to be deleted (the studio's upload staging)")
 
     g = ap.add_argument_group("trim")
-    g.add_argument("--start", help="skip in, e.g. 0:12")
-    g.add_argument("--take", help="seconds to keep, e.g. 24")
+    g.add_argument("--start", type=time_arg, help="skip in, e.g. 0:12")
+    g.add_argument("--take", type=time_arg, help="seconds to keep, e.g. 24")
     g.add_argument("--fade-in", type=float, help="seconds of fade at the head")
     g.add_argument("--fade-out", type=float, help="seconds of fade at the tail")
 
@@ -380,7 +324,9 @@ def main() -> int:
     }
     for k in list(o):
         v = getattr(args, k, None)
-        if v not in (None, False):
+        # `is not`, not `not in (None, False)`: 0.0 == False, and an explicit
+        # --fade-in 0 is how a remembered fade gets cleared on a refresh.
+        if v is not None and v is not False:
             o[k] = v
     # normalize is tri-state (None = keep the remembered/default value), and
     # an explicit --no-normalize is a False the loop above would drop.
@@ -391,7 +337,12 @@ def main() -> int:
     if not source:
         raise SystemExit("need a source (file or URL)")
     source = source.removeprefix("file:")
-    is_url = "://" in source
+    is_url = is_web_url(source)
+    # A source that wanted to be a URL and is not one never becomes a path:
+    # "ftp://…" or "--config-location=http://…" would otherwise be opened as a
+    # local file name, which is a confusing way to fail at best.
+    if not is_url and "://" in source:
+        raise SystemExit(f"not a link this can fetch: {source!r} — http(s) only")
 
     # Per-run scratch dir. A shared one races: two imports at once, and the
     # first to finish deletes the other's half-downloaded file out from under
@@ -399,13 +350,26 @@ def main() -> int:
     tmp = TRACKS / f"_incoming_{os.getpid()}"
     shutil.rmtree(tmp, ignore_errors=True)
     tmp.mkdir(parents=True, exist_ok=True)
+    try:
+        return _import(args, o, source, is_url, tmp, prev)
+    finally:
+        # Whatever happened, the scratch dir goes — a failed import used to
+        # leave _incoming_<pid> behind next to the library.
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _import(args: argparse.Namespace, o: dict, source: str, is_url: bool,
+            tmp: Path, prev: dict | None) -> int:
     title = (prev or {}).get("title", "")
     if is_url:
         src, title = fetch_url(source, tmp)
     else:
         src = Path(source)
     if not src.exists():
-        raise SystemExit(f"no such file: {src}")
+        # The basename, not the path: an operator can act on "drop it
+        # again", not on /private/tmp/…/_upload/x.wav (JB1-3).
+        raise SystemExit(f"no such file: {src.name} — the remembered source "
+                         "is gone; import it again from the original")
 
     tid = args.refresh or args.id or "".join(
         c if c.isalnum() else "_" for c in src.stem.lower()
@@ -421,12 +385,37 @@ def main() -> int:
     conv = dict(o)
     conv["start"] = secs(o["start"]) if o["start"] else 0
     conv["take"] = secs(o["take"]) if o["take"] else None
+    # A start past the end is the commonest way to get a 358-byte "track":
+    # ffmpeg happily writes a header and nothing else. Refuse up front, in
+    # the operator's own units (JB1-1).
+    src_dur = probe_duration(src)
+    if src_dur is not None and conv["start"] >= src_dur:
+        raise SystemExit(f"start {o['start']} is past the end of {src.name} "
+                         f"({src_dur:.0f}s long)")
     convert(src, out, conv)
-    shutil.rmtree(tmp, ignore_errors=True)
 
-    x = ana.load_audio(out)
+    try:
+        x = ana.load_audio(out)
+        if len(x) < ana.SR // 10:
+            raise ValueError("the cut came out (nearly) empty")
+    except Exception as e:
+        # Never leave a broken row behind: the desk would offer to send it
+        # to the castle. One line, no traceback.
+        out.unlink(missing_ok=True)
+        raise SystemExit(f"{src.name}: {e} — check start/length against "
+                         f"the source") from None
     dur = len(x) / ana.SR
     size = out.stat().st_size
+    # A refresh that changed the container leaves the old one behind, and
+    # track_path() would keep finding it first. One file per id — but never
+    # the source itself: `import_track.py tracks/foo.wav --id foo` used to
+    # convert the original and then delete it (judge B, JB2-2).
+    for other in AUDIO_EXT:
+        stale = TRACKS / f"{tid}.{other}"
+        if other != o["format"] and not _same_file(stale, src):
+            stale.unlink(missing_ok=True)
+    if args.keep_source and not is_url:
+        source = f"file:{keep_source(src, tid)}"
     # stereo= so import-time markers carry pan, same as the studio's live
     # analysis — otherwise the pasteable scene block and the desk disagree.
     marks = ana.analyze_full(x, sensitivity=o["sensitivity"],
@@ -434,7 +423,8 @@ def main() -> int:
 
     mf.record(
         tid,
-        source=source if is_url else f"file:{Path(source).resolve()}",
+        source=source if is_url or source.startswith("file:")
+               else f"file:{Path(source).resolve()}",
         title=title, opts=o, notes=args.notes,
         audio={"duration": round(dur, 2), "bytes": size, "format": o["format"],
                "channels": o["channels"], "sample_rate": o["sample_rate"],

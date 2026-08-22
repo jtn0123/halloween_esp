@@ -14,6 +14,7 @@ and a progress bar does not need sub-second latency.
 
 from __future__ import annotations
 
+import contextlib
 import re
 import subprocess
 import threading
@@ -50,11 +51,20 @@ class Job:
 
 
 class JobRunner:
-    """One import at a time; ffmpeg and yt-dlp are not worth interleaving."""
+    """Background jobs, serialised with the studio's synchronous encodes.
 
-    def __init__(self) -> None:
+    `gate` is the studio's encode lock (tools/studio.py `_lock`): a job
+    holds it for the life of its child, so an async import, a sync import
+    and a rebuild take turns at ffmpeg instead of racing for the CPU. A job
+    waiting on the gate stays "queued" — the page can see it is in line,
+    not hung. None (the default) means no serialisation, which is what the
+    unit tests and any other embedder get unless they ask.
+    """
+
+    def __init__(self, gate: threading.Lock | None = None) -> None:
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
+        self._gate = gate
 
     def get(self, job_id: str) -> Job | None:
         with self._lock:
@@ -73,6 +83,10 @@ class JobRunner:
         return job
 
     def _run(self, job: Job, argv: list[str]) -> None:
+        with self._gate or contextlib.nullcontext():
+            self._run_child(job, argv)
+
+    def _run_child(self, job: Job, argv: list[str]) -> None:
         job.phase = "fetching"
         try:
             # Context-managed so the child's stdout is closed deterministically.
@@ -127,27 +141,103 @@ class JobRunner:
 
     @staticmethod
     def _explain(log: list[str]) -> str:
-        """Turn yt-dlp's output into something worth showing a person.
+        """Turn a tool's output into one line worth showing a person.
 
-        Raw shell output in a UI is a failure of nerve — the interesting line
-        is almost always in there, it just needs finding.
+        Raw shell output in a UI is a failure of nerve — the interesting
+        line is almost always in there, it just needs finding. In order:
+        a phrase we recognise, the last ERROR line, the last Python
+        exception (named by the program that failed, not the traceback),
+        then the last meaningful line. Paths come back as basenames:
+        /private/tmp/…/_upload/x.wav tells an operator nothing x.wav
+        does not (judge B, JB1-3/JB1-10).
         """
         text = "\n".join(log)
-        known = [
-            ("Private video", "That video is private."),
-            ("Video unavailable", "That video is unavailable."),
-            ("Sign in to confirm", "That video needs a signed-in account."),
-            ("members-only", "That video is members-only."),
-            ("is not a valid URL", "That does not look like a link."),
-            ("Unsupported URL", "Nothing here knows how to read that link."),
-            ("HTTP Error 404", "That link is a dead end (404)."),
-            ("no audio file", "The download produced no audio."),
-            ("Requested format", "No audio-only format was offered for that video."),
-        ]
-        for needle, friendly in known:
+        for needle, friendly in KNOWN:
             if needle.lower() in text.lower():
                 return friendly
         for line in reversed(log):
             if "ERROR" in line:
-                return line.split("ERROR:", 1)[-1].strip() or line
+                return basenames(line.split("ERROR:", 1)[-1].strip() or line)
+        for line in reversed(log):
+            m = _EXC.match(line)
+            if m and m.group(1).endswith(_EXC_TAIL):
+                return basenames(_exception_line(m.group(1), m.group(2)))
+        for line in reversed(log):
+            if line.strip() and not line[:1].isspace() \
+                    and not line.startswith(("[", "Traceback")):
+                return basenames(line.strip())
         return ""
+
+
+NO_DEMUCS = "Demucs is not installed in the studio's Python — pip install demucs."
+#: Phrases worth a sentence. yt-dlp's first; then the studio's own tools.
+KNOWN: list[tuple[str, str]] = [
+    ("Private video", "That video is private."),
+    ("Video unavailable", "That video is unavailable."),
+    ("Sign in to confirm", "That video needs a signed-in account."),
+    ("members-only", "That video is members-only."),
+    ("is not a valid URL", "That does not look like a link."),
+    ("Unsupported URL", "Nothing here knows how to read that link."),
+    ("HTTP Error 404", "That link is a dead end (404)."),
+    ("no audio file", "The download produced no audio."),
+    ("Requested format", "No audio-only format was offered for that video."),
+    ("No module named demucs", NO_DEMUCS),
+    ("No module named 'demucs'", NO_DEMUCS),
+    ("out of memory", "Ran out of memory — try a shorter track."),
+    ("No such file or directory: 'ffmpeg'",
+     "ffmpeg is not installed — brew install ffmpeg."),
+    ("ffmpeg: command not found", "ffmpeg is not installed — brew install ffmpeg."),
+]
+
+#: "subprocess.CalledProcessError: Command '['ffmpeg', …]' returned non-zero
+#: exit status 1." and friends — the LAST line of a traceback.
+_EXC = re.compile(r"^([A-Za-z_][\w.]*)(?::\s*(.*))?$")
+#: What makes a dotted name an exception's name rather than any old line.
+_EXC_TAIL = ("Error", "Exception", "Exit", "Interrupt")
+_CMD = re.compile(r"Command '\['([^']+)'")
+_EXIT = re.compile(r"exit status (-?\d+)")
+#: An absolute path prefix — everything up to and including the last slash —
+#: but not the // of a URL. POSSESSIVE (`++`): the group can never give a
+#: segment back, so a long unterminated path costs one pass instead of
+#: exponential backtracking. Nothing after the group needs those characters,
+#: so the match is unchanged — see tests/test_studio_unit.py.
+_PATH = re.compile(r"(?<![:/\w])/(?:[^/\s'\"]+/)++")
+
+
+def _exception_line(name: str, rest: str | None) -> str:
+    rest = (rest or "").strip()
+    cmd = _CMD.search(rest)
+    if cmd:
+        prog = cmd.group(1).rsplit("/", 1)[-1]
+        code = _EXIT.search(rest)
+        return f"{prog} failed" + (f" (exit {code.group(1)})" if code else "")
+    return rest or name.rsplit(".", 1)[-1]
+
+
+def basenames(s: str) -> str:
+    """Strip directory prefixes: '/a/b/x.wav' → 'x.wav'; URLs untouched."""
+    return _PATH.sub("", s)
+
+
+def reason(text: str) -> str:
+    """The one-line verdict for a tool's whole output (the sync paths)."""
+    return JobRunner._explain([ln.rstrip() for ln in text.splitlines()
+                               if ln.strip()])
+
+
+# ── the importer's CLI flags — shared by import, async import and refresh ──
+OPT_KEYS = ("id", "start", "take", "sensitivity", "bitrate", "sample_rate",
+            "channels", "format", "gain_db", "fade_in", "fade_out", "notes")
+
+
+def opt_args(req: dict, keys: tuple[str, ...] = OPT_KEYS) -> list[str]:
+    args: list[str] = []
+    for k in keys:
+        v = req.get(k)
+        if v not in (None, ""):
+            args.append(f"--{k.replace('_', '-')}={v}")   # `=`: a value can't become a flag
+    if req.get("normalize") is True:
+        args.append("--normalize")
+    elif req.get("normalize") is False:
+        args.append("--no-normalize")
+    return args

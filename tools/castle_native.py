@@ -17,10 +17,24 @@ timeout.
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from typing import Any
 
-import aioesphomeapi
+try:
+    import aioesphomeapi
+except ModuleNotFoundError:      # pragma: no cover — exercised by CI, not here
+    # OPTIONAL. This leg only matters for the all-in-flash build, which serves
+    # no HTTP; the SD build on the porch, the emulator and every test reach the
+    # castle over port 80. A studio without the library still serves the desk
+    # and relays everything — it just cannot talk to a flash-only castle, and
+    # `connected()` says so rather than the import taking the server down
+    # (CI installs numpy/scipy/pyyaml and nothing else, and hit exactly that).
+    aioesphomeapi = None         # type: ignore[assignment]
+
+# The client narrates every reconnect attempt at INFO/ERROR; in a studio
+# that is one line per 5 s per dead castle, forever. Real trouble is WARNING+.
+logging.getLogger("aioesphomeapi").setLevel(logging.WARNING)
 
 PORT = 6053
 #: One command round-trip; castle_link's own TIMEOUT_S guards the HTTP leg.
@@ -44,20 +58,24 @@ class _Link:
         self.states: dict[int, Any] = {}
         self.version = ""
         self.connected = False
-        threading.Thread(target=self._run, daemon=True,
-                         name="castle-native").start()
+        self.closing = False
+        self._wake = asyncio.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True,
+                                       name="castle-native")
+        self.thread.start()
 
     def _run(self) -> None:
         asyncio.set_event_loop(self.loop)
         self.loop.run_until_complete(self._main())
 
     async def _main(self) -> None:
-        while True:
-            dropped = asyncio.Event()
+        self._wake = asyncio.Event()
+        while not self.closing:
+            self._wake.clear()
 
             async def on_stop(expected: bool) -> None:
                 self.connected = False
-                dropped.set()
+                self._wake.set()
 
             try:
                 api = aioesphomeapi.APIClient(self.host, PORT, None)
@@ -70,10 +88,23 @@ class _Link:
                     lambda s: self.states.__setitem__(s.key, s))
                 self.api = api
                 self.connected = True
-                await dropped.wait()
+                await self._wake.wait()            # until dropped or closed
             except Exception:
                 self.connected = False
-            await asyncio.sleep(_RETRY_S)
+            if self.closing:
+                break
+            self._wake.clear()
+            try:
+                await asyncio.wait_for(self._wake.wait(), _RETRY_S)
+            except TimeoutError:
+                pass
+
+    def close(self) -> None:
+        """End the thread: no more reconnects. Tests only — the studio keeps
+        its links for life."""
+        self.closing = True
+        self.connected = False
+        self.loop.call_soon_threadsafe(self._wake.set)
 
     # -- called from the studio's threads ---------------------------------
 
@@ -97,6 +128,21 @@ class _Link:
         return str(getattr(s, "state", "") or "")
 
 
+def close_all() -> None:
+    """Drop every link and join its thread (test teardown)."""
+    with _lock:
+        links = list(_links.values())
+        _links.clear()
+    for ln in links:
+        ln.close()
+        ln.thread.join(timeout=2)
+
+
+def available() -> bool:
+    """Is the native leg even possible here? False without aioesphomeapi."""
+    return aioesphomeapi is not None
+
+
 def _get(host: str) -> _Link:
     with _lock:
         if host not in _links:
@@ -104,8 +150,21 @@ def _get(host: str) -> _Link:
         return _links[host]
 
 
+def connected(host: str) -> bool:
+    """Is the native leg actually talking to `host` right now?
+
+    The bridge asks this BEFORE translating a verb: a castle that serves no
+    HTTP and has no native session is simply down, and every verb must say
+    so. (Pass 1 of the dogfood found Stop answering 200 "queued" to a dead
+    castle, because the stub's key lookups all came back empty.)
+    """
+    return available() and _get(host).connected
+
+
 def status(host: str) -> dict[str, Any] | None:
     """The desk's status shape, from native entity state; None if offline."""
+    if not available():
+        return None
     ln = _get(host)
     if not ln.connected:
         return None
@@ -129,6 +188,8 @@ def status(host: str) -> dict[str, Any] | None:
 
 def scene(host: str, scene_id: str) -> bool:
     """Press the firmware's scene__<id> button."""
+    if not available():
+        return False
     ln = _get(host)
     key = ln.keys.get(f"scene__{scene_id}")
     if key is None:
@@ -138,8 +199,14 @@ def scene(host: str, scene_id: str) -> bool:
 
 def stop(host: str) -> bool:
     """The desk's Stop: halt audio, then blackout the zones."""
+    if not available():
+        return False
     ln = _get(host)
     media, blackout = ln.keys.get("castle_audio"), ln.keys.get("blackout")
+    # Nothing to press means nothing was stopped: False, never a vacuous
+    # True — "press ■, see ✓, castle keeps blaring" is the worst night.
+    if not ln.connected or (media is None and blackout is None):
+        return False
     ok = True
     if media is not None:
         ok &= ln._submit(lambda api: api.media_player_command(
@@ -151,6 +218,8 @@ def stop(host: str) -> bool:
 
 def volume(host: str, pct: int) -> bool:
     """0-100, same contract as the SD build's /api/volume."""
+    if not available():
+        return False
     ln = _get(host)
     key = ln.keys.get("castle_audio")
     if key is None or not 0 <= pct <= 100:

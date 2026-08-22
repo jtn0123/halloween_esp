@@ -12,6 +12,10 @@
  *
  * legacy_effects.mjs is the pre-migration code extracted verbatim. It is the
  * reference, not a reimplementation, which is what makes this test meaningful.
+ * One primitive in it was re-pinned on purpose (see its header): the lattice
+ * hash became the integer mix the firmware runs, so that the desk and the
+ * porch agree frame for frame (web/test/firmware_parity.mjs). Everything
+ * built on top of that hash is still the original.
  */
 
 import { EFFECTS as LEGACY, toScreen as legacyToScreen, P as legacyP } from "./legacy_effects.mjs";

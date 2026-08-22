@@ -39,9 +39,10 @@ const FIRMWARE = APP_PARTITION - FLASH_BUDGET;
 /** `hardware.audio.bitrate` in scenes.yaml: 32 kbps mono, so 4 KB per second.
  *  Only used for a scene that has not been rendered — a real file wins. */
 const BYTES_PER_SEC = 32_000 / 8;
-/** No card reports its size to the desk. This is the figure the rest of the
- *  project quotes (see import_opts.ts) and it is labelled as an assumption. */
-const CARD = 32 * 1024 * 1024 * 1024;
+/** Until a castle reports its card (`sd_total_kb`, v5.23+), the figure the
+ *  rest of the project quotes (see import_opts.ts) — labelled as an
+ *  assumption for exactly as long as it is one. */
+const CARD_ASSUMED = 32 * 1024 * 1024 * 1024;
 
 /** One clickable band, and one legend row. */
 interface Item {
@@ -63,6 +64,8 @@ export interface LibraryTrack { id: string; kb: number }
 export interface BudgetApi {
   /** The imported library changed — it is the SD view's biggest number. */
   setTracks(tracks: readonly LibraryTrack[]): void;
+  /** The castle said how big its card is (KB), or stopped saying (null). */
+  setCard(totalKb: number | null): void;
 }
 
 const MB = 1024 * 1024;
@@ -127,6 +130,8 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
   let build: "flash" | "sd" = "flash";
   let picked: string | null = null;
   let library: readonly LibraryTrack[] = [];
+  /** Bytes the castle reports for its card; null = assume. */
+  let cardKb: number | null = null;
 
   /** Everything on the ground, largest ceiling last. */
   function items(): { items: Item[]; capacity: number; used: number } {
@@ -136,8 +141,9 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
       const lib = library.reduce((a, t) => a + t.kb * 1024, 0);
       const site = siteCost();
       const used = showBytes + lib + site.bytes;
+      const card = cardKb ? cardKb * 1024 : CARD_ASSUMED;
       return {
-        capacity: CARD,
+        capacity: card,
         used,
         items: [
           { key: "scenes", label: `/sd/scenes — the show's ${scenes.length} rendered scenes`,
@@ -153,8 +159,11 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
           { key: "site", label: "/sd/site — this cue desk", bytes: site.bytes,
             color: "var(--spirit)", meta: site.meta,
             blurb: "One self-contained file, which is the constraint that makes it servable by a microcontroller at all." },
-          { key: "free", label: "Free", bytes: Math.max(0, CARD - used),
-            color: "var(--line-2)", meta: "32 GB card, assumed — nothing reports it",
+          { key: "free", label: "Free", bytes: Math.max(0, card - used),
+            color: "var(--line-2)",
+            meta: cardKb
+              ? `${size(card)} card — as the castle reports it`
+              : "32 GB card, assumed — no castle is answering to say",
             blurb: "The card holds as many tracks as you like. The ceiling that mattered was flash, not storage." },
         ],
       };
@@ -262,6 +271,11 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
   return {
     setTracks(tracks: readonly LibraryTrack[]): void {
       library = tracks;
+      if (build === "sd") draw();
+    },
+    setCard(totalKb: number | null): void {
+      if (totalKb === cardKb) return;
+      cardKb = totalKb;
       if (build === "sd") draw();
     },
   };

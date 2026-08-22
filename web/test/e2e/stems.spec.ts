@@ -52,7 +52,7 @@ const READY = {
 
 test("the ready panel draws three layers and Left exposes what mono missed",
     async ({ page }) => {
-  await page.route(`**/api/stems/${MP3}`, r =>
+  await page.route(`**/studio/stems/${MP3}`, r =>
     r.fulfill({ json: READY }));
   await openEditor(page);
 
@@ -74,7 +74,7 @@ test("the ready panel draws three layers and Left exposes what mono missed",
 });
 
 test("L / R stacks the channels and counts one-sided hits", async ({ page }) => {
-  await page.route(`**/api/stems/${MP3}`, r =>
+  await page.route(`**/studio/stems/${MP3}`, r =>
     r.fulfill({ json: READY }));
   await openEditor(page);
   const panel = page.locator("#trkWave .stems");
@@ -89,7 +89,7 @@ test("L / R stacks the channels and counts one-sided hits", async ({ page }) => 
 
 test("a stale split says so instead of quietly showing old audio",
     async ({ page }) => {
-  await page.route(`**/api/stems/${MP3}`, r =>
+  await page.route(`**/studio/stems/${MP3}`, r =>
     r.fulfill({ json: { ...READY, stale: true } }));
   await openEditor(page);
   await expect(page.locator("#trkWave .stems")).toContainText("re-imported");

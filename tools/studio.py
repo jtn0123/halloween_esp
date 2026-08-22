@@ -1,31 +1,21 @@
 #!/usr/bin/env python3
-"""Local companion server for the cue desk.
+"""Local companion server for the cue desk (`make studio` -> 127.0.0.1:8765).
 
-The previewer is a single static HTML file, which is exactly what makes it
-portable — but a static file cannot run yt-dlp, cannot write to tracks/, and
-cannot edit scenes.yaml. This puts a small server behind it so the Tracks
-panel can actually do those things on your own machine.
+The previewer is one static HTML file; this small server is what lets its
+Tracks panel run yt-dlp/ffmpeg, write tracks/, and edit scenes.yaml. Routes:
+docs/API.md. What the studio OWNS lives under /studio/...; /api/... is the
+castle's and relays to it untouched (castle_link.py) — except /api/status,
+answered here when no castle is in reach. Old /api/ spellings of studio
+routes are aliases for one release (STUDIO_ROUTES below).
 
-    make studio          -> http://127.0.0.1:8765
-
-Endpoints (all JSON, all local-only):
-
-    GET    /api/tracks              list imported tracks + their onsets
-    POST   /api/import              {url} or multipart file  -> import
-    DELETE /api/tracks/<id>         remove a track
-    POST   /api/scene               add/replace a scene in scenes.yaml
-    POST   /api/rebuild             re-run audio + generators
-    GET    /api/track/<id>          stream a track for the browser to audition
-                                    (extension optional — the server owns it)
-
-Binds to 127.0.0.1 by default. This drives ffmpeg and yt-dlp on your machine
-and edits files in the repo; `--lan` opens it to the local network for the
-phone/iPad remote — do that only on a network you control.
+Binds to 127.0.0.1 by default; `--lan` opens it to the local network for
+the phone/iPad remote — only on a network you control: a LAN visitor can
+import and delete tracks, rewrite scenes.yaml, push to the castle and stop
+the server, with no login.
 """
 
 from __future__ import annotations
 
-import json
 import os
 import shutil
 import subprocess
@@ -37,12 +27,17 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
+import build_paths as bp
 import castle_link as cl
+import gen_previewer as gp
 import manifest as mf
+import netguard as ng
 import stems as st
 import studio_http as sh
 import studio_jobs as sj
 import studio_media as sm
+import studio_scenes as ss
+from studio_jobs import OPT_KEYS, opt_args  # the importer's CLI flags, one place
 
 # Re-exported: TRACKS and these helpers are the track vocabulary, and
 # callers (including the tests) reach for them through this module.
@@ -51,8 +46,10 @@ from studio_tracks import (
     MIME,
     TRACKS,
     parse_sensitivity,
+    source_copies,
     track_files,
-    track_info,
+    track_info,  # noqa: F401 — re-exported for tests
+    track_infos,
     track_path,
 )
 
@@ -60,34 +57,40 @@ ROOT = Path(__file__).resolve().parent.parent
 # CASTLE_SCENES redirects scene writes the way CASTLE_TRACKS redirects the
 # track library — a sandboxed studio (tests, UX sessions on a scratch copy)
 # must not be able to edit the real show. Unset means the real file.
-SCENES = Path(os.environ.get("CASTLE_SCENES") or (ROOT / "scenes" / "scenes.yaml"))
+SCENES = bp.SCENES
 HTML = ROOT / "previewer" / "castle-cue-desk.html"
-PY = str(ROOT / ".venv" / "bin" / "python")
+# The interpreter running this server is the one its children run under —
+# whichever venv that is. The hardcoded .venv/bin/python broke the moment
+# the studio was launched from anywhere else.
+PY = sys.executable
 
 _lock = threading.Lock()          # ffmpeg/yt-dlp jobs are serialised
-_runner = sj.JobRunner()          # long imports run in the background
+_runner = sj.JobRunner(gate=_lock)  # background jobs queue behind the same lock
 
 
 def _restart() -> None:
-    """Replace this process with a fresh copy of itself.
-
-    os.execv keeps the same PID, so whatever launched us — a double-clicked
-    launcher, or launchd — neither notices nor needs to re-parent anything.
-    """
+    """Replace this process with a fresh copy of itself. os.execv keeps the
+    PID, so whatever launched us (a launcher, launchd) notices nothing."""
     time.sleep(0.4)               # let the HTTP response actually go out
     os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
 def run(cmd: list[str], timeout: int = 900) -> tuple[bool, str]:
-    # The ceiling matters more than its exact value: these run holding
-    # _lock, so one hung ffmpeg/yt-dlp used to wedge every later import
-    # and rebuild for the life of the process.
+    # The ceiling matters more than its value: these run holding _lock, so
+    # one hung ffmpeg/yt-dlp used to wedge every later import and rebuild.
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, check=False,
                            timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, f"gave up after {timeout}s — the job stalled"
     return p.returncode == 0, (p.stdout + p.stderr)[-4000:]
+
+
+
+
+def failed(log: str, **extra) -> dict:
+    """A failure body: the log tail for the curious, one reason for the row."""
+    return {"ok": False, "log": log, "reason": sj.reason(log), **extra}
 
 
 def safe_id(raw: str) -> str | None:
@@ -99,6 +102,47 @@ def safe_id(raw: str) -> str | None:
     import_track's error output."""
     tid = (raw or "").strip()
     return tid if tid and all(c.isalnum() or c == "_" for c in tid) else None
+
+
+def served() -> tuple[Path, Path]:
+    """The page the studio serves and the audio/ it was built from — a
+    sandbox's own build once it has one, the repo's until then; always both,
+    so the lean page's /studio/scene-audio/ links resolve to its own files."""
+    if bp.sandboxed() and bp.PREVIEW_HTML.exists():
+        return bp.PREVIEW_HTML, bp.AUDIO
+    return HTML, ROOT / "audio"
+
+
+#: The studio's own route families. "/api/<x>" for any of these is the OLD
+#: spelling (v5.23 and earlier), rewritten to "/studio/<x>" for one release
+#: so a desk built before the move keeps working; every other /api/* path
+#: is the castle's and relays untouched (/api/scene?s=<id> included).
+STUDIO_ROUTES = frozenset((
+    "tracks", "import", "job", "refresh", "track", "waveform", "stems",
+    "stem", "compare", "probe", "server", "scene", "rebuild", "card"))
+_deprecated_seen: set[str] = set()
+
+
+#: The castle's own prefix. Studio routes moved out from under it (they are
+#: /studio/* now), and these two spellings are compared often enough that the
+#: literal was drifting between them.
+API = "/api/"
+
+
+def studio_path(raw: str) -> str:
+    """The request's path (no query), an old /api/ spelling of a studio
+    route rewritten to its /studio/ home — logged once per route."""
+    url = urllib.parse.urlparse(raw)
+    path = url.path
+    head = path[len(API):].split("/", 1)[0] if path.startswith(API) else ""
+    if head not in STUDIO_ROUTES or (
+            head == "scene" and urllib.parse.parse_qs(url.query).get("s")):
+        return path
+    if head not in _deprecated_seen:
+        _deprecated_seen.add(head)
+        sys.stderr.write(f"  DEPRECATED: /api/{head} is now /studio/{head} "
+                         "(docs/API.md) — the alias goes away next release\n")
+    return "/studio/" + path[5:]
 
 
 class Handler(sh.JsonHandler):
@@ -116,19 +160,32 @@ class Handler(sh.JsonHandler):
         self._guarded(self._put)
 
     def _get(self):
-        path = urllib.parse.urlparse(self.path).path
+        path = studio_path(self.path)
         if path in ("/", "/index.html"):
-            if not HTML.exists():
+            # Lean: inlined audio rewritten to /studio/scene-audio/ links.
+            page, _ = served()
+            if not page.exists():
                 return self.send_json({"error": "previewer not built"}, 404)
-            return self.send_bytes(HTML.read_bytes(), "text/html; charset=utf-8")
-        if path.startswith("/api/job/"):
+            body, etag = gp.lean_page(page)
+            return self.send_bytes(body, "text/html; charset=utf-8", etag=etag)
+        if path.startswith("/studio/scene-audio/"):
+            p = gp.scene_audio(served()[1], Path(path).name)
+            if p is None:
+                return self.send_json({"error": "no such scene audio"}, 404)
+            return self.send_range(p, "audio/mpeg")
+        if path == "/remote":
+            # The castle's own phone remote (firmware/sd_web_remote.h) — four
+            # thumb buttons that live in flash. Relayed so the address on
+            # the desk's link works from any phone on the LAN (JB1-8).
+            return self.relay("GET")
+        if path.startswith("/studio/job/"):
             job = _runner.get(Path(path).name)
             if job is None:
                 return self.send_json({"error": "no such job"}, 404)
             d = job.as_dict()
             if d["done"]:
                 TRACKS.mkdir(exist_ok=True)
-                d["tracks"] = [track_info(p) for p in track_files()]
+                d["tracks"] = track_infos(track_files())
             return self.send_json(d)
         if path == "/api/status":
             # The desk probes this to decide simulator-vs-device mode. When
@@ -138,42 +195,42 @@ class Handler(sh.JsonHandler):
             # answer for itself, marked so device.ts knows it is NOT one.
             live = cl.status()
             return self.send_json(live or {"studio": True})
-        if path == "/api/tracks":
+        if path == "/studio/tracks":
             TRACKS.mkdir(exist_ok=True)
             return self.send_json({
-                "tracks": [track_info(p) for p in track_files()],
-                "scenes": [s for s in scene_ids()],
+                "tracks": track_infos(track_files()),
+                "scenes": scene_ids(),
             })
-        if path.startswith("/api/waveform/"):
+        if path.startswith("/studio/waveform/"):
             q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             sens = parse_sensitivity(q)
             p = track_path(Path(path).name)    # name-stripped: no traversal
             if p is None:
                 return self.send_json({"error": "no such track"}, 404)
             return self.send_json(sm.waveform(p, sensitivity=sens))
-        if path.startswith("/api/stems/"):
+        if path.startswith("/studio/stems/"):
             # Cached nine-way analysis (layer x channel), written by the
             # split job — never derived inside a GET, which would stall the
             # panel for the length of nine STFTs.
             out = st.analysis(Path(path).name)
             return self.send_json(out, 200 if out.get("ok") else 404)
-        if path.startswith("/api/stem/"):
-            # /api/stem/<tid>/<layer> — the stem mp3s; `combined` has no file
-            # here because the original track already streams via /api/track.
+        if path.startswith("/studio/stem/"):
+            # /studio/stem/<tid>/<layer> — the stem mp3s; `combined` has no file
+            # here because the original track already streams via /studio/track.
             parts = path.split("/")
             p = st.stem_file(parts[-2], parts[-1]) if len(parts) >= 5 else None
             if p is None:
                 return self.send_json({"error": "no such stem"}, 404)
             return self.send_range(p, "audio/mpeg")
-        if path.startswith("/api/compare/"):
-            # /api/compare/<token>/<codec>
+        if path.startswith("/studio/compare/"):
+            # /studio/compare/<token>/<codec>
             parts = path.split("/")
             p = sm.compare_file(parts[-2], parts[-1]) if len(parts) >= 5 else None
             if p is None:
                 return self.send_json({"error": "no such comparison"}, 404)
             return self.send_range(p, MIME.get(p.suffix.lstrip("."),
                                                "application/octet-stream"))
-        if path.startswith("/api/track/"):
+        if path.startswith("/studio/track/"):
             # Path(...).name strips any directory part, so a traversal
             # like ../../etc/passwd cannot escape TRACKS. That call IS
             # the guard — a `p.parent == TRACKS` check here would be
@@ -184,51 +241,67 @@ class Handler(sh.JsonHandler):
             if p is None:
                 return self.send_json({"error": "not found"}, 404)
             return self.send_range(p, MIME[p.suffix.lstrip(".")])
-        if path.startswith("/api/"):
+        if path.startswith("/studio/card/"):
+            # Pull leg: the castle serves card bytes at /sd/<name>. Name-
+            # stripped like every other file route — the raw suffix used to
+            # go through, and "../api/status" reached any GET on the castle.
+            name = Path(path[len("/studio/card/"):]).name
+            if not name:
+                return self.send_json({"error": "no file name"}, 400)
+            return self.relay("GET", to="/sd/" + name)
+        if path.startswith(API):
             return self.relay("GET")
         self.send_json({"error": "not found"}, 404)
 
     def _delete(self):
-        path = urllib.parse.urlparse(self.path).path
-        if path.startswith("/api/tracks/"):
+        path = studio_path(self.path)
+        if path.startswith("/studio/tracks/"):
             tid = Path(path).name
             p = track_path(tid)            # name-stripped above
+            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            # ?scene=1 with the file already gone: the scene is an orphan
+            # and taking it out is the whole point (judge B, JB2-5a).
+            if p is None and not q.get("scene"):
+                return self.send_json({"error": "not found"}, 404)
             if p is not None:
                 p.unlink()
-                mf.forget(tid)
-                return self.send_json({"ok": True, "removed": tid})
-            return self.send_json({"error": "not found"}, 404)
-        if path.startswith("/api/"):
+            for kept in source_copies(tid):
+                kept.unlink()
+            mf.forget(tid)
+            body: dict = {"ok": True, "removed": tid, "file_missing": p is None}
+            if q.get("scene"):
+                # The track was IN THE SHOW and the operator chose to take
+                # its scene out with it, rather than leave scenes.yaml
+                # pointing at a file that is gone (JB1-6).
+                res, _code = ss.remove(SCENES, tid, _lock, run, PY, ROOT)
+                body.update(scene_removed=res.get("removed", False),
+                            scenes=res.get("scenes", []), log=res.get("log", ""))
+                if not res.get("ok"):
+                    body.update(failed(res.get("log", "")))
+            return self.send_json(body, 200 if body["ok"] else 500)
+        if path.startswith(API):
             return self.relay("DELETE")
         self.send_json({"error": "not found"}, 404)
 
     def _post(self):
-        path = urllib.parse.urlparse(self.path).path
+        path = studio_path(self.path)
         raw = self.body()
-        if path == "/api/import":
+        if path == "/studio/import":
             return self.do_import(raw)
-        if path == "/api/import/async":
+        if path == "/studio/import/async":
             req = self.json_body(raw)
             src = (req.get("url") or "").strip()
             if not src.startswith(("http://", "https://")):
                 return self.send_json({"error": "url must be http(s)"}, 400)
+            if (why := ng.refuse_reason(src, self.client_address[0])):
+                return self.send_json({"error": why}, 400)
             if req.get("id") and safe_id(req["id"]) is None:
-                return self.send_json(
-                    {"error": "id: letters, digits and _ only"}, 400)
-            args = [PY, str(ROOT / "tools" / "import_track.py"), src]
-            for k in ("id", "start", "take", "sensitivity", "bitrate",
-                      "sample_rate", "channels", "format", "gain_db",
-                      "fade_in", "fade_out", "notes"):
-                v = req.get(k)
-                if v not in (None, ""):
-                    args += [f"--{k.replace('_', '-')}", str(v)]
-            if req.get("normalize"):
-                args.append("--normalize")
+                return self.send_json({"error": "id: letters, digits and _ only"}, 400)
+            args = [PY, str(ROOT / "tools" / "import_track.py"), src, *opt_args(req)]
             return self.send_json(_runner.start(args).as_dict())
-        if path == "/api/stems":
-            # Demucs split as a background job — ~25 s on the GPU is far too
-            # long to hold an HTTP request open, and the JobRunner already
-            # knows how to babysit a child process.
+        if path == "/studio/stems":
+            # Demucs split as a background job — ~25 s on the GPU is too long
+            # to hold a request open; the JobRunner babysits child processes.
             req = self.json_body(raw)
             tid = safe_id(req.get("id") or "")
             if tid is None or track_path(tid) is None:
@@ -237,29 +310,21 @@ class Handler(sh.JsonHandler):
             if req.get("force"):
                 args.append("--force")
             return self.send_json(_runner.start(args).as_dict())
-        if path == "/api/refresh":
-            # Rebuild a track from its remembered source, with any option
-            # overridden. This is why the manifest exists.
+        if path == "/studio/refresh":
+            # Rebuild a track from its remembered source, options overridden.
             req = self.json_body(raw)
             tid = safe_id(req.get("id") or "")
             if tid is None:
                 return self.send_json({"error": "no id"}, 400)
             args = [PY, str(ROOT / "tools" / "import_track.py"), "--refresh", tid]
-            for k in ("start", "take", "sensitivity", "bitrate",
-                      "sample_rate", "channels", "format", "gain_db",
-                      "fade_in", "fade_out"):
-                v = req.get(k)
-                if v not in (None, ""):
-                    args += [f"--{k.replace('_', '-')}", str(v)]
-            if req.get("normalize"):
-                args.append("--normalize")
+            args += opt_args(req, OPT_KEYS[1:-1])      # no id, no notes
             with _lock:
                 ok, out = run(args)
-            return self.send_json({"ok": ok, "log": out,
-                                   "tracks": [track_info(p)
-                                              for p in track_files()]},
+            tracks = track_infos(track_files())
+            return self.send_json({"ok": True, "log": out, "tracks": tracks}
+                                  if ok else failed(out, tracks=tracks),
                                   200 if ok else 500)
-        if path == "/api/compare":
+        if path == "/studio/compare":
             req = self.json_body(raw)
             # .name-strip like every other track route — without it this was
             # an arbitrary-read: "../../x" resolved, encoded, and streamed.
@@ -277,61 +342,51 @@ class Handler(sh.JsonHandler):
             }
             # ffmpeg four times over; serialise with every other encode job.
             with _lock:
-                out = sm.compare(p, opts, token=f"{p.stem}-{int(time.time())}")
-            return self.send_json(out, 200 if out.get("ok") else 500)
-        if path == "/api/probe":
+                res = sm.compare(p, opts, token=f"{p.stem}-{int(time.time())}")
+            return self.send_json(res, 200 if res.get("ok") else 500)
+        if path == "/studio/probe":
             req = self.json_body(raw)
-            out = sm.probe((req.get("url") or "").strip())
+            url = (req.get("url") or "").strip()
+            if (why := ng.refuse_reason(url, self.client_address[0])):
+                return self.send_json({"error": why}, 400)
+            res = sm.probe(url)
             # A bad or unreadable link is the caller's problem: 400, not 200.
-            return self.send_json(out, 200 if out.get("ok") else 400)
-        if path == "/api/server/stop":
+            return self.send_json(res, 200 if res.get("ok") else 400)
+        if path == "/studio/server/stop":
             # Answer first, then shut down — otherwise the page sees the
             # socket die and reports a network error instead of "stopped".
             self.send_json({"ok": True, "stopping": True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
-        if path == "/api/server/restart":
+        if path == "/studio/server/restart":
             self.send_json({"ok": True, "restarting": True})
             threading.Thread(target=_restart, daemon=True).start()
             return
-        if path == "/api/scene":
-            # ?s=<id> is the castle's fire-a-scene; a JSON body is the
-            # studio's own scenes.yaml editor. Same path, different verb.
-            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-            if q.get("s"):
-                return self.relay("POST", raw)
+        if path == "/studio/scene":
+            # The studio's scenes.yaml editor (JSON body). /api/scene?s=<id> is
+            # the castle's fire-a-scene; studio_path keeps it on the relay.
             return self.do_scene(self.json_body(raw))
-        if path == "/api/rebuild":
-            with _lock:
-                ok1, o1 = run([PY, str(ROOT / "tools" / "render_audio.py")])
-                ok2, o2 = run([PY, str(ROOT / "tools" / "gen_esphome.py")])
-                ok3, o3 = run([PY, str(ROOT / "tools" / "gen_previewer.py")])
-            ok = ok1 and ok2 and ok3
-            return self.send_json({"ok": ok, "log": (o1 + o2 + o3)[-4000:]},
-                                  200 if ok else 500)
-        if path.startswith("/api/"):
+        if path == "/studio/rebuild":
+            ok, log = ss.rebuild(_lock, run, PY, ROOT)
+            return self.send_json({"ok": ok, "log": log}, 200 if ok else 500)
+        if path.startswith(API):
             return self.relay("POST", raw)
         self.send_json({"error": "not found"}, 404)
 
-    def _put(self) -> None:
+    def _put(self):
         # The desk's "→ Castle" button: PUT /api/files/<name> with the track
         # bytes. The studio owns no PUT routes of its own, so everything
         # castle-shaped relays; castle_link enforces the reachability story.
-        path = urllib.parse.urlparse(self.path).path
-        if not path.startswith("/api/"):
+        path = studio_path(self.path)
+        if not path.startswith(API):
             return self.send_json({"error": "not found"}, 404)
-        n = int(self.headers.get("Content-Length") or 0)
-        body = self.rfile.read(n) if n else b""
-        return self.relay("PUT", body)
+        self.relay("PUT", self.body())
 
-    def relay(self, method: str, body: bytes = b"") -> None:
-        """Hand an unclaimed /api/* request to the castle, answer as it did."""
-        code, out, ctype = cl.forward(method, self.path, body)
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(out)))
-        self.end_headers()
-        self.wfile.write(out)
+    def relay(self, method: str, body: bytes = b"",
+              to: str | None = None) -> None:
+        """Hand a castle-shaped /api/* request to the castle, answer as it did."""
+        code, out, ctype = cl.forward(method, to or self.path, body)
+        self._send_plain(out, ctype, code, [])
 
     def do_import(self, raw: bytes):
         ctype = self.headers.get("Content-Type", "")
@@ -345,110 +400,51 @@ class Handler(sh.JsonHandler):
                 return self.send_json({"error": "no url"}, 400)
             if not src.startswith(("http://", "https://")):
                 return self.send_json({"error": "url must be http(s)"}, 400)
+            if (why := ng.refuse_reason(src, self.client_address[0])):
+                return self.send_json({"error": why}, 400)
             args.append(src)
         else:
             # multipart upload: pull out the single file part
             fname, data = sh.parse_multipart(raw, ctype)
             if not data:
                 return self.send_json({"error": "no file in upload"}, 400)
+            # Through json_body: malformed options are the client's mistake
+            # (400), not a traceback and a dead socket. Before the staging
+            # write, so a rejected upload leaves nothing behind.
+            req = self.json_body(
+                (self.headers.get("X-Import-Opts") or "{}").encode())
             tmp = TRACKS / "_upload"
             tmp.mkdir(exist_ok=True)
             src = tmp / (fname or "upload.bin")
             src.write_bytes(data)
-            args.append(str(src))
-            req = json.loads(self.headers.get("X-Import-Opts") or "{}")
+            # The staging copy is gone the moment this returns, so the
+            # importer keeps the original beside the library (tracks/_src/)
+            # and remembers THAT as the source — or Re-import could never
+            # work for a dropped or card-pulled file (JB1-3).
+            args += [str(src), "--keep-source"]
 
         if req.get("id") and safe_id(str(req["id"])) is None:
             return self.send_json({"error": "id: letters, digits and _ only"}, 400)
-        for k in ("id", "start", "take", "sensitivity", "bitrate",
-                  "sample_rate", "channels", "format", "gain_db",
-                      "fade_in", "fade_out", "notes"):
-            v = req.get(k)
-            if v not in (None, ""):
-                args += [f"--{k.replace('_', '-')}", str(v)]
-        if req.get("normalize"):
-            args.append("--normalize")
+        args += opt_args(req)
 
         with _lock:
             ok, out = run(args)
         shutil.rmtree(TRACKS / "_upload", ignore_errors=True)
-        return self.send_json({"ok": ok, "log": out,
-                               "tracks": [track_info(p)
-                                          for p in track_files()]},
+        tracks = track_infos(track_files())
+        return self.send_json({"ok": True, "log": out, "tracks": tracks}
+                              if ok else failed(out, tracks=tracks),
                               200 if ok else 500)
 
     def do_scene(self, req: dict):
-        """Insert or replace a scene block in scenes.yaml.
-
-        Text splicing, not a YAML round-trip: scenes.yaml is a hand-authored
-        file full of comments that carry the reasoning behind the show, and
-        dumping it back through a YAML serialiser would erase all of them.
-        """
-        block = (req.get("yaml") or "").rstrip()
-        sid = (req.get("id") or "").strip()
-        if not block or not sid:
-            return self.send_json({"error": "need id and yaml"}, 400)
-        # The block must PARSE, and must be the one scene it claims to be —
-        # scenes.yaml is the hand-authored source of truth for the whole
-        # show, and a malformed splice used to corrupt it permanently (the
-        # UI then showed "no scenes" instead of an error).
-        import yaml as _yaml
-        try:
-            parsed = _yaml.safe_load(block)
-        except _yaml.YAMLError as e:
-            return self.send_json({"error": f"scene is not valid YAML: {e}"}, 400)
-        if (not isinstance(parsed, list) or len(parsed) != 1
-                or not isinstance(parsed[0], dict) or parsed[0].get("id") != sid):
-            return self.send_json(
-                {"error": f"expected exactly one scene with id {sid!r}"}, 400)
-        import re
-        pat = re.compile(rf"^  - id: {re.escape(sid)}\n(?:.*\n)*?(?=^  - id: |\Z)", re.MULTILINE)
-        with _lock:
-            # Read-modify-write under the lock: two concurrent saves used to
-            # interleave here and one silently lost.
-            before = SCENES.read_text()
-            replaced = bool(pat.search(before))
-            if replaced:
-                # lambda: a plain-string replacement treats backslashes as
-                # group escapes and mangles the block (gen_previewer.py
-                # documents this exact trap).
-                raw = pat.sub(lambda _: block + "\n\n", before)
-            else:
-                raw = before.rstrip() + "\n\n" + block + "\n"
-            # Exactly one trailing newline either way. Replacing the last
-            # scene in the file leaves a blank line behind otherwise — stable
-            # rather than growing, but it shows up as a diff on a write that
-            # changed nothing.
-            # Keep the pre-edit text, then replace atomically: a crash
-            # mid-write must never be able to truncate the show.
-            SCENES.with_suffix(".yaml.bak").write_text(before)
-            tmp = SCENES.with_suffix(".yaml.tmp")
-            tmp.write_text(raw.rstrip() + "\n")
-            os.replace(tmp, SCENES)
-        with _lock:
-            ok1, o1 = run([PY, str(ROOT / "tools" / "render_audio.py")])
-            ok2, o2 = run([PY, str(ROOT / "tools" / "gen_esphome.py")])
-            ok3, o3 = run([PY, str(ROOT / "tools" / "gen_previewer.py")])
-        # `replaced` and `scenes` are what let the panel say what actually
-        # happened instead of "written", which is indistinguishable from
-        # nothing having happened at all.
-        ok = ok1 and ok2 and ok3
-        return self.send_json({"ok": ok, "id": sid,
-                               "replaced": replaced, "scenes": scene_ids(),
-                               "log": (o1 + o2 + o3)[-4000:]},
-                              200 if ok else 500)
+        """Insert or replace a scene in scenes.yaml — studio_scenes.splice."""
+        body, code = ss.splice(SCENES, req, _lock, run, PY, ROOT)
+        if not body.get("ok") and body.get("log"):
+            body["reason"] = sj.reason(body["log"])
+        return self.send_json(body, code)
 
 
 def scene_ids() -> list[str]:
-    import yaml
-    try:
-        doc = yaml.safe_load(SCENES.read_text())
-        return [s["id"] for s in doc.get("scenes", [])]
-    except Exception as e:
-        # But it must not be SILENT either: "no scenes" and "the file is
-        # broken, here's the parse error" are very different situations.
-        print(f"WARNING: could not parse {SCENES}: {e}")
-        return []
+    return ss.scene_ids(SCENES)
 
 
 def lan_ip() -> str:

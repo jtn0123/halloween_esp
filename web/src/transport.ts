@@ -35,6 +35,11 @@ export interface TransportDeps {
   /** Whether an external player is sounding. With the button showing Pause
    *  for a row preview, pressing it must pause THAT — not start the scene. */
   isExternalPlaying?: () => boolean;
+  /** Blackout happened — the button or Esc. The host mirrors it to the
+   *  castle the way scene picks are mirrored: a scene fired on the porch
+   *  from this desk must be stoppable from the same transport, or ■ Stop
+   *  silences the laptop while the castle plays on. */
+  onBlackout?: () => void;
 }
 
 export class Transport {
@@ -171,6 +176,7 @@ export class Transport {
     this.d.synth.newShowBus();
     this.d.rendered.stopAll();
     this.d.synth.stopWind();
+    this.d.onBlackout?.();
   }
 
   restart(): void {

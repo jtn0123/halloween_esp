@@ -294,6 +294,53 @@ const P = defaultParams();
      "a slam mid-swell wins instantly and cancels the pending rise");
 }
 
+/* ── An RGB fixture has no white die: the device drops W, so must we ──── */
+{
+  // The castle as built: a Ring 12 in the doorway, wired `rgbw: false`.
+  // `ember` carries most of its body in W (0.85 l), which the device's RGB
+  // strip never emits — the preview used to paint it as a warm glow anyway.
+  const sc = scene({ base: { towerL: "off", towerR: "off", door: "ember" } });
+  const st = createState(sc, 0);
+  rebuildLightsAt(st, sc, 0);
+  ok(st.rgbw.door === false && st.rgbw.towerL === true,
+     "the default rig knows which zones have a white die");
+  ok(st.layout.door.n === 12 && st.layout.towerL.n === 7,
+     "createState takes each zone's own fixture from DEFAULT_RIG, not towerL's");
+  const rgb = renderZones(st, 2.0, P).door.pix[3];
+  st.rgbw.door = true;
+  const rgbw = renderZones(st, 2.0, P).door.pix[3];
+  ok(rgbw[2] > rgb[2] && rgbw[0] > rgb[0],
+     "an RGB zone renders without the white die's contribution");
+  // With the die gone the pixel is pure RGB: the blue channel carries only the
+  // effect's (zero) blue — no warm-white leaking in.
+  ok(rgb[2] === 0, `ember on an RGB ring has no blue (got ${rgb[2]})`);
+  // The strike's W channel is dropped on an RGB zone as well.
+  st.rgbw.door = false;
+  st.flash.door = 1; st.flashCol.door = [0, 0, 0, 1];
+  const struck = renderZones(st, 2.0, P).door.pix[3];
+  ok(struck[0] === rgb[0] && struck[1] === rgb[1] && struck[2] === rgb[2],
+     "a white-only strike does nothing on an RGB zone, as on the device");
+}
+
+/* ── A cue on the scene's last millisecond fires before the end signal ── */
+{
+  // The device emits no tail delay when the last cue sits at duration_ms,
+  // so that cue runs. The transport stops the show inside onEnded; firing
+  // the cues after it meant a t == dur cue was swallowed.
+  const sc = scene({ loop: false, dur: 500, cues: [
+    { t: 500, bus: "LED", op: "set", zone: "door", eff: "furnace" },
+  ]});
+  const st = createState(sc, 0);
+  rebuildLightsAt(st, sc, 0);
+  st.running = true; st.t0 = 0;
+  let ended = 0;
+  step(st, 516, P, () => {}, () => { ended++; st.running = false; });
+  ok(ended === 1, "the end is still signalled once");
+  ok(st.eff.door === "furnace", "the cue at t == dur fired in the frame that reached it");
+  step(st, 532, P, () => {}, () => ended++);
+  ok(ended === 1, "a stopped show does not signal the end again");
+}
+
 console.log(`show engine: ${pass} assertions`);
 if (fails.length) {
   console.error(`\nFAILED — ${fails.length}:`);

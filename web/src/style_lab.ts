@@ -52,32 +52,30 @@ function loadSaved(): SavedLab {
 
 /** @param onStyle re-expand the audition after any change here. */
 export function createStyleLab(onStyle: () => void): StyleLab {
-  // Styling is inline: previewer/styles.css sits exactly at the 500-line cap,
-  // and this panel owns its whole DOM the way waveform.ts's chrome does.
+  // Styled by class in previewer/panels.css (.stylelab*) — this panel owns
+  // its whole DOM the way waveform.ts's chrome does, but not its colours.
   const el = document.createElement("details");
   el.className = "stylelab";
-  el.style.cssText = "margin:6px 0;font:12px/1.7 var(--f-data),ui-monospace,"
-    + "monospace;color:var(--ink-2)";
   // Open by default: this panel was invisible in practice — a collapsed fold
   // labelled "Style lab" told nobody that the A/B lives here. Discoverable
   // first, foldable after.
   el.open = true;
   const sum = document.createElement("summary");
-  sum.style.cursor = "pointer";
-  sum.textContent = "Judge the lights — A/B engine test, flavours, knobs";
-  sum.title = "Compare the light engine against the old flat look, and trim "
-            + "intensity/tails live. Applies to the audition and to the next "
-            + "Make/Update scene — the baked scenes on the left don't change "
-            + "until you re-export them.";
+  // Operator words on the outside (JB1-9): what you can do to the look.
+  // The engine A/B and the code export are developer tools and live in
+  // the fold at the bottom, named as such.
+  sum.textContent = "Light style — flavours, brightness and tails";
+  sum.title = "Shape how the lights follow this track: optional flavours, "
+            + "and how hard and how long each band strikes. Applies to the "
+            + "audition and to the next Make/Update scene — the baked scenes "
+            + "on the left don't change until you re-export them.";
   el.append(sum);
 
   const row = (label: string): HTMLDivElement => {
     const r = document.createElement("div");
     r.className = "stylelab__row";
-    r.style.cssText = "display:flex;align-items:center;gap:8px;margin:3px 0";
     const s = document.createElement("span");
     s.className = "stylelab__nm";
-    s.style.cssText = "min-width:3.5em";
     s.textContent = label;
     r.append(s);
     return r;
@@ -105,7 +103,6 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   });
   sayAb();
   abRow.append(ab);
-  el.append(abRow);
 
   /* ── Flavours: taste features, default off, judged via the A/B above.
      Turning one on colours the audition AND the next export. ── */
@@ -121,7 +118,7 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   ];
   for (const [key, label, title] of FLAVORS) {
     const wrap = document.createElement("label");
-    wrap.style.cssText = "display:inline-flex;align-items:center;gap:3px;cursor:pointer";
+    wrap.className = "stylelab__flav";
     wrap.title = title;
     const box = document.createElement("input");
     box.type = "checkbox";
@@ -135,16 +132,18 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     wrap.append(box, document.createTextNode(label));
     flavRow.append(wrap);
   }
+  el.append(flavRow);
   // Expectations, or the boxes read as dead (round 2: a tester turned all
   // three on, auditioned ten seconds of ambience, and measured no change —
-  // correctly, because nothing they gate had happened yet).
+  // correctly, because nothing they gate had happened yet). Its own
+  // paragraph under the row: inside the flex row it collapsed to a
+  // one-word-per-line column on a phone (JB1-7).
   const flavHint = document.createElement("div");
-  flavHint.style.cssText = "margin:1px 0 3px;color:var(--ink-3,#888);font-size:11px";
+  flavHint.className = "stylelab__flavhint";
   flavHint.textContent = "drift shows over ~a minute · chorus fires only in "
     + "loud chorus sections · swells need long sustained louds — audition a "
     + "loud stretch of the song to see them";
-  flavRow.append(flavHint);
-  el.append(flavRow);
+  el.append(flavHint);
 
   /* ── Knobs ── */
   const sliders: HTMLInputElement[] = [];
@@ -173,7 +172,6 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     const s = document.createElement("input");
     s.type = "range";
     s.className = "stylelab__knob";
-    s.style.cssText = "width:90px";
     s.min = String(min);
     s.max = String(max);
     s.step = "0.05";
@@ -198,9 +196,7 @@ export function createStyleLab(onStyle: () => void): StyleLab {
   const head = row("");
   const th = (label: string, title: string): HTMLSpanElement => {
     const s = document.createElement("span");
-    // 90px slider + its "×1.00" readout: match that span so the two labels
-    // sit over their own columns.
-    s.style.cssText = "width:134px;text-align:center;color:var(--ink-3,#888)";
+    s.className = "stylelab__th";
     s.textContent = label;
     s.title = title;
     return s;
@@ -218,12 +214,18 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     el.append(r);
   }
 
-  /* ── Reset + copy ── */
+  /* ── Reset, then the developer fold: engine A/B and the code export ── */
   const foot = row("");
   const reset = document.createElement("button");
   reset.type = "button";
   reset.textContent = "Reset";
-  reset.title = "Neutral knobs, engine A";
+  reset.title = "Neutral brightness and tails, no flavours, engine A";
+  const dev = document.createElement("details");
+  dev.className = "stylelab__dev";
+  const devSum = document.createElement("summary");
+  devSum.textContent = "developer — compare light engines, copy the style as code";
+  devSum.title = "Tools for working on the light engine itself, not on a show";
+  dev.append(devSum);
   const copy = document.createElement("button");
   copy.type = "button";
   copy.textContent = "Copy as TS";
@@ -232,8 +234,6 @@ export function createStyleLab(onStyle: () => void): StyleLab {
              + "them as code, for making them the project-wide default.";
   const out = document.createElement("pre");
   out.className = "stylelab__ts";
-  out.style.cssText = "max-height:14em;overflow:auto;font-size:10px;"
-    + "background:var(--panel-2);padding:6px;border-radius:6px";
   out.hidden = true;
 
   const doReset = (): void => {
@@ -257,8 +257,11 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     out.hidden = false;                      // visible even if the copy fails
     void navigator.clipboard?.writeText(ts).catch(() => { /* shown below */ });
   });
-  foot.append(reset, copy);
-  el.append(foot, out);
+  foot.append(reset);
+  const devFoot = row("");
+  devFoot.append(copy);
+  dev.append(abRow, devFoot, out);
+  el.append(foot, dev);
 
   // Restore last session's knobs and flavours — the settings someone spent
   // ten minutes finding must not evaporate on reload.

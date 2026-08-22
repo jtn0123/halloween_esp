@@ -1,484 +1,407 @@
 # Codebase Grade Report
 
 **Project:** halloween_esp — castle cue desk + ESPHome firmware
-**Audited:** 2026-08-16
-**Stack:** Python 3.13 tools (stdlib HTTP studio server, generators, DSP/analysis) · TypeScript/esbuild no-framework web app · ESPHome YAML + C++ headers on ESP32-S2 · unittest (397) + node engine suites + Playwright e2e (8 specs) + cross-language seeded fuzz parity
+**Audited:** 2026-08-21
+**Stack:** Python 3.13/3.14 stdlib tools (studio HTTP server + castle relay, generators, import/DSP, emulator) · TypeScript/esbuild no-framework web app · ESPHome YAML + C++ headers on ESP32-S2 · unittest (613, incl. host-compiled firmware harness + contract/fuzz/chaos suites) · 14 node suites · Playwright e2e (135, incl. real studio+emulator bridge/remote specs)
 
-**Scope note:** UI/UX, visual design, styling and accessibility were excluded at
-the user's request — a UI rewrite is planned, so those findings would not be
-actionable. Category C therefore grades **frontend code** only: module
-structure, typing discipline, state handling, and correctness. Items about
-layout, theming, widget affordances or a11y were dropped rather than counted
-against the grade.
-
-**Prior report:** a 2026-08-14 audit exists at the main checkout's
-`.claude/grade-report.md` with 21 items marked done. This is an independent
-re-audit against the current tree — every finding below was verified against
-today's code, and IDs are freshly numbered.
+**Scope note:** Unlike the 2026-08-16 report, UI/UX and accessibility ARE graded this time (the desk was polished in place; no rewrite is planned). The owner's accepted-risk position (local-only studio Origin/Host handling; firmware OTA/HTTP auth — LAN-only porch prop) is honoured and not counted against E. Previous report preserved at `.claude/grade-report-2026-08-16.md` (overall B, 36 items).
 
 ## Summary
 
 | ID | Category | Grade | Items |
 |----|----------|-------|-------|
-| A | Architecture & Design | A− | 4 |
-| B | Backend Quality | B | 5 |
-| C | Frontend Quality (code only) | B+ | 4 |
-| D | Testing & Reliability | B | 4 |
-| E | Security | C+ *(B+ excl. accepted risk)* | 2 open + 2 accepted |
-| F | Dependencies & Tech Currency | B | 3 |
-| G | Performance & Scalability | B− | 4 |
-| H | Documentation & Onboarding | C+ | 4 |
-| I | Developer Experience & Tooling | B | 4 |
-| **Overall** | | **B** | **36** |
+| A | Architecture & Design | B+ | 6 |
+| B | Backend Quality | B+ | 6 |
+| C | Frontend Quality | B+ | 6 |
+| D | Testing & Reliability | B+ | 6 |
+| E | Security | B+ | 4 |
+| F | Dependencies & Tech Currency | B | 4 |
+| G | Performance & Scalability | B | 5 |
+| H | Documentation & Onboarding | B+ | 5 |
+| I | Developer Experience & Tooling | A− | 5 |
+| **Overall** | | **B+** | **47** |
 
-**Top 5 highest-leverage fixes:** B1, H1, I1, C1, F2
+**Overall rationale:** nothing below B; Security and Testing both B+ with one real data-safety item left (D1); the remaining lifts are architectural seams (A1), a firmware write that isn't atomic (B1), toolchain agreement (F1/I1) and page delivery (G1). Since 08-16: overall B → B+ (A, B, C, D, E, F, G, H, I all up or held).
 
-*(E1 and E2 were the original top two. Both were permanently accepted as risk on
-2026-08-16 — local device, private network — and are struck through below. Do
-not re-raise them in future audits.)*
-
-The engineering culture here is well above the grade. Comments explain *why* and
-routinely cite the regression that motivated them (`tools/studio_http.py:88-93`,
-`tools/check_loc.py:38-49`, `web/src/main.ts:75-81`); the 500-line cap is
-enforced by a check that also warns before you hit it; a seeded cross-language
-fuzz keeps three implementations of the cue engine in agreement. Zero `any`,
-zero `@ts-ignore`, zero `eslint-disable` across 7,775 lines of TypeScript under
-a maximally strict tsconfig is genuinely rare.
-
-The grade is held down by three things that are not about craft: two
-unauthenticated remote-code paths (one in the studio server, one in the
-firmware), a measured 2-second stall on the most-called endpoint, and a README
-that documents the firmware while omitting the cue desk — which is the majority
-of the codebase and the thing you actually run.
+**Top 5 highest-leverage fixes:** ~~D1, A1, B1, F1, G1~~ — all five executed 2026-08-21 (25 of 47 items done; see strikethroughs). Re-grade with `/grade-codebase rerun`.
 
 ---
 
-## A — Architecture & Design — A−
+## A — Architecture & Design — B+
 
-The Python layering is acyclic and the seams are real: `studio.py` owns what
-endpoints *mean*, `studio_http.py` owns bytes on the socket, `studio_tracks.py`
-owns what a track is on disk, and none of them import back up. `web/src/main.ts`
-is an honest composition root that stays wiring-only by policy, with the reason
-written at the top. One file (`scenes/scenes.yaml`) is the source of truth and
-everything else is generated from it, so the previewer and the firmware cannot
-drift. The 500-line cap is enforced by `tools/check_loc.py`, which also names
-files nearing it so splits happen on a chosen seam.
+The layering is real and mostly acyclic: `studio.py` routes, `studio_http.py` bytes, `studio_tracks/_media/_scenes/_jobs` one concern each; `build_paths.py` is a clean sandbox seam every generator honours (`tools/build_paths.py:31-72`); `castle_emu_wire.py` is a byte-level port of `sd_web.h` held to the C by `tests/test_firmware_contract.py:1-45`, which is the best cross-layer contract in the repo; firmware splits (`sd_web_state.h` mailbox, `sd_web_site.h` bytes-out, `sd_web_stream.h` second httpd) follow genuine seams. What holds it at B+: the studio is now a transparent relay for every unclaimed `/api/*` (`tools/studio.py:230-231,260-261,352-353`) and `POST /api/scene` means "fire on castle" or "edit scenes.yaml" depending on query-vs-body (`studio.py:342-348`), so the A1 namespace trap from 08-16 got sharper, not fixed; the effect vocabulary exists in four copies tied by comment (`gen_previewer.py:60-64` says "must match gen_esphome" but gen_esphome keeps its own `EFFECT_IDS`, plus `effects.ts:136`, `castle_effects.h`); two devices.toml resolvers (`hosts.py` "one resolver for every tool" vs `castle_link.castle_hosts` `:69-99`); `api.ts` still imports its wire types from panels (`api.ts:22-23`) and three modules bypass the doorway with raw `fetch` (`track_send.ts:31,58,107`, `track_card.ts:167`); the 2.37 MB generated page is still tracked (55 revisions, pack 12.9 MiB).
 
-Held back by a route namespace shared by two different machines, a type
-dependency that points the wrong way, and a megabyte of generated output tracked
-in git.
-
-#### A1 — `/api/*` means different things on two backends that serve the same bundle
-- **Where:** `tools/studio.py:194-296` vs `firmware/sd_web.h:261-337,488`
-- **What's wrong:** `POST /api/scene` splices YAML into `scenes.yaml` on the studio, but queues a scene for playback on the castle. `/api/files/`, `/api/tracks`, `/api/status` overlap similarly. The same JS bundle is served by both, and the only thing keeping a call site honest is the `{"studio": true}` probe in `/api/status`. A call site that forgets the probe authors when it meant to play.
-- **Fix:** Namespace the studio's authoring routes under `/studio/...` and leave `/api/...` to device semantics. `web/src/api.ts` is already the single doorway for studio calls (device endpoints deliberately live in `device.ts`), so the TS side is a one-file change: rewrite the ~15 paths in `api.ts`. Mirror the prefix in `studio.py`'s three `_get`/`_post`/`_delete` routers, keeping the old paths as aliases for one release so a stale cached bundle doesn't break.
+#### ~~A1~~ ✓ done 2026-08-21 — Studio and castle share `/api/*` with different semantics, now via a catch-all relay
+- **Where:** `tools/studio.py:230-231,260-261,342-353,361-363`; `web/src/api.ts:1-23`; `web/src/device.ts:1-30`
+- **What's wrong:** Anything the studio does not own is forwarded to the castle verbatim, and `/api/scene` dispatches on `?s=` vs JSON body. A new studio route that collides with a future firmware route, or a typo'd path, silently becomes a castle call (or a 502).
+- **Fix:** Move studio-owned authoring routes under `/studio/...` in `api.ts` (one file) and `studio.py`'s three routers, keep `/api/*` as pure relay, alias old paths for one release; add a test that `/api/<unknown>` 502s and `/studio/<unknown>` 404s.
 - **Effort:** M
-- **Grade lift:** A− → A (removes the sharpest cross-backend trap in the repo)
+- **Grade lift:** B+ → A− (removes the one structural ambiguity everything else is built around)
 
-#### A2 — The API client takes its response types from the panels that consume them
-- **Where:** `web/src/api.ts:22-23`
-- **What's wrong:** `api.ts` — described in its own header as "the typed doorway to the studio server" — imports `CodecRow` from `codec_ab.ts` and `TrackInfo` from `tracks.ts`. The transport layer depends on the presentation layer for its own wire contract. Both are `import type`, so nothing breaks at runtime, but the dependency direction is inverted on paper and renaming or splitting a panel churns the API client.
-- **Fix:** Move `TrackInfo` and `CodecRow` into `web/src/types.ts` (already the leaf everything imports). Re-export them from `tracks.ts`/`codec_ab.ts` so existing call sites are untouched. Two moved interfaces, two added re-export lines.
+#### ~~A2~~ ✓ done 2026-08-21 — Four copies of the effect vocabulary, synchronised by comment
+- **Where:** `tools/gen_previewer.py:60-64`, `tools/gen_esphome.py:54-63,89-92`, `web/src/effects.ts:136`, `firmware/castle_effects.h`
+- **What's wrong:** `gen_previewer` claims to match `gen_esphome` which has no `KNOWN_EFFECTS`; validation differs per generator (`SystemExit` vs skip). Adding an effect is a four-file edit with no single test that all four agree on the *name list*.
+- **Fix:** One `tools/effect_vocab.py` (names+ids) imported by both generators; `tests/test_generator_parity.py` asserts it equals the names parsed from `effects.ts` and the enum in `castle_effects.h` (same technique as `test_firmware_contract.py`).
 - **Effort:** S
-- **Grade lift:** A− → A− (hygiene, but it makes the "one doorway" claim structurally true)
+- **Grade lift:** B+ → B+ (closes a drift path the parity fuzz only catches indirectly)
 
-#### A3 — 1.1 MB of generated output is tracked, and rewritten on every `make preview`
-- **Where:** `previewer/castle-cue-desk.html` (1,109,830 bytes, 42 revisions in history); generated by `tools/gen_previewer.py`
-- **What's wrong:** The file is base64'd audio (~816 KB) plus the inlined bundle and CSS. It is exempted from the LOC cap as generated, but it is still committed, so every regeneration writes a fresh incompressible megabyte into history. The pack is 11.1 MiB, and roughly all of the growth is this one file.
-- **Fix:** Decide which of the two things it is. If it is a build artifact, gitignore it and have `make preview` produce it (CI already regenerates audio from scratch, so nothing depends on it being committed). If it is a shipped portable deliverable — the "single static HTML you can hand to someone" property the previewer was designed for — keep it tracked but regenerate it only on release rather than on every preview, and add a banner comment at the top saying so.
+#### ~~A3~~ ✓ done 2026-08-21 — Two devices.toml resolvers
+- **Where:** `tools/hosts.py:20-45`, `tools/castle_link.py:69-99`
+- **What's wrong:** `hosts.py` documents itself as the one resolver; `castle_link` re-parses the file with a different precedence (fallbacks, last-good host), so CLI tools and the studio can disagree about which castle is "the" castle.
+- **Fix:** Have `castle_link.castle_hosts()` call a new `hosts.candidates()` that returns the ordered list (env → entry host → fallbacks); `hosts.resolve` becomes `candidates()[0]`.
 - **Effort:** S
-- **Grade lift:** A− → A− (stops unbounded history growth; the decision matters more than the size)
+- **Grade lift:** B+ → B+ (duplication removal)
 
-#### A4 — Six files sit within 25 lines of the 500-line cap
-- **Where:** `previewer/styles.css` (500), `firmware/sd_web.h` (496), `web/src/stems_view.ts` (489), `firmware/castle.yaml` (488), `web/src/waveform.ts` (477), `web/src/tracks.ts` (462)
-- **What's wrong:** `styles.css` passes only because the check is `>` and not `>=`. The next feature in any of these forces a split under time pressure instead of at a chosen seam — which is the exact failure the cap exists to prevent. `check_loc.py` already warns at 450, so the signal is being produced and not acted on.
-- **Fix:** Split the two that are about to be touched. `stems_view.ts` divides cleanly into the analysis-fetch/state half and the drawing half. `sd_web.h` splits along the same seam `studio.py` already used: route meaning vs. HTTP mechanics (`reply_json`, `name_from_uri`, the range/upload plumbing) into `sd_web_http.h`. Leave the rest; the warning band will catch them.
-- **Effort:** M
-- **Grade lift:** A− → A− (prevention — no behaviour change)
+#### ~~A4~~ ✓ done 2026-08-21 — Dead PSRAM audio path beside the streaming one
+- **Where:** `firmware/sd_audio.h:1-24,214-341`, `firmware/castle_sd.yaml:209-225,356-362`
+- **What's wrong:** `start_load` loads into PSRAM on a worker task but `take_ready()` is never polled anywhere (grep: only defined), so the "Play SD file" button loads a megabyte and plays nothing; the header comment still says "WHAT THIS IS NOT: streaming" while `sd_web_site.h:9-14` documents that streaming is how scenes play. ~130 lines of dead code in the file nearest the RAM wall.
+- **Fix:** Delete `load/load_worker/start_load/take_ready/type_from_name`, point `play_sd` at `set_media_url("http://127.0.0.1:8080/sd/"+path)` like `h_play`, rewrite the header to describe mount + streaming.
+- **Effort:** S
+- **Grade lift:** B+ → B+ (removes the largest dead block and a misleading design doc)
+
+#### ~~A5~~ ✓ done 2026-08-21 — `api.ts` is not the only doorway and takes its types from panels
+- **Where:** `web/src/api.ts:22-23`; `web/src/track_send.ts:31,58,107`; `web/src/track_card.ts:167`
+- **What's wrong:** Three raw `fetch` sites talk to studio/castle routes outside `api.ts`/`device.ts`, and the transport layer imports `TrackInfo`/`CodecRow` from the consumers.
+- **Fix:** Move the two interfaces to `types.ts` (re-export from old homes); add `api.castleFiles()/castleStatus()/trackBytes()` and `api.cardFile()` wrappers and call them.
+- **Effort:** S
+- **Grade lift:** B+ → B+
+
+#### A6 (owner decision: the generated page is the published/SD-card deliverable — left tracked) — Tracked 2.37 MB generated page (A3 from 08-16, still open)
+- **Where:** `previewer/castle-cue-desk.html` (2,374,807 B; 1.87 MB base64 audio; 55 revisions); `tools/check_loc.py:33-37` exempts it as generated
+- **What's wrong:** Every `make preview` commits another incompressible ~2 MB; the repo already treats it as a build artefact (`bp.PREVIEW_HTML`).
+- **Fix:** gitignore it, have `make studio`/CI build it; if a portable single-file deliverable is wanted, publish it as a release asset.
+- **Effort:** S
+- **Grade lift:** B+ → B+
 
 ---
 
-## B — Backend Quality — B
+## B — Backend Quality — B+
 
-The error boundary is properly built: `_guarded` turns `BadRequest` into a 400,
-swallows `BrokenPipeError`, and converts anything else into a 500 with a
-traceback on the console instead of a dead socket (`tools/studio_http.py:102-114`).
-Scene writes are atomic with a `.bak` alongside (`studio.py:386-389`), every
-subprocess has a timeout with the reasoning for the ceiling written down
-(`studio.py:80-89`), job and codec-compare retention are both bounded
-(`studio_jobs.py:68-71`, `studio_media.py:110-111`), and the traversal guard is
-documented at the site with an explanation of why a redundant second check would
-read as protection it isn't providing (`studio.py:169-179`).
+Much of the 08-16 list landed and landed well: `/api/tracks` reads `dur/onsets` from the manifest keyed by byte size and writes back on a miss (`tools/studio_tracks.py:128-167`), `send_range` seeks (`studio_http.py:79-83`), bodies are capped (`:22-26,94-105`), `X-Import-Opts` goes through `json_body` (`studio.py:396-397`), ffmpeg encodes beside the target then `os.replace` (`import_track.py:180-202`), per-PID scratch dirs (`:355-368`), the manifest is flock-guarded and atomically replaced (`manifest.py:45-85`), `castle_link` distinguishes Unreachable/Stalled and refuses to replay a stalled PUT (`castle_link.py:160-250`), and the emulator reproduces httpd's 404/405/414 and `recv_wait_timeout` (`castle_emu_http.py:10-25`). Firmware: the mailbox is the right thread model (`sd_web_state.h:19-42`), every long loop yields (`sd_web.h:226,384`, `sd_web_site.h:84`), OTA uses sequential writes with the reason recorded. What stops A−: firmware uploads truncate the target in place, OTA leaks its handle on failure, two JSON builders can emit invalid JSON, the dead load path above, no scene schema validation (B5 still open), and `JobRunner` is not actually "one at a time".
 
-The drag is one hot endpoint that does far too much work, and a few unguarded
-edges around it.
+#### ~~B1~~ ✓ done 2026-08-21 — Firmware PUT truncates the existing file before the upload is known good
+- **Where:** `firmware/sd_web.h:205-240` (`fopen(path,"wb")` then `unlink` on failure); contrast `tools/import_track.py:180-202`
+- **What's wrong:** Re-sending a track over a good copy: a mid-upload WiFi drop deletes the *previous* good file (`unlink(path)` at `:231`). The studio side was fixed for exactly this class in commit 3ccdd8b; the device side was not.
+- **Fix:** Write to `path + ".part"`, `fclose`, then `rename(part, path)` (FATFS supports rename; `unlink(path)` first if it exists since FAT rename won't overwrite); on failure unlink `.part` only. Mirror in `castle_emu_http.h_put` and add a contract test.
+- **Effort:** S
+- **Grade lift:** B+ → A− (last non-atomic write in the pipeline)
 
-#### B1 — `/api/tracks` re-decodes every track through ffmpeg on every call
-- **Where:** `tools/studio.py:134-139` → `tools/studio_tracks.py:87-115` (the `ana.load_audio(p)` + `ana.analyze(x)` pair at lines 107-114)
-- **What's wrong:** `track_info` fully decodes and onset-analyses each track to report duration and onset counts. With 5 tracks in the library this endpoint measured **1.68 s, 2.29 s and 2.66 s** across three consecutive calls on a warm server. It is called on page load, after every import, after every delete, and on the final poll of every background job — and the numbers it computes are already cached in `tracks.json` by the importer.
-- **Fix:** Read `dur` and `onsets` from the manifest (`manifest.py`) instead of recomputing. `track_info` already reads the manifest first for `source`/`title`/`opts`. Fall back to decoding only when the manifest lacks the keys — that also fixes it for tracks imported before the fields existed — and write them back when you do. Add a test asserting `/api/tracks` performs no decode when the manifest is complete.
+#### ~~B2~~ ✓ done 2026-08-21 — `h_ota` never calls `esp_ota_abort` on a failed write
+- **Where:** `firmware/sd_web.h:387-391`
+- **What's wrong:** `if (!ok || esp_ota_end(ota) != ESP_OK)` short-circuits, so after a short body / bad magic / write error the handle is left open; also `castle_sd::g_quiesce` is only cleared on the error paths, never on a success that then fails to reboot.
+- **Fix:** `if (!ok) { esp_ota_abort(ota); ... }` then a separate `esp_ota_end` check; clear `g_quiesce` before returning from every non-reboot path.
+- **Effort:** S
+- **Grade lift:** B+ → B+ (correctness on the highest-consequence handler)
+
+#### ~~B3~~ ✓ done 2026-08-21 — `h_list` / `h_status` can emit truncated or unescaped JSON
+- **Where:** `firmware/sd_web.h:146-165` (`buf[760]`, `missing` unbounded), `:193-197` (`item[200]`, `d_name` up to 255 bytes, no escaping; the emulator documents the quote bug at `castle_emu_http.py:13-16`)
+- **What's wrong:** `snprintf` truncation is unchecked, so a long `missing` list or a long/quoted card filename (placed by the Mac, not by PUT) breaks the parse for every client.
+- **Fix:** Add a tiny `json_escape(const std::string&)` and use `std::string` building (as `h_list` already does for `out`) rather than fixed `snprintf` buffers; skip entries that fail `safe_name` in `h_list` with a `"skipped":N` field; contract-test both.
+- **Effort:** S
+- **Grade lift:** B+ → B+
+
+#### ~~B4~~ ✓ done 2026-08-21 — Scene splice still has no schema validation (B5 from 08-16)
+- **Where:** `tools/studio_scenes.py:106-120`; vocab in `gen_esphome.py:54-92`
+- **What's wrong:** Unknown effect, cue past `length`, missing `audio_file` splice cleanly and fail inside `render_audio`/`gen_esphome`, surfacing as `reason()`'s log tail (better than before thanks to the stop-at-first-failure rebuild, `:53-59`, but still a subprocess message not a field).
+- **Fix:** `tools/scene_schema.py: validate(scene) -> list[str]` (effects from the shared vocab of A2, cue `t <= length`, required keys, ranges); call before `_write`, return 400 with the list; reuse in `gen_esphome`.
 - **Effort:** M
-- **Grade lift:** B → B+ (removes the only measured multi-second wait in the app)
+- **Grade lift:** B+ → A−
 
-#### B2 — `send_range` reads the whole file into RAM to serve a byte range
-- **Where:** `tools/studio_http.py:46-55` — `data = p.read_bytes()` before any range arithmetic
-- **What's wrong:** The docstring explains that ranges exist so the browser doesn't have to pull 3 MB before seeking to 1:30 — but the server pulls the whole file into memory anyway to answer, then slices. On a `ThreadingHTTPServer` several concurrent audition requests each hold a full copy.
-- **Fix:** `p.stat().st_size` for `total`, then open the file, `seek(lo)`, and `read(hi - lo + 1)`. Roughly six lines, and the existing range tests cover the arithmetic unchanged.
+#### ~~B5~~ ✓ done 2026-08-21 — `JobRunner` jobs bypass `_lock`; "one import at a time" is only a docstring
+- **Where:** `tools/studio_jobs.py:52-73`, `tools/studio.py:73,277-279,288-291` vs `:301-302,412-413`
+- **What's wrong:** `/api/import/async` and `/api/stems` spawn children without `_lock`, so an async import, a sync import, and a rebuild can run ffmpeg concurrently; correctness holds (flock'd manifest, per-PID dirs) but the CPU/serialisation story the lock promises does not.
+- **Fix:** Either give `JobRunner` a `gate: threading.Lock` it acquires in `_run` (pass `_lock`), or fix the docstrings to say "background jobs are not serialised with sync encodes" — pick and test.
 - **Effort:** S
-- **Grade lift:** B → B+ (makes the range path actually do what its docstring promises)
+- **Grade lift:** B+ → B+
 
-#### B3 — The three-generator rebuild is duplicated verbatim in two routes
-- **Where:** `tools/studio.py:290-292` (`/api/rebuild`) and `tools/studio.py:391-393` (`do_scene`)
-- **What's wrong:** The same three `run([PY, ...])` calls for `render_audio.py`, `gen_esphome.py`, `gen_previewer.py`, with the same `ok1 and ok2 and ok3` reduction and the same `[-4000:]` log tail, written out twice. A fourth generator, or a change to the log budget, has to be made in both places or the two paths silently diverge.
-- **Fix:** Extract `def rebuild() -> tuple[bool, str]` next to `run()`, returning the combined ok and the trimmed log. Both call sites become one line. No behaviour change.
+#### ~~B6~~ ✓ done 2026-08-21 — `track_info` reloads `tracks.json` once per track
+- **Where:** `tools/studio_tracks.py:106` (`mf.get` → `load()` per call), `tools/manifest.py:111-112`
+- **What's wrong:** N file reads + JSON parses per `/api/tracks`; trivial today (2 tracks), linear at 23.
+- **Fix:** `mf.load()` once in the route and pass `meta` into `track_info(p, meta)` (keep the old signature as a wrapper).
 - **Effort:** S
-- **Grade lift:** B → B (removes the largest duplication in the server)
-
-#### B4 — `X-Import-Opts` is parsed with a raw `json.loads`
-- **Where:** `tools/studio.py:321`
-- **What's wrong:** Every other body in the server goes through `json_body`, which exists precisely so malformed input becomes a 400 with a sentence instead of a traceback (`studio_http.py:88-100`). The multipart upload path bypasses it: a bad `X-Import-Opts` header raises `JSONDecodeError`, hits the generic handler in `_guarded`, and the browser is told the *upload* failed with a 500. It also isn't checked for being a dict, so a bare `[1,2]` reaches `req.get` and raises `AttributeError`.
-- **Fix:** Route it through the same helper: `req = self.json_body((self.headers.get("X-Import-Opts") or "{}").encode())`. That gets both the 400 and the dict check for free. Add one test posting a multipart upload with a junk header and asserting 400.
-- **Effort:** S
-- **Grade lift:** B → B (closes the last unguarded parse in the server)
-
-#### B5 — Scene YAML is shape-checked but not schema-validated
-- **Where:** `tools/studio.py:342-365`
-- **What's wrong:** `do_scene` verifies the block parses, is a one-element list, and that the id matches — which is genuinely the important half, and it prevented the corruption class it was written for. But nothing checks the *contents*: an unknown effect name, a cue past the scene length, a missing `audio_file`, or a negative volume all splice cleanly into `scenes.yaml` and fail later inside `render_audio.py` or `gen_esphome.py`, where the error surfaces as a subprocess log tail rather than a pointed message. `gen_esphome.py` already knows the effect vocabulary (`KNOWN_EFFECTS`).
-- **Fix:** Add `validate_scene(dict) -> list[str]` in a shared module (`tools/manifest.py` is the wrong home — make it `tools/scene_schema.py`), checking effect names against the shared `KNOWN_EFFECTS` set, cue times within `length`, required keys present, and numeric ranges. Call it in `do_scene` before the splice and return the messages as a 400. Reuse it in `gen_esphome.py` so the CLI path gets the same errors.
-- **Effort:** M
-- **Grade lift:** B → B+ (moves a whole class of failure from "subprocess log" to "the field that's wrong")
+- **Grade lift:** B+ → B+
 
 ---
 
-## C — Frontend Quality (code only) — B+
+## C — Frontend Quality — B+
 
-*Scoped per the request: structure, typing, state and correctness. Styling,
-layout, widget design and a11y were not assessed.*
+The typing discipline is still the real thing: `web/tsconfig.json` keeps `strict` + `noUncheckedIndexedAccess` + `exactOptionalPropertyTypes`, and across 51 modules/10,719 lines there is no `any`, no `@ts-ignore`, and only 5 `as unknown` (each a browser-API shim, e.g. `track_drop.ts:51`); the 62 `!` assertions are almost all index reads in hot DSP loops (`onsets.ts:46-114`). Theming is done properly — a full light default on bare `:root` (`styles.css:14-32`), a `prefers-color-scheme` block, and `data-theme` overrides in both directions (`styles.css:37-68`) — with `:focus-visible` and `prefers-reduced-motion` handled (`styles.css:452-454`), and the UX work since the last report is verified by tests rather than asserted: `a11y.spec.ts:49-97` (every visible control named, Tab order, focus retention, no sideways overflow at three widths), `mobile.spec.ts:22-108` (44 px floors, 12 px caption floor), `kiosk.spec.ts` (the tablet can no longer operate the castle), toasts stack/dedupe (`device.ts:102-116`). What holds it at B+: the three old code items are all still open (six-flag audition state machine in `main.ts:52-315`, `.scene[data-i]` reach-arounds at `main.ts:182,278`, 80 raw DOM lookups and no `dom.ts`), the castle panel is built from innerHTML strings carrying 31 inline `style="…"` attributes (`device_panel.ts:116-136`), status messages have no live region, and three CSS tokens referenced in markup don't exist.
 
-`web/tsconfig.json` runs `strict` plus `noUncheckedIndexedAccess`,
-`exactOptionalPropertyTypes`, `noImplicitOverride`, `noFallthroughCasesInSwitch`,
-`noUnusedLocals` and `noUnusedParameters` — and across 36 modules and 7,775
-lines there are **zero** occurrences of `any`, `as any`, `@ts-ignore`,
-`@ts-expect-error` or `eslint-disable`. The strictness is real rather than
-configured-and-suppressed, which is the distinction that usually decides this
-grade. `api.ts` gives every server call one typed doorway with a per-kind
-timeout and an explicit convention (application failures returned, transport
-failures thrown) written into the header. The nullable `players` holder in
-`main.ts:75-83` is a small masterclass: the TDZ hazard is named, the reason the
-previous spelling was unsafe is recorded, and the fix makes the compiler enforce
-it.
+#### ~~C1~~ ✓ done 2026-08-21 — Toasts and status lines are never announced
+- **Where:** `web/src/device.ts:89-116` (`#toasts` host created without `role`/`aria-live`), `web/src/device_chip.ts` masthead line; `previewer/template.html` has no `aria-live` anywhere.
+- **What's wrong:** Every "castle not answering", "scene failed — …", "deleted x from the card" is visual-only; a screen-reader user gets the button press and nothing back. The a11y spec checks names and tab order but not announcements.
+- **Fix:** Give the toast host `role="status" aria-live="polite"` (errors `role="alert"`), the masthead line `aria-live="polite"`; add one Playwright assertion that the host carries the attribute.
+- **Effort:** S
+- **Grade lift:** B+ → A− (closes the only a11y class the suite doesn't cover)
 
-What's left is state that has outgrown its representation, and a couple of
-modules pressing the size cap.
-
-#### C1 — The audition/preview state in `main.ts` is six interacting module-level flags
-- **Where:** `web/src/main.ts:46` (`audioMode`), `:83` (`players`), `:116` (`adopting`), `:211-212` (`previewScene`, `sceneBeforeAudition`), `:225` (`selectedTrack`)
-- **What's wrong:** These encode a real state machine — stopped / playing a scene / auditioning a clip / previewing a row / A-B'ing codecs, with "what to restore when the audition ends" carried in `sceneBeforeAudition`. It is spread across six mutable bindings whose legal combinations exist only in the reader's head. The `onAudition` callback (`:249-267`) already has to check `sceneBeforeAudition` for both null-ness and truthiness to decide whether this is a start or an adopt, and the comment above `adopting` documents a feedback loop that the flag exists to break. This is the file most likely to grow a bug during the UI rewrite.
-- **Fix:** Model it explicitly: `type DeskMode = {kind:"scene"} | {kind:"audition", restore:Scene, preview:Scene} | {kind:"rowPreview"} | {kind:"codec"}` in a small `desk_mode.ts` with a `transition(mode, event)` function, unit-tested the way `show.ts` is. `main.ts` keeps one `let mode: DeskMode`. This also gives the rewrite a tested contract to build against rather than six flags to re-derive.
+#### ~~C2~~ ✓ done 2026-08-21 — The castle panel is an innerHTML string with 31 inline `style=` attributes
+- **Where:** `web/src/device_panel.ts:116-136` and throughout (31 `style="…"`), `style_lab.ts` (11 `.style.x =`), `track_rows.ts:52,92`.
+- **What's wrong:** Chip and toasts were moved into `panels.css` tokens (ff58890), but the panel — the most-rendered surface in the dock — still hard-codes padding/flex/colour per render; theme and mobile rules can't reach it, and J3-4 remains open.
+- **Fix:** Lift the panel markup into `.dp__*` classes in `panels.css`; keep `innerHTML` but with class names only. `castle_panel.spec.ts` + `bridge.spec.ts` catch regressions.
 - **Effort:** M
-- **Grade lift:** B+ → A− (turns the least-safe part of the frontend into the tested part)
+- **Grade lift:** B+ → A− (the styling-discipline gap the judges named twice)
 
-#### C2 — `main.ts` drives other modules' DOM by selector instead of by method
-- **Where:** `web/src/main.ts:122` (`document.querySelector('.scene[data-i="..."]')?.click()`), `:189-190` (same pattern in the key handler)
-- **What's wrong:** `Panels` owns the scene buttons and their markup, but `main.ts` reaches past it to synthesise a click — so the `data-i` attribute and the `.scene` class are now a load-bearing contract between two files with nothing declaring it. `panels.renderScenes` already receives the selection callback, so the plumbing to do this properly exists.
-- **Fix:** Add `panels.selectScene(i: number)` that does the click (or, better, invokes the same callback directly) and call that from both sites. The device-adoption path in `deviceBridge` keeps working unchanged.
-- **Effort:** S
-- **Grade lift:** B+ → B+ (removes the last cross-module DOM reach-around)
+#### ~~C3~~ ✓ done 2026-08-21 — Audition/preview state is still six module-level flags
+- **Where:** `web/src/main.ts:52` `audioMode`, `:111` `players`, `:170` `adopting`, `:301-302` `previewScene`/`sceneBeforeAudition`, `:315` `selectedTrack`.
+- **What's wrong:** Unchanged from the last report's C1; the rewrite that was supposed to dissolve it didn't happen, and the desk was polished on top of it.
+- **Fix:** `desk_mode.ts` with a discriminated union + `transition()`, unit-tested in `web/test/`; `main.ts` keeps one `let mode`.
+- **Effort:** M
+- **Grade lift:** B+ → A− (turns the least-safe file into a tested one)
 
-#### C3 — 58 raw DOM lookups with no shared typed accessor
-- **Where:** `getElementById` in 9 modules (28 calls; `main.ts` 8, `import_opts.ts` 7, `transport.ts` 4), `querySelector` in 6 modules (30 calls; `device_panel.ts` 13, `zone_designer.ts` 6)
-- **What's wrong:** Each call site re-does the same cast-and-null-check dance, e.g. `(document.getElementById(id) as HTMLInputElement | null)?.value.trim() ?? ""` inline at `main.ts:234`. `noUncheckedIndexedAccess` and strict null checks mean none of these can silently explode — the compiler forces a guard — so this is verbosity and inconsistency rather than a correctness hole. But the same expression appears in several shapes across the codebase.
-- **Fix:** One leaf `dom.ts` exporting `input(id): HTMLInputElement | null`, `el<T>(id): T | null` and `req<T>(id): T` (throws with the id in the message, for the handful that are genuinely required at boot). Migrate opportunistically during the UI rewrite rather than in one sweep.
+#### ~~C4~~ ✓ done 2026-08-21 — Three referenced CSS tokens don't exist, so the fallback hex always wins
+- **Where:** `web/src/track_rows.ts:52` (`var(--err,…)`, `var(--warn,…)`), `:92` (`var(--err,…)`), `previewer/panels.css:187` (`var(--bad,…)`); the palette defines `--alarm`, not `--err/--warn/--bad`.
+- **What's wrong:** The "import failed" badge and stems error note render a fixed dark-theme red in light mode; the token indirection is decorative.
+- **Fix:** Replace with `var(--alarm)`; add `--warn` to `styles.css` or use `--accent`.
 - **Effort:** S
-- **Grade lift:** B+ → B+ (consistency; low urgency given the rewrite)
+- **Grade lift:** B+ → B+ (correctness of the token system; small)
 
-#### C4 — Three modules are within 40 lines of the cap
-- **Where:** `web/src/stems_view.ts` (489), `web/src/waveform.ts` (477), `web/src/tracks.ts` (462)
-- **What's wrong:** Same issue as A4, called out separately because these three are the ones the UI rewrite will touch first, and a split forced mid-rewrite is a split made badly.
-- **Fix:** Split `stems_view.ts` before the rewrite starts, along the fetch/state vs. draw seam. Defer the other two — the rewrite may dissolve them anyway.
+#### ~~C5~~ ✓ done 2026-08-21 — Row buttons, view selector and budget tabs sit under the 44 px floor at 375
+- **Where:** `previewer/mobile.css:18` (34 px), `:23` (30 px), `:73,81` (40 px); `mobile.spec.ts:30,68` only asserts scenes/chip/selects/tabs.
+- **What's wrong:** Judge B measured row actions at 40 px after the "44 px" commit; the spec doesn't cover `.trk__act`, `.viewsel`, `.budget__tabs`, so the gap is invisible.
+- **Fix:** Raise to 44 and extend the spec's selector list.
 - **Effort:** S
-- **Grade lift:** B+ → B+ (prevention, timed to the rewrite)
+- **Grade lift:** B+ → B+ (mobile polish)
+
+#### ~~C6~~ ✓ done 2026-08-21 — `main.ts` still drives panels by selector; no shared DOM accessor
+- **Where:** `web/src/main.ts:182,278` (`.scene[data-i]`), 80 `getElementById`/`querySelector` calls across modules, `main.ts:324` cast-and-trim inline.
+- **Fix:** `panels.selectScene(i)`; leaf `dom.ts` (`el`, `input`, `req`) migrated opportunistically.
+- **Effort:** S
+- **Grade lift:** B+ → B+ (coupling hygiene)
 
 ---
 
-## D — Testing & Reliability — B
+## D — Testing & Reliability — B+
 
-397 Python tests pass in 17.9 s. The quality is high: `tests/test_studio_api.py`
-drives a **real** server on an ephemeral port rather than mocking the handler,
-`tests/studio_case.py` sandboxes both `CASTLE_TRACKS` and `CASTLE_SCENES` so a
-test run cannot touch the real show, `test_generator_parity.py` runs a seeded
-cross-language fuzz through the real generators to keep the Python, TypeScript
-and firmware cue engines in agreement, and CI gates lint, types, unit tests, the
-LOC cap, the node engine suites, Playwright, and `esphome config` on all four
-buildable variants.
+613 Python tests run in 58 s (`make test`, measured), 76% line coverage of `tools/` (`make coverage`, measured: 4124 stmts / 983 missed), plus `tests/test_firmware_cxx.py` host-compiling `tests/cxx/{parity_dump,render_check}.cpp` with `-Wall -Wextra -Werror` against the real `firmware/*.h`, 14 node suites (`web/package.json` `test`), and 131 Playwright tests incl. `bridge.spec.ts`/`castle_fail.spec.ts` that spawn a real studio + emulator. Quality is high: `tests/test_studio_api.py` drives a live server on an ephemeral port, `tests/studio_case.py:92` patches `CASTLE_TRACKS`/`CASTLE_HOST`, `tests/test_guards.py:146` asserts every writer honours the sandbox, `tests/test_gen_fuzz.py:173` seeds its RNG, `web/playwright.config.ts:47` forces one worker on a fixed overridable port. CI gates lint/mypy/unit/LOC/tsc/node/e2e/`esphome config`×4 on every PR (`.github/workflows/ci.yml`); only pip-audit is `continue-on-error`. Still untested: `tools/device.py`, `tools/sd_sync.py`, `tools/hosts.py` at 0% (the on-device OTA write, real WiFi timing and on-board playback are hardware-only and honestly left out), and one test still writes into the real library.
 
-What's missing is knowing what *isn't* covered, and two bodies of code that
-aren't.
-
-#### D1 — No coverage measurement anywhere [both]
-- **Where:** absent from `Makefile:85-98`, `pyproject.toml`, `.github/workflows/ci.yml`; `.coverage` appears in `.gitignore` but nothing produces it
-- **What's wrong:** 397 tests is a count, not a coverage figure. With no measurement, the honest answer to "is the new stems pipeline tested as well as the synth is?" is nobody knows — and the gaps in D2/D3 below were found by reading imports, which is not a method that scales.
-- **Fix:** Add `coverage` to `requirements-dev.txt` and a `make coverage` target running `coverage run -m unittest discover -s tests -q && coverage report --include='tools/*'`. Print the total in CI without gating on it at first; once you know the real number, set a floor slightly below it so it can only go up.
+#### ~~D1~~ ✓ done 2026-08-21 — One integration test writes into the real `tracks/` [BE]
+- **Where:** `tests/test_import.py:289,305` — `cls.track = ROOT / "tracks" / "_test_integration.mp3"`, scene `audio_file: "tracks/_test_integration.mp3"`
+- **What's wrong:** Every other test goes through `studio_case.py`/`test_import_cli.py:33`'s tempdir sandbox; this one converts a click track straight into the user's library (cleaned in `tearDownClass`, but a crash mid-class leaves it, and it errors when `CASTLE_TRACKS` is exported — reproduced: 3 errors with the env set). It is the exception `test_guards.py:146` exists to forbid.
+- **Fix:** Render into `cls.tmp` and point `audio_file` at that absolute path (or patch `CASTLE_TRACKS` like the CLI tests do).
 - **Effort:** S
-- **Grade lift:** B → B+ (makes every other testing decision informed rather than guessed)
+- **Grade lift:** B+ → B+ (closes the last sandbox hole; protects real data)
 
-#### D2 — The device-network layer has no tests [BE]
-- **Where:** `tools/device.py` (110 lines), `tools/sd_sync.py` (199 lines), `tools/hosts.py` (65 lines) — none appear in any `tests/*.py` import
-- **What's wrong:** ~370 lines of code that talks to the castle over the network and syncs files to its SD card, with no test at any level. This is also the code most likely to be run in a hurry on Halloween night, and the code whose failure mode is a castle that needs physical access to recover.
-- **Fix:** `sd_sync.py`'s manifest-diff logic (what to upload, what to skip, what to delete) is pure and testable without a device — start there with a fake listing. For `device.py`, test the request-building and response-parsing against recorded fixtures; leave the socket itself untested. Aim for the decisions, not the I/O.
-- **Effort:** M
-- **Grade lift:** B → B+ (covers the code with the worst failure mode)
-
-#### D3 — 3,036 lines of firmware C++ are validated only by config parse [both]
-- **Where:** `firmware/*.h`, notably `sd_web.h` (496 lines, including the OTA handler at `:340-400`), `sd_audio.h` (341), `castle_eink.h` (327), `castle_effects.h` (210)
-- **What's wrong:** CI runs `esphome config` on four variants, which catches a missing id or a bad package merge — and the workflow comment is honest that this is the intended trade. But it executes none of the C++. The OTA handler writes to a flash partition and reboots the device; a mistake there is the "physical access to recover" scenario the OTA path exists to avoid. `castle_effects.h` is partly covered indirectly by the fuzz parity suite, which is the right idea applied to one file.
-- **Fix:** Extend the parity approach: compile the pure functions in `castle_effects.h` and the range/name-parsing helpers in `sd_web.h` (`name_from_uri`) as a host binary in CI and assert against the same fixtures the Python side uses. That's a `g++` step and a small test main, no ESP toolchain required. The OTA write path itself stays untested — that's reasonable — but its *input validation* (`:349-350`, the implausible-size check) should not be.
-- **Effort:** M
-- **Grade lift:** B → B+ (covers the highest-consequence code that is cheaply coverable)
-
-#### D4 — Test output is noisy enough to train you to ignore it [both]
-- **Where:** run `make test` — the tail includes `FAIL — over 97% of the slot.`, `WARNING: tracks.json was not valid JSON — moved to tracks.json.corrupt-…` (×3), and `WARNING: could not parse …/no/such.yaml` after the `OK` line
-- **What's wrong:** These come from tests deliberately exercising failure paths, so they are correct — but a run that prints `FAIL` and three `WARNING`s and then says `OK` teaches you not to read the output. The `no/such.yaml` warning prints *after* the summary, so it looks like a post-run error.
-- **Fix:** Capture stdout/stderr in the tests that exercise those paths (`contextlib.redirect_stdout` into an `io.StringIO`, which several tests already import) and assert on the captured text instead of letting it through. That converts noise into an actual assertion.
+#### ~~D2~~ ✓ done 2026-08-21 — The suite is not hermetic against the operator's own `CASTLE_*` env [BE]
+- **Where:** `tests/test_studio_unit.py:58`, `tests/test_castle_emu.py` (`TestSceneSeeding`), `tests/test_studio_api.py` (`test_tracks_lists_files_and_scene_ids`) — read the repo's `scenes/scenes.yaml` via `build_paths`, which honours `CASTLE_SCENES`
+- **What's wrong:** `CLAUDE.md:57` tells you to export `CASTLE_HOST`/`CASTLE_TRACKS` for the emulator workflow; run `make test` in that shell and 6 tests fail (measured). The guard is per-TestCase, not suite-wide.
+- **Fix:** In `tests/__init__.py`/`helpers.py` clear or pin the three variables at import, then let each case set what it needs.
 - **Effort:** S
-- **Grade lift:** B → B (restores signal to the one output you read every time)
+- **Grade lift:** B+ → B+ (removes a real local-only false-red)
+
+#### ~~D3~~ ✓ done 2026-08-21 — The device-network layer is still at 0% [BE]
+- **Where:** `tools/device.py` (66 stmts), `tools/sd_sync.py` (131), `tools/hosts.py` (36) — no test imports them (coverage report)
+- **What's wrong:** D2 from the 2026-08-16 report is open. `sd_sync.py`'s manifest diff (what to upload/skip/delete) is pure and is the code run in a hurry on the night.
+- **Fix:** Fake-listing tests for the diff; `hosts.resolve()` table/env precedence is three asserts.
+- **Effort:** M
+- **Grade lift:** B+ → A− (the worst-failure-mode code gets covered)
+
+#### ~~D4~~ ✓ done 2026-08-21 — Coverage is measured but never gated and not in CI [BE]
+- **Where:** `Makefile` `coverage:` target; `ci.yml` python job has no coverage step
+- **What's wrong:** 76% is now a known number; nothing stops it sliding.
+- **Fix:** `coverage report --fail-under=72` in CI, raise as D3 lands.
+- **Effort:** S
+- **Grade lift:** B+ → B+ (turns information into a ratchet)
+
+#### ~~D5~~ ✓ done 2026-08-21 — The C++ host harness silently skips where no compiler exists [both]
+- **Where:** `tests/test_firmware_cxx.py:37-38,48` — `@unittest.skipIf(COMPILER is None, …)`
+- **What's wrong:** Ubuntu runners have g++, so CI is fine today, but a runner image change would turn the only firmware-executing tests into a skip with a green tick.
+- **Fix:** Make the skip an error when `CI` is set.
+- **Effort:** S
+- **Grade lift:** B+ → B+
+
+#### ~~D6~~ ✓ done 2026-08-21 — Test output still prints WARNINGs on a green run [BE]
+- **Where:** `tests/test_studio_cache.py`/manifest tests — three `WARNING: tracks.json was not valid JSON — moved to …corrupt-…` lines, `FAIL — over 97% of the slot.` (measured in the run log)
+- **What's wrong:** D4 of the last report, still open.
+- **Fix:** `redirect_stdout` and assert on the text.
+- **Effort:** S
+- **Grade lift:** B+ → B+
 
 ---
 
-## E — Security — C+ as written, B+ excluding accepted risk
+## E — Security — B+ (outside the accepted Origin/Host + OTA-auth position)
 
-> **Two of the four items below (E1, E2) were permanently accepted as risk by the
-> owner on 2026-08-16:** this is a local device on a private home network, and the
-> threat model the findings assume does not apply. They are struck through and
-> must not be re-raised. The C+ describes the code as it stands; **B+** describes
-> the posture the owner actually chose, and is the fairer number to carry forward.
+Input handling is consistently right: `studio_http.py:26,94-119` caps bodies at 512 MiB and turns bad JSON into 400s; every id reaches disk through `safe_id` (`studio.py:124`) or `Path(...).name` (`studio.py:165,190,221,237,311`; `studio_http.py:151` for multipart filenames); `X-Import-Opts` now goes through `json_body` (`studio.py:396`); subprocess calls are argv lists with fixed flags (`studio.py:106-116` `opt_args`, `import_track.py:73,189`), never a shell; the relay only ever dials `castle_hosts()` (`castle_link.py:218`); `firmware/secrets.yaml` is ignored (`.gitignore:9`) with a tracked `.example`; `sd_web.h:79-89` `safe_name` rejects slashes/`..`/dotfiles/quotes/control bytes and `query_param` uses bounded stack buffers (`:111-114`). `npm audit` is clean; pip-audit shows cryptography 49.0.0 PYSEC-2026-3552 (clears with the esphome bump) and starlette (build-toolchain only, ignored by id in `Makefile`). `--lan` is documented as "do that only on a network you control" (`studio.py:23-24`, `README.md:103`). No PII.
 
-
-The guards that exist are well built and well explained. Path traversal is
-stopped by `Path(...).name` on every serving route, with a comment explaining why
-a redundant parent check would misrepresent where the protection lives
-(`studio.py:169-179`); `safe_id` is its write-side twin (`studio.py:92-100`).
-There is **no** `shell=True`, `os.system`, `eval` or `exec` anywhere in `tools/`
-— every subprocess takes a list. YAML is always `safe_load`. Import URLs are
-scheme-allowlisted to http(s). `npm audit` reports 0 vulnerabilities. The
-`--lan` flag is opt-in and prints a blunt warning.
-
-The grade is set by two paths that let someone else run code, both verified
-against the running server and the firmware source.
-
-#### ~~E1~~ — ACCEPTED RISK 2026-08-16, will not fix — The studio server validates neither `Origin` nor `Host`
-> **Owner's decision (2026-08-16): permanently accepted, do not re-raise.** This
-> is a local device on a private home network. The threat model that makes this
-> item matter — a hostile page in another tab, or an untrusted party on the LAN —
-> is not the one this project operates under. Recorded here so future audits skip
-> it rather than rediscovering it.
-
-- **Where:** `tools/studio.py:103-296` (no header check in any route); `tools/studio_http.py` (none in the transport layer either) — confirmed by grep across both files
-- **What's wrong:** Verified against the live server: `curl -H "Host: attacker.example" http://127.0.0.1:8765/api/tracks` returns **200**, and a cross-origin `multipart/form-data` POST to `/api/import` reaches the handler (it returned 400 for an empty body — a content complaint, not a rejection). `multipart/form-data` is a CORS-simple content type, so no preflight protects it, and `/api/rebuild`, `/api/server/stop` and `/api/server/restart` take a POST with no body at all. The consequence: any website the user has open can silently drive this server — importing from a URL of its choosing (which runs yt-dlp and ffmpeg), triggering rebuilds, deleting tracks, or stopping the server. With no `Host` check, DNS rebinding also defeats the 127.0.0.1 bind, and `--lan` removes even that.
-- **Fix:** One check in `JsonHandler`, before dispatch: reject any request whose `Host` header is not `127.0.0.1:<port>`, `localhost:<port>`, or (under `--lan`) the LAN IP; and for every state-changing method (POST/DELETE), reject when `Origin` is present and is not the server's own origin. Both are a handful of lines in `studio_http.py` and apply to all routes at once. Add two tests — a bad `Host` and a foreign `Origin` — to `test_studio_api.py`, which already drives a real server.
+#### ~~E1~~ ✓ done 2026-08-21 — `/api/card/<name>` relays the raw suffix, not a filename [BE]
+- **Where:** `tools/studio.py:227-228` — `to="/sd/" + path[len("/api/card/"):]`
+- **What's wrong:** The one relay that builds a castle path does not `Path(...).name` it, so `/api/card/../api/status` (sent `--path-as-is`) reaches any GET on the castle. Only the configured hosts, GET only — low — but it is the single route off the guard pattern.
+- **Fix:** `name = Path(path).name; if not name: 400`.
 - **Effort:** S
-- **Grade lift:** C+ → B (closes the drive-by path to local code execution)
+- **Grade lift:** B+ → A− (makes the guard uniform)
 
-#### ~~E2~~ — ACCEPTED RISK 2026-08-16, will not fix — The firmware's OTA and file endpoints have no authentication
-> **Owner's decision (2026-08-16): permanently accepted, do not re-raise.** Same
-> reasoning as E1 — private home network, single operator, and the affected
-> variant is the experimental SD build. Recorded here so future audits skip it.
-
-- **Where:** `firmware/sd_web.h:488` (`reg("/api/ota", HTTP_PUT, h_ota)`), handler at `:340-400`; file upload/delete at `:261-285`; no `Authorization`, `httpd_req_get_hdr` or auth helper appears anywhere in `firmware/*.h`
-- **What's wrong:** `PUT /api/ota` accepts a firmware image over plain HTTP and writes it straight into the inactive OTA slot, then reboots — the header comment says so plainly ("any browser or curl can deliver a .bin"). The only validation is a size plausibility check at `:349-350`. `/api/files/` allows upload and delete on the SD card. Anyone on the WiFi can replace the castle's firmware. Note the ESPHome OTA component in `castle.yaml:168-173` *is* password-protected — this is a second, parallel update path that isn't. This is the SD variant, documented as experimental, which is the mitigating factor; it is not the flash build.
-- **Fix:** Add a shared-secret check at the top of `h_ota` and the file handlers: read an `X-Castle-Key` header via `httpd_req_get_hdr` and compare against a `!secret` substituted into the build, rejecting with 401 otherwise. Roughly 15 lines plus a substitution. Cheaper alternative if you'd rather not carry the secret: gate registration of `/api/ota` and the file routes behind a build flag that is off by default, so the experimental variant has to be deliberately armed.
+#### ~~E2~~ ✓ done 2026-08-21 — Import values that start with `-` reach argparse as flags [BE]
+- **Where:** `tools/studio.py:109-111` (`opt_args`), `tools/import_track.py:250,257-258`
+- **What's wrong:** `notes: "--force"` or `start: "-x"` becomes an option token; the worst outcome is a 500 from argparse, not execution, but it is an unvalidated edge.
+- **Fix:** Validate `start`/`take` as numbers/`m:ss` server-side and pass `--notes=<v>` with `=`.
 - **Effort:** S
-- **Grade lift:** C+ → B (removes unauthenticated firmware replacement over the LAN)
+- **Grade lift:** B+ → B+
 
-#### E3 — `/api/import` will fetch any http(s) URL on the host's behalf
-- **Where:** `tools/studio.py:202-203, 306-310` (scheme allowlist only), then `tools/import_track.py` via yt-dlp
-- **What's wrong:** The scheme check stops `file://` and `gopher://`, which is the important half. What remains is that the server will fetch arbitrary internal addresses — `http://192.168.1.1/…`, `http://169.254.169.254/…` — and surface the result in the import log. On a single-user Mac this is close to theoretical; it becomes real under `--lan`, where the requester need not be the operator. It is also the natural companion to E1: a drive-by page picks the URL.
-- **Fix:** After E1 is in place this is largely mooted for the local case. If you want it closed properly, resolve the hostname before handing it to yt-dlp and reject loopback, link-local, and RFC1918 targets unless an explicit `--allow-private` flag is passed.
+#### ~~E3~~ ✓ done 2026-08-21 — URL import will fetch any http(s) target, including LAN/loopback [BE]
+- **Where:** `tools/studio.py:385-387`, `:329` (`/api/probe`)
+- **What's wrong:** E3 from the prior report remains: yt-dlp/ffmpeg will happily probe `http://192.168.1.1/…` on the host's behalf. Defence-in-depth only given the accepted position.
+- **Fix:** Resolve the host and refuse private/loopback ranges unless `--lan` is off and the caller is 127.0.0.1.
 - **Effort:** S
-- **Grade lift:** C+ → C+ (defence in depth; do it after E1)
+- **Grade lift:** B+ → B+
 
-#### E4 — No Python dependency lockfile
-- **Where:** `requirements.txt` (`~=` ranges for numpy, scipy, PyYAML, segno, aioesphomeapi, Pillow), `requirements-dev.txt`; no `uv.lock`, `poetry.lock` or `requirements.lock`
-- **What's wrong:** `esphome` is pinned exactly, with a comment explaining that CI validates against that version — the reasoning is right and applied to one dependency. Everything else floats within a compatible range, so `make setup` today and `make setup` next month install different transitive trees, and a compromised or broken point release lands without a diff to review. The npm half has `package-lock.json`; the Python half has nothing equivalent.
-- **Fix:** `pip freeze > requirements.lock` after a known-good `make setup`, install from it in CI, and keep `requirements.txt` as the human-readable direct-dependency list. Dependabot is already configured for pip (`.github/dependabot.yml`) and will raise the updates as reviewable PRs.
+#### ~~E4~~ ✓ done 2026-08-21 — Upload filename `..` survives `Path().name` [BE]
+- **Where:** `tools/studio_http.py:151` → `tools/studio.py:400` (`tmp / (fname or "upload.bin")`)
+- **What's wrong:** `Path("..").name == ".."`, so the staging path is `_upload/..` (= `TRACKS`), and `write_bytes` fails with a 500 rather than a 400. No escape, just an ungraceful edge.
+- **Fix:** Reject names in `{"", ".", ".."}` in `parse_multipart`.
 - **Effort:** S
-- **Grade lift:** C+ → C+ (supply-chain reviewability, matching what npm already has)
+- **Grade lift:** B+ → B+
 
 ---
 
 ## F — Dependencies & Tech Currency — B
 
-`requirements.txt` is a genuinely good manifest: it lists direct dependencies
-only, explains *why* each is named rather than inherited (aioesphomeapi and
-Pillow used to arrive transitively through esphome and would have broken
-silently), and pins esphome to the version CI validates against.
-`.github/dependabot.yml` covers pip, npm and github-actions weekly with
-minor/patch grouping. `npm audit` is clean, including dev dependencies. Nothing
-is abandoned or EOL.
+`requirements.txt` explains why each direct dep is named; `requirements.lock` (112 pins) exists with a `make lock`/`make audit` pair; Dependabot covers pip/npm/actions weekly with assignees (`.github/dependabot.yml`); `npm audit` is clean. But the lock is not what CI installs (`ci.yml:43-44,78` install loose `numpy scipy pyyaml yt-dlp` + `requirements-dev.txt`), the local `.venv` is Python 3.14.6 while `pyproject.toml`, `ci.yml` and `Makefile` `PY_SETUP` all say 3.13 — so "the lock says exactly what was tested" (`Makefile` comment) is only true on 3.14 locally. esphome 2026.7.4 vs 2026.8.0, aioesphomeapi 45.7 vs 45.13.1, TypeScript 5.9.3 vs 7.0.2, esbuild 0.25.12 vs 0.28.2 (`npm outdated`). The esphome hold is at least a documented decision: `firmware/castle.yaml:148-158` records that dram0 has ~20 bytes spare and the next framework bump "will hit the wall again".
 
-#### F1 — `make setup` names a Python interpreter that doesn't exist on this machine
-- **Where:** `Makefile:29` — `/opt/homebrew/bin/python3.13 -m venv .venv`
-- **What's wrong:** Homebrew's python3.13 is gone; `/opt/homebrew/bin/` has `python3.14`. The working 3.13 is the python.org framework build at `/Library/Frameworks/Python.framework/Versions/3.13/bin/python3`. `make setup` therefore fails outright on a clean checkout of this machine — verified this session, where the venv had to be sourced from the main checkout instead. It also hardcodes an Apple-Silicon-Homebrew path, so it cannot work on CI or any other machine.
-- **Fix:** Try candidates in order and fail with a useful message: `PY313 := $(shell command -v python3.13 || echo /Library/Frameworks/Python.framework/Versions/3.13/bin/python3)`, with a guard that errors telling the user to install 3.13 if neither resolves. CI already uses `actions/setup-python`, so this only affects local setup.
+#### ~~F1~~ ✓ done 2026-08-21 — The venv, the lock and CI disagree on the interpreter
+- **Where:** `.venv/bin/python → python3.14` (3.14.6); `pyproject.toml` `target-version = "py313"`, `python_version = "3.13"`; `Makefile` `PY_SETUP` = python3.13; `ci.yml:37,69,98` "3.13"
+- **What's wrong:** `requirements.lock` was frozen from 3.14; CI never installs it. Two toolchains, neither fully exercised by the other.
+- **Fix:** Recreate `.venv` with `make setup` (python3.13 is on PATH at `/Library/Frameworks/…/3.13`), refreeze, and `pip install -r requirements.lock` in the python job.
 - **Effort:** S
-- **Grade lift:** B → B+ (the documented first step currently doesn't run)
+- **Grade lift:** B → B+ (the lock becomes what CI tests)
 
-#### F2 — TypeScript is a major version behind; esbuild three minors
-- **Where:** `web/package.json` devDependencies — typescript 5.9.3 (latest 7.0.2), esbuild 0.25.12 (latest 0.28.2)
-- **What's wrong:** Not urgent — no CVEs, and the code compiles clean under the strictest settings 5.9 offers. But TS 7 is a major with real changes, and the gap widens the longer it sits. Doing it *before* the UI rewrite means the rewrite is written against the compiler you'll keep; doing it after means touching every new file twice.
-- **Fix:** Bump esbuild first (low risk, `npm test` and the e2e suite are the check). Then TypeScript on its own branch: `npx tsc --noEmit` will list everything the new checker objects to, and with zero suppressions in the codebase the output is trustworthy. Dependabot will otherwise raise these itself.
-- **Effort:** S
-- **Grade lift:** B → B+ (best done before the rewrite, not during)
-
-#### F3 — Dependabot has no reviewer and CI is the only gate
-- **Where:** `.github/dependabot.yml`
-- **What's wrong:** Weekly grouped PRs with a limit of 5 per ecosystem, on a single-developer repo, with no assignee or reviewer configured. The likely outcome is a queue of open PRs nobody looks at, which is the same as not having it — plus noise.
-- **Fix:** Add `assignees: [jtn0123]` to each ecosystem, and consider `interval: monthly` for pip given how stable the set is. Keep npm weekly.
-- **Effort:** S
-- **Grade lift:** B → B (makes the automation land somewhere)
-
----
-
-## G — Performance & Scalability — B−
-
-This is a single-user local tool, so most of what would be a scalability finding
-elsewhere is correctly a non-issue here — and the code says so where it matters
-(jobs serialised under one lock with the reason written down). Graded on what
-the operator actually waits for. One endpoint is measurably slow, and the frame
-loop does full work regardless of whether anything is moving.
-
-#### G1 — See B1: `/api/tracks` costs 1.7–2.7 s per call
-- **Where:** `tools/studio_tracks.py:107-114`
-- **What's wrong:** Cross-listed because it is the only measured user-visible wait in the app, and it grows linearly with library size — at 23 tracks (the main checkout's library) this endpoint would take roughly 8-12 s.
-- **Fix:** As B1 — read the cached values from the manifest.
+#### F2 (trialled 2026-08-21: 2026.8.0 overflows dram0 by 16 B — held) — esphome 2026.7.4 → 2026.8.0 (clears cryptography 49 advisory)
+- **Where:** `requirements.txt:10`, `ci.yml:104`, `requirements.lock` cryptography==49.0.0
+- **What's wrong:** One known advisory in the venv is fixable by the pin bump; the S2 static-RAM cliff (`castle.yaml:148-158`) is the honest reason it's held, so this is a decision with a rebuild, not neglect.
+- **Fix:** Bump on a branch, `make validate` ×4, compile once, check link margin; if dram0 overflows, apply the "next levers" the YAML already lists.
 - **Effort:** M
-- **Grade lift:** B− → B (the single biggest latency win available)
+- **Grade lift:** B → B+
 
-#### G2 — The frame loop runs at full cost when nothing is playing
-- **Where:** `web/src/main.ts:279-296`
-- **What's wrong:** `frame()` unconditionally calls `stage.draw`, `insets.draw`, `panels.updateMeters`, `wave.mirror` and `panels.updateTransport` every animation frame, then re-schedules — whether the transport is running, the tab is idle, or the scene is blacked out. On a laptop that's a constant GPU/CPU floor for a stopped desk; on the porch tablet in kiosk mode it's battery.
-- **Fix:** Keep the rAF loop (the flicker is time-driven and must keep moving while playing), but early-out to a cheap path when `!state.running` and no audition is active — redraw once on state change rather than continuously. Guard with `document.hidden` too.
-- **Effort:** S
-- **Grade lift:** B− → B (removes the idle cost entirely)
+#### F3 — esbuild three minors and TypeScript a major behind
+- **Where:** `web/package.json` devDependencies (`^0.25.0`, `^5.7.0`)
+- **What's wrong:** F2 from the prior report; unchanged. No CVEs, but the gap widens.
+- **Fix:** esbuild first (`npm test` + e2e), TS 7 on its own branch.
+- **Effort:** S / M
+- **Grade lift:** B → B+
 
-#### G3 — The served page is ~1.1 MB before a single track loads
-- **Where:** `previewer/castle-cue-desk.html` (1,109,830 bytes) — ~816 KB base64 audio + 188 KB unminified bundle + inlined CSS; `web/package.json` build script has no `--minify`
-- **What's wrong:** Every page load and every `/api/server/restart` re-transfers it. Over localhost this is fast; over `--lan` to a phone it is the difference between instant and a visible wait, which is exactly the use case `--lan` exists for. The audio is inlined deliberately (so the previewer plays exactly what ships, and stays portable as one file) — that trade is sound and worth keeping.
-- **Fix:** Add `--minify` to the esbuild build (bundle drops roughly 40-50%; source maps are not needed for a tool you debug from source). Leave the audio inlined. If the phone case gets more use, add a `?lean=1` mode that fetches the audio from `/api/track/` instead of inlining it.
+#### F4 (not movable: esphome pins aioesphomeapi exactly; tracks the esphome pin) — `aioesphomeapi~=45.7` six patch releases behind; dependabot PRs not landing
+- **Where:** `requirements.txt:12`, `requirements.lock`
+- **What's wrong:** Dependabot is configured but the floor hasn't moved since the last report — check the open-PR queue.
+- **Fix:** Merge/close the queue; consider monthly for pip.
 - **Effort:** S
-- **Grade lift:** B− → B− (meaningful only for the LAN/phone path)
-
-#### G4 — `send_range` holds a full file copy per concurrent request
-- **Where:** `tools/studio_http.py:55`
-- **What's wrong:** Cross-listed from B2 for the memory dimension: `ThreadingHTTPServer` plus whole-file reads means N concurrent auditions hold N full copies. With a 4-minute import at ~3 MB it's bounded and small, so this is real but minor.
-- **Fix:** As B2 — seek and read the slice.
-- **Effort:** S
-- **Grade lift:** B− → B− (bounded by track size; fix comes free with B2)
+- **Grade lift:** B → B
 
 ---
 
-## H — Documentation & Onboarding — C+
+## G — Performance & Scalability — B
 
-The *inline* documentation is the best thing in this repo and would carry an A on
-its own. Comments consistently explain why rather than what, and cite the
-specific regression that motivated the code: `studio_http.py:88-93` records that
-`json.loads` used to kill the socket and how the browser mis-reported it;
-`check_loc.py:38-49` explains why `git ls-files` alone measured nothing;
-`main.ts:75-81` names the esbuild hoisting behaviour that made the previous
-spelling unsafe. `PROJECT_NOTES.md` is 61 KB of real design record, and the
-README's hardware section explains the non-obvious pin choices (why not D5/D6/D10)
-better than most commercial documentation.
+Measured against a sandboxed studio (port 8877, copied tracks): `/api/tracks` 1.23 s cold (manifest fields wiped, 2 tracks) then **19 ms** warm — the 08-16 multi-second wait is gone (`studio_tracks.py:128-147`); `/api/waveform` 0.77 s cold, **1.5 ms** cached (`studio_media.py:133-161`); `/api/status` 0.4 ms with the 1.5 s castle TTL (`castle_link.py:58-62`). Unit suite: 613 tests in 59.4 s (3.3× 08-16's 18 s for 1.5× the tests; the chaos suite's 18 s poll bug was fixed). Firmware constraints are handled with care: second httpd for streaming so the control plane never queues behind a song (`sd_web_stream.h:1-10`), yields per chunk everywhere, card-space cached 60 s (`sd_web.h:119-135`), dram0 at ~20 bytes spare with the next levers written down (`castle.yaml:148-158`). Remaining costs: the page is 2.37 MB served with `Cache-Control: no-store` and no gzip (1.45 MB gzipped; the firmware already serves `.gz`, the studio does not), the waveform cache keys on sensitivity so every knob nudge re-decodes (0.74 s measured), and the frame loop still does full work while stopped.
 
-The grade is set by what a new reader is told about the project they'd actually
-run. The README describes a firmware project. The cue desk — 7,775 lines of
-TypeScript, 4,796 of Python, the studio server, the entire thing this session
-started and drove — appears in it once, as a box in an ASCII diagram.
-
-#### H1 — The README omits the browser half of the project
-- **Where:** `README.md:76-88` ("Getting started"), which lists only `make setup`, `audio`, `validate`, `build`, `upload`
-- **What's wrong:** `make studio` — the command that starts the app — is not in the README. Neither is `make preview`, `make track`, `make test`, `make check`, or `make e2e`. There is no mention of `web/`, TypeScript, the studio server, the track library, the stems pipeline, or the fact that a browser is involved at all. `make help` knows all of this; the README doesn't. Someone handed this repo would build firmware and never discover the tool that is most of the code.
-- **Fix:** Add a "The cue desk" section after "How it fits together": what it is, `make studio` → http://127.0.0.1:8765, what the Tracks panel does, and the `CASTLE_TRACKS`/`CASTLE_SCENES` sandbox variables. Then a "Development" section with `make test` / `make check` / `make e2e` and what each gates. The content already exists in `make help` and the module docstrings — this is assembly, not authorship.
+#### ~~G1~~ ✓ done 2026-08-21 — Studio serves the 2.37 MB page uncompressed and uncacheable
+- **Where:** `tools/studio.py:155-158`, `tools/studio_http.py:45-51`; `firmware/sd_web_site.h:130-137` (does it right)
+- **What's wrong:** Every load/restart on the LAN path sends 2.37 MB; `gzip` would be 1.45 MB and an ETag on the file mtime would make reloads 304s.
+- **Fix:** In `send_bytes`, if `Accept-Encoding` has gzip, send a gzip of the page cached in-process by `(path, mtime)`; add `ETag: "<mtime>-<size>"` and honour `If-None-Match`. Keep `no-store` for API JSON.
 - **Effort:** S
-- **Grade lift:** C+ → B (the single largest gap between what the repo is and what it says it is)
+- **Grade lift:** B → B+
 
-#### H2 — The documented first step doesn't run
-- **Where:** `README.md:78` (`make setup`) → `Makefile:29`
-- **What's wrong:** As F1 — the interpreter path is stale, so the first command in "Getting started" fails on this machine. The README also says "Copy `firmware/secrets.yaml` and set real WiFi credentials" but there is no template to copy from (`secrets.yaml` is gitignored and no `.example` exists).
-- **Fix:** Fix the Makefile per F1, and add a tracked `firmware/secrets.yaml.example` with placeholder keys so "copy" is a real instruction.
+#### ~~G2~~ ✓ done 2026-08-21 — Waveform cache re-decodes on every sensitivity change
+- **Where:** `tools/studio_media.py:151-152,164-193`
+- **What's wrong:** The key includes `sensitivity`, but decode + peaks + `envelope` (~70% of the 0.77 s) do not depend on it; only `analyze_full` does.
+- **Fix:** Two-level cache: `_DECODED[(path, mtime)] -> (x, stereo, peaks, env)` (bounded, e.g. 8) and the existing `_WAVES` on top; `_waveform` takes the decoded tuple.
 - **Effort:** S
-- **Grade lift:** C+ → B− (an onboarding path that works end to end)
+- **Grade lift:** B → B+ (turns a 0.74 s nudge into ~0.2 s)
 
-#### H3 — Nothing explains the parity contract, which is the project's best idea
-- **Where:** the mechanism spans `tools/pulse_dynamics.py`, `tools/gen_esphome.py`, `web/src/track_lights.ts`, `firmware/castle_effects.h`, `tests/test_generator_parity.py`, `web/test/fuzz_parity.mjs`; `docs/` contains only `ROADMAP.md`
-- **What's wrong:** Three independent implementations of the cue engine are kept in agreement by a seeded cross-language fuzz. That's the most interesting engineering in the repo and the thing most likely to be accidentally broken by someone who doesn't know it exists — including the UI rewrite, which will touch `track_lights.ts`. The rounding rules are documented at their call sites, but nothing describes the contract as a whole.
-- **Fix:** `docs/PARITY.md`: which three implementations, why three, what the fuzz actually asserts, how to run it, and what to do when it fails. One page. Link it from the README and from the top of `test_generator_parity.py`.
+#### ~~G3~~ ✓ done 2026-08-21 — Frame loop runs at full cost when stopped (G2 from 08-16, still open)
+- **Where:** `web/src/main.ts:371-390`
+- **What's wrong:** `stage.draw/insets.draw/updateMeters/lightChrome/wave.mirror/updateTransport` every rAF regardless of `state.running`, audition, or `document.hidden`.
+- **Fix:** Early-out after `step()` when `!state.running && !sceneBeforeAudition && f.flash === 0` unless a `dirty` flag was set by slider/scene change; skip entirely while `document.hidden`.
 - **Effort:** S
-- **Grade lift:** C+ → B− (protects the highest-value invariant through the rewrite)
+- **Grade lift:** B → B
 
-#### H4 — No dev-loop or contribution doc
-- **Where:** absent — no `CONTRIBUTING.md`, no dev section in the README
-- **What's wrong:** Non-obvious things a second person (or you in six months) would need: the 500-line cap and that `check_loc.py` enforces it, that the pre-commit hook must be installed by hand, that `.venv/bin/*` paths mean a git worktree needs its own venv, that `scenes.yaml` is the source of truth and generated files must never be hand-edited, that e2e needs `npx playwright install chromium`. All true today, none written down.
-- **Fix:** A `docs/DEVELOPING.md` covering exactly that list, linked from the README. The worktree note in particular cost this session real time.
+#### ~~G4~~ ✓ done 2026-08-21 — 1.87 MB of base64 audio inlined for nine scenes
+- **Where:** `tools/gen_previewer.py:270-276`; `previewer/castle-cue-desk.html`
+- **What's wrong:** 79% of the page is audio the LAN phone may never play; the "portable single file" property is sound for the file artefact but not for the studio-served case.
+- **Fix:** `gen_previewer --lean` (or studio-side strip) that replaces data URIs with `/api/scene-audio/<id>` URLs served by `send_range`; keep inlining for the committed/portable build.
+- **Effort:** M
+- **Grade lift:** B → B+ (only matters for `--lan`)
+
+#### ~~G5~~ ✓ done 2026-08-21 — Unit suite 59 s for 613 tests
+- **Where:** `Makefile:103-104`; heavy files `tests/test_studio_api.py` (real server per class), `tests/test_castle_chaos.py`
+- **What's wrong:** 3.3× slower than 08-16 at 1.5× the tests; the pre-commit hook runs lint only, so this is the `make check` floor.
+- **Fix:** Run `python -m unittest -v 2>&1 | sort by duration` once, move real-server classes to `setUpClass` servers where they are per-test, and add `make test-fast` excluding chaos/e2e-ish suites for the inner loop.
 - **Effort:** S
-- **Grade lift:** C+ → B− (turns tribal knowledge into a page)
+- **Grade lift:** B → B
 
 ---
 
-## I — Developer Experience & Tooling — B
+## H — Documentation & Onboarding — B+
 
-The gates are real and well chosen. `pyproject.toml` selects ruff rule families
-deliberately and explains the omissions — style-only packs were left out on the
-grounds that they'd bury the signal the linter exists to surface (silent
-subprocess failures, mutable defaults, dead noqa). mypy runs over `tools` and
-`tests` with per-module ignores only where stubs genuinely don't ship. CI has
-three jobs covering Python, web and ESPHome, and its comments explain the
-trade-offs (why a full firmware compile is deliberately absent, why stdout must
-not be piped away). `make help` is genuinely useful. `check_loc.py` warns before
-the cap, not just at it.
+The two biggest prior gaps are closed and accurate: `README.md:92-127` now has "The cue desk" and "Development" (commands verified against `Makefile`), `make help` lists every target including `coverage`/`audit`/`lock` (checked against `.PHONY`), `firmware/secrets.yaml.example` makes the "copy" step real, `make setup` resolves python3.13 on PATH (present on this machine), and the root `CLAUDE.md` (93 lines) captures layout, rules, sandboxing, hardware traps and the accepted-risk position. `PROJECT_NOTES.md` indexes `docs/notes/01-05` with section ranges, `05-decisions-and-roadmap.md` is an ADR-style log, `firmware/pending/README.md` records applied-vs-pending firmware work, `docs/WIRING.md` + generated `castle-wiring.html` cover the rig, and header comments remain exceptional (`castle.yaml:120-160`, `sd_web.h:76-89`, `studio_http.py:94-119`). What's missing is a single truthful route list and the parity contract write-up.
 
-The friction is in installation and repeatability rather than configuration.
-
-#### I1 — Every tool path is hardcoded to `.venv/bin/*`, which breaks in a git worktree
-- **Where:** `Makefile:1-2`, `githooks/pre-commit:5-8`, `tools/studio.py:66` (`PY = str(ROOT / ".venv" / "bin" / "python")`), `web/playwright.config.ts` (webServer command)
-- **What's wrong:** `.venv/` is gitignored, so a `git worktree add` produces a tree where every make target, the pre-commit hook, the studio server's subprocess launcher, and the Playwright webServer all point at a path that doesn't exist. Verified this session: starting the app in a worktree required symlinking `.venv` and `web/node_modules` from the main checkout first. Given `.claude/worktrees/` is in active use, this is a recurring tax.
-- **Fix:** Resolve the interpreter once, with a fallback: in the Makefile, `PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)`; in `studio.py`, prefer `sys.executable` over the constructed path (the server is already running under the right interpreter, so this is strictly more correct). Add a `make setup-worktree` that creates the symlinks if you'd rather share one venv.
+#### ~~H1~~ ✓ done 2026-08-21 — The studio docstring lists 8 of ~22 routes
+- **Where:** `tools/studio.py:11-20` vs handlers at `:164-352` (`/api/job/`, `/api/status`, `/api/waveform/`, `/api/stems`, `/api/stem/`, `/api/compare`, `/api/refresh`, `/api/probe`, `/api/import/async`, `/api/server/stop|restart`, PUT, and the relay fallthrough are absent)
+- **What's wrong:** This docstring is the only prose "API doc" for the studio; the firmware side has `sd_web.h`'s registration table but nothing maps desk → studio → castle in one place.
+- **Fix:** Rewrite the docstring as the full table (method, path, claims-or-relays), or a 40-line `docs/API.md` linked from README/CLAUDE.md.
 - **Effort:** S
-- **Grade lift:** B → B+ (removes a per-worktree manual step)
+- **Grade lift:** B+ → A− (one place that tells the truth about the contract)
 
-#### I2 — The pre-commit hook exists but nothing installs it
-- **Where:** `githooks/pre-commit` — the install command is a comment on line 3 (`git config core.hooksPath githooks`); `make setup` (`Makefile:28-32`) doesn't run it
-- **What's wrong:** A hook that must be installed by hand, documented only inside itself, is a hook that is not installed. It also fails immediately in a worktree per I1, since its first line is `.venv/bin/ruff`.
-- **Fix:** Add `git config core.hooksPath githooks` to the `setup` target and mention it in the README's development section. Fix the interpreter paths per I1 so it survives a worktree.
+#### ~~H2~~ ✓ done 2026-08-21 — The parity contract still has no page of its own
+- **Where:** `CLAUDE.md:73-75` (two lines); mechanism spans `tools/pulse_dynamics.py`, `web/src/effects.ts`, `firmware/castle_effects.h`, `tests/test_generator_parity.py`, `tests/cxx/parity_dump.cpp`, `web/test/fuzz_parity.mjs`, `firmware_parity.mjs`
+- **What's wrong:** H3 from the prior report; now four implementations (incl. the C++ host dump) kept bit-exact by seeded fuzz — the repo's best idea, still undocumented as a whole.
+- **Fix:** `docs/PARITY.md`: what, why, how to run, what to do when it fails.
 - **Effort:** S
-- **Grade lift:** B → B+ (makes the fast gates actually gate)
+- **Grade lift:** B+ → A−
 
-#### I3 — No coverage in the local loop or CI
-- **Where:** as D1
-- **What's wrong:** Cross-listed for the tooling dimension — there is no `make coverage`, so the question can't even be asked locally without ad-hoc commands.
-- **Fix:** As D1.
+#### ~~H3~~ ✓ done 2026-08-21 — CLAUDE.md's e2e count is stale
+- **Where:** `CLAUDE.md:47` "(108 tests)" vs 131 `test(` in `web/test/e2e/*.spec.ts`
+- **What's wrong:** Hard-coded counts rot; it already has.
+- **Fix:** Drop the number or say "`npx playwright test --list`".
 - **Effort:** S
-- **Grade lift:** B → B (see D1)
+- **Grade lift:** B+ → B+
 
-#### I4 — 51 `noqa: E402` comments, all the same shape
-- **Where:** every file in `tests/` (`tests/test_import.py` has 8, `tests/studio_case.py` 5, `tests/test_studio_api.py` 4)
-- **What's wrong:** The pattern is `sys.path.insert(0, ROOT/"tools")` followed by imports that must come after it, each needing its own suppression. It is legitimate and unavoidable given `tools/` is a directory of scripts rather than a package — but it's 51 lines of noise, and it means a genuinely misplaced import in a test would blend in. The remaining suppressions in `tools/` are three, each with a written reason (`F401 (re-export)`, `E731`, `DTZ005`) — that's the standard the tests aren't meeting.
-- **Fix:** One line in `pyproject.toml`: `[tool.ruff.lint.per-file-ignores]` with `"tests/*" = ["E402"]` and a comment explaining the `sys.path` bootstrap. Then delete all 51. Alternatively add a `tests/conftest`-equivalent — but with unittest rather than pytest, the per-file-ignore is the honest fix.
+#### ~~H4~~ ✓ done 2026-08-21 — `--lan` exposure is stated but not enumerated
+- **Where:** `README.md:103`, `tools/studio.py:22-24`
+- **What's wrong:** "Do that only on a network you control" is right, but a reader can't tell that a LAN visitor can import/delete tracks, rewrite `scenes.yaml`, and `POST /api/server/stop`. Acceptable for the porch; should be one explicit sentence.
+- **Fix:** Add the sentence to README "The cue desk" and the docstring.
 - **Effort:** S
-- **Grade lift:** B → B (restores the "every suppression has a reason" standard to the test suite)
+- **Grade lift:** B+ → B+
+
+#### ~~H5~~ ✓ done 2026-08-21 — No CONTRIBUTING / hook-install step in the onboarding path
+- **Where:** `README.md:123-125` mentions the hook; no `CONTRIBUTING.md`; `make setup` does not run `git config core.hooksPath githooks`
+- **What's wrong:** Minor for a one-owner repo; the dev section covers most of it.
+- **Fix:** Add the hooksPath line to `make setup`.
+- **Effort:** S
+- **Grade lift:** B+ → B+
 
 ---
 
-## Verification notes
+## I — Developer Experience & Tooling — A−
 
-Findings in this report were checked against the running system rather than
-inferred, where checkable:
+The loop is fast and the gates are real: `tsc --noEmit` 1.0 s, esbuild 13 ms, `npm test` 2.5 s, the pre-commit hook 0.35 s, Python unit suite 613 tests/58 s, e2e 135 tests in 18 files on a fixed `CASTLE_E2E_PORT` with `CASTLE_TRACKS`/`CASTLE_SCENES`/`CASTLE_HOST=""` sandboxing (`web/playwright.config.ts:28-40,80`). Three of the four old items are fixed — `Makefile:4` falls back when `.venv` is absent, `tools/studio.py:71` uses `sys.executable`, `make coverage`/`make audit`/`make lock` exist, `pyproject.toml:30-33` replaced 78 noqa lines — `make help` matches the targets, CI has concurrency cancellation and explains its timeouts (`ci.yml:17-31`), and the emulator workflow is in the README (`README.md:106-110`). Left: the hook, `make lint`, the Playwright webServer and the `.command` still hardcode `.venv/bin/*`, `make setup` still doesn't install the hook, and the venv/lock are 3.14 while every config says 3.13.
 
-- `make test` — 397 tests, `OK`, 17.9 s
-- `/api/tracks` latency — 3 consecutive `curl` calls against the live server: 2.29 s, 1.68 s, 2.66 s (5-track library)
-- `Host: attacker.example` → HTTP 200; cross-origin multipart POST to `/api/import` → reaches handler (400 on empty body)
-- `npm audit` → 0 vulnerabilities; `npm outdated` → esbuild and typescript as listed
-- `grep` for `any` / `@ts-ignore` / `eslint-disable` across `web/src/` → 0 hits
-- `grep` for `shell=True` / `os.system` / `eval(` / `exec(` / `yaml.load(` across `tools/` → 0 hits
-- `tools/check_loc.py --list` for the cap figures
-- `git log --oneline -- previewer/castle-cue-desk.html | wc -l` → 42; `git count-objects -vH` → 11.10 MiB
-- `make setup`'s interpreter path — confirmed absent on this machine
+#### ~~I1~~ ✓ done 2026-08-21 — The local venv is Python 3.14 but pyproject/CI/mypy/setup all say 3.13
+- **Where:** `.venv/bin/python` → 3.14.6 (verified); `Makefile:11` `PY_SETUP` resolves `python3.13` (present at `/Library/Frameworks/…/3.13`); `pyproject.toml:6,34`; `ci.yml:36,66`; `requirements.lock` frozen via `make lock` from that venv.
+- **What's wrong:** Tests and `make lock` run on an interpreter CI never uses; the lockfile `make audit` checks in CI was produced from a different Python, and mypy type-checks against a `python_version` it isn't running.
+- **Fix:** `rm -rf .venv && make setup` (now works since python3.13 is on PATH), re-run `make lock`; add a `setup` guard that prints the venv's version vs `pyproject`.
+- **Effort:** S
+- **Grade lift:** A− → A (makes local == CI)
+
+#### ~~I2~~ ✓ done 2026-08-21 — Four places still hardcode `.venv/bin/*`, and `setup` still doesn't install the hook
+- **Where:** `githooks/pre-commit:6-8`, `Makefile:131-132` (`lint`), `web/playwright.config.ts:80` (`../.venv/bin/python`), `Castle Cue Desk.command:26-36`; `Makefile:48-52` `setup` has no `git config core.hooksPath githooks`.
+- **What's wrong:** `PY` has a fallback but `lint` and the hook bypass it; in a worktree `make lint` and the hook fail on the first line. The hook is installed here only because `core.hooksPath` was set by hand (pointing at the *main* checkout's `githooks/`, so a worktree edit to the hook is silently not what runs).
+- **Fix:** `lint: @$(PY) -m ruff …; @$(PY) -m mypy …`; hook uses `PY=$(command -v .venv/bin/python || command -v python3)`; Playwright `command` reads `process.env.CASTLE_PY ?? "../.venv/bin/python"`; `setup` runs `git config core.hooksPath githooks`.
+- **Effort:** S
+- **Grade lift:** A− → A (worktrees are the daily workflow here)
+
+#### ~~I3~~ ✓ done 2026-08-21 — mypy runs without any strictness flags
+- **Where:** `pyproject.toml:32-40` — `files` + `ignore_missing_imports` overrides only; no `strict`, `disallow_untyped_defs`, `warn_return_any`, `warn_unused_ignores`.
+- **What's wrong:** The comment says it brings tools/tests "up to the same standard" as tsc, but default mypy skips bodies of unannotated functions, so a large part of `tools/` is effectively unchecked.
+- **Fix:** Turn on `warn_unused_ignores`, `warn_return_any`, `check_untyped_defs` first (cheap), then `disallow_untyped_defs` per module via overrides.
+- **Effort:** M
+- **Grade lift:** A− → A− (real gate strength; ungraded surprise risk)
+
+#### ~~I4~~ ✓ done 2026-08-21 — A stray WARNING prints after the unit-suite summary
+- **Where:** `.venv/bin/python -m unittest discover -s tests -q` → `OK` followed by `WARNING: could not parse …/no/such.yaml` (a test exercising the missing-file path lets the module logger through).
+- **Fix:** `assertLogs`/`self.assertWarns` around that call, or silence the logger in `tests/studio_case.py`.
+- **Effort:** S
+- **Grade lift:** A− → A− (keeps the one output you read clean; old D4)
+
+#### ~~I5~~ ✓ done 2026-08-21 — 14 `waitForTimeout` sleeps in the e2e suite
+- **Where:** `grep -c waitForTimeout web/test/e2e/*.spec.ts` = 14; `bridge.spec.ts` fixes ports 8797/8798 with no collision check (J3-5).
+- **What's wrong:** Timed sleeps are where a 2-minute suite grows flaky on a slower CI runner; the two extra fixed ports can collide with a second lane.
+- **Fix:** Replace sleeps with `expect.poll`/`waitForFunction` on the observable; derive bridge ports from `CASTLE_E2E_PORT+1/+2`.
+- **Effort:** S
+- **Grade lift:** A− → A− (flake insurance)

@@ -8,10 +8,11 @@
 #   make sd-upload     flash it
 #
 # HOW IT WORKS: ESPHome has no SD component and its audio pipeline cannot read
-# a filesystem. But `audio::AudioFile` is just {pointer, length, type} and
-# `SpeakerMediaPlayer::play_file()` is public — so sd_audio.h mounts the card
-# over SPI, reads a whole file into PSRAM, and hands it to the ordinary
-# decoder. See firmware/sd_audio.h for what that does and does not buy you.
+# a filesystem — but it can read a URL. sd_audio.h mounts the card over SPI
+# at /sd, sd_web_site.h serves any file on it at GET /sd/<path>, and playing
+# a card file is the ordinary media_player URL call pointed at loopback:
+# http://127.0.0.1:8080/sd/<file>. True streaming, no PSRAM cap. See
+# firmware/sd_audio.h for the whole story.
 #
 # THE PART THAT IS NOT PROVEN: nobody has published ESPHome SD audio on an
 # ESP32-S2, and the two well-known ESP32 audio libraries decline to support
@@ -24,18 +25,12 @@ substitutions:
   friendly: Castle SD
 
   # ── ONBOARD pixel, for now ───────────────────────────────────────────
-  # No external jewels are soldered yet, so drive the Feather's own NeoPixel
-  # (GPIO33, plain RGB) exactly like bench.yaml does: it plays pixel 0 of
-  # towerL and the 20 pixels that don't exist fall off the end of the wire.
-  # WHEN THE JEWELS ARE SOLDERED: wire their DIN (via the 74AHCT125) to A0,
-  # then flash firmware/castle_sd_jewels.yaml — it overrides these two lines
-  # and nothing else.
-  # The onboard pixel replaces tower L's strip: same pin substitution as
-  # before, now per zone. It plays tower L's pixel 0 and the rest of that
-  # zone falls off the end of a wire that is not there. The other two zones
-  # keep their real pins and clock into thin air, which costs nothing.
-  pin_towerL: "33"      # onboard NeoPixel
-  rgbw_towerL: "false"  # the onboard pixel is plain RGB
+  # The real rig: every zone on the pins castle.yaml declares (tower L on
+  # A0/GPIO18 through the 74AHCT125). Until 2026-08-21 this file still
+  # carried bench.yaml's `pin_towerL: "33"` (the onboard NeoPixel, plain
+  # RGB) from before the jewels were soldered — so the porch build lit the
+  # Feather's own pixel as tower L and the left jewel got no data at all.
+  # Bench work belongs in bench*.yaml, never here.
 
   # ── SD pins: Adafruit 2.13" eInk FeatherWing (4128 / 4195 / 4814) ────
   # Adafruit documents one convention for the whole eInk FeatherWing family —
@@ -103,6 +98,7 @@ esphome:
     - sd_web_state.h
     - sd_web_stream.h
     - sd_web.h
+    - sd_web_ota.h
     - sd_web_site.h
     - sd_web_remote.h
     - castle_eink.h
@@ -117,6 +113,15 @@ esphome:
     # pixels dark and its opening scene never started, and nothing said so.
     - priority: -200
       then:
+        # "I just rebooted", in one pixel: the first thing written to the
+        # onboard NeoPixel, which clears its power-up garbage. The 2 s status
+        # interval turns it off a moment later if all is well.
+        - light.turn_on:
+            id: status_pixel
+            brightness: 25%
+            red: 0%
+            green: 20%
+            blue: 100%
         # Park the eInk and SRAM chip selects HIGH before touching the bus.
         - output.turn_on: eink_cs_park
         - output.turn_on: sram_cs_park
@@ -130,8 +135,15 @@ esphome:
             // you find out the card is missing without walking to the castle.
             castle_web::start();
             // The web layer 404s unknown scene ids instead of queueing lies —
-            // this is where it learns which ids are real.
-            castle_web::set_scene_ids(id(pir_scene).traits.get_options());
+            // this is where it learns which ids are real. Element-wise copy:
+            // get_options() returns FixedVector<const char*> on current
+            // ESPHome (std::vector<std::string> before) — emplace takes both.
+            {
+              std::vector<std::string> scene_ids;
+              for (const auto &opt : id(pir_scene).traits.get_options())
+                scene_ids.emplace_back(opt);
+              castle_web::set_scene_ids(std::move(scene_ids));
+            }
             // The status panel — after the mount attempt so it can join the
             // SD's SPI bus rather than race it. Also fine with no card.
             castle_eink::begin(CASTLE_VERSION, ${eink_cs}, ${eink_dc},
@@ -143,14 +155,36 @@ esphome:
         - script.execute: boot_selftest
 
 # The onboard pixel is dark until its power rail (GPIO21) is driven high —
-# same as bench.yaml. Harmless once the real jewels take over: GPIO21 is clear
-# of the eInk wing and everything else on this build.
+# same as bench.yaml. The rail stays on so the status pixel below can write.
 switch:
   - platform: gpio
     id: neopixel_power
     pin: GPIO21
     restore_mode: ALWAYS_ON
     internal: true
+
+# ── The onboard NeoPixel: DEVICE STATUS ONLY ─────────────────────────
+# Appended to the generated strips (packages merge lists by appending), so it
+# is allocated an RMT channel LAST and can never take one the show needs.
+# It has no zone in scenes.yaml, which is what keeps it out of the show: no
+# scene script and no /api/light can address it. Between status changes it is
+# written once and then silent, so it costs the strips nothing.
+#
+# Until v5.31 this pixel WAS tower L (a bench leftover); with that gone and
+# the rail still powered, it sat holding whatever garbage it woke up with.
+light:
+  - platform: esp32_rmt_led_strip
+    id: status_pixel
+    name: "Status pixel"
+    pin: GPIO33
+    num_leds: 1
+    chipset: WS2812
+    rgb_order: GRB
+    is_rgbw: false
+    rmt_symbols: 64
+    use_psram: false
+    default_transition_length: 0s
+    restore_mode: ALWAYS_OFF
 
 # Held deselected for the life of the device — see the note in substitutions.
 # These chip selects are active-low, so deselected means driven HIGH, which is
@@ -163,10 +197,9 @@ output:
     id: sram_cs_park
     pin: GPIO${sram_cs}
 
-# Play a card file the OLD way: whole file into PSRAM, then decode. The
-# normal path is now streaming (see the PLAY action in the interval below and
-# sd_web_site.h) — this stays as the deliberate fallback for the day the
-# loopback stream misbehaves, reachable via the "Play SD file" button.
+# Play a card file by name from the "Play SD file" button — the same
+# loopback stream the PLAY action in the interval below uses (sd_web_site.h),
+# just reachable without a browser: set the `SD file` text, press the button.
 script:
   # #26: boot self-test — every zone flashes R, G, B, W in turn, riding the
   # strike machinery over whatever scene is starting. No tone on purpose:
@@ -205,23 +238,44 @@ script:
       path: string
     then:
       - lambda: |-
-          // Stop first: a new load frees the PSRAM buffer the decoder may
-          // still be reading. Stopping before the (100+ ms) load starts gives
-          // the pipeline time to let go of the old buffer.
-          id(castle_media)->make_call()
-              .set_command(esphome::media_player::MEDIA_PLAYER_COMMAND_STOP)
-              .set_announcement(true)
-              .perform();
-          // The read happens on its own task — a megabyte over SPI takes the
-          // better part of a second, and the main loop must keep the lights
-          // moving. The 200 ms interval below picks up the finished file.
-          castle_sd::start_load(path.c_str());
+          // STREAMED off the card through our own server over loopback —
+          // identical to what the web PLAY action does (interval below).
+          // The PSRAM load-then-decode path this once took is gone
+          // (sd_audio.h); there is no second way to play a card file.
+          auto call = id(castle_media)->make_call();
+          call.set_media_url("http://127.0.0.1:8080/sd/" + path);
+          call.set_announcement(true);
+          call.perform();
+          id(current_track).publish_state(path);
 
 # The bridge between the web server's httpd task and ESPHome's main loop.
 # HTTP handlers only *record* play/scene/stop requests (scripts and the media
 # player are not thread-safe off the loop); this picks them up and runs them.
 # 200 ms of latency on a button press is imperceptible next to an MP3 spin-up.
 interval:
+  - interval: 2s
+    then:
+      - lambda: |-
+          // The status pixel: blue while booting (written in on_boot, cleared
+          // here once there is nothing to say), amber while an OTA burns
+          // flash, red for a missing card, dark otherwise. Only a CHANGE
+          // writes, so the RMT channel is idle between events.
+          static uint8_t shown = 0xFF;
+          const uint8_t want = castle_sd::g_quiesce ? 1
+                             : (castle_sd::g_mounted ? 0 : 2);
+          if (want != shown) {
+            shown = want;
+            if (want == 0) {
+              id(status_pixel).turn_off().perform();
+            } else {
+              auto call = id(status_pixel).turn_on();
+              call.set_brightness(0.25f);
+              if (want == 1) call.set_rgb(1.0f, 0.55f, 0.0f);   // updating
+              else call.set_rgb(1.0f, 0.0f, 0.0f);              // no card
+              call.perform();
+            }
+          }
+
   - interval: 200ms
     then:
       - lambda: |-
@@ -252,14 +306,28 @@ interval:
           } else if (act.type == castle_web::STOP) {
             id(scene_stop)->execute();
           } else if (act.type == castle_web::VOLUME) {
+            // 0 is the desk's hush (sound routed to the Mac): remembered so
+            // scene scripts keep quiet too — see speaker_hush in castle.yaml.
+            const int pct = atoi(act.arg.c_str());
+            id(speaker_hush) = pct == 0;
             auto call = id(castle_media)->make_call();
-            call.set_volume(atoi(act.arg.c_str()) / 100.0f);
+            call.set_volume(pct / 100.0f);
             call.perform();
           } else if (act.type == castle_web::LIGHT) {
-            // Manual override for every strip. "off", "show", or six hex
-            // digits to park on a colour. One script rather than a list of
-            // ids here, because the zone list lives in scenes.yaml and is
-            // generated into lights_override.
+            // Manual override for every strip (or one, "<zone>:"): a colour,
+            // a bench pattern, "off", or "show" to hand the pixels back. One
+            // script rather than a list of ids here, because the zone list
+            // lives in scenes.yaml and is generated into lights_override.
+            //
+            // Anything but "show" stops the scene first. A looping scene
+            // re-runs its audio every 30 s (Vigil), and the SD read + SPI
+            // burst that goes with it starves the RMT refill ISR: two or
+            // three pixels on the longest strip flick to a wrong colour and
+            // back, which reads as a hardware fault while you are staring at
+            // a test pattern (reported 2026-08-21, the 12 px ring). A hex
+            // colour can never spell "show" — s, h, o and w are not digits.
+            if (act.arg.find("show") == std::string::npos)
+              id(scene_stop)->execute();
             id(lights_override)->execute(act.arg);
           } else if (act.type == castle_web::SCENE) {
             id(run_scene)->execute(act.arg);
@@ -360,6 +428,6 @@ text:
     id: sd_path
     optimistic: true
     mode: text
-    # Relative to the card root: sd_audio.h prefixes /sd/.
+    # Relative to the card root: play_sd prefixes /sd/ (the loopback URL).
     initial_value: "test.mp3"
     entity_category: config

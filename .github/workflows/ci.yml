@@ -40,16 +40,34 @@ jobs:
       - uses: ./.github/actions/media-tools
       # yt-dlp: two tests assert the import toolchain is present and that
       # probe/import guards reject junk BEFORE shelling out to it.
-      - run: pip install pyyaml numpy scipy yt-dlp
-      - run: pip install -r requirements-dev.txt
+      # The lock IS what was tested locally (frozen from the 3.13 venv by `make lock`).
+      - run: pip install -r requirements.lock
+      # esbuild: the sandbox guard runs all three generators end to end, and
+      # gen_previewer.py bundles web/src through it. Without node_modules that
+      # test fails on the environment rather than on the guard it exists for.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
       - name: lint
         run: ruff check tools tests
       - name: type check
         run: mypy tools tests
-      - name: unit tests
-        run: python -m unittest discover -s tests -q
+      # The unit suite runs under coverage.py so the number is a ratchet,
+      # not a report: the floor is the Makefile's COVERAGE_MIN (72% of
+      # tools/ as of 2026-08-21); raise it there as coverage lands.
+      - name: unit tests (coverage-gated)
+        run: make coverage-gate PY=python
       - name: LOC cap
         run: python tools/check_loc.py
+      # Advisories against the locked venv. Informational only — see the
+      # `audit` target's comment in the Makefile for what is ignored and why.
+      - name: pip-audit (non-gating)
+        continue-on-error: true
+        run: make audit PY=python
 
   web:
     runs-on: ubuntu-latest
@@ -71,6 +89,12 @@ jobs:
         run: |
           python3 -m venv .venv
           .venv/bin/pip install --quiet numpy scipy pyyaml
+      # audio/*.mp3 are gitignored, and show_sim checks every scene has one.
+      # Seconds to render, and it keeps that check real in CI instead of
+      # skipped. The one scene built on the user's own import renders without
+      # it (tracks/ is theirs, not the repo's) and says so.
+      - name: render scene audio
+        run: .venv/bin/python tools/render_audio.py
       - run: npm ci
         working-directory: web
       - run: npx tsc --noEmit
@@ -101,9 +125,14 @@ jobs:
         run: python tools/render_audio.py
       - name: generate
         run: python tools/gen_esphome.py
-      - name: fake secrets            # validation needs names, not real keys
+      # Validation needs the KEYS to resolve, not real credentials — and a
+      # literal here reads as a hardcoded password to anything scanning the
+      # repo, so the value comes from the run rather than from the file.
+      - name: fake secrets
+        env:
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
-          printf 'wifi_ssid: "ci"\nwifi_password: "ci-password"\n' \
+          printf 'wifi_ssid: "ci"\nwifi_password: "%s"\n' "$RUN" \
             > firmware/secrets.yaml
       # No `> /dev/null`: esphome prints its ERRORS to stdout, and piping it
       # away turned every validation failure into a bare "exit code 2".

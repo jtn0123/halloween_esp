@@ -21,7 +21,8 @@ import { createStemsView } from "./stems_view.js";
 import { createStyleLab } from "./style_lab.js";
 import { sections } from "./track_lights.js";
 import { EDGE_SLOP, WaveView, type WaveClip, type WaveData } from "./waveform_view.js";
-import { clock, loadClip, saveClip } from "./wave_clip.js";
+import { clock, loadClip, onsetTimes, saveClip, snapClip } from "./wave_clip.js";
+import { trimOwner } from "./import_opts.js";
 import { initOptsBridge } from "./wave_opts_bridge.js";
 import { buildWaveChrome } from "./wave_chrome.js";
 
@@ -95,7 +96,14 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   // Two things can make noise here; each silences the other on play.
   const stems = createStemsView({ onPlay: () => stop(),
                                   duration: () => view.data?.duration ?? null });
-  wrap.append(title, view.el, row, deps.bands.el, lab.el, stems.el, note);
+  // What the selection IS and IS NOT (judge B, JB1-4): the handles look
+  // like they define the scene, but Make scene writes the whole file. The
+  // only road from a trim to the castle is Re-import, so say so here.
+  const hint = document.createElement("p");
+  hint.className = "wave__trimhint";
+  hint.style.cssText = "margin:4px 0 0;font-size:12px;color:var(--ink-2)";
+  hint.hidden = true;
+  wrap.append(title, view.el, row, hint, deps.bands.el, lab.el, stems.el, note);
   if (deps.codecs) wrap.append(deps.codecs.el);
   host.append(wrap);
 
@@ -115,8 +123,9 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     () => view.data?.duration ?? null,
     (c) => { clip = c; sync(); },
     (msg) => say(msg),
+    () => syncLight(),
   );
-  const pushOpts = (): void => bridge.push(clip);
+  const pushOpts = (): void => { if (trackId) bridge.push(clip, trackId); };
 
   /** The per-frame half: redraw and readout only. Cheap enough to run on
    *  every pointermove of a drag. */
@@ -128,6 +137,19 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       : "drag across the waveform to pick a clip";
     play.disabled = !clip || !view.data;
     snap.disabled = play.disabled;
+    const d = view.data;
+    const partial = !!(clip && d && (clip.start > 0.05 || clip.end < d.duration - 0.05));
+    hint.hidden = !partial;
+    // After an import has consumed START/LENGTH they are blank, and "set
+    // from it" would be a lie (JB2-5c): say what puts them back.
+    const stamped = !!trackId && trimOwner() === trackId;
+    hint.textContent = partial
+      ? "This selection is for listening and for placing the lights. The castle "
+        + "plays the whole file — to keep only this part, press Re-import on the "
+        + "track's row " + (stamped
+          ? "(START/LENGTH above are set from it)."
+          : "— START/LENGTH above are blank now; nudge a handle to set them from it again.")
+      : "";
   }
 
   function sync(): void {
@@ -359,48 +381,20 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     if (playing) stop(`Could not load audio for “${trackId ?? ""}”.`);
   });
 
-  /* ── Loop points ──────────────────────────────────────────────────────
-     A looping scene whose seam lands mid-note clicks every time round. The
-     fix is to put both ends on a transient, which the detector has already
-     found — so this is a search, not a guess. */
-
-  /** Every onset in the track, in time order, across all bands. */
-  const allOnsets = (): number[] => {
-    const d = view.data;
-    if (!d) return [];
-    const t: number[] = [];
-    for (const b of BANDS) for (const [sec] of d.onsets[b.name] ?? []) t.push(sec);
-    return t.sort((a, z) => a - z);
-  };
-
-  /** Nearest onset to `sec`, or `sec` itself if none is close enough. */
-  const nearest = (times: number[], sec: number, within: number): number => {
-    let best = sec, gap = within;
-    for (const t of times) {
-      const d = Math.abs(t - sec);
-      if (d < gap) { gap = d; best = t; }
-    }
-    return best;
-  };
-
+  /* ── Loop points ── the arithmetic lives in wave_clip.ts (snapClip). */
   snap.addEventListener("click", () => {
     const d = view.data;
     if (!clip || !d) return;
-    const times = allOnsets();
+    const times = onsetTimes(d.onsets);
     if (!times.length) return say("No onsets to snap to at these thresholds.", true);
-    // Half a second is about as far as an edit can move before it stops being
-    // the edit you asked for.
-    const start = nearest(times, clip.start, 0.5);
-    let end = nearest(times, clip.end, 0.5);
-    if (end - start < 0.25) end = clip.end;      // refuse to collapse the clip
-    const moved = Math.abs(start - clip.start) + Math.abs(end - clip.end);
-    clip = { start, end };
+    const r = snapClip(times, clip);
+    clip = r.clip;
     sync();
     pushOpts();
     if (playing) seekIntoClip();
-    say(moved < 0.001
+    say(r.moved < 0.001
       ? "Already on a beat at both ends."
-      : `Snapped to the nearest onsets — moved ${moved.toFixed(2)}s in total.`);
+      : `Snapped to the nearest onsets — moved ${r.moved.toFixed(2)}s in total.`);
   });
 
   /* ── Bands ── */
@@ -436,6 +430,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       // entirely off-screen with no cue that anything had happened.
       if (id) host.scrollIntoView({ block: "nearest", behavior: "smooth" });
       clip = null;                     // a new track's in/out points are its own
+      bridge.clear();                  // …and so are its START/LENGTH (JB1-1)
       // Drop the previous track's analysis NOW, not when the new one lands.
       // Between show() and load() finishing, the old data was still live: a
       // drag in that window built a clip — and an audition scene — from the

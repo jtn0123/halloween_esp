@@ -39,6 +39,7 @@
 #include <driver/spi_master.h>
 #include <driver/sdspi_host.h>
 #include <driver/gpio.h>
+#include <esp_heap_caps.h>
 #include <esp_netif.h>
 #include <esp_timer.h>
 #include <esp_vfs_fat.h>
@@ -65,16 +66,23 @@ constexpr uint32_t MIN_GAP_MS = 3 * 60 * 1000;   // scene-change refreshes
 constexpr uint32_t FORCE_GAP_MS = 15 * 1000;     // button presses
 constexpr uint32_t STALE_MS = 60 * 60 * 1000;    // hourly, for the uptime
 
-inline uint8_t g_fb[ROW_BYTES * PANEL_H];
+constexpr size_t FB_BYTES = (size_t) ROW_BYTES * PANEL_H;
+// The framebuffer lives in PSRAM (allocated in begin), NOT static RAM: the
+// S2's dram0 segment is full to the line — IDF 5.5's frameworks pushed it
+// over — and a panel that refreshes every few minutes never notices PSRAM
+// latency. Same move boot_log.h made for the same reason.
+inline uint8_t *g_fb = nullptr;
 inline spi_device_handle_t g_spi = nullptr;
 inline gpio_num_t g_dc;
 inline int g_cs, g_sck, g_mosi, g_miso;
-inline char g_version[16] = "?";
+// Sized to what render() can SHOW, not to what strings could hold — the last
+// bytes of dram0 were found in exactly such slack (IDF 5.5 overflow).
+inline char g_version[12] = "?";
 
 // Written by the main loop (note_state), read by the panel task.
 inline SemaphoreHandle_t g_lock = nullptr;
-inline char g_scene[32] = "-";
-inline char g_track[64] = "-";
+inline char g_scene[20] = "-";
+inline char g_track[28] = "-";
 inline std::atomic<bool> g_pending{false};
 inline std::atomic<bool> g_force{false};
 
@@ -158,7 +166,7 @@ inline void flush() {
   cmd(0x4E); data1(0x00);                       // RAM counters home
   cmd(0x4F); data1(0x00); data1(0x00);
   cmd(0x24);
-  data(g_fb, sizeof(g_fb));
+  data(g_fb, FB_BYTES);
   cmd(0x22); data1(0xF7);                       // full update sequence
   cmd(0x20);
   // No BUSY line on the wing: wait out the worst case instead of polling.
@@ -179,10 +187,10 @@ inline void ip_string(char *out, size_t n) {
 }
 
 inline void render() {
-  memset(g_fb, 0xFF, sizeof(g_fb));
+  memset(g_fb, 0xFF, FB_BYTES);
   char line[44];
 
-  char scene[32], track[64];
+  char scene[20], track[28];
   xSemaphoreTake(g_lock, portMAX_DELAY);
   strlcpy(scene, g_scene, sizeof(scene));
   strlcpy(track, g_track, sizeof(track));
@@ -296,6 +304,13 @@ inline void task(void *) {
 /// pin map stays in one place.
 inline void begin(const char *version, int cs, int dc, int sck, int mosi,
                   int miso) {
+  // No framebuffer, no panel — but everything else on the castle still runs.
+  // PSRAM first; the internal-RAM fallback only matters on a PSRAM-less bench
+  // board, where 4 KB of heap is affordable.
+  g_fb = (uint8_t *) heap_caps_malloc(FB_BYTES, MALLOC_CAP_SPIRAM);
+  if (g_fb == nullptr)
+    g_fb = (uint8_t *) heap_caps_malloc(FB_BYTES, MALLOC_CAP_8BIT);
+  if (g_fb == nullptr) return;
   strlcpy(g_version, version, sizeof(g_version));
   g_cs = cs;
   g_dc = (gpio_num_t) dc;

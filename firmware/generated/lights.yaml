@@ -42,6 +42,40 @@ light:
             for (int p = 0; p < fx.n; p++)
               it[p] = Color(buf[p * 4], buf[p * 4 + 1],
                             buf[p * 4 + 2], buf[p * 4 + 3]);
+      - addressable_lambda:
+          name: "Test Bars"
+          update_interval: 500ms
+          lambda: |-
+            // Red, green, blue repeating. Wrong first colour means
+            // rgb_order is wrong; a gap means a dead pixel; count the
+            // triplets to see how many pixels actually arrive.
+            for (int p = 0; p < it.size(); p++) {
+              const int k = p % 3;
+              it[p] = Color(k == 0 ? 255 : 0, k == 1 ? 255 : 0,
+                            k == 2 ? 255 : 0, 0);
+            }
+      - addressable_lambda:
+          name: "Test Chase"
+          update_interval: 100ms
+          lambda: |-
+            // One white dot walking the chain, ~4 px/s. Where it stops
+            // is where the data stops: a cut wire, a cold joint, or the
+            // pixel that died. It wraps, so watch one full lap.
+            const int n = it.size() > 0 ? it.size() : 1;
+            const int at = (millis() / 250) % n;
+            for (int p = 0; p < it.size(); p++)
+              it[p] = p == at ? Color(255, 255, 255, 255) : Color(0, 0, 0, 0);
+      - addressable_lambda:
+          name: "Test Ends"
+          update_interval: 500ms
+          lambda: |-
+            // First pixel red, last blue, the rest dim. Which end lights
+            // red is the end the data goes in — the answer when a jewel
+            // is mounted upside down and the centre pixel looks wrong.
+            for (int p = 0; p < it.size(); p++)
+              it[p] = Color(24, 24, 24, 0);
+            if (it.size() > 0) it[0] = Color(255, 0, 0, 0);
+            if (it.size() > 1) it[it.size() - 1] = Color(0, 0, 255, 0);
     # towerL: jewel7 — 7 px, rgbw true, GPIO18
   - platform: esp32_rmt_led_strip
     id: zone_towerR
@@ -78,6 +112,40 @@ light:
             for (int p = 0; p < fx.n; p++)
               it[p] = Color(buf[p * 4], buf[p * 4 + 1],
                             buf[p * 4 + 2], buf[p * 4 + 3]);
+      - addressable_lambda:
+          name: "Test Bars"
+          update_interval: 500ms
+          lambda: |-
+            // Red, green, blue repeating. Wrong first colour means
+            // rgb_order is wrong; a gap means a dead pixel; count the
+            // triplets to see how many pixels actually arrive.
+            for (int p = 0; p < it.size(); p++) {
+              const int k = p % 3;
+              it[p] = Color(k == 0 ? 255 : 0, k == 1 ? 255 : 0,
+                            k == 2 ? 255 : 0, 0);
+            }
+      - addressable_lambda:
+          name: "Test Chase"
+          update_interval: 100ms
+          lambda: |-
+            // One white dot walking the chain, ~4 px/s. Where it stops
+            // is where the data stops: a cut wire, a cold joint, or the
+            // pixel that died. It wraps, so watch one full lap.
+            const int n = it.size() > 0 ? it.size() : 1;
+            const int at = (millis() / 250) % n;
+            for (int p = 0; p < it.size(); p++)
+              it[p] = p == at ? Color(255, 255, 255, 255) : Color(0, 0, 0, 0);
+      - addressable_lambda:
+          name: "Test Ends"
+          update_interval: 500ms
+          lambda: |-
+            // First pixel red, last blue, the rest dim. Which end lights
+            // red is the end the data goes in — the answer when a jewel
+            // is mounted upside down and the centre pixel looks wrong.
+            for (int p = 0; p < it.size(); p++)
+              it[p] = Color(24, 24, 24, 0);
+            if (it.size() > 0) it[0] = Color(255, 0, 0, 0);
+            if (it.size() > 1) it[it.size() - 1] = Color(0, 0, 255, 0);
     # towerR: jewel7 — 7 px, rgbw true, GPIO14
   - platform: esp32_rmt_led_strip
     id: zone_door
@@ -114,7 +182,42 @@ light:
             for (int p = 0; p < fx.n; p++)
               it[p] = Color(buf[p * 4], buf[p * 4 + 1],
                             buf[p * 4 + 2], buf[p * 4 + 3]);
+      - addressable_lambda:
+          name: "Test Bars"
+          update_interval: 500ms
+          lambda: |-
+            // Red, green, blue repeating. Wrong first colour means
+            // rgb_order is wrong; a gap means a dead pixel; count the
+            // triplets to see how many pixels actually arrive.
+            for (int p = 0; p < it.size(); p++) {
+              const int k = p % 3;
+              it[p] = Color(k == 0 ? 255 : 0, k == 1 ? 255 : 0,
+                            k == 2 ? 255 : 0, 0);
+            }
+      - addressable_lambda:
+          name: "Test Chase"
+          update_interval: 100ms
+          lambda: |-
+            // One white dot walking the chain, ~4 px/s. Where it stops
+            // is where the data stops: a cut wire, a cold joint, or the
+            // pixel that died. It wraps, so watch one full lap.
+            const int n = it.size() > 0 ? it.size() : 1;
+            const int at = (millis() / 250) % n;
+            for (int p = 0; p < it.size(); p++)
+              it[p] = p == at ? Color(255, 255, 255, 255) : Color(0, 0, 0, 0);
+      - addressable_lambda:
+          name: "Test Ends"
+          update_interval: 500ms
+          lambda: |-
+            // First pixel red, last blue, the rest dim. Which end lights
+            // red is the end the data goes in — the answer when a jewel
+            // is mounted upside down and the centre pixel looks wrong.
+            for (int p = 0; p < it.size(); p++)
+              it[p] = Color(24, 24, 24, 0);
+            if (it.size() > 0) it[0] = Color(255, 0, 0, 0);
+            if (it.size() > 1) it[it.size() - 1] = Color(0, 0, 255, 0);
     # door: ring12 — 12 px, rgbw false, GPIO16
+# RMT: 192 of 256 symbols spent, 1 block(s) spare (the SD build's status pixel needs one).
 
 script:
   - id: lights_override
@@ -124,20 +227,47 @@ script:
     then:
       - lambda: |-
           esphome::light::LightState *zones[] = {id(zone_towerL), id(zone_towerR), id(zone_door)};
-          for (auto *z : zones) {
-            if (arg == "off") { z->turn_off().perform(); continue; }
+          const char *names[] = {"towerL", "towerR", "door"};
+          const bool rgbw[] = {true, true, false};
+          // "[zone:]spec[@pct]": spec = RRGGBB | white | off | show; one
+          // strip when a zone is named (the desk's channel test), pct 1..100.
+          std::string spec = arg, only;
+          const auto colon = arg.find(':');
+          if (colon != std::string::npos) {
+            only = arg.substr(0, colon); spec = arg.substr(colon + 1);
+          }
+          float bright = 1.0f;
+          const auto at = spec.find('@');
+          if (at != std::string::npos) {
+            bright = atoi(spec.c_str() + at + 1) / 100.0f; spec.resize(at);
+          }
+          for (size_t i = 0; i < 3; i++) {
+            if (!only.empty() && only != names[i]) continue;
+            auto *z = zones[i];
+            if (spec == "off") { z->turn_off().perform(); continue; }
             auto call = z->turn_on();
-            call.set_brightness(1.0f);
-            if (arg == "show") {
+            call.set_brightness(bright);
+            if (spec == "show") {
               call.set_effect("Show");
-            } else {
-              // Park on a colour with no animation — the manual
-              // override the phone remote offers.
-              long v = strtol(arg.c_str(), nullptr, 16);
+            } else if (spec == "bars" || spec == "chase" || spec == "ends") {
+              // The bench patterns, one effect each (TEST_EFFECTS).
+              call.set_effect(spec == "bars" ? "Test Bars"
+                              : spec == "chase" ? "Test Chase" : "Test Ends");
+            } else if (spec == "white") {
+              // The white LED itself on an RGBW fixture; an RGB one
+              // mixes it. Tests the one channel a colour never lights.
               call.set_effect("None");
-              call.set_rgb(((v >> 16) & 0xFF) / 255.0f,
-                           ((v >> 8) & 0xFF) / 255.0f,
-                           (v & 0xFF) / 255.0f);
+              if (rgbw[i]) call.set_rgbw(0.0f, 0.0f, 0.0f, 1.0f);
+              else call.set_rgb(1.0f, 1.0f, 1.0f);
+            } else {
+              // Park on a colour, no animation. White channel OFF:
+              // left alone it kept whatever the effect last wrote,
+              // and 'red' came out pink on the jewels (2026-08-21).
+              long v = strtol(spec.c_str(), nullptr, 16);
+              call.set_effect("None");
+              call.set_rgbw(((v >> 16) & 0xFF) / 255.0f,
+                            ((v >> 8) & 0xFF) / 255.0f,
+                            (v & 0xFF) / 255.0f, 0.0f);
             }
             call.perform();
           }

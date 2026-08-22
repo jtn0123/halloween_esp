@@ -9,6 +9,8 @@ actually hears a hard-panned sound in its channel and nothing in the other.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import shutil
 import struct
@@ -21,8 +23,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import numpy as np  # noqa: E402
-import stems  # noqa: E402
+import numpy as np
+import stems
 
 
 def write_left_clicks(path: Path, seconds: float = 6.0, sr: int = 44100) -> int:
@@ -111,7 +113,9 @@ class TestChannelAnalysis(StemsCase):
     def test_a_hard_left_sound_is_heard_left_and_not_right(self) -> None:
         wav = self.sandbox / "leftclicks.wav"
         clicks = write_left_clicks(wav)
-        data = stems.analyse_layers({"combined": wav})
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            data = stems.analyse_layers({"combined": wav})
+        self.assertIn("combined  left", out.getvalue())
         chans = data["layers"]["combined"]
 
         left_hits = sum(len(v) for v in chans["left"]["onsets"].values())

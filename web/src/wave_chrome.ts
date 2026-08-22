@@ -47,6 +47,7 @@ export function buildWaveChrome(): WaveChrome {
              + "stage above. (The row's Play button is the plain audio, "
              + "no lights.)";
   const readout = mk("span", "font-variant-numeric:tabular-nums");
+  readout.className = "wave__readout";
   // A live mirror of the three zones, right next to Audition. "Judge the
   // lights" with the stage 1600px off-screen was judging from memory
   // (round-2 user test): these dots are the castle, at arm's reach.

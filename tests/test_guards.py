@@ -12,6 +12,8 @@ as a pass. Hence these.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import shutil
 import sys
 import tempfile
@@ -21,8 +23,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import check_image  # noqa: E402
-import check_loc  # noqa: E402
+import check_image
+import check_loc
 
 
 class TestLocCheck(unittest.TestCase):
@@ -47,11 +49,12 @@ class TestLocCheck(unittest.TestCase):
         for path in check_loc.EXEMPT_PATHS:
             self.assertNotIn(path, measured, f"{path} should be exempt")
 
-    def test_prose_is_exempt(self) -> None:
-        """A long design document is not the same problem as a long module."""
-        self.assertIn(".md", check_loc.EXEMPT_SUFFIX)
+    def test_prose_is_in_scope(self) -> None:
+        """Docs are held to the cap too: the design record reached 1194 lines
+        while only code was measured. Suffix no longer buys an exemption."""
         measured = {rel for _n, rel, _o in check_loc.measure()}
-        self.assertFalse([r for r in measured if r.endswith(".md")])
+        self.assertIn("PROJECT_NOTES.md", measured)
+        self.assertTrue([r for r in measured if r.endswith(".md")])
 
     def test_the_repo_currently_passes(self) -> None:
         """If this fails, something needs splitting — that is the whole point."""
@@ -75,7 +78,9 @@ class TestImageCheck(unittest.TestCase):
         argv = sys.argv
         try:
             sys.argv = ["check_image.py", "_no_such_device_"]
-            self.assertEqual(check_image.main(), 0)
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(check_image.main(), 0)
+            self.assertIn("no built image", out.getvalue())
         finally:
             sys.argv = argv
 
@@ -110,8 +115,10 @@ class TestImageCheck(unittest.TestCase):
             argv = sys.argv
             try:
                 sys.argv = ["check_image.py", "big"]
-                self.assertEqual(check_image.main(), 1,
-                                 "an oversized image must fail the check")
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    self.assertEqual(check_image.main(), 1,
+                                     "an oversized image must fail the check")
+                self.assertIn("FAIL — over 97% of the slot", out.getvalue())
             finally:
                 sys.argv = argv
                 check_image.find_image = orig
@@ -129,7 +136,9 @@ class TestImageCheck(unittest.TestCase):
             argv = sys.argv
             try:
                 sys.argv = ["check_image.py", "small"]
-                self.assertEqual(check_image.main(), 0)
+                with contextlib.redirect_stdout(io.StringIO()) as out:
+                    self.assertEqual(check_image.main(), 0)
+                self.assertIn("50.0%", out.getvalue())
             finally:
                 sys.argv = argv
                 check_image.find_image = orig
@@ -139,3 +148,91 @@ class TestImageCheck(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestTracksSandbox(unittest.TestCase):
+    """CASTLE_TRACKS must redirect EVERY writer of tracks/, subprocesses
+    included. import_track.py honored only the hardcoded repo path while the
+    studio honored the env — so a sandboxed e2e import landed files in (or
+    over) the user's real library. Caught 2026-08-20 by the pull test."""
+
+    def test_import_track_honors_the_sandbox(self) -> None:
+        import os
+        import subprocess
+        out = subprocess.run(
+            [sys.executable, "-c",
+             "import import_track; print(import_track.TRACKS)"],
+            cwd=str(ROOT / "tools"),
+            env={**os.environ, "CASTLE_TRACKS": "/tmp/castle-sandbox-guard"},
+            capture_output=True, text=True, check=False)
+        self.assertEqual(out.stdout.strip(), "/tmp/castle-sandbox-guard",
+                         out.stderr)
+
+
+class TestScenesSandbox(unittest.TestCase):
+    """CASTLE_SCENES must redirect EVERY reader and writer of the show —
+    the three generators the studio runs after a splice included. The splice
+    honoured it while render_audio/gen_esphome/gen_previewer read the real
+    scenes/scenes.yaml and rewrote audio/, firmware/generated/ and the
+    previewer page (judge B, JB1-12). build_paths.py is the one answer."""
+
+    #: The repo artefacts a sandboxed rebuild must never touch.
+    GUARDED = ("scenes/scenes.yaml", "audio/markers.json",
+               "previewer/castle-cue-desk.html",
+               "firmware/generated/scenes.yaml",
+               "firmware/generated/media_files.yaml")
+
+    def _stamp(self) -> dict[str, float]:
+        return {rel: (ROOT / rel).stat().st_mtime_ns
+                for rel in self.GUARDED if (ROOT / rel).exists()}
+
+    def test_generators_resolve_their_paths_inside_the_sandbox(self) -> None:
+        import os
+        import subprocess
+        out = subprocess.run(
+            [sys.executable, "-c",
+             ("import render_audio as r, gen_esphome as e, gen_previewer as p;"
+              "print(r.SCENES, r.OUT, e.SRC, e.OUT, p.SRC, p.HTML, p.AUDIO)")],
+            cwd=str(ROOT / "tools"),
+            env={**os.environ, "CASTLE_SCENES": "/tmp/castle-sb/scenes.yaml"},
+            capture_output=True, text=True, check=False)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        for p in out.stdout.split():
+            self.assertTrue(p.startswith("/tmp/castle-sb/"), p)
+
+    def test_a_sandboxed_rebuild_touches_nothing_outside_the_sandbox(self) -> None:
+        """The real thing, end to end: a one-scene show in a scratch dir,
+        all three generators run as the studio runs them, and the repo's
+        artefacts keep their mtimes to the nanosecond."""
+        import os
+        import subprocess
+
+        import yaml
+        sb = Path(tempfile.mkdtemp(prefix="castle-scenes-sb-"))
+        try:
+            doc = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
+            doc["scenes"] = [{
+                "id": "sb_probe", "name": "Probe", "kind": "custom",
+                "volume": 0.5, "duration_ms": 1200, "loop": False, "blurb": "x",
+                "base": {"towerL": "chill", "towerR": "chill", "door": "ember"},
+                "levels": {"towerL": 0.4, "towerR": 0.4, "door": 0.5},
+                "score": [{"t": 0.0, "synth": "wind", "dur": 1.0}], "cues": []}]
+            (sb / "scenes.yaml").write_text(yaml.safe_dump(doc, sort_keys=False))
+            env = {**os.environ, "CASTLE_SCENES": str(sb / "scenes.yaml"),
+                   "CASTLE_TRACKS": str(sb / "tracks")}
+            before = self._stamp()
+            for script in ("render_audio.py", "gen_esphome.py", "gen_previewer.py"):
+                r = subprocess.run([sys.executable, str(ROOT / "tools" / script)],
+                                   env=env, capture_output=True, text=True,
+                                   check=False)
+                self.assertEqual(r.returncode, 0, f"{script}: {r.stdout}{r.stderr}")
+            self.assertEqual(self._stamp(), before, "a repo artefact was rewritten")
+            built = {str(p.relative_to(sb)) for p in sb.rglob("*") if p.is_file()}
+            for rel in ("_build/audio/01_sb_probe.mp3", "_build/audio/markers.json",
+                        "_build/firmware/generated/scenes.yaml",
+                        "_build/previewer/castle-cue-desk.html"):
+                self.assertIn(rel, built)
+            self.assertIn("sb_probe", (sb / "_build" / "previewer"
+                                       / "castle-cue-desk.html").read_text())
+        finally:
+            shutil.rmtree(sb, ignore_errors=True)

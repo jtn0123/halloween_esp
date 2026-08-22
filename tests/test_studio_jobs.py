@@ -13,6 +13,7 @@ subprocesses are `true`, `false`, and short python one-liners.
 from __future__ import annotations
 
 import sys
+import threading
 import time
 import unittest
 import warnings
@@ -22,7 +23,7 @@ from typing import ClassVar
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import studio_jobs as sj  # noqa: E402
+import studio_jobs as sj
 
 
 def setUpModule() -> None:
@@ -252,6 +253,31 @@ class TestJobRunner(unittest.TestCase):
     def test_get_of_an_unknown_id_is_none(self) -> None:
         self.assertIsNone(self.runner.get("nosuchjob"))
 
+    def test_a_gated_job_waits_for_the_studio_lock(self) -> None:
+        """The studio's sync encodes and the background jobs take turns:
+        while the gate is held the job sits queued, and it runs the moment
+        the gate is released."""
+        gate = threading.Lock()
+        runner = sj.JobRunner(gate=gate)
+        with gate:
+            job = runner.start(["true"])
+            time.sleep(0.15)
+            self.assertEqual(job.phase, "queued")
+        self.assertEqual(wait_done(job).phase, "done")
+
+    def test_a_gated_job_holds_the_gate_while_its_child_runs(self) -> None:
+        gate = threading.Lock()
+        runner = sj.JobRunner(gate=gate)
+        job = runner.start(["sleep", "0.3"])
+        time.sleep(0.1)
+        self.assertFalse(gate.acquire(blocking=False), "gate free mid-job")
+        wait_done(job)
+        self.assertTrue(gate.acquire(blocking=False))
+        gate.release()
+
+    def test_no_gate_is_the_default(self) -> None:
+        self.assertIsNone(sj.JobRunner()._gate)
+
     def test_a_successful_command_ends_done_at_100(self) -> None:
         job = wait_done(self.runner.start(["true"]))
         self.assertEqual(job.phase, "done")
@@ -306,3 +332,46 @@ class TestJobRunner(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestExplainBeyondYtDlp(unittest.TestCase):
+    """Judge B, JB1-10: ffmpeg and demucs failures reached the operator as
+    "import failed (exit 1)" or as a raw traceback with an absolute path."""
+
+    TRACEBACK: ClassVar[list] = [
+        "Traceback (most recent call last):",
+        "  File \"tools/import_track.py\", line 450, in _import",
+        "    x = ana.load_audio(out)",
+        ("subprocess.CalledProcessError: Command '['ffmpeg', '-v', 'quiet', "
+         "'-i', '/private/tmp/x/jb_drop.mp3']' returned non-zero exit status 1."),
+    ]
+
+    def test_a_traceback_names_the_program_that_failed(self) -> None:
+        self.assertEqual(sj.JobRunner._explain(self.TRACEBACK),
+                         "ffmpeg failed (exit 1)")
+
+    def test_the_last_meaningful_line_is_the_fallback(self) -> None:
+        """import_track's own SystemExit sentences are already for a person;
+        they must come through instead of the generic exit code."""
+        log = ["fetching x", "[download] 100% of 1MiB",
+               ("clip.wav doesn't look like playable audio — ffmpeg could not "
+                "convert it (exit 1)")]
+        self.assertEqual(sj.JobRunner._explain(log), log[-1])
+
+    def test_paths_come_back_as_basenames(self) -> None:
+        self.assertEqual(
+            sj.JobRunner._explain(["no such file: /private/tmp/abc/_upload/jb.wav"]),
+            "no such file: jb.wav")
+        self.assertEqual(sj.basenames("see https://youtu.be/abc/def then /a/b/c.wav"),
+                         "see https://youtu.be/abc/def then c.wav")
+
+    def test_missing_demucs_and_ffmpeg_are_sentences(self) -> None:
+        self.assertIn("Demucs is not installed",
+                      sj.JobRunner._explain(["ModuleNotFoundError: No module named 'demucs'"]))
+        self.assertIn("ffmpeg is not installed", sj.JobRunner._explain(
+            ["FileNotFoundError: [Errno 2] No such file or directory: 'ffmpeg'"]))
+
+    def test_reason_takes_the_sync_paths_whole_output(self) -> None:
+        text = "x\n\n" + "\n".join(self.TRACEBACK) + "\n"
+        self.assertEqual(sj.reason(text), "ffmpeg failed (exit 1)")
+        self.assertEqual(sj.reason(""), "")

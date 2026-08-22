@@ -9,14 +9,36 @@ what the endpoints MEAN; this is how bytes get on and off the socket.
 
 from __future__ import annotations
 
+import collections
+import gzip
+import hashlib
 import json
 import sys
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 
+def scrub(line: str, limit: int = 300) -> str:
+    """A line of ours, with the caller's control characters taken out.
+
+    Anything that reaches the console after passing through a request —
+    a path, a header, a filename — comes through here first: newlines and
+    carriage returns become escapes rather than new log lines, and the whole
+    thing is capped so one request cannot scroll the console.
+    """
+    out = "".join(ch if ch.isprintable() else repr(ch)[1:-1] for ch in line)
+    return out if len(out) <= limit else out[:limit] + "…"
+
+
 class BadRequest(Exception):
     """A client mistake the boundary turns into a 400 instead of a traceback."""
+
+
+# Request bodies are buffered whole (the multipart path needs the file in
+# RAM to find the part). Nothing legitimate is anywhere near this — the
+# biggest import is a few tens of MB — and without a ceiling one header
+# could ask the server to allocate whatever the client claims.
+MAX_BODY = 512 * 1024 * 1024
 
 
 class JsonHandler(BaseHTTPRequestHandler):
@@ -25,7 +47,10 @@ class JsonHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt, *a):              # quieter console
-        sys.stderr.write("  %s\n" % (fmt % a))
+        # The request line is whatever the client sent, control bytes and
+        # all. Written straight through, a carriage return in a URL forges
+        # a second log line — someone else's tidy "200 OK" under our name.
+        sys.stderr.write("  %s\n" % scrub(fmt % a))
 
     def send_json(self, obj, code=200):
         body = json.dumps(obj).encode()
@@ -35,11 +60,51 @@ class JsonHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_bytes(self, body: bytes, ctype: str):
-        self.send_response(200)
+    def send_bytes(self, body: bytes, ctype: str, *, etag: str | None = None):
+        """Whole-body response. HTML (the 2.4 MB desk page) is served the
+        way the firmware already serves it: gzipped when the browser can
+        take it, and with a validator so a reload is a 304, not a resend.
+        Everything else stays `no-store`, which is right for API JSON.
+
+        `etag` is the validator; send_file() derives it from the file's
+        (mtime, size) without reading the file. Left None, an HTML body
+        gets one from its content hash so the old `send_bytes(read_bytes())`
+        call site gains the behaviour unchanged."""
+        if etag is None and ctype.startswith("text/html"):
+            etag = content_etag(body)
+        if etag is None:
+            self._send_plain(body, ctype, 200, [("Cache-Control", "no-store")])
+            return
+        if etag_matches(self.headers.get("If-None-Match"), etag):
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            return
+        hdrs = [("ETag", etag), ("Cache-Control", "no-cache"),
+                ("Vary", "Accept-Encoding")]
+        if accepts_gzip(self.headers.get("Accept-Encoding")):
+            body = gzipped(etag, body)
+            hdrs.append(("Content-Encoding", "gzip"))
+        self._send_plain(body, ctype, 200, hdrs)
+
+    def send_file(self, p: Path, ctype: str):
+        """send_bytes for a file on disk: the validator is "<mtime>-<size>",
+        so a matching If-None-Match answers 304 without reading the file."""
+        st = p.stat()
+        etag = f'"{st.st_mtime_ns}-{st.st_size}"'
+        if etag_matches(self.headers.get("If-None-Match"), etag):
+            self.send_bytes(b"", ctype, etag=etag)
+            return
+        self.send_bytes(p.read_bytes(), ctype, etag=etag)
+
+    def _send_plain(self, body: bytes, ctype: str, code: int,
+                    extra: list[tuple[str, str]]) -> None:
+        self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        for k, v in extra:
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
@@ -52,8 +117,7 @@ class JsonHandler(BaseHTTPRequestHandler):
         3 MB first. Only the one-range form is handled — that is all a media
         element ever asks for — and anything else falls back to the whole file.
         """
-        data = p.read_bytes()
-        total = len(data)
+        total = p.stat().st_size
         rng = (self.headers.get("Range") or "").strip()
         lo, hi = 0, total - 1
         partial = False
@@ -70,7 +134,11 @@ class JsonHandler(BaseHTTPRequestHandler):
         hi = min(hi, total - 1)
         if not partial or lo > hi:
             lo, hi, partial = 0, total - 1, False
-        chunk = data[lo:hi + 1]
+        # Only the bytes asked for leave the disk: the old read_bytes() pulled
+        # a whole four-minute import into RAM to answer a 64 KB probe.
+        with p.open("rb") as fh:
+            fh.seek(lo)
+            chunk = fh.read(hi + 1 - lo)
         self.send_response(206 if partial else 200)
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
@@ -82,7 +150,17 @@ class JsonHandler(BaseHTTPRequestHandler):
         self.wfile.write(chunk)
 
     def body(self) -> bytes:
-        return self.rfile.read(int(self.headers.get("Content-Length", 0) or 0))
+        try:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            raise BadRequest("Content-Length is not a number") from None
+        if n > MAX_BODY:
+            # Unread body bytes would be parsed as the next request on a
+            # kept-alive connection; drop it after the 400.
+            self.close_connection = True
+            raise BadRequest(f"request body too large ({n} bytes; "
+                             f"the limit is {MAX_BODY})")
+        return self.rfile.read(n) if n > 0 else b""
 
     def json_body(self, raw: bytes) -> dict:
         """The request body as a dict, or a 400 — not a dead connection.
@@ -114,6 +192,56 @@ class JsonHandler(BaseHTTPRequestHandler):
                             "error": f"{type(e).__name__}: {e}"}, 500)
 
 
+# Compressed copies of recent bodies, keyed by their ETag — one entry is the
+# desk page, a second appears only while a rebuild is in flight. Bounded so
+# an unusual caller cannot grow it.
+_GZ: collections.OrderedDict[str, bytes] = collections.OrderedDict()
+KEEP_GZ = 4
+
+
+def gzipped(etag: str, body: bytes) -> bytes:
+    hit = _GZ.get(etag)
+    if hit is None:
+        hit = gzip.compress(body, 6)
+        _GZ[etag] = hit
+        while len(_GZ) > KEEP_GZ:
+            _GZ.popitem(last=False)
+    else:
+        _GZ.move_to_end(etag)
+    return hit
+
+
+def content_etag(body: bytes) -> str:
+    """A validator for a body with no file behind it: hash plus length."""
+    return f'"{hashlib.blake2b(body, digest_size=8).hexdigest()}-{len(body)}"'
+
+
+def accepts_gzip(header: str | None) -> bool:
+    """`gzip` named in Accept-Encoding with a non-zero q (or no q at all)."""
+    for part in (header or "").split(","):
+        enc, _, params = part.strip().partition(";")
+        if enc.strip().lower() not in ("gzip", "*"):
+            continue
+        q = params.strip().lower().removeprefix("q=").strip() if params else ""
+        try:
+            return float(q) > 0 if q else True
+        except ValueError:
+            return False
+    return False
+
+
+def etag_matches(header: str | None, etag: str) -> bool:
+    """If-None-Match: `*`, or a list of (possibly weak) validators."""
+    if not header:
+        return False
+    if header.strip() == "*":
+        return True
+    for cand in header.split(","):
+        if cand.strip().removeprefix("W/") == etag:
+            return True
+    return False
+
+
 def parse_multipart(raw: bytes, ctype: str) -> tuple[str, bytes]:
     if "boundary=" not in ctype:
         return "", b""
@@ -126,7 +254,12 @@ def parse_multipart(raw: bytes, ctype: str) -> tuple[str, bytes]:
             continue
         name = head.decode("utf-8", "replace").split("filename=")[1]
         name = name.split('"')[1] if '"' in name else name.strip()
+        name = Path(name).name
+        # Path("..").name is ".." — the staging path would be tracks/_upload/..
+        # (= tracks/) and write_bytes would 500. Say 400 here instead.
+        if name in ("", ".", ".."):
+            raise BadRequest(f"upload filename {name!r} is not a file name")
         # Strip exactly the CRLF before the boundary — rstrip(b"\r\n-")
         # also ate any REAL trailing 0x2D/0x0D/0x0A bytes of the file.
-        return Path(name).name, data[:-2] if data.endswith(b"\r\n") else data
+        return name, data[:-2] if data.endswith(b"\r\n") else data
     return "", b""

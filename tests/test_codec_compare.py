@@ -8,6 +8,8 @@ not fall over on the degenerate inputs.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import shutil
 import sys
 import tempfile
@@ -20,9 +22,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import analyze as ana  # noqa: E402
-import codec_compare as cc  # noqa: E402
-from helpers import make_click_track  # noqa: E402
+import analyze as ana
+import codec_compare as cc
+from helpers import make_click_track
 
 OPTS = {"start": 0, "take": 3.0, "fade_in": None, "fade_out": None,
         "normalize": False, "gain_db": None, "bitrate": 96,
@@ -74,7 +76,9 @@ class TestEncodeSet(unittest.TestCase):
         cls.tmp = Path(tempfile.mkdtemp())
         cls.src = cls.tmp / "src.wav"
         make_click_track(cls.src, seconds=3.0)
-        cls.rows = cc.encode_set(cls.src, cls.tmp / "out", dict(OPTS))
+        # opus re-rates 44100 -> 48000 and says so; keep -q output clean.
+        with contextlib.redirect_stdout(io.StringIO()):
+            cls.rows = cc.encode_set(cls.src, cls.tmp / "out", dict(OPTS))
         cls.by = {r["codec"]: r for r in cls.rows}
 
     @classmethod
@@ -105,7 +109,8 @@ class TestEncodeSet(unittest.TestCase):
 
     def test_the_score_is_reproducible(self) -> None:
         """A number that moves between runs cannot be used to choose."""
-        again = cc.encode_set(self.src, self.tmp / "out2", dict(OPTS))
+        with contextlib.redirect_stdout(io.StringIO()):
+            again = cc.encode_set(self.src, self.tmp / "out2", dict(OPTS))
         for a, b in zip(self.rows, again):
             self.assertEqual(a["codec"], b["codec"])
             self.assertAlmostEqual(a["db"], b["db"], places=2, msg=a["codec"])

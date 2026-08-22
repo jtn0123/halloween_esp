@@ -9,11 +9,13 @@ the same env for every other studio test, for the same reason.)
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -26,8 +28,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import castle_link as cl  # noqa: E402
-from studio_case import ServerCase  # noqa: E402
+import castle_link as cl
+import castle_native as cn
+import hosts
+from studio_case import HostEnv, ServerCase
 
 DEAD = "127.0.0.1:1"   # nothing listens; connect refuses instantly
 
@@ -62,13 +66,33 @@ class FakeCastle(BaseHTTPRequestHandler):
         self._answer({"removed": True})
 
 
-def start_fake_castle() -> tuple[ThreadingHTTPServer, str]:
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), FakeCastle)
+class SlowCastle(FakeCastle):
+    """A castle whose card writes take a while: acks a PUT after `put_delay`
+    seconds, the way the real one acks only once the last byte is on SD."""
+
+    put_delay: ClassVar[float] = 0.0
+    puts: ClassVar[list[int]] = []
+
+    def do_PUT(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(n)
+        SlowCastle.puts.append(len(body))
+        time.sleep(SlowCastle.put_delay)
+        # The stalled-PUT tests hang up before the ack; a late write to a
+        # closed socket is the point, not a traceback on the test's stderr.
+        with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+            self._answer({"path": self.path, "bytes": len(body)})
+
+
+def start_fake_castle(
+        handler: type[FakeCastle] = FakeCastle) -> tuple[ThreadingHTTPServer, str]:
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     return srv, f"127.0.0.1:{srv.server_address[1]}"
 
 
-class TestCastleHost(unittest.TestCase):
+class TestCastleHost(HostEnv, unittest.TestCase):
     """Resolution order: env, then the first devices.toml entry, then None."""
 
     def setUp(self) -> None:
@@ -76,14 +100,14 @@ class TestCastleHost(unittest.TestCase):
         env = mock.patch.dict(os.environ, {}, clear=False)
         env.start()
         self.addCleanup(env.stop)
-        dev = mock.patch.object(cl, "DEVICES", self.tmp / "devices.toml")
+        dev = mock.patch.object(hosts, "DEVICES", self.tmp / "devices.toml")
         dev.start()
         self.addCleanup(dev.stop)
         os.environ.pop("CASTLE_HOST", None)
 
     def test_env_wins_over_the_file(self) -> None:
         (self.tmp / "devices.toml").write_text('[a]\nhost = "1.2.3.4"\n')
-        os.environ["CASTLE_HOST"] = "9.9.9.9"
+        self.host_env("9.9.9.9")
         self.assertEqual(cl.castle_host(), "9.9.9.9")
 
     def test_first_toml_entry_with_a_host(self) -> None:
@@ -94,12 +118,23 @@ class TestCastleHost(unittest.TestCase):
     def test_no_file_means_no_castle(self) -> None:
         self.assertIsNone(cl.castle_host())
 
+    def test_hosts_is_the_shared_candidate_list_with_fallbacks(self) -> None:
+        """One resolver: what castle_link walks IS hosts.candidates()."""
+        (self.tmp / "devices.toml").write_text(
+            '[castle]\nhost = "1.2.3.4"\nfallbacks = ["1.2.3.5"]\n')
+        self.assertEqual(cl.castle_hosts(), ["1.2.3.4", "1.2.3.5"])
+        self.assertEqual(cl.castle_hosts(), hosts.candidates())
+        self.host_env("castle,9.9.9.9")
+        self.assertEqual(cl.castle_hosts(), ["1.2.3.4", "1.2.3.5", "9.9.9.9"])
+        self.host_env("")
+        self.assertEqual(cl.castle_hosts(), [])
+
     def test_malformed_toml_means_no_castle_not_a_traceback(self) -> None:
         (self.tmp / "devices.toml").write_text("host = = =\n")
         self.assertIsNone(cl.castle_host())
 
 
-class TestStatusAndForward(unittest.TestCase):
+class TestStatusAndForward(HostEnv, unittest.TestCase):
     """status() and forward() against a castle the test owns."""
 
     def setUp(self) -> None:
@@ -124,7 +159,7 @@ class TestStatusAndForward(unittest.TestCase):
         self.assertEqual(FakeCastle.seen.count("GET /api/status"), 1)
 
     def test_dead_castle_is_none_and_remembered(self) -> None:
-        os.environ["CASTLE_HOST"] = DEAD
+        self.host_env(DEAD)
         cl._cache.clear()
         self.assertIsNone(cl.status())
         # The second miss must come from the down-cache, not another connect.
@@ -138,13 +173,108 @@ class TestStatusAndForward(unittest.TestCase):
 
     def test_forward_without_a_castle_is_a_502(self) -> None:
         os.environ.pop("CASTLE_HOST")
-        with mock.patch.object(cl, "DEVICES", Path("/no/such/devices.toml")):
+        with mock.patch.object(hosts, "DEVICES", Path("/no/such/devices.toml")):
             code, body, _ = cl.forward("POST", "/api/stop")
         self.assertEqual(code, 502)
         self.assertIn("no castle", body.decode())
 
+    def test_a_configured_but_dead_castle_502s_every_verb(self) -> None:
+        """Pass-1 J1-1: Stop answered 200 "queued" to a castle that was not
+        there, because the native stub's empty key dict made it vacuously
+        true. Nothing is reachable here; nothing may claim to be queued."""
+        self.host_env(DEAD)
+        cl._cache.clear()
+        for method, path, body in (("POST", "/api/stop", b""),
+                                   ("POST", "/api/scene?s=vigil", b""),
+                                   ("POST", "/api/volume?v=5", b""),
+                                   ("POST", "/api/play?f=x.mp3", b""),
+                                   ("PUT", "/api/files/x.mp3", b"\xff\xfb"),
+                                   ("DELETE", "/api/files/x.mp3", b""),
+                                   ("GET", "/api/files", b"")):
+            code, out, _ = cl.forward(method, path, body)
+            self.assertEqual(code, 502, f"{method} {path} -> {out!r}")
+            self.assertIn("not reachable", out.decode())
 
-class TestStudioBridge(ServerCase):
+    def test_a_mutation_drops_the_cached_status(self) -> None:
+        """Pass-1 J1-5: the desk re-polls ~1 s after a click, inside the
+        status cache's 1.5 s — it must get the post-click world."""
+        cl.status()
+        cl.forward("POST", "/api/volume?v=5")
+        cl.status()
+        self.assertEqual(FakeCastle.seen.count("GET /api/status"), 2)
+
+    def test_an_answered_request_clears_the_down_cache(self) -> None:
+        """J2-4: a probe that failed while the castle rebooted must not keep
+        saying "down" for 3 s after the castle plainly served a click —
+        the desk's own 0.9 s re-poll would flip it to 'not answering'."""
+        cl._cache["down"] = (time.monotonic(), {})
+        code, _, _ = cl.forward("POST", "/api/scene?s=vigil")
+        self.assertEqual(code, 200)
+        self.assertNotIn("down", cl._cache)
+        self.assertIsNotNone(cl.status())
+
+    def test_native_leg_is_skipped_for_hosts_with_a_port(self) -> None:
+        """J2-8: "host:port" names an HTTP server; aioesphomeapi cannot
+        resolve it and would log "Error resolving" every 5 s forever."""
+        self.assertFalse(cl.native_host("127.0.0.1:8093"))
+        self.assertTrue(cl.native_host("castle.lan"))
+        with mock.patch.object(cl.castle_native, "connected") as conn:
+            self.host_env(DEAD)
+            cl._cache.clear()
+            self.assertEqual(cl.forward("POST", "/api/stop")[0], 502)
+        conn.assert_not_called()
+
+    def test_a_plain_get_keeps_the_cached_status(self) -> None:
+        cl.status()
+        cl.forward("GET", "/api/files")
+        cl.status()
+        self.assertEqual(FakeCastle.seen.count("GET /api/status"), 1)
+
+
+class TestSlowCard(HostEnv, unittest.TestCase):
+    """Pass-1 J1-8: PUT budgets and no replay once the bytes have gone."""
+
+    def setUp(self) -> None:
+        self.castle, self.host = start_fake_castle(SlowCastle)
+        self.addCleanup(self.castle.shutdown)
+        self.addCleanup(self.castle.server_close)
+        SlowCastle.puts = []
+        SlowCastle.put_delay = 0.0
+        FakeCastle.seen = []
+        cl._cache.clear()
+
+    def test_a_put_that_acks_after_the_post_budget_still_succeeds(self) -> None:
+        SlowCastle.put_delay = cl.TIMEOUT_S + 0.5
+        with mock.patch.dict(os.environ, {"CASTLE_HOST": self.host}):
+            code, out, _ = cl.forward("PUT", "/api/files/big.mp3", b"x" * 1000)
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(out)["bytes"], 1000)
+
+    def test_a_stalled_put_is_never_replayed_to_the_fallback(self) -> None:
+        """The bytes left once; a 504 says "maybe landed", and the fallback
+        address (the same castle, re-leased) must NOT receive a second copy."""
+        other, other_host = start_fake_castle()
+        self.addCleanup(other.shutdown)
+        self.addCleanup(other.server_close)
+        SlowCastle.put_delay = 1.5
+        with mock.patch.dict(os.environ, {"CASTLE_HOST": f"{self.host},{other_host}"}), \
+                mock.patch.dict(cl.READ_BUDGET_S, {"PUT": 0.3}):
+            code, out, _ = cl.forward("PUT", "/api/files/big.mp3", b"x" * 10)
+        self.assertEqual(code, 504)
+        self.assertIn("may have landed", out.decode())
+        self.assertEqual(SlowCastle.puts, [10])
+        self.assertEqual([c for c in FakeCastle.seen if c.startswith("PUT")], [])
+
+    def test_a_get_that_stalls_tries_the_next_host(self) -> None:
+        other, other_host = start_fake_castle()
+        self.addCleanup(other.shutdown)
+        self.addCleanup(other.server_close)
+        with mock.patch.dict(os.environ, {"CASTLE_HOST": f"127.0.0.1:1,{other_host}"}):
+            code, _, _ = cl.forward("GET", "/api/files")
+        self.assertEqual(code, 200)
+
+
+class TestStudioBridge(HostEnv, ServerCase):
     """The studio's routes, with a fake castle behind them."""
 
     castle: ThreadingHTTPServer
@@ -162,12 +292,12 @@ class TestStudioBridge(ServerCase):
         super().tearDownClass()
 
     def setUp(self) -> None:
-        os.environ["CASTLE_HOST"] = self.castle_host
+        self.host_env(self.castle_host)
         cl._cache.clear()
         FakeCastle.seen = []
 
     def tearDown(self) -> None:
-        os.environ["CASTLE_HOST"] = DEAD
+        self.host_env(DEAD)
         cl._cache.clear()
 
     def get(self, path: str) -> tuple[int, dict]:
@@ -187,7 +317,7 @@ class TestStudioBridge(ServerCase):
         self.assertNotIn("studio", s)   # this is what flips the desk's mode
 
     def test_status_falls_back_to_the_studio_marker(self) -> None:
-        os.environ["CASTLE_HOST"] = DEAD
+        self.host_env(DEAD)
         cl._cache.clear()
         _, s = self.get("/api/status")
         self.assertEqual(s, {"studio": True})
@@ -219,3 +349,35 @@ class TestStudioBridge(ServerCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNativeLegIsOptional(unittest.TestCase):
+    """aioesphomeapi is a nicety, not a dependency.
+
+    The native leg exists for the all-in-flash build, which serves no HTTP.
+    Everything else — the porch's SD build, the emulator, every test — is
+    reached over port 80, so a studio whose environment lacks the library
+    must still start and still relay. It did not: the import was top-level
+    and took the whole server down with it (CI, 2026-08-22).
+    """
+
+    def setUp(self) -> None:
+        p = mock.patch.object(cn, "aioesphomeapi", None)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_the_leg_reports_itself_unavailable(self) -> None:
+        self.assertFalse(cn.available())
+        self.assertFalse(cn.connected("10.0.0.1"))
+
+    def test_every_verb_declines_instead_of_raising(self) -> None:
+        self.assertIsNone(cn.status("10.0.0.1"))
+        self.assertFalse(cn.scene("10.0.0.1", "vigil"))
+        self.assertFalse(cn.stop("10.0.0.1"))
+        self.assertFalse(cn.volume("10.0.0.1", 40))
+
+    def test_no_connection_is_ever_opened(self) -> None:
+        """The guards come BEFORE _get, so no thread and no socket."""
+        cn.status("10.0.0.1")
+        cn.scene("10.0.0.1", "vigil")
+        self.assertEqual(cn._links, {})

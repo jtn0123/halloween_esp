@@ -67,7 +67,9 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
    Every band is clickable, and so is every legend row — on the card view the
    used bands are hairlines, which is the honest picture and unclickable. */
 .budget .panel__hd { align-items: center; }
-.budget__tabs { display: flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+/* Above the fixed castle dock (z 40), which sits over this strip at
+   1280×900 — the tabs stay clickable and readable whatever the dock does. */
+.budget__tabs { display: flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; position: relative; z-index: 41; background: var(--panel); }
 .budget__tabs button {
   font-family: var(--f-data); font-size: 9.5px; letter-spacing: .1em;
   text-transform: uppercase; padding: 4px 11px; border: 0; cursor: pointer;
@@ -128,6 +130,21 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   letter-spacing: .16em; text-transform: uppercase; color: var(--ink-2);
 }
 .trk-lib__hd .note { font-weight: 400; letter-spacing: .04em; color: var(--muted); }
+/* The Sync button: quiet when the card is complete, an action when it isn't. */
+.trk-sync {
+  margin-left: auto; padding: 3px 10px; cursor: pointer;
+  font: 600 10.5px var(--f-data); letter-spacing: .08em; text-transform: none;
+  color: var(--accent); background: none;
+  border: 1px solid var(--accent); border-radius: 6px;
+}
+.trk-sync[disabled] { color: var(--muted); border-color: var(--line); cursor: default; }
+/* The merged view's second half: files that live only on the castle's card. */
+.trk-cardhd {
+  padding: 9px 14px 5px; border-top: 1px solid var(--line);
+  font-family: var(--f-data); font-size: 10px; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+}
+.trk--card { opacity: .85; }
 .trk-lib .trk-list { max-height: 430px; overflow-y: auto; }
 /* A 380px column cannot put four actions beside a title, so the row stacks —
    the same shape the phone breakpoint already gives it. */
@@ -167,7 +184,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   color: #fff;
 }
 .stems-note { margin: 6px 0; font-size: 12px; color: var(--ink-2, #a9a4bd); }
-.stems-note.err { color: var(--bad, #ff6a6a); }
+.stems-note.err { color: var(--alarm); }
 .stems-row { margin: 8px 0 2px; }
 .stems-row-head {
   display: flex; align-items: center; gap: 8px;
@@ -180,12 +197,71 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   background: var(--panel, #0d101c); border-radius: 6px; cursor: pointer;
 }
 
-#devicePanel {
+/* One castle home: the dock owns the corner; the chip is its collapsed
+   face, #devicePanel its expanded one (device.ts builds both into it). */
+#castleDock {
   position: fixed;
   right: 12px;
-  bottom: 96px;
-  z-index: 39;
+  bottom: 12px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  /* The column is as tall as whatever it holds, and an open panel makes that
+     most of the window. Only the chip and the panel themselves should catch
+     a click; the empty space beside them belongs to the page (a track row
+     under the dock became unclickable when the strip test arrived). */
+  pointer-events: none;
+}
+#castleDock > * { pointer-events: auto; }
+
+/* The chip: the dock's collapsed face (device_chip.ts renders it). Hidden
+   until the first contact; `.down` dims the words, never the ground — the
+   library used to bleed through an opacity-faded chip. */
+#deviceChip {
+  display: none;
+  background: var(--panel-2);
+  color: var(--ink);
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  padding: .5rem .75rem;
+  font: 13px system-ui;
+  box-shadow: var(--shadow);
+}
+#deviceChip.live { display: block; }
+#deviceChip.down > * { opacity: .45; }
+#deviceChip.down #devNow { font-style: italic; }
+#devNow { color: var(--ink-2); }
+#deviceChip .chip__row {
+  margin-top: .25rem; display: flex; align-items: center; gap: .4rem;
+}
+#deviceChip .chip__btn {
+  cursor: pointer; background: var(--panel); color: inherit;
+  border: 1px solid var(--line); border-radius: 6px; padding: .2rem .5rem;
+  white-space: nowrap; font: inherit;
+}
+#deviceChip .chip__btn:disabled { cursor: default; opacity: .5; }
+#deviceChip #devVol { width: 90px; }
+#deviceChip .chip__mirror { cursor: pointer; white-space: nowrap; }
+
+/* Toasts stack in one column above the dock (device.ts toast()). */
+#toasts {
+  position: fixed; right: 12px; bottom: 84px; z-index: 41;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  pointer-events: none;
+}
+.toast {
+  padding: .4rem .7rem; border-radius: 8px; font: 12px system-ui; max-width: 60vw;
+  transition: opacity .4s; opacity: 1;
+  background: var(--spirit); color: #fff;
+}
+.toast--err { background: var(--alarm); color: #fff; }
+
+#devicePanel {
   width: 290px;
+  max-height: min(70vh, 640px);
+  overflow-y: auto;
   background: var(--panel-2);
   color: var(--ink);
   border: 1px solid var(--line-2);
@@ -193,7 +269,76 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   font: 13px system-ui;
   display: none;
   box-shadow: 0 6px 24px rgba(0, 0, 0, .55);
-  overflow: hidden;
+}
+/* The panel's rows (device_panel.ts renders them as innerHTML with these
+   class names only — grade report C2): header, show row, lights row, the
+   card's file list, the motion-sensor row, the drop zone, the boot-log foot.
+   Tokens throughout, so the panel follows the light theme like the chip. */
+.dp__hd, .dp__row, .dp__lights {
+  display: flex; align-items: center; gap: .4rem;
+  padding: .6rem .8rem; border-bottom: 1px solid var(--line-2);
+}
+.dp__row { padding: .5rem .8rem; gap: .6rem; flex-wrap: wrap; }
+.dp__lights { padding: .5rem .8rem; gap: .5rem; }
+.dp__strips { flex-wrap: wrap; }
+.dp__strip { display: inline-flex; align-items: center; gap: .15rem; white-space: nowrap; }
+.dp__strip small { color: var(--muted); margin-right: .15rem; }
+.dp__grow { flex: 1; }
+.dp__muted { color: var(--muted); }
+.dp__x, .dp__del, .dp__logbtn {
+  cursor: pointer; background: none; border: 0; color: var(--muted); font: inherit;
+}
+.dp__x { font-size: 14px; padding: 0 .2rem; }
+.dp__go {
+  cursor: pointer; border: 0; border-radius: 6px; padding: .25rem .7rem;
+  background: var(--spirit); color: #fff; font: inherit;
+}
+.dp__go--on { background: var(--alarm); }
+.dp__link { margin-left: auto; color: var(--cool); text-decoration: none; white-space: nowrap; }
+.dp__color { cursor: pointer; }
+.dp__btn {
+  cursor: pointer; background: var(--panel); color: inherit; border: 0;
+  border-radius: 6px; padding: .2rem .5rem; font: inherit;
+}
+.dp__btn--sm { padding: .15rem .5rem; }
+.dp__ghost {
+  cursor: pointer; background: none; color: var(--muted);
+  border: 1px solid var(--line-2); border-radius: 6px; padding: .2rem .5rem; font: inherit;
+}
+.dp__files { max-height: 180px; overflow: auto; }
+.dp__note { padding: .5rem .8rem; color: var(--muted); }
+.dp__file { display: flex; gap: .4rem; align-items: center; padding: .3rem .8rem; }
+.dp__file-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dp__pir, .dp__foot { padding: .5rem .8rem; border-top: 1px solid var(--line-2); }
+.dp__foot { padding: .4rem .8rem; }
+.dp__cool { width: 3.5rem; }
+.dp__drop {
+  padding: .4rem .8rem; border-top: 1px dashed var(--line-2);
+  color: var(--muted); text-align: center;
+}
+.dp__drop--over { color: var(--ink); }
+.dp__log {
+  max-height: 160px; overflow: auto; font-size: 11px;
+  white-space: pre-wrap; margin: .4rem 0 0;
+}
+.dp__log[hidden] { display: none; }
+
+/* Style lab (style_lab.ts) — the knobs, flavours and developer fold. Was
+   inline cssText when styles.css sat at the cap; lives here now (C2). */
+.stylelab { margin: 6px 0; font: 12px/1.7 var(--f-data), ui-monospace, monospace; color: var(--ink-2); }
+.stylelab summary, .stylelab__flav, .stylelab__dev summary { cursor: pointer; }
+.stylelab__row { display: flex; align-items: center; gap: 8px; margin: 3px 0; }
+.stylelab__nm { min-width: 3.5em; }
+.stylelab__flav { display: inline-flex; align-items: center; gap: 3px; }
+.stylelab__flavhint { margin: 0 0 4px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.stylelab__knob { width: 90px; }
+/* 90px slider + its "×1.00" readout: the two column labels sit over their columns. */
+.stylelab__th { width: 134px; text-align: center; color: var(--muted); }
+.stylelab__dev { margin-top: 4px; }
+.stylelab__dev summary { color: var(--muted); }
+.stylelab__ts {
+  max-height: 14em; overflow: auto; font-size: 10px;
+  background: var(--panel-2); padding: 6px; border-radius: 6px;
 }
 
 /* ── Rig panel (rig_panel.ts) ─────────────────────────────────────────
@@ -243,3 +388,17 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
 /* `hidden` loses to any display rule, and every other fold on this page has
    been bitten by exactly this — see .budget__pick. */
 #rigOut[hidden] { display: none; }
+
+/* Band editor (band_editor.ts): mute and solo are states, and read as such.
+   Under 620px the seven-column row stacks — name + window, the slider on its
+   own line, then the readouts and mix buttons — instead of clipping the
+   sensitivity readout and hit counts off the right edge (JB1-7). */
+.bandcfg__mute.on { border-color: var(--alarm); color: var(--alarm); }
+.bandcfg__solo.on { border-color: var(--spirit); color: var(--spirit); }
+@media (max-width: 620px) {
+  .bandcfg__row { display: flex; flex-wrap: wrap; gap: 6px 9px; }
+  .bandcfg__zone { flex: 1 1 auto; }
+  .bandcfg__sens { flex: 1 1 100%; }
+  .bandcfg__hits { margin-left: auto; }
+}
+.dp__ghost[aria-pressed="true"] { color: inherit; border-color: var(--spirit); }

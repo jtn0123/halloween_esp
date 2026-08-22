@@ -85,6 +85,89 @@ def emit_rig_header(layouts: dict[str, Layout], zones: list[dict]) -> str:
     return "\n".join(out) + "\n"
 
 
+# ── Bench patterns ────────────────────────────────────────────────────
+# Three test effects on every strip, driven by /api/light?c=<zone>:<name>
+# and the desk's strip-test row. A solid colour answers "is this line
+# alive"; these answer the questions that come next — how many pixels
+# arrive, in what order, with which colour first, and where a chain dies.
+# Deliberately NO static buffers (the Show effect's `buf` is the only one
+# the S2's dram0 can afford) and no scene state: they draw from `it` and
+# millis() alone, so they are safe to leave running while you go and look.
+#: How every strip effect starts. Four of them, so it is written once.
+EFFECT = "      - addressable_lambda:"
+
+TEST_EFFECTS = [
+    EFFECT,
+    '          name: "Test Bars"',
+    "          update_interval: 500ms",
+    "          lambda: |-",
+    "            // Red, green, blue repeating. Wrong first colour means",
+    "            // rgb_order is wrong; a gap means a dead pixel; count the",
+    "            // triplets to see how many pixels actually arrive.",
+    "            for (int p = 0; p < it.size(); p++) {",
+    "              const int k = p % 3;",
+    "              it[p] = Color(k == 0 ? 255 : 0, k == 1 ? 255 : 0,",
+    "                            k == 2 ? 255 : 0, 0);",
+    "            }",
+    EFFECT,
+    '          name: "Test Chase"',
+    "          update_interval: 100ms",
+    "          lambda: |-",
+    "            // One white dot walking the chain, ~4 px/s. Where it stops",
+    "            // is where the data stops: a cut wire, a cold joint, or the",
+    "            // pixel that died. It wraps, so watch one full lap.",
+    "            const int n = it.size() > 0 ? it.size() : 1;",
+    "            const int at = (millis() / 250) % n;",
+    "            for (int p = 0; p < it.size(); p++)",
+    "              it[p] = p == at ? Color(255, 255, 255, 255) : Color(0, 0, 0, 0);",
+    EFFECT,
+    '          name: "Test Ends"',
+    "          update_interval: 500ms",
+    "          lambda: |-",
+    "            // First pixel red, last blue, the rest dim. Which end lights",
+    "            // red is the end the data goes in — the answer when a jewel",
+    "            // is mounted upside down and the centre pixel looks wrong.",
+    "            for (int p = 0; p < it.size(); p++)",
+    "              it[p] = Color(24, 24, 24, 0);",
+    "            if (it.size() > 0) it[0] = Color(255, 0, 0, 0);",
+    "            if (it.size() > 1) it[it.size() - 1] = Color(0, 0, 255, 0);",
+]
+
+
+# The ESP32-S2's whole RMT peripheral: 4 channels, 64 symbols of memory each,
+# 256 in total, no DMA. A channel that asks for more takes the next channel's
+# block, which is how the 192-symbol default once left strips 2 and 3 dead
+# (bench-diagnosed 2026-08-19). A bigger block is not a luxury either: the
+# refill ISR must top the block up every half-block — 32 symbols is 40 us of
+# WS2812 bits — and a late refill is a garbled pixel. So it is a budget, and
+# this is where it is spent and checked. The SD build's status pixel takes one
+# block, so leave RMT_BLOCK spare if it is in play (see castle_sd.yaml).
+RMT_TOTAL_SYMBOLS = 256
+RMT_BLOCK = 64
+
+
+def rmt_symbols(z: dict) -> int:
+    """A zone's RMT memory. Whole blocks only — the hardware has no other
+       granularity — and the longest strip is the one worth spending on."""
+    n = int(z.get("rmt_symbols", RMT_BLOCK))
+    if n % RMT_BLOCK or n < RMT_BLOCK:
+        raise SystemExit(f"zone {z['id']}: rmt_symbols must be a multiple of "
+                         f"{RMT_BLOCK} (the S2 allocates whole blocks), got {n}")
+    return n
+
+
+def check_rmt_budget(zones: list[dict], layouts: dict[str, Layout]) -> int:
+    """Spend no more than the peripheral has; return what is left over."""
+    live = [z for z in zones if layouts[z["id"]].n > 0]
+    spent = sum(rmt_symbols(z) for z in live)
+    if spent > RMT_TOTAL_SYMBOLS:
+        raise SystemExit(
+            f"RMT budget: {len(live)} strips ask for {spent} symbols, the "
+            f"ESP32-S2 has {RMT_TOTAL_SYMBOLS}. Strips past the limit get no "
+            f"channel and stay dark. Lower a zone's rmt_symbols.")
+    return RMT_TOTAL_SYMBOLS - spent
+
+
 def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
     """One `light:` component per zone, each rendering itself.
 
@@ -121,11 +204,10 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
             "    chipset: WS2812",
             f"    rgb_order: {z.get('rgb_order', 'GRB')}",
             f"    is_rgbw: ${{rgbw_{zid}}}",
-            # 64, explicitly: ESPHome's S2 default is 192, but the S2's RMT
-            # has 256 symbols TOTAL (4 blocks x 64). At 192 the first strip
-            # takes 3 blocks and every later strip fails to allocate — one
-            # clean zone, two dead ones (bench-diagnosed 2026-08-19).
-            "    rmt_symbols: 64",
+            # Explicit, and budgeted: see RMT_TOTAL_SYMBOLS above for why
+            # ESPHome's S2 default of 192 leaves two strips dark, and why a
+            # long strip may be worth a second block.
+            f"    rmt_symbols: {rmt_symbols(z)}",
             # Internal RAM, deliberately: the strip buffer is under 50 bytes,
             # and the RMT refill ISR must be able to read it during flash-cache
             # blackouts. PSRAM there truncated frames at 4 px on every strip
@@ -133,7 +215,7 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
             "    use_psram: false",
             "    default_transition_length: 0s",
             "    effects:",
-            "      - addressable_lambda:",
+            EFFECT,
             '          name: "Show"',
             "          update_interval: 16ms",
             "          lambda: |-",
@@ -156,6 +238,7 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
             "            for (int p = 0; p < fx.n; p++)",
             "              it[p] = Color(buf[p * 4], buf[p * 4 + 1],",
             "                            buf[p * 4 + 2], buf[p * 4 + 3]);",
+            *TEST_EFFECTS,
         ]
         out.append(f"    # {zid}: {z.get('fixture', f'{per} uniform')} "
                    f"— {lay.n} px, rgbw {rgbw}, GPIO{pin}")
@@ -164,7 +247,12 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
     # sequence want to talk to "the pixels", and with a strip per zone that is
     # no longer a single `id()`. Generated rather than hand-written in
     # castle_sd.yaml so the zone list stays in exactly one place.
+    spare = check_rmt_budget(zones, layouts)
+    out.append(f"# RMT: {RMT_TOTAL_SYMBOLS - spare} of {RMT_TOTAL_SYMBOLS} "
+               f"symbols spent, {spare // RMT_BLOCK} block(s) spare "
+               f"(the SD build's status pixel needs one).")
     live = [z["id"] for z in zones if layouts[z["id"]].n > 0]
+    zone_rgbw = {z["id"]: bool(z.get("rgbw", True)) for z in zones}
     out += [
         "",
         "script:",
@@ -176,20 +264,48 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
         "      - lambda: |-",
         "          esphome::light::LightState *zones[] = {"
         + ", ".join(f"id(zone_{z})" for z in live) + "};",
-        "          for (auto *z : zones) {",
-        '            if (arg == "off") { z->turn_off().perform(); continue; }',
+        '          const char *names[] = {' + ", ".join(f'"{z}"' for z in live) + "};",
+        "          const bool rgbw[] = {"
+        + ", ".join(str(bool(zone_rgbw[z])).lower() for z in live) + "};",
+        '          // "[zone:]spec[@pct]": spec = RRGGBB | white | off | show; one',
+        "          // strip when a zone is named (the desk's channel test), pct 1..100.",
+        "          std::string spec = arg, only;",
+        "          const auto colon = arg.find(':');",
+        "          if (colon != std::string::npos) {",
+        "            only = arg.substr(0, colon); spec = arg.substr(colon + 1);",
+        "          }",
+        "          float bright = 1.0f;",
+        "          const auto at = spec.find('@');",
+        "          if (at != std::string::npos) {",
+        "            bright = atoi(spec.c_str() + at + 1) / 100.0f; spec.resize(at);",
+        "          }",
+        f"          for (size_t i = 0; i < {len(live)}; i++) {{",
+        "            if (!only.empty() && only != names[i]) continue;",
+        "            auto *z = zones[i];",
+        '            if (spec == "off") { z->turn_off().perform(); continue; }',
         "            auto call = z->turn_on();",
-        "            call.set_brightness(1.0f);",
-        '            if (arg == "show") {',
+        "            call.set_brightness(bright);",
+        '            if (spec == "show") {',
         '              call.set_effect("Show");',
-        "            } else {",
-        "              // Park on a colour with no animation — the manual",
-        "              // override the phone remote offers.",
-        "              long v = strtol(arg.c_str(), nullptr, 16);",
+        '            } else if (spec == "bars" || spec == "chase" || spec == "ends") {',
+        "              // The bench patterns, one effect each (TEST_EFFECTS).",
+        '              call.set_effect(spec == "bars" ? "Test Bars"',
+        '                              : spec == "chase" ? "Test Chase" : "Test Ends");',
+        '            } else if (spec == "white") {',
+        "              // The white LED itself on an RGBW fixture; an RGB one",
+        "              // mixes it. Tests the one channel a colour never lights.",
         '              call.set_effect("None");',
-        "              call.set_rgb(((v >> 16) & 0xFF) / 255.0f,",
-        "                           ((v >> 8) & 0xFF) / 255.0f,",
-        "                           (v & 0xFF) / 255.0f);",
+        "              if (rgbw[i]) call.set_rgbw(0.0f, 0.0f, 0.0f, 1.0f);",
+        "              else call.set_rgb(1.0f, 1.0f, 1.0f);",
+        "            } else {",
+        "              // Park on a colour, no animation. White channel OFF:",
+        "              // left alone it kept whatever the effect last wrote,",
+        "              // and 'red' came out pink on the jewels (2026-08-21).",
+        "              long v = strtol(spec.c_str(), nullptr, 16);",
+        '              call.set_effect("None");',
+        "              call.set_rgbw(((v >> 16) & 0xFF) / 255.0f,",
+        "                            ((v >> 8) & 0xFF) / 255.0f,",
+        "                            (v & 0xFF) / 255.0f, 0.0f);",
         "            }",
         "            call.perform();",
         "          }",

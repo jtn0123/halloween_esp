@@ -6,12 +6,16 @@ scene block, and the render that consumes it.
 
 from __future__ import annotations
 
+import argparse
+import contextlib
+import io
 import shutil
 import sys
 import tempfile
 import unittest
 import wave
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
@@ -19,15 +23,20 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import json  # noqa: E402  (sys.path bootstrap above must run first)
-import subprocess  # noqa: E402
+import json
+import subprocess
 
-import analyze as ana  # noqa: E402
-import import_track as it  # noqa: E402
-import manifest as mf  # noqa: E402
-import render_audio as ra  # noqa: E402
-import yaml  # noqa: E402
-from helpers import make_click_track  # noqa: E402
+import analyze as ana
+import import_track as it
+import manifest as mf
+import render_audio as ra
+import yaml
+from helpers import make_click_track
+
+#: The format half of an import's options — what every convert() test uses.
+CONVERT_DEFAULTS = {"fade_in": None, "fade_out": None, "bitrate": 96,
+                    "channels": 1, "sample_rate": 44100, "normalize": False,
+                    "gain_db": None}
 
 
 class TestTimeParsing(unittest.TestCase):
@@ -70,7 +79,7 @@ class TestConvert(unittest.TestCase):
             ["ffprobe", "-v", "quiet", "-print_format", "json",
              "-show_streams", "-show_format", str(p)],
             capture_output=True, text=True, check=True).stdout
-        return json.loads(out)
+        return dict(json.loads(out))
 
     def test_produces_mono_44k(self) -> None:
         out = self.tmp / "a.mp3"
@@ -215,7 +224,9 @@ class TestManifest(unittest.TestCase):
     def test_corrupt_file_is_survivable(self) -> None:
         mf.PATH.parent.mkdir(parents=True, exist_ok=True)
         mf.PATH.write_text("{not json")
-        self.assertEqual(mf.load(), {})
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(mf.load(), {})
+        self.assertIn("WARNING: tracks.json was not valid JSON", out.getvalue())
 
 
 class TestSceneBlock(unittest.TestCase):
@@ -230,7 +241,7 @@ class TestSceneBlock(unittest.TestCase):
 
     def parse(self, block: str) -> dict:
         doc = yaml.safe_load("scenes:\n" + block)
-        return doc["scenes"][0]
+        return dict(doc["scenes"][0])
 
     def test_is_valid_yaml(self) -> None:
         sc = self.parse(it.scene_block("my_track", 20.0, self.marks))
@@ -276,8 +287,11 @@ class TestRenderIntegration(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
+        # Rendered INTO the tempdir, never the user's tracks/: the scene
+        # below points at the absolute path, so nothing here needs the real
+        # library and nothing is left behind if the class dies mid-run.
         cls.tmp = Path(tempfile.mkdtemp())
-        cls.track = ROOT / "tracks" / "_test_integration.mp3"
+        cls.track = cls.tmp / "_test_integration.mp3"
         src = cls.tmp / "src.wav"
         make_click_track(src, seconds=6.0, bpm=120.0)
         it.convert(src, cls.track, {
@@ -293,7 +307,7 @@ class TestRenderIntegration(unittest.TestCase):
     def scene(self) -> dict:
         return {
             "id": "_test_integration", "duration_ms": 6000, "loop": True,
-            "audio_file": "tracks/_test_integration.mp3",
+            "audio_file": str(self.track),
             "pulse": [{"synth": "onset_low", "zone": "door", "intensity": 0.55}],
         }
 
@@ -351,3 +365,59 @@ if __name__ == "__main__":
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestKeepSourceAndCutGuards(unittest.TestCase):
+    """Judge B, JB1-1/JB1-3: a start past the end made a 358-byte "track"
+    plus a traceback; a dropped file's staging copy vanished, so Re-import
+    had nothing to rebuild from."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.src = self.tmp / "src.wav"
+        make_click_track(self.src, seconds=3.0)
+        self.p_tracks = mock.patch.object(it, "TRACKS", self.tmp / "lib")
+        self.p_tracks.start()
+        (self.tmp / "lib").mkdir()
+
+    def tearDown(self) -> None:
+        self.p_tracks.stop()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_probe_duration_reads_the_source(self) -> None:
+        d = it.probe_duration(self.src)
+        self.assertIsNotNone(d)
+        self.assertAlmostEqual(d or 0, 3.0, delta=0.1)
+        self.assertIsNone(it.probe_duration(self.tmp / "missing.wav"))
+
+    def test_keep_source_copies_beside_the_library_once(self) -> None:
+        kept = it.keep_source(self.src, "tid")
+        self.assertEqual(kept, (self.tmp / "lib" / "_src" / "tid.wav").resolve())
+        self.assertEqual(kept.read_bytes(), self.src.read_bytes())
+        # Keeping the kept copy again is a no-op, not a self-copy error.
+        self.assertEqual(it.keep_source(kept, "tid"), kept)
+
+    def test_a_start_past_the_end_is_refused_in_one_line(self) -> None:
+        ns = argparse.Namespace(refresh=None, id="late", notes="",
+                                keep_source=False)
+        o = {**CONVERT_DEFAULTS, "start": "1:00", "take": None,
+             "sensitivity": 1.1, "format": "mp3"}
+        with self.assertRaises(SystemExit) as cm:
+            it._import(ns, o, str(self.src), False, self.tmp / "scratch", None)
+        self.assertIn("past the end", str(cm.exception))
+        self.assertIn("src.wav", str(cm.exception))
+        self.assertFalse((self.tmp / "lib" / "late.mp3").exists(),
+                         "a broken row was left behind")
+
+    def test_keep_source_is_what_the_manifest_remembers(self) -> None:
+        ns = argparse.Namespace(refresh=None, id="kept", notes="",
+                                keep_source=True)
+        o = {**CONVERT_DEFAULTS, "start": "0", "take": None,
+             "sensitivity": 1.1, "format": "mp3"}
+        with mock.patch.object(mf, "PATH", self.tmp / "lib" / "tracks.json"), \
+                contextlib.redirect_stdout(io.StringIO()):
+            it._import(ns, o, str(self.src), False, self.tmp / "scratch", None)
+            entry = mf.get("kept") or {}
+        self.assertEqual(entry["source"],
+                         f"file:{(self.tmp / 'lib' / '_src' / 'kept.wav').resolve()}")
+        self.assertTrue((self.tmp / "lib" / "kept.mp3").exists())
