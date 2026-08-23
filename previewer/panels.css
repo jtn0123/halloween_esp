@@ -2,7 +2,7 @@
    build them — styles.css sat exactly at the 500-line cap, so the newest
    chrome was pushed out of the cascade and (for the device panel) out of
    the theme system entirely: it hardcoded its dark colours and ignored the
-   light theme. This file is the overflow room; gen_previewer.py inlines it
+   theme tokens. This file is the overflow room; gen_previewer.py inlines it
    right after styles.css. */
 
 /* ─── Masthead view toggle (stage_view.ts) ──────────────────────────────
@@ -276,7 +276,8 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
 /* The panel's rows (device_panel.ts renders them as innerHTML with these
    class names only — grade report C2): header, show row, lights row, the
    card's file list, the motion-sensor row, the drop zone, the boot-log foot.
-   Tokens throughout, so the panel follows the light theme like the chip. */
+   Tokens throughout, so the panel is themed like the chip rather than
+   carrying a private palette of its own. */
 .dp__hd, .dp__row {
   display: flex; align-items: center; gap: .4rem;
   padding: .6rem .8rem;
@@ -331,8 +332,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   content: ""; display: inline-block; width: .5em; height: .5em;
   border-radius: 50%; background: var(--sw); margin-right: .3em;
   vertical-align: baseline;
-  /* The ring is what keeps the white channel's dot visible on the light
-     theme, where a near-white swatch otherwise disappears. */
+  /* A ring, so the white channel's dot has an edge against the button. */
   box-shadow: 0 0 0 1px var(--line-2);
 }
 .dp__muted { color: var(--muted); }

@@ -162,8 +162,8 @@ export class DevicePanel {
 
   constructor(parent?: HTMLElement) {
     this.root = document.createElement("div");
-    // Styled in previewer/panels.css — as tokens, so the panel follows the
-    // light theme instead of hardcoding its own dark one (grade report C7).
+    // Styled in previewer/panels.css — as tokens, not a private palette
+    // hardcoded here (grade report C7).
     // Lives inside the castle dock when device.ts provides one, so chip and
     // panel are one widget rather than two floating boxes.
     this.root.id = "devicePanel";

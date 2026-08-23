@@ -1,72 +1,42 @@
   /* ─── Tokens ──────────────────────────────────────────────────────────
-     Chrome adapts to the viewer's theme. The stage does NOT: you cannot
-     judge an LED glow against a white ground, so the preview keeps its own
-     night-dark world in both themes, the way a video player does.        */
+     Dark, always, whatever the viewer's OS says. This desk is used in the
+     dark beside the thing it drives: you cannot judge an LED glow against a
+     white ground, the stage was already night-dark in both themes, and the
+     chrome around it kept having to be re-checked in a theme nobody ran the
+     show in (the light palette's last bug: a white swatch dot that vanished
+     on white, 2026-08-22). One palette, one thing to get right.           */
   :root {
-    color-scheme: light dark;
+    color-scheme: dark;
 
-    /* stage — fixed in both themes */
+    /* stage — its own night world, unchanged from when the chrome had two
+       themes and this had to survive both */
     --sky-hi:   #070912;
     --sky-lo:   #161c33;
     --stone:    #05070e;
     --stone-lit:#1b2138;
 
-    /* chrome — light default */
-    --bg:       #eceaf2;
-    --panel:    #f8f7fb;
-    --panel-2:  #f1eff6;
-    --ink:      #191725;
-    --ink-2:    #56526b;
-    --muted:    #7d7894;
-    --line:     #dcd8e6;
-    --line-2:   #c9c4d8;
+    /* chrome */
+    --bg:       #0b0d14;
+    --panel:    #131725;
+    --panel-2:  #171c2c;
+    --ink:      #e9e7f2;
+    --ink-2:    #a9a4bd;
+    --muted:    #837e9b;
+    --line:     #242a3d;
+    --line-2:   #333a52;
 
-    --accent:   #b8600b;   /* candle amber, darkened for light ground */
+    --accent:   #ff9d3c;   /* candle amber */
     --accent-hi:#ff9d3c;
-    --cool:     #2b7f96;
-    --spirit:   #2f8f63;
-    --alarm:    #c0392f;
-    --warn:     #9a6a12;   /* caution amber: mono-in-show, stale-on-castle */
+    --cool:     #7fd4e8;
+    --spirit:   #6fe3a8;
+    --alarm:    #e2453c;
+    --warn:     #e0a34a;   /* caution amber: mono-in-show, stale-on-castle */
 
-    --shadow: 0 1px 2px rgba(25,23,37,.06), 0 8px 24px -12px rgba(25,23,37,.18);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px -16px rgba(0,0,0,.7);
 
     --f-display: Didot, "Bodoni 72", "Playfair Display", Baskerville, "Times New Roman", serif;
     --f-body: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     --f-data: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg:      #0b0d14;
-      --panel:   #131725;
-      --panel-2: #171c2c;
-      --ink:     #e9e7f2;
-      --ink-2:   #a9a4bd;
-      --muted:   #837e9b;
-      --line:    #242a3d;
-      --line-2:  #333a52;
-      --accent:  #ff9d3c;
-      --cool:    #7fd4e8;
-      --spirit:  #6fe3a8;
-      --alarm:   #e2453c;
-      --warn:    #e0a34a;
-      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px -16px rgba(0,0,0,.7);
-    }
-  }
-  /* Viewer toggle must beat the media query in both directions. */
-  :root[data-theme="dark"] {
-    --bg:#0b0d14; --panel:#131725; --panel-2:#171c2c;
-    --ink:#e9e7f2; --ink-2:#a9a4bd; --muted:#837e9b;
-    --line:#242a3d; --line-2:#333a52;
-    --accent:#ff9d3c; --cool:#7fd4e8; --spirit:#6fe3a8; --alarm:#e2453c; --warn:#e0a34a;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px -16px rgba(0,0,0,.7);
-  }
-  :root[data-theme="light"] {
-    --bg:#eceaf2; --panel:#f8f7fb; --panel-2:#f1eff6;
-    --ink:#191725; --ink-2:#56526b; --muted:#7d7894;
-    --line:#dcd8e6; --line-2:#c9c4d8;
-    --accent:#b8600b; --cool:#2b7f96; --spirit:#2f8f63; --alarm:#c0392f; --warn:#9a6a12;
-    --shadow: 0 1px 2px rgba(25,23,37,.06), 0 8px 24px -12px rgba(25,23,37,.18);
   }
 
   * { box-sizing: border-box; }
