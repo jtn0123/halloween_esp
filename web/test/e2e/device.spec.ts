@@ -193,7 +193,10 @@ test("the light override parks a colour and hands the show back", async ({ page 
   await page.locator("[data-zl='door:00ff00']").click();
   await expect.poll(() => calls.filter((c) => c.includes("/api/light?c=door:00ff00@100")).length)
     .toBe(1);
-  await expect(page.locator("[data-zl]")).toHaveCount(18);   // 3 × R G B W off, + 3 patterns
+  // 4 rows (towerL, door, towerR, all) × R G B W off, + 3 patterns.
+  await expect(page.locator("[data-zl]")).toHaveCount(23);
+  // The all-strips row carries no zone: every strip runs it.
+  await expect(page.locator("[data-zl=':ff0000']")).toBeVisible();
   // Brightness applies to the strip test and the picker; "off" carries none.
   await page.locator("[data-pct='25']").click();
   await page.locator("[data-zl='towerL:white']").click();
@@ -216,7 +219,7 @@ test("the speaker test plays a tone at a chosen level, spaced for the mailbox", 
   // Only the tones on the card are live; the rest say how to push them.
   await expect(page.locator("[data-tone='test_sweep']")).toBeEnabled();
   await expect(page.locator("[data-tone='test_200']")).toBeDisabled();
-  await expect(page.locator("#dpSub, .dp__lights").last()).toContainText("tones not on the card");
+  await expect(page.locator(".dp__note--tight").first()).toContainText("tones not on the card");
   await page.locator("[data-tpct='80']").click();
   await page.locator("[data-tone='test_sweep']").click();
   await expect.poll(() => calls.filter((c) => c.includes("/api/play?f=test_sweep.mp3")).length).toBe(1);
@@ -226,6 +229,36 @@ test("the speaker test plays a tone at a chosen level, spaced for the mailbox", 
   expect(vol).toBeLessThan(play);                 // level lands before the tone
   await page.locator("#dpToneStop").click();
   await expect.poll(() => calls.filter((c) => c.includes("/api/stop")).length).toBe(1);
+});
+
+test("the panel lists what is actually on the card, and what each track is for", async ({ page }) => {
+  await stubCastle(page);
+  await page.goto("/");
+  await page.locator("#devMore").click();
+  // Every root track is listed by name — the panel used to show a count and
+  // point at the Library, which is not "what is on the device".
+  await expect(page.locator(".dp__file-nm")).toHaveCount(4);
+  await expect(page.locator(".dp__file-nm").first()).toHaveText("wicked_winds.mp3");
+  // ...and badged by what it is FOR, which its name does not say.
+  await expect(page.locator(".dp__badge--tone")).toHaveCount(2);
+  // The show's own tracks live in scenes/, which /api/files never lists;
+  // the manifest's verdict from /api/status stands in for them.
+  await expect(page.locator(".dp__sec").filter({ has: page.locator("#dpFiles") }))
+    .toContainText("all 9 show tracks present");
+});
+
+test("a light sequence walks the channels and can be superseded", async ({ page }) => {
+  const calls = await stubCastle(page);
+  await page.goto("/");
+  await page.locator("#devMore").click();
+  await page.locator("[data-seq='cycle']").click();
+  await expect.poll(() => calls.filter((c) => c.includes("c=ff0000@")).length).toBe(1);
+  // A plain strip click supersedes the running walk rather than interleaving.
+  await page.locator("[data-zl='door:0000ff']").click();
+  const after = calls.length;
+  await page.waitForTimeout(2000);
+  expect(calls.filter((c) => c.includes("c=00ff00@")).length).toBe(0);
+  expect(calls.length).toBeLessThanOrEqual(after + 1);
 });
 
 test("the boot log is one tap away", async ({ page }) => {

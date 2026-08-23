@@ -259,7 +259,10 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
 .toast--err { background: var(--alarm); color: #fff; }
 
 #devicePanel {
-  width: 290px;
+  /* Wide enough for the test bench's five-across rows: at 290px the
+     speaker row clipped its last tone off the edge (2026-08-22), and
+     the min() keeps it inside a phone held in portrait. */
+  width: min(23rem, calc(100vw - 24px));
   max-height: min(70vh, 640px);
   overflow-y: auto;
   background: var(--panel-2);
@@ -274,16 +277,64 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
    class names only — grade report C2): header, show row, lights row, the
    card's file list, the motion-sensor row, the drop zone, the boot-log foot.
    Tokens throughout, so the panel follows the light theme like the chip. */
-.dp__hd, .dp__row, .dp__lights {
+.dp__hd, .dp__row {
   display: flex; align-items: center; gap: .4rem;
-  padding: .6rem .8rem; border-bottom: 1px solid var(--line-2);
+  padding: .6rem .8rem;
 }
+.dp__hd { border-bottom: 1px solid var(--line-2); }
 .dp__row { padding: .5rem .8rem; gap: .6rem; flex-wrap: wrap; }
-.dp__lights { padding: .5rem .8rem; gap: .5rem; }
-.dp__strips { flex-wrap: wrap; }
-.dp__strip { display: inline-flex; align-items: center; gap: .15rem; white-space: nowrap; }
-.dp__strip small { color: var(--muted); margin-right: .15rem; }
+.dp__row--tight { padding: .3rem .8rem; }
 .dp__grow { flex: 1; }
+
+/* One block per job — health, show, strip test, speaker test, card, motion.
+   The rule between them is the only separator; inside a section the rows
+   run tight, so a heading and its controls read as one thing. */
+.dp__sec { border-bottom: 1px solid var(--line-2); padding-bottom: .35rem; }
+.dp__sec-hd {
+  display: flex; align-items: baseline; gap: .4rem;
+  padding: .55rem .8rem .15rem;
+}
+.dp__sec-hd b { font-weight: 600; letter-spacing: .01em; }
+.dp__sec-hd small { flex: 1; font-size: 11px; }
+.dp__sec-ic { opacity: .8; }
+
+/* The health line: three numbers that each mean something when they fall,
+   and a bar for the one that has a total to compare against. */
+.dp__meta {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  padding: .35rem .8rem .5rem; border-bottom: 1px solid var(--line-2);
+  font-size: 11px; color: var(--muted);
+}
+.dp__stat { white-space: nowrap; }
+.dp__bar {
+  flex: 1; min-width: 40px; height: 4px; border-radius: 2px;
+  background: var(--line-2); overflow: hidden;
+}
+.dp__bar i { display: block; height: 100%; background: var(--spirit); }
+
+/* The strip test: one row per data line, the five buttons in a grid so the
+   eye can run DOWN a column (towerL's R above door's R) rather than hunting
+   along ragged rows. The last row is every strip at once. */
+.dp__zones { padding: .15rem .8rem .35rem; display: grid; gap: .25rem; }
+.dp__zone {
+  display: grid; grid-template-columns: 3.6rem repeat(5, 1fr); gap: .25rem;
+  align-items: center;
+}
+.dp__zone small {
+  color: var(--muted); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dp__pills { display: flex; flex-wrap: wrap; gap: .25rem; }
+/* A colour button wearing its colour: R/G/B/W read at a glance in the dark. */
+.dp__sw { border-color: color-mix(in srgb, var(--sw) 45%, transparent); }
+.dp__sw::before {
+  content: ""; display: inline-block; width: .5em; height: .5em;
+  border-radius: 50%; background: var(--sw); margin-right: .3em;
+  vertical-align: baseline;
+  /* The ring is what keeps the white channel's dot visible on the light
+     theme, where a near-white swatch otherwise disappears. */
+  box-shadow: 0 0 0 1px var(--line-2);
+}
 .dp__muted { color: var(--muted); }
 .dp__x, .dp__del, .dp__logbtn {
   cursor: pointer; background: none; border: 0; color: var(--muted); font: inherit;
@@ -307,11 +358,23 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
 }
 .dp__files { max-height: 180px; overflow: auto; }
 .dp__note { padding: .5rem .8rem; color: var(--muted); }
+.dp__note--tight { padding: .15rem .8rem .35rem; font-size: 11px; }
+.dp__note--warn { color: var(--alarm); }
 .dp__file { display: flex; gap: .4rem; align-items: center; padding: .3rem .8rem; }
+/* What a track is FOR, since its name does not say: the show's own audio,
+   a test-bench tone, or a song somebody imported. */
+.dp__badge {
+  font-size: 10px; padding: 0 .35rem; border-radius: 999px;
+  border: 1px solid var(--line-2); color: var(--muted);
+}
+.dp__badge--scene { color: var(--spirit); border-color: var(--spirit); }
+.dp__badge--tone { color: var(--cool); border-color: var(--cool); }
 .dp__file-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dp__pir, .dp__foot { padding: .5rem .8rem; border-top: 1px solid var(--line-2); }
+.dp__foot { border-top: 1px solid var(--line-2); }
 .dp__foot { padding: .4rem .8rem; }
 .dp__cool { width: 3.5rem; }
+/* The scene select took the whole row when the panel got wider. */
+#dpPirScene { max-width: 9rem; }
 .dp__drop {
   padding: .4rem .8rem; border-top: 1px dashed var(--line-2);
   color: var(--muted); text-align: center;
