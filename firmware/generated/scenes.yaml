@@ -999,6 +999,36 @@ script:
     mode: restart
     then:
       - lambda: 'id(zone_effect)[0] = 0; id(zone_center)[0] = -1; id(zone_overlay)[0] = 0; id(zone_flash)[0] = 0.0f; id(zone_flash_target)[0] = 0.0f; id(zone_effect)[1] = 0; id(zone_center)[1] = -1; id(zone_overlay)[1] = 0; id(zone_flash)[1] = 0.0f; id(zone_flash_target)[1] = 0.0f; id(zone_effect)[2] = 0; id(zone_center)[2] = -1; id(zone_overlay)[2] = 0; id(zone_flash)[2] = 0.0f; id(zone_flash_target)[2] = 0.0f;'
+      - lambda: |-
+          id(scene_vigil)->stop();
+          id(scene_storm)->stop();
+          id(scene_seance)->stop();
+          id(scene_ballroom)->stop();
+          id(scene_descent)->stop();
+          id(cont_descent_1)->stop();
+          id(scene_visitation)->stop();
+          id(scene_approach)->stop();
+          id(scene_crypt)->stop();
+          id(cont_crypt_1)->stop();
+          id(cont_crypt_2)->stop();
+          id(cont_crypt_3)->stop();
+          id(cont_crypt_4)->stop();
+          id(cont_crypt_5)->stop();
+          id(scene_the_citizens_of_halloween___this)->stop();
+          id(cont_the_citizens_of_halloween___this_1)->stop();
+          id(cont_the_citizens_of_halloween___this_2)->stop();
+          id(cont_the_citizens_of_halloween___this_3)->stop();
+          id(cont_the_citizens_of_halloween___this_4)->stop();
+          id(cont_the_citizens_of_halloween___this_5)->stop();
+          id(cont_the_citizens_of_halloween___this_6)->stop();
+          id(cont_the_citizens_of_halloween___this_7)->stop();
+          id(cont_the_citizens_of_halloween___this_8)->stop();
+          id(cont_the_citizens_of_halloween___this_9)->stop();
+          id(cont_the_citizens_of_halloween___this_10)->stop();
+          id(cont_the_citizens_of_halloween___this_11)->stop();
+          id(cont_the_citizens_of_halloween___this_12)->stop();
+          id(cont_the_citizens_of_halloween___this_13)->stop();
+          id(cont_the_citizens_of_halloween___this_14)->stop();
       - media_player.stop:
       - text_sensor.template.publish:
           id: current_scene
@@ -1058,6 +1088,7 @@ script:
           else if (scene == "crypt") id(scene_crypt)->execute();
           else if (scene == "the_citizens_of_halloween___this") id(scene_the_citizens_of_halloween___this)->execute();
           else if (scene == "stop") id(scene_stop)->execute();
+          else if (scene == "halt") {}
           else ESP_LOGW("castle", "unknown scene '%s'", scene.c_str());
 
   # ── The evening playlist (#19) ───────────────────

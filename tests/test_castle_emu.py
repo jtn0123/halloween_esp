@@ -103,6 +103,22 @@ class TestValidationParity(EmuCase):
         for ok in ("0", "70", "100"):
             self.assertEqual(self.http("POST", f"/api/volume?v={ok}")[0], 200)
 
+    def test_volume_is_clamped_to_the_ceiling(self) -> None:
+        """v5.36: castle_sd.yaml never asks the amps past kMaxVolumePct (static
+        above 80 on the porch); the emulator must land on the same number."""
+        self.assertEqual(self.http("POST", "/api/volume?v=100")[0], 200)
+        time.sleep(castle_emu.APPLY_DELAY_S * 2)
+        self.assertEqual(self.status()["volume"], castle_emu.MAX_VOLUME_PCT)
+
+    def test_ceiling_matches_scenes_yaml(self) -> None:
+        """The one number lives in scenes.yaml (hardware.audio.max_volume);
+        rig.h gets it generated, the emulator pins it — hold them equal."""
+        import yaml
+        doc = yaml.safe_load((Path(__file__).resolve().parent.parent
+                              / "scenes" / "scenes.yaml").read_text())
+        self.assertEqual(round(doc["hardware"]["audio"]["max_volume"] * 100),
+                         castle_emu.MAX_VOLUME_PCT)
+
     def test_unknown_scene_is_404_not_queued(self) -> None:
         code, body = self.http("POST", "/api/scene?s=doesnotexist")
         self.assertEqual(code, 404)
@@ -157,7 +173,9 @@ class TestRemotePage(EmuCase):
         start = header.index('R"HTML(') + len('R"HTML(')
         self.assertEqual(page, header[start:header.index(')HTML"', start)])
         for needle in ("<title>Castle Remote</title>", "id=show", "id=ambient",
-                       "id=scare", "id=black", "/api/status"):
+                       "id=scare", "id=black", "/api/status",
+                       # v5.38: the speaker strip — level, the test sweep, quiet
+                       "id=spk", "/api/volume?v=80", "test_sweep.mp3", "/api/stop"):
             self.assertIn(needle, page)
 
 
@@ -316,7 +334,7 @@ class TestBridge(HostEnv, EmuCase):
         st = castle_link.status()
         self.assertIsNotNone(st)
         assert st is not None
-        self.assertEqual(st["version"], "5.33")
+        self.assertEqual(st["version"], self.emu.version)
         self.assertEqual(st["bridged"], f"127.0.0.1:{self.emu.port}")
 
     def test_dead_primary_falls_through_to_a_live_fallback(self) -> None:

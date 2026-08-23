@@ -14,6 +14,11 @@
 #include "castle_effects.h"
 
 namespace castle {
+// The loudest the amps may be asked for — scenes.yaml's
+// hardware.audio.max_volume. /api/volume clamps to it; every
+// scene's level was generated under it.
+inline constexpr int kMaxVolumePct = 100;
+
 namespace rig_tables {
 
 // towerL: jewel7, 7 pixels

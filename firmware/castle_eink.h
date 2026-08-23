@@ -219,8 +219,10 @@ inline void render() {
   text(4, 54, line);
 
   const uint32_t up_min = (uint32_t) (esp_timer_get_time() / 60000000ULL);
-  snprintf(line, sizeof(line), "up    %ud %02u:%02u", up_min / 1440,
-           (up_min / 60) % 24, up_min % 60);
+  // uint32_t is `unsigned long` on xtensa, so %u needs the cast — the same
+  // idiom the boots/crashes line below already uses.
+  snprintf(line, sizeof(line), "up    %ud %02u:%02u", (unsigned) (up_min / 1440),
+           (unsigned) ((up_min / 60) % 24), (unsigned) (up_min % 60));
   text(4, 67, line);
 
   snprintf(line, sizeof(line), "boots %u  crashes %u",

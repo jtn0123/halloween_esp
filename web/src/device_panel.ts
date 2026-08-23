@@ -52,6 +52,20 @@ const PATTERNS: readonly (readonly [string, string])[] = [
   ["ends", "First pixel red, last blue: which end the data goes in"],
 ];
 
+/** The speaker test's tones — files `make audio` renders into audio/test/
+ *  and `sd_sync tones` pushes to the card root: what to play, the button,
+ *  and the one question each answers (the porch diagnosis, 2026-08-22). */
+const TONES: readonly (readonly [string, string, string])[] = [
+  ["test_sweep", "sweep", "200 Hz → 10 kHz in 12 s: static that comes and goes with pitch, a top end that vanishes"],
+  ["test_1k", "1 kHz", "A steady reference tone: should be a smooth whistle — anything else is distortion"],
+  ["test_200", "200 Hz", "Bass pulls the current: crackle here and not on 4 kHz is the 5 V rail sagging"],
+  ["test_4k", "4 kHz", "Nearly no current: crackle here too is data or wiring, not power"],
+  ["test_silence", "silence", "Nothing should be heard: hiss or hum here is ground or supply noise"],
+];
+/** Level for the tones; the firmware clamps at scenes.yaml's ceiling anyway. */
+let tonePct = 50;
+const TONE_PCTS = [25, 50, 80, 100] as const;
+
 interface SdFile {
   name: string;
   size: number;
@@ -171,6 +185,7 @@ export class DevicePanel {
       return;
     }
     const tracks = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
+    const toneFiles = new Set(tracks.map((f) => f.name));
 
     // Class names only — the rules are previewer/panels.css's .dp__* block,
     // so theme and phone CSS reach every row (grade report C2).
@@ -229,6 +244,27 @@ export class DevicePanel {
       PATTERNS.map(([spec, why]) =>
         `<button class="dp__ghost dp__btn--sm" data-zl=":${spec}" title="${why}">` +
         `${spec}</button>`).join("") + `</span>` +
+      `</div>` +
+      // Both amps, one tone at a time: the audio twin of the strip test.
+      // The firmware halts the running scene first (its 30 s loop would
+      // otherwise take the speakers back mid-tone), lights stay as they are.
+      `<div class="dp__lights dp__strips" ` +
+      `title="Play one tone through both amps — finds static, a dead amp, a rail that ` +
+      `sags under bass. The scene is halted first so nothing else is on the speakers">` +
+      `🔊 <small class="dp__muted">speaker test</small> ` +
+      `<span class="dp__strip" title="Level for the tones">` +
+      TONE_PCTS.map((p) =>
+        `<button class="dp__ghost dp__btn--sm" data-tpct="${p}" ` +
+        `aria-pressed="${p === tonePct}">${p}%</button>`).join("") + `</span> ` +
+      `<span class="dp__strip">` +
+      TONES.map(([file, label, why]) =>
+        `<button class="dp__ghost dp__btn--sm" data-tone="${file}" title="${why}"` +
+        (toneFiles.has(`${file}.mp3`) ? "" : " disabled") + `>${label}</button>`)
+        .join("") + `</span> ` +
+      `<button id="dpToneStop" class="dp__ghost dp__btn--sm" title="Silence the test">stop</button>` +
+      (TONES.every(([file]) => toneFiles.has(`${file}.mp3`)) ? "" :
+        ` <small class="dp__muted" title="make audio renders audio/test/; sd_sync pushes it">` +
+        `— tones not on the card: <code>tools/sd_sync.py &lt;ip&gt; tones</code></small>`) +
       `</div>` +
       `<div class="dp__files" id="dpFiles">` +
       // Through the studio the merged Library below already lists every card
@@ -301,6 +337,25 @@ export class DevicePanel {
         this.body.querySelectorAll<HTMLButtonElement>("[data-pct]").forEach((o) =>
           o.setAttribute("aria-pressed", String(o === b)));
       }));
+
+    this.body.querySelectorAll<HTMLButtonElement>("[data-tpct]").forEach((b) =>
+      b.addEventListener("click", () => {
+        tonePct = Number(b.dataset.tpct);
+        this.body.querySelectorAll<HTMLButtonElement>("[data-tpct]").forEach((o) =>
+          o.setAttribute("aria-pressed", String(o === b)));
+      }));
+    this.body.querySelectorAll<HTMLButtonElement>("[data-tone]").forEach((b) =>
+      b.addEventListener("click", () => void (async () => {
+        // Two commands, spaced: the castle's mailbox is ONE slot applied
+        // every 200 ms, and the later of two in a tick overwrites the first
+        // (castle_emu.py) — volume then play inside one tick loses the level.
+        if (!await castleAct(`/api/volume?v=${tonePct}`, "test level", { quiet: true })) return;
+        await new Promise((r) => setTimeout(r, 300));
+        void castleAct(`/api/play?f=${b.dataset.tone}.mp3`,
+                       `${b.textContent} tone on the castle at ${tonePct}%`);
+      })()));
+    this.body.querySelector<HTMLButtonElement>("#dpToneStop")!
+      .addEventListener("click", () => void castleAct("/api/stop", "speakers silent"));
 
     this.body.querySelectorAll<HTMLButtonElement>("[data-play]").forEach((b) =>
       b.addEventListener("click", () => {

@@ -20,7 +20,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.33"
+  version: "5.40"
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
   #
@@ -261,6 +261,9 @@ packages:
   # Build trees live off the internal disk — see the file for why, and for
   # how to go back to building locally.
   build_path: !include build_path.yaml
+  # I2S bus + speaker + media player: castle_audio.yaml (split for the
+  # 500-line cap; the variants still `!extend castle_media`).
+  audio_stack: !include castle_audio.yaml
 
 globals:
   # The desk's "sound on the Mac" hush: /api/volume?v=0 sets it, louder clears
@@ -355,42 +358,6 @@ switch:
     restore_mode: RESTORE_DEFAULT_ON
     # Hard ~7 Hz white strobe is a photosensitivity risk on a public porch.
     # Default ON; turning it off is a deliberate act.
-
-i2s_audio:
-  - id: i2s_bus
-    i2s_lrclk_pin: GPIO${pin_i2s_lrclk}
-    i2s_bclk_pin: GPIO${pin_i2s_bclk}
-
-speaker:
-  - platform: i2s_audio
-    id: castle_speaker
-    i2s_audio_id: i2s_bus
-    i2s_dout_pin: GPIO${pin_i2s_dout}
-    dac_type: external
-    channel: mono
-    sample_rate: 44100
-    bits_per_sample: 16bit
-
-media_player:
-  - platform: speaker
-    id: castle_media
-    name: "Castle audio"
-    # One pipeline only. ESPHome refuses to let the announcement and media
-    # pipelines share a speaker (it wants a `mixer` for that), and the show
-    # plays exactly one scene at a time — so scenes go out as announcements.
-    # `format: MP3` pulls in the MP3 decoder; the default is FLAC.
-    announcement_pipeline:
-      speaker: castle_speaker
-      format: MP3
-      sample_rate: 44100
-      num_channels: 1
-    # Default is 1 MB, which is half the PSRAM on this board.
-    buffer_size: 250000
-    volume_initial: 70%
-    task_stack_in_psram: true
-    # NO `files:` here — each variant adds its own via `!extend castle_media`
-    # (extend appends, and appending to nothing is the one case where that
-    # semantics does exactly what we want).
 
 # The `light:` components are GENERATED into generated/lights.yaml — one
 # strip per zone, because an RGBW fixture and an RGB one cannot share a data

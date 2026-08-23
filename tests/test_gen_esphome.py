@@ -409,6 +409,47 @@ class TestGenEsphomeMain(unittest.TestCase):
             self.assertIn(f"id(zone_overlay)[{i}] = 0;", lam)
             self.assertIn(f"id(zone_flash_target)[{i}] = 0.0f;", lam)
 
+    def test_run_scene_halt_stops_the_scripts_and_starts_nothing(self) -> None:
+        """/api/play runs run_scene("halt"): every scene script stopped (the
+        looping one must not come back over the file), then no scene — and
+        no blackout, the lights keep their texture. Not its own script: the
+        S2's static RAM is on a diet and a script is a static object."""
+        ge.main()
+        doc = yaml.safe_load(ge.OUT.read_text())
+        lam = next(s for s in doc["script"] if s["id"] == "run_scene")["then"][0]["lambda"]
+        self.assertIn('else if (scene == "halt") {}', lam)
+        for sid in ("scene_a", "scene_b"):
+            self.assertIn(f"id({sid})->stop();", lam)
+        self.assertLess(lam.index("->stop();"), lam.index('"halt"'))
+
+    def test_max_volume_caps_every_scene_and_reaches_rig_h(self) -> None:
+        """hardware.audio.max_volume is the porch's measured ceiling: a scene
+        asking for more is generated under it, and rig.h carries the same
+        number for /api/volume to clamp to — one source, both builds."""
+        doc = dict(self.DOC, hardware={"pixels_per_zone": 7,
+                                       "audio": {"max_volume": 0.8}})
+        doc["scenes"] = [scene(id="a", volume=1.0), scene(id="b", volume=0.5)]
+        ge.SRC.write_text(yaml.safe_dump(doc))
+        self.assertEqual(ge.main(), 0)
+        out = ge.OUT.read_text()
+        self.assertIn("0.0f : 0.8f", out)          # 1.0 capped
+        self.assertIn("0.0f : 0.5f", out)          # under the cap, untouched
+        self.assertNotIn("0.0f : 1.0f", out)
+        self.assertIn("inline constexpr int kMaxVolumePct = 80;",
+                      ge.RIG_OUT.read_text())
+
+    def test_blackout_stops_the_scene_scripts_themselves(self) -> None:
+        """Clearing the output is not enough: a looping scene mid-delay
+        re-fires after the stop and walks back on, audio and all. The stop
+        has to halt every scene script (continuations included)."""
+        ge.main()
+        doc = yaml.safe_load(ge.OUT.read_text())
+        stop = next(s for s in doc["script"] if s["id"] == "scene_stop")
+        lams = [a["lambda"] for a in stop["then"] if "lambda" in a]
+        for sid in ("scene_a", "scene_b"):
+            self.assertTrue(any(f"id({sid})->stop();" in lam for lam in lams),
+                            f"scene_stop leaves {sid} armed")
+
     def test_pixel_map_is_written_into_the_header_comment(self) -> None:
         ge.main()
         text = ge.OUT.read_text()

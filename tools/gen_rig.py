@@ -17,7 +17,8 @@ from __future__ import annotations
 from rig_layout import Layout
 
 
-def emit_rig_header(layouts: dict[str, Layout], zones: list[dict]) -> str:
+def emit_rig_header(layouts: dict[str, Layout], zones: list[dict],
+                    max_volume_pct: int = 100) -> str:
     """Bake each zone's geometry into a header the firmware only indexes.
 
     The device does no layout arithmetic: `walk`, `fall` and `core` are the
@@ -42,6 +43,11 @@ def emit_rig_header(layouts: dict[str, Layout], zones: list[dict]) -> str:
         '#include "castle_effects.h"',
         "",
         "namespace castle {",
+        "// The loudest the amps may be asked for — scenes.yaml's",
+        "// hardware.audio.max_volume. /api/volume clamps to it; every",
+        "// scene's level was generated under it.",
+        f"inline constexpr int kMaxVolumePct = {max_volume_pct};",
+        "",
         "namespace rig_tables {",
         "",
     ]

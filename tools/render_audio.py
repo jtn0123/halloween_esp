@@ -38,6 +38,14 @@ ROOT = Path(__file__).resolve().parent.parent
 SCENES = bp.SCENES
 OUT = bp.AUDIO
 
+
+def card_dir() -> Path:
+    """The SD build's copies, rendered at card_bitrate; sd_sync pushes these.
+    Derived from OUT at call time, not import time, so a redirected OUT
+    (tests, a sandboxed studio) carries the card copies with it — a fixed
+    path here once let a test's stale-sweep delete the real render."""
+    return OUT / "card"
+
 TARGET_PEAK = 0.89   # leaves headroom for the MP3 encoder's overshoot
 
 
@@ -158,12 +166,52 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
     return buf, {k: sorted(v) for k, v in markers.items()}
 
 
+def card_bitrate(cfg: dict) -> int:
+    """What the SD build streams. Absent means "same as flash" — the card
+    copies are then redundant and never written."""
+    return int(cfg.get("card_bitrate", cfg["bitrate"]))
+
+
 def encode_mp3(wav: Path, mp3: Path, bitrate: int) -> None:
     subprocess.run(
         ["lame", "--quiet", "-m", "m", "-b", str(bitrate), "--resample", "44.1",
          str(wav), str(mp3)],
         check=True,
     )
+
+
+#: The speaker test's tones: (stem, seconds). The desk's 🏰 panel plays them
+#: off the card root (/api/play takes one path component); sd_sync `tones`
+#: pushes them. Each answers one question — see device_panel.ts TONES.
+TEST_TONES = (("test_sweep", 12.0), ("test_1k", 8.0), ("test_200", 8.0),
+              ("test_4k", 8.0), ("test_silence", 6.0))
+
+
+def test_dir() -> Path:
+    """Where the tones land; derived from OUT at call time like card_dir()."""
+    return OUT / "test"
+
+
+def render_test_tones(cfg: dict) -> None:
+    """audio/test/test_*.mp3 at -6 dBFS, 128 kbps — clean enough that what
+    you hear is the amps and the rail, never the codec. The sweep is the
+    log run the porch was diagnosed with (200 Hz-10 kHz, 2026-08-22)."""
+    sr = cfg["sample_rate"]
+    test_dir().mkdir(parents=True, exist_ok=True)
+    for stem, secs in TEST_TONES:
+        t = np.arange(int(secs * sr)) / sr
+        if stem == "test_sweep":
+            k = np.log(10000.0 / 200.0)
+            x = 0.5 * np.sin(2 * np.pi * 200.0 * secs / k * (np.exp(t * k / secs) - 1))
+        elif stem == "test_silence":
+            x = np.zeros_like(t)
+        else:
+            x = 0.5 * np.sin(2 * np.pi * float(stem.split("_")[1].replace("k", "000")) * t)
+        wav = test_dir() / f"{stem}.wav"
+        write_wav(wav, x, sr)
+        encode_mp3(wav, test_dir() / f"{stem}.mp3", 128)
+        wav.unlink()
+    print(f"speaker test: {len(TEST_TONES)} tones -> {test_dir().relative_to(OUT.parent)}/")
 
 
 def render_chirp(cfg: dict) -> None:
@@ -212,6 +260,11 @@ def render_one(scene: dict, i: int, cfg: dict, keep_wav: bool) -> tuple[int, dic
     wav, mp3 = OUT / f"{stem}.wav", OUT / f"{stem}.mp3"
     write_wav(wav, buf, cfg["sample_rate"])
     encode_mp3(wav, mp3, cfg["bitrate"])
+    # The same WAV, encoded again for the card. Synthesis is the expensive
+    # half and it is already paid for here; a second LAME pass is cents.
+    if card_bitrate(cfg) != cfg["bitrate"]:
+        card_dir().mkdir(parents=True, exist_ok=True)
+        encode_mp3(wav, card_dir() / f"{stem}.mp3", card_bitrate(cfg))
     if not keep_wav:
         wav.unlink()
     size = mp3.stat().st_size
@@ -231,6 +284,7 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     if not args.only:
         render_chirp(cfg)
+        render_test_tones(cfg)
 
     scenes = doc["scenes"]
     if args.only:
@@ -262,10 +316,11 @@ def main() -> int:
         # A full render owns the numbered files: a scene deleted from the
         # show renumbers the rest, and 11_foo.mp3 beside 10_foo.mp3 in the
         # same directory would otherwise stay forever (judge B, JB2-5d).
-        for stale in sorted(OUT.glob("[0-9][0-9]_*.mp3")):
-            if stale.name not in produced:
-                stale.unlink()
-                print(f"swept stale {stale.name}")
+        for d in (OUT, card_dir()):
+            for stale in sorted(d.glob("[0-9][0-9]_*.mp3")):
+                if stale.name not in produced:
+                    stale.unlink()
+                    print(f"swept stale {stale.relative_to(OUT.parent)}")
         (OUT / "markers.json").write_text(json.dumps(all_markers, indent=0))
         n = sum(len(m) for v in all_markers.values() for m in v.values())
         print(f"beat markers: {n} across {len(all_markers)} scenes -> audio/markers.json")
@@ -274,7 +329,15 @@ def main() -> int:
     budget = 2.9 * 1024 * 1024
     pct = total / budget * 100
     verdict = "fits" if total < budget else "OVER BUDGET"
-    print(f"\nAudio budget ~2.9 MB (single-app partition): {pct:.0f}% used — {verdict}")
+    print(f"\nflash build  {cfg['bitrate']:>3} kbps  {total/1024:>6.0f}K  "
+          f"{pct:.0f}% of the ~2.9 MB single-app partition — {verdict}")
+    # The card is 31 GB. Printed for symmetry, not as a limit: the only
+    # ceiling the SD build has is decode load, and §12.13 measured 96 kbps
+    # clean on this chip.
+    if card_bitrate(cfg) != cfg["bitrate"]:
+        ctotal = sum(f.stat().st_size for f in card_dir().glob("[0-9][0-9]_*.mp3"))
+        print(f"card  (SD)  {card_bitrate(cfg):>3} kbps  {ctotal/1024:>6.0f}K  "
+              f"streamed off the card — no budget")
     return 0
 
 

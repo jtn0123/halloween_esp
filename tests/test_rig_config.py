@@ -155,7 +155,8 @@ class TestGeneratedFilesAreFresh(unittest.TestCase):
     """What the firmware was built from must be what scenes.yaml says now."""
 
     def test_rig_header_matches_scenes_yaml(self) -> None:
-        want = gen_rig.emit_rig_header(LAYOUTS, ZONES)
+        cap = round(DOC["hardware"]["audio"]["max_volume"] * 100)
+        want = gen_rig.emit_rig_header(LAYOUTS, ZONES, cap)
         got = (ROOT / "firmware" / "generated" / "rig.h").read_text()
         self.assertEqual(got, want, "firmware/generated/rig.h is stale — run `make generate`")
 

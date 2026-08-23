@@ -23,7 +23,7 @@ Fidelity notes, each mirrored from sd_web.h on purpose:
     only the later one runs (set_pending overwrites). A colour-picker drag
     lands its last colour; a stop-then-scene inside a tick loses the stop.
   - /api/volume takes digits only, 0..100 — atoi("abc")-is-0 was dogfood
-    ISSUE-007.
+    ISSUE-007 — and clamps to MAX_VOLUME_PCT like castle_sd.yaml does.
   - /api/scene 404s an unknown id — {"queued":true} for a typo was 008.
   - Filenames are one path component, nothing hidden, same safe_name rule,
     measured in BYTES as the board measures them.
@@ -51,6 +51,9 @@ from castle_emu_http import Handler
 
 #: The device applies queued actions on its main-loop interval.
 APPLY_DELAY_S = 0.2
+#: castle_sd.yaml clamps /api/volume to rig.h's kMaxVolumePct — scenes.yaml
+#: hardware.audio.max_volume — and so does this. test_castle_emu holds them equal.
+MAX_VOLUME_PCT = 100
 #: Rough playback clock: 96 kbps MP3 is ~12 kB of file per second.
 BYTES_PER_S = 12000
 
@@ -128,7 +131,7 @@ class CastleEmu(ThreadingHTTPServer):
     request_queue_size = 64
 
     def __init__(self, port: int = 0, sd_dir: Path | None = None,
-                 scenes: list[str] | None = None, version: str = "5.33",
+                 scenes: list[str] | None = None, version: str = "5.40",
                  wedge: bool = False, sd_mounted: bool = True,
                  serial: bool = False) -> None:
         super().__init__(("127.0.0.1", port), Handler)
@@ -186,7 +189,7 @@ class CastleEmu(ThreadingHTTPServer):
         st = self.state
         with st.lock:
             if action == "VOLUME":
-                st.volume = int(arg)
+                st.volume = min(int(arg), MAX_VOLUME_PCT)
             elif action == "PLAY":
                 f = self.sd_dir / arg
                 size = f.stat().st_size if f.is_file() else 0

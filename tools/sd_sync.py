@@ -6,6 +6,8 @@
     tools/sd_sync.py [ip|name] ls            list the card
     tools/sd_sync.py [ip|name] purge         delete every file in the card root
     tools/sd_sync.py [ip|name] push [f...]   upload tracks (default: tracks/*)
+    tools/sd_sync.py [ip|name] tones         upload the speaker-test tones the
+                                             desk's 🏰 panel plays (audio/test -> /sd)
     tools/sd_sync.py [ip|name] scenes        upload the 8 scene tracks the SD
                                              build streams (audio/ -> /sd/scenes)
     tools/sd_sync.py [ip|name] site          push the cue desk page (gzipped)
@@ -73,13 +75,31 @@ def cmd_push(ip: str, args: list[str]) -> int:
 
 def cmd_scenes(ip: str) -> int:
     """The show's own audio, to where the streaming sfx expects it."""
-    files = sorted(p for p in ROOT.glob("audio/[0-9][0-9]_*.mp3")
-                   if not p.name.startswith("00_"))
+    # audio/card/ holds the card_bitrate copies when scenes.yaml asks for a
+    # different one; audio/ itself is what the FLASH build embeds and is
+    # deliberately smaller. Prefer the card copies — pushing the flash ones
+    # would put a 32 kbps compromise onto a 31 GB card.
+    card = sorted(ROOT.glob("audio/card/[0-9][0-9]_*.mp3"))
+    files = card or sorted(p for p in ROOT.glob("audio/[0-9][0-9]_*.mp3")
+                           if not p.name.startswith("00_"))
     if not files:
         raise SystemExit("no audio/NN_*.mp3 — run `make audio` first")
+    print(f"  source: {files[0].parent.relative_to(ROOT)}/")
     for src in files:
         upload(ip, "/api/scenes", src.name, src.read_bytes())
     print(f"  {len(files)} scene tracks in /sd/scenes/")
+    return 0
+
+
+def cmd_tones(ip: str) -> int:
+    """The 🏰 panel's speaker test: five tones at the card ROOT, because
+    /api/play takes one path component. `make audio` renders them."""
+    files = sorted(ROOT.glob("audio/test/test_*.mp3"))
+    if not files:
+        raise SystemExit("no audio/test/test_*.mp3 — run `make audio` first")
+    for src in files:
+        upload(ip, "/api/files", src.name, src.read_bytes())
+    print(f"  {len(files)} test tones in /sd/ — the desk's speaker test is live")
     return 0
 
 
@@ -176,6 +196,8 @@ def main() -> int:
         return cmd_push(ip, args)
     if cmd == "scenes":
         return cmd_scenes(ip)
+    if cmd == "tones":
+        return cmd_tones(ip)
     if cmd == "site":
         return cmd_site(ip)
     if cmd == "ota":

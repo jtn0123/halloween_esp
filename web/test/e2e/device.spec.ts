@@ -23,6 +23,9 @@ const FILES = [
   { name: "logs", size: 0, dir: true },
   { name: "wicked_winds.mp3", size: 287744, dir: false },
   { name: "ghostbusters.mp3", size: 985088, dir: false },
+  // Two of the five speaker-test tones: the others must render disabled.
+  { name: "test_sweep.mp3", size: 190000, dir: false },
+  { name: "test_1k.mp3", size: 128000, dir: false },
 ];
 
 /** Wire up a pretend castle and remember what the desk asks of it. */
@@ -204,6 +207,25 @@ test("the light override parks a colour and hands the show back", async ({ page 
   await page.locator("[data-zl=':chase']").click();
   await expect.poll(() => calls.filter((c) => c.includes("c=chase@25")).length).toBe(1);
   expect(calls.some((c) => c.includes("c=:chase"))).toBe(false);
+});
+
+test("the speaker test plays a tone at a chosen level, spaced for the mailbox", async ({ page }) => {
+  const calls = await stubCastle(page);
+  await page.goto("/");
+  await page.locator("#devMore").click();
+  // Only the tones on the card are live; the rest say how to push them.
+  await expect(page.locator("[data-tone='test_sweep']")).toBeEnabled();
+  await expect(page.locator("[data-tone='test_200']")).toBeDisabled();
+  await expect(page.locator("#dpSub, .dp__lights").last()).toContainText("tones not on the card");
+  await page.locator("[data-tpct='80']").click();
+  await page.locator("[data-tone='test_sweep']").click();
+  await expect.poll(() => calls.filter((c) => c.includes("/api/play?f=test_sweep.mp3")).length).toBe(1);
+  const vol = calls.findIndex((c) => c.includes("/api/volume?v=80"));
+  const play = calls.findIndex((c) => c.includes("/api/play?f=test_sweep.mp3"));
+  expect(vol).toBeGreaterThanOrEqual(0);
+  expect(vol).toBeLessThan(play);                 // level lands before the tone
+  await page.locator("#dpToneStop").click();
+  await expect.poll(() => calls.filter((c) => c.includes("/api/stop")).length).toBe(1);
 });
 
 test("the boot log is one tap away", async ({ page }) => {

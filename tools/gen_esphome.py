@@ -284,6 +284,11 @@ def main() -> int:
         if problems:
             sid = scene.get("id", "?") if isinstance(scene, dict) else "?"
             raise SystemExit(f"scene {sid}: " + "\n  ".join(problems))
+    # hardware.audio.max_volume caps every scene's level (scenes.yaml says
+    # why); the firmware's /api/volume clamps to the same number via rig.h.
+    cap = float(doc["hardware"].get("audio", {}).get("max_volume", 1.0))
+    for scene in doc["scenes"]:
+        scene["volume"] = min(float(scene.get("volume", 0.8)), cap)
     script_ids: list[str] = []          # every scene script, continuations too
     for i, scene in enumerate(doc["scenes"], start=1):
         lines = emit_scene(scene, zones, i, markers)
@@ -309,6 +314,13 @@ def main() -> int:
         f" id(zone_flash_target)[{i}] = 0.0f;" for i in range(len(zones))
     )
     out.append(f"      - lambda: '{stop}'")
+    # And it stops the scene SCRIPTS, not only their output. Until v5.35 it
+    # did not: a looping scene's pending delay survived the stop, re-fired
+    # within 30 s, and Vigil walked back on — volume, lights and its wind
+    # track — under whatever the operator was doing (every "quiet board"
+    # test in docs/ISSUE-ring-flicker.md had it playing underneath).
+    out.append(LAMBDA)
+    out.extend(f"          id({sid})->stop();" for sid in script_ids)
     out.append("      - media_player.stop:")
     out.append("      - text_sensor.template.publish:")
     out.append("          id: current_scene")
@@ -339,6 +351,12 @@ def main() -> int:
         out.append(f"          {kw} (scene == \"{scene['id']}\") "
                    f"id(scene_{scene['id']})->execute();")
     out.append("          else if (scene == \"stop\") id(scene_stop)->execute();")
+    # "halt": the stops above and nothing else — lights keep their texture,
+    # audio is untouched. /api/play runs it first so a looping scene's 30 s
+    # re-fire cannot take the speakers back from the file the operator chose
+    # (a song, the panel's speaker test). A branch here rather than its own
+    # script: a script is a static object, and the S2's dram0 is on a diet.
+    out.append("          else if (scene == \"halt\") {}")
     out.append("          else ESP_LOGW(\"castle\", \"unknown scene '%s'\", scene.c_str());")
     out.append("")
     out.extend(emit_show_playlist(doc))
@@ -468,7 +486,7 @@ def main() -> int:
     # Geometry the firmware indexes, and the strips that use it. Written
     # from the same `layouts` the cue scripts above were emitted against, so
     # a zone can never end up with cues aimed at pixels its strip lacks.
-    RIG_OUT.write_text(emit_rig_header(layouts, zones))
+    RIG_OUT.write_text(emit_rig_header(layouts, zones, round(cap * 100)))
     LIGHTS_OUT.write_text(emit_lights(layouts, zones, per))
 
     print(f"wrote {bp.rel(OUT)} + {MEDIA_OUT.name} "

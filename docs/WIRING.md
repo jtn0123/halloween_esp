@@ -340,6 +340,20 @@ ground.
 
 ---
 
+### Testing the speakers
+
+Desk → **🏰 Castle** → **speaker test**: five tones through both amps at
+25 / 50 / 80 %, each asking one question — the **sweep** (200 Hz → 10 kHz)
+for static that comes and goes with pitch, **1 kHz** as the reference that
+should be a smooth whistle, **200 Hz** vs **4 kHz** to split the 5 V rail
+(bass pulls the current) from data and wiring (4 kHz pulls almost none), and
+**silence** for hiss or hum from ground or supply. `make audio` renders them
+into `audio/test/`; `tools/sd_sync.py <ip> tones` puts them on the card.
+The bare 4 Ω 3 W drivers measured clean only to 80 % on the porch (CanaKit
+5 A, 2026-08-22) — `scenes.yaml`'s `hardware.audio.max_volume` is the cap
+for a speaker like that; the shrouded pair that replaced them run the full
+range, so it sits at 1.0 today.
+
 ## 6. Build order
 
 Do it in this order and each step proves the one before it.

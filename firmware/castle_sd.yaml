@@ -296,6 +296,10 @@ interval:
           auto act = castle_web::take_pending();
           if (act.type == castle_web::NONE) return;
           if (act.type == castle_web::PLAY) {
+            // A looping scene would re-fire its own track over this file
+            // within 30 s: run_scene("halt") stops every scene script and
+            // starts nothing (lights keep their texture, see gen_esphome).
+            id(run_scene)->execute("halt");
             // STREAMED off the card through our own server over loopback —
             // no PSRAM cap, start is near-instant. See sd_web_site.h.
             auto call = id(castle_media)->make_call();
@@ -308,7 +312,9 @@ interval:
           } else if (act.type == castle_web::VOLUME) {
             // 0 is the desk's hush (sound routed to the Mac): remembered so
             // scene scripts keep quiet too — see speaker_hush in castle.yaml.
-            const int pct = atoi(act.arg.c_str());
+            int pct = atoi(act.arg.c_str());
+            // Never past the measured ceiling (rig.h, from scenes.yaml).
+            if (pct > castle::kMaxVolumePct) pct = castle::kMaxVolumePct;
             id(speaker_hush) = pct == 0;
             auto call = id(castle_media)->make_call();
             call.set_volume(pct / 100.0f);

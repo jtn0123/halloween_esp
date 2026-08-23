@@ -20,15 +20,34 @@ hardware:
   rgb_order: GRB
   audio:
     sample_rate: 44100
-    # 32 kbps is TEMPORARY and it is a real quality loss from the 96 kbps
-    # this show was tuned at. It buys OTA: the image has to fit one 1.75 MB
-    # app slot, and audio is the only part big enough to matter.
+    # TWO bitrates, because the two builds have nothing in common here.
     #
-    # The trade is worth making once, because it is the last change that
-    # needs someone standing at the board. Once OTA works, moving the audio
-    # to the SD card frees ~600 KB and 96 kbps comes back — over the air.
+    # `bitrate` is what castle_flash.yaml EMBEDS. That build carries every
+    # scene inside the image, so it is bounded by the 2.9 MB the single-app
+    # partition leaves after firmware — 32 kbps is 46% of it, 96 kbps would
+    # be 138% and the build would simply not fit. It stays low so the
+    # no-card fallback keeps working.
+    #
+    # `card_bitrate` is what castle_sd.yaml STREAMS off a 31 GB card, where
+    # that budget does not exist and never did. 32 kbps was only ever a
+    # flash compromise: measured, it brickwalls the show at ~6 kHz, which is
+    # telephone quality and audibly so. 96 kbps is what the show was tuned
+    # at, and PROJECT_NOTES §12.13 measured it decoding on this exact chip
+    # with zero underruns, zero decode errors and zero blocking warnings.
     bitrate: 32
+    card_bitrate: 96
+    # Mono on purpose, and it is full level: both amps have SD pinned LEFT
+    # (WIRING §5) and the S2 puts a mono stream in the left I2S slot, so
+    # nothing is halved. Stereo doubled the bytes and changed nothing
+    # audible (HARDWARE_FINDINGS §8, 2026-08-22).
     channels: 1
+    # The loudest the amps are ever asked for. Every scene's level is
+    # generated under this cap and /api/volume clamps to it, so one number
+    # here protects a speaker that cannot take full drive. The bare 4 Ω 3 W
+    # drivers measured clean only to 80 on the porch (2026-08-22, CanaKit
+    # 5 A); the shrouded speakers that replaced them take the full range,
+    # so the cap is off (1.0) and the app's volume control goes to 100.
+    max_volume: 1.0
 
 # The all-evening playlist (#19): "start show" runs these in order, each for
 # its full length, with a dark ambient gap between, looping until stopped.
