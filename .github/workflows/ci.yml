@@ -165,7 +165,10 @@ jobs:
         with:
           python-version: "3.13"
       - uses: ./.github/actions/media-tools
-      - run: pip install "esphome==2026.7.4" pyyaml numpy scipy
+      # From the LOCK, wheels only: exact resolved versions (the same set
+      # every other gate tested against) and no sdist setup.py execution —
+      # the two things Sonar rightly flagged on the unpinned spelling.
+      - run: pip install --only-binary=":all:" -r requirements.lock
       - name: render + generate
         run: |
           python tools/render_audio.py
