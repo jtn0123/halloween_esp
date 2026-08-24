@@ -83,6 +83,7 @@ sync();setInterval(sync,4000);
 </script>)HTML";
 
 inline esp_err_t h_remote(httpd_req_t *req) {
+  set_csp(req);  // E4 — sd_web_site.h; same policy as the desk page
   httpd_resp_set_type(req, "text/html; charset=utf-8");
   return httpd_resp_send(req, kRemotePage, HTTPD_RESP_USE_STRLEN);
 }

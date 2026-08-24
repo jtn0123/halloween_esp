@@ -36,6 +36,7 @@ import stems as st
 import studio_http as sh
 import studio_jobs as sj
 import studio_media as sm
+import studio_publish as sp
 import studio_scenes as ss
 from studio_jobs import OPT_KEYS, opt_args  # the importer's CLI flags, one place
 
@@ -113,37 +114,12 @@ def served() -> tuple[Path, Path]:
     return HTML, ROOT / "audio"
 
 
-#: The studio's own route families. "/api/<x>" for any of these is the OLD
-#: spelling (v5.23 and earlier), rewritten to "/studio/<x>" for one release
-#: so a desk built before the move keeps working; every other /api/* path
-#: is the castle's and relays untouched (/api/scene?s=<id> included).
-STUDIO_ROUTES = frozenset((
-    "tracks", "import", "job", "refresh", "track", "waveform", "stems",
-    "stem", "compare", "probe", "server", "scene", "rebuild", "card"))
-_deprecated_seen: set[str] = set()
-
-
-#: The castle's own prefix. Studio routes moved out from under it (they are
-#: /studio/* now), and these two spellings are compared often enough that the
-#: literal was drifting between them.
-API = "/api/"
-
-
-def studio_path(raw: str) -> str:
-    """The request's path (no query), an old /api/ spelling of a studio
-    route rewritten to its /studio/ home — logged once per route."""
-    url = urllib.parse.urlparse(raw)
-    path = url.path
-    head = path[len(API):].split("/", 1)[0] if path.startswith(API) else ""
-    if head not in STUDIO_ROUTES or (
-            head == "scene" and urllib.parse.parse_qs(url.query).get("s")):
-        return path
-    if head not in _deprecated_seen:
-        _deprecated_seen.add(head)
-        sys.stderr.write(f"  DEPRECATED: /api/{head} is now /studio/{head} "
-                         "(docs/API.md) — the alias goes away next release\n")
-    return "/studio/" + path[5:]
-
+# The /api->/studio alias table and rewriter live in studio_http.py now
+# (HTTP plumbing, same seam as the senders); the names stay importable here.
+studio_path = sh.studio_path
+STUDIO_ROUTES = sh.STUDIO_ROUTES
+API = sh.API
+_deprecated_seen = sh._deprecated_seen
 
 class Handler(sh.JsonHandler):
     # ── routes ──
@@ -194,7 +170,11 @@ class Handler(sh.JsonHandler):
             # (castle_link.py). Only with no castle in reach does the studio
             # answer for itself, marked so device.ts knows it is NOT one.
             live = cl.status()
-            return self.send_json(live or {"studio": True})
+            if not live:  # marker + WHO the relay was trying (C3); no
+                # `castle` key = none configured, a simulator on purpose.
+                live = {"studio": True,
+                        **({"castle": h} if (h := cl.castle_host()) else {})}
+            return self.send_json(live)
         if path == "/studio/tracks":
             TRACKS.mkdir(exist_ok=True)
             return self.send_json({
@@ -369,6 +349,12 @@ class Handler(sh.JsonHandler):
         if path == "/studio/rebuild":
             ok, log = ss.rebuild(_lock, run, PY, ROOT)
             return self.send_json({"ok": ok, "log": log}, 200 if ok else 500)
+        if path == "/studio/publish":
+            # The last mile (A1): sd_sync scenes + lean site + what still
+            # needs an OTA; rebuild() runs it too when a castle answers.
+            with _lock:
+                body, code = sp.publish(run)
+            return self.send_json(body, code)
         if path.startswith(API):
             return self.relay("POST", raw)
         self.send_json({"error": "not found"}, 404)

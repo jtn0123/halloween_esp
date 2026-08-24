@@ -1,0 +1,15 @@
+# pip-audit exceptions — `make audit` reads the first column of each line.
+# One advisory per line: id, why it is accepted, and when to look again.
+# Remove a line the moment the underlying pin moves (make lock, then make audit).
+#
+# starlette 0.52.1 arrives transitively through the pinned esphome==2026.7.4
+# BUILD toolchain (platformio's web layer). It never sees network input in
+# this repo — nothing here serves starlette. Review at the next esphome bump.
+PYSEC-2026-161   starlette, build-toolchain only              review 2026-10-01
+PYSEC-2026-248   starlette, build-toolchain only              review 2026-10-01
+PYSEC-2026-249   starlette, build-toolchain only              review 2026-10-01
+PYSEC-2026-2280  starlette, build-toolchain only              review 2026-10-01
+PYSEC-2026-2281  starlette, build-toolchain only              review 2026-10-01
+# cryptography 49 is dragged in by the same pin; the next esphome release
+# clears it (CLAUDE.md). Review at the next esphome bump.
+PYSEC-2026-3552  cryptography via esphome pin, clears on bump review 2026-10-01

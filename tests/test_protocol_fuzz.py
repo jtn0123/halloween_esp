@@ -73,7 +73,8 @@ class TestBodies(FuzzCase):
     def test_zero_byte_put(self) -> None:
         code, body, _ = self.req("PUT", "/api/files/empty.bin", body=b"")
         self.assertEqual(code, 200)
-        self.assertEqual(json.loads(body), {"path": "/sd/empty.bin", "bytes": 0})
+        self.assertEqual(json.loads(body), {"path": "/sd/empty.bin", "bytes": 0,
+                                            "crc32": "00000000"})   # B5
         self.assertEqual((self.card / "empty.bin").read_bytes(), b"")
 
     def test_two_megabyte_put_arrives_intact(self) -> None:

@@ -123,3 +123,30 @@ test("what the castle says is printed, never executed", async ({ page }) => {
   expect(await page.evaluate(() => (window as unknown as { __x?: number }).__x)).toBeUndefined();
   expect(castle.hits("/api/status")).toBeGreaterThan(0);
 });
+
+test("a firmware behind scenes.yaml is said in the panel and dimmed in the picker", async ({ page }) => {
+  // v5.42 status carries the ids the BUILD was compiled with; a board that
+  // predates a scene must say so BEFORE a pick answers "unknown scene" (C6).
+  await fakeCastle(page, [], { scenes: "vigil" });
+  await page.goto("/");
+  await expect(page.locator("#deviceChip")).toBeVisible();
+  await expect(page.locator(".scene--stale").first()).toBeVisible();
+  await page.locator("#devMore").click();
+  const warn = page.locator("#devicePanel .dp__note--warn",
+                            { hasText: "newer than the firmware" });
+  await expect(warn).toBeVisible();
+  await expect(warn).toContainText("rebuild and OTA");
+});
+
+test("a firmware that knows every scene dims nothing", async ({ page }) => {
+  const ids = await (async () => {
+    await page.goto("/");
+    return page.evaluate(() =>
+      ((window as unknown as { CASTLE_GEN?: { scenes: { id: string }[] } })
+        .CASTLE_GEN?.scenes ?? []).map((s) => s.id).join(","));
+  })();
+  await fakeCastle(page, [], { scenes: ids });
+  await page.goto("/");
+  await expect(page.locator("#deviceChip")).toBeVisible();
+  await expect(page.locator(".scene--stale")).toHaveCount(0);
+});

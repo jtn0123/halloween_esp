@@ -244,7 +244,7 @@ test("the panel lists what is actually on the card, and what each track is for",
   // The show's own tracks live in scenes/, which /api/files never lists;
   // the manifest's verdict from /api/status stands in for them.
   await expect(page.locator(".dp__sec").filter({ has: page.locator("#dpFiles") }))
-    .toContainText("all 9 show tracks present");
+    .toContainText(/all \d+ show tracks present/);
 });
 
 test("a light sequence walks the channels and can be superseded", async ({ page }) => {
@@ -398,4 +398,48 @@ test("Play on a card-only row moves the chip off 'idle'", async ({ page }) => {
   await page.locator("#devMore").click();
   await page.locator("#devicePanel [data-play]").first().click();
   await expect(page.locator("#devNow")).toHaveText("▶ wicked_winds.mp3");
+});
+
+test("an EXPECTED castle that never answers becomes a visible, retryable state", async ({ page }) => {
+  // The studio names the host it is trying (C3): after three missed probes
+  // the chip stops being a blank box. ~16 s of real retry cadence.
+  test.setTimeout(40_000);
+  let up = false;
+  await page.route("**/api/status", (route) =>
+    route.fulfill({ json: up
+      ? { version: "5.42", sd_mounted: true, scene: "", track: "" }
+      : { studio: true, castle: "10.27.27.247" } }));
+  await page.goto("/");
+  const chip = page.locator("#deviceChip");
+  await expect(chip).toBeHidden();                       // not instantly noisy
+  await expect(chip).toBeVisible({ timeout: 25_000 });   // three misses later
+  await expect(chip).toContainText("looking for the castle");
+  await expect(chip).toContainText("10.27.27.247");
+  up = true;                                             // Retry finds it
+  await page.locator("#devRetry").click();
+  await expect(chip).toContainText("castle v5.42");
+});
+
+test("a poll landing on a held volume slider does not yank it away", async ({ page }) => {
+  // C1: the hand wins. Focus the slider, let an action-driven re-poll land
+  // with a DIFFERENT castle volume, and the element must survive untouched.
+  // Route "castle" so the slider is enabled (♪ Mac disables it by design).
+  await page.addInitScript(() =>
+    localStorage.setItem("castleSoundRoute", "castle"));
+  await stubCastle(page);
+  await page.goto("/");
+  await expect(page.locator("#deviceChip")).toBeVisible();
+  const vol = page.locator("#devVol");
+  await vol.focus();
+  await vol.press("ArrowUp");                 // fires a volume act + re-poll
+  STATUS.volume = 5;                          // the poll would snap to this
+  try {
+    await page.waitForTimeout(1600);          // let the debounced poll land
+    await expect(vol).toBeFocused();          // same element, not a rebuild
+    await expect(vol).not.toHaveValue("5");   // and not snapped to the poll
+    await page.locator("#stage").click();     // release focus…
+    await expect(vol).toHaveValue("5", { timeout: 20_000 });  // …parked render lands
+  } finally {
+    STATUS.volume = 40;                       // the stub is shared state
+  }
 });

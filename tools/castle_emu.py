@@ -146,6 +146,9 @@ class CastleEmu(ThreadingHTTPServer):
         self.missing = ""
         self.wedge = wedge
         self.sd_mounted = sd_mounted
+        #: write_body's free-space precondition (B3): KB free the emulated
+        #: card claims. None = report the disk's real number and never 507.
+        self.sd_free_kb: int | None = None
         # The real httpd is ONE task: a long PUT holds every other request
         # (the status poll included) until it finishes. --serial rehearses
         # that; the default threads so the bench stays snappy.
@@ -235,6 +238,9 @@ class CastleEmu(ThreadingHTTPServer):
                 "sd_free_kb": du.free // 1024 if self.sd_mounted else 0,
                 "missing": self.missing,
                 "volume": st.volume, "scene": st.scene, "track": st.track,
+                # B1: the ids this "build" runs with — the same list
+                # /api/scene checks, so the desk can spot a stale board.
+                "scenes": ",".join(self.scenes),
                 "show_on": st.show_on,
                 "pir": {"armed": st.pir["armed"],
                         "cooldown_s": st.pir["cooldown_s"],
@@ -253,12 +259,14 @@ class CastleEmu(ThreadingHTTPServer):
         return ('{"version":"%s","compiled":"%s","uptime_s":%d,'
                 '"sd_mounted":%s,"psram_free_kb":%d,"heap_free_kb":%d,'
                 '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
-                '"volume":%d,"scene":"%s","track":"%s","show_on":%s,'
+                '"volume":%d,"scene":"%s","track":"%s","scenes":"%s",'
+                '"show_on":%s,'
                 '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
                 % (t("version"), t("compiled"), i("uptime_s"),
                    b[bool(s["sd_mounted"])], i("psram_free_kb"), i("heap_free_kb"),
                    i("sd_total_kb"), i("sd_free_kb"), t("missing"),
-                   i("volume"), t("scene"), t("track"), b[bool(s["show_on"])],
+                   i("volume"), t("scene"), t("track"), t("scenes"),
+                   b[bool(s["show_on"])],
                    b[bool(pir["armed"])], int(pir["cooldown_s"]),
                    wire.json_escape(str(pir["scene"]))))
 

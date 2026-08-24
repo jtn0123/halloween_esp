@@ -1,3 +1,6 @@
+> ARCHIVED — the current report is `.claude/grade-report.md`; item IDs
+> differ between runs and the ones below are no longer addressable.
+
 # Codebase Grade Report
 
 **Project:** halloween_esp — castle cue desk + ESPHome firmware

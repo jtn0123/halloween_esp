@@ -36,10 +36,13 @@ test("a LAN phone's scene audio is linked, not inlined — and plays", async ({ 
       .CASTLE_GEN.audio));
   expect(srcs.length).toBeGreaterThan(0);
   for (const s of srcs) expect(s).toMatch(/^\/studio\/scene-audio\/[A-Za-z0-9_]+$/);
+  // G5: NOTHING is instantiated until an audition — ten live players at
+  // load used to pin every decoded buffer for the whole session. The srcs
+  // above come from the page's data; the players only exist once played.
   const players = await page.evaluate(() =>
     [...(window as unknown as { __media: HTMLMediaElement[] }).__media]
       .map((a) => a.src).filter((s) => s.includes("/studio/scene-audio/")));
-  expect(players).toHaveLength(srcs.length);
+  expect(players).toHaveLength(0);
 
   // The route serves real audio with Range support, from the LAN hostname
   // (fetched in the page: the browser is what knows studio.lan).

@@ -25,11 +25,13 @@ are left alone; purge means "clear the music", not "wipe the card".
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import json
 import sys
 import urllib.parse
 import urllib.request
+import zlib
 from pathlib import Path
 
 from hosts import maybe_host
@@ -55,7 +57,28 @@ def upload(ip: str, route: str, name: str, data: bytes, timeout: float = 600) ->
     got = resp.get("bytes", -1)
     if got != len(data):
         raise SystemExit(f" FAILED ({got} of {len(data)} bytes)")
+    # v5.42+ answers with a CRC32 of what actually hit the card — "bytes
+    # matched" cannot see a bad SD sector (grade report B5). Older firmware
+    # omits the field; nothing to compare then.
+    said = resp.get("crc32")
+    want = zlib.crc32(data)
+    if said is not None and int(str(said), 16) != want:
+        raise SystemExit(f" FAILED (crc mismatch: card wrote {said}, "
+                         f"sent {want:08x} — bad sector or corrupt transfer)")
     print(" ok")
+
+
+def card_dir(ip: str, d: str) -> dict[str, int]:
+    """name -> size inside one card directory (v5.42 /api/files?d=), or {}
+    when the firmware predates the parameter — then nothing is skippable."""
+    try:
+        rows = json.loads(api(ip, "GET", f"/api/files?d={urllib.parse.quote(d)}"))
+    except OSError:
+        return {}
+    if not isinstance(rows, list):
+        return {}
+    return {f["name"]: int(f["size"]) for f in rows
+            if isinstance(f, dict) and "name" in f and not f.get("dir")}
 
 
 def cmd_push(ip: str, args: list[str]) -> int:
@@ -85,9 +108,20 @@ def cmd_scenes(ip: str) -> int:
     if not files:
         raise SystemExit("no audio/NN_*.mp3 — run `make audio` first")
     print(f"  source: {files[0].parent.relative_to(ROOT)}/")
+    have = card_dir(ip, "scenes")
+    sent = 0
     for src in files:
-        upload(ip, "/api/scenes", src.name, src.read_bytes())
-    print(f"  {len(files)} scene tracks in /sd/scenes/")
+        data = src.read_bytes()
+        # Same name, same size: almost certainly the same render — a full
+        # ten-scene push is minutes over porch WiFi, and publish (the studio
+        # runs this after every scene save) must not pay that every time.
+        if have.get(src.name) == len(data):
+            print(f"  {src.name} unchanged, skipped")
+            continue
+        upload(ip, "/api/scenes", src.name, data)
+        sent += 1
+    print(f"  {len(files)} scene tracks in /sd/scenes/ ({sent} sent, "
+          f"{len(files) - sent} already there)")
     return 0
 
 
@@ -111,14 +145,32 @@ def cmd_site(ip: str) -> int:
     src = ROOT / "previewer" / "castle-cue-desk.html"
     if not src.exists():
         raise SystemExit("previewer/castle-cue-desk.html missing — run `make preview`")
-    plain = src.read_bytes()
+    # The DEVICE gets the LEAN rewrite (grade report G1/A5): the committed
+    # build inlines every scene's audio as base64 — 89% of a 3.3 MB page the
+    # porch phone downloads before anything appears, for tracks it may never
+    # play. The device page links /site/<sid>.mp3 instead, pushed below and
+    # served by the firmware's existing /site/* handler; the inlined build
+    # stays on disk for portability.
+    import gen_previewer as gp
+    plain = gp.lean(src.read_text(), route="/site/", suffix=".mp3").encode()
     packed = gzip.compress(plain, 9)
     upload(ip, "/api/site", "index.html.gz", packed)
     # The plain copy too, for any client that cannot take gzip — the firmware
     # prefers .gz but falls back, and a stale pair would be worse than bytes.
     upload(ip, "/api/site", "index.html", plain)
-    print(f"  http://{ip}/ now serves the cue desk "
-          f"({len(packed)//1024} KB gzipped, {len(plain)//1024} KB plain)")
+    have = card_dir(ip, "site")
+    audio = [p for p in sorted(ROOT.glob("audio/[0-9][0-9]_*.mp3"))
+             if not p.name.startswith("00_")]
+    for mp3 in audio:
+        name = mp3.name[3:]              # NN_<sid>.mp3 -> <sid>.mp3, the URL
+        data = mp3.read_bytes()
+        if have.get(name) == len(data):
+            print(f"  {name} unchanged, skipped")
+            continue
+        upload(ip, "/api/site", name, data)
+    print(f"  http://{ip}/ now serves the LEAN cue desk "
+          f"({len(packed)//1024} KB gzipped + {len(audio)} scene tracks "
+          f"fetched on first play)")
     return 0
 
 
@@ -134,6 +186,10 @@ def cmd_ota(ip: str, args: list[str]) -> int:
     data = bin_path.read_bytes()
     if data[:1] != b"\xe9":
         raise SystemExit(f"{bin_path} does not look like an app image (no 0xE9 magic)")
+    # Stop audio before an OTA — the standing rule (CLAUDE.md): a decode
+    # mid-flash competes for the same starved heap.
+    with contextlib.suppress(OSError):
+        api(ip, "POST", "/api/stop", timeout=5)
     print(f"  flashing {bin_path.name} ({len(data)//1024} KB) over HTTP ...",
           end="", flush=True)
     try:

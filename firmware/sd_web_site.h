@@ -29,6 +29,19 @@ namespace castle_web {
 esp_err_t reply_err(httpd_req_t *req, const char *status, const char *msg);
 std::string url_decode(const char *s);
 
+/// E4: one CSP on every page we serve — depth behind the escaping, not a
+/// substitute for it (safe_name still admits '<' and '>', so a filename is
+/// one missed esc() away from running). The desk is deliberately a single
+/// self-contained file, so inline script/style must stay allowed; what the
+/// header removes is everything ELSE an injected tag could do: no external
+/// fetches, no foreign media, no form posts off-box.
+inline void set_csp(httpd_req_t *req) {
+  httpd_resp_set_hdr(req, "Content-Security-Policy",
+                     "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                     "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                     "media-src 'self' data: blob:; connect-src 'self'");
+}
+
 inline const char *content_type(const std::string &p) {
   auto ends = [&p](const char *s) {
     size_t n = strlen(s);
@@ -46,13 +59,6 @@ inline const char *content_type(const std::string &p) {
   if (ends(".mp3")) return "audio/mpeg";
   if (ends(".wav")) return "audio/wav";
   return "application/octet-stream";
-}
-
-/// A path that may contain subdirectories but must stay inside /sd:
-/// no "..", no leading dot segments, no absolute escapes.
-inline bool safe_subpath(const std::string &p) {
-  if (p.empty() || p.size() > 140 || p[0] == '/' || p[0] == '.') return false;
-  return p.find("..") == std::string::npos;
 }
 
 /// Stream a file off the card. Returns false if it does not exist. Content
@@ -127,6 +133,7 @@ fetch('/api/files').then(r=>r.json()).then(fs=>files.innerHTML=fs.filter(f=>!f.d
 </script>)HTML";
 
 inline esp_err_t h_root(httpd_req_t *req) {
+  set_csp(req);
   if (castle_sd::g_mounted) {
     // Prefer the pre-compressed desk: ~3x fewer bytes over the radio, and
     // every browser this decade sends Accept-Encoding: gzip. sd_sync pushes
@@ -141,6 +148,7 @@ inline esp_err_t h_root(httpd_req_t *req) {
 }
 
 inline esp_err_t h_site(httpd_req_t *req) {
+  set_csp(req);
   std::string rel = url_decode(req->uri + strlen("/site/"));
   auto q = rel.find('?');
   if (q != std::string::npos) rel.resize(q);

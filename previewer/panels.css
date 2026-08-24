@@ -230,6 +230,10 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   box-shadow: var(--shadow);
 }
 #deviceChip.live { display: block; }
+/* C3: an EXPECTED castle that never answered is a state, not a blank —
+   shown after three missed probes (device.ts seeking()). */
+#deviceChip.seeking { display: block; }
+#deviceChip .chip__seek { color: var(--ink-2); }
 #deviceChip.down > * { opacity: .45; }
 #deviceChip.down #devNow { font-style: italic; }
 #devNow { color: var(--ink-2); }

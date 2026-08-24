@@ -5,7 +5,22 @@ static RAM headroom (see castle.yaml sdkconfig notes); apply with the next
 firmware session, recompile, and update tools/castle_emu_wire.py in step
 (tests/test_firmware_contract.py parses sd_web.h and will flag drift).
 
-Nothing pending (2026-08-22).
+Pending: **v5.42, written and compiled, NOT yet flashed** (2026-08-23 —
+the castle was off the network when the work landed). One OTA covers it:
+`make ota`, then confirm on the panel and re-push the page (`make publish`).
+
+- sd_web_util.h split out of sd_web.h (helper layer; contract test reads it).
+- /api/status gains `scenes` (the build's ids) — the desk's stale-firmware
+  warning reads it.
+- /api/files?d=<subdir> lists inside the card.
+- write_body: 507 free-space precondition, crc32 in the reply (sd_sync
+  compares), watchdog fed every 4th chunk (one tick / 32 KB — **verify the
+  first big upload on the bench**; revert the cadence if a push reboots it).
+- /api/site/ uploads capped at 8 MB (413).
+- set_csp() on every served page (root, /site/*, /remote).
+
+After the OTA, `make publish` puts the LEAN desk page + per-scene audio on
+the card — first paint drops from 3.3 MB to ~150 KB gzipped.
 
 Applied in v5.34 (flashed to the new porch board, 2026-08-22):
 

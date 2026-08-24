@@ -26,6 +26,7 @@
  * soldered pixel plays its part in the corner of the room.
  */
 
+import { api } from "./api.js";
 import { cardChanged } from "./castle_bus.js";
 import { esc } from "./dom.js";
 import { castleAct } from "./device.js";
@@ -105,6 +106,8 @@ interface DeviceStatus {
   show_on?: boolean;
   /** Current scene id, "" when idle. */
   scene?: string;
+  /** Comma-joined scene ids this firmware was BUILT with (v5.42+). */
+  scenes?: string;
   /** The studio answering FOR a castle it cannot reach — not a castle. */
   studio?: boolean;
   /** Set by the studio's relay: this status came through the bridge, and
@@ -149,16 +152,30 @@ function healthMeta(st: DeviceStatus): string {
       : "") + `</div>`;
 }
 
-async function getJson<T>(path: string): Promise<T> {
-  const r = await fetch(path);
-  if (!r.ok) throw new Error(`${path}: ${r.status}`);
-  return (await r.json()) as T;
+/** C6: the scenes this desk knows that the BOARD's firmware does not —
+ *  the drift behind "unknown scene", said before a button press finds it.
+ *  Empty until the firmware reports its build list (v5.42+). */
+function firmwareDrift(st: DeviceStatus): string {
+  if (st.scenes === undefined) return "";
+  const known = new Set(st.scenes.split(",").filter(Boolean));
+  const newer = sceneIds().filter((id) => !known.has(id));
+  if (!newer.length) return "";
+  const n = newer.length;
+  return `<div class="dp__note dp__note--warn" title="The board's firmware was ` +
+    `built before ${n === 1 ? "this scene" : "these scenes"} existed; picking ` +
+    `${n === 1 ? "it" : "one"} answers 'unknown scene'. make sd-build, stop ` +
+    `audio, then OTA.">⚠ ${n} scene${n === 1 ? "" : "s"} newer than the ` +
+    `firmware (${esc(newer.join(", "))}) — rebuild and OTA</div>`;
 }
 
 export class DevicePanel {
   private root: HTMLDivElement;
   private body: HTMLDivElement;
   private open = false;
+  /** What had focus when the panel opened — focus goes back there (C4). */
+  private opener: HTMLElement | null = null;
+  /** The last payload rendered, so an unchanged poll skips the rebuild (G4). */
+  private lastKey = "";
 
   constructor(parent?: HTMLElement) {
     this.root = document.createElement("div");
@@ -167,6 +184,14 @@ export class DevicePanel {
     // Lives inside the castle dock when device.ts provides one, so chip and
     // panel are one widget rather than two floating boxes.
     this.root.id = "devicePanel";
+    // A modal-ish overlay with the semantics to match (C4): named, closable
+    // from the keyboard, and focus goes in on open and back out on close.
+    this.root.setAttribute("role", "dialog");
+    this.root.setAttribute("aria-modal", "true");
+    this.root.setAttribute("aria-label", "Castle controls");
+    this.root.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.open) this.toggle();
+    });
     this.body = document.createElement("div");
     this.root.appendChild(this.body);
     (parent ?? document.body).appendChild(this.root);
@@ -175,7 +200,15 @@ export class DevicePanel {
   toggle(): void {
     this.open = !this.open;
     this.root.style.display = this.open ? "block" : "none";
-    if (this.open) void this.render();
+    if (this.open) {
+      this.opener = document.activeElement instanceof HTMLElement
+        ? document.activeElement : null;
+      void this.render().then(() =>
+        this.body.querySelector<HTMLButtonElement>("#dpClose")?.focus());
+    } else {
+      this.lastKey = "";             // a re-open renders fresh
+      (this.opener ?? document.getElementById("devMore"))?.focus();
+    }
   }
 
   /** Re-render only while open — a closed panel that polls is a panel lying
@@ -185,15 +218,20 @@ export class DevicePanel {
   }
 
   private async render(): Promise<void> {
+    // C2: while the operator is typing in a panel field, a poll-driven
+    // rebuild would eat the caret — skip it; the next poll catches up.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && this.body.contains(focused)
+        && /^(INPUT|SELECT|TEXTAREA)$/.test(focused.tagName)) return;
     let st: DeviceStatus;
     let files: SdFile[] = [];
     try {
-      st = await getJson<DeviceStatus>("/api/status");
+      st = await api.castleGet<DeviceStatus>("/api/status");
       // The studio answers a castle-less probe 200 {"studio":true}: an
       // empty object that rendered as "vundefined · NaN MB · no SD card"
       // — a plausible, invented control panel (J2-1). Treat it as down.
       if (st.studio || !st.version) throw new Error("no castle");
-      if (st.sd_mounted) files = await getJson<SdFile[]>("/api/files");
+      if (st.sd_mounted) files = await api.castleGet<SdFile[]>("/api/files");
     } catch {
       this.body.innerHTML =
         `<div class="dp__hd"><span class="dp__grow">castle stopped answering</span>` +
@@ -205,6 +243,25 @@ export class DevicePanel {
     const tracks = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
     const onCard = new Set(tracks.map((f) => f.name));
 
+    // G4: the poll answered with the same truth — keep the DOM it already
+    // has (and the scroll, focus and open boot log with it).
+    const key = JSON.stringify([st, files]);
+    if (key === this.lastKey && this.body.childElementCount) return;
+    this.lastKey = key;
+
+    // C2: an innerHTML swap resets everything the reader was holding —
+    // scroll position, keyboard focus, an opened boot log. Save it all,
+    // rebuild, put it back.
+    const keepFocus = document.activeElement instanceof HTMLElement
+      && this.body.contains(document.activeElement)
+      ? document.activeElement.id : "";
+    const keepScroll = { root: this.root.scrollTop, body: this.body.scrollTop };
+    const openDetails = new Set(
+      Array.from(this.body.querySelectorAll("details"))
+        .flatMap((d, i) => (d.open ? [i] : [])));
+    const logOut0 = this.body.querySelector<HTMLPreElement>("#dpLogOut");
+    const keepLog = logOut0 && !logOut0.hidden ? logOut0.textContent : null;
+
     // Class names only — the rules are previewer/panels.css's .dp__* block,
     // so theme and phone CSS reach every row (grade report C2).
     this.body.innerHTML =
@@ -214,6 +271,7 @@ export class DevicePanel {
       `<button id="dpClose" class="dp__x" title="Close this panel" aria-label="Close">✕</button>` +
       `</div>` +
       healthMeta(st) +
+      firmwareDrift(st) +
 
       `<div class="dp__sec">` +
       `<div class="dp__row">` +
@@ -279,6 +337,23 @@ export class DevicePanel {
 
     this.body.querySelector<HTMLButtonElement>("#dpClose")!
       .addEventListener("click", () => this.toggle());
+
+    // The reader's place, restored (C2).
+    this.body.querySelectorAll("details").forEach((d, i) => {
+      if (openDetails.has(i)) d.open = true;
+    });
+    if (keepLog !== null) {
+      const logOut1 = this.body.querySelector<HTMLPreElement>("#dpLogOut");
+      const logBtn1 = this.body.querySelector<HTMLButtonElement>("#dpLog");
+      if (logOut1 && logBtn1) {
+        logOut1.hidden = false;
+        logOut1.textContent = keepLog;
+        logBtn1.textContent = "boot log ▾";
+      }
+    }
+    this.root.scrollTop = keepScroll.root;
+    this.body.scrollTop = keepScroll.body;
+    if (keepFocus) this.body.querySelector<HTMLElement>(`#${keepFocus}`)?.focus();
 
     // Every control below goes through castleAct (device.ts): toast with
     // the castle's reason on failure, and a chip re-poll on success — the
@@ -365,8 +440,7 @@ export class DevicePanel {
       drop.classList.remove("dp__drop--over");
       for (const f of Array.from(e.dataTransfer?.files ?? [])) {
         drop.textContent = `uploading ${f.name} (${(f.size / 1024) | 0} KB)…`;
-        const r = await fetch(`/api/files/${encodeURIComponent(f.name)}`,
-                              { method: "PUT", body: f });
+        const r = await api.castlePut(f.name, f);
         drop.textContent = r.ok ? `✓ ${f.name}` : `✗ ${f.name} failed`;
       }
       cardChanged();                 // the Library below re-reads the card now
@@ -382,9 +456,9 @@ export class DevicePanel {
       if (!showing) {
         logOut.textContent = "loading…";
         try {
-          const r = await fetch("/api/bootlog");
           // The ring keeps ANSI colour codes out already; strip any stragglers.
-          logOut.textContent = (await r.text()).replace(/\x1b\[[0-9;]*m/g, "");
+          logOut.textContent =
+            (await api.castleBootlog()).replace(/\x1b\[[0-9;]*m/g, "");
         } catch {
           logOut.textContent = "could not fetch the boot log";
         }

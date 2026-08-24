@@ -33,9 +33,6 @@ const UNNAMED = `(() => {
   for (const el of document.querySelectorAll(
       "button, a[href], input:not([type=hidden]), select, textarea, summary, [role=slider], [role=button]")) {
     if (!visible(el)) continue;
-    // The zone designer's grid names its controls by column header only
-    // (zone_designer.ts, owned by the light pipeline) — known, not checked here.
-    if (el.closest("#zoneDesigner")) continue;
     if (!nameOf(el)) {
       const tag = el.tagName.toLowerCase();
       seen.push(tag + (el.id ? "#" + el.id : "") + (el.className ? "." + String(el.className).split(" ")[0] : "")

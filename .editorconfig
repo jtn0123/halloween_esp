@@ -1,0 +1,22 @@
+# One statement of the whitespace ground rules for every editor (grade
+# report I5's harmless half). A mechanical whole-tree reformat (ruff format
+# / prettier) was considered and deliberately NOT adopted: it would rewrite
+# all 89 Python files at once, bury real diffs, and press eight files that
+# sit within 25 lines of the 500-line cap. Revisit as its own commit if
+# formatting drift ever shows up in review noise.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{py,ts,mjs,css,yaml,yml,md,html,toml}]
+indent_style = space
+
+[*.py]
+indent_size = 4
+
+[*.{ts,mjs,css,yaml,yml,json}]
+indent_size = 2

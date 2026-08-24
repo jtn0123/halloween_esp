@@ -2,6 +2,14 @@
 # strictness in web/tsconfig.json; this brings tools/ and tests/ up to the
 # same standard. Run both with `make lint` (wired into `make check` and CI).
 
+# Not a distributable package — [project] exists to state the interpreter
+# floor (grade report F5): the venv is 3.13, CI is 3.13, and the Makefile's
+# bare-python3 fallback checks this before running anything.
+[project]
+name = "halloween-castle"
+version = "0"
+requires-python = ">=3.13"
+
 [tool.ruff]
 target-version = "py313"
 line-length = 88

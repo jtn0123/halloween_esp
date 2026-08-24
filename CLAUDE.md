@@ -25,13 +25,21 @@ here. This file is the one that does.
   written but not yet flashed.
 - `tracks/` — the user's imported audio (gitignored except `tracks.json`, the
   provenance manifest) — never a test fixture directory.
+- `previewer/castle-cue-desk.html` is generated AND tracked — a deliberate
+  decision (2026-08-23): the committed inlined build is the portable artifact
+  (open from disk, publish, copy). The repo accepts the multi-MB blob per
+  preview rebuild; `tests/test_gen_previewer.py` budgets its size. The DEVICE
+  never serves it — `sd_sync site` pushes the lean rewrite + per-scene mp3s.
 
 ## Make targets (see `make help`)
 
 `setup` (python3.13 venv) · `audio` · `generate` · `preview` · `validate` ·
 `build` / `upload` / `logs` · `studio` · `track SRC=… ID=…` · `test` · `lint`
 · `check` (= CI) · `e2e` · `check-all` · `coverage` / `audit` (non-gating)
-· `lock` · `bench*` (bare-board dry runs) · `sd-build` / `sd-upload`.
+· `lock` · `bench*` (bare-board dry runs) · `sd-build` / `sd-upload`
+· `publish` (scene tracks + lean page → the castle) · `ota` (build, stop
+audio, flash). The studio's rebuild publishes on its own when a castle
+answers; `docs/RUNBOOK.md` is the operator's end-to-end view.
 
 Run Python through `.venv/bin/python` (the Makefile falls back to `python3`
 only when `.venv` is absent). `make e2e` is `cd web && npx playwright test`;
@@ -78,7 +86,15 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   share an integer hash and are checked frame-exact (`web/test/firmware_parity.mjs`,
   `tests/cxx/`). Change both or neither. The whole parity contract — every
   copy, every check, what to do when one fails — is `docs/PARITY.md`.
-- Stop audio before an OTA. The ring is RGB, not RGBW (`rgbw: false`).
+- Stop audio before an OTA (`make ota` and `sd_sync ota` do it themselves).
+  The ring is RGB, not RGBW (`rgbw: false`).
+- Scene ceiling: **12 scenes max** on this board (~9 KB dram0 each; see the
+  header comment in `scenes/scenes.yaml` and the weekly CI compile's 92%
+  alarm). Past that, cue timelines move to a card-loaded format, not a
+  thirteenth generated script.
+- v5.42 feeds the upload watchdog every 32 KB (was 8 KB). Verified on the
+  emulator only — watch the first big push on real hardware; if an upload
+  reboots the board, revert the cadence in `sd_web.h write_body`.
 
 ## Security position (accepted risk — do not re-raise)
 

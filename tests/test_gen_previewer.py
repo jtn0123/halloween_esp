@@ -243,8 +243,41 @@ class TestInjection(unittest.TestCase):
         self.assertIn("</script>", str(cm.exception))
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
+class TestLeanRewrite(unittest.TestCase):
+    """lean() serves two masters: the studio's /studio/scene-audio/<id> and
+    the device's /site/<sid>.mp3 (grade report A5/G1)."""
+
+    HTML = '{"vigil": "data:audio/mpeg;base64,AAAA", "storm": "data:audio/mpeg;base64,BB=="}'
+
+    def test_default_is_the_studio_route(self) -> None:
+        out = gp.lean(self.HTML)
+        self.assertIn('"vigil": "/studio/scene-audio/vigil"', out)
+        self.assertNotIn("data:audio/mpeg", out)
+
+    def test_device_route_and_suffix(self) -> None:
+        out = gp.lean(self.HTML, route="/site/", suffix=".mp3")
+        self.assertIn('"vigil": "/site/vigil.mp3"', out)
+        self.assertIn('"storm": "/site/storm.mp3"', out)
+
+
+class TestPageWeight(unittest.TestCase):
+    """G1's growth, made visible the moment it happens (grade report D3)."""
+
+    # The built page is 3.31 MB at ten scenes, ~89% inlined audio, growing
+    # ~1.2 MB per song scene. If a new scene pushes it over, raising this
+    # number must be a deliberate act in the same commit — the alternative
+    # is A5/G1: serve the lean page from the device and stop inlining.
+    BUDGET = 3_600_000
+
+    def test_built_page_stays_under_its_byte_budget(self) -> None:
+        page = ROOT / "previewer" / "castle-cue-desk.html"
+        size = page.stat().st_size
+        self.assertLessEqual(
+            size, self.BUDGET,
+            f"previewer/castle-cue-desk.html is {size:,} bytes, over the "
+            f"{self.BUDGET:,}-byte budget. Each song scene adds ~1.2 MB of "
+            "inlined audio (grade report G1/D3). If the growth is deliberate, "
+            "raise BUDGET here in the same commit that adds the scene.")
 
 
 if __name__ == "__main__":

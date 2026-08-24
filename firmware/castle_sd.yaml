@@ -95,6 +95,7 @@ esp32:
 esphome:
   includes:
     - sd_audio.h
+    - sd_web_util.h
     - sd_web_state.h
     - sd_web_stream.h
     - sd_web.h

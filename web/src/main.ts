@@ -75,7 +75,10 @@ const state = createState(firstScene, performance.now());
 let dirty = true;
 let settle = false;
 const markDirty = (): void => { dirty = true; };
-const draws = { frames: 0 };
+// `ms` is per-paint duration samples (capped), so a test can assert the
+// 95th-percentile paint cost without depending on rAF cadence — a hidden
+// tab throttles WHEN frames run, not how long each takes (grade report D4).
+const draws = { frames: 0, ms: [] as number[] };
 (window as unknown as { __castleDraws: typeof draws }).__castleDraws = draws;
 const canvas = el<HTMLCanvasElement>("stage");
 if (!canvas) throw new Error("no #stage canvas in the page");
@@ -217,6 +220,15 @@ const device = deviceBridge({
   // The card's size, for the SD budget — a measured ceiling beats the
   // assumed one, whenever a castle is there to report it.
   onCard: (totalKb) => budget.setCard(totalKb),
+  // The firmware's own scene list (v5.42+): scenes this desk has that the
+  // BOARD does not get their tiles dimmed — the drift behind "unknown
+  // scene", visible before a pick finds it (C6).
+  onScenes: (ids) => {
+    const known = ids === null ? null : new Set(ids);
+    panels.setStaleScenes(known === null
+      ? new Set()
+      : new Set(SCENES.filter((s) => !known.has(s.id)).map((s) => s.id)));
+  },
   // A kiosk is a display, not a console: nothing it does may reach the
   // porch, and it asks often enough to follow what the porch is doing.
   ...(kiosk ? { mirror: false, follow: true, pollMs: KIOSK_POLL_MS } : {}),
@@ -407,12 +419,14 @@ function frame(now: number): void {
 
   const active = state.running || auditioning(mode) || f.flash > 0;
   if (!document.hidden && (active || dirty || settle)) {
+    const t0 = performance.now();
     stage.draw(f.zones, now / 1000, f.flash, f.flashColor);
     insets.draw(f.zones);
     panels.updateMeters(f.zones);
     lightChrome(f.zones);
     wave.mirror(f.zones);
     panels.updateTransport(f.elapsed, state.scene);
+    if (draws.ms.length < 4096) draws.ms.push(performance.now() - t0);
     draws.frames++;
     settle = active || dirty;          // one more paint after the last change
     dirty = false;

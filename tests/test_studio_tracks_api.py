@@ -12,6 +12,7 @@ its continuation.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -186,11 +187,12 @@ class TestDeleteWithScene(ServerCase):
 class TestRouteBoundary(ServerCase):
     """/studio/* is the studio's, /api/* is the castle's — on every verb."""
 
-    def test_unknown_studio_routes_are_404_and_unknown_api_routes_relay(self) -> None:
+    def test_unknown_studio_routes_are_404_and_unknown_api_routes_refuse(self) -> None:
         # A typo'd studio route can no longer silently become a castle
-        # call: outside /api/ the studio answers 404 for itself, and an
-        # unknown /api/* path relays (castle_link.py) — with the fixture's
-        # dead CASTLE_HOST that surfaces as the bridge's 502.
+        # call: outside /api/ the studio answers 404 for itself. An unknown
+        # /api/* path is refused by the relay's allowlist (castle_link.py,
+        # B4) with the known routes in the body — a client bug no longer
+        # reads as a castle outage.
         for method, data in (("GET", None), ("POST", b"{}"), ("DELETE", None),
                              ("PUT", b"x")):
             for path in ("/nope", "/studio/nope", "/studio/tracks/../nope"):
@@ -198,8 +200,10 @@ class TestRouteBoundary(ServerCase):
                 self.assertEqual(code, 404, (method, path))
                 self.assertEqual(json.loads(body)["error"], "not found")
             code, body = self.req(method, "/api/nope", data)
-            self.assertEqual(code, 502, method)
-            self.assertIn("castle", json.loads(body)["error"])
+            self.assertEqual(code, 404, method)
+            d = json.loads(body)
+            self.assertEqual(d["error"], "unknown castle route")
+            self.assertIn("/api/status", d["known"])
 
     def test_old_api_spellings_still_answer_for_one_release(self) -> None:
         """A desk built before the move keeps working; the alias is logged
@@ -232,7 +236,8 @@ class TestRouteBoundary(ServerCase):
         """The desk's mode probe never moves: no castle in reach, the studio
         answers for itself and says so (device.ts reads the marker)."""
         code, d = self.get_json("/api/status")
-        self.assertEqual((code, d), (200, {"studio": True}))
+        self.assertEqual((code, d), (200, {"studio": True,
+                                           "castle": os.environ["CASTLE_HOST"]}))
         self.assertEqual(self.req("GET", "/studio/status")[0], 404)
 
     def test_card_pull_relays_the_file_name_only(self) -> None:

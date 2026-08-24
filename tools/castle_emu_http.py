@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import zlib
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -68,6 +69,10 @@ def _remote_page() -> str:
 
 
 REMOTE_PAGE = _remote_page()
+#: sd_web_site.h set_csp(), byte for byte (E4) — sent on every served page.
+CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
+       "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+       "media-src 'self' data: blob:; connect-src 'self'")
 FALLBACK_PAGE = ("<!doctype html><meta charset=utf-8><title>Castle</title>"
                  "<h1>Castle</h1><p>emulated fallback page</p>")
 
@@ -190,9 +195,18 @@ class Handler(BaseHTTPRequestHandler):
     def h_list(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
+        # B2: ?d=<subdir> lists inside the card, validated like /sd/ paths.
+        sub = wire.query_param(raw, "d")
+        base = self.server.sd_dir
+        if sub:
+            if not wire.safe_subpath(sub):
+                return self._err(400, "bad path")
+            base = base / wire.fs_name(sub)
+            if not base.is_dir():
+                return self._err(404, "no such directory")
         items = []
         skipped = 0
-        for p in sorted(self.server.sd_dir.iterdir()):
+        for p in sorted(base.iterdir()):
             if p.name.startswith("."):
                 continue
             if not wire.safe_name(p.name.encode("utf-8", "surrogateescape")):
@@ -215,7 +229,8 @@ class Handler(BaseHTTPRequestHandler):
         self._raw(200, b"boot log: 2 lines, 0 dropped\n[I][emu] up\n", "text/plain")
 
     def h_remote(self, _raw: bytes) -> None:
-        self._raw(200, REMOTE_PAGE.encode(), "text/html; charset=utf-8")
+        self._raw(200, REMOTE_PAGE.encode(), "text/html; charset=utf-8",
+                  {"Content-Security-Policy": CSP})
 
     def _subpath(self, raw: bytes, prefix: bytes) -> bytes:
         rel = wire.url_decode(raw[len(prefix):])
@@ -223,12 +238,17 @@ class Handler(BaseHTTPRequestHandler):
         return rel[:q] if q >= 0 else rel
 
     def _send_file(self, f: Path, encoding: str | None = None,
-                   ctype: str | None = None) -> bool:
+                   ctype: str | None = None, csp: bool = False) -> bool:
         if not f.is_file():
             return False
-        extra = {"Content-Encoding": encoding} if encoding else None
+        extra: dict[str, str] = {}
+        if encoding:
+            extra["Content-Encoding"] = encoding
+        if csp:
+            extra["Content-Security-Policy"] = CSP
         self._raw(200, f.read_bytes(),
-                  ctype or _TYPES.get(f.suffix, "application/octet-stream"), extra)
+                  ctype or _TYPES.get(f.suffix, "application/octet-stream"),
+                  extra or None)
         return True
 
     def h_sd_get(self, raw: bytes) -> None:
@@ -245,16 +265,18 @@ class Handler(BaseHTTPRequestHandler):
         if not wire.safe_subpath(rel):
             return self._err(400, "bad path")
         f = self.server.sd_dir / "site" / wire.fs_name(rel)
-        if not self.server.sd_mounted or not self._send_file(f):
+        if not self.server.sd_mounted or not self._send_file(f, csp=True):
             return self._err(404, "not on card")
 
     def h_root(self, _raw: bytes) -> None:
         site = self.server.sd_dir / "site"
         if self.server.sd_mounted and (
-                self._send_file(site / "index.html.gz", "gzip", _TYPES[".html"])
-                or self._send_file(site / "index.html")):
+                self._send_file(site / "index.html.gz", "gzip", _TYPES[".html"],
+                                csp=True)
+                or self._send_file(site / "index.html", csp=True)):
             return
-        self._raw(200, FALLBACK_PAGE.encode(), "text/html; charset=utf-8")
+        self._raw(200, FALLBACK_PAGE.encode(), "text/html; charset=utf-8",
+                  {"Content-Security-Policy": CSP})
 
     # -- POST: show control, all queued ------------------------------------
 
@@ -324,12 +346,23 @@ class Handler(BaseHTTPRequestHandler):
             sub, prefix = "site", b"/api/site/"
         if raw.startswith(b"/api/scenes/"):
             sub, prefix = "scenes", b"/api/scenes/"
+        if sub == "site":
+            m = self._content_len()
+            # E3: a desk page has a known plausible size; the firmware
+            # refuses before reading a byte.
+            if m is not None and m > 8 * 1024 * 1024:
+                return self._err(413, "site file too large")
         name = wire.name_from_uri(raw, prefix)
         if not wire.safe_name(name):
             return self._err(400, "bad filename")
         n = self._content_len()
         if n is None:
             return self._idf(400)
+        # B3: write_body's free-space precondition (64 KB slack), when the
+        # emulated card declares a size (sd_free_kb None = plenty of room).
+        free_kb = self.server.sd_free_kb
+        if free_kb is not None and n // 1024 + 64 > free_kb:
+            return self._err(507, "not enough room on the card")
         dest = self.server.sd_dir / sub if sub else self.server.sd_dir
         dest.mkdir(parents=True, exist_ok=True)
         target = dest / wire.fs_name(name)
@@ -342,11 +375,13 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             return self._err(500, "cannot create file")
         written = 0
+        crc = 0
         with f:
             try:
                 for chunk in self._body_chunks(n):
                     f.write(chunk)
                     written += len(chunk)
+                    crc = zlib.crc32(chunk, crc)   # B5: sd_sync compares
             except OSError:            # TimeoutError is one of these
                 pass
         if written != n:
@@ -359,7 +394,7 @@ class Handler(BaseHTTPRequestHandler):
             part.unlink(missing_ok=True)
             return self._err(500, "rename failed")
         card = f"/sd/{sub}/{target.name}" if sub else f"/sd/{target.name}"
-        self._json({"path": card, "bytes": written})
+        self._json({"path": card, "bytes": written, "crc32": "%08x" % crc})
 
     def h_delete(self, raw: bytes) -> None:
         if not self.server.sd_mounted:

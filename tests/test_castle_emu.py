@@ -305,9 +305,11 @@ class TestJsonEscaping(EmuCase):
         self.assertEqual(st["track"], 'say "boo".mp3')
 
     def test_the_escape_table_is_the_firmwares(self) -> None:
-        """Read sd_web.h json_escape: every `case` it handles is one
-        json.dumps short-escapes, and the fallback is \\u%04x below 0x20."""
-        src = (Path(__file__).resolve().parent.parent / "firmware" / "sd_web.h").read_text()
+        """Read the firmware's json_escape: every `case` it handles is one
+        json.dumps short-escapes, and the fallback is \\u%04x below 0x20.
+        (It lives in sd_web_util.h since the v5.42 helper-layer split.)"""
+        src = (Path(__file__).resolve().parent.parent / "firmware"
+               / "sd_web_util.h").read_text()
         body = src[src.index("inline std::string json_escape"):]
         body = body[:body.index("\n}\n")]
         cases = set(re.findall(r"case '(\\?.)': out \+= \"(\\\\.+?)\"; break;", body))
