@@ -4,6 +4,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
+      day: monday
     open-pull-requests-limit: 5
     assignees: [jtn0123]
     groups:
@@ -16,6 +17,7 @@ updates:
     directory: /web
     schedule:
       interval: weekly
+      day: monday
     open-pull-requests-limit: 5
     assignees: [jtn0123]
     groups:
@@ -28,5 +30,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+      day: monday
     open-pull-requests-limit: 5
     assignees: [jtn0123]
