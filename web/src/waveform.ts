@@ -25,6 +25,7 @@ import { clock, loadClip, onsetTimes, saveClip, snapClip } from "./wave_clip.js"
 import { trimOwner } from "./import_opts.js";
 import { initOptsBridge } from "./wave_opts_bridge.js";
 import { buildWaveChrome } from "./wave_chrome.js";
+import { el as byId } from "./dom.js";
 
 export interface WaveformDeps {
   /**
@@ -77,7 +78,7 @@ export interface WaveformApi {
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
 export function initWaveform(deps: WaveformDeps): WaveformApi {
-  const host = document.getElementById(deps.containerId ?? "trkWave");
+  const host = byId(deps.containerId ?? "trkWave");
   if (!host) {
     // The editor is optional chrome. A page generated before this panel existed
     // has no #trkWave, and that is not worth taking the whole desk down for.

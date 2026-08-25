@@ -140,20 +140,27 @@ class JsonHandler(BaseHTTPRequestHandler):
         hi = min(hi, total - 1)
         if not partial or lo > hi:
             lo, hi, partial = 0, total - 1, False
-        # Only the bytes asked for leave the disk: the old read_bytes() pulled
-        # a whole four-minute import into RAM to answer a 64 KB probe.
-        with p.open("rb") as fh:
-            fh.seek(lo)
-            chunk = fh.read(hi + 1 - lo)
+        length = hi + 1 - lo
         self.send_response(206 if partial else 200)
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Content-Length", str(len(chunk)))
+        self.send_header("Content-Length", str(length))
         if partial:
             self.send_header("Content-Range", f"bytes {lo}-{hi}/{total}")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        self.wfile.write(chunk)
+        # Streamed in 64 KB slices: the old read_bytes() pulled a whole
+        # four-minute import into RAM to answer a 64 KB probe, and the first
+        # fix still buffered the full file whenever no Range was sent.
+        with p.open("rb") as fh:
+            fh.seek(lo)
+            left = length
+            while left > 0:
+                chunk = fh.read(min(65536, left))
+                if not chunk:
+                    break                     # file shrank mid-serve
+                self.wfile.write(chunk)
+                left -= len(chunk)
 
     def body(self) -> bytes:
         try:

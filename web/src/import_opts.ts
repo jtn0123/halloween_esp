@@ -12,6 +12,7 @@
  */
 
 import type { TrackInfo } from "./tracks.js";
+import { el as byId, input as byInput } from "./dom.js";
 
 /**
  * The option row as it goes out to the server. Deliberately strings, not
@@ -140,7 +141,7 @@ const WATCHED = ["trkStart", "trkTake", "trkBitrate", "trkFormat",
  */
 export function initImportOpts(flashUsed: () => number): OptsForm {
   const el = (id: string): HTMLInputElement | null =>
-    document.getElementById(id) as HTMLInputElement | null;
+    byInput(id);
   const val = (id: string): string => el(id)?.value.trim() ?? "";
 
   const values = (): ImportOpts => ({
@@ -154,9 +155,9 @@ export function initImportOpts(flashUsed: () => number): OptsForm {
 
   function sync(): void {
     const o = values();
-    const cap = document.getElementById("trkCap");
+    const cap = byId("trkCap");
     if (cap) cap.innerHTML = capacityHtml(o.bitrate, o.channels, flashUsed());
-    const hint = document.getElementById("trkOptsHint");
+    const hint = byId("trkOptsHint");
     if (hint) hint.textContent = optsHint(o);
     // Bitrate is meaningless for the lossless containers; grey it out rather
     // than letting someone set a number that gets silently discarded.
@@ -170,13 +171,13 @@ export function initImportOpts(flashUsed: () => number): OptsForm {
 
   for (const id of WATCHED) {
     for (const ev of ["input", "change"]) {
-      document.getElementById(id)?.addEventListener(ev, sync);
+      byId(id)?.addEventListener(ev, sync);
     }
   }
   // A human keystroke in either trim box makes the values theirs. isTrusted
   // is what separates it from the clip editor's synthetic writes.
   for (const t of TRIM_IDS) {
-    document.getElementById(t)?.addEventListener("input", e => {
+    byId(t)?.addEventListener("input", e => {
       if (e.isTrusted) setTrimOwner(null);
     });
   }
@@ -200,7 +201,7 @@ export function initImportOpts(flashUsed: () => number): OptsForm {
 export function fillOptsFrom(t: TrackInfo): void {
   const o = t.opts || {};
   const set = (id: string, v: string | undefined | null): void => {
-    const el = document.getElementById(id) as HTMLInputElement | null;
+    const el = byInput(id);
     if (!el || v === undefined || v === null || el.value === String(v)) return;
     el.value = String(v);
     el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -215,7 +216,7 @@ export function fillOptsFrom(t: TrackInfo): void {
   set("trkSens", o.sensitivity != null ? String(o.sensitivity) : "1.1");
   set("trkFadeIn", o.fade_in != null ? String(o.fade_in) : "");
   set("trkFadeOut", o.fade_out != null ? String(o.fade_out) : "");
-  const norm = document.getElementById("trkNorm") as HTMLInputElement | null;
+  const norm = byInput("trkNorm");
   if (norm && norm.checked !== !!o.normalize) {
     norm.checked = !!o.normalize;
     norm.dispatchEvent(new Event("change", { bubbles: true }));
@@ -224,7 +225,7 @@ export function fillOptsFrom(t: TrackInfo): void {
   // reads as "unset" (rounds 2–3). Snap those back to their first option.
   // trkRate is exempt: its default option's value IS "".
   for (const [id, dflt] of [["trkCh", "2"], ["trkFormat", "mp3"]] as const) {
-    const sel = document.getElementById(id) as HTMLSelectElement | null;
+    const sel = byId<HTMLSelectElement>(id);
     if (sel && sel.value === "") set(id, dflt);
   }
 }
@@ -239,7 +240,7 @@ export function fillOptsFrom(t: TrackInfo): void {
 
 const TRIM_IDS = ["trkStart", "trkTake"] as const;
 const trimEl = (id: string): HTMLInputElement | null =>
-  document.getElementById(id) as HTMLInputElement | null;
+  byInput(id);
 
 /** The track id the clip editor wrote the trim for, or null: typed/blank. */
 export const trimOwner = (): string | null =>

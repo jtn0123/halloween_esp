@@ -12,7 +12,9 @@ Never skip or disable a test to get there: fix it or list it as follow-up.
 The reasoning behind every rule here lives in `CLAUDE.md`, which is written
 for agents but reads fine for people.
 
-**Rules.** Every tracked text file stays under 500 lines (`tools/check_loc.py`,
+**Rules.** The security posture is local-only by decision, not omission —
+read [docs/SECURITY.md](docs/SECURITY.md) before "fixing" auth or Origin
+checks. Every tracked text file stays under 500 lines (`tools/check_loc.py`,
 prose included — split on a real seam). ruff and mypy clean per `pyproject.toml`.
 Tests never touch `tracks/`, `scenes/` or a real castle: use `CASTLE_TRACKS`,
 `CASTLE_SCENES` and `CASTLE_HOST` (see CLAUDE.md "Sandboxing").

@@ -102,6 +102,11 @@ jobs:
         run: .venv/bin/python tools/render_audio.py
       - run: npm ci
         working-directory: web
+      # The previewer page is generated, not tracked (2 MB a revision was
+      # the whole repo's growth); the e2e global-setup refuses to run
+      # without it. After npm ci: the build inlines an esbuild bundle.
+      - name: build previewer page
+        run: .venv/bin/python tools/gen_previewer.py
       - run: npx tsc --noEmit
         working-directory: web
       - name: engine unit tests

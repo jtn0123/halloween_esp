@@ -17,6 +17,7 @@ import { startEta, type EtaHandle } from "./eta.js";
 import type { ImportOpts } from "./import_opts.js";
 import type { TrackStatus } from "./track_status.js";
 import type { TrackInfo } from "./tracks.js";
+import { req as byReq } from "./dom.js";
 
 const PHASE_TEXT: Record<string, string> = {
   queued: "waiting for the previous job",
@@ -38,8 +39,8 @@ export interface UrlImportDeps {
 }
 
 export function wireUrlImport({ say, status, opts, drawTracks, imported }: UrlImportDeps): void {
-  const btn = document.getElementById("trkGet") as HTMLButtonElement;
-  const urlBox = document.getElementById("trkUrl") as HTMLInputElement;
+  const btn = byReq<HTMLButtonElement>("trkGet", "track_import_url");
+  const urlBox = byReq<HTMLInputElement>("trkUrl", "track_import_url");
 
   btn.addEventListener("click", () => void (async () => {
     const url = urlBox.value.trim();

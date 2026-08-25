@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import math
 import pathlib
+import sys
 
 W, H = 1380, 1030
 RAIL = 56                      # +5 V bus
@@ -250,8 +251,8 @@ PADS_B = {"DIN":922,"LRC":946,"BCLK":970,"GAIN":994,"SD":1018,"GND":1042,"VIN":1
 
 for ax, nm, pads in ((AMP_A,"Amp A",PADS_A), (AMP_B,"Amp B",PADS_B)):
     A(box(ax, AY, AW, AH, nm))
-    A(f'<text class="modsub fb-only" x="{ax+16}" y="{AY+45}">MAX98357A · left channel</text>'
-      f'<text class="modsub fl-only" x="{ax+16}" y="{AY+45}">MAX98357A · (L+R)/2</text>')
+    A(f'<text class="modsub fb-only" x="{ax+16}" y="{AY+45}">MAX98357A · left · SD pinned</text>'
+      f'<text class="modsub fl-only" x="{ax+16}" y="{AY+45}">MAX98357A · (L+R)/2 · full level</text>')
     for p_, x_ in pads.items():
         c = {"LRC":"i2s","BCLK":"i2s","DIN":"i2s","SD":"v5","VIN":"v5",
              "GND":"gnd","GAIN":"free"}[p_]
@@ -260,7 +261,7 @@ for ax, nm, pads in ((AMP_A,"Amp A",PADS_A), (AMP_B,"Amp B",PADS_B)):
     net("v5", wire([(pads["VIN"],AY),(pads["VIN"],SPUR)], "v5"))
     net("v5", '<g class="res">'
         + wire([(pads["SD"],AY),(pads["SD"],SPUR)], "v5", width=2.4)
-        + resistor(pads["SD"], (AY+SPUR)/2, "100 kΩ", True, pads["SD"]+11, (AY+SPUR)/2+4)
+        + resistor(pads["SD"], (AY+SPUR)/2, "100 kΩ opt", True, pads["VIN"]+8, (AY+SPUR)/2+4)
         + '</g>')
     net("gnd", wire([(pads["GND"],AY+AH),(pads["GND"],AY+AH+16)], "gnd"))
     A(gnd_sym(pads["GND"], AY+AH+16))
@@ -277,14 +278,14 @@ for ax, nm, pads in ((AMP_A,"Amp A",PADS_A), (AMP_B,"Amp B",PADS_B)):
         + f'<text class="pinsub" x="{sx-10}" y="{AY+87}" text-anchor="end">\u2212</text>')
 
 A(f'<text class="note" x="{AMP_A}" y="{AY+AH+58}">The breakout\u2019s own pin row reads LRC BCLK DIN GAIN SD GND VIN; pads are placed here for routing.</text>')
-A(f'<text class="note fb-only" x="{AMP_A}" y="{AY+AH+74}">GAIN left open = 9 dB. SD pulled to 5 V selects the LEFT channel \u2014 full level on a mono stream.</text>')
-A(f'<text class="note fl-only" x="{AMP_A}" y="{AY+AH+74}">GAIN left open = 9 dB. SD left EMPTY = (L+R)/2 \u2014 both amps play the mono show, at most 6 dB quieter.</text>')
+A(f'<text class="note fb-only" x="{AMP_A}" y="{AY+AH+74}">GAIN left open = 9 dB. SD \u2192 5 V via 100 k\u03a9 pins the LEFT channel \u2014 optional insurance, not a fix; the default is already full level.</text>')
+A(f'<text class="note fl-only" x="{AMP_A}" y="{AY+AH+74}">GAIN left open = 9 dB. SD left EMPTY = (L+R)/2 \u2014 and ESPHome\u2019s mono duplicates both slots, so that IS full level.</text>')
 
 # 5 V spur, hopping every signal drop that crosses it.
 drops = sorted([PADS_A[k] for k in ("DIN","LRC","BCLK")]
              + [PADS_B[k] for k in ("DIN","LRC","BCLK")])
 net("v5", wire([(1320,RAIL),(1320,SPUR),(AMP_A-24,SPUR)], "v5", hops=tuple(drops)))
-A(f'<text class="raillbl raillbl--v5" x="1330" y="{SPUR+5}">5 V SPUR</text>')
+A(f'<text class="raillbl raillbl--v5" x="1322" y="{SPUR+5}">5 V SPUR</text>')
 
 # ── The I2S bus ──────────────────────────────────────────────────────────
 # DIN comes off the LEFT header, BCLK and LRC off the RIGHT one. That split
@@ -317,7 +318,10 @@ for sig, ch, side, sy, feed in BUS:
 # rest of the file, which declares no charset when served bare.
 OPEN_MARK = 'amplifiers connected between them.">'
 svg = "\n".join(S).encode("ascii", "xmlcharrefreplace").decode()
-page = pathlib.Path(__file__).resolve().parents[1] / "docs" / "castle-wiring.html"
+# An argv path lets the smoke test splice into a COPY; without one this
+# writes the real page, as `make`/hand runs always have.
+page = (pathlib.Path(sys.argv[1]) if len(sys.argv) > 1
+        else pathlib.Path(__file__).resolve().parents[1] / "docs" / "castle-wiring.html")
 html = page.read_text()
 start = html.index(OPEN_MARK) + len(OPEN_MARK)
 end = html.index("</svg>", start)

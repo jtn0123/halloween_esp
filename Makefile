@@ -141,7 +141,13 @@ test-fast:
 # Measured 83% on 2026-08-23 — the floor is the measurement minus one, and
 # it moves UP whenever a fresh `make coverage` beats it (grade report D1).
 COVERAGE_MIN := 82
+# Both tools live in requirements-dev.txt; a venv from before they were added
+# dies with "No module named …", which reads as breakage instead of what it
+# is — a stale venv. Say so. (grade report I2, 2026-08-24)
+NEED_DEV_TOOL = @$(PY) -c "import $(1)" 2>/dev/null \
+	|| { echo "$(1) missing — .venv predates a dev dependency; run 'make setup'"; exit 1; }
 coverage:
+	$(call NEED_DEV_TOOL,coverage)
 	@$(PY) -m coverage run --source=tools -m unittest discover -s tests -q
 	@$(PY) -m coverage report --include='tools/*' --skip-empty
 
@@ -155,6 +161,7 @@ coverage-gate: coverage
 # anyone's memory. Re-run after `make lock`.
 AUDIT_IGNORES := $(shell awk '/^[A-Z]/{print "--ignore-vuln " $$1}' .pip-audit-ignore)
 audit:
+	$(call NEED_DEV_TOOL,pip_audit)
 	@$(PY) -m pip_audit -r requirements.lock --no-deps --progress-spinner off \
 		$(AUDIT_IGNORES) \
 		|| echo "(advisories above are informational — see .pip-audit-ignore)"
@@ -171,7 +178,7 @@ lint:
 	@$(PY) -m ruff check tools tests
 	@$(PY) -m mypy tools tests
 
-check: test lint
+check: audio test lint
 	@$(PY) tools/check_image.py castle-sd
 	@$(PY) tools/check_loc.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"

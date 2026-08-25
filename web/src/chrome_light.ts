@@ -15,8 +15,9 @@
  */
 
 import type { ZoneRender } from "./show.js";
+import { el as byId } from "./dom.js";
 
-const el = (id: string): HTMLElement | null => document.getElementById(id);
+const el = (id: string): HTMLElement | null => byId(id);
 
 const shell = el("stageShell");
 const head = el("head");

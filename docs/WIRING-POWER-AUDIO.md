@@ -78,49 +78,114 @@ the board, not for 4 A of LEDs.
 I2S is a bus. Both MAX98357A boards get the **same three signal wires** —
 there's no second set of pins to find, and no second peripheral to configure.
 
-| MAX98357A pin | Connect to |
-|---|---|
-| `VIN` | 5 V bus |
-| `GND` | common ground |
-| `DIN` | GPIO15 (A3) — **both amps** |
-| `BCLK` | GPIO11 (D11) — **both amps** |
-| `LRC` | GPIO12 (D12) — **both amps** |
-| `SD` | 100 kΩ to 5 V — **both amps** (see below) |
-| `GAIN` | leave unconnected for the default 9 dB |
-| `+` / `−` | speaker terminals |
+And both play **the same audio**. This is not a stereo pair; it is one mono
+show coming out of two boxes, one per tower. That is deliberate — the scenes
+are rendered mono, and the castle is a single sound source that happens to be
+several feet wide.
 
-### The SD pin, and why 100 kΩ
+### The wire table
 
-`SD` is not just a shutdown pin — its *voltage* selects which channel the amp
-plays. The chip has an internal 100 kΩ pulldown, and the Adafruit breakout
-adds a 1 MΩ pullup to VIN, so the pin sits at about 0.45 V by default:
+Listed in the order the pins actually sit on the Adafruit breakout, so you can
+read straight down the header with the board in your hand:
+
+| Pin | Connect to | Why |
+|---|---|---|
+| `LRC` | GPIO12 (D12) — **both amps** | word clock, shared |
+| `BCLK` | GPIO11 (D11) — **both amps** | bit clock, shared |
+| `DIN` | GPIO15 (A3) — **both amps** | data, shared |
+| `GAIN` | leave unconnected | the default 9 dB |
+| `SD` | **leave unconnected** | selects (L+R)/2 — which is full level here |
+| `GND` | common ground | — |
+| `VIN` | 5 V bus | 0.8 A peak each — see [Power at the amps](#power-at-the-amps) |
+| `+` / `−` | speaker terminals | bridge-tied — neither one is ground |
+
+Those three GPIOs come from `firmware/castle.yaml` (`pin_i2s_dout`,
+`pin_i2s_bclk`, `pin_i2s_lrclk`). If they ever move, they move there.
+
+### The SD pin — leave it empty
+
+`SD` is not just a shutdown pin: its *voltage* selects which channel the amp
+plays. The chip has an internal 100 kΩ pulldown and the Adafruit breakout adds
+a 1 MΩ pullup to VIN, so with nothing else attached the pin sits at
+5 V × 100k/1.1M = **0.45 V**.
 
 | SD voltage | Amp plays |
 |---|---|
 | < 0.16 V | shut down |
-| 0.16 – 0.77 V | (L+R)/2 — **the factory default** |
+| 0.16 – 0.77 V | (L+R)/2 — **where it sits with nothing attached** |
 | 0.77 – 1.4 V | right channel |
 | > 1.4 V | left channel |
 
-Adding **100 kΩ from `SD` to 5 V** pulls the pin to roughly 2.6 V, which
-selects **left** on both amps.
+So out of the bag, both amps average the two I2S slots. **That is the right
+setting for this firmware, it is full level, and you should leave it alone.**
 
-That looks wrong for stereo, and it is deliberate. The firmware renders and
-plays **mono** (`channel: mono`, `num_channels: 1`). Depending on how a mono
-frame gets packed into the I2S slots, the right slot may carry silence — in
-which case an amp in the default (L+R)/2 mode plays at **half amplitude, 6 dB
-down**. Pinning both amps to *left* gives full level whichever way the frame
-is packed, so it is the choice that can't be wrong.
+The reason is what ESPHome does with `channel: mono`:
 
-If you later want real stereo, that's two changes together — the amps and the
-firmware, never one without the other:
+> `channel: mono` compiles to `slot_mode = I2S_SLOT_MODE_MONO` together with
+> `slot_mask = I2S_STD_SLOT_BOTH` (ESPHome 2026.7.4,
+> `components/i2s_audio/__init__.py` — anything that isn't `stereo` gets mono
+> slot mode, and anything that isn't `left`/`right` gets both slots). In
+> ESP-IDF's standard-mode transmitter, mono with both slots enabled
+> **duplicates the sample into both slots**. The right slot carries the same
+> audio as the left, not silence.
 
-- Left amp: 100 kΩ from `SD` to 5 V.
-- Right amp: ~760 kΩ from `SD` to 5 V (330 k + 330 k + 100 k in series is the
-  combination Adafruit suggests), landing the pin near 1.0 V.
-- Firmware: `channel: stereo` on the speaker, and re-render the scene audio
-  as 2-channel — which roughly doubles the audio size, so check the budget
-  card before committing.
+Average two identical slots and you get the original back: (L+L)/2 = L. Full
+level, no resistor, nothing to solder.
+
+**The 6 dB trap is real — it just isn't this configuration.** Set `channel:
+left` or `channel: right` and `slot_mask` narrows to that one slot while the
+other transmits zeros; an amp averaging them then plays at half amplitude,
+6 dB down. If the castle ever goes quiet after someone edits the `speaker:`
+block, that is the first line to read.
+
+### If you want to pin it anyway
+
+100 kΩ from `SD` to 5 V forces **left** on both amps. That is also full level,
+and it keeps working if someone later changes `channel:`. Insurance, not a
+requirement — two resistors against a config edit you would notice within one
+scene.
+
+The arithmetic, for whichever value you reach for: the external resistor sits
+in parallel with the breakout's onboard 1 MΩ, and the pair divides against the
+chip's internal 100 kΩ pulldown.
+
+| `SD` → 5 V | Pin sits at | Amp plays |
+|---|---:|---|
+| nothing | 0.45 V | (L+R)/2 — **the default, and correct here** |
+| 1 MΩ | 0.83 V | right, but only 60 mV clear of the boundary |
+| 760 kΩ | 0.94 V | right, mid-band |
+| 100 kΩ | 2.62 V | left |
+
+Adafruit publishes the thresholds but not the resistor values — their guide
+says to experiment. The table above is that experiment done once, on paper.
+
+### If you later want real stereo
+
+Three changes, and they only work as a set:
+
+- Left amp: 100 kΩ from `SD` to 5 V (lands at 2.62 V).
+- Right amp: 760 kΩ from `SD` to 5 V — 330 k + 330 k + 100 k in series
+  (lands at 0.94 V, near the middle of the right-channel band).
+- Firmware: `channel: stereo` on `castle_speaker` **and** `num_channels: 2` in
+  the media player's `announcement_pipeline`, then re-render the scene audio
+  as 2-channel. That roughly doubles the audio size, so check the budget card
+  before committing.
+
+Change the amps without the firmware and one speaker goes silent. Change the
+firmware without the amps and both play half the mix.
+
+### Power at the amps
+
+Each amp peaks near **0.8 A** on bass transients — 1.6 A for the pair, and it
+arrives as a spike rather than a level. Put a **100–470 µF electrolytic across
+`VIN` and `GND` at each amp**, close to the board, observing polarity. The
+breakout's own decoupling is sized for the chip, not for a shared rail that is
+also feeding pixels; without it the bass hits show up as pixel flicker, which
+then gets debugged as a data fault for an hour.
+
+Feed both amps from the **5 V bus**. Not from the Feather's 3V3 pin — the
+MAX98357A will run at 3.3 V, but output power scales with the square of the
+supply, so you lose more than half the volume and gain nothing.
 
 ### Speaker wiring
 
@@ -129,10 +194,11 @@ ground.
 
 - Never connect a speaker `−` to ground. You will short half the bridge.
 - Never join the two amps' outputs.
-- 4 Ω or 8 Ω, rated 3 W or better. 4 Ω is louder; 8 Ω runs cooler.
-- If it's too quiet, tie `GAIN` to GND for 12 dB, or 100 kΩ to GND for 15 dB.
-
----
+- 4 Ω or 8 Ω, rated 3 W or better. 4 Ω is louder (3.2 W); 8 Ω runs cooler
+  (1.8 W).
+- Too quiet? `GAIN` straight to GND is 12 dB; 100 kΩ from `GAIN` to GND is
+  15 dB.
+- Too loud? `GAIN` straight to VIN is 6 dB; 100 kΩ from `GAIN` to VIN is 3 dB.
 
 ### Testing the speakers
 

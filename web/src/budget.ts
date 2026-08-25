@@ -27,6 +27,7 @@
 
 import { sceneTint } from "./scene_tint.js";
 import type { Scene } from "./types.js";
+import { el as byId } from "./dom.js";
 
 /** firmware/partitions_single_app.csv — app0, 0x3E0000. */
 const APP_PARTITION = 0x3E0000;
@@ -114,7 +115,7 @@ function siteCost(): { bytes: number; meta: string } {
 }
 
 function must(id: string): HTMLElement {
-  const el = document.getElementById(id);
+  const el = byId(id);
   if (!el) throw new Error(`budget: missing #${id}`);
   return el;
 }

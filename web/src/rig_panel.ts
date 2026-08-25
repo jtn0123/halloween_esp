@@ -20,6 +20,7 @@ import {
   type RigState,
 } from "./rig.js";
 import type { ZoneId } from "./types.js";
+import { el as byId } from "./dom.js";
 
 const SPOT: Record<ZoneId, string> = {
   towerL: "Tower L",
@@ -38,7 +39,7 @@ export interface RigHooks {
 }
 
 export function createRigPanel(rig: RigState, hooks: RigHooks): RigPanel {
-  const found = document.getElementById("rigPanel");
+  const found = byId("rigPanel");
   if (!found) return { refresh: () => {} };
   // Retyped rather than used directly: `render` and `rowFor` are hoisted
   // declarations, and TypeScript will not carry a narrowing from the guard
@@ -88,7 +89,7 @@ export function createRigPanel(rig: RigState, hooks: RigHooks): RigPanel {
    *  "three zones · 21 px" in the template, which stopped being true the
    *  moment a fixture could be swapped. */
   function retitleMasthead(pixels: number): void {
-    const eyebrow = document.getElementById("rigEyebrow");
+    const eyebrow = byId("rigEyebrow");
     if (!eyebrow) return;
     eyebrow.textContent = `three zones · ${pixels} px`;
     eyebrow.title = "ESP32-S2 Feather · MAX98357A I²S amp · "

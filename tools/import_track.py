@@ -371,9 +371,15 @@ def _import(args: argparse.Namespace, o: dict, source: str, is_url: bool,
         raise SystemExit(f"no such file: {src.name} — the remembered source "
                          "is gone; import it again from the original")
 
-    tid = args.refresh or args.id or "".join(
-        c if c.isalnum() else "_" for c in src.stem.lower()
-    ).strip("_")[:32]
+    # Truncate BEFORE stripping, and cut at the last word boundary inside
+    # the limit — "the_citizens_of_halloween___this" (cut mid-title, dangling
+    # separators kept) is what the other order produces, on the desk and on
+    # the card.
+    slug = "".join(
+        c if c.isalnum() else "_" for c in src.stem.lower())[:32]
+    if "_" in slug[1:] and len(slug) == 32:
+        slug = slug[:slug.rindex("_")]
+    tid = args.refresh or args.id or slug.strip("_")
     # The derived branch above is sanitised by construction; an EXPLICIT id
     # was not, and the studio forwards the browser's id verbatim — so
     # "../../audio/01_vigil" used to walk out of tracks/ and overwrite show

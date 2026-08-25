@@ -29,6 +29,7 @@ import { createPreview } from "./preview.js";
 // re-exported so the panel modules keep their old import path.
 export type { TrackInfo, TrackOpts } from "./types.js";
 import type { Scene, TrackInfo } from "./types.js";
+import { req as byReq } from "./dom.js";
 
 export interface TracksDeps {
   /** The show as loaded, for the capacity readout's "alongside the current show". */
@@ -83,7 +84,7 @@ export function initTracks(deps: TracksDeps): TracksApi {
      in the template, and the cast lets it fail as a TypeError at first use —
      the same way the untyped version did — instead of quietly doing nothing. */
   const byId = <T extends HTMLElement = HTMLElement>(id: string): T =>
-    document.getElementById(id) as T;
+    byReq<T>(id, "tracks");
 
   const T = {
     mode: "static" as "static" | "studio",

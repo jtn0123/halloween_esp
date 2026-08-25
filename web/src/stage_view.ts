@@ -1,3 +1,4 @@
+import { el as byId } from "./dom.js";
 /**
  * Castle / Pixels / Both — which of the two stage renders is on screen.
  *
@@ -21,7 +22,7 @@ const isMode = (v: string | null): v is Mode =>
   v !== null && (MODES as readonly string[]).includes(v);
 
 export function initStageView(): void {
-  const sel = document.getElementById("viewSel");
+  const sel = byId("viewSel");
   if (!sel) return;                  // kiosk or a stripped page: nothing to bind
 
   let mode: Mode = "both";

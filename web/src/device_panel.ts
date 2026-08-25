@@ -28,7 +28,7 @@
 
 import { api } from "./api.js";
 import { cardChanged } from "./castle_bus.js";
-import { esc } from "./dom.js";
+import { esc, el as byId } from "./dom.js";
 import { castleAct } from "./device.js";
 import { lightsMarkup, sectionHead, speakerMarkup, testPct, wireTests }
   from "./device_tests.js";
@@ -207,7 +207,7 @@ export class DevicePanel {
         this.body.querySelector<HTMLButtonElement>("#dpClose")?.focus());
     } else {
       this.lastKey = "";             // a re-open renders fresh
-      (this.opener ?? document.getElementById("devMore"))?.focus();
+      (this.opener ?? byId("devMore"))?.focus();
     }
   }
 

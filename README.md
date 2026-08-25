@@ -6,7 +6,8 @@ pre-rendered spooky audio, and a cue engine that keeps the two in step.
 
 See [PROJECT_NOTES.md](PROJECT_NOTES.md) for the design record and the hardware
 research behind every choice here — it is an index; the record itself lives in
-parts under [`docs/notes/`](docs/notes/). For the night-to-night view —
+parts under [`docs/notes/`](docs/notes/). The trust model — local-only, two
+permanently accepted risks — is [docs/SECURITY.md](docs/SECURITY.md). For the night-to-night view —
 adding a song end to end, pushing to the castle, what to check when a scene
 will not play — see [docs/RUNBOOK.md](docs/RUNBOOK.md).
 

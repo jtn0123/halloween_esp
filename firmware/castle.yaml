@@ -265,6 +265,8 @@ packages:
   # 500-line cap; the variants still `!extend castle_media`).
   audio_stack: !include castle_audio.yaml
 
+  # The PIR and the manual scene/diagnostic buttons.
+  inputs: !include castle_inputs.yaml
 globals:
   # The desk's "sound on the Mac" hush: /api/volume?v=0 sets it, louder clears
   # it, every scene's volume_set respects it (else the idle loop un-hushed the porch).
@@ -368,98 +370,3 @@ switch:
 # Pin, count and colour type per zone come from the substitutions above, so
 # bench.yaml can still point a zone at the onboard pixel without touching the
 # generated file.
-
-
-binary_sensor:
-  - platform: gpio
-    id: walkway_pir
-    name: "Walkway motion"
-    pin:
-      number: GPIO${pin_pir}
-      # Pulldown, not bare input: the AM312 drives high actively, and on a
-      # bench board with nothing wired a floating pin would fire the Approach
-      # scene at random.
-      mode:
-        input: true
-        pulldown: true
-    filters:
-      # One trigger per approach, not one per twitch.
-      - delayed_off: 8s
-    on_press:
-      then:
-        # Which scene, how often, and whether at all — all runtime settings
-        # (see the generated pir_* entities), not code. The cooldown is the
-        # difference between a haunted castle and a car alarm.
-        - lambda: |-
-            static uint32_t last_ms = 0;
-            if (!id(pir_armed).state) return;
-            const uint32_t now = millis();
-            const uint32_t hold = (uint32_t)(id(pir_cooldown).state * 1000.0f);
-            if (last_ms != 0 && (now - last_ms) < hold) return;
-            last_ms = now;
-            ESP_LOGI("castle", "motion -> scene '%s'", id(pir_scene).current_option().c_str());
-            id(run_scene)->execute(id(pir_scene).current_option().str());
-
-button:
-  # ── Diagnostics ──────────────────────────────────────────────────
-  # Everything the board did before the API came up. This is the only way to
-  # see the boot sequence on a device with no serial console — see boot_log.h.
-  - platform: template
-    name: "Dump boot log"
-    entity_category: diagnostic
-    on_press:
-      - lambda: 'castle_log::dump();'
-
-  # ── Remote flashing escape hatch ─────────────────────────────────
-  # This board has no USB serial console, and OTA is off because the embedded
-  # audio makes the binary too big for two app slots. So new firmware has
-  # meant physically holding BOOT and tapping RESET — fine at the desk,
-  # useless once the castle is on a porch and you are not.
-  #
-  # The ESP32-S2 ROM checks a bit in an always-on RTC register at boot. Set
-  # it, reboot, and the chip comes up with its USB bootloader enumerated,
-  # ready for esptool over the wire. No buttons.
-  #
-  # A button, not a service, on purpose: pressing it takes the show off the air.
-  - platform: template
-    name: "Enter flash mode"
-    entity_category: config
-    on_press:
-      - logger.log: "rebooting into download mode — reflash over USB to recover"
-      - delay: 300ms          # let the log and the API response get out
-      - lambda: 'castle_sd::reboot_to_download_mode();'
-  - platform: template
-    name: "Scene: Vigil"
-    on_press:
-      - script.execute: {id: run_scene, scene: vigil}
-  - platform: template
-    name: "Scene: Storm"
-    on_press:
-      - script.execute: {id: run_scene, scene: storm}
-  - platform: template
-    name: "Scene: Seance"
-    on_press:
-      - script.execute: {id: run_scene, scene: seance}
-  - platform: template
-    name: "Scene: Ballroom"
-    on_press:
-      - script.execute: {id: run_scene, scene: ballroom}
-  - platform: template
-    name: "Scene: Descent"
-    on_press:
-      - script.execute: {id: run_scene, scene: descent}
-  - platform: template
-    name: "Scene: Visitation"
-    on_press:
-      - script.execute: {id: run_scene, scene: visitation}
-  - platform: template
-    name: "Scene: Approach"
-    on_press:
-      - script.execute: {id: run_scene, scene: approach}
-  - platform: template
-    name: "Scene: Crypt"
-    on_press:
-      - script.execute: {id: run_scene, scene: crypt}
-  - platform: template
-    name: "Blackout"
-    on_press: {script.execute: scene_stop}

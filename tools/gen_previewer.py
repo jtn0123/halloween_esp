@@ -305,6 +305,12 @@ def inject_styles(html: str) -> str:
     return html[:i] + css + html[j:]
 
 
+#: Ceiling for the portable inlined build, in KB (see main()). 3 MB held
+#: for the nine-scene rig; scene 10 (the 3-minute Ballad) pushed the honest
+#: size past it, so the line moved rather than the warning becoming wallpaper.
+PAGE_BUDGET_KB = 4 * 1024
+
+
 def main() -> int:
     raw = SRC.read_text()
     doc = yaml.safe_load(raw)
@@ -345,8 +351,17 @@ def main() -> int:
     HTML.write_text(html)
 
     kb = sum(len(v) for v in audio.values()) // 1024
+    total_kb = len(html.encode()) // 1024
     print(f"wrote {len(scenes)} scenes + {len(audio)} audio files (~{kb} KB base64) "
-          f"into {bp.rel(HTML)}")
+          f"into {bp.rel(HTML)} ({total_kb / 1024:.1f} MB)")
+    # The inlined page scales with scenes x audio length and nothing else
+    # bounds it — it doubled (1.1 -> 2.2 MB) in the eight days before this
+    # budget existed. Warn, not fail: a heavy page is a nuisance, not a
+    # broken show. (grade report G2)
+    if total_kb > PAGE_BUDGET_KB:
+        print(f"WARNING: page exceeds its {PAGE_BUDGET_KB // 1024} MB budget "
+              f"— trim scenes or shorten audio, or raise PAGE_BUDGET_KB "
+              f"here if the budget itself is stale")
     return 0
 
 

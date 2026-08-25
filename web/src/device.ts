@@ -32,7 +32,7 @@ import { api } from "./api.js";
 import { isCastleBusy, onCastleChanged, setCastleLive } from "./castle_bus.js";
 import { castleAct } from "./castle_act.js";
 import { chipHtml, nowLine, sdText, wireChip } from "./device_chip.js";
-import { esc } from "./dom.js";
+import { esc, el as byId } from "./dom.js";
 import { DevicePanel } from "./device_panel.js";
 
 // The action layer (toast, failReason, castleAct) lives in castle_act.ts
@@ -225,7 +225,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   let routeBtn: HTMLButtonElement | null = null;
 
   function mountRouteBtn(): void {
-    const muteEl = document.getElementById("mute");
+    const muteEl = byId("mute");
     if (!muteEl || routeBtn) return;
     routeBtn = document.createElement("button");
     routeBtn.id = "sndRoute";

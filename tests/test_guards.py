@@ -19,6 +19,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -60,6 +61,59 @@ class TestLocCheck(unittest.TestCase):
         """If this fails, something needs splitting — that is the whole point."""
         over = [(n, rel) for n, rel, o in check_loc.measure() if o]
         self.assertEqual(over, [], f"files over the cap: {over}")
+
+
+class TestLocCli(unittest.TestCase):
+    """The reporting half of the guard — the part whose silent breakage
+    reads as a pass, which the module docstring above calls the worst
+    outcome. Driven through main() with measure() doubled out."""
+
+    ROWS_OK: ClassVar = [(400, "tools/a.py", False), (460, "tools/b.py", False)]
+    ROWS_OVER: ClassVar = [(512, "tools/big.py", True), (100, "tools/ok.py", False)]
+
+    def _main(self, rows, argv):
+        orig_measure, orig_argv = check_loc.measure, sys.argv
+        check_loc.measure = lambda: rows  # type: ignore[assignment, misc]  # test double
+        try:
+            sys.argv = ["check_loc.py", *argv]
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                code = check_loc.main()
+            return code, out.getvalue()
+        finally:
+            check_loc.measure, sys.argv = orig_measure, orig_argv
+
+    def test_pass_report_names_largest_and_scope(self) -> None:
+        code, out = self._main(self.ROWS_OK, [])
+        self.assertEqual(code, 0)
+        self.assertIn("largest 400 lines (tools/a.py)", out)
+        self.assertIn("scope:", out)
+
+    def test_nearing_band_fires_inside_50_lines(self) -> None:
+        code, out = self._main(self.ROWS_OK, [])
+        self.assertEqual(code, 0)
+        self.assertIn("nearing the cap", out)
+        self.assertIn("tools/b.py (460)", out)
+        self.assertNotIn("tools/a.py (400)", out, "400 is outside the band")
+
+    def test_over_cap_fails_naming_file_and_excess(self) -> None:
+        code, out = self._main(self.ROWS_OVER, [])
+        self.assertEqual(code, 1)
+        self.assertIn("tools/big.py", out)
+        self.assertIn("(+12)", out)
+        self.assertIn("real seam", out, "the advice is part of the contract")
+
+    def test_list_prints_rows_and_never_fails(self) -> None:
+        code, out = self._main(self.ROWS_OVER, ["--list"])
+        self.assertEqual(code, 0, "--list is informational even when over")
+        self.assertIn("OVER", out)
+        self.assertIn("tools/big.py", out)
+
+    def test_exempt_lists_every_path_with_reason(self) -> None:
+        code, out = self._main([], ["--exempt"])
+        self.assertEqual(code, 0)
+        for rel, why in check_loc.EXEMPT_PATHS.items():
+            self.assertIn(rel, out)
+            self.assertIn(why, out)
 
 
 class TestImageCheck(unittest.TestCase):

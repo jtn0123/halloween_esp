@@ -16,8 +16,9 @@ Do it in this order and each step proves the one before it.
    looks like, so this is the honest test of the shifter.
 4. **The other two zones.** Same pattern on GPIO16 and GPIO14. Set the rig in
    the app first so the firmware knows the counts (§7).
-5. **One amp.** `SD` to 5 V through 100 kΩ. Play a scene. Confirm full volume,
-   not a quiet one.
+5. **One amp.** Three signal wires, 5 V, ground, `SD` left unconnected. Play a
+   scene and confirm *full* volume. If it's quiet, suspect `channel:` in the
+   speaker block, not the wiring (WIRING-POWER-AUDIO §5).
 6. **The second amp.** Same three signal wires. Both should now be equally
    loud.
 7. **Measure the real peak.** Run the Storm scene with a clamp meter or an

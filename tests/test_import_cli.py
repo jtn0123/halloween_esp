@@ -118,6 +118,25 @@ class TestImportFromFile(CliCase):
         self.run_cli(str(self.src))
         self.assertTrue((it.TRACKS / "src.mp3").exists())
 
+    def test_derived_id_truncates_on_a_word_boundary(self) -> None:
+        """A long title used to become the_citizens_of_halloween___this —
+        cut mid-word with the separator run kept, because the strip ran
+        before the truncate. The cut lands on the last _ inside the limit
+        and then sheds the separators."""
+        src = self.tmp / "The Citizens of Halloween - This Is Halloween.wav"
+        shutil.copy(self.src, src)
+        code, _ = self.run_cli(str(src))
+        self.assertEqual(code, 0)
+        self.assertTrue((it.TRACKS / "the_citizens_of_halloween.mp3").exists(),
+                        sorted(p.name for p in it.TRACKS.iterdir()))
+
+    def test_derived_id_with_no_boundary_still_fits(self) -> None:
+        src = self.tmp / ("x" * 40 + ".wav")
+        shutil.copy(self.src, src)
+        code, _ = self.run_cli(str(src))
+        self.assertEqual(code, 0)
+        self.assertTrue((it.TRACKS / ("x" * 32 + ".mp3")).exists())
+
     def test_reports_the_flash_cost(self) -> None:
         """Every import competes for the same budget, so the cost belongs in
         front of you at the moment you make the choice."""

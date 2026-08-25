@@ -18,6 +18,7 @@
 import type { ShowState } from "./show.js";
 import type { EffectName, ZoneId } from "./types.js";
 import { OVERLAY_NAMES, PALETTE_NAMES } from "./effects.js";
+import { el as byId } from "./dom.js";
 
 const ZONES: readonly ZoneId[] = ["towerL", "towerR", "door"];
 const EFFECT_CHOICES: readonly string[] = [
@@ -31,7 +32,7 @@ export interface ZoneDesigner {
 }
 
 export function createZoneDesigner(getState: () => ShowState): ZoneDesigner {
-  const host = document.getElementById("zoneDesigner");
+  const host = byId("zoneDesigner");
   if (!host) return { refresh: () => {} };
 
   const sel = (opts: readonly string[], cur: string, cls: string, z: string,

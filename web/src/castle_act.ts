@@ -8,6 +8,7 @@
 
 import { api } from "./api.js";
 import { castleChanged } from "./castle_bus.js";
+import { el as byId } from "./dom.js";
 
 /** Where toasts stack: one fixed column above the dock, newest at the
  *  bottom. Two toasts a second apart used to print on the same pixels
@@ -15,7 +16,7 @@ import { castleChanged } from "./castle_bus.js";
  *  showing, and only the last few stay on screen. */
 const TOAST_MAX = 3;
 function toastHost(): HTMLDivElement {
-  let host = document.getElementById("toasts") as HTMLDivElement | null;
+  let host = byId<HTMLDivElement>("toasts");
   if (!host) {
     host = document.createElement("div");
     host.id = "toasts";              // styled in previewer/panels.css

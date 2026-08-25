@@ -15,6 +15,7 @@ import type { RenderedAudio } from "./audio.js";
 import type { Synth } from "./synth.js";
 import { rebuildLightsAt, type ShowState } from "./show.js";
 import type { Scene } from "./types.js";
+import { el as byId } from "./dom.js";
 
 export interface TransportDeps {
   state: ShowState;
@@ -84,7 +85,7 @@ export class Transport {
       // so replay their current values now that it does.
       this.slidersApplied = true;
       for (const id of ["hall", "trem", "vol"]) {
-        document.getElementById(id)?.dispatchEvent(new Event("input"));
+        byId(id)?.dispatchEvent(new Event("input"));
       }
     }
 
@@ -192,9 +193,9 @@ export class Transport {
     // A sounding row preview counts: the button showing a dead ▶ Play while
     // music audibly plays read as "the transport is broken" (round 2).
     const running = this.st.running || (this.d.isExternalPlaying?.() ?? false);
-    const icon = document.getElementById("playIcon");
-    const label = document.getElementById("playLabel");
-    const btn = document.getElementById("play");
+    const icon = byId("playIcon");
+    const label = byId("playLabel");
+    const btn = byId("play");
     if (icon) icon.innerHTML = running ? "&#10073;&#10073;" : "&#9654;";
     if (label) label.textContent = running ? "Pause" : "Play";
     btn?.setAttribute("aria-pressed", String(running));

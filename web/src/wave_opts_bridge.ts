@@ -18,6 +18,7 @@
 import { clearTrim, setTrimOwner } from "./import_opts.js";
 import { clock, mmss, parseClock } from "./wave_clip.js";
 import type { WaveClip } from "./waveform_view.js";
+import { el as byId, input as byInput } from "./dom.js";
 
 export interface OptsBridge {
   /** Mirror the clip into trkStart/trkTake, stamped as `id`'s. */
@@ -40,7 +41,7 @@ export function initOptsBridge(
   onBlank?: () => void,
 ): OptsBridge {
   const get = (id: string): string =>
-    (document.getElementById(id) as HTMLInputElement | null)?.value ?? "";
+    byInput(id)?.value ?? "";
   const adoptTyped = (e: Event): void => {
     const dur = getDur();
     if (!e.isTrusted) {
@@ -61,14 +62,14 @@ export function initOptsBridge(
     if (clamped) say(`That length runs past the end — clipped at ${clock(dur)}.`);
   };
   for (const id of ["trkStart", "trkTake"]) {
-    document.getElementById(id)?.addEventListener("input", adoptTyped);
+    byId(id)?.addEventListener("input", adoptTyped);
   }
 
   return {
     push(clip: WaveClip | null, id: string): void {
       if (!clip) return;
       const write = (inputId: string, value: string): void => {
-        const el = document.getElementById(inputId) as HTMLInputElement | null;
+        const el = byInput(inputId);
         if (!el) return;
         el.value = value;
         el.dispatchEvent(new Event("input", { bubbles: true }));
