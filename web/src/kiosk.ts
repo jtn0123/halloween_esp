@@ -83,10 +83,6 @@ export function installKiosk(): void {
   css.textContent = CSS;
   document.head.appendChild(css);
   document.body.classList.add("kiosk");
-  // A wall tablet inheriting the viewer's light theme framed the night
-  // stage in pale lavender; the token switch is the same one the desk's own
-  // theme toggle uses, so every colour follows.
-  document.documentElement.dataset["theme"] = "dark";
   banner = document.createElement("div");
   banner.id = "kioskDown";
   banner.setAttribute("role", "status");

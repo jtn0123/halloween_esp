@@ -42,7 +42,8 @@ script:
           if (stat("/sd/scenes/07_approach.mp3", &st) != 0) missing += missing.empty() ? "07_approach.mp3" : ",07_approach.mp3";
           if (stat("/sd/scenes/08_crypt.mp3", &st) != 0) missing += missing.empty() ? "08_crypt.mp3" : ",08_crypt.mp3";
           if (stat("/sd/scenes/09_the_citizens_of_halloween___this.mp3", &st) != 0) missing += missing.empty() ? "09_the_citizens_of_halloween___this.mp3" : ",09_the_citizens_of_halloween___this.mp3";
+          if (stat("/sd/scenes/10_the_ballad_of_the_witches__road_.mp3", &st) != 0) missing += missing.empty() ? "10_the_ballad_of_the_witches__road_.mp3" : ",10_the_ballad_of_the_witches__road_.mp3";
           castle_web::set_missing(missing);
           if (!missing.empty())
             ESP_LOGW("castle", "MISSING scene audio: %s", missing.c_str());
-          else ESP_LOGI("castle", "manifest: all %d scene files present", 9);
+          else ESP_LOGI("castle", "manifest: all %d scene files present", 10);

@@ -30,7 +30,7 @@ Each line was tested, not reasoned about.
 | The RMT refill ISR dying in a flash-cache blackout | `CONFIG_RMT_ISR_IRAM_SAFE=y` is already set by ESPHome (see `sdkconfig.castle-sd`), along with `RMT_TX_ISR_HANDLER_IN_IRAM` and `RMT_ENCODER_FUNC_IN_IRAM`. The ISR runs from IRAM and survives cache disables. |
 | GPIO16 being the S2's `XTAL_32K_N` pin | `CONFIG_RTC_CLK_SRC_INT_RC=y` — the RTC runs off the internal RC oscillator, so GPIO15/16 are plain GPIOs. Nothing else is driving the pad. |
 | ESPHome's `esp32_rmt_led_strip` misusing the peripheral | Read the driver: it calls `rmt_tx_wait_all_done()` before every frame, waits the 50 µs WS2812 latch, uses a queue depth of 1, and its encoder callback is `IRAM_ATTR`. One buffer per strip. Nothing overlaps. |
-| The scene's 30 s audio re-trigger starving the ISR | Real, and fixed in v5.33 (any manual override now runs `scene_stop` first, so a test pattern runs on a quiet board) — **and the flicker survived it**. The 30 s cadence was a coincidence, or the eye's pattern-matching. |
+| The scene's 30 s audio re-trigger starving the ISR | **Not actually ruled out — re-test.** v5.33 made every manual override run `scene_stop` first, but until v5.35 `scene_stop` never stopped the scene *scripts*: Vigil's pending 30 s delay survived it and re-fired, audio and all, under every "quiet board" test (found 2026-08-22, with the castle reporting `scene: vigil` minutes after a stop). The 30 s cadence may not have been a coincidence. Test 1 below still stands on its own: a lone channel corrupted with the towers off. |
 | Contention between the three strips' RMT channels | **The decisive test.** Both towers driven `off` (no RMT traffic at all from them), ring alone on `bars@50`: *still flickers*. One channel transmitting by itself cannot be starved by the other two. |
 
 ## What is left
@@ -104,7 +104,7 @@ it is one edit, and worth trying if the hardware tests come back clean.
 Desk → **🏰 Castle** → **strip test**. Or from a terminal:
 
 ```bash
-curl -X POST "http://10.27.27.238/api/light?c=bars@50"
+curl -X POST "http://10.27.27.247/api/light?c=bars@50"
 ```
 
 `towerL:off` / `towerR:off` isolate the ring; `c=show` hands the pixels back to
@@ -124,6 +124,8 @@ They are separate bugs found on the way, all on the porch build and verified:
   and strobes white" report.
 - **v5.31** — parking a colour left the RGBW white channel at whatever the
   effect last wrote, so "red" came out pink on the jewels.
+- **v5.35** — `scene_stop` now stops the scene scripts as well as their
+  output; before, a stop was a 30 s pause before Vigil came back.
 - **v5.33** — the onboard NeoPixel's power rail stayed on with nothing driving
   its data line, so it held power-up garbage. It is now a status-only pixel
   (blue booting, amber OTA, red no-card, dark otherwise) that no scene and no

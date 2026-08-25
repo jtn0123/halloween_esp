@@ -10,8 +10,8 @@
  * Everything is hue-only, scaled by luminance: a dim scene glows faintly in
  * its own colour rather than washing out to grey, and a dark one leaves the
  * chrome at its theme defaults. Colours are mixed INTO the theme tokens
- * rather than set outright, because a value bright enough to read against
- * the night stage is unreadable on the light theme's ground.
+ * rather than set outright, so the spill stays a tint of the desk's own
+ * ground instead of painting over it.
  */
 
 import type { ZoneRender } from "./show.js";

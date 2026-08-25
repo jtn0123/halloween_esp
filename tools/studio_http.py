@@ -14,6 +14,7 @@ import gzip
 import hashlib
 import json
 import sys
+import urllib.parse
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -83,6 +84,11 @@ class JsonHandler(BaseHTTPRequestHandler):
             return
         hdrs = [("ETag", etag), ("Cache-Control", "no-cache"),
                 ("Vary", "Accept-Encoding")]
+        if ctype.startswith("text/html"):
+            # E4: depth behind the escaping — same policy as the firmware's
+            # set_csp (sd_web_site.h). Inline script/style must stay: the
+            # desk is deliberately one self-contained file.
+            hdrs.append(("Content-Security-Policy", CSP))
         if accepts_gzip(self.headers.get("Accept-Encoding")):
             body = gzipped(etag, body)
             hdrs.append(("Content-Encoding", "gzip"))
@@ -209,6 +215,44 @@ def gzipped(etag: str, body: bytes) -> bytes:
     else:
         _GZ.move_to_end(etag)
     return hit
+
+
+#: The studio's own route families. "/api/<x>" for any of these is the OLD
+#: spelling (v5.23 and earlier), rewritten to "/studio/<x>" for one release
+#: so a desk built before the move keeps working; every other /api/* path
+#: is the castle's and relays untouched (/api/scene?s=<id> included).
+STUDIO_ROUTES = frozenset((
+    "tracks", "import", "job", "refresh", "track", "waveform", "stems",
+    "stem", "compare", "probe", "server", "scene", "rebuild", "card"))
+_deprecated_seen: set[str] = set()
+
+
+#: The castle's own prefix. Studio routes moved out from under it (they are
+#: /studio/* now), and these two spellings are compared often enough that the
+#: literal was drifting between them.
+API = "/api/"
+
+
+def studio_path(raw: str) -> str:
+    """The request's path (no query), an old /api/ spelling of a studio
+    route rewritten to its /studio/ home — logged once per route."""
+    url = urllib.parse.urlparse(raw)
+    path = url.path
+    head = path[len(API):].split("/", 1)[0] if path.startswith(API) else ""
+    if head not in STUDIO_ROUTES or (
+            head == "scene" and urllib.parse.parse_qs(url.query).get("s")):
+        return path
+    if head not in _deprecated_seen:
+        _deprecated_seen.add(head)
+        sys.stderr.write(f"  DEPRECATED: /api/{head} is now /studio/{head} "
+                         "(docs/API.md) — the alias goes away next release\n")
+    return "/studio/" + path[5:]
+
+
+#: sd_web_site.h set_csp(), the same policy on the studio's pages (E4).
+CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
+       "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+       "media-src 'self' data: blob:; connect-src 'self'")
 
 
 def content_etag(body: bytes) -> str:

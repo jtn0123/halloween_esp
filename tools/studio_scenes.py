@@ -69,6 +69,17 @@ def rebuild(lock: threading.Lock, run: Runner, py: str,
             if not ok:
                 log += f"\n{tool} failed — the later steps were not run\n"
                 return False, log[-4000:]
+        # The fourth step (grade report A1): when a castle is answering,
+        # PUSH what was just rebuilt — three correct local artifacts and a
+        # board still on last week's show is exactly how the Ballad failed
+        # on 08-22. No castle (or CASTLE_HOST="") publishes nothing and
+        # says so; a push failure is reported but does not fail the rebuild,
+        # whose local artifacts are good.
+        import studio_publish as sp
+        body, _code = sp.publish(run)
+        log += "\n" + str(body.get("log") or body.get("error") or "")
+        if body.get("note"):
+            log += "\n" + str(body["note"])
     return True, log[-4000:]
 
 

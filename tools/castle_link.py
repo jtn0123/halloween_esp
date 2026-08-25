@@ -189,6 +189,22 @@ def _read_budget(method: str, path: str) -> float:
     return TIMEOUT_S
 
 
+#: Every route the firmware actually serves (sd_web.h's reg table, kept in
+#: step by docs/API.md). A typo'd or future-firmware /api/* path used to
+#: become a castle call or a 502, so a client bug read as an outage (B4);
+#: unknown paths are refused HERE, before a socket is opened.
+KNOWN_API = ("/api/status", "/api/health", "/api/files", "/api/play",
+             "/api/stop", "/api/scene", "/api/volume", "/api/light",
+             "/api/pir", "/api/show/start", "/api/show/stop", "/api/blackout",
+             "/api/bootlog", "/api/ota", "/remote")
+KNOWN_PREFIX = ("/api/files/", "/api/site/", "/api/scenes/", "/sd/")
+
+
+def known_api(path: str) -> bool:
+    p = path.split("?", 1)[0]
+    return p in KNOWN_API or p.startswith(KNOWN_PREFIX)
+
+
 def forward(method: str, path_and_query: str,
             body: bytes = b"") -> tuple[int, bytes, str]:
     """Relay one request to the castle verbatim.
@@ -200,6 +216,10 @@ def forward(method: str, path_and_query: str,
     so they are NOT replayed to the next host (a PUT re-sent in full to a
     fallback address of the same castle is the pass-1 J1-8 finding).
     """
+    if not known_api(path_and_query):
+        return 404, json.dumps(
+            {"error": "unknown castle route",
+             "known": sorted(KNOWN_API + KNOWN_PREFIX)}).encode(), JSON_MIME
     hosts = castle_hosts()
     if not hosts:
         return 502, b'{"error": "no castle configured"}', JSON_MIME

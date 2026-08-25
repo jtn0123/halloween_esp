@@ -42,3 +42,21 @@ test("after Stop the loop stops painting; a slider repaints briefly", async ({ p
   const woke = await settled(page);
   expect(woke - idle0).toBeLessThanOrEqual(4);
 });
+
+test("while a scene runs, the 95th-percentile paint stays under budget", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#stage")).toBeVisible();
+  await page.locator("#play").click();
+  await expect(page.locator("#playLabel")).toHaveText("Pause");
+  await expect.poll(() => draws(page)).toBeGreaterThan(60);   // a real sample
+  const p95 = await page.evaluate(() => {
+    const ms = (window as unknown as { __castleDraws: { ms: number[] } })
+      .__castleDraws.ms.slice().sort((a, b) => a - b);
+    return ms[Math.floor(ms.length * 0.95)] ?? 0;
+  });
+  // One 60 Hz frame is 16.7 ms and the paint (stage, insets, meters,
+  // chrome, wave mirror) must fit inside it with room for the browser's
+  // own work. Raise this deliberately if the rig grows — the test guards
+  // regressions, not the absolute number.
+  expect(p95).toBeLessThan(16);
+});

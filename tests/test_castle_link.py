@@ -320,7 +320,9 @@ class TestStudioBridge(HostEnv, ServerCase):
         self.host_env(DEAD)
         cl._cache.clear()
         _, s = self.get("/api/status")
-        self.assertEqual(s, {"studio": True})
+        # `castle` names the configured host (C3): the desk can say WHO is
+        # not answering instead of rendering a blank box.
+        self.assertEqual(s, {"studio": True, "castle": DEAD})
 
     def test_scene_with_a_query_fires_on_the_castle(self) -> None:
         code, body = self.post("/api/scene?s=vigil")

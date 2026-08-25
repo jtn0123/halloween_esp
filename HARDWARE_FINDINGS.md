@@ -244,8 +244,32 @@ Unusable: 19/20 (native USB), 26–32 (SPI flash + PSRAM inside the module),
 
 ## 7. Not yet verified
 
-- Audio through a real amp and speaker (I2S pins have only ever been unconnected)
 - The remapped pins against physical hardware (see the inference flag in §5)
-- microSD — no card has been mounted yet; `firmware/castle_sd.yaml` compiles but
-  has never run
 - Idle-vs-playing loop time delta (see the caveat in §2)
+
+(Audio through real amps and speakers, and microSD, moved to §8 on
+2026-08-22: both run on the porch board now.)
+
+## 8. Audio bring-up, 2026-08-22 — it was the 5 V rail
+
+Two MAX98357A on GPIO15/11/12 (DIN/BCLK/LRC), `SD` pinned **left** with
+100 kΩ to 5 V on both (WIRING §5), 4 Ω 3 W speakers. First sound was
+"muffled, crackly, too quiet" and a 1 kHz test tone came out robotic.
+
+Ruled out, each by a listening A/B with everything else held equal:
+the file's bitrate (32 → 96 kbps: measurably fixed the 6 kHz brickwall,
+audibly changed nothing), the LEDs (off vs on), mono vs dual-mono stereo
+I2S framing (static in both — and with both amps pinned left a mono stream
+in the left slot is already full level, so mono is the right render), and
+the data rate (22.05 kHz identical to 44.1 kHz, so not decode or DMA).
+The same bytes were audibly cleaner the moment the board moved from a
+small wall plug to the CanaKit 5 A supply, and the bare drivers then
+measured clean only to 80 % — static is the amps pulling the rail down,
+nothing upstream. ESPHome's 16-bit-mono sample swap (`swap_esp32_mono_samples_`)
+is classic-ESP32 only; the S2 needed none.
+
+Two software faults were hiding under that and are fixed: `scene_stop` did
+not stop the scene *scripts* (Vigil's 30 s loop came back under every test,
+wind track and all — v5.35), and a file play let a looping scene take the
+speakers back 30 s later (`run_scene("halt")` first — v5.37). The tones the
+diagnosis used are now the desk's speaker test (WIRING §5).

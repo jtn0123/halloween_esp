@@ -34,8 +34,9 @@ export function createZoneDesigner(getState: () => ShowState): ZoneDesigner {
   const host = document.getElementById("zoneDesigner");
   if (!host) return { refresh: () => {} };
 
-  const sel = (opts: readonly string[], cur: string, cls: string, z: string): string =>
-    `<select class="${cls}" data-z="${z}">` +
+  const sel = (opts: readonly string[], cur: string, cls: string, z: string,
+               label: string): string =>
+    `<select class="${cls}" data-z="${z}" aria-label="${label}">` +
     opts.map((o) => `<option${o === cur ? " selected" : ""}>${o}</option>`).join("") +
     `</select>`;
 
@@ -48,11 +49,15 @@ export function createZoneDesigner(getState: () => ShowState): ZoneDesigner {
       `<th title="Seconds added to this zone's clock">phase</th></tr>` +
       ZONES.map((z) =>
         `<tr><td>${z}</td>` +
-        `<td>${sel(["ring", ...EFFECT_CHOICES], st.centerEff[z] ?? "ring", "zdC", z)}</td>` +
-        `<td>${sel(OVERLAY_NAMES, OVERLAY_NAMES[st.overlay[z]] ?? "none", "zdO", z)}</td>` +
-        `<td>${sel(PALETTE_NAMES, PALETTE_NAMES[st.palette[z]] ?? "haunt", "zdP", z)}</td>` +
+        `<td>${sel(["ring", ...EFFECT_CHOICES], st.centerEff[z] ?? "ring", "zdC", z,
+                   `${z} centre-pixel effect`)}</td>` +
+        `<td>${sel(OVERLAY_NAMES, OVERLAY_NAMES[st.overlay[z]] ?? "none", "zdO", z,
+                   `${z} overlay`)}</td>` +
+        `<td>${sel(PALETTE_NAMES, PALETTE_NAMES[st.palette[z]] ?? "haunt", "zdP", z,
+                   `${z} palette`)}</td>` +
         `<td><input class="zdF" data-z="${z}" type="number" min="0" max="5" step="0.1"` +
-        ` value="${st.phase[z]}" style="width:3.5rem"></td></tr>`).join("") +
+        ` value="${st.phase[z]}" aria-label="${z} phase seconds"` +
+        ` style="width:3.5rem"></td></tr>`).join("") +
       `</table>` +
       `<div><button id="zdYaml" type="button" title="Copies this scene's zone settings ` +
       `as the zones: block for scenes/scenes.yaml">Copy these zone settings</button>` +

@@ -8,10 +8,15 @@
  * ships to the Mac build too and simply stays dormant. Keep it that way —
  * device-only behaviour behind the probe, shared behaviour in the desk proper.
  *
- * What it offers:
- *   - status: firmware version, uptime, free PSRAM (the SD turntable's budget)
- *   - the SD library: play any track on the castle speaker, delete with care
- *   - the boot log: the invisible early-boot window, one tap away
+ * What it offers, in the order the panel shows it:
+ *   - health: firmware version, uptime, and the three numbers that go wrong
+ *     (card room, PSRAM — the SD turntable's budget — and internal heap,
+ *     which is what a decoder actually starves on)
+ *   - the show: the evening playlist, the phone remote, the light override
+ *   - the test bench: strip test and speaker test (device_tests.ts)
+ *   - the card: every track on it, with play and delete, plus whether the
+ *     show's own nine scene tracks are all present
+ *   - the motion sensor, the drop zone, and the boot log
  * Volume lives on the chip (device.ts) alone — the same slider twice was
  * the scatter the dogfood pass called out, and two sliders drift.
  *
@@ -21,36 +26,12 @@
  * soldered pixel plays its part in the corner of the room.
  */
 
+import { api } from "./api.js";
 import { cardChanged } from "./castle_bus.js";
 import { esc } from "./dom.js";
 import { castleAct } from "./device.js";
-import { ZONE_ORDER } from "./rig.js";
-
-/** The strips in porch order (left, door, right) for the per-line test. */
-const STRIPS = ZONE_ORDER;
-/** Brightness for the strip test and the colour picker; survives a
- *  re-render, not a reload. 100 % on a tower is a lot of LED in a dark room. */
-let testPct = 100;
-const PCTS = [25, 50, 75, 100] as const;
-/** The bench patterns, on every strip at once — each answers a different
- *  question than a solid colour does. Names match gen_rig's TEST_EFFECTS. */
-/** The colour buttons on every strip row: what to send, what to print. */
-const CHANNELS: readonly (readonly [string, string])[] = [
-  ["ff0000", "R"], ["00ff00", "G"], ["0000ff", "B"], ["white", "W"], ["off", "off"],
-];
-
-/** What one strip-test button promises, for its tooltip. */
-function stripTitle(zone: string, label: string): string {
-  if (label === "off") return `${zone}: off`;
-  if (label === "W") return `${zone}: white channel`;
-  return `${zone}: solid ${label}`;
-}
-
-const PATTERNS: readonly (readonly [string, string])[] = [
-  ["bars", "R G B repeating: colour order, pixel count, dead pixels"],
-  ["chase", "One dot walking: where it stops is where the data stops"],
-  ["ends", "First pixel red, last blue: which end the data goes in"],
-];
+import { lightsMarkup, sectionHead, speakerMarkup, testPct, wireTests }
+  from "./device_tests.js";
 
 interface SdFile {
   name: string;
@@ -58,27 +39,49 @@ interface SdFile {
   dir: boolean;
 }
 
-/** "5 tracks on the card", pointing at the Library that lists them all. */
-const cardSummary = (n: number): string =>
-  `<div class="dp__note">${n} track${n === 1 ? "" : "s"} on the card — ` +
-  `see the Library below (🏰 rows and badges)</div>`;
+/** What a card file is FOR, which is not something its name shouts: the
+ *  show's own audio is numbered, the test bench's tones are prefixed, and
+ *  everything else is a song somebody imported. */
+function kind(name: string): readonly [string, string] {
+  if (/^\d\d_/.test(name)) return ["scene", "A rendered scene track"];
+  if (/^test_/.test(name)) return ["tone", "A speaker-test tone"];
+  return ["song", "An imported track"];
+}
 
-/** The card's file list, or a line saying why there isn't one. Lifted out of
- *  the panel's markup: it was the tail of a three-deep ternary. */
+/** The card's file list, or a line saying why there isn't one. */
 function cardFiles(tracks: SdFile[], mounted: boolean | undefined): string {
-  if (tracks.length) {
-    return tracks.map((f, i) =>
-      `<div class="dp__file">` +
+  if (!tracks.length) {
+    return `<div class="dp__note">` + (mounted
+      ? "no tracks on the card yet — drop audio below, or press → Castle on a " +
+        "track in the Library"
+      : "no SD card") + `</div>`;
+  }
+  return tracks.map((f, i) => {
+    const [tag, why] = kind(f.name);
+    return `<div class="dp__file">` +
       `<button data-play="${i}" class="dp__btn dp__btn--sm" title="Play on the castle">▶</button>` +
       `<span class="dp__file-nm" title="${esc(f.name)}">${esc(f.name)}</span>` +
+      `<small class="dp__badge dp__badge--${tag}" title="${why}">${tag}</small>` +
       `<small class="dp__muted">${kb(f.size)}</small>` +
       `<button data-del="${i}" class="dp__del" title="Delete from the card">✕</button>` +
-      `</div>`).join("");
-  }
-  const why = mounted
-    ? "no tracks on the card yet — drop audio below, or press → Castle on a track in the Library"
-    : "no SD card";
-  return `<div class="dp__note">${why}</div>`;
+      `</div>`;
+  }).join("");
+}
+
+/** The show's own tracks live in /sd/scenes/, which /api/files does not list
+ *  (it reads the root only). The firmware's manifest check does know, and
+ *  reports the gap in /api/status — so say what it says rather than nothing. */
+function sceneTracks(st: DeviceStatus): string {
+  if (!st.sd_mounted) return "";
+  const n = sceneIds().length;
+  const missing = (st.missing ?? "").trim();
+  return missing
+    ? `<div class="dp__note dp__note--warn" title="The scene will fall back to ` +
+      `the chirp. Push them with tools/sd_sync.py &lt;ip&gt; scenes">` +
+      `⚠ scenes/ is missing ${esc(missing)}</div>`
+    : `<div class="dp__note dp__note--tight" title="The rendered show tracks the ` +
+      `scene engine streams; pushed by tools/sd_sync.py &lt;ip&gt; scenes">` +
+      `scenes/ — all ${n} show track${n === 1 ? "" : "s"} present</div>`;
 }
 
 interface DeviceStatus {
@@ -86,8 +89,15 @@ interface DeviceStatus {
   uptime_s: number;
   sd_mounted: boolean;
   psram_free_kb: number;
+  /** Internal heap — the pool the decoder and the web servers actually run
+   *  in, and the one that gets tight while a song plays. */
+  heap_free_kb?: number;
   /** KB free on the card — v5.23+. */
   sd_free_kb?: number;
+  /** Card size, for the "how full is it" bar. */
+  sd_total_kb?: number;
+  /** Scene tracks the manifest check could not find in /sd/scenes/. */
+  missing?: string;
   /** 0–100, mirrored from the media player; older firmware omits it. */
   volume?: number;
   /** Motion-sensor config, mirrored from the pir_* entities. */
@@ -96,6 +106,8 @@ interface DeviceStatus {
   show_on?: boolean;
   /** Current scene id, "" when idle. */
   scene?: string;
+  /** Comma-joined scene ids this firmware was BUILT with (v5.42+). */
+  scenes?: string;
   /** The studio answering FOR a castle it cannot reach — not a castle. */
   studio?: boolean;
   /** Set by the studio's relay: this status came through the bridge, and
@@ -116,24 +128,70 @@ const fmtUptime = (s: number): string =>
 
 const kb = (bytes: number): string => `${(bytes / 1024) | 0} KB`;
 
-async function getJson<T>(path: string): Promise<T> {
-  const r = await fetch(path);
-  if (!r.ok) throw new Error(`${path}: ${r.status}`);
-  return (await r.json()) as T;
+/** The health line: three numbers, each with the sentence that says what it
+ *  means when it falls. Heap is here because a scene start is where it goes
+ *  (docs/ISSUE-scene-start-audio.md) and nothing on the desk showed it. */
+function healthMeta(st: DeviceStatus): string {
+  const bit = (v: string, why: string): string =>
+    `<span class="dp__stat" title="${why}">${v}</span>`;
+  const used = st.sd_total_kb && st.sd_free_kb
+    ? 1 - st.sd_free_kb / st.sd_total_kb : 0;
+  return `<div class="dp__meta">` +
+    (st.sd_free_kb
+      ? bit(`card ${(st.sd_free_kb / 1048576).toFixed(1)} GB`,
+            "Room left on the microSD card") +
+        `<span class="dp__bar" aria-hidden="true">` +
+        `<i style="width:${Math.max(2, Math.round(used * 100))}%"></i></span>`
+      : "") +
+    bit(`psram ${(st.psram_free_kb / 1024).toFixed(1)} MB`,
+        "Free PSRAM — the buffer the SD turntable streams through") +
+    (st.heap_free_kb
+      ? bit(`heap ${st.heap_free_kb} KB`,
+            "Free internal RAM — what the decoder and the web servers run in. " +
+            "It drops while a song plays; under ~20 KB things start failing")
+      : "") + `</div>`;
+}
+
+/** C6: the scenes this desk knows that the BOARD's firmware does not —
+ *  the drift behind "unknown scene", said before a button press finds it.
+ *  Empty until the firmware reports its build list (v5.42+). */
+function firmwareDrift(st: DeviceStatus): string {
+  if (st.scenes === undefined) return "";
+  const known = new Set(st.scenes.split(",").filter(Boolean));
+  const newer = sceneIds().filter((id) => !known.has(id));
+  if (!newer.length) return "";
+  const n = newer.length;
+  return `<div class="dp__note dp__note--warn" title="The board's firmware was ` +
+    `built before ${n === 1 ? "this scene" : "these scenes"} existed; picking ` +
+    `${n === 1 ? "it" : "one"} answers 'unknown scene'. make sd-build, stop ` +
+    `audio, then OTA.">⚠ ${n} scene${n === 1 ? "" : "s"} newer than the ` +
+    `firmware (${esc(newer.join(", "))}) — rebuild and OTA</div>`;
 }
 
 export class DevicePanel {
   private root: HTMLDivElement;
   private body: HTMLDivElement;
   private open = false;
+  /** What had focus when the panel opened — focus goes back there (C4). */
+  private opener: HTMLElement | null = null;
+  /** The last payload rendered, so an unchanged poll skips the rebuild (G4). */
+  private lastKey = "";
 
   constructor(parent?: HTMLElement) {
     this.root = document.createElement("div");
-    // Styled in previewer/panels.css — as tokens, so the panel follows the
-    // light theme instead of hardcoding its own dark one (grade report C7).
+    // Styled in previewer/panels.css — as tokens, not a private palette
+    // hardcoded here (grade report C7).
     // Lives inside the castle dock when device.ts provides one, so chip and
     // panel are one widget rather than two floating boxes.
     this.root.id = "devicePanel";
+    // A modal-ish overlay with the semantics to match (C4): named, closable
+    // from the keyboard, and focus goes in on open and back out on close.
+    this.root.setAttribute("role", "dialog");
+    this.root.setAttribute("aria-modal", "true");
+    this.root.setAttribute("aria-label", "Castle controls");
+    this.root.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.open) this.toggle();
+    });
     this.body = document.createElement("div");
     this.root.appendChild(this.body);
     (parent ?? document.body).appendChild(this.root);
@@ -142,26 +200,38 @@ export class DevicePanel {
   toggle(): void {
     this.open = !this.open;
     this.root.style.display = this.open ? "block" : "none";
-    if (this.open) void this.render();
+    if (this.open) {
+      this.opener = document.activeElement instanceof HTMLElement
+        ? document.activeElement : null;
+      void this.render().then(() =>
+        this.body.querySelector<HTMLButtonElement>("#dpClose")?.focus());
+    } else {
+      this.lastKey = "";             // a re-open renders fresh
+      (this.opener ?? document.getElementById("devMore"))?.focus();
+    }
   }
 
-  /** Redraw if open — device.ts calls this when the castle goes quiet or
-   *  comes back, so the panel cannot keep showing a file list and an uptime
+  /** Re-render only while open — a closed panel that polls is a panel lying
    *  from a castle that is no longer there (pass 1, J1-4). */
   refresh(): void {
     if (this.open) void this.render();
   }
 
   private async render(): Promise<void> {
+    // C2: while the operator is typing in a panel field, a poll-driven
+    // rebuild would eat the caret — skip it; the next poll catches up.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && this.body.contains(focused)
+        && /^(INPUT|SELECT|TEXTAREA)$/.test(focused.tagName)) return;
     let st: DeviceStatus;
     let files: SdFile[] = [];
     try {
-      st = await getJson<DeviceStatus>("/api/status");
+      st = await api.castleGet<DeviceStatus>("/api/status");
       // The studio answers a castle-less probe 200 {"studio":true}: an
       // empty object that rendered as "vundefined · NaN MB · no SD card"
       // — a plausible, invented control panel (J2-1). Treat it as down.
       if (st.studio || !st.version) throw new Error("no castle");
-      if (st.sd_mounted) files = await getJson<SdFile[]>("/api/files");
+      if (st.sd_mounted) files = await api.castleGet<SdFile[]>("/api/files");
     } catch {
       this.body.innerHTML =
         `<div class="dp__hd"><span class="dp__grow">castle stopped answering</span>` +
@@ -171,18 +241,39 @@ export class DevicePanel {
       return;
     }
     const tracks = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
+    const onCard = new Set(tracks.map((f) => f.name));
+
+    // G4: the poll answered with the same truth — keep the DOM it already
+    // has (and the scroll, focus and open boot log with it).
+    const key = JSON.stringify([st, files]);
+    if (key === this.lastKey && this.body.childElementCount) return;
+    this.lastKey = key;
+
+    // C2: an innerHTML swap resets everything the reader was holding —
+    // scroll position, keyboard focus, an opened boot log. Save it all,
+    // rebuild, put it back.
+    const keepFocus = document.activeElement instanceof HTMLElement
+      && this.body.contains(document.activeElement)
+      ? document.activeElement.id : "";
+    const keepScroll = { root: this.root.scrollTop, body: this.body.scrollTop };
+    const openDetails = new Set(
+      Array.from(this.body.querySelectorAll("details"))
+        .flatMap((d, i) => (d.open ? [i] : [])));
+    const logOut0 = this.body.querySelector<HTMLPreElement>("#dpLogOut");
+    const keepLog = logOut0 && !logOut0.hidden ? logOut0.textContent : null;
 
     // Class names only — the rules are previewer/panels.css's .dp__* block,
     // so theme and phone CSS reach every row (grade report C2).
     this.body.innerHTML =
       `<div class="dp__hd">` +
-      `<span class="dp__grow"><b>🏰 v${esc(st.version)}</b> · up ${fmtUptime(st.uptime_s)}` +
-      (st.sd_free_kb
-        ? ` · card ${(st.sd_free_kb / 1048576).toFixed(1)} GB free` : "") +
-      ` <small title="Free working memory (PSRAM) — what the SD turntable runs on">` +
-      `· ${(st.psram_free_kb / 1024).toFixed(1)} MB memory free</small></span>` +
+      `<span class="dp__grow"><b>🏰 v${esc(st.version)}</b>` +
+      `<small class="dp__muted"> · up ${fmtUptime(st.uptime_s)}</small></span>` +
       `<button id="dpClose" class="dp__x" title="Close this panel" aria-label="Close">✕</button>` +
       `</div>` +
+      healthMeta(st) +
+      firmwareDrift(st) +
+
+      `<div class="dp__sec">` +
       `<div class="dp__row">` +
       `<button id="dpPlaylist" class="dp__go${st.show_on ? " dp__go--on" : ""}" ` +
       `title="Every scene in order with dark gaps, ` +
@@ -197,49 +288,37 @@ export class DevicePanel {
       `title="The castle's own phone page: ambient, scare, stop and the evening ` +
       `show on four thumb-sized buttons. Opens in a new tab">📱 phone remote</a>` +
       `</div>` +
-      `<div class="dp__lights" ` +
+      `<div class="dp__row dp__row--tight" ` +
       `title="Park every pixel on one colour, or give them back to the show">` +
-      `💡 <small class="dp__muted">lights</small> ` +
+      `<small class="dp__muted">lights</small>` +
       `<input id="dpColor" class="dp__color" type="color" value="#ff8c1e" ` +
       `title="Park the pixels on a colour">` +
       `<button id="dpShow" class="dp__btn" title="Hand the pixels back to the scene engine">` +
       `resume show</button>` +
       `<button id="dpOff" class="dp__ghost">off</button>` +
+      `</div></div>` +
+
+      lightsMarkup() +
+      speakerMarkup(onCard) +
+
+      `<div class="dp__sec">` +
+      sectionHead("💿", "on the card",
+                  `${tracks.length} track${tracks.length === 1 ? "" : "s"} in the root`) +
+      sceneTracks(st) +
+      `<div class="dp__files" id="dpFiles">` + cardFiles(tracks, st.sd_mounted) +
       `</div>` +
-      // One strip at a time: which data line is dead, which one strobes.
-      // Plain colours, no effect engine in the way — a strip that will not
-      // show solid red here is a wiring/shifter/power problem, not a scene.
-      `<div class="dp__lights dp__strips" ` +
-      `title="Drive ONE strip with a solid colour — finds the dead data line. ` +
-      `Any test stops the scene first, so nothing else is touching the pixels">` +
-      `🔌 <small class="dp__muted">strip test</small> ` +
-      `<span class="dp__strip" title="Brightness for the strip test and the colour picker">` +
-      PCTS.map((p) =>
-        `<button class="dp__ghost dp__btn--sm" data-pct="${p}" ` +
-        `aria-pressed="${p === testPct}">${p}%</button>`).join("") + `</span> ` +
-      STRIPS.map((z) =>
-        `<span class="dp__strip"><small>${z}</small> ` +
-        CHANNELS
-          .map(([spec, label]) =>
-            `<button class="dp__ghost dp__btn--sm" data-zl="${z}:${spec}" ` +
-            `title="${stripTitle(z, label)}">${label}</button>`)
-          .join("") + `</span>`).join(" ") +
-      `<span class="dp__strip" title="Patterns run on every strip at once">` +
-      `<small>patterns</small>` +
-      PATTERNS.map(([spec, why]) =>
-        `<button class="dp__ghost dp__btn--sm" data-zl=":${spec}" title="${why}">` +
-        `${spec}</button>`).join("") + `</span>` +
+      // Through the studio the Library below can also DOWNLOAD a card file
+      // and push one back; this list plays and deletes, which is what you
+      // want while standing at the castle.
+      (st.bridged
+        ? `<div class="dp__note dp__note--tight">the Library below can also ` +
+          `download these and push new ones</div>` : "") +
+      `<div id="dpDrop" class="dp__drop">drop audio files here to upload</div>` +
       `</div>` +
-      `<div class="dp__files" id="dpFiles">` +
-      // Through the studio the merged Library below already lists every card
-      // file with Play/⬇/Delete — two lists of one card drift.
-      (tracks.length && st.bridged
-        ? cardSummary(tracks.length)
-        : cardFiles(tracks, st.sd_mounted)) +
-      `</div>` +
-      `<div class="dp__pir" ` +
-      `title="The motion sensor: when someone walks up, which scene plays, and how long before it can fire again">` +
-      `👣 <small class="dp__muted">motion sensor</small> ` +
+
+      `<div class="dp__sec">` +
+      sectionHead("👣", "motion sensor", "who it wakes for, and how often") +
+      `<div class="dp__row dp__row--tight">` +
       `<label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
       `<select id="dpPirScene" title="Which scene the motion sensor plays">` +
       sceneIds().map((s) =>
@@ -248,9 +327,9 @@ export class DevicePanel {
       `<input id="dpPirCool" class="dp__cool" type="number" min="5" max="600" step="5" ` +
       `value="${st.pir?.cooldown_s ?? 60}" ` +
       `title="Cooldown: seconds before the sensor can fire again">` +
-      `<small class="dp__muted"> s between triggers</small>` +
-      `</div>` +
-      `<div id="dpDrop" class="dp__drop">drop audio files here to upload</div>` +
+      `<small class="dp__muted">s between triggers</small>` +
+      `</div></div>` +
+
       `<div class="dp__foot">` +
       `<button id="dpLog" class="dp__logbtn">boot log ▸</button>` +
       `<pre id="dpLogOut" class="dp__log" hidden></pre>` +
@@ -258,6 +337,23 @@ export class DevicePanel {
 
     this.body.querySelector<HTMLButtonElement>("#dpClose")!
       .addEventListener("click", () => this.toggle());
+
+    // The reader's place, restored (C2).
+    this.body.querySelectorAll("details").forEach((d, i) => {
+      if (openDetails.has(i)) d.open = true;
+    });
+    if (keepLog !== null) {
+      const logOut1 = this.body.querySelector<HTMLPreElement>("#dpLogOut");
+      const logBtn1 = this.body.querySelector<HTMLButtonElement>("#dpLog");
+      if (logOut1 && logBtn1) {
+        logOut1.hidden = false;
+        logOut1.textContent = keepLog;
+        logBtn1.textContent = "boot log ▾";
+      }
+    }
+    this.root.scrollTop = keepScroll.root;
+    this.body.scrollTop = keepScroll.body;
+    if (keepFocus) this.body.querySelector<HTMLElement>(`#${keepFocus}`)?.focus();
 
     // Every control below goes through castleAct (device.ts): toast with
     // the castle's reason on failure, and a chip re-poll on success — the
@@ -274,8 +370,8 @@ export class DevicePanel {
           .then(() => this.render());
       });
 
-    // The light override: a colour parks the chain (today: the one onboard
-    // pixel, which plays towerL pixel 0), "resume show" gives it back.
+    // The light override: a colour parks the chain, "resume show" gives it
+    // back. The strip and speaker benches wire themselves (device_tests.ts).
     this.body.querySelector<HTMLInputElement>("#dpColor")!
       .addEventListener("input", (e) => {
         const hex = (e.target as HTMLInputElement).value.slice(1);
@@ -289,18 +385,7 @@ export class DevicePanel {
     this.body.querySelector<HTMLButtonElement>("#dpOff")!
       .addEventListener("click", () =>
         void castleAct("/api/light?c=off", "lights off"));
-    this.body.querySelectorAll<HTMLButtonElement>("[data-zl]").forEach((b) =>
-      b.addEventListener("click", () => {
-        const spec = b.dataset.zl!.replace(/^:/, "");   // ":bars" = all strips
-        const arg = spec.endsWith("off") ? spec : `${spec}@${testPct}`;
-        void castleAct(`/api/light?c=${arg}`, `strip ${arg}`);
-      }));
-    this.body.querySelectorAll<HTMLButtonElement>("[data-pct]").forEach((b) =>
-      b.addEventListener("click", () => {
-        testPct = Number(b.dataset.pct);
-        this.body.querySelectorAll<HTMLButtonElement>("[data-pct]").forEach((o) =>
-          o.setAttribute("aria-pressed", String(o === b)));
-      }));
+    wireTests(this.body);
 
     this.body.querySelectorAll<HTMLButtonElement>("[data-play]").forEach((b) =>
       b.addEventListener("click", () => {
@@ -355,8 +440,7 @@ export class DevicePanel {
       drop.classList.remove("dp__drop--over");
       for (const f of Array.from(e.dataTransfer?.files ?? [])) {
         drop.textContent = `uploading ${f.name} (${(f.size / 1024) | 0} KB)…`;
-        const r = await fetch(`/api/files/${encodeURIComponent(f.name)}`,
-                              { method: "PUT", body: f });
+        const r = await api.castlePut(f.name, f);
         drop.textContent = r.ok ? `✓ ${f.name}` : `✗ ${f.name} failed`;
       }
       cardChanged();                 // the Library below re-reads the card now
@@ -372,9 +456,9 @@ export class DevicePanel {
       if (!showing) {
         logOut.textContent = "loading…";
         try {
-          const r = await fetch("/api/bootlog");
           // The ring keeps ANSI colour codes out already; strip any stragglers.
-          logOut.textContent = (await r.text()).replace(/\x1b\[[0-9;]*m/g, "");
+          logOut.textContent =
+            (await api.castleBootlog()).replace(/\x1b\[[0-9;]*m/g, "");
         } catch {
           logOut.textContent = "could not fetch the boot log";
         }

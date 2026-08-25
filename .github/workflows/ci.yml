@@ -14,6 +14,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The weekly firmware job below — PRs never pay the ~10 min toolchain fetch.
+  schedule:
+    - cron: "0 9 * * 1"
 
 # A push that supersedes a commit should supersede its CI too. Three runs for
 # this branch were alive at once on 2026-08-18, the oldest for 38 minutes on a
@@ -25,6 +28,7 @@ concurrency:
 
 jobs:
   python:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     # Every timeout here has to clear the media-tools retry budget (~16.5 min
     # worst case) plus the job's own work, or a job that finished cleanly gets
@@ -57,8 +61,8 @@ jobs:
       - name: type check
         run: mypy tools tests
       # The unit suite runs under coverage.py so the number is a ratchet,
-      # not a report: the floor is the Makefile's COVERAGE_MIN (72% of
-      # tools/ as of 2026-08-21); raise it there as coverage lands.
+      # not a report: the floor is the Makefile's COVERAGE_MIN (82% of
+      # tools/ as of 2026-08-23); raise it there as coverage lands.
       - name: unit tests (coverage-gated)
         run: make coverage-gate PY=python
       - name: LOC cap
@@ -70,6 +74,7 @@ jobs:
         run: make audit PY=python
 
   web:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -109,6 +114,7 @@ jobs:
         working-directory: web
 
   esphome:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
@@ -143,3 +149,44 @@ jobs:
               || { echo "== $y FAILED"; cat "/tmp/$y.out"; exit 1; }
             echo "$y OK"
           done
+
+  # `esphome config` cannot see the failure mode that is now closest: the
+  # S2's dram0 sits at ~88% and each song scene costs ~9 KB (grade report
+  # D5/G2). Once a week, actually compile the SD build and fail while the
+  # ceiling is still a warning — and say whether a newer esphome exists,
+  # because the pin is what holds eight stale advisories in place (F1).
+  firmware-weekly:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: ./.github/actions/media-tools
+      # From the LOCK, wheels only: exact resolved versions (the same set
+      # every other gate tested against) and no sdist setup.py execution —
+      # the two things Sonar rightly flagged on the unpinned spelling.
+      - run: pip install --only-binary=":all:" -r requirements.lock
+      - name: render + generate
+        run: |
+          python tools/render_audio.py
+          python tools/gen_esphome.py
+      - name: fake secrets
+        env:
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          printf 'wifi_ssid: "ci"\nwifi_password: "%s"\n' "$RUN" \
+            > firmware/secrets.yaml
+      - name: compile the SD build
+        run: esphome compile firmware/castle_sd.yaml | tee /tmp/build.out
+      - name: dram0 ceiling
+        run: |
+          PCT=$(grep -Eo 'RAM: *\[[^]]*\] *[0-9.]+%' /tmp/build.out | grep -Eo '[0-9.]+%' | tr -d '%')
+          echo "dram0 at ${PCT}%"
+          python3 -c "import sys; p=float('${PCT}' or 101); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm — about one scene of headroom left (grade report G2); split or cap before adding more') or 1)"
+      - name: newer esphome available?
+        run: |
+          pip index versions esphome 2>/dev/null | head -2 || true
+          echo "pin is 2026.7.4 — a bump clears the cryptography advisory (see .pip-audit-ignore)"

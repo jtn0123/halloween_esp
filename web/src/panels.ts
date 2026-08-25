@@ -280,6 +280,24 @@ export class Panels {
     // builds, is the Budgets panel's whole job now (budget.ts) — it was never
     // going to fit in a parenthesised percentage.
     this.sceneCount.textContent = `${scenes.length} loaded`;
+    this.applyStale();
+  }
+
+  /** Scenes the castle's FIRMWARE was built without (C6): dim their tiles,
+   *  so the drift is visible before a pick answers "unknown scene". The
+   *  castle panel's health row says what to do about it. */
+  setStaleScenes(ids: ReadonlySet<string>): void {
+    this.staleIds = ids;
+    this.applyStale();
+  }
+
+  private staleIds: ReadonlySet<string> = new Set();
+
+  private applyStale(): void {
+    this.scenesEl.querySelectorAll<HTMLButtonElement>(".scene").forEach((b, i) => {
+      const sc = this.sceneList[i];
+      if (sc) b.classList.toggle("scene--stale", this.staleIds.has(sc.id));
+    });
   }
 
   /** Pick scene `index` exactly as a click on its tile would — the same

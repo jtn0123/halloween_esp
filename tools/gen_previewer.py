@@ -226,9 +226,14 @@ _DATA_URI = re.compile(r'"(\w+)": ?"data:audio/mpeg;base64,[A-Za-z0-9+/=]*"')
 _lean_cache: dict[tuple[str, int, int], bytes] = {}
 
 
-def lean(html: str) -> str:
-    """The page with every inlined scene audio swapped for its URL."""
-    return _DATA_URI.sub(lambda m: f'"{m[1]}": "{AUDIO_ROUTE}{m[1]}"', html)
+def lean(html: str, route: str = AUDIO_ROUTE, suffix: str = "") -> str:
+    """The page with every inlined scene audio swapped for its URL.
+
+    The studio serves `/studio/scene-audio/<id>` (the default); the device
+    build gets `/site/<id>.mp3` — sd_sync pushes the files beside the page
+    (grade report A5/G1), served by the firmware's existing /site/* handler.
+    """
+    return _DATA_URI.sub(lambda m: f'"{m[1]}": "{route}{m[1]}{suffix}"', html)
 
 
 def lean_page(page: Path) -> tuple[bytes, str]:

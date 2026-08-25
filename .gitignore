@@ -9,6 +9,10 @@ firmware/.esphome/
 firmware/secrets.yaml
 audio/*.wav
 audio/*.mp3
+# Render products too: the SD build's card_bitrate copies and the speaker
+# test's tones (`make audio` writes both; sd_sync pushes them).
+audio/card/
+audio/test/
 # Imported audio is the user's own; the scene definitions that use it are
 # tracked, the files are not.
 tracks/*

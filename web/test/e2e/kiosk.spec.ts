@@ -165,16 +165,19 @@ test("kiosk says since when the castle stopped answering", async ({ page }) => {
   await expect(banner).toBeHidden();
 });
 
-test("kiosk is dark even in a light-themed browser", async ({ page }) => {
+test("the desk is dark even in a light-themed browser", async ({ page }) => {
+  // The desk has one palette now (previewer/styles.css): a light-themed OS
+  // used to swing the chrome, and the kiosk had to stamp data-theme="dark"
+  // to stop a wall tablet framing the night stage in pale lavender.
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/?kiosk=1");
   await expect(page.locator("#stage")).toBeVisible();
   const m = await page.evaluate(() => ({
-    theme: document.documentElement.dataset["theme"],
+    panel: getComputedStyle(document.documentElement).getPropertyValue("--panel").trim(),
     body: getComputedStyle(document.body).backgroundColor,
     shell: getComputedStyle(document.getElementById("stageShell")!).backgroundColor,
   }));
-  expect(m.theme).toBe("dark");
+  expect(m.panel).toBe("#131725");
   // --stone, the stage's own ground: #05070e.
   expect(m.body).toBe("rgb(5, 7, 14)");
   expect(m.shell).toBe("rgb(5, 7, 14)");

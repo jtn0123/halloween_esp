@@ -39,6 +39,10 @@ corrupted frame now and then on the 12 px ring, narrowed to its own signal
 path (everything upstream of the pad is ruled out, with evidence). Read it
 before re-deriving the theories; it also lists the next tests in order.
 
+**Open issue:** [a scene's audio starts rough](docs/ISSUE-scene-start-audio.md)
+— the song and the tones are clean, a scene start is not; A/B/C/D by ear and
+the firmware evidence are in the file, with the next tests in order.
+
 ### Quick section finder
 
 | § | Topic | File |

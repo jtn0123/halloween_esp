@@ -10,7 +10,7 @@ YAML := firmware/castle_flash.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload
+.PHONY: publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload
 
 help:
 	@echo "Halloween Castle"
@@ -28,6 +28,8 @@ help:
 	@echo "  make bench-audio  measure decode load on the bare board (no speakers)"
 	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
 	@echo "  make studio     serve the cue desk with track management (localhost)"
+	@echo "  make publish    push scene tracks + the lean desk page to the castle"
+	@echo "  make ota        build the SD firmware and flash it over HTTP"
 	@echo "  make test       python unit tests (~1 min)"
 	@echo "  make test-fast  the same minus the chaos/relay/fuzz suites (inner loop)"
 	@echo "  make lint       ruff + mypy over tools/ and tests/"
@@ -69,6 +71,18 @@ track:
 studio: preview
 	@$(PY) tools/studio.py
 
+# The publish chain (grade report A1/I4): everything the castle needs after
+# a scene edit, in one word. Host resolves via tools/hosts.py (CASTLE_HOST,
+# else devices.toml). The studio's rebuild runs the same push automatically;
+# this is the terminal spelling. `make ota` builds first and sd_sync stops
+# audio before flashing (the standing OTA rule).
+publish: preview
+	@$(PY) tools/sd_sync.py scenes
+	@$(PY) tools/sd_sync.py site
+
+ota: sd-build
+	@$(PY) tools/sd_sync.py ota
+
 # EXPERIMENTAL microSD variant — see PROJECT_NOTES §12.9 before relying on it.
 sd-build: audio generate
 	$(ESPHOME) compile firmware/castle_sd.yaml
@@ -103,7 +117,13 @@ bench-audio: audio generate
 bench-audio-logs:
 	$(ESPHOME) logs firmware/bench_audio.yaml
 
-test:
+# pyproject.toml says >=3.13; the bare-python3 fallback above could silently
+# hand an older interpreter to everything below (grade report F5).
+pycheck:
+	@$(PY) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else \
+		(print(f"python {sys.version.split()[0]} is too old — this repo needs 3.13+ (make setup)") or 1))'
+
+test: pycheck
 	@$(PY) -m unittest discover -s tests -q
 
 # The inner loop: everything except the suites that exist to wait — the
@@ -118,7 +138,9 @@ test-fast:
 # Where the unit suite reaches and where it does not. Informational here —
 # the number is for deciding what to test next. `coverage-gate` is the same
 # run with the floor CI enforces (COVERAGE_MIN); raise it as coverage lands.
-COVERAGE_MIN := 72
+# Measured 83% on 2026-08-23 — the floor is the measurement minus one, and
+# it moves UP whenever a fresh `make coverage` beats it (grade report D1).
+COVERAGE_MIN := 82
 coverage:
 	@$(PY) -m coverage run --source=tools -m unittest discover -s tests -q
 	@$(PY) -m coverage report --include='tools/*' --skip-empty
@@ -127,15 +149,15 @@ coverage-gate: coverage
 	@$(PY) -m coverage report --include='tools/*' --skip-empty \
 		--fail-under=$(COVERAGE_MIN) > /dev/null && echo "coverage >= $(COVERAGE_MIN)%"
 
-# Known advisories against what the venv actually has. Non-gating: the hits
-# so far are in ESPHome's build toolchain (platformio -> starlette, which never
-# sees network input here — ignored by id below) and cryptography 49, which
-# the esphome pin drags in and a pin bump will clear. Re-run after `make lock`.
-STARLETTE_TOOLCHAIN_ONLY := PYSEC-2026-161 PYSEC-2026-248 PYSEC-2026-249 PYSEC-2026-2280 PYSEC-2026-2281
+# Known advisories against what the venv actually has. Non-gating. The
+# exception list lives in .pip-audit-ignore — one id per line WITH its reason
+# and a review date (grade report E1) — so the "why" survives longer than
+# anyone's memory. Re-run after `make lock`.
+AUDIT_IGNORES := $(shell awk '/^[A-Z]/{print "--ignore-vuln " $$1}' .pip-audit-ignore)
 audit:
 	@$(PY) -m pip_audit -r requirements.lock --no-deps --progress-spinner off \
-		$(foreach v,$(STARLETTE_TOOLCHAIN_ONLY),--ignore-vuln $(v)) \
-		|| echo "(advisories above are informational — see the comment on this target)"
+		$(AUDIT_IGNORES) \
+		|| echo "(advisories above are informational — see .pip-audit-ignore)"
 
 # The lock is the venv as it is: every package, pinned. requirements.txt says
 # what the project needs; this says exactly what was tested.
@@ -154,12 +176,19 @@ check: test lint
 	@$(PY) tools/check_loc.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"
 	@cd web && npm run --silent test
+	@echo "note: the browser e2e suite did NOT run — 'make e2e' (or 'make check-all') covers the UI"
 
 # Browser tests. Separate from `check` because they need a built page and a
 # browser binary, and they take an order of magnitude longer than everything
 # else put together. They drive the real studio server against a scratch
 # tracks directory, and Chromium runs with --mute-audio, so a run is silent.
+# `playwright install chromium` is idempotent and near-instant once the
+# browser is cached — running it here turns the two tribal setup steps
+# ("build the page, install the browser") into the target itself.
 e2e: preview
+	@cd web && node -e "require('@playwright/test')" 2>/dev/null \
+		|| { echo "e2e needs its deps first: cd web && npm ci"; exit 1; }
+	@cd web && npx playwright install chromium
 	@cd web && npx playwright test
 
 check-all: check e2e

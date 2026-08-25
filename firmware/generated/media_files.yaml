@@ -28,3 +28,5 @@
   file: ../audio/08_crypt.mp3
 - id: snd_the_citizens_of_halloween___this
   file: ../audio/09_the_citizens_of_halloween___this.mp3
+- id: snd_the_ballad_of_the_witches__road_
+  file: ../audio/10_the_ballad_of_the_witches__road_.mp3

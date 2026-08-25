@@ -152,17 +152,19 @@ ok(running() === 0, "synth mode ran no rendered file");
 
 /* ── The latency slider moves light→sound and light→file together ──── */
 {
-  const file = media.find(a => a.src === AUDIO.a);
   const r2 = new Transport({
     state, rendered, synth, getMode: () => "rendered", onSceneChange: () => {} });
   r2.loadScene(A);
   for (const lat of [0, 40, 200]) {
     state.latency = lat; rendered.latency = lat;   // main.ts: the `lat` slider writes both
-    fired.length = 0; synthPlays.length = 0; file.log.length = 0;
+    fired.length = 0; synthPlays.length = 0;
     const start = clock.now();
     r2.play();
+    // The element is born on play (G5) and reused across iterations, so
+    // read the play that belongs to THIS start, not the log's first.
+    const file = media.find(a => a.src === AUDIO.a);
     run(600);
-    ok(file.log.find(([, op]) => op === "play")?.[0] === start + lat,
+    ok(file?.log.find(([t, op]) => op === "play" && t >= start)?.[0] === start + lat,
        `latency ${lat}: the rendered file starts ${lat} ms after play()`);
     r2.blackout();
   }

@@ -5,15 +5,30 @@ static RAM headroom (see castle.yaml sdkconfig notes); apply with the next
 firmware session, recompile, and update tools/castle_emu_wire.py in step
 (tests/test_firmware_contract.py parses sd_web.h and will flag drift).
 
-Pending for the next firmware session (found by judge B, pass 2; no
-source under firmware/ was edited for them — both need a recompile/reflash):
+Pending: **v5.42, written and compiled, NOT yet flashed** (2026-08-23 —
+the castle was off the network when the work landed). One OTA covers it:
+`make ota`, then confirm on the panel and re-push the page (`make publish`).
 
-- qr_castle — `make generate` so firmware/generated/qr_castle.h encodes
-  `http://<castle>/remote` (tools/gen_qr.py's default already says so); the
-  flashed eInk QR still lands on the 2.4 MB desk instead of the phone remote.
-- sd_web_remote.h `api()` — add `.catch(sync)` so a tap at a dead castle does
+- sd_web_util.h split out of sd_web.h (helper layer; contract test reads it).
+- /api/status gains `scenes` (the build's ids) — the desk's stale-firmware
+  warning reads it.
+- /api/files?d=<subdir> lists inside the card.
+- write_body: 507 free-space precondition, crc32 in the reply (sd_sync
+  compares), watchdog fed every 4th chunk (one tick / 32 KB — **verify the
+  first big upload on the bench**; revert the cadence if a push reboots it).
+- /api/site/ uploads capped at 8 MB (413).
+- set_csp() on every served page (root, /site/*, /remote).
+
+After the OTA, `make publish` puts the LEAN desk page + per-scene audio on
+the card — first paint drops from 3.3 MB to ~150 KB gzipped.
+
+Applied in v5.34 (flashed to the new porch board, 2026-08-22):
+
+- qr_castle — regenerated (tools/gen_qr.py) so the eInk QR lands on
+  `http://<castle>/remote`, the phone remote, not the 2.4 MB desk.
+- sd_web_remote.h `api()` — `.catch(sync)` so a tap at a dead castle does
   not leave an unhandled "Failed to fetch" in the phone's console; the
-  emulator now serves this page byte-for-byte (tools/castle_emu_http.py), so
+  emulator serves this page byte-for-byte (tools/castle_emu_http.py), so
   web/test/e2e/remote.spec.ts exercises whatever the C says.
 
 Applied in v5.24:

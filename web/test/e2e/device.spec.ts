@@ -23,6 +23,9 @@ const FILES = [
   { name: "logs", size: 0, dir: true },
   { name: "wicked_winds.mp3", size: 287744, dir: false },
   { name: "ghostbusters.mp3", size: 985088, dir: false },
+  // Two of the five speaker-test tones: the others must render disabled.
+  { name: "test_sweep.mp3", size: 190000, dir: false },
+  { name: "test_1k.mp3", size: 128000, dir: false },
 ];
 
 /** Wire up a pretend castle and remember what the desk asks of it. */
@@ -190,7 +193,10 @@ test("the light override parks a colour and hands the show back", async ({ page 
   await page.locator("[data-zl='door:00ff00']").click();
   await expect.poll(() => calls.filter((c) => c.includes("/api/light?c=door:00ff00@100")).length)
     .toBe(1);
-  await expect(page.locator("[data-zl]")).toHaveCount(18);   // 3 × R G B W off, + 3 patterns
+  // 4 rows (towerL, door, towerR, all) × R G B W off, + 3 patterns.
+  await expect(page.locator("[data-zl]")).toHaveCount(23);
+  // The all-strips row carries no zone: every strip runs it.
+  await expect(page.locator("[data-zl=':ff0000']")).toBeVisible();
   // Brightness applies to the strip test and the picker; "off" carries none.
   await page.locator("[data-pct='25']").click();
   await page.locator("[data-zl='towerL:white']").click();
@@ -204,6 +210,55 @@ test("the light override parks a colour and hands the show back", async ({ page 
   await page.locator("[data-zl=':chase']").click();
   await expect.poll(() => calls.filter((c) => c.includes("c=chase@25")).length).toBe(1);
   expect(calls.some((c) => c.includes("c=:chase"))).toBe(false);
+});
+
+test("the speaker test plays a tone at a chosen level, spaced for the mailbox", async ({ page }) => {
+  const calls = await stubCastle(page);
+  await page.goto("/");
+  await page.locator("#devMore").click();
+  // Only the tones on the card are live; the rest say how to push them.
+  await expect(page.locator("[data-tone='test_sweep']")).toBeEnabled();
+  await expect(page.locator("[data-tone='test_200']")).toBeDisabled();
+  await expect(page.locator(".dp__note--tight").first()).toContainText("tones not on the card");
+  await page.locator("[data-tpct='80']").click();
+  await page.locator("[data-tone='test_sweep']").click();
+  await expect.poll(() => calls.filter((c) => c.includes("/api/play?f=test_sweep.mp3")).length).toBe(1);
+  const vol = calls.findIndex((c) => c.includes("/api/volume?v=80"));
+  const play = calls.findIndex((c) => c.includes("/api/play?f=test_sweep.mp3"));
+  expect(vol).toBeGreaterThanOrEqual(0);
+  expect(vol).toBeLessThan(play);                 // level lands before the tone
+  await page.locator("#dpToneStop").click();
+  await expect.poll(() => calls.filter((c) => c.includes("/api/stop")).length).toBe(1);
+});
+
+test("the panel lists what is actually on the card, and what each track is for", async ({ page }) => {
+  await stubCastle(page);
+  await page.goto("/");
+  await page.locator("#devMore").click();
+  // Every root track is listed by name — the panel used to show a count and
+  // point at the Library, which is not "what is on the device".
+  await expect(page.locator(".dp__file-nm")).toHaveCount(4);
+  await expect(page.locator(".dp__file-nm").first()).toHaveText("wicked_winds.mp3");
+  // ...and badged by what it is FOR, which its name does not say.
+  await expect(page.locator(".dp__badge--tone")).toHaveCount(2);
+  // The show's own tracks live in scenes/, which /api/files never lists;
+  // the manifest's verdict from /api/status stands in for them.
+  await expect(page.locator(".dp__sec").filter({ has: page.locator("#dpFiles") }))
+    .toContainText(/all \d+ show tracks present/);
+});
+
+test("a light sequence walks the channels and can be superseded", async ({ page }) => {
+  const calls = await stubCastle(page);
+  await page.goto("/");
+  await page.locator("#devMore").click();
+  await page.locator("[data-seq='cycle']").click();
+  await expect.poll(() => calls.filter((c) => c.includes("c=ff0000@")).length).toBe(1);
+  // A plain strip click supersedes the running walk rather than interleaving.
+  await page.locator("[data-zl='door:0000ff']").click();
+  const after = calls.length;
+  await page.waitForTimeout(2000);
+  expect(calls.filter((c) => c.includes("c=00ff00@")).length).toBe(0);
+  expect(calls.length).toBeLessThanOrEqual(after + 1);
 });
 
 test("the boot log is one tap away", async ({ page }) => {
@@ -343,4 +398,48 @@ test("Play on a card-only row moves the chip off 'idle'", async ({ page }) => {
   await page.locator("#devMore").click();
   await page.locator("#devicePanel [data-play]").first().click();
   await expect(page.locator("#devNow")).toHaveText("▶ wicked_winds.mp3");
+});
+
+test("an EXPECTED castle that never answers becomes a visible, retryable state", async ({ page }) => {
+  // The studio names the host it is trying (C3): after three missed probes
+  // the chip stops being a blank box. ~16 s of real retry cadence.
+  test.setTimeout(40_000);
+  let up = false;
+  await page.route("**/api/status", (route) =>
+    route.fulfill({ json: up
+      ? { version: "5.42", sd_mounted: true, scene: "", track: "" }
+      : { studio: true, castle: "10.27.27.247" } }));
+  await page.goto("/");
+  const chip = page.locator("#deviceChip");
+  await expect(chip).toBeHidden();                       // not instantly noisy
+  await expect(chip).toBeVisible({ timeout: 25_000 });   // three misses later
+  await expect(chip).toContainText("looking for the castle");
+  await expect(chip).toContainText("10.27.27.247");
+  up = true;                                             // Retry finds it
+  await page.locator("#devRetry").click();
+  await expect(chip).toContainText("castle v5.42");
+});
+
+test("a poll landing on a held volume slider does not yank it away", async ({ page }) => {
+  // C1: the hand wins. Focus the slider, let an action-driven re-poll land
+  // with a DIFFERENT castle volume, and the element must survive untouched.
+  // Route "castle" so the slider is enabled (♪ Mac disables it by design).
+  await page.addInitScript(() =>
+    localStorage.setItem("castleSoundRoute", "castle"));
+  await stubCastle(page);
+  await page.goto("/");
+  await expect(page.locator("#deviceChip")).toBeVisible();
+  const vol = page.locator("#devVol");
+  await vol.focus();
+  await vol.press("ArrowUp");                 // fires a volume act + re-poll
+  STATUS.volume = 5;                          // the poll would snap to this
+  try {
+    await page.waitForTimeout(1600);          // let the debounced poll land
+    await expect(vol).toBeFocused();          // same element, not a rebuild
+    await expect(vol).not.toHaveValue("5");   // and not snapped to the poll
+    await page.locator("#stage").click();     // release focus…
+    await expect(vol).toHaveValue("5", { timeout: 20_000 });  // …parked render lands
+  } finally {
+    STATUS.volume = 40;                       // the stub is shared state
+  }
 });

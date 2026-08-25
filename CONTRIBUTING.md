@@ -6,8 +6,11 @@ requirements and the commit hook (`git config core.hooksPath githooks`);
 
 **Before handing work back.** `make check` green — unit tests, ruff + mypy,
 the image/LOC guards, `tsc --noEmit`, the node suites (what CI runs).
-`make test-fast` is the inner loop; `make e2e` when the page or studio changed.
+`make test-fast` is the inner loop; `make e2e` when the page or studio changed
+(it builds the page and installs Chromium itself — no separate setup steps).
 Never skip or disable a test to get there: fix it or list it as follow-up.
+The reasoning behind every rule here lives in `CLAUDE.md`, which is written
+for agents but reads fine for people.
 
 **Rules.** Every tracked text file stays under 500 lines (`tools/check_loc.py`,
 prose included — split on a real seam). ruff and mypy clean per `pyproject.toml`.

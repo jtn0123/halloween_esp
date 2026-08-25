@@ -1,7 +1,7 @@
 """The emulator held to the firmware — by reading the firmware.
 
 firmware/sd_web.h (+ sd_web_ota.h, sd_web_site.h, sd_web_remote.h,
-sd_web_state.h) is the contract the studio speaks to; tools/castle_emu*.py is the stand-in every
+sd_web_state.h, sd_web_util.h) is the contract the studio speaks to; tools/castle_emu*.py is the stand-in every
 hardware-free test drives. The two can only be trusted together if a change
 to either is caught here. So these tests PARSE the C at test time — the
 reg() table, every reply_err() string per handler, safe_name's rule,
@@ -35,6 +35,7 @@ SD_OTA = (FW / "sd_web_ota.h").read_text()
 SD_SITE = (FW / "sd_web_site.h").read_text()
 SD_REMOTE = (FW / "sd_web_remote.h").read_text()
 SD_STATE = (FW / "sd_web_state.h").read_text()
+SD_UTIL = (FW / "sd_web_util.h").read_text()
 EMU_HTTP = (ROOT / "tools" / "castle_emu_http.py").read_text()
 
 #: reply_err strings the emulator has no way to produce: flash, heap and
@@ -85,7 +86,7 @@ def firmware_routes() -> list[tuple[str, str, str]]:
             re.findall(r'reg\("([^"]+)", HTTP_(\w+), (\w+)\);', SD_WEB)]
 
 
-FUNCS = c_functions(SD_WEB, SD_OTA, SD_SITE, SD_REMOTE)
+FUNCS = c_functions(SD_WEB, SD_OTA, SD_SITE, SD_REMOTE, SD_UTIL)
 
 
 def grab(pattern: str, text: str, group: int = 1) -> str:

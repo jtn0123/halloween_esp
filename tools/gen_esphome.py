@@ -18,10 +18,11 @@ import json
 from pathlib import Path
 
 import build_paths as bp
+import gen_esphome_audio as ga
 import yaml
 from effect_vocab import EFFECT_IDS, FLASH_MODE_IDS, OVERLAY_IDS, PALETTE_IDS
 from gen_rig import emit_lights, emit_rig_header
-from gen_show import emit_manifest_check, emit_show_playlist
+from gen_show import emit_show_playlist
 
 # The pulse expansion (what a `pulse:` stream MEANS) lives in
 # pulse_expand.py; this file only decides how the device is told.
@@ -284,6 +285,11 @@ def main() -> int:
         if problems:
             sid = scene.get("id", "?") if isinstance(scene, dict) else "?"
             raise SystemExit(f"scene {sid}: " + "\n  ".join(problems))
+    # hardware.audio.max_volume caps every scene's level (scenes.yaml says
+    # why); the firmware's /api/volume clamps to the same number via rig.h.
+    cap = float(doc["hardware"].get("audio", {}).get("max_volume", 1.0))
+    for scene in doc["scenes"]:
+        scene["volume"] = min(float(scene.get("volume", 0.8)), cap)
     script_ids: list[str] = []          # every scene script, continuations too
     for i, scene in enumerate(doc["scenes"], start=1):
         lines = emit_scene(scene, zones, i, markers)
@@ -309,6 +315,13 @@ def main() -> int:
         f" id(zone_flash_target)[{i}] = 0.0f;" for i in range(len(zones))
     )
     out.append(f"      - lambda: '{stop}'")
+    # And it stops the scene SCRIPTS, not only their output. Until v5.35 it
+    # did not: a looping scene's pending delay survived the stop, re-fired
+    # within 30 s, and Vigil walked back on — volume, lights and its wind
+    # track — under whatever the operator was doing (every "quiet board"
+    # test in docs/ISSUE-ring-flicker.md had it playing underneath).
+    out.append(LAMBDA)
+    out.extend(f"          id({sid})->stop();" for sid in script_ids)
     out.append("      - media_player.stop:")
     out.append("      - text_sensor.template.publish:")
     out.append("          id: current_scene")
@@ -339,6 +352,12 @@ def main() -> int:
         out.append(f"          {kw} (scene == \"{scene['id']}\") "
                    f"id(scene_{scene['id']})->execute();")
     out.append("          else if (scene == \"stop\") id(scene_stop)->execute();")
+    # "halt": the stops above and nothing else — lights keep their texture,
+    # audio is untouched. /api/play runs it first so a looping scene's 30 s
+    # re-fire cannot take the speakers back from the file the operator chose
+    # (a song, the panel's speaker test). A branch here rather than its own
+    # script: a script is a static object, and the S2's dram0 is on a diet.
+    out.append("          else if (scene == \"halt\") {}")
     out.append("          else ESP_LOGW(\"castle\", \"unknown scene '%s'\", scene.c_str());")
     out.append("")
     out.extend(emit_show_playlist(doc))
@@ -390,85 +409,18 @@ def main() -> int:
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("\n".join(out))
 
-    # The media files each scene plays.
-    #
-    # These used to be hand-maintained in castle.yaml, listing the eight scenes
-    # that existed when it was written — while this generator happily emitted
-    # `media_file: snd_<id>` for every scene in scenes.yaml. So a scene added
-    # any other way, including through the cue desk's own "Make scene" button,
-    # produced a config that referenced an id nothing declared:
-    #
-    #     Couldn't find ID 'snd_the_ballad_of_the_witches__road_'
-    #
-    # The previewer rebuilt fine, which is what made it convincing; only the
-    # firmware build failed, and only when someone next tried to flash. Both
-    # halves come from scenes.yaml now, so they cannot disagree.
-    files = [HEADER, "",
-             "# One entry per scene, matching the `snd_<id>` ids the scripts",
-             "# above reference. Generated: do not hand-edit.", ""]
-    for i, scene in enumerate(doc["scenes"], start=1):
-        files.append(f"- id: snd_{scene['id']}")
-        files.append(f"  file: ../audio/{i:02d}_{scene['id']}.mp3")
-    MEDIA_OUT.write_text("\n".join(files) + "\n")
-
-    # The two implementations of `sfx` — the audio half of every scene.
-    #
-    # FLASH (castle.yaml): play the file embedded in the image. Costs ~600 KB
-    # of a 1.75 MB OTA slot, works with nothing attached.
-    #
-    # SD (castle_sd.yaml, via !extend): STREAM the same track off the card
-    # through the device's own web server over loopback. The media pipeline
-    # already knows how to read a URL; pointing it at 127.0.0.1 turns the SD
-    # card into a real streaming source with zero new decoder code — no PSRAM
-    # cap, no whole-file loads. If the card is missing, the embedded chirp
-    # (the only file the SD build keeps in flash) says so audibly.
-    flash = [HEADER, "", "script:",
-             "  - id: sfx",
-             MODE_RESTART,
-             "    parameters:",
-             "      track: string",
-             THEN,
-             "      - text_sensor.template.publish:",
-             "          id: current_track",
-             "          state: !lambda 'return track;'",
-             LAMBDA,
-             "          esphome::audio::AudioFile *f = nullptr;"]
-    for i, scene in enumerate(doc["scenes"], start=1):
-        kw = "if" if i == 1 else "else if"
-        flash.append(f"          {kw} (track == \"{i:02d}_{scene['id']}\") "
-                     f"f = id(snd_{scene['id']});")
-    flash += ["          if (f != nullptr) id(castle_media)->play_file(f, true, false);",
-              ("          else ESP_LOGW(\"castle\", \"no embedded audio for '%s'\","
-               " track.c_str());"), ""]
-    AUDIO_FLASH.write_text("\n".join(flash))
-
-    sd = [HEADER, "", "script:",
-          "  - id: sfx",
-          MODE_RESTART,
-          "    parameters:",
-          "      track: string",
-          THEN,
-          "      - text_sensor.template.publish:",
-          "          id: current_track",
-          "          state: !lambda 'return track;'",
-          LAMBDA,
-          "          if (!castle_sd::g_mounted) {",
-          "            ESP_LOGW(\"castle\", \"no SD card — playing the fallback chirp\");",
-          "            id(castle_media)->play_file(id(snd_chirp), true, false);",
-          "            return;",
-          "          }",
-          "          auto call = id(castle_media)->make_call();",
-          "          call.set_media_url(\"http://127.0.0.1:8080/sd/scenes/\" + track + \".mp3\");",
-          "          call.set_announcement(true);",
-          "          call.perform();", ""]
-    sd += emit_manifest_check(doc)
-    AUDIO_SD.write_text("\n".join(sd))
+    # The media manifest and both sfx implementations moved to
+    # gen_esphome_audio.py (the 500-line cap; the seam is honest — nothing
+    # about cues, everything about which bytes play and from where).
+    MEDIA_OUT.write_text(ga.emit_media_files(doc))
+    AUDIO_FLASH.write_text(ga.emit_audio_flash(doc))
+    AUDIO_SD.write_text(ga.emit_audio_sd(doc))
 
     n_cues = sum(len(s.get("cues") or []) for s in doc["scenes"])
     # Geometry the firmware indexes, and the strips that use it. Written
     # from the same `layouts` the cue scripts above were emitted against, so
     # a zone can never end up with cues aimed at pixels its strip lacks.
-    RIG_OUT.write_text(emit_rig_header(layouts, zones))
+    RIG_OUT.write_text(emit_rig_header(layouts, zones, round(cap * 100)))
     LIGHTS_OUT.write_text(emit_lights(layouts, zones, per))
 
     print(f"wrote {bp.rel(OUT)} + {MEDIA_OUT.name} "

@@ -222,4 +222,39 @@ export const api = {
     if (!r.ok) throw new Error(String(r.status));
     return r.json() as Promise<{ sd_free_kb?: number }>;
   },
+
+  /* The five calls below moved here from device.ts / device_panel.ts
+     (grade report A4): one shared timeout convention, one place the wire
+     shapes are cast, no bespoke error path per call site. */
+
+  /** The probe that decides simulator-vs-device. The raw Response — the
+   *  caller reads the studio marker out of the body itself. */
+  castleProbe: (timeoutMs: number): Promise<Response> =>
+    fetch("/api/status", { signal: AbortSignal.timeout(timeoutMs) }),
+
+  /** One castle action (scene, stop, volume, light, pir, delete…). The raw
+   *  Response: castleAct words a failure from the castle's own reply. */
+  castleAction: (path: string, method: "POST" | "DELETE"): Promise<Response> =>
+    fetch(path, { method, signal: AbortSignal.timeout(QUICK) }),
+
+  /** A castle JSON read the panel renders whole (status, files). Throws on
+   *  any non-2xx — the panel's catch renders "stopped answering". */
+  castleGet: async <T>(path: "/api/status" | "/api/files"): Promise<T> => {
+    const r = await fetch(path, { signal: AbortSignal.timeout(QUICK) });
+    if (!r.ok) throw new Error(`${path}: ${r.status}`);
+    return (await r.json()) as T;
+  },
+
+  /** The castle's boot log, verbatim. */
+  castleBootlog: async (): Promise<string> => {
+    const r = await fetch("/api/bootlog", { signal: AbortSignal.timeout(QUICK) });
+    return r.text();
+  },
+
+  /** PUT a file onto the card root. ENCODE, not QUICK: a multi-MB track
+   *  over porch WiFi is minutes, and the firmware feeds the watchdog per
+   *  chunk rather than hurrying. */
+  castlePut: (name: string, body: Blob): Promise<Response> =>
+    fetch(`/api/files/${encodeURIComponent(name)}`,
+          { method: "PUT", body, signal: AbortSignal.timeout(ENCODE) }),
 };

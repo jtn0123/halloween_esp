@@ -23,7 +23,7 @@ Fidelity notes, each mirrored from sd_web.h on purpose:
     only the later one runs (set_pending overwrites). A colour-picker drag
     lands its last colour; a stop-then-scene inside a tick loses the stop.
   - /api/volume takes digits only, 0..100 — atoi("abc")-is-0 was dogfood
-    ISSUE-007.
+    ISSUE-007 — and clamps to MAX_VOLUME_PCT like castle_sd.yaml does.
   - /api/scene 404s an unknown id — {"queued":true} for a typo was 008.
   - Filenames are one path component, nothing hidden, same safe_name rule,
     measured in BYTES as the board measures them.
@@ -51,6 +51,9 @@ from castle_emu_http import Handler
 
 #: The device applies queued actions on its main-loop interval.
 APPLY_DELAY_S = 0.2
+#: castle_sd.yaml clamps /api/volume to rig.h's kMaxVolumePct — scenes.yaml
+#: hardware.audio.max_volume — and so does this. test_castle_emu holds them equal.
+MAX_VOLUME_PCT = 100
 #: Rough playback clock: 96 kbps MP3 is ~12 kB of file per second.
 BYTES_PER_S = 12000
 
@@ -128,7 +131,7 @@ class CastleEmu(ThreadingHTTPServer):
     request_queue_size = 64
 
     def __init__(self, port: int = 0, sd_dir: Path | None = None,
-                 scenes: list[str] | None = None, version: str = "5.33",
+                 scenes: list[str] | None = None, version: str = "5.40",
                  wedge: bool = False, sd_mounted: bool = True,
                  serial: bool = False) -> None:
         super().__init__(("127.0.0.1", port), Handler)
@@ -143,6 +146,9 @@ class CastleEmu(ThreadingHTTPServer):
         self.missing = ""
         self.wedge = wedge
         self.sd_mounted = sd_mounted
+        #: write_body's free-space precondition (B3): KB free the emulated
+        #: card claims. None = report the disk's real number and never 507.
+        self.sd_free_kb: int | None = None
         # The real httpd is ONE task: a long PUT holds every other request
         # (the status poll included) until it finishes. --serial rehearses
         # that; the default threads so the bench stays snappy.
@@ -186,7 +192,7 @@ class CastleEmu(ThreadingHTTPServer):
         st = self.state
         with st.lock:
             if action == "VOLUME":
-                st.volume = int(arg)
+                st.volume = min(int(arg), MAX_VOLUME_PCT)
             elif action == "PLAY":
                 f = self.sd_dir / arg
                 size = f.stat().st_size if f.is_file() else 0
@@ -232,6 +238,9 @@ class CastleEmu(ThreadingHTTPServer):
                 "sd_free_kb": du.free // 1024 if self.sd_mounted else 0,
                 "missing": self.missing,
                 "volume": st.volume, "scene": st.scene, "track": st.track,
+                # B1: the ids this "build" runs with — the same list
+                # /api/scene checks, so the desk can spot a stale board.
+                "scenes": ",".join(self.scenes),
                 "show_on": st.show_on,
                 "pir": {"armed": st.pir["armed"],
                         "cooldown_s": st.pir["cooldown_s"],
@@ -250,12 +259,14 @@ class CastleEmu(ThreadingHTTPServer):
         return ('{"version":"%s","compiled":"%s","uptime_s":%d,'
                 '"sd_mounted":%s,"psram_free_kb":%d,"heap_free_kb":%d,'
                 '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
-                '"volume":%d,"scene":"%s","track":"%s","show_on":%s,'
+                '"volume":%d,"scene":"%s","track":"%s","scenes":"%s",'
+                '"show_on":%s,'
                 '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
                 % (t("version"), t("compiled"), i("uptime_s"),
                    b[bool(s["sd_mounted"])], i("psram_free_kb"), i("heap_free_kb"),
                    i("sd_total_kb"), i("sd_free_kb"), t("missing"),
-                   i("volume"), t("scene"), t("track"), b[bool(s["show_on"])],
+                   i("volume"), t("scene"), t("track"), t("scenes"),
+                   b[bool(s["show_on"])],
                    b[bool(pir["armed"])], int(pir["cooldown_s"]),
                    wire.json_escape(str(pir["scene"]))))
 

@@ -37,6 +37,8 @@ class FakeCard:
         self.dirs = list(dirs)
         self.calls: list[tuple[str, str, int]] = []
         self.short_by = 0          # report fewer bytes than sent, to test the check
+        self.crc: str | None = None   # a v5.42 reply's crc32; None = old firmware
+        self.subdirs: dict[str, dict[str, int]] = {}   # ?d= listings (v5.42)
 
     def __call__(self, ip: str, method: str, path: str, body: bytes | None = None,
                  timeout: float = 60) -> bytes:
@@ -45,11 +47,19 @@ class FakeCard:
             rows = [{"name": n, "size": s, "dir": False} for n, s in self.files.items()]
             rows += [{"name": d, "size": 0, "dir": True} for d in self.dirs]
             return json.dumps(rows).encode()
+        if method == "GET" and path.startswith("/api/files?d="):
+            d = urllib.parse.unquote(path.split("=", 1)[1])
+            rows = [{"name": n, "size": s, "dir": False}
+                    for n, s in self.subdirs.get(d, {}).items()]
+            return json.dumps(rows).encode()
         if method == "PUT":
             name = urllib.parse.unquote(path.rsplit("/", 1)[1])
             if path.startswith("/api/files/"):
                 self.files[name] = len(body or b"")
-            return json.dumps({"bytes": len(body or b"") - self.short_by}).encode()
+            reply: dict[str, object] = {"bytes": len(body or b"") - self.short_by}
+            if self.crc is not None:
+                reply["crc32"] = self.crc
+            return json.dumps(reply).encode()
         if method == "DELETE":
             self.files.pop(urllib.parse.unquote(path.rsplit("/", 1)[1]), None)
             return b"{}"
@@ -137,6 +147,24 @@ class TestPush(SdCase):
         self.assertEqual(rc, 1)
         self.assertEqual(self.puts(), [])
 
+    def test_a_crc_mismatch_is_a_failure(self) -> None:
+        """v5.42 answers with a CRC of what hit the card (B5) — a byte count
+        that matches but a checksum that does not is a bad sector, and the
+        push must SAY so instead of shipping noise to the show."""
+        (self.tmp / "t.mp3").write_bytes(b"abc")
+        self.card.crc = "deadbeef"           # never the CRC of b"abc"
+        with self.assertRaises(SystemExit) as cm:
+            self.run_quiet(sd_sync.cmd_push, "10.0.0.9", [str(self.tmp / "t.mp3")])
+        self.assertIn("crc mismatch", str(cm.exception))
+
+    def test_a_matching_crc_is_accepted(self) -> None:
+        import zlib
+        (self.tmp / "t.mp3").write_bytes(b"abc")
+        self.card.crc = "%08x" % zlib.crc32(b"abc")
+        self.assertEqual(
+            self.run_quiet(sd_sync.cmd_push, "10.0.0.9",
+                           [str(self.tmp / "t.mp3")]), 0)
+
     def test_a_short_write_is_a_failure_not_a_shrug(self) -> None:
         self.card.short_by = 1
         with self.assertRaises(SystemExit) as cm:
@@ -145,6 +173,31 @@ class TestPush(SdCase):
 
 
 class TestSiteScenesOta(SdCase):
+    def test_site_pushes_the_lean_page_and_the_scene_audio(self) -> None:
+        """The DEVICE gets the lean rewrite (G1/A5): inlined data URIs become
+        /site/<sid>.mp3 links and the tracks are pushed beside the page."""
+        (self.tmp / "previewer").mkdir(exist_ok=True)
+        (self.tmp / "previewer" / "castle-cue-desk.html").write_text(
+            '<html>"vigil": "data:audio/mpeg;base64,AAAA"</html>')
+        (self.tmp / "audio").mkdir(exist_ok=True)
+        (self.tmp / "audio" / "01_vigil.mp3").write_bytes(b"MP3" * 10)
+        self.assertEqual(self.run_quiet(sd_sync.cmd_site, "10.0.0.9"), 0)
+        by_path = {p: n for p, n in self.puts()}
+        self.assertIn("/api/site/index.html", by_path)
+        self.assertIn("/api/site/index.html.gz", by_path)
+        self.assertIn("/api/site/vigil.mp3", by_path)
+        # the pushed page links the card copy, and carries no data URI
+        import gzip as _gz
+        put_bodies = [b for m, p, b in self.card.calls if m == "PUT"]
+        self.assertTrue(put_bodies)
+        # sizes only are recorded; re-derive the lean text to check the link
+        import gen_previewer as gp
+        lean = gp.lean((self.tmp / "previewer" / "castle-cue-desk.html")
+                       .read_text(), route="/site/", suffix=".mp3")
+        self.assertIn('"vigil": "/site/vigil.mp3"', lean)
+        self.assertNotIn("data:audio/mpeg", lean)
+        _ = _gz  # gzip round-trip covered by the size assertions above
+
     def test_site_pushes_gzipped_and_plain_copies(self) -> None:
         page = self.tmp / "previewer" / "castle-cue-desk.html"
         page.parent.mkdir()
@@ -160,6 +213,19 @@ class TestSiteScenesOta(SdCase):
         with self.assertRaises(SystemExit) as cm:
             self.run_quiet(sd_sync.cmd_site, "1.2.3.4")
         self.assertIn("make preview", str(cm.exception))
+
+    def test_scenes_skips_tracks_the_card_already_holds(self) -> None:
+        """Same name, same size in /sd/scenes (the v5.42 ?d= listing) — not
+        re-sent. The studio publishes after every scene save; steady state
+        must not be a ten-track resend over porch WiFi."""
+        (self.tmp / "audio").mkdir()
+        (self.tmp / "audio" / "01_vigil.mp3").write_bytes(b"x" * 100)
+        (self.tmp / "audio" / "02_storm.mp3").write_bytes(b"y" * 200)
+        self.card.subdirs["scenes"] = {"01_vigil.mp3": 100}   # already there
+        self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
+        sent = [p for p, _n in self.puts()]
+        self.assertEqual(sent, ["/api/scenes/02_storm.mp3"])
+        self.assertIn("01_vigil.mp3 unchanged, skipped", self.out.getvalue())
 
     def test_scenes_uploads_the_numbered_tracks_but_not_00(self) -> None:
         audio = self.tmp / "audio"

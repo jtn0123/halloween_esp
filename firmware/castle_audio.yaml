@@ -1,0 +1,51 @@
+# The audio stack — I2S bus, the MAX98357A speaker, the media player — split
+# out of castle.yaml (the 500-line cap) on the seam the two builds already
+# share: castle_flash.yaml and castle_sd.yaml each `!extend castle_media` to
+# add their own `files:`. Pins come from castle.yaml's substitutions.
+
+i2s_audio:
+  - id: i2s_bus
+    i2s_lrclk_pin: GPIO${pin_i2s_lrclk}
+    i2s_bclk_pin: GPIO${pin_i2s_bclk}
+
+speaker:
+  - platform: i2s_audio
+    id: castle_speaker
+    i2s_audio_id: i2s_bus
+    i2s_dout_pin: GPIO${pin_i2s_dout}
+    dac_type: external
+    channel: mono
+    sample_rate: 44100
+    bits_per_sample: 16bit
+
+media_player:
+  - platform: speaker
+    id: castle_media
+    name: "Castle audio"
+    # One pipeline only. ESPHome refuses to let the announcement and media
+    # pipelines share a speaker (it wants a `mixer` for that), and the show
+    # plays exactly one scene at a time — so scenes go out as announcements.
+    # `format: MP3` pulls in the MP3 decoder; the default is FLAC.
+    announcement_pipeline:
+      speaker: castle_speaker
+      format: MP3
+      sample_rate: 44100
+      num_channels: 1
+    # Default is 1 MB, which is half the PSRAM on this board.
+    buffer_size: 250000
+    volume_initial: 70%
+    # The read/decode tasks run at priority 1 — the MAIN LOOP's priority —
+    # so at a scene start the decoder only gets what the pixel render and
+    # the cue scripts leave it, and the speaker (priority 19) pads silence
+    # when it falls behind: a choppy first second or two (2026-08-22, heard
+    # on every scene start, worst with the full cue timeline). Their stacks
+    # in PSRAM made each slice slower still — the S2 reaches PSRAM through
+    # an 8 KB cache and Helix is stack-heavy. Internal RAM costs ~8-10 KB of
+    # heap (not static) and decodes faster per slice. OUTCOME (v5.40, by
+    # ear, same evening): no audible change at a scene start, and free
+    # heap while a song plays fell 62 -> 34 KB. Open — see
+    # docs/ISSUE-scene-start-audio.md before keeping or reverting this.
+    task_stack_in_psram: false
+    # NO `files:` here — each variant adds its own via `!extend castle_media`
+    # (extend appends, and appending to nothing is the one case where that
+    # semantics does exactly what we want).

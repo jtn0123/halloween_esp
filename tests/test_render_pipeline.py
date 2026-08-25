@@ -175,11 +175,20 @@ class TestStaleSweep(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(ra.main(), 0)
 
+    def test_card_copies_follow_a_redirected_out(self) -> None:
+        """The card dir must derive from OUT when used, not at import — a
+        module-level path once pointed a sandboxed test's sweep at the real
+        audio/card/ and deleted two rendered scenes."""
+        self.assertEqual(ra.card_dir(), self.out / "card")
+
     def test_a_full_render_sweeps_what_it_did_not_write(self) -> None:
         self.run_main()
         names = sorted(p.name for p in self.out.iterdir())
         self.assertEqual(names, ["00_chirp.mp3", "01_one.mp3", "02_two.mp3",
-                                 "markers.json", "notes.txt"])
+                                 "markers.json", "notes.txt", "test"])
+        # The speaker test's tones render beside the scenes, never swept.
+        self.assertEqual(sorted(p.name for p in (self.out / "test").iterdir()),
+                         sorted(f"{stem}.mp3" for stem, _ in ra.TEST_TONES))
         self.assertEqual((self.out / "02_two.mp3").read_bytes(), b"new")
 
     def test_a_partial_render_sweeps_nothing(self) -> None:

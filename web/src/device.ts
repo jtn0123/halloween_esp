@@ -28,10 +28,17 @@
  * runs its own show engine and this page only nudges it.
  */
 
-import { castleChanged, isCastleBusy, onCastleChanged, setCastleLive }
-  from "./castle_bus.js";
+import { api } from "./api.js";
+import { isCastleBusy, onCastleChanged, setCastleLive } from "./castle_bus.js";
+import { castleAct } from "./castle_act.js";
 import { chipHtml, nowLine, sdText, wireChip } from "./device_chip.js";
+import { esc } from "./dom.js";
 import { DevicePanel } from "./device_panel.js";
+
+// The action layer (toast, failReason, castleAct) lives in castle_act.ts
+// now; re-exported so the panel, the library rows and the tests keep their
+// import path.
+export { toast, failReason, castleAct, type ActOpts } from "./castle_act.js";
 
 /** What `deviceBridge()` hands back; every call is safe in simulator mode. */
 export interface DeviceLink {
@@ -57,6 +64,12 @@ interface Status {
   /** tools/studio.py answers the probe too (so it isn't a console error),
    *  marked with this so we don't mistake the laptop for the castle. */
   studio?: boolean;
+  /** On the studio's marker answer: the castle host it is configured to
+   *  relay to — present means "a castle is expected and not answering". */
+  castle?: string;
+  /** Comma-joined scene ids the firmware was BUILT with (v5.42+) — the
+   *  desk diffs them against its own list to spot a stale board (C6). */
+  scenes?: string;
 }
 
 /** Room for the studio to try two addresses (1 s connect each, castle_link
@@ -69,117 +82,25 @@ const RETRY_MS = 5000;
 /** The slow poll once live; actions re-poll sooner via castleAct(). */
 const POLL_MS = 15000;
 
+/** Set when the studio answered FOR a castle it could not reach: the host
+ *  it was trying. That is the one no-castle case worth surfacing (C3) — a
+ *  page opened from disk, or a studio with no castle configured, is a
+ *  simulator on purpose and gets no placeholder. */
+let expectedCastle: string | null = null;
+
 async function probe(): Promise<Status | null> {
   try {
-    const r = await fetch("/api/status", {
-      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
-    });
+    const r = await api.castleProbe(PROBE_TIMEOUT_MS);
     if (!r.ok) return null;
     const s = (await r.json()) as Status;
-    return s.studio ? null : s;
+    if (s.studio) {
+      expectedCastle = typeof s.castle === "string" && s.castle ? s.castle : null;
+      return null;
+    }
+    return s;
   } catch {
     return null;
   }
-}
-
-/** Where toasts stack: one fixed column above the dock, newest at the
- *  bottom. Two toasts a second apart used to print on the same pixels
- *  (J2-3); now they stack, identical text is not repeated while it is still
- *  showing, and only the last few stay on screen. */
-const TOAST_MAX = 3;
-function toastHost(): HTMLDivElement {
-  let host = document.getElementById("toasts") as HTMLDivElement | null;
-  if (!host) {
-    host = document.createElement("div");
-    host.id = "toasts";              // styled in previewer/panels.css
-    // A live region: a screen reader hears "scene failed — …" the way a
-    // sighted operator sees it (grade report C1). Polite for the host;
-    // each error toast is its own role="alert" so it interrupts.
-    host.setAttribute("role", "status");
-    host.setAttribute("aria-live", "polite");
-    document.body.appendChild(host);
-  }
-  return host;
-}
-
-/** One small transient message near the chip. The device queues actions, so
- *  "queued" IS the honest success state — see the interval in castle_sd.yaml. */
-export function toast(msg: string, isError = false): void {
-  const host = toastHost();
-  for (const live of Array.from(host.children)) {
-    if (live.textContent === msg) return;       // already saying exactly this
-  }
-  while (host.children.length >= TOAST_MAX) host.firstElementChild?.remove();
-  const el = document.createElement("div");
-  el.textContent = msg;
-  el.className = isError ? "toast toast--err" : "toast";
-  if (isError) el.setAttribute("role", "alert");
-  host.appendChild(el);
-  setTimeout(() => { el.style.opacity = "0"; }, isError ? 3200 : 1400);
-  setTimeout(() => el.remove(), isError ? 3700 : 1900);
-}
-
-/** Why a castle call failed, in the castle's own words: its error pages are
- *  short plain text ("unknown scene", "need ?v=0..100", "no SD card"), the
- *  studio's relay answers JSON {"error": ...}. "failed" alone cannot tell a
- *  typo from a dead castle (pass 1, J1-6). */
-export async function failReason(r: Response): Promise<string> {
-  if (r.status === 502) return "castle not reachable";
-  if (r.status === 504) return "castle did not answer in time";
-  try {
-    const text = (await r.text()).trim();
-    if (text.startsWith("{")) {
-      const j = JSON.parse(text) as { error?: string };
-      return j.error || `HTTP ${r.status}`;
-    }
-    return text.slice(0, 80) || `HTTP ${r.status}`;
-  } catch {
-    return `HTTP ${r.status}`;
-  }
-}
-
-export interface ActOpts {
-  method?: "POST" | "DELETE";
-  /** Toast only on failure — for controls that fire continuously. */
-  quiet?: boolean;
-}
-
-/** ONE castle action: call, toast the outcome (with the reason when it went
- *  wrong), and announce the change so the chip re-polls about a second
- *  later — instead of waiting out the 15 s cycle. Every castle button in
- *  the desk goes through here: the chip, the panel, the library rows. */
-export async function castleAct(path: string, okMsg: string,
-                                opts: ActOpts = {}): Promise<boolean> {
-  // Re-poll after EVERY outcome: a failure is news too — it is usually how
-  // the desk first learns the castle went away, and the masthead/chip
-  // should say so within a second rather than at the next 15 s poll.
-  let r: Response;
-  try {
-    r = await fetch(path, { method: opts.method ?? "POST" });
-  } catch {
-    toast(`${okMsg} failed — no answer from the castle`, true);
-    castleChangedSoon();
-    return false;
-  }
-  if (!r.ok) {
-    toast(`${okMsg} failed — ${await failReason(r)}`, true);
-    castleChangedSoon();
-    return false;
-  }
-  if (!opts.quiet) toast(okMsg);
-  castleChangedSoon();
-  return true;
-}
-
-/** The chip's re-poll, debounced: a burst of clicks is one poll, and it
- *  lands after the castle's queued action + main-loop tick (~200 ms). */
-let changedTimer: number | undefined;
-function castleChangedSoon(): void {
-  clearTimeout(changedTimer);
-  changedTimer = window.setTimeout(() => {
-    changedTimer = undefined;
-    castleChanged();
-  }, 900);
 }
 
 export interface BridgeOpts {
@@ -199,6 +120,10 @@ export interface BridgeOpts {
   /** The card's reported size, KB, on every answer — null when the castle
    *  does not say (older firmware, no card) or has stopped answering. */
   onCard?: (totalKb: number | null) => void;
+  /** The scene ids the castle's FIRMWARE was built with, on every answer —
+   *  null when the firmware predates the field. The desk diffs this against
+   *  its own list and dims scenes the board cannot play (C6). */
+  onScenes?: (ids: string[] | null) => void;
   /**
    * The device half of the masthead's status line — "castle v1.4 · SD ok ·
    * mirroring", or "castle not answering" once it stops replying. `ok` is
@@ -241,6 +166,41 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   const chip = document.createElement("div");
   chip.id = "deviceChip";          // styled in previewer/panels.css; hidden until contact
   dock.appendChild(chip);
+
+  /* ── The hand wins (C1) ──────────────────────────────────────────────
+     The poll must not rebuild the chip while a pointer or keyboard focus is
+     on it: replacing #devVol mid-drag kills the drag and snaps the value
+     back to the last polled level. While the chip is busy the fresh status
+     is parked and only the read-only ▶ line is updated in place; the parked
+     render lands on pointerup/focusout. The markup memo below also skips
+     the rebuild entirely when nothing visible changed (G4) — on a kiosk
+     left open all night that is every poll. */
+  let pointerOnChip = false;
+  let pendingStatus: Status | null = null;
+  let lastMarkup = "";
+  const chipBusy = (): boolean => {
+    // The seeking placeholder has no control worth preserving — first
+    // contact must replace it even though its Retry button holds focus.
+    // (By the button, not the class: render() strips `seeking` before it
+    // asks, so the class is already gone when this runs.)
+    const a = document.activeElement;
+    if (a !== null && a.id === "devRetry") return false;
+    return pointerOnChip || chip.contains(a);
+  };
+  const flushPending = (): void => {
+    if (pendingStatus && !chipBusy()) {
+      const s = pendingStatus;
+      pendingStatus = null;
+      render(s);
+    }
+  };
+  chip.addEventListener("pointerdown", () => { pointerOnChip = true; });
+  window.addEventListener("pointerup", () => {
+    pointerOnChip = false;
+    flushPending();
+  });
+  // focusout fires before the new focus target is set; defer the check.
+  chip.addEventListener("focusout", () => setTimeout(flushPending, 0));
 
   // True while the last poll answered. The masthead must not flip back to
   // a healthy line just because ♪ or the mirror box was toggled while the
@@ -348,7 +308,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
 
   const render = (s: Status): void => {
     chip.classList.add("live");
-    chip.classList.remove("down");
+    chip.classList.remove("down", "seeking");
     const wasDown = !lastOk;
     lastOk = true;
     lastVol = s.volume ?? lastVol;
@@ -365,9 +325,34 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     if (wasDown) panel.refresh();
     lastSeen = new Date();
     lastPlaying = nowLine(s);
-    chip.innerHTML = chipHtml(s, lastVol, mirror);
+    opts.onScenes?.(s.scenes === undefined
+      ? null : s.scenes.split(",").filter(Boolean));
+    const markup = chipHtml(s, lastVol, mirror);
+    if (chipBusy()) {
+      // A hand or focus is on the chip: park the render, refresh only the
+      // read-only now-playing line so the words stay honest.
+      pendingStatus = s;
+      const nowEl = chip.querySelector<HTMLElement>("#devNow");
+      if (nowEl) { nowEl.textContent = nowLine(s); nowEl.title = ""; }
+      syncRouteUI();
+      return;
+    }
+    if (markup === lastMarkup) {
+      // Nothing visible changed (G4) — but the down-state may have written
+      // "last seen …" into #devNow directly, so restore the live line.
+      const nowEl = chip.querySelector<HTMLElement>("#devNow");
+      if (nowEl && wasDown) { nowEl.textContent = nowLine(s); nowEl.title = ""; }
+      syncRouteUI();
+      afterRender(s);
+      return;
+    }
+    lastMarkup = markup;
+    chip.innerHTML = markup;
     wireChip(chip, {
-      mirror: (on) => { mirror = on; sayStatus(s); },   // the masthead says whether picks reach the porch
+      mirror: (on) => {
+        mirror = on;                 // the masthead says whether picks reach the porch
+        if (lastStatus) sayStatus(lastStatus);
+      },
       stop: () => act("/api/stop", "stop"),
       more: () => panel.toggle(),
       route: () => applyRoute(soundRoute === "mac" ? "castle" : "mac", true),
@@ -381,6 +366,12 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       },
     });
 
+    afterRender(s);
+  };
+
+  /** Render's tail, shared with the skipped-rebuild path: first-contact
+   *  route enforcement plus the controls' enabled state. */
+  const afterRender = (s: Status): void => {
     // First contact: make the amp match the remembered route. Only the
     // castle side — the desk's own muted-by-default rule still governs
     // page load, so no browser audio starts without a press.
@@ -445,12 +436,36 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     setInterval(() => void refresh(), opts.pollMs ?? POLL_MS);
   }
 
+  /** C3: after three missed probes, an EXPECTED castle stops being a blank
+   *  box — the chip says which host it is trying and offers a retry now.
+   *  Only when the studio names a configured castle (expectedCastle): a
+   *  desk opened from disk, or a studio with no castle set, is a simulator
+   *  on purpose and stays quiet. */
+  function seeking(): void {
+    if (live || !expectedCastle) return;
+    chip.classList.add("seeking");
+    chip.innerHTML =
+      `<div>🏰 looking for the castle… <small class="chip__seek">` +
+      `no answer from ${esc(expectedCastle)} — retrying every ` +
+      `${RETRY_MS / 1000} s</small></div>` +
+      `<button id="devRetry" class="chip__btn" type="button" ` +
+      `title="Probe the castle again right now">Retry</button>`;
+    chip.querySelector<HTMLButtonElement>("#devRetry")!
+      .addEventListener("click", () =>
+
+        void probe().then((now) => {
+          if (now !== null && !live) firstContact(now);
+        }));
+  }
+
   void probe().then((s) => {
     if (s !== null) { firstContact(s); return; }
+    let misses = 1;
     const retry = window.setInterval(() => {
       if (live) { clearInterval(retry); return; }
       void probe().then((now) => {
         if (now !== null && !live) { clearInterval(retry); firstContact(now); }
+        else if (now === null && !live && ++misses === 3) seeking();
       });
     }, RETRY_MS);
   });

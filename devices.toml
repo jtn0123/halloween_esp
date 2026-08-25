@@ -7,11 +7,13 @@
 # device a DHCP reservation in the router and record the address here once.
 
 [castle-sd]
-host = "10.27.27.238"
+# 2026-08-22: the NEW board (MAC 84:f7:03:d7:99:3c, rewired, speakers on)
+# — the router's lease for it today. The old board kept .187 and is being
+# retired; it is deliberately not a fallback. Make the DHCP reservation for
+# this MAC and point this at it when you get a minute.
+host = "10.27.27.247"
 # Tried in order when `host` stops answering (castle_link.castle_hosts) —
-# the safety net until the DHCP reservation below actually exists.
-fallbacks = ["10.27.27.142", "10.27.27.7"]
-# 2026-08-19: the .7 reservation was never actually created in UniFi; this
-# is the lease the router hands the board today. Make the reservation and
-# point this back at it when you get a minute.
+# the safety net until that reservation exists. .238 and .142 were the
+# leases the previous board had; harmless to keep until the new one moves.
+fallbacks = ["10.27.27.238", "10.27.27.142"]
 # The SD-equipped castle on the porch stack: eInk FeatherWing + 32 GB card.

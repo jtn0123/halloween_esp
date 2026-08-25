@@ -10,3 +10,25 @@ PY=$(command -v .venv/bin/python || command -v python3)
 "$PY" -m ruff check tools tests
 "$PY" -m mypy tools tests
 "$PY" tools/check_loc.py
+
+# The TS half gets the same gate as the Python half (grade report I1) —
+# with a tsconfig this strict, tsc is the highest-value check in the repo.
+# Guarded on node_modules so a Python-only clone still commits.
+if [ -d web/node_modules ]; then
+  (cd web && npx tsc --noEmit)
+fi
+
+# The repo's only real secret is one gitignore line away from history (E2):
+# refuse a staged secrets.yaml, and refuse any staged file that contains the
+# actual PSK (read from the live file, never echoed).
+if git diff --cached --name-only | grep -q 'secrets\.yaml$'; then
+  echo "pre-commit: firmware/secrets.yaml is staged — that file never lands in git" >&2
+  exit 1
+fi
+if [ -f firmware/secrets.yaml ]; then
+  PSK=$(sed -n 's/^wifi_password:[[:space:]]*"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' firmware/secrets.yaml | head -1)
+  if [ -n "$PSK" ] && git diff --cached | grep -qF -- "$PSK"; then
+    echo "pre-commit: a staged change contains the WiFi password — remove it" >&2
+    exit 1
+  fi
+fi

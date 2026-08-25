@@ -37,6 +37,10 @@ Part of the design record; the index is [`PROJECT_NOTES.md`](../../PROJECT_NOTES
 | 2026-08-10 | MP3 stays the codec | Measured on the board: zero underruns, zero decode errors, 32.7 ms average loop. The S2-can't-decode folklore is wrong at 96 kbps mono (§12.13) |
 | 2026-08-10 | Never set CONFIG_ESP_CONSOLE_USB_CDC on this board | It doesn't just fail — it panics. Interrupt watchdog timeout inside `esp_usb_console_flush_internal`, captured from the crash log (§12.14) |
 | 2026-08-10 | Find the device by IP, not mDNS | mDNS does not resolve on this network; the API on port 6053 does. A subnet scan found it immediately (§12.14) |
+| 2026-08-22 | Two bitrates: 32 kbps embedded, 96 kbps on the card | The flash build is bounded by its 2.9 MB partition; the card never was. 32 kbps brickwalls at ~6 kHz, measured; 96 is what the show was tuned at (`scenes.yaml` `card_bitrate`, `audio/card/`) |
+| 2026-08-22 | Scene audio stays mono | Both amps are pinned LEFT (WIRING §5) and the S2 puts a mono stream in the left slot at full level — stereo doubles the bytes and changes nothing (HARDWARE_FINDINGS §8) |
+| 2026-08-22 | One volume ceiling, `hardware.audio.max_volume` | Generated into every scene's level and rig.h, clamped by /api/volume and the emulator. 0.8 for the bare 4 Ω drivers that crackled above it; 1.0 for the shrouded pair that replaced them |
+| 2026-08-22 | A stop stops the scripts; a play halts them | `scene_stop` only cleared output until v5.35, so a looping scene walked back on; `/api/play` runs `run_scene("halt")` first (v5.37) so a song or a test tone keeps the speakers |
 
 ---
 

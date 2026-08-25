@@ -44,10 +44,11 @@ const AUDIO = { a: "data:audio/mpeg;base64,AAAA", b: "data:audio/mpeg;base64,BBB
   ok(new RenderedAudio({}).defaultMode === "synth", "with no files the default is the synth");
   ok(r.count === 2 && r.has("a") && !r.has("zzz"), "count/has report the files given");
 
-  const elA = media.find(a => a.src === AUDIO.a);
   r.latency = 120;
+  ok(media.length === 0, "no element exists before the first audition (G5)");
   ok(r.play(A, 0) === true, "play() accepts a scene it has a file for");
   ok(r.play(scene({ id: "nope" })) === false, "play() refuses a scene it has no file for");
+  const elA = media.find(a => a.src === AUDIO.a);   // born on first play
   ok(elA.paused && elA.log.length === 0, "nothing starts before the latency elapses");
   clock.advance(119);
   ok(elA.paused, "still silent one ms before the modelled latency");
@@ -106,12 +107,13 @@ const AUDIO = { a: "data:audio/mpeg;base64,AAAA", b: "data:audio/mpeg;base64,BBB
   r.pauseAll();
   clock.advance(100);
   ok(elA.paused, "Pause inside the latency window cancels the pending start too");
-  const elB = media.find(a => a.src === AUDIO.b);
   r.play(A, 0);
   clock.advance(10);
   r.play(B, 0);
+  const elB = media.find(a => a.src === AUDIO.b);   // born on ITS first play
   clock.advance(100);
   ok(elA.paused && !elB.paused, "a second play() inside the window supersedes the first");
+  ok(elA.src === "", "…and the superseded element is released, buffer and all (G5)");
   r.stopAll();
 }
 
@@ -145,7 +147,8 @@ media.length = 0;
   tr.seekTo(2000);
   ok(!state.running && state.held === 2000 && running() === 0,
      "seekTo while stopped moves the clock only — no audio");
-  ok(Math.abs(elOf("a").currentTime - 2) < 1e-9, "seekTo drags the file's position while stopped");
+  ok(elOf("a") === undefined,
+     "…and no element even exists yet (G5): play(fromMs) seeks when it starts");
 
   tr.restart();
   ok(!state.running && running() === 0 && state.held === 0,
@@ -167,10 +170,13 @@ media.length = 0;
      "once the synth is armed the sliders are replayed onto it");
   ok(Math.abs(tr.elapsed() - 90) < 1e-9, "elapsed() follows the clock while running");
 
-  // Scene change while playing keeps playing — on the NEW file.
+  // Scene change while playing keeps playing — on the NEW file. (Grab the
+  // old element's handle first: the release that stops it also clears its
+  // src, so elOf cannot find it afterwards — that is the release working.)
+  const fileA = elOf("a");
   tr.loadScene(B, { play: state.running });
   ok(state.running, "loading a scene while playing keeps playing");
-  ok(elOf("a").paused, "…the old file stops");
+  ok(fileA.paused && fileA.src === "", "…the old file stops and is released (G5)");
   clock.advance(90);
   ok(!elOf("b").paused && elOf("b").loop === true, "…and the new file runs, looping as the scene says");
   ok(calls.sceneChange.at(-1) === "b", "the host is told about the new scene");
