@@ -167,8 +167,21 @@ digit-for-digit (f64, no tolerances) against tools/pulse_dynamics.py by
 tests/test_pulse_rust.py over a seeded corpus via the pulse_dump line
 protocol; thin_pulses compared by surviving-index identity so both
 tie-breaks are pinned. section_gates' YAML walking stays Python (plumbing,
-not arithmetic). Next B2 passes: pulse_expand.py's pulse_cues, then the
-fuzz-harness swap. NOT done, deliberately: the desk swap (wiring
+not arithmetic).
+
+B2 passes 2-3 + B4 passes 1-2 (2026-08-27, second Track-B run):
+core/src/pulse_expand.rs carries the whole pulse-to-cue merge (zone
+round-robin, decisive pan, boost, takeover, drift, velocity masks —
+including every .get default), pinned by a 300-stream random-presence
+corpus AND by the live cross-language fuzz: tools/fuzz_check.py now
+computes a third "rust" answer per case and asserts it equals the
+Python's inside make check. Nothing retired yet — the fuzz-harness
+shrink waits for post-Halloween with the desk swap. B4 started early:
+core/src/bridge.rs + the `castle` bin speak sd_web.h's HTTP on a bare
+TcpStream (zero deps) — status/health/scene/play/stop/volume/show/
+blackout/files/bootlog all round-trip castle_emu in
+tests/test_bridge_rust.py. Host discovery (devices.toml, fallback
+walks) stays in tools/hosts.py until the sd_sync verbs port. NOT done, deliberately: the desk swap (wiring
 the wasm into the previewer in place of effects.ts) stays post-Halloween —
 it changes what the live show previews with, and the sine-effect
 wasm-libm-vs-JS-Math deltas need the swap harness's tolerance model.
