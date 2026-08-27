@@ -253,6 +253,30 @@ the imported-track path (ffmpeg decode + analyze's onset bands — FFT-
 framed, next season), and render_audio's orchestration itself, which
 retires only when the tool calls the crate (a swap, so post-Halloween).
 
+B3 passes 12-15 (2026-08-27, sixth Track-B run — the ears): analyze.py
+left scipy's kernels first, like limit and the hall before it — its
+STFT rebuilt on synth_master's defined-order FFT (with scipy's exact
+framing, periodic hann, and the t grid matched BITWISE: frame centres
+shifted back, not i*HOP/sr), np.convolve smoothing replaced by an
+explicit FIR, signal.medfilt by an explicit zero-padded middle element
+— behavioral identity proven hit-for-hit on a ten-way corpus before
+committing. core/src/onsets.rs then ports the whole detector, which
+meant pinning numpy's REDUCTION orders: np.sum is pairwise (8
+accumulators per 128-block, recursive halving above), np.std rides it,
+.sum(axis=0) adds rows sequentially, and complex abs is numpy's own
+scaled hypot with a fused inner term (ax*sqrt(fma(r,r,1)) — none of
+libm hypot, naive, or plain-scaled matched). envelope(), analyze_full's
+beatless merge and annotate_pan followed (round(pan,2) = {:.2}, same
+ties-to-even story), and core/src/media.rs closes analyze_file: both
+languages run the identical ffmpeg command, so the samples agree by
+construction. Gates: tests/test_onsets_rust.py — band dictionaries
+equal hit for hit across bursts, waltz, heartbeat, drones at three
+sensitivities, stereo pans, and two real WAV files end to end. With
+this, EVERYTHING the importer computes and everything the renderer
+produces exists once, in castle-core, bit-exact. Left in Python: the
+orchestration shells (render_audio, import_track, studio) — they retire
+with the B5/post-Halloween swaps, not with more math.
+
 | Loop | Iteration unit | Gate per pass | Stops when |
 |---|---|---|---|
 | B1 core/effects | scaffold → int hash → 1 effect family per pass → WASM face → desk swap | Rust tests + frame-exact vs TS/C++ + page ≤4MB budget | old parity suite retired |
