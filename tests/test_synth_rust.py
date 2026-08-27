@@ -204,6 +204,73 @@ class TestSynthRngParity(unittest.TestCase):
                 int(crc, 16), zlib.crc32(buf.tobytes()), f"crc diverged: {case}"
             )
 
+    def test_pieces_match_bit_for_bit_markers_included(self) -> None:
+        """The compositions: whole mixed buffers digest-equal, and the light
+        markers (what the cue generators consume) float-equal."""
+        assert CARGO is not None
+        subprocess.run(
+            [
+                CARGO,
+                "build",
+                "--release",
+                "--quiet",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=300,
+        )
+        import synth
+
+        cases: list[tuple[str, float | None]] = [
+            ("organ", None),
+            ("descent", None),
+            ("waltz", None),
+            ("musicbox", None),
+            ("toll", None),
+            ("drone", 20.0),
+            ("drone", 7.3),
+        ]
+        lines = [
+            f"piece {name}" + ("" if dur is None else f" {fmt(dur)}")
+            for name, dur in cases
+        ]
+        run = subprocess.run(
+            [str(DUMP)],
+            input="\n".join(lines) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=180,
+        )
+        got = run.stdout.splitlines()
+        self.assertEqual(len(got), len(cases))
+        for (name, dur), reply in zip(cases, got):
+            if name == "drone":
+                assert dur is not None
+                res: object = synth.drone(dur)
+            else:
+                res = getattr(synth, name)()
+            sig, marks = res if isinstance(res, tuple) else (res, [])
+            buf = np.asarray(sig, dtype="<f8")
+            head, _, mtext = reply.partition(" | ")
+            crc, n, *probes = head.split()
+            self.assertEqual(int(n), len(buf), (name, dur))
+            stride = max(1, len(buf) // 16)
+            want_probes = [float(buf[i]) for i in range(0, len(buf), stride)]
+            self.assertEqual(
+                [float(p) for p in probes], want_probes, f"probe diverged: {name}"
+            )
+            self.assertEqual(
+                int(crc, 16), zlib.crc32(buf.tobytes()), f"crc diverged: {name}"
+            )
+            got_marks = [
+                (float(a), float(b))
+                for a, b in (m.split(":") for m in mtext.split(",") if m)
+            ]
+            self.assertEqual(got_marks, [(float(a), float(b)) for a, b in marks], name)
+
 
 if __name__ == "__main__":
     unittest.main()

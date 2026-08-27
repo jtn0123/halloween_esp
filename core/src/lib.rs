@@ -13,6 +13,7 @@ pub mod hosts;
 pub mod noise;
 pub mod overlay;
 pub mod palette;
+pub mod pieces;
 pub mod pulse;
 pub mod pulse_expand;
 pub mod rng;

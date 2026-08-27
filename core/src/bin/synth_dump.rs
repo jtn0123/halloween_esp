@@ -11,6 +11,7 @@
 //! side parses them back with float()/int() so spelling cannot false-fail.
 
 use castle_core::bridge::crc32;
+use castle_core::pieces;
 use castle_core::rng::Pcg64;
 use castle_core::synth;
 use std::io::BufRead;
@@ -86,6 +87,27 @@ fn main() {
                     }
                 };
                 println!("{}", digest(&buf));
+            }
+            "piece" => {
+                // piece <name> [dur] — buffer digest, then " | t:v" markers.
+                let _ = seed;
+                let mut rest = line.split_whitespace().skip(1);
+                let name = rest.next().unwrap_or("");
+                let dur: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(20.0);
+                let (buf, marks): (Vec<f64>, Vec<(f64, f64)>) = match name {
+                    "drone" => (pieces::drone(dur), Vec::new()),
+                    "toll" => pieces::toll(),
+                    "organ" => pieces::organ(),
+                    "descent" => (pieces::descent(), Vec::new()),
+                    "waltz" => pieces::waltz(),
+                    "musicbox" => (pieces::musicbox(), Vec::new()),
+                    _ => {
+                        println!("ERR unknown piece {name}");
+                        continue;
+                    }
+                };
+                let ms: Vec<String> = marks.iter().map(|(t, v)| format!("{t:?}:{v:?}")).collect();
+                println!("{} | {}", digest(&buf), ms.join(","));
             }
             other => println!("ERR unknown op {other}"),
         }
