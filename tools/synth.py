@@ -424,51 +424,12 @@ def musicbox() -> Voice:
     return buf
 
 
-# ── room and master ───────────────────────────────────────────────────────
-
-
-def reverb_ir(secs: float, decay: float, rng: np.random.Generator) -> np.ndarray:
-    n = int(secs * SR)
-    return _noise(n, rng) * (1.0 - np.arange(n) / n) ** decay
-
-
-def apply_reverb(x: np.ndarray, wet: float, rng: np.random.Generator) -> np.ndarray:
-    """The stone hall. Without it the organ is just a synth patch."""
-    if wet <= 0:
-        return x
-    ir = reverb_ir(3.4, 2.4, rng)
-    tail = signal.fftconvolve(x, ir)[: len(x)]
-    peak = np.max(np.abs(tail))
-    if peak > 0:
-        tail /= peak
-    return np.asarray(x + wet * tail * np.max(np.abs(x) + 1e-9))
-
-
-def limit(x: np.ndarray, ceiling: float = 0.89) -> np.ndarray:
-    """Lookahead limiter. Two overlapping organ chords clip without it.
-
-    Smoothed peak envelope -> per-sample gain -> smoothed again so the gain
-    ride is inaudible. Hard clip at the end is a backstop, not the mechanism.
-    """
-    if np.max(np.abs(x)) <= 0:
-        return x
-    win = max(1, int(0.005 * SR))
-    env = np.convolve(np.abs(x), np.ones(win) / win, mode="same")
-    gain = np.ones_like(env)
-    over = env > ceiling
-    gain[over] = ceiling / env[over]
-    smooth = max(1, int(0.02 * SR))
-    # Pad with the edge value rather than letting convolve assume zeros past
-    # the ends. With mode="same" alone the first and last ~10 ms came back at
-    # roughly half gain — inaudible as a de-click on a one-shot, but wind and
-    # drone loop, so the seam dipped on every pass.
-    pad = smooth // 2
-    padded = np.pad(gain, pad, mode="edge")
-    gain = np.convolve(padded, np.ones(smooth) / smooth, mode="same")[
-        pad : pad + len(env)
-    ]
-    return np.asarray(np.clip(x * gain, -1.0, 1.0))
-
+# ── room and master: split to synth_master.py at the 500-line cap ─────────
+# Re-exported here so `synth.limit` / `synth.apply_reverb` keep working —
+# every consumer (render_audio, the tests) reads them off this namespace.
+from synth_master import apply_reverb as apply_reverb  # noqa: E402
+from synth_master import limit as limit  # noqa: E402
+from synth_master import reverb_ir as reverb_ir  # noqa: E402
 
 SYNTHS: dict[str, Callable[..., Voice]] = {
     "wind": lambda rng, dur=30.0: wind(dur, rng),

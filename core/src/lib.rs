@@ -12,6 +12,7 @@ pub mod bridge;
 pub mod effects;
 pub mod filters;
 pub mod hosts;
+pub mod master;
 pub mod noise;
 pub mod overlay;
 pub mod palette;

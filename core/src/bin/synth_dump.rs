@@ -13,6 +13,7 @@
 use castle_core::atmos;
 use castle_core::bridge::crc32;
 use castle_core::filters;
+use castle_core::master;
 use castle_core::pieces;
 use castle_core::rng::Pcg64;
 use castle_core::synth;
@@ -191,6 +192,47 @@ fn main() {
                 };
                 let ms: Vec<String> = marks.iter().map(|(t, v)| format!("{t:?}:{v:?}")).collect();
                 println!("{} | {}", digest(&buf), ms.join(","));
+            }
+            "master" => {
+                // master <kind> <seed> <n> <umode> — limit|loop|fade|norm|wav
+                // applied to a seeded noise buffer (hot for the limiter).
+                let _ = seed;
+                let mut rest = line.split_whitespace().skip(1);
+                let kind = rest.next().unwrap_or("");
+                let sd: u128 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                let n: usize = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                let fused = rest.next() == Some("fma");
+                let mut g = Pcg64::new(sd);
+                let amp = if kind == "limit" { 1.6 } else { 0.8 };
+                let mut buf: Vec<f64> = (0..n)
+                    .map(|_| {
+                        if fused {
+                            g.uniform_fma(-amp, amp)
+                        } else {
+                            g.uniform_plain(-amp, amp)
+                        }
+                    })
+                    .collect();
+                match kind {
+                    "limit" => buf = master::limit(&buf, 0.89),
+                    "loop" => master::loop_crossfade(&mut buf),
+                    "fade" => master::end_fade(&mut buf),
+                    "norm" => master::normalize(&mut buf, 0.89),
+                    "wav" => {
+                        let pcm = master::quantize16(&buf);
+                        let mut bytes = Vec::with_capacity(pcm.len() * 2);
+                        for v in &pcm {
+                            bytes.extend_from_slice(&v.to_le_bytes());
+                        }
+                        println!("{:08x} {}", castle_core::bridge::crc32(&bytes), pcm.len());
+                        continue;
+                    }
+                    _ => {
+                        println!("ERR unknown master kind {kind}");
+                        continue;
+                    }
+                }
+                println!("{}", digest(&buf));
             }
             other => println!("ERR unknown op {other}"),
         }
