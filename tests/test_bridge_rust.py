@@ -166,6 +166,33 @@ class TestBridgeVerbs(unittest.TestCase):
         self.assertEqual(code, 2, body)
         self.assertIn("refused", body)
 
+    def test_put_to_scenes_lands_in_the_subdirectory(self) -> None:
+        src = self.card / "waltz_src.mp3"
+        src.write_bytes(b"\xff\xfb" + b"\x22" * 700)
+        code, body = self.castle("put", "--to", "scenes", str(src), "waltz.mp3")
+        self.assertEqual(code, 0, body)
+        self.assertEqual(
+            (self.card / "scenes" / "waltz.mp3").read_bytes(), src.read_bytes()
+        )
+
+    def test_purge_clears_root_files_but_leaves_directories(self) -> None:
+        """sd_sync's rule, ported: purge means "clear the music", so the
+        site/ and scenes/ trees survive it."""
+        (self.card / "doomed_a.mp3").write_bytes(b"a" * 32)
+        (self.card / "doomed_b.mp3").write_bytes(b"b" * 32)
+        keep = self.card / "site"
+        keep.mkdir(exist_ok=True)
+        (keep / "index.html").write_text("kept")
+        code, body = self.castle("purge")
+        self.assertEqual(code, 0, body)
+        self.assertIn("deleted doomed_a.mp3", body)
+        self.assertFalse((self.card / "doomed_a.mp3").exists())
+        self.assertFalse((self.card / "doomed_b.mp3").exists())
+        self.assertEqual((keep / "index.html").read_text(), "kept")
+        code, body = self.castle("purge")
+        self.assertEqual(code, 0, body)
+        self.assertIn("no files", body)
+
     def test_rm_deletes_and_a_second_rm_is_exit_two(self) -> None:
         (self.card / "victim.mp3").write_bytes(b"x" * 64)
         code, body = self.castle("rm", "victim.mp3")

@@ -10,7 +10,7 @@
 //! the castle refuses or the card's answer disagrees, 1 for transport.
 //! tests/test_bridge_rust.py round-trips every verb against castle_emu.
 
-use castle_core::bridge::{encode_query, request, upload, UploadFault};
+use castle_core::bridge::{encode_query, list_entries, request, upload, UploadFault};
 
 fn fail(msg: &str) -> ! {
     eprintln!("castle: {msg}");
@@ -25,6 +25,16 @@ fn refuse(msg: &str) -> ! {
 /// `put LOCAL [NAME]`: one file onto the card, held to the byte count and
 /// (v5.42+) the CRC32 the castle answers with — sd_sync.upload's checks.
 fn do_put(host: &str, args: &[String]) -> ! {
+    let mut args = args;
+    let mut route = "/api/files";
+    if args.first().map(String::as_str) == Some("--to") {
+        route = match args.get(1).map(String::as_str) {
+            Some("site") => "/api/site",
+            Some("scenes") => "/api/scenes",
+            _ => fail("--to takes site or scenes (plain put goes to the card root)"),
+        };
+        args = &args[2..];
+    }
     let Some(path) = args.first() else {
         fail("put needs a local file")
     };
@@ -35,7 +45,7 @@ fn do_put(host: &str, args: &[String]) -> ! {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default()
     });
-    match upload(host, "/api/files", &name, &data) {
+    match upload(host, route, &name, &data) {
         Ok(body) => {
             println!("{body}");
             std::process::exit(0)
@@ -46,6 +56,42 @@ fn do_put(host: &str, args: &[String]) -> ! {
         }
         Err(UploadFault::Mismatch(why)) => refuse(&why),
     }
+}
+
+/// `purge`: delete every FILE in the card root — directories (site/,
+/// scenes/, logs/) stay, exactly sd_sync's "clear the music, not the card".
+fn do_purge(host: &str) -> ! {
+    let listing = match request(host, "GET", "/api/files", b"", 10.0) {
+        Err(e) => fail(&e),
+        Ok(r) if !(200..300).contains(&r.code) => refuse(&format!(
+            "{host} cannot list the card: {} {}",
+            r.code,
+            String::from_utf8_lossy(&r.body).trim_end()
+        )),
+        Ok(r) => String::from_utf8_lossy(&r.body).into_owned(),
+    };
+    let victims: Vec<String> = list_entries(&listing)
+        .into_iter()
+        .filter(|(_, dir)| !dir)
+        .map(|(n, _)| n)
+        .collect();
+    if victims.is_empty() {
+        println!("card root has no files");
+        std::process::exit(0)
+    }
+    for name in victims {
+        let target = format!("/api/files/{}", encode_query(&name));
+        match request(host, "DELETE", &target, b"", 10.0) {
+            Err(e) => fail(&e),
+            Ok(r) if !(200..300).contains(&r.code) => refuse(&format!(
+                "{host} kept {name}: {} {}",
+                r.code,
+                String::from_utf8_lossy(&r.body).trim_end()
+            )),
+            Ok(_) => println!("deleted {name}"),
+        }
+    }
+    std::process::exit(0)
 }
 
 fn main() {
@@ -72,6 +118,9 @@ fn main() {
     if verb == "put" {
         do_put(&host, &args[1..]);
     }
+    if verb == "purge" {
+        do_purge(&host);
+    }
     let arg = args.get(1);
     let (method, target, read_s) = match (verb.as_str(), arg) {
         ("status", None) => ("GET", "/api/status".to_string(), 5.0),
@@ -89,7 +138,7 @@ fn main() {
         _ => fail(
             "usage: castle [--host H:P] status|health|stop|scene ID|play FILE|\
              volume N|show start|show stop|blackout|files [DIR]|bootlog|\
-             put LOCAL [NAME]|rm NAME",
+             put [--to site|scenes] LOCAL [NAME]|rm NAME|purge",
         ),
     };
     match request(&host, method, &target, b"", read_s) {

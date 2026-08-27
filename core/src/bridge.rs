@@ -158,6 +158,34 @@ pub fn upload(host: &str, route: &str, name: &str, data: &[u8]) -> Result<String
     Ok(body)
 }
 
+/// The (name, is_dir) rows of a /api/files listing — the firmware's own
+/// template, `{"name":"…","size":N,"dir":bool}` rows in a bare array. A
+/// name safe_name allowed can never contain `"` or `\\`, so the name runs
+/// to the next quote; the trailing `{"skipped":N}` row has no name and
+/// falls out naturally.
+pub fn list_entries(body: &str) -> Vec<(String, bool)> {
+    let mut out = Vec::new();
+    let mut rest = body;
+    while let Some(at) = rest.find("\"name\":") {
+        rest = &rest[at + 7..];
+        let Some((name, after)) = json_first_str(rest) else {
+            break;
+        };
+        let dir = after_key(after, "dir").is_some_and(|v| v.starts_with("true"));
+        out.push((name, dir));
+        rest = after;
+    }
+    out
+}
+
+/// The first `"…"` literal at the start of `rest` (spaces allowed), and
+/// what follows it.
+fn json_first_str(rest: &str) -> Option<(String, &str)> {
+    let rest = rest.trim_start_matches(' ').strip_prefix('"')?;
+    let end = rest.find('"')?;
+    Some((rest[..end].to_string(), &rest[end + 1..]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,6 +196,16 @@ mod tests {
         // and esp_rom_crc32_le both answer.
         assert_eq!(crc32(b"123456789"), 0xCBF4_3926);
         assert_eq!(crc32(b""), 0);
+    }
+
+    #[test]
+    fn listing_rows_parse_and_the_skipped_row_falls_out() {
+        let b = r#"[{"name":"a.mp3","size":10,"dir":false},{"name":"site","size":0,"dir":true},{"skipped":2}]"#;
+        assert_eq!(
+            list_entries(b),
+            vec![("a.mp3".to_string(), false), ("site".to_string(), true)]
+        );
+        assert!(list_entries("[]").is_empty());
     }
 
     #[test]
