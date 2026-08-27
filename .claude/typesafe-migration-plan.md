@@ -277,6 +277,35 @@ produces exists once, in castle-core, bit-exact. Left in Python: the
 orchestration shells (render_audio, import_track, studio) — they retire
 with the B5/post-Halloween swaps, not with more math.
 
+B5 (2026-08-27, seventh Track-B run, 7 passes): the studio server,
+whole. NOT axum — the plan's row predates the bridge proving std-only
+HTTP pleasant: the Rust studio is a fifth castle-core face (bin
+`studio`, zero deps still), spawning the same venv tools the Python
+spawns, exactly as intended. Pass 1: transport (keep-alive, Range,
+ETag/304, CSP; no gzip by choice), CPython-shaped JSON (jsonio.rs:
+json.dumps separators/escapes, indent-2 manifest form), the tracks read
+side, deletion, the alias table — tracks.json byte-identical from both
+languages, same flock (a two-line extern; std's File::lock is 1.89).
+Pass 2: waveform BYTE-equal (the crate's own decode/onsets), stems
+reads. Pass 3: scenes — validation stays Python behind a new
+tools/scene_check.py shim so the 400 strings have one home; splice/
+remove/rebuild ported; both sides render byte-identical artifacts.
+Pass 4: jobs + imports (multipart, refresh, async polled to the same
+end; netguard; reason()'s heuristics; the find: fs::read("/dev/urandom")
+reads to EOF — read_exact or hang). Pass 5: the relay with castle_link's
+TTL caches on typed bridge faults, emulator round-trips; probe; compare
+via tools/compare_encodes.py; stop/restart for real (execv +
+SO_REUSEADDR + FD_CLOEXEC). Pass 6: publish through sd_sync — which
+REFUSES host:port castles, a latent break in the emulator chain's
+auto-publish (flagged as follow-up; parity holds on the shared refusal).
+Pass 7: CASTLE_STUDIO_CMD swaps the e2e webServer — ALL 148 BROWSER
+TESTS PASS against the Rust studio unchanged, the loop's stop condition.
+Parity harness: tests/studio_rust_case.py + five suites drive both
+servers over HTTP on twin sandboxes. studio*.py stays the default
+through Halloween; retiring it (and the desk swap) is the off-season
+flip. Deliberately not ported: the aioesphomeapi native leg (flash
+build; the esphome-native-api crate swap owns it) and gzip.
+
 | Loop | Iteration unit | Gate per pass | Stops when |
 |---|---|---|---|
 | B1 core/effects | scaffold → int hash → 1 effect family per pass → WASM face → desk swap | Rust tests + frame-exact vs TS/C++ + page ≤4MB budget | old parity suite retired |
