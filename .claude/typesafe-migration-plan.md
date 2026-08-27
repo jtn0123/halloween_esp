@@ -127,6 +127,19 @@ build_paths, manifest, hosts, scene_schema, rig_layout, gen_rig, gen_show,
 gen_esphome_audio, gen_qr, gen_eink_font (four of those were already clean).
 The ratchet lives in pyproject's per-module override block; hosts grew a
 _Device TypedDict, manifest an Entry alias (A4 upgrades it to a TypedDict).
+TRACK A COMPLETE (2026-08-26, third run, 11 passes). A3: every stays-list
+module AND its tests strict (33 modules on the ratchet). A4: all three
+shapes — Scene/Zone/Cue/Pulse + ShowDoc behind scene_schema.load_show/
+parse_show, Markers behind load_markers, manifest.Entry a TypedDict with
+patch(**Unpack[Entry]). A2 follow-up: all five excluded files split on real
+seams (import_convert, fuzz_http, test_gen_esphome_main,
+test_pulse_dynamics_parity, test_studio_scene_edit) and the format exclude
+list is deleted — ruff format now covers every Python file. Deliberately
+NOT strict: Phase 2-4 code and its tests (studio*, castle_link/native/
+sd_sync, synth/analyze, pulse internals, castle_fuzz body) — annotating
+code Track B deletes is wasted work. Note: castle_fuzz sits at 499 lines;
+its next growth splits the Fuzzer class.
+
 A3 TOOLS COMPLETE (2026-08-26, second 5-pass run): importers, the emulator
 trio, gen_esphome, gen_previewer and gen_wiring_diagram are all strict — the
 last after its overdue split (wiring_svg.py holds the drawing kit; output
