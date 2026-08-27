@@ -299,9 +299,9 @@ pub fn stem_file(tracks: &Path, tid: &str, layer: &str) -> Option<PathBuf> {
     p.exists().then_some(p)
 }
 
-type Compares = Mutex<Vec<(String, PathBuf)>>;
+pub(crate) type Compares = Mutex<Vec<(String, PathBuf)>>;
 
-fn compares() -> &'static Compares {
+pub(crate) fn compares() -> &'static Compares {
     static C: OnceLock<Compares> = OnceLock::new();
     C.get_or_init(|| Mutex::new(Vec::new()))
 }

@@ -13,7 +13,7 @@ use std::process::{Command, Stdio};
 
 use crate::jsonio::{self, Json};
 use crate::studio::{scene_ids, App};
-use crate::studio_routes::castle_status;
+use crate::studio_relay;
 
 /// The interpreter the studio's children run under — the project venv
 /// when it exists (which is sys.executable for the Python twin).
@@ -38,13 +38,24 @@ fn tail4000(s: &str) -> String {
 
 /// studio.run(): capture a child completely, under the 900 s ceiling that
 /// keeps one hung tool from wedging every later rebuild.
-pub fn run(mut cmd: Command, timeout_s: u64) -> (bool, String) {
+pub fn run(cmd: Command, timeout_s: u64) -> (bool, String) {
+    match run_split(cmd, timeout_s) {
+        Timed::Out => (
+            false,
+            format!("gave up after {timeout_s}s — the job stalled"),
+        ),
+        Timed::Done(ok, out, err) => (ok, tail4000(&format!("{out}{err}"))),
+    }
+}
+
+/// The two-stream form probe needs (yt-dlp's useful line is on stderr).
+pub fn run_split(mut cmd: Command, timeout_s: u64) -> Timed {
     cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
     let mut child = match cmd.spawn() {
         Ok(c) => c,
-        Err(e) => return (false, e.to_string()),
+        Err(e) => return Timed::Done(false, String::new(), e.to_string()),
     };
     let mut out_pipe = child.stdout.take().expect("piped");
     let mut err_pipe = child.stderr.take().expect("piped");
@@ -78,19 +89,19 @@ pub fn run(mut cmd: Command, timeout_s: u64) -> (bool, String) {
     let out = out_t.join().unwrap_or_default();
     let err = err_t.join().unwrap_or_default();
     match status {
-        None => (
-            false,
-            format!("gave up after {timeout_s}s — the job stalled"),
+        None => Timed::Out,
+        Some(st) => Timed::Done(
+            st.success(),
+            String::from_utf8_lossy(&out).into_owned(),
+            String::from_utf8_lossy(&err).into_owned(),
         ),
-        Some(st) => {
-            let text = format!(
-                "{}{}",
-                String::from_utf8_lossy(&out),
-                String::from_utf8_lossy(&err)
-            );
-            (st.success(), tail4000(&text))
-        }
     }
+}
+
+/// run_split's answer: the child finished, or the watchdog fired.
+pub enum Timed {
+    Done(bool, String, String),
+    Out,
 }
 
 /// studio_scenes.block_pattern: one scene's block, from its `  - id: `
@@ -333,7 +344,7 @@ pub fn rebuild(app: &App) -> (bool, String) {
 /// studio_publish.publish, the castle-less arm — the sd_sync legs arrive
 /// with the publish pass.
 pub fn publish_body(app: &App) -> (Json, u16) {
-    if castle_status(app).is_none() {
+    if studio_relay::status(app).is_none() {
         return (
             Json::Obj(vec![
                 ("ok".into(), Json::Bool(false)),

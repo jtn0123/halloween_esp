@@ -10,8 +10,9 @@ use crate::studio::{scene_audio, scene_ids, studio_path, App, API};
 use std::sync::Arc;
 
 use crate::studio_import as si;
+use crate::studio_relay as rl;
 use crate::studio_scenes as ssc;
-use crate::{bridge, hosts, manifest, studio_media as sm, studio_tracks as st};
+use crate::{manifest, studio_media as sm, studio_tracks as st};
 
 fn jerr(msg: &str, code: u16) -> Reply {
     Reply::Json(
@@ -20,135 +21,11 @@ fn jerr(msg: &str, code: u16) -> Reply {
     )
 }
 
-/// castle_link.KNOWN_API — every route the firmware actually serves.
-pub const KNOWN_API: [&str; 15] = [
-    "/api/status",
-    "/api/health",
-    "/api/files",
-    "/api/play",
-    "/api/stop",
-    "/api/scene",
-    "/api/volume",
-    "/api/light",
-    "/api/pir",
-    "/api/show/start",
-    "/api/show/stop",
-    "/api/blackout",
-    "/api/bootlog",
-    "/api/ota",
-    "/remote",
-];
-pub const KNOWN_PREFIX: [&str; 4] = ["/api/files/", "/api/site/", "/api/scenes/", "/sd/"];
-
-pub fn known_api(target: &str) -> bool {
-    let p = target.split('?').next().unwrap_or("");
-    KNOWN_API.contains(&p) || KNOWN_PREFIX.iter().any(|pre| p.starts_with(pre))
-}
-
-/// castle_link's per-verb read budgets (READ_BUDGET_S / TIMEOUT_S).
-fn read_budget(method: &str, target: &str) -> f64 {
-    let p = target.split('?').next().unwrap_or("");
-    match method {
-        "PUT" => 60.0,
-        "DELETE" => 30.0,
-        "GET" if p.starts_with("/sd/") => 60.0,
-        "GET" if p.starts_with("/api/files") => 5.0,
-        _ => 2.0,
-    }
-}
-
-/// Who the castle is, best first — castle_link.castle_hosts minus the
-/// remembered-up reordering (a cache the relay pass brings).
-fn candidates(app: &App) -> Vec<String> {
-    let toml_path = match std::env::var("CASTLE_DEVICES") {
-        Ok(v) if !v.is_empty() => std::path::PathBuf::from(v),
-        _ => app.root.join("devices.toml"),
-    };
-    let toml = std::fs::read_to_string(toml_path).unwrap_or_default();
-    let env = std::env::var("CASTLE_HOST").ok();
-    hosts::candidates(None, env.as_deref(), &toml)
-}
-
-fn with_port(h: &str) -> String {
-    if h.contains(':') {
-        h.to_string()
-    } else {
-        format!("{h}:80")
-    }
-}
-
-/// bridge::request's connect-stage failures — the body never left, so the
-/// next host may be tried for any verb (castle_link.Unreachable).
-fn unreachable_err(e: &str) -> bool {
-    e.starts_with("cannot reach") || e.starts_with("cannot resolve") || e.starts_with("no address")
-}
-
-/// castle_link.forward, the pass-1 subset: the allowlist, the host walk,
-/// and the GET-retries-but-writes-don't rule. No TTL caches or native leg
-/// yet — those arrive with the relay pass.
-pub fn relay(app: &App, method: &str, target: &str, body: &[u8]) -> Reply {
-    if !known_api(target) {
-        let mut known: Vec<&str> = KNOWN_API
-            .iter()
-            .chain(KNOWN_PREFIX.iter())
-            .copied()
-            .collect();
-        known.sort_unstable();
-        return Reply::Json(
-            Json::Obj(vec![
-                ("error".into(), Json::Str("unknown castle route".into())),
-                (
-                    "known".into(),
-                    Json::Arr(known.into_iter().map(|k| Json::Str(k.into())).collect()),
-                ),
-            ]),
-            404,
-        );
-    }
-    let hosts = candidates(app);
-    if hosts.is_empty() {
-        return jerr("no castle configured", 502);
-    }
-    let budget = read_budget(method, target);
-    for h in &hosts {
-        match bridge::request(&with_port(h), method, target, body, budget) {
-            Ok(r) => {
-                return Reply::Raw {
-                    code: r.code,
-                    body: r.body,
-                    ctype: r.ctype,
-                }
-            }
-            Err(e) if unreachable_err(&e) => continue,
-            Err(_) => {
-                if method == "GET" {
-                    continue; // nothing changed anywhere; the next host may do
-                }
-                return jerr(
-                    "castle took the request but did not answer in time — it may \
-                     have landed; check before sending again",
-                    504,
-                );
-            }
-        }
-    }
-    jerr("castle not reachable", 502)
-}
-
-/// The desk's mode probe: the castle's status when one answers (marked
-/// `bridged`), else the studio's own marker naming who it tried.
-pub fn castle_status(app: &App) -> Option<Vec<(String, Json)>> {
-    for h in &candidates(app) {
-        if let Ok(r) = bridge::request(&with_port(h), "GET", "/api/status", b"", 2.0) {
-            if r.code == 200 {
-                if let Ok(Json::Obj(mut o)) = jsonio::parse(&String::from_utf8_lossy(&r.body)) {
-                    o.push(("bridged".into(), Json::Str(h.clone())));
-                    return Some(o);
-                }
-            }
-        }
-    }
-    None
+/// The relay itself (allowlist, host walk, TTL caches) lives in
+/// studio_relay — castle_link's own seam; this shim keeps the route
+/// bodies reading like the Python's.
+fn relay(app: &App, method: &str, target: &str, body: &[u8]) -> Reply {
+    rl::relay_reply(app, method, target, body)
 }
 
 /// studio_http.json_body — the request body as an object, or the client's
@@ -174,23 +51,6 @@ pub(crate) fn bad_request(msg: &str) -> Reply {
             ("error".into(), Json::Str(msg.to_string())),
         ]),
         400,
-    )
-}
-
-pub fn status_reply(app: &App) -> Reply {
-    let hosts = candidates(app);
-    if hosts.is_empty() {
-        return Reply::Json(Json::Obj(vec![("studio".into(), Json::Bool(true))]), 200);
-    }
-    if let Some(o) = castle_status(app) {
-        return Reply::Json(Json::Obj(o), 200);
-    }
-    Reply::Json(
-        Json::Obj(vec![
-            ("studio".into(), Json::Bool(true)),
-            ("castle".into(), Json::Str(hosts[0].clone())),
-        ]),
-        200,
     )
 }
 
@@ -253,7 +113,7 @@ fn get(app: &App, req: &Request) -> Reply {
         return si::job_get(app, &last_segment(rest));
     }
     if path == "/api/status" {
-        return status_reply(app);
+        return rl::status_reply(app);
     }
     if path == "/studio/tracks" {
         let _ = std::fs::create_dir(&app.tracks);
@@ -434,6 +294,53 @@ fn post(app: &Arc<App>, req: &Request) -> Reply {
     }
     if path == "/studio/refresh" {
         return si::refresh(app, req);
+    }
+    if path == "/studio/compare" {
+        let body = match json_body(&req.body) {
+            Ok(v) => v,
+            Err(e) => return bad_request(&e),
+        };
+        // ffmpeg four times over; serialise with every other encode job.
+        let (out, code) = {
+            let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+            crate::studio_probe::compare(app, &body)
+        };
+        return Reply::Json(out, code);
+    }
+    if path == "/studio/probe" {
+        let body = match json_body(&req.body) {
+            Ok(v) => v,
+            Err(e) => return bad_request(&e),
+        };
+        let url = body.str_or("url", "").trim().to_string();
+        if let Some(why) = crate::netguard::refuse_reason(&url, &req.client_ip) {
+            return jerr(&why, 400);
+        }
+        // A bad or unreadable link is the caller's problem: 400, not 200.
+        let (out, ok) = crate::studio_probe::probe(&url);
+        return Reply::Json(out, if ok { 200 } else { 400 });
+    }
+    if path == "/studio/server/stop" {
+        // Answer first, then shut down — the page must see "stopped",
+        // not a dead socket.
+        crate::studio::schedule(crate::studio::Action::Stop);
+        return Reply::Json(
+            Json::Obj(vec![
+                ("ok".into(), Json::Bool(true)),
+                ("stopping".into(), Json::Bool(true)),
+            ]),
+            200,
+        );
+    }
+    if path == "/studio/server/restart" {
+        crate::studio::schedule(crate::studio::Action::Restart);
+        return Reply::Json(
+            Json::Obj(vec![
+                ("ok".into(), Json::Bool(true)),
+                ("restarting".into(), Json::Bool(true)),
+            ]),
+            200,
+        );
     }
     if path == "/studio/scene" {
         // The studio's scenes.yaml editor (JSON body); /api/scene?s=<id>

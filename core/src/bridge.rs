@@ -47,6 +47,22 @@ pub fn crc32(data: &[u8]) -> u32 {
     !crc
 }
 
+/// castle_link's two failure kinds: Unreachable means the body never
+/// left (trying the next host is safe for any verb); Stalled means it
+/// MAY have landed.
+pub enum CallFault {
+    Unreachable(String),
+    Stalled(String),
+}
+
+impl CallFault {
+    pub fn text(&self) -> &str {
+        match self {
+            CallFault::Unreachable(s) | CallFault::Stalled(s) => s,
+        }
+    }
+}
+
 /// One request, connection-close, body read to EOF. `read_s` is the verb's
 /// read budget — status is quick, a card write is not.
 pub fn request(
@@ -56,13 +72,25 @@ pub fn request(
     body: &[u8],
     read_s: f64,
 ) -> Result<Reply, String> {
+    call(host, method, target, body, 2.0, read_s).map_err(|f| f.text().to_string())
+}
+
+/// The typed form, with a separate connect budget — castle_link._call.
+pub fn call(
+    host: &str,
+    method: &str,
+    target: &str,
+    body: &[u8],
+    connect_s: f64,
+    read_s: f64,
+) -> Result<Reply, CallFault> {
     let addr = host
         .to_socket_addrs()
-        .map_err(|e| format!("cannot resolve {host}: {e}"))?
+        .map_err(|e| CallFault::Unreachable(format!("cannot resolve {host}: {e}")))?
         .next()
-        .ok_or_else(|| format!("no address for {host}"))?;
-    let mut s = TcpStream::connect_timeout(&addr, Duration::from_secs_f64(2.0))
-        .map_err(|e| format!("cannot reach {host}: {e}"))?;
+        .ok_or_else(|| CallFault::Unreachable(format!("no address for {host}")))?;
+    let mut s = TcpStream::connect_timeout(&addr, Duration::from_secs_f64(connect_s))
+        .map_err(|e| CallFault::Unreachable(format!("cannot reach {host}: {e}")))?;
     s.set_read_timeout(Some(Duration::from_secs_f64(read_s)))
         .ok();
     s.set_nodelay(true).ok();
@@ -77,20 +105,20 @@ pub fn request(
         format!("{method} {target} HTTP/1.1\r\nHost: castle\r\n{extra}Connection: close\r\n\r\n");
     s.write_all(head.as_bytes())
         .and_then(|()| s.write_all(body))
-        .map_err(|e| format!("send to {host} failed: {e}"))?;
+        .map_err(|e| CallFault::Stalled(format!("send to {host} failed: {e}")))?;
     let mut data = Vec::new();
     s.read_to_end(&mut data)
-        .map_err(|e| format!("read from {host} failed: {e}"))?;
+        .map_err(|e| CallFault::Stalled(format!("read from {host} failed: {e}")))?;
     let split = data
         .windows(4)
         .position(|w| w == b"\r\n\r\n")
-        .ok_or_else(|| format!("malformed reply from {host}"))?;
+        .ok_or_else(|| CallFault::Stalled(format!("malformed reply from {host}")))?;
     let head = String::from_utf8_lossy(&data[..split]);
     let code: u16 = head
         .split_whitespace()
         .nth(1)
         .and_then(|c| c.parse().ok())
-        .ok_or_else(|| format!("bad status line from {host}"))?;
+        .ok_or_else(|| CallFault::Stalled(format!("bad status line from {host}")))?;
     let ctype = head
         .lines()
         .skip(1)

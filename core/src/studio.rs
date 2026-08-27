@@ -297,3 +297,30 @@ pub fn repo_root() -> PathBuf {
     }
     PathBuf::from(".")
 }
+
+/// What the server-ops routes asked the process to do after answering.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    None,
+    Stop,
+    Restart,
+}
+
+static ACTION: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+pub fn schedule(a: Action) {
+    let v = match a {
+        Action::None => 0,
+        Action::Stop => 1,
+        Action::Restart => 2,
+    };
+    ACTION.store(v, std::sync::atomic::Ordering::SeqCst);
+}
+
+pub fn pending() -> Action {
+    match ACTION.load(std::sync::atomic::Ordering::SeqCst) {
+        1 => Action::Stop,
+        2 => Action::Restart,
+        _ => Action::None,
+    }
+}
