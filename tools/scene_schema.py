@@ -21,9 +21,110 @@ interprets for itself — this is the shape of the block, not the show.
 from __future__ import annotations
 
 import re
-from typing import Any
+from pathlib import Path
+from typing import Any, TypedDict, cast
 
 import effect_vocab as ev
+import yaml
+
+
+class Cue(TypedDict, total=False):
+    """One timed cue. `op` decides which other keys matter (see _check_cue)."""
+
+    t: float
+    op: str
+    zone: str
+    effect: str
+    level: float
+    targets: list[str]
+    pixels: str
+    intensity: float
+    decay: float
+    ms: float
+    attack: float
+    color: list[float]
+    note: str
+
+
+class Pulse(TypedDict, total=False):
+    """One marker-driven pulse stream (the per-hit dynamics contract)."""
+
+    synth: str
+    zone: str
+    zones: list[str]
+    boost_targets: list[str]
+    boost_at: float
+    color: list[float]
+    color_hot: list[float]
+    colors: list[list[float]]
+    pixels: str
+    pixels_by_vel: bool
+    intensity: float
+    decay: float
+    ms: float
+    attack_ms: float
+
+
+class ZoneTexture(TypedDict, total=False):
+    """One zone's entry under a scene's `zones:` map."""
+
+    center: str
+    overlay: str
+    palette: str
+    phase: float
+
+
+class Scene(TypedDict, total=False):
+    """One scene block. validate() is the runtime guard; this is the shape."""
+
+    id: str
+    name: str
+    kind: str
+    duration_ms: int
+    volume: float
+    loop: bool
+    blurb: str
+    audio_file: str
+    base: dict[str, str]
+    levels: dict[str, float]
+    zones: dict[str, ZoneTexture]
+    cues: list[Cue]
+    pulse: list[Pulse]
+    score: list[dict[str, Any]]
+
+
+class Zone(TypedDict, total=False):
+    """One rig zone from the top-level `zones:` list."""
+
+    id: str
+    channel: int
+    name: str
+    pin: int
+    fixture: str
+    rgbw: bool
+    pixels: int
+    rmt_symbols: int
+
+
+class ShowDoc(TypedDict, total=False):
+    """scenes.yaml, whole: hardware facts, the show, the rig, the scenes."""
+
+    hardware: dict[str, Any]
+    show: dict[str, Any]
+    zones: list[Zone]
+    palette: dict[str, list[float]]
+    scenes: list[Scene]
+
+
+def parse_show(text: str) -> ShowDoc:
+    """scenes.yaml text, parsed and typed. No validation — validate() below
+    is the runtime guard; this states the shape the file promises."""
+    return cast(ShowDoc, yaml.safe_load(text))
+
+
+def load_show(path: Path) -> ShowDoc:
+    return parse_show(path.read_text())
+
 
 REQUIRED = ("id", "name", "kind", "duration_ms", "base")
 CUE_OPS = ("set", "strike")

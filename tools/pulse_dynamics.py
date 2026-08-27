@@ -11,6 +11,8 @@ tests/test_stream_dynamics.py and web/test/track_lights_logic.ts.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
+from typing import Any
 
 
 def tempo_factor(times_s: list[float]) -> float:
@@ -73,7 +75,7 @@ PAN_DECISIVE = 0.10
 SECTION_NOTES = ("hush", "verse", "chorus", "silence")
 
 
-def section_gates(scene: dict) -> list[tuple[int, str]]:
+def section_gates(scene: Mapping[str, Any]) -> list[tuple[int, str]]:
     """The scene's section timeline, reconstructed from its own set cues.
 
     Generated scenes carry hush/verse/chorus/silence as explicit `set` cues

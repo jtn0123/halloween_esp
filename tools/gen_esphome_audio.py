@@ -9,6 +9,7 @@ knows about cues or rigs, only which bytes play and from where.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from gen_show import emit_manifest_check
@@ -27,7 +28,7 @@ MODE_RESTART = "    mode: restart"
 THEN = "    then:"
 
 
-def emit_media_files(doc: dict[str, Any]) -> str:
+def emit_media_files(doc: Mapping[str, Any]) -> str:
     """One entry per scene, matching the `snd_<id>` ids the scripts
     reference. Both halves come from scenes.yaml so they cannot disagree —
     the hand-maintained list once shipped a config referencing an id
@@ -45,7 +46,7 @@ def emit_media_files(doc: dict[str, Any]) -> str:
     return "\n".join(files) + "\n"
 
 
-def emit_audio_flash(doc: dict[str, Any]) -> str:
+def emit_audio_flash(doc: Mapping[str, Any]) -> str:
     """FLASH sfx: play the file embedded in the image. Costs ~600 KB of a
     1.75 MB OTA slot, works with nothing attached."""
     flash = [
@@ -80,7 +81,7 @@ def emit_audio_flash(doc: dict[str, Any]) -> str:
     return "\n".join(flash)
 
 
-def emit_audio_sd(doc: dict[str, Any]) -> str:
+def emit_audio_sd(doc: Mapping[str, Any]) -> str:
     """SD sfx: STREAM the same track off the card through the device's own
     web server over loopback — a real streaming source with zero new
     decoder code, no PSRAM cap, no whole-file loads. A missing card plays

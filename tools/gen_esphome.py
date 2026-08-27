@@ -15,12 +15,12 @@ absolute timestamps, because ESPHome scripts step forward with `delay:`.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 import build_paths as bp
 import gen_esphome_audio as ga
-import yaml
 from effect_vocab import EFFECT_IDS, FLASH_MODE_IDS, OVERLAY_IDS, PALETTE_IDS
 from gen_rig import emit_lights, emit_rig_header
 from gen_show import emit_show_playlist
@@ -32,6 +32,7 @@ from gen_show import emit_show_playlist
 from pulse_dynamics import round3, section_gates, thin_pulses
 from pulse_expand import DEFAULT_DECAY, WHITE, pulse_cues
 from rig_layout import Layout, zone_layouts
+from scene_schema import load_show
 from scene_schema import validate as validate_scene
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -76,7 +77,7 @@ __all__ = [
 
 
 def zone_pixels(
-    layouts: dict[str, Layout], zones: list[dict[str, Any]]
+    layouts: dict[str, Layout], zones: Sequence[Mapping[str, Any]]
 ) -> dict[str, tuple[int, int]]:
     """Map each zone to its [first, last] index if they shared ONE chain.
 
@@ -142,10 +143,10 @@ def chunked(sid: str, items: list[list[str]], loop: bool) -> list[str]:
 
 
 def emit_scene(
-    scene: dict[str, Any],
-    zones: list[dict[str, Any]],
+    scene: Mapping[str, Any],
+    zones: Sequence[Mapping[str, Any]],
     idx: int,
-    markers: dict[str, Any],
+    markers: Mapping[str, Any],
 ) -> list[str]:
     zone_ids = [z["id"] for z in zones]
     sid = scene["id"]
@@ -288,7 +289,7 @@ def emit_scene(
 
 
 def main() -> int:
-    doc = yaml.safe_load(SRC.read_text())
+    doc = load_show(SRC)
     zones = doc["zones"]
     per = doc["hardware"]["pixels_per_zone"]
     # A zone may now name its own fixture; `pixels_per_zone` is the fallback

@@ -14,6 +14,8 @@ digit-for-digit by web/test/fuzz_parity.ts -> tools/fuzz_check.py.
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
+from typing import Any
 
 from pulse_dynamics import (
     PAN_DECISIVE,
@@ -50,7 +52,9 @@ def pixels_for(cfg: dict, vel: float) -> str:
     return "center" if vel < 0.40 else ("scatter" if vel < 0.72 else "all")
 
 
-def pulse_cues(scene: dict, markers: dict) -> list[dict]:
+def pulse_cues(
+    scene: Mapping[str, Any], markers: Mapping[str, Any]
+) -> list[dict[str, Any]]:
     """Beat markers from the audio render, turned into light pulses.
 
     The renderer reports the ACTUAL event times AND loudness of every sound
