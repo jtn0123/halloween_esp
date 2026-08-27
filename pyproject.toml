@@ -45,8 +45,7 @@ select = [
 # split on a real seam, formatted in that same pass, and removed from this
 # list — the list only ever shrinks.
 exclude = [
-        "tests/test_gen_esphome.py",
-    "tests/test_generator_parity.py",
+        "tests/test_generator_parity.py",
     "tests/test_studio_api.py",
 ]
 
@@ -83,7 +82,7 @@ module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_sc
     "test_lean_page",
     "helpers", "test_scene_schema", "test_gen_chunks", "test_castle_emu",
     "test_emu_modes", "test_gen_previewer", "test_protocol_fuzz", "test_rig_config",
-    "test_firmware_contract", "test_gen_esphome", "test_import",
+    "test_firmware_contract", "test_gen_esphome", "test_gen_esphome_main", "test_import",
     "test_guards", "studio_case", "test_gen_fuzz", "test_generator_parity"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
