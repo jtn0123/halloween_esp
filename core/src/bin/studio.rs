@@ -13,7 +13,8 @@ use std::sync::Arc;
 
 use castle_core::httpd::{deliver, respond_json, scrub, Conn, Reply};
 use castle_core::jsonio::Json;
-use castle_core::studio::{repo_root, App};
+use castle_core::studio::repo_root;
+use castle_core::studio::App;
 use castle_core::studio_routes::handle;
 
 fn main() {
@@ -53,7 +54,7 @@ fn main() {
     }
 }
 
-fn conn_loop(app: &App, stream: TcpStream) {
+fn conn_loop(app: &Arc<App>, stream: TcpStream) {
     let mut conn = Conn::new(stream);
     loop {
         match conn.read_request() {

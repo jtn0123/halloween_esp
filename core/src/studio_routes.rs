@@ -7,6 +7,9 @@
 use crate::httpd::{Reply, Request};
 use crate::jsonio::{self, Json};
 use crate::studio::{scene_audio, scene_ids, studio_path, App, API};
+use std::sync::Arc;
+
+use crate::studio_import as si;
 use crate::studio_scenes as ssc;
 use crate::{bridge, hosts, manifest, studio_media as sm, studio_tracks as st};
 
@@ -151,7 +154,7 @@ pub fn castle_status(app: &App) -> Option<Vec<(String, Json)>> {
 /// studio_http.json_body — the request body as an object, or the client's
 /// mistake (a 400, never a dead socket). The parse-error text is this
 /// parser's, not CPython's; the shape is the contract.
-fn json_body(body: &[u8]) -> Result<Json, String> {
+pub(crate) fn json_body(body: &[u8]) -> Result<Json, String> {
     if body.is_empty() {
         return Ok(Json::obj());
     }
@@ -164,7 +167,7 @@ fn json_body(body: &[u8]) -> Result<Json, String> {
     Ok(parsed)
 }
 
-fn bad_request(msg: &str) -> Reply {
+pub(crate) fn bad_request(msg: &str) -> Reply {
     Reply::Json(
         Json::Obj(vec![
             ("ok".into(), Json::Bool(false)),
@@ -200,7 +203,7 @@ fn last_segment(s: &str) -> String {
         .to_string()
 }
 
-pub fn handle(app: &App, req: &Request) -> Reply {
+pub fn handle(app: &Arc<App>, req: &Request) -> Reply {
     match req.method.as_str() {
         "GET" => get(app, req),
         "DELETE" => delete(app, req),
@@ -245,6 +248,9 @@ fn get(app: &App, req: &Request) -> Reply {
     }
     if path == "/remote" {
         return relay(app, "GET", &req.target, b"");
+    }
+    if let Some(rest) = path.strip_prefix("/studio/job/") {
+        return si::job_get(app, &last_segment(rest));
     }
     if path == "/api/status" {
         return status_reply(app);
@@ -415,8 +421,20 @@ fn delete(app: &App, req: &Request) -> Reply {
     jerr("not found", 404)
 }
 
-fn post(app: &App, req: &Request) -> Reply {
+fn post(app: &Arc<App>, req: &Request) -> Reply {
     let path = studio_path(&req.target);
+    if path == "/studio/import" {
+        return si::do_import(app, req);
+    }
+    if path == "/studio/import/async" {
+        return si::import_async(app, req);
+    }
+    if path == "/studio/stems" {
+        return si::stems_post(app, req);
+    }
+    if path == "/studio/refresh" {
+        return si::refresh(app, req);
+    }
     if path == "/studio/scene" {
         // The studio's scenes.yaml editor (JSON body); /api/scene?s=<id>
         // is the castle's fire-a-scene and stayed on the relay above.
@@ -424,7 +442,25 @@ fn post(app: &App, req: &Request) -> Reply {
             Ok(v) => v,
             Err(e) => return bad_request(&e),
         };
-        let (out, code) = ssc::splice(app, &body);
+        let (mut out, code) = ssc::splice(app, &body);
+        if let Json::Obj(o) = &mut out {
+            let not_ok = !matches!(
+                o.iter().find(|(k, _)| k == "ok"),
+                Some((_, Json::Bool(true)))
+            );
+            let log = o
+                .iter()
+                .find(|(k, _)| k == "log")
+                .and_then(|(_, v)| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if not_ok && !log.is_empty() {
+                o.push((
+                    "reason".into(),
+                    Json::Str(crate::studio_reason::reason(&log)),
+                ));
+            }
+        }
         return Reply::Json(out, code);
     }
     if path == "/studio/rebuild" {

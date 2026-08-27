@@ -413,3 +413,55 @@ pub fn scrub(line: &str) -> String {
     }
     out
 }
+
+/// studio_http.parse_multipart — the single file part of an upload:
+/// (filename, bytes). An empty name or data means "no file in upload";
+/// a name that is not a file name ("", ".", "..") is the caller's 400.
+pub fn parse_multipart(raw: &[u8], ctype: &str) -> Result<(String, Vec<u8>), String> {
+    let Some(bpos) = ctype.find("boundary=") else {
+        return Ok((String::new(), Vec::new()));
+    };
+    let boundary = ctype[bpos + 9..].trim().trim_matches('"');
+    let marker = format!("--{boundary}");
+    let marker = marker.as_bytes();
+    let mut at = 0usize;
+    while at <= raw.len() {
+        let next = raw[at..]
+            .windows(marker.len())
+            .position(|w| w == marker)
+            .map(|p| at + p);
+        let end = next.unwrap_or(raw.len());
+        let part = &raw[at..end];
+        at = match next {
+            Some(p) => p + marker.len(),
+            None => break,
+        };
+        let Some(split) = part.windows(4).position(|w| w == b"\r\n\r\n") else {
+            continue;
+        };
+        let head = String::from_utf8_lossy(&part[..split]);
+        if !head.contains("filename=") {
+            continue;
+        }
+        let name_part = head.split("filename=").nth(1).unwrap_or("");
+        let name = if let Some(q) = name_part.split('"').nth(1) {
+            q.to_string()
+        } else {
+            name_part.trim().to_string()
+        };
+        let name = name
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .to_string();
+        if name.is_empty() || name == "." || name == ".." {
+            return Err(format!("upload filename {name:?} is not a file name"));
+        }
+        let data = &part[split + 4..];
+        // Strip exactly the CRLF before the boundary — never real bytes.
+        let data = data.strip_suffix(b"\r\n").unwrap_or(data);
+        return Ok((name, data.to_vec()));
+    }
+    Ok((String::new(), Vec::new()))
+}
