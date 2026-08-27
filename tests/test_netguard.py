@@ -11,6 +11,7 @@ import socket
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -19,8 +20,10 @@ sys.path.insert(0, str(ROOT / "tools"))
 import netguard as ng
 
 
-def fake_dns(table: dict[str, list[str]]):
-    def getaddrinfo(host, port, *a, **k):
+def fake_dns(table: dict[str, list[str]]) -> "mock._patch[Any]":
+    def getaddrinfo(
+        host: str, port: object, *a: object, **k: object
+    ) -> list[tuple[Any, ...]]:
         if host not in table:
             raise socket.gaierror(8, "nodename nor servname provided")
         return [

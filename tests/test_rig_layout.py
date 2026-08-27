@@ -11,13 +11,14 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
 import rig_layout as rl
 
 ZIDS = ["towerL", "towerR", "door"]
-ZONES: list[dict] = [{"id": z, "channel": i + 1} for i, z in enumerate(ZIDS)]
+ZONES: list[dict[str, Any]] = [{"id": z, "channel": i + 1} for i, z in enumerate(ZIDS)]
 
 
 class TestCounts(unittest.TestCase):
@@ -57,7 +58,7 @@ class TestZoneLayouts(unittest.TestCase):
         self.assertIsNone(got["door"].center)
 
     def test_zones_may_differ_from_each_other(self) -> None:
-        zones: list[dict] = [
+        zones: list[dict[str, Any]] = [
             {"id": "towerL", "fixture": "jewel7"},
             {"id": "towerR", "fixture": "ring16"},
             {"id": "door", "fixture": "wing32"},

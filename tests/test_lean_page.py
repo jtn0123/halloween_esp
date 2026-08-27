@@ -20,6 +20,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -107,7 +108,7 @@ class TestServedLean(ServerCase):
     """The route pair over HTTP, against a build of its own."""
 
     build: Path
-    _served: mock._patch
+    _served: "mock._patch[Any]"
 
     @classmethod
     def setUpClass(cls) -> None:
