@@ -47,8 +47,7 @@ select = [
 exclude = [
     "tools/castle_fuzz.py",
     "tools/import_track.py",
-    "tools/gen_wiring_diagram.py",
-    "tests/test_gen_esphome.py",
+        "tests/test_gen_esphome.py",
     "tests/test_generator_parity.py",
     "tests/test_studio_api.py",
 ]
@@ -78,7 +77,8 @@ ignore_missing_imports = true
 module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_schema", "rig_layout", "gen_rig", "gen_show",
     "gen_esphome_audio", "gen_qr", "gen_eink_font",
     "import_track", "import_fetch", "import_scene",
-    "castle_emu_wire", "castle_emu", "castle_emu_http", "gen_esphome", "gen_previewer"]
+    "castle_emu_wire", "castle_emu", "castle_emu_http", "gen_esphome", "gen_previewer",
+    "gen_wiring_diagram", "wiring_svg"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_decorators = true
