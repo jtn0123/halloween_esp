@@ -27,7 +27,8 @@ def fake_dns(table: dict[str, list[str]]):
             (socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 0)) for ip in table[host]
         ]
 
-    return mock.patch.object(ng.socket, "getaddrinfo", getaddrinfo)
+    # netguard's `socket` is this very module object, so patching here lands there.
+    return mock.patch.object(socket, "getaddrinfo", getaddrinfo)
 
 
 class TestClassification(unittest.TestCase):

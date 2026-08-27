@@ -71,3 +71,18 @@ warn_unused_ignores = true
 module = ["scipy.*", "aioesphomeapi.*", "PIL.*", "esphome.*", "segno.*"]
 ignore_missing_imports = true
 
+# The strict ratchet (typesafe-migration-plan A3): modules join this list one
+# loop pass at a time, easy to hard, stays-list first — and never leave. The
+# per-module-legal half of --strict; warn_redundant_casts is global-only.
+[[tool.mypy.overrides]]
+module = ["netguard", "check_loc", "build_paths"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_decorators = true
+disallow_untyped_calls = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true
+
