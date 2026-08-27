@@ -105,6 +105,84 @@ class TestOnsetParity(unittest.TestCase):
             self.assertEqual(got_bands, want, f"{spec} sens={sens}")
             self.assertTrue(want, f"{spec}: the reference found nothing to compare")
 
+    def test_analyze_full_matches_levels_and_pans_included(self) -> None:
+        """What the importer actually calls: onsets grown a pan third
+        element when stereo is known, and level envelopes for any band
+        with no beat — rows equal, element for element."""
+        assert CARGO is not None
+        subprocess.run(
+            [
+                CARGO,
+                "build",
+                "--release",
+                "--quiet",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=300,
+        )
+        import analyze
+        import synth
+
+        modes = kernel_modes()
+        umode = numpy_uniform_mode()
+
+        def burst(seed: int, n: int) -> np.ndarray:
+            base = np.random.default_rng(seed).uniform(-1.0, 1.0, n)
+            factors = np.where((np.arange(n) // 2000) % 9 == 0, 1.0, 0.05)
+            return np.asarray(base * factors)
+
+        cases: list[tuple[str, float, bool, np.ndarray]] = [
+            ("burst 203 220000", 1.1, True, burst(203, 220000)),
+            # sens 3.0: onsets AND levels mixed; sens 5.0: all-envelope
+            ("drone 12.0 0", 3.0, False, np.asarray(synth.drone(12.0))),
+            ("drone 12.0 0", 5.0, True, np.asarray(synth.drone(12.0))),
+            (
+                "heartbeat 12.0 19",
+                1.1,
+                True,
+                np.asarray(synth.heartbeat(12.0, np.random.default_rng(19))[0]),
+            ),
+        ]
+        lines = [
+            f"full {spec} {sens} {1 if st else 0} {umode} {modes}"
+            for spec, sens, st, _ in cases
+        ]
+        run = subprocess.run(
+            [str(DUMP)],
+            input="\n".join(lines) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=300,
+        )
+        got = run.stdout.splitlines()
+        self.assertEqual(len(got), len(cases))
+        for (spec, sens, st, x), reply in zip(cases, got):
+            stereo = (x, x[::-1]) if st else None
+            want = {
+                k: [list(r) for r in v]
+                for k, v in analyze.analyze_full(
+                    x, sensitivity=sens, stereo=stereo
+                ).items()
+            }
+            got_bands: dict[str, list[list[float]]] = {}
+            for chunk in reply.split(";"):
+                if not chunk:
+                    continue
+                name, _, pts = chunk.partition(">")
+                got_bands[name] = [
+                    [float(v) for v in p.split(":")] for p in pts.split(",") if p
+                ]
+            self.assertEqual(got_bands, want, f"{spec} stereo={st}")
+            if "drone" in spec:
+                self.assertTrue(
+                    any(k.startswith("level_") for k in want),
+                    f"the drone at sens={sens} should have envelope bands",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

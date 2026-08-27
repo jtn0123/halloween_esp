@@ -350,6 +350,62 @@ fn main() {
                     .collect();
                 println!("{}", bands.join(";"));
             }
+            "full" => {
+                // full <src> <p1> <p2> <sens> <st01> <umode> <modes> — the
+                // importer's analyze_full; stereo is (x, reversed x).
+                let _ = seed;
+                let mut rest = line.split_whitespace().skip(1);
+                let src = rest.next().unwrap_or("");
+                let p1: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                let p2: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                let sens: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(1.1);
+                let st = rest.next() == Some("1");
+                let fused = rest.next() == Some("fma");
+                let m = filters::Modes::parse(rest.next().unwrap_or(""));
+                let x: Vec<f64> = match src {
+                    "burst" => {
+                        let mut d = atmos::Dice::new(p1 as u128, fused);
+                        (0..p2 as usize)
+                            .map(|i| {
+                                let f = if (i / 2000) % 9 == 0 { 1.0 } else { 0.05 };
+                                d.uni2(-1.0, 1.0) * f
+                            })
+                            .collect()
+                    }
+                    "waltz" => pieces::waltz().0,
+                    "drone" => pieces::drone(p1),
+                    "heartbeat" => {
+                        let mut d = atmos::Dice::new(p2 as u128, fused);
+                        atmos::heartbeat(p1, &mut d, &m).0
+                    }
+                    _ => {
+                        println!("ERR unknown full src {src}");
+                        continue;
+                    }
+                };
+                let rev: Vec<f64> = x.iter().rev().copied().collect();
+                let stereo = if st {
+                    Some((x.as_slice(), rev.as_slice()))
+                } else {
+                    None
+                };
+                let bands: Vec<String> = onsets::analyze_full(&x, sens, stereo)
+                    .iter()
+                    .map(|(n, rows)| {
+                        let pts: Vec<String> = rows
+                            .iter()
+                            .map(|r| {
+                                r.iter()
+                                    .map(|v| format!("{v:?}"))
+                                    .collect::<Vec<_>>()
+                                    .join(":")
+                            })
+                            .collect();
+                        format!("{n}>{}", pts.join(","))
+                    })
+                    .collect();
+                println!("{}", bands.join(";"));
+            }
             other => println!("ERR unknown op {other}"),
         }
     }

@@ -124,9 +124,9 @@ fn medfilt(e: &[f64], k: usize) -> Vec<f64> {
         .collect()
 }
 
-/// analyze._stft on the WIN-padded input: log-compressed magnitudes per
-/// frame, the frequency grid, and the shifted time grid.
-fn stft_logmag(x: &[f64]) -> (Vec<Vec<f64>>, Vec<f64>, Vec<f64>) {
+/// analyze._stft: RAW magnitudes per frame, the frequency grid, and the
+/// shifted time grid. analyze log-compresses; envelope wants them plain.
+fn stft_mag(x: &[f64]) -> (Vec<Vec<f64>>, Vec<f64>, Vec<f64>) {
     let win: Vec<f64> = (0..WIN)
         .map(|i| 0.5 - 0.5 * ((2.0 * std::f64::consts::PI * i as f64) / WIN as f64).cos())
         .collect();
@@ -144,7 +144,7 @@ fn stft_logmag(x: &[f64]) -> (Vec<Vec<f64>>, Vec<f64>, Vec<f64>) {
         fft(&mut re, &mut im, false);
         mag.push(
             (0..=WIN / 2)
-                .map(|b| (cabs(re[b] * scale, im[b] * scale) * 100.0).ln_1p())
+                .map(|b| cabs(re[b] * scale, im[b] * scale))
                 .collect(),
         );
     }
@@ -206,7 +206,11 @@ pub fn analyze(x: &[f64], sensitivity: f64) -> Vec<(String, Vec<(f64, f64)>)> {
     }
     let mut xx = vec![0.0; WIN]; // the front pad that saves a t=0 downbeat
     xx.extend_from_slice(x);
-    let (mag, freqs, t0) = stft_logmag(&xx);
+    let (raw, freqs, t0) = stft_mag(&xx);
+    let mag: Vec<Vec<f64>> = raw
+        .iter()
+        .map(|row| row.iter().map(|m| (m * 100.0).ln_1p()).collect())
+        .collect();
     let shift = WIN as f64 / SR_F;
     let times: Vec<f64> = t0.iter().map(|t| t - shift).collect();
     let mut out = Vec::new();
@@ -236,6 +240,140 @@ pub fn analyze(x: &[f64], sensitivity: f64) -> Vec<(String, Vec<(f64, f64)>)> {
         if !hits.is_empty() {
             out.push((name.to_string(), hits));
         }
+    }
+    out
+}
+
+/// How often the level envelope is sampled, and the beatless floor —
+/// analyze.py's ENV_HZ and BEATLESS.
+pub const ENV_HZ: f64 = 6.0;
+pub const BEATLESS: usize = 8;
+const PAN_WIN_S: f64 = 0.08;
+const PAN_DEAD: f64 = 0.05;
+
+/// CPython round(v, 2), the pan's spelling — like round3, {:.2} IS it.
+fn round2(v: f64) -> f64 {
+    format!("{v:.2}").parse().unwrap_or(v)
+}
+
+/// np.sqrt((seg ** 2).mean()): squares, pairwise mean, root.
+fn rms(seg: &[f64]) -> f64 {
+    let sq: Vec<f64> = seg.iter().map(|v| v * v).collect();
+    (pairwise_sum(&sq) / seg.len() as f64).sqrt()
+}
+
+/// analyze.annotate_pan's per-hit measurement: L/R RMS balance in a short
+/// window at the hit, dead-zoned and rounded.
+fn pan_of(t: f64, left: &[f64], right: &[f64]) -> f64 {
+    let n = (PAN_WIN_S * SR_F) as usize;
+    let a = ((t * SR_F) as i64).max(0) as usize;
+    let b = (a + n).min(left.len());
+    if b <= a {
+        return 0.0;
+    }
+    let lo = rms(&left[a..b]);
+    let hi = rms(&right[a..b]);
+    let mut pan = if lo + hi < 1e-9 {
+        0.0
+    } else {
+        (hi - lo) / (hi + lo)
+    };
+    if pan.abs() < PAN_DEAD {
+        pan = 0.0;
+    }
+    round2(pan)
+}
+
+/// analyze.envelope: band loudness over time for beatless material,
+/// under level_* names.
+pub fn envelope(x: &[f64], bands: &[(&str, f64, f64, f64)]) -> Vec<(String, Vec<(f64, f64)>)> {
+    if x.len() < WIN * 2 {
+        return Vec::new();
+    }
+    let (mag, freqs, times) = stft_mag(x);
+    let nseg = mag.len();
+    let step = 1.max(((SR_F / HOP as f64) / ENV_HZ).round_ties_even() as usize);
+    let mut out = Vec::new();
+    for (name, lo, hi, _gap) in bands {
+        let sel: Vec<usize> = (0..freqs.len())
+            .filter(|&b| freqs[b] >= *lo && freqs[b] < *hi)
+            .collect();
+        if sel.is_empty() {
+            continue;
+        }
+        let rows = sel.len() as f64;
+        let mut acc = vec![0.0; nseg];
+        for &b in &sel {
+            for (fr, slot) in acc.iter_mut().enumerate() {
+                slot_add(slot, mag[fr][b]);
+            }
+        }
+        let env0: Vec<f64> = acc.iter().map(|v| (v / rows).sqrt()).collect();
+        if env0.iter().fold(0.0f64, |a, b| a.max(*b)) <= 0.0 {
+            continue;
+        }
+        let sm = fir_same(&env0, &hann_kernel(9));
+        let le: Vec<f64> = sm.iter().map(|v| (v * 50.0).ln_1p()).collect();
+        let lo_v = le.iter().fold(f64::INFINITY, |a, b| a.min(*b));
+        let hi_v = le.iter().fold(f64::NEG_INFINITY, |a, b| a.max(*b));
+        if hi_v - lo_v < 1e-9 {
+            continue;
+        }
+        let d = hi_v - lo_v;
+        let pts: Vec<(f64, f64)> = (0..le.len())
+            .step_by(step)
+            .map(|i| (times[i], round3((le[i] - lo_v) / d)))
+            .filter(|(_, v)| *v > 0.02)
+            .collect();
+        if !pts.is_empty() {
+            out.push((name.replace("onset_", "level_"), pts));
+        }
+    }
+    out
+}
+
+/// The squared-magnitude row accumulation — numpy squares the whole
+/// selected block first, then row-adds sequentially.
+fn slot_add(slot: &mut f64, m: f64) {
+    *slot += m * m;
+}
+
+/// analyze.analyze_full: onsets, pans when stereo is known, and a level
+/// envelope for any band with no beat worth following. Rows carry 2 or
+/// 3 values exactly as the Python's tuples do.
+pub fn analyze_full(
+    x: &[f64],
+    sensitivity: f64,
+    stereo: Option<(&[f64], &[f64])>,
+) -> Vec<(String, Vec<Vec<f64>>)> {
+    let ons = analyze(x, sensitivity);
+    let mut out: Vec<(String, Vec<Vec<f64>>)> = ons
+        .iter()
+        .map(|(n, hits)| (n.clone(), hits.iter().map(|(t, v)| vec![*t, *v]).collect()))
+        .collect();
+    if let Some((l, r)) = stereo {
+        for (_, hits) in out.iter_mut() {
+            for h in hits.iter_mut() {
+                let p = pan_of(h[0], l, r);
+                h.push(p);
+            }
+        }
+    }
+    let thin: Vec<(&str, f64, f64, f64)> = BANDS
+        .iter()
+        .filter(|(n, ..)| {
+            out.iter()
+                .find(|(name, _)| name == n)
+                .map_or(0, |(_, h)| h.len())
+                < BEATLESS
+        })
+        .copied()
+        .collect();
+    if thin.is_empty() {
+        return out;
+    }
+    for (name, pts) in envelope(x, &thin) {
+        out.push((name, pts.iter().map(|(t, v)| vec![*t, *v]).collect()));
     }
     out
 }
