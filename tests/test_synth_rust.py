@@ -17,7 +17,6 @@ Skipped, not failed, without cargo — except in CI.
 
 from __future__ import annotations
 
-import math
 import os
 import random
 import shutil
@@ -31,6 +30,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+
+from synth_probes import kernel_modes, numpy_uniform_mode
 
 CARGO = shutil.which("cargo")
 IN_CI = bool(os.environ.get("CI"))
@@ -50,21 +51,6 @@ RANGES = [
 
 def fmt(v: float) -> str:
     return repr(float(v))
-
-
-def numpy_uniform_mode() -> str:
-    """ "fma" or "plain" — whichever this numpy wheel compiled uniform into."""
-    g = np.random.Generator(np.random.PCG64(999))
-    want = [float(x) for x in g.uniform(0.15, 1.4, 64)]
-    raws = [int(x) for x in np.random.PCG64(999).random_raw(64)]
-    ds = [(r >> 11) * (1.0 / 9007199254740992.0) for r in raws]
-    if want == [math.fma(1.4 - 0.15, d, 0.15) for d in ds]:
-        return "fma"
-    if want == [0.15 + (1.4 - 0.15) * d for d in ds]:
-        return "plain"
-    raise AssertionError(
-        "this numpy's uniform matches neither the fused nor the plain form"
-    )
 
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
@@ -270,6 +256,106 @@ class TestSynthRngParity(unittest.TestCase):
                 for a, b in (m.split(":") for m in mtext.split(",") if m)
             ]
             self.assertEqual(got_marks, [(float(a), float(b)) for a, b in marks], name)
+
+    def test_butter_and_sosfilt_match_scipy_bit_for_bit(self) -> None:
+        """The filter design chain and the filter run itself. numpy/scipy
+        wheels carry compiler-placed fusions inside their complex kernels
+        that differ per platform, so kernel_modes() probes each one on the
+        installed wheels and the Rust side reproduces the observed form —
+        exact everywhere, tolerant nowhere."""
+        assert CARGO is not None
+        subprocess.run(
+            [
+                CARGO,
+                "build",
+                "--release",
+                "--quiet",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=300,
+        )
+        from scipy import signal
+
+        modes = kernel_modes()
+        umode = numpy_uniform_mode()
+        r = random.Random(int(os.environ.get("CASTLE_SYNTH_SEED", "7")))
+        lp_cases = [
+            (n, hz) for n in (1, 2) for hz in (70.0, 150.0, 420.0, 900.0, 21950.0)
+        ]
+        lp_cases += [
+            (r.choice([1, 2]), round(r.uniform(35.0, 21950.0), 3)) for _ in range(20)
+        ]
+        bp_cases = [(320.0, 620.0), (652.0, 868.0), (2755.0, 3045.0)]
+        for _ in range(30):
+            hz = r.uniform(35.0, 5000.0)
+            bw = max(hz / r.uniform(0.7, 10.0), 20.0)
+            bp_cases.append(
+                (round(max(20.0, hz - bw / 2), 3), round(min(21950.0, hz + bw / 2), 3))
+            )
+        lines = [f"blp {n} {fmt(hz)} {modes}" for n, hz in lp_cases]
+        lines += [f"bbp {fmt(lo)} {fmt(hi)} {modes}" for lo, hi in bp_cases]
+        filt_cases = [
+            ("sflp", 2.0, 150.0),
+            ("sflp", 1.0, 630.0),
+            ("sfbp", 652.0, 868.0),
+        ]
+        lines += [
+            f"{op} {fmt(a)} {fmt(b)} 12345 8000 {umode} {modes}"
+            for op, a, b in filt_cases
+        ]
+        run = subprocess.run(
+            [str(DUMP)],
+            input="\n".join(lines) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=120,
+        )
+        got = run.stdout.splitlines()
+        self.assertEqual(len(got), len(lines))
+        at = 0
+        for n, hz in lp_cases:
+            want = [
+                float(v)
+                for v in signal.butter(n, hz, "lowpass", fs=44100, output="sos").ravel()
+            ]
+            want += [0.0] * (6 - len(want))
+            self.assertEqual([float(v) for v in got[at].split()], want, (n, hz))
+            at += 1
+        for lo, hi in bp_cases:
+            want = [
+                float(v)
+                for v in signal.butter(
+                    2, [lo, hi], "bandpass", fs=44100, output="sos"
+                ).ravel()
+            ]
+            self.assertEqual([float(v) for v in got[at].split()], want, (lo, hi))
+            at += 1
+        for op, a, b in filt_cases:
+            g = np.random.Generator(np.random.PCG64(12345))
+            x = g.uniform(-1.0, 1.0, 8000)
+            wn: float | list[float] = a if op == "sflp" else [a, b]
+            sos = signal.butter(
+                int(a) if op == "sflp" else 2,
+                b if op == "sflp" else wn,
+                "lowpass" if op == "sflp" else "bandpass",
+                fs=44100,
+                output="sos",
+            )
+            buf = np.asarray(signal.sosfilt(sos, x), dtype="<f8")
+            crc, cnt, *probes = got[at].split()
+            self.assertEqual(int(cnt), len(buf), (op, a, b))
+            stride = max(1, len(buf) // 16)
+            self.assertEqual(
+                [float(v) for v in probes],
+                [float(buf[i]) for i in range(0, len(buf), stride)],
+                f"filtered probe diverged: {op} {a} {b}",
+            )
+            self.assertEqual(int(crc, 16), zlib.crc32(buf.tobytes()), (op, a, b))
+            at += 1
 
 
 if __name__ == "__main__":

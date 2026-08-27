@@ -9,6 +9,7 @@
 
 pub mod bridge;
 pub mod effects;
+pub mod filters;
 pub mod hosts;
 pub mod noise;
 pub mod overlay;

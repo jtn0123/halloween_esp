@@ -11,6 +11,7 @@
 //! side parses them back with float()/int() so spelling cannot false-fail.
 
 use castle_core::bridge::crc32;
+use castle_core::filters;
 use castle_core::pieces;
 use castle_core::rng::Pcg64;
 use castle_core::synth;
@@ -108,6 +109,61 @@ fn main() {
                 };
                 let ms: Vec<String> = marks.iter().map(|(t, v)| format!("{t:?}:{v:?}")).collect();
                 println!("{} | {}", digest(&buf), ms.join(","));
+            }
+            "blp" | "bbp" => {
+                // blp <N> <hz> <modes> · bbp <lo> <hi> <modes>
+                let _ = seed;
+                let mut rest = line.split_whitespace().skip(1);
+                let mut num =
+                    |d: f64| -> f64 { rest.next().and_then(|v| v.parse().ok()).unwrap_or(d) };
+                let (x1, x2) = (num(2.0), num(150.0));
+                let m = filters::Modes::parse(rest.next().unwrap_or(""));
+                let vals: Vec<String> = if op == "blp" {
+                    filters::butter_lp(x1 as usize, x2, &m)
+                        .iter()
+                        .map(|v| format!("{v:?}"))
+                        .collect()
+                } else {
+                    filters::butter_bp(x1, x2, &m)
+                        .iter()
+                        .map(|v| format!("{v:?}"))
+                        .collect()
+                };
+                println!("{}", vals.join(" "));
+            }
+            "sflp" | "sfbp" => {
+                // sflp <N> <hz> <seed> <n> <umode> <modes>
+                // sfbp <lo> <hi> <seed> <n> <umode> <modes>
+                let _ = seed;
+                let mut rest = line.split_whitespace().skip(1);
+                let mut num =
+                    |d: f64| -> f64 { rest.next().and_then(|v| v.parse().ok()).unwrap_or(d) };
+                let (x1, x2) = (num(2.0), num(150.0));
+                let sd: u128 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                let n: usize = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                let fma_uni = rest.next() == Some("fma");
+                let m = filters::Modes::parse(rest.next().unwrap_or(""));
+                let mut g = Pcg64::new(sd);
+                let x: Vec<f64> = (0..n)
+                    .map(|_| {
+                        if fma_uni {
+                            g.uniform_fma(-1.0, 1.0)
+                        } else {
+                            g.uniform_plain(-1.0, 1.0)
+                        }
+                    })
+                    .collect();
+                let y = if op == "sflp" {
+                    filters::sosfilt(&[filters::butter_lp(x1 as usize, x2, &m)], &x, m.sos_fused)
+                } else {
+                    let c = filters::butter_bp(x1, x2, &m);
+                    let rows = [
+                        [c[0], c[1], c[2], c[3], c[4], c[5]],
+                        [c[6], c[7], c[8], c[9], c[10], c[11]],
+                    ];
+                    filters::sosfilt(&rows, &x, m.sos_fused)
+                };
+                println!("{}", digest(&y));
             }
             other => println!("ERR unknown op {other}"),
         }
