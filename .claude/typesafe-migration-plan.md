@@ -122,6 +122,15 @@ scene_schema, rig_layout, gen_rig, gen_show, gen_esphome_audio, importers,
 gen_wiring/qr/eink, castle_emu_wire, castle_emu, castle_emu_http, gen_esphome,
 gen_previewer — then their tests.
 
+A3 progress (2026-08-26, 5 passes): ten modules strict — netguard, check_loc,
+build_paths, manifest, hosts, scene_schema, rig_layout, gen_rig, gen_show,
+gen_esphome_audio, gen_qr, gen_eink_font (four of those were already clean).
+The ratchet lives in pyproject's per-module override block; hosts grew a
+_Device TypedDict, manifest an Entry alias (A4 upgrades it to a TypedDict).
+Remaining: importers, gen_wiring_diagram (80 errors — split it off the ruff
+exclude list first), castle_emu_wire, castle_emu, castle_emu_http,
+gen_esphome, gen_previewer, then tests.
+
 ### Track B — off-season (post-Halloween)
 
 | Loop | Iteration unit | Gate per pass | Stops when |
