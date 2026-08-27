@@ -11,6 +11,7 @@ from __future__ import annotations
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -22,8 +23,8 @@ import yaml
 ZONES = ["towerL", "towerR", "door"]
 
 
-def scene(**over: object) -> dict:
-    s: dict = {
+def scene(**over: object) -> dict[str, Any]:
+    s: dict[str, Any] = {
         "id": "probe",
         "name": "Probe",
         "kind": "triggered",

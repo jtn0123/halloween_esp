@@ -18,6 +18,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -50,7 +51,9 @@ class FuzzCase(unittest.TestCase):
         cls.emu.shutdown()
         cls.emu.server_close()
 
-    def req(self, method: str, target: str, **kw):
+    def req(
+        self, method: str, target: str, **kw: Any
+    ) -> tuple[int, bytes, dict[str, str]]:
         return raw_request("127.0.0.1", self.emu.port, method, target, **kw)
 
     def fuzzer(self) -> Fuzzer:

@@ -18,7 +18,9 @@ import tempfile
 import threading
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -30,7 +32,7 @@ import castle_link as cl
 FAST = 0.3
 
 
-def wait_for(cond, timeout: float = 4.0) -> bool:
+def wait_for(cond: Callable[[], object], timeout: float = 4.0) -> bool:
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         if cond():
@@ -40,7 +42,7 @@ def wait_for(cond, timeout: float = 4.0) -> bool:
 
 
 class ModeCase(unittest.TestCase):
-    def start(self, **kw) -> castle_emu.CastleEmu:
+    def start(self, **kw: Any) -> castle_emu.CastleEmu:
         card = Path(tempfile.mkdtemp(prefix="emu-mode-sd-"))
         (card / "tone.mp3").write_bytes(b"\xff\xfb" + b"\0" * 3000)  # ~1 s track
         emu = castle_emu.CastleEmu(port=0, sd_dir=card, scenes=["vigil", "storm"], **kw)
@@ -50,7 +52,7 @@ class ModeCase(unittest.TestCase):
         env = mock.patch.dict(os.environ, {"CASTLE_HOST": f"127.0.0.1:{emu.port}"})
         env.start()
         self.addCleanup(env.stop)
-        patches: list = [
+        patches: list[Any] = [
             mock.patch.object(cl, "TIMEOUT_S", FAST),
             mock.patch.object(cl, "PROBE_CONNECT_S", FAST),
             mock.patch.object(cl, "_DOWN_TTL_S", 0.0),

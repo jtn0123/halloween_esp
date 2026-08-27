@@ -17,6 +17,7 @@ import tempfile
 import unittest
 from itertools import pairwise
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,7 +29,7 @@ import yaml
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 
 
-def long_scene(n: int, loop: bool = False) -> dict:
+def long_scene(n: int, loop: bool = False) -> dict[str, Any]:
     return {
         "id": "epic",
         "name": "Epic",
@@ -42,8 +43,8 @@ def long_scene(n: int, loop: bool = False) -> dict:
     }
 
 
-def scripts(lines: list[str]) -> list[dict]:
-    out: list[dict] = yaml.safe_load("script:\n" + "\n".join(lines))["script"]
+def scripts(lines: list[str]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = yaml.safe_load("script:\n" + "\n".join(lines))["script"]
     return out
 
 

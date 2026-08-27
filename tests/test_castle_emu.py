@@ -22,7 +22,9 @@ import unittest
 import unittest.mock
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # studio_case
@@ -33,7 +35,7 @@ import castle_link
 from studio_case import HostEnv
 
 
-def _wait(cond, timeout_s: float = 2.0) -> bool:
+def _wait(cond: Callable[[], object], timeout_s: float = 2.0) -> bool:
     """Queued actions apply on the emulator's tick, not on the reply."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
@@ -71,7 +73,7 @@ class EmuCase(unittest.TestCase):
             with e:
                 return e.code, e.read()
 
-    def status(self) -> dict:
+    def status(self) -> dict[str, Any]:
         return dict(json.loads(self.http("GET", "/api/status")[1]))
 
 

@@ -25,6 +25,8 @@ SANDBOX_ENV = ("CASTLE_HOST", "CASTLE_TRACKS", "CASTLE_SCENES", "CASTLE_BUILD")
 for _k in SANDBOX_ENV:
     os.environ.pop(_k, None)
 
+from typing import Any
+
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -83,7 +85,9 @@ def make_click_track(
     return beats
 
 
-def render_synth(name: str, dur: float = SYNTH_DUR, seed: int = 1234):
+def render_synth(
+    name: str, dur: float = SYNTH_DUR, seed: int = 1234
+) -> tuple[np.ndarray, Any]:
     """Render one registry entry the way render_audio.py calls it.
 
     Always returns (buf, marks) — marks is None for the voices that report

@@ -19,6 +19,7 @@ import re
 import sys
 import unittest
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -28,7 +29,7 @@ import rig_layout as rl
 import yaml
 
 DOC = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
-ZONES: list[dict] = DOC["zones"]
+ZONES: list[dict[str, Any]] = DOC["zones"]
 PER: int = DOC["hardware"]["pixels_per_zone"]
 LAYOUTS = rl.zone_layouts(ZONES, PER)
 LIVE = [z for z in ZONES if LAYOUTS[z["id"]].n > 0]
@@ -39,7 +40,7 @@ RGB_ONLY = {"wing32", "mini"}
 ZONE_PIN = {"towerL": 18, "door": 16, "towerR": 14}
 
 
-def strips() -> list[dict]:
+def strips() -> list[dict[str, Any]]:
     lights = yaml.safe_load(gen_rig.emit_lights(LAYOUTS, ZONES, PER))["light"]
     assert isinstance(lights, list)
     return lights
@@ -119,7 +120,7 @@ class TestRmtBudget(unittest.TestCase):
     (it happened, 2026-08-19); underspend a long strip and its refill ISR
     runs to a 40 us deadline, which is a garbled pixel now and then."""
 
-    def zones(self, **symbols: int) -> list[dict]:
+    def zones(self, **symbols: int) -> list[dict[str, Any]]:
         return [
             {**z, **({"rmt_symbols": symbols[z["id"]]} if z["id"] in symbols else {})}
             for z in ZONES
@@ -202,7 +203,7 @@ class TestGeneratedFilesAreFresh(unittest.TestCase):
         self.assertEqual(declared, max(1, *(LAYOUTS[z["id"]].n for z in ZONES)))
 
 
-def _castle_substitutions() -> dict:
+def _castle_substitutions() -> dict[str, Any]:
     """castle.yaml uses ESPHome tags (!secret, !lambda, !include); the
     substitutions block is plain, so load with those tags ignored."""
 

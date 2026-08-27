@@ -82,7 +82,9 @@ module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_sc
     # …and their tests, same ratchet, same rule:
     "test_hosts", "test_loc_scope", "test_stems", "test_safety_floor", "test_netguard",
     "test_import_cli", "test_media_failures", "test_analysis", "test_rig_layout",
-    "test_lean_page"]
+    "test_lean_page",
+    "helpers", "test_scene_schema", "test_gen_chunks", "test_castle_emu",
+    "test_emu_modes", "test_gen_previewer", "test_protocol_fuzz", "test_rig_config"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_decorators = true
