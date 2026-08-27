@@ -8,10 +8,11 @@
 //! truncated milliseconds and round(vel, 3) — CPython's round is decimal
 //! nearest-ties-even, which is also what Rust's {:.3} formatting does.
 //!
-//! Reverb is the one missing stage (fftconvolve = pocketfft's rounding,
-//! its own project), so this handles `reverb: 0` scenes only and the
-//! caller must not send others. tests/test_master_rust.py holds whole
-//! scenes and their marker dicts to the Python bit for bit.
+//! Reverb draws its impulse response from the same dice AFTER the score
+//! (order is the seed), then convolves through the defined-order FFT —
+//! since synth_master left pocketfft, wet scenes match too.
+//! tests/test_master_rust.py holds whole scenes and marker dicts to the
+//! Python bit for bit.
 
 use crate::atmos::{self, Dice};
 use crate::bridge::crc32;
@@ -67,6 +68,7 @@ pub fn render_scene(
     id: &str,
     duration_ms: f64,
     score: &[Ev],
+    wet: f64,
     looped: bool,
     uni_fused: bool,
     m: &Modes,
@@ -98,7 +100,7 @@ pub fn render_scene(
                 .map(|(t, v)| (((ev.t + t) * 1000.0) as i64, round3(*v))),
         );
     }
-    // reverb: 0 scenes only — apply_reverb(wet=0) is the identity.
+    buf = atmos::apply_reverb(&buf, wet, &mut d);
     if looped {
         master::loop_crossfade(&mut buf);
     } else {
@@ -142,7 +144,7 @@ mod tests {
                 take: Some(2.0),
             },
         ];
-        let (buf, marks) = render_scene("vigil", 5000.0, &score, false, true, &M).unwrap();
+        let (buf, marks) = render_scene("vigil", 5000.0, &score, 0.0, false, true, &M).unwrap();
         assert_eq!(buf.len(), 5 * 44100);
         let peak = buf.iter().fold(0.0f64, |a, v| a.max(v.abs()));
         assert!((peak - 0.89).abs() < 1e-12);

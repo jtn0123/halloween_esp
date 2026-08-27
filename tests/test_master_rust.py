@@ -160,8 +160,9 @@ class TestMasterChainParity(unittest.TestCase):
     def test_whole_scenes_render_bit_for_bit(self) -> None:
         """The synth-score path of render_scene end to end: crc32-seeded
         dice, twelve-voice dispatch, takes, gains, tails, limiter and
-        normalise — buffer AND marker dict exact. reverb: 0 scenes only;
-        the stone hall (fftconvolve) is the one unported stage."""
+        normalise — buffer AND marker dict exact, the stone hall
+        included (wet scenes convolve through the defined-order FFT,
+        whose dice follow the score's on the same stream)."""
         assert CARGO is not None
         subprocess.run(
             [
@@ -216,10 +217,19 @@ class TestMasterChainParity(unittest.TestCase):
             {
                 "id": "procession",
                 "duration_ms": 8000,
-                "reverb": 0,
-                "score": [
+                "score": [  # no reverb key: the synth default 0.42 applies
                     {"synth": "organ", "t": 0.0, "take": 7.5, "gain": 0.9},
                     {"synth": "shriek", "t": 5.0, "gain": 0.4},
+                ],
+            },
+            {
+                "id": "seance",
+                "duration_ms": 9000,
+                "reverb": 0.25,
+                "loop": True,
+                "score": [
+                    {"synth": "drone", "t": 0.0, "dur": 9.0},
+                    {"synth": "toll", "t": 1.0, "gain": 0.7},
                 ],
             },
         ]
@@ -233,7 +243,7 @@ class TestMasterChainParity(unittest.TestCase):
         for sc in scenes:
             score = cast("list[dict[str, object]]", sc["score"])
             lines.append(
-                f"scene {sc['id']} {sc['duration_ms']} "
+                f"scene {sc['id']} {sc['duration_ms']} {sc.get('reverb', 0.42)} "
                 f"{1 if sc.get('loop') else 0} {umode} {modes} "
                 + ";".join(ev_arg(e) for e in score)
             )

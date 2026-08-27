@@ -236,12 +236,13 @@ fn main() {
                 println!("{}", digest(&buf));
             }
             "scene" => {
-                // scene <id> <duration_ms> <loop01> <umode> <modes> <ev;ev…>
-                // ev = name:t:gain:dur|-:take|-  (reverb-0 scenes only)
+                // scene <id> <duration_ms> <wet> <loop01> <umode> <modes>
+                // <ev;ev…> where ev = name:t:gain:dur|-:take|-
                 let _ = seed;
                 let mut rest = line.split_whitespace().skip(1);
                 let id = rest.next().unwrap_or("");
                 let dur_ms: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                let wet: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0.42);
                 let looped = rest.next() == Some("1");
                 let fused = rest.next() == Some("fma");
                 let m = filters::Modes::parse(rest.next().unwrap_or(""));
@@ -268,7 +269,7 @@ fn main() {
                         })
                     })
                     .collect();
-                match scene::render_scene(id, dur_ms, &evs, looped, fused, &m) {
+                match scene::render_scene(id, dur_ms, &evs, wet, looped, fused, &m) {
                     None => println!("ERR unknown synth in scene"),
                     Some((buf, marks)) => {
                         let ms: Vec<String> = marks
