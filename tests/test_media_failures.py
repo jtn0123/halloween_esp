@@ -39,7 +39,7 @@ class TestFetchUrl(unittest.TestCase):
         with (
             mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"),
             mock.patch.object(
-                imf.subprocess,
+                subprocess,
                 "run",
                 return_value=done(1, err="x\nERROR: Video unavailable"),
             ),
@@ -52,7 +52,7 @@ class TestFetchUrl(unittest.TestCase):
     def test_success_with_no_file_is_still_a_failure(self) -> None:
         with (
             mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"),
-            mock.patch.object(imf.subprocess, "run", return_value=done(0)),
+            mock.patch.object(subprocess, "run", return_value=done(0)),
         ):
             with self.assertRaises(SystemExit) as c:
                 imf.fetch_url("https://example.test/a", self.tmp)
@@ -62,7 +62,7 @@ class TestFetchUrl(unittest.TestCase):
         with (
             mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"),
             mock.patch.object(
-                imf.subprocess,
+                subprocess,
                 "run",
                 side_effect=subprocess.TimeoutExpired("yt-dlp", 900),
             ),
@@ -72,7 +72,7 @@ class TestFetchUrl(unittest.TestCase):
         self.assertIn("stalled", str(c.exception))
 
     def test_non_link_is_refused_before_any_subprocess(self) -> None:
-        with mock.patch.object(imf.subprocess, "run") as r:
+        with mock.patch.object(subprocess, "run") as r:
             with self.assertRaises(SystemExit):
                 imf.fetch_url("-not-a-url", self.tmp)
         r.assert_not_called()

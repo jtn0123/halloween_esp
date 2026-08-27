@@ -8,10 +8,17 @@ to paste under `scenes:` — with decays solved from how busy each band is.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 FRAME = 0.016  # the light engine's tick, matching the firmware
 
+#: One band's detected hits, each [time_s, velocity] (a third element is a
+#: re-pin marker). Sequence because the analyser hands over tuples, the
+#: markers file lists — the maths only ever reads.
+Hits = Sequence[Sequence[float]]
 
-def fit_to_density(hits: list, fallback: float) -> tuple[float, float]:
+
+def fit_to_density(hits: Hits, fallback: float) -> tuple[float, float]:
     """Choose a decay and an intensity scale that suit how busy a band is.
 
     The built-in scenes' decay constants were tuned against Crypt's 48 bpm
@@ -46,7 +53,9 @@ def fit_to_density(hits: list, fallback: float) -> tuple[float, float]:
     return round(decay, 3), round(scale, 2)
 
 
-def scene_block(tid: str, dur: float, marks: dict, ext: str = "mp3") -> str:
+def scene_block(
+    tid: str, dur: float, marks: Mapping[str, Hits], ext: str = "mp3"
+) -> str:
     """A ready-to-paste scene, wired to whatever the analyser actually found."""
     zones = {"onset_low": "door", "onset_mid": "towerL", "onset_high": "towerR"}
     colors = {

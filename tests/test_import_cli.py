@@ -342,7 +342,7 @@ class TestUrlIsAUrl(unittest.TestCase):
     def test_fetch_refuses_before_it_spawns_anything(self) -> None:
         """The guard is in fetch_url too, not only at the call site."""
         with (
-            mock.patch.object(imf.subprocess, "run") as run,
+            mock.patch.object(subprocess, "run") as run,
             tempfile.TemporaryDirectory() as td,
         ):
             with self.assertRaises(SystemExit) as e:
@@ -354,7 +354,7 @@ class TestUrlIsAUrl(unittest.TestCase):
         """`--` closes the option list, so a link can never become a flag."""
         with (
             mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"),
-            mock.patch.object(imf.subprocess, "run") as run,
+            mock.patch.object(subprocess, "run") as run,
             tempfile.TemporaryDirectory() as td,
         ):
             run.return_value = subprocess.CompletedProcess([], 1, "", "nope")

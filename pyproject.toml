@@ -76,7 +76,8 @@ ignore_missing_imports = true
 # per-module-legal half of --strict; warn_redundant_casts is global-only.
 [[tool.mypy.overrides]]
 module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_schema", "rig_layout", "gen_rig", "gen_show",
-    "gen_esphome_audio", "gen_qr", "gen_eink_font"]
+    "gen_esphome_audio", "gen_qr", "gen_eink_font",
+    "import_track", "import_fetch", "import_scene"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_decorators = true

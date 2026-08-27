@@ -77,7 +77,7 @@ def text_arg(raw: str) -> str:
     return raw
 
 
-def sensitivity_arg(raw: str):
+def sensitivity_arg(raw: str) -> float | dict[str, float]:
     """`1.1`, or `low=0.8,mid=1.1,high=1.6`.
 
     One number for all three bands is usually the wrong answer — a crisp kick
@@ -90,7 +90,7 @@ def sensitivity_arg(raw: str):
             return float(raw)
         except ValueError:
             raise argparse.ArgumentTypeError(f"not a number: {raw!r}") from None
-    out = {}
+    out: dict[str, float] = {}
     for part in raw.split(","):
         k, _, v = part.partition("=")
         k = k.strip().replace("onset_", "")
@@ -105,7 +105,7 @@ def sensitivity_arg(raw: str):
     return out
 
 
-def convert(src: Path, out: Path, o: dict) -> None:
+def convert(src: Path, out: Path, o: dict[str, Any]) -> None:
     """One ffmpeg pass: trim, filter, downmix, resample, encode."""
     cmd = ["ffmpeg", "-v", "quiet", "-y"]
     if o["start"]:
@@ -358,8 +358,8 @@ def main() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _import(args: argparse.Namespace, o: dict, source: str, is_url: bool,
-            tmp: Path, prev: dict | None) -> int:
+def _import(args: argparse.Namespace, o: dict[str, Any], source: str, is_url: bool,
+            tmp: Path, prev: mf.Entry | None) -> int:
     title = (prev or {}).get("title", "")
     if is_url:
         src, title = fetch_url(source, tmp)
