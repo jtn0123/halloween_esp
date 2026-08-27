@@ -28,6 +28,7 @@ import json
 import subprocess
 
 import analyze as ana
+import import_convert as ic
 import import_track as it
 import manifest as mf
 import render_audio as ra
@@ -429,11 +430,16 @@ class TestKeepSourceAndCutGuards(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.src = self.tmp / "src.wav"
         make_click_track(self.src, seconds=3.0)
+        # BOTH bindings: keep_source lives in import_convert since the split,
+        # and a patch that misses one writes into the real library.
         self.p_tracks = mock.patch.object(it, "TRACKS", self.tmp / "lib")
         self.p_tracks.start()
+        self.p_tracks2 = mock.patch.object(ic, "TRACKS", self.tmp / "lib")
+        self.p_tracks2.start()
         (self.tmp / "lib").mkdir()
 
     def tearDown(self) -> None:
+        self.p_tracks2.stop()
         self.p_tracks.stop()
         shutil.rmtree(self.tmp, ignore_errors=True)
 

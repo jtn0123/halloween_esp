@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import castle_link as cl
+import import_convert as ic
 import import_track as it
 import manifest as mf
 import studio
@@ -124,6 +125,7 @@ class ServerCase(unittest.TestCase):
             mock.patch.object(studio, "TRACKS", cls.sandbox),
             mock.patch.object(studio_tracks, "TRACKS", cls.sandbox),
             mock.patch.object(it, "TRACKS", cls.sandbox),
+            mock.patch.object(ic, "TRACKS", cls.sandbox),
             mock.patch.object(mf, "PATH", cls.sandbox / "tracks.json"),
         ]
         for patch in cls._sandbox_patches:
