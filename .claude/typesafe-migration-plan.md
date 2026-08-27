@@ -151,6 +151,19 @@ and the five files still on the ruff-format exclude list.
 
 ### Track B — off-season (post-Halloween)
 
+B1 progress (2026-08-27, started early at the user's direction, 4 passes):
+core/ (castle-core crate, zero deps) holds the full per-pixel render path —
+noise primitives, all 13 effects, overlays, strike gates — proven BIT-EXACT
+against the host-compiled firmware header by tests/test_castle_core.py
+(the C++ there builds with -ffp-contract=off: clang on arm64 otherwise
+fuses a*b+c into fma, which the FPU-less S2 never does, so the un-fused
+build is the device-faithful proxy and exact bits replace tolerances).
+The WASM face is built and checked: 8 KB, allocator-free, loads in node,
+fbm-only paths bit-exact. NOT done, deliberately: the desk swap (wiring
+the wasm into the previewer in place of effects.ts) stays post-Halloween —
+it changes what the live show previews with, and the sine-effect
+wasm-libm-vs-JS-Math deltas need the swap harness's tolerance model.
+
 | Loop | Iteration unit | Gate per pass | Stops when |
 |---|---|---|---|
 | B1 core/effects | scaffold → int hash → 1 effect family per pass → WASM face → desk swap | Rust tests + frame-exact vs TS/C++ + page ≤4MB budget | old parity suite retired |
