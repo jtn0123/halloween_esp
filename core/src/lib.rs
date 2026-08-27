@@ -14,6 +14,7 @@ pub mod fft;
 pub mod filters;
 pub mod hosts;
 pub mod master;
+pub mod media;
 pub mod noise;
 pub mod onsets;
 pub mod overlay;

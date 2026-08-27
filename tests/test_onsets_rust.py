@@ -183,6 +183,74 @@ class TestOnsetParity(unittest.TestCase):
                     f"the drone at sens={sens} should have envelope bands",
                 )
 
+    def test_analyze_file_matches_through_the_same_ffmpeg(self) -> None:
+        """The whole importer path on a real file: both sides run the
+        identical ffmpeg decode, then the identical detection — so a WAV
+        rendered from the show comes back with equal band dictionaries."""
+        assert CARGO is not None
+        subprocess.run(
+            [
+                CARGO,
+                "build",
+                "--release",
+                "--quiet",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=300,
+        )
+        if shutil.which("ffmpeg") is None and not IN_CI:
+            self.skipTest("no ffmpeg")
+        import tempfile
+
+        import analyze
+        import render_audio
+        import synth
+
+        tmp = Path(tempfile.mkdtemp(prefix="onsets-file-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        wavs: list[tuple[Path, float, bool]] = []
+        buf = np.asarray(synth.waltz()[0])
+        buf = buf * (0.89 / float(np.max(np.abs(buf))))
+        render_audio.write_wav(tmp / "waltz.wav", buf, 44100)
+        wavs.append((tmp / "waltz.wav", 1.1, True))
+        d = np.asarray(synth.drone(12.0))
+        d = d * (0.89 / float(np.max(np.abs(d))))
+        render_audio.write_wav(tmp / "drone.wav", d, 44100)
+        wavs.append((tmp / "drone.wav", 3.0, False))
+        lines = [f"file {p} {sens} {1 if st else 0}" for p, sens, st in wavs]
+        run = subprocess.run(
+            [str(DUMP)],
+            input="\n".join(lines) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=300,
+        )
+        got = run.stdout.splitlines()
+        self.assertEqual(len(got), len(wavs))
+        for (p, sens, st), reply in zip(wavs, got):
+            x = analyze.load_audio(p)
+            stereo = analyze.load_stereo(p) if st else None
+            want = {
+                k: [list(r) for r in v]
+                for k, v in analyze.analyze_full(
+                    x, sensitivity=sens, stereo=stereo
+                ).items()
+            }
+            got_bands: dict[str, list[list[float]]] = {}
+            for chunk in reply.split(";"):
+                if not chunk:
+                    continue
+                name, _, pts = chunk.partition(">")
+                got_bands[name] = [
+                    [float(v) for v in pt.split(":")] for pt in pts.split(",") if pt
+                ]
+            self.assertEqual(got_bands, want, p.name)
+            self.assertTrue(want, f"{p.name}: nothing detected to compare")
+
 
 if __name__ == "__main__":
     unittest.main()

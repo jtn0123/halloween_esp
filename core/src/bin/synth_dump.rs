@@ -14,6 +14,7 @@ use castle_core::atmos;
 use castle_core::bridge::crc32;
 use castle_core::filters;
 use castle_core::master;
+use castle_core::media;
 use castle_core::onsets;
 use castle_core::pieces;
 use castle_core::rng::Pcg64;
@@ -389,6 +390,39 @@ fn main() {
                 } else {
                     None
                 };
+                let bands: Vec<String> = onsets::analyze_full(&x, sens, stereo)
+                    .iter()
+                    .map(|(n, rows)| {
+                        let pts: Vec<String> = rows
+                            .iter()
+                            .map(|r| {
+                                r.iter()
+                                    .map(|v| format!("{v:?}"))
+                                    .collect::<Vec<_>>()
+                                    .join(":")
+                            })
+                            .collect();
+                        format!("{n}>{}", pts.join(","))
+                    })
+                    .collect();
+                println!("{}", bands.join(";"));
+            }
+            "file" => {
+                // file <path> <sens> <st01> — analyze_file end to end: the
+                // same ffmpeg decode, then analyze_full.
+                let _ = seed;
+                let mut rest = line.split_whitespace().skip(1);
+                let path = rest.next().unwrap_or("");
+                let sens: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(1.1);
+                let st = rest.next() == Some("1");
+                let Some(x) = media::load_audio(path) else {
+                    println!("ERR cannot decode {path}");
+                    continue;
+                };
+                let stereo_data = if st { media::load_stereo(path) } else { None };
+                let stereo = stereo_data
+                    .as_ref()
+                    .map(|(l, r)| (l.as_slice(), r.as_slice()));
                 let bands: Vec<String> = onsets::analyze_full(&x, sens, stereo)
                     .iter()
                     .map(|(n, rows)| {
