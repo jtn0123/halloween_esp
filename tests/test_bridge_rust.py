@@ -20,6 +20,7 @@ import sys
 import tempfile
 import time
 import unittest
+import zlib
 from pathlib import Path
 from typing import ClassVar
 
@@ -136,6 +137,42 @@ class TestBridgeVerbs(unittest.TestCase):
     def test_bootlog_answers_text(self) -> None:
         code, body = self.castle("bootlog")
         self.assertEqual(code, 0, body)
+
+    def test_put_lands_the_bytes_and_the_castle_proves_it(self) -> None:
+        """The upload verbs carry sd_sync.upload's whole contract: the byte
+        count must match, and the v5.42 crc32 field must agree with a CRC
+        computed over what was sent (the emulator hashes what it wrote)."""
+        src = self.card / "local_march.mp3"
+        payload = bytes(range(256)) * 37  # not compressible, not trivial
+        src.write_bytes(payload)
+        code, body = self.castle("put", str(src), "march.mp3")
+        self.assertEqual(code, 0, body)
+        reply = json.loads(body)
+        self.assertEqual(reply["bytes"], len(payload))
+        self.assertEqual(int(str(reply["crc32"]), 16), zlib.crc32(payload))
+        self.assertEqual((self.card / "march.mp3").read_bytes(), payload)
+
+    def test_put_defaults_the_remote_name_to_the_basename(self) -> None:
+        src = self.card / "dirge.mp3"
+        src.write_bytes(b"\xff\xfb" + b"\x11" * 500)
+        code, body = self.castle("put", str(src))
+        self.assertEqual(code, 0, body)
+        self.assertIn("/sd/dirge.mp3", body)
+
+    def test_put_of_a_refused_name_is_exit_two(self) -> None:
+        src = self.card / "innocent.mp3"
+        src.write_bytes(b"x" * 64)
+        code, body = self.castle("put", str(src), ".hidden")
+        self.assertEqual(code, 2, body)
+        self.assertIn("refused", body)
+
+    def test_rm_deletes_and_a_second_rm_is_exit_two(self) -> None:
+        (self.card / "victim.mp3").write_bytes(b"x" * 64)
+        code, body = self.castle("rm", "victim.mp3")
+        self.assertEqual(code, 0, body)
+        self.assertFalse((self.card / "victim.mp3").exists())
+        code, body = self.castle("rm", "victim.mp3")
+        self.assertEqual(code, 2, body)
 
     def test_an_unknown_scene_is_a_refusal_not_a_crash(self) -> None:
         code, body = self.castle("scene", "no_such_scene")

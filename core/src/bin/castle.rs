@@ -3,16 +3,49 @@
 //!     castle --host 10.27.27.7:80 status
 //!     castle --host … scene seance | play 10_ballad.mp3 | stop | volume 60
 //!     castle --host … show start|stop · blackout · files [subdir] · bootlog
+//!     castle --host … put local.mp3 [name] · rm name
 //!
 //! Host comes from --host or CASTLE_HOST (host[:port], first entry of a
-//! comma list). Prints the castle's own JSON answer; exit 0 on 2xx.
+//! comma list). Prints the castle's own JSON answer; exit 0 on 2xx, 2 when
+//! the castle refuses or the card's answer disagrees, 1 for transport.
 //! tests/test_bridge_rust.py round-trips every verb against castle_emu.
 
-use castle_core::bridge::{encode_query, request};
+use castle_core::bridge::{encode_query, request, upload, UploadFault};
 
 fn fail(msg: &str) -> ! {
     eprintln!("castle: {msg}");
     std::process::exit(1)
+}
+
+fn refuse(msg: &str) -> ! {
+    eprintln!("castle: {msg}");
+    std::process::exit(2)
+}
+
+/// `put LOCAL [NAME]`: one file onto the card, held to the byte count and
+/// (v5.42+) the CRC32 the castle answers with — sd_sync.upload's checks.
+fn do_put(host: &str, args: &[String]) -> ! {
+    let Some(path) = args.first() else {
+        fail("put needs a local file")
+    };
+    let data = std::fs::read(path).unwrap_or_else(|e| fail(&format!("cannot read {path}: {e}")));
+    let name = args.get(1).cloned().unwrap_or_else(|| {
+        std::path::Path::new(path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    });
+    match upload(host, "/api/files", &name, &data) {
+        Ok(body) => {
+            println!("{body}");
+            std::process::exit(0)
+        }
+        Err(UploadFault::Transport(e)) => fail(&e),
+        Err(UploadFault::Refused(code, body)) => {
+            refuse(&format!("{host} refused {name}: {code} {body}"))
+        }
+        Err(UploadFault::Mismatch(why)) => refuse(&why),
+    }
 }
 
 fn main() {
@@ -36,6 +69,9 @@ fn main() {
         host.push_str(":80");
     }
     let verb = args.first().cloned().unwrap_or_default();
+    if verb == "put" {
+        do_put(&host, &args[1..]);
+    }
     let arg = args.get(1);
     let (method, target, read_s) = match (verb.as_str(), arg) {
         ("status", None) => ("GET", "/api/status".to_string(), 5.0),
@@ -49,12 +85,14 @@ fn main() {
         ("bootlog", None) => ("GET", "/api/bootlog".to_string(), 5.0),
         ("files", None) => ("GET", "/api/files".to_string(), 5.0),
         ("files", Some(d)) => ("GET", format!("/api/files?d={}", encode_query(d)), 5.0),
+        ("rm", Some(n)) => ("DELETE", format!("/api/files/{}", encode_query(n)), 10.0),
         _ => fail(
             "usage: castle [--host H:P] status|health|stop|scene ID|play FILE|\
-             volume N|show start|show stop|blackout|files [DIR]|bootlog",
+             volume N|show start|show stop|blackout|files [DIR]|bootlog|\
+             put LOCAL [NAME]|rm NAME",
         ),
     };
-    match request(&host, method, &target, read_s) {
+    match request(&host, method, &target, b"", read_s) {
         Err(e) => fail(&e),
         Ok(r) => {
             println!("{}", String::from_utf8_lossy(&r.body).trim_end());
