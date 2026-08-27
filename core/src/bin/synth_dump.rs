@@ -10,6 +10,7 @@
 //! integers). Values print with {:?} (shortest round-trip); the Python
 //! side parses them back with float()/int() so spelling cannot false-fail.
 
+use castle_core::atmos;
 use castle_core::bridge::crc32;
 use castle_core::filters;
 use castle_core::pieces;
@@ -164,6 +165,32 @@ fn main() {
                     filters::sosfilt(&rows, &x, m.sos_fused)
                 };
                 println!("{}", digest(&y));
+            }
+            "voice" => {
+                // voice <name> <dur> <seed> <umode> <modes> — atmosphere
+                // voices; dur is ignored by the fixed-length ones.
+                let _ = seed;
+                let mut rest = line.split_whitespace().skip(1);
+                let name = rest.next().unwrap_or("");
+                let dur: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(20.0);
+                let sd: u128 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                let fused = rest.next() == Some("fma");
+                let m = filters::Modes::parse(rest.next().unwrap_or(""));
+                let mut d = atmos::Dice::new(sd, fused);
+                let (buf, marks): (Vec<f64>, Vec<(f64, f64)>) = match name {
+                    "wind" => (atmos::wind(dur, &mut d, &m), Vec::new()),
+                    "thunder" => (atmos::thunder(&mut d, &m), Vec::new()),
+                    "creak" => (atmos::creak(&mut d, &m), Vec::new()),
+                    "shriek" => (atmos::shriek(&mut d, &m), Vec::new()),
+                    "heartbeat" => atmos::heartbeat(dur, &mut d, &m),
+                    "whispers" => atmos::whispers(dur, &mut d, &m),
+                    _ => {
+                        println!("ERR unknown voice {name}");
+                        continue;
+                    }
+                };
+                let ms: Vec<String> = marks.iter().map(|(t, v)| format!("{t:?}:{v:?}")).collect();
+                println!("{} | {}", digest(&buf), ms.join(","));
             }
             other => println!("ERR unknown op {other}"),
         }

@@ -357,6 +357,79 @@ class TestSynthRngParity(unittest.TestCase):
             self.assertEqual(int(crc, 16), zlib.crc32(buf.tobytes()), (op, a, b))
             at += 1
 
+    def test_atmosphere_voices_match_bit_for_bit(self) -> None:
+        """wind, heartbeat, creak, shriek, whispers, thunder: numpy dice
+        through scipy filters, whole buffers and markers exact under the
+        probed kernel modes."""
+        assert CARGO is not None
+        subprocess.run(
+            [
+                CARGO,
+                "build",
+                "--release",
+                "--quiet",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=300,
+        )
+        import synth
+
+        modes = kernel_modes()
+        umode = numpy_uniform_mode()
+        cases: list[tuple[str, float, int]] = [
+            ("wind", 8.0, 11),
+            ("wind", 30.0, 21),
+            ("heartbeat", 6.0, 12),
+            ("heartbeat", 20.0, 22),
+            ("whispers", 6.0, 13),
+            ("whispers", 20.0, 23),
+            ("thunder", 0.0, 14),
+            ("creak", 0.0, 15),
+            ("shriek", 0.0, 16),
+        ]
+        lines = [
+            f"voice {name} {fmt(dur)} {seed} {umode} {modes}"
+            for name, dur, seed in cases
+        ]
+        run = subprocess.run(
+            [str(DUMP)],
+            input="\n".join(lines) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=240,
+        )
+        got = run.stdout.splitlines()
+        self.assertEqual(len(got), len(cases))
+        for (name, dur, seed), reply in zip(cases, got):
+            rng = np.random.default_rng(seed)
+            fn = synth.SYNTHS[name]
+            res = (
+                fn(rng, dur=dur)
+                if name in ("wind", "heartbeat", "whispers")
+                else fn(rng)
+            )
+            sig, marks = res if isinstance(res, tuple) else (res, [])
+            buf = np.asarray(sig, dtype="<f8")
+            head, _, mtext = reply.partition(" | ")
+            crc, cnt, *probes = head.split()
+            self.assertEqual(int(cnt), len(buf), (name, dur))
+            stride = max(1, len(buf) // 16)
+            self.assertEqual(
+                [float(v) for v in probes],
+                [float(buf[i]) for i in range(0, len(buf), stride)],
+                f"probe diverged: {name} {dur}",
+            )
+            self.assertEqual(int(crc, 16), zlib.crc32(buf.tobytes()), (name, dur))
+            got_marks = [
+                (float(a), float(b))
+                for a, b in (v.split(":") for v in mtext.split(",") if v)
+            ]
+            self.assertEqual(got_marks, [(float(a), float(b)) for a, b in marks], name)
+
 
 if __name__ == "__main__":
     unittest.main()
