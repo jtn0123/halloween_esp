@@ -16,6 +16,7 @@ use castle_core::filters;
 use castle_core::master;
 use castle_core::pieces;
 use castle_core::rng::Pcg64;
+use castle_core::scene;
 use castle_core::synth;
 use std::io::BufRead;
 
@@ -233,6 +234,54 @@ fn main() {
                     }
                 }
                 println!("{}", digest(&buf));
+            }
+            "scene" => {
+                // scene <id> <duration_ms> <loop01> <umode> <modes> <ev;ev…>
+                // ev = name:t:gain:dur|-:take|-  (reverb-0 scenes only)
+                let _ = seed;
+                let mut rest = line.split_whitespace().skip(1);
+                let id = rest.next().unwrap_or("");
+                let dur_ms: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                let looped = rest.next() == Some("1");
+                let fused = rest.next() == Some("fma");
+                let m = filters::Modes::parse(rest.next().unwrap_or(""));
+                let evs: Vec<scene::Ev> = rest
+                    .next()
+                    .unwrap_or("")
+                    .split(';')
+                    .filter(|e| !e.is_empty())
+                    .filter_map(|e| {
+                        let f: Vec<&str> = e.split(':').collect();
+                        let opt = |s: &&str| -> Option<f64> {
+                            if **s == *"-" {
+                                None
+                            } else {
+                                s.parse().ok()
+                            }
+                        };
+                        Some(scene::Ev {
+                            synth: (*f.first()?).to_string(),
+                            t: f.get(1)?.parse().ok()?,
+                            gain: f.get(2)?.parse().ok()?,
+                            dur: f.get(3).and_then(opt),
+                            take: f.get(4).and_then(opt),
+                        })
+                    })
+                    .collect();
+                match scene::render_scene(id, dur_ms, &evs, looped, fused, &m) {
+                    None => println!("ERR unknown synth in scene"),
+                    Some((buf, marks)) => {
+                        let ms: Vec<String> = marks
+                            .iter()
+                            .map(|(n, v)| {
+                                let pts: Vec<String> =
+                                    v.iter().map(|(t, vel)| format!("{t}:{vel:?}")).collect();
+                                format!("{n}>{}", pts.join(","))
+                            })
+                            .collect();
+                        println!("{} | {}", digest(&buf), ms.join(";"));
+                    }
+                }
             }
             other => println!("ERR unknown op {other}"),
         }

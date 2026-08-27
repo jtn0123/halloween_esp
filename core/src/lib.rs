@@ -20,6 +20,7 @@ pub mod pieces;
 pub mod pulse;
 pub mod pulse_expand;
 pub mod rng;
+pub mod scene;
 pub mod synth;
 pub mod wasm;
 

@@ -20,6 +20,7 @@ import sys
 import unittest
 import zlib
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 
@@ -109,6 +110,120 @@ class TestMasterChainParity(unittest.TestCase):
                 f"probe diverged: {kind} {seed}",
             )
             self.assertEqual(int(crc, 16), zlib.crc32(out.tobytes()), (kind, seed))
+
+    def test_whole_scenes_render_bit_for_bit(self) -> None:
+        """The synth-score path of render_scene end to end: crc32-seeded
+        dice, twelve-voice dispatch, takes, gains, tails, limiter and
+        normalise — buffer AND marker dict exact. reverb: 0 scenes only;
+        the stone hall (fftconvolve) is the one unported stage."""
+        assert CARGO is not None
+        subprocess.run(
+            [
+                CARGO,
+                "build",
+                "--release",
+                "--quiet",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=300,
+        )
+        import render_audio
+        from synth_probes import kernel_modes
+
+        modes = kernel_modes()
+        umode = numpy_uniform_mode()
+        scenes: list[dict[str, object]] = [
+            {
+                "id": "vigil",
+                "duration_ms": 9000,
+                "reverb": 0,
+                "score": [
+                    {"synth": "toll", "t": 0.5},
+                    {"synth": "heartbeat", "t": 0.0, "dur": 8.0, "gain": 0.9},
+                    {"synth": "creak", "t": 4.0, "gain": 0.5},
+                ],
+            },
+            {
+                "id": "storm",
+                "duration_ms": 12000,
+                "reverb": 0,
+                "loop": True,
+                "score": [
+                    {"synth": "wind", "t": 0.0, "dur": 12.0},
+                    {"synth": "thunder", "t": 2.0, "gain": 1.2},
+                    {"synth": "whispers", "t": 1.0, "dur": 10.0, "gain": 0.7},
+                ],
+            },
+            {
+                "id": "ballroom",
+                "duration_ms": 10000,
+                "reverb": 0,
+                "score": [
+                    {"synth": "waltz", "t": 0.2, "take": 6.0},
+                    {"synth": "musicbox", "t": 7.0, "gain": 0.8},
+                    {"synth": "drone", "t": 0.0, "dur": 10.0, "gain": 0.6},
+                ],
+            },
+            {
+                "id": "procession",
+                "duration_ms": 8000,
+                "reverb": 0,
+                "score": [
+                    {"synth": "organ", "t": 0.0, "take": 7.5, "gain": 0.9},
+                    {"synth": "shriek", "t": 5.0, "gain": 0.4},
+                ],
+            },
+        ]
+
+        def ev_arg(ev: dict[str, object]) -> str:
+            dur = ev.get("dur", "-")
+            take = ev.get("take", "-")
+            return f"{ev['synth']}:{ev['t']}:{ev.get('gain', 1.0)}:{dur}:{take}"
+
+        lines = []
+        for sc in scenes:
+            score = cast("list[dict[str, object]]", sc["score"])
+            lines.append(
+                f"scene {sc['id']} {sc['duration_ms']} "
+                f"{1 if sc.get('loop') else 0} {umode} {modes} "
+                + ";".join(ev_arg(e) for e in score)
+            )
+        run = subprocess.run(
+            [str(DUMP)],
+            input="\n".join(lines) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=240,
+        )
+        got = run.stdout.splitlines()
+        self.assertEqual(len(got), len(scenes))
+        for sc, reply in zip(scenes, got):
+            want_buf, want_marks = render_audio.render_scene(sc, {"sample_rate": SR})
+            buf = np.asarray(want_buf, dtype="<f8")
+            head, _, mtext = reply.partition(" | ")
+            crc, cnt, *probes = head.split()
+            self.assertEqual(int(cnt), len(buf), sc["id"])
+            stride = max(1, len(buf) // 16)
+            self.assertEqual(
+                [float(v) for v in probes],
+                [float(buf[i]) for i in range(0, len(buf), stride)],
+                f"scene probe diverged: {sc['id']}",
+            )
+            self.assertEqual(int(crc, 16), zlib.crc32(buf.tobytes()), sc["id"])
+            got_marks: dict[str, list[list[float]]] = {}
+            for chunk in mtext.split(";"):
+                if not chunk:
+                    continue
+                name, _, pts = chunk.partition(">")
+                got_marks[name] = [
+                    [int(a), float(b)]
+                    for a, b in (p.split(":") for p in pts.split(",") if p)
+                ]
+            self.assertEqual(got_marks, want_marks, sc["id"])
 
 
 if __name__ == "__main__":

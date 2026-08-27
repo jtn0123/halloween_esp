@@ -78,16 +78,23 @@ pub fn loop_crossfade(buf: &mut [f64]) {
     }
 }
 
-/// render_scene's one-shot path: a quarter-second fade to silence.
-pub fn end_fade(buf: &mut [f64]) {
+/// A linspace(1,0) fade over the last `secs` seconds (or the whole
+/// buffer when shorter) — render_scene's one-shot tail and the 0.4 s
+/// `take` trim both use this shape.
+pub fn fade_tail(buf: &mut [f64], secs: f64) {
     let n = buf.len();
-    let fade = ((0.25 * SR_F) as usize).min(n);
+    let fade = ((secs * SR_F) as usize).min(n);
     if fade < 2 {
         return;
     }
     for i in 0..fade {
         buf[n - fade + i] *= lin(1.0, 0.0, fade, i);
     }
+}
+
+/// render_scene's one-shot path: a quarter-second fade to silence.
+pub fn end_fade(buf: &mut [f64]) {
+    fade_tail(buf, 0.25);
 }
 
 /// render_scene's normalisation: every scene at the same peak.
