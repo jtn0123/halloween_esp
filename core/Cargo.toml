@@ -26,3 +26,7 @@ path = "src/bin/castle.rs"
 [[bin]]
 name = "parity_dump"
 path = "src/bin/parity_dump.rs"
+
+[[bin]]
+name = "synth_dump"
+path = "src/bin/synth_dump.rs"

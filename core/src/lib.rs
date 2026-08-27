@@ -15,6 +15,7 @@ pub mod overlay;
 pub mod palette;
 pub mod pulse;
 pub mod pulse_expand;
+pub mod rng;
 pub mod wasm;
 
 pub use effects::render;
