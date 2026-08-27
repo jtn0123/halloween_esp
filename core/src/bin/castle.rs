@@ -2,6 +2,7 @@
 //!
 //!     castle --host 10.27.27.7:80 status
 //!     castle --host … scene seance | play 10_ballad.mp3 | stop | volume 60
+//!     castle --host … show start|stop · blackout · files [subdir] · bootlog
 //!
 //! Host comes from --host or CASTLE_HOST (host[:port], first entry of a
 //! comma list). Prints the castle's own JSON answer; exit 0 on 2xx.
@@ -43,7 +44,15 @@ fn main() {
         ("scene", Some(id)) => ("POST", format!("/api/scene?s={}", encode_query(id)), 5.0),
         ("play", Some(f)) => ("POST", format!("/api/play?f={}", encode_query(f)), 5.0),
         ("volume", Some(v)) => ("POST", format!("/api/volume?v={}", encode_query(v)), 5.0),
-        _ => fail("usage: castle [--host H:P] status|health|stop|scene ID|play FILE|volume N"),
+        ("show", Some(w)) if w == "start" || w == "stop" => ("POST", format!("/api/show/{w}"), 5.0),
+        ("blackout", None) => ("POST", "/api/blackout".to_string(), 5.0),
+        ("bootlog", None) => ("GET", "/api/bootlog".to_string(), 5.0),
+        ("files", None) => ("GET", "/api/files".to_string(), 5.0),
+        ("files", Some(d)) => ("GET", format!("/api/files?d={}", encode_query(d)), 5.0),
+        _ => fail(
+            "usage: castle [--host H:P] status|health|stop|scene ID|play FILE|\
+             volume N|show start|show stop|blackout|files [DIR]|bootlog",
+        ),
     };
     match request(&host, method, &target, read_s) {
         Err(e) => fail(&e),

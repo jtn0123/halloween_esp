@@ -115,6 +115,28 @@ class TestBridgeVerbs(unittest.TestCase):
         self.assertEqual(code, 0)
         self.wait_status("volume", 60)
 
+    def test_show_start_and_stop_flip_the_status_flag(self) -> None:
+        code, _ = self.castle("show", "start")
+        self.assertEqual(code, 0)
+        self.wait_status("show_on", True)
+        code, _ = self.castle("show", "stop")
+        self.assertEqual(code, 0)
+        self.wait_status("show_on", False)
+
+    def test_blackout_answers(self) -> None:
+        code, body = self.castle("blackout")
+        self.assertEqual(code, 0, body)
+
+    def test_files_lists_the_card(self) -> None:
+        code, body = self.castle("files")
+        self.assertEqual(code, 0, body)
+        names = [f["name"] for f in json.loads(body)]  # a bare array, like the card
+        self.assertIn("tone.mp3", names)
+
+    def test_bootlog_answers_text(self) -> None:
+        code, body = self.castle("bootlog")
+        self.assertEqual(code, 0, body)
+
     def test_an_unknown_scene_is_a_refusal_not_a_crash(self) -> None:
         code, body = self.castle("scene", "no_such_scene")
         self.assertEqual(code, 2, body)
