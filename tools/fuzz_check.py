@@ -17,13 +17,132 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gen_esphome as ge
 import gen_previewer as gp
+
+ROOT = Path(__file__).resolve().parent.parent
+PULSE_DUMP = ROOT / "core" / "target" / "release" / "pulse_dump"
+
+
+def _pc_line(
+    cfg: dict[str, Any], gates: list[tuple[int, str]], beats: list[Any]
+) -> str | None:
+    """One stream as castle-core's `pc` protocol, or None when the case
+    uses a shape the compact protocol cannot carry (non-integer times)."""
+    parts = [f"synth={cfg['synth']}"]
+    zones = cfg.get("zones") or ([cfg["zone"]] if cfg.get("zone") else None)
+    if zones:
+        parts.append("zones=" + "+".join(zones))
+    for flag, key in (
+        ("alternate", "alternate"),
+        ("takeover", "takeover"),
+        ("drift", "drift"),
+        ("pbv", "pixels_by_vel"),
+    ):
+        if cfg.get(key):
+            parts.append(f"{flag}=1")
+    if cfg.get("boost_targets"):
+        parts.append("boost_targets=" + "+".join(cfg["boost_targets"]))
+    parts.extend(
+        f"{key}={float(cfg[key])!r}"
+        for key in ("boost_at", "intensity", "decay")
+        if key in cfg
+    )
+    if "ms" in cfg:
+        parts.append(f"ms={int(cfg['ms'])}")
+    if "attack_ms" in cfg:
+        parts.append(f"attack={int(cfg['attack_ms'])}")
+    if "pixels" in cfg:
+        parts.append(f"pixels={cfg['pixels']}")
+    if cfg.get("color"):
+        parts.append("color=" + ",".join(repr(float(v)) for v in cfg["color"]))
+    if cfg.get("color_hot"):
+        parts.append("hot=" + ",".join(repr(float(v)) for v in cfg["color_hot"]))
+    if cfg.get("colors"):
+        parts.append(
+            "colors="
+            + "|".join(",".join(repr(float(v)) for v in c) for c in cfg["colors"])
+        )
+    if any(float(b[0]) != int(b[0]) for b in beats):
+        return None
+    beat_arg = (
+        ",".join(
+            ":".join(
+                [str(int(b[0])), repr(float(b[1]))]
+                + ([repr(float(b[2]))] if len(b) > 2 else [])
+            )
+            for b in beats
+        )
+        or "-"
+    )
+    g_arg = ",".join(f"{t}:{n}" for t, n in gates) or "-"
+    return f"pc {g_arg} {';'.join(parts)} {beat_arg}"
+
+
+def rust_strikes(
+    scene: dict[str, Any], markers: dict[str, Any]
+) -> list[dict[str, Any]] | None:
+    """The strikes castle-core computes, normalised — or None when the
+    Rust binary is not around (no cargo on this machine) or a case shape
+    falls outside the pc protocol. Present, it must agree exactly."""
+    if not PULSE_DUMP.exists():
+        if shutil.which("cargo") is None:
+            return None
+        subprocess.run(
+            [
+                "cargo",
+                "build",
+                "--release",
+                "--quiet",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            check=True,
+            capture_output=True,
+            timeout=300,
+        )
+    gates = ge.section_gates(scene)
+    lines = []
+    for cfg in scene.get("pulse") or []:
+        line = _pc_line(cfg, gates, markers[scene["id"]].get(cfg["synth"], []))
+        if line is None:
+            return None
+        lines.append(line)
+    run = subprocess.run(
+        [str(PULSE_DUMP)],
+        input="\n".join(lines) + "\n",
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    out: list[dict[str, Any]] = []
+    for ln in run.stdout.split("\n")[: len(lines)]:
+        for cue in filter(None, ln.split("\x1e")):
+            t, targets, ms, inten, color, decay, attack, pixels, _note = cue.split(
+                "\x1f"
+            )
+            out.append(
+                {
+                    "t": int(t),
+                    "targets": [] if targets == "-" else targets.split("+"),
+                    "ms": int(ms),
+                    "intensity": float(inten),
+                    "color": [float(v) for v in color.split(",")],
+                    "decay": float(decay),
+                    "attack": int(attack),
+                    "pixels": pixels,
+                }
+            )
+    return out
 
 
 def norm(c: dict) -> dict:
@@ -72,6 +191,13 @@ def run_case(case: dict) -> dict:
     esphome = [norm(c) for c in ge.pulse_cues(scene, markers)]
     prev = gp.to_previewer(scene, 1, "", markers)["cues"]
     previewer = [norm(c) for c in prev if c["op"] == "strike" and "intensity" in c]
+    rust = rust_strikes(scene, markers)
+    if rust is not None and rust != esphome:
+        for i, (a, b) in enumerate(zip(rust, esphome)):
+            assert a == b, f"castle-core strike {i} disagrees:\nrust {a}\npy   {b}"
+        raise AssertionError(
+            f"castle-core cue count {len(rust)} != python {len(esphome)}"
+        )
     return {"esphome": esphome, "previewer": previewer}
 
 
