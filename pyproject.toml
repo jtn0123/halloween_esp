@@ -74,7 +74,8 @@ module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_sc
     "test_firmware_contract", "test_gen_esphome", "test_gen_esphome_main", "test_import",
     "test_guards", "studio_case", "test_gen_fuzz", "test_generator_parity",
     "test_pulse_dynamics_parity", "test_castle_core", "test_pulse_rust",
-    "test_synth_rust", "synth_probes", "test_master_rust", "test_onsets_rust", "test_bridge_rust", "test_studio_rust"]
+    "test_synth_rust", "synth_probes", "test_master_rust", "test_onsets_rust", "test_bridge_rust", "test_studio_rust",
+    "studio_rust_case", "test_studio_media_rust"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_decorators = true

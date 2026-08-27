@@ -67,7 +67,7 @@ fn bp(x: &[f64], hz: f64, q: f64, m: &Modes) -> Vec<f64> {
 
 /// np.linspace(0, n, blocks+1).astype(int): i*delta, endpoint forced,
 /// truncated toward zero.
-fn edges(n: usize, blocks: usize) -> Vec<usize> {
+pub(crate) fn edges(n: usize, blocks: usize) -> Vec<usize> {
     let d = n as f64 / blocks as f64;
     (0..=blocks)
         .map(|i| {

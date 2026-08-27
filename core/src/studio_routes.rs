@@ -7,7 +7,7 @@
 use crate::httpd::{Reply, Request};
 use crate::jsonio::{self, Json};
 use crate::studio::{scene_audio, scene_ids, studio_path, App, API};
-use crate::{bridge, hosts, manifest, studio_tracks as st};
+use crate::{bridge, hosts, manifest, studio_media as sm, studio_tracks as st};
 
 fn jerr(msg: &str, code: u16) -> Reply {
     Reply::Json(
@@ -227,6 +227,59 @@ fn get(app: &App, req: &Request) -> Reply {
             ]),
             200,
         );
+    }
+    if let Some(rest) = path.strip_prefix("/studio/waveform/") {
+        let sens = sm::parse_sensitivity(&req.query());
+        let name = last_segment(rest);
+        let Some(p) = st::track_path(&app.tracks, &name) else {
+            return jerr("no such track", 404);
+        };
+        return match sm::waveform(&p, sens) {
+            Some(obj) => Reply::Json(obj, 200),
+            None => Reply::Json(
+                Json::Obj(vec![
+                    ("ok".into(), Json::Bool(false)),
+                    (
+                        "error".into(),
+                        Json::Str(format!("could not decode {}", p.display())),
+                    ),
+                ]),
+                500,
+            ),
+        };
+    }
+    if let Some(rest) = path.strip_prefix("/studio/stems/") {
+        let (obj, code) = sm::stems_analysis(&app.tracks, &last_segment(rest));
+        return Reply::Json(obj, code);
+    }
+    if path.starts_with("/studio/stem/") {
+        let parts: Vec<&str> = path.split('/').collect();
+        let hit = (parts.len() >= 5)
+            .then(|| sm::stem_file(&app.tracks, parts[parts.len() - 2], parts[parts.len() - 1]))
+            .flatten();
+        return match hit {
+            None => jerr("no such stem", 404),
+            Some(p) => Reply::FileRange {
+                path: p,
+                ctype: "audio/mpeg".into(),
+            },
+        };
+    }
+    if path.starts_with("/studio/compare/") {
+        let parts: Vec<&str> = path.split('/').collect();
+        let hit = (parts.len() >= 5)
+            .then(|| sm::compare_file(parts[parts.len() - 2], parts[parts.len() - 1]))
+            .flatten();
+        return match hit {
+            None => jerr("no such comparison", 404),
+            Some(p) => {
+                let ctype = st::mime(p.extension().and_then(|e| e.to_str()).unwrap_or(""));
+                Reply::FileRange {
+                    path: p,
+                    ctype: ctype.into(),
+                }
+            }
+        };
     }
     if let Some(rest) = path.strip_prefix("/studio/track/") {
         let name = last_segment(rest);

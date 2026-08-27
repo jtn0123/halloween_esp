@@ -201,6 +201,11 @@ fn pick_peaks(env: &[f64], times: &[f64], min_gap: f64, sensitivity: f64) -> Vec
 
 /// analyze.analyze with a scalar sensitivity: {band: [(s, vel)]}.
 pub fn analyze(x: &[f64], sensitivity: f64) -> Vec<(String, Vec<(f64, f64)>)> {
+    analyze3(x, [sensitivity; 3])
+}
+
+/// The per-band form — band_sensitivity's dict, in BANDS order.
+pub fn analyze3(x: &[f64], sens: [f64; 3]) -> Vec<(String, Vec<(f64, f64)>)> {
     if x.len() < WIN * 2 {
         return Vec::new();
     }
@@ -214,7 +219,7 @@ pub fn analyze(x: &[f64], sensitivity: f64) -> Vec<(String, Vec<(f64, f64)>)> {
     let shift = WIN as f64 / SR_F;
     let times: Vec<f64> = t0.iter().map(|t| t - shift).collect();
     let mut out = Vec::new();
-    for (name, lo, hi, gap) in BANDS {
+    for (bi, (name, lo, hi, gap)) in BANDS.into_iter().enumerate() {
         let sel: Vec<usize> = (0..freqs.len())
             .filter(|&b| freqs[b] >= lo && freqs[b] < hi)
             .collect();
@@ -236,7 +241,7 @@ pub fn analyze(x: &[f64], sensitivity: f64) -> Vec<(String, Vec<(f64, f64)>)> {
             }
         }
         let sm = fir_same(&flux, &hann_kernel(5));
-        let hits = pick_peaks(&sm, &times, gap, sensitivity);
+        let hits = pick_peaks(&sm, &times, gap, sens[bi]);
         if !hits.is_empty() {
             out.push((name.to_string(), hits));
         }
@@ -346,7 +351,16 @@ pub fn analyze_full(
     sensitivity: f64,
     stereo: Option<(&[f64], &[f64])>,
 ) -> Vec<(String, Vec<Vec<f64>>)> {
-    let ons = analyze(x, sensitivity);
+    analyze_full3(x, [sensitivity; 3], stereo)
+}
+
+/// analyze_full with the clip editor's per-band sensitivities.
+pub fn analyze_full3(
+    x: &[f64],
+    sens: [f64; 3],
+    stereo: Option<(&[f64], &[f64])>,
+) -> Vec<(String, Vec<Vec<f64>>)> {
+    let ons = analyze3(x, sens);
     let mut out: Vec<(String, Vec<Vec<f64>>)> = ons
         .iter()
         .map(|(n, hits)| (n.clone(), hits.iter().map(|(t, v)| vec![*t, *v]).collect()))

@@ -28,6 +28,7 @@ pub mod pulse_expand;
 pub mod rng;
 pub mod scene;
 pub mod studio;
+pub mod studio_media;
 pub mod studio_routes;
 pub mod studio_tracks;
 pub mod synth;
