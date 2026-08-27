@@ -36,8 +36,9 @@ class TestLocCheck(unittest.TestCase):
         rows = check_loc.measure()
         self.assertGreater(len(rows), 0, "no tracked files measured")
         counts = [n for n, _rel, _over in rows]
-        self.assertEqual(counts, sorted(counts, reverse=True),
-                         "rows should be largest first")
+        self.assertEqual(
+            counts, sorted(counts, reverse=True), "rows should be largest first"
+        )
 
     def test_over_flag_matches_the_limit(self) -> None:
         for n, rel, over in check_loc.measure():
@@ -146,7 +147,7 @@ class TestImageCheck(unittest.TestCase):
             build = tmp / "mydev" / "build"
             build.mkdir(parents=True)
             real = check_image.ROOT
-            check_image.ROOT = tmp.parent      # so the fallback base resolves
+            check_image.ROOT = tmp.parent  # so the fallback base resolves
             try:
                 (build / "mydev.bin").write_bytes(b"x" * 100)
                 found = check_image.find_image("mydev")
@@ -170,8 +171,9 @@ class TestImageCheck(unittest.TestCase):
             try:
                 sys.argv = ["check_image.py", "big"]
                 with contextlib.redirect_stdout(io.StringIO()) as out:
-                    self.assertEqual(check_image.main(), 1,
-                                     "an oversized image must fail the check")
+                    self.assertEqual(
+                        check_image.main(), 1, "an oversized image must fail the check"
+                    )
                 self.assertIn("FAIL — over 97% of the slot", out.getvalue())
             finally:
                 sys.argv = argv
@@ -213,14 +215,16 @@ class TestTracksSandbox(unittest.TestCase):
     def test_import_track_honors_the_sandbox(self) -> None:
         import os
         import subprocess
+
         out = subprocess.run(
-            [sys.executable, "-c",
-             "import import_track; print(import_track.TRACKS)"],
+            [sys.executable, "-c", "import import_track; print(import_track.TRACKS)"],
             cwd=str(ROOT / "tools"),
             env={**os.environ, "CASTLE_TRACKS": "/tmp/castle-sandbox-guard"},
-            capture_output=True, text=True, check=False)
-        self.assertEqual(out.stdout.strip(), "/tmp/castle-sandbox-guard",
-                         out.stderr)
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(out.stdout.strip(), "/tmp/castle-sandbox-guard", out.stderr)
 
 
 class TestScenesSandbox(unittest.TestCase):
@@ -231,25 +235,40 @@ class TestScenesSandbox(unittest.TestCase):
     previewer page (judge B, JB1-12). build_paths.py is the one answer."""
 
     #: The repo artefacts a sandboxed rebuild must never touch.
-    GUARDED = ("scenes/scenes.yaml", "audio/markers.json",
-               "previewer/castle-cue-desk.html",
-               "firmware/generated/scenes.yaml",
-               "firmware/generated/media_files.yaml")
+    GUARDED = (
+        "scenes/scenes.yaml",
+        "audio/markers.json",
+        "previewer/castle-cue-desk.html",
+        "firmware/generated/scenes.yaml",
+        "firmware/generated/media_files.yaml",
+    )
 
     def _stamp(self) -> dict[str, float]:
-        return {rel: (ROOT / rel).stat().st_mtime_ns
-                for rel in self.GUARDED if (ROOT / rel).exists()}
+        return {
+            rel: (ROOT / rel).stat().st_mtime_ns
+            for rel in self.GUARDED
+            if (ROOT / rel).exists()
+        }
 
     def test_generators_resolve_their_paths_inside_the_sandbox(self) -> None:
         import os
         import subprocess
+
         out = subprocess.run(
-            [sys.executable, "-c",
-             ("import render_audio as r, gen_esphome as e, gen_previewer as p;"
-              "print(r.SCENES, r.OUT, e.SRC, e.OUT, p.SRC, p.HTML, p.AUDIO)")],
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import render_audio as r, gen_esphome as e, gen_previewer as p;"
+                    "print(r.SCENES, r.OUT, e.SRC, e.OUT, p.SRC, p.HTML, p.AUDIO)"
+                ),
+            ],
             cwd=str(ROOT / "tools"),
             env={**os.environ, "CASTLE_SCENES": "/tmp/castle-sb/scenes.yaml"},
-            capture_output=True, text=True, check=False)
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         self.assertEqual(out.returncode, 0, out.stderr)
         for p in out.stdout.split():
             self.assertTrue(p.startswith("/tmp/castle-sb/"), p)
@@ -262,31 +281,53 @@ class TestScenesSandbox(unittest.TestCase):
         import subprocess
 
         import yaml
+
         sb = Path(tempfile.mkdtemp(prefix="castle-scenes-sb-"))
         try:
             doc = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
-            doc["scenes"] = [{
-                "id": "sb_probe", "name": "Probe", "kind": "custom",
-                "volume": 0.5, "duration_ms": 1200, "loop": False, "blurb": "x",
-                "base": {"towerL": "chill", "towerR": "chill", "door": "ember"},
-                "levels": {"towerL": 0.4, "towerR": 0.4, "door": 0.5},
-                "score": [{"t": 0.0, "synth": "wind", "dur": 1.0}], "cues": []}]
+            doc["scenes"] = [
+                {
+                    "id": "sb_probe",
+                    "name": "Probe",
+                    "kind": "custom",
+                    "volume": 0.5,
+                    "duration_ms": 1200,
+                    "loop": False,
+                    "blurb": "x",
+                    "base": {"towerL": "chill", "towerR": "chill", "door": "ember"},
+                    "levels": {"towerL": 0.4, "towerR": 0.4, "door": 0.5},
+                    "score": [{"t": 0.0, "synth": "wind", "dur": 1.0}],
+                    "cues": [],
+                }
+            ]
             (sb / "scenes.yaml").write_text(yaml.safe_dump(doc, sort_keys=False))
-            env = {**os.environ, "CASTLE_SCENES": str(sb / "scenes.yaml"),
-                   "CASTLE_TRACKS": str(sb / "tracks")}
+            env = {
+                **os.environ,
+                "CASTLE_SCENES": str(sb / "scenes.yaml"),
+                "CASTLE_TRACKS": str(sb / "tracks"),
+            }
             before = self._stamp()
             for script in ("render_audio.py", "gen_esphome.py", "gen_previewer.py"):
-                r = subprocess.run([sys.executable, str(ROOT / "tools" / script)],
-                                   env=env, capture_output=True, text=True,
-                                   check=False)
+                r = subprocess.run(
+                    [sys.executable, str(ROOT / "tools" / script)],
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
                 self.assertEqual(r.returncode, 0, f"{script}: {r.stdout}{r.stderr}")
             self.assertEqual(self._stamp(), before, "a repo artefact was rewritten")
             built = {str(p.relative_to(sb)) for p in sb.rglob("*") if p.is_file()}
-            for rel in ("_build/audio/01_sb_probe.mp3", "_build/audio/markers.json",
-                        "_build/firmware/generated/scenes.yaml",
-                        "_build/previewer/castle-cue-desk.html"):
+            for rel in (
+                "_build/audio/01_sb_probe.mp3",
+                "_build/audio/markers.json",
+                "_build/firmware/generated/scenes.yaml",
+                "_build/previewer/castle-cue-desk.html",
+            ):
                 self.assertIn(rel, built)
-            self.assertIn("sb_probe", (sb / "_build" / "previewer"
-                                       / "castle-cue-desk.html").read_text())
+            self.assertIn(
+                "sb_probe",
+                (sb / "_build" / "previewer" / "castle-cue-desk.html").read_text(),
+            )
         finally:
             shutil.rmtree(sb, ignore_errors=True)

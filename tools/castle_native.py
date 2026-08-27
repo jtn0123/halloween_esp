@@ -23,14 +23,14 @@ from typing import Any
 
 try:
     import aioesphomeapi
-except ModuleNotFoundError:      # pragma: no cover — exercised by CI, not here
+except ModuleNotFoundError:  # pragma: no cover — exercised by CI, not here
     # OPTIONAL. This leg only matters for the all-in-flash build, which serves
     # no HTTP; the SD build on the porch, the emulator and every test reach the
     # castle over port 80. A studio without the library still serves the desk
     # and relays everything — it just cannot talk to a flash-only castle, and
     # `connected()` says so rather than the import taking the server down
     # (CI installs numpy/scipy/pyyaml and nothing else, and hit exactly that).
-    aioesphomeapi = None         # type: ignore[assignment]
+    aioesphomeapi = None  # type: ignore[assignment]
 
 # The client narrates every reconnect attempt at INFO/ERROR; in a studio
 # that is one line per 5 s per dead castle, forever. Real trouble is WARNING+.
@@ -60,8 +60,9 @@ class _Link:
         self.connected = False
         self.closing = False
         self._wake = asyncio.Event()
-        self.thread = threading.Thread(target=self._run, daemon=True,
-                                       name="castle-native")
+        self.thread = threading.Thread(
+            target=self._run, daemon=True, name="castle-native"
+        )
         self.thread.start()
 
     def _run(self) -> None:
@@ -84,11 +85,10 @@ class _Link:
                 self.version = info.project_version or info.esphome_version
                 entities, _ = await api.list_entities_services()
                 self.keys = {e.object_id: e.key for e in entities}
-                api.subscribe_states(
-                    lambda s: self.states.__setitem__(s.key, s))
+                api.subscribe_states(lambda s: self.states.__setitem__(s.key, s))
                 self.api = api
                 self.connected = True
-                await self._wake.wait()            # until dropped or closed
+                await self._wake.wait()  # until dropped or closed
             except Exception:
                 self.connected = False
             if self.closing:
@@ -209,8 +209,11 @@ def stop(host: str) -> bool:
         return False
     ok = True
     if media is not None:
-        ok &= ln._submit(lambda api: api.media_player_command(
-            media, command=aioesphomeapi.MediaPlayerCommand.STOP))
+        ok &= ln._submit(
+            lambda api: api.media_player_command(
+                media, command=aioesphomeapi.MediaPlayerCommand.STOP
+            )
+        )
     if blackout is not None:
         ok &= ln._submit(lambda api: api.button_command(blackout))
     return ok
@@ -224,5 +227,4 @@ def volume(host: str, pct: int) -> bool:
     key = ln.keys.get("castle_audio")
     if key is None or not 0 <= pct <= 100:
         return False
-    return ln._submit(lambda api: api.media_player_command(
-        key, volume=pct / 100.0))
+    return ln._submit(lambda api: api.media_player_command(key, volume=pct / 100.0))

@@ -57,7 +57,8 @@ class TestProgressRegex(unittest.TestCase):
 
     def test_standard_line(self) -> None:
         m = sj._PROGRESS.search(
-            "[download]  41.8% of    2.39MiB at   17.12MiB/s ETA 00:03")
+            "[download]  41.8% of    2.39MiB at   17.12MiB/s ETA 00:03"
+        )
         assert m is not None
         self.assertEqual(m.group("pct"), "41.8")
         self.assertEqual(m.group("size"), "2.39MiB")
@@ -67,7 +68,8 @@ class TestProgressRegex(unittest.TestCase):
     def test_estimated_size_with_tilde(self) -> None:
         """`~` means yt-dlp is guessing the total; it must not break the parse."""
         m = sj._PROGRESS.search(
-            "[download]   0.0% of ~  12.34MiB at  Unknown B/s ETA Unknown")
+            "[download]   0.0% of ~  12.34MiB at  Unknown B/s ETA Unknown"
+        )
         assert m is not None
         self.assertEqual(m.group("pct"), "0.0")
         self.assertEqual(m.group("size"), "12.34MiB")
@@ -98,7 +100,8 @@ class TestInterpret(unittest.TestCase):
     def test_a_progress_line_moves_it_to_fetching(self) -> None:
         job = sj.Job(id="x")
         sj.JobRunner._interpret(
-            job, "[download]  41.8% of 2.39MiB at 17.12MiB/s ETA 00:03")
+            job, "[download]  41.8% of 2.39MiB at 17.12MiB/s ETA 00:03"
+        )
         self.assertEqual(job.phase, "fetching")
         self.assertAlmostEqual(job.percent, 41.8)
         self.assertEqual(job.detail, "2.39MiB at 17.12MiB/s, 00:03 left")
@@ -109,8 +112,10 @@ class TestInterpret(unittest.TestCase):
         self.assertEqual(job.detail, "2.39MiB")
 
     def test_audio_extraction_moves_it_to_converting(self) -> None:
-        for line in ("[ExtractAudio] Destination: clip.mp3",
-                     "[ffmpeg] Merging formats into \"clip.mkv\""):
+        for line in (
+            "[ExtractAudio] Destination: clip.mp3",
+            '[ffmpeg] Merging formats into "clip.mkv"',
+        ):
             job = sj.Job(id="x")
             sj.JobRunner._interpret(job, line)
             self.assertEqual(job.phase, "converting", line)
@@ -127,11 +132,13 @@ class TestInterpret(unittest.TestCase):
         """The sequence a real import walks, driven by its own output."""
         job = sj.Job(id="x")
         seen = [job.phase]
-        for line in ("[youtube] Extracting URL: https://example.invalid/v",
-                     "[download]   5.0% of 2.39MiB at 1.00MiB/s ETA 00:03",
-                     "[download] 100% of 2.39MiB",
-                     "[ExtractAudio] Destination: clip.mp3",
-                     "imported clip  24.0s"):
+        for line in (
+            "[youtube] Extracting URL: https://example.invalid/v",
+            "[download]   5.0% of 2.39MiB at 1.00MiB/s ETA 00:03",
+            "[download] 100% of 2.39MiB",
+            "[ExtractAudio] Destination: clip.mp3",
+            "imported clip  24.0s",
+        ):
             sj.JobRunner._interpret(job, line)
             if job.phase != seen[-1]:
                 seen.append(job.phase)
@@ -153,42 +160,65 @@ class TestExplain(unittest.TestCase):
     """
 
     CASES: ClassVar[list] = [
-        ("ERROR: [youtube] abc: Private video. Sign in if you've been granted access",
-         "That video is private."),
+        (
+            "ERROR: [youtube] abc: Private video. Sign in if you've been granted access",
+            "That video is private.",
+        ),
         ("ERROR: [youtube] abc: Video unavailable", "That video is unavailable."),
-        ("ERROR: [youtube] abc: Sign in to confirm you're not a bot",
-         "That video needs a signed-in account."),
-        ("ERROR: [youtube] abc: Join this channel: members-only content",
-         "That video is members-only."),
+        (
+            "ERROR: [youtube] abc: Sign in to confirm you're not a bot",
+            "That video needs a signed-in account.",
+        ),
+        (
+            "ERROR: [youtube] abc: Join this channel: members-only content",
+            "That video is members-only.",
+        ),
         ("ERROR: 'not a link' is not a valid URL", "That does not look like a link."),
-        ("ERROR: Unsupported URL: https://example.invalid/thing",
-         "Nothing here knows how to read that link."),
-        ("ERROR: unable to download: HTTP Error 404: Not Found",
-         "That link is a dead end (404)."),
+        (
+            "ERROR: Unsupported URL: https://example.invalid/thing",
+            "Nothing here knows how to read that link.",
+        ),
+        (
+            "ERROR: unable to download: HTTP Error 404: Not Found",
+            "That link is a dead end (404).",
+        ),
         ("no audio file was produced", "The download produced no audio."),
-        ("ERROR: Requested format is not available",
-         "No audio-only format was offered for that video."),
+        (
+            "ERROR: Requested format is not available",
+            "No audio-only format was offered for that video.",
+        ),
     ]
 
     def test_known_failures_become_sentences(self) -> None:
         for raw, friendly in self.CASES:
-            self.assertEqual(sj.JobRunner._explain(["[youtube] abc", raw]), friendly,
-                             f"not translated: {raw!r}")
+            self.assertEqual(
+                sj.JobRunner._explain(["[youtube] abc", raw]),
+                friendly,
+                f"not translated: {raw!r}",
+            )
 
     def test_match_is_case_insensitive(self) -> None:
         """yt-dlp's wording drifts between releases; matching on case is brittle."""
-        self.assertEqual(sj.JobRunner._explain(["error: PRIVATE VIDEO"]),
-                         "That video is private.")
+        self.assertEqual(
+            sj.JobRunner._explain(["error: PRIVATE VIDEO"]), "That video is private."
+        )
 
     def test_unknown_failure_falls_back_to_the_last_error_line(self) -> None:
-        log = ["[youtube] fine", "ERROR: first thing went wrong",
-               "still going", "ERROR: the thing that actually killed it"]
-        self.assertEqual(sj.JobRunner._explain(log),
-                         "the thing that actually killed it")
+        log = [
+            "[youtube] fine",
+            "ERROR: first thing went wrong",
+            "still going",
+            "ERROR: the thing that actually killed it",
+        ]
+        self.assertEqual(
+            sj.JobRunner._explain(log), "the thing that actually killed it"
+        )
 
     def test_fallback_keeps_the_whole_line_when_there_is_no_prefix(self) -> None:
-        self.assertEqual(sj.JobRunner._explain(["something ERROR happened"]),
-                         "something ERROR happened")
+        self.assertEqual(
+            sj.JobRunner._explain(["something ERROR happened"]),
+            "something ERROR happened",
+        )
 
     def test_empty_log_explains_nothing(self) -> None:
         self.assertEqual(sj.JobRunner._explain([]), "")
@@ -202,8 +232,9 @@ class TestAsDict(unittest.TestCase):
 
     def test_shape(self) -> None:
         d = sj.Job(id="abc123").as_dict()
-        self.assertEqual(set(d), {"id", "phase", "percent", "detail",
-                                  "error", "done", "log"})
+        self.assertEqual(
+            set(d), {"id", "phase", "percent", "detail", "error", "done", "log"}
+        )
         self.assertEqual(d["id"], "abc123")
         self.assertEqual(d["phase"], "queued")
         self.assertFalse(d["done"])
@@ -293,9 +324,15 @@ class TestJobRunner(unittest.TestCase):
         self.assertIn("exit 1", job.error)
 
     def test_a_failing_command_gets_its_output_translated(self) -> None:
-        job = wait_done(self.runner.start([
-            sys.executable, "-c",
-            "import sys; print('ERROR: [youtube] x: Private video'); sys.exit(1)"]))
+        job = wait_done(
+            self.runner.start(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; print('ERROR: [youtube] x: Private video'); sys.exit(1)",
+                ]
+            )
+        )
         self.assertEqual(job.phase, "failed")
         self.assertEqual(job.error, "That video is private.")
         self.assertIn("ERROR: [youtube] x: Private video", job.log)
@@ -308,15 +345,24 @@ class TestJobRunner(unittest.TestCase):
 
     def test_progress_from_a_real_child_reaches_the_job(self) -> None:
         """End to end through the pipe: printed line -> parsed percent."""
-        job = wait_done(self.runner.start([
-            sys.executable, "-c",
-            "print('[download]  41.8% of 2.39MiB at 1.0MiB/s ETA 00:03')"]))
-        self.assertEqual(job.phase, "done")           # finished after the line
-        self.assertEqual(job.log, ["[download]  41.8% of 2.39MiB at 1.0MiB/s ETA 00:03"])
+        job = wait_done(
+            self.runner.start(
+                [
+                    sys.executable,
+                    "-c",
+                    "print('[download]  41.8% of 2.39MiB at 1.0MiB/s ETA 00:03')",
+                ]
+            )
+        )
+        self.assertEqual(job.phase, "done")  # finished after the line
+        self.assertEqual(
+            job.log, ["[download]  41.8% of 2.39MiB at 1.0MiB/s ETA 00:03"]
+        )
 
     def test_blank_lines_are_not_logged(self) -> None:
-        job = wait_done(self.runner.start(
-            [sys.executable, "-c", "print(); print('kept'); print()"]))
+        job = wait_done(
+            self.runner.start([sys.executable, "-c", "print(); print('kept'); print()"])
+        )
         self.assertEqual(job.log, ["kept"])
 
     def test_the_job_map_is_pruned(self) -> None:
@@ -326,8 +372,9 @@ class TestJobRunner(unittest.TestCase):
         self.assertEqual(len(self.runner._jobs), 40)
         newest = self.runner.start(["true"])
         self.assertLess(len(self.runner._jobs), 41, "finished jobs were never pruned")
-        self.assertIsNotNone(self.runner.get(newest.id),
-                             "pruning threw away the job that just started")
+        self.assertIsNotNone(
+            self.runner.get(newest.id), "pruning threw away the job that just started"
+        )
 
 
 if __name__ == "__main__":
@@ -340,36 +387,53 @@ class TestExplainBeyondYtDlp(unittest.TestCase):
 
     TRACEBACK: ClassVar[list] = [
         "Traceback (most recent call last):",
-        "  File \"tools/import_track.py\", line 450, in _import",
+        '  File "tools/import_track.py", line 450, in _import',
         "    x = ana.load_audio(out)",
-        ("subprocess.CalledProcessError: Command '['ffmpeg', '-v', 'quiet', "
-         "'-i', '/private/tmp/x/jb_drop.mp3']' returned non-zero exit status 1."),
+        (
+            "subprocess.CalledProcessError: Command '['ffmpeg', '-v', 'quiet', "
+            "'-i', '/private/tmp/x/jb_drop.mp3']' returned non-zero exit status 1."
+        ),
     ]
 
     def test_a_traceback_names_the_program_that_failed(self) -> None:
-        self.assertEqual(sj.JobRunner._explain(self.TRACEBACK),
-                         "ffmpeg failed (exit 1)")
+        self.assertEqual(
+            sj.JobRunner._explain(self.TRACEBACK), "ffmpeg failed (exit 1)"
+        )
 
     def test_the_last_meaningful_line_is_the_fallback(self) -> None:
         """import_track's own SystemExit sentences are already for a person;
         they must come through instead of the generic exit code."""
-        log = ["fetching x", "[download] 100% of 1MiB",
-               ("clip.wav doesn't look like playable audio — ffmpeg could not "
-                "convert it (exit 1)")]
+        log = [
+            "fetching x",
+            "[download] 100% of 1MiB",
+            (
+                "clip.wav doesn't look like playable audio — ffmpeg could not "
+                "convert it (exit 1)"
+            ),
+        ]
         self.assertEqual(sj.JobRunner._explain(log), log[-1])
 
     def test_paths_come_back_as_basenames(self) -> None:
         self.assertEqual(
             sj.JobRunner._explain(["no such file: /private/tmp/abc/_upload/jb.wav"]),
-            "no such file: jb.wav")
-        self.assertEqual(sj.basenames("see https://youtu.be/abc/def then /a/b/c.wav"),
-                         "see https://youtu.be/abc/def then c.wav")
+            "no such file: jb.wav",
+        )
+        self.assertEqual(
+            sj.basenames("see https://youtu.be/abc/def then /a/b/c.wav"),
+            "see https://youtu.be/abc/def then c.wav",
+        )
 
     def test_missing_demucs_and_ffmpeg_are_sentences(self) -> None:
-        self.assertIn("Demucs is not installed",
-                      sj.JobRunner._explain(["ModuleNotFoundError: No module named 'demucs'"]))
-        self.assertIn("ffmpeg is not installed", sj.JobRunner._explain(
-            ["FileNotFoundError: [Errno 2] No such file or directory: 'ffmpeg'"]))
+        self.assertIn(
+            "Demucs is not installed",
+            sj.JobRunner._explain(["ModuleNotFoundError: No module named 'demucs'"]),
+        )
+        self.assertIn(
+            "ffmpeg is not installed",
+            sj.JobRunner._explain(
+                ["FileNotFoundError: [Errno 2] No such file or directory: 'ffmpeg'"]
+            ),
+        )
 
     def test_reason_takes_the_sync_paths_whole_output(self) -> None:
         text = "x\n\n" + "\n".join(self.TRACEBACK) + "\n"

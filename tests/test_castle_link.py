@@ -33,7 +33,7 @@ import castle_native as cn
 import hosts
 from studio_case import HostEnv, ServerCase
 
-DEAD = "127.0.0.1:1"   # nothing listens; connect refuses instantly
+DEAD = "127.0.0.1:1"  # nothing listens; connect refuses instantly
 
 
 class FakeCastle(BaseHTTPRequestHandler):
@@ -55,8 +55,9 @@ class FakeCastle(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/api/status":
-            return self._answer({"version": "9.9", "sd_mounted": True,
-                                 "volume": 40, "scene": "vigil"})
+            return self._answer(
+                {"version": "9.9", "sd_mounted": True, "volume": 40, "scene": "vigil"}
+            )
         self._answer({"ok": True})
 
     def do_POST(self):
@@ -85,7 +86,8 @@ class SlowCastle(FakeCastle):
 
 
 def start_fake_castle(
-        handler: type[FakeCastle] = FakeCastle) -> tuple[ThreadingHTTPServer, str]:
+    handler: type[FakeCastle] = FakeCastle,
+) -> tuple[ThreadingHTTPServer, str]:
     srv = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -112,7 +114,8 @@ class TestCastleHost(HostEnv, unittest.TestCase):
 
     def test_first_toml_entry_with_a_host(self) -> None:
         (self.tmp / "devices.toml").write_text(
-            '[noise]\nnote = "no host key"\n[castle]\nhost = "1.2.3.4"\n')
+            '[noise]\nnote = "no host key"\n[castle]\nhost = "1.2.3.4"\n'
+        )
         self.assertEqual(cl.castle_host(), "1.2.3.4")
 
     def test_no_file_means_no_castle(self) -> None:
@@ -121,7 +124,8 @@ class TestCastleHost(HostEnv, unittest.TestCase):
     def test_hosts_is_the_shared_candidate_list_with_fallbacks(self) -> None:
         """One resolver: what castle_link walks IS hosts.candidates()."""
         (self.tmp / "devices.toml").write_text(
-            '[castle]\nhost = "1.2.3.4"\nfallbacks = ["1.2.3.5"]\n')
+            '[castle]\nhost = "1.2.3.4"\nfallbacks = ["1.2.3.5"]\n'
+        )
         self.assertEqual(cl.castle_hosts(), ["1.2.3.4", "1.2.3.5"])
         self.assertEqual(cl.castle_hosts(), hosts.candidates())
         self.host_env("castle,9.9.9.9")
@@ -184,13 +188,15 @@ class TestStatusAndForward(HostEnv, unittest.TestCase):
         true. Nothing is reachable here; nothing may claim to be queued."""
         self.host_env(DEAD)
         cl._cache.clear()
-        for method, path, body in (("POST", "/api/stop", b""),
-                                   ("POST", "/api/scene?s=vigil", b""),
-                                   ("POST", "/api/volume?v=5", b""),
-                                   ("POST", "/api/play?f=x.mp3", b""),
-                                   ("PUT", "/api/files/x.mp3", b"\xff\xfb"),
-                                   ("DELETE", "/api/files/x.mp3", b""),
-                                   ("GET", "/api/files", b"")):
+        for method, path, body in (
+            ("POST", "/api/stop", b""),
+            ("POST", "/api/scene?s=vigil", b""),
+            ("POST", "/api/volume?v=5", b""),
+            ("POST", "/api/play?f=x.mp3", b""),
+            ("PUT", "/api/files/x.mp3", b"\xff\xfb"),
+            ("DELETE", "/api/files/x.mp3", b""),
+            ("GET", "/api/files", b""),
+        ):
             code, out, _ = cl.forward(method, path, body)
             self.assertEqual(code, 502, f"{method} {path} -> {out!r}")
             self.assertIn("not reachable", out.decode())
@@ -257,8 +263,10 @@ class TestSlowCard(HostEnv, unittest.TestCase):
         self.addCleanup(other.shutdown)
         self.addCleanup(other.server_close)
         SlowCastle.put_delay = 1.5
-        with mock.patch.dict(os.environ, {"CASTLE_HOST": f"{self.host},{other_host}"}), \
-                mock.patch.dict(cl.READ_BUDGET_S, {"PUT": 0.3}):
+        with (
+            mock.patch.dict(os.environ, {"CASTLE_HOST": f"{self.host},{other_host}"}),
+            mock.patch.dict(cl.READ_BUDGET_S, {"PUT": 0.3}),
+        ):
             code, out, _ = cl.forward("PUT", "/api/files/big.mp3", b"x" * 10)
         self.assertEqual(code, 504)
         self.assertIn("may have landed", out.decode())
@@ -301,20 +309,20 @@ class TestStudioBridge(HostEnv, ServerCase):
         cl._cache.clear()
 
     def get(self, path: str) -> tuple[int, dict]:
-        with urllib.request.urlopen(
-                f"http://127.0.0.1:{self.port}{path}") as r:
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}") as r:
             return r.status, json.loads(r.read())
 
     def post(self, path: str, body: bytes = b"") -> tuple[int, dict]:
         req = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}{path}", data=body, method="POST")
+            f"http://127.0.0.1:{self.port}{path}", data=body, method="POST"
+        )
         with urllib.request.urlopen(req) as r:
             return r.status, json.loads(r.read())
 
     def test_status_is_the_castles_own_when_it_answers(self) -> None:
         _, s = self.get("/api/status")
         self.assertEqual(s.get("version"), "9.9")
-        self.assertNotIn("studio", s)   # this is what flips the desk's mode
+        self.assertNotIn("studio", s)  # this is what flips the desk's mode
 
     def test_status_falls_back_to_the_studio_marker(self) -> None:
         self.host_env(DEAD)
@@ -336,7 +344,7 @@ class TestStudioBridge(HostEnv, ServerCase):
         try:
             self.post("/api/scene", json.dumps({"id": ""}).encode())
         except urllib.error.HTTPError as e:
-            e.close()   # the editor rejecting the stub is fine — and local
+            e.close()  # the editor rejecting the stub is fine — and local
         self.assertEqual(FakeCastle.seen, [])
 
     def test_unclaimed_api_gets_relay(self) -> None:

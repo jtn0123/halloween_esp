@@ -33,7 +33,7 @@ class TestCounts(unittest.TestCase):
 
     def test_loose_singles_take_a_count_and_are_clamped(self) -> None:
         self.assertEqual(rl.layout_of("mini", 2).n, 2)
-        self.assertEqual(rl.layout_of("mini", 99).n, 5)   # only five in the pack
+        self.assertEqual(rl.layout_of("mini", 99).n, 5)  # only five in the pack
         self.assertEqual(rl.layout_of("mini", 0).n, 1)
 
     def test_unknown_fixture_stops_the_build(self) -> None:
@@ -80,8 +80,12 @@ class TestInvariants(unittest.TestCase):
         """The firmware indexes these with no bounds check."""
         for fid in rl.FIXTURES:
             lay = rl.layout_of(fid)
-            for name, table in (("walk", lay.walk), ("fall", lay.fall),
-                                ("core", lay.core), ("pos", lay.pos)):
+            for name, table in (
+                ("walk", lay.walk),
+                ("fall", lay.fall),
+                ("core", lay.core),
+                ("pos", lay.pos),
+            ):
                 self.assertEqual(len(table), lay.n, f"{fid}.{name}")
 
     def test_travel_coordinates_stay_normalised(self) -> None:

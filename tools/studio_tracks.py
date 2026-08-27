@@ -31,14 +31,19 @@ TRACKS = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks"))
 # when only MP3 existed — makes a WAV or FLAC import land on disk and then never
 # appear in the panel, which reads as the import having silently failed.
 AUDIO_EXT = ("mp3", "wav", "flac", "opus")
-MIME = {"mp3": "audio/mpeg", "wav": "audio/wav",
-        "flac": "audio/flac", "opus": "audio/ogg"}
+MIME = {
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+    "flac": "audio/flac",
+    "opus": "audio/ogg",
+}
 
 
 def track_files() -> list[Path]:
     """Every imported track, whatever container it landed in, by id."""
-    return sorted((p for e in AUDIO_EXT for p in TRACKS.glob(f"*.{e}")),
-                  key=lambda p: p.stem)
+    return sorted(
+        (p for e in AUDIO_EXT for p in TRACKS.glob(f"*.{e}")), key=lambda p: p.stem
+    )
 
 
 def parse_sensitivity(q: dict) -> float | dict:
@@ -71,7 +76,7 @@ def parse_sensitivity(q: dict) -> float | dict:
     return per
 
 
-SRC_DIR = "_src"     # kept originals of dropped/pulled files, beside the library
+SRC_DIR = "_src"  # kept originals of dropped/pulled files, beside the library
 
 
 def source_copies(tid: str) -> list[Path]:
@@ -111,7 +116,7 @@ def track_path(tid: str) -> Path | None:
 
 def source_missing(source: str) -> bool:
     """True for a file: source whose file is no longer there."""
-    return source.startswith("file:") and not Path(source[len("file:"):]).exists()
+    return source.startswith("file:") and not Path(source[len("file:") :]).exists()
 
 
 def track_infos(paths: list[Path]) -> list[dict]:
@@ -170,10 +175,15 @@ def track_info(p: Path, meta: dict | None = None) -> dict:
     # Remember the answer beside the provenance, so the next /api/tracks
     # reads it instead of decoding the library again (it was linear in the
     # number of tracks, every call). `bytes` is the staleness check.
-    mf.patch(p.stem,
-             audio={**meta.get("audio", {}), "duration": info["dur"],
-                    "bytes": info["bytes"]},
-             onsets=info["onsets"])
+    mf.patch(
+        p.stem,
+        audio={
+            **meta.get("audio", {}),
+            "duration": info["dur"],
+            "bytes": info["bytes"],
+        },
+        onsets=info["onsets"],
+    )
     return info
 
 
@@ -192,6 +202,7 @@ def _from_manifest(meta: dict, size: int) -> dict | None:
         return None
     if audio.get("bytes") != size:
         return None
-    return {"dur": round(float(audio["duration"]), 2),
-            "onsets": {k: int(v) for k, v in onsets.items()
-                       if k.startswith("onset_")}}
+    return {
+        "dur": round(float(audio["duration"]), 2),
+        "onsets": {k: int(v) for k, v in onsets.items() if k.startswith("onset_")},
+    }

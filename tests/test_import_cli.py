@@ -100,8 +100,9 @@ class TestImportFromFile(CliCase):
         """The output is the handover to scenes.yaml; if it stops being valid
         YAML the workflow silently breaks at the paste step."""
         import yaml
+
         _code, out = self.run_cli(str(self.src), "--id", "demo")
-        block = out[out.index("  - id: demo"):out.index("then:")]
+        block = out[out.index("  - id: demo") : out.index("then:")]
         doc = yaml.safe_load("scenes:\n" + block)
         self.assertEqual(doc["scenes"][0]["id"], "demo")
 
@@ -127,8 +128,10 @@ class TestImportFromFile(CliCase):
         shutil.copy(self.src, src)
         code, _ = self.run_cli(str(src))
         self.assertEqual(code, 0)
-        self.assertTrue((it.TRACKS / "the_citizens_of_halloween.mp3").exists(),
-                        sorted(p.name for p in it.TRACKS.iterdir()))
+        self.assertTrue(
+            (it.TRACKS / "the_citizens_of_halloween.mp3").exists(),
+            sorted(p.name for p in it.TRACKS.iterdir()),
+        )
 
     def test_derived_id_with_no_boundary_still_fits(self) -> None:
         src = self.tmp / ("x" * 40 + ".wav")
@@ -150,10 +153,17 @@ class TestImportFromFile(CliCase):
     def test_flag_shaped_and_nonsense_times_are_refused_by_argparse(self) -> None:
         """`start: "-x"` from the studio used to reach ffmpeg as an option;
         now argparse refuses it (exit 2) before anything runs."""
-        for opt, val in (("--start", "-x"), ("--take", "--force"),
-                         ("--start", "abc"), ("--take", "1:99"), ("--start", "")):
-            with self.assertRaises(SystemExit, msg=f"{opt} {val!r}") as cm, \
-                    contextlib.redirect_stderr(io.StringIO()):
+        for opt, val in (
+            ("--start", "-x"),
+            ("--take", "--force"),
+            ("--start", "abc"),
+            ("--take", "1:99"),
+            ("--start", ""),
+        ):
+            with (
+                self.assertRaises(SystemExit, msg=f"{opt} {val!r}") as cm,
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
                 self.run_cli(str(self.src), f"{opt}={val}")
             self.assertEqual(cm.exception.code, 2, f"{opt} {val!r}")
 
@@ -162,8 +172,10 @@ class TestImportFromFile(CliCase):
             self.assertEqual(it.time_arg(raw), raw)
 
     def test_notes_may_not_start_with_a_dash(self) -> None:
-        with self.assertRaises(SystemExit) as cm, \
-                contextlib.redirect_stderr(io.StringIO()):
+        with (
+            self.assertRaises(SystemExit) as cm,
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
             self.run_cli(str(self.src), "--notes=--force")
         self.assertEqual(cm.exception.code, 2)
         code, _ = self.run_cli(str(self.src), "--id", "noted", "--notes=loud - keep")
@@ -195,22 +207,23 @@ class TestImportFromFile(CliCase):
         with self.assertRaises(SystemExit):
             self.run_cli("--refresh", "keep")
         self.assertEqual(out.read_bytes(), before)
-        self.assertEqual(sorted(p.name for p in it.TRACKS.iterdir()
-                                if p.name.endswith(".part")), [])
+        self.assertEqual(
+            sorted(p.name for p in it.TRACKS.iterdir() if p.name.endswith(".part")), []
+        )
 
 
 class TestOptions(CliCase):
     def test_take_and_bitrate_are_applied_and_remembered(self) -> None:
-        self.run_cli(str(self.src), "--id", "demo", "--take", "2",
-                     "--bitrate", "64")
+        self.run_cli(str(self.src), "--id", "demo", "--take", "2", "--bitrate", "64")
         entry = mf.get("demo")
         assert entry is not None
         self.assertEqual(entry["opts"]["bitrate"], 64)
         self.assertAlmostEqual(entry["audio"]["duration"], 2.0, delta=0.3)
 
     def test_sample_rate_and_channels(self) -> None:
-        self.run_cli(str(self.src), "--id", "demo", "--sample-rate", "22050",
-                     "--channels", "2")
+        self.run_cli(
+            str(self.src), "--id", "demo", "--sample-rate", "22050", "--channels", "2"
+        )
         entry = mf.get("demo")
         assert entry is not None
         self.assertEqual(entry["audio"]["sample_rate"], 22050)
@@ -238,8 +251,16 @@ class TestRefresh(CliCase):
         self.assertEqual(entry["opts"]["bitrate"], 96)
 
     def test_unchanged_options_are_carried_forward(self) -> None:
-        self.run_cli(str(self.src), "--id", "demo", "--take", "2",
-                     "--normalize", "--sample-rate", "22050")
+        self.run_cli(
+            str(self.src),
+            "--id",
+            "demo",
+            "--take",
+            "2",
+            "--normalize",
+            "--sample-rate",
+            "22050",
+        )
         self.run_cli("--refresh", "demo", "--bitrate", "96")
         entry = mf.get("demo")
         assert entry is not None
@@ -292,26 +313,38 @@ class TestUrlIsAUrl(unittest.TestCase):
     """
 
     def test_http_and_https_links_are_links(self) -> None:
-        for url in ("http://example.test/a.mp3",
-                    "https://example.test/watch?v=x",
-                    "HTTPS://Example.test/A"):
+        for url in (
+            "http://example.test/a.mp3",
+            "https://example.test/watch?v=x",
+            "HTTPS://Example.test/A",
+        ):
             self.assertTrue(it.is_web_url(url), url)
 
     def test_an_option_wearing_a_url_is_not(self) -> None:
-        for bad in ("--config-location=http://evil.test/x",
-                    "-o/tmp/x http://evil.test",
-                    "--exec=curl http://evil.test"):
+        for bad in (
+            "--config-location=http://evil.test/x",
+            "-o/tmp/x http://evil.test",
+            "--exec=curl http://evil.test",
+        ):
             self.assertFalse(it.is_web_url(bad), bad)
 
     def test_other_schemes_and_paths_are_not(self) -> None:
-        for bad in ("ftp://x.test/a", "file:///etc/passwd", "/Users/j/a.mp3",
-                    "a.mp3", "https://", ""):
+        for bad in (
+            "ftp://x.test/a",
+            "file:///etc/passwd",
+            "/Users/j/a.mp3",
+            "a.mp3",
+            "https://",
+            "",
+        ):
             self.assertFalse(it.is_web_url(bad), bad)
 
     def test_fetch_refuses_before_it_spawns_anything(self) -> None:
         """The guard is in fetch_url too, not only at the call site."""
-        with mock.patch.object(imf.subprocess, "run") as run, \
-                tempfile.TemporaryDirectory() as td:
+        with (
+            mock.patch.object(imf.subprocess, "run") as run,
+            tempfile.TemporaryDirectory() as td,
+        ):
             with self.assertRaises(SystemExit) as e:
                 it.fetch_url("--config-location=http://evil.test/x", Path(td))
             self.assertIn("http(s) only", str(e.exception))
@@ -319,9 +352,11 @@ class TestUrlIsAUrl(unittest.TestCase):
 
     def test_a_real_link_is_passed_after_a_double_dash(self) -> None:
         """`--` closes the option list, so a link can never become a flag."""
-        with mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"), \
-                mock.patch.object(imf.subprocess, "run") as run, \
-                tempfile.TemporaryDirectory() as td:
+        with (
+            mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"),
+            mock.patch.object(imf.subprocess, "run") as run,
+            tempfile.TemporaryDirectory() as td,
+        ):
             run.return_value = subprocess.CompletedProcess([], 1, "", "nope")
             with contextlib.suppress(SystemExit):
                 it.fetch_url("https://example.test/a", Path(td))

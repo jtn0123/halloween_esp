@@ -67,14 +67,14 @@ HTML = ROOT / "previewer" / "castle-cue-desk.html"
 # the studio was launched from anywhere else.
 PY = sys.executable
 
-_lock = threading.Lock()          # ffmpeg/yt-dlp jobs are serialised
+_lock = threading.Lock()  # ffmpeg/yt-dlp jobs are serialised
 _runner = sj.JobRunner(gate=_lock)  # background jobs queue behind the same lock
 
 
 def _restart() -> None:
     """Replace this process with a fresh copy of itself. os.execv keeps the
     PID, so whatever launched us (a launcher, launchd) notices nothing."""
-    time.sleep(0.4)               # let the HTTP response actually go out
+    time.sleep(0.4)  # let the HTTP response actually go out
     os.execv(sys.executable, [sys.executable, *sys.argv])
 
 
@@ -82,13 +82,12 @@ def run(cmd: list[str], timeout: int = 900) -> tuple[bool, str]:
     # The ceiling matters more than its value: these run holding _lock, so
     # one hung ffmpeg/yt-dlp used to wedge every later import and rebuild.
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, check=False,
-                           timeout=timeout)
+        p = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=timeout
+        )
     except subprocess.TimeoutExpired:
         return False, f"gave up after {timeout}s — the job stalled"
     return p.returncode == 0, (p.stdout + p.stderr)[-4000:]
-
-
 
 
 def failed(log: str, **extra) -> dict:
@@ -155,11 +154,11 @@ class Handler(sh.JsonHandler):
     def _put(self):
         sr.handle_put(self)
 
-    def relay(self, method: str, body: bytes = b"",
-              to: str | None = None) -> None:
+    def relay(self, method: str, body: bytes = b"", to: str | None = None) -> None:
         """Hand a castle-shaped /api/* request to the castle, answer as it did."""
         code, out, ctype = cl.forward(method, to or self.path, body)
         self._send_plain(out, ctype, code, [])
+
 
 def scene_ids() -> list[str]:
     return ss.scene_ids(SCENES)
@@ -168,9 +167,10 @@ def scene_ids() -> list[str]:
 def lan_ip() -> str:
     """Best guess at this machine's address on the LAN, for the banner."""
     import socket
+
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(("10.255.255.255", 1))   # no packets sent; just picks a route
+        s.connect(("10.255.255.255", 1))  # no packets sent; just picks a route
         return str(s.getsockname()[0])
     except OSError:
         return "127.0.0.1"

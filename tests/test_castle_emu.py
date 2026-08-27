@@ -24,7 +24,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))      # studio_case
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # studio_case
 
 import castle_emu
 import castle_emu_wire as wire
@@ -51,8 +51,9 @@ class EmuCase(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.card = Path(tempfile.mkdtemp(prefix="emu-test-sd-"))
         (cls.card / "wicked_winds.mp3").write_bytes(b"\xff\xfb" + b"\0" * 4000)
-        cls.emu = castle_emu.CastleEmu(port=0, sd_dir=cls.card,
-                                       scenes=["vigil", "storm"])
+        cls.emu = castle_emu.CastleEmu(
+            port=0, sd_dir=cls.card, scenes=["vigil", "storm"]
+        )
         cls.emu.start()
         cls.base = f"http://127.0.0.1:{cls.emu.port}"
 
@@ -60,10 +61,8 @@ class EmuCase(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls.emu.shutdown()
 
-    def http(self, method: str, path: str,
-             body: bytes = b"") -> tuple[int, bytes]:
-        req = urllib.request.Request(self.base + path, data=body or None,
-                                     method=method)
+    def http(self, method: str, path: str, body: bytes = b"") -> tuple[int, bytes]:
+        req = urllib.request.Request(self.base + path, data=body or None, method=method)
         try:
             with urllib.request.urlopen(req, timeout=3) as r:
                 return r.status, r.read()
@@ -80,12 +79,23 @@ class TestStatusShape(EmuCase):
         """device.ts, device_panel.ts and castle_link between them read all
         of these; a missing one renders as a lie (dogfood ISSUE-001)."""
         st = self.status()
-        for key in ("version", "uptime_s", "sd_mounted", "psram_free_kb",
-                    "heap_free_kb", "sd_total_kb", "sd_free_kb", "volume",
-                    "scene", "track", "show_on", "pir"):
+        for key in (
+            "version",
+            "uptime_s",
+            "sd_mounted",
+            "psram_free_kb",
+            "heap_free_kb",
+            "sd_total_kb",
+            "sd_free_kb",
+            "volume",
+            "scene",
+            "track",
+            "show_on",
+            "pir",
+        ):
             self.assertIn(key, st)
         self.assertTrue(st["sd_mounted"])
-        self.assertGreater(st["sd_free_kb"], 0)   # v5.23: the card reports room
+        self.assertGreater(st["sd_free_kb"], 0)  # v5.23: the card reports room
         for key in ("armed", "cooldown_s", "scene"):
             self.assertIn(key, st["pir"])
 
@@ -114,10 +124,16 @@ class TestValidationParity(EmuCase):
         """The one number lives in scenes.yaml (hardware.audio.max_volume);
         rig.h gets it generated, the emulator pins it — hold them equal."""
         import yaml
-        doc = yaml.safe_load((Path(__file__).resolve().parent.parent
-                              / "scenes" / "scenes.yaml").read_text())
-        self.assertEqual(round(doc["hardware"]["audio"]["max_volume"] * 100),
-                         castle_emu.MAX_VOLUME_PCT)
+
+        doc = yaml.safe_load(
+            (
+                Path(__file__).resolve().parent.parent / "scenes" / "scenes.yaml"
+            ).read_text()
+        )
+        self.assertEqual(
+            round(doc["hardware"]["audio"]["max_volume"] * 100),
+            castle_emu.MAX_VOLUME_PCT,
+        )
 
     def test_unknown_scene_is_404_not_queued(self) -> None:
         code, body = self.http("POST", "/api/scene?s=doesnotexist")
@@ -126,8 +142,11 @@ class TestValidationParity(EmuCase):
 
     def test_traversal_names_are_rejected(self) -> None:
         for bad in ("..%2F..%2Fetc", ".hidden", "a%2Fb"):
-            self.assertEqual(self.http("PUT", f"/api/files/{bad}", b"x")[0],
-                             400, f"{bad} must be rejected")
+            self.assertEqual(
+                self.http("PUT", f"/api/files/{bad}", b"x")[0],
+                400,
+                f"{bad} must be rejected",
+            )
         self.assertEqual(self.http("POST", "/api/play?f=..%2Fconfig")[0], 400)
 
 
@@ -136,15 +155,16 @@ class TestQueuedSemantics(EmuCase):
         code, body = self.http("POST", "/api/scene?s=storm")
         self.assertEqual(code, 200)
         self.assertEqual(json.loads(body), {"queued": True})
-        self.assertTrue(_wait(lambda: self.status()["scene"] == "storm"),
-                        "queued scene never applied")
+        self.assertTrue(
+            _wait(lambda: self.status()["scene"] == "storm"),
+            "queued scene never applied",
+        )
         self.http("POST", "/api/stop")
         self.assertTrue(_wait(lambda: self.status()["scene"] == ""))
 
     def test_play_sets_the_track_and_stop_clears_it(self) -> None:
         self.http("POST", "/api/play?f=wicked_winds.mp3")
-        self.assertTrue(
-            _wait(lambda: self.status()["track"] == "wicked_winds.mp3"))
+        self.assertTrue(_wait(lambda: self.status()["track"] == "wicked_winds.mp3"))
         self.http("POST", "/api/stop")
         self.assertTrue(_wait(lambda: self.status()["track"] == ""))
 
@@ -168,14 +188,24 @@ class TestRemotePage(EmuCase):
         code, body = self.http("GET", "/remote")
         self.assertEqual(code, 200)
         page = body.decode()
-        header = (Path(__file__).resolve().parent.parent / "firmware"
-                  / "sd_web_remote.h").read_text()
+        header = (
+            Path(__file__).resolve().parent.parent / "firmware" / "sd_web_remote.h"
+        ).read_text()
         start = header.index('R"HTML(') + len('R"HTML(')
-        self.assertEqual(page, header[start:header.index(')HTML"', start)])
-        for needle in ("<title>Castle Remote</title>", "id=show", "id=ambient",
-                       "id=scare", "id=black", "/api/status",
-                       # v5.38: the speaker strip — level, the test sweep, quiet
-                       "id=spk", "/api/volume?v=80", "test_sweep.mp3", "/api/stop"):
+        self.assertEqual(page, header[start : header.index(')HTML"', start)])
+        for needle in (
+            "<title>Castle Remote</title>",
+            "id=show",
+            "id=ambient",
+            "id=scare",
+            "id=black",
+            "/api/status",
+            # v5.38: the speaker strip — level, the test sweep, quiet
+            "id=spk",
+            "/api/volume?v=80",
+            "test_sweep.mp3",
+            "/api/stop",
+        ):
             self.assertIn(needle, page)
 
 
@@ -192,7 +222,9 @@ class TestSceneSeeding(unittest.TestCase):
     def test_castle_scenes_env_is_honoured(self) -> None:
         tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
         tmp.write_text("scenes:\n  - id: only_this\n")
-        with unittest.mock.patch.dict(castle_emu.os.environ, {"CASTLE_SCENES": str(tmp)}):
+        with unittest.mock.patch.dict(
+            castle_emu.os.environ, {"CASTLE_SCENES": str(tmp)}
+        ):
             emu = castle_emu.CastleEmu(port=0)
         self.addCleanup(emu.server_close)
         self.assertEqual(emu.scenes, ["only_this", "stop"])
@@ -205,8 +237,9 @@ class TestSceneSeeding(unittest.TestCase):
 
     def test_unreadable_show_falls_back_to_the_defaults(self) -> None:
         self.assertIsNone(castle_emu.show_scene_ids(Path("/no/such/scenes.yaml")))
-        with unittest.mock.patch.dict(castle_emu.os.environ,
-                                      {"CASTLE_SCENES": "/no/such/scenes.yaml"}):
+        with unittest.mock.patch.dict(
+            castle_emu.os.environ, {"CASTLE_SCENES": "/no/such/scenes.yaml"}
+        ):
             emu = castle_emu.CastleEmu(port=0)
         self.addCleanup(emu.server_close)
         self.assertEqual(emu.scenes, castle_emu.DEFAULT_SCENES)
@@ -228,8 +261,7 @@ class TestCardRoundTrip(EmuCase):
         names = {f["name"] for f in files if not f["dir"]}
         self.assertIn("e2e_song.mp3", names)
 
-        self.assertEqual(self.http("GET", "/sd/e2e_song.mp3")[1],
-                         b"\xff\xfbdata")
+        self.assertEqual(self.http("GET", "/sd/e2e_song.mp3")[1], b"\xff\xfbdata")
 
         self.assertEqual(self.http("DELETE", "/api/files/e2e_song.mp3")[0], 200)
         self.assertEqual(self.http("DELETE", "/api/files/e2e_song.mp3")[0], 404)
@@ -278,7 +310,7 @@ class TestJsonEscaping(EmuCase):
         try:
             code, out = self.http("GET", "/api/files")
             self.assertEqual(code, 200)
-            files = json.loads(out)                 # the whole point: it parses
+            files = json.loads(out)  # the whole point: it parses
             names = [f["name"] for f in files if "name" in f]
             self.assertIn("plain.mp3", names)
             self.assertNotIn('say "boo".mp3', names)
@@ -289,7 +321,7 @@ class TestJsonEscaping(EmuCase):
             (self.card / "back\\slash.mp3").unlink()
             (self.card / "plain.mp3").unlink()
         files = json.loads(self.http("GET", "/api/files")[1])
-        self.assertFalse(any("skipped" in f for f in files))   # none → no trailer
+        self.assertFalse(any("skipped" in f for f in files))  # none → no trailer
 
     def test_status_escapes_a_quote_in_missing_and_track(self) -> None:
         self.emu.missing = 'a"b.mp3,c\\d.mp3'
@@ -308,20 +340,32 @@ class TestJsonEscaping(EmuCase):
         """Read the firmware's json_escape: every `case` it handles is one
         json.dumps short-escapes, and the fallback is \\u%04x below 0x20.
         (It lives in sd_web_util.h since the v5.42 helper-layer split.)"""
-        src = (Path(__file__).resolve().parent.parent / "firmware"
-               / "sd_web_util.h").read_text()
-        body = src[src.index("inline std::string json_escape"):]
-        body = body[:body.index("\n}\n")]
+        src = (
+            Path(__file__).resolve().parent.parent / "firmware" / "sd_web_util.h"
+        ).read_text()
+        body = src[src.index("inline std::string json_escape") :]
+        body = body[: body.index("\n}\n")]
         cases = set(re.findall(r"case '(\\?.)': out \+= \"(\\\\.+?)\"; break;", body))
-        self.assertEqual(cases, {('"', '\\\\\\"'), ("\\\\", "\\\\\\\\"),
-                                 ("\\n", "\\\\n"), ("\\r", "\\\\r"), ("\\t", "\\\\t"),
-                                 ("\\b", "\\\\b"), ("\\f", "\\\\f")})
+        self.assertEqual(
+            cases,
+            {
+                ('"', '\\\\\\"'),
+                ("\\\\", "\\\\\\\\"),
+                ("\\n", "\\\\n"),
+                ("\\r", "\\\\r"),
+                ("\\t", "\\\\t"),
+                ("\\b", "\\\\b"),
+                ("\\f", "\\\\f"),
+            },
+        )
         self.assertIn("if (c < 0x20)", body)
         self.assertIn('"\\\\u%04x"', body)
         # and the Python half really is json.dumps' table for those bytes
         for ch in '"\\\n\r\t\b\f\x01\x1f\x7fé':
             self.assertEqual(json.loads('"' + wire.json_escape(ch) + '"'), ch)
-        self.assertEqual(wire.json_escape("\x7f"), "\x7f")   # DEL passes raw, as in the C
+        self.assertEqual(
+            wire.json_escape("\x7f"), "\x7f"
+        )  # DEL passes raw, as in the C
 
 
 class TestBridge(HostEnv, EmuCase):
@@ -352,8 +396,7 @@ class TestBridge(HostEnv, EmuCase):
         code, _, _ = castle_link.forward("POST", "/api/volume?v=55")
         self.assertEqual(code, 200)
         # The live host is remembered and tried first from now on.
-        self.assertEqual(castle_link.castle_hosts()[0],
-                         f"127.0.0.1:{self.emu.port}")
+        self.assertEqual(castle_link.castle_hosts()[0], f"127.0.0.1:{self.emu.port}")
 
     def test_forward_relays_verdicts_verbatim(self) -> None:
         code, _, _ = castle_link.forward("POST", "/api/volume?v=40")
@@ -366,11 +409,11 @@ class TestBridge(HostEnv, EmuCase):
 
     def test_forward_uploads_a_file(self) -> None:
         code, body, _ = castle_link.forward(
-            "PUT", "/api/files/bridged.mp3", b"\xff\xfbbridged")
+            "PUT", "/api/files/bridged.mp3", b"\xff\xfbbridged"
+        )
         self.assertEqual(code, 200)
         self.assertEqual(json.loads(body)["bytes"], 9)
-        self.assertEqual((self.card / "bridged.mp3").read_bytes(),
-                         b"\xff\xfbbridged")
+        self.assertEqual((self.card / "bridged.mp3").read_bytes(), b"\xff\xfbbridged")
         (self.card / "bridged.mp3").unlink()
 
 

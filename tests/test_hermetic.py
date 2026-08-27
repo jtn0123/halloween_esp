@@ -27,18 +27,30 @@ class TestHermeticEnv(unittest.TestCase):
             self.assertNotIn(k, os.environ, k)
 
     def test_a_polluted_shell_is_scrubbed_in_a_fresh_interpreter(self) -> None:
-        env = {**os.environ, "CASTLE_HOST": "127.0.0.1:9",
-               "CASTLE_TRACKS": "/tmp/castle-hermetic-x",
-               "CASTLE_SCENES": "/tmp/castle-hermetic-x/scenes.yaml",
-               "CASTLE_BUILD": "/tmp/castle-hermetic-x/build"}
+        env = {
+            **os.environ,
+            "CASTLE_HOST": "127.0.0.1:9",
+            "CASTLE_TRACKS": "/tmp/castle-hermetic-x",
+            "CASTLE_SCENES": "/tmp/castle-hermetic-x/scenes.yaml",
+            "CASTLE_BUILD": "/tmp/castle-hermetic-x/build",
+        }
         out = subprocess.run(
-            [sys.executable, "-c",
-             ("import os, helpers, studio_tracks, build_paths;"
-              "print(sorted(k for k in os.environ if k.startswith('CASTLE_')));"
-              "print(studio_tracks.TRACKS);"
-              "print(build_paths.scenes_file())")],
-            cwd=str(ROOT / "tests"), env=env,
-            capture_output=True, text=True, check=False)
+            [
+                sys.executable,
+                "-c",
+                (
+                    "import os, helpers, studio_tracks, build_paths;"
+                    "print(sorted(k for k in os.environ if k.startswith('CASTLE_')));"
+                    "print(studio_tracks.TRACKS);"
+                    "print(build_paths.scenes_file())"
+                ),
+            ],
+            cwd=str(ROOT / "tests"),
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
         self.assertEqual(out.returncode, 0, out.stderr)
         lines = out.stdout.strip().splitlines()
         self.assertEqual(lines[0], "[]")

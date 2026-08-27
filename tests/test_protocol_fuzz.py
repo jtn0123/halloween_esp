@@ -40,8 +40,9 @@ class FuzzCase(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.jail = Path(tempfile.mkdtemp(prefix="fuzz-jail-"))
         cls.card = cls.jail / "card"
-        cls.emu = castle_emu.CastleEmu(port=0, sd_dir=cls.card,
-                                       scenes=["vigil", "storm", "stop"])
+        cls.emu = castle_emu.CastleEmu(
+            port=0, sd_dir=cls.card, scenes=["vigil", "storm", "stop"]
+        )
         cls.emu.start()
 
     @classmethod
@@ -73,8 +74,9 @@ class TestBodies(FuzzCase):
     def test_zero_byte_put(self) -> None:
         code, body, _ = self.req("PUT", "/api/files/empty.bin", body=b"")
         self.assertEqual(code, 200)
-        self.assertEqual(json.loads(body), {"path": "/sd/empty.bin", "bytes": 0,
-                                            "crc32": "00000000"})   # B5
+        self.assertEqual(
+            json.loads(body), {"path": "/sd/empty.bin", "bytes": 0, "crc32": "00000000"}
+        )  # B5
         self.assertEqual((self.card / "empty.bin").read_bytes(), b"")
 
     def test_two_megabyte_put_arrives_intact(self) -> None:
@@ -90,8 +92,14 @@ class TestBodies(FuzzCase):
         timer fires, the half-file is unlinked, the client hears 500."""
         with mock.patch.object(castle_emu_http.Handler, "timeout", 0.5):
             t0 = time.monotonic()
-            code, body, _ = self.req("PUT", "/api/files/loris.bin", body=b"x" * 4000,
-                                     send_fraction=0.5, hang=True, timeout=5)
+            code, body, _ = self.req(
+                "PUT",
+                "/api/files/loris.bin",
+                body=b"x" * 4000,
+                send_fraction=0.5,
+                hang=True,
+                timeout=5,
+            )
             took = time.monotonic() - t0
         self.assertEqual((code, body), (500, b"short write"))
         self.assertLess(took, 3.0)
@@ -100,13 +108,15 @@ class TestBodies(FuzzCase):
         self.assertEqual(self.req("GET", "/api/status")[0], 200)
 
     def test_short_body_with_eof_is_a_short_write(self) -> None:
-        code, body, _ = self.req("PUT", "/api/files/short.bin", body=b"abc", declared=10)
+        code, body, _ = self.req(
+            "PUT", "/api/files/short.bin", body=b"abc", declared=10
+        )
         self.assertEqual((code, body), (500, b"short write"))
         self.assertFalse((self.card / "short.bin").exists())
 
     def test_extra_bytes_never_reach_the_file(self) -> None:
         code, _, _ = self.req("PUT", "/api/files/extra.bin", body=b"abcdef", declared=4)
-        if code:                 # the server may RST the unread tail instead
+        if code:  # the server may RST the unread tail instead
             self.assertEqual(code, 200)
         self.assertEqual((self.card / "extra.bin").read_bytes(), b"abcd")
 
@@ -156,12 +166,20 @@ class TestNulAndOddNames(FuzzCase):
             (self.card / n).unlink()
 
     def test_unicode_name_is_measured_in_bytes(self) -> None:
-        ok = "é" * 49 + ".mp3"          # 98 + 4 = 102 bytes → too long
-        self.assertEqual(self.req("PUT", "/api/files/" + ok.encode().decode("latin-1"),
-                                  body=b"x")[0], 400)
-        fine = "é" * 40 + ".mp3"        # 84 bytes
-        self.assertEqual(self.req("PUT", "/api/files/" + fine.encode().decode("latin-1"),
-                                  body=b"x")[0], 200)
+        ok = "é" * 49 + ".mp3"  # 98 + 4 = 102 bytes → too long
+        self.assertEqual(
+            self.req("PUT", "/api/files/" + ok.encode().decode("latin-1"), body=b"x")[
+                0
+            ],
+            400,
+        )
+        fine = "é" * 40 + ".mp3"  # 84 bytes
+        self.assertEqual(
+            self.req("PUT", "/api/files/" + fine.encode().decode("latin-1"), body=b"x")[
+                0
+            ],
+            200,
+        )
         (self.card / fine).unlink()
 
 
@@ -200,24 +218,30 @@ class TestSlowRead(unittest.TestCase):
     def test_a_half_sent_body_is_a_slow_read_not_a_bad_one(self) -> None:
         port = self.serve_and_stall(
             b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-            b"Content-Length: 40\r\n\r\n{\"version\":")
+            b'Content-Length: 40\r\n\r\n{"version":'
+        )
         with self.assertRaises(castle_fuzz.SlowRead):
-            castle_fuzz.raw_request("127.0.0.1", port, "GET", "/api/status",
-                                    timeout=0.4)
+            castle_fuzz.raw_request(
+                "127.0.0.1", port, "GET", "/api/status", timeout=0.4
+            )
 
     def test_headers_that_never_finish_are_a_slow_read_too(self) -> None:
         port = self.serve_and_stall(b"HTTP/1.1 200 OK\r\nContent-Type: app")
         with self.assertRaises(castle_fuzz.SlowRead):
-            castle_fuzz.raw_request("127.0.0.1", port, "GET", "/api/status",
-                                    timeout=0.4)
+            castle_fuzz.raw_request(
+                "127.0.0.1", port, "GET", "/api/status", timeout=0.4
+            )
 
     def test_a_complete_answer_is_never_a_slow_read(self) -> None:
         """The teeth stay in: a finished body parses, timer or no timer."""
         body = b'{"ok":true}'
         port = self.serve_and_stall(
             b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
-            b"Content-Length: %d\r\n\r\n%s" % (len(body), body), wait=0.05)
+            b"Content-Length: %d\r\n\r\n%s" % (len(body), body),
+            wait=0.05,
+        )
         code, got, hdr = castle_fuzz.raw_request(
-            "127.0.0.1", port, "GET", "/api/status", timeout=1.0)
+            "127.0.0.1", port, "GET", "/api/status", timeout=1.0
+        )
         self.assertEqual((code, got), (200, body))
         self.assertEqual(hdr["content-type"], "application/json")

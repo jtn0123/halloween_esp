@@ -175,6 +175,7 @@ lock:
 # Lint + type-check the Python half; config lives in pyproject.toml. The TS
 # half's equivalent is the tsc line in `check`.
 lint:
+	@$(PY) -m ruff format --check --quiet tools tests || { echo "formatting drift — run: .venv/bin/python -m ruff format tools tests"; exit 1; }
 	@$(PY) -m ruff check tools tests
 	@$(PY) -m mypy tools tests
 

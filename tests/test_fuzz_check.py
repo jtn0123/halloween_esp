@@ -35,8 +35,11 @@ SCENE_YAML = """
   cues: []
 """
 
-CASE = {"dur_ms": 4000, "scene_yaml": SCENE_YAML,
-        "hits_by_synth": {"toll": [[500, 0.8], [1500, 0.6]]}}
+CASE = {
+    "dur_ms": 4000,
+    "scene_yaml": SCENE_YAML,
+    "hits_by_synth": {"toll": [[500, 0.8], [1500, 0.6]]},
+}
 
 
 class TestRunCase(unittest.TestCase):
@@ -66,14 +69,15 @@ class TestMainContract(unittest.TestCase):
     def test_stdout_is_json_even_when_generators_chatter(self) -> None:
         stdin = io.StringIO(json.dumps({"cases": [CASE]}))
         stdout, stderr = io.StringIO(), io.StringIO()
-        with mock.patch.object(fc.sys, "stdin", stdin), \
-             contextlib.redirect_stdout(stdout), \
-             contextlib.redirect_stderr(stderr):
+        with (
+            mock.patch.object(fc.sys, "stdin", stdin),
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
             fc.main()
-        body = json.loads(stdout.getvalue())   # the whole contract
+        body = json.loads(stdout.getvalue())  # the whole contract
         self.assertEqual(len(body["results"]), 1)
-        self.assertEqual(body["results"][0]["esphome"],
-                         body["results"][0]["previewer"])
+        self.assertEqual(body["results"][0]["esphome"], body["results"][0]["previewer"])
 
 
 if __name__ == "__main__":

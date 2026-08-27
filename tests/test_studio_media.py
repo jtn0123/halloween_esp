@@ -39,9 +39,10 @@ class TestDecodedCache(unittest.TestCase):
     def counts(self, fn):
         """(result, decodes, onset passes) for one call."""
         real_load, real_full = sm.ana.load_audio, sm.ana.analyze_full
-        with mock.patch.object(sm.ana, "load_audio", side_effect=real_load) as ld, \
-                mock.patch.object(sm.ana, "analyze_full",
-                                  side_effect=real_full) as an:
+        with (
+            mock.patch.object(sm.ana, "load_audio", side_effect=real_load) as ld,
+            mock.patch.object(sm.ana, "analyze_full", side_effect=real_full) as an,
+        ):
             out = fn()
         return out, ld.call_count, an.call_count
 
@@ -73,7 +74,7 @@ class TestDecodedCache(unittest.TestCase):
         self.assertEqual(max(d["peaks"]), 1.0)
         self.assertIn("onset_low", d["onsets"])
         self.assertGreater(len(d["onsets"]["onset_low"]), 2)
-        self.assertEqual(len(d["onsets"]["onset_low"][0]), 3)   # t, v, pan
+        self.assertEqual(len(d["onsets"]["onset_low"][0]), 3)  # t, v, pan
         self.assertGreater(len(d["env"]), 5)
 
     def test_a_rewritten_file_is_decoded_afresh(self) -> None:
@@ -99,12 +100,16 @@ class TestDecodedCache(unittest.TestCase):
         self.assertEqual(len(sm._DECODED), 2)
 
     def test_an_empty_file_is_answered_without_a_stereo_decode(self) -> None:
-        with mock.patch.object(sm.ana, "load_audio", return_value=sm.np.zeros(0)), \
-                mock.patch.object(sm.ana, "load_stereo",
-                                  side_effect=AssertionError("stereo")):
+        with (
+            mock.patch.object(sm.ana, "load_audio", return_value=sm.np.zeros(0)),
+            mock.patch.object(
+                sm.ana, "load_stereo", side_effect=AssertionError("stereo")
+            ),
+        ):
             d = sm.waveform(self.track)
-        self.assertEqual(d, {"id": "_t_media", "duration": 0.0,
-                             "peaks": [], "onsets": {}})
+        self.assertEqual(
+            d, {"id": "_t_media", "duration": 0.0, "peaks": [], "onsets": {}}
+        )
 
 
 if __name__ == "__main__":

@@ -47,10 +47,16 @@ def probe(url: str, timeout: int = 60) -> dict:
     try:
         r = subprocess.run(
             ["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", url],
-            capture_output=True, text=True, timeout=timeout, check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
         )
     except subprocess.TimeoutExpired:
-        return {"ok": False, "error": f"timed out after {timeout}s asking about that link"}
+        return {
+            "ok": False,
+            "error": f"timed out after {timeout}s asking about that link",
+        }
 
     if r.returncode != 0:
         # yt-dlp's own message is usually the useful one ("Video unavailable",
@@ -76,7 +82,8 @@ def probe(url: str, timeout: int = 60) -> dict:
         # A live stream has no end, so trimming is meaningless and the download
         # would never finish. Worth saying before someone starts one.
         "warning": "this is a live stream — it has no end to trim from"
-                   if d.get("is_live") else "",
+        if d.get("is_live")
+        else "",
     }
 
 
@@ -103,7 +110,7 @@ def compare(path: Path, opts: dict, token: str) -> dict:
     root = Path(tempfile.mkdtemp(prefix="castle-cmp-"))
     try:
         rows = cc.encode_set(path, root, opts)
-    except SystemExit as e:                      # ffmpeg said no
+    except SystemExit as e:  # ffmpeg said no
         shutil.rmtree(root, ignore_errors=True)
         return {"ok": False, "error": str(e)}
 
@@ -127,6 +134,7 @@ def compare_file(token: str, codec: str) -> Path | None:
 
 def cc_codecs() -> tuple[str, ...]:
     import codec_compare as cc
+
     return cc.CODECS
 
 
@@ -140,8 +148,7 @@ _WAVES: collections.OrderedDict[tuple, dict] = collections.OrderedDict()
 KEEP_WAVES = 32
 
 
-def waveform(path: Path, sensitivity: float | dict = 1.1,
-             buckets: int = PEAKS) -> dict:
+def waveform(path: Path, sensitivity: float | dict = 1.1, buckets: int = PEAKS) -> dict:
     """Peak envelope plus detected onsets, for the clip editor — cached.
 
     Peaks are absolute maxima per bucket rather than RMS: the point of the
@@ -185,8 +192,10 @@ class Decoded:
             return
         n = min(buckets, len(x))
         edges = np.linspace(0, len(x), n + 1).astype(int)
-        peaks = [float(np.abs(x[a:b]).max()) if b > a else 0.0
-                 for a, b in itertools.pairwise(edges)]
+        peaks = [
+            float(np.abs(x[a:b]).max()) if b > a else 0.0
+            for a, b in itertools.pairwise(edges)
+        ]
         top = max(peaks) or 1.0
         self.peaks = [round(p / top, 4) for p in peaks]
         # Stereo alongside the mono: onsets carry their pan as a third
@@ -226,7 +235,8 @@ def _waveform(dec: Decoded, sensitivity: float | dict) -> dict:
         "id": dec.id,
         "duration": round(len(x) / ana.SR, 3),
         "peaks": dec.peaks,
-        "onsets": {k: [[round(h[0], 3), *h[1:]] for h in v_]
-                   for k, v_ in marks.items()},
+        "onsets": {
+            k: [[round(h[0], 3), *h[1:]] for h in v_] for k, v_ in marks.items()
+        },
         "env": dec.env,
     }

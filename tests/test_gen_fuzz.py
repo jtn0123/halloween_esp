@@ -36,8 +36,16 @@ SEED = 20260820
 CASES = 40
 ZIDS = ["towerL", "towerR", "door"]
 EFFECTS = list(ge.EFFECT_IDS)
-OUTPUT_PATHS = ("SRC", "MARKERS", "OUT", "MEDIA_OUT", "AUDIO_FLASH",
-                "AUDIO_SD", "RIG_OUT", "LIGHTS_OUT")
+OUTPUT_PATHS = (
+    "SRC",
+    "MARKERS",
+    "OUT",
+    "MEDIA_OUT",
+    "AUDIO_FLASH",
+    "AUDIO_SD",
+    "RIG_OUT",
+    "LIGHTS_OUT",
+)
 
 
 class EsphomeLoader(yaml.SafeLoader):
@@ -66,7 +74,12 @@ def rand_zones(r: random.Random) -> list[dict]:
 def rand_cue(r: random.Random, dur: int) -> dict:
     t = r.choice([0, dur, r.randint(0, dur)])
     if r.random() < 0.5:
-        c: dict = {"t": t, "op": "set", "zone": r.choice(ZIDS), "effect": r.choice(EFFECTS)}
+        c: dict = {
+            "t": t,
+            "op": "set",
+            "zone": r.choice(ZIDS),
+            "effect": r.choice(EFFECTS),
+        }
         if r.random() < 0.5:
             c["level"] = round(r.random(), 3)
     else:
@@ -94,13 +107,19 @@ def rand_cue(r: random.Random, dur: int) -> dict:
 def rand_scene(r: random.Random, i: int) -> tuple[dict, dict]:
     dur = r.choice([100, 1000, 8000, 30000])
     scene: dict = {
-        "id": f"fz{i}", "name": f"Fuzz {i}", "kind": r.choice(["ambient", "triggered", "motion"]),
-        "duration_ms": dur, "volume": round(r.random(), 2), "loop": r.random() < 0.5,
+        "id": f"fz{i}",
+        "name": f"Fuzz {i}",
+        "kind": r.choice(["ambient", "triggered", "motion"]),
+        "duration_ms": dur,
+        "volume": round(r.random(), 2),
+        "loop": r.random() < 0.5,
         "base": {z: r.choice(EFFECTS) for z in r.sample(ZIDS, r.randint(1, 3))},
         "cues": [rand_cue(r, dur) for _ in range(r.randint(0, 12))],
     }
     if r.random() < 0.6:
-        scene["levels"] = {z: round(r.random(), 2) for z in r.sample(ZIDS, r.randint(1, 3))}
+        scene["levels"] = {
+            z: round(r.random(), 2) for z in r.sample(ZIDS, r.randint(1, 3))
+        }
     if r.random() < 0.7:
         scene["zones"] = {}
         for z in r.sample(ZIDS, r.randint(1, 3)):
@@ -119,8 +138,11 @@ def rand_scene(r: random.Random, i: int) -> tuple[dict, dict]:
         scene["pulse"] = []
         for s in range(r.randint(1, 3)):
             synth = f"syn{s}"
-            p: dict = {"synth": synth, "intensity": round(r.random(), 2),
-                       "decay": r.choice([0.82, 0.9, 0.95])}
+            p: dict = {
+                "synth": synth,
+                "intensity": round(r.random(), 2),
+                "decay": r.choice([0.82, 0.9, 0.95]),
+            }
             k = r.random()
             if k < 0.3:
                 p["zone"] = r.choice(ZIDS)
@@ -133,8 +155,11 @@ def rand_scene(r: random.Random, i: int) -> tuple[dict, dict]:
                 p["pixels"] = r.choice(list(ge.FLASH_MODE_IDS))
             scene["pulse"].append(p)
             markers[synth] = sorted(
-                [[r.randint(0, dur), round(r.uniform(0.05, 1.0), 3)]
-                 for _ in range(r.randint(0, 10))])
+                [
+                    [r.randint(0, dur), round(r.uniform(0.05, 1.0), 3)]
+                    for _ in range(r.randint(0, 10))
+                ]
+            )
     return scene, markers
 
 
@@ -178,9 +203,12 @@ class TestGeneratorFuzz(unittest.TestCase):
         for case in range(CASES):
             zones = rand_zones(r)
             scenes = [rand_scene(r, i) for i in range(r.randint(1, 4))]
-            doc = {"hardware": {"pixels_per_zone": r.choice([1, 7])}, "zones": zones,
-                   "show": {"gap_ms": r.randint(0, 20000)},
-                   "scenes": [s for s, _ in scenes]}
+            doc = {
+                "hardware": {"pixels_per_zone": r.choice([1, 7])},
+                "zones": zones,
+                "show": {"gap_ms": r.randint(0, 20000)},
+                "scenes": [s for s, _ in scenes],
+            }
             markers = {s["id"]: m for s, m in scenes}
             with self.subTest(case=case, seed=SEED):
                 self.check_case(doc, markers, zones)
@@ -201,14 +229,20 @@ class TestGeneratorFuzz(unittest.TestCase):
             pulse = ge.pulse_cues(scene, markers)
             want = sorted(c["t"] for c in (scene.get("cues") or []) + pulse)
             self.assertEqual(replay_times(lines), want)
-            total = sum(int(ln.strip().split()[-1].removesuffix("ms"))
-                        for ln in lines if ln.strip().startswith("- delay:"))
+            total = sum(
+                int(ln.strip().split()[-1].removesuffix("ms"))
+                for ln in lines
+                if ln.strip().startswith("- delay:")
+            )
             self.assertEqual(total, scene["duration_ms"])
-            self.assertEqual("script.execute: scene_" + scene["id"] in text,
-                             bool(scene.get("loop")))
+            self.assertEqual(
+                "script.execute: scene_" + scene["id"] in text, bool(scene.get("loop"))
+            )
             # The previewer describes the same strikes at the same times.
             prev = gp.to_previewer(scene, idx, "", markers)
-            self.assertEqual(sorted(c["t"] for c in prev["cues"] if c["bus"] == "LED"), want)
+            self.assertEqual(
+                sorted(c["t"] for c in prev["cues"] if c["bus"] == "LED"), want
+            )
             for c in prev["cues"]:
                 if c["op"] == "strike" and c.get("targets"):
                     self.assertLessEqual(set(c["targets"]), set(ZIDS))
@@ -224,19 +258,29 @@ class TestGeneratorFuzz(unittest.TestCase):
         # Long scenes continue in cont_<id>_N scripts (gen_esphome.CHUNK);
         # the heads keep the document's order, the fixed scripts follow.
         heads = [i for i in ids if not i.startswith("cont_")]
-        self.assertEqual(heads[:len(doc["scenes"])], [f"scene_{s['id']}" for s in doc["scenes"]])
-        self.assertEqual(heads[len(doc["scenes"]):], ["scene_stop", "run_scene", "show_playlist"])
-        for sc in out["script"]:          # and no chain is ever deep again
+        self.assertEqual(
+            heads[: len(doc["scenes"])], [f"scene_{s['id']}" for s in doc["scenes"]]
+        )
+        self.assertEqual(
+            heads[len(doc["scenes"]) :], ["scene_stop", "run_scene", "show_playlist"]
+        )
+        for sc in out["script"]:  # and no chain is ever deep again
             self.assertLessEqual(len(sc["then"]), ge.CHUNK, sc["id"])
-        self.assertEqual(out["select"][0]["options"][:-1], [s["id"] for s in doc["scenes"]])
+        self.assertEqual(
+            out["select"][0]["options"][:-1], [s["id"] for s in doc["scenes"]]
+        )
         for path in (ge.AUDIO_FLASH, ge.AUDIO_SD, ge.LIGHTS_OUT, ge.MEDIA_OUT):
             yaml.load(path.read_text(), Loader=EsphomeLoader)
         # The rig outputs agree with the layouts the cues were emitted against.
         layouts = rl.zone_layouts(zones, doc["hardware"]["pixels_per_zone"])
-        self.assertEqual(ge.RIG_OUT.read_text(), gen_rig.emit_rig_header(layouts, zones))
+        self.assertEqual(
+            ge.RIG_OUT.read_text(), gen_rig.emit_rig_header(layouts, zones)
+        )
         lights = yaml.safe_load(ge.LIGHTS_OUT.read_text())
         live = [z["id"] for z in zones if layouts[z["id"]].n > 0]
-        self.assertEqual([s["id"] for s in lights["light"]], [f"zone_{z}" for z in live])
+        self.assertEqual(
+            [s["id"] for s in lights["light"]], [f"zone_{z}" for z in live]
+        )
         for s in lights["light"]:
             self.assertEqual(s["rmt_symbols"], 64)
             self.assertIs(s["use_psram"], False)

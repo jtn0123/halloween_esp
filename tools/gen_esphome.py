@@ -86,8 +86,6 @@ def eff_id(name: str, scene_id: str) -> int:
     return EFFECT_IDS[name]
 
 
-
-
 # ESPHome stops and polls a script by walking its action chain RECURSIVELY
 # (Action::stop_complex -> next_->stop_complex -> ...), one stack frame per
 # action, on the 8 KB loop task. run_scene stops every scene script before it
@@ -109,14 +107,14 @@ SCRIPT_HEAD = (MODE_RESTART, THEN)
 
 def chunked(sid: str, items: list[list[str]], loop: bool) -> list[str]:
     """Lay `items` (one YAML list item each) out as head + continuations."""
-    step = CHUNK - 1                       # room for the chaining execute
+    step = CHUNK - 1  # room for the chaining execute
     starts = list(range(0, max(len(items), 1), step))
     out: list[str] = []
     for k, lo in enumerate(starts):
         last = k == len(starts) - 1
         out.append(f"  - id: {'scene_' + sid if k == 0 else f'cont_{sid}_{k}'}")
         out.extend(SCRIPT_HEAD)
-        for item in items[lo:lo + step]:
+        for item in items[lo : lo + step]:
             out.extend(item)
         if not last:
             out.append(f"      - script.execute: cont_{sid}_{k + 1}")
@@ -130,7 +128,9 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
     zone_ids = [z["id"] for z in zones]
     sid = scene["id"]
     lines: list[str] = [
-        f"  # ── {scene['name']} ({scene['kind']}) " + "─" * max(0, 42 - len(scene["name"]))]
+        f"  # ── {scene['name']} ({scene['kind']}) "
+        + "─" * max(0, 42 - len(scene["name"]))
+    ]
 
     # Body actions, one YAML list item each; `chunked` lays them out.
     items: list[list[str]] = []
@@ -183,7 +183,9 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
     # stays plain YAML for every tool that loads it with safe_load.
     a(LAMBDA)
     a("          auto call = id(castle_media)->make_call();")
-    a(f"          call.set_volume(id(speaker_hush) ? 0.0f : {float(scene.get('volume', 0.8))}f);")
+    a(
+        f"          call.set_volume(id(speaker_hush) ? 0.0f : {float(scene.get('volume', 0.8))}f);"
+    )
     a("          call.perform();")
     # Audio goes through the generated `sfx` dispatch script rather than a
     # direct play action, because the two builds implement it differently:
@@ -197,8 +199,10 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
     pulses = pulse_cues(scene, markers)
     kept = thin_pulses(pulses)
     if len(kept) < len(pulses):
-        print(f"note: scene {scene['id']}: {len(pulses)} pulse hits thinned to "
-              f"{len(kept)} (PULSE_CAP — device RAM; preview matches)")
+        print(
+            f"note: scene {scene['id']}: {len(pulses)} pulse hits thinned to "
+            f"{len(kept)} (PULSE_CAP — device RAM; preview matches)"
+        )
     all_cues = (scene.get("cues") or []) + kept
     for cue in sorted(all_cues, key=lambda c: c["t"]):
         dt = cue["t"] - prev
@@ -213,9 +217,11 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
                 stmt += f" id(zone_level)[{i}] = {float(cue['level']):.2f}f;"
             a(f"      - lambda: '{stmt}'{note}")
         elif cue["op"] == "strike":
-            targets = (cue.get("targets")
-                       or ([cue["zone"]] if cue.get("zone") else None)
-                       or zone_ids)
+            targets = (
+                cue.get("targets")
+                or ([cue["zone"]] if cue.get("zone") else None)
+                or zone_ids
+            )
             # `ms` documents the intended visual length; the actual fall is
             # the per-zone decay factor, applied every frame in the render
             # loop. Colour is per strike: lightning white, heartbeat red.
@@ -232,7 +238,8 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
                     # loop climbs by _rise per 16 ms frame, then decays.
                     parts.append(f"id(zone_flash_target)[{i}] = {amt:.3f}f;")
                     parts.append(
-                        f"id(zone_flash_rise)[{i}] = {amt * 16.0 / attack:.4f}f;")
+                        f"id(zone_flash_rise)[{i}] = {amt * 16.0 / attack:.4f}f;"
+                    )
                 else:
                     parts.append(f"id(zone_flash)[{i}] = {amt:.3f}f;")
                     parts.append(f"id(zone_flash_target)[{i}] = 0.0f;")
@@ -240,9 +247,13 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
                 # Mask + epoch: WHERE on the jewel this strike lands, and a
                 # fresh scatter subset each time (mirrors fireCues in show.ts).
                 parts.append(f"id(zone_flash_mode)[{i}] = {mode};")
-                parts.append(f"id(zone_flash_epoch)[{i}] = (id(zone_flash_epoch)[{i}] + 1) % 1000;")
-                parts += [f"id(zone_flash_col)[{i * 4 + k}] = {float(col[k]):.2f}f;"
-                          for k in range(4)]
+                parts.append(
+                    f"id(zone_flash_epoch)[{i}] = (id(zone_flash_epoch)[{i}] + 1) % 1000;"
+                )
+                parts += [
+                    f"id(zone_flash_col)[{i * 4 + k}] = {float(col[k]):.2f}f;"
+                    for k in range(4)
+                ]
             a(f"      - lambda: '{' '.join(parts)}'{note}")
         else:
             raise SystemExit(f"scene {sid}: unknown cue op {cue['op']!r}")
@@ -252,7 +263,6 @@ def emit_scene(scene: dict, zones: list[dict], idx: int, markers: dict) -> list[
         a(f"      - delay: {tail}ms")
     lines.extend(chunked(sid, items, bool(scene.get("loop"))))
     return lines
-
 
 
 def main() -> int:
@@ -268,8 +278,7 @@ def main() -> int:
     out = [HEADER, ""]
     out.append(f"# {len(zones)} zones, {total} pixels — one strip each")
     for zid, (lo, hi) in zone_pixels(layouts, zones).items():
-        out.append(f"#   {zid:<8} {layouts[zid].n:>2} px "
-                   f"(chain equivalent {lo}-{hi})")
+        out.append(f"#   {zid:<8} {layouts[zid].n:>2} px (chain equivalent {lo}-{hi})")
     out.append("")
     out.append("script:")
 
@@ -290,10 +299,12 @@ def main() -> int:
     cap = float(doc["hardware"].get("audio", {}).get("max_volume", 1.0))
     for scene in doc["scenes"]:
         scene["volume"] = min(float(scene.get("volume", 0.8)), cap)
-    script_ids: list[str] = []          # every scene script, continuations too
+    script_ids: list[str] = []  # every scene script, continuations too
     for i, scene in enumerate(doc["scenes"], start=1):
         lines = emit_scene(scene, zones, i, markers)
-        script_ids += [ln[len("  - id: "):] for ln in lines if ln.startswith("  - id: ")]
+        script_ids += [
+            ln[len("  - id: ") :] for ln in lines if ln.startswith("  - id: ")
+        ]
         out.extend(lines)
 
     # A single stop script, so "blackout" is one call from anywhere.
@@ -312,7 +323,8 @@ def main() -> int:
     stop = " ".join(
         f"id(zone_effect)[{i}] = 0; id(zone_center)[{i}] = -1;"
         f" id(zone_overlay)[{i}] = 0; id(zone_flash)[{i}] = 0.0f;"
-        f" id(zone_flash_target)[{i}] = 0.0f;" for i in range(len(zones))
+        f" id(zone_flash_target)[{i}] = 0.0f;"
+        for i in range(len(zones))
     )
     out.append(f"      - lambda: '{stop}'")
     # And it stops the scene SCRIPTS, not only their output. Until v5.35 it
@@ -345,20 +357,26 @@ def main() -> int:
     out.append("          // scene's pending delay re-fires AFTER the new scene starts")
     out.append("          // and takes the stage back — two loops fighting forever.")
     out.append("          // Continuations too (cont_*): a scene is several short")
-    out.append("          // scripts, see CHUNK — the one mid-delay may be any of them.")
+    out.append(
+        "          // scripts, see CHUNK — the one mid-delay may be any of them."
+    )
     out.extend(f"          id({sid})->stop();" for sid in script_ids)
     for j, scene in enumerate(doc["scenes"]):
         kw = "if" if j == 0 else "else if"
-        out.append(f"          {kw} (scene == \"{scene['id']}\") "
-                   f"id(scene_{scene['id']})->execute();")
-    out.append("          else if (scene == \"stop\") id(scene_stop)->execute();")
+        out.append(
+            f'          {kw} (scene == "{scene["id"]}") '
+            f"id(scene_{scene['id']})->execute();"
+        )
+    out.append('          else if (scene == "stop") id(scene_stop)->execute();')
     # "halt": the stops above and nothing else — lights keep their texture,
     # audio is untouched. /api/play runs it first so a looping scene's 30 s
     # re-fire cannot take the speakers back from the file the operator chose
     # (a song, the panel's speaker test). A branch here rather than its own
     # script: a script is a static object, and the S2's dram0 is on a diet.
-    out.append("          else if (scene == \"halt\") {}")
-    out.append("          else ESP_LOGW(\"castle\", \"unknown scene '%s'\", scene.c_str());")
+    out.append('          else if (scene == "halt") {}')
+    out.append(
+        '          else ESP_LOGW("castle", "unknown scene \'%s\'", scene.c_str());'
+    )
     out.append("")
     out.extend(emit_show_playlist(doc))
 
@@ -423,8 +441,9 @@ def main() -> int:
     RIG_OUT.write_text(emit_rig_header(layouts, zones, round(cap * 100)))
     LIGHTS_OUT.write_text(emit_lights(layouts, zones, per))
 
-    print(f"wrote {bp.rel(OUT)} + {MEDIA_OUT.name} "
-          f"+ {RIG_OUT.name} + {LIGHTS_OUT.name}")
+    print(
+        f"wrote {bp.rel(OUT)} + {MEDIA_OUT.name} + {RIG_OUT.name} + {LIGHTS_OUT.name}"
+    )
     print(f"  {len(doc['scenes'])} scenes, {n_cues} cues, {total} pixels")
     return 0
 

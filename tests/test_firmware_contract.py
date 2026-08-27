@@ -40,8 +40,14 @@ EMU_HTTP = (ROOT / "tools" / "castle_emu_http.py").read_text()
 
 #: reply_err strings the emulator has no way to produce: flash, heap and
 #: FAT failures of the real board. Everything else must be mirrored.
-HARDWARE_ONLY = {"no memory", "opendir failed", "no OTA slot",
-                 "ota begin failed", "ota end failed", "could not select slot"}
+HARDWARE_ONLY = {
+    "no memory",
+    "opendir failed",
+    "no OTA slot",
+    "ota begin failed",
+    "ota end failed",
+    "could not select slot",
+}
 
 
 def c_functions(*sources: str) -> dict[str, str]:
@@ -52,38 +58,47 @@ def c_functions(*sources: str) -> dict[str, str]:
         hits = list(pat.finditer(src))
         for i, m in enumerate(hits):
             end = hits[i + 1].start() if i + 1 < len(hits) else len(src)
-            out[m.group(1)] = src[m.start():end]
+            out[m.group(1)] = src[m.start() : end]
     return out
 
 
 def reply_errs(body: str) -> set[tuple[int, str]]:
-    return {(int(c), msg) for c, msg in
-            re.findall(r'reply_err\(req, "(\d{3}) [^"]*", "([^"]*)"\)', body)}
+    return {
+        (int(c), msg)
+        for c, msg in re.findall(r'reply_err\(req, "(\d{3}) [^"]*", "([^"]*)"\)', body)
+    }
 
 
 #: Module-level string constants in the emulator, so a message spelled once
 #: and reused (NO_SD) reads the same to this contract as a bare literal.
 EMU_CONSTS: dict[str, str] = dict(
-    re.findall(r'^([A-Z][A-Z0-9_]*) = "([^"]*)"', EMU_HTTP, re.MULTILINE))
+    re.findall(r'^([A-Z][A-Z0-9_]*) = "([^"]*)"', EMU_HTTP, re.MULTILINE)
+)
 
 
 def emu_errs(handler: str) -> set[tuple[int, str]]:
     """Every self._err(code, msg) inside one emulator handler method, with a
-       named constant resolved to the string it holds."""
+    named constant resolved to the string it holds."""
     m = re.search(rf"    def {handler}\(self.*?(?=\n    def |\Z)", EMU_HTTP, re.DOTALL)
     assert m, f"emulator has no {handler}"
     out: set[tuple[int, str]] = set()
-    for code, msg in re.findall(r'self\._err\((\d{3}), (?:"([^"]*)")\)', m.group(0)):
+    for code, msg in re.findall(
+        r'self\._err\(\s*(\d{3}),\s*(?:"([^"]*)")\s*\)', m.group(0)
+    ):
         out.add((int(code), msg))
-    for code, name in re.findall(r"self\._err\((\d{3}), ([A-Z][A-Z0-9_]*)\)", m.group(0)):
+    for code, name in re.findall(
+        r"self\._err\(\s*(\d{3}),\s*([A-Z][A-Z0-9_]*)\s*\)", m.group(0)
+    ):
         assert name in EMU_CONSTS, f"{handler}: unknown constant {name}"
         out.add((int(code), EMU_CONSTS[name]))
     return out
 
 
 def firmware_routes() -> list[tuple[str, str, str]]:
-    return [(p, m, h) for p, m, h in
-            re.findall(r'reg\("([^"]+)", HTTP_(\w+), (\w+)\);', SD_WEB)]
+    return [
+        (p, m, h)
+        for p, m, h in re.findall(r'reg\("([^"]+)", HTTP_(\w+), (\w+)\);', SD_WEB)
+    ]
 
 
 FUNCS = c_functions(SD_WEB, SD_OTA, SD_SITE, SD_REMOTE, SD_UTIL)
@@ -131,8 +146,12 @@ class TestErrorStrings(unittest.TestCase):
     def test_no_emulator_error_string_is_invented(self) -> None:
         all_fw = set().union(*(reply_errs(b) for b in FUNCS.values()))
         spelled = re.findall(r'self\._err\((\d{3}), "([^"]*)"\)', EMU_HTTP)
-        named = [(c, EMU_CONSTS[n]) for c, n in
-                 re.findall(r"self\._err\((\d{3}), ([A-Z][A-Z0-9_]*)\)", EMU_HTTP)]
+        named = [
+            (c, EMU_CONSTS[n])
+            for c, n in re.findall(
+                r"self\._err\((\d{3}), ([A-Z][A-Z0-9_]*)\)", EMU_HTTP
+            )
+        ]
         for c, msg in spelled + named:
             self.assertIn((int(c), msg), all_fw)
 
@@ -150,13 +169,20 @@ class TestNameRules(unittest.TestCase):
         below = int(grab(r"c < (0x[0-9a-fA-F]+)", body), 16)
         bad = set()
         for lit in re.findall(r"c == (0x[0-9a-fA-F]+|'[^']+')", body):
-            bad.add(int(lit, 16) if lit.startswith("0x")
-                    else ord(lit[1:-1].encode().decode("unicode_escape")))
+            bad.add(
+                int(lit, 16)
+                if lit.startswith("0x")
+                else ord(lit[1:-1].encode().decode("unicode_escape"))
+            )
         self.assertEqual(limit, wire.NAME_MAX)
         self.assertEqual(bad, {0x7F, ord('"'), ord("\\")})
-        return lambda n: (bool(n) and len(n) < limit and n[:1] != lead
-                          and all(f not in n for f in finds)
-                          and all(c >= below and c not in bad for c in n))
+        return lambda n: (
+            bool(n)
+            and len(n) < limit
+            and n[:1] != lead
+            and all(f not in n for f in finds)
+            and all(c >= below and c not in bad for c in n)
+        )
 
     def ref_safe_subpath(self):
         body = FUNCS["safe_subpath"]
@@ -164,18 +190,48 @@ class TestNameRules(unittest.TestCase):
         leads = [c.encode() for c in re.findall(r"p\[0\] == '(.)'", body)]
         finds = [f.encode() for f in re.findall(r"""p\.find\(["'](.+?)["']\)""", body)]
         self.assertEqual(limit, wire.SUBPATH_MAX)
-        return lambda p: (bool(p) and len(p) <= limit and p[:1] not in leads
-                          and all(f not in p for f in finds))
+        return lambda p: (
+            bool(p)
+            and len(p) <= limit
+            and p[:1] not in leads
+            and all(f not in p for f in finds)
+        )
 
     def corpus(self, seed: int = 7) -> list[bytes]:
         rng = random.Random(seed)
         alphabet = b"ab./\\?%+ \x00\xc3\xa9\"'\t\x1f\x7f"
-        out = [b"", b".", b"..", b"a", b"a/b", b"/a", b".a", b"a..b", b"a" * 99,
-               b"a" * 100, b"a" * 140, b"a" * 141, b"\xc3\xa9" * 50, b"\x00",
-               b"a\x00/..", b"..\\x", b"a?b", b'a"b.mp3', b"a\\b.mp3", b"a\tb",
-               b"a\x1fb", b"a\x7fb", b"a b", b"a'b", b"\xc3\xa9.mp3", b"a\x80b"]
-        out += [bytes(rng.choice(alphabet) for _ in range(rng.randint(0, 150)))
-                for _ in range(1500)]
+        out = [
+            b"",
+            b".",
+            b"..",
+            b"a",
+            b"a/b",
+            b"/a",
+            b".a",
+            b"a..b",
+            b"a" * 99,
+            b"a" * 100,
+            b"a" * 140,
+            b"a" * 141,
+            b"\xc3\xa9" * 50,
+            b"\x00",
+            b"a\x00/..",
+            b"..\\x",
+            b"a?b",
+            b'a"b.mp3',
+            b"a\\b.mp3",
+            b"a\tb",
+            b"a\x1fb",
+            b"a\x7fb",
+            b"a b",
+            b"a'b",
+            b"\xc3\xa9.mp3",
+            b"a\x80b",
+        ]
+        out += [
+            bytes(rng.choice(alphabet) for _ in range(rng.randint(0, 150)))
+            for _ in range(1500)
+        ]
         return out
 
     def test_safe_name_matches_the_c_rule_byte_for_byte(self) -> None:
@@ -198,18 +254,36 @@ class TestNameRules(unittest.TestCase):
         card through us: safe_name says no at the door (and since v5.25
         json_escape keeps the parse alive for names that got there another
         way). High bytes (UTF-8) and spaces stay welcome."""
-        for bad in (b'a"b.mp3', b"a\\b.mp3", b"a\tb", b"a\nb", b"a\rb", b"\x00",
-                    b"ab\x00cd.mp3", b"a\x1fb", b"a\x7fb", b'"', b"\\"):
+        for bad in (
+            b'a"b.mp3',
+            b"a\\b.mp3",
+            b"a\tb",
+            b"a\nb",
+            b"a\rb",
+            b"\x00",
+            b"ab\x00cd.mp3",
+            b"a\x1fb",
+            b"a\x7fb",
+            b'"',
+            b"\\",
+        ):
             self.assertFalse(wire.safe_name(bad), repr(bad))
-        for good in (b"a b.mp3", b"a'b.mp3", "é.mp3".encode(), b"a\x80b",
-                     b"x-y_z (1).mp3", b"a~b", b"a\xffb"):
+        for good in (
+            b"a b.mp3",
+            b"a'b.mp3",
+            "é.mp3".encode(),
+            b"a\x80b",
+            b"x-y_z (1).mp3",
+            b"a~b",
+            b"a\xffb",
+        ):
             self.assertTrue(wire.safe_name(good), repr(good))
 
     def test_query_param_buffers_are_the_firmwares(self) -> None:
         body = FUNCS["query_param"]
         self.assertEqual(int(grab(r"char q\[(\d+)\]", body)), wire.QUERY_BUF)
         self.assertEqual(int(grab(r"char val\[(\d+)\]", body)), wire.VALUE_BUF)
-        self.assertIn("url_decode(val)", body)   # values ARE decoded
+        self.assertIn("url_decode(val)", body)  # values ARE decoded
 
     def test_url_decode_plus_and_bad_hex(self) -> None:
         """'+' is a space and "%zz" is strtol's 0 — both read off the C."""
@@ -217,15 +291,17 @@ class TestNameRules(unittest.TestCase):
         self.assertIn("strtol", FUNCS["url_decode"])
         self.assertEqual(wire.url_decode(b"a+b%20c"), b"a b c")
         self.assertEqual(wire.url_decode(b"a%zzb"), b"a\x00b")
-        self.assertEqual(wire.url_decode(b"a%4"), b"a%4")   # needs two chars
+        self.assertEqual(wire.url_decode(b"a%4"), b"a%4")  # needs two chars
         self.assertEqual(wire.url_decode(b"%4g"), b"\x04")  # leading digit only
 
     def test_name_from_uri_cuts_at_the_decoded_question_mark(self) -> None:
         self.assertIn("n.find('?')", FUNCS["name_from_uri"])
-        self.assertEqual(wire.name_from_uri(b"/api/files/a%3Fb.mp3", b"/api/files/"),
-                         b"a")
-        self.assertEqual(wire.name_from_uri(b"/api/files/a.mp3?x=1", b"/api/files/"),
-                         b"a.mp3")
+        self.assertEqual(
+            wire.name_from_uri(b"/api/files/a%3Fb.mp3", b"/api/files/"), b"a"
+        )
+        self.assertEqual(
+            wire.name_from_uri(b"/api/files/a.mp3?x=1", b"/api/files/"), b"a.mp3"
+        )
 
     def test_query_param_semantics(self) -> None:
         """httpd_query_key_value: case-insensitive key, first '=' wins, a
@@ -238,8 +314,9 @@ class TestNameRules(unittest.TestCase):
         self.assertEqual(wire.query_param(b"/api/scene?s=", "s"), b"")
         self.assertEqual(wire.query_param(b"/api/scene?", "s"), b"")
         self.assertEqual(wire.query_param(b"/api/scene?s=" + b"v" * 120, "s"), b"")
-        self.assertEqual(wire.query_param(b"/api/scene?s=" + b"v" * 119, "s"),
-                         b"v" * 119)
+        self.assertEqual(
+            wire.query_param(b"/api/scene?s=" + b"v" * 119, "s"), b"v" * 119
+        )
         self.assertEqual(wire.query_param(b"/api/scene?s=v&" + b"x" * 197, "s"), b"")
 
 
@@ -252,18 +329,34 @@ class TestValidatorConstants(unittest.TestCase):
         self.assertIn("spec.size() == 6", SD_STATE)
         self.assertIn("zone.size() > 16", SD_STATE)
         self.assertIn("> 100) return false", SD_STATE)
-        for c, ok in ((b"ff0000", True), (b"show", True), (b"towerL:off", True),
-                      (b"door:00FF00", True), (b":ff0000", False), (b"tower-L:ff0000", False),
-                      (b"towerL:ff00", False), (b"x" * 17 + b":show", False), (b"", False),
-                      (b"white", True), (b"towerR:white@25", True), (b"ff0000@100", True),
-                      (b"ff0000@0", False), (b"ff0000@101", False), (b"ff0000@", False),
-                      (b"ff0000@5x", False), (b"show@50", True),
-                      (b"bars", True), (b"towerL:chase@75", True), (b"ends", True),
-                      (b"sparkle", False), (b"door:bars@0", False)):
+        for c, ok in (
+            (b"ff0000", True),
+            (b"show", True),
+            (b"towerL:off", True),
+            (b"door:00FF00", True),
+            (b":ff0000", False),
+            (b"tower-L:ff0000", False),
+            (b"towerL:ff00", False),
+            (b"x" * 17 + b":show", False),
+            (b"", False),
+            (b"white", True),
+            (b"towerR:white@25", True),
+            (b"ff0000@100", True),
+            (b"ff0000@0", False),
+            (b"ff0000@101", False),
+            (b"ff0000@", False),
+            (b"ff0000@5x", False),
+            (b"show@50", True),
+            (b"bars", True),
+            (b"towerL:chase@75", True),
+            (b"ends", True),
+            (b"sparkle", False),
+            (b"door:bars@0", False),
+        ):
             self.assertEqual(castle_emu_http.light_spec_ok(c), ok, c)
         pat = r"content_len < (\d+) \|\| req->content_len > ([\w>-]+)"
         self.assertEqual(int(grab(pat, FUNCS["h_ota"], 1)), castle_emu_http.OTA_MIN)
-        self.assertEqual(grab(pat, FUNCS["h_ota"], 2), "part->size")   # the slot
+        self.assertEqual(grab(pat, FUNCS["h_ota"], 2), "part->size")  # the slot
 
     def test_status_keys_are_the_firmwares(self) -> None:
         fmt = FUNCS["h_status"]
@@ -278,7 +371,7 @@ class TestValidatorConstants(unittest.TestCase):
     def test_pending_mailbox_is_one_slot(self) -> None:
         """sd_web_state.h: set_pending overwrites; take_pending empties."""
         self.assertIn("g_pending = {type, std::move(arg)};", SD_STATE)
-        self.assertIn("g_pending = {NONE, \"\"};", SD_STATE)
+        self.assertIn('g_pending = {NONE, ""};', SD_STATE)
 
 
 class TestWireBehaviour(unittest.TestCase):
@@ -326,8 +419,17 @@ class TestWireBehaviour(unittest.TestCase):
                 code, out = self.call(verb, self.concrete(path))
                 want = b"" if verb == "HEAD" else wire.IDF_ERRORS[405].encode()
                 self.assertEqual((code, out), (405, want), f"{verb} {path}")
-        for path in ("/api", "/api/", "/api/files2", "/apix/status", "/nope",
-                     "/api/status/", "/remote/x", "/sd", "/site"):
+        for path in (
+            "/api",
+            "/api/",
+            "/api/files2",
+            "/apix/status",
+            "/nope",
+            "/api/status/",
+            "/remote/x",
+            "/sd",
+            "/site",
+        ):
             code, out = self.call("GET", path)
             self.assertEqual((code, out), (404, wire.IDF_ERRORS[404].encode()), path)
 
@@ -340,8 +442,10 @@ class TestWireBehaviour(unittest.TestCase):
         self.call("POST", "/api/volume?v=22")
         self.call("POST", "/api/volume?v=33")
         deadline = time.monotonic() + 2
-        while time.monotonic() < deadline and json.loads(
-                self.call("GET", "/api/status")[1])["volume"] != 33:
+        while (
+            time.monotonic() < deadline
+            and json.loads(self.call("GET", "/api/status")[1])["volume"] != 33
+        ):
             time.sleep(0.05)
         self.assertEqual(json.loads(self.call("GET", "/api/status")[1])["volume"], 33)
         self.assertNotIn(("VOLUME", "11"), self.emu.applied[-3:])
@@ -365,6 +469,7 @@ class TestWireBehaviour(unittest.TestCase):
         code, out = self.call("GET", "/api/status")
         self.assertEqual(code, 200)
         json.loads(out)
+
 
 if __name__ == "__main__":
     unittest.main()

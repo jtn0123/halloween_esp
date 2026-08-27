@@ -46,10 +46,9 @@ MARKER_SYNTHS = ("heartbeat", "whispers", "toll", "organ", "waltz")
 TONAL_SYNTHS = ("drone", "toll", "organ", "descent", "waltz", "musicbox", "heartbeat")
 
 
-
-
-def make_click_track(path: Path, *, seconds: float = 6.0, bpm: float = 120.0,
-                     hats: bool = True) -> list[float]:
+def make_click_track(
+    path: Path, *, seconds: float = 6.0, bpm: float = 120.0, hats: bool = True
+) -> list[float]:
     """A file with beats at known times, so onset detection has a right answer."""
     sr = ana.SR
     x = np.zeros(int(seconds * sr))
@@ -60,14 +59,14 @@ def make_click_track(path: Path, *, seconds: float = 6.0, bpm: float = 120.0,
         i = int(at * sr)
         k = min(len(sig), len(x) - i)
         if k > 0:
-            x[i:i + k] += sig[:k]
+            x[i : i + k] += sig[:k]
 
     t = 0.0
     rng = np.random.default_rng(7)
     while t < seconds - 0.3:
         n = int(0.18 * sr)
         tt = np.arange(n) / sr
-        place(np.sin(2 * np.pi * 55 * tt) * np.exp(-tt * 22) * 0.9, t)   # kick
+        place(np.sin(2 * np.pi * 55 * tt) * np.exp(-tt * 22) * 0.9, t)  # kick
         beats.append(t)
         if hats:
             hn = int(0.05 * sr)
@@ -105,4 +104,6 @@ def rms(x: np.ndarray) -> float:
 def window_peaks(x: np.ndarray, ms: float = 20.0) -> np.ndarray:
     """Peak amplitude per short window — a cheap amplitude envelope."""
     w = max(1, int(ms * 1e-3 * synth.SR))
-    return np.array([np.max(np.abs(x[i * w:(i + 1) * w])) for i in range(len(x) // w)])
+    return np.array(
+        [np.max(np.abs(x[i * w : (i + 1) * w])) for i in range(len(x) // w)]
+    )

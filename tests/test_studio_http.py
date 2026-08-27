@@ -103,8 +103,7 @@ class TestPageDelivery(unittest.TestCase):
     def test_the_gzip_cache_is_bounded(self) -> None:
         with mock.patch.object(sh, "KEEP_GZ", 2):
             for i in range(5):
-                Fake({"Accept-Encoding": "gzip"}).send_bytes(
-                    PAGE + bytes([i]), HTML)
+                Fake({"Accept-Encoding": "gzip"}).send_bytes(PAGE + bytes([i]), HTML)
         self.assertEqual(len(sh._GZ), 2)
 
     def test_matching_if_none_match_is_a_304_with_no_body(self) -> None:
@@ -172,6 +171,7 @@ class TestSendFile(unittest.TestCase):
 
     def tearDown(self) -> None:
         import shutil
+
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_etag_is_mtime_and_size(self) -> None:
@@ -186,8 +186,9 @@ class TestSendFile(unittest.TestCase):
     def test_304_does_not_read_the_file(self) -> None:
         st = self.page.stat()
         h = Fake({"If-None-Match": f'"{st.st_mtime_ns}-{st.st_size}"'})
-        with mock.patch.object(Path, "read_bytes",
-                               side_effect=AssertionError("read")) as m:
+        with mock.patch.object(
+            Path, "read_bytes", side_effect=AssertionError("read")
+        ) as m:
             h.send_file(self.page, HTML)
             self.assertEqual(m.call_count, 0)
         code, _, body = h.response()
@@ -211,8 +212,10 @@ class TestMultipartNames(unittest.TestCase):
 
     @staticmethod
     def body(filename: str) -> bytes:
-        return (b"--B\r\nContent-Disposition: form-data; name=\"file\"; "
-                b'filename="' + filename.encode() + b'"\r\n\r\nx\r\n--B--\r\n')
+        return (
+            b'--B\r\nContent-Disposition: form-data; name="file"; '
+            b'filename="' + filename.encode() + b'"\r\n\r\nx\r\n--B--\r\n'
+        )
 
     def test_dot_dot_empty_and_dot_are_400_not_500(self) -> None:
         for name in ("..", ".", "", "a/.."):
@@ -220,9 +223,12 @@ class TestMultipartNames(unittest.TestCase):
                 sh.parse_multipart(self.body(name), "multipart/form-data; boundary=B")
 
     def test_a_real_name_still_parses(self) -> None:
-        self.assertEqual(sh.parse_multipart(self.body("../x.wav"),
-                                            "multipart/form-data; boundary=B"),
-                         ("x.wav", b"x"))
+        self.assertEqual(
+            sh.parse_multipart(
+                self.body("../x.wav"), "multipart/form-data; boundary=B"
+            ),
+            ("x.wav", b"x"),
+        )
 
 
 if __name__ == "__main__":

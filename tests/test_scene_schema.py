@@ -23,9 +23,13 @@ ZONES = ["towerL", "towerR", "door"]
 
 
 def scene(**over: object) -> dict:
-    s: dict = {"id": "probe", "name": "Probe", "kind": "triggered",
-               "duration_ms": 5000,
-               "base": {"towerL": "candle", "towerR": "candle", "door": "ember"}}
+    s: dict = {
+        "id": "probe",
+        "name": "Probe",
+        "kind": "triggered",
+        "duration_ms": 5000,
+        "base": {"towerL": "candle", "towerR": "candle", "door": "ember"},
+    }
     s.update(over)
     return s
 
@@ -53,8 +57,9 @@ class TestShape(unittest.TestCase):
 
     def test_id_is_filesystem_and_esphome_safe(self) -> None:
         for bad in ("a-b", "a b", "../x", "", 7):
-            self.assertTrue(any(e.startswith("id:") for e in
-                                ss.validate(scene(id=bad))), bad)
+            self.assertTrue(
+                any(e.startswith("id:") for e in ss.validate(scene(id=bad))), bad
+            )
         self.assertEqual(ss.validate(scene(id="the_citizens_01")), [])
 
     def test_duration_is_a_positive_whole_number_of_ms(self) -> None:
@@ -68,13 +73,19 @@ class TestShape(unittest.TestCase):
         self.assertTrue(ss.validate(scene(volume=1.5)))
         self.assertTrue(ss.validate(scene(loop="yes")))
         self.assertTrue(ss.validate(scene(levels={"door": 2})))
-        self.assertEqual(ss.validate(scene(volume=0, loop=False,
-                                           levels={"door": 0.5})), [])
+        self.assertEqual(
+            ss.validate(scene(volume=0, loop=False, levels={"door": 0.5})), []
+        )
 
     def test_audio_file_is_a_relative_path(self) -> None:
         for bad in ("/etc/passwd", "tracks/../secret.mp3", "", 3):
-            self.assertTrue(any(e.startswith("audio_file") for e in
-                                ss.validate(scene(audio_file=bad))), bad)
+            self.assertTrue(
+                any(
+                    e.startswith("audio_file")
+                    for e in ss.validate(scene(audio_file=bad))
+                ),
+                bad,
+            )
         self.assertEqual(ss.validate(scene(audio_file="tracks/x.mp3")), [])
 
 
@@ -83,8 +94,9 @@ class TestVocabulary(unittest.TestCase):
     one list, the one the firmware is built from."""
 
     def test_unknown_effect_in_base_and_centre(self) -> None:
-        errs = ss.validate(scene(base={"door": "glow"},
-                                 zones={"towerL": {"center": "nope"}}))
+        errs = ss.validate(
+            scene(base={"door": "glow"}, zones={"towerL": {"center": "nope"}})
+        )
         self.assertEqual(len(errs), 2, errs)
         self.assertIn("base.door: unknown effect 'glow'", errs[0])
         self.assertIn("zones.towerL.center", errs[1])
@@ -96,11 +108,20 @@ class TestVocabulary(unittest.TestCase):
     def test_overlay_palette_and_pixels(self) -> None:
         self.assertTrue(ss.validate(scene(zones={"door": {"overlay": "glitter"}})))
         self.assertTrue(ss.validate(scene(zones={"door": {"palette": "neon"}})))
-        self.assertTrue(ss.validate(scene(
-            cues=[{"t": 0, "op": "strike", "pixels": "random"}])))
-        self.assertEqual(ss.validate(scene(
-            zones={"door": {"overlay": "chase", "palette": "toxic", "phase": 1}},
-            cues=[{"t": 0, "op": "strike", "pixels": "scatter"}])), [])
+        self.assertTrue(
+            ss.validate(scene(cues=[{"t": 0, "op": "strike", "pixels": "random"}]))
+        )
+        self.assertEqual(
+            ss.validate(
+                scene(
+                    zones={
+                        "door": {"overlay": "chase", "palette": "toxic", "phase": 1}
+                    },
+                    cues=[{"t": 0, "op": "strike", "pixels": "scatter"}],
+                )
+            ),
+            [],
+        )
 
     def test_zone_names_are_checked_only_when_the_show_is_known(self) -> None:
         s = scene(base={"attic": "candle"})
@@ -112,9 +133,14 @@ class TestVocabulary(unittest.TestCase):
 
 class TestCuesAndPulse(unittest.TestCase):
     def test_cue_past_the_end_is_named_with_its_index(self) -> None:
-        errs = ss.validate(scene(cues=[
-            {"t": 100, "op": "strike"},
-            {"t": 9000, "op": "set", "zone": "door", "effect": "ember"}]))
+        errs = ss.validate(
+            scene(
+                cues=[
+                    {"t": 100, "op": "strike"},
+                    {"t": 9000, "op": "set", "zone": "door", "effect": "ember"},
+                ]
+            )
+        )
         self.assertEqual(len(errs), 1)
         self.assertTrue(errs[0].startswith("cues[1]"), errs)
         self.assertIn("duration_ms=5000", errs[0])
@@ -125,8 +151,13 @@ class TestCuesAndPulse(unittest.TestCase):
     def test_set_needs_zone_and_a_known_effect(self) -> None:
         errs = ss.validate(scene(cues=[{"t": 0, "op": "set"}]))
         self.assertEqual(len(errs), 2, errs)
-        errs = ss.validate(scene(cues=[{"t": 0, "op": "set", "zone": "door",
-                                        "effect": "glow", "level": 3}]))
+        errs = ss.validate(
+            scene(
+                cues=[
+                    {"t": 0, "op": "set", "zone": "door", "effect": "glow", "level": 3}
+                ]
+            )
+        )
         self.assertEqual(len(errs), 2, errs)
 
     def test_unknown_op_and_bad_time(self) -> None:
@@ -137,23 +168,49 @@ class TestCuesAndPulse(unittest.TestCase):
         self.assertTrue(ss.validate(scene(cues={"t": 0})))
 
     def test_strike_ranges(self) -> None:
-        good = {"t": 0, "op": "strike", "zone": "door", "targets": ["towerL"],
-                "intensity": 1.2, "decay": 0.9, "ms": 80, "attack": 40,
-                "color": [1, 0.2, 0, 0]}
+        good = {
+            "t": 0,
+            "op": "strike",
+            "zone": "door",
+            "targets": ["towerL"],
+            "intensity": 1.2,
+            "decay": 0.9,
+            "ms": 80,
+            "attack": 40,
+            "color": [1, 0.2, 0, 0],
+        }
         self.assertEqual(ss.validate(scene(cues=[good]), ZONES), [])
-        for k, v in (("decay", 1.5), ("ms", -1), ("color", [2, 0, 0]),
-                     ("targets", "door"), ("intensity", "loud")):
+        for k, v in (
+            ("decay", 1.5),
+            ("ms", -1),
+            ("color", [2, 0, 0]),
+            ("targets", "door"),
+            ("intensity", "loud"),
+        ):
             self.assertTrue(ss.validate(scene(cues=[{**good, k: v}])), k)
 
     def test_pulse_needs_a_synth_and_sane_numbers(self) -> None:
         self.assertTrue(ss.validate(scene(pulse=[{"zones": ["door"]}])))
-        good = {"synth": "onset_low", "zones": ["door"], "intensity": 0.8,
-                "decay": 0.9, "ms": 140, "attack_ms": 20,
-                "colors": [[1, 0, 0, 0], [0, 1, 0]], "color_hot": [1, 1, 1, 1],
-                "boost_targets": ["towerL"], "pixels": "scatter"}
+        good = {
+            "synth": "onset_low",
+            "zones": ["door"],
+            "intensity": 0.8,
+            "decay": 0.9,
+            "ms": 140,
+            "attack_ms": 20,
+            "colors": [[1, 0, 0, 0], [0, 1, 0]],
+            "color_hot": [1, 1, 1, 1],
+            "boost_targets": ["towerL"],
+            "pixels": "scatter",
+        }
         self.assertEqual(ss.validate(scene(pulse=[good]), ZONES), [])
-        for k, v in (("decay", 2), ("colors", []), ("colors", [[1, 2, 3]]),
-                     ("boost_targets", ["attic"]), ("pixels", "all over")):
+        for k, v in (
+            ("decay", 2),
+            ("colors", []),
+            ("colors", [[1, 2, 3]]),
+            ("boost_targets", ["attic"]),
+            ("pixels", "all over"),
+        ):
             self.assertTrue(ss.validate(scene(pulse=[{**good, k: v}]), ZONES), k)
 
 

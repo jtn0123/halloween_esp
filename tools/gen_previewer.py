@@ -82,7 +82,9 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         {
             "t": int(ev["t"] * 1000),
             "bus": "AUD",
-            "op": "play_loop" if scene.get("loop") and ev["synth"] == "wind" else "play",
+            "op": "play_loop"
+            if scene.get("loop") and ev["synth"] == "wind"
+            else "play",
             "snd": ev["synth"],
         }
         for ev in scene.get("score") or []
@@ -91,15 +93,25 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         if cue["op"] == "set":
             if cue["effect"] not in KNOWN_EFFECTS:
                 sys.exit(f"scene {sid}: unknown effect {cue['effect']!r}")
-            c = {"t": cue["t"], "bus": "LED", "op": "set",
-                 "zone": cue["zone"], "eff": cue["effect"],
-                 "detail": cue.get("note", "")}
+            c = {
+                "t": cue["t"],
+                "bus": "LED",
+                "op": "set",
+                "zone": cue["zone"],
+                "eff": cue["effect"],
+                "detail": cue.get("note", ""),
+            }
             if "level" in cue:
                 c["level"] = float(cue["level"])
             cues.append(c)
         elif cue["op"] == "strike":
-            c = {"t": cue["t"], "bus": "LED", "op": "strike",
-                 "ms": cue.get("ms", 80), "detail": cue.get("note", "")}
+            c = {
+                "t": cue["t"],
+                "bus": "LED",
+                "op": "strike",
+                "ms": cue.get("ms", 80),
+                "detail": cue.get("note", ""),
+            }
             # Carry every field gen_esphome.py honours on a hand-written
             # strike. It has always read targets/intensity/color/decay; this
             # side used to copy only zone, so a cue aimed at one zone flashed
@@ -130,7 +142,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
     # ms) and web/src/track_lights.ts — keep all three in lockstep.
     scene_marks = markers.get(sid, {})
     gates = pd.section_gates(scene)
-    pulses: list[dict] = []           # capped with pd.thin_pulses below
+    pulses: list[dict] = []  # capped with pd.thin_pulses below
     for pcfg in scene.get("pulse") or []:
         beats = scene_marks.get(pcfg["synth"], [])
         zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
@@ -143,7 +155,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
             pan = beat[2] if len(beat) > 2 else None
             mul = pd.gate_mul(pcfg["synth"], gates, t)
             if mul is None:
-                continue                       # gated out by its section (#9)
+                continue  # gated out by its section (#9)
             cyc = pcfg.get("colors")
             hot = pcfg.get("color_hot")
             if pcfg.get("takeover") and pd.gate_note(gates, t) == "chorus":
@@ -153,32 +165,44 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
                 base = pd.drift_base(cyc, i, t)
             else:
                 base = cyc[i % len(cyc)] if cyc else pcfg.get("color", [1, 1, 1, 1])
-            c = {"t": t, "bus": "LED", "op": "strike",
-                 "ms": ms,
-                 "intensity": pd.round3(pcfg.get("intensity", 0.3) * vel * mul),
-                 "color": _blend_color(base, hot, vel),
-                 "decay": decay,
-                 "detail": pcfg["synth"]}
+            c = {
+                "t": t,
+                "bus": "LED",
+                "op": "strike",
+                "ms": ms,
+                "intensity": pd.round3(pcfg.get("intensity", 0.3) * vel * mul),
+                "color": _blend_color(base, hot, vel),
+                "decay": decay,
+                "detail": pcfg["synth"],
+            }
             if pcfg.get("attack_ms"):
                 c["attack"] = int(pcfg["attack_ms"])
             if pcfg.get("pixels_by_vel"):
-                c["pixels"] = ("center" if vel < 0.40
-                               else "scatter" if vel < 0.72 else "all")
+                c["pixels"] = (
+                    "center" if vel < 0.40 else "scatter" if vel < 0.72 else "all"
+                )
             elif pcfg.get("pixels"):
                 c["pixels"] = pcfg["pixels"]
             if zones and pcfg.get("alternate"):
-                if (pan is not None and abs(pan) >= pd.PAN_DECISIVE
-                        and "towerL" in zones and "towerR" in zones):
+                if (
+                    pan is not None
+                    and abs(pan) >= pd.PAN_DECISIVE
+                    and "towerL" in zones
+                    and "towerR" in zones
+                ):
                     c["targets"] = ["towerL" if pan < 0 else "towerR"]
                 else:
                     c["targets"] = [zones[i % len(zones)]]
             elif zones:
                 c["targets"] = list(zones)
-            if (c.get("targets") and pcfg.get("boost_targets")
-                    and (vel >= pcfg.get("boost_at", 2)
-                         or pd.is_accent(vels, i))):
-                c["targets"] = c["targets"] + [z for z in pcfg["boost_targets"]
-                                               if z not in c["targets"]]
+            if (
+                c.get("targets")
+                and pcfg.get("boost_targets")
+                and (vel >= pcfg.get("boost_at", 2) or pd.is_accent(vels, i))
+            ):
+                c["targets"] = c["targets"] + [
+                    z for z in pcfg["boost_targets"] if z not in c["targets"]
+                ]
             pulses.append(c)
     # Same cap as gen_esphome (PULSE_CAP): the desk must show the hits the
     # device will actually play, not the 1,200 its RAM cannot hold.
@@ -206,7 +230,8 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
         # constraint on the show — ~2.9 MB for everything — so the number
         # belongs next to the scene, not only in the render log.
         "bytes": (AUDIO / f"{idx:02d}_{sid}.mp3").stat().st_size
-                 if (AUDIO / f"{idx:02d}_{sid}.mp3").exists() else 0,
+        if (AUDIO / f"{idx:02d}_{sid}.mp3").exists()
+        else 0,
         "yaml": scene_yaml_slice(raw, sid),
     }
 
@@ -270,9 +295,20 @@ def inject_bundle(html: str) -> str:
         # --minify: the page is re-sent on every studio restart and every
         # phone load, and the unminified bundle was a quarter of it. Debug
         # against `npm run watch`'s dist/bundle.js, not the spliced page.
-        ["npx", "esbuild", "src/main.ts", "--bundle", "--minify",
-         "--format=iife", "--target=es2020", "--outfile=dist/bundle.js"],
-        cwd=WEB, capture_output=True, text=True, check=False,  # handled below
+        [
+            "npx",
+            "esbuild",
+            "src/main.ts",
+            "--bundle",
+            "--minify",
+            "--format=iife",
+            "--target=es2020",
+            "--outfile=dist/bundle.js",
+        ],
+        cwd=WEB,
+        capture_output=True,
+        text=True,
+        check=False,  # handled below
     )
     if r.returncode != 0:
         sys.exit(f"esbuild failed:\n{r.stdout}\n{r.stderr}")
@@ -300,8 +336,13 @@ def inject_styles(html: str) -> str:
     if i < 0:
         sys.exit(f"{STYLE_MARK} marker not found in {TEMPLATE}")
     j = html.index("*/", i) + 2
-    css = (STYLES.read_text().rstrip() + "\n\n" + PANELS.read_text().rstrip()
-           + "\n\n" + MOBILE.read_text().rstrip())
+    css = (
+        STYLES.read_text().rstrip()
+        + "\n\n"
+        + PANELS.read_text().rstrip()
+        + "\n\n"
+        + MOBILE.read_text().rstrip()
+    )
     return html[:i] + css + html[j:]
 
 
@@ -315,8 +356,9 @@ def main() -> int:
     raw = SRC.read_text()
     doc = yaml.safe_load(raw)
     markers = json.loads(MARKERS_FILE.read_text()) if MARKERS_FILE.exists() else {}
-    scenes = [to_previewer(s, i, raw, markers)
-              for i, s in enumerate(doc["scenes"], start=1)]
+    scenes = [
+        to_previewer(s, i, raw, markers) for i, s in enumerate(doc["scenes"], start=1)
+    ]
 
     audio: dict[str, str] = {}
     missing = []
@@ -328,8 +370,10 @@ def main() -> int:
         else:
             missing.append(sc["file"])
     if missing:
-        print(f"note: no rendered audio for {missing} — run `make audio` first;"
-              " previewer will fall back to live synth for those scenes")
+        print(
+            f"note: no rendered audio for {missing} — run `make audio` first;"
+            " previewer will fall back to live synth for those scenes"
+        )
 
     block = (
         f"{START} (written by tools/gen_previewer.py — do not edit, do not format)\n"
@@ -352,16 +396,20 @@ def main() -> int:
 
     kb = sum(len(v) for v in audio.values()) // 1024
     total_kb = len(html.encode()) // 1024
-    print(f"wrote {len(scenes)} scenes + {len(audio)} audio files (~{kb} KB base64) "
-          f"into {bp.rel(HTML)} ({total_kb / 1024:.1f} MB)")
+    print(
+        f"wrote {len(scenes)} scenes + {len(audio)} audio files (~{kb} KB base64) "
+        f"into {bp.rel(HTML)} ({total_kb / 1024:.1f} MB)"
+    )
     # The inlined page scales with scenes x audio length and nothing else
     # bounds it — it doubled (1.1 -> 2.2 MB) in the eight days before this
     # budget existed. Warn, not fail: a heavy page is a nuisance, not a
     # broken show. (grade report G2)
     if total_kb > PAGE_BUDGET_KB:
-        print(f"WARNING: page exceeds its {PAGE_BUDGET_KB // 1024} MB budget "
-              f"— trim scenes or shorten audio, or raise PAGE_BUDGET_KB "
-              f"here if the budget itself is stale")
+        print(
+            f"WARNING: page exceeds its {PAGE_BUDGET_KB // 1024} MB budget "
+            f"— trim scenes or shorten audio, or raise PAGE_BUDGET_KB "
+            f"here if the budget itself is stale"
+        )
     return 0
 
 

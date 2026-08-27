@@ -26,9 +26,17 @@ import analyze as ana
 import codec_compare as cc
 from helpers import make_click_track
 
-OPTS = {"start": 0, "take": 3.0, "fade_in": None, "fade_out": None,
-        "normalize": False, "gain_db": None, "bitrate": 96,
-        "channels": 1, "sample_rate": 44100}
+OPTS = {
+    "start": 0,
+    "take": 3.0,
+    "fade_in": None,
+    "fade_out": None,
+    "normalize": False,
+    "gain_db": None,
+    "bitrate": 96,
+    "channels": 1,
+    "sample_rate": 44100,
+}
 
 
 class TestSpectralDistance(unittest.TestCase):
@@ -45,15 +53,17 @@ class TestSpectralDistance(unittest.TestCase):
         rng = np.random.default_rng(99)
         nudged = self.x + rng.standard_normal(len(self.x)).astype(np.float32) * 0.001
         wrecked = rng.standard_normal(len(self.x)).astype(np.float32) * 0.2
-        self.assertLess(cc.spectral_db(self.x, nudged),
-                        cc.spectral_db(self.x, wrecked))
+        self.assertLess(cc.spectral_db(self.x, nudged), cc.spectral_db(self.x, wrecked))
 
     def test_it_is_symmetric(self) -> None:
         y = self.x * 0.5
-        self.assertAlmostEqual(cc.spectral_db(self.x, y),
-                               cc.spectral_db(y, self.x), places=6)
+        self.assertAlmostEqual(
+            cc.spectral_db(self.x, y), cc.spectral_db(y, self.x), places=6
+        )
 
-    def test_a_buffer_too_short_to_analyse_scores_zero_rather_than_throwing(self) -> None:
+    def test_a_buffer_too_short_to_analyse_scores_zero_rather_than_throwing(
+        self,
+    ) -> None:
         tiny = np.zeros(16, dtype=np.float32)
         self.assertEqual(cc.spectral_db(tiny, tiny), 0.0)
 
@@ -118,8 +128,9 @@ class TestEncodeSet(unittest.TestCase):
     def test_a_lower_bitrate_scores_worse(self) -> None:
         """The question the panel exists to answer — 'is 96k enough here' —
         needs the number to move in the right direction when the bitrate does."""
-        low = cc.encode_set(self.src, self.tmp / "low",
-                            dict(OPTS, bitrate=32), codecs=("wav", "mp3"))
+        low = cc.encode_set(
+            self.src, self.tmp / "low", dict(OPTS, bitrate=32), codecs=("wav", "mp3")
+        )
         low_mp3 = next(r for r in low if r["codec"] == "mp3")
         self.assertGreater(low_mp3["db"], self.by["mp3"]["db"])
 

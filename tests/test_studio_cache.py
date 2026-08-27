@@ -51,9 +51,23 @@ class TestTrackInfoFromManifest(unittest.TestCase):
         second, n2 = self.decodes(lambda: stt.track_info(self.track))
         self.assertEqual(n2, 0)
         self.assertEqual(first, second)
-        self.assertEqual(set(first), {"id", "ext", "kb", "bytes", "source",
-                                      "source_missing", "title", "imported",
-                                      "opts", "notes", "dur", "onsets"})
+        self.assertEqual(
+            set(first),
+            {
+                "id",
+                "ext",
+                "kb",
+                "bytes",
+                "source",
+                "source_missing",
+                "title",
+                "imported",
+                "opts",
+                "notes",
+                "dur",
+                "onsets",
+            },
+        )
         self.assertAlmostEqual(first["dur"], 2.0, delta=0.3)
         self.assertIn("onset_low", first["onsets"])
         self.assertTrue(all(isinstance(v, int) for v in first["onsets"].values()))
@@ -63,7 +77,7 @@ class TestTrackInfoFromManifest(unittest.TestCase):
         b = self.tmp / "_t_cache_b.wav"
         make_click_track(b, seconds=2.0)
         stt.track_info(self.track)
-        stt.track_info(b)                     # both cached in the manifest now
+        stt.track_info(b)  # both cached in the manifest now
         with mock.patch.object(stt.mf, "load", wraps=stt.mf.load) as ld:
             rows, n = self.decodes(lambda: stt.track_infos([self.track, b]))
         self.assertEqual(ld.call_count, 1)
@@ -78,8 +92,13 @@ class TestTrackInfoFromManifest(unittest.TestCase):
         self.assertEqual(rows[0], stt.track_info(self.track))
 
     def test_write_back_does_not_clobber_provenance(self) -> None:
-        mf.record("_t_cache_a", source="file:/x.wav", title="X",
-                  opts={"take": 2}, notes="keep me")
+        mf.record(
+            "_t_cache_a",
+            source="file:/x.wav",
+            title="X",
+            opts={"take": 2},
+            notes="keep me",
+        )
         stt.track_info(self.track)
         entry = mf.get("_t_cache_a") or {}
         self.assertEqual(entry["source"], "file:/x.wav")
@@ -89,15 +108,18 @@ class TestTrackInfoFromManifest(unittest.TestCase):
 
     def test_a_replaced_file_is_decoded_afresh(self) -> None:
         stt.track_info(self.track)
-        make_click_track(self.track, seconds=4.0)        # same id, new bytes
+        make_click_track(self.track, seconds=4.0)  # same id, new bytes
         info, n = self.decodes(lambda: stt.track_info(self.track))
         self.assertEqual(n, 1)
         self.assertAlmostEqual(info["dur"], 4.0, delta=0.3)
 
     def test_import_level_entries_are_not_reported_as_onsets(self) -> None:
-        mf.record("_t_cache_a", source="file:/x.wav",
-                  audio={"duration": 2.0, "bytes": self.track.stat().st_size},
-                  onsets={"onset_low": 4, "level_high": 900})
+        mf.record(
+            "_t_cache_a",
+            source="file:/x.wav",
+            audio={"duration": 2.0, "bytes": self.track.stat().st_size},
+            onsets={"onset_low": 4, "level_high": 900},
+        )
         info, n = self.decodes(lambda: stt.track_info(self.track))
         self.assertEqual(n, 0)
         self.assertEqual(info["onsets"], {"onset_low": 4})
@@ -106,7 +128,7 @@ class TestTrackInfoFromManifest(unittest.TestCase):
 
 class TestTracksEndpointDecodesOnce(ServerCase):
     def test_second_api_tracks_call_does_no_audio_decode(self) -> None:
-        code, d = self.get_json("/api/tracks")          # warm
+        code, d = self.get_json("/api/tracks")  # warm
         self.assertEqual(code, 200)
         real = stt.ana.load_audio
         with mock.patch.object(stt.ana, "load_audio", side_effect=real) as m:
@@ -155,9 +177,12 @@ class TestWaveformCache(unittest.TestCase):
         sm.waveform(self.track, sensitivity=1.1)
         _, n = self.analyses(lambda: sm.waveform(self.track, sensitivity=0.6))
         self.assertEqual(n, 1)
-        _, n = self.analyses(lambda: sm.waveform(
-            self.track, sensitivity={"onset_low": 1.1, "onset_mid": 1.1,
-                                     "onset_high": 1.1}))
+        _, n = self.analyses(
+            lambda: sm.waveform(
+                self.track,
+                sensitivity={"onset_low": 1.1, "onset_mid": 1.1, "onset_high": 1.1},
+            )
+        )
         self.assertEqual(n, 1)
         _, n = self.analyses(lambda: sm.waveform(self.track, sensitivity=0.6))
         self.assertEqual(n, 0)

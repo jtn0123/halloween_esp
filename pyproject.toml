@@ -38,6 +38,21 @@ select = [
 # to follow the insert. Saying so once here beats 78 identical noqa comments.
 "tests/*" = ["E402"]
 
+[tool.ruff.format]
+# The 2026-08 format pass: formatting expanded these six past the 500-line
+# cap (they were already on check_loc's nearing-the-cap watchlist, so the
+# expansion just moved up a split that was coming anyway). Each one gets
+# split on a real seam, formatted in that same pass, and removed from this
+# list — the list only ever shrinks.
+exclude = [
+    "tools/castle_fuzz.py",
+    "tools/import_track.py",
+    "tools/gen_wiring_diagram.py",
+    "tests/test_gen_esphome.py",
+    "tests/test_generator_parity.py",
+    "tests/test_studio_api.py",
+]
+
 [tool.mypy]
 python_version = "3.13"
 files = ["tools", "tests"]

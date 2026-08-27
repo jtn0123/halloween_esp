@@ -46,7 +46,7 @@ def main() -> int:
         f"// Encodes: {url}\n"
         "#include <cstdint>\n\n"
         "namespace castle_qr {\n"
-        f"inline constexpr const char *URL = \"{url}\";\n"
+        f'inline constexpr const char *URL = "{url}";\n'
         f"inline constexpr int SIZE = {n};        // modules per side\n"
         f"inline constexpr int ROW_BYTES = {row_bytes};\n"
         "inline constexpr uint8_t BITS[] = {   // MSB-first per row\n"

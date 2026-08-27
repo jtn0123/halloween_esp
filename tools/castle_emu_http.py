@@ -50,9 +50,16 @@ JSON_MIME = "application/json"
 NO_SD = "no SD card"
 
 #: sd_web_site.h content_type(): suffix → MIME.
-_TYPES = {".html": "text/html; charset=utf-8", ".js": "application/javascript",
-          ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png",
-          ".json": JSON_MIME, ".mp3": "audio/mpeg", ".wav": "audio/wav"}
+_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript",
+    ".css": "text/css",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".json": JSON_MIME,
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+}
 
 #: firmware/sd_web_remote.h kRemotePage, byte for byte — the phone remote
 #: is embedded in flash, so the emulator lifts it out of the C raw string
@@ -61,8 +68,9 @@ _REMOTE_H = Path(__file__).resolve().parent.parent / "firmware" / "sd_web_remote
 
 
 def _remote_page() -> str:
-    m = re.search(r'kRemotePage\[\] = R"HTML\((.*?)\)HTML";',
-                  _REMOTE_H.read_text(), re.DOTALL)
+    m = re.search(
+        r'kRemotePage\[\] = R"HTML\((.*?)\)HTML";', _REMOTE_H.read_text(), re.DOTALL
+    )
     if not m:
         raise RuntimeError(f"no kRemotePage raw string in {_REMOTE_H}")
     return m.group(1)
@@ -70,11 +78,15 @@ def _remote_page() -> str:
 
 REMOTE_PAGE = _remote_page()
 #: sd_web_site.h set_csp(), byte for byte (E4) — sent on every served page.
-CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
-       "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-       "media-src 'self' data: blob:; connect-src 'self'")
-FALLBACK_PAGE = ("<!doctype html><meta charset=utf-8><title>Castle</title>"
-                 "<h1>Castle</h1><p>emulated fallback page</p>")
+CSP = (
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "media-src 'self' data: blob:; connect-src 'self'"
+)
+FALLBACK_PAGE = (
+    "<!doctype html><meta charset=utf-8><title>Castle</title>"
+    "<h1>Castle</h1><p>emulated fallback page</p>"
+)
 
 
 _ZONE_CHARS = set(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
@@ -113,8 +125,9 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, body: dict[str, object] | list[object]) -> None:
         self._raw(200, json.dumps(body).encode(), JSON_MIME)
 
-    def _raw(self, code: int, raw: bytes, ctype: str,
-             extra: dict[str, str] | None = None) -> None:
+    def _raw(
+        self, code: int, raw: bytes, ctype: str, extra: dict[str, str] | None = None
+    ) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(raw)))
@@ -185,12 +198,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def h_status(self, raw: bytes) -> None:
         # surrogateescape: a track named by raw bytes goes out as raw bytes
-        self._raw(200, self.server.status_text().encode("utf-8", "surrogateescape"),
-                  JSON_MIME)
+        self._raw(
+            200, self.server.status_text().encode("utf-8", "surrogateescape"), JSON_MIME
+        )
 
     def h_health(self, _raw: bytes) -> None:
-        self._json({"boots": 3, "crashes": 0,
-                    "last_reset": "power-on", "was_crash": False})
+        self._json(
+            {"boots": 3, "crashes": 0, "last_reset": "power-on", "was_crash": False}
+        )
 
     def h_list(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
@@ -210,35 +225,48 @@ class Handler(BaseHTTPRequestHandler):
             if p.name.startswith("."):
                 continue
             if not wire.safe_name(p.name.encode("utf-8", "surrogateescape")):
-                skipped += 1          # the Mac's doing, not the desk's: counted
+                skipped += 1  # the Mac's doing, not the desk's: counted
                 continue
-            try:                      # stat() failing is size -1 on the board
+            try:  # stat() failing is size -1 on the board
                 size = p.stat().st_size if p.is_file() else 0
             except OSError:
                 size = -1
             # The firmware's template: name through json_escape, the rest raw.
-            items.append('{"name":"%s","size":%d,"dir":%s}'
-                         % (wire.json_escape(p.name), size,
-                            "true" if p.is_dir() else "false"))
+            items.append(
+                '{"name":"%s","size":%d,"dir":%s}'
+                % (wire.json_escape(p.name), size, "true" if p.is_dir() else "false")
+            )
         if skipped:
             items.append('{"skipped":%d}' % skipped)
-        self._raw(200, ("[" + ",".join(items) + "]").encode("utf-8", "surrogateescape"),
-                  "application/json")
+        self._raw(
+            200,
+            ("[" + ",".join(items) + "]").encode("utf-8", "surrogateescape"),
+            "application/json",
+        )
 
     def h_bootlog(self, _raw: bytes) -> None:
         self._raw(200, b"boot log: 2 lines, 0 dropped\n[I][emu] up\n", "text/plain")
 
     def h_remote(self, _raw: bytes) -> None:
-        self._raw(200, REMOTE_PAGE.encode(), "text/html; charset=utf-8",
-                  {"Content-Security-Policy": CSP})
+        self._raw(
+            200,
+            REMOTE_PAGE.encode(),
+            "text/html; charset=utf-8",
+            {"Content-Security-Policy": CSP},
+        )
 
     def _subpath(self, raw: bytes, prefix: bytes) -> bytes:
-        rel = wire.url_decode(raw[len(prefix):])
+        rel = wire.url_decode(raw[len(prefix) :])
         q = rel.find(b"?")
         return rel[:q] if q >= 0 else rel
 
-    def _send_file(self, f: Path, encoding: str | None = None,
-                   ctype: str | None = None, csp: bool = False) -> bool:
+    def _send_file(
+        self,
+        f: Path,
+        encoding: str | None = None,
+        ctype: str | None = None,
+        csp: bool = False,
+    ) -> bool:
         if not f.is_file():
             return False
         extra: dict[str, str] = {}
@@ -246,9 +274,12 @@ class Handler(BaseHTTPRequestHandler):
             extra["Content-Encoding"] = encoding
         if csp:
             extra["Content-Security-Policy"] = CSP
-        self._raw(200, f.read_bytes(),
-                  ctype or _TYPES.get(f.suffix, "application/octet-stream"),
-                  extra or None)
+        self._raw(
+            200,
+            f.read_bytes(),
+            ctype or _TYPES.get(f.suffix, "application/octet-stream"),
+            extra or None,
+        )
         return True
 
     def h_sd_get(self, raw: bytes) -> None:
@@ -271,12 +302,16 @@ class Handler(BaseHTTPRequestHandler):
     def h_root(self, _raw: bytes) -> None:
         site = self.server.sd_dir / "site"
         if self.server.sd_mounted and (
-                self._send_file(site / "index.html.gz", "gzip", _TYPES[".html"],
-                                csp=True)
-                or self._send_file(site / "index.html", csp=True)):
+            self._send_file(site / "index.html.gz", "gzip", _TYPES[".html"], csp=True)
+            or self._send_file(site / "index.html", csp=True)
+        ):
             return
-        self._raw(200, FALLBACK_PAGE.encode(), "text/html; charset=utf-8",
-                  {"Content-Security-Policy": CSP})
+        self._raw(
+            200,
+            FALLBACK_PAGE.encode(),
+            "text/html; charset=utf-8",
+            {"Content-Security-Policy": CSP},
+        )
 
     # -- POST: show control, all queued ------------------------------------
 
@@ -325,7 +360,9 @@ class Handler(BaseHTTPRequestHandler):
     def h_light(self, raw: bytes) -> None:
         c = wire.query_param(raw, "c")
         if not light_spec_ok(c):
-            return self._err(400, "need ?c=[zone:]RRGGBB|white|bars|chase|ends|show|off[@pct]")
+            return self._err(
+                400, "need ?c=[zone:]RRGGBB|white|bars|chase|ends|show|off[@pct]"
+            )
         self.server.queue("LIGHT", c.decode())
         self._json({"queued": True})
 
@@ -381,11 +418,11 @@ class Handler(BaseHTTPRequestHandler):
                 for chunk in self._body_chunks(n):
                     f.write(chunk)
                     written += len(chunk)
-                    crc = zlib.crc32(chunk, crc)   # B5: sd_sync compares
-            except OSError:            # TimeoutError is one of these
+                    crc = zlib.crc32(chunk, crc)  # B5: sd_sync compares
+            except OSError:  # TimeoutError is one of these
                 pass
         if written != n:
-            part.unlink(missing_ok=True)     # the sidecar only
+            part.unlink(missing_ok=True)  # the sidecar only
             return self._err(500, "short write")
         try:
             target.unlink(missing_ok=True)
@@ -417,11 +454,11 @@ class Handler(BaseHTTPRequestHandler):
         got, first = 0, True
         try:
             for chunk in self._body_chunks(n):
-                if first and chunk[0] != 0xE9:      # app image magic
+                if first and chunk[0] != 0xE9:  # app image magic
                     return self._err(500, "ota write failed")
                 first = False
                 got += len(chunk)
-        except OSError:            # TimeoutError is one of these
+        except OSError:  # TimeoutError is one of these
             pass
         if got != n:
             return self._err(500, "ota write failed")

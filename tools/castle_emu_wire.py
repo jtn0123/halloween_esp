@@ -102,10 +102,10 @@ def url_decode(raw: bytes) -> bytes:
     i, n = 0, len(raw)
     while i < n:
         c = raw[i]
-        if c == 0x25 and i + 2 < n and raw[i + 1] and raw[i + 2]:      # '%'
-            out.append(_strtol16(raw[i + 1:i + 3]) & 0xFF)
+        if c == 0x25 and i + 2 < n and raw[i + 1] and raw[i + 2]:  # '%'
+            out.append(_strtol16(raw[i + 1 : i + 3]) & 0xFF)
             i += 3
-        elif c == 0x2B:                                                # '+'
+        elif c == 0x2B:  # '+'
             out.append(0x20)
             i += 1
         else:
@@ -151,7 +151,7 @@ def safe_subpath(p: bytes) -> bool:
 def name_from_uri(raw_target: bytes, prefix: bytes) -> bytes:
     """The filename after a fixed prefix: decode the WHOLE remaining target
     (query included), then cut at the first '?' of the decoded text."""
-    n = url_decode(raw_target[len(prefix):])
+    n = url_decode(raw_target[len(prefix) :])
     q = n.find(b"?")
     return n[:q] if q >= 0 else n
 
@@ -185,7 +185,7 @@ def query_param(raw_target: bytes, key: str) -> bytes:
             break
         if eq - pos == len(k) and qry[pos:eq].lower() == k:
             end = qry.find(b"&", eq + 1)
-            val = qry[eq + 1:] if end < 0 else qry[eq + 1:end]
+            val = qry[eq + 1 :] if end < 0 else qry[eq + 1 : end]
             if len(val) + 1 > VALUE_BUF:
                 return b""
             return url_decode(val)

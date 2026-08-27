@@ -22,8 +22,9 @@ def emit_show_playlist(doc: dict) -> list[str]:
     cfg = doc.get("show") or {}
     gap = int(cfg.get("gap_ms", 15000))
     by_id = {s["id"]: s for s in doc["scenes"]}
-    order = cfg.get("order") or [s["id"] for s in doc["scenes"]
-                                 if s.get("kind") != "motion"]
+    order = cfg.get("order") or [
+        s["id"] for s in doc["scenes"] if s.get("kind") != "motion"
+    ]
     out = ["  # ── The evening playlist (#19) ───────────────────"]
     out.append("  - id: show_playlist")
     out.append("    mode: restart")
@@ -49,20 +50,28 @@ def emit_manifest_check(doc: dict) -> list[str]:
     # stat()ed once after mount; whatever is missing lands in /api/status
     # (and the remote's status line) instead of being discovered as silence
     # when the cue fires. Generated because the file list IS the scene list.
-    sd += ["  - id: manifest_check",
-           "    then:",
-           "      - lambda: |-",
-           "          if (!castle_sd::g_mounted) return;",
-           "          std::string missing;",
-           "          struct stat st;"]
+    sd += [
+        "  - id: manifest_check",
+        "    then:",
+        "      - lambda: |-",
+        "          if (!castle_sd::g_mounted) return;",
+        "          std::string missing;",
+        "          struct stat st;",
+    ]
     for i, scene in enumerate(doc["scenes"], start=1):
         fname = f"{i:02d}_{scene['id']}.mp3"
-        sd.append(f"          if (stat(\"/sd/scenes/{fname}\", &st) != 0)"
-                  f" missing += missing.empty() ? \"{fname}\" : \",{fname}\";")
-    sd += ["          castle_web::set_missing(missing);",
-           "          if (!missing.empty())",
-           ("            ESP_LOGW(\"castle\", \"MISSING scene audio: %s\","
-            " missing.c_str());"),
-           ("          else ESP_LOGI(\"castle\", \"manifest: all %d scene files"
-            f" present\", {len(doc['scenes'])});"), ""]
+        sd.append(
+            f'          if (stat("/sd/scenes/{fname}", &st) != 0)'
+            f' missing += missing.empty() ? "{fname}" : ",{fname}";'
+        )
+    sd += [
+        "          castle_web::set_missing(missing);",
+        "          if (!missing.empty())",
+        ('            ESP_LOGW("castle", "MISSING scene audio: %s", missing.c_str());'),
+        (
+            '          else ESP_LOGI("castle", "manifest: all %d scene files'
+            f' present", {len(doc["scenes"])});'
+        ),
+        "",
+    ]
     return sd

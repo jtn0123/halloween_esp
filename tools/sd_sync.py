@@ -39,8 +39,9 @@ from hosts import maybe_host
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def api(ip: str, method: str, path: str, body: bytes | None = None,
-        timeout: float = 60) -> bytes:
+def api(
+    ip: str, method: str, path: str, body: bytes | None = None, timeout: float = 60
+) -> bytes:
     req = urllib.request.Request(f"http://{ip}{path}", data=body, method=method)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return bytes(r.read())
@@ -51,9 +52,10 @@ def listing(ip: str) -> list[dict]:
 
 
 def upload(ip: str, route: str, name: str, data: bytes, timeout: float = 600) -> None:
-    print(f"  uploading {name} ({len(data)//1024} KB) ...", end="", flush=True)
-    resp = json.loads(api(ip, "PUT", f"{route}/{urllib.parse.quote(name)}",
-                          data, timeout=timeout))
+    print(f"  uploading {name} ({len(data) // 1024} KB) ...", end="", flush=True)
+    resp = json.loads(
+        api(ip, "PUT", f"{route}/{urllib.parse.quote(name)}", data, timeout=timeout)
+    )
     got = resp.get("bytes", -1)
     if got != len(data):
         raise SystemExit(f" FAILED ({got} of {len(data)} bytes)")
@@ -63,8 +65,10 @@ def upload(ip: str, route: str, name: str, data: bytes, timeout: float = 600) ->
     said = resp.get("crc32")
     want = zlib.crc32(data)
     if said is not None and int(str(said), 16) != want:
-        raise SystemExit(f" FAILED (crc mismatch: card wrote {said}, "
-                         f"sent {want:08x} — bad sector or corrupt transfer)")
+        raise SystemExit(
+            f" FAILED (crc mismatch: card wrote {said}, "
+            f"sent {want:08x} — bad sector or corrupt transfer)"
+        )
     print(" ok")
 
 
@@ -77,13 +81,15 @@ def card_dir(ip: str, d: str) -> dict[str, int]:
         return {}
     if not isinstance(rows, list):
         return {}
-    return {f["name"]: int(f["size"]) for f in rows
-            if isinstance(f, dict) and "name" in f and not f.get("dir")}
+    return {
+        f["name"]: int(f["size"])
+        for f in rows
+        if isinstance(f, dict) and "name" in f and not f.get("dir")
+    }
 
 
 def cmd_push(ip: str, args: list[str]) -> int:
-    files = ([Path(a) for a in args] if args
-             else sorted(ROOT.glob("tracks/*.mp3")))
+    files = [Path(a) for a in args] if args else sorted(ROOT.glob("tracks/*.mp3"))
     if not files:
         print("nothing to push")
         return 1
@@ -103,8 +109,9 @@ def cmd_scenes(ip: str) -> int:
     # deliberately smaller. Prefer the card copies — pushing the flash ones
     # would put a 32 kbps compromise onto a 31 GB card.
     card = sorted(ROOT.glob("audio/card/[0-9][0-9]_*.mp3"))
-    files = card or sorted(p for p in ROOT.glob("audio/[0-9][0-9]_*.mp3")
-                           if not p.name.startswith("00_"))
+    files = card or sorted(
+        p for p in ROOT.glob("audio/[0-9][0-9]_*.mp3") if not p.name.startswith("00_")
+    )
     if not files:
         raise SystemExit("no audio/NN_*.mp3 — run `make audio` first")
     print(f"  source: {files[0].parent.relative_to(ROOT)}/")
@@ -120,8 +127,10 @@ def cmd_scenes(ip: str) -> int:
             continue
         upload(ip, "/api/scenes", src.name, data)
         sent += 1
-    print(f"  {len(files)} scene tracks in /sd/scenes/ ({sent} sent, "
-          f"{len(files) - sent} already there)")
+    print(
+        f"  {len(files)} scene tracks in /sd/scenes/ ({sent} sent, "
+        f"{len(files) - sent} already there)"
+    )
     return 0
 
 
@@ -152,6 +161,7 @@ def cmd_site(ip: str) -> int:
     # served by the firmware's existing /site/* handler; the inlined build
     # stays on disk for portability.
     import gen_previewer as gp
+
     plain = gp.lean(src.read_text(), route="/site/", suffix=".mp3").encode()
     packed = gzip.compress(plain, 9)
     upload(ip, "/api/site", "index.html.gz", packed)
@@ -159,26 +169,34 @@ def cmd_site(ip: str) -> int:
     # prefers .gz but falls back, and a stale pair would be worse than bytes.
     upload(ip, "/api/site", "index.html", plain)
     have = card_dir(ip, "site")
-    audio = [p for p in sorted(ROOT.glob("audio/[0-9][0-9]_*.mp3"))
-             if not p.name.startswith("00_")]
+    audio = [
+        p
+        for p in sorted(ROOT.glob("audio/[0-9][0-9]_*.mp3"))
+        if not p.name.startswith("00_")
+    ]
     for mp3 in audio:
-        name = mp3.name[3:]              # NN_<sid>.mp3 -> <sid>.mp3, the URL
+        name = mp3.name[3:]  # NN_<sid>.mp3 -> <sid>.mp3, the URL
         data = mp3.read_bytes()
         if have.get(name) == len(data):
             print(f"  {name} unchanged, skipped")
             continue
         upload(ip, "/api/site", name, data)
-    print(f"  http://{ip}/ now serves the LEAN cue desk "
-          f"({len(packed)//1024} KB gzipped + {len(audio)} scene tracks "
-          f"fetched on first play)")
+    print(
+        f"  http://{ip}/ now serves the LEAN cue desk "
+        f"({len(packed) // 1024} KB gzipped + {len(audio)} scene tracks "
+        f"fetched on first play)"
+    )
     return 0
 
 
 def cmd_ota(ip: str, args: list[str]) -> int:
     if not args:
         # The compiled image lives wherever the build put it; find the newest.
-        cands = sorted(ROOT.glob("firmware/.esphome/build/**/firmware.bin"),
-                       key=lambda p: p.stat().st_mtime, reverse=True)
+        cands = sorted(
+            ROOT.glob("firmware/.esphome/build/**/firmware.bin"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
         if not cands:
             raise SystemExit("no firmware.bin found — pass a path or build first")
         args = [str(cands[0])]
@@ -190,8 +208,11 @@ def cmd_ota(ip: str, args: list[str]) -> int:
     # mid-flash competes for the same starved heap.
     with contextlib.suppress(OSError):
         api(ip, "POST", "/api/stop", timeout=5)
-    print(f"  flashing {bin_path.name} ({len(data)//1024} KB) over HTTP ...",
-          end="", flush=True)
+    print(
+        f"  flashing {bin_path.name} ({len(data) // 1024} KB) over HTTP ...",
+        end="",
+        flush=True,
+    )
     try:
         resp = json.loads(api(ip, "PUT", "/api/ota", data, timeout=180))
         print(" ok" if resp.get("flashed") else f" UNEXPECTED: {resp}")
@@ -202,24 +223,29 @@ def cmd_ota(ip: str, args: list[str]) -> int:
         print(" (no reply — device likely rebooting)")
     print("  waiting for the device to come back ...", end="", flush=True)
     import time
+
     for _ in range(30):
         time.sleep(3)
         try:
             st = json.loads(api(ip, "GET", "/api/status", timeout=3))
             print(f" up — v{st.get('version')} compiled {st.get('compiled')}")
-            print("  now CONFIRM it (connect once with tools/device.py or HA) —"
-                  " an unconfirmed image rolls back on its next reboot")
+            print(
+                "  now CONFIRM it (connect once with tools/device.py or HA) —"
+                " an unconfirmed image rolls back on its next reboot"
+            )
             return 0
         except OSError:
             print(".", end="", flush=True)
-    print(" no answer after 90 s — if it stays down, the bootloader will"
-          " roll back to the previous image on the next power cycle")
+    print(
+        " no answer after 90 s — if it stays down, the bootloader will"
+        " roll back to the previous image on the next power cycle"
+    )
     return 1
 
 
 def cmd_ls(ip: str) -> int:
     for f in listing(ip):
-        mark = "/" if f["dir"] else f"  {f['size']//1024} KB"
+        mark = "/" if f["dir"] else f"  {f['size'] // 1024} KB"
         print(f"  {f['name']}{mark}")
     return 0
 

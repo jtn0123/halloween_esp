@@ -30,8 +30,12 @@ def ent(name: str, key: int, kind: str = "ButtonInfo") -> types.SimpleNamespace:
     return types.SimpleNamespace(name=name, key=key, __class__=type(kind, (), {}))
 
 
-ENTITIES = [ent("Dump boot log", 1), ent("SD file", 2, "TextInfo"),
-            ent("Stop audio", 3), ent("Volume", 4, "NumberInfo")]
+ENTITIES = [
+    ent("Dump boot log", 1),
+    ent("SD file", 2, "TextInfo"),
+    ent("Stop audio", 3),
+    ent("Volume", 4, "NumberInfo"),
+]
 
 
 class FakeClient:
@@ -89,9 +93,11 @@ class TestRun(unittest.TestCase):
         async def no_sleep(_s):
             pass
 
-        for p in (mock.patch.object(device, "APIClient", make),
-                  mock.patch.object(device.asyncio, "wait_for", no_wait),
-                  mock.patch.object(device.asyncio, "sleep", no_sleep)):
+        for p in (
+            mock.patch.object(device, "APIClient", make),
+            mock.patch.object(device.asyncio, "wait_for", no_wait),
+            mock.patch.object(device.asyncio, "sleep", no_sleep),
+        ):
             p.start()
             self.addCleanup(p.stop)
         self.out = io.StringIO()
@@ -115,7 +121,7 @@ class TestRun(unittest.TestCase):
         self.assertLess(kinds.index("subscribe"), kinds.index("press"))
         self.assertIn(("press", 1), log)
         self.assertEqual(log[1][1], device.LogLevel.LOG_LEVEL_VERY_VERBOSE)
-        self.assertIn("[castle] hello", self.out.getvalue())   # the log line
+        self.assertIn("[castle] hello", self.out.getvalue())  # the log line
 
     def test_set_sends_the_rest_of_argv_as_the_value(self) -> None:
         self.assertEqual(self.run_cmd("set", "SD file", "spooky", "song.mp3"), 0)
@@ -140,9 +146,11 @@ class TestRun(unittest.TestCase):
 class TestMain(unittest.TestCase):
     def test_no_command_prints_the_usage(self) -> None:
         out = io.StringIO()
-        with mock.patch.dict(os.environ, {"CASTLE_HOST": "10.1.1.1"}), \
-                mock.patch.object(sys, "argv", ["device.py"]), \
-                contextlib.redirect_stdout(out):
+        with (
+            mock.patch.dict(os.environ, {"CASTLE_HOST": "10.1.1.1"}),
+            mock.patch.object(sys, "argv", ["device.py"]),
+            contextlib.redirect_stdout(out),
+        ):
             self.assertEqual(device.main(), 2)
         self.assertIn("press", out.getvalue())
 

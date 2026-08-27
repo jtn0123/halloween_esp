@@ -104,6 +104,12 @@ green. One commit per completed iteration keeps every loop pass revertable.
 | A3 mypy strict | 1 module from the stays-list into strict overrides | mypy green, no new ignores | stays-list fully strict |
 | A4 typed boundaries | 1 data shape (scenes.yaml → tracks.json → markers) as TypedDict + typed loader | mypy green, Any count down | 3 shapes done |
 
+A2 outcome (2026-08-26): applied; six files are excluded in [tool.ruff.format]
+because formatting pushed them past the 500-line cap (castle_fuzz, import_track,
+gen_wiring_diagram, test_gen_esphome, test_generator_parity, test_studio_api).
+Follow-up loop: split each on a real seam, format it, drop it from the exclude
+list — the list only shrinks.
+
 A3 order (easy → hard): netguard, check_loc, build_paths, manifest, hosts,
 scene_schema, rig_layout, gen_rig, gen_show, gen_esphome_audio, importers,
 gen_wiring/qr/eink, castle_emu_wire, castle_emu, castle_emu_http, gen_esphome,

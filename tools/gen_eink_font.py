@@ -36,7 +36,7 @@ def main() -> int:
         img = Image.new("1", (cw, ch), 0)
         ImageDraw.Draw(img).text((0, 0), chr(c), font=font, fill=1)
         px = img.load()
-        assert px is not None    # "1"-mode images always expose pixels
+        assert px is not None  # "1"-mode images always expose pixels
         rows = []
         for y in range(ch):
             b = 0
@@ -58,13 +58,10 @@ def main() -> int:
         f"inline constexpr int FIRST = {FIRST};\n"
         f"inline constexpr int LAST = {LAST};\n"
         "// One byte per row (MSB-first), H rows per glyph.\n"
-        "inline constexpr uint8_t GLYPHS[] = {\n"
-        + "\n".join(lines)
-        + "\n};\n"
+        "inline constexpr uint8_t GLYPHS[] = {\n" + "\n".join(lines) + "\n};\n"
         "}  // namespace castle_font\n"
     )
-    print(f"wrote {OUT.relative_to(ROOT)}: {cw}x{ch} cells, "
-          f"{LAST - FIRST + 1} glyphs")
+    print(f"wrote {OUT.relative_to(ROOT)}: {cw}x{ch} cells, {LAST - FIRST + 1} glyphs")
     return 0
 
 

@@ -35,8 +35,10 @@ def _entries() -> dict[str, dict]:
     out: dict[str, dict] = {}
     for name, cfg in doc.items():
         if isinstance(cfg, dict) and cfg.get("host"):
-            out[name] = {"host": str(cfg["host"]),
-                         "fallbacks": [str(h) for h in cfg.get("fallbacks") or []]}
+            out[name] = {
+                "host": str(cfg["host"]),
+                "fallbacks": [str(h) for h in cfg.get("fallbacks") or []],
+            }
     return out
 
 
@@ -80,13 +82,17 @@ def resolve(arg: str | None = None) -> str:
     tool with no castle has nothing to do, so "none" is not an answer).
     """
     if arg and not _IP.match(arg) and arg not in _table():
-        raise SystemExit(f"unknown device {arg!r} — not an IP and not in devices.toml "
-                         f"(known: {', '.join(_table()) or 'none'})")
+        raise SystemExit(
+            f"unknown device {arg!r} — not an IP and not in devices.toml "
+            f"(known: {', '.join(_table()) or 'none'})"
+        )
     found = candidates(arg) or _from_table()
     if found:
         return found[0]
-    raise SystemExit("no device given: pass an IP or name, set CASTLE_HOST, "
-                     "or add an entry to devices.toml")
+    raise SystemExit(
+        "no device given: pass an IP or name, set CASTLE_HOST, "
+        "or add an entry to devices.toml"
+    )
 
 
 def maybe_host(argv: list[str]) -> tuple[str, list[str]]:
@@ -94,9 +100,23 @@ def maybe_host(argv: list[str]) -> tuple[str, list[str]]:
 
     Lets `sd_sync.py status` work as well as `sd_sync.py 10.27.27.7 status`.
     """
-    known_cmds = {"status", "ls", "purge", "push", "scenes", "rm", "play",
-                  "bootlog", "site", "ota", "health", "list", "press", "set",
-                  "watch"}
+    known_cmds = {
+        "status",
+        "ls",
+        "purge",
+        "push",
+        "scenes",
+        "rm",
+        "play",
+        "bootlog",
+        "site",
+        "ota",
+        "health",
+        "list",
+        "press",
+        "set",
+        "watch",
+    }
     if argv and (argv[0] in known_cmds):
         return resolve(None), argv
     if argv:

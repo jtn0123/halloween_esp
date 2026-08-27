@@ -46,7 +46,8 @@ def card_dir() -> Path:
     path here once let a test's stale-sweep delete the real render."""
     return OUT / "card"
 
-TARGET_PEAK = 0.89   # leaves headroom for the MP3 encoder's overshoot
+
+TARGET_PEAK = 0.89  # leaves headroom for the MP3 encoder's overshoot
 
 
 def write_wav(path: Path, x: np.ndarray, sr: int) -> None:
@@ -94,9 +95,11 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
             # shape. An audio_file nobody ever imported is a typo, and still
             # stops the render — tracks/tracks.json is what tells them apart.
             if not known_track(track):
-                raise SystemExit(f"scene {scene['id']}: no such audio_file "
-                                 f"{track} — not on disk, and no record of it "
-                                 f"in tracks/tracks.json either")
+                raise SystemExit(
+                    f"scene {scene['id']}: no such audio_file "
+                    f"{track} — not on disk, and no record of it "
+                    f"in tracks/tracks.json either"
+                )
             NOT_HERE.append(scene["id"])
             track = None
     if track:
@@ -104,18 +107,23 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
         gain = float(scene.get("track_gain", 1.0))
         synth._place(buf, x * gain, float(scene.get("track_at", 0.0)))
         for band, hits in analyze.analyze_full(
-                # A scalar, or a per-band map ({low: 0.8, mid: 1.1, high: 1.6})
-                # as the clip editor writes it. Coercing to float here would
-                # have thrown on the map and, worse, silently ignored it if it
-                # had not — the render must detect the same onsets the editor
-                # showed, or the tuning was for nothing.
-                x, sr, sensitivity=scene.get("sensitivity", 1.1),
-                # Onsets gain a pan third element; markers grow with them,
-                # and the pulse expansions route decisive pans by tower.
-                stereo=analyze.load_stereo(path, sr)).items():
+            # A scalar, or a per-band map ({low: 0.8, mid: 1.1, high: 1.6})
+            # as the clip editor writes it. Coercing to float here would
+            # have thrown on the map and, worse, silently ignored it if it
+            # had not — the render must detect the same onsets the editor
+            # showed, or the tuning was for nothing.
+            x,
+            sr,
+            sensitivity=scene.get("sensitivity", 1.1),
+            # Onsets gain a pan third element; markers grow with them,
+            # and the pulse expansions route decisive pans by tower.
+            stereo=analyze.load_stereo(path, sr),
+        ).items():
             markers.setdefault(band, []).extend(
                 [int((h[0] + scene.get("track_at", 0.0)) * 1000), *h[1:]]
-                for h in hits if h[0] < dur - 0.1)
+                for h in hits
+                if h[0] < dur - 0.1
+            )
 
     for ev in scene.get("score") or []:
         name = ev["synth"]
@@ -126,8 +134,9 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
         sig, raw_marks = res if isinstance(res, tuple) else (res, [])
         # A synth may report bare times or (time, velocity) pairs.
         marks: list[tuple[float, float]] = [
-            m if isinstance(m, tuple) else (m, 1.0) for m in raw_marks]
-        if "take" in ev:                      # trim a long piece to fit
+            m if isinstance(m, tuple) else (m, 1.0) for m in raw_marks
+        ]
+        if "take" in ev:  # trim a long piece to fit
             sig = sig[: int(ev["take"] * sr)]
             fade = min(len(sig), int(0.4 * sr))
             if fade:
@@ -135,8 +144,10 @@ def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
             marks = [(m, v) for m, v in marks if m < ev["take"]]
         synth._place(buf, sig * float(ev.get("gain", 1.0)), ev["t"])
         markers.setdefault(name, []).extend(
-            [int((ev["t"] + m) * 1000), round(v, 3)] for m, v in marks
-            if ev["t"] + m < dur - 0.1)
+            [int((ev["t"] + m) * 1000), round(v, 3)]
+            for m, v in marks
+            if ev["t"] + m < dur - 0.1
+        )
 
     # Imported tracks arrive already produced — adding the stone hall on top
     # of someone else's reverb just makes mud. Scenes can override either way.
@@ -174,8 +185,18 @@ def card_bitrate(cfg: dict) -> int:
 
 def encode_mp3(wav: Path, mp3: Path, bitrate: int) -> None:
     subprocess.run(
-        ["lame", "--quiet", "-m", "m", "-b", str(bitrate), "--resample", "44.1",
-         str(wav), str(mp3)],
+        [
+            "lame",
+            "--quiet",
+            "-m",
+            "m",
+            "-b",
+            str(bitrate),
+            "--resample",
+            "44.1",
+            str(wav),
+            str(mp3),
+        ],
         check=True,
     )
 
@@ -183,8 +204,13 @@ def encode_mp3(wav: Path, mp3: Path, bitrate: int) -> None:
 #: The speaker test's tones: (stem, seconds). The desk's 🏰 panel plays them
 #: off the card root (/api/play takes one path component); sd_sync `tones`
 #: pushes them. Each answers one question — see device_panel.ts TONES.
-TEST_TONES = (("test_sweep", 12.0), ("test_1k", 8.0), ("test_200", 8.0),
-              ("test_4k", 8.0), ("test_silence", 6.0))
+TEST_TONES = (
+    ("test_sweep", 12.0),
+    ("test_1k", 8.0),
+    ("test_200", 8.0),
+    ("test_4k", 8.0),
+    ("test_silence", 6.0),
+)
 
 
 def test_dir() -> Path:
@@ -206,12 +232,16 @@ def render_test_tones(cfg: dict) -> None:
         elif stem == "test_silence":
             x = np.zeros_like(t)
         else:
-            x = 0.5 * np.sin(2 * np.pi * float(stem.split("_")[1].replace("k", "000")) * t)
+            x = 0.5 * np.sin(
+                2 * np.pi * float(stem.split("_")[1].replace("k", "000")) * t
+            )
         wav = test_dir() / f"{stem}.wav"
         write_wav(wav, x, sr)
         encode_mp3(wav, test_dir() / f"{stem}.mp3", 128)
         wav.unlink()
-    print(f"speaker test: {len(TEST_TONES)} tones -> {test_dir().relative_to(OUT.parent)}/")
+    print(
+        f"speaker test: {len(TEST_TONES)} tones -> {test_dir().relative_to(OUT.parent)}/"
+    )
 
 
 def render_chirp(cfg: dict) -> None:
@@ -243,8 +273,8 @@ NOT_HERE: list[str] = []
 
 def known_track(track: str) -> bool:
     """Is this an import the manifest has a record of? tracks/tracks.json is
-       tracked; the audio beside it is not, so the manifest is the only way to
-       tell 'you have not imported this here' from 'that name is a typo'."""
+    tracked; the audio beside it is not, so the manifest is the only way to
+    tell 'you have not imported this here' from 'that name is a typo'."""
     tid = Path(track).stem
     return mf.get(tid) is not None
 
@@ -268,8 +298,10 @@ def render_one(scene: dict, i: int, cfg: dict, keep_wav: bool) -> tuple[int, dic
     if not keep_wav:
         wav.unlink()
     size = mp3.stat().st_size
-    print(f"{scene['id']:<12} {len(buf)/cfg['sample_rate']:>7.1f}s "
-          f"{size/1024:>8.0f}K   {mp3.name}")
+    print(
+        f"{scene['id']:<12} {len(buf) / cfg['sample_rate']:>7.1f}s "
+        f"{size / 1024:>8.0f}K   {mp3.name}"
+    )
     return size, markers
 
 
@@ -308,10 +340,12 @@ def main() -> int:
         produced.add(f"{i:02d}_{scene['id']}.mp3")
 
     print("-" * 52)
-    print(f"{'total':<12} {'':>8} {total/1024:>8.0f}K")
+    print(f"{'total':<12} {'':>8} {total / 1024:>8.0f}K")
     if NOT_HERE:
-        print(f"note: {len(NOT_HERE)} scene(s) rendered WITHOUT their imported "
-              f"song — it is not on this machine: {', '.join(NOT_HERE)}")
+        print(
+            f"note: {len(NOT_HERE)} scene(s) rendered WITHOUT their imported "
+            f"song — it is not on this machine: {', '.join(NOT_HERE)}"
+        )
     if not args.only:  # partial renders must not clobber other scenes' markers
         # A full render owns the numbered files: a scene deleted from the
         # show renumbers the rest, and 11_foo.mp3 beside 10_foo.mp3 in the
@@ -323,21 +357,27 @@ def main() -> int:
                     print(f"swept stale {stale.relative_to(OUT.parent)}")
         (OUT / "markers.json").write_text(json.dumps(all_markers, indent=0))
         n = sum(len(m) for v in all_markers.values() for m in v.values())
-        print(f"beat markers: {n} across {len(all_markers)} scenes -> audio/markers.json")
+        print(
+            f"beat markers: {n} across {len(all_markers)} scenes -> audio/markers.json"
+        )
     # 3.87 MB single-app partition minus ~0.97 MB of firmware (measured,
     # PROJECT_NOTES §12.2).
     budget = 2.9 * 1024 * 1024
     pct = total / budget * 100
     verdict = "fits" if total < budget else "OVER BUDGET"
-    print(f"\nflash build  {cfg['bitrate']:>3} kbps  {total/1024:>6.0f}K  "
-          f"{pct:.0f}% of the ~2.9 MB single-app partition — {verdict}")
+    print(
+        f"\nflash build  {cfg['bitrate']:>3} kbps  {total / 1024:>6.0f}K  "
+        f"{pct:.0f}% of the ~2.9 MB single-app partition — {verdict}"
+    )
     # The card is 31 GB. Printed for symmetry, not as a limit: the only
     # ceiling the SD build has is decode load, and §12.13 measured 96 kbps
     # clean on this chip.
     if card_bitrate(cfg) != cfg["bitrate"]:
         ctotal = sum(f.stat().st_size for f in card_dir().glob("[0-9][0-9]_*.mp3"))
-        print(f"card  (SD)  {card_bitrate(cfg):>3} kbps  {ctotal/1024:>6.0f}K  "
-              f"streamed off the card — no budget")
+        print(
+            f"card  (SD)  {card_bitrate(cfg):>3} kbps  {ctotal / 1024:>6.0f}K  "
+            f"streamed off the card — no budget"
+        )
     return 0
 
 

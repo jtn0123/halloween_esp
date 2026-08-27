@@ -7,6 +7,7 @@
 set -e
 cd "$(git rev-parse --show-toplevel)"
 PY=$(command -v .venv/bin/python || command -v python3)
+"$PY" -m ruff format --check --quiet tools tests || { echo "pre-commit: formatting drift — run: $PY -m ruff format tools tests" >&2; exit 1; }
 "$PY" -m ruff check tools tests
 "$PY" -m mypy tools tests
 "$PY" tools/check_loc.py

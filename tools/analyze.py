@@ -35,7 +35,7 @@ import numpy as np
 from scipy import signal
 
 SR = 44100
-HOP = 512                 # ~11.6 ms between analysis frames
+HOP = 512  # ~11.6 ms between analysis frames
 WIN = 2048
 
 # (name, low_hz, high_hz, min_gap_s) — min_gap is a refractory period, the
@@ -43,9 +43,9 @@ WIN = 2048
 # notes are further apart than hi-hats, and without this a single kick
 # smeared across a few frames reads as a burst of four.
 BANDS = [
-    ("onset_low",  20,    200,   0.16),
-    ("onset_mid",  200,   2000,  0.11),
-    ("onset_high", 2000,  16000, 0.09),
+    ("onset_low", 20, 200, 0.16),
+    ("onset_mid", 200, 2000, 0.11),
+    ("onset_high", 2000, 16000, 0.09),
 ]
 
 
@@ -54,13 +54,28 @@ def _decode(path: Path, channels: int, sr: int) -> bytes:
     studio's job lock forever, wedging every later import and rebuild."""
     try:
         return subprocess.run(
-            ["ffmpeg", "-v", "quiet", "-i", str(path),
-             "-f", "f32le", "-ac", str(channels), "-ar", str(sr), "-"],
-            capture_output=True, check=True, timeout=120,
+            [
+                "ffmpeg",
+                "-v",
+                "quiet",
+                "-i",
+                str(path),
+                "-f",
+                "f32le",
+                "-ac",
+                str(channels),
+                "-ar",
+                str(sr),
+                "-",
+            ],
+            capture_output=True,
+            check=True,
+            timeout=120,
         ).stdout
     except subprocess.TimeoutExpired:
-        raise SystemExit(f"ffmpeg stalled decoding {path.name} — "
-                         "gave up after 2 minutes") from None
+        raise SystemExit(
+            f"ffmpeg stalled decoding {path.name} — gave up after 2 minutes"
+        ) from None
 
 
 def load_audio(path: Path, sr: int = SR) -> np.ndarray:
@@ -85,9 +100,9 @@ PAN_WIN_S = 0.08
 PAN_DEAD = 0.05
 
 
-def annotate_pan(hits: list[tuple[float, float]],
-                 left: np.ndarray, right: np.ndarray,
-                 sr: int = SR) -> list[tuple[float, float, float]]:
+def annotate_pan(
+    hits: list[tuple[float, float]], left: np.ndarray, right: np.ndarray, sr: int = SR
+) -> list[tuple[float, float, float]]:
     """Attach where in the stereo field each hit lives: (t, vel) -> (t, vel, pan).
 
     pan is -1 (hard left) .. +1 (hard right), 0 centre, from the L/R RMS
@@ -122,8 +137,9 @@ def _flux(mag: np.ndarray) -> np.ndarray:
     return np.maximum(d, 0.0).sum(axis=0)
 
 
-def _pick_peaks(env: np.ndarray, times: np.ndarray, min_gap: float,
-                sensitivity: float) -> list[tuple[float, float]]:
+def _pick_peaks(
+    env: np.ndarray, times: np.ndarray, min_gap: float, sensitivity: float
+) -> list[tuple[float, float]]:
     """Adaptive-threshold peak picking.
 
     A fixed threshold fails on any real music: a quiet intro and a loud
@@ -145,7 +161,7 @@ def _pick_peaks(env: np.ndarray, times: np.ndarray, min_gap: float,
         if env[i] < thresh[i]:
             continue
         if not (env[i] >= env[i - 1] and env[i] >= env[i + 1]):
-            continue                       # local maximum only
+            continue  # local maximum only
         t = float(times[i])
         if t - last < min_gap:
             # Too close to the previous hit: keep whichever is stronger.
@@ -181,8 +197,9 @@ def band_sensitivity(sensitivity, name: str, default: float = 1.1) -> float:
     return float(default if sensitivity is None else sensitivity)
 
 
-def analyze(x: np.ndarray, sr: int = SR, sensitivity=1.1,
-            bands=BANDS) -> dict[str, list[tuple[float, float]]]:
+def analyze(
+    x: np.ndarray, sr: int = SR, sensitivity=1.1, bands=BANDS
+) -> dict[str, list[tuple[float, float]]]:
     """Band-split onset detection. Returns {band_name: [(seconds, velocity)]}.
 
     `sensitivity` is a float for all bands, or a {band: float} mapping.
@@ -227,8 +244,9 @@ ENV_HZ = 6.0
 BEATLESS = 8
 
 
-def envelope(x: np.ndarray, sr: int = SR, hz: float = ENV_HZ,
-             bands=BANDS) -> dict[str, list[tuple[float, float]]]:
+def envelope(
+    x: np.ndarray, sr: int = SR, hz: float = ENV_HZ, bands=BANDS
+) -> dict[str, list[tuple[float, float]]]:
     """Band loudness over time, for audio with no beat to detect.
 
     Onset detection answers "when did something start". Drones, pads, wind and
@@ -265,11 +283,10 @@ def envelope(x: np.ndarray, sr: int = SR, hz: float = ENV_HZ,
         env = np.log1p(env * 50.0)
         lo_v, hi_v = float(env.min()), float(env.max())
         if hi_v - lo_v < 1e-9:
-            continue                      # dead flat: nothing to follow
+            continue  # dead flat: nothing to follow
         env = (env - lo_v) / (hi_v - lo_v)
 
-        pts = [(float(t[i]), round(float(env[i]), 3))
-               for i in range(0, len(env), step)]
+        pts = [(float(t[i]), round(float(env[i]), 3)) for i in range(0, len(env), step)]
         # Drop the near-silent tail of the list; a zero-level pulse is a cue
         # that costs firmware space and does nothing.
         pts = [(tt, v) for tt, v in pts if v > 0.02]
@@ -278,9 +295,12 @@ def envelope(x: np.ndarray, sr: int = SR, hz: float = ENV_HZ,
     return out
 
 
-def analyze_full(x: np.ndarray, sr: int = SR, sensitivity=1.1,
-                 stereo: tuple[np.ndarray, np.ndarray] | None = None,
-                 ) -> dict[str, list[tuple[float, ...]]]:
+def analyze_full(
+    x: np.ndarray,
+    sr: int = SR,
+    sensitivity=1.1,
+    stereo: tuple[np.ndarray, np.ndarray] | None = None,
+) -> dict[str, list[tuple[float, ...]]]:
     """Onsets, plus a level envelope for any band that has no beat.
 
     This is what the importer uses. A track can be beaty in the bass and
@@ -294,13 +314,18 @@ def analyze_full(x: np.ndarray, sr: int = SR, sensitivity=1.1,
     # The wider tuple[float, ...] spelling: with `stereo` every hit grows
     # a pan third element, and the dict must hold both shapes.
     onsets: dict[str, list[tuple[float, ...]]] = {
-        k: list(v) for k, v in analyze(x, sr, sensitivity=sensitivity).items()}
+        k: list(v) for k, v in analyze(x, sr, sensitivity=sensitivity).items()
+    }
     if stereo is not None:
-        onsets = {name: list(annotate_pan([(h[0], h[1]) for h in hits],
-                                          stereo[0], stereo[1], sr))
-                  for name, hits in onsets.items()}
-    thin = [name for name, _lo, _hi, _g in BANDS
-            if len(onsets.get(name, [])) < BEATLESS]
+        onsets = {
+            name: list(
+                annotate_pan([(h[0], h[1]) for h in hits], stereo[0], stereo[1], sr)
+            )
+            for name, hits in onsets.items()
+        }
+    thin = [
+        name for name, _lo, _hi, _g in BANDS if len(onsets.get(name, [])) < BEATLESS
+    ]
     if not thin:
         return onsets
     levels = envelope(x, sr, bands=[b for b in BANDS if b[0] in thin])
@@ -319,8 +344,10 @@ def main() -> int:
     print("-" * 52)
     for name, hits in marks.items():
         rate = len(hits) / dur * 60
-        print(f"  {name:<11} {len(hits):>4} onsets  ({rate:>5.0f}/min)  "
-              f"first: {', '.join(f'{t:.2f}s' for t, _ in hits[:5])}")
+        print(
+            f"  {name:<11} {len(hits):>4} onsets  ({rate:>5.0f}/min)  "
+            f"first: {', '.join(f'{t:.2f}s' for t, _ in hits[:5])}"
+        )
     if not marks:
         print("  no onsets found — try a lower sensitivity, e.g. 0.6")
     return 0

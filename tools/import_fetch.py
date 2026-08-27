@@ -56,20 +56,36 @@ def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
         r = subprocess.run(
             # `--` closes the option list: whatever the URL turns out to look
             # like, yt-dlp reads it as the thing to download.
-            [_ytdlp(), "-x", "--audio-format", "mp3", "--audio-quality", "0",
-             "--no-playlist", "-o", str(dest / "%(title)s.%(ext)s"), "--", url],
-            capture_output=True, text=True, check=False,  # handled below
-            timeout=900,   # a hung download must not wedge the studio's lock
+            [
+                _ytdlp(),
+                "-x",
+                "--audio-format",
+                "mp3",
+                "--audio-quality",
+                "0",
+                "--no-playlist",
+                "-o",
+                str(dest / "%(title)s.%(ext)s"),
+                "--",
+                url,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,  # handled below
+            timeout=900,  # a hung download must not wedge the studio's lock
         )
     except subprocess.TimeoutExpired:
-        raise SystemExit("gave up after 15 minutes — the download stalled. "
-                         "Try the link again, or a different source.") from None
+        raise SystemExit(
+            "gave up after 15 minutes — the download stalled. "
+            "Try the link again, or a different source."
+        ) from None
     if r.returncode != 0:
         # yt-dlp's own last lines say WHY ("Video unavailable", a bot check…).
         # check=True here dumped a raw CalledProcessError traceback into the
         # studio's red banner, which no one can act on (round-3 user test).
-        tail = [ln for ln in (r.stderr or r.stdout or "").splitlines()
-                if ln.strip()][-3:]
+        tail = [ln for ln in (r.stderr or r.stdout or "").splitlines() if ln.strip()][
+            -3:
+        ]
         raise SystemExit("could not fetch that link:\n" + "\n".join(tail))
     got = sorted(dest.glob("*.mp3"), key=lambda p: p.stat().st_mtime)
     if not got:

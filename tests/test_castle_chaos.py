@@ -34,8 +34,8 @@ sys.path.insert(0, str(ROOT / "tools"))
 import castle_link as cl
 
 DEAD = "127.0.0.1:1"
-FAST = 0.1       # the patched TIMEOUT_S / read budgets
-SLACK = 0.6      # thread scheduling + connect on loopback (6x the budget)
+FAST = 0.1  # the patched TIMEOUT_S / read budgets
+SLACK = 0.6  # thread scheduling + connect on loopback (6x the budget)
 
 
 class Scripted(BaseHTTPRequestHandler):
@@ -53,8 +53,8 @@ class Scripted(BaseHTTPRequestHandler):
         self.server.seen.append((self.command, self.path, len(body)))
         act = self.server.next()
         if act == "stall":
-            self.server.release.wait(5)     # longer than any patched budget
-            act = "ok"                      # ...then answer, late
+            self.server.release.wait(5)  # longer than any patched budget
+            act = "ok"  # ...then answer, late
         if act == "close":
             self.close_connection = True
             return
@@ -62,19 +62,24 @@ class Scripted(BaseHTTPRequestHandler):
             time.sleep(float(act.split(":")[1]))
             act = "ok"
         if act == "ok":
-            payload = (json.dumps({"version": "9.9", "volume": 40, "sd_mounted": True})
-                       if self.path == "/api/status" else '{"queued":true}').encode()
+            payload = (
+                json.dumps({"version": "9.9", "volume": 40, "sd_mounted": True})
+                if self.path == "/api/status"
+                else '{"queued":true}'
+            ).encode()
             self.send_response(200)
         else:
             payload, code = b"scripted " + act.encode(), int(act)
             self.send_response(code)
-        self.send_header("Content-Type", "application/json" if act == "ok" else "text/plain")
+        self.send_header(
+            "Content-Type", "application/json" if act == "ok" else "text/plain"
+        )
         self.send_header("Content-Length", str(len(payload)))
         try:
             self.end_headers()
             self.wfile.write(payload)
         except OSError:
-            pass        # the bridge gave up waiting; a late answer to nobody
+            pass  # the bridge gave up waiting; a late answer to nobody
 
     def handle(self) -> None:
         try:
@@ -98,8 +103,9 @@ class ScriptedCastle(ThreadingHTTPServer):
         # poll_interval: shutdown() waits for the serve loop to notice, and
         # the default 0.5 s was most of the suite's wall time — every test
         # stops one or two of these.
-        threading.Thread(target=self.serve_forever, kwargs={"poll_interval": 0.02},
-                         daemon=True).start()
+        threading.Thread(
+            target=self.serve_forever, kwargs={"poll_interval": 0.02}, daemon=True
+        ).start()
 
     @property
     def host(self) -> str:
@@ -120,23 +126,32 @@ class ScriptedCastle(ThreadingHTTPServer):
         self.server_close()
 
 
-VERBS = (("POST", "/api/stop", b""), ("POST", "/api/scene?s=vigil", b""),
-         ("POST", "/api/volume?v=5", b""), ("POST", "/api/play?f=x.mp3", b""),
-         ("PUT", "/api/files/x.mp3", b"\xff\xfbdata"),
-         ("DELETE", "/api/files/x.mp3", b""), ("GET", "/api/files", b""),
-         ("GET", "/sd/x.mp3", b""))
+VERBS = (
+    ("POST", "/api/stop", b""),
+    ("POST", "/api/scene?s=vigil", b""),
+    ("POST", "/api/volume?v=5", b""),
+    ("POST", "/api/play?f=x.mp3", b""),
+    ("PUT", "/api/files/x.mp3", b"\xff\xfbdata"),
+    ("DELETE", "/api/files/x.mp3", b""),
+    ("GET", "/api/files", b""),
+    ("GET", "/sd/x.mp3", b""),
+)
 
 
 class ChaosCase(unittest.TestCase):
     def setUp(self) -> None:
         self.castle = ScriptedCastle()
         self.addCleanup(self.castle.stop)
-        self.native = mock.patch.object(cl.castle_native, "connected", return_value=False)
+        self.native = mock.patch.object(
+            cl.castle_native, "connected", return_value=False
+        )
         self.native_connected = self.native.start()
         self.addCleanup(self.native.stop)
-        patches: list = [mock.patch.object(cl, "TIMEOUT_S", FAST),
-                   mock.patch.object(cl, "PROBE_CONNECT_S", FAST),
-                   mock.patch.dict(cl.READ_BUDGET_S, {k: FAST for k in cl.READ_BUDGET_S})]
+        patches: list = [
+            mock.patch.object(cl, "TIMEOUT_S", FAST),
+            mock.patch.object(cl, "PROBE_CONNECT_S", FAST),
+            mock.patch.dict(cl.READ_BUDGET_S, {k: FAST for k in cl.READ_BUDGET_S}),
+        ]
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
@@ -157,7 +172,9 @@ class TestNeverALie(ChaosCase):
     def assert_no_2xx(self, label: str) -> None:
         for method, path, body in VERBS:
             code, out, _ = cl.forward(method, path, body)
-            self.assertFalse(200 <= code < 300, f"{label}: {method} {path} → {code} {out!r}")
+            self.assertFalse(
+                200 <= code < 300, f"{label}: {method} {path} → {code} {out!r}"
+            )
         self.assertIsNone(cl.status(), label)
         cl._cache.clear()
 
@@ -172,7 +189,7 @@ class TestNeverALie(ChaosCase):
         self.assert_no_2xx("500")
         self.castle.program("close")
         self.assert_no_2xx("close-without-reply")
-        self.native_connected.assert_not_called()   # ported host: no native leg
+        self.native_connected.assert_not_called()  # ported host: no native leg
 
     def test_stall_verdicts_by_verb(self) -> None:
         """GET → 502 (safe to retry, nothing changed); anything mutating →
@@ -193,8 +210,10 @@ class TestNoReplay(ChaosCase):
         self.castle.program("stall")
         code, _, _ = cl.forward("PUT", "/api/files/song.mp3", b"x" * 5000)
         self.assertEqual(code, 504)
-        self.assertEqual([s for s in self.castle.seen if s[0] == "PUT"],
-                         [("PUT", "/api/files/song.mp3", 5000)])
+        self.assertEqual(
+            [s for s in self.castle.seen if s[0] == "PUT"],
+            [("PUT", "/api/files/song.mp3", 5000)],
+        )
         self.assertEqual(other.seen, [])
         self.native_connected.assert_not_called()
 
@@ -216,14 +235,18 @@ class TestNoReplay(ChaosCase):
         self.hosts(DEAD, self.castle.host)
         code, _, _ = cl.forward("PUT", "/api/files/song.mp3", b"x" * 10)
         self.assertEqual(code, 200)
-        self.assertEqual([s for s in self.castle.seen if s[0] == "PUT"],
-                         [("PUT", "/api/files/song.mp3", 10)])
+        self.assertEqual(
+            [s for s in self.castle.seen if s[0] == "PUT"],
+            [("PUT", "/api/files/song.mp3", 10)],
+        )
 
     def test_slow_ack_inside_the_budget_is_a_plain_200(self) -> None:
         # A wider budget for this one test: the ack has to land INSIDE it,
         # and 0.15 s against FAST would be a coin-toss on a busy machine.
-        with mock.patch.object(cl, "TIMEOUT_S", 0.5), \
-                mock.patch.dict(cl.READ_BUDGET_S, {"PUT": 0.5}):
+        with (
+            mock.patch.object(cl, "TIMEOUT_S", 0.5),
+            mock.patch.dict(cl.READ_BUDGET_S, {"PUT": 0.5}),
+        ):
             self.castle.program("slow:0.15")
             self.assertEqual(cl.forward("PUT", "/api/files/song.mp3", b"x")[0], 200)
 
@@ -231,8 +254,10 @@ class TestNoReplay(ChaosCase):
         """Even for a native-capable (port-less) host: a stall means the
         HTTP leg took the request; translating it again would double it."""
         self.native_connected.return_value = True
-        with mock.patch.object(cl, "_call", side_effect=cl.Stalled("stalled")), \
-                mock.patch.object(cl.castle_native, "stop") as stop:
+        with (
+            mock.patch.object(cl, "_call", side_effect=cl.Stalled("stalled")),
+            mock.patch.object(cl.castle_native, "stop") as stop,
+        ):
             os.environ["CASTLE_HOST"] = "castle.lan"
             cl._cache.clear()
             code, _, _ = cl.forward("POST", "/api/stop")
@@ -243,14 +268,14 @@ class TestNoReplay(ChaosCase):
 class TestCaches(ChaosCase):
     def test_down_is_remembered_then_cleared_by_any_answer(self) -> None:
         self.hosts(DEAD, self.castle.host)
-        self.castle.program("close")          # both hosts unusable for status
+        self.castle.program("close")  # both hosts unusable for status
         self.assertIsNone(cl.status())
         self.assertIn("down", cl._cache)
         self.castle.program("404")
         code, _, _ = cl.forward("POST", "/api/scene?s=nope")
         self.assertEqual(code, 404)
-        self.assertNotIn("down", cl._cache)   # an answer of any kind is life
-        self.assertNotIn("up", cl._cache)     # ...but only a 2xx promotes
+        self.assertNotIn("down", cl._cache)  # an answer of any kind is life
+        self.assertNotIn("up", cl._cache)  # ...but only a 2xx promotes
 
     def test_within_down_ttl_no_socket_is_touched(self) -> None:
         self.hosts(self.castle.host)
@@ -271,7 +296,7 @@ class TestCaches(ChaosCase):
         other = ScriptedCastle()
         self.addCleanup(other.stop)
         self.hosts(self.castle.host, other.host)
-        self.castle.program("close")          # primary sick, fallback fine
+        self.castle.program("close")  # primary sick, fallback fine
         st = cl.status()
         assert st is not None
         self.assertEqual(st["bridged"], other.host)
@@ -326,9 +351,12 @@ class TestBudgets(ChaosCase):
         self.castle.program("stall")
         (code, _, _), took = self.timed(lambda: cl.forward("POST", "/api/stop"))
         self.assertEqual(code, 504)
-        self.assertLess(took, cl.TIMEOUT_S + cl._read_budget("POST", "/api/stop") + SLACK)
+        self.assertLess(
+            took, cl.TIMEOUT_S + cl._read_budget("POST", "/api/stop") + SLACK
+        )
         (code, _, _), took = self.timed(
-            lambda: cl.forward("PUT", "/api/files/a.mp3", b"x"))
+            lambda: cl.forward("PUT", "/api/files/a.mp3", b"x")
+        )
         self.assertEqual(code, 504)
         self.assertLess(took, cl.TIMEOUT_S + cl.READ_BUDGET_S["PUT"] + SLACK)
         self.assertEqual(other.seen, [])
@@ -358,7 +386,7 @@ class TestHostLists(ChaosCase):
         self.assertIn("no castle configured", out.decode())
         self.assertEqual(self.castle.seen, [])
         self.native_connected.assert_not_called()
-        self.assertNotIn("down", cl._cache)     # nothing to be down
+        self.assertNotIn("down", cl._cache)  # nothing to be down
 
     def test_live_host_listed_last_still_serves_and_is_promoted(self) -> None:
         dead2 = ScriptedCastle()
@@ -376,9 +404,18 @@ class TestHostLists(ChaosCase):
         for phase in ("ok", "500", "close", "ok"):
             self.castle.program(phase)
             cl._cache.clear()
-            seq.append((phase, cl.status() is not None, cl.forward("POST", "/api/stop")[0]))
-        self.assertEqual(seq, [("ok", True, 200), ("500", False, 500),
-                               ("close", False, 504), ("ok", True, 200)])
+            seq.append(
+                (phase, cl.status() is not None, cl.forward("POST", "/api/stop")[0])
+            )
+        self.assertEqual(
+            seq,
+            [
+                ("ok", True, 200),
+                ("500", False, 500),
+                ("close", False, 504),
+                ("ok", True, 200),
+            ],
+        )
 
     def test_restart_on_the_same_port_is_picked_up(self) -> None:
         port = self.castle.server_address[1]

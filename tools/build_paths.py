@@ -53,7 +53,7 @@ def track_source(rel: str) -> Path:
     """
     lib = os.environ.get("CASTLE_TRACKS")
     if lib and rel.startswith("tracks/"):
-        return Path(lib) / rel[len("tracks/"):]
+        return Path(lib) / rel[len("tracks/") :]
     return ROOT / rel
 
 

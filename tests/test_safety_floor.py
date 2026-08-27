@@ -34,8 +34,16 @@ class TestIdGuards(unittest.TestCase):
             self.assertEqual(studio.safe_id(tid), tid)
 
     def test_traversal_and_junk_die(self) -> None:
-        for tid in ("../../audio/01_vigil", "a/b", "a\\b", "a.b", "", "  ",
-                    "x;rm -rf", "a b"):
+        for tid in (
+            "../../audio/01_vigil",
+            "a/b",
+            "a\\b",
+            "a.b",
+            "",
+            "  ",
+            "x;rm -rf",
+            "a b",
+        ):
             self.assertIsNone(studio.safe_id(tid), tid)
 
 
@@ -43,35 +51,36 @@ class TestServerGuards(ServerCase):
     """The HTTP boundary refuses what the sanitiser refuses."""
 
     def test_refresh_rejects_a_traversal_id(self) -> None:
-        code, out = self.post_json("/api/refresh",
-                                   {"id": "../../audio/01_vigil"})
+        code, out = self.post_json("/api/refresh", {"id": "../../audio/01_vigil"})
         self.assertEqual(code, 400)
         self.assertIn("error", out)
 
     def test_import_rejects_a_traversal_id(self) -> None:
         code, out = self.post_json(
-            "/api/import", {"url": "https://example.com/x", "id": "../evil"})
+            "/api/import", {"url": "https://example.com/x", "id": "../evil"}
+        )
         self.assertEqual(code, 400)
         self.assertIn("error", out)
 
     def test_compare_strips_a_traversal_id_to_nothing(self) -> None:
         """E2: '../../<real file elsewhere>' must NOT resolve and stream."""
-        code, out = self.post_json("/api/compare",
-                                   {"id": "../../audio/01_vigil"})
+        code, out = self.post_json("/api/compare", {"id": "../../audio/01_vigil"})
         self.assertEqual(code, 404)
         self.assertEqual(out.get("error"), "no such track")
 
     def test_scene_write_refuses_invalid_yaml(self) -> None:
         """B4: a block that does not parse must never reach the file."""
         code, out = self.post_json(
-            "/api/scene", {"id": "x", "yaml": "  - id: x\n   broken: ["})
+            "/api/scene", {"id": "x", "yaml": "  - id: x\n   broken: ["}
+        )
         self.assertEqual(code, 400)
         self.assertIn("YAML", out["error"])
 
     def test_scene_write_refuses_a_lying_id(self) -> None:
         """B4: the block must be the one scene it claims to be."""
         code, out = self.post_json(
-            "/api/scene", {"id": "x", "yaml": "  - id: y\n    name: n"})
+            "/api/scene", {"id": "x", "yaml": "  - id: y\n    name: n"}
+        )
         self.assertEqual(code, 400)
         self.assertIn("expected exactly one scene", out["error"])
 
@@ -96,8 +105,10 @@ class TestManifestSafety(unittest.TestCase):
 
     def test_save_is_atomic_write_then_rename(self) -> None:
         mf.record("chant", source="file:/x")
-        self.assertFalse(mf.PATH.with_suffix(".tmp").exists(),
-                         "the temp file must not be left behind")
+        self.assertFalse(
+            mf.PATH.with_suffix(".tmp").exists(),
+            "the temp file must not be left behind",
+        )
         self.assertIn("chant", json.loads(mf.PATH.read_text()))
 
     def test_record_after_corruption_keeps_the_evidence(self) -> None:

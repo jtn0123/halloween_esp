@@ -30,9 +30,13 @@ def emit_media_files(doc: dict) -> str:
     reference. Both halves come from scenes.yaml so they cannot disagree —
     the hand-maintained list once shipped a config referencing an id
     nothing declared (see gen_esphome.py's history of the Ballad)."""
-    files = [HEADER, "",
-             "# One entry per scene, matching the `snd_<id>` ids the scripts",
-             "# above reference. Generated: do not hand-edit.", ""]
+    files = [
+        HEADER,
+        "",
+        "# One entry per scene, matching the `snd_<id>` ids the scripts",
+        "# above reference. Generated: do not hand-edit.",
+        "",
+    ]
     for i, scene in enumerate(doc["scenes"], start=1):
         files.append(f"- id: snd_{scene['id']}")
         files.append(f"  file: ../audio/{i:02d}_{scene['id']}.mp3")
@@ -42,24 +46,35 @@ def emit_media_files(doc: dict) -> str:
 def emit_audio_flash(doc: dict) -> str:
     """FLASH sfx: play the file embedded in the image. Costs ~600 KB of a
     1.75 MB OTA slot, works with nothing attached."""
-    flash = [HEADER, "", "script:",
-             "  - id: sfx",
-             MODE_RESTART,
-             "    parameters:",
-             "      track: string",
-             THEN,
-             "      - text_sensor.template.publish:",
-             "          id: current_track",
-             "          state: !lambda 'return track;'",
-             LAMBDA,
-             "          esphome::audio::AudioFile *f = nullptr;"]
+    flash = [
+        HEADER,
+        "",
+        "script:",
+        "  - id: sfx",
+        MODE_RESTART,
+        "    parameters:",
+        "      track: string",
+        THEN,
+        "      - text_sensor.template.publish:",
+        "          id: current_track",
+        "          state: !lambda 'return track;'",
+        LAMBDA,
+        "          esphome::audio::AudioFile *f = nullptr;",
+    ]
     for i, scene in enumerate(doc["scenes"], start=1):
         kw = "if" if i == 1 else "else if"
-        flash.append(f"          {kw} (track == \"{i:02d}_{scene['id']}\") "
-                     f"f = id(snd_{scene['id']});")
-    flash += ["          if (f != nullptr) id(castle_media)->play_file(f, true, false);",
-              ("          else ESP_LOGW(\"castle\", \"no embedded audio for '%s'\","
-               " track.c_str());"), ""]
+        flash.append(
+            f'          {kw} (track == "{i:02d}_{scene["id"]}") '
+            f"f = id(snd_{scene['id']});"
+        )
+    flash += [
+        "          if (f != nullptr) id(castle_media)->play_file(f, true, false);",
+        (
+            '          else ESP_LOGW("castle", "no embedded audio for \'%s\'",'
+            " track.c_str());"
+        ),
+        "",
+    ]
     return "\n".join(flash)
 
 
@@ -68,24 +83,29 @@ def emit_audio_sd(doc: dict) -> str:
     web server over loopback — a real streaming source with zero new
     decoder code, no PSRAM cap, no whole-file loads. A missing card plays
     the embedded chirp (the only file the SD build keeps in flash)."""
-    sd = [HEADER, "", "script:",
-          "  - id: sfx",
-          MODE_RESTART,
-          "    parameters:",
-          "      track: string",
-          THEN,
-          "      - text_sensor.template.publish:",
-          "          id: current_track",
-          "          state: !lambda 'return track;'",
-          LAMBDA,
-          "          if (!castle_sd::g_mounted) {",
-          "            ESP_LOGW(\"castle\", \"no SD card — playing the fallback chirp\");",
-          "            id(castle_media)->play_file(id(snd_chirp), true, false);",
-          "            return;",
-          "          }",
-          "          auto call = id(castle_media)->make_call();",
-          "          call.set_media_url(\"http://127.0.0.1:8080/sd/scenes/\" + track + \".mp3\");",
-          "          call.set_announcement(true);",
-          "          call.perform();", ""]
+    sd = [
+        HEADER,
+        "",
+        "script:",
+        "  - id: sfx",
+        MODE_RESTART,
+        "    parameters:",
+        "      track: string",
+        THEN,
+        "      - text_sensor.template.publish:",
+        "          id: current_track",
+        "          state: !lambda 'return track;'",
+        LAMBDA,
+        "          if (!castle_sd::g_mounted) {",
+        '            ESP_LOGW("castle", "no SD card — playing the fallback chirp");',
+        "            id(castle_media)->play_file(id(snd_chirp), true, false);",
+        "            return;",
+        "          }",
+        "          auto call = id(castle_media)->make_call();",
+        '          call.set_media_url("http://127.0.0.1:8080/sd/scenes/" + track + ".mp3");',
+        "          call.set_announcement(true);",
+        "          call.perform();",
+        "",
+    ]
     sd += emit_manifest_check(doc)
     return "\n".join(sd)

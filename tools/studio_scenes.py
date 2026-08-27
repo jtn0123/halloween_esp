@@ -43,8 +43,7 @@ def zone_ids(scenes: Path) -> list[str] | None:
         return None
 
 
-def rebuild(lock: threading.Lock, run: Runner, py: str,
-            root: Path) -> tuple[bool, str]:
+def rebuild(lock: threading.Lock, run: Runner, py: str, root: Path) -> tuple[bool, str]:
     """audio → firmware cues → previewer, serialised with the encode jobs.
 
     The three scripts inherit this process's environment, so a sandboxed
@@ -58,9 +57,12 @@ def rebuild(lock: threading.Lock, run: Runner, py: str,
     failed — wrote 11 scenes…" (judge B, JB2-3). The failing step's output
     is the tail of the log, so studio_jobs.reason() reads the real cause.
     """
-    note = (f"sandbox: rendered under {bp.BUILD} — the repo's audio/, "
-            f"firmware/generated/ and previewer are untouched\n"
-            if bp.sandboxed() else "")
+    note = (
+        f"sandbox: rendered under {bp.BUILD} — the repo's audio/, "
+        f"firmware/generated/ and previewer are untouched\n"
+        if bp.sandboxed()
+        else ""
+    )
     log = note
     with lock:
         for tool in ("render_audio.py", "gen_esphome.py", "gen_previewer.py"):
@@ -76,6 +78,7 @@ def rebuild(lock: threading.Lock, run: Runner, py: str,
         # says so; a push failure is reported but does not fail the rebuild,
         # whose local artifacts are good.
         import studio_publish as sp
+
         body, _code = sp.publish(run)
         log += "\n" + str(body.get("log") or body.get("error") or "")
         if body.get("note"):
@@ -89,8 +92,8 @@ def block_pattern(sid: str) -> re.Pattern[str]:
     # itself whether it belongs to this block. The lazy `(?:.*\n)*?` it
     # replaces could backtrack line by line across a long file (Sonar S5852).
     return re.compile(
-        rf"^  - id: {re.escape(sid)}\n(?:(?!^  - id: ).*\n)*+",
-        re.MULTILINE)
+        rf"^  - id: {re.escape(sid)}\n(?:(?!^  - id: ).*\n)*+", re.MULTILINE
+    )
 
 
 def _write(scenes: Path, before: str, raw: str) -> None:
@@ -102,8 +105,9 @@ def _write(scenes: Path, before: str, raw: str) -> None:
     os.replace(tmp, scenes)
 
 
-def remove(scenes: Path, sid: str, lock: threading.Lock, run: Runner,
-           py: str, root: Path) -> tuple[dict, int]:
+def remove(
+    scenes: Path, sid: str, lock: threading.Lock, run: Runner, py: str, root: Path
+) -> tuple[dict, int]:
     """Take one scene out of scenes.yaml and re-render; (body, http code).
 
     The desk offers this when a track that is IN THE SHOW is deleted:
@@ -114,16 +118,24 @@ def remove(scenes: Path, sid: str, lock: threading.Lock, run: Runner,
         before = scenes.read_text()
         pat = block_pattern(sid)
         if not pat.search(before):
-            return {"ok": True, "id": sid, "removed": False,
-                    "scenes": scene_ids(scenes), "log": ""}, 200
+            return {
+                "ok": True,
+                "id": sid,
+                "removed": False,
+                "scenes": scene_ids(scenes),
+                "log": "",
+            }, 200
         _write(scenes, before, pat.sub("", before))
     ok, log = rebuild(lock, run, py, root)
-    return ({"ok": ok, "id": sid, "removed": True,
-             "scenes": scene_ids(scenes), "log": log}, 200 if ok else 500)
+    return (
+        {"ok": ok, "id": sid, "removed": True, "scenes": scene_ids(scenes), "log": log},
+        200 if ok else 500,
+    )
 
 
-def splice(scenes: Path, req: dict, lock: threading.Lock, run: Runner,
-           py: str, root: Path) -> tuple[dict, int]:
+def splice(
+    scenes: Path, req: dict, lock: threading.Lock, run: Runner, py: str, root: Path
+) -> tuple[dict, int]:
     """Insert or replace a scene block in scenes.yaml; (body, http code).
 
     Text splicing, not a YAML round-trip: scenes.yaml is a hand-authored
@@ -142,8 +154,12 @@ def splice(scenes: Path, req: dict, lock: threading.Lock, run: Runner,
         parsed = yaml.safe_load(block)
     except yaml.YAMLError as e:
         return {"error": f"scene is not valid YAML: {e}"}, 400
-    if (not isinstance(parsed, list) or len(parsed) != 1
-            or not isinstance(parsed[0], dict) or parsed[0].get("id") != sid):
+    if (
+        not isinstance(parsed, list)
+        or len(parsed) != 1
+        or not isinstance(parsed[0], dict)
+        or parsed[0].get("id") != sid
+    ):
         return {"error": f"expected exactly one scene with id {sid!r}"}, 400
     # And it must be a SCENE — known effects, cues inside its length, the
     # keys the generators read. A block that parses but says `effect: glow`
@@ -152,9 +168,11 @@ def splice(scenes: Path, req: dict, lock: threading.Lock, run: Runner,
     # the desk can show next to the field.
     errors = scene_schema.validate(parsed[0], zone_ids(scenes))
     if errors:
-        return {"error": f"scene {sid!r} has {len(errors)} problem"
-                         f"{'s' if len(errors) > 1 else ''}: {errors[0]}",
-                "errors": errors}, 400
+        return {
+            "error": f"scene {sid!r} has {len(errors)} problem"
+            f"{'s' if len(errors) > 1 else ''}: {errors[0]}",
+            "errors": errors,
+        }, 400
     pat = block_pattern(sid)
     with lock:
         # Read-modify-write under the lock: two concurrent saves used to
@@ -177,5 +195,13 @@ def splice(scenes: Path, req: dict, lock: threading.Lock, run: Runner,
     # `replaced` and `scenes` are what let the panel say what actually
     # happened instead of "written", which is indistinguishable from
     # nothing having happened at all.
-    return ({"ok": ok, "id": sid, "replaced": replaced,
-             "scenes": scene_ids(scenes), "log": log}, 200 if ok else 500)
+    return (
+        {
+            "ok": ok,
+            "id": sid,
+            "replaced": replaced,
+            "scenes": scene_ids(scenes),
+            "log": log,
+        },
+        200 if ok else 500,
+    )

@@ -42,7 +42,7 @@ def wait_for(cond, timeout: float = 4.0) -> bool:
 class ModeCase(unittest.TestCase):
     def start(self, **kw) -> castle_emu.CastleEmu:
         card = Path(tempfile.mkdtemp(prefix="emu-mode-sd-"))
-        (card / "tone.mp3").write_bytes(b"\xff\xfb" + b"\0" * 3000)   # ~1 s track
+        (card / "tone.mp3").write_bytes(b"\xff\xfb" + b"\0" * 3000)  # ~1 s track
         emu = castle_emu.CastleEmu(port=0, sd_dir=card, scenes=["vigil", "storm"], **kw)
         emu.start()
         self.addCleanup(emu.server_close)
@@ -50,11 +50,12 @@ class ModeCase(unittest.TestCase):
         env = mock.patch.dict(os.environ, {"CASTLE_HOST": f"127.0.0.1:{emu.port}"})
         env.start()
         self.addCleanup(env.stop)
-        patches: list = [mock.patch.object(cl, "TIMEOUT_S", FAST),
-                         mock.patch.object(cl, "PROBE_CONNECT_S", FAST),
-                         mock.patch.object(cl, "_DOWN_TTL_S", 0.0),
-                         mock.patch.dict(cl.READ_BUDGET_S,
-                                         {k: FAST for k in cl.READ_BUDGET_S})]
+        patches: list = [
+            mock.patch.object(cl, "TIMEOUT_S", FAST),
+            mock.patch.object(cl, "PROBE_CONNECT_S", FAST),
+            mock.patch.object(cl, "_DOWN_TTL_S", 0.0),
+            mock.patch.dict(cl.READ_BUDGET_S, {k: FAST for k in cl.READ_BUDGET_S}),
+        ]
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
@@ -62,13 +63,17 @@ class ModeCase(unittest.TestCase):
         self.addCleanup(cl._cache.clear)
         return emu
 
-    def slow_put(self, emu: castle_emu.CastleEmu, name: str, total: int,
-                 seconds: float) -> threading.Thread:
+    def slow_put(
+        self, emu: castle_emu.CastleEmu, name: str, total: int, seconds: float
+    ) -> threading.Thread:
         """A PUT whose body trickles in over `seconds` — WiFi-to-SD speed."""
+
         def go() -> None:
             s = socket.create_connection(("127.0.0.1", emu.port), timeout=10)
-            s.sendall(f"PUT /api/files/{name} HTTP/1.1\r\nHost: c\r\n"
-                      f"Content-Length: {total}\r\nConnection: close\r\n\r\n".encode())
+            s.sendall(
+                f"PUT /api/files/{name} HTTP/1.1\r\nHost: c\r\n"
+                f"Content-Length: {total}\r\nConnection: close\r\n\r\n".encode()
+            )
             steps = 10
             for _ in range(steps):
                 s.sendall(b"x" * (total // steps))
@@ -78,9 +83,10 @@ class ModeCase(unittest.TestCase):
             while s.recv(4096):
                 pass
             s.close()
+
         t = threading.Thread(target=go, daemon=True)
         t.start()
-        time.sleep(0.15)            # let the handler take the serial lock
+        time.sleep(0.15)  # let the handler take the serial lock
         return t
 
 
@@ -96,8 +102,14 @@ class TestSerial(ModeCase):
         self.assertEqual(cl.forward("GET", "/api/files")[0], 502)
         t.join(timeout=10)
         # The upload completed untouched by the interruptions...
-        self.assertTrue(wait_for(lambda: (emu.sd_dir / "big.mp3").is_file()
-                                 and (emu.sd_dir / "big.mp3").stat().st_size == 20000))
+        self.assertTrue(
+            wait_for(
+                lambda: (
+                    (emu.sd_dir / "big.mp3").is_file()
+                    and (emu.sd_dir / "big.mp3").stat().st_size == 20000
+                )
+            )
+        )
         # ...and "may have landed" was literal: the parked stop ran later.
         self.assertTrue(wait_for(lambda: ("STOP", "") in emu.applied))
         cl._cache.clear()
@@ -139,13 +151,15 @@ class TestNoCard(ModeCase):
         assert st is not None
         self.assertFalse(st["sd_mounted"])
         self.assertEqual((st["sd_total_kb"], st["sd_free_kb"]), (0, 0))
-        for method, path, body in (("GET", "/api/files", b""),
-                                   ("PUT", "/api/files/a.mp3", b"x"),
-                                   ("DELETE", "/api/files/a.mp3", b""),
-                                   ("GET", "/sd/a.mp3", b"")):
+        for method, path, body in (
+            ("GET", "/api/files", b""),
+            ("PUT", "/api/files/a.mp3", b"x"),
+            ("DELETE", "/api/files/a.mp3", b""),
+            ("GET", "/sd/a.mp3", b""),
+        ):
             code, out, _ = cl.forward(method, path, body)
             self.assertEqual((code, out), (503, b"no SD card"), f"{method} {path}")
-        self.assertEqual(cl.forward("GET", "/site/x.js")[0], 404)   # "not on card"
+        self.assertEqual(cl.forward("GET", "/site/x.js")[0], 404)  # "not on card"
         code, out, _ = cl.forward("POST", "/api/scene?s=vigil")
         self.assertEqual((code, json.loads(out)), (200, {"queued": True}))
         self.assertEqual(cl.forward("POST", "/api/volume?v=5")[0], 200)

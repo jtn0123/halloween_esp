@@ -41,8 +41,12 @@ FLAGS = ["-std=c++17", "-O1", "-Wall", "-Wextra", "-Werror", "-I", str(FIRMWARE)
 
 def build(src: Path, out: Path) -> subprocess.CompletedProcess[str]:
     assert COMPILER is not None
-    return subprocess.run([COMPILER, *FLAGS, str(src), "-o", str(out)],
-                          capture_output=True, text=True, check=False)
+    return subprocess.run(
+        [COMPILER, *FLAGS, str(src), "-o", str(out)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 #: Locally a missing compiler is a skip. In CI it is a failure: the runner
@@ -62,8 +66,10 @@ class TestFirmwareRenderPath(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         if COMPILER is None:
-            raise AssertionError("CI is set and no host C++ compiler (clang++/g++) "
-                                 "is on PATH — the firmware harness must run in CI")
+            raise AssertionError(
+                "CI is set and no host C++ compiler (clang++/g++) "
+                "is on PATH — the firmware harness must run in CI"
+            )
         cls.tmp = tempfile.mkdtemp()
         cls.check = Path(cls.tmp) / "render_check"
         cls.dump = Path(cls.tmp) / "parity_dump"
@@ -75,28 +81,38 @@ class TestFirmwareRenderPath(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def test_generated_rig_header_exists(self) -> None:
-        self.assertTrue((FIRMWARE / "generated" / "rig.h").exists(),
-                        "generated/rig.h missing — run `make generate` first")
+        self.assertTrue(
+            (FIRMWARE / "generated" / "rig.h").exists(),
+            "generated/rig.h missing — run `make generate` first",
+        )
 
     def test_render_check_compiles_warning_free(self) -> None:
         """Warnings are errors here: the device build hides them in a wall of
         ESP-IDF output, so a warning that survives is a warning nobody reads."""
-        self.assertEqual(self.built.returncode, 0,
-                         f"render_check.cpp did not compile:\n{self.built.stderr}")
+        self.assertEqual(
+            self.built.returncode,
+            0,
+            f"render_check.cpp did not compile:\n{self.built.stderr}",
+        )
 
     def test_parity_dump_compiles_warning_free(self) -> None:
-        self.assertEqual(self.built_dump.returncode, 0,
-                         f"parity_dump.cpp did not compile:\n{self.built_dump.stderr}")
+        self.assertEqual(
+            self.built_dump.returncode,
+            0,
+            f"parity_dump.cpp did not compile:\n{self.built_dump.stderr}",
+        )
 
     def test_invariants_hold_for_two_seeds(self) -> None:
         """Buffer canaries, finite 0..255 output, identity of unknown ids, the
         exact strike-envelope curve, blackout really dark — see the harness."""
         self.assertEqual(self.built.returncode, 0, self.built.stderr)
         for seed in ("1234", "424242"):
-            run = subprocess.run([str(self.check), seed], capture_output=True,
-                                 text=True, check=False)
-            self.assertEqual(run.returncode, 0,
-                             f"seed {seed}:\n{run.stdout}\n{run.stderr}")
+            run = subprocess.run(
+                [str(self.check), seed], capture_output=True, text=True, check=False
+            )
+            self.assertEqual(
+                run.returncode, 0, f"seed {seed}:\n{run.stdout}\n{run.stderr}"
+            )
             self.assertIn("rendered ok", run.stdout)
             checks = int(run.stdout.split("rendered ok, ")[1].split(" checks")[0])
             self.assertGreater(checks, 500_000, "the harness lost most of its checks")
@@ -105,13 +121,16 @@ class TestFirmwareRenderPath(unittest.TestCase):
         """Every line parses; every zone in rig.h is described; every effect,
         overlay and strike mask appears; every value is finite and in 0..1."""
         self.assertEqual(self.built_dump.returncode, 0, self.built_dump.stderr)
-        run = subprocess.run([str(self.dump), "11", "1500"], capture_output=True,
-                             text=True, check=False)
+        run = subprocess.run(
+            [str(self.dump), "11", "1500"], capture_output=True, text=True, check=False
+        )
         self.assertEqual(run.returncode, 0, run.stderr)
         rows = [json.loads(line) for line in run.stdout.splitlines()]
         zones = [r for r in rows if r["kind"] == "zone"]
         rig = (FIRMWARE / "generated" / "rig.h").read_text()
-        declared = int(rig.split("inline constexpr Fixture RIG[", 1)[1].split("]", 1)[0])
+        declared = int(
+            rig.split("inline constexpr Fixture RIG[", 1)[1].split("]", 1)[0]
+        )
         self.assertEqual(len(zones), declared)
         px = [r for r in rows if r["kind"] == "px"]
         self.assertEqual({r["eff"] for r in px}, set(range(13)))
@@ -134,6 +153,7 @@ class TestFirmwareRenderPath(unittest.TestCase):
         biggest = max(
             int(line.split("{", 1)[1].split(",", 1)[0])
             for line in rig.splitlines()
-            if line.strip().startswith("{") and "rig_tables::" in line)
+            if line.strip().startswith("{") and "rig_tables::" in line
+        )
         declared = int(rig.split("RIG_MAX_PIXELS = ", 1)[1].split(";", 1)[0])
         self.assertGreaterEqual(declared, biggest)

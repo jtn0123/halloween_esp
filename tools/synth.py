@@ -20,11 +20,17 @@ SR = 44100
 # Organ voicing. Matches the RANKS table in the previewer:
 # 32' 16' 8' celeste, then the upper chorus which rides the `stops` control.
 RANKS = [
-    (0.25, 0.30, False), (0.5, 0.86, False), (1.0, 1.00, False), (1.004, 0.40, False),
-    (2.0, 0.40, True), (3.0, 0.22, True), (4.0, 0.13, True), (6.0, 0.06, True),
+    (0.25, 0.30, False),
+    (0.5, 0.86, False),
+    (1.0, 1.00, False),
+    (1.004, 0.40, False),
+    (2.0, 0.40, True),
+    (3.0, 0.22, True),
+    (4.0, 0.13, True),
+    (6.0, 0.06, True),
 ]
 
-STOPS = 0.42        # how much upper chorus is drawn
+STOPS = 0.42  # how much upper chorus is drawn
 TREM_HZ = 5.1
 TREM_DEPTH = 0.046  # multiplicative, not additive — see previewer notes
 
@@ -71,13 +77,14 @@ def _sweep_lp(x: np.ndarray, f0: float, f1: float, blocks: int = 48) -> np.ndarr
         a, b = edges[i], edges[i + 1]
         if b <= a:
             continue
-        seg = _lp(x[max(0, a - win):b], freqs[i])[-(b - a):]
+        seg = _lp(x[max(0, a - win) : b], freqs[i])[-(b - a) :]
         out[a:b] = seg
     # Soften block seams.
     return _lp(out, min(f0 * 1.5, SR / 2 - 200), order=1)
 
 
 # ── voices ────────────────────────────────────────────────────────────────
+
 
 def pipe(f: float, dur: float, vel: float, stops: float = STOPS) -> np.ndarray:
     """Additive drawbar organ rank with tremulant and a duration-scaled swell."""
@@ -86,7 +93,7 @@ def pipe(f: float, dur: float, vel: float, stops: float = STOPS) -> np.ndarray:
     out = np.zeros(n)
     for m, amp, upper in RANKS:
         fr = f * m * (1.0 if m == 1.0 else 1.0012)
-        if fr < 24 or fr > 11000:          # below hearing / above useful
+        if fr < 24 or fr > 11000:  # below hearing / above useful
             continue
         a = amp * (stops if upper else 1.0)
         if a < 0.012:
@@ -110,7 +117,9 @@ def piano(f: float, dur: float, vel: float) -> np.ndarray:
         fr = f * h * (1 + 0.0004 * h * h)
         if fr > 12000:
             break
-        out += (1.0 / h ** 1.6) * np.sin(2 * np.pi * fr * t) * np.exp(-t * (2.2 + 0.9 * h))
+        out += (
+            (1.0 / h**1.6) * np.sin(2 * np.pi * fr * t) * np.exp(-t * (2.2 + 0.9 * h))
+        )
     atk = max(1, int(0.006 * SR))
     out[:atk] *= np.linspace(0, 1, atk)
     return out * vel
@@ -125,13 +134,16 @@ def box(f: float, dur: float, vel: float) -> np.ndarray:
         if f * m > 14000:
             continue
         decay = 3.2 / (dur / (i * 0.8 + 1))
-        out += (1.0 / (i * 2.2 + 1)) * np.sin(2 * np.pi * f * m * t) * np.exp(-t * decay)
+        out += (
+            (1.0 / (i * 2.2 + 1)) * np.sin(2 * np.pi * f * m * t) * np.exp(-t * decay)
+        )
     atk = max(1, int(0.004 * SR))
     out[:atk] *= np.linspace(0, 1, atk)
     return out * vel
 
 
 # ── atmosphere ────────────────────────────────────────────────────────────
+
 
 def wind(dur: float, rng: np.random.Generator) -> np.ndarray:
     n = int(dur * SR)
@@ -146,7 +158,7 @@ def wind(dur: float, rng: np.random.Generator) -> np.ndarray:
         if b <= a:
             continue
         centre = 420 + 240 * np.sin(2 * np.pi * 0.09 * (a / SR))
-        out[a:b] = _bp(src[max(0, a - 512):b], centre, q=0.7)[-(b - a):]
+        out[a:b] = _bp(src[max(0, a - 512) : b], centre, q=0.7)[-(b - a) :]
     swell = 1.0 + 0.38 * np.sin(2 * np.pi * 0.06 * t)
     # Knees clamped into order: below ~4 s the two fades would overlap and
     # np.interp's xp goes non-monotonic, which silently returns nonsense —
@@ -188,13 +200,17 @@ def shriek(rng: np.random.Generator) -> np.ndarray:
     out = np.zeros(n)
     blocks = 40
     edges = np.linspace(0, n, blocks + 1).astype(int)
-    centres = np.concatenate([np.geomspace(700, 2900, blocks // 2),
-                              np.geomspace(2900, 900, blocks - blocks // 2)])
+    centres = np.concatenate(
+        [
+            np.geomspace(700, 2900, blocks // 2),
+            np.geomspace(2900, 900, blocks - blocks // 2),
+        ]
+    )
     for i in range(blocks):
         a, b = edges[i], edges[i + 1]
         if b <= a:
             continue
-        out[a:b] = _bp(src[max(0, a - 256):b], centres[i], q=9)[-(b - a):]
+        out[a:b] = _bp(src[max(0, a - 256) : b], centres[i], q=9)[-(b - a) :]
     return np.asarray(out * np.interp(t, [0, 0.04, dur], [0.0, 1.0, 0.0]) ** 1.3 * 0.34)
 
 
@@ -213,9 +229,9 @@ def heartbeat(dur: float, rng: np.random.Generator) -> Voice:
 
     period = 1.25
     t0 = 0.0
-    beats = []                                     # actual thump times, for the lights
+    beats = []  # actual thump times, for the lights
     while t0 < dur:
-        jitter = rng.uniform(-0.03, 0.03)          # a metronome heart is dead
+        jitter = rng.uniform(-0.03, 0.03)  # a metronome heart is dead
         _place(buf, thump(52, 1.00), t0 + jitter)
         _place(buf, thump(64, 0.55), t0 + 0.18 + jitter)
         # BOTH thumps, with their real loudness — the light does lub-dub too.
@@ -238,9 +254,13 @@ def drone(dur: float) -> np.ndarray:
     n = int(dur * SR)
     t = _t(n)
     out = np.zeros(n)
-    for f, amp in ((73.42, 0.5), (73.60, 0.35),      # D2, detuned pair
-                   (103.83, 0.30), (104.05, 0.22),   # Ab2, detuned pair
-                   (36.71, 0.30)):                   # D1 under everything
+    for f, amp in (
+        (73.42, 0.5),
+        (73.60, 0.35),  # D2, detuned pair
+        (103.83, 0.30),
+        (104.05, 0.22),  # Ab2, detuned pair
+        (36.71, 0.30),
+    ):  # D1 under everything
         out += amp * np.sin(2 * np.pi * f * t)
     wander = 0.75 + 0.25 * np.sin(2 * np.pi * 0.045 * t + 1.0)
     # Clamp the knees so they stay ordered on short durations; otherwise
@@ -256,26 +276,26 @@ def whispers(dur: float, rng: np.random.Generator) -> Voice:
     effect; half-heard, the listener's brain writes the words."""
     n = int(dur * SR)
     buf = np.zeros(n)
-    words = []                                      # word onsets, for the lights
+    words = []  # word onsets, for the lights
     t0 = 0.6
     while t0 < dur - 1.0:
-        wlen = rng.uniform(0.25, 0.9)               # one "word"
+        wlen = rng.uniform(0.25, 0.9)  # one "word"
         wn = int(wlen * SR)
         seg = _noise(wn, rng)
         f1 = rng.uniform(1200, 2600)
         f2 = f1 * rng.uniform(1.3, 1.9)
         seg = _bp(seg, f1, q=8) + 0.6 * _bp(seg, f2, q=10)
         st = _t(wn)
-        env = np.sin(np.pi * st / wlen) ** 2        # syllable swell
+        env = np.sin(np.pi * st / wlen) ** 2  # syllable swell
         env *= 1.0 + 0.5 * np.sin(2 * np.pi * rng.uniform(6, 11) * st)
         buf_i = int(t0 * SR)
         k = min(wn, n - buf_i)
         if k > 0:
-            buf[buf_i:buf_i + k] += seg[:k] * env[:k]
+            buf[buf_i : buf_i + k] += seg[:k] * env[:k]
         # Velocity from word length (no extra rng draws — the audio must not
         # change because we started reporting markers).
         words.append((t0, 0.5 + 0.5 * min(1.0, wlen / 0.9)))
-        t0 += wlen + rng.uniform(0.15, 1.4)         # ragged pauses
+        t0 += wlen + rng.uniform(0.15, 1.4)  # ragged pauses
     return buf * 0.5, words
 
 
@@ -285,31 +305,36 @@ def toll() -> Voice:
     t = _t(n)
     out = np.zeros(n)
     for i, m in enumerate((1.0, 2.76, 5.4, 8.9)):
-        out += (0.24 / (i + 1)) * np.sin(2 * np.pi * 138 * m * t) * np.exp(-t * (0.9 + i * 0.55))
+        out += (
+            (0.24 / (i + 1))
+            * np.sin(2 * np.pi * 138 * m * t)
+            * np.exp(-t * (0.9 + i * 0.55))
+        )
     return out, [(0.0, 1.0)]
 
 
 # ── pieces ────────────────────────────────────────────────────────────────
 
+
 def _place(buf: np.ndarray, sig: np.ndarray, t0: float) -> None:
     i = int(t0 * SR)
-    if i < 0:                     # e.g. heartbeat jitter on the first beat
+    if i < 0:  # e.g. heartbeat jitter on the first beat
         sig = sig[-i:]
         i = 0
     if i >= len(buf) or len(sig) == 0:
         return
     k = min(len(sig), len(buf) - i)
     if k > 0:
-        buf[i:i + k] += sig[:k]
+        buf[i : i + k] += sig[:k]
 
 
 def organ() -> Voice:
     """Procession in D minor: i - bII - i - V7b9. 7.5 s chords, 0.9 s overlap."""
     chords = [
-        (-19, (5, 8, 12)),      # i     D minor
-        (-18, (6, 10, 13)),     # bII   E flat major, the Neapolitan
-        (-19, (5, 8, 12)),      # i
-        (-12, (12, 13, 16, 19)) # V7b9  A, Bb, C#, E
+        (-19, (5, 8, 12)),  # i     D minor
+        (-18, (6, 10, 13)),  # bII   E flat major, the Neapolitan
+        (-19, (5, 8, 12)),  # i
+        (-12, (12, 13, 16, 19)),  # V7b9  A, Bb, C#, E
     ]
     buf = np.zeros(int(28.0 * SR))
     for i, (ped, notes) in enumerate(chords):
@@ -326,11 +351,13 @@ def descent() -> Voice:
     buf = np.zeros(int(27.5 * SR))
     _place(buf, pipe(nt(-19), 25.5, 0.090), 0.0)
     _place(buf, pipe(nt(-31), 25.5, 0.060), 0.0)
-    for i, cluster in enumerate(((17, 20, 24), (16, 19, 23), (15, 18, 22), (14, 17, 21))):
+    for i, cluster in enumerate(
+        ((17, 20, 24), (16, 19, 23), (15, 18, 22), (14, 17, 21))
+    ):
         bt = 1.2 + i * 5.8
         for s in cluster:
             _place(buf, pipe(nt(s - 12), 6.6, 0.030), bt)
-    for s in (5, 8, 11, 14):           # diminished pile-up: D F Ab B
+    for s in (5, 8, 11, 14):  # diminished pile-up: D F Ab B
         _place(buf, pipe(nt(s - 12), 6.4, 0.034), 20.4)
     return buf
 
@@ -338,10 +365,42 @@ def descent() -> Voice:
 def waltz() -> Voice:
     """8 bars, 3/4. Bass on the downbeat, triad on 2 and 3, music box on top."""
     B = 0.52
-    prog = [(0, (0, 3, 7)), (0, (0, 3, 7)), (5, (0, 3, 7)), (7, (0, 4, 7)),
-            (0, (0, 3, 7)), (8, (0, 4, 7)), (7, (0, 4, 7)), (0, (0, 3, 7))]
-    mel = [12, 15, 19, 17, 15, 14, 17, 20, 17, 19, 14, 11,
-           12, 15, 19, 20, 19, 17, 19, 14, 11, 12, None, None]
+    prog = [
+        (0, (0, 3, 7)),
+        (0, (0, 3, 7)),
+        (5, (0, 3, 7)),
+        (7, (0, 4, 7)),
+        (0, (0, 3, 7)),
+        (8, (0, 4, 7)),
+        (7, (0, 4, 7)),
+        (0, (0, 3, 7)),
+    ]
+    mel = [
+        12,
+        15,
+        19,
+        17,
+        15,
+        14,
+        17,
+        20,
+        17,
+        19,
+        14,
+        11,
+        12,
+        15,
+        19,
+        20,
+        19,
+        17,
+        19,
+        14,
+        11,
+        12,
+        None,
+        None,
+    ]
     buf = np.zeros(int((8 * 3 * B + 3.0) * SR))
     for bar, (root, iv) in enumerate(prog):
         bt = bar * 3 * B
@@ -353,7 +412,9 @@ def waltz() -> Voice:
         if note is not None:
             _place(buf, box(nt(note), 1.7, 0.15), i * B)
     # Downbeats, bar 1 of each 4-bar phrase accented.
-    return buf, [(bar * 3 * B, 1.0 if bar % 4 == 0 else 0.7) for bar in range(len(prog))]
+    return buf, [
+        (bar * 3 * B, 1.0 if bar % 4 == 0 else 0.7) for bar in range(len(prog))
+    ]
 
 
 def musicbox() -> Voice:
@@ -365,6 +426,7 @@ def musicbox() -> Voice:
 
 # ── room and master ───────────────────────────────────────────────────────
 
+
 def reverb_ir(secs: float, decay: float, rng: np.random.Generator) -> np.ndarray:
     n = int(secs * SR)
     return _noise(n, rng) * (1.0 - np.arange(n) / n) ** decay
@@ -375,7 +437,7 @@ def apply_reverb(x: np.ndarray, wet: float, rng: np.random.Generator) -> np.ndar
     if wet <= 0:
         return x
     ir = reverb_ir(3.4, 2.4, rng)
-    tail = signal.fftconvolve(x, ir)[:len(x)]
+    tail = signal.fftconvolve(x, ir)[: len(x)]
     peak = np.max(np.abs(tail))
     if peak > 0:
         tail /= peak
@@ -402,7 +464,9 @@ def limit(x: np.ndarray, ceiling: float = 0.89) -> np.ndarray:
     # drone loop, so the seam dipped on every pass.
     pad = smooth // 2
     padded = np.pad(gain, pad, mode="edge")
-    gain = np.convolve(padded, np.ones(smooth) / smooth, mode="same")[pad:pad + len(env)]
+    gain = np.convolve(padded, np.ones(smooth) / smooth, mode="same")[
+        pad : pad + len(env)
+    ]
     return np.asarray(np.clip(x * gain, -1.0, 1.0))
 
 

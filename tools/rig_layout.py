@@ -63,7 +63,7 @@ class Layout:
 def _ring(n: int) -> tuple[list[tuple[float, float]], list[float], list[float]]:
     pos, walk, fall = [], [], []
     for i in range(n):
-        a = -math.pi / 2 + (i / n) * math.tau      # pixel 0 at 12 o'clock
+        a = -math.pi / 2 + (i / n) * math.tau  # pixel 0 at 12 o'clock
         pos.append((0.5 + math.cos(a) * 0.42, 0.5 + math.sin(a) * 0.42))
         walk.append(i / n)
         # Top to bottom, so a drip reads as gravity and not as a lap.
@@ -82,7 +82,8 @@ def layout_of(fixture_id: str, count: int | None = None) -> Layout:
     elif count is not None and count != base:
         raise SystemExit(
             f"fixture {fixture_id!r} has {base} pixels, not {count} — remove the "
-            "`pixels:` override or name a different fixture")
+            "`pixels:` override or name a different fixture"
+        )
     return build(n, kind, cols, rows)
 
 
@@ -137,13 +138,22 @@ def build(n: int, kind: str, cols: int = 0, rows: int = 0) -> Layout:
         # really are equal and the index breaks the tie. Unrounded, the last
         # bits of the two languages' hypot disagreed and they picked different
         # pixels — see web/test/rig_parity.mjs, which is what found it.
-        order = sorted(range(n), key=lambda i: (round(math.hypot(pos[i][0] - 0.5,
-                                                                 pos[i][1] - 0.5), 6), i))
-        for i in order[:max(1, round(n / 7))]:
+        order = sorted(
+            range(n),
+            key=lambda i: (round(math.hypot(pos[i][0] - 0.5, pos[i][1] - 0.5), 6), i),
+        )
+        for i in order[: max(1, round(n / 7))]:
             core[i] = True
 
-    return Layout(n=n, center=center, walk=tuple(walk), fall=tuple(fall),
-                  fall_steps=fall_steps, core=tuple(core), pos=tuple(pos))
+    return Layout(
+        n=n,
+        center=center,
+        walk=tuple(walk),
+        fall=tuple(fall),
+        fall_steps=fall_steps,
+        core=tuple(core),
+        pos=tuple(pos),
+    )
 
 
 def zone_layouts(zones: list[dict], per: int) -> dict[str, Layout]:

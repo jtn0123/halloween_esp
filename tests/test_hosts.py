@@ -25,7 +25,7 @@ import helpers  # noqa: F401  (clears CASTLE_* so the env here is ours)
 import hosts
 from studio_case import HostEnv
 
-TABLE = '''
+TABLE = """
 # comments and non-device tables are ignored
 [porch]
 host = "10.0.0.7"
@@ -36,12 +36,12 @@ host = "10.0.0.9"
 
 [notes]
 text = "no host key — not a device"
-'''
+"""
 
 
 class HostCase(HostEnv, unittest.TestCase):
     """A devices.toml of our own and an environment we can scribble on: both
-       classes below want the same two, and the resolver reads both."""
+    classes below want the same two, and the resolver reads both."""
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="castle-hosts-"))
@@ -58,7 +58,6 @@ class HostCase(HostEnv, unittest.TestCase):
 
 
 class TestResolve(HostCase):
-
     def test_an_explicit_ip_wins_over_everything(self) -> None:
         self.host_env("10.9.9.9")
         self.assertEqual(hosts.resolve("192.168.1.5"), "192.168.1.5")
@@ -115,8 +114,9 @@ class TestCandidates(TestResolve):
 
     def test_env_is_a_comma_list_and_names_expand(self) -> None:
         self.host_env("1.1.1.1, porch ,127.0.0.1:8093")
-        self.assertEqual(hosts.candidates(),
-                         ["1.1.1.1", "10.0.0.7", "10.0.0.8", "127.0.0.1:8093"])
+        self.assertEqual(
+            hosts.candidates(), ["1.1.1.1", "10.0.0.7", "10.0.0.8", "127.0.0.1:8093"]
+        )
 
     def test_empty_env_means_no_castle(self) -> None:
         self.host_env("")
@@ -145,8 +145,9 @@ class TestCandidates(TestResolve):
 class TestMaybeHost(HostCase):
     def test_a_leading_command_keeps_argv_and_resolves_the_default(self) -> None:
         self.assertEqual(hosts.maybe_host(["status"]), ("10.0.0.7", ["status"]))
-        self.assertEqual(hosts.maybe_host(["push", "a.mp3"]),
-                         ("10.0.0.7", ["push", "a.mp3"]))
+        self.assertEqual(
+            hosts.maybe_host(["push", "a.mp3"]), ("10.0.0.7", ["push", "a.mp3"])
+        )
 
     def test_a_leading_host_is_popped(self) -> None:
         self.assertEqual(hosts.maybe_host(["10.1.1.1", "ls"]), ("10.1.1.1", ["ls"]))
@@ -158,9 +159,23 @@ class TestMaybeHost(HostCase):
 
     def test_every_tool_command_is_known(self) -> None:
         """A command missing from the set would be resolved AS a host name."""
-        for cmd in ("status", "health", "ls", "purge", "push", "scenes", "site",
-                    "ota", "rm", "play", "bootlog", "list", "press", "set",
-                    "watch"):
+        for cmd in (
+            "status",
+            "health",
+            "ls",
+            "purge",
+            "push",
+            "scenes",
+            "site",
+            "ota",
+            "rm",
+            "play",
+            "bootlog",
+            "list",
+            "press",
+            "set",
+            "watch",
+        ):
             host, rest = hosts.maybe_host([cmd])
             self.assertEqual((host, rest), ("10.0.0.7", [cmd]), cmd)
 

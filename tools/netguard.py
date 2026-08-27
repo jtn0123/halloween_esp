@@ -37,9 +37,14 @@ def is_public(addr: IPAddress) -> bool:
     where it lagged (e.g. 0.0.0.0, the v6-mapped forms)."""
     if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
         addr = addr.ipv4_mapped
-    return addr.is_global and not (addr.is_private or addr.is_loopback
-                                   or addr.is_link_local or addr.is_multicast
-                                   or addr.is_reserved or addr.is_unspecified)
+    return addr.is_global and not (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_multicast
+        or addr.is_reserved
+        or addr.is_unspecified
+    )
 
 
 def resolve(host: str) -> list[IPAddress]:
@@ -51,7 +56,7 @@ def resolve(host: str) -> list[IPAddress]:
         pass
     try:
         infos = socket.getaddrinfo(host, None, proto=socket.IPPROTO_TCP)
-    except (UnicodeError, OSError):        # gaierror is an OSError
+    except (UnicodeError, OSError):  # gaierror is an OSError
         return []
     out: list[IPAddress] = []
     for info in infos:
@@ -78,7 +83,9 @@ def refuse_reason(url: str, client_ip: str) -> str | None:
         return "that link has no usable host"
     if not host:
         return "that link has no host"
-    if host.lower() in ("localhost", "localhost.localdomain") or host.endswith(".local"):
+    if host.lower() in ("localhost", "localhost.localdomain") or host.endswith(
+        ".local"
+    ):
         return f"{host} is not a public address"
     addrs = resolve(host)
     bad = [str(a) for a in addrs if not is_public(a)]

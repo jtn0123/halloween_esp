@@ -45,15 +45,21 @@ class TestOnsetDetection(unittest.TestCase):
     def test_finds_the_kicks(self) -> None:
         marks = ana.analyze_file(self.wav)
         low = marks.get("onset_low", [])
-        self.assertEqual(len(low), len(self.beats),
-                         f"expected {len(self.beats)} kicks, found {len(low)}")
+        self.assertEqual(
+            len(low),
+            len(self.beats),
+            f"expected {len(self.beats)} kicks, found {len(low)}",
+        )
 
     def test_onsets_land_on_the_beat(self) -> None:
         """Within 25 ms — tighter than anyone can see in a light cue."""
         low = ana.analyze_file(self.wav)["onset_low"]
         for expected, (got, _vel) in zip(self.beats, low):
-            self.assertLess(abs(got - expected), 0.025,
-                            f"onset at {got:.3f}s, expected {expected:.3f}s")
+            self.assertLess(
+                abs(got - expected),
+                0.025,
+                f"onset at {got:.3f}s, expected {expected:.3f}s",
+            )
 
     def test_downbeat_at_zero_is_not_lost(self) -> None:
         """Frame 0 has nothing to diff against; a loop's downbeat lives there."""
@@ -79,8 +85,11 @@ class TestOnsetDetection(unittest.TestCase):
             w.setsampwidth(2)
             w.setframerate(ana.SR)
             w.writeframes((np.zeros(ana.SR * 2)).astype("<i2").tobytes())
-        self.assertEqual(ana.analyze_file(p), {},
-                         "silence should produce no onsets, not phantom ones")
+        self.assertEqual(
+            ana.analyze_file(p),
+            {},
+            "silence should produce no onsets, not phantom ones",
+        )
 
     def test_too_short_is_handled(self) -> None:
         """A clip shorter than one analysis window must not throw."""
@@ -98,7 +107,8 @@ class TestOnsetDetection(unittest.TestCase):
         self.assertGreaterEqual(
             sum(len(v) for v in loose.values()),
             sum(len(v) for v in tight.values()),
-            "lower sensitivity should find at least as many onsets")
+            "lower sensitivity should find at least as many onsets",
+        )
 
 
 class TestEnvelopeFallback(unittest.TestCase):
@@ -118,8 +128,7 @@ class TestEnvelopeFallback(unittest.TestCase):
         cls.drone = cls.tmp / "drone.wav"
         sr = ana.SR
         t = np.arange(int(12.0 * sr)) / sr
-        tone = (0.5 * np.sin(2 * np.pi * 73.4 * t)
-                + 0.3 * np.sin(2 * np.pi * 110 * t))
+        tone = 0.5 * np.sin(2 * np.pi * 73.4 * t) + 0.3 * np.sin(2 * np.pi * 110 * t)
         swell = 0.25 + 0.75 * (0.5 + 0.5 * np.sin(2 * np.pi * 0.12 * t))
         x = tone * swell * 0.6
         with wave.open(str(cls.drone), "wb") as w:
@@ -143,9 +152,14 @@ class TestEnvelopeFallback(unittest.TestCase):
         self.assertGreater(len(full["level_low"]), 20)
 
     def test_envelope_follows_the_swell(self) -> None:
-        levels = [v for _t, v in ana.analyze_full(ana.load_audio(self.drone))["level_low"]]
-        self.assertGreater(max(levels) - min(levels), 0.4,
-                           "envelope is flat — it is not tracking anything")
+        levels = [
+            v for _t, v in ana.analyze_full(ana.load_audio(self.drone))["level_low"]
+        ]
+        self.assertGreater(
+            max(levels) - min(levels),
+            0.4,
+            "envelope is flat — it is not tracking anything",
+        )
 
     def test_envelope_is_normalised(self) -> None:
         for _t, v in ana.analyze_full(ana.load_audio(self.drone))["level_low"]:
@@ -157,8 +171,9 @@ class TestEnvelopeFallback(unittest.TestCase):
         click = self.tmp / "click.wav"
         make_click_track(click, seconds=8.0, bpm=120.0)
         full = ana.analyze_full(ana.load_audio(click))
-        self.assertNotIn("level_low", full,
-                         "envelope applied to material that has real onsets")
+        self.assertNotIn(
+            "level_low", full, "envelope applied to material that has real onsets"
+        )
 
     def test_scene_block_uses_gliding_decay_for_envelopes(self) -> None:
         """An envelope must glide. Beat decay would chop a swell into steps."""
@@ -217,11 +232,14 @@ class TestPerBandSensitivity(unittest.TestCase):
             shutil.rmtree(tmp, ignore_errors=True)
         base = ana.analyze(x, sensitivity=1.1)
         loosened = ana.analyze(x, sensitivity={"low": 1.1, "mid": 1.1, "high": 0.4})
-        self.assertEqual(len(base.get("onset_low", [])),
-                         len(loosened.get("onset_low", [])),
-                         "the low band moved when only high was changed")
-        self.assertGreaterEqual(len(loosened.get("onset_high", [])),
-                                len(base.get("onset_high", [])))
+        self.assertEqual(
+            len(base.get("onset_low", [])),
+            len(loosened.get("onset_low", [])),
+            "the low band moved when only high was changed",
+        )
+        self.assertGreaterEqual(
+            len(loosened.get("onset_high", [])), len(base.get("onset_high", []))
+        )
 
 
 class TestDensityFitting(unittest.TestCase):
@@ -244,8 +262,9 @@ class TestDensityFitting(unittest.TestCase):
     def test_dense_material_decays_faster(self) -> None:
         decay, _ = it.fit_to_density(self.hits(0.24), 0.92)
         self.assertLess(decay, 0.92)
-        self.assertLess(self.residual(decay, 0.24), 0.15,
-                        "a dense band still saturates")
+        self.assertLess(
+            self.residual(decay, 0.24), 0.15, "a dense band still saturates"
+        )
 
     def test_sparse_material_keeps_its_bloom(self) -> None:
         """A slow bell toll should not be sped up into a blink."""
@@ -292,15 +311,21 @@ class TestStudioMedia(unittest.TestCase):
 
     def test_waveform_shape(self) -> None:
         import studio_media as sm
+
         d = sm.waveform(self.wav, buckets=200)
         self.assertAlmostEqual(d["duration"], 5.0, delta=0.1)
         self.assertEqual(len(d["peaks"]), 200)
         self.assertLessEqual(max(d["peaks"]), 1.0)
-        self.assertAlmostEqual(max(d["peaks"]), 1.0, delta=1e-6,
-                               msg="peaks should be normalised to the loudest")
+        self.assertAlmostEqual(
+            max(d["peaks"]),
+            1.0,
+            delta=1e-6,
+            msg="peaks should be normalised to the loudest",
+        )
 
     def test_waveform_includes_onsets(self) -> None:
         import studio_media as sm
+
         d = sm.waveform(self.wav)
         self.assertIn("onset_low", d["onsets"])
         for t, v, *rest in d["onsets"]["onset_low"]:
@@ -313,6 +338,7 @@ class TestStudioMedia(unittest.TestCase):
 
     def test_probe_rejects_non_links_without_touching_the_network(self) -> None:
         import studio_media as sm
+
         r = sm.probe("not a url")
         self.assertFalse(r["ok"])
         self.assertIn("link", r["error"])

@@ -56,8 +56,11 @@ class TestZonesBlock(unittest.TestCase):
         self.assertEqual(len(set(pins)), len(pins), "two zones share a data pin")
         for z in ZONES:
             self.assertIn(z["fixture"], rl.FIXTURES, z)
-            self.assertEqual(z["pin"], ZONE_PIN[z["id"]],
-                             f"{z['id']} is not on the pin docs/WIRING.md budgets")
+            self.assertEqual(
+                z["pin"],
+                ZONE_PIN[z["id"]],
+                f"{z['id']} is not on the pin docs/WIRING.md budgets",
+            )
 
     def test_rgbw_flag_is_honest_about_the_part(self) -> None:
         """A FeatherWing or a mini PCB cannot be RGBW; claiming so makes the
@@ -113,16 +116,19 @@ class TestEmittedStrips(unittest.TestCase):
 
 class TestRmtBudget(unittest.TestCase):
     """The S2 has 256 RMT symbols and no DMA. Overspend and a strip goes dark
-       (it happened, 2026-08-19); underspend a long strip and its refill ISR
-       runs to a 40 us deadline, which is a garbled pixel now and then."""
+    (it happened, 2026-08-19); underspend a long strip and its refill ISR
+    runs to a 40 us deadline, which is a garbled pixel now and then."""
 
     def zones(self, **symbols: int) -> list[dict]:
-        return [{**z, **({"rmt_symbols": symbols[z["id"]]} if z["id"] in symbols else {})}
-                for z in ZONES]
+        return [
+            {**z, **({"rmt_symbols": symbols[z["id"]]} if z["id"] in symbols else {})}
+            for z in ZONES
+        ]
 
     def test_a_zone_gets_one_block_unless_it_asks(self) -> None:
-        self.assertEqual([s["rmt_symbols"] for s in strips()],
-                         [gen_rig.RMT_BLOCK] * len(LIVE))
+        self.assertEqual(
+            [s["rmt_symbols"] for s in strips()], [gen_rig.RMT_BLOCK] * len(LIVE)
+        )
 
     def test_a_long_strip_can_be_given_a_second_block(self) -> None:
         zones = self.zones(door=128)
@@ -133,11 +139,15 @@ class TestRmtBudget(unittest.TestCase):
 
     def test_the_leftover_blocks_are_stated(self) -> None:
         """The SD build's status pixel needs one of them, so the number is
-           not decoration — it is the reason that pixel can exist."""
-        self.assertIn("192 of 256 symbols spent, 1 block(s) spare",
-                      gen_rig.emit_lights(LAYOUTS, ZONES, PER))
-        self.assertIn("256 of 256 symbols spent, 0 block(s) spare",
-                      gen_rig.emit_lights(LAYOUTS, self.zones(door=128), PER))
+        not decoration — it is the reason that pixel can exist."""
+        self.assertIn(
+            "192 of 256 symbols spent, 1 block(s) spare",
+            gen_rig.emit_lights(LAYOUTS, ZONES, PER),
+        )
+        self.assertIn(
+            "256 of 256 symbols spent, 0 block(s) spare",
+            gen_rig.emit_lights(LAYOUTS, self.zones(door=128), PER),
+        )
 
     def test_overspending_the_peripheral_stops_the_build(self) -> None:
         with self.assertRaises(SystemExit) as e:
@@ -158,22 +168,30 @@ class TestGeneratedFilesAreFresh(unittest.TestCase):
         cap = round(DOC["hardware"]["audio"]["max_volume"] * 100)
         want = gen_rig.emit_rig_header(LAYOUTS, ZONES, cap)
         got = (ROOT / "firmware" / "generated" / "rig.h").read_text()
-        self.assertEqual(got, want, "firmware/generated/rig.h is stale — run `make generate`")
+        self.assertEqual(
+            got, want, "firmware/generated/rig.h is stale — run `make generate`"
+        )
 
     def test_lights_yaml_matches_scenes_yaml(self) -> None:
         want = gen_rig.emit_lights(LAYOUTS, ZONES, PER)
         got = (ROOT / "firmware" / "generated" / "lights.yaml").read_text()
-        self.assertEqual(got, want, "firmware/generated/lights.yaml is stale — run `make generate`")
+        self.assertEqual(
+            got, want, "firmware/generated/lights.yaml is stale — run `make generate`"
+        )
 
     def test_rig_header_pixel_counts_and_tables(self) -> None:
         text = (ROOT / "firmware" / "generated" / "rig.h").read_text()
         for z in ZONES:
             lay = LAYOUTS[z["id"]]
-            row = re.search(rf"\{{(\d+), (-?\d+), (\d+), rig_tables::{z['id']}_walk", text)
+            row = re.search(
+                rf"\{{(\d+), (-?\d+), (\d+), rig_tables::{z['id']}_walk", text
+            )
             self.assertIsNotNone(row, z["id"])
             assert row is not None
             self.assertEqual(int(row.group(1)), lay.n)
-            self.assertEqual(int(row.group(2)), -1 if lay.center is None else lay.center)
+            self.assertEqual(
+                int(row.group(2)), -1 if lay.center is None else lay.center
+            )
             self.assertEqual(int(row.group(3)), lay.fall_steps)
             for kind in ("walk", "fall", "core"):
                 arr = re.search(rf"{z['id']}_{kind}\[\] = \{{(.*?)\}};", text)
@@ -192,8 +210,9 @@ def _castle_substitutions() -> dict:
         pass
 
     Loader.add_multi_constructor("!", lambda loader, suffix, node: None)
-    subs = yaml.load((ROOT / "firmware" / "castle.yaml").read_text(),
-                     Loader=Loader)["substitutions"]
+    subs = yaml.load((ROOT / "firmware" / "castle.yaml").read_text(), Loader=Loader)[
+        "substitutions"
+    ]
     assert isinstance(subs, dict)
     return subs
 
@@ -208,14 +227,19 @@ class TestCastleYamlSubstitutions(unittest.TestCase):
             zid = z["id"]
             self.assertEqual(int(self.SUBS[f"pin_{zid}"]), z["pin"], zid)
             self.assertEqual(int(self.SUBS[f"px_{zid}"]), LAYOUTS[zid].n, zid)
-            self.assertEqual(self.SUBS[f"rgbw_{zid}"],
-                             str(bool(z.get("rgbw", True))).lower(), zid)
+            self.assertEqual(
+                self.SUBS[f"rgbw_{zid}"], str(bool(z.get("rgbw", True))).lower(), zid
+            )
 
     def test_no_zone_pin_collides_with_the_rest_of_the_board(self) -> None:
         zone_pins = {int(self.SUBS[f"pin_{z['id']}"]) for z in ZONES}
-        others = {k: int(v) for k, v in self.SUBS.items()
-                  if k.startswith("pin_") and k[4:] not in {z["id"] for z in ZONES}
-                  and str(v).strip().isdigit()}
+        others = {
+            k: int(v)
+            for k, v in self.SUBS.items()
+            if k.startswith("pin_")
+            and k[4:] not in {z["id"] for z in ZONES}
+            and str(v).strip().isdigit()
+        }
         for name, pin in others.items():
             self.assertNotIn(pin, zone_pins, f"{name} shares GPIO{pin} with a zone")
 

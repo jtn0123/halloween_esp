@@ -49,8 +49,7 @@ PROBE_CONNECT_S = 1.0
 #: castle's single httpd task for many seconds, and it acks only after the
 #: last byte hit the card — the 2 s that fits a POST reported every large
 #: send as "castle not reachable" (pass 1, J1-8).
-READ_BUDGET_S = {"PUT": 60.0, "DELETE": 30.0, "SD_GET": 60.0,
-                 "FILES_GET": 5.0}
+READ_BUDGET_S = {"PUT": 60.0, "DELETE": 30.0, "SD_GET": 60.0, "FILES_GET": 5.0}
 
 #: The desk polls status continuously; the castle should not pay for every
 #: poll. Fresh enough that "PLAYING" in the chip tracks reality.
@@ -120,8 +119,9 @@ def status() -> dict | None:
     data, good = None, hosts[0]
     for host in hosts:
         try:
-            code, raw, _ = _call(host, "GET", "/api/status", b"",
-                                 PROBE_CONNECT_S, TIMEOUT_S)
+            code, raw, _ = _call(
+                host, "GET", "/api/status", b"", PROBE_CONNECT_S, TIMEOUT_S
+            )
             if code == 200:
                 data, good = json.loads(raw), host
                 break
@@ -150,8 +150,9 @@ class Stalled(OSError):
     """Connected, then no complete answer: the request MAY have landed."""
 
 
-def _call(host: str, method: str, path: str, body: bytes,
-          connect_s: float, read_s: float) -> tuple[int, bytes, str]:
+def _call(
+    host: str, method: str, path: str, body: bytes, connect_s: float, read_s: float
+) -> tuple[int, bytes, str]:
     """One HTTP exchange with a connect budget and a separate read budget.
 
     urllib's single timeout governed every socket op, so the 2 s that suits
@@ -169,8 +170,7 @@ def _call(host: str, method: str, path: str, body: bytes,
                 conn.sock.settimeout(read_s)
             conn.request(method, path, body=body or None)
             r = conn.getresponse()
-            return (r.status, r.read(),
-                    r.getheader("Content-Type") or JSON_MIME)
+            return (r.status, r.read(), r.getheader("Content-Type") or JSON_MIME)
         except (OSError, http.client.HTTPException) as e:
             raise Stalled(str(e)) from e
     finally:
@@ -193,10 +193,23 @@ def _read_budget(method: str, path: str) -> float:
 #: step by docs/API.md). A typo'd or future-firmware /api/* path used to
 #: become a castle call or a 502, so a client bug read as an outage (B4);
 #: unknown paths are refused HERE, before a socket is opened.
-KNOWN_API = ("/api/status", "/api/health", "/api/files", "/api/play",
-             "/api/stop", "/api/scene", "/api/volume", "/api/light",
-             "/api/pir", "/api/show/start", "/api/show/stop", "/api/blackout",
-             "/api/bootlog", "/api/ota", "/remote")
+KNOWN_API = (
+    "/api/status",
+    "/api/health",
+    "/api/files",
+    "/api/play",
+    "/api/stop",
+    "/api/scene",
+    "/api/volume",
+    "/api/light",
+    "/api/pir",
+    "/api/show/start",
+    "/api/show/stop",
+    "/api/blackout",
+    "/api/bootlog",
+    "/api/ota",
+    "/remote",
+)
 KNOWN_PREFIX = ("/api/files/", "/api/site/", "/api/scenes/", "/sd/")
 
 
@@ -205,8 +218,9 @@ def known_api(path: str) -> bool:
     return p in KNOWN_API or p.startswith(KNOWN_PREFIX)
 
 
-def forward(method: str, path_and_query: str,
-            body: bytes = b"") -> tuple[int, bytes, str]:
+def forward(
+    method: str, path_and_query: str, body: bytes = b""
+) -> tuple[int, bytes, str]:
     """Relay one request to the castle verbatim.
 
     Returns (status code, body, content-type). A castle error page comes
@@ -217,25 +231,41 @@ def forward(method: str, path_and_query: str,
     fallback address of the same castle is the pass-1 J1-8 finding).
     """
     if not known_api(path_and_query):
-        return 404, json.dumps(
-            {"error": "unknown castle route",
-             "known": sorted(KNOWN_API + KNOWN_PREFIX)}).encode(), JSON_MIME
+        return (
+            404,
+            json.dumps(
+                {
+                    "error": "unknown castle route",
+                    "known": sorted(KNOWN_API + KNOWN_PREFIX),
+                }
+            ).encode(),
+            JSON_MIME,
+        )
     hosts = castle_hosts()
     if not hosts:
         return 502, b'{"error": "no castle configured"}', JSON_MIME
     read_s = _read_budget(method, path_and_query)
     for host in hosts:
         try:
-            code, out, ctype = _call(host, method, path_and_query, body,
-                                     TIMEOUT_S, read_s)
+            code, out, ctype = _call(
+                host, method, path_and_query, body, TIMEOUT_S, read_s
+            )
         except Unreachable:
             continue
         except Stalled:
             if method == "GET":
-                continue       # nothing changed anywhere; the next host may do
-            return (504, json.dumps({"error": "castle took the request but "
-                    "did not answer in time — it may have landed; check "
-                    "before sending again"}).encode(), JSON_MIME)
+                continue  # nothing changed anywhere; the next host may do
+            return (
+                504,
+                json.dumps(
+                    {
+                        "error": "castle took the request but "
+                        "did not answer in time — it may have landed; check "
+                        "before sending again"
+                    }
+                ).encode(),
+                JSON_MIME,
+            )
         # The castle ANSWERED — its verdict stands, error or not — and an
         # answer of ANY kind proves it is up: a probe that failed while it
         # was rebooting must not keep reporting it dead for 3 s after a

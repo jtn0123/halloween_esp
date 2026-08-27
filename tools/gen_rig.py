@@ -17,8 +17,9 @@ from __future__ import annotations
 from rig_layout import Layout
 
 
-def emit_rig_header(layouts: dict[str, Layout], zones: list[dict],
-                    max_volume_pct: int = 100) -> str:
+def emit_rig_header(
+    layouts: dict[str, Layout], zones: list[dict], max_volume_pct: int = 100
+) -> str:
     """Bake each zone's geometry into a header the firmware only indexes.
 
     The device does no layout arithmetic: `walk`, `fall` and `core` are the
@@ -36,7 +37,7 @@ def emit_rig_header(layouts: dict[str, Layout], zones: list[dict],
         "// fields mean and tools/rig_layout.py for how they are derived.",
         "#pragma once",
         "",
-        "// Flat, not \"../castle_effects.h\": ESPHome's `includes:` copies each",
+        '// Flat, not "../castle_effects.h": ESPHome\'s `includes:` copies each',
         "// file into the build's src/ by BASENAME, so the directory this lives",
         "// in does not survive to the compiler (esphome/core/config.py,",
         "// add_includes).",
@@ -80,7 +81,8 @@ def emit_rig_header(layouts: dict[str, Layout], zones: list[dict],
         center = -1 if lay.center is None else lay.center
         out.append(
             f"    {{{lay.n}, {center}, {lay.fall_steps}, rig_tables::{zid}_walk,"
-            f" rig_tables::{zid}_fall, rig_tables::{zid}_core}},  // {zid}")
+            f" rig_tables::{zid}_fall, rig_tables::{zid}_core}},  // {zid}"
+        )
     out.append("};")
     out.append("")
     biggest = max((layouts[z["id"]].n for z in zones), default=0)
@@ -154,11 +156,13 @@ RMT_BLOCK = 64
 
 def rmt_symbols(z: dict) -> int:
     """A zone's RMT memory. Whole blocks only — the hardware has no other
-       granularity — and the longest strip is the one worth spending on."""
+    granularity — and the longest strip is the one worth spending on."""
     n = int(z.get("rmt_symbols", RMT_BLOCK))
     if n % RMT_BLOCK or n < RMT_BLOCK:
-        raise SystemExit(f"zone {z['id']}: rmt_symbols must be a multiple of "
-                         f"{RMT_BLOCK} (the S2 allocates whole blocks), got {n}")
+        raise SystemExit(
+            f"zone {z['id']}: rmt_symbols must be a multiple of "
+            f"{RMT_BLOCK} (the S2 allocates whole blocks), got {n}"
+        )
     return n
 
 
@@ -170,7 +174,8 @@ def check_rmt_budget(zones: list[dict], layouts: dict[str, Layout]) -> int:
         raise SystemExit(
             f"RMT budget: {len(live)} strips ask for {spent} symbols, the "
             f"ESP32-S2 has {RMT_TOTAL_SYMBOLS}. Strips past the limit get no "
-            f"channel and stay dark. Lower a zone's rmt_symbols.")
+            f"channel and stay dark. Lower a zone's rmt_symbols."
+        )
     return RMT_TOTAL_SYMBOLS - spent
 
 
@@ -246,17 +251,21 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
             "                            buf[p * 4 + 2], buf[p * 4 + 3]);",
             *TEST_EFFECTS,
         ]
-        out.append(f"    # {zid}: {z.get('fixture', f'{per} uniform')} "
-                   f"— {lay.n} px, rgbw {rgbw}, GPIO{pin}")
+        out.append(
+            f"    # {zid}: {z.get('fixture', f'{per} uniform')} "
+            f"— {lay.n} px, rgbw {rgbw}, GPIO{pin}"
+        )
 
     # One override for all the strips at once. The web remote and the boot
     # sequence want to talk to "the pixels", and with a strip per zone that is
     # no longer a single `id()`. Generated rather than hand-written in
     # castle_sd.yaml so the zone list stays in exactly one place.
     spare = check_rmt_budget(zones, layouts)
-    out.append(f"# RMT: {RMT_TOTAL_SYMBOLS - spare} of {RMT_TOTAL_SYMBOLS} "
-               f"symbols spent, {spare // RMT_BLOCK} block(s) spare "
-               f"(the SD build's status pixel needs one).")
+    out.append(
+        f"# RMT: {RMT_TOTAL_SYMBOLS - spare} of {RMT_TOTAL_SYMBOLS} "
+        f"symbols spent, {spare // RMT_BLOCK} block(s) spare "
+        f"(the SD build's status pixel needs one)."
+    )
     live = [z["id"] for z in zones if layouts[z["id"]].n > 0]
     zone_rgbw = {z["id"]: bool(z.get("rgbw", True)) for z in zones}
     out += [
@@ -269,10 +278,12 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
         "    then:",
         "      - lambda: |-",
         "          esphome::light::LightState *zones[] = {"
-        + ", ".join(f"id(zone_{z})" for z in live) + "};",
-        '          const char *names[] = {' + ", ".join(f'"{z}"' for z in live) + "};",
+        + ", ".join(f"id(zone_{z})" for z in live)
+        + "};",
+        "          const char *names[] = {" + ", ".join(f'"{z}"' for z in live) + "};",
         "          const bool rgbw[] = {"
-        + ", ".join(str(bool(zone_rgbw[z])).lower() for z in live) + "};",
+        + ", ".join(str(bool(zone_rgbw[z])).lower() for z in live)
+        + "};",
         '          // "[zone:]spec[@pct]": spec = RRGGBB | white | off | show; one',
         "          // strip when a zone is named (the desk's channel test), pct 1..100.",
         "          std::string spec = arg, only;",
@@ -317,5 +328,3 @@ def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
         "          }",
     ]
     return "\n".join(out) + "\n"
-
-

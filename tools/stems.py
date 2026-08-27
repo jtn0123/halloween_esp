@@ -63,7 +63,7 @@ SEPARATE_TIMEOUT = 600
 
 def track_file(tid: str) -> Path | None:
     """The audio behind a bare id, whichever container it landed in."""
-    tid = Path(tid).name                       # no traversal, ever
+    tid = Path(tid).name  # no traversal, ever
     for e in AUDIO_EXT:
         p = TRACKS / f"{tid}.{e}"
         if p.exists():
@@ -95,8 +95,10 @@ def fresh(tid: str) -> bool:
     except (OSError, json.JSONDecodeError):
         return False
     st = src.stat()
-    return bool(meta.get("src_bytes") == st.st_size
-                and meta.get("src_mtime") == int(st.st_mtime))
+    return bool(
+        meta.get("src_bytes") == st.st_size
+        and meta.get("src_mtime") == int(st.st_mtime)
+    )
 
 
 def analysis(tid: str) -> dict:
@@ -132,8 +134,10 @@ def _peaks_of(x: np.ndarray, buckets: int = PEAKS) -> list[float]:
     if len(x) == 0:
         return []
     edges = np.linspace(0, len(x), buckets + 1).astype(int)
-    out = [float(np.abs(x[a:b]).max()) if b > a else 0.0
-           for a, b in itertools.pairwise(edges)]
+    out = [
+        float(np.abs(x[a:b]).max()) if b > a else 0.0
+        for a, b in itertools.pairwise(edges)
+    ]
     top = max(out) or 1.0
     return [round(p / top, 3) for p in out]
 
@@ -156,28 +160,61 @@ def analyse_layers(files: dict[str, Path], sensitivity: float = 1.1) -> dict:
             layers[name][ch] = {
                 "peaks": _peaks_of(x),
                 "level": round(float(np.abs(x).max()), 4) if len(x) else 0.0,
-                "onsets": {k: [[round(t, 3), v] for t, v in hits]
-                           for k, hits in marks.items()},
+                "onsets": {
+                    k: [[round(t, 3), v] for t, v in hits] for k, hits in marks.items()
+                },
             }
-            counts = " ".join(f"{k.replace('onset_', '')}:{len(v)}"
-                              for k, v in marks.items())
+            counts = " ".join(
+                f"{k.replace('onset_', '')}:{len(v)}" for k, v in marks.items()
+            )
             print(f"  {name:<9} {ch:<5} {counts or 'no onsets'}", flush=True)
     return {"duration": round(dur, 3), "layers": layers}
 
 
 def _run_demucs(src: Path, out: Path, device: str) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [sys.executable, "-m", "demucs.separate", "--two-stems", "vocals",
-         "-n", "htdemucs", "-d", device, "-o", str(out), str(src)],
-        capture_output=True, text=True, check=False, timeout=SEPARATE_TIMEOUT)
+        [
+            sys.executable,
+            "-m",
+            "demucs.separate",
+            "--two-stems",
+            "vocals",
+            "-n",
+            "htdemucs",
+            "-d",
+            device,
+            "-o",
+            str(out),
+            str(src),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=SEPARATE_TIMEOUT,
+    )
 
 
 def _encode(wav: Path, mp3: Path) -> None:
     """Stereo 160 kbps — a validation listen, not a flash-budget citizen."""
     r = subprocess.run(
-        ["ffmpeg", "-v", "quiet", "-y", "-i", str(wav),
-         "-c:a", "libmp3lame", "-b:a", "160k", str(mp3)],
-        capture_output=True, text=True, check=False, timeout=300)
+        [
+            "ffmpeg",
+            "-v",
+            "quiet",
+            "-y",
+            "-i",
+            str(wav),
+            "-c:a",
+            "libmp3lame",
+            "-b:a",
+            "160k",
+            str(mp3),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=300,
+    )
     if r.returncode != 0:
         raise SystemExit(f"ffmpeg could not encode {mp3.name}")
 
@@ -190,9 +227,11 @@ def separate(tid: str, force: bool = False) -> int:
         print(f"stems for {tid} are current — --force to redo")
         return 0
     if importlib.util.find_spec("demucs") is None:
-        raise SystemExit("demucs is not installed — "
-                         ".venv/bin/pip install demucs (then re-pin: "
-                         ".venv/bin/pip install click==8.3.3)")
+        raise SystemExit(
+            "demucs is not installed — "
+            ".venv/bin/pip install demucs (then re-pin: "
+            ".venv/bin/pip install click==8.3.3)"
+        )
 
     dest = STEMS / tid
     with tempfile.TemporaryDirectory(prefix="castle-stems-") as td:
@@ -207,11 +246,13 @@ def separate(tid: str, force: bool = False) -> int:
                 print("  GPU path failed — retrying on CPU", flush=True)
                 r = _run_demucs(src, tmp, "cpu")
         except subprocess.TimeoutExpired:
-            raise SystemExit("demucs stalled — gave up after "
-                             f"{SEPARATE_TIMEOUT // 60} minutes") from None
+            raise SystemExit(
+                f"demucs stalled — gave up after {SEPARATE_TIMEOUT // 60} minutes"
+            ) from None
         if r.returncode != 0:
-            tail = [ln for ln in (r.stderr or r.stdout or "").splitlines()
-                    if ln.strip()][-3:]
+            tail = [
+                ln for ln in (r.stderr or r.stdout or "").splitlines() if ln.strip()
+            ][-3:]
             raise SystemExit("demucs failed:\n" + "\n".join(tail))
         vocals = next(tmp.rglob("vocals.wav"), None)
         backing = next(tmp.rglob("no_vocals.wav"), None)
@@ -224,8 +265,7 @@ def separate(tid: str, force: bool = False) -> int:
         _encode(backing, dest / "backing.mp3")
 
         print("analysing 3 layers x 3 channels…", flush=True)
-        data = analyse_layers({"vocals": vocals, "backing": backing,
-                               "combined": src})
+        data = analyse_layers({"vocals": vocals, "backing": backing, "combined": src})
 
     st = src.stat()
     data.update(id=tid, src_bytes=st.st_size, src_mtime=int(st.st_mtime))
@@ -240,8 +280,9 @@ def separate(tid: str, force: bool = False) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("id", help="track id (tools/import_track.py --list)")
-    ap.add_argument("--force", action="store_true",
-                    help="re-split even if the stems look current")
+    ap.add_argument(
+        "--force", action="store_true", help="re-split even if the stems look current"
+    )
     args = ap.parse_args()
     return separate(args.id, force=args.force)
 

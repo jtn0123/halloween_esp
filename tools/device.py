@@ -63,8 +63,10 @@ async def run(host: str, cmd: str, args: list[str]) -> int:
 
         def on_log(msg) -> None:
             line = msg.message
-            print(line.decode("utf-8", "replace") if isinstance(line, bytes) else line,
-                  flush=True)
+            print(
+                line.decode("utf-8", "replace") if isinstance(line, bytes) else line,
+                flush=True,
+            )
 
         # An explicit level is required: without it the device sends nothing,
         # which reads exactly like a button that did not fire.
@@ -98,6 +100,7 @@ async def run(host: str, cmd: str, args: list[str]) -> int:
 
 def main() -> int:
     from hosts import maybe_host
+
     host, rest = maybe_host(sys.argv[1:])
     if not rest:
         print(__doc__)

@@ -31,9 +31,17 @@ import studio
 import studio_tracks
 from helpers import make_click_track
 
-CONVERT_OPTS = {"start": 0, "take": None, "fade_in": None, "fade_out": None,
-                "bitrate": 96, "channels": 1, "sample_rate": 44100,
-                "normalize": False, "gain_db": None}
+CONVERT_OPTS = {
+    "start": 0,
+    "take": None,
+    "fade_in": None,
+    "fade_out": None,
+    "bitrate": 96,
+    "channels": 1,
+    "sample_rate": 44100,
+    "normalize": False,
+    "gain_db": None,
+}
 
 
 def make_mp3(dest: Path, seconds: float = 3.0) -> None:
@@ -58,12 +66,12 @@ class HostEnv:
 
     def host_env(self, value: str | None) -> None:
         env = mock.patch.dict(
-            os.environ, {} if value is None else {"CASTLE_HOST": value},
-            clear=False)
+            os.environ, {} if value is None else {"CASTLE_HOST": value}, clear=False
+        )
         env.start()
         if value is None:
             os.environ.pop("CASTLE_HOST", None)
-        self.addCleanup(env.stop)      # type: ignore[attr-defined]
+        self.addCleanup(env.stop)  # type: ignore[attr-defined]
 
 
 class Quiet(studio.Handler):
@@ -108,8 +116,10 @@ class ServerCase(unittest.TestCase):
             # to the castle (castle_link.py), and a suite that resolved the
             # real porch address from devices.toml would be driving live
             # hardware from the tests. Port 1 refuses instantly.
-            mock.patch.dict(os.environ, {"CASTLE_TRACKS": str(cls.sandbox),
-                                         "CASTLE_HOST": "127.0.0.1:1"}),
+            mock.patch.dict(
+                os.environ,
+                {"CASTLE_TRACKS": str(cls.sandbox), "CASTLE_HOST": "127.0.0.1:1"},
+            ),
             mock.patch.object(studio, "TRACKS", cls.sandbox),
             mock.patch.object(studio_tracks, "TRACKS", cls.sandbox),
             mock.patch.object(it, "TRACKS", cls.sandbox),
@@ -124,7 +134,7 @@ class ServerCase(unittest.TestCase):
         # globbing "*.mp3" made a WAV import vanish from the panel entirely.
         cls.wav = studio.TRACKS / f"{cls.WAV_ID}.wav"
         make_click_track(cls.wav, seconds=2.0)
-        cl._cache.clear()   # no live status leaking between test classes
+        cl._cache.clear()  # no live status leaking between test classes
         cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), Quiet)
         cls.port = cls.srv.server_address[1]
         cls.thread = threading.Thread(target=cls.srv.serve_forever, daemon=True)
@@ -144,15 +154,24 @@ class ServerCase(unittest.TestCase):
         # the run ever pointed at the real library.
 
     # ── HTTP ──
-    def req(self, method: str, path: str, data: bytes | None = None,
-            headers: dict | None = None) -> tuple[int, bytes]:
-        r = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}",
-                                   data=data, method=method, headers=headers or {})
+    def req(
+        self,
+        method: str,
+        path: str,
+        data: bytes | None = None,
+        headers: dict | None = None,
+    ) -> tuple[int, bytes]:
+        r = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            data=data,
+            method=method,
+            headers=headers or {},
+        )
         try:
             with urllib.request.urlopen(r, timeout=20) as f:
                 return f.status, f.read()
         except urllib.error.HTTPError as e:
-            with e:                 # closed, or unittest warns on GC
+            with e:  # closed, or unittest warns on GC
                 return e.code, e.read()
 
     def get_json(self, path: str) -> tuple[int, dict]:
@@ -160,7 +179,7 @@ class ServerCase(unittest.TestCase):
         return code, json.loads(body)
 
     def post_json(self, path: str, obj: dict) -> tuple[int, dict]:
-        code, body = self.req("POST", path, json.dumps(obj).encode(),
-                              {"Content-Type": "application/json"})
+        code, body = self.req(
+            "POST", path, json.dumps(obj).encode(), {"Content-Type": "application/json"}
+        )
         return code, json.loads(body)
-

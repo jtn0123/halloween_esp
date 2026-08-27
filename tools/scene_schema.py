@@ -27,28 +27,40 @@ import effect_vocab as ev
 
 REQUIRED = ("id", "name", "kind", "duration_ms", "base")
 CUE_OPS = ("set", "strike")
-ID_RE = re.compile(r"^\w+$", re.ASCII)   # \w, but not the Unicode half
+ID_RE = re.compile(r"^\w+$", re.ASCII)  # \w, but not the Unicode half
 
 
 def _vocab() -> dict[str, set[str]]:
-    return {"effect": set(ev.EFFECT_IDS), "overlay": set(ev.OVERLAY_IDS),
-            "palette": set(ev.PALETTE_IDS), "pixels": set(ev.FLASH_MODE_IDS)}
+    return {
+        "effect": set(ev.EFFECT_IDS),
+        "overlay": set(ev.OVERLAY_IDS),
+        "palette": set(ev.PALETTE_IDS),
+        "pixels": set(ev.FLASH_MODE_IDS),
+    }
 
 
 def _num(v: Any) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool) \
-        and v == v and v not in (float("inf"), float("-inf"))
+    return (
+        isinstance(v, (int, float))
+        and not isinstance(v, bool)
+        and v == v
+        and v not in (float("inf"), float("-inf"))
+    )
 
 
-def _unit(where: str, v: Any, errs: list[str], lo: float = 0.0,
-          hi: float = 1.0) -> None:
+def _unit(
+    where: str, v: Any, errs: list[str], lo: float = 0.0, hi: float = 1.0
+) -> None:
     if not _num(v) or not lo <= v <= hi:
         errs.append(f"{where}: must be a number from {lo:g} to {hi:g}, got {v!r}")
 
 
 def _color(where: str, v: Any, errs: list[str]) -> None:
-    if (not isinstance(v, list) or len(v) not in (3, 4)
-            or not all(_num(c) and 0 <= c <= 1 for c in v)):
+    if (
+        not isinstance(v, list)
+        or len(v) not in (3, 4)
+        or not all(_num(c) and 0 <= c <= 1 for c in v)
+    ):
         errs.append(f"{where}: must be [r, g, b(, w)] with each from 0 to 1")
 
 
@@ -59,22 +71,31 @@ def _zone(where: str, z: Any, zones: set[str] | None, errs: list[str]) -> None:
         errs.append(f"{where}: no zone {z!r} (have {', '.join(sorted(zones))})")
 
 
-def _effect(where: str, e: Any, vocab: dict[str, set[str]],
-            errs: list[str]) -> None:
+def _effect(where: str, e: Any, vocab: dict[str, set[str]], errs: list[str]) -> None:
     if e not in vocab["effect"]:
-        errs.append(f"{where}: unknown effect {e!r} "
-                    f"(one of {', '.join(sorted(vocab['effect']))})")
+        errs.append(
+            f"{where}: unknown effect {e!r} "
+            f"(one of {', '.join(sorted(vocab['effect']))})"
+        )
 
 
-def _in(where: str, v: Any, kind: str, vocab: dict[str, set[str]],
-        errs: list[str]) -> None:
+def _in(
+    where: str, v: Any, kind: str, vocab: dict[str, set[str]], errs: list[str]
+) -> None:
     if v not in vocab[kind]:
-        errs.append(f"{where}: unknown {kind} {v!r} "
-                    f"(one of {', '.join(sorted(vocab[kind]))})")
+        errs.append(
+            f"{where}: unknown {kind} {v!r} (one of {', '.join(sorted(vocab[kind]))})"
+        )
 
 
-def _check_cue(i: int, c: Any, length: int | None, zones: set[str] | None,
-               vocab: dict[str, set[str]], errs: list[str]) -> None:
+def _check_cue(
+    i: int,
+    c: Any,
+    length: int | None,
+    zones: set[str] | None,
+    vocab: dict[str, set[str]],
+    errs: list[str],
+) -> None:
     w = f"cues[{i}]"
     if not isinstance(c, dict):
         errs.append(f"{w}: must be a mapping")
@@ -115,15 +136,16 @@ def _check_cue(i: int, c: Any, length: int | None, zones: set[str] | None,
         _unit(f"{w}.intensity", c["intensity"], errs, 0, 4)
     if "decay" in c:
         _unit(f"{w}.decay", c["decay"], errs)
-    errs.extend(f"{w}.{k}: must be a number of ms >= 0, got {c[k]!r}"
-                for k in ("ms", "attack")
-                if k in c and (not _num(c[k]) or c[k] < 0))
+    errs.extend(
+        f"{w}.{k}: must be a number of ms >= 0, got {c[k]!r}"
+        for k in ("ms", "attack")
+        if k in c and (not _num(c[k]) or c[k] < 0)
+    )
     if "color" in c:
         _color(f"{w}.color", c["color"], errs)
 
 
-def _pulse_zones(w: str, p: dict, zones: set[str] | None,
-                 errs: list[str]) -> None:
+def _pulse_zones(w: str, p: dict, zones: set[str] | None, errs: list[str]) -> None:
     """Where a pulse lands: one zone, or lists of them."""
     if "zone" in p:
         _zone(f"{w}.zone", p["zone"], zones, errs)
@@ -139,8 +161,8 @@ def _pulse_zones(w: str, p: dict, zones: set[str] | None,
 
 def _pulse_colors(w: str, p: dict, errs: list[str]) -> None:
     """A pulse's colours: two named ones, plus an optional palette to pick
-       from. A `colors:` that is present but empty is a mistake worth a
-       message — the render would silently fall back to white."""
+    from. A `colors:` that is present but empty is a mistake worth a
+    message — the render would silently fall back to white."""
     for k in ("color", "color_hot"):
         if k in p:
             _color(f"{w}.{k}", p[k], errs)
@@ -153,8 +175,7 @@ def _pulse_colors(w: str, p: dict, errs: list[str]) -> None:
         _color(f"{w}.colors", c, errs)
 
 
-def _pulse_shape(w: str, p: dict, vocab: dict[str, set[str]],
-                 errs: list[str]) -> None:
+def _pulse_shape(w: str, p: dict, vocab: dict[str, set[str]], errs: list[str]) -> None:
     """How hard it hits and how it falls."""
     if "pixels" in p:
         _in(f"{w}.pixels", p["pixels"], "pixels", vocab, errs)
@@ -162,13 +183,16 @@ def _pulse_shape(w: str, p: dict, vocab: dict[str, set[str]],
         _unit(f"{w}.intensity", p["intensity"], errs, 0, 4)
     if "decay" in p:
         _unit(f"{w}.decay", p["decay"], errs)
-    errs.extend(f"{w}.{k}: must be a number of ms >= 0, got {p[k]!r}"
-                for k in ("ms", "attack_ms")
-                if k in p and (not _num(p[k]) or p[k] < 0))
+    errs.extend(
+        f"{w}.{k}: must be a number of ms >= 0, got {p[k]!r}"
+        for k in ("ms", "attack_ms")
+        if k in p and (not _num(p[k]) or p[k] < 0)
+    )
 
 
-def _check_pulse(i: int, p: Any, zones: set[str] | None,
-                 vocab: dict[str, set[str]], errs: list[str]) -> None:
+def _check_pulse(
+    i: int, p: Any, zones: set[str] | None, vocab: dict[str, set[str]], errs: list[str]
+) -> None:
     w = f"pulse[{i}]"
     if not isinstance(p, dict):
         errs.append(f"{w}: must be a mapping")
@@ -182,22 +206,28 @@ def _check_pulse(i: int, p: Any, zones: set[str] | None,
 
 def _scene_head(scene: dict, errs: list[str]) -> int | None:
     """id, name, kind, duration, volume, loop, audio_file — the scalars.
-       Returns the scene's length in ms when it has a usable one."""
+    Returns the scene's length in ms when it has a usable one."""
     errs.extend(f"missing required key {k!r}" for k in REQUIRED if k not in scene)
     sid = scene.get("id")
     if "id" in scene and (not isinstance(sid, str) or not ID_RE.match(sid)):
         errs.append(f"id: letters, digits and _ only, got {sid!r}")
-    errs.extend(f"{k}: must be a non-empty string" for k in ("name", "kind")
-                if k in scene and (not isinstance(scene[k], str)
-                                   or not scene[k].strip()))
+    errs.extend(
+        f"{k}: must be a non-empty string"
+        for k in ("name", "kind")
+        if k in scene and (not isinstance(scene[k], str) or not scene[k].strip())
+    )
     if "volume" in scene:
         _unit("volume", scene["volume"], errs)
     if "loop" in scene and not isinstance(scene["loop"], bool):
         errs.append(f"loop: must be true or false, got {scene['loop']!r}")
     if "audio_file" in scene:
         af = scene["audio_file"]
-        if (not isinstance(af, str) or not af or af.startswith("/")
-                or ".." in af.split("/")):
+        if (
+            not isinstance(af, str)
+            or not af
+            or af.startswith("/")
+            or ".." in af.split("/")
+        ):
             errs.append(f"audio_file: must be a relative path, got {af!r}")
     if "duration_ms" not in scene:
         return None
@@ -216,31 +246,34 @@ def _mapping(name: str, value: Any, complaint: str, errs: list[str]) -> bool:
     return False
 
 
-def _scene_zones(scene: dict, zs: set[str] | None,
-                 vocab: dict[str, set[str]], errs: list[str]) -> None:
+def _scene_zones(
+    scene: dict, zs: set[str] | None, vocab: dict[str, set[str]], errs: list[str]
+) -> None:
     """base, levels and zones: three maps keyed by zone, each with its own
-       idea of what a value is."""
+    idea of what a value is."""
     if "base" in scene and _mapping(
-            "base", scene["base"], "must map each zone to an effect", errs):
+        "base", scene["base"], "must map each zone to an effect", errs
+    ):
         for z, e in scene["base"].items():
             _zone("base", z, zs, errs)
             _effect(f"base.{z}", e, vocab, errs)
     levels = scene.get("levels")
     if levels is not None and _mapping(
-            "levels", levels, "must map zones to a level", errs):
+        "levels", levels, "must map zones to a level", errs
+    ):
         for z, v in levels.items():
             _zone("levels", z, zs, errs)
             _unit(f"levels.{z}", v, errs)
     zd = scene.get("zones")
     if zd is not None and _mapping(
-            "zones", zd, "must map zones to their texture", errs):
+        "zones", zd, "must map zones to their texture", errs
+    ):
         for z, d in zd.items():
             _zone("zones", z, zs, errs)
             _zone_texture(z, d, vocab, errs)
 
 
-def _zone_texture(z: str, d: Any, vocab: dict[str, set[str]],
-                  errs: list[str]) -> None:
+def _zone_texture(z: str, d: Any, vocab: dict[str, set[str]], errs: list[str]) -> None:
     """One zone's entry under `zones:` — centre effect, overlay, palette, phase."""
     if not _mapping(f"zones.{z}", d, "must be a mapping", errs):
         return

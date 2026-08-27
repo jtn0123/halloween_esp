@@ -34,9 +34,15 @@ import yaml
 from helpers import make_click_track
 
 #: The format half of an import's options — what every convert() test uses.
-CONVERT_DEFAULTS = {"fade_in": None, "fade_out": None, "bitrate": 96,
-                    "channels": 1, "sample_rate": 44100, "normalize": False,
-                    "gain_db": None}
+CONVERT_DEFAULTS = {
+    "fade_in": None,
+    "fade_out": None,
+    "bitrate": 96,
+    "channels": 1,
+    "sample_rate": 44100,
+    "normalize": False,
+    "gain_db": None,
+}
 
 
 class TestTimeParsing(unittest.TestCase):
@@ -67,18 +73,36 @@ class TestConvert(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def opts(self, **over: object) -> dict:
-        o: dict[str, object] = {"start": 0, "take": None, "fade_in": None,
-                                "fade_out": None, "bitrate": 96, "channels": 1,
-                                "sample_rate": 44100, "normalize": False,
-                                "gain_db": None}
+        o: dict[str, object] = {
+            "start": 0,
+            "take": None,
+            "fade_in": None,
+            "fade_out": None,
+            "bitrate": 96,
+            "channels": 1,
+            "sample_rate": 44100,
+            "normalize": False,
+            "gain_db": None,
+        }
         o.update(over)
         return o
 
     def probe(self, p: Path) -> dict:
         out = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
-             "-show_streams", "-show_format", str(p)],
-            capture_output=True, text=True, check=True).stdout
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-show_format",
+                str(p),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
         return dict(json.loads(out))
 
     def test_produces_mono_44k(self) -> None:
@@ -155,9 +179,11 @@ class TestConvert(unittest.TestCase):
             it.convert(hot, out, self.opts(normalize=normalize))
             peak = float(np.abs(ana.load_audio(out)).max())
             self.assertLess(
-                peak, 1.3,
+                peak,
+                1.3,
                 f"normalize={normalize}: peaks at {peak:.4f} "
-                f"({20 * np.log10(peak):+.2f} dBFS) — limiter not applied?")
+                f"({20 * np.log10(peak):+.2f} dBFS) — limiter not applied?",
+            )
 
     def test_quiet_source_is_not_pumped_up_by_the_limiter(self) -> None:
         """The ceiling must not act as a compressor on already-quiet audio.
@@ -169,7 +195,7 @@ class TestConvert(unittest.TestCase):
         quiet = self.tmp / "quiet.wav"
         sr = ana.SR
         t = np.arange(int(3.0 * sr)) / sr
-        x = np.sin(2 * np.pi * 220 * t) * 0.05          # -26 dBFS
+        x = np.sin(2 * np.pi * 220 * t) * 0.05  # -26 dBFS
         with wave.open(str(quiet), "wb") as w:
             w.setnchannels(1)
             w.setsampwidth(2)
@@ -179,9 +205,12 @@ class TestConvert(unittest.TestCase):
         out = self.tmp / "q.mp3"
         it.convert(quiet, out, self.opts())
         peak = float(np.abs(ana.load_audio(out)).max())
-        self.assertLess(peak, 0.15,
-                        f"quiet source came back at {peak:.3f} — the limiter "
-                        f"is applying makeup gain it should not")
+        self.assertLess(
+            peak,
+            0.15,
+            f"quiet source came back at {peak:.3f} — the limiter "
+            f"is applying makeup gain it should not",
+        )
 
 
 class TestManifest(unittest.TestCase):
@@ -197,8 +226,14 @@ class TestManifest(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_round_trip(self) -> None:
-        mf.record("x", source="https://example.com/a", title="A Title",
-                  opts={"take": 20}, audio={"duration": 20.0}, onsets={"onset_low": 5})
+        mf.record(
+            "x",
+            source="https://example.com/a",
+            title="A Title",
+            opts={"take": 20},
+            audio={"duration": 20.0},
+            onsets={"onset_low": 5},
+        )
         got = mf.get("x")
         assert got is not None
         self.assertEqual(got["source"], "https://example.com/a")
@@ -208,7 +243,7 @@ class TestManifest(unittest.TestCase):
     def test_refresh_keeps_user_notes(self) -> None:
         """Notes are the user's; a re-import must not wipe them."""
         mf.record("x", source="s", notes="keep me")
-        mf.record("x", source="s")                    # re-import, no notes given
+        mf.record("x", source="s")  # re-import, no notes given
         got = mf.get("x")
         assert got is not None
         self.assertEqual(got["notes"], "keep me")
@@ -267,6 +302,7 @@ class TestSceneBlock(unittest.TestCase):
         """A scene referencing an effect the firmware lacks fails to build."""
         sys.path.insert(0, str(ROOT / "tools"))
         import gen_esphome as ge
+
         sc = self.parse(it.scene_block("t", 10.0, self.marks))
         for eff in sc["base"].values():
             self.assertIn(eff, ge.EFFECT_IDS, f"unknown effect {eff!r}")
@@ -294,10 +330,21 @@ class TestRenderIntegration(unittest.TestCase):
         cls.track = cls.tmp / "_test_integration.mp3"
         src = cls.tmp / "src.wav"
         make_click_track(src, seconds=6.0, bpm=120.0)
-        it.convert(src, cls.track, {
-            "start": 0, "take": None, "fade_in": None, "fade_out": None,
-            "bitrate": 96, "channels": 1, "sample_rate": 44100,
-            "normalize": False, "gain_db": None})
+        it.convert(
+            src,
+            cls.track,
+            {
+                "start": 0,
+                "take": None,
+                "fade_in": None,
+                "fade_out": None,
+                "bitrate": 96,
+                "channels": 1,
+                "sample_rate": 44100,
+                "normalize": False,
+                "gain_db": None,
+            },
+        )
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -306,7 +353,9 @@ class TestRenderIntegration(unittest.TestCase):
 
     def scene(self) -> dict:
         return {
-            "id": "_test_integration", "duration_ms": 6000, "loop": True,
+            "id": "_test_integration",
+            "duration_ms": 6000,
+            "loop": True,
             "audio_file": str(self.track),
             "pulse": [{"synth": "onset_low", "zone": "door", "intensity": 0.55}],
         }
@@ -321,6 +370,7 @@ class TestRenderIntegration(unittest.TestCase):
     def test_markers_become_light_cues(self) -> None:
         """The contract that makes imported audio drive the lights at all."""
         import gen_esphome as ge
+
         cfg = {"sample_rate": 44100, "bitrate": 96, "channels": 1}
         _buf, marks = ra.render_scene(self.scene(), cfg)
         cues = ge.pulse_cues(self.scene(), {"_test_integration": marks})
@@ -348,13 +398,15 @@ class TestExternalTools(unittest.TestCase):
         self.assertIsNotNone(shutil.which("ffmpeg"), "ffmpeg not installed")
 
     def test_ytdlp_present(self) -> None:
-        self.assertIsNotNone(shutil.which("yt-dlp"),
-                             "yt-dlp not installed — `brew install yt-dlp`")
+        self.assertIsNotNone(
+            shutil.which("yt-dlp"), "yt-dlp not installed — `brew install yt-dlp`"
+        )
 
     def test_ytdlp_understands_a_youtube_url(self) -> None:
         """No network: --simulate with a bad URL still proves URL parsing."""
-        r = subprocess.run(["yt-dlp", "--version"], capture_output=True, text=True,
-                           check=False)   # asserted on returncode below
+        r = subprocess.run(
+            ["yt-dlp", "--version"], capture_output=True, text=True, check=False
+        )  # asserted on returncode below
         self.assertEqual(r.returncode, 0)
         self.assertRegex(r.stdout.strip(), r"^\d{4}\.\d{2}\.\d{2}")
 
@@ -398,26 +450,39 @@ class TestKeepSourceAndCutGuards(unittest.TestCase):
         self.assertEqual(it.keep_source(kept, "tid"), kept)
 
     def test_a_start_past_the_end_is_refused_in_one_line(self) -> None:
-        ns = argparse.Namespace(refresh=None, id="late", notes="",
-                                keep_source=False)
-        o = {**CONVERT_DEFAULTS, "start": "1:00", "take": None,
-             "sensitivity": 1.1, "format": "mp3"}
+        ns = argparse.Namespace(refresh=None, id="late", notes="", keep_source=False)
+        o = {
+            **CONVERT_DEFAULTS,
+            "start": "1:00",
+            "take": None,
+            "sensitivity": 1.1,
+            "format": "mp3",
+        }
         with self.assertRaises(SystemExit) as cm:
             it._import(ns, o, str(self.src), False, self.tmp / "scratch", None)
         self.assertIn("past the end", str(cm.exception))
         self.assertIn("src.wav", str(cm.exception))
-        self.assertFalse((self.tmp / "lib" / "late.mp3").exists(),
-                         "a broken row was left behind")
+        self.assertFalse(
+            (self.tmp / "lib" / "late.mp3").exists(), "a broken row was left behind"
+        )
 
     def test_keep_source_is_what_the_manifest_remembers(self) -> None:
-        ns = argparse.Namespace(refresh=None, id="kept", notes="",
-                                keep_source=True)
-        o = {**CONVERT_DEFAULTS, "start": "0", "take": None,
-             "sensitivity": 1.1, "format": "mp3"}
-        with mock.patch.object(mf, "PATH", self.tmp / "lib" / "tracks.json"), \
-                contextlib.redirect_stdout(io.StringIO()):
+        ns = argparse.Namespace(refresh=None, id="kept", notes="", keep_source=True)
+        o = {
+            **CONVERT_DEFAULTS,
+            "start": "0",
+            "take": None,
+            "sensitivity": 1.1,
+            "format": "mp3",
+        }
+        with (
+            mock.patch.object(mf, "PATH", self.tmp / "lib" / "tracks.json"),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             it._import(ns, o, str(self.src), False, self.tmp / "scratch", None)
             entry = mf.get("kept") or {}
-        self.assertEqual(entry["source"],
-                         f"file:{(self.tmp / 'lib' / '_src' / 'kept.wav').resolve()}")
+        self.assertEqual(
+            entry["source"],
+            f"file:{(self.tmp / 'lib' / '_src' / 'kept.wav').resolve()}",
+        )
         self.assertTrue((self.tmp / "lib" / "kept.mp3").exists())

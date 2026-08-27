@@ -47,7 +47,7 @@ class JsonHandler(BaseHTTPRequestHandler):
 
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, fmt, *a):              # quieter console
+    def log_message(self, fmt, *a):  # quieter console
         # The request line is whatever the client sent, control bytes and
         # all. Written straight through, a carriage return in a URL forges
         # a second log line — someone else's tidy "200 OK" under our name.
@@ -82,8 +82,11 @@ class JsonHandler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             return
-        hdrs = [("ETag", etag), ("Cache-Control", "no-cache"),
-                ("Vary", "Accept-Encoding")]
+        hdrs = [
+            ("ETag", etag),
+            ("Cache-Control", "no-cache"),
+            ("Vary", "Accept-Encoding"),
+        ]
         if ctype.startswith("text/html"):
             # E4: depth behind the escaping — same policy as the firmware's
             # set_csp (sd_web_site.h). Inline script/style must stay: the
@@ -104,8 +107,9 @@ class JsonHandler(BaseHTTPRequestHandler):
             return
         self.send_bytes(p.read_bytes(), ctype, etag=etag)
 
-    def _send_plain(self, body: bytes, ctype: str, code: int,
-                    extra: list[tuple[str, str]]) -> None:
+    def _send_plain(
+        self, body: bytes, ctype: str, code: int, extra: list[tuple[str, str]]
+    ) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -132,7 +136,7 @@ class JsonHandler(BaseHTTPRequestHandler):
             try:
                 if a:
                     lo, hi = int(a), (int(b) if b else total - 1)
-                elif b:                       # bytes=-500 -> the last 500
+                elif b:  # bytes=-500 -> the last 500
                     lo, hi = max(0, total - int(b)), total - 1
                 partial = True
             except ValueError:
@@ -158,7 +162,7 @@ class JsonHandler(BaseHTTPRequestHandler):
             while left > 0:
                 chunk = fh.read(min(65536, left))
                 if not chunk:
-                    break                     # file shrank mid-serve
+                    break  # file shrank mid-serve
                 self.wfile.write(chunk)
                 left -= len(chunk)
 
@@ -171,8 +175,9 @@ class JsonHandler(BaseHTTPRequestHandler):
             # Unread body bytes would be parsed as the next request on a
             # kept-alive connection; drop it after the 400.
             self.close_connection = True
-            raise BadRequest(f"request body too large ({n} bytes; "
-                             f"the limit is {MAX_BODY})")
+            raise BadRequest(
+                f"request body too large ({n} bytes; the limit is {MAX_BODY})"
+            )
         return self.rfile.read(n) if n > 0 else b""
 
     def json_body(self, raw: bytes) -> dict:
@@ -197,12 +202,12 @@ class JsonHandler(BaseHTTPRequestHandler):
         except BadRequest as e:
             self.send_json({"ok": False, "error": str(e)}, 400)
         except BrokenPipeError:
-            pass                       # the client hung up mid-response
+            pass  # the client hung up mid-response
         except Exception as e:
             import traceback
+
             traceback.print_exc()
-            self.send_json({"ok": False,
-                            "error": f"{type(e).__name__}: {e}"}, 500)
+            self.send_json({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
 
 
 # Compressed copies of recent bodies, keyed by their ETag — one entry is the
@@ -228,9 +233,24 @@ def gzipped(etag: str, body: bytes) -> bytes:
 #: spelling (v5.23 and earlier), rewritten to "/studio/<x>" for one release
 #: so a desk built before the move keeps working; every other /api/* path
 #: is the castle's and relays untouched (/api/scene?s=<id> included).
-STUDIO_ROUTES = frozenset((
-    "tracks", "import", "job", "refresh", "track", "waveform", "stems",
-    "stem", "compare", "probe", "server", "scene", "rebuild", "card"))
+STUDIO_ROUTES = frozenset(
+    (
+        "tracks",
+        "import",
+        "job",
+        "refresh",
+        "track",
+        "waveform",
+        "stems",
+        "stem",
+        "compare",
+        "probe",
+        "server",
+        "scene",
+        "rebuild",
+        "card",
+    )
+)
 _deprecated_seen: set[str] = set()
 
 
@@ -245,21 +265,26 @@ def studio_path(raw: str) -> str:
     route rewritten to its /studio/ home — logged once per route."""
     url = urllib.parse.urlparse(raw)
     path = url.path
-    head = path[len(API):].split("/", 1)[0] if path.startswith(API) else ""
+    head = path[len(API) :].split("/", 1)[0] if path.startswith(API) else ""
     if head not in STUDIO_ROUTES or (
-            head == "scene" and urllib.parse.parse_qs(url.query).get("s")):
+        head == "scene" and urllib.parse.parse_qs(url.query).get("s")
+    ):
         return path
     if head not in _deprecated_seen:
         _deprecated_seen.add(head)
-        sys.stderr.write(f"  DEPRECATED: /api/{head} is now /studio/{head} "
-                         "(docs/API.md) — the alias goes away next release\n")
+        sys.stderr.write(
+            f"  DEPRECATED: /api/{head} is now /studio/{head} "
+            "(docs/API.md) — the alias goes away next release\n"
+        )
     return "/studio/" + path[5:]
 
 
 #: sd_web_site.h set_csp(), the same policy on the studio's pages (E4).
-CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
-       "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-       "media-src 'self' data: blob:; connect-src 'self'")
+CSP = (
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+    "media-src 'self' data: blob:; connect-src 'self'"
+)
 
 
 def content_etag(body: bytes) -> str:

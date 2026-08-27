@@ -72,8 +72,8 @@ class TestNoteHelper(unittest.TestCase):
 
     def test_the_scored_pedals_are_where_the_docstrings_claim(self) -> None:
         """organ() calls nt(-19) 'D minor'; descent()'s 32' pedal is nt(-31)."""
-        self.assertAlmostEqual(S.nt(-19), 73.416, places=2)     # D2
-        self.assertAlmostEqual(S.nt(-31), 36.708, places=2)     # D1
+        self.assertAlmostEqual(S.nt(-19), 73.416, places=2)  # D2
+        self.assertAlmostEqual(S.nt(-31), 36.708, places=2)  # D1
 
 
 class TestFilters(unittest.TestCase):
@@ -104,11 +104,11 @@ class TestFilters(unittest.TestCase):
 
     def test_bandpass_passes_its_centre(self) -> None:
         band = S._bp(np.sin(2 * np.pi * 1000 * self.t), 1000, q=2)
-        self.assertGreater(float(np.sqrt(np.mean(band ** 2))), 0.5)
+        self.assertGreater(float(np.sqrt(np.mean(band**2))), 0.5)
 
     def test_bandpass_rejects_out_of_band(self) -> None:
         band = S._bp(np.sin(2 * np.pi * 80 * self.t), 1000, q=2)
-        self.assertLess(float(np.sqrt(np.mean(band ** 2))), 0.05)
+        self.assertLess(float(np.sqrt(np.mean(band**2))), 0.05)
 
     def test_bandpass_survives_absurd_centres(self) -> None:
         for hz in (1.0, 5.0, 30000.0, 1e6):
@@ -121,8 +121,10 @@ class TestFilters(unittest.TestCase):
         out = S._sweep_lp(x, 900, 70)
         self.assertEqual(len(out), len(x))
         self.assertTrue(np.all(np.isfinite(out)))
-        self.assertLess(float(np.sqrt(np.mean(out[-4000:] ** 2))),
-                        float(np.sqrt(np.mean(out[:4000] ** 2))))
+        self.assertLess(
+            float(np.sqrt(np.mean(out[-4000:] ** 2))),
+            float(np.sqrt(np.mean(out[:4000] ** 2))),
+        )
 
 
 class TestTremulant(unittest.TestCase):
@@ -139,7 +141,7 @@ class TestTremulant(unittest.TestCase):
     carrier: np.ndarray
 
     F = S.nt(-19)
-    D = 7.5                      # exactly what organ() and descent() ask for
+    D = 7.5  # exactly what organ() and descent() ask for
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -153,8 +155,11 @@ class TestTremulant(unittest.TestCase):
         return np.asarray(self.out[keep] / self.carrier[keep])
 
     def test_the_recovered_gain_is_never_negative(self) -> None:
-        self.assertGreaterEqual(self.gain().min(), -1e-9,
-                                "gain went negative — the tremulant is summed, not multiplied")
+        self.assertGreaterEqual(
+            self.gain().min(),
+            -1e-9,
+            "gain went negative — the tremulant is summed, not multiplied",
+        )
 
     def test_the_recovered_gain_stays_within_the_trem_depth(self) -> None:
         self.assertLessEqual(self.gain().max(), 1.0 + S.TREM_DEPTH + 1e-6)
@@ -164,14 +169,20 @@ class TestTremulant(unittest.TestCase):
         at this duration, that assertion would be proving nothing."""
         t = np.arange(int(self.D * S.SR)) / S.SR
         atk, rel = min(1.7, self.D * 0.20), min(2.6, self.D * 0.34)
-        env = np.interp(t, [0, atk, max(atk + 0.05, self.D - rel), self.D], [0, 1, 1, 0])
-        self.assertLess((env + S.TREM_DEPTH * np.sin(2 * np.pi * S.TREM_HZ * t)).min(), 0.0)
+        env = np.interp(
+            t, [0, atk, max(atk + 0.05, self.D - rel), self.D], [0, 1, 1, 0]
+        )
+        self.assertLess(
+            (env + S.TREM_DEPTH * np.sin(2 * np.pi * S.TREM_HZ * t)).min(), 0.0
+        )
 
     def test_the_note_actually_dies_away(self) -> None:
         """A summed LFO leaves a residual ripple of TREM_DEPTH times the rank
         sum ringing on after the release, instead of silence."""
         env = window_peaks(self.out)
-        self.assertLess(env[-1], 0.02 * peak(self.out), "the release never reaches silence")
+        self.assertLess(
+            env[-1], 0.02 * peak(self.out), "the release never reaches silence"
+        )
 
     def test_the_trem_depth_cannot_invert_a_multiplicative_gain(self) -> None:
         self.assertLess(S.TREM_DEPTH, 1.0)
@@ -237,8 +248,11 @@ class TestKeyboardVoices(unittest.TestCase):
         self.assertGreater(peak(out), 0.0)
 
     def test_velocity_scales_linearly(self) -> None:
-        self.assertAlmostEqual(peak(S.box(S.nt(12), 1.0, 0.2)) * 2,
-                               peak(S.box(S.nt(12), 1.0, 0.4)), places=6)
+        self.assertAlmostEqual(
+            peak(S.box(S.nt(12), 1.0, 0.2)) * 2,
+            peak(S.box(S.nt(12), 1.0, 0.4)),
+            places=6,
+        )
 
 
 class TestEveryVoice(unittest.TestCase):
@@ -254,9 +268,23 @@ class TestEveryVoice(unittest.TestCase):
 
     def test_the_registry_is_complete(self) -> None:
         """render_audio.py looks scenes up by name; a rename is a broken build."""
-        self.assertEqual(set(S.SYNTHS), {
-            "wind", "heartbeat", "drone", "whispers", "thunder", "creak",
-            "shriek", "toll", "organ", "descent", "waltz", "musicbox"})
+        self.assertEqual(
+            set(S.SYNTHS),
+            {
+                "wind",
+                "heartbeat",
+                "drone",
+                "whispers",
+                "thunder",
+                "creak",
+                "shriek",
+                "toll",
+                "organ",
+                "descent",
+                "waltz",
+                "musicbox",
+            },
+        )
 
     def test_output_is_finite(self) -> None:
         """The single assertion most worth having: one NaN and the whole mixed
@@ -294,11 +322,21 @@ class TestEveryVoice(unittest.TestCase):
     def test_fixed_length_voices_ignore_dur(self) -> None:
         """The rest are one-shots of a written length, and render_audio passes
         `dur` whenever the scene has one — so they must swallow it."""
-        for name in ("thunder", "creak", "shriek", "toll", "organ",
-                     "descent", "waltz", "musicbox"):
+        for name in (
+            "thunder",
+            "creak",
+            "shriek",
+            "toll",
+            "organ",
+            "descent",
+            "waltz",
+            "musicbox",
+        ):
             with self.subTest(name):
-                self.assertEqual(len(render_synth(name, dur=2.0)[0]),
-                                 len(render_synth(name, dur=9.0)[0]))
+                self.assertEqual(
+                    len(render_synth(name, dur=2.0)[0]),
+                    len(render_synth(name, dur=9.0)[0]),
+                )
 
     def test_no_dc_offset(self) -> None:
         """A voice sitting off zero eats headroom and thumps at the splice."""
@@ -313,7 +351,9 @@ class TestEveryVoice(unittest.TestCase):
             buf = self.rendered[name][0]
             jump = float(np.max(np.abs(np.diff(buf)))) / peak(buf)
             with self.subTest(name):
-                self.assertLess(jump, 0.35, f"{name} jumps {jump:.2f}x peak in one sample")
+                self.assertLess(
+                    jump, 0.35, f"{name} jumps {jump:.2f}x peak in one sample"
+                )
 
     def test_voices_start_near_zero(self) -> None:
         """Files butt against silence, or against their own loop point."""
@@ -330,7 +370,6 @@ class TestEveryVoice(unittest.TestCase):
                 self.assertLess(env[0], 0.3 * env.max())
                 self.assertLess(env[-1], 0.3 * env.max())
 
-
     def test_short_atmosphere_beds_still_fade_out(self) -> None:
         """FIXED (regression guard): wind and drone build their fade with
         np.interp over [0, in, dur - out, dur]. Those knees only rise while dur
@@ -342,8 +381,11 @@ class TestEveryVoice(unittest.TestCase):
         for name in ("wind", "drone"):
             buf, _m = render_synth(name, dur=3.0)
             with self.subTest(name):
-                self.assertLess(abs(buf[-1]), 0.3 * peak(buf),
-                                f"{name} at dur=3 stops dead at full level")
+                self.assertLess(
+                    abs(buf[-1]),
+                    0.3 * peak(buf),
+                    f"{name} at dur=3 stops dead at full level",
+                )
 
 
 class TestDeterminism(unittest.TestCase):
@@ -362,8 +404,10 @@ class TestDeterminism(unittest.TestCase):
         """Markers ride in the manifest; churn there rebuilds the firmware."""
         for name in ("heartbeat", "whispers", "toll", "organ", "waltz"):
             with self.subTest(name):
-                self.assertEqual(render_synth(name, dur=4.0, seed=99)[1],
-                                 render_synth(name, dur=4.0, seed=99)[1])
+                self.assertEqual(
+                    render_synth(name, dur=4.0, seed=99)[1],
+                    render_synth(name, dur=4.0, seed=99)[1],
+                )
 
     def test_different_seeds_change_the_noise_voices(self) -> None:
         """The counterpart: if these matched, the seed would be doing nothing

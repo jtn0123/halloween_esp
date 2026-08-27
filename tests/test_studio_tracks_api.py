@@ -30,11 +30,13 @@ import studio_tracks
 from helpers import make_click_track
 from studio_case import ServerCase
 
-TRACEBACK = ("Traceback (most recent call last):\n"
-             "  File \"import_track.py\", line 1, in <module>\n"
-             "    convert()\n"
-             "subprocess.CalledProcessError: Command '['ffmpeg', '-v', 'quiet']'"
-             " returned non-zero exit status 1.\n")
+TRACEBACK = (
+    "Traceback (most recent call last):\n"
+    '  File "import_track.py", line 1, in <module>\n'
+    "    convert()\n"
+    "subprocess.CalledProcessError: Command '['ffmpeg', '-v', 'quiet']'"
+    " returned non-zero exit status 1.\n"
+)
 
 
 class TestImportOptions(ServerCase):
@@ -55,8 +57,10 @@ class TestImportOptions(ServerCase):
 
     def test_refresh_forwards_format_and_fades(self) -> None:
         with mock.patch.object(studio, "run", return_value=(True, "log")) as spy:
-            self.post_json("/studio/refresh", {"id": self.WAVE_ID, "format": "wav",
-                                            "fade_in": 0.5, "fade_out": "1"})
+            self.post_json(
+                "/studio/refresh",
+                {"id": self.WAVE_ID, "format": "wav", "fade_in": 0.5, "fade_out": "1"},
+            )
         argv = spy.call_args[0][0]
         for flag in ("--format=", "--fade-in=", "--fade-out="):
             self.assertTrue(any(a.startswith(flag) for a in argv), flag)
@@ -72,11 +76,17 @@ class TestImportOptions(ServerCase):
     def test_an_upload_keeps_its_original_beside_the_library(self) -> None:
         """The staging copy is deleted after import, so Re-import of a
         dropped file could never work — the importer is told to keep it."""
-        body = (b"--B\r\nContent-Disposition: form-data; name=\"file\"; "
-                b"filename=\"clip.wav\"\r\n\r\nRIFFfake\r\n--B--\r\n")
+        body = (
+            b'--B\r\nContent-Disposition: form-data; name="file"; '
+            b'filename="clip.wav"\r\n\r\nRIFFfake\r\n--B--\r\n'
+        )
         with mock.patch.object(studio, "run", return_value=(True, "ok")) as spy:
-            code, _ = self.req("POST", "/studio/import", body, {
-                "Content-Type": "multipart/form-data; boundary=B"})
+            code, _ = self.req(
+                "POST",
+                "/studio/import",
+                body,
+                {"Content-Type": "multipart/form-data; boundary=B"},
+            )
         self.assertEqual(code, 200)
         self.assertIn("--keep-source", spy.call_args[0][0])
 
@@ -96,13 +106,15 @@ class TestSourceMissing(ServerCase):
 
 
 class TestDeleteWithScene(ServerCase):
-    ORIGINAL = ("scenes:\n"
-                "  - id: vigil\n"
-                "    duration_ms: 1000\n"
-                "  - id: {tid}\n"
-                "    audio_file: tracks/{tid}.wav\n"
-                "  - id: storm\n"
-                "    duration_ms: 2000\n")
+    ORIGINAL = (
+        "scenes:\n"
+        "  - id: vigil\n"
+        "    duration_ms: 1000\n"
+        "  - id: {tid}\n"
+        "    audio_file: tracks/{tid}.wav\n"
+        "  - id: storm\n"
+        "    duration_ms: 2000\n"
+    )
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
@@ -149,11 +161,12 @@ class TestDeleteWithScene(ServerCase):
         self.assertNotIn(self.DEL_ID, text)
         self.assertIn("- id: vigil", text)
         self.assertIn("- id: storm", text)
-        self.assertEqual(self.scenes.with_suffix(".yaml.bak").read_text(),
-                         self.ORIGINAL.format(tid=self.DEL_ID))
+        self.assertEqual(
+            self.scenes.with_suffix(".yaml.bak").read_text(),
+            self.ORIGINAL.format(tid=self.DEL_ID),
+        )
         ran = [Path(c[0][0][1]).name for c in self.run_spy.call_args_list]
-        self.assertEqual(ran, ["render_audio.py", "gen_esphome.py",
-                               "gen_previewer.py"])
+        self.assertEqual(ran, ["render_audio.py", "gen_esphome.py", "gen_previewer.py"])
         self.assertFalse(self.track.exists())
 
     def test_delete_with_scene_removes_an_orphan_whose_file_is_gone(self) -> None:
@@ -193,8 +206,12 @@ class TestRouteBoundary(ServerCase):
         # /api/* path is refused by the relay's allowlist (castle_link.py,
         # B4) with the known routes in the body — a client bug no longer
         # reads as a castle outage.
-        for method, data in (("GET", None), ("POST", b"{}"), ("DELETE", None),
-                             ("PUT", b"x")):
+        for method, data in (
+            ("GET", None),
+            ("POST", b"{}"),
+            ("DELETE", None),
+            ("PUT", b"x"),
+        ):
             for path in ("/nope", "/studio/nope", "/studio/tracks/../nope"):
                 code, body = self.req(method, path, data)
                 self.assertEqual(code, 404, (method, path))
@@ -217,8 +234,9 @@ class TestRouteBoundary(ServerCase):
             self.assertEqual(self.req("GET", "/api/waveform/_t_nope")[0], 404)
             self.assertEqual(self.req("GET", "/api/job/nope")[0], 404)
             self.get_json("/api/tracks")
-        notes = [c.args[0] for c in err.write.call_args_list
-                 if "DEPRECATED" in c.args[0]]
+        notes = [
+            c.args[0] for c in err.write.call_args_list if "DEPRECATED" in c.args[0]
+        ]
         self.assertEqual(len([n for n in notes if "/api/tracks" in n]), 1)
         self.assertTrue(all("/studio/" in n for n in notes))
 
@@ -236,21 +254,23 @@ class TestRouteBoundary(ServerCase):
         """The desk's mode probe never moves: no castle in reach, the studio
         answers for itself and says so (device.ts reads the marker)."""
         code, d = self.get_json("/api/status")
-        self.assertEqual((code, d), (200, {"studio": True,
-                                           "castle": os.environ["CASTLE_HOST"]}))
+        self.assertEqual(
+            (code, d), (200, {"studio": True, "castle": os.environ["CASTLE_HOST"]})
+        )
         self.assertEqual(self.req("GET", "/studio/status")[0], 404)
 
     def test_card_pull_relays_the_file_name_only(self) -> None:
         """/studio/card/<name> is the one relay that builds a castle path,
         so it is name-stripped like every other file route (grade report
         E1): "../api/status" must not reach any GET on the castle."""
-        with mock.patch.object(studio.cl, "forward",
-                               return_value=(200, b"x", "audio/mpeg")) as fw:
+        with mock.patch.object(
+            studio.cl, "forward", return_value=(200, b"x", "audio/mpeg")
+        ) as fw:
             self.assertEqual(self.req("GET", "/studio/card/song.mp3")[0], 200)
             self.assertEqual(fw.call_args[0][:2], ("GET", "/sd/song.mp3"))
             self.req("GET", "/studio/card/../api/status")
             self.assertEqual(fw.call_args[0][1], "/sd/status")
-            self.req("GET", "/api/card/a/../b.mp3")          # the alias too
+            self.req("GET", "/api/card/a/../b.mp3")  # the alias too
             self.assertEqual(fw.call_args[0][1], "/sd/b.mp3")
             code, body = self.req("GET", "/studio/card/")
             self.assertEqual(code, 400)
@@ -261,8 +281,9 @@ class TestRouteBoundary(ServerCase):
 class TestRemoteRelay(ServerCase):
     def test_remote_is_handed_to_the_castle(self) -> None:
         page = b"<!doctype html><title>Castle Remote</title>"
-        with mock.patch.object(studio.cl, "forward",
-                               return_value=(200, page, "text/html; charset=utf-8")) as fw:
+        with mock.patch.object(
+            studio.cl, "forward", return_value=(200, page, "text/html; charset=utf-8")
+        ) as fw:
             code, body = self.req("GET", "/remote")
         self.assertEqual((code, body), (200, page))
         self.assertEqual(fw.call_args[0][:2], ("GET", "/remote"))

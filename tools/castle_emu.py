@@ -76,7 +76,7 @@ def a_show_file(src: Path) -> Path | None:
     """
     try:
         resolved = src.expanduser().resolve()
-    except (OSError, RuntimeError):        # loops, unreadable parents
+    except (OSError, RuntimeError):  # loops, unreadable parents
         return None
     if resolved.suffix.lower() not in (".yaml", ".yml"):
         return None
@@ -87,8 +87,10 @@ def show_scene_ids(path: Path | None = None) -> list[str] | None:
     """Scene ids from a scenes.yaml — CASTLE_SCENES, else the repo's — or
     None when there is no readable show to seed from."""
     import yaml
-    src = a_show_file(path or Path(os.environ.get("CASTLE_SCENES")
-                                   or ROOT / "scenes" / "scenes.yaml"))
+
+    src = a_show_file(
+        path or Path(os.environ.get("CASTLE_SCENES") or ROOT / "scenes" / "scenes.yaml")
+    )
     if src is None:
         return None
     try:
@@ -130,16 +132,23 @@ class CastleEmu(ThreadingHTTPServer):
     # (the Python default) turns bursts into refused connects.
     request_queue_size = 64
 
-    def __init__(self, port: int = 0, sd_dir: Path | None = None,
-                 scenes: list[str] | None = None, version: str = "5.40",
-                 wedge: bool = False, sd_mounted: bool = True,
-                 serial: bool = False) -> None:
+    def __init__(
+        self,
+        port: int = 0,
+        sd_dir: Path | None = None,
+        scenes: list[str] | None = None,
+        version: str = "5.40",
+        wedge: bool = False,
+        sd_mounted: bool = True,
+        serial: bool = False,
+    ) -> None:
         super().__init__(("127.0.0.1", port), Handler)
         self.state = _State()
         self.sd_dir = sd_dir or Path(tempfile.mkdtemp(prefix="castle-emu-sd-"))
         self.sd_dir.mkdir(parents=True, exist_ok=True)
-        self.scenes = (scenes if scenes is not None
-                       else show_scene_ids() or list(DEFAULT_SCENES))
+        self.scenes = (
+            scenes if scenes is not None else show_scene_ids() or list(DEFAULT_SCENES)
+        )
         self.version = version
         #: h_status's "missing": the boot manifest's comma-separated list of
         #: scene files the card lacks. Tests set it to rehearse the escaping.
@@ -155,17 +164,19 @@ class CastleEmu(ThreadingHTTPServer):
         self.serial = threading.Lock() if serial else None
         #: set_pending's single slot: (action, arg) or None.
         self._pending: tuple[str, str] | None = None
-        self.applied: list[tuple[str, str]] = []   # what the tick ran, for tests
-        threading.Thread(target=self._ticker, daemon=True,
-                         name="castle-emu-tick").start()
+        self.applied: list[tuple[str, str]] = []  # what the tick ran, for tests
+        threading.Thread(
+            target=self._ticker, daemon=True, name="castle-emu-tick"
+        ).start()
 
     @property
     def port(self) -> int:
         return int(self.server_address[1])
 
     def start(self) -> None:
-        threading.Thread(target=self.serve_forever, daemon=True,
-                         name="castle-emu").start()
+        threading.Thread(
+            target=self.serve_forever, daemon=True, name="castle-emu"
+        ).start()
 
     # -- the pending-action mailbox ---------------------------------------
 
@@ -181,7 +192,7 @@ class CastleEmu(ThreadingHTTPServer):
                 taken, self._pending = self._pending, None
                 st = self.state
                 if st.track and time.monotonic() > st.track_ends:
-                    st.track = ""          # the song ended on its own
+                    st.track = ""  # the song ended on its own
             if taken is not None:
                 try:
                     self._apply(*taken)
@@ -203,8 +214,9 @@ class CastleEmu(ThreadingHTTPServer):
                 audio = self.sd_dir / "scenes" / f"{arg}.mp3"
                 if audio.is_file():
                     st.track = audio.name
-                    st.track_ends = (time.monotonic()
-                                     + max(1, audio.stat().st_size // BYTES_PER_S))
+                    st.track_ends = time.monotonic() + max(
+                        1, audio.stat().st_size // BYTES_PER_S
+                    )
             elif action in ("STOP", "BLACKOUT"):
                 st.scene, st.track, st.show_on = "", "", False
             elif action == "SHOW":
@@ -230,21 +242,27 @@ class CastleEmu(ThreadingHTTPServer):
         du = shutil.disk_usage(self.sd_dir)
         with st.lock:
             return {
-                "version": self.version, "compiled": "emulated",
+                "version": self.version,
+                "compiled": "emulated",
                 "uptime_s": int(time.monotonic() - st.boot),
                 "sd_mounted": self.sd_mounted,
-                "psram_free_kb": 1800, "heap_free_kb": 96,
+                "psram_free_kb": 1800,
+                "heap_free_kb": 96,
                 "sd_total_kb": du.total // 1024 if self.sd_mounted else 0,
                 "sd_free_kb": du.free // 1024 if self.sd_mounted else 0,
                 "missing": self.missing,
-                "volume": st.volume, "scene": st.scene, "track": st.track,
+                "volume": st.volume,
+                "scene": st.scene,
+                "track": st.track,
                 # B1: the ids this "build" runs with — the same list
                 # /api/scene checks, so the desk can spot a stale board.
                 "scenes": ",".join(self.scenes),
                 "show_on": st.show_on,
-                "pir": {"armed": st.pir["armed"],
-                        "cooldown_s": st.pir["cooldown_s"],
-                        "scene": st.pir["scene"]},
+                "pir": {
+                    "armed": st.pir["armed"],
+                    "cooldown_s": st.pir["cooldown_s"],
+                    "scene": st.pir["scene"],
+                },
             }
 
     def status_text(self) -> str:
@@ -256,20 +274,33 @@ class CastleEmu(ThreadingHTTPServer):
         assert isinstance(pir, dict)
         b = {True: "true", False: "false"}
         i, t = (lambda k: int(str(s[k]))), (lambda k: wire.json_escape(str(s[k])))
-        return ('{"version":"%s","compiled":"%s","uptime_s":%d,'
-                '"sd_mounted":%s,"psram_free_kb":%d,"heap_free_kb":%d,'
-                '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
-                '"volume":%d,"scene":"%s","track":"%s","scenes":"%s",'
-                '"show_on":%s,'
-                '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
-                % (t("version"), t("compiled"), i("uptime_s"),
-                   b[bool(s["sd_mounted"])], i("psram_free_kb"), i("heap_free_kb"),
-                   i("sd_total_kb"), i("sd_free_kb"), t("missing"),
-                   i("volume"), t("scene"), t("track"), t("scenes"),
-                   b[bool(s["show_on"])],
-                   b[bool(pir["armed"])], int(pir["cooldown_s"]),
-                   wire.json_escape(str(pir["scene"]))))
-
+        return (
+            '{"version":"%s","compiled":"%s","uptime_s":%d,'
+            '"sd_mounted":%s,"psram_free_kb":%d,"heap_free_kb":%d,'
+            '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
+            '"volume":%d,"scene":"%s","track":"%s","scenes":"%s",'
+            '"show_on":%s,'
+            '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
+            % (
+                t("version"),
+                t("compiled"),
+                i("uptime_s"),
+                b[bool(s["sd_mounted"])],
+                i("psram_free_kb"),
+                i("heap_free_kb"),
+                i("sd_total_kb"),
+                i("sd_free_kb"),
+                t("missing"),
+                i("volume"),
+                t("scene"),
+                t("track"),
+                t("scenes"),
+                b[bool(s["show_on"])],
+                b[bool(pir["armed"])],
+                int(pir["cooldown_s"]),
+                wire.json_escape(str(pir["scene"])),
+            )
+        )
 
 
 def _seed(card: Path) -> None:
@@ -284,30 +315,52 @@ def _seed(card: Path) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("port", nargs="?", type=int, default=8093)
-    ap.add_argument("--dir", type=Path, default=None,
-                    help="directory that plays the SD card (default: temp, seeded)")
-    ap.add_argument("--wedge", action="store_true",
-                    help="replay the pre-v5.22 wedge: stall requests while playing")
-    ap.add_argument("--no-sd", action="store_true",
-                    help="pretend the card is missing")
-    ap.add_argument("--serial", action="store_true",
-                    help="one request at a time, like the device's single httpd task")
-    ap.add_argument("--scenes", default=None,
-                    help="scene ids: a comma list, or a scenes.yaml "
-                         "(default: $CASTLE_SCENES, else scenes/scenes.yaml)")
+    ap.add_argument(
+        "--dir",
+        type=Path,
+        default=None,
+        help="directory that plays the SD card (default: temp, seeded)",
+    )
+    ap.add_argument(
+        "--wedge",
+        action="store_true",
+        help="replay the pre-v5.22 wedge: stall requests while playing",
+    )
+    ap.add_argument("--no-sd", action="store_true", help="pretend the card is missing")
+    ap.add_argument(
+        "--serial",
+        action="store_true",
+        help="one request at a time, like the device's single httpd task",
+    )
+    ap.add_argument(
+        "--scenes",
+        default=None,
+        help="scene ids: a comma list, or a scenes.yaml "
+        "(default: $CASTLE_SCENES, else scenes/scenes.yaml)",
+    )
     args = ap.parse_args()
     scenes: list[str] | None = None
     if args.scenes:
-        scenes = (show_scene_ids(Path(args.scenes)) if args.scenes.endswith(".yaml")
-                  else [x.strip() for x in args.scenes.split(",") if x.strip()])
-    emu = CastleEmu(port=args.port, sd_dir=args.dir, wedge=args.wedge,
-                    sd_mounted=not args.no_sd, serial=args.serial,
-                    scenes=scenes)
+        scenes = (
+            show_scene_ids(Path(args.scenes))
+            if args.scenes.endswith(".yaml")
+            else [x.strip() for x in args.scenes.split(",") if x.strip()]
+        )
+    emu = CastleEmu(
+        port=args.port,
+        sd_dir=args.dir,
+        wedge=args.wedge,
+        sd_mounted=not args.no_sd,
+        serial=args.serial,
+        scenes=scenes,
+    )
     if args.dir is None:
         _seed(emu.sd_dir)
-    print(f"castle emulator on http://127.0.0.1:{emu.port}  card={emu.sd_dir}"
-          + ("  [WEDGE MODE]" if args.wedge else "")
-          + ("  [SERIAL]" if args.serial else ""))
+    print(
+        f"castle emulator on http://127.0.0.1:{emu.port}  card={emu.sd_dir}"
+        + ("  [WEDGE MODE]" if args.wedge else "")
+        + ("  [SERIAL]" if args.serial else "")
+    )
     print(f"  scenes: {', '.join(emu.scenes)}")
     print(f"  point the studio at it:  CASTLE_HOST=127.0.0.1:{emu.port}")
     emu.serve_forever()

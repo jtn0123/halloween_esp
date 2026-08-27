@@ -50,20 +50,33 @@ def publish(run: Runner) -> tuple[dict, int]:
     """
     st = cl.status()
     if st is None or st.get("studio"):
-        return {"ok": False, "pushed": False,
-                "error": "no castle answered — nothing pushed"}, 502
+        return {
+            "ok": False,
+            "pushed": False,
+            "error": "no castle answered — nothing pushed",
+        }, 502
     host = str(st.get("bridged") or cl.castle_host() or "")
     log = ""
     for cmd in ("scenes", "site"):
-        ok, out = run([sys.executable, str(ROOT / "tools" / "sd_sync.py"),
-                       host, cmd])
+        ok, out = run([sys.executable, str(ROOT / "tools" / "sd_sync.py"), host, cmd])
         log += out
         if not ok:
-            return {"ok": False, "pushed": False, "log": log[-4000:],
-                    "error": f"sd_sync {cmd} failed"}, 500
+            return {
+                "ok": False,
+                "pushed": False,
+                "log": log[-4000:],
+                "error": f"sd_sync {cmd} failed",
+            }, 500
     stale = needs_firmware(st)
-    return {"ok": True, "pushed": True, "log": log[-4000:],
-            "needs_firmware": stale,
-            "note": (f"{len(stale)} scene(s) missing from the running "
-                     "firmware — make sd-build, stop audio, then OTA"
-                     if stale else "")}, 200
+    return {
+        "ok": True,
+        "pushed": True,
+        "log": log[-4000:],
+        "needs_firmware": stale,
+        "note": (
+            f"{len(stale)} scene(s) missing from the running "
+            "firmware — make sd-build, stop audio, then OTA"
+            if stale
+            else ""
+        ),
+    }, 200

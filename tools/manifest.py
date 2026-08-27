@@ -71,8 +71,10 @@ def load() -> dict:
         # (nothing is lost, it can be hand-repaired) and say so loudly.
         aside = PATH.with_name(f"tracks.json.corrupt-{int(time.time())}")
         PATH.rename(aside)
-        print(f"WARNING: {PATH.name} was not valid JSON — moved to "
-              f"{aside.name}; starting from an empty manifest")
+        print(
+            f"WARNING: {PATH.name} was not valid JSON — moved to "
+            f"{aside.name}; starting from an empty manifest"
+        )
         return {}
 
 
@@ -85,9 +87,16 @@ def save(data: dict) -> None:
     os.replace(tmp, PATH)
 
 
-def record(tid: str, *, source: str, title: str = "", opts: dict | None = None,
-           audio: dict | None = None, onsets: dict | None = None,
-           notes: str = "") -> dict:
+def record(
+    tid: str,
+    *,
+    source: str,
+    title: str = "",
+    opts: dict | None = None,
+    audio: dict | None = None,
+    onsets: dict | None = None,
+    notes: str = "",
+) -> dict:
     with _locked():
         data = load()
         prev = data.get(tid, {})

@@ -23,8 +23,9 @@ PAGE = ROOT / "docs" / "castle-wiring.html"
 
 
 def _run(page: Path) -> None:
-    subprocess.run([sys.executable, str(SCRIPT), str(page)],
-                   check=True, capture_output=True)
+    subprocess.run(
+        [sys.executable, str(SCRIPT), str(page)], check=True, capture_output=True
+    )
 
 
 class TestWiringDiagram(unittest.TestCase):
@@ -38,8 +39,9 @@ class TestWiringDiagram(unittest.TestCase):
         _run(self.page)
         once = self.page.read_bytes()
         _run(self.page)
-        self.assertEqual(once, self.page.read_bytes(),
-                         "a second run must be byte-identical")
+        self.assertEqual(
+            once, self.page.read_bytes(), "a second run must be byte-identical"
+        )
 
     def test_exactly_one_svg_body_survives(self) -> None:
         _run(self.page)
@@ -53,7 +55,7 @@ class TestWiringDiagram(unittest.TestCase):
         m = re.search(r'viewBox="0 0 (\d+) (\d+)"', html)
         assert m is not None, "schematic viewBox missing"
         w, h = int(m.group(1)), int(m.group(2))
-        svg = html[html.index('id="schem"'):html.index("</svg>")]
+        svg = html[html.index('id="schem"') : html.index("</svg>")]
         for tm in re.finditer(r'<text[^>]*\bx="([\d.]+)"[^>]*\by="([\d.]+)"', svg):
             x, y = float(tm.group(1)), float(tm.group(2))
             self.assertTrue(0 <= x <= w, f"text x={x} outside 0..{w}")

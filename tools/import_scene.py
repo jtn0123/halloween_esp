@@ -8,7 +8,7 @@ to paste under `scenes:` — with decays solved from how busy each band is.
 
 from __future__ import annotations
 
-FRAME = 0.016          # the light engine's tick, matching the firmware
+FRAME = 0.016  # the light engine's tick, matching the firmware
 
 
 def fit_to_density(hits: list, fallback: float) -> tuple[float, float]:
@@ -50,8 +50,8 @@ def scene_block(tid: str, dur: float, marks: dict, ext: str = "mp3") -> str:
     """A ready-to-paste scene, wired to whatever the analyser actually found."""
     zones = {"onset_low": "door", "onset_mid": "towerL", "onset_high": "towerR"}
     colors = {
-        "onset_low":  "[1.0, 0.12, 0.02, 0.0]",
-        "onset_mid":  "[0.66, 0.10, 1.0, 0.05]",
+        "onset_low": "[1.0, 0.12, 0.02, 0.0]",
+        "onset_mid": "[0.66, 0.10, 1.0, 0.05]",
         "onset_high": "[0.30, 1.0, 0.55, 0.0]",
     }
     decays = {"onset_low": 0.86, "onset_mid": 0.92, "onset_high": 0.94}

@@ -30,24 +30,34 @@ import gen_previewer as gp
 import studio
 from studio_case import ServerCase
 
-MP3 = b"\xff\xfb\x90\x00" + bytes(range(256)) * 4      # 1028 fake mp3 bytes
+MP3 = b"\xff\xfb\x90\x00" + bytes(range(256)) * 4  # 1028 fake mp3 bytes
 
 
 def page_with(audio: dict[str, str]) -> str:
     """A page shaped like gen_previewer's output around the GEN block."""
-    gen = {"scenes": [{"id": k, "file": f"0{i}_{k}.mp3", "yaml": "a: b"}
-                      for i, k in enumerate(audio, start=1)],
-           "audio": audio}
-    return ("<html><script>\n  // @GEN-DATA-START\n"
-            f"  window.CASTLE_GEN = {json.dumps(gen)};\n"
-            "  // @GEN-DATA-END\n</script></html>")
+    gen = {
+        "scenes": [
+            {"id": k, "file": f"0{i}_{k}.mp3", "yaml": "a: b"}
+            for i, k in enumerate(audio, start=1)
+        ],
+        "audio": audio,
+    }
+    return (
+        "<html><script>\n  // @GEN-DATA-START\n"
+        f"  window.CASTLE_GEN = {json.dumps(gen)};\n"
+        "  // @GEN-DATA-END\n</script></html>"
+    )
 
 
 class TestLeanRewrite(unittest.TestCase):
     def test_every_data_uri_becomes_its_route(self) -> None:
         b64 = base64.b64encode(MP3).decode()
-        html = page_with({"vigil": f"data:audio/mpeg;base64,{b64}",
-                          "storm_2": f"data:audio/mpeg;base64,{b64}"})
+        html = page_with(
+            {
+                "vigil": f"data:audio/mpeg;base64,{b64}",
+                "storm_2": f"data:audio/mpeg;base64,{b64}",
+            }
+        )
         lean = gp.lean(html)
         self.assertNotIn("data:audio/mpeg", lean)
         self.assertIn('"vigil": "/studio/scene-audio/vigil"', lean)
@@ -67,7 +77,7 @@ class TestLeanRewrite(unittest.TestCase):
         (tmp / "03_crypt.mp3").write_bytes(MP3)
         self.assertEqual(gp.scene_audio(tmp, "crypt"), tmp / "03_crypt.mp3")
         self.assertIsNone(gp.scene_audio(tmp, "vigil"))
-        self.assertIsNone(gp.scene_audio(tmp, "03_crypt.mp3"))   # the id, not the file
+        self.assertIsNone(gp.scene_audio(tmp, "03_crypt.mp3"))  # the id, not the file
         self.assertIsNone(gp.scene_audio(tmp, "../03_crypt"))
         self.assertIsNone(gp.scene_audio(tmp, "*"))
         self.assertIsNone(gp.scene_audio(tmp, ""))
@@ -85,7 +95,9 @@ class TestLeanRewrite(unittest.TestCase):
         self.assertTrue(etag1.endswith('-lean"'))
         # A rewritten page (new mtime/size) is rewritten again.
         page.write_text(page_with({"b": "data:audio/mpeg;base64,AAAA"}))
-        os.utime(page, ns=(page.stat().st_atime_ns, page.stat().st_mtime_ns + 10_000_000))
+        os.utime(
+            page, ns=(page.stat().st_atime_ns, page.stat().st_mtime_ns + 10_000_000)
+        )
         body3, etag3 = gp.lean_page(page)
         self.assertIn(b"/studio/scene-audio/b", body3)
         self.assertNotEqual(etag1, etag3)
@@ -106,8 +118,14 @@ class TestServedLean(ServerCase):
         (audio / "01_vigil.mp3").write_bytes(MP3)
         page = cls.build / "castle-cue-desk.html"
         b64 = base64.b64encode(MP3).decode()
-        page.write_text(page_with({"vigil": f"data:audio/mpeg;base64,{b64}",
-                                   "ghost": f"data:audio/mpeg;base64,{b64}"}))
+        page.write_text(
+            page_with(
+                {
+                    "vigil": f"data:audio/mpeg;base64,{b64}",
+                    "ghost": f"data:audio/mpeg;base64,{b64}",
+                }
+            )
+        )
         cls._served = mock.patch.object(studio, "served", return_value=(page, audio))
         cls._served.start()
 
@@ -128,8 +146,9 @@ class TestServedLean(ServerCase):
         code, body = self.req("GET", "/studio/scene-audio/vigil")
         self.assertEqual(code, 200)
         self.assertEqual(body, MP3)
-        code, body = self.req("GET", "/studio/scene-audio/vigil",
-                              headers={"Range": "bytes=4-7"})
+        code, body = self.req(
+            "GET", "/studio/scene-audio/vigil", headers={"Range": "bytes=4-7"}
+        )
         self.assertEqual(code, 206)
         self.assertEqual(body, MP3[4:8])
 
@@ -154,9 +173,11 @@ class TestServedPair(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp(prefix="castle-lean-sb-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         sb_page = tmp / "previewer" / "castle-cue-desk.html"
-        with mock.patch.object(studio.bp, "sandboxed", return_value=True), \
-             mock.patch.object(studio.bp, "PREVIEW_HTML", sb_page), \
-             mock.patch.object(studio.bp, "AUDIO", tmp / "audio"):
+        with (
+            mock.patch.object(studio.bp, "sandboxed", return_value=True),
+            mock.patch.object(studio.bp, "PREVIEW_HTML", sb_page),
+            mock.patch.object(studio.bp, "AUDIO", tmp / "audio"),
+        ):
             # Not built yet: the repo's page AND the repo's audio.
             self.assertEqual(studio.served(), (studio.HTML, studio.ROOT / "audio"))
             sb_page.parent.mkdir(parents=True)

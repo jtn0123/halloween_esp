@@ -62,8 +62,7 @@ def spectral_db(ref: np.ndarray, got: np.ndarray, sr: int = ana.SR) -> float:
     ref, got = ref[:n], got[:n]
 
     def spec(x: np.ndarray) -> np.ndarray:
-        _f, _t, z = signal.stft(x, fs=sr, nperseg=ana.WIN,
-                                noverlap=ana.WIN - ana.HOP)
+        _f, _t, z = signal.stft(x, fs=sr, nperseg=ana.WIN, noverlap=ana.WIN - ana.HOP)
         # Floor at -100 dB so silence does not turn into a division by zero
         # and dominate the mean with meaningless numbers.
         return np.asarray(20 * np.log10(np.abs(z) + 1e-5))
@@ -73,8 +72,7 @@ def spectral_db(ref: np.ndarray, got: np.ndarray, sr: int = ana.SR) -> float:
     return float(np.abs(a[:, :m] - b[:, :m]).mean())
 
 
-def encode_set(src: Path, dest: Path, opts: dict,
-               codecs=CODECS) -> list[dict]:
+def encode_set(src: Path, dest: Path, opts: dict, codecs=CODECS) -> list[dict]:
     """Encode `src` once per codec into `dest`, and score each one.
 
     Returns a row per codec: name, file, bytes, and `db` — the spectral
@@ -93,13 +91,16 @@ def encode_set(src: Path, dest: Path, opts: dict,
         x = ana.load_audio(out)
         if codec == REFERENCE:
             ref_audio = x
-        rows.append({
-            "codec": codec,
-            "file": out.name,
-            "bytes": out.stat().st_size,
-            "db": 0.0 if codec == REFERENCE or ref_audio is None
-                  else round(spectral_db(ref_audio, x), 2),
-        })
+        rows.append(
+            {
+                "codec": codec,
+                "file": out.name,
+                "bytes": out.stat().st_size,
+                "db": 0.0
+                if codec == REFERENCE or ref_audio is None
+                else round(spectral_db(ref_audio, x), 2),
+            }
+        )
 
     # Report in the order asked for, not the order encoded.
     by_name = {r["codec"]: r for r in rows}
@@ -108,8 +109,10 @@ def encode_set(src: Path, dest: Path, opts: dict,
 
 def main() -> int:
     import argparse
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("src", type=Path)
     ap.add_argument("--out", type=Path, default=Path("/tmp/codec-compare"))
     ap.add_argument("--start", default=0)
@@ -124,10 +127,17 @@ def main() -> int:
     if not shutil.which("ffmpeg"):
         raise SystemExit("ffmpeg not installed")
 
-    opts = {"start": it.secs(str(a.start)) if a.start else 0, "take": a.take,
-            "fade_in": None, "fade_out": None, "normalize": False,
-            "gain_db": None, "bitrate": a.bitrate, "channels": a.channels,
-            "sample_rate": a.sample_rate}
+    opts = {
+        "start": it.secs(str(a.start)) if a.start else 0,
+        "take": a.take,
+        "fade_in": None,
+        "fade_out": None,
+        "normalize": False,
+        "gain_db": None,
+        "bitrate": a.bitrate,
+        "channels": a.channels,
+        "sample_rate": a.sample_rate,
+    }
     rows = encode_set(a.src, a.out, opts)
 
     print(f"{'codec':6} {'size':>9}  {'vs wav':>8}")

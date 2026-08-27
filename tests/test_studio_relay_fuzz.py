@@ -26,10 +26,21 @@ import castle_emu
 import castle_link as cl
 from studio_case import ServerCase
 
-TRAVERSAL = ["..%2F..%2Fetc%2Fpasswd", "%2Fetc%2Fpasswd", "..", "../x",
-             "a%2F..%2F..%2Fx", ".hidden", "scenes%2F..%2Fsecret", "",
-             "%2e%2e%2f%2e%2e%2fetc", "..%5C..%5Cx", "a%00%2F..%2Fx",
-             "%2e%2e", "site%2F%2e%2e%2F%2e%2e%2Fetc%2Fhosts"]
+TRAVERSAL = [
+    "..%2F..%2Fetc%2Fpasswd",
+    "%2Fetc%2Fpasswd",
+    "..",
+    "../x",
+    "a%2F..%2F..%2Fx",
+    ".hidden",
+    "scenes%2F..%2Fsecret",
+    "",
+    "%2e%2e%2f%2e%2e%2fetc",
+    "..%5C..%5Cx",
+    "a%00%2F..%2Fx",
+    "%2e%2e",
+    "site%2F%2e%2e%2F%2e%2e%2Fetc%2Fhosts",
+]
 
 
 class RelayCase(ServerCase):
@@ -63,10 +74,16 @@ class RelayCase(ServerCase):
     def tearDown(self) -> None:
         os.environ["CASTLE_HOST"] = "127.0.0.1:1"
         cl._cache.clear()
-        self.assertEqual(sorted(p.name for p in self.sandbox.rglob("*")),
-                         self.library_before, "a relayed request touched the library")
-        self.assertEqual(sorted(p.name for p in self.jail.iterdir()),
-                         ["card", "secret.txt"], "something landed beside the card")
+        self.assertEqual(
+            sorted(p.name for p in self.sandbox.rglob("*")),
+            self.library_before,
+            "a relayed request touched the library",
+        )
+        self.assertEqual(
+            sorted(p.name for p in self.jail.iterdir()),
+            ["card", "secret.txt"],
+            "something landed beside the card",
+        )
 
 
 class TestCardPull(RelayCase):
@@ -85,7 +102,8 @@ class TestCardPull(RelayCase):
 
     def test_header_injection_in_a_name_stays_in_the_name(self) -> None:
         r = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}/api/card/a%0D%0AX-Injected:%201.mp3")
+            f"http://127.0.0.1:{self.port}/api/card/a%0D%0AX-Injected:%201.mp3"
+        )
         try:
             with urllib.request.urlopen(r, timeout=10) as f:
                 hdrs, code = dict(f.headers), f.status
@@ -101,15 +119,21 @@ class TestCardPull(RelayCase):
         s.shutdown(socket.SHUT_WR)
         data = s.recv(4096)
         s.close()
-        self.assertTrue(data.startswith(b"HTTP/1.1 400") or data.startswith(b"HTTP/1.0 400"),
-                        data[:60])
-        self.assertEqual(self.req("GET", "/api/status")[0], 200)   # still alive
+        self.assertTrue(
+            data.startswith(b"HTTP/1.1 400") or data.startswith(b"HTTP/1.0 400"),
+            data[:60],
+        )
+        self.assertEqual(self.req("GET", "/api/status")[0], 200)  # still alive
 
 
 class TestCardPush(RelayCase):
     def put(self, name: str, body: bytes) -> tuple[int, bytes]:
-        return self.req("PUT", f"/api/files/{name}", body,
-                        {"Content-Type": "application/octet-stream"})
+        return self.req(
+            "PUT",
+            f"/api/files/{name}",
+            body,
+            {"Content-Type": "application/octet-stream"},
+        )
 
     def test_bodies_of_every_size_land_intact(self) -> None:
         for size in (0, 1, 8 * 1024, 2 * 1024 * 1024):

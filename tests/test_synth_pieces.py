@@ -105,7 +105,9 @@ class TestMarkers(unittest.TestCase):
             for t, _v in marks:
                 with self.subTest(name=name, t=t):
                     self.assertGreaterEqual(t, 0.0)
-                    self.assertLess(t, span, f"{name} marker at {t:.2f}s of {span:.2f}s")
+                    self.assertLess(
+                        t, span, f"{name} marker at {t:.2f}s of {span:.2f}s"
+                    )
 
     def test_velocities_are_normalised(self) -> None:
         """gen_esphome.py multiplies brightness by these; over 1.0 clips."""
@@ -138,8 +140,11 @@ class TestMarkers(unittest.TestCase):
         for t, _v in beats:
             i = int(t * S.SR)
             with self.subTest(t=round(t, 3)):
-                self.assertGreater(env[i:i + 2205].max(), 0.05 * peak(buf),
-                                   f"marker at {t:.2f}s has no thump under it")
+                self.assertGreater(
+                    env[i : i + 2205].max(),
+                    0.05 * peak(buf),
+                    f"marker at {t:.2f}s has no thump under it",
+                )
 
     def test_organ_markers_are_the_chord_changes(self) -> None:
         _buf, marks = render_synth("organ")
@@ -180,8 +185,10 @@ class TestMarkers(unittest.TestCase):
         """
         buf, beats = render_synth("heartbeat", dur=2.6)
         span = len(buf) / S.SR
-        self.assertTrue(all(t < span for t, _v in beats),
-                        f"markers {[round(t, 2) for t, _ in beats]} run past {span}s")
+        self.assertTrue(
+            all(t < span for t, _v in beats),
+            f"markers {[round(t, 2) for t, _ in beats]} run past {span}s",
+        )
 
 
 class TestReverb(unittest.TestCase):
@@ -269,8 +276,9 @@ class TestLimiter(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(out)))
 
     def test_a_lower_ceiling_gives_a_quieter_result(self) -> None:
-        self.assertLess(rms(S.limit(self.loud, ceiling=0.3)),
-                        rms(S.limit(self.loud, ceiling=0.89)))
+        self.assertLess(
+            rms(S.limit(self.loud, ceiling=0.3)), rms(S.limit(self.loud, ceiling=0.89))
+        )
 
     def test_quiet_material_passes_through_untouched(self) -> None:
         """Sampled away from the edges — see the taper test at the bottom."""

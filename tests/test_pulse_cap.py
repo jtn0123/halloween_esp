@@ -26,8 +26,10 @@ import pulse_expand as pe
 
 class TestThinPulses(unittest.TestCase):
     def test_keeps_the_strongest_in_time_order(self) -> None:
-        cues = [{"t": t, "intensity": i} for t, i in
-                ((0, 0.1), (100, 0.9), (200, 0.5), (300, 0.95), (400, 0.2))]
+        cues = [
+            {"t": t, "intensity": i}
+            for t, i in ((0, 0.1), (100, 0.9), (200, 0.5), (300, 0.95), (400, 0.2))
+        ]
         kept = pd.thin_pulses(cues, cap=3)
         self.assertEqual([c["t"] for c in kept], [100, 200, 300])
 
@@ -62,12 +64,19 @@ class TestGeneratorsAgreeUnderTheCap(unittest.TestCase):
             hand = [c for c in (scene.get("cues") or []) if c.get("op") == "strike"]
             prev_strikes = [c for c in prev if c.get("op") == "strike"]
             # preview = hand-written strikes + the SAME thinned pulses
-            self.assertEqual(len(prev_strikes), len(hand) + len(dev),
-                             f"{scene['id']}: preview and device disagree on hit count")
+            self.assertEqual(
+                len(prev_strikes),
+                len(hand) + len(dev),
+                f"{scene['id']}: preview and device disagree on hit count",
+            )
             dev_ts = sorted(c["t"] for c in dev)
             prev_ts = sorted(c["t"] for c in prev_strikes)
             for t_ in dev_ts:
-                self.assertIn(t_, prev_ts, f"{scene['id']}: device hit at {t_} missing from preview")
+                self.assertIn(
+                    t_,
+                    prev_ts,
+                    f"{scene['id']}: device hit at {t_} missing from preview",
+                )
             if len(raw) > pd.PULSE_CAP:
                 self.assertLess(len(dev), len(raw))
 

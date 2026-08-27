@@ -55,7 +55,7 @@ def is_accent(vels: list[float], i: int) -> bool:
     threshold; against a rolling window only the real accents do. Needs 3
     prior hits — the first few have no neighbourhood to stand out from.
     """
-    w = vels[max(0, i - 8):i]
+    w = vels[max(0, i - 8) : i]
     return len(w) >= 3 and vels[i] >= sum(w) / len(w) + 0.25 and vels[i] >= 0.55
 
 
@@ -148,9 +148,9 @@ def drift_base(colors: list, i: int, t_ms: int) -> list:
 # colour at the verse is what makes the chorus feel like an event. Table
 # passes the same saturation guards as BAND_STYLE (one channel low, W low).
 TAKEOVER_COLORS = [
-    [1.0, 0.55, 0.0, 0.0],    # gold
-    [1.0, 0.25, 0.0, 0.05],   # flame orange
-    [1.0, 0.0, 0.35, 0.0],    # hot rose
+    [1.0, 0.55, 0.0, 0.0],  # gold
+    [1.0, 0.25, 0.0, 0.05],  # flame orange
+    [1.0, 0.0, 0.35, 0.0],  # hot rose
 ]
 TAKEOVER_HOT = [1.0, 0.75, 0.1, 0.12]
 
@@ -169,9 +169,9 @@ def thin_pulses(cues: list[dict], cap: int = PULSE_CAP) -> list[dict]:
     """The `cap` strongest pulse cues (intensity, then earlier), time-ordered."""
     if len(cues) <= cap:
         return cues
-    ranked = sorted(enumerate(cues),
-                    key=lambda ic: (-float(ic[1].get("intensity", 0.0)),
-                                    ic[1]["t"], ic[0]))
+    ranked = sorted(
+        enumerate(cues),
+        key=lambda ic: (-float(ic[1].get("intensity", 0.0)), ic[1]["t"], ic[0]),
+    )
     keep = sorted(ranked[:cap], key=lambda ic: (ic[1]["t"], ic[0]))
     return [c for _, c in keep]
-

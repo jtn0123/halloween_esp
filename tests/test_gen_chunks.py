@@ -30,10 +30,15 @@ ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 
 def long_scene(n: int, loop: bool = False) -> dict:
     return {
-        "id": "epic", "name": "Epic", "kind": "triggered", "loop": loop,
-        "duration_ms": n * 100 + 500, "base": {"towerL": "candle"},
-        "cues": [{"t": 100 * (i + 1), "op": "strike", "intensity": 0.5}
-                 for i in range(n)],
+        "id": "epic",
+        "name": "Epic",
+        "kind": "triggered",
+        "loop": loop,
+        "duration_ms": n * 100 + 500,
+        "base": {"towerL": "candle"},
+        "cues": [
+            {"t": 100 * (i + 1), "op": "strike", "intensity": 0.5} for i in range(n)
+        ],
     }
 
 
@@ -71,14 +76,17 @@ class TestChunking(unittest.TestCase):
             self.assertEqual(s["mode"], "restart")
         for here, nxt in pairwise(sc):
             self.assertEqual(here["then"][-1], {"script.execute": nxt["id"]})
-        self.assertNotIn("script.execute", sc[-1]["then"][-1])   # not looping
+        self.assertNotIn("script.execute", sc[-1]["then"][-1])  # not looping
 
     def test_the_timeline_survives_the_split(self) -> None:
         scene = long_scene(300)
         lines = ge.emit_scene(scene, ZONES, 1, {})
         self.assertEqual(replay(lines), [c["t"] for c in scene["cues"]])
-        total = sum(int(ln.strip().split()[-1].removesuffix("ms"))
-                    for ln in lines if ln.strip().startswith("- delay:"))
+        total = sum(
+            int(ln.strip().split()[-1].removesuffix("ms"))
+            for ln in lines
+            if ln.strip().startswith("- delay:")
+        )
         self.assertEqual(total, scene["duration_ms"])
 
     def test_a_looping_scene_loops_back_to_its_head_only(self) -> None:
@@ -90,23 +98,30 @@ class TestChunking(unittest.TestCase):
     def test_run_scene_stops_every_continuation(self) -> None:
         """The whole point: the one script mid-delay may be any chunk."""
         scene = long_scene(300)
-        doc = {"zones": ZONES, "hardware": {"pixels_per_zone": 7},
-               "scenes": [scene]}
+        doc = {"zones": ZONES, "hardware": {"pixels_per_zone": 7}, "scenes": [scene]}
         # Every output path redirected — main() writes rig.h, lights.yaml
         # and the audio dispatch too, and the real ones are tracked files.
         names = ("MEDIA_OUT", "AUDIO_FLASH", "AUDIO_SD", "RIG_OUT", "LIGHTS_OUT", "OUT")
-        with tempfile.TemporaryDirectory() as td, \
-                contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.ExitStack() as stack:
+        with (
+            tempfile.TemporaryDirectory() as td,
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.ExitStack() as stack,
+        ):
             tmp = Path(td)
             (tmp / "generated").mkdir()
             # Every output path redirected, restored by the stack even if an
             # assertion raises — the real ones are tracked files.
             for n in names:
-                stack.enter_context(mock.patch.object(
-                    ge, n, tmp / "generated" / Path(getattr(ge, n)).name))
-            for n, v in (("ROOT", tmp), ("SRC", tmp / "scenes.yaml"),
-                         ("MARKERS", tmp / "m.json")):
+                stack.enter_context(
+                    mock.patch.object(
+                        ge, n, tmp / "generated" / Path(getattr(ge, n)).name
+                    )
+                )
+            for n, v in (
+                ("ROOT", tmp),
+                ("SRC", tmp / "scenes.yaml"),
+                ("MARKERS", tmp / "m.json"),
+            ):
                 stack.enter_context(mock.patch.object(ge, n, v))
             ge.SRC.write_text(yaml.safe_dump(doc))
             self.assertEqual(ge.main(), 0)
@@ -116,6 +131,7 @@ class TestChunking(unittest.TestCase):
         self.assertGreater(len(ids), 5)
         for sid in ids:
             self.assertIn(f"id({sid})->stop();", body)
+
 
 if __name__ == "__main__":
     unittest.main()

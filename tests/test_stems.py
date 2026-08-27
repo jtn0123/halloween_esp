@@ -36,7 +36,7 @@ def write_left_clicks(path: Path, seconds: float = 6.0, sr: int = 44100) -> int:
     t = 0.5
     while t < seconds - 0.5:
         a = int(t * sr)
-        left[a:a + int(0.005 * sr)] = 0.9
+        left[a : a + int(0.005 * sr)] = 0.9
         clicks += 1
         t += 0.5
     with wave.open(str(path), "wb") as w:
@@ -71,8 +71,11 @@ class TestGuards(StemsCase):
     def test_track_file_strips_traversal(self) -> None:
         (self.sandbox / "passwd.mp3").write_bytes(b"x")
         p = stems.track_file("../../passwd")
-        self.assertEqual(p, self.sandbox / "passwd.mp3",
-                         "the directory part must be stripped, not resolved")
+        self.assertEqual(
+            p,
+            self.sandbox / "passwd.mp3",
+            "the directory part must be stripped, not resolved",
+        )
 
     def test_stem_file_serves_only_the_two_stem_layers(self) -> None:
         d = self.sandbox / "stems" / "song"
@@ -85,8 +88,10 @@ class TestGuards(StemsCase):
         self.assertIsNone(stems.stem_file("song", "analysis.json"))
         # Name-stripped, same as /api/track: the directory part is discarded,
         # so a traversal can only ever land back inside the stems dir.
-        self.assertEqual(stems.stem_file("../../../song", "vocals"),
-                         stems.stem_file("song", "vocals"))
+        self.assertEqual(
+            stems.stem_file("../../../song", "vocals"),
+            stems.stem_file("song", "vocals"),
+        )
 
     def test_analysis_names_each_missing_state(self) -> None:
         self.assertEqual(stems.analysis("nope")["error"], "no such track")
@@ -101,8 +106,9 @@ class TestFreshness(StemsCase):
         d = self.sandbox / "stems" / "tune"
         d.mkdir(parents=True, exist_ok=True)
         st = src.stat()
-        (d / "analysis.json").write_text(json.dumps(
-            {"src_bytes": st.st_size, "src_mtime": int(st.st_mtime)}))
+        (d / "analysis.json").write_text(
+            json.dumps({"src_bytes": st.st_size, "src_mtime": int(st.st_mtime)})
+        )
         self.assertTrue(stems.fresh("tune"))
         # A re-import rewrites the file; the old split must stop counting.
         src.write_bytes(b"different content")
@@ -120,9 +126,12 @@ class TestChannelAnalysis(StemsCase):
 
         left_hits = sum(len(v) for v in chans["left"]["onsets"].values())
         right_hits = sum(len(v) for v in chans["right"]["onsets"].values())
-        self.assertGreaterEqual(left_hits, clicks,
-                                "the left channel must hear its own clicks "
-                                "(broadband, so several bands fire)")
+        self.assertGreaterEqual(
+            left_hits,
+            clicks,
+            "the left channel must hear its own clicks "
+            "(broadband, so several bands fire)",
+        )
         self.assertEqual(right_hits, 0, "silence has no onsets")
         # The raw levels are the tell the normalised strips would hide.
         self.assertGreater(chans["left"]["level"], 0.5)

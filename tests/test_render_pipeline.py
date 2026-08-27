@@ -54,10 +54,12 @@ class TestRenderScene(unittest.TestCase):
         self.assertAlmostEqual(float(np.abs(buf).max()), ra.TARGET_PEAK, delta=0.02)
 
     def test_output_never_exceeds_full_scale(self) -> None:
-        sc = self.scene(score=[
-            {"t": 0.0, "synth": "thunder", "gain": 4.0},
-            {"t": 0.1, "synth": "shriek", "gain": 4.0},
-        ])
+        sc = self.scene(
+            score=[
+                {"t": 0.0, "synth": "thunder", "gain": 4.0},
+                {"t": 0.1, "synth": "shriek", "gain": 4.0},
+            ]
+        )
         buf, _ = ra.render_scene(sc, CFG)
         self.assertLessEqual(float(np.abs(buf).max()), 1.0)
 
@@ -85,8 +87,9 @@ class TestRenderScene(unittest.TestCase):
     def test_markers_are_offset_by_event_time(self) -> None:
         """A synth reports times relative to itself; the scene has to place
         them on its own clock, or every cue lands early."""
-        sc = self.scene(duration_ms=12000,
-                        score=[{"t": 5.0, "synth": "heartbeat", "dur": 6.0}])
+        sc = self.scene(
+            duration_ms=12000, score=[{"t": 5.0, "synth": "heartbeat", "dur": 6.0}]
+        )
         _, marks = ra.render_scene(sc, CFG)
         self.assertIn("heartbeat", marks)
         first_ms = marks["heartbeat"][0][0]
@@ -94,8 +97,9 @@ class TestRenderScene(unittest.TestCase):
 
     def test_markers_stay_inside_the_buffer(self) -> None:
         """A cue past the end of the scene would be scheduled and never fire."""
-        sc = self.scene(duration_ms=3000,
-                        score=[{"t": 0.0, "synth": "heartbeat", "dur": 10.0}])
+        sc = self.scene(
+            duration_ms=3000, score=[{"t": 0.0, "synth": "heartbeat", "dur": 10.0}]
+        )
         _, marks = ra.render_scene(sc, CFG)
         for hits in marks.values():
             for ms, _v in hits:
@@ -104,18 +108,22 @@ class TestRenderScene(unittest.TestCase):
     def test_take_trims_both_audio_and_markers(self) -> None:
         """`take` shortens a long piece to fit. Markers past the cut must go
         with it, or the scene carries cues for sound that was removed."""
-        sc = self.scene(duration_ms=20000,
-                        score=[{"t": 0.0, "synth": "organ", "take": 5.0}])
+        sc = self.scene(
+            duration_ms=20000, score=[{"t": 0.0, "synth": "organ", "take": 5.0}]
+        )
         _, marks = ra.render_scene(sc, CFG)
         for hits in marks.values():
             for ms, _v in hits:
                 self.assertLess(ms, 5000)
 
     def test_markers_are_sorted(self) -> None:
-        sc = self.scene(duration_ms=12000, score=[
-            {"t": 6.0, "synth": "toll"},
-            {"t": 1.0, "synth": "toll"},
-        ])
+        sc = self.scene(
+            duration_ms=12000,
+            score=[
+                {"t": 6.0, "synth": "toll"},
+                {"t": 1.0, "synth": "toll"},
+            ],
+        )
         _, marks = ra.render_scene(sc, CFG)
         times = [ms for ms, _ in marks["toll"]]
         self.assertEqual(times, sorted(times))
@@ -123,16 +131,20 @@ class TestRenderScene(unittest.TestCase):
     def test_loop_crossfades_so_the_seam_is_inaudible(self) -> None:
         """A looping scene blends its tail into its head. Without it the loop
         point clicks every time round."""
-        sc = self.scene(loop=True, duration_ms=6000,
-                        score=[{"t": 0.0, "synth": "wind", "dur": 6.0}])
+        sc = self.scene(
+            loop=True, duration_ms=6000, score=[{"t": 0.0, "synth": "wind", "dur": 6.0}]
+        )
         buf, _ = ra.render_scene(sc, CFG)
         # A hard cut leaves a step between the last and first sample.
         step = abs(float(buf[-1]) - float(buf[0]))
         self.assertLess(step, 0.5, "loop seam looks like a discontinuity")
 
     def test_non_looping_scene_fades_out(self) -> None:
-        sc = self.scene(loop=False, duration_ms=4000,
-                        score=[{"t": 0.0, "synth": "wind", "dur": 4.0}])
+        sc = self.scene(
+            loop=False,
+            duration_ms=4000,
+            score=[{"t": 0.0, "synth": "wind", "dur": 4.0}],
+        )
         buf, _ = ra.render_scene(sc, CFG)
         self.assertLess(abs(float(buf[-1])), 0.02, "tail should fade to silence")
 
@@ -149,9 +161,11 @@ class TestStaleSweep(unittest.TestCase):
     """A full render owns the numbered files: after a delete renumbers the
     show, 11_foo.mp3 sat beside 10_foo.mp3 forever (judge B, JB2-5d)."""
 
-    SHOW = ("hardware:\n  audio: {sample_rate: 8000, bitrate: 32, channels: 1}\n"
-            "scenes:\n  - id: one\n    duration_ms: 200\n"
-            "  - id: two\n    duration_ms: 200\n")
+    SHOW = (
+        "hardware:\n  audio: {sample_rate: 8000, bitrate: 32, channels: 1}\n"
+        "scenes:\n  - id: one\n    duration_ms: 200\n"
+        "  - id: two\n    duration_ms: 200\n"
+    )
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
@@ -163,16 +177,21 @@ class TestStaleSweep(unittest.TestCase):
         scenes = self.tmp / "scenes.yaml"
         scenes.write_text(self.SHOW)
         fake_encode = lambda wav, mp3, br: mp3.write_bytes(b"new")  # noqa: E731
-        for target, value in (("OUT", self.out), ("SCENES", scenes),
-                              ("encode_mp3", fake_encode)):
+        for target, value in (
+            ("OUT", self.out),
+            ("SCENES", scenes),
+            ("encode_mp3", fake_encode),
+        ):
             p = mock.patch.object(ra, target, value)
             p.start()
             self.addCleanup(p.stop)
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
     def run_main(self, *argv: str) -> None:
-        with mock.patch.object(sys, "argv", ["render_audio.py", *argv]), \
-                contextlib.redirect_stdout(io.StringIO()):
+        with (
+            mock.patch.object(sys, "argv", ["render_audio.py", *argv]),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             self.assertEqual(ra.main(), 0)
 
     def test_card_copies_follow_a_redirected_out(self) -> None:
@@ -184,11 +203,22 @@ class TestStaleSweep(unittest.TestCase):
     def test_a_full_render_sweeps_what_it_did_not_write(self) -> None:
         self.run_main()
         names = sorted(p.name for p in self.out.iterdir())
-        self.assertEqual(names, ["00_chirp.mp3", "01_one.mp3", "02_two.mp3",
-                                 "markers.json", "notes.txt", "test"])
+        self.assertEqual(
+            names,
+            [
+                "00_chirp.mp3",
+                "01_one.mp3",
+                "02_two.mp3",
+                "markers.json",
+                "notes.txt",
+                "test",
+            ],
+        )
         # The speaker test's tones render beside the scenes, never swept.
-        self.assertEqual(sorted(p.name for p in (self.out / "test").iterdir()),
-                         sorted(f"{stem}.mp3" for stem, _ in ra.TEST_TONES))
+        self.assertEqual(
+            sorted(p.name for p in (self.out / "test").iterdir()),
+            sorted(f"{stem}.mp3" for stem, _ in ra.TEST_TONES),
+        )
         self.assertEqual((self.out / "02_two.mp3").read_bytes(), b"new")
 
     def test_a_partial_render_sweeps_nothing(self) -> None:

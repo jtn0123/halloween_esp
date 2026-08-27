@@ -50,8 +50,8 @@ class TestPureHelpers(unittest.TestCase):
     def test_run_reports_failure_with_stderr_folded_in(self) -> None:
         """The log goes straight to the page, so stderr must not be dropped."""
         ok, out = studio.run(
-            [sys.executable, "-c",
-             "import sys; sys.stderr.write('boom'); sys.exit(1)"])
+            [sys.executable, "-c", "import sys; sys.stderr.write('boom'); sys.exit(1)"]
+        )
         self.assertFalse(ok)
         self.assertIn("boom", out)
 
@@ -63,8 +63,10 @@ class TestPureHelpers(unittest.TestCase):
     def test_scene_ids_survives_an_unreadable_file(self) -> None:
         """A half-edited scenes.yaml must not take the whole panel down."""
         out = io.StringIO()
-        with mock.patch.object(studio, "SCENES", ROOT / "no" / "such.yaml"), \
-                contextlib.redirect_stdout(out):
+        with (
+            mock.patch.object(studio, "SCENES", ROOT / "no" / "such.yaml"),
+            contextlib.redirect_stdout(out),
+        ):
             self.assertEqual(studio.scene_ids(), [])
         # Not silent either: the panel says WHY it is empty — and the
         # suite's own output stays clean (the line used to print after OK).
@@ -96,64 +98,96 @@ class TestStudioPath(unittest.TestCase):
     """The alias table: old /api/ spellings land on /studio/, nothing else moves."""
 
     def test_studio_routes_are_rewritten(self) -> None:
-        for old, new in (("/api/tracks", "/studio/tracks"),
-                         ("/api/tracks/x?scene=1", "/studio/tracks/x"),
-                         ("/api/import/async", "/studio/import/async"),
-                         ("/api/scene", "/studio/scene"),
-                         ("/api/card/a.mp3", "/studio/card/a.mp3"),
-                         ("/api/server/stop", "/studio/server/stop")):
+        for old, new in (
+            ("/api/tracks", "/studio/tracks"),
+            ("/api/tracks/x?scene=1", "/studio/tracks/x"),
+            ("/api/import/async", "/studio/import/async"),
+            ("/api/scene", "/studio/scene"),
+            ("/api/card/a.mp3", "/studio/card/a.mp3"),
+            ("/api/server/stop", "/studio/server/stop"),
+        ):
             self.assertEqual(studio.studio_path(old), new, old)
 
     def test_castle_routes_and_studio_routes_pass_through(self) -> None:
-        for same in ("/api/status", "/api/files/x.mp3", "/api/scene?s=vigil",
-                     "/api/play?f=x.mp3", "/studio/tracks", "/remote", "/"):
-            self.assertEqual(studio.studio_path(same),
-                             same.split("?")[0], same)
+        for same in (
+            "/api/status",
+            "/api/files/x.mp3",
+            "/api/scene?s=vigil",
+            "/api/play?f=x.mp3",
+            "/studio/tracks",
+            "/remote",
+            "/",
+        ):
+            self.assertEqual(studio.studio_path(same), same.split("?")[0], same)
 
     def test_every_studio_route_family_is_in_the_table(self) -> None:
         """docs/API.md and the handler agree on what the studio owns."""
-        self.assertEqual(studio.STUDIO_ROUTES, {
-            "tracks", "import", "job", "refresh", "track", "waveform",
-            "stems", "stem", "compare", "probe", "server", "scene",
-            "rebuild", "card"})
+        self.assertEqual(
+            studio.STUDIO_ROUTES,
+            {
+                "tracks",
+                "import",
+                "job",
+                "refresh",
+                "track",
+                "waveform",
+                "stems",
+                "stem",
+                "compare",
+                "probe",
+                "server",
+                "scene",
+                "rebuild",
+                "card",
+            },
+        )
 
 
 class TestMultipart(unittest.TestCase):
     """Uploads are parsed by hand rather than with cgi, so parse it properly."""
 
     def body(self, filename: str, data: bytes, boundary: str = "BOUND") -> bytes:
-        return (f"--{boundary}\r\nContent-Disposition: form-data; "
+        return (
+            (
+                f"--{boundary}\r\nContent-Disposition: form-data; "
                 f'name="file"; filename="{filename}"\r\n'
-                f"Content-Type: application/octet-stream\r\n\r\n").encode() \
-            + data + f"\r\n--{boundary}--\r\n".encode()
+                f"Content-Type: application/octet-stream\r\n\r\n"
+            ).encode()
+            + data
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
 
     def test_extracts_name_and_bytes(self) -> None:
         name, data = sh.parse_multipart(
             self.body("clip.wav", b"\x00\x01\x02payload"),
-            "multipart/form-data; boundary=BOUND")
+            "multipart/form-data; boundary=BOUND",
+        )
         self.assertEqual(name, "clip.wav")
         self.assertEqual(data, b"\x00\x01\x02payload")
 
     def test_strips_any_path_from_the_filename(self) -> None:
         """A browser can send a full path; writing it verbatim would escape tracks/."""
         name, _ = sh.parse_multipart(
-            self.body("../../etc/passwd", b"x"),
-            "multipart/form-data; boundary=BOUND")
+            self.body("../../etc/passwd", b"x"), "multipart/form-data; boundary=BOUND"
+        )
         self.assertEqual(name, "passwd")
 
     def test_quoted_boundary_is_accepted(self) -> None:
         name, _ = sh.parse_multipart(
-            self.body("a.wav", b"x"), 'multipart/form-data; boundary="BOUND"')
+            self.body("a.wav", b"x"), 'multipart/form-data; boundary="BOUND"'
+        )
         self.assertEqual(name, "a.wav")
 
     def test_no_boundary_yields_nothing(self) -> None:
         self.assertEqual(sh.parse_multipart(b"whatever", "text/plain"), ("", b""))
 
     def test_a_part_without_a_filename_is_not_a_file(self) -> None:
-        body = (b"--B\r\nContent-Disposition: form-data; name=\"opts\"\r\n\r\n"
-                b"{}\r\n--B--\r\n")
-        self.assertEqual(sh.parse_multipart(body, "multipart/form-data; boundary=B"),
-                         ("", b""))
+        body = (
+            b'--B\r\nContent-Disposition: form-data; name="opts"\r\n\r\n{}\r\n--B--\r\n'
+        )
+        self.assertEqual(
+            sh.parse_multipart(body, "multipart/form-data; boundary=B"), ("", b"")
+        )
 
 
 class TestServerStop(unittest.TestCase):
@@ -168,9 +202,12 @@ class TestServerStop(unittest.TestCase):
         t = threading.Thread(target=srv.serve_forever, daemon=True)
         t.start()
         try:
-            r = urllib.request.Request(f"http://127.0.0.1:{port}/studio/server/stop",
-                                       data=b"{}", method="POST",
-                                       headers={"Content-Type": "application/json"})
+            r = urllib.request.Request(
+                f"http://127.0.0.1:{port}/studio/server/stop",
+                data=b"{}",
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
             with urllib.request.urlopen(r, timeout=10) as f:
                 d = json.loads(f.read())
             self.assertTrue(d["ok"])
@@ -201,8 +238,10 @@ class TestLogScrub(unittest.TestCase):
         self.assertIn("\\x00", got)
 
     def test_ordinary_lines_are_untouched(self) -> None:
-        self.assertEqual(sh.scrub('GET /studio/tracks HTTP/1.1" 200 -'),
-                         'GET /studio/tracks HTTP/1.1" 200 -')
+        self.assertEqual(
+            sh.scrub('GET /studio/tracks HTTP/1.1" 200 -'),
+            'GET /studio/tracks HTTP/1.1" 200 -',
+        )
 
     def test_one_request_cannot_scroll_the_console(self) -> None:
         got = sh.scrub("GET /" + "a" * 5000)

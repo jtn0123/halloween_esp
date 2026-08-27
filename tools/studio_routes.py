@@ -58,19 +58,23 @@ def handle_get(h):
         live = app.cl.status()
         if not live:  # marker + WHO the relay was trying (C3); no
             # `castle` key = none configured, a simulator on purpose.
-            live = {"studio": True,
-                    **({"castle": c} if (c := app.cl.castle_host()) else {})}
+            live = {
+                "studio": True,
+                **({"castle": c} if (c := app.cl.castle_host()) else {}),
+            }
         return h.send_json(live)
     if path == "/studio/tracks":
         app.TRACKS.mkdir(exist_ok=True)
-        return h.send_json({
-            "tracks": app.track_infos(app.track_files()),
-            "scenes": app.scene_ids(),
-        })
+        return h.send_json(
+            {
+                "tracks": app.track_infos(app.track_files()),
+                "scenes": app.scene_ids(),
+            }
+        )
     if path.startswith("/studio/waveform/"):
         q = urllib.parse.parse_qs(urllib.parse.urlparse(h.path).query)
         sens = app.parse_sensitivity(q)
-        p = app.track_path(Path(path).name)    # name-stripped: no traversal
+        p = app.track_path(Path(path).name)  # name-stripped: no traversal
         if p is None:
             return h.send_json({"error": "no such track"}, 404)
         return h.send_json(app.sm.waveform(p, sensitivity=sens))
@@ -94,8 +98,9 @@ def handle_get(h):
         p = app.sm.compare_file(parts[-2], parts[-1]) if len(parts) >= 5 else None
         if p is None:
             return h.send_json({"error": "no such comparison"}, 404)
-        return h.send_range(p, app.MIME.get(p.suffix.lstrip("."),
-                                            "application/octet-stream"))
+        return h.send_range(
+            p, app.MIME.get(p.suffix.lstrip("."), "application/octet-stream")
+        )
     if path.startswith("/studio/track/"):
         # Path(...).name strips any directory part, so a traversal
         # like ../../etc/passwd cannot escape TRACKS. That call IS
@@ -111,7 +116,7 @@ def handle_get(h):
         # Pull leg: the castle serves card bytes at /sd/<name>. Name-
         # stripped like every other file route — the raw suffix used to
         # go through, and "../api/status" reached any GET on the castle.
-        name = Path(path[len("/studio/card/"):]).name
+        name = Path(path[len("/studio/card/") :]).name
         if not name:
             return h.send_json({"error": "no file name"}, 400)
         return h.relay("GET", to="/sd/" + name)
@@ -127,7 +132,7 @@ def handle_delete(h):
     path = app.studio_path(h.path)
     if path.startswith("/studio/tracks/"):
         tid = Path(path).name
-        p = app.track_path(tid)            # name-stripped above
+        p = app.track_path(tid)  # name-stripped above
         q = urllib.parse.parse_qs(urllib.parse.urlparse(h.path).query)
         # ?scene=1 with the file already gone: the scene is an orphan
         # and taking it out is the whole point (judge B, JB2-5a).
@@ -143,10 +148,14 @@ def handle_delete(h):
             # The track was IN THE SHOW and the operator chose to take
             # its scene out with it, rather than leave scenes.yaml
             # pointing at a file that is gone (JB1-6).
-            res, _code = app.ss.remove(app.SCENES, tid, app._lock, app.run,
-                                       app.PY, app.ROOT)
-            body.update(scene_removed=res.get("removed", False),
-                        scenes=res.get("scenes", []), log=res.get("log", ""))
+            res, _code = app.ss.remove(
+                app.SCENES, tid, app._lock, app.run, app.PY, app.ROOT
+            )
+            body.update(
+                scene_removed=res.get("removed", False),
+                scenes=res.get("scenes", []),
+                log=res.get("log", ""),
+            )
             if not res.get("ok"):
                 body.update(app.failed(res.get("log", "")))
         return h.send_json(body, 200 if body["ok"] else 500)
@@ -168,12 +177,16 @@ def handle_post(h):
         src = (req.get("url") or "").strip()
         if not src.startswith(("http://", "https://")):
             return h.send_json({"error": "url must be http(s)"}, 400)
-        if (why := app.ng.refuse_reason(src, h.client_address[0])):
+        if why := app.ng.refuse_reason(src, h.client_address[0]):
             return h.send_json({"error": why}, 400)
         if req.get("id") and app.safe_id(req["id"]) is None:
             return h.send_json({"error": "id: letters, digits and _ only"}, 400)
-        args = [app.PY, str(app.ROOT / "tools" / "import_track.py"), src,
-                *app.opt_args(req)]
+        args = [
+            app.PY,
+            str(app.ROOT / "tools" / "import_track.py"),
+            src,
+            *app.opt_args(req),
+        ]
         return h.send_json(app._runner.start(args).as_dict())
     if path == "/studio/stems":
         # Demucs split as a background job — ~25 s on the GPU is too long
@@ -192,15 +205,17 @@ def handle_post(h):
         tid = app.safe_id(req.get("id") or "")
         if tid is None:
             return h.send_json({"error": "no id"}, 400)
-        args = [app.PY, str(app.ROOT / "tools" / "import_track.py"),
-                "--refresh", tid]
-        args += app.opt_args(req, app.OPT_KEYS[1:-1])      # no id, no notes
+        args = [app.PY, str(app.ROOT / "tools" / "import_track.py"), "--refresh", tid]
+        args += app.opt_args(req, app.OPT_KEYS[1:-1])  # no id, no notes
         with app._lock:
             ok, out = app.run(args)
         tracks = app.track_infos(app.track_files())
-        return h.send_json({"ok": True, "log": out, "tracks": tracks}
-                           if ok else app.failed(out, tracks=tracks),
-                           200 if ok else 500)
+        return h.send_json(
+            {"ok": True, "log": out, "tracks": tracks}
+            if ok
+            else app.failed(out, tracks=tracks),
+            200 if ok else 500,
+        )
     if path == "/studio/compare":
         req = h.json_body(raw)
         # .name-strip like every other track route — without it this was
@@ -208,24 +223,26 @@ def handle_post(h):
         p = app.track_path(Path((req.get("id") or "").strip()).name)
         if p is None:
             return h.send_json({"ok": False, "error": "no such track"}, 404)
-        num = lambda k, d: float(req.get(k) or d)      # noqa: E731
+        num = lambda k, d: float(req.get(k) or d)  # noqa: E731
         opts = {
-            "start": num("start", 0), "take": (float(req["take"])
-                                               if req.get("take") else None),
-            "fade_in": None, "fade_out": None, "normalize": False,
-            "gain_db": None, "bitrate": int(num("bitrate", 96)),
+            "start": num("start", 0),
+            "take": (float(req["take"]) if req.get("take") else None),
+            "fade_in": None,
+            "fade_out": None,
+            "normalize": False,
+            "gain_db": None,
+            "bitrate": int(num("bitrate", 96)),
             "channels": int(num("channels", 1)),
             "sample_rate": int(num("sample_rate", 44100)),
         }
         # ffmpeg four times over; serialise with every other encode job.
         with app._lock:
-            res = app.sm.compare(p, opts,
-                                 token=f"{p.stem}-{int(app.time.time())}")
+            res = app.sm.compare(p, opts, token=f"{p.stem}-{int(app.time.time())}")
         return h.send_json(res, 200 if res.get("ok") else 500)
     if path == "/studio/probe":
         req = h.json_body(raw)
         url = (req.get("url") or "").strip()
-        if (why := app.ng.refuse_reason(url, h.client_address[0])):
+        if why := app.ng.refuse_reason(url, h.client_address[0]):
             return h.send_json({"error": why}, 400)
         res = app.sm.probe(url)
         # A bad or unreadable link is the caller's problem: 400, not 200.
@@ -283,7 +300,7 @@ def do_import(h, raw: bytes):
             return h.send_json({"error": "no url"}, 400)
         if not src.startswith(("http://", "https://")):
             return h.send_json({"error": "url must be http(s)"}, 400)
-        if (why := app.ng.refuse_reason(src, h.client_address[0])):
+        if why := app.ng.refuse_reason(src, h.client_address[0]):
             return h.send_json({"error": why}, 400)
         args.append(src)
     else:
@@ -294,8 +311,7 @@ def do_import(h, raw: bytes):
         # Through json_body: malformed options are the client's mistake
         # (400), not a traceback and a dead socket. Before the staging
         # write, so a rejected upload leaves nothing behind.
-        req = h.json_body(
-            (h.headers.get("X-Import-Opts") or "{}").encode())
+        req = h.json_body((h.headers.get("X-Import-Opts") or "{}").encode())
         tmp = app.TRACKS / "_upload"
         tmp.mkdir(exist_ok=True)
         src = tmp / (fname or "upload.bin")
@@ -314,15 +330,17 @@ def do_import(h, raw: bytes):
         ok, out = app.run(args)
     app.shutil.rmtree(app.TRACKS / "_upload", ignore_errors=True)
     tracks = app.track_infos(app.track_files())
-    return h.send_json({"ok": True, "log": out, "tracks": tracks}
-                       if ok else app.failed(out, tracks=tracks),
-                       200 if ok else 500)
+    return h.send_json(
+        {"ok": True, "log": out, "tracks": tracks}
+        if ok
+        else app.failed(out, tracks=tracks),
+        200 if ok else 500,
+    )
 
 
 def do_scene(h, req: dict):
     """Insert or replace a scene in scenes.yaml — studio_scenes.splice."""
-    body, code = app.ss.splice(app.SCENES, req, app._lock, app.run,
-                               app.PY, app.ROOT)
+    body, code = app.ss.splice(app.SCENES, req, app._lock, app.run, app.PY, app.ROOT)
     if not body.get("ok") and body.get("log"):
         body["reason"] = app.sj.reason(body["log"])
     return h.send_json(body, code)

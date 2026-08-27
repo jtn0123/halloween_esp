@@ -27,7 +27,8 @@ Phase = Literal["queued", "fetching", "converting", "analysing", "done", "failed
 # yt-dlp's progress line, e.g. "[download]  41.8% of 2.39MiB at 15.81MiB/s ETA 00:00"
 _PROGRESS = re.compile(
     r"\[download\]\s+(?P<pct>[\d.]+)%\s+of\s+~?\s*(?P<size>\S+)"
-    r"(?:\s+at\s+(?P<rate>\S+))?(?:\s+ETA\s+(?P<eta>\S+))?")
+    r"(?:\s+at\s+(?P<rate>\S+))?(?:\s+ETA\s+(?P<eta>\S+))?"
+)
 
 
 @dataclass
@@ -41,8 +42,11 @@ class Job:
 
     def as_dict(self) -> dict:
         return {
-            "id": self.id, "phase": self.phase, "percent": round(self.percent, 1),
-            "detail": self.detail, "error": self.error,
+            "id": self.id,
+            "phase": self.phase,
+            "percent": round(self.percent, 1),
+            "detail": self.detail,
+            "error": self.error,
             "done": self.phase in ("done", "failed"),
             # The tail is enough to diagnose a failure without shipping the
             # whole of yt-dlp's chatter to the browser.
@@ -76,8 +80,9 @@ class JobRunner:
             self._jobs[job.id] = job
             # Keep the map from growing without bound over a long session.
             if len(self._jobs) > 40:
-                for k in [k for k, v in self._jobs.items()
-                          if v.phase in ("done", "failed")][:20]:
+                for k in [
+                    k for k, v in self._jobs.items() if v.phase in ("done", "failed")
+                ][:20]:
                     del self._jobs[k]
         threading.Thread(target=self._run, args=(job, argv), daemon=True).start()
         return job
@@ -92,9 +97,13 @@ class JobRunner:
             # Context-managed so the child's stdout is closed deterministically.
             # Leaving it to the collector worked, but raised a ResourceWarning
             # on every job, which is noise that trains you to ignore warnings.
-            with subprocess.Popen(argv, stdout=subprocess.PIPE,
-                                  stderr=subprocess.STDOUT, text=True,
-                                  bufsize=1) as p:
+            with subprocess.Popen(
+                argv,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            ) as p:
                 # Wall-clock kill: a child that stops producing output blocks
                 # the readline below forever, and the job would sit at
                 # "fetching" for the life of the server.
@@ -118,8 +127,10 @@ class JobRunner:
         else:
             job.phase = "failed"
             job.error = self._explain(job.log) or (
-                "gave up after 15 minutes — the job stalled" if code == -9
-                else f"import failed (exit {code})")
+                "gave up after 15 minutes — the job stalled"
+                if code == -9
+                else f"import failed (exit {code})"
+            )
 
     @staticmethod
     def _interpret(job: Job, line: str) -> None:
@@ -163,8 +174,11 @@ class JobRunner:
             if m and m.group(1).endswith(_EXC_TAIL):
                 return basenames(_exception_line(m.group(1), m.group(2)))
         for line in reversed(log):
-            if line.strip() and not line[:1].isspace() \
-                    and not line.startswith(("[", "Traceback")):
+            if (
+                line.strip()
+                and not line[:1].isspace()
+                and not line.startswith(("[", "Traceback"))
+            ):
                 return basenames(line.strip())
         return ""
 
@@ -184,8 +198,10 @@ KNOWN: list[tuple[str, str]] = [
     ("No module named demucs", NO_DEMUCS),
     ("No module named 'demucs'", NO_DEMUCS),
     ("out of memory", "Ran out of memory — try a shorter track."),
-    ("No such file or directory: 'ffmpeg'",
-     "ffmpeg is not installed — brew install ffmpeg."),
+    (
+        "No such file or directory: 'ffmpeg'",
+        "ffmpeg is not installed — brew install ffmpeg.",
+    ),
     ("ffmpeg: command not found", "ffmpeg is not installed — brew install ffmpeg."),
 ]
 
@@ -221,13 +237,24 @@ def basenames(s: str) -> str:
 
 def reason(text: str) -> str:
     """The one-line verdict for a tool's whole output (the sync paths)."""
-    return JobRunner._explain([ln.rstrip() for ln in text.splitlines()
-                               if ln.strip()])
+    return JobRunner._explain([ln.rstrip() for ln in text.splitlines() if ln.strip()])
 
 
 # ── the importer's CLI flags — shared by import, async import and refresh ──
-OPT_KEYS = ("id", "start", "take", "sensitivity", "bitrate", "sample_rate",
-            "channels", "format", "gain_db", "fade_in", "fade_out", "notes")
+OPT_KEYS = (
+    "id",
+    "start",
+    "take",
+    "sensitivity",
+    "bitrate",
+    "sample_rate",
+    "channels",
+    "format",
+    "gain_db",
+    "fade_in",
+    "fade_out",
+    "notes",
+)
 
 
 def opt_args(req: dict, keys: tuple[str, ...] = OPT_KEYS) -> list[str]:
@@ -235,7 +262,9 @@ def opt_args(req: dict, keys: tuple[str, ...] = OPT_KEYS) -> list[str]:
     for k in keys:
         v = req.get(k)
         if v not in (None, ""):
-            args.append(f"--{k.replace('_', '-')}={v}")   # `=`: a value can't become a flag
+            args.append(
+                f"--{k.replace('_', '-')}={v}"
+            )  # `=`: a value can't become a flag
     if req.get("normalize") is True:
         args.append("--normalize")
     elif req.get("normalize") is False:

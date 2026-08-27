@@ -36,25 +36,37 @@ class TestFetchUrl(unittest.TestCase):
         self.addCleanup(__import__("shutil").rmtree, self.tmp, True)
 
     def test_ytdlp_failure_surfaces_its_own_last_lines(self) -> None:
-        with mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"), \
-             mock.patch.object(imf.subprocess, "run",
-                               return_value=done(1, err="x\nERROR: Video unavailable")):
+        with (
+            mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"),
+            mock.patch.object(
+                imf.subprocess,
+                "run",
+                return_value=done(1, err="x\nERROR: Video unavailable"),
+            ),
+        ):
             with self.assertRaises(SystemExit) as c:
                 imf.fetch_url("https://example.test/a", self.tmp)
         self.assertIn("Video unavailable", str(c.exception))
         self.assertIn("could not fetch", str(c.exception))
 
     def test_success_with_no_file_is_still_a_failure(self) -> None:
-        with mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"), \
-             mock.patch.object(imf.subprocess, "run", return_value=done(0)):
+        with (
+            mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"),
+            mock.patch.object(imf.subprocess, "run", return_value=done(0)),
+        ):
             with self.assertRaises(SystemExit) as c:
                 imf.fetch_url("https://example.test/a", self.tmp)
         self.assertIn("no audio file", str(c.exception))
 
     def test_timeout_names_the_stall_not_a_traceback(self) -> None:
-        with mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"), \
-             mock.patch.object(imf.subprocess, "run",
-                               side_effect=subprocess.TimeoutExpired("yt-dlp", 900)):
+        with (
+            mock.patch.object(imf, "_ytdlp", return_value="yt-dlp"),
+            mock.patch.object(
+                imf.subprocess,
+                "run",
+                side_effect=subprocess.TimeoutExpired("yt-dlp", 900),
+            ),
+        ):
             with self.assertRaises(SystemExit) as c:
                 imf.fetch_url("https://example.test/a", self.tmp)
         self.assertIn("stalled", str(c.exception))
@@ -79,33 +91,51 @@ class TestProbe(unittest.TestCase):
         self.assertFalse(out["ok"])
 
     def test_timeout_reports_the_budget(self) -> None:
-        with mock.patch.object(sm.shutil, "which", return_value="yt-dlp"), \
-             mock.patch.object(sm.subprocess, "run",
-                               side_effect=subprocess.TimeoutExpired("yt-dlp", 60)):
+        with (
+            mock.patch.object(sm.shutil, "which", return_value="yt-dlp"),
+            mock.patch.object(
+                sm.subprocess,
+                "run",
+                side_effect=subprocess.TimeoutExpired("yt-dlp", 60),
+            ),
+        ):
             out = sm.probe("https://example.test/a")
         self.assertFalse(out["ok"])
         self.assertIn("timed out", out["error"])
 
     def test_failure_surfaces_ytdlps_last_line(self) -> None:
-        with mock.patch.object(sm.shutil, "which", return_value="yt-dlp"), \
-             mock.patch.object(sm.subprocess, "run",
-                               return_value=done(1, err="warn\nERROR: Private video")):
+        with (
+            mock.patch.object(sm.shutil, "which", return_value="yt-dlp"),
+            mock.patch.object(
+                sm.subprocess,
+                "run",
+                return_value=done(1, err="warn\nERROR: Private video"),
+            ),
+        ):
             out = sm.probe("https://example.test/a")
         self.assertFalse(out["ok"])
         self.assertEqual(out["error"], "ERROR: Private video")
 
     def test_unparseable_answer_is_a_sentence(self) -> None:
-        with mock.patch.object(sm.shutil, "which", return_value="yt-dlp"), \
-             mock.patch.object(sm.subprocess, "run",
-                               return_value=done(0, out="not json")):
+        with (
+            mock.patch.object(sm.shutil, "which", return_value="yt-dlp"),
+            mock.patch.object(
+                sm.subprocess, "run", return_value=done(0, out="not json")
+            ),
+        ):
             out = sm.probe("https://example.test/a")
         self.assertFalse(out["ok"])
         self.assertIn("parse", out["error"])
 
     def test_ok_path_shapes_duration_text(self) -> None:
-        with mock.patch.object(sm.shutil, "which", return_value="yt-dlp"), \
-             mock.patch.object(sm.subprocess, "run",
-                               return_value=done(0, out='{"title":"T","duration":125}')):
+        with (
+            mock.patch.object(sm.shutil, "which", return_value="yt-dlp"),
+            mock.patch.object(
+                sm.subprocess,
+                "run",
+                return_value=done(0, out='{"title":"T","duration":125}'),
+            ),
+        ):
             out = sm.probe("https://example.test/a")
         self.assertTrue(out["ok"])
         self.assertEqual(out["duration_text"], "2:05")
@@ -125,9 +155,11 @@ class TestStems(unittest.TestCase):
         self.assertIn("no such track", str(c.exception))
 
     def test_missing_demucs_says_how_to_install(self) -> None:
-        with mock.patch.object(stems, "track_file", return_value=Path("x.mp3")), \
-             mock.patch.object(stems, "fresh", return_value=False), \
-             mock.patch.object(stems.importlib.util, "find_spec", return_value=None):
+        with (
+            mock.patch.object(stems, "track_file", return_value=Path("x.mp3")),
+            mock.patch.object(stems, "fresh", return_value=False),
+            mock.patch.object(stems.importlib.util, "find_spec", return_value=None),
+        ):
             with self.assertRaises(SystemExit) as c:
                 stems.separate("x")
         self.assertIn("demucs", str(c.exception))

@@ -15,8 +15,18 @@ switch, not a string compare. Order here IS the id order.
 from __future__ import annotations
 
 EFFECT_IDS: dict[str, int] = {
-    "off": 0, "candle": 1, "ember": 2, "furnace": 3, "spirit": 4, "eyes": 5,
-    "seance": 6, "wisp": 7, "mansion": 8, "chill": 9, "throb": 10, "strobe": 11,
+    "off": 0,
+    "candle": 1,
+    "ember": 2,
+    "furnace": 3,
+    "spirit": 4,
+    "eyes": 5,
+    "seance": 6,
+    "wisp": 7,
+    "mansion": 8,
+    "chill": 9,
+    "throb": 10,
+    "strobe": 11,
     "blood": 12,
 }
 
