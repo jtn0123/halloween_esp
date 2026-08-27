@@ -186,6 +186,25 @@ the wasm into the previewer in place of effects.ts) stays post-Halloween —
 it changes what the live show previews with, and the sine-effect
 wasm-libm-vs-JS-Math deltas need the swap harness's tolerance model.
 
+B4 passes 3-6 (2026-08-27, third Track-B run): the `castle` CLI now
+carries sd_sync's whole card-and-firmware surface — `put` (with --to
+site|scenes) held to the byte count AND the v5.42 CRC32 the firmware
+answers with (crc32 implemented in-crate, bitwise, zero-dep), `rm`,
+`purge` (files only, directories survive — "clear the music, not the
+card"), and `ota` (0xE9 magic check, stop-audio-first per the standing
+rule, tolerant of the reboot race, status poll as the verdict;
+CASTLE_OTA_WAIT_S bounds the poll for tests). Host discovery ported
+too: core/src/hosts.rs reads devices.toml through a TOML-subset parser
+and reproduces hosts.py's candidates() — tests/test_bridge_rust.py
+holds the two together combo for combo against tomllib, and the CLI
+probes multi-candidate walks so a dead lease falls through to the
+living fallback with no --host at all. 21 emulator round-trip tests.
+The reply parsing is deliberately NOT a JSON parser: the firmware
+prints fixed snprintf templates (json.dumps spacing tolerated for the
+emulator). Still Python: sd_sync's repo-glob conveniences (scenes/site
+source discovery, lean-page rewrite — they need gen_previewer) and the
+size-skip optimization; those retire with the studio port, not before.
+
 | Loop | Iteration unit | Gate per pass | Stops when |
 |---|---|---|---|
 | B1 core/effects | scaffold → int hash → 1 effect family per pass → WASM face → desk swap | Rust tests + frame-exact vs TS/C++ + page ≤4MB budget | old parity suite retired |
