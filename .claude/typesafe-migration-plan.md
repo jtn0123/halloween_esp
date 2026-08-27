@@ -205,6 +205,30 @@ emulator). Still Python: sd_sync's repo-glob conveniences (scenes/site
 source discovery, lean-page rewrite — they need gen_previewer) and the
 size-skip optimization; those retire with the studio port, not before.
 
+B3 passes 1-4 (2026-08-27, fourth Track-B run): the synth pipeline's
+foundations, all gated bit-exact with a new probing discipline. Pass 1:
+core/src/rng.rs is numpy's default_rng draw-for-draw — SeedSequence's
+4-word pool and PCG64 XSL-RR (the spike caught a transposed multiplier
+digit and, bigger, that Generator.uniform's `low + range*d` is compiled
+to an fma on arm64 wheels but not baseline x86 — so the test PROBES the
+installed numpy and tells the Rust dump which form to match; exact on
+every platform, tolerant on none). Pass 2: synth.rs — pipe/piano/box,
+whole buffers bit-equal (np.interp is fused inside, np.linspace is
+i*delta endpoint-forced). Pass 3: pieces.rs — organ, descent, waltz,
+musicbox, toll, drone and _place, buffers AND light markers exact.
+Pass 4: filters.rs — scipy butter (N=1/2 lowpass, N=2 bandpass with a
+hand-derived zpk2sos pairing for that fixed shape) and sosfilt. The
+deep finding: numpy's complex kernels carry compiler-placed fmas that
+DIFFER WITHIN one wheel — the ufunc multiply is fused where np.poly's
+convolve loop is naive; division is Smith-with-reciprocal fused at all
+three products; csqrt's hypot is sqrt(fma(x,x,y*y)) — all pinned by
+enumeration, all behind per-kernel mode flags that
+tests/synth_probes.py (split at the 500-line cap) measures from the
+host's wheels at test time. Still Python: the rng-driven atmosphere
+voices (wind, heartbeat, creak, shriek, whispers, thunder — they need
+_sweep_lp's blockwise sweeps next), reverb (fftconvolve = pocketfft,
+deliberately deferred), limit, and render_audio's scene mixing.
+
 | Loop | Iteration unit | Gate per pass | Stops when |
 |---|---|---|---|
 | B1 core/effects | scaffold → int hash → 1 effect family per pass → WASM face → desk swap | Rust tests + frame-exact vs TS/C++ + page ≤4MB budget | old parity suite retired |
