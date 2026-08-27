@@ -10,6 +10,14 @@ edition = "2021"
 [lib]
 name = "castle_core"
 path = "src/lib.rs"
+crate-type = ["lib", "cdylib"]
+
+# The desk inlines the wasm as base64; every KB here is ~1.4 KB of page.
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+strip = true
 
 [[bin]]
 name = "parity_dump"

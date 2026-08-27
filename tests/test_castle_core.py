@@ -39,6 +39,7 @@ CORE = ROOT / "core"
 CXX_SRC = ROOT / "tests" / "cxx" / "parity_dump.cpp"
 
 CARGO = shutil.which("cargo")
+NODE = shutil.which("node")
 COMPILER = shutil.which("clang++") or shutil.which("g++")
 IN_CI = bool(os.environ.get("CI"))
 SEED = os.environ.get("CASTLE_CORE_SEED", "7")
@@ -239,6 +240,80 @@ class TestCastleCoreParity(unittest.TestCase):
                 f32_bits(b["gate"]),
                 f"seed {SEED} px {i} (mode {a['mode']}): gate differs",
             )
+
+    def test_wasm_face_builds_loads_and_computes(self) -> None:
+        """The cdylib face: builds for wasm32, fits the page, computes.
+
+        The noise chain and the fbm-only effects are pure IEEE arithmetic,
+        so the wasm module must reproduce the firmware goldens bit for bit
+        — no tolerance. Sine-based effects go through wasm's own libm and
+        get their exact check from the desk-swap harness (post-Halloween).
+        Skips (loudly) without the wasm32 target or node.
+        """
+        assert CARGO is not None
+        targets = subprocess.run(
+            ["rustup", "target", "list", "--installed"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if "wasm32-unknown-unknown" not in targets.stdout and not IN_CI:
+            self.skipTest("wasm32-unknown-unknown target not installed")
+        if NODE is None and not IN_CI:
+            self.skipTest("no node")
+        assert NODE is not None
+        built = cargo(
+            "build", "--release", "--quiet", "--target", "wasm32-unknown-unknown"
+        )
+        self.assertEqual(built.returncode, 0, f"wasm build failed:\n{built.stderr}")
+        wasm = (
+            CORE / "target" / "wasm32-unknown-unknown" / "release" / "castle_core.wasm"
+        )
+        size = wasm.stat().st_size
+        # ~1.4x when base64-inlined; the page budget is 4 MB and ~3.3 used.
+        self.assertLess(size, 200_000, f"castle_core.wasm is {size:,} bytes")
+        script = Path(self.tmp) / "wasm_check.mjs"
+        script.write_text(WASM_CHECK)
+        r = subprocess.run(
+            [NODE, str(script), str(wasm)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+        self.assertEqual(r.returncode, 0, f"wasm check failed:\n{r.stdout}\n{r.stderr}")
+
+
+#: Loads the module bare (no imports — the crate is allocator-free) and holds
+#: the deterministic paths to the same goldens core/src/noise.rs pins, plus
+#: two full fbm-effect renders printed by firmware/castle_effects.h
+#: (clang++ -ffp-contract=off, 2026-08-27).
+WASM_CHECK = """
+import { readFileSync } from "node:fs";
+const wasm = await WebAssembly.instantiate(readFileSync(process.argv[2]), {});
+const e = wasm.instance.exports;
+const eq = (got, want, what) => {
+  if (Math.fround(got) !== Math.fround(want)) {
+    console.error(`${what}: got ${got}, want ${want}`);
+    process.exit(1);
+  }
+};
+eq(e.wasm_hashi(1), 0.40834903717041016, "hashi(1)");
+eq(e.wasm_hashi(-1), 0.4039384126663208, "hashi(-1)");
+eq(e.wasm_hash3(1, 2, 3), 0.2482842206954956, "hash3(1,2,3)");
+eq(e.wasm_vnoise(43210.75), 0.32014009356498718, "vnoise(43210.75)");
+eq(e.wasm_fbm(59999.5), 0.59178024530410767, "fbm(59999.5)");
+const out = () => new Float32Array(e.memory.buffer, e.out_ptr(), 4);
+e.wasm_render(1, 1.5, 0.0, 0.5, 0, 0);   // candle: fbm-only, exact
+const candle = [0.25588309764862061, 0.0376298688352108, 0, 0.75259733200073242];
+out().forEach((v, i) => eq(v, candle[i], `candle[${i}]`));
+e.wasm_render(2, 4321.25, 11.25, 0.5, 0, 0);   // ember: fbm-only, exact
+const ember = [0.13594624400138855, 0.020391935482621193, 0, 0.28888577222824097];
+out().forEach((v, i) => eq(v, ember[i], `ember[${i}]`));
+e.wasm_render(0, 9.0, 1.0, 0.5, 0, 0);   // off: all zeros
+out().forEach((v, i) => eq(v, 0, `off[${i}]`));
+console.log("wasm face OK");
+"""
 
 
 if __name__ == "__main__":
