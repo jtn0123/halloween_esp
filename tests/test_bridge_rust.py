@@ -201,6 +201,39 @@ class TestBridgeVerbs(unittest.TestCase):
         code, body = self.castle("rm", "victim.mp3")
         self.assertEqual(code, 2, body)
 
+    def test_ota_flashes_a_plausible_image_and_sees_the_device_return(self) -> None:
+        """The reboot race is normal (the device restarts moments after the
+        last byte), so the verb's verdict is the status poll — which the
+        emulator answers immediately, keeping this test quick."""
+        img = self.card / "firmware.bin"
+        img.write_bytes(b"\xe9" + b"\x00" * 70000)
+        r = subprocess.run(
+            [str(BIN), "--host", f"127.0.0.1:{self.emu.port}", "ota", str(img)],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+            env={**os.environ, "CASTLE_OTA_WAIT_S": "5"},
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("flashed", r.stdout)
+        self.assertIn("up — v", r.stdout)
+        self.assertIn("CONFIRM", r.stdout)
+
+    def test_ota_refuses_a_file_without_the_magic_before_sending(self) -> None:
+        img = self.card / "not_firmware.bin"
+        img.write_bytes(b"\x7fELF" + b"\x00" * 70000)
+        code, body = self.castle("ota", str(img))
+        self.assertEqual(code, 1, body)
+        self.assertIn("0xE9", body)
+
+    def test_ota_of_an_implausible_size_is_the_castles_refusal(self) -> None:
+        img = self.card / "tiny.bin"
+        img.write_bytes(b"\xe9" + b"\x00" * 100)  # under OTA_MIN
+        code, body = self.castle("ota", str(img))
+        self.assertEqual(code, 2, body)
+        self.assertIn("refused the image", body)
+
     def test_an_unknown_scene_is_a_refusal_not_a_crash(self) -> None:
         code, body = self.castle("scene", "no_such_scene")
         self.assertEqual(code, 2, body)

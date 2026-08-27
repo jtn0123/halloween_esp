@@ -94,6 +94,64 @@ fn do_purge(host: &str) -> ! {
     std::process::exit(0)
 }
 
+/// `ota FILE`: flash a firmware image over plain HTTP — sd_sync.cmd_ota's
+/// choreography. Audio stops first (the standing rule: a decode mid-flash
+/// competes for the same starved heap), the reply race is survivable (the
+/// device reboots moments after the last byte lands), and the status poll
+/// afterwards is the real verdict. CASTLE_OTA_WAIT_S bounds the poll.
+fn do_ota(host: &str, args: &[String]) -> ! {
+    let Some(path) = args.first() else {
+        fail("ota needs a firmware .bin")
+    };
+    let data = std::fs::read(path).unwrap_or_else(|e| fail(&format!("cannot read {path}: {e}")));
+    if data.first() != Some(&0xE9) {
+        fail(&format!(
+            "{path} does not look like an app image (no 0xE9 magic)"
+        ));
+    }
+    let _ = request(host, "POST", "/api/stop", b"", 5.0);
+    match request(host, "PUT", "/api/ota", &data, 180.0) {
+        Ok(r) if (200..300).contains(&r.code) => {
+            println!("{}", String::from_utf8_lossy(&r.body).trim_end())
+        }
+        Ok(r) => refuse(&format!(
+            "{host} refused the image: {} {}",
+            r.code,
+            String::from_utf8_lossy(&r.body).trim_end()
+        )),
+        Err(_) => println!("(no reply — device likely rebooting)"),
+    }
+    let wait_s: f64 = std::env::var("CASTLE_OTA_WAIT_S")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(90.0);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs_f64(wait_s);
+    loop {
+        if let Ok(r) = request(host, "GET", "/api/status", b"", 3.0) {
+            if (200..300).contains(&r.code) {
+                let body = String::from_utf8_lossy(&r.body).into_owned();
+                let v = castle_core::bridge::json_str(&body, "version").unwrap_or_default();
+                println!("up — v{v}");
+                println!(
+                    "now CONFIRM it (connect once with tools/device.py or HA) — \
+                     an unconfirmed image rolls back on its next reboot"
+                );
+                std::process::exit(0)
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            eprintln!(
+                "castle: no answer after {wait_s} s — the bootloader rolls back \
+                 to the previous image on the next power cycle"
+            );
+            std::process::exit(1)
+        }
+        std::thread::sleep(std::time::Duration::from_secs_f64(
+            3.0_f64.min(wait_s / 3.0),
+        ));
+    }
+}
+
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut host = std::env::var("CASTLE_HOST")
@@ -121,6 +179,9 @@ fn main() {
     if verb == "purge" {
         do_purge(&host);
     }
+    if verb == "ota" {
+        do_ota(&host, &args[1..]);
+    }
     let arg = args.get(1);
     let (method, target, read_s) = match (verb.as_str(), arg) {
         ("status", None) => ("GET", "/api/status".to_string(), 5.0),
@@ -138,7 +199,7 @@ fn main() {
         _ => fail(
             "usage: castle [--host H:P] status|health|stop|scene ID|play FILE|\
              volume N|show start|show stop|blackout|files [DIR]|bootlog|\
-             put [--to site|scenes] LOCAL [NAME]|rm NAME|purge",
+             put [--to site|scenes] LOCAL [NAME]|rm NAME|purge|ota BIN",
         ),
     };
     match request(&host, method, &target, b"", read_s) {
