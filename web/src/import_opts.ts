@@ -7,7 +7,7 @@
  *
  * The arithmetic and the formatting are exported as plain functions so the
  * tests can call the shipped code rather than a copy of it that has to be kept
- * in step by hand — which is what test/tracks_logic.mjs was reduced to while
+ * in step by hand — which is what test/tracks_logic.ts was reduced to while
  * all of this lived inside a DOM-bound closure.
  */
 

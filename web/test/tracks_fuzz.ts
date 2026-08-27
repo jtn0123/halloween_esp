@@ -2,7 +2,7 @@
  * Fuzz for the card-reconciliation arithmetic: cardName / sendable /
  * cardState (track_send.ts) and syncPlan / cardOnly (track_card.ts).
  *
- *     node test/tracks_fuzz.mjs      (after `npm run test:desk` builds dist/)
+ *     (runs bundled from web/dist — see package.json "test:desk")
  *
  * These five functions decide what the library says about the castle's card
  * and what Sync will PUT over it. The e2e suite covers the handful of shapes
@@ -20,49 +20,61 @@
  *   - card-only rows are exactly the audio files no local track maps onto.
  */
 
-import { cardName, cardState, sendable } from "../dist/track_send.mjs";
-import { cardOnly, syncPlan } from "../dist/track_card.mjs";
+import { cardName, cardState, sendable } from "../src/track_send.js";
+import { cardOnly, syncPlan } from "../src/track_card.js";
+import type { CardCtx } from "../src/track_card.js";
+import type { TrackInfo } from "../src/types.js";
 
 let pass = 0;
-const fails = [];
-const ok = (c, m) => { if (c) pass++; else if (fails.length < 40) fails.push(m); };
+const fails: string[] = [];
+const ok = (c: boolean, m: string): void => { if (c) pass++; else if (fails.length < 40) fails.push(m); };
+
+/* The fuzz builds minimal shapes on purpose — missing fields are part of the
+ * hostile input space — so it types them loosely and crosses the boundary
+ * with one cast. */
+interface FuzzTrack {
+  id: string; kb: number; ext?: string;
+  opts?: { format?: string }; bytes?: number; error?: string;
+}
+const T = (o: FuzzTrack): TrackInfo => o as unknown as TrackInfo;
 
 /* Deterministic PRNG so a failure reproduces. */
 let seed = 0x5eed;
-const rnd = () => {
+const rnd = (): number => {
   seed = (seed * 1103515245 + 12345) & 0x7fffffff;
   return seed / 0x7fffffff;
 };
-const pick = (xs) => xs[Math.floor(rnd() * xs.length)];
-const maybe = (p, v) => (rnd() < p ? v : undefined);
+const pick = <X,>(xs: readonly X[]): X => xs[Math.floor(rnd() * xs.length)]!;
+const maybe = <X,>(p: number, v: X): X | undefined => (rnd() < p ? v : undefined);
 
 const IDS = ["vigil", "Storm", "seance_2", "e2e_beats", "x", "phantom-waltz",
              "ghost.busters", "ÄLIEN", "", "01_vigil"];
-const EXTS = ["mp3", "MP3", "wav", "flac", "opus", "Mp3", "", undefined, "ogg"];
+const EXTS: readonly (string | undefined)[] =
+  ["mp3", "MP3", "wav", "flac", "opus", "Mp3", "", undefined, "ogg"];
 
-function track() {
+function track(): TrackInfo {
   const id = pick(IDS);
   const ext = pick(EXTS);
-  const t = { id, kb: Math.floor(rnd() * 4000) };
+  const t: FuzzTrack = { id, kb: Math.floor(rnd() * 4000) };
   if (ext !== undefined) t.ext = ext;
   const fmt = maybe(0.4, pick(EXTS));
   if (fmt !== undefined) t.opts = { format: fmt };
   const bytes = pick([undefined, 0, -1, 1, 287744, 985088, Math.floor(rnd() * 2e6)]);
   if (bytes !== undefined) t.bytes = bytes;
   if (rnd() < 0.15) t.error = "ffmpeg could not convert it";
-  return t;
+  return T(t);
 }
 
 /** A card: some names derived from real tracks (same or different bytes),
  *  some strangers, some directories' worth of non-audio. */
-function card(tracks) {
+function card(tracks: TrackInfo[]): Map<string, number> | null {
   if (rnd() < 0.15) return null;
-  const m = new Map();
+  const m = new Map<string, number>();
   for (const t of tracks) {
     if (rnd() < 0.6) {
       const name = cardName(t);
       const same = rnd() < 0.5 && typeof t.bytes === "number";
-      m.set(name, same ? t.bytes : Math.floor(rnd() * 1e6));
+      m.set(name, same ? t.bytes! : Math.floor(rnd() * 1e6));
     }
   }
   for (let i = Math.floor(rnd() * 4); i > 0; i--) {
@@ -78,9 +90,10 @@ for (let round = 0; round < ROUNDS; round++) {
   const tracks = Array.from({ length: Math.floor(rnd() * 6) }, track);
   const c = card(tracks);
   const inShow = new Set(tracks.filter(() => rnd() < 0.5).map(t => t.id));
-  const ctx = { tracks, sceneIds: inShow, card: c, canPull: rnd() < 0.5 };
+  const ctx: CardCtx = { tracks, sceneIds: inShow, card: c, canPull: rnd() < 0.5 };
 
-  let plan, only;
+  let plan: TrackInfo[] = [];
+  let only: { name: string; size: number }[] = [];
   try {
     plan = syncPlan(ctx);
     only = cardOnly(ctx);
@@ -131,18 +144,18 @@ for (let round = 0; round < ROUNDS; round++) {
     }
     const expected = [...c.keys()].filter(n => /\.(mp3|wav|flac|opus)$/i.test(n) && !local.has(n));
     ok(only.length === expected.length, `every stranger audio file gets a row (${only.length} vs ${expected.length})`);
-    ok(only.every((f, i) => i === 0 || only[i - 1].name.localeCompare(f.name) <= 0),
+    ok(only.every((f, i) => i === 0 || only[i - 1]!.name.localeCompare(f.name) <= 0),
        "card-only rows come out sorted");
   }
 }
 
 // A couple of fixed shapes worth naming outright.
-ok(cardName({ id: "a", kb: 1 }) === "a.mp3", "no ext, no opts → .mp3");
-ok(cardName({ id: "a", kb: 1, ext: "WAV" }) === "a.wav", "ext is lowercased");
-ok(cardName({ id: "a", kb: 1, opts: { format: "flac" } }) === "a.flac", "opts.format stands in for ext");
-ok(cardState({ id: "a", kb: 1, bytes: 0 }, new Map([["a.mp3", 0]])) === null,
+ok(cardName(T({ id: "a", kb: 1 })) === "a.mp3", "no ext, no opts → .mp3");
+ok(cardName(T({ id: "a", kb: 1, ext: "WAV" })) === "a.wav", "ext is lowercased");
+ok(cardName(T({ id: "a", kb: 1, opts: { format: "flac" } })) === "a.flac", "opts.format stands in for ext");
+ok(cardState(T({ id: "a", kb: 1, bytes: 0 }), new Map([["a.mp3", 0]])) === null,
    "a 0-byte file is not 'current' even if the card has 0 bytes under its name");
-ok(cardState({ id: "a", kb: 1, bytes: 5 }, new Map([["A.mp3", 5]])) === "absent",
+ok(cardState(T({ id: "a", kb: 1, bytes: 5 }), new Map([["A.mp3", 5]])) === "absent",
    "names are case-sensitive — A.mp3 is not a.mp3 on the card");
 
 console.log(`tracks fuzz: ${pass} assertions over ${ROUNDS} rounds`);

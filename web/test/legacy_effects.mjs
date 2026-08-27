@@ -7,7 +7,7 @@
 //   frame for frame. Both sides now use the integer mix below (lowbias32 on
 //   the lattice cell, 24-bit result). It is written out here INDEPENDENTLY
 //   — not imported from the port — so a typo in effects.ts's mix32 still
-//   fails effects_equivalence.mjs. vnoise, fbm and every effect formula
+//   fails effects_equivalence.ts. vnoise, fbm and every effect formula
 //   beneath them are still the verbatim original.
   /* ── Smoothed value noise — the flame's whole personality ────────── */
   const hash = n => {

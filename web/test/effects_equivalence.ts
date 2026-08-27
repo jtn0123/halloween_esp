@@ -2,7 +2,7 @@
  * Prove the TypeScript effect port is numerically identical to the JavaScript
  * it replaced.
  *
- *     node test/effects_equivalence.mjs
+ *     (runs bundled from web/dist — see package.json "test")
  *
  * A type checker cannot catch a transposed digit or a dropped term, and the
  * effect maths is the one part of this project that is also implemented twice
@@ -19,13 +19,16 @@
  */
 
 import { EFFECTS as LEGACY, toScreen as legacyToScreen, P as legacyP } from "./legacy_effects.mjs";
-import { EFFECTS as PORTED, toScreen as portedToScreen, defaultParams } from "../dist/effects.mjs";
+import { EFFECTS, toScreen as portedToScreen, defaultParams } from "../src/effects.js";
+import type { EffectFn } from "../src/effects.js";
+import type { Rgbw } from "../src/types.js";
 
+const PORTED = EFFECTS as Record<string, EffectFn | undefined>;
 const NAMES = Object.keys(LEGACY);
 const EPS = 1e-12;          // identical maths should be bit-identical, not close
 
 let checks = 0;
-const failures = [];
+const failures: string[] = [];
 
 /** Sweep the parameters the effects actually read, not just the defaults. */
 const PARAM_SETS = [
@@ -40,7 +43,7 @@ for (const params of PARAM_SETS) {
   const ported = { ...defaultParams(), ...params };
 
   for (const name of NAMES) {
-    const a = LEGACY[name];
+    const a = LEGACY[name]!;
     const b = PORTED[name];
     if (typeof b !== "function") {
       failures.push(`${name}: missing from the ported EFFECTS table`);
@@ -71,7 +74,8 @@ for (const params of PARAM_SETS) {
 }
 
 // toScreen matters just as much — it is what turns RGBW into what you look at.
-for (const c of [[0, 0, 0, 0], [1, 1, 1, 1], [0.34, 0.05, 0, 1], [0.2, 0.9, 0.4, 0.3]]) {
+const SCREEN_CASES: Rgbw[] = [[0, 0, 0, 0], [1, 1, 1, 1], [0.34, 0.05, 0, 1], [0.2, 0.9, 0.4, 0.3]];
+for (const c of SCREEN_CASES) {
   const x = legacyToScreen(c), y = portedToScreen(c);
   checks++;
   for (let i = 0; i < 3; i++) {
@@ -81,8 +85,8 @@ for (const c of [[0, 0, 0, 0], [1, 1, 1, 1], [0.34, 0.05, 0, 1], [0.2, 0.9, 0.4,
   }
 }
 
-const missing = NAMES.filter(n => !(n in PORTED));
-const extra = Object.keys(PORTED).filter(n => !NAMES.includes(n));
+const missing = NAMES.filter(n => !(n in EFFECTS));
+const extra = Object.keys(EFFECTS).filter(n => !NAMES.includes(n));
 if (missing.length) failures.push(`effects lost in the port: ${missing.join(", ")}`);
 
 console.log(`effect equivalence: ${checks} comparisons across ` +

@@ -13,7 +13,7 @@ individual checks say how each one works.
 |---|---|---|
 | Pulse dynamics (tempo, accents, pan, section gates) | `tools/pulse_dynamics.py` (both Python generators) · `web/src/track_lights.ts` | `tests/test_stream_dynamics.py`, `web/test/track_lights_logic.mjs`, `web/test/fuzz_parity.mjs` + `tools/fuzz_check.py` |
 | Pulse → cue merge (zone routing, round-robin, velocity rounding) | `tools/gen_esphome.py` · `tools/gen_previewer.py` | `tests/test_generator_parity.py`, `tests/test_gen_fuzz.py` |
-| Effect maths (colour per pixel per frame) | `firmware/castle_effects.h` (C++, float32) · `web/src/effects.ts` (TS, double) | `web/test/firmware_parity.mjs` reading `tests/cxx/parity_dump.cpp` (host-compiled); `web/test/effects_equivalence.mjs` |
+| Effect maths (colour per pixel per frame) | `firmware/castle_effects.h` (C++, float32) · `web/src/effects.ts` (TS, double) | `web/test/firmware_parity.mjs` reading `tests/cxx/parity_dump.cpp` (host-compiled); `web/test/effects_equivalence.ts` |
 | Rig geometry (which pixel is where, what `core` means) | `tools/rig_layout.py` → `firmware/generated/rig.h` · `web/src/rig.ts` | `web/test/rig_parity.mjs`, `tests/test_rig_layout.py` |
 | Castle wire protocol (`/api/*` on the device) | `firmware/sd_web.h` · `tools/castle_emu_wire.py` | `tests/test_firmware_contract.py` parses the C |
 
@@ -61,7 +61,7 @@ no compiler has not checked the firmware layer.
    widen them to make a run pass; a failure past them is a real drift.
 5. If the firmware header changed its hash or a primitive's rounding, the
    TS port (`effects.ts`, `hashi/hash3` in the checker) must change the same
-   way, and `legacy_effects.mjs` in `effects_equivalence.mjs` is re-pinned
+   way, and `legacy_effects.mjs` in `effects_equivalence.ts` is re-pinned
    only with a note in its header saying why.
 
 Never skip or loosen a parity test to get a green run.

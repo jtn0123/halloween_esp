@@ -1,7 +1,7 @@
 /**
  * Tests for the browser-side track logic.
  *
- *     node test/tracks_logic.mjs
+ *     (runs bundled from web/dist — see package.json "test")
  *
  * This half had no tests at all, and all three bugs the dogfood pass turned up
  * were in it — a negative bitrate rendering "-47:-47", a channel count of 7
@@ -15,14 +15,15 @@
  * that has to be kept in step by hand.
  */
 
-import { pickOnsets } from "../dist/onsets.mjs";
+import { pickOnsets } from "../src/onsets.js";
 import {
   MIN_KBPS, MAX_KBPS, clampKbps, channelsOf, capacityHtml, optsHint,
-} from "../dist/import_opts.mjs";
+} from "../src/import_opts.js";
+import type { ImportOpts } from "../src/import_opts.js";
 
 let pass = 0;
-const fails = [];
-const ok = (c, m) => { if (c) pass++; else fails.push(m); };
+const fails: string[] = [];
+const ok = (c: boolean, m: string): void => { if (c) pass++; else fails.push(m); };
 
 // The bug: -5 is truthy, so `+raw || 96` let it straight through.
 ok(clampKbps("-5") === 96, "a negative bitrate falls back to the default");
@@ -58,9 +59,10 @@ ok(!/under 4 min|one track:/.test(capacityHtml("96", "1", 0)),
 ok(/stereo/.test(capacityHtml("96", "2", 0)), "channels reach the readout");
 // More of the show on the flash means less room left for the next track.
 {
-  const room = (used) => capacityHtml("96", "1", used).match(/show: <b>(\d+):(\d+)</);
+  const room = (used: number) => capacityHtml("96", "1", used).match(/show: <b>(\d+):(\d+)</);
   const empty = room(0), full = room(2.5 * 1024 * 1024);
-  ok(+empty[1] * 60 + +empty[2] > +full[1] * 60 + +full[2],
+  ok(empty !== null && full !== null
+     && +empty![1]! * 60 + +empty![2]! > +full![1]! * 60 + +full![2]!,
      "a fuller show leaves less flash for the next import");
 }
 ok(/show: <b>0:00</.test(capacityHtml("96", "1", 99 * 1024 * 1024)),
@@ -76,9 +78,10 @@ ok(channelsOf("1") === 1 && channelsOf("7") === 1
    It is the only thing telling you what an import will do before you run
    it, so a wrong summary is worse than none. */
 
-const hint = (o) => optsHint({
-  id: "", start: "", take: "", sensitivity: "", bitrate: "96",
-  sample_rate: "44100", channels: "1", format: "mp3", normalize: false, ...o,
+const hint = (o: Partial<ImportOpts>) => optsHint({
+  id: "", start: "", take: "", sensitivity: "", fade_in: "", fade_out: "",
+  bitrate: "96", sample_rate: "44100", channels: "1", format: "mp3",
+  normalize: false, ...o,
 });
 ok(hint({}) === "— MP3 96k", "the default summary is the format and its bitrate");
 ok(hint({ take: "24", start: "0:30" }) === "— 24s from 0:30, MP3 96k",
@@ -105,7 +108,7 @@ ok(hint({ channels: "7" }) === "— MP3 96k",
 
 const SR = 44100, HOP = 512;
 // One "hit" every `gap` frames, as a sharp rise then decay.
-const band = (hits, frames = 400, gap = 40) => {
+const band = (hits: number, frames = 400, gap = 40): Float32Array => {
   const a = new Float32Array(frames * HOP);
   for (let h = 0; h < hits; h++) {
     const at = (h * gap + 5) * HOP;
@@ -126,7 +129,7 @@ const band = (hits, frames = 400, gap = 40) => {
     ok(v >= 0 && v <= 1, `velocity ${v} outside 0..1`);
   }
   const times = found.map(([t]) => t);
-  ok(times.every((t, i) => i === 0 || t > times[i - 1]), "onsets come out sorted");
+  ok(times.every((t, i) => i === 0 || t > times[i - 1]!), "onsets come out sorted");
 }
 ok(pickOnsets(new Float32Array(400 * HOP), SR, 0.05).length === 0,
    "silence produces no onsets rather than phantom ones");
@@ -148,8 +151,8 @@ if (fails.length) {
 console.log("PASS");
 
 /* ── Loop points and failure wording (judge B, JB1-4/JB1-10) ──────────── */
-import { onsetTimes, snapClip } from "../dist/wave_clip.mjs";
-import { why } from "../dist/api.mjs";
+import { onsetTimes, snapClip } from "../src/wave_clip.js";
+import { why } from "../src/api.js";
 {
   const times = onsetTimes({ onset_low: [[1.0, 0.5], [3.0, 0.4]], onset_mid: [[2.0, 0.3]],
                              onset_high: undefined });
