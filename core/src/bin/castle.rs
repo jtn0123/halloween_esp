@@ -5,12 +5,17 @@
 //!     castle --host … show start|stop · blackout · files [subdir] · bootlog
 //!     castle --host … put local.mp3 [name] · rm name
 //!
-//! Host comes from --host or CASTLE_HOST (host[:port], first entry of a
-//! comma list). Prints the castle's own JSON answer; exit 0 on 2xx, 2 when
+//! Host resolution is tools/hosts.py's, ported: --host (an address or a
+//! devices.toml name), then CASTLE_HOST (a comma list, names looked up),
+//! then the devices.toml inventory (CASTLE_DEVICES overrides the path);
+//! several candidates are probed and the first that answers wins. The
+//! `hosts` verb prints the walk. Answers print as the castle's own JSON;
+//! exit 0 on 2xx, 2 when
 //! the castle refuses or the card's answer disagrees, 1 for transport.
 //! tests/test_bridge_rust.py round-trips every verb against castle_emu.
 
-use castle_core::bridge::{encode_query, list_entries, request, upload, UploadFault};
+use castle_core::bridge::{encode_query, list_entries, probe, request, upload, UploadFault};
+use castle_core::hosts;
 
 fn fail(msg: &str) -> ! {
     eprintln!("castle: {msg}");
@@ -154,25 +159,44 @@ fn do_ota(host: &str, args: &[String]) -> ! {
 
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
-    let mut host = std::env::var("CASTLE_HOST")
-        .ok()
-        .and_then(|h| h.split(',').next().map(str::to_string))
-        .unwrap_or_default();
+    let mut arg_host: Option<String> = None;
     if args.first().map(String::as_str) == Some("--host") {
         args.remove(0);
-        host = if args.is_empty() {
+        if args.is_empty() {
             fail("--host needs a value")
-        } else {
-            args.remove(0)
-        };
+        }
+        arg_host = Some(args.remove(0));
     }
-    if host.is_empty() {
-        fail("no castle named: pass --host or set CASTLE_HOST");
+    let env_host = std::env::var("CASTLE_HOST").ok();
+    let toml_path = std::env::var("CASTLE_DEVICES").unwrap_or_else(|_| "devices.toml".to_string());
+    let toml = std::fs::read_to_string(&toml_path).unwrap_or_default();
+    let verb = args.first().cloned().unwrap_or_default();
+    if verb == "hosts" {
+        // The candidate walk, best first — hosts.py's answer on the same
+        // inputs; the parity test holds the two together.
+        let arg = args.get(1).map(String::as_str).or(arg_host.as_deref());
+        for c in hosts::candidates(arg, env_host.as_deref(), &toml) {
+            println!("{c}");
+        }
+        std::process::exit(0)
     }
+    let mut cands = hosts::candidates(arg_host.as_deref(), env_host.as_deref(), &toml);
+    if cands.is_empty() {
+        // resolve()'s floor: a CLI with no castle has nothing to do, so an
+        // empty CASTLE_HOST falls through to the inventory here.
+        cands = hosts::from_table(&toml);
+    }
+    if cands.is_empty() {
+        fail("no castle named: pass --host, set CASTLE_HOST, or add a devices.toml entry");
+    }
+    let mut host = if cands.len() == 1 {
+        cands[0].clone()
+    } else {
+        probe(&cands)
+    };
     if !host.contains(':') {
         host.push_str(":80");
     }
-    let verb = args.first().cloned().unwrap_or_default();
     if verb == "put" {
         do_put(&host, &args[1..]);
     }
@@ -199,7 +223,7 @@ fn main() {
         _ => fail(
             "usage: castle [--host H:P] status|health|stop|scene ID|play FILE|\
              volume N|show start|show stop|blackout|files [DIR]|bootlog|\
-             put [--to site|scenes] LOCAL [NAME]|rm NAME|purge|ota BIN",
+             put [--to site|scenes] LOCAL [NAME]|rm NAME|purge|ota BIN|hosts [ARG]",
         ),
     };
     match request(&host, method, &target, b"", read_s) {

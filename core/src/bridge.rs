@@ -186,6 +186,27 @@ fn json_first_str(rest: &str) -> Option<(String, &str)> {
     Some((rest[..end].to_string(), &rest[end + 1..]))
 }
 
+/// The first candidate that accepts a TCP connection (2 s each), or the
+/// first candidate when nobody does — the verb's own error then names it.
+/// This is castle_link's fallback walk: devices.toml lists the leases a
+/// retired router handed the board, and the living one wins.
+pub fn probe(cands: &[String]) -> String {
+    for h in cands {
+        let hp = if h.contains(':') {
+            h.clone()
+        } else {
+            format!("{h}:80")
+        };
+        let Some(addr) = hp.to_socket_addrs().ok().and_then(|mut a| a.next()) else {
+            continue;
+        };
+        if TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_ok() {
+            return h.clone();
+        }
+    }
+    cands.first().cloned().unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

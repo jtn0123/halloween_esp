@@ -18,16 +18,19 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import unittest
 import zlib
 from pathlib import Path
 from typing import ClassVar
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 import castle_emu
+import hosts as hosts_mod
 
 CARGO = shutil.which("cargo")
 IN_CI = bool(os.environ.get("CI"))
@@ -248,6 +251,109 @@ class TestBridgeVerbs(unittest.TestCase):
         )
         self.assertEqual(r.returncode, 1)
         self.assertIn("127.0.0.1:1", r.stderr)
+
+
+@unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
+class TestHostDiscoveryParity(unittest.TestCase):
+    """`castle hosts` must answer exactly what tools/hosts.py answers on the
+    same inputs — the Rust side reads a TOML subset, and this is the test
+    that keeps that subset honest against Python's tomllib, combo by combo.
+    """
+
+    tmp: ClassVar[Path]
+    toml: ClassVar[Path]
+
+    TOML = textwrap.dedent(
+        """\
+        # full-line comment
+        [castle-sd]
+        host = "10.9.9.1"  # trailing comment
+        fallbacks = ["10.9.9.2", "10.9.9.3"]
+
+        [spare]
+        host = "10.9.9.20"
+        fallbacks = []
+
+        [broken]
+        nickname = "no host key, skipped by both sides"
+        """
+    )
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmp = Path(tempfile.mkdtemp(prefix="bridge-hosts-"))
+        cls.toml = cls.tmp / "devices.toml"
+        cls.toml.write_text(cls.TOML)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def walk(self, arg: str | None = None, env: str | None = None) -> list[str]:
+        e = {k: v for k, v in os.environ.items() if k != "CASTLE_HOST"}
+        e["CASTLE_DEVICES"] = str(self.toml)
+        if env is not None:
+            e["CASTLE_HOST"] = env
+        cmd = [str(BIN), "hosts", *([arg] if arg else [])]
+        r = subprocess.run(
+            cmd, capture_output=True, text=True, check=False, timeout=15, env=e
+        )
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout.split()
+
+    def expected(self, arg: str | None = None, env: str | None = None) -> list[str]:
+        clean = {k: v for k, v in os.environ.items() if k != "CASTLE_HOST"}
+        if env is not None:
+            clean["CASTLE_HOST"] = env
+        with (
+            mock.patch.object(hosts_mod, "DEVICES", self.toml),
+            mock.patch.dict(os.environ, clean, clear=True),
+        ):
+            return hosts_mod.candidates(arg)
+
+    def test_every_resolution_combo_matches_hosts_py(self) -> None:
+        combos: list[tuple[str | None, str | None]] = [
+            ("castle-sd", None),  # a name expands to host + fallbacks
+            ("10.1.2.3", None),  # a raw address passes through
+            ("mystery", "ignored"),  # unknown arg passes through, env loses
+            (None, "spare, 10.1.2.3:81"),  # env comma list, names looked up
+            (None, ""),  # explicitly no castle
+            (None, None),  # the whole inventory, file order
+        ]
+        for arg, env in combos:
+            with self.subTest(arg=arg, env=env):
+                want = self.expected(arg, env)
+                self.assertEqual(self.walk(arg, env), want)
+                if (arg, env) == (None, None):
+                    self.assertEqual(len(want), 4, "inventory should be full")
+
+    def test_the_walk_finds_the_living_fallback(self) -> None:
+        """The point of the fallbacks list: the primary is a dead lease and
+        the device answers on the next one — no --host needed at all."""
+        card = Path(tempfile.mkdtemp(prefix="bridge-walk-"))
+        emu = castle_emu.CastleEmu(port=0, sd_dir=card, scenes=["vigil"])
+        emu.start()
+        try:
+            toml = self.tmp / "walk.toml"
+            toml.write_text(
+                f'[porch]\nhost = "127.0.0.1:1"\nfallbacks = ["127.0.0.1:{emu.port}"]\n'
+            )
+            e = {k: v for k, v in os.environ.items() if k != "CASTLE_HOST"}
+            e["CASTLE_DEVICES"] = str(toml)
+            r = subprocess.run(
+                [str(BIN), "status"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+                env=e,
+            )
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("version", json.loads(r.stdout))
+        finally:
+            emu.shutdown()
+            emu.server_close()
+            shutil.rmtree(card, ignore_errors=True)
 
 
 if __name__ == "__main__":
