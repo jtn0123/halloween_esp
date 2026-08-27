@@ -30,6 +30,8 @@ pub struct App {
     pub root: PathBuf,
     pub tracks: PathBuf,
     pub scenes: PathBuf,
+    /// studio.py's `_lock` — ffmpeg/render jobs and scene edits take turns.
+    pub oplock: Mutex<()>,
     lean: Mutex<Option<LeanEntry>>,
 }
 
@@ -42,6 +44,7 @@ impl App {
             root,
             tracks,
             scenes,
+            oplock: Mutex::new(()),
             lean: Mutex::new(None),
         }
     }

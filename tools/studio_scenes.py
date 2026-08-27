@@ -133,23 +133,22 @@ def remove(
     )
 
 
-def splice(
-    scenes: Path, req: dict, lock: threading.Lock, run: Runner, py: str, root: Path
-) -> tuple[dict, int]:
-    """Insert or replace a scene block in scenes.yaml; (body, http code).
+def check(scenes: Path, req: dict) -> tuple[dict, int] | None:
+    """splice()'s validation phase: the error body and code, or None when
+    the block may be spliced. Split out so the Rust studio can ask the
+    SAME code (tools/scene_check.py) and answer with identical strings.
 
-    Text splicing, not a YAML round-trip: scenes.yaml is a hand-authored
-    file full of comments that carry the reasoning behind the show, and
-    dumping it back through a YAML serialiser would erase all of them.
+    The block must PARSE, and must be the one scene it claims to be —
+    scenes.yaml is the hand-authored source of truth for the whole show,
+    and a malformed splice used to corrupt it permanently. And it must be
+    a SCENE — known effects, cues inside its length, the keys the
+    generators read (grade report B4); each problem is one line the desk
+    can show next to the field.
     """
     block = (req.get("yaml") or "").rstrip()
     sid = (req.get("id") or "").strip()
     if not block or not sid:
         return {"error": "need id and yaml"}, 400
-    # The block must PARSE, and must be the one scene it claims to be —
-    # scenes.yaml is the hand-authored source of truth for the whole
-    # show, and a malformed splice used to corrupt it permanently (the
-    # UI then showed "no scenes" instead of an error).
     try:
         parsed = yaml.safe_load(block)
     except yaml.YAMLError as e:
@@ -161,11 +160,6 @@ def splice(
         or parsed[0].get("id") != sid
     ):
         return {"error": f"expected exactly one scene with id {sid!r}"}, 400
-    # And it must be a SCENE — known effects, cues inside its length, the
-    # keys the generators read. A block that parses but says `effect: glow`
-    # used to splice cleanly and fail inside the re-render, where the only
-    # trace was the log tail (grade report B4). Each problem is one line
-    # the desk can show next to the field.
     errors = scene_schema.validate(parsed[0], zone_ids(scenes))
     if errors:
         return {
@@ -173,6 +167,23 @@ def splice(
             f"{'s' if len(errors) > 1 else ''}: {errors[0]}",
             "errors": errors,
         }, 400
+    return None
+
+
+def splice(
+    scenes: Path, req: dict, lock: threading.Lock, run: Runner, py: str, root: Path
+) -> tuple[dict, int]:
+    """Insert or replace a scene block in scenes.yaml; (body, http code).
+
+    Text splicing, not a YAML round-trip: scenes.yaml is a hand-authored
+    file full of comments that carry the reasoning behind the show, and
+    dumping it back through a YAML serialiser would erase all of them.
+    """
+    bad = check(scenes, req)
+    if bad is not None:
+        return bad
+    block = (req.get("yaml") or "").rstrip()
+    sid = (req.get("id") or "").strip()
     pat = block_pattern(sid)
     with lock:
         # Read-modify-write under the lock: two concurrent saves used to

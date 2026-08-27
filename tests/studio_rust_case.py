@@ -17,7 +17,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import textwrap
 import time
 import unittest
 import urllib.error
@@ -37,20 +36,38 @@ CARGO = shutil.which("cargo")
 IN_CI = bool(os.environ.get("CI"))
 BIN = ROOT / "core" / "target" / "release" / "studio"
 
-SCENES_YAML = textwrap.dedent(
-    """\
-    # A sandbox show for the parity harness.
-    version: 3
-    zones:
-      - id: door
-      - id: tower_l
-    scenes:
-      - id: vigil  # the quiet one
-        length_ms: 2000
-      - id: storm
-        length_ms: 3000
-    """
-)
+#: Two renderable-in-a-blink scenes riding the REPO's own preamble
+#: (hardware, zones, palette — the parts the generators need real).
+SCENES_TAIL = """\
+  - id: vigil
+    name: Vigil
+    kind: ambient
+    volume: 0.45
+    duration_ms: 2000
+    loop: true
+    base: {towerL: candle, towerR: candle, door: ember}
+    score:
+      - {t: 0, synth: toll, gain: 0.5}
+    cues: []
+
+  - id: storm
+    name: Storm
+    kind: triggered
+    volume: 1.0
+    duration_ms: 1500
+    base: {towerL: candle, towerR: candle, door: ember}
+    score:
+      - {t: 0.0, synth: wind, dur: 1.5, gain: 0.6}
+    cues:
+      - {t: 80, op: strike, ms: 70, pixels: scatter, note: "lightning"}
+"""
+
+
+def scenes_fixture() -> str:
+    real = (ROOT / "scenes" / "scenes.yaml").read_text()
+    preamble = real.split("\nscenes:\n", 1)[0]
+    return preamble + "\nscenes:\n" + SCENES_TAIL
+
 
 #: Both spacing forms the lean rewriter must normalise (`": ?"`), plus one
 #: data URI that is NOT a scene entry and must survive untouched.
@@ -225,29 +242,37 @@ class StudioPair(unittest.TestCase):
     rs_port: ClassVar[int]
     procs: ClassVar[list[subprocess.Popen[bytes]]]
 
+    py_scenes: ClassVar[Path]
+    rs_scenes: ClassVar[Path]
+    py_build: ClassVar[Path]
+    rs_build: ClassVar[Path]
+
     @classmethod
     def setUpClass(cls) -> None:
         build_bin()
         cls.tmp = Path(tempfile.mkdtemp(prefix="studio-rust-"))
-        (cls.tmp / "scenes.yaml").write_text(SCENES_YAML)
-        build = cls.tmp / "build"
-        (build / "previewer").mkdir(parents=True)
-        (build / "previewer" / "castle-cue-desk.html").write_text(PAGE)
-        (build / "audio").mkdir()
-        (build / "audio" / "01_vigil.mp3").write_bytes(bytes(range(256)) * 12)
+        scenes_text = scenes_fixture()
+        template_build = cls.tmp / "template_build"
+        (template_build / "previewer").mkdir(parents=True)
+        (template_build / "previewer" / "castle-cue-desk.html").write_text(PAGE)
+        (template_build / "audio").mkdir()
+        (template_build / "audio" / "01_vigil.mp3").write_bytes(bytes(range(256)) * 12)
         template = cls.tmp / "template"
         seed_library(template)
         cls.py_tracks = cls.tmp / "py_tracks"
         cls.rs_tracks = cls.tmp / "rs_tracks"
         shutil.copytree(template, cls.py_tracks)
         shutil.copytree(template, cls.rs_tracks)
+        cls.py_build = cls.tmp / "py_build"
+        cls.rs_build = cls.tmp / "rs_build"
+        shutil.copytree(template_build, cls.py_build)
+        shutil.copytree(template_build, cls.rs_build)
+        cls.py_scenes = cls.tmp / "py_scenes.yaml"
+        cls.rs_scenes = cls.tmp / "rs_scenes.yaml"
+        cls.py_scenes.write_text(scenes_text)
+        cls.rs_scenes.write_text(scenes_text)
         cls.py_port, cls.rs_port = free_port(), free_port()
-        env = {
-            **os.environ,
-            "CASTLE_SCENES": str(cls.tmp / "scenes.yaml"),
-            "CASTLE_BUILD": str(build),
-            "CASTLE_HOST": cls.HOST_ENV,
-        }
+        env = {**os.environ, "CASTLE_HOST": cls.HOST_ENV}
         cls.procs = [
             subprocess.Popen(
                 [
@@ -256,13 +281,23 @@ class StudioPair(unittest.TestCase):
                     str(cls.py_port),
                     "--localhost",
                 ],
-                env={**env, "CASTLE_TRACKS": str(cls.py_tracks)},
+                env={
+                    **env,
+                    "CASTLE_TRACKS": str(cls.py_tracks),
+                    "CASTLE_SCENES": str(cls.py_scenes),
+                    "CASTLE_BUILD": str(cls.py_build),
+                },
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             ),
             subprocess.Popen(
                 [str(BIN), str(cls.rs_port), "--localhost"],
-                env={**env, "CASTLE_TRACKS": str(cls.rs_tracks)},
+                env={
+                    **env,
+                    "CASTLE_TRACKS": str(cls.rs_tracks),
+                    "CASTLE_SCENES": str(cls.rs_scenes),
+                    "CASTLE_BUILD": str(cls.rs_build),
+                },
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             ),
@@ -283,9 +318,10 @@ class StudioPair(unittest.TestCase):
         path: str,
         method: str = "GET",
         headers: dict[str, str] | None = None,
+        body: bytes | None = None,
     ) -> tuple[tuple[int, dict[str, str], bytes], tuple[int, dict[str, str], bytes]]:
-        a = fetch(self.py_port, path, method, headers)
-        b = fetch(self.rs_port, path, method, headers)
+        a = fetch(self.py_port, path, method, headers, body)
+        b = fetch(self.rs_port, path, method, headers, body)
         self.assertEqual(
             a[0], b[0], f"{method} {path}: {a[0]} vs {b[0]} — {a[2]!r} vs {b[2]!r}"
         )
@@ -293,3 +329,15 @@ class StudioPair(unittest.TestCase):
 
     def parsed(self, raw: tuple[int, dict[str, str], bytes]) -> object:
         return json.loads(raw[2])
+
+    def masked(self, text: str, side: str) -> str:
+        """A log with this server's sandbox paths replaced by tokens, so
+        the two sides' logs can be compared byte for byte."""
+        build = self.py_build if side == "py" else self.rs_build
+        scenes = self.py_scenes if side == "py" else self.rs_scenes
+        tracks = self.py_tracks if side == "py" else self.rs_tracks
+        return (
+            text.replace(str(build), "<BUILD>")
+            .replace(str(scenes), "<SCENES>")
+            .replace(str(tracks), "<TRACKS>")
+        )

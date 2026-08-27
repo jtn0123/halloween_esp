@@ -30,6 +30,7 @@ pub mod scene;
 pub mod studio;
 pub mod studio_media;
 pub mod studio_routes;
+pub mod studio_scenes;
 pub mod studio_tracks;
 pub mod synth;
 pub mod wasm;

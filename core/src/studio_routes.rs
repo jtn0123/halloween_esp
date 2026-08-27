@@ -7,6 +7,7 @@
 use crate::httpd::{Reply, Request};
 use crate::jsonio::{self, Json};
 use crate::studio::{scene_audio, scene_ids, studio_path, App, API};
+use crate::studio_scenes as ssc;
 use crate::{bridge, hosts, manifest, studio_media as sm, studio_tracks as st};
 
 fn jerr(msg: &str, code: u16) -> Reply {
@@ -133,20 +134,53 @@ pub fn relay(app: &App, method: &str, target: &str, body: &[u8]) -> Reply {
 
 /// The desk's mode probe: the castle's status when one answers (marked
 /// `bridged`), else the studio's own marker naming who it tried.
+pub fn castle_status(app: &App) -> Option<Vec<(String, Json)>> {
+    for h in &candidates(app) {
+        if let Ok(r) = bridge::request(&with_port(h), "GET", "/api/status", b"", 2.0) {
+            if r.code == 200 {
+                if let Ok(Json::Obj(mut o)) = jsonio::parse(&String::from_utf8_lossy(&r.body)) {
+                    o.push(("bridged".into(), Json::Str(h.clone())));
+                    return Some(o);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// studio_http.json_body — the request body as an object, or the client's
+/// mistake (a 400, never a dead socket). The parse-error text is this
+/// parser's, not CPython's; the shape is the contract.
+fn json_body(body: &[u8]) -> Result<Json, String> {
+    if body.is_empty() {
+        return Ok(Json::obj());
+    }
+    let text = String::from_utf8_lossy(body);
+    let parsed =
+        jsonio::parse(&text).map_err(|e| format!("request body is not valid JSON: {e}"))?;
+    if !matches!(parsed, Json::Obj(_)) {
+        return Err("request body must be a JSON object".to_string());
+    }
+    Ok(parsed)
+}
+
+fn bad_request(msg: &str) -> Reply {
+    Reply::Json(
+        Json::Obj(vec![
+            ("ok".into(), Json::Bool(false)),
+            ("error".into(), Json::Str(msg.to_string())),
+        ]),
+        400,
+    )
+}
+
 pub fn status_reply(app: &App) -> Reply {
     let hosts = candidates(app);
     if hosts.is_empty() {
         return Reply::Json(Json::Obj(vec![("studio".into(), Json::Bool(true))]), 200);
     }
-    for h in &hosts {
-        if let Ok(r) = bridge::request(&with_port(h), "GET", "/api/status", b"", 2.0) {
-            if r.code == 200 {
-                if let Ok(Json::Obj(mut o)) = jsonio::parse(&String::from_utf8_lossy(&r.body)) {
-                    o.push(("bridged".into(), Json::Str(h.clone())));
-                    return Reply::Json(Json::Obj(o), 200);
-                }
-            }
-        }
+    if let Some(o) = castle_status(app) {
+        return Reply::Json(Json::Obj(o), 200);
     }
     Reply::Json(
         Json::Obj(vec![
@@ -317,35 +351,63 @@ fn delete(app: &App, req: &Request) -> Reply {
     let path = studio_path(&req.target);
     if let Some(rest) = path.strip_prefix("/studio/tracks/") {
         let tid = last_segment(rest);
-        if req.query().iter().any(|(k, _)| k == "scene") {
-            // Needs studio_scenes.remove + the rebuild chain.
-            return Reply::Json(
-                Json::Obj(vec![
-                    ("ok".into(), Json::Bool(false)),
-                    (
-                        "error".into(),
-                        Json::Str("scene removal arrives with the scenes pass".into()),
-                    ),
-                ]),
-                500,
-            );
-        }
-        let Some(p) = st::track_path(&app.tracks, &tid) else {
+        let scene = req.query().iter().any(|(k, _)| k == "scene");
+        let p = st::track_path(&app.tracks, &tid);
+        // ?scene=1 with the file already gone: the scene is an orphan and
+        // taking it out is the whole point.
+        if p.is_none() && !scene {
             return jerr("not found", 404);
-        };
-        let _ = std::fs::remove_file(&p);
+        }
+        if let Some(p) = &p {
+            let _ = std::fs::remove_file(p);
+        }
         for kept in st::source_copies(&app.tracks, &tid) {
             let _ = std::fs::remove_file(kept);
         }
         let _ = manifest::forget(&app.tracks, &tid);
-        return Reply::Json(
-            Json::Obj(vec![
-                ("ok".into(), Json::Bool(true)),
-                ("removed".into(), Json::Str(tid)),
-                ("file_missing".into(), Json::Bool(false)),
-            ]),
-            200,
-        );
+        let mut body = vec![
+            ("ok".into(), Json::Bool(true)),
+            ("removed".into(), Json::Str(tid.clone())),
+            ("file_missing".into(), Json::Bool(p.is_none())),
+        ];
+        let mut code = 200;
+        if scene {
+            let (res, _c) = ssc::remove(app, &tid);
+            let ok = matches!(res.get("ok"), Some(Json::Bool(true)));
+            jsonio::obj_update(
+                &mut body,
+                vec![
+                    (
+                        "scene_removed".into(),
+                        res.get("removed").cloned().unwrap_or(Json::Bool(false)),
+                    ),
+                    (
+                        "scenes".into(),
+                        res.get("scenes").cloned().unwrap_or(Json::Arr(Vec::new())),
+                    ),
+                    (
+                        "log".into(),
+                        res.get("log").cloned().unwrap_or(Json::Str(String::new())),
+                    ),
+                ],
+            );
+            if !ok {
+                // app.failed()'s ok/log keys; its one-line `reason` rides
+                // in with the jobs pass.
+                jsonio::obj_update(
+                    &mut body,
+                    vec![
+                        ("ok".into(), Json::Bool(false)),
+                        (
+                            "log".into(),
+                            res.get("log").cloned().unwrap_or(Json::Str(String::new())),
+                        ),
+                    ],
+                );
+                code = 500;
+            }
+        }
+        return Reply::Json(Json::Obj(body), code);
     }
     if path.starts_with(API) {
         return relay(app, "DELETE", &req.target, &req.body);
@@ -355,6 +417,26 @@ fn delete(app: &App, req: &Request) -> Reply {
 
 fn post(app: &App, req: &Request) -> Reply {
     let path = studio_path(&req.target);
+    if path == "/studio/scene" {
+        // The studio's scenes.yaml editor (JSON body); /api/scene?s=<id>
+        // is the castle's fire-a-scene and stayed on the relay above.
+        let body = match json_body(&req.body) {
+            Ok(v) => v,
+            Err(e) => return bad_request(&e),
+        };
+        let (out, code) = ssc::splice(app, &body);
+        return Reply::Json(out, code);
+    }
+    if path == "/studio/rebuild" {
+        let (ok, log) = ssc::rebuild(app);
+        return Reply::Json(
+            Json::Obj(vec![
+                ("ok".into(), Json::Bool(ok)),
+                ("log".into(), Json::Str(log)),
+            ]),
+            if ok { 200 } else { 500 },
+        );
+    }
     if path.starts_with(API) {
         return relay(app, "POST", &req.target, &req.body);
     }
