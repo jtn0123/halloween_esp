@@ -9,7 +9,7 @@
  * the things a listener would otherwise have to hear: cues fire on time and
  * once, lights lead audio by exactly the latency, a scene change mid-show
  * restarts the cue list for the new scene, and a finished scene hands the
- * transport back stopped. (show_sim.mjs, next door, drives the REAL scenes
+ * transport back stopped. (show_sim.ts, next door, drives the REAL scenes
  * through the engine alone; this one is about the transport around it.)
  */
 

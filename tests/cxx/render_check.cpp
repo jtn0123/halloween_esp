@@ -5,7 +5,7 @@
 // every fixture in the generated rig plus synthetic ones the catalogue
 // allows, at time/parameter extremes the show can reach. Properties, not
 // golden values: the numeric parity with the browser lives in
-// parity_dump.cpp + web/test/firmware_parity.mjs.
+// parity_dump.cpp + web/test/firmware_parity.ts.
 //
 //   render_check [seed]      exit 0 and "rendered ok" on success; every
 //                            failure is printed as one line starting "FAIL".

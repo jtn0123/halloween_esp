@@ -1,6 +1,6 @@
 """The Python half of the cross-language parity fuzz, held to its contract.
 
-fuzz_check.py does not compare — web/test/fuzz_parity.mjs does — but two of
+fuzz_check.py does not compare — web/test/fuzz_parity.ts does — but two of
 its properties decide whether that comparison can be trusted, and neither
 was tested: stdout must stay parseable JSON even when the generators print
 (the chatter is diverted to stderr), and norm() must never smooth away a

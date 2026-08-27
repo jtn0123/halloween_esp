@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Python half of the cross-language dynamics fuzz.
 
-web/test/fuzz_parity.mjs generates random pulse cases, computes the
+web/test/fuzz_parity.ts generates random pulse cases, computes the
 TypeScript side's strikes, then pipes the same cases here. This runs them
 through the REAL generators — gen_esphome.pulse_cues and
 gen_previewer.to_previewer — and prints both answers as JSON for the Node

@@ -2,8 +2,8 @@
  * Cross-language dynamics fuzz: random onset streams through all THREE
  * copies of the pulse arithmetic.
  *
- *     node test/fuzz_parity.mjs            (from web/; dist must be built)
- *     FUZZ_SEED=123 FUZZ_CASES=500 node test/fuzz_parity.mjs
+ *     (runs bundled from web/dist — see package.json "test")
+ *     FUZZ_SEED=123 FUZZ_CASES=500 … to go hunting
  *
  * The hand-written parity tests pin known values; this throws seeded random
  * streams — boundary velocities, median ties, decisive-pan edges, gate
@@ -20,16 +20,19 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import {
   bandStrikes, styleFor, setFlavor, resetFlavors,
-} from "../dist/track_lights.mjs";
-import { sceneYaml } from "../dist/track_scene.mjs";
+} from "../src/track_lights.js";
+import { sceneYaml } from "../src/track_scene.js";
+import type { BandName } from "../src/bands.js";
 
 const SEED = Number(process.env.FUZZ_SEED ?? 0xc0ffee);
 const N = Number(process.env.FUZZ_CASES ?? 250);
-const BANDS = ["onset_low", "onset_mid", "onset_high"];
+const BANDS: readonly BandName[] = ["onset_low", "onset_mid", "onset_high"];
 const NOTES = ["hush", "verse", "chorus", "silence"];
 
+type FHit = [number, number] | [number, number, number];
+
 /* Deterministic PRNG — Math.random is banned from parity work. */
-function mulberry32(seed) {
+function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -40,8 +43,8 @@ function mulberry32(seed) {
   };
 }
 const rnd = mulberry32(SEED);
-const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
-const r3 = (x) => Math.round(x * 1000) / 1000;
+const pick = <X,>(arr: readonly X[]): X => arr[Math.floor(rnd() * arr.length)]!;
+const r3 = (x: number): number => Math.round(x * 1000) / 1000;
 
 /* Velocities that sit ON the shared thresholds get extra visits: the
  * strict-vs-inclusive bugs live there. */
@@ -50,15 +53,15 @@ const EDGE_VELS = [0.4, 0.55, 0.72, 0.85, 0.25, 1.0];
 // regression back to the original constant would still be caught.
 const EDGE_PANS = [0.1, -0.1, 0.09, -0.09, 0.25, -0.25, 1.0, -1.0, 0.0];
 
-function genHits() {
+function genHits(): FHit[] {
   const n = Math.floor(rnd() * 25); // 0..24, straddles the 8-hit tempo gate
   const mode = rnd();
   let t = Math.floor(rnd() * 2000);
-  const hits = [];
+  const hits: FHit[] = [];
   for (let i = 0; i < n; i++) {
     const vel = rnd() < 0.25 ? pick(EDGE_VELS) : r3(rnd());
-    const hit = [t, vel];
-    if (rnd() < 0.5) hit.push(rnd() < 0.3 ? pick(EDGE_PANS) : r3(rnd() * 2 - 1));
+    const hit: FHit = [t, vel];
+    if (rnd() < 0.5) (hit as number[]).push(rnd() < 0.3 ? pick(EDGE_PANS) : r3(rnd() * 2 - 1));
     hits.push(hit);
     // Uniform gaps force exact median ties; mixed gaps scatter them.
     t += mode < 0.3 ? 250
@@ -68,7 +71,8 @@ function genHits() {
   return hits;
 }
 
-function genGates(durMs) {
+interface GateCue { t: number; op: string; zone: string; effect: string; level: number; note: string }
+function genGates(durMs: number): GateCue[] {
   const n = Math.floor(rnd() * 5); // 0..4 section boundaries
   const ts = [...new Set(Array.from({ length: n },
     () => Math.floor(rnd() * durMs)))].sort((a, b) => a - b);
@@ -80,10 +84,13 @@ function genGates(durMs) {
 
 /* A pin only counts when it moves the band OFF its home zone — the same
  * rule bandStrikes and sceneYaml apply (zoneOverride !== band.zone). */
-const HOME_ZONE = { onset_low: "door", onset_mid: "towerL", onset_high: "towerR" };
+const HOME_ZONE: Record<string, string> = { onset_low: "door", onset_mid: "towerL", onset_high: "towerR" };
+
+type Style = ReturnType<typeof styleFor>;
 
 /** The pulse block sceneYaml would write for this band — same field map. */
-function cfgFor(band, s, pinnedZone, flav) {
+function cfgFor(band: BandName, s: Style, pinnedZone: string | undefined,
+                flav: { drift: boolean; takeover: boolean }): Record<string, unknown> {
   const pinned = pinnedZone !== undefined && pinnedZone !== HOME_ZONE[band];
   return {
     synth: band,
@@ -103,18 +110,21 @@ function cfgFor(band, s, pinnedZone, flav) {
   };
 }
 
+type Strikes = ReturnType<typeof bandStrikes>;
+
 /* ── generate ── */
-const cases = [];
-const expected = [];
+const cases: Record<string, unknown>[] = [];
+const expected: Strikes[] = [];
 for (let i = 0; i < N; i++) {
   const band = pick(BANDS);
   const s = styleFor(band);
   const hits = genHits();
-  const durMs = (hits.length ? hits[hits.length - 1][0] : 0) + 1000;
+  const durMs = (hits.length ? hits[hits.length - 1]![0] : 0) + 1000;
   const gateCues = genGates(durMs);
   const flav = { drift: rnd() < 0.35, takeover: rnd() < 0.35 };
   // Occasionally pin the band to one zone, like the band editor would.
-  const pinnedZone = rnd() < 0.15 ? pick(["door", "towerL", "towerR"]) : undefined;
+  const pinnedZone = rnd() < 0.15
+    ? pick(["door", "towerL", "towerR"] as const) : undefined;
   cases.push({
     dur_ms: durMs,
     cfg: cfgFor(band, s, pinnedZone, flav),
@@ -123,8 +133,8 @@ for (let i = 0; i < N; i++) {
   });
   setFlavor("drift", flav.drift);
   setFlavor("takeover", flav.takeover);
-  const gates = gateCues.map((c) => [c.t, c.note]);
-  const hitsSec = hits.map(([t, v, p]) =>
+  const gates: [number, string][] = gateCues.map((c) => [c.t, c.note]);
+  const hitsSec = hits.map(([t, v, p]): FHit =>
     p === undefined ? [t / 1000, v] : [t / 1000, v, p]);
   expected.push(bandStrikes(band, hitsSec, 0, durMs / 1000, pinnedZone, gates));
   resetFlavors();
@@ -137,15 +147,17 @@ for (let i = 0; i < N; i++) {
    sail through with a green fuzz. These cases generate the actual YAML
    block the desk writes into scenes.yaml, let the Python side parse it
    for real, and pin the whole default vocabulary end to end. */
-for (const only of [["onset_low"], ["onset_mid"], ["onset_high"], BANDS]) {
-  const hitsBySynth = {};
-  const counts = {};
+const ONLY_SETS: readonly (readonly BandName[])[] =
+  [["onset_low"], ["onset_mid"], ["onset_high"], BANDS];
+for (const only of ONLY_SETS) {
+  const hitsBySynth: Record<string, FHit[]> = {};
+  const counts: Record<string, number> = {};
   let durMs = 0;
   for (const band of only) {
     const hits = genHits();
     hitsBySynth[band] = hits;
     counts[band] = hits.length || 1;
-    durMs = Math.max(durMs, (hits.length ? hits[hits.length - 1][0] : 0) + 1000);
+    durMs = Math.max(durMs, (hits.length ? hits[hits.length - 1]![0] : 0) + 1000);
   }
   resetFlavors();
   cases.push({
@@ -158,7 +170,7 @@ for (const only of [["onset_low"], ["onset_mid"], ["onset_high"], BANDS]) {
   expected.push(BANDS.flatMap((band) => {
     const hits = hitsBySynth[band];
     if (!hits) return [];
-    const hitsSec = hits.map(([t, v, p]) =>
+    const hitsSec = hits.map(([t, v, p]): FHit =>
       p === undefined ? [t / 1000, v] : [t / 1000, v, p]);
     return bandStrikes(band, hitsSec, 0, durMs / 1000, undefined, []);
   }));
@@ -166,7 +178,7 @@ for (const only of [["onset_low"], ["onset_mid"], ["onset_high"], BANDS]) {
 
 /* ── the Python side, on the same cases ── */
 const py = ["../.venv/bin/python", "python3"].find((p) =>
-  p === "python3" || existsSync(p));
+  p === "python3" || existsSync(p))!;
 const proc = spawnSync(py, ["../tools/fuzz_check.py"], {
   input: JSON.stringify({ cases }), encoding: "utf8",
   maxBuffer: 64 * 1024 * 1024,
@@ -176,29 +188,34 @@ if (proc.status !== 0) {
   console.error(`FAIL — fuzz_check.py exited ${proc.status}`);
   process.exit(1);
 }
-const { results } = JSON.parse(proc.stdout);
+interface NormCue {
+  t: number; targets: string[]; ms: number; intensity: number;
+  color: number[]; decay: number; attack: number; pixels: string;
+}
+const { results } = JSON.parse(proc.stdout) as
+  { results: { esphome: NormCue[]; previewer: NormCue[] }[] };
 
 /* ── compare all three ── */
-const normTs = (c) => ({
+const normTs = (c: Strikes[number]): NormCue => ({
   t: c.t,
-  targets: [...c.targets],
-  ms: c.ms,
+  targets: [...c.targets!],
+  ms: c.ms!,
   // TS keeps full float colours for the audition; the generators write
   // 3-decimal YAML. Rounding here must land on the same digits.
-  intensity: c.intensity,
-  color: c.color.map(r3),
-  decay: c.decay,
+  intensity: c.intensity!,
+  color: c.color!.map(r3),
+  decay: c.decay!,
   attack: c.attack ?? 0,
   pixels: c.pixels ?? "all",
 });
 
 let pass = 0;
-const fails = [];
-const ties = [];
-const close = (a, b) => Math.abs(a - b) <= 0.0011;
+const fails: string[] = [];
+const ties: string[] = [];
+const close = (a: number, b: number): boolean => Math.abs(a - b) <= 0.0011;
 
-function diffCue(where, i, j, a, b) {
-  for (const k of ["t", "ms", "decay", "attack", "pixels"]) {
+function diffCue(a: NormCue, b: NormCue): string | null {
+  for (const k of ["t", "ms", "decay", "attack", "pixels"] as const) {
     if (a[k] !== b[k]) return `${k}: ${a[k]} vs ${b[k]}`;
   }
   if (JSON.stringify(a.targets) !== JSON.stringify(b.targets)) {
@@ -210,7 +227,7 @@ function diffCue(where, i, j, a, b) {
   }
   for (let c = 0; c < 4; c++) {
     if (a.color[c] !== b.color[c]) {
-      const kind = close(a.color[c], b.color[c]) ? "rounding-tie " : "";
+      const kind = close(a.color[c]!, b.color[c]!) ? "rounding-tie " : "";
       return `${kind}color[${c}]: ${a.color[c]} vs ${b.color[c]}`;
     }
   }
@@ -222,16 +239,16 @@ function diffCue(where, i, j, a, b) {
    per-stream. The multi-band yaml cases interleave streams, so those are
    compared as canonically-sorted multisets; single-stream cases stay
    order-exact. */
-const canon = (list) => [...list].sort((a, b) =>
+const canon = (list: NormCue[]): NormCue[] => [...list].sort((a, b) =>
   JSON.stringify(a) < JSON.stringify(b) ? -1
     : JSON.stringify(a) > JSON.stringify(b) ? 1 : 0);
 
 for (let i = 0; i < cases.length; i++) {
-  const multi = "scene_yaml" in cases[i];
-  const ts0 = expected[i].map(normTs);
+  const multi = "scene_yaml" in cases[i]!;
+  const ts0 = expected[i]!.map(normTs);
   const ts = multi ? canon(ts0) : ts0;
-  for (const [name, got0] of [["esphome", results[i].esphome],
-                              ["previewer", results[i].previewer]]) {
+  for (const [name, got0] of [["esphome", results[i]!.esphome],
+                              ["previewer", results[i]!.previewer]] as const) {
     const got = multi ? canon(got0) : got0;
     if (got.length !== ts.length) {
       fails.push(`case ${i} ${name}: ${got.length} strikes, TS has ${ts.length}`);
@@ -239,9 +256,9 @@ for (let i = 0; i < cases.length; i++) {
     }
     let bad = false;
     for (let j = 0; j < ts.length; j++) {
-      const d = diffCue(name, i, j, ts[j], got[j]);
+      const d = diffCue(ts[j]!, got[j]!);
       if (d) {
-        const line = `case ${i} ${name} cue ${j} (t=${ts[j].t}): ${d}`;
+        const line = `case ${i} ${name} cue ${j} (t=${ts[j]!.t}): ${d}`;
         (d.startsWith("rounding-tie") ? ties : fails).push(line);
         bad = true;
       }

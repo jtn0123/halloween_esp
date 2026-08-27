@@ -8,7 +8,7 @@ gen_esphome.py along the seam that was already documented there: this is
 what a pulse stream MEANS; gen_esphome.py is how the device is told.
 
 The same arithmetic lives in web/src/track_lights.ts and is exercised
-digit-for-digit by web/test/fuzz_parity.mjs -> tools/fuzz_check.py.
+digit-for-digit by web/test/fuzz_parity.ts -> tools/fuzz_check.py.
 """
 
 from __future__ import annotations

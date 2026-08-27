@@ -13,7 +13,7 @@
 // A second kind of line probes the noise primitives directly (hashf,
 // vnoise, fbm) at the arguments the effects actually reach, so a mismatch
 // can be attributed to the layer it comes from. The reader is
-// web/test/firmware_parity.mjs, which owns the tolerances and the verdict.
+// web/test/firmware_parity.ts, which owns the tolerances and the verdict.
 #include "castle_effects.h"
 #include "castle_pixels.h"
 #include "generated/rig.h"

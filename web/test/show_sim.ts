@@ -1,10 +1,10 @@
 /**
  * Show-engine simulation: every scene in scenes/scenes.yaml, start to finish.
  *
- *     node test/show_sim.mjs                       (from web/; dist built)
- *     SIM_SEED=5 SIM_FUZZ=40 node test/show_sim.mjs
+ *     (runs bundled from web/dist — see package.json "test")
+ *     SIM_SEED=5 SIM_FUZZ=40 … to go hunting
  *
- * show_engine.mjs pins the engine's rules on hand-built scenes. This drives
+ * show_engine.ts pins the engine's rules on hand-built scenes. This drives
  * the REAL scenes — as tools/gen_previewer.py hands them to the browser,
  * pulse streams expanded from audio/markers.json — through step() at
  * accelerated time and checks the invariants that hold for any show:
@@ -27,16 +27,28 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   createState, rebuildLightsAt, renderZones, step, ZONE_IDS,
-} from "../dist/show.mjs";
-import { defaultParams } from "../dist/effects.mjs";
-import { FIXTURES, fixture, layoutOf } from "../dist/rig.mjs";
+} from "../src/show.js";
+import { defaultParams } from "../src/effects.js";
+import type { EffectParams } from "../src/effects.js";
+import { FIXTURES, fixture, layoutOf } from "../src/rig.js";
+import type { Layout } from "../src/rig.js";
+import type { Scene } from "../src/types.js";
 
-const ROOT = join(import.meta.dirname, "..", "..");
+const ROOT = new URL("../..", import.meta.url).pathname;
 const SEED = Number(process.env.SIM_SEED ?? 0xcafe);
 const FUZZ = Number(process.env.SIM_FUZZ ?? 24);
 
+/* The scenes arrive as JSON from the generator — typed loosely on purpose,
+ * cast to Scene at the engine boundary. */
+interface SimCue { t: number; bus: string; op: string; [k: string]: unknown }
+interface SimScene {
+  id: string; dur: number; loop: boolean; file: string;
+  audio_file?: string | null; base: Record<string, string>; cues: SimCue[];
+}
+interface SimZone { id: string; fixture?: string; pixels?: number }
+
 /* ── the scenes, exactly as the previewer generator shapes them ── */
-const PY = [join(ROOT, ".venv", "bin", "python"), "python3"].find((p) => p === "python3" || existsSync(p));
+const PY = [join(ROOT, ".venv", "bin", "python"), "python3"].find((p) => p === "python3" || existsSync(p))!;
 const DUMP = [
   "import sys, json, pathlib; sys.path.insert(0, 'tools')",
   "import gen_previewer as gp, yaml",
@@ -54,14 +66,14 @@ if (proc.status !== 0) {
   console.error("FAIL — could not dump scenes through gen_previewer.py");
   process.exit(1);
 }
-const { scenes, zones } = JSON.parse(proc.stdout);
+const { scenes, zones } = JSON.parse(proc.stdout) as { scenes: SimScene[]; zones: SimZone[] };
 
 let pass = 0;
-const fails = [];
-const ok = (cond, msg) => { if (cond) pass++; else if (fails.length < 400) fails.push(msg); };
+const fails: string[] = [];
+const ok = (cond: boolean, msg: string): void => { if (cond) pass++; else if (fails.length < 400) fails.push(msg); };
 
 /* Deterministic PRNG — Math.random is banned from parity work. */
-function mulberry32(seed) {
+function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -73,45 +85,51 @@ function mulberry32(seed) {
 }
 
 /** The rig as scenes.yaml declares it, by zone id. */
-const rigLayout = {};
+const rigLayout: Record<string, Layout> = {};
 for (const z of zones) rigLayout[z.id] = layoutOf(fixture(z.fixture ?? "jewel7"), z.pixels);
 
-const unit = (v) => Number.isFinite(v) && v >= 0 && v <= 1;
+const unit = (v: number): boolean => Number.isFinite(v) && v >= 0 && v <= 1;
+
+interface SimOpts {
+  layout: Record<string, Layout>; P: EffectParams; soft: boolean;
+  latency: number; jitter: boolean; rnd?: () => number; tag: string;
+}
 
 /**
  * Run one scene through the engine and check every invariant along the way.
  * Returns the state so the caller can add scene-specific checks.
  */
-function simulate(sc, { layout, P, soft, latency, jitter, rnd, tag }) {
+function simulate(sim: SimScene, { layout, P, soft, latency, jitter, rnd = () => 0, tag }: SimOpts) {
+  const sc = sim as unknown as Scene;
   const st = createState(sc, 0);
-  for (const z of ZONE_IDS) st.layout[z] = layout[z];
+  for (const z of ZONE_IDS) st.layout[z] = layout[z]!;
   st.soft = soft;
   st.latency = latency;
   rebuildLightsAt(st, sc, 0);
   st.running = true;
   st.t0 = 0;
 
-  const cueT = sc.cues.map((c) => c.t);
-  ok(cueT.every((t, i) => i === 0 || t >= cueT[i - 1]), `${tag}: cue list is not time-sorted`);
-  ok(cueT.every((t) => t >= 0 && t <= sc.dur), `${tag}: a cue lies outside 0..${sc.dur}`);
+  const cueT = sim.cues.map((c) => c.t);
+  ok(cueT.every((t, i) => i === 0 || t >= cueT[i - 1]!), `${tag}: cue list is not time-sorted`);
+  ok(cueT.every((t) => t >= 0 && t <= sim.dur), `${tag}: a cue lies outside 0..${sim.dur}`);
 
   let ended = 0, audio = 0, passes = 0, lastFiredT = -Infinity, prevElapsed = -1, frames = 0;
   let firedThisPass = 0;
-  const seen = new Set();
-  const horizon = sc.loop ? sc.dur * 2 + 400 : sc.dur + 1000;
+  const seen = new Set<number>();
+  const horizon = sim.loop ? sim.dur * 2 + 400 : sim.dur + 1000;
   for (let now = 0; now <= horizon; now += jitter ? 1 + Math.floor(rnd() * 40) : 16) {
     frames++;
     const f = step(st, now, P, () => audio++, () => { ended++; st.running = false; });
 
-    ok(Number.isFinite(f.elapsed) && f.elapsed >= 0 && f.elapsed <= sc.dur,
+    ok(Number.isFinite(f.elapsed) && f.elapsed >= 0 && f.elapsed <= sim.dur,
        `${tag}: elapsed ${f.elapsed} outside the scene at now=${now}`);
     ok(unit(f.flash), `${tag}: frame flash ${f.flash} at now=${now}`);
     ok(f.flashColor.length === 4 && f.flashColor.every(Number.isFinite),
        `${tag}: flash colour ${f.flashColor}`);
     for (const z of ZONE_IDS) {
       const out = f.zones[z];
-      ok(out.pix.length === layout[z].n,
-         `${tag}: zone ${z} rendered ${out.pix.length} px, rig has ${layout[z].n}`);
+      ok(out.pix.length === layout[z]!.n,
+         `${tag}: zone ${z} rendered ${out.pix.length} px, rig has ${layout[z]!.n}`);
       ok(out.avg.every(unit), `${tag}: zone ${z} avg ${out.avg} at now=${now}`);
       for (const px of out.pix) {
         ok(px.length === 3 && px.every(unit), `${tag}: zone ${z} pixel ${px} at now=${now}`);
@@ -122,7 +140,7 @@ function simulate(sc, { layout, P, soft, latency, jitter, rnd, tag }) {
     // Cue bookkeeping: a loop wrap clears `fired`; within a pass, the newly
     // fired cues are later than the ones before and not from the future.
     if (f.elapsed < prevElapsed) {             // wrapped
-      ok(sc.loop, `${tag}: the clock went backwards in a non-looping scene`);
+      ok(sim.loop, `${tag}: the clock went backwards in a non-looping scene`);
       ok(firedThisPass === cueT.length,
          `${tag}: pass ${passes} fired ${firedThisPass} of ${cueT.length} cues`);
       passes++; firedThisPass = 0; lastFiredT = -Infinity; seen.clear();
@@ -131,22 +149,22 @@ function simulate(sc, { layout, P, soft, latency, jitter, rnd, tag }) {
       if (seen.has(i)) continue;
       seen.add(i);
       firedThisPass++;
-      ok(cueT[i] <= f.elapsed + 1e-9, `${tag}: cue ${i} (t=${cueT[i]}) fired early at ${f.elapsed}`);
-      ok(cueT[i] >= lastFiredT - 1e-9, `${tag}: cue ${i} (t=${cueT[i]}) fired after t=${lastFiredT}`);
-      lastFiredT = Math.max(lastFiredT, cueT[i]);
+      ok(cueT[i]! <= f.elapsed + 1e-9, `${tag}: cue ${i} (t=${cueT[i]}) fired early at ${f.elapsed}`);
+      ok(cueT[i]! >= lastFiredT - 1e-9, `${tag}: cue ${i} (t=${cueT[i]}) fired after t=${lastFiredT}`);
+      lastFiredT = Math.max(lastFiredT, cueT[i]!);
     }
     prevElapsed = f.elapsed;
   }
 
-  if (sc.loop) {
+  if (sim.loop) {
     ok(passes >= 1, `${tag}: looping scene never wrapped in ${horizon} ms`);
     ok(ended === 0, `${tag}: looping scene signalled an end`);
   } else {
     ok(ended === 1, `${tag}: finite scene ended ${ended} times`);
     ok(st.fired.size === cueT.length, `${tag}: ${st.fired.size}/${cueT.length} cues fired by the end`);
   }
-  const audCues = sc.cues.filter((c) => c.bus === "AUD").length;
-  if (!sc.loop) ok(audio === audCues, `${tag}: ${audio} audio callbacks for ${audCues} audio cues`);
+  const audCues = sim.cues.filter((c) => c.bus === "AUD").length;
+  if (!sim.loop) ok(audio === audCues, `${tag}: ${audio} audio callbacks for ${audCues} audio cues`);
 
   // Blackout: what the device's scene_stop does — effects off, strikes
   // cleared — must leave nothing lit on any fixture.
@@ -170,8 +188,8 @@ let totalFrames = 0;
 // typo: the file-presence checks are skipped for the first and enforced for
 // the second. `make audio` is what fills audio/ in the first place.
 const KNOWN = new Set(Object.keys(
-  JSON.parse(readFileSync(join(ROOT, "tracks", "tracks.json"), "utf8"))));
-const notHere = [];
+  JSON.parse(readFileSync(join(ROOT, "tracks", "tracks.json"), "utf8")) as Record<string, unknown>));
+const notHere: string[] = [];
 for (const sc of scenes) {
   const file = join(ROOT, "audio", sc.file);
   // The RENDER always has to be there — `make audio` produces one per scene
@@ -203,15 +221,15 @@ if (notHere.length) {
 
 /* ── fuzz: random rigs, params, jitter ── */
 const rnd = mulberry32(SEED);
-const pick = (arr) => arr[Math.floor(rnd() * arr.length)];
+const pick = <X,>(arr: readonly X[]): X => arr[Math.floor(rnd() * arr.length)]!;
 for (let i = 0; i < FUZZ; i++) {
   const sc = pick(scenes);
-  const layout = {};
+  const layout: Record<string, Layout> = {};
   for (const z of ZONE_IDS) {
     const fx = pick(FIXTURES);
     layout[z] = layoutOf(fx, fx.maxCount ? 1 + Math.floor(rnd() * fx.maxCount) : undefined);
   }
-  const P = {
+  const P: EffectParams = {
     ...defaultParams(),
     depth: rnd(), speed: 0.3 + rnd() * 2.7, bright: rnd(), hue: rnd(),
     soft: rnd() < 0.5, stops: rnd(),
@@ -223,7 +241,7 @@ for (let i = 0; i < FUZZ; i++) {
     : sc;
   simulate(clipped, {
     layout, P, soft: rnd() < 0.5, latency: Math.floor(rnd() * 400), jitter: true, rnd,
-    tag: `fuzz#${i} ${sc.id} rig=${ZONE_IDS.map((z) => layout[z].n).join("/")} seed=${SEED}`,
+    tag: `fuzz#${i} ${sc.id} rig=${ZONE_IDS.map((z) => layout[z]!.n).join("/")} seed=${SEED}`,
   });
 }
 

@@ -11,9 +11,9 @@ individual checks say how each one works.
 
 | Layer | Copies | Checked by |
 |---|---|---|
-| Pulse dynamics (tempo, accents, pan, section gates) | `tools/pulse_dynamics.py` (both Python generators) · `web/src/track_lights.ts` | `tests/test_stream_dynamics.py`, `web/test/track_lights_logic.ts`, `web/test/fuzz_parity.mjs` + `tools/fuzz_check.py` |
+| Pulse dynamics (tempo, accents, pan, section gates) | `tools/pulse_dynamics.py` (both Python generators) · `web/src/track_lights.ts` | `tests/test_stream_dynamics.py`, `web/test/track_lights_logic.ts`, `web/test/fuzz_parity.ts` + `tools/fuzz_check.py` |
 | Pulse → cue merge (zone routing, round-robin, velocity rounding) | `tools/gen_esphome.py` · `tools/gen_previewer.py` | `tests/test_generator_parity.py`, `tests/test_gen_fuzz.py` |
-| Effect maths (colour per pixel per frame) | `firmware/castle_effects.h` (C++, float32) · `web/src/effects.ts` (TS, double) | `web/test/firmware_parity.mjs` reading `tests/cxx/parity_dump.cpp` (host-compiled); `web/test/effects_equivalence.ts` |
+| Effect maths (colour per pixel per frame) | `firmware/castle_effects.h` (C++, float32) · `web/src/effects.ts` (TS, double) | `web/test/firmware_parity.ts` reading `tests/cxx/parity_dump.cpp` (host-compiled); `web/test/effects_equivalence.ts` |
 | Rig geometry (which pixel is where, what `core` means) | `tools/rig_layout.py` → `firmware/generated/rig.h` · `web/src/rig.ts` | `web/test/rig_parity.mjs`, `tests/test_rig_layout.py` |
 | Castle wire protocol (`/api/*` on the device) | `firmware/sd_web.h` · `tools/castle_emu_wire.py` | `tests/test_firmware_contract.py` parses the C |
 
@@ -34,21 +34,21 @@ make check                       # everything below except the browser suite
 .venv/bin/python -m unittest tests.test_generator_parity tests.test_stream_dynamics \
                               tests.test_gen_fuzz tests.test_firmware_cxx -q
 cd web && npm test               # builds dist/, then runs every *_parity.mjs
-cd web && node test/firmware_parity.mjs          # C++ vs TS effects, default seed
-cd web && PARITY_SEED=9 PARITY_CASES=20000 node test/firmware_parity.mjs
-cd web && FUZZ_SEED=123 FUZZ_CASES=500 node test/fuzz_parity.mjs   # TS vs both Python generators
+cd web && node test/firmware_parity.ts          # C++ vs TS effects, default seed
+cd web && PARITY_SEED=9 PARITY_CASES=20000 node test/firmware_parity.ts
+cd web && FUZZ_SEED=123 FUZZ_CASES=500 node test/fuzz_parity.ts   # TS vs both Python generators
 cd web && node test/rig_parity.mjs
 ```
 
 Seeds are fixed by default so a red run reproduces; the env knobs are for
-going hunting. `test_firmware_cxx` and `firmware_parity.mjs` need a host
+going hunting. `test_firmware_cxx` and `firmware_parity.ts` need a host
 `clang++`/`g++` and SKIP (loudly) without one — a green run on a machine with
 no compiler has not checked the firmware layer.
 
 ## When it fails
 
 1. Read the first mismatch: every checker prints the case (seed, index,
-   inputs) and both answers. `firmware_parity.mjs` also names the layer
+   inputs) and both answers. `firmware_parity.ts` also names the layer
    (`hashf`/`vnoise`/`fbm` probe lines vs effect lines) so a lattice-hash
    drift is told apart from a palette-mix drift.
 2. Decide which side is RIGHT. Usually the one you did not just edit. The
@@ -57,7 +57,7 @@ no compiler has not checked the firmware layer.
 3. Re-run with the printed seed pinned (`PARITY_SEED=…`, `FUZZ_SEED=…`) until
    green, then run the default seeds again.
 4. Float32 slack is already accounted for — the tolerances in
-   `firmware_parity.mjs` grow exactly as float32 phase error does. Do not
+   `firmware_parity.ts` grow exactly as float32 phase error does. Do not
    widen them to make a run pass; a failure past them is a real drift.
 5. If the firmware header changed its hash or a primitive's rounding, the
    TS port (`effects.ts`, `hashi/hash3` in the checker) must change the same

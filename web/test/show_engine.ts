@@ -1,7 +1,7 @@
 /**
  * Tests for the show engine — the code that decides what the lights do.
  *
- *     node test/show_engine.mjs
+ *     (runs bundled from web/dist — see package.json "test")
  *
  * This is the highest-consequence logic in the browser half: a bug here is a
  * wrong show, and it mirrors the firmware's own render loop, so a divergence
@@ -14,21 +14,23 @@
 import {
   createState, rebuildLightsAt, fireCues, decayFlashes, renderZones,
   dominantFlash, step, ZONE_IDS,
-} from "../dist/show.mjs";
-import { defaultParams } from "../dist/effects.mjs";
-import { fixture, layoutOf } from "../dist/rig.mjs";
+} from "../src/show.js";
+import { defaultParams } from "../src/effects.js";
+import { fixture, layoutOf } from "../src/rig.js";
+import type { Scene } from "../src/types.js";
 
 let pass = 0;
-const fails = [];
-const ok = (cond, msg) => { if (cond) pass++; else fails.push(msg); };
-const near = (a, b, eps, msg) => ok(Math.abs(a - b) <= eps, `${msg} (${a} vs ${b})`);
+const fails: string[] = [];
+const ok = (cond: boolean, msg: string): void => { if (cond) pass++; else fails.push(msg); };
+const near = (a: number, b: number, eps: number, msg: string): void =>
+  ok(Math.abs(a - b) <= eps, `${msg} (${a} vs ${b})`);
 
 /** A scene shaped exactly like what gen_previewer.py emits. */
-const scene = (over = {}) => ({
+const scene = (over: Record<string, unknown> = {}): Scene => ({
   id: "t", name: "T", kind: "test", dur: 10000, loop: false, volume: 0.8,
   blurb: "", base: { towerL: "off", towerR: "off", door: "off" },
   levels: {}, cues: [], file: "t.mp3", yaml: "", ...over,
-});
+} as unknown as Scene);
 
 const P = defaultParams();
 
@@ -195,17 +197,17 @@ const P = defaultParams();
   const dim = createState(scene({ base: { towerL: "furnace", towerR: "off", door: "off" },
                                   levels: { towerL: 0.1 } }), 0);
   rebuildLightsAt(dim, dim.scene, 0);
-  const dimOut = renderZones(dim, 2.0, P).towerL.pix[0];
+  const dimOut = renderZones(dim, 2.0, P).towerL.pix[0]!;
 
   const full = createState(scene({ base: { towerL: "furnace", towerR: "off", door: "off" } }), 0);
   rebuildLightsAt(full, full.scene, 0);
-  const fullOut = renderZones(full, 2.0, P).towerL.pix[0];
+  const fullOut = renderZones(full, 2.0, P).towerL.pix[0]!;
   ok(dimOut[0] < fullOut[0], "level dims the base effect");
 
   // With a strike up, the dim zone must still reach full brightness — this is
   // the whole mechanism that gives a scene contrast.
   dim.flash.towerL = 1; dim.flashCol.towerL = [1, 1, 1, 1];
-  const struck = renderZones(dim, 2.0, P).towerL.pix[0];
+  const struck = renderZones(dim, 2.0, P).towerL.pix[0]!;
   ok(struck[0] > 0.9, "a strike is unscaled by level");
 }
 
@@ -306,9 +308,9 @@ const P = defaultParams();
      "the default rig knows which zones have a white die");
   ok(st.layout.door.n === 12 && st.layout.towerL.n === 7,
      "createState takes each zone's own fixture from DEFAULT_RIG, not towerL's");
-  const rgb = renderZones(st, 2.0, P).door.pix[3];
+  const rgb = renderZones(st, 2.0, P).door.pix[3]!;
   st.rgbw.door = true;
-  const rgbw = renderZones(st, 2.0, P).door.pix[3];
+  const rgbw = renderZones(st, 2.0, P).door.pix[3]!;
   ok(rgbw[2] > rgb[2] && rgbw[0] > rgb[0],
      "an RGB zone renders without the white die's contribution");
   // With the die gone the pixel is pure RGB: the blue channel carries only the
@@ -317,7 +319,7 @@ const P = defaultParams();
   // The strike's W channel is dropped on an RGB zone as well.
   st.rgbw.door = false;
   st.flash.door = 1; st.flashCol.door = [0, 0, 0, 1];
-  const struck = renderZones(st, 2.0, P).door.pix[3];
+  const struck = renderZones(st, 2.0, P).door.pix[3]!;
   ok(struck[0] === rgb[0] && struck[1] === rgb[1] && struck[2] === rgb[2],
      "a white-only strike does nothing on an RGB zone, as on the device");
 }
@@ -337,7 +339,7 @@ const P = defaultParams();
   step(st, 516, P, () => {}, () => { ended++; st.running = false; });
   ok(ended === 1, "the end is still signalled once");
   ok(st.eff.door === "furnace", "the cue at t == dur fired in the frame that reached it");
-  step(st, 532, P, () => {}, () => ended++);
+  step(st, 532, P, () => ended++, () => ended++);
   ok(ended === 1, "a stopped show does not signal the end again");
 }
 

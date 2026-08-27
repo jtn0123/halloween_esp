@@ -83,7 +83,7 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
 - The door ring corrupts a frame now and then: `docs/ISSUE-ring-flicker.md`
   has what is already ruled out (with evidence) and the next tests.
 - The desk's effects (`web/src/effects.ts`) and `firmware/castle_effects.h`
-  share an integer hash and are checked frame-exact (`web/test/firmware_parity.mjs`,
+  share an integer hash and are checked frame-exact (`web/test/firmware_parity.ts`,
   `tests/cxx/`). Change both or neither. The whole parity contract — every
   copy, every check, what to do when one fails — is `docs/PARITY.md`.
 - Stop audio before an OTA (`make ota` and `sd_sync ota` do it themselves).

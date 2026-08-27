@@ -43,4 +43,4 @@ Applied in v5.24:
   (lowbias32) over integer inputs: vnoise hashes its lattice cell, sparkle
   hashes (cell, pixel, zone), scatter hashes (pixel, zone, epoch), and the
   result is a 24-bit fraction that is bit-identical in float32 and double.
-  web/test/firmware_parity.mjs judges every effect frame-exact now.
+  web/test/firmware_parity.ts judges every effect frame-exact now.

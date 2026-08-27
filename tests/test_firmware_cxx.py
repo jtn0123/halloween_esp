@@ -13,7 +13,7 @@ Two host programs, both in tests/cxx/:
                      the catalogue, canary bytes around each zone's buffer,
                      0..255 and finite at t=0, t=10^7 s, negative t and the
                      parameter extremes; the strike envelope's exact curve.
-  parity_dump.cpp    the numeric dump web/test/firmware_parity.mjs compares
+  parity_dump.cpp    the numeric dump web/test/firmware_parity.ts compares
                      against the TypeScript port. Here it is only built and
                      smoke-run; the comparison lives on the node side.
 
