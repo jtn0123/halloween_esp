@@ -35,11 +35,23 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict, Unpack
 
-# One track's manifest entry. A loose JSON shape today; the A4 ratchet pass
-# turns it into a TypedDict once the studio's readers are ready for it.
-Entry = dict[str, Any]
+
+class Entry(TypedDict, total=False):
+    """One track's manifest entry (see the module docstring's example).
+
+    Everything is optional: hand-copied files and manifests from before a
+    field existed produce entries with holes, and the readers cope."""
+
+    source: str
+    title: str
+    imported: str
+    opts: dict[str, Any]
+    audio: dict[str, Any]
+    onsets: dict[str, int]
+    notes: str
+
 
 ROOT = Path(__file__).resolve().parent.parent
 # The manifest lives beside the tracks it describes, so it follows the same
@@ -100,7 +112,7 @@ def record(
     title: str = "",
     opts: dict[str, Any] | None = None,
     audio: dict[str, Any] | None = None,
-    onsets: dict[str, Any] | None = None,
+    onsets: dict[str, int] | None = None,
     notes: str = "",
 ) -> Entry:
     with _locked():
@@ -127,7 +139,7 @@ def get(tid: str) -> Entry | None:
     return load().get(tid)
 
 
-def patch(tid: str, **fields: Any) -> None:
+def patch(tid: str, **fields: Unpack[Entry]) -> None:
     """Merge a few fields into one entry, leaving everything else alone.
 
     The studio fills in `audio`/`onsets` for a track whose entry lacks them

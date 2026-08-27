@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 import analyze as ana
 import manifest as mf
@@ -119,7 +120,7 @@ def source_missing(source: str) -> bool:
     return source.startswith("file:") and not Path(source[len("file:") :]).exists()
 
 
-def track_infos(paths: list[Path]) -> list[dict]:
+def track_infos(paths: list[Path]) -> list[dict[str, Any]]:
     """track_info for a whole listing, reading tracks.json ONCE.
 
     /api/tracks used to load and parse the manifest once per track; that is
@@ -129,7 +130,7 @@ def track_infos(paths: list[Path]) -> list[dict]:
     return [track_info(p, data.get(p.stem) or {}) for p in paths]
 
 
-def track_info(p: Path, meta: dict | None = None) -> dict:
+def track_info(p: Path, meta: mf.Entry | None = None) -> dict[str, Any]:
     """Everything the Tracks panel needs, including where the file came from.
 
     The manifest is the cheap part — read it even if decoding fails, so a
@@ -171,7 +172,8 @@ def track_info(p: Path, meta: dict | None = None) -> dict:
         info["error"] = str(e)
         return info
     info["dur"] = round(len(x) / ana.SR, 2)
-    info["onsets"] = {k: len(v) for k, v in marks.items()}
+    onset_counts = {k: len(v) for k, v in marks.items()}
+    info["onsets"] = onset_counts
     # Remember the answer beside the provenance, so the next /api/tracks
     # reads it instead of decoding the library again (it was linear in the
     # number of tracks, every call). `bytes` is the staleness check.
@@ -182,12 +184,12 @@ def track_info(p: Path, meta: dict | None = None) -> dict:
             "duration": info["dur"],
             "bytes": info["bytes"],
         },
-        onsets=info["onsets"],
+        onsets=onset_counts,
     )
     return info
 
 
-def _from_manifest(meta: dict, size: int) -> dict | None:
+def _from_manifest(meta: mf.Entry, size: int) -> dict[str, Any] | None:
     """The decode-free answer, if the manifest has one for THIS file.
 
     import_track.py records duration, byte size and per-band onset counts
