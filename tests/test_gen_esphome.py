@@ -14,7 +14,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -35,7 +35,7 @@ ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 ZIDS = [z["id"] for z in ZONES]
 
 
-def scene(**over: object) -> dict:
+def scene(**over: object) -> dict[str, Any]:
     """A minimal scene that both generators accept, for overriding per test."""
     s = {
         "id": "probe", "name": "Probe", "kind": "triggered",
@@ -46,7 +46,7 @@ def scene(**over: object) -> dict:
     return s
 
 
-def parse_script(lines: list[str]) -> dict:
+def parse_script(lines: list[str]) -> dict[str, Any]:
     """emit_scene's lines are a YAML fragment; load them the way ESPHome would."""
     return dict(yaml.safe_load("script:\n" + "\n".join(lines))["script"][0])
 
@@ -120,7 +120,7 @@ class TestEffectIds(unittest.TestCase):
 class TestPulseCues(unittest.TestCase):
     """Beat markers are what lock the lights to the audio; this is the join."""
 
-    MARKS: ClassVar[dict] = {"probe": {"heart": [[0, 1.0], [500, 0.5], [1000, 0.25]],
+    MARKS: ClassVar[dict[str, Any]] = {"probe": {"heart": [[0, 1.0], [500, 0.5], [1000, 0.25]],
                        "whisper": [[100, 1.0], [200, 1.0], [300, 1.0]]}}
 
     def test_no_pulse_block_is_no_cues(self) -> None:
@@ -322,7 +322,7 @@ class TestEmitScene(unittest.TestCase):
 class TestGenEsphomeMain(unittest.TestCase):
     """End to end: a scenes.yaml on disk becomes a loadable ESPHome file."""
 
-    DOC: ClassVar[dict] = {
+    DOC: ClassVar[dict[str, Any]] = {
         "hardware": {"pixels_per_zone": 7},
         "zones": ZONES,
         "scenes": [

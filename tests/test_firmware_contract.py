@@ -20,7 +20,9 @@ import sys
 import tempfile
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -159,7 +161,7 @@ class TestErrorStrings(unittest.TestCase):
 class TestNameRules(unittest.TestCase):
     """safe_name / safe_subpath / url_decode / query_param, re-derived."""
 
-    def ref_safe_name(self):
+    def ref_safe_name(self) -> Callable[..., Any]:
         body = FUNCS["safe_name"]
         limit = int(grab(r"n\.size\(\) >= (\d+)", body))
         lead = grab(r"n\[0\] == '(.)'", body).encode()
@@ -184,7 +186,7 @@ class TestNameRules(unittest.TestCase):
             and all(c >= below and c not in bad for c in n)
         )
 
-    def ref_safe_subpath(self):
+    def ref_safe_subpath(self) -> Callable[..., Any]:
         body = FUNCS["safe_subpath"]
         limit = int(grab(r"p\.size\(\) > (\d+)", body))
         leads = [c.encode() for c in re.findall(r"p\[0\] == '(.)'", body)]

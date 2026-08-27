@@ -15,6 +15,7 @@ import tempfile
 import unittest
 import wave
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import numpy as np
@@ -72,7 +73,7 @@ class TestConvert(unittest.TestCase):
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def opts(self, **over: object) -> dict:
+    def opts(self, **over: object) -> dict[str, object]:
         o: dict[str, object] = {
             "start": 0,
             "take": None,
@@ -87,7 +88,7 @@ class TestConvert(unittest.TestCase):
         o.update(over)
         return o
 
-    def probe(self, p: Path) -> dict:
+    def probe(self, p: Path) -> dict[str, Any]:
         out = subprocess.run(
             [
                 "ffprobe",
@@ -274,7 +275,7 @@ class TestSceneBlock(unittest.TestCase):
             "onset_high": [(0.75, 0.4)],
         }
 
-    def parse(self, block: str) -> dict:
+    def parse(self, block: str) -> dict[str, Any]:
         doc = yaml.safe_load("scenes:\n" + block)
         return dict(doc["scenes"][0])
 
@@ -351,7 +352,7 @@ class TestRenderIntegration(unittest.TestCase):
         cls.track.unlink(missing_ok=True)
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def scene(self) -> dict:
+    def scene(self) -> dict[str, Any]:
         return {
             "id": "_test_integration",
             "duration_ms": 6000,
