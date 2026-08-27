@@ -1,6 +1,6 @@
 """Fixture geometry: the rules the cross-language parity test cannot see.
 
-web/test/rig_parity.mjs proves the browser and this module place every pixel
+web/test/rig_parity.ts proves the browser and this module place every pixel
 identically, but only for the catalogue's default counts. These cover the
 edges around that: overrides, the legacy fallback, and the invariants an
 overlay relies on.

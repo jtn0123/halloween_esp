@@ -7,7 +7,7 @@
  * the selected track — and the rules that tied them together lived in
  * main.ts's callbacks, where nothing could test them. Now the rules are
  * `transition()`: a pure function from (mode, event) to (mode, scene to
- * load), exercised in web/test/desk_mode.mjs, and main.ts keeps one `mode`.
+ * load), exercised in web/test/desk_mode.ts, and main.ts keeps one `mode`.
  *
  * The `phase` is the discriminated union; the rest is what every phase
  * needs at hand. The players ride along because "not built yet" is a real

@@ -7,7 +7,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SRC = new URL("../src", import.meta.url).pathname;
-const offenders = [];
+const offenders: string[] = [];
 for (const f of readdirSync(SRC)) {
   if (!f.endsWith(".ts") || f === "dom.ts") continue;
   const text = readFileSync(join(SRC, f), "utf8");

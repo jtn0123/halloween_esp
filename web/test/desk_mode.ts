@@ -1,7 +1,7 @@
 /**
  * The desk's mode machine (desk_mode.ts), driven through every rule it has.
  *
- *     node test/desk_mode.mjs
+ *     (runs bundled from web/dist — see package.json "test")
  *
  * These used to be six flags and four callbacks in main.ts, and the only
  * check on them was clicking around. The rules worth pinning: an audition
@@ -10,17 +10,23 @@
  * nothing; adopting is a phase the pick handler can see and nothing else.
  */
 
-import { auditioning, initialMode, transition } from "../dist/desk_mode.mjs";
+import { auditioning, initialMode, transition } from "../src/desk_mode.js";
+import type { DeskEvent, DeskMode } from "../src/desk_mode.js";
+import type { Scene } from "../src/types.js";
+
+type Players = { p: number };
 
 let pass = 0;
-const fails = [];
-const ok = (c, m) => { if (c) pass++; else fails.push(m); };
+const fails: string[] = [];
+const ok = (c: boolean, m: string): void => { if (c) pass++; else fails.push(m); };
 
-const sc = (id) => ({ id, name: id, kind: "t", dur: 1000, loop: false, volume: 1,
-                      blurb: "", base: {}, levels: {}, cues: [], file: "", bytes: 0, yaml: "" });
+// A minimal stand-in: the machine only ever compares scenes by identity and
+// reads `id`, so the fixture doesn't populate the full per-zone records.
+const sc = (id: string): Scene => ({ id, name: id, kind: "t", dur: 1000, loop: false, volume: 1,
+                                     blurb: "", base: {}, levels: {}, cues: [], file: "", bytes: 0, yaml: "" } as unknown as Scene);
 const SHOW = sc("show"), CLIP = sc("clip"), CLIP2 = sc("clip2");
-const run = (m, ...events) => {
-  const loads = [];
+const run = (m: DeskMode<Players>, ...events: DeskEvent<Players>[]) => {
+  const loads: string[] = [];
   for (const e of events) {
     const t = transition(m, e);
     m = t.mode;
@@ -30,7 +36,7 @@ const run = (m, ...events) => {
 };
 
 // ── initial ──
-const m0 = initialMode("rendered");
+const m0 = initialMode<Players>("rendered");
 ok(m0.source === "rendered" && m0.phase.kind === "show" && m0.preview === null
    && m0.track === null && m0.players === null, "initial mode is show/no clip/no players");
 ok(!auditioning(m0), "not auditioning at start");
@@ -40,7 +46,7 @@ ok(!auditioning(m0), "not auditioning at start");
   const { m, loads } = run(m0, { type: "source", source: "synth" },
                            { type: "ready", players: { p: 1 } },
                            { type: "select", track: "song" });
-  ok(m.source === "synth" && m.players.p === 1 && m.track === "song" && loads.length === 0,
+  ok(m.source === "synth" && m.players?.p === 1 && m.track === "song" && loads.length === 0,
      "source/ready/select update their field and load nothing");
   ok(run(m, { type: "select", track: null }).m.track === null, "deselect clears the track");
 }
@@ -54,7 +60,7 @@ ok(!auditioning(m0), "not auditioning at start");
   ok(loads.join() === "clip", "starting the audition loads the clip's scene");
   // Start again while running: no second displacement, nothing loaded.
   const again = run(m, { type: "audition-start", current: CLIP });
-  ok(again.m.phase.before === SHOW && again.loads.length === 0,
+  ok(again.m.phase.kind === "audition" && again.m.phase.before === SHOW && again.loads.length === 0,
      "a second start keeps the original before and loads nothing");
   // Clip changes mid-audition re-load without stopping.
   const re = run(m, { type: "clip", preview: CLIP2 });
@@ -93,7 +99,7 @@ ok(run(m0, { type: "clip", preview: CLIP }).loads.length === 0,
 
 // ── immutability: transition never edits its input ──
 {
-  const frozen = Object.freeze({ ...m0, phase: Object.freeze({ kind: "show" }) });
+  const frozen = Object.freeze({ ...m0, phase: Object.freeze({ kind: "show" as const }) });
   let threw = false;
   try { run(frozen, { type: "clip", preview: CLIP }, { type: "audition-start", current: SHOW },
             { type: "audition-stop" }); } catch { threw = true; }

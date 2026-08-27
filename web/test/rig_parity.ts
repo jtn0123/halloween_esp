@@ -1,7 +1,7 @@
 /**
  * Cross-language fixture geometry: rig.ts against tools/rig_layout.py.
  *
- *     node test/rig_parity.mjs            (from web/; dist must be built)
+ *     (runs bundled from web/dist — see package.json "test")
  *
  * There are two implementations of where a pixel sits, and there have to be:
  * the desk needs it in the browser, and the generator needs it to bake the
@@ -16,10 +16,10 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { FIXTURES, layoutOf } from "../dist/rig.mjs";
+import { FIXTURES, layoutOf } from "../src/rig.js";
 
 const PY = ["../.venv/bin/python", "../.venv/bin/python3", "python3"]
-  .find(p => p.startsWith("python") || existsSync(p));
+  .find(p => p.startsWith("python") || existsSync(p)) ?? "python3";
 
 const run = spawnSync(PY, ["../tools/rig_layout.py"], { encoding: "utf8" });
 if (run.status !== 0) {
@@ -27,12 +27,16 @@ if (run.status !== 0) {
   console.error("FAIL — rig_layout.py exited " + run.status);
   process.exit(1);
 }
-const theirs = JSON.parse(run.stdout);
+interface PyLayout {
+  n: number; center: number; fallSteps: number;
+  core: number[]; walk: number[]; fall: number[]; pos: [number, number][];
+}
+const theirs = JSON.parse(run.stdout) as Record<string, PyLayout | undefined>;
 
-const r6 = (v) => Math.round(v * 1e6) / 1e6;
+const r6 = (v: number): number => Math.round(v * 1e6) / 1e6;
 let pass = 0;
-const fails = [];
-const eq = (a, b, msg) => {
+const fails: string[] = [];
+const eq = (a: unknown, b: unknown, msg: string): void => {
   if (JSON.stringify(a) === JSON.stringify(b)) pass++;
   else fails.push(`${msg}\n    ts: ${JSON.stringify(a)}\n    py: ${JSON.stringify(b)}`);
 };

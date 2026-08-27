@@ -137,7 +137,7 @@ def build(n: int, kind: str, cols: int = 0, rows: int = 0) -> Layout:
         # Rounded before sorting so that a ring's notionally-equal distances
         # really are equal and the index breaks the tie. Unrounded, the last
         # bits of the two languages' hypot disagreed and they picked different
-        # pixels — see web/test/rig_parity.mjs, which is what found it.
+        # pixels — see web/test/rig_parity.ts, which is what found it.
         order = sorted(
             range(n),
             key=lambda i: (round(math.hypot(pos[i][0] - 0.5, pos[i][1] - 0.5), 6), i),

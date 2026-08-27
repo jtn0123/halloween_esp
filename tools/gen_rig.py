@@ -23,7 +23,7 @@ def emit_rig_header(
     """Bake each zone's geometry into a header the firmware only indexes.
 
     The device does no layout arithmetic: `walk`, `fall` and `core` are the
-    tables computed by rig_layout.py, which web/test/rig_parity.mjs holds
+    tables computed by rig_layout.py, which web/test/rig_parity.ts holds
     identical to the browser's. That is the whole reason there is no third
     copy of this maths in C++.
     """

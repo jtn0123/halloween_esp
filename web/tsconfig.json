@@ -4,8 +4,8 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2020", "DOM"],
+    "types": ["node"],
     "outDir": "dist",
-    "rootDir": "src",
 
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -18,5 +18,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts", "test/*.ts"]
 }
