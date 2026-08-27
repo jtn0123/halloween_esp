@@ -20,5 +20,9 @@ panic = "abort"
 strip = true
 
 [[bin]]
+name = "castle"
+path = "src/bin/castle.rs"
+
+[[bin]]
 name = "parity_dump"
 path = "src/bin/parity_dump.rs"

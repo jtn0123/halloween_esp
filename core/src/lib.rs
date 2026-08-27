@@ -7,6 +7,7 @@
 //! here is f32, matching the device; `tests/test_castle_core.py` compares
 //! this crate's `parity_dump` against the host-compiled C++ one bit for bit.
 
+pub mod bridge;
 pub mod effects;
 pub mod noise;
 pub mod overlay;

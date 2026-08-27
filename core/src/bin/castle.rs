@@ -1,0 +1,57 @@
+//! The bridge CLI — the desk's transport verbs, spoken from a terminal.
+//!
+//!     castle --host 10.27.27.7:80 status
+//!     castle --host … scene seance | play 10_ballad.mp3 | stop | volume 60
+//!
+//! Host comes from --host or CASTLE_HOST (host[:port], first entry of a
+//! comma list). Prints the castle's own JSON answer; exit 0 on 2xx.
+//! tests/test_bridge_rust.py round-trips every verb against castle_emu.
+
+use castle_core::bridge::{encode_query, request};
+
+fn fail(msg: &str) -> ! {
+    eprintln!("castle: {msg}");
+    std::process::exit(1)
+}
+
+fn main() {
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let mut host = std::env::var("CASTLE_HOST")
+        .ok()
+        .and_then(|h| h.split(',').next().map(str::to_string))
+        .unwrap_or_default();
+    if args.first().map(String::as_str) == Some("--host") {
+        args.remove(0);
+        host = if args.is_empty() {
+            fail("--host needs a value")
+        } else {
+            args.remove(0)
+        };
+    }
+    if host.is_empty() {
+        fail("no castle named: pass --host or set CASTLE_HOST");
+    }
+    if !host.contains(':') {
+        host.push_str(":80");
+    }
+    let verb = args.first().cloned().unwrap_or_default();
+    let arg = args.get(1);
+    let (method, target, read_s) = match (verb.as_str(), arg) {
+        ("status", None) => ("GET", "/api/status".to_string(), 5.0),
+        ("health", None) => ("GET", "/api/health".to_string(), 5.0),
+        ("stop", None) => ("POST", "/api/stop".to_string(), 5.0),
+        ("scene", Some(id)) => ("POST", format!("/api/scene?s={}", encode_query(id)), 5.0),
+        ("play", Some(f)) => ("POST", format!("/api/play?f={}", encode_query(f)), 5.0),
+        ("volume", Some(v)) => ("POST", format!("/api/volume?v={}", encode_query(v)), 5.0),
+        _ => fail("usage: castle [--host H:P] status|health|stop|scene ID|play FILE|volume N"),
+    };
+    match request(&host, method, &target, read_s) {
+        Err(e) => fail(&e),
+        Ok(r) => {
+            println!("{}", String::from_utf8_lossy(&r.body).trim_end());
+            if !(200..300).contains(&r.code) {
+                std::process::exit(2);
+            }
+        }
+    }
+}
