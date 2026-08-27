@@ -159,7 +159,16 @@ against the host-compiled firmware header by tests/test_castle_core.py
 fuses a*b+c into fma, which the FPU-less S2 never does, so the un-fused
 build is the device-faithful proxy and exact bits replace tolerances).
 The WASM face is built and checked: 8 KB, allocator-free, loads in node,
-fbm-only paths bit-exact. NOT done, deliberately: the desk swap (wiring
+fbm-only paths bit-exact.
+
+B2 pass 1 (2026-08-27): core/src/pulse.rs — tempo_factor/tempo_decay/
+round3/is_accent/gate_mul/gate_note/drift_base/thin_pulses — held
+digit-for-digit (f64, no tolerances) against tools/pulse_dynamics.py by
+tests/test_pulse_rust.py over a seeded corpus via the pulse_dump line
+protocol; thin_pulses compared by surviving-index identity so both
+tie-breaks are pinned. section_gates' YAML walking stays Python (plumbing,
+not arithmetic). Next B2 passes: pulse_expand.py's pulse_cues, then the
+fuzz-harness swap. NOT done, deliberately: the desk swap (wiring
 the wasm into the previewer in place of effects.ts) stays post-Halloween —
 it changes what the live show previews with, and the sine-effect
 wasm-libm-vs-JS-Math deltas need the swap harness's tolerance model.
