@@ -127,9 +127,14 @@ build_paths, manifest, hosts, scene_schema, rig_layout, gen_rig, gen_show,
 gen_esphome_audio, gen_qr, gen_eink_font (four of those were already clean).
 The ratchet lives in pyproject's per-module override block; hosts grew a
 _Device TypedDict, manifest an Entry alias (A4 upgrades it to a TypedDict).
-Remaining: importers, gen_wiring_diagram (80 errors — split it off the ruff
-exclude list first), castle_emu_wire, castle_emu, castle_emu_http,
-gen_esphome, gen_previewer, then tests.
+A3 TOOLS COMPLETE (2026-08-26, second 5-pass run): importers, the emulator
+trio, gen_esphome, gen_previewer and gen_wiring_diagram are all strict — the
+last after its overdue split (wiring_svg.py holds the drawing kit; output
+verified byte-identical). gen_esphome's pulse-contract re-exports are now
+explicit in __all__. A4 shape 1 done: manifest.Entry is a TypedDict and
+patch() takes Unpack[Entry]. Remaining in Track A: the tests/ modules into
+strict (~286 errors — batch by file), A4 shapes 2–3 (scenes.yaml, markers),
+and the five files still on the ruff-format exclude list.
 
 ### Track B — off-season (post-Halloween)
 
