@@ -72,7 +72,11 @@ export default defineConfig({
   webServer: {
     // CASTLE_PY names the interpreter (a worktree sharing the main
     // checkout's venv, CI's runner python); the project venv otherwise.
-    command: `${process.env.CASTLE_PY ?? "../.venv/bin/python"} ../tools/studio.py ${PORT} --localhost`,
+    // CASTLE_STUDIO_CMD swaps the SERVER wholesale — the Rust studio
+    // (core/target/release/studio) runs this same suite as its parity
+    // gate; the port and --localhost are appended either way.
+    command: `${process.env.CASTLE_STUDIO_CMD
+      ?? `${process.env.CASTLE_PY ?? "../.venv/bin/python"} ../tools/studio.py`} ${PORT} --localhost`,
     url: `http://127.0.0.1:${PORT}/studio/tracks`,
     // A studio the user is already running is pointed at their real tracks,
     // which is exactly what this suite must not touch.
