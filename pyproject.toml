@@ -78,7 +78,7 @@ ignore_missing_imports = true
 module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_schema", "rig_layout", "gen_rig", "gen_show",
     "gen_esphome_audio", "gen_qr", "gen_eink_font",
     "import_track", "import_fetch", "import_scene",
-    "castle_emu_wire", "castle_emu", "castle_emu_http"]
+    "castle_emu_wire", "castle_emu", "castle_emu_http", "gen_esphome", "gen_previewer"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_decorators = true

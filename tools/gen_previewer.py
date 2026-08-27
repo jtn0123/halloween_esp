@@ -23,7 +23,10 @@ import base64
 import json
 import math
 import re
-import subprocess
+
+# `as` marks the explicit seam: the build tests swap gen_previewer.subprocess
+# for a double, so the binding is part of this module's surface.
+import subprocess as subprocess
 import sys
 from pathlib import Path
 
@@ -31,10 +34,12 @@ from pathlib import Path
 # the firmware generator rather than duplicated a third time — one pair of
 # implementations (Python here, TS in track_lights.ts) is a parity burden;
 # three was how the last drift happened.
+from typing import Any
+
 import build_paths as bp
 import pulse_dynamics as pd
 import yaml
-from effect_vocab import KNOWN_EFFECTS  # one vocabulary for every generator
+from effect_vocab import KNOWN_EFFECTS as KNOWN_EFFECTS  # one vocabulary, re-exported
 
 ROOT = Path(__file__).resolve().parent.parent
 # What is read from the show and what is written follow build_paths.py, so
@@ -68,7 +73,7 @@ def scene_yaml_slice(text: str, sid: str) -> str:
     return m.group(0).rstrip() if m else f"# (slice for {sid} not found)"
 
 
-def _blend_color(base: list, hot: list | None, vel: float) -> list:
+def _blend_color(base: list[float], hot: list[float] | None, vel: float) -> list[float]:
     """color -> color_hot by velocity — same maths as gen_esphome.blend_color
     and track_lights.ts."""
     if not hot:
@@ -76,7 +81,9 @@ def _blend_color(base: list, hot: list | None, vel: float) -> list:
     return [pd.round3(b + (h - b) * vel) for b, h in zip(base, hot)]
 
 
-def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
+def to_previewer(
+    scene: dict[str, Any], idx: int, raw: str, markers: dict[str, Any]
+) -> dict[str, Any]:
     sid = scene["id"]
     cues = [
         {
@@ -142,7 +149,7 @@ def to_previewer(scene: dict, idx: int, raw: str, markers: dict) -> dict:
     # ms) and web/src/track_lights.ts — keep all three in lockstep.
     scene_marks = markers.get(sid, {})
     gates = pd.section_gates(scene)
-    pulses: list[dict] = []  # capped with pd.thin_pulses below
+    pulses: list[dict[str, Any]] = []  # capped with pd.thin_pulses below
     for pcfg in scene.get("pulse") or []:
         beats = scene_marks.get(pcfg["synth"], [])
         zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
