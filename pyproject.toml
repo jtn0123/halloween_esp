@@ -45,7 +45,6 @@ select = [
 # split on a real seam, formatted in that same pass, and removed from this
 # list — the list only ever shrinks.
 exclude = [
-    "tools/castle_fuzz.py",
         "tests/test_gen_esphome.py",
     "tests/test_generator_parity.py",
     "tests/test_studio_api.py",
@@ -77,7 +76,7 @@ module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_sc
     "gen_esphome_audio", "gen_qr", "gen_eink_font",
     "import_track", "import_convert", "import_fetch", "import_scene",
     "castle_emu_wire", "castle_emu", "castle_emu_http", "gen_esphome", "gen_previewer",
-    "gen_wiring_diagram", "wiring_svg",
+    "gen_wiring_diagram", "wiring_svg", "fuzz_http",
     # …and their tests, same ratchet, same rule:
     "test_hosts", "test_loc_scope", "test_stems", "test_safety_floor", "test_netguard",
     "test_import_cli", "test_media_failures", "test_analysis", "test_rig_layout",
