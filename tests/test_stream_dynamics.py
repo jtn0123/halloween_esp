@@ -16,7 +16,8 @@ from typing import ClassVar
 # inside the directory — the sibling carries the shared fixtures.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gen_esphome as ge
-from test_generator_parity import PULSE_SCENE, dynamic_strikes
+from test_generator_parity import PULSE_SCENE
+from test_pulse_dynamics_parity import dynamic_strikes
 
 
 class TestStreamDynamicsParity(unittest.TestCase):

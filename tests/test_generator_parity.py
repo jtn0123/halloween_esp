@@ -15,7 +15,6 @@ from __future__ import annotations
 import contextlib
 import io
 import json
-import re
 import shutil
 import sys
 import tempfile
@@ -27,7 +26,6 @@ from typing import Any, ClassVar
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
-import effect_vocab as ev
 import gen_esphome as ge
 import gen_previewer as gp
 import pulse_dynamics as pd
@@ -40,26 +38,51 @@ ZIDS = [z["id"] for z in ZONES]
 # stream (whole chain), a single named zone, an explicit zone list, and a
 # round-robin — each with its own colour, decay and intensity.
 PULSE_SCENE = {
-    "id": "parity", "name": "Parity", "kind": "triggered",
-    "duration_ms": 8000, "volume": 0.7,
+    "id": "parity",
+    "name": "Parity",
+    "kind": "triggered",
+    "duration_ms": 8000,
+    "volume": 0.7,
     "base": {"towerL": "candle", "towerR": "spirit", "door": "ember"},
     "pulse": [
-        {"synth": "toll", "intensity": 0.5, "decay": 0.97,
-         "color": [0.66, 0.08, 1.0, 0.06]},
-        {"synth": "heartbeat", "zone": "door", "intensity": 0.85,
-         "decay": 0.82, "color": [1.0, 0.03, 0.01, 0.0]},
-        {"synth": "heartbeat", "zones": ["towerL", "towerR"],
-         "intensity": 0.10, "decay": 0.88, "color": [1.0, 0.05, 0.02, 0.0]},
-        {"synth": "whispers", "zones": ["towerL", "towerR"], "alternate": True,
-         "intensity": 0.34, "decay": 0.94, "color": [0.24, 1.0, 0.38, 0.0]},
+        {
+            "synth": "toll",
+            "intensity": 0.5,
+            "decay": 0.97,
+            "color": [0.66, 0.08, 1.0, 0.06],
+        },
+        {
+            "synth": "heartbeat",
+            "zone": "door",
+            "intensity": 0.85,
+            "decay": 0.82,
+            "color": [1.0, 0.03, 0.01, 0.0],
+        },
+        {
+            "synth": "heartbeat",
+            "zones": ["towerL", "towerR"],
+            "intensity": 0.10,
+            "decay": 0.88,
+            "color": [1.0, 0.05, 0.02, 0.0],
+        },
+        {
+            "synth": "whispers",
+            "zones": ["towerL", "towerR"],
+            "alternate": True,
+            "intensity": 0.34,
+            "decay": 0.94,
+            "color": [0.24, 1.0, 0.38, 0.0],
+        },
     ],
 }
 
-MARKERS = {"parity": {
-    "toll": [[0, 1.0], [4200, 0.75]],
-    "heartbeat": [[0, 1.0], [153, 0.55], [820, 0.91], [1600, 0.4]],
-    "whispers": [[2600, 0.806], [3537, 0.994], [4100, 0.5], [5000, 1.0]],
-}}
+MARKERS = {
+    "parity": {
+        "toll": [[0, 1.0], [4200, 0.75]],
+        "heartbeat": [[0, 1.0], [153, 0.55], [820, 0.91], [1600, 0.4]],
+        "whispers": [[2600, 0.806], [3537, 0.994], [4100, 0.5], [5000, 1.0]],
+    }
+}
 
 
 def esphome_strikes(
@@ -67,9 +90,15 @@ def esphome_strikes(
 ) -> list[tuple[Any, ...]]:
     """Pulse strikes as gen_esphome will write them into the ESPHome script."""
     return sorted(
-        (c["t"], tuple(c["targets"] or ZIDS), c["intensity"],
-         tuple(float(v) for v in c["color"]), c["decay"])
-        for c in pd.thin_pulses(ge.pulse_cues(scene, markers)))
+        (
+            c["t"],
+            tuple(c["targets"] or ZIDS),
+            c["intensity"],
+            tuple(float(v) for v in c["color"]),
+            c["decay"],
+        )
+        for c in pd.thin_pulses(ge.pulse_cues(scene, markers))
+    )
 
 
 def previewer_strikes(
@@ -78,9 +107,16 @@ def previewer_strikes(
     """The same strikes as gen_previewer will hand to the browser."""
     cues = gp.to_previewer(scene, idx, "", markers)["cues"]
     return sorted(
-        (c["t"], tuple(c.get("targets") or ZIDS), c["intensity"],
-         tuple(float(v) for v in c["color"]), c["decay"])
-        for c in cues if c["op"] == "strike" and "intensity" in c)
+        (
+            c["t"],
+            tuple(c.get("targets") or ZIDS),
+            c["intensity"],
+            tuple(float(v) for v in c["color"]),
+            c["decay"],
+        )
+        for c in cues
+        if c["op"] == "strike" and "intensity" in c
+    )
 
 
 class TestPulseParity(unittest.TestCase):
@@ -118,8 +154,15 @@ class TestPulseParity(unittest.TestCase):
         """
         s = dict(PULSE_SCENE, pulse=[PULSE_SCENE["pulse"][3]])  # type: ignore[index]  # heterogeneous scene dict
         pairs = [(t, z) for t, z, *_ in esphome_strikes(s, MARKERS)]
-        self.assertEqual(pairs, [(2600, ("towerL",)), (3537, ("towerR",)),
-                                 (4100, ("towerL",)), (5000, ("towerR",))])
+        self.assertEqual(
+            pairs,
+            [
+                (2600, ("towerL",)),
+                (3537, ("towerR",)),
+                (4100, ("towerL",)),
+                (5000, ("towerR",)),
+            ],
+        )
         self.assertEqual(pairs, [(t, z) for t, z, *_ in previewer_strikes(s, MARKERS)])
 
     def test_velocity_scaling_is_rounded_identically(self) -> None:
@@ -132,8 +175,9 @@ class TestPulseParity(unittest.TestCase):
     def test_default_colour_and_decay_match(self) -> None:
         """The defaults are written out separately in each file as literals."""
         s = dict(PULSE_SCENE, pulse=[{"synth": "toll"}])
-        self.assertEqual(esphome_strikes(s, MARKERS)[0][2:],
-                         previewer_strikes(s, MARKERS)[0][2:])
+        self.assertEqual(
+            esphome_strikes(s, MARKERS)[0][2:], previewer_strikes(s, MARKERS)[0][2:]
+        )
         self.assertEqual(ge.WHITE, [1.0, 1.0, 1.0, 1.0])
         self.assertEqual(ge.DEFAULT_DECAY, 0.90)
 
@@ -158,27 +202,36 @@ class TestPulseParity(unittest.TestCase):
         for i, scene in enumerate(doc["scenes"], start=1):
             with self.subTest(scene=scene["id"]):
                 with contextlib.redirect_stdout(io.StringIO()):
-                    a = [(c["t"], tuple(c["targets"] or zids), c["intensity"])
-                         for c in pd.thin_pulses(ge.pulse_cues(scene, markers))]
-                b = [(c["t"], tuple(c.get("targets") or zids), c["intensity"])
-                     for c in gp.to_previewer(scene, i, raw, markers)["cues"]
-                     if c["op"] == "strike" and "intensity" in c]
+                    a = [
+                        (c["t"], tuple(c["targets"] or zids), c["intensity"])
+                        for c in pd.thin_pulses(ge.pulse_cues(scene, markers))
+                    ]
+                b = [
+                    (c["t"], tuple(c.get("targets") or zids), c["intensity"])
+                    for c in gp.to_previewer(scene, i, raw, markers)["cues"]
+                    if c["op"] == "strike" and "intensity" in c
+                ]
                 self.assertEqual(sorted(a), sorted(b))
 
 
 class TestTimelineParity(unittest.TestCase):
     """Same cues is not enough — they have to happen at the same moment."""
 
-    def emitted_times(self, scene: dict[str, Any], markers: dict[str, Any]) -> list[int]:
+    def emitted_times(
+        self, scene: dict[str, Any], markers: dict[str, Any]
+    ) -> list[int]:
         """Replay the ESPHome script's delays to recover absolute cue times."""
         then = yaml.safe_load(
             "script:\n" + "\n".join(ge.emit_scene(scene, ZONES, 1, markers))
         )["script"][0]["then"]
-        start = next(i for i, st in enumerate(then)
-                     if isinstance(st.get("script.execute"), dict)
-                     and st["script.execute"].get("id") == "sfx")
+        start = next(
+            i
+            for i, st in enumerate(then)
+            if isinstance(st.get("script.execute"), dict)
+            and st["script.execute"].get("id") == "sfx"
+        )
         times, t = [], 0
-        for st in then[start + 1:]:
+        for st in then[start + 1 :]:
             if "delay" in st:
                 t += int(str(st["delay"]).removesuffix("ms"))
             elif "lambda" in st:
@@ -192,47 +245,79 @@ class TestTimelineParity(unittest.TestCase):
         Summing the emitted deltas back has to reproduce exactly the timeline
         the browser plays, mixed cues and pulses included.
         """
-        s = dict(PULSE_SCENE, cues=[
-            {"t": 80, "op": "strike", "note": "lightning"},
-            {"t": 3000, "op": "set", "zone": "door", "effect": "blood"}])
+        s = dict(
+            PULSE_SCENE,
+            cues=[
+                {"t": 80, "op": "strike", "note": "lightning"},
+                {"t": 3000, "op": "set", "zone": "door", "effect": "blood"},
+            ],
+        )
         with contextlib.redirect_stdout(io.StringIO()):
             emitted = self.emitted_times(s, MARKERS)
-        preview = [c["t"] for c in gp.to_previewer(s, 1, "", MARKERS)["cues"]
-                   if c["bus"] == "LED"]
+        preview = [
+            c["t"]
+            for c in gp.to_previewer(s, 1, "", MARKERS)["cues"]
+            if c["bus"] == "LED"
+        ]
         self.assertEqual(emitted, sorted(preview))
 
     def test_simultaneous_cues_do_not_collapse_into_one(self) -> None:
         """Two zones struck on the same beat must stay two events on both sides."""
-        s = dict(PULSE_SCENE, pulse=[
-            {"synth": "heartbeat", "zone": "door"},
-            {"synth": "heartbeat", "zones": ["towerL"]}])
+        s = dict(
+            PULSE_SCENE,
+            pulse=[
+                {"synth": "heartbeat", "zone": "door"},
+                {"synth": "heartbeat", "zones": ["towerL"]},
+            ],
+        )
         self.assertEqual(len(self.emitted_times(s, MARKERS)), 8)
         self.assertEqual(len(previewer_strikes(s, MARKERS)), 8)
-
 
 
 class TestGenPreviewerMain(unittest.TestCase):
     """The whole splice, on tempfiles: does a real page come out the far end?"""
 
-    TEMPLATE = ("<style>/* @STYLES here */</style>\n"
-                "<script>\n"
-                "  // @GEN-DATA-START\n"
-                "  window.CASTLE_GEN = {};\n"
-                "  // @GEN-DATA-END\n"
-                "  /* @BUNDLE here */\n"
-                "</script>\n")
+    TEMPLATE = (
+        "<style>/* @STYLES here */</style>\n"
+        "<script>\n"
+        "  // @GEN-DATA-START\n"
+        "  window.CASTLE_GEN = {};\n"
+        "  // @GEN-DATA-END\n"
+        "  /* @BUNDLE here */\n"
+        "</script>\n"
+    )
 
-    DOC: ClassVar[dict[str, Any]] = {"zones": ZONES, "scenes": [
-        {**PULSE_SCENE, "id": "one"},
-        {"id": "two", "name": "Two", "kind": "ambient", "duration_ms": 100,
-         "base": {"door": "candle"}},
-    ]}
+    DOC: ClassVar[dict[str, Any]] = {
+        "zones": ZONES,
+        "scenes": [
+            {**PULSE_SCENE, "id": "one"},
+            {
+                "id": "two",
+                "name": "Two",
+                "kind": "ambient",
+                "duration_ms": 100,
+                "base": {"door": "candle"},
+            },
+        ],
+    }
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
-        self._saved = {k: getattr(gp, k) for k in
-                       ("ROOT", "SRC", "MARKERS_FILE", "TEMPLATE", "HTML",
-                        "AUDIO", "WEB", "BUNDLE", "STYLES", "subprocess")}
+        self._saved = {
+            k: getattr(gp, k)
+            for k in (
+                "ROOT",
+                "SRC",
+                "MARKERS_FILE",
+                "TEMPLATE",
+                "HTML",
+                "AUDIO",
+                "WEB",
+                "BUNDLE",
+                "STYLES",
+                "subprocess",
+            )
+        }
         gp.ROOT = self.tmp
         gp.SRC = self.tmp / "scenes.yaml"
         gp.SRC.write_text(yaml.safe_dump(self.DOC))
@@ -252,7 +337,9 @@ class TestGenPreviewerMain(unittest.TestCase):
         gp.BUNDLE.write_text("/*js*/")
         gp.subprocess = types.SimpleNamespace(  # type: ignore[assignment]  # test double
             run=lambda *a, **k: types.SimpleNamespace(
-                returncode=0, stdout="", stderr=""))
+                returncode=0, stdout="", stderr=""
+            )
+        )
 
     def tearDown(self) -> None:
         for k, v in self._saved.items():
@@ -286,7 +373,7 @@ class TestGenPreviewerMain(unittest.TestCase):
         (gp.AUDIO / "01_one.mp3").write_bytes(b"\xff\xfbfake mp3")
         data = self.gen(self.run_main())
         self.assertTrue(data["audio"]["one"].startswith("data:audio/mpeg;base64,"))
-        self.assertNotIn("two", data["audio"])   # no file rendered yet
+        self.assertNotIn("two", data["audio"])  # no file rendered yet
 
     def test_base64_backslashes_survive_the_splice(self) -> None:
         """re.sub() would read a backslash in the payload as an escape.
@@ -303,8 +390,10 @@ class TestGenPreviewerMain(unittest.TestCase):
 
     def test_missing_data_markers_exit_rather_than_write_a_dead_page(self) -> None:
         gp.TEMPLATE.write_text("<html>no markers here</html>")
-        with self.assertRaises(SystemExit) as cm, \
-                contextlib.redirect_stdout(io.StringIO()):
+        with (
+            self.assertRaises(SystemExit) as cm,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             gp.main()
         self.assertIn("markers not found", str(cm.exception))
         self.assertFalse(gp.HTML.exists())
@@ -312,172 +401,9 @@ class TestGenPreviewerMain(unittest.TestCase):
     def test_the_page_is_only_written_once_everything_succeeded(self) -> None:
         """A partial write leaves a stale-looking page that loads and lies."""
         gp.STYLES.unlink()
-        with self.assertRaises(FileNotFoundError), \
-                contextlib.redirect_stdout(io.StringIO()):
+        with (
+            self.assertRaises(FileNotFoundError),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
             gp.main()
         self.assertFalse(gp.HTML.exists())
-
-
-def dynamic_strikes(
-    side: str, scene: dict[str, Any], markers: dict[str, Any]
-) -> list[tuple[Any, ...]]:
-    """Strikes including the per-hit dynamics fields (pixels, ms, colour)."""
-    if side == "esphome":
-        cues = ge.pulse_cues(scene, markers)
-    else:
-        cues = [c for c in gp.to_previewer(scene, 1, "", markers)["cues"]
-                if c["op"] == "strike"]
-    return sorted(
-        (c["t"], tuple(c.get("targets") or ZIDS), c["intensity"],
-         tuple(float(v) for v in c["color"]),
-         c.get("pixels", "all"), c.get("ms", 120))
-        for c in cues)
-
-
-class TestPulseDynamicsParity(unittest.TestCase):
-    """The per-hit dynamics: colour blend, velocity masks, boost, ms.
-
-    Each is arithmetic duplicated across gen_esphome.py, gen_previewer.py and
-    web/src/track_lights.ts. These pin the two Python copies to each other and
-    to the exact numbers the TypeScript copy is tested against, so all three
-    meet at the same values.
-    """
-
-    DYN: ClassVar[dict[str, Any]] = {"synth": "heartbeat", "zone": "door", "intensity": 0.6,
-           "color": [1.0, 0.0, 0.0, 0.0], "color_hot": [1.0, 0.5, 0.0, 0.4],
-           "pixels_by_vel": True, "ms": 110,
-           "boost_at": 0.85, "boost_targets": ["towerL", "towerR"]}
-
-    def scene(self, **over: Any) -> dict[str, Any]:
-        return dict(PULSE_SCENE, pulse=[dict(self.DYN, **over)])
-
-    def test_colour_blends_by_velocity_identically(self) -> None:
-        # heartbeat velocities: 1.0, 0.55, 0.91, 0.4
-        a = dynamic_strikes("esphome", self.scene(), MARKERS)
-        b = dynamic_strikes("previewer", self.scene(), MARKERS)
-        self.assertEqual(a, b)
-        by_t = {t: col for t, _z, _i, col, _p, _m in a}
-        self.assertEqual(by_t[0], (1.0, 0.5, 0.0, 0.4))          # vel 1.0: hot
-        self.assertEqual(by_t[153], (1.0, 0.275, 0.0, 0.22))     # vel 0.55
-        self.assertEqual(by_t[1600], (1.0, 0.2, 0.0, 0.16))      # vel 0.40
-
-    def test_velocity_picks_the_same_mask(self) -> None:
-        masks = {t: p for t, _z, _i, _c, p, _m
-                 in dynamic_strikes("esphome", self.scene(), MARKERS)}
-        # vel 0.40 sits ON the centre/scatter edge; both sides use `<`.
-        self.assertEqual(masks, {0: "all", 153: "scatter",
-                                 820: "all", 1600: "scatter"})
-        self.assertEqual(masks, {t: p for t, _z, _i, _c, p, _m
-                                 in dynamic_strikes("previewer", self.scene(), MARKERS)})
-
-    def test_soft_hits_land_on_the_centre(self) -> None:
-        m = {"parity": {"heartbeat": [[100, 0.2]]}}
-        for side in ("esphome", "previewer"):
-            (_t, _z, _i, _c, pixels, _ms), = dynamic_strikes(side, self.scene(), m)
-            self.assertEqual(pixels, "center")
-
-    def test_boost_spills_onto_the_extra_zones(self) -> None:
-        for side in ("esphome", "previewer"):
-            zones = {t: z for t, z, *_ in dynamic_strikes(side, self.scene(), MARKERS)}
-            # vel 1.0 and 0.91 clear boost_at 0.85; 0.55 and 0.40 do not.
-            self.assertEqual(zones[0], ("door", "towerL", "towerR"))
-            self.assertEqual(zones[820], ("door", "towerL", "towerR"))
-            self.assertEqual(zones[153], ("door",))
-            self.assertEqual(zones[1600], ("door",))
-
-    def test_boost_does_not_fire_without_targets(self) -> None:
-        s = self.scene()
-        del s["pulse"][0]["boost_targets"]
-        for side in ("esphome", "previewer"):
-            zones = {t: z for t, z, *_ in dynamic_strikes(side, s, MARKERS)}
-            self.assertEqual(zones[0], ("door",))
-
-    def test_ms_reaches_both_sides(self) -> None:
-        for side in ("esphome", "previewer"):
-            self.assertEqual({m for *_rest, m in dynamic_strikes(side, self.scene(), MARKERS)},
-                             {110})
-
-    def test_colour_cycle_agrees_hit_for_hit(self) -> None:
-        """`colors:` cycles by hit index, identically on both sides."""
-        cyc = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]
-        s = self.scene(colors=cyc)
-        del s["pulse"][0]["color_hot"]      # bare cycle, no blend
-        a = dynamic_strikes("esphome", s, MARKERS)
-        b = dynamic_strikes("previewer", s, MARKERS)
-        self.assertEqual(a, b)
-        # heartbeat markers in time order: t=0, 153, 820, 1600 — cycle wraps.
-        by_t = {t: col for t, _z, _i, col, _p, _m in a}
-        self.assertEqual(by_t[0], (1.0, 0.0, 0.0, 0.0))
-        self.assertEqual(by_t[153], (0.0, 1.0, 0.0, 0.0))
-        self.assertEqual(by_t[820], (0.0, 0.0, 1.0, 0.0))
-        self.assertEqual(by_t[1600], (1.0, 0.0, 0.0, 0.0))
-
-    def test_colour_cycle_blends_toward_hot(self) -> None:
-        cyc = [[1.0, 0.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0]]
-        s = self.scene(colors=cyc, color_hot=[1.0, 1.0, 0.0, 0.0])
-        a = dynamic_strikes("esphome", s, MARKERS)
-        self.assertEqual(a, dynamic_strikes("previewer", s, MARKERS))
-        by_t = {t: col for t, _z, _i, col, _p, _m in a}
-        self.assertEqual(by_t[0], (1.0, 1.0, 0.0, 0.0))       # vel 1.0 -> hot
-        self.assertEqual(by_t[153], (0.55, 0.55, 0.45, 0.0))  # vel .55 from blue
-
-    def test_plain_streams_are_untouched(self) -> None:
-        """A stream without the new fields renders exactly as before."""
-        a = esphome_strikes(PULSE_SCENE, MARKERS)
-        b = previewer_strikes(PULSE_SCENE, MARKERS)
-        self.assertEqual(a, b)
-        self.assertEqual(len(a), 14)
-
-
-class TestVocabularyAgreement(unittest.TestCase):
-    """tools/effect_vocab.py against the two copies a Python test can't import.
-
-    The TS (web/src/effects.ts, types.ts) and C++ (firmware/castle_effects.h)
-    vocabularies are parsed from their source text — the technique
-    test_firmware_contract.py uses — so nothing here is hand-copied.
-    """
-
-    TS = (ROOT / "web" / "src" / "effects.ts").read_text()
-    TYPES = (ROOT / "web" / "src" / "types.ts").read_text()
-    CXX = (ROOT / "firmware" / "castle_effects.h").read_text()
-
-    @staticmethod
-    def ts_array(text: str, name: str) -> list[str]:
-        m = re.search(rf"export const {name} = \[([^\]]*)\] as const", text)
-        assert m, name
-        return re.findall(r'"(\w+)"', m.group(1))
-
-    def test_python_generators_share_the_vocab(self) -> None:
-        self.assertIs(ge.EFFECT_IDS, ev.EFFECT_IDS)
-        self.assertEqual(set(ge.EFFECT_IDS), gp.KNOWN_EFFECTS)
-        for table in (ev.EFFECT_IDS, ev.OVERLAY_IDS, ev.PALETTE_IDS, ev.FLASH_MODE_IDS):
-            self.assertEqual(list(table.values()), list(range(len(table))), table)
-
-    def test_effects_ts_implements_exactly_the_vocab(self) -> None:
-        body = self.TS.split("export const EFFECTS:", 1)[1].split("\n};", 1)[0]
-        impl = re.findall(r"^  (\w+): \(", body, re.MULTILINE)
-        self.assertEqual(set(impl), set(ev.EFFECT_IDS))
-        union = self.TYPES.split("export type EffectName =", 1)[1].split(";", 1)[0]
-        self.assertEqual(re.findall(r'"(\w+)"', union), list(ev.EFFECT_IDS))
-
-    def test_effects_ts_name_arrays_match_in_order(self) -> None:
-        self.assertEqual(self.ts_array(self.TS, "OVERLAY_NAMES"), list(ev.OVERLAY_IDS))
-        self.assertEqual(self.ts_array(self.TS, "PALETTE_NAMES"), list(ev.PALETTE_IDS))
-        self.assertEqual(self.ts_array(self.TS, "FLASH_MODES"), list(ev.FLASH_MODE_IDS))
-
-    def test_firmware_enums_match_names_and_ids(self) -> None:
-        eff = {n.lower(): int(i) for n, i in
-               re.findall(r"EFF_(\w+) = (\d+)", self.CXX)}
-        self.assertEqual(eff, ev.EFFECT_IDS)
-        ov = {n.lower(): int(i) for n, i in
-              re.findall(r"OV_(\w+) = (\d+)", self.CXX)}
-        self.assertEqual(ov, ev.OVERLAY_IDS)
-        pal = self.CXX.split("constexpr float PALETTES[", 1)[1].split("};", 1)[0]
-        self.assertEqual(re.findall(r"//\s*(\w+)", pal), list(ev.PALETTE_IDS))
-        # Strike masks are ints 0..3 in C (no enum); the gate must know each.
-        modes = {int(m) for m in re.findall(r"mode == (\d)", self.CXX)} | {0}
-        self.assertEqual(modes, set(ev.FLASH_MODE_IDS.values()))
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
