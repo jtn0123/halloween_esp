@@ -22,7 +22,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -62,7 +62,9 @@ MARKERS = {"parity": {
 }}
 
 
-def esphome_strikes(scene: dict, markers: dict) -> list[tuple]:
+def esphome_strikes(
+    scene: dict[str, Any], markers: dict[str, Any]
+) -> list[tuple[Any, ...]]:
     """Pulse strikes as gen_esphome will write them into the ESPHome script."""
     return sorted(
         (c["t"], tuple(c["targets"] or ZIDS), c["intensity"],
@@ -70,7 +72,9 @@ def esphome_strikes(scene: dict, markers: dict) -> list[tuple]:
         for c in pd.thin_pulses(ge.pulse_cues(scene, markers)))
 
 
-def previewer_strikes(scene: dict, markers: dict, idx: int = 1) -> list[tuple]:
+def previewer_strikes(
+    scene: dict[str, Any], markers: dict[str, Any], idx: int = 1
+) -> list[tuple[Any, ...]]:
     """The same strikes as gen_previewer will hand to the browser."""
     cues = gp.to_previewer(scene, idx, "", markers)["cues"]
     return sorted(
@@ -165,7 +169,7 @@ class TestPulseParity(unittest.TestCase):
 class TestTimelineParity(unittest.TestCase):
     """Same cues is not enough — they have to happen at the same moment."""
 
-    def emitted_times(self, scene: dict, markers: dict) -> list[int]:
+    def emitted_times(self, scene: dict[str, Any], markers: dict[str, Any]) -> list[int]:
         """Replay the ESPHome script's delays to recover absolute cue times."""
         then = yaml.safe_load(
             "script:\n" + "\n".join(ge.emit_scene(scene, ZONES, 1, markers))
@@ -218,7 +222,7 @@ class TestGenPreviewerMain(unittest.TestCase):
                 "  /* @BUNDLE here */\n"
                 "</script>\n")
 
-    DOC: ClassVar[dict] = {"zones": ZONES, "scenes": [
+    DOC: ClassVar[dict[str, Any]] = {"zones": ZONES, "scenes": [
         {**PULSE_SCENE, "id": "one"},
         {"id": "two", "name": "Two", "kind": "ambient", "duration_ms": 100,
          "base": {"door": "candle"}},
@@ -260,7 +264,7 @@ class TestGenPreviewerMain(unittest.TestCase):
             self.assertEqual(gp.main(), 0)
         return gp.HTML.read_text()
 
-    def gen(self, html: str) -> dict:
+    def gen(self, html: str) -> dict[str, Any]:
         body = html.split(gp.START, 1)[1].split(gp.END, 1)[0]
         return dict(json.loads(body.split("=", 1)[1].rsplit(";", 1)[0]))
 
@@ -314,7 +318,9 @@ class TestGenPreviewerMain(unittest.TestCase):
         self.assertFalse(gp.HTML.exists())
 
 
-def dynamic_strikes(side, scene: dict, markers: dict) -> list[tuple]:
+def dynamic_strikes(
+    side: str, scene: dict[str, Any], markers: dict[str, Any]
+) -> list[tuple[Any, ...]]:
     """Strikes including the per-hit dynamics fields (pixels, ms, colour)."""
     if side == "esphome":
         cues = ge.pulse_cues(scene, markers)
@@ -337,12 +343,12 @@ class TestPulseDynamicsParity(unittest.TestCase):
     meet at the same values.
     """
 
-    DYN: ClassVar[dict] = {"synth": "heartbeat", "zone": "door", "intensity": 0.6,
+    DYN: ClassVar[dict[str, Any]] = {"synth": "heartbeat", "zone": "door", "intensity": 0.6,
            "color": [1.0, 0.0, 0.0, 0.0], "color_hot": [1.0, 0.5, 0.0, 0.4],
            "pixels_by_vel": True, "ms": 110,
            "boost_at": 0.85, "boost_targets": ["towerL", "towerR"]}
 
-    def scene(self, **over) -> dict:
+    def scene(self, **over: Any) -> dict[str, Any]:
         return dict(PULSE_SCENE, pulse=[dict(self.DYN, **over)])
 
     def test_colour_blends_by_velocity_identically(self) -> None:

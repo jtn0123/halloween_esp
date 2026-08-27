@@ -19,7 +19,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -72,7 +72,7 @@ class TestLocCli(unittest.TestCase):
     ROWS_OK: ClassVar = [(400, "tools/a.py", False), (460, "tools/b.py", False)]
     ROWS_OVER: ClassVar = [(512, "tools/big.py", True), (100, "tools/ok.py", False)]
 
-    def _main(self, rows, argv):
+    def _main(self, rows: list[Any], argv: list[str]) -> tuple[int, str]:
         orig_measure, orig_argv = check_loc.measure, sys.argv
         check_loc.measure = lambda: rows  # type: ignore[assignment, misc]  # test double
         try:

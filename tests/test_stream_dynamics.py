@@ -15,7 +15,8 @@ from typing import ClassVar
 # Importable both as `tests.test_stream_dynamics` and via discovery from
 # inside the directory — the sibling carries the shared fixtures.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from test_generator_parity import PULSE_SCENE, dynamic_strikes, ge
+import gen_esphome as ge
+from test_generator_parity import PULSE_SCENE, dynamic_strikes
 
 
 class TestStreamDynamicsParity(unittest.TestCase):

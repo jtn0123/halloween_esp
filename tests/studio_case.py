@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -77,7 +78,7 @@ class HostEnv:
 class Quiet(studio.Handler):
     """The real handler logs every request to stderr; tests do not need that."""
 
-    def log_message(self, fmt, *a):
+    def log_message(self, fmt: str, *a: object) -> None:
         pass
 
 
@@ -96,7 +97,7 @@ class ServerCase(unittest.TestCase):
     # teardown) left debris in the user's library whenever a run crashed —
     # the exact thing the env knob exists to prevent (grade report D2).
     sandbox: Path
-    _sandbox_patches: list
+    _sandbox_patches: list[Any]
     wave: Path
     wav: Path
     srv: ThreadingHTTPServer
@@ -159,7 +160,7 @@ class ServerCase(unittest.TestCase):
         method: str,
         path: str,
         data: bytes | None = None,
-        headers: dict | None = None,
+        headers: dict[str, str] | None = None,
     ) -> tuple[int, bytes]:
         r = urllib.request.Request(
             f"http://127.0.0.1:{self.port}{path}",
@@ -174,11 +175,11 @@ class ServerCase(unittest.TestCase):
             with e:  # closed, or unittest warns on GC
                 return e.code, e.read()
 
-    def get_json(self, path: str) -> tuple[int, dict]:
+    def get_json(self, path: str) -> tuple[int, dict[str, Any]]:
         code, body = self.req("GET", path)
         return code, json.loads(body)
 
-    def post_json(self, path: str, obj: dict) -> tuple[int, dict]:
+    def post_json(self, path: str, obj: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         code, body = self.req(
             "POST", path, json.dumps(obj).encode(), {"Content-Type": "application/json"}
         )

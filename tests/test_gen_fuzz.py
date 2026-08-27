@@ -22,6 +22,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -56,11 +57,11 @@ class EsphomeLoader(yaml.SafeLoader):
 EsphomeLoader.add_multi_constructor("!", lambda loader, suffix, node: None)
 
 
-def rand_zones(r: random.Random) -> list[dict]:
+def rand_zones(r: random.Random) -> list[dict[str, Any]]:
     zones = []
     pins = r.sample([14, 16, 18, 5, 6, 9, 10], 3)
     for i, zid in enumerate(ZIDS):
-        z: dict = {"id": zid, "channel": i + 1, "pin": pins[i]}
+        z: dict[str, Any] = {"id": zid, "channel": i + 1, "pin": pins[i]}
         if r.random() < 0.85:
             fx = r.choice(list(rl.FIXTURES))
             z["fixture"] = fx
@@ -71,10 +72,10 @@ def rand_zones(r: random.Random) -> list[dict]:
     return zones
 
 
-def rand_cue(r: random.Random, dur: int) -> dict:
+def rand_cue(r: random.Random, dur: int) -> dict[str, Any]:
     t = r.choice([0, dur, r.randint(0, dur)])
     if r.random() < 0.5:
-        c: dict = {
+        c: dict[str, Any] = {
             "t": t,
             "op": "set",
             "zone": r.choice(ZIDS),
@@ -104,9 +105,9 @@ def rand_cue(r: random.Random, dur: int) -> dict:
     return c
 
 
-def rand_scene(r: random.Random, i: int) -> tuple[dict, dict]:
+def rand_scene(r: random.Random, i: int) -> tuple[dict[str, Any], dict[str, Any]]:
     dur = r.choice([100, 1000, 8000, 30000])
-    scene: dict = {
+    scene: dict[str, Any] = {
         "id": f"fz{i}",
         "name": f"Fuzz {i}",
         "kind": r.choice(["ambient", "triggered", "motion"]),
@@ -123,7 +124,7 @@ def rand_scene(r: random.Random, i: int) -> tuple[dict, dict]:
     if r.random() < 0.7:
         scene["zones"] = {}
         for z in r.sample(ZIDS, r.randint(1, 3)):
-            d: dict = {}
+            d: dict[str, Any] = {}
             if r.random() < 0.5:
                 d["center"] = r.choice(EFFECTS)
             if r.random() < 0.5:
@@ -133,12 +134,12 @@ def rand_scene(r: random.Random, i: int) -> tuple[dict, dict]:
             if r.random() < 0.5:
                 d["phase"] = round(r.random() * 3, 2)
             scene["zones"][z] = d
-    markers: dict = {}
+    markers: dict[str, Any] = {}
     if r.random() < 0.6:
         scene["pulse"] = []
         for s in range(r.randint(1, 3)):
             synth = f"syn{s}"
-            p: dict = {
+            p: dict[str, Any] = {
                 "synth": synth,
                 "intensity": round(r.random(), 2),
                 "decay": r.choice([0.82, 0.9, 0.95]),
@@ -213,7 +214,9 @@ class TestGeneratorFuzz(unittest.TestCase):
             with self.subTest(case=case, seed=SEED):
                 self.check_case(doc, markers, zones)
 
-    def check_case(self, doc: dict, markers: dict, zones: list[dict]) -> None:
+    def check_case(
+        self, doc: dict[str, Any], markers: dict[str, Any], zones: list[dict[str, Any]]
+    ) -> None:
         nz = len(zones)
         for idx, scene in enumerate(doc["scenes"], start=1):
             lines = ge.emit_scene(scene, zones, idx, markers)
