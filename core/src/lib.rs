@@ -11,6 +11,7 @@ pub mod effects;
 pub mod noise;
 pub mod overlay;
 pub mod palette;
+pub mod pulse;
 pub mod wasm;
 
 pub use effects::render;
