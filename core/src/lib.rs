@@ -9,8 +9,10 @@
 
 pub mod effects;
 pub mod noise;
+pub mod overlay;
 pub mod palette;
 
 pub use effects::render;
 pub use noise::{fbm, hash3, hashi, mix32, vnoise};
+pub use overlay::{apply_overlay, flash_gate, Fixture};
 pub use palette::{mix_pal, Rgbw, PALETTES};

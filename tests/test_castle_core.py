@@ -23,12 +23,18 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
+
+import rig_layout
+import scene_schema
+
 CORE = ROOT / "core"
 CXX_SRC = ROOT / "tests" / "cxx" / "parity_dump.cpp"
 
@@ -41,6 +47,33 @@ SEED = os.environ.get("CASTLE_CORE_SEED", "7")
 def f32_bits(v: float) -> int:
     """The float32 the value rounds to, as its bit pattern."""
     return int(struct.unpack("<I", struct.pack("<f", v))[0])
+
+
+def rig_spec() -> str:
+    """The rig as the Rust dump wants it, from the same source rig.h has.
+
+    walk/fall go through the SAME %.6f quantisation gen_esphome bakes into
+    generated/rig.h — the C++ side computes on the rounded values, so the
+    Rust side must too."""
+    doc = scene_schema.parse_show((ROOT / "scenes" / "scenes.yaml").read_text())
+    per = int(doc["hardware"]["pixels_per_zone"])
+    layouts = rig_layout.zone_layouts(doc["zones"], per)
+    parts = []
+    for z in doc["zones"]:
+        lo = layouts[z["id"]]
+        parts.append(
+            ":".join(
+                [
+                    str(lo.n),
+                    str(-1 if lo.center is None else lo.center),
+                    str(lo.fall_steps),
+                    ";".join(f"{v:.6f}" for v in lo.walk),
+                    ";".join(f"{v:.6f}" for v in lo.fall),
+                    "".join("1" if c else "0" for c in lo.core),
+                ]
+            )
+        )
+    return ",".join(parts)
 
 
 def cargo(*args: str) -> subprocess.CompletedProcess[str]:
@@ -159,9 +192,19 @@ class TestCastleCoreParity(unittest.TestCase):
         zones = sorted(
             (r for r in rows if r["kind"] == "zone"), key=lambda r: int(r["zi"])
         )
-        csv = ",".join(str(r["n"]) for r in zones)
+        spec = rig_spec()
+        # The C++ geometry is compiled from generated/rig.h; ours is computed
+        # from the same source (rig_layout over scenes.yaml). The zone lines
+        # prove we are comparing like with like.
+        for z, built in zip(zones, spec.split(",")):
+            n, center, steps = built.split(":")[:3]
+            self.assertEqual(
+                (z["n"], z["center"], z["fall_steps"]),
+                (int(n), int(center), int(steps)),
+                "rig drift between generated/rig.h and rig_layout",
+            )
         rust = subprocess.run(
-            [str(CORE / "target" / "release" / "parity_dump"), SEED, "3000", csv],
+            [str(CORE / "target" / "release" / "parity_dump"), SEED, "3000", spec],
             capture_output=True,
             text=True,
             check=True,
@@ -182,13 +225,20 @@ class TestCastleCoreParity(unittest.TestCase):
                     f32_bits(b[k]),
                     f"seed {SEED} px {i}: input {k} differs",
                 )
-            for ch in range(4):
-                self.assertEqual(
-                    f32_bits(a["base"][ch]),
-                    f32_bits(b["base"][ch]),
-                    f"seed {SEED} px {i} (eff {a['eff']}, t {a['t']}): "
-                    f"base[{ch}] — C++ {a['base'][ch]!r} vs Rust {b['base'][ch]!r}",
-                )
+            for key in ("base", "ovl"):
+                for ch in range(4):
+                    self.assertEqual(
+                        f32_bits(a[key][ch]),
+                        f32_bits(b[key][ch]),
+                        f"seed {SEED} px {i} (eff {a['eff']}, ov {a['ov']}, "
+                        f"t {a['t']}): {key}[{ch}] — "
+                        f"C++ {a[key][ch]!r} vs Rust {b[key][ch]!r}",
+                    )
+            self.assertEqual(
+                f32_bits(a["gate"]),
+                f32_bits(b["gate"]),
+                f"seed {SEED} px {i} (mode {a['mode']}): gate differs",
+            )
 
 
 if __name__ == "__main__":
