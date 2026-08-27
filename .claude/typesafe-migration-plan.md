@@ -229,6 +229,30 @@ voices (wind, heartbeat, creak, shriek, whispers, thunder — they need
 _sweep_lp's blockwise sweeps next), reverb (fftconvolve = pocketfft,
 deliberately deferred), limit, and render_audio's scene mixing.
 
+B3 passes 5-11 (2026-08-27, closing the synth path): the atmosphere
+voices (core/src/atmos.rs — wind/heartbeat/creak/shriek/whispers/
+thunder; the find: numpy's array**2 is x*x where **1.6 is libm pow),
+then two PORTABILITY fixes that improved the Python itself before each
+port. limit left np.convolve (each window went to the BLAS dot — vendor
+summation order, so renders differed across machines) for cumsum
+averages in the new tools/synth_master.py (split at the cap), matched
+by core/src/master.rs with the full tail chain: loop crossfade, end
+fade, normalise, int16 quantise. apply_reverb left pocketfft the same
+way: a defined-order radix-2 FFT (separate re/im arrays so no complex
+kernels fuse; one twiddle table strided per stage — exact, since
+halving the angle and doubling the index round identically) lives in
+synth_master and core/src/fft.rs, 3e-16 from fftconvolve and bit-equal
+cross-language. core/src/scene.rs then renders WHOLE scenes: crc32-
+seeded dice through all twelve voices in score order, takes, gains,
+tails, reverb on the same dice, limiter, normalise — and markers with
+CPython's round(v,3) (= Rust {:.3}: decimal ties-to-even both).
+Closing gate: five scenes straight out of scenes/scenes.yaml render
+byte-identical — f64 buffer, marker dict, and the int16 PCM write_wav
+produces. Still Python in the render path: lame encoding (external),
+the imported-track path (ffmpeg decode + analyze's onset bands — FFT-
+framed, next season), and render_audio's orchestration itself, which
+retires only when the tool calls the crate (a swap, so post-Halloween).
+
 | Loop | Iteration unit | Gate per pass | Stops when |
 |---|---|---|---|
 | B1 core/effects | scaffold → int hash → 1 effect family per pass → WASM face → desk swap | Rust tests + frame-exact vs TS/C++ + page ≤4MB budget | old parity suite retired |
