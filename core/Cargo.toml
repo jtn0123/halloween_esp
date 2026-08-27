@@ -1,0 +1,16 @@
+# castle-core — the show's arithmetic, one implementation (typesafe plan, B1).
+# Zero dependencies on purpose: everything here must compile to a small WASM
+# module for the cue desk and stay auditable against the C++/TS copies it
+# will eventually replace.
+[package]
+name = "castle-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "castle_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "parity_dump"
+path = "src/bin/parity_dump.rs"
