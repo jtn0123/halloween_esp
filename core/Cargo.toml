@@ -30,3 +30,7 @@ path = "src/bin/parity_dump.rs"
 [[bin]]
 name = "synth_dump"
 path = "src/bin/synth_dump.rs"
+
+[[bin]]
+name = "studio"
+path = "src/bin/studio.rs"

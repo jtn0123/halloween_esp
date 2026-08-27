@@ -252,7 +252,7 @@ const PAN_WIN_S: f64 = 0.08;
 const PAN_DEAD: f64 = 0.05;
 
 /// CPython round(v, 2), the pan's spelling — like round3, {:.2} IS it.
-fn round2(v: f64) -> f64 {
+pub fn round2(v: f64) -> f64 {
     format!("{v:.2}").parse().unwrap_or(v)
 }
 

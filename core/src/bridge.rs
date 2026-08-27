@@ -13,6 +13,8 @@ use std::time::Duration;
 pub struct Reply {
     pub code: u16,
     pub body: Vec<u8>,
+    /// The castle's Content-Type, defaulted like castle_link's JSON_MIME.
+    pub ctype: String,
 }
 
 /// Percent-encode one query VALUE or path segment, the firmware's
@@ -89,9 +91,20 @@ pub fn request(
         .nth(1)
         .and_then(|c| c.parse().ok())
         .ok_or_else(|| format!("bad status line from {host}"))?;
+    let ctype = head
+        .lines()
+        .skip(1)
+        .find_map(|l| {
+            let (k, v) = l.split_once(':')?;
+            k.trim()
+                .eq_ignore_ascii_case("content-type")
+                .then(|| v.trim().to_string())
+        })
+        .unwrap_or_else(|| "application/json".to_string());
     Ok(Reply {
         code,
         body: data[split + 4..].to_vec(),
+        ctype,
     })
 }
 
