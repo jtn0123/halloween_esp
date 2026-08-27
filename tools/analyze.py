@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
-from scipy import signal
+from synth_master import _fft
 
 SR = 44100
 HOP = 512  # ~11.6 ms between analysis frames
@@ -127,6 +127,55 @@ def annotate_pan(
     return out
 
 
+def _stft(x: np.ndarray, sr: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """scipy.signal.stft(x, fs=sr, nperseg=WIN, noverlap=WIN-HOP), rebuilt
+    on the defined-order FFT synth_master keeps. Same zero boundary, same
+    end padding, same periodic hann, same 1/win.sum() scale, and the f/t
+    grids spelled to match scipy's BITWISE (t is computed at frame centres
+    and shifted back — (i*HOP + WIN/2)/sr - (WIN/2)/sr, not i*HOP/sr).
+    Why not scipy: pocketfft's rounding is nobody's to reproduce, and
+    castle-core must detect the SAME onsets, not nearly the same."""
+    win = 0.5 - 0.5 * np.cos(2.0 * np.pi * np.arange(WIN) / WIN)
+    x = np.concatenate([np.zeros(WIN // 2), x, np.zeros(WIN // 2)])
+    nseg = -(-(len(x) - WIN) // HOP) + 1
+    total = (nseg - 1) * HOP + WIN
+    x = np.concatenate([x, np.zeros(total - len(x))])
+    scale = 1.0 / win.sum()
+    frames = np.lib.stride_tricks.sliding_window_view(x, WIN)[::HOP]
+    Z = np.zeros((WIN // 2 + 1, nseg), dtype=complex)
+    for i in range(nseg):
+        re = (frames[i] * win).copy()
+        im = np.zeros(WIN)
+        _fft(re, im, False)
+        Z[:, i] = (re[: WIN // 2 + 1] + 1j * im[: WIN // 2 + 1]) * scale
+    f = np.arange(WIN // 2 + 1) * (sr / WIN)
+    idx = np.arange(nseg)
+    t = (idx * HOP + WIN / 2) / sr - (WIN / 2) / sr
+    return f, t, Z
+
+
+def _fir_same(env: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+    """np.convolve(env, kernel, "same") in a defined order — numpy's own
+    hands each window to the BLAS dot, whose summation order is a vendor
+    choice (the same trap limit fell into)."""
+    k = len(kernel)
+    pad = (k - 1) // 2
+    padded = np.concatenate([np.zeros(pad), env, np.zeros(k - 1 - pad)])
+    out = kernel[k - 1] * padded[: len(env)]
+    for j in range(k - 2, -1, -1):
+        out = out + kernel[j] * padded[k - 1 - j : k - 1 - j + len(env)]
+    return np.asarray(out)
+
+
+def _medfilt(env: np.ndarray, k: int) -> np.ndarray:
+    """scipy.signal.medfilt for an odd k: the exact middle element of each
+    zero-padded window — selection, not arithmetic, so trivially portable."""
+    pad = k // 2
+    padded = np.concatenate([np.zeros(pad), env, np.zeros(pad)])
+    frames = np.lib.stride_tricks.sliding_window_view(padded, k)
+    return np.asarray(np.sort(frames, axis=1)[:, pad])
+
+
 def _flux(mag: np.ndarray) -> np.ndarray:
     """Positive spectral flux: how much energy APPEARED since last frame.
 
@@ -152,7 +201,7 @@ def _pick_peaks(
 
     # Running median over ~0.5 s, as the local "normal" level.
     k = max(3, int(0.5 / (HOP / SR)) | 1)
-    local = signal.medfilt(env, kernel_size=k)
+    local = _medfilt(env, k)
     thresh = local + sensitivity * (env.std() + 1e-9)
 
     hits: list[tuple[float, float]] = []
@@ -211,7 +260,7 @@ def analyze(
     # on its downbeat — which is most loops — loses that downbeat.
     pad = WIN
     x = np.concatenate([np.zeros(pad), x])
-    f, t, Z = signal.stft(x, fs=sr, nperseg=WIN, noverlap=WIN - HOP)
+    f, t, Z = _stft(x, sr)
     t = t - pad / sr
     mag = np.abs(Z)
     # Log-compress: onsets are perceived roughly logarithmically, and without
@@ -225,7 +274,7 @@ def analyze(
             continue
         env = _flux(mag[sel])
         # Light smoothing kills frame-level jitter without moving the peaks.
-        env = np.convolve(env, np.hanning(5) / np.hanning(5).sum(), mode="same")
+        env = _fir_same(env, np.hanning(5) / np.hanning(5).sum())
         hits = _pick_peaks(env, t, gap, band_sensitivity(sensitivity, name))
         if hits:
             out[name] = hits
@@ -262,7 +311,7 @@ def envelope(
     """
     if len(x) < WIN * 2:
         return {}
-    f, t, Z = signal.stft(x, fs=sr, nperseg=WIN, noverlap=WIN - HOP)
+    f, t, Z = _stft(x, sr)
     mag = np.abs(Z)
     step = max(1, round((sr / HOP) / hz))
 
@@ -276,7 +325,7 @@ def envelope(
         env = np.sqrt((mag[sel] ** 2).mean(axis=0))
         if env.max() <= 0:
             continue
-        env = np.convolve(env, np.hanning(9) / np.hanning(9).sum(), mode="same")
+        env = _fir_same(env, np.hanning(9) / np.hanning(9).sum())
 
         # Perceptual-ish compression, then scale to the band's own range: what
         # matters is the shape of this material, not its absolute level.
