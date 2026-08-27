@@ -111,6 +111,52 @@ class TestMasterChainParity(unittest.TestCase):
             )
             self.assertEqual(int(crc, 16), zlib.crc32(out.tobytes()), (kind, seed))
 
+    def test_reverb_matches_bit_for_bit(self) -> None:
+        """The stone hall: defined-order FFT convolution both sides, so
+        the wet tail is exact — no tolerances, 2^18-point transforms."""
+        assert CARGO is not None
+        subprocess.run(
+            [
+                CARGO,
+                "build",
+                "--release",
+                "--quiet",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=300,
+        )
+        import synth_master
+
+        umode = numpy_uniform_mode()
+        cases = [(61, 60_000, 0.42), (62, 60_000, 0.15), (63, 20_000, 0.0)]
+        lines = [f"reverb {seed} {n} {wet} {umode}" for seed, n, wet in cases]
+        run = subprocess.run(
+            [str(DUMP)],
+            input="\n".join(lines) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=240,
+        )
+        got = run.stdout.splitlines()
+        self.assertEqual(len(got), len(cases))
+        for (seed, n, wet), reply in zip(cases, got):
+            x = np.random.default_rng(seed).uniform(-0.5, 0.5, n)
+            want = synth_master.apply_reverb(x, wet, np.random.default_rng(seed + 1))
+            buf = np.asarray(want, dtype="<f8")
+            crc, cnt, *probes = reply.split()
+            self.assertEqual(int(cnt), len(buf), (seed, wet))
+            stride = max(1, len(buf) // 16)
+            self.assertEqual(
+                [float(v) for v in probes],
+                [float(buf[i]) for i in range(0, len(buf), stride)],
+                f"reverb probe diverged: seed {seed} wet {wet}",
+            )
+            self.assertEqual(int(crc, 16), zlib.crc32(buf.tobytes()), (seed, wet))
+
     def test_whole_scenes_render_bit_for_bit(self) -> None:
         """The synth-score path of render_scene end to end: crc32-seeded
         dice, twelve-voice dispatch, takes, gains, tails, limiter and

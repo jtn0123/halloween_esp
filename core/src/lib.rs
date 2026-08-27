@@ -10,6 +10,7 @@
 pub mod atmos;
 pub mod bridge;
 pub mod effects;
+pub mod fft;
 pub mod filters;
 pub mod hosts;
 pub mod master;

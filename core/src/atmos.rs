@@ -29,6 +29,10 @@ impl Dice {
             fused,
         }
     }
+    /// A public uniform draw, for harnesses that build test signals.
+    pub fn uni2(&mut self, lo: f64, hi: f64) -> f64 {
+        self.uni(lo, hi)
+    }
     fn uni(&mut self, lo: f64, hi: f64) -> f64 {
         if self.fused {
             self.g.uniform_fma(lo, hi)
@@ -263,6 +267,42 @@ pub fn whispers(dur: f64, d: &mut Dice, m: &Modes) -> (Vec<f64>, Vec<(f64, f64)>
         t0 += wlen + d.uni(0.15, 1.4);
     }
     (buf.iter().map(|v| v * 0.5).collect(), words)
+}
+
+/// synth_master.reverb_ir: decaying noise, drawn from the shared dice.
+pub fn reverb_ir(secs: f64, decay: f64, d: &mut Dice) -> Vec<f64> {
+    let n = (secs * SR_F) as usize;
+    let noise = d.noise(n);
+    noise
+        .iter()
+        .enumerate()
+        .map(|(i, v)| v * (1.0 - i as f64 / n as f64).powf(decay))
+        .collect()
+}
+
+/// synth_master.apply_reverb: the stone hall, through the defined-order
+/// FFT (crate::fft) so the tail matches the Python bit for bit.
+pub fn apply_reverb(x: &[f64], wet: f64, d: &mut Dice) -> Vec<f64> {
+    if wet <= 0.0 {
+        return x.to_vec();
+    }
+    let ir = reverb_ir(3.4, 2.4, d);
+    let mut tail = crate::fft::fft_convolve(x, &ir);
+    tail.truncate(x.len());
+    let peak = tail.iter().fold(0.0f64, |m, v| m.max(v.abs()));
+    if peak > 0.0 {
+        for v in tail.iter_mut() {
+            *v /= peak; // the Python divides; a reciprocal would round off
+        }
+    }
+    let m = x
+        .iter()
+        .map(|v| v.abs() + 1e-9)
+        .fold(f64::NEG_INFINITY, f64::max);
+    x.iter()
+        .zip(&tail)
+        .map(|(xv, tv)| xv + wet * tv * m)
+        .collect()
 }
 
 #[cfg(test)]

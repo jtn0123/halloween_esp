@@ -283,6 +283,17 @@ fn main() {
                     }
                 }
             }
+            "reverb" => {
+                // reverb <seed> <n> <wet> <umode> — noise from seed, the
+                // IR's dice from seed+1, like the Python side of the gate.
+                let n: usize = it.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+                let wet: f64 = it.next().and_then(|v| v.parse().ok()).unwrap_or(0.42);
+                let fused = it.next() == Some("fma");
+                let mut dx = atmos::Dice::new(seed, fused);
+                let x: Vec<f64> = (0..n).map(|_| dx.uni2(-0.5, 0.5)).collect();
+                let mut dr = atmos::Dice::new(seed + 1, fused);
+                println!("{}", digest(&atmos::apply_reverb(&x, wet, &mut dr)));
+            }
             other => println!("ERR unknown op {other}"),
         }
     }
