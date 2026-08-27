@@ -14,17 +14,25 @@ import re
 import sys
 import tomllib
 from pathlib import Path
+from typing import TypedDict
 
 DEVICES = Path(__file__).resolve().parent.parent / "devices.toml"
 
 _IP = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
 
 
+class _Device(TypedDict):
+    """One devices.toml entry, normalized: the host plus its fallbacks."""
+
+    host: str
+    fallbacks: list[str]
+
+
 def _table() -> dict[str, str]:
     return {name: cfg["host"] for name, cfg in _entries().items()}
 
 
-def _entries() -> dict[str, dict]:
+def _entries() -> dict[str, _Device]:
     """devices.toml's device tables: name -> {host, fallbacks}. Missing or
     malformed file means no devices, not a traceback — the studio runs
     castle-less by design."""
@@ -32,7 +40,7 @@ def _entries() -> dict[str, dict]:
         doc = tomllib.loads(DEVICES.read_text())
     except (OSError, tomllib.TOMLDecodeError):
         return {}
-    out: dict[str, dict] = {}
+    out: dict[str, _Device] = {}
     for name, cfg in doc.items():
         if isinstance(cfg, dict) and cfg.get("host"):
             out[name] = {

@@ -75,7 +75,7 @@ ignore_missing_imports = true
 # loop pass at a time, easy to hard, stays-list first — and never leave. The
 # per-module-legal half of --strict; warn_redundant_casts is global-only.
 [[tool.mypy.overrides]]
-module = ["netguard", "check_loc", "build_paths"]
+module = ["netguard", "check_loc", "build_paths", "manifest", "hosts"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_decorators = true

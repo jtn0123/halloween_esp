@@ -31,9 +31,15 @@ import fcntl
 import json
 import os
 import time
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+# One track's manifest entry. A loose JSON shape today; the A4 ratchet pass
+# turns it into a TypedDict once the studio's readers are ready for it.
+Entry = dict[str, Any]
 
 ROOT = Path(__file__).resolve().parent.parent
 # The manifest lives beside the tracks it describes, so it follows the same
@@ -43,7 +49,7 @@ PATH = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks")) / "tracks.json
 
 
 @contextmanager
-def _locked():
+def _locked() -> Iterator[None]:
     """Cross-process lock for read-modify-write.
 
     The studio server (forget) and its import_track children (record) both
@@ -59,7 +65,7 @@ def _locked():
             fcntl.flock(fh, fcntl.LOCK_UN)
 
 
-def load() -> dict:
+def load() -> dict[str, Entry]:
     if not PATH.exists():
         return {}
     try:
@@ -78,7 +84,7 @@ def load() -> dict:
         return {}
 
 
-def save(data: dict) -> None:
+def save(data: dict[str, Entry]) -> None:
     PATH.parent.mkdir(exist_ok=True)
     # Write-then-rename so a crash mid-write can never truncate the real
     # file: os.replace is atomic on the same filesystem.
@@ -92,15 +98,15 @@ def record(
     *,
     source: str,
     title: str = "",
-    opts: dict | None = None,
-    audio: dict | None = None,
-    onsets: dict | None = None,
+    opts: dict[str, Any] | None = None,
+    audio: dict[str, Any] | None = None,
+    onsets: dict[str, Any] | None = None,
     notes: str = "",
-) -> dict:
+) -> Entry:
     with _locked():
         data = load()
         prev = data.get(tid, {})
-        entry = {
+        entry: Entry = {
             "source": source,
             "title": title or prev.get("title", ""),
             # Local wall clock on purpose: single-machine library, human-read
@@ -117,11 +123,11 @@ def record(
     return entry
 
 
-def get(tid: str) -> dict | None:
+def get(tid: str) -> Entry | None:
     return load().get(tid)
 
 
-def patch(tid: str, **fields: dict) -> None:
+def patch(tid: str, **fields: Any) -> None:
     """Merge a few fields into one entry, leaving everything else alone.
 
     The studio fills in `audio`/`onsets` for a track whose entry lacks them
