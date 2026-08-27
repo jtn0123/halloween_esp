@@ -14,7 +14,6 @@ absolute timestamps, because ESPHome scripts step forward with `delay:`.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -32,7 +31,7 @@ from gen_show import emit_show_playlist
 from pulse_dynamics import round3, section_gates, thin_pulses
 from pulse_expand import DEFAULT_DECAY, WHITE, pulse_cues
 from rig_layout import Layout, zone_layouts
-from scene_schema import load_show
+from scene_schema import load_markers, load_show
 from scene_schema import validate as validate_scene
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -305,7 +304,7 @@ def main() -> int:
     out.append("")
     out.append("script:")
 
-    markers = json.loads(MARKERS.read_text()) if MARKERS.exists() else {}
+    markers = load_markers(MARKERS)
     if not markers:
         print("note: no audio/markers.json — run `make audio` first; no beat pulses")
     # The same checks the studio runs before a splice (scene_schema), so a

@@ -20,6 +20,7 @@ interprets for itself — this is the shape of the block, not the show.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any, TypedDict, cast
@@ -114,6 +115,23 @@ class ShowDoc(TypedDict, total=False):
     zones: list[Zone]
     palette: dict[str, list[float]]
     scenes: list[Scene]
+
+
+#: One detected hit in audio/markers.json: [t_ms, velocity] — a third
+#: element marks a re-pinned click. Times are ms (import_scene's Hits are
+#: the analyser's seconds; this is the rendered file's timeline).
+Hit = list[float]
+
+#: audio/markers.json, whole: scene id -> marker stream -> hits.
+Markers = dict[str, dict[str, list[Hit]]]
+
+
+def load_markers(path: Path) -> Markers:
+    """audio/markers.json, typed. Missing file means no beat pulses — the
+    generators say so themselves and carry on."""
+    if not path.exists():
+        return {}
+    return cast(Markers, json.loads(path.read_text()))
 
 
 def parse_show(text: str) -> ShowDoc:

@@ -38,6 +38,7 @@ from typing import Any
 
 import build_paths as bp
 import pulse_dynamics as pd
+import scene_schema
 import yaml
 from effect_vocab import KNOWN_EFFECTS as KNOWN_EFFECTS  # one vocabulary, re-exported
 
@@ -362,7 +363,7 @@ PAGE_BUDGET_KB = 4 * 1024
 def main() -> int:
     raw = SRC.read_text()
     doc = yaml.safe_load(raw)
-    markers = json.loads(MARKERS_FILE.read_text()) if MARKERS_FILE.exists() else {}
+    markers = scene_schema.load_markers(MARKERS_FILE)
     scenes = [
         to_previewer(s, i, raw, markers) for i, s in enumerate(doc["scenes"], start=1)
     ]
