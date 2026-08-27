@@ -1,7 +1,7 @@
 /**
  * The audio ↔ transport contract, under node at fake-clock speed.
  *
- *     node test/transport_audio.mjs      (after `npm run test:desk` builds dist/)
+ *     (runs bundled from web/dist — see package.json "test:desk")
  *
  * Everything the desk promises about sound, asserted against the shipped
  * modules rather than a retelling of them:
@@ -18,22 +18,25 @@
 import {
   clock, installDom, media, sounding, running, el, fakeSynth, scene,
   makeAsserter,
-} from "./desk_harness.mjs";
+} from "./desk_harness.js";
 
 clock.install();
 installDom();
 
-const { RenderedAudio } = await import("../dist/audio.mjs");
-const { Transport } = await import("../dist/transport.mjs");
-const { createPreview } = await import("../dist/preview.mjs");
-const { createState } = await import("../dist/show.mjs");
+// Imported AFTER the fakes are installed — module init must see them.
+const { RenderedAudio } = await import("../src/audio.js");
+const { Transport } = await import("../src/transport.js");
+const { createPreview } = await import("../src/preview.js");
+const { createState } = await import("../src/show.js");
+type TransportDeps = ConstructorParameters<typeof Transport>[0];
 
 const { ok, done } = makeAsserter("transport/audio");
 
 const A = scene({ id: "a", dur: 5000 });
 const B = scene({ id: "b", dur: 8000, loop: true });
 const SCENES = [A, B];
-const AUDIO = { a: "data:audio/mpeg;base64,AAAA", b: "data:audio/mpeg;base64,BBBB" };
+const AUDIO: Record<string, string> =
+  { a: "data:audio/mpeg;base64,AAAA", b: "data:audio/mpeg;base64,BBBB" };
 
 /* ── RenderedAudio alone ────────────────────────────────────────────── */
 {
@@ -48,12 +51,12 @@ const AUDIO = { a: "data:audio/mpeg;base64,AAAA", b: "data:audio/mpeg;base64,BBB
   ok(media.length === 0, "no element exists before the first audition (G5)");
   ok(r.play(A, 0) === true, "play() accepts a scene it has a file for");
   ok(r.play(scene({ id: "nope" })) === false, "play() refuses a scene it has no file for");
-  const elA = media.find(a => a.src === AUDIO.a);   // born on first play
+  const elA = media.find(a => a.src === AUDIO.a)!;   // born on first play
   ok(elA.paused && elA.log.length === 0, "nothing starts before the latency elapses");
   clock.advance(119);
   ok(elA.paused, "still silent one ms before the modelled latency");
   clock.advance(1);
-  ok(!elA.paused && elA.log[0][0] === 120,
+  ok(!elA.paused && elA.log[0]![0] === 120,
      `the file starts exactly LATENCY ms after play() (${elA.log[0]?.[0]})`);
   ok(elA.muted === true && sounding() === 0,
      "playing while muted runs the file without a sound");
@@ -73,7 +76,7 @@ const AUDIO = { a: "data:audio/mpeg;base64,AAAA", b: "data:audio/mpeg;base64,BBB
   clock.advance(29);
   ok(elA.paused, "(control) not yet at 29 ms");
   clock.advance(1);
-  ok(!elA.paused && elA.log.at(-1)[0] === t1 + 30,
+  ok(!elA.paused && elA.log.at(-1)![0] === t1 + 30,
      "a lower latency starts the file sooner");
   ok(Math.abs(elA.currentTime - 1.5) < 1e-9, "play(from) seeks the element to fromMs");
 
@@ -110,7 +113,7 @@ const AUDIO = { a: "data:audio/mpeg;base64,AAAA", b: "data:audio/mpeg;base64,BBB
   r.play(A, 0);
   clock.advance(10);
   r.play(B, 0);
-  const elB = media.find(a => a.src === AUDIO.b);   // born on ITS first play
+  const elB = media.find(a => a.src === AUDIO.b)!;   // born on ITS first play
   clock.advance(100);
   ok(elA.paused && !elB.paused, "a second play() inside the window supersedes the first");
   ok(elA.src === "", "…and the superseded element is released, buffer and all (G5)");
@@ -123,20 +126,22 @@ media.length = 0;
   const rendered = new RenderedAudio(AUDIO);
   const synth = fakeSynth();
   const state = createState(A, clock.now());
-  let mode = "rendered";
+  let mode: "rendered" | "synth" = "rendered";
   let external = false;
-  /** @type {{stopExternal: number, sceneChange: (string|null)[], blackout: number}} */
-  const calls = { stopExternal: 0, sceneChange: [], blackout: 0 };
+  const calls: { stopExternal: number; sceneChange: string[]; blackout: number } =
+    { stopExternal: 0, sceneChange: [], blackout: 0 };
   const tr = new Transport({
-    state, rendered, synth,
+    state, rendered,
+    synth: synth as unknown as TransportDeps["synth"],
     getMode: () => mode,
     onSceneChange: (sc) => calls.sceneChange.push(sc.id),
     stopExternal: () => { calls.stopExternal++; external = false; },
     isExternalPlaying: () => external,
     onBlackout: () => calls.blackout++,
   });
-  const label = () => el("playLabel").textContent;
-  const elOf = (id) => media.find(a => a.src === AUDIO[id]);
+  const label = (): string => el("playLabel").textContent;
+  const elOf = (id: string): FakeMedia | undefined => media.find(a => a.src === AUDIO[id]);
+  type FakeMedia = (typeof media)[number];
 
   tr.loadScene(A);
   ok(!state.running && running() === 0, "loadScene does not play");
@@ -162,7 +167,7 @@ media.length = 0;
   ok(synth.log.includes("arm"), "play() arms the synth (the gesture is the consent)");
   ok(running() === 0, "no file runs in the same tick as play()");
   clock.advance(90);
-  ok(running() === 1 && elOf("a").log.at(-1)[0] === t0 + 90,
+  ok(running() === 1 && elOf("a")!.log.at(-1)![0] === t0 + 90,
      "the file starts LATENCY ms after the lights did");
   ok(sounding() === 0 && rendered.muted,
      "play() does not unmute — muted-by-default survives Play");
@@ -173,12 +178,12 @@ media.length = 0;
   // Scene change while playing keeps playing — on the NEW file. (Grab the
   // old element's handle first: the release that stops it also clears its
   // src, so elOf cannot find it afterwards — that is the release working.)
-  const fileA = elOf("a");
+  const fileA = elOf("a")!;
   tr.loadScene(B, { play: state.running });
   ok(state.running, "loading a scene while playing keeps playing");
   ok(fileA.paused && fileA.src === "", "…the old file stops and is released (G5)");
   clock.advance(90);
-  ok(!elOf("b").paused && elOf("b").loop === true, "…and the new file runs, looping as the scene says");
+  ok(!elOf("b")!.paused && elOf("b")!.loop === true, "…and the new file runs, looping as the scene says");
   ok(calls.sceneChange.at(-1) === "b", "the host is told about the new scene");
   ok(state.held === 0 && tr.elapsed() < 100, "the clock restarts at the head of the new scene");
 
@@ -194,7 +199,7 @@ media.length = 0;
   const held = state.held;
   tr.toggle();
   clock.advance(90);
-  ok(state.running && Math.abs(elOf("b").currentTime - held / 1000) < 1e-6,
+  ok(state.running && Math.abs(elOf("b")!.currentTime - held / 1000) < 1e-6,
      "resume restarts the file where it was held");
 
   // A row preview sounding + Pause showing: toggle pauses THAT, not the scene.
@@ -216,7 +221,8 @@ media.length = 0;
   tr.blackout();
   ok(!state.running && state.held === 0, "blackout stops the clock at zero");
   ok(running() === 0, "blackout stops every file");
-  ok(["towerL", "towerR", "door"].every(z => state.eff[z] === "off"), "blackout turns every zone off");
+  ok((["towerL", "towerR", "door"] as const).every(z => state.eff[z] === "off"),
+     "blackout turns every zone off");
   ok(synth.log.at(-1) === "stopWind" && synth.log.includes("newShowBus"),
      "blackout drops the synth bus and the wind");
   ok(calls.blackout === 2, "blackout tells the host every time (mirroring hook)");
@@ -251,15 +257,15 @@ media.length = 0;
 /* ── The row preview ────────────────────────────────────────────────── */
 media.length = 0;
 {
-  /** @type {{change: (string|null)[], err: string[], claim: number}} */
-  const ev = { change: [], err: [], claim: 0 };
+  const ev: { change: (string | null)[]; err: string[]; claim: number } =
+    { change: [], err: [], claim: 0 };
   const p = createPreview({
     onChange: (id) => ev.change.push(id),
     onError: (m) => ev.err.push(m),
     onClaim: () => ev.claim++,
   });
-  const a = media[0];
-  ok(a?.muted === true && a.paused, "the preview element is built muted and stopped");
+  const a = media[0]!;
+  ok(a.muted === true && a.paused, "the preview element is built muted and stopped");
   ok(p.playing() === null, "nothing plays at first");
 
   p.toggle("one");
@@ -297,7 +303,7 @@ media.length = 0;
   ok(p.playing() === null && a.muted === true, "ended stops and re-mutes");
   p.toggle("three");
   a.emit("error");
-  ok(p.playing() === null && /three/.test(ev.err.at(-1)), "a load error names the track");
+  ok(p.playing() === null && /three/.test(ev.err.at(-1) ?? ""), "a load error names the track");
   a.emit("error");
   ok(ev.err.filter(m => /three/.test(m)).length === 1,
      "the teardown error (src empty) is not reported as a failure");

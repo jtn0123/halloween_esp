@@ -11,7 +11,7 @@ individual checks say how each one works.
 
 | Layer | Copies | Checked by |
 |---|---|---|
-| Pulse dynamics (tempo, accents, pan, section gates) | `tools/pulse_dynamics.py` (both Python generators) · `web/src/track_lights.ts` | `tests/test_stream_dynamics.py`, `web/test/track_lights_logic.mjs`, `web/test/fuzz_parity.mjs` + `tools/fuzz_check.py` |
+| Pulse dynamics (tempo, accents, pan, section gates) | `tools/pulse_dynamics.py` (both Python generators) · `web/src/track_lights.ts` | `tests/test_stream_dynamics.py`, `web/test/track_lights_logic.ts`, `web/test/fuzz_parity.mjs` + `tools/fuzz_check.py` |
 | Pulse → cue merge (zone routing, round-robin, velocity rounding) | `tools/gen_esphome.py` · `tools/gen_previewer.py` | `tests/test_generator_parity.py`, `tests/test_gen_fuzz.py` |
 | Effect maths (colour per pixel per frame) | `firmware/castle_effects.h` (C++, float32) · `web/src/effects.ts` (TS, double) | `web/test/firmware_parity.mjs` reading `tests/cxx/parity_dump.cpp` (host-compiled); `web/test/effects_equivalence.ts` |
 | Rig geometry (which pixel is where, what `core` means) | `tools/rig_layout.py` → `firmware/generated/rig.h` · `web/src/rig.ts` | `web/test/rig_parity.mjs`, `tests/test_rig_layout.py` |

@@ -2,7 +2,7 @@
 
 Split from test_generator_parity.py purely for the 500-line cap; same
 duplication contract — these numbers are the numbers
-web/test/track_lights_logic.mjs pins the TypeScript copy to.
+web/test/track_lights_logic.ts pins the TypeScript copy to.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ class TestStreamDynamicsParity(unittest.TestCase):
     """Phase-2 stream dynamics: pan routing, tempo tails, local accents.
 
     Same duplication contract as TestPulseDynamicsParity — the numbers here
-    are the numbers web/test/track_lights_logic.mjs pins the TS copy to.
+    are the numbers web/test/track_lights_logic.ts pins the TS copy to.
     """
 
     MOVE: ClassVar[dict] = {

@@ -5,7 +5,7 @@ tempo (#3), local accents (#8), pan routing threshold (#7), and section
 gating (#5/#9) — the rules gen_esphome.py and gen_previewer.py apply
 identically to every pulse stream. One Python copy here; the deliberate
 duplicate is web/src/track_lights.ts, pinned digit-for-digit by
-tests/test_stream_dynamics.py and web/test/track_lights_logic.mjs.
+tests/test_stream_dynamics.py and web/test/track_lights_logic.ts.
 """
 
 from __future__ import annotations
