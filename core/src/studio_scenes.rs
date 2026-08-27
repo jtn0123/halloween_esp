@@ -341,10 +341,12 @@ pub fn rebuild(app: &App) -> (bool, String) {
     (true, tail4000(&log))
 }
 
-/// studio_publish.publish, the castle-less arm — the sd_sync legs arrive
-/// with the publish pass.
+/// studio_publish.publish — push scene tracks and the lean page to the
+/// castle through tools/sd_sync.py (whose repo-glob conveniences stay
+/// Python by design), and report the one thing a push cannot fix:
+/// scenes the RUNNING firmware was not built with.
 pub fn publish_body(app: &App) -> (Json, u16) {
-    if studio_relay::status(app).is_none() {
+    let Some(st) = studio_relay::status(app) else {
         return (
             Json::Obj(vec![
                 ("ok".into(), Json::Bool(false)),
@@ -356,16 +358,74 @@ pub fn publish_body(app: &App) -> (Json, u16) {
             ]),
             502,
         );
+    };
+    let host = st
+        .get("bridged")
+        .and_then(Json::as_str)
+        .map(str::to_string)
+        .or_else(|| studio_relay::castle_host(app))
+        .unwrap_or_default();
+    let mut log = String::new();
+    for cmd in ["scenes", "site"] {
+        let mut c = Command::new(py(&app.root));
+        c.arg(app.root.join("tools").join("sd_sync.py"))
+            .arg(&host)
+            .arg(cmd);
+        let (ok, out) = run(c, 900);
+        log.push_str(&out);
+        if !ok {
+            return (
+                Json::Obj(vec![
+                    ("ok".into(), Json::Bool(false)),
+                    ("pushed".into(), Json::Bool(false)),
+                    ("log".into(), Json::Str(tail4000(&log))),
+                    ("error".into(), Json::Str(format!("sd_sync {cmd} failed"))),
+                ]),
+                500,
+            );
+        }
     }
+    let stale = needs_firmware(app, &st);
+    let note = if stale.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "{} scene(s) missing from the running firmware — make sd-build,              stop audio, then OTA",
+            stale.len()
+        )
+    };
     (
         Json::Obj(vec![
-            ("ok".into(), Json::Bool(false)),
-            ("pushed".into(), Json::Bool(false)),
+            ("ok".into(), Json::Bool(true)),
+            ("pushed".into(), Json::Bool(true)),
+            ("log".into(), Json::Str(tail4000(&log))),
             (
-                "error".into(),
-                Json::Str("the publish legs arrive with their pass".into()),
+                "needs_firmware".into(),
+                Json::Arr(stale.into_iter().map(Json::Str).collect()),
             ),
+            ("note".into(), Json::Str(note)),
         ]),
-        500,
+        200,
     )
+}
+
+/// studio_publish.needs_firmware — scene ids in scenes.yaml that the
+/// castle's firmware does not know; empty too when the firmware predates
+/// the `scenes` field, because guessing would be worse than silence.
+fn needs_firmware(app: &App, st: &Json) -> Vec<String> {
+    let fw: Vec<String> = st
+        .get("scenes")
+        .and_then(Json::as_str)
+        .unwrap_or("")
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    if fw.is_empty() {
+        return Vec::new();
+    }
+    scene_ids(&app.scenes)
+        .into_iter()
+        .filter(|s| !fw.contains(s))
+        .collect()
 }

@@ -234,6 +234,11 @@ class StudioPair(unittest.TestCase):
     """Base fixture: the two servers over twin copies of one sandbox."""
 
     HOST_ENV = ""  # explicitly castle-less unless a subclass says otherwise
+    #: Per-side overrides, for suites that give each server its own castle
+    #: (a shared emulator would let one server's push mark the other's
+    #: files "unchanged, skipped" and split the logs).
+    HOST_ENV_PY: str | None = None
+    HOST_ENV_RS: str | None = None
 
     tmp: ClassVar[Path]
     py_tracks: ClassVar[Path]
@@ -272,7 +277,8 @@ class StudioPair(unittest.TestCase):
         cls.py_scenes.write_text(scenes_text)
         cls.rs_scenes.write_text(scenes_text)
         cls.py_port, cls.rs_port = free_port(), free_port()
-        env = {**os.environ, "CASTLE_HOST": cls.HOST_ENV}
+        env = {**os.environ}
+        env.pop("CASTLE_HOST", None)
         cls.procs = [
             subprocess.Popen(
                 [
@@ -283,6 +289,9 @@ class StudioPair(unittest.TestCase):
                 ],
                 env={
                     **env,
+                    "CASTLE_HOST": cls.HOST_ENV_PY
+                    if cls.HOST_ENV_PY is not None
+                    else cls.HOST_ENV,
                     "CASTLE_TRACKS": str(cls.py_tracks),
                     "CASTLE_SCENES": str(cls.py_scenes),
                     "CASTLE_BUILD": str(cls.py_build),
@@ -294,6 +303,9 @@ class StudioPair(unittest.TestCase):
                 [str(BIN), str(cls.rs_port), "--localhost"],
                 env={
                     **env,
+                    "CASTLE_HOST": cls.HOST_ENV_RS
+                    if cls.HOST_ENV_RS is not None
+                    else cls.HOST_ENV,
                     "CASTLE_TRACKS": str(cls.rs_tracks),
                     "CASTLE_SCENES": str(cls.rs_scenes),
                     "CASTLE_BUILD": str(cls.rs_build),

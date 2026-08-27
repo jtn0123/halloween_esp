@@ -101,7 +101,73 @@ class EmulatorRelay(StudioPair):
 
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
+class PublishToTwinCastles(StudioPair):
+    """Each server publishes toward its OWN emulator. sd_sync's host
+    validation currently refuses a nonstandard-port castle (the emulator
+    chain), so what parity can hold today is the FAILURE: both servers
+    spawn the same sd_sync, get the same refusal, and answer the same
+    body. The success path runs on the porch, against port 80."""
+
+    emu_py: ClassVar[castle_emu.CastleEmu]
+    emu_rs: ClassVar[castle_emu.CastleEmu]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.emu_py = castle_emu.CastleEmu(port=0, sd_dir=None, scenes=["vigil"])
+        cls.emu_rs = castle_emu.CastleEmu(port=0, sd_dir=None, scenes=["vigil"])
+        cls.emu_py.start()
+        cls.emu_rs.start()
+        cls.HOST_ENV_PY = f"127.0.0.1:{cls.emu_py.port}"
+        cls.HOST_ENV_RS = f"127.0.0.1:{cls.emu_rs.port}"
+        super().setUpClass()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        super().tearDownClass()
+        for emu in (cls.emu_py, cls.emu_rs):
+            emu.shutdown()
+            emu.server_close()
+
+    def masked_all(self, text: str, side: str) -> str:
+        host = self.HOST_ENV_PY if side == "py" else self.HOST_ENV_RS
+        assert host is not None
+        return self.masked(text, side).replace(host, "<CASTLE>")
+
+    def cards_match(self) -> None:
+        import gzip
+
+        assert self.emu_py.sd_dir is not None and self.emu_rs.sd_dir is not None
+        pa, pb = Path(self.emu_py.sd_dir), Path(self.emu_rs.sd_dir)
+        la = sorted(str(f.relative_to(pa)) for f in pa.rglob("*") if f.is_file())
+        lb = sorted(str(f.relative_to(pb)) for f in pb.rglob("*") if f.is_file())
+        self.assertEqual(la, lb)
+        for rel in la:
+            da, db = (pa / rel).read_bytes(), (pb / rel).read_bytes()
+            if rel.endswith(".gz"):
+                # gzip stamps its mtime into the header; the content is
+                # the contract.
+                da, db = gzip.decompress(da), gzip.decompress(db)
+            self.assertEqual(da, db, rel)
+
+    def test_publish_reports_alike_even_in_refusal(self) -> None:
+        a, b = self.both("/studio/publish", method="POST")
+        self.assertEqual(a[0], 500, a[2][:400])
+        da, db = self.parsed(a), self.parsed(b)
+        assert isinstance(da, dict) and isinstance(db, dict)
+        la, lb = str(da.pop("log")), str(db.pop("log"))
+        self.assertEqual(da, db)
+        self.assertEqual(self.masked_all(la, "py"), self.masked_all(lb, "rs"))
+        self.assertEqual(da["error"], "sd_sync scenes failed")
+        self.cards_match()  # nothing landed on either card
+
+
+@unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
 class MediaAndOps(StudioPair):
+    def test_00_publish_without_a_castle(self) -> None:
+        a, b = self.both("/studio/publish", method="POST")
+        self.assertEqual(a[0], 502)
+        self.assertEqual(a[2], b[2])
+
     def test_01_probe_speaks_with_one_voice(self) -> None:
         hdrs = {"Content-Type": "application/json"}
         for url in ("notalink", "https://127.0.0.1:1/never.wav"):

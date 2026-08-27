@@ -380,6 +380,15 @@ fn post(app: &Arc<App>, req: &Request) -> Reply {
             if ok { 200 } else { 500 },
         );
     }
+    if path == "/studio/publish" {
+        // The last mile: sd_sync scenes + lean site + what still needs
+        // an OTA; rebuild() runs it too when a castle answers.
+        let (out, code) = {
+            let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+            ssc::publish_body(app)
+        };
+        return Reply::Json(out, code);
+    }
     if path.starts_with(API) {
         return relay(app, "POST", &req.target, &req.body);
     }
