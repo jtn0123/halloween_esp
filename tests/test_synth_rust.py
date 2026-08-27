@@ -129,6 +129,81 @@ class TestSynthRngParity(unittest.TestCase):
         # 13 seeds x (200 raws + 8 ranges x 50 uniforms)
         self.assertEqual(checked, len(seeds) * (200 + len(RANGES) * 50))
 
+    def test_note_voices_match_bit_for_bit(self) -> None:
+        """pipe/piano/box, whole buffers: the Rust digest (crc32 of the f64
+        bytes + 16 strided probes) must equal one computed from synth.py's
+        numpy output. A probe mismatch names the sample; a crc mismatch
+        with equal probes means a bit flipped somewhere between them."""
+        assert CARGO is not None
+        subprocess.run(
+            [
+                CARGO,
+                "build",
+                "--release",
+                "--quiet",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=300,
+        )
+        import synth
+
+        r = random.Random(int(os.environ.get("CASTLE_SYNTH_SEED", "7")))
+        cases: list[tuple[str, float, float, float, float]] = [
+            # the notes the pieces actually play
+            ("pipe", synth.nt(-19), 7.5, 0.078, synth.STOPS),
+            ("pipe", synth.nt(-31), 25.5, 0.060, synth.STOPS),
+            ("piano", synth.nt(-24), 1.35, 0.22, 0.0),
+            ("piano", synth.nt(-5), 0.75, 0.07, 0.0),
+            ("box", synth.nt(24), 1.9, 0.17, 0.0),
+            ("box", synth.nt(12), 1.7, 0.15, 0.0),
+        ]
+        cases.extend(
+            (
+                r.choice(["pipe", "piano", "box"]),
+                synth.nt(r.randrange(-31, 25)),
+                round(r.uniform(0.3, 3.0), 3),
+                round(r.uniform(0.02, 0.5), 3),
+                round(r.uniform(0.1, 0.9), 3),
+            )
+            for _ in range(12)
+        )
+        lines = [
+            f"note {v} {fmt(f)} {fmt(dur)} {fmt(vel)} {fmt(stops)}"
+            for v, f, dur, vel, stops in cases
+        ]
+        run = subprocess.run(
+            [str(DUMP)],
+            input="\n".join(lines) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=120,
+        )
+        got = run.stdout.splitlines()
+        self.assertEqual(len(got), len(cases))
+        for case, reply in zip(cases, got):
+            voice, f, dur, vel, stops = case
+            if voice == "pipe":
+                ref = synth.pipe(f, dur, vel, stops)
+            elif voice == "piano":
+                ref = synth.piano(f, dur, vel)
+            else:
+                ref = synth.box(f, dur, vel)
+            buf = np.asarray(ref, dtype="<f8")
+            crc, n, *probes = reply.split()
+            self.assertEqual(int(n), len(buf), case)
+            stride = max(1, len(buf) // 16)
+            want_probes = [float(buf[i]) for i in range(0, len(buf), stride)]
+            self.assertEqual(
+                [float(p) for p in probes], want_probes, f"probe diverged: {case}"
+            )
+            self.assertEqual(
+                int(crc, 16), zlib.crc32(buf.tobytes()), f"crc diverged: {case}"
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
