@@ -260,7 +260,10 @@ class TestMasterChainParity(unittest.TestCase):
         for sc, reply in zip(scenes, got):
             want_buf, want_marks = render_audio.render_scene(sc, {"sample_rate": SR})
             buf = np.asarray(want_buf, dtype="<f8")
-            head, _, mtext = reply.partition(" | ")
+            head, _, rest2 = reply.partition(" | ")
+            mtext, _, pcm_crc = rest2.partition(" | ")
+            pcm = (np.clip(buf, -1.0, 1.0) * 32767.0).astype("<i2")
+            self.assertEqual(int(pcm_crc, 16), zlib.crc32(pcm.tobytes()), sc["id"])
             crc, cnt, *probes = head.split()
             self.assertEqual(int(cnt), len(buf), sc["id"])
             stride = max(1, len(buf) // 16)
@@ -270,6 +273,88 @@ class TestMasterChainParity(unittest.TestCase):
                 f"scene probe diverged: {sc['id']}",
             )
             self.assertEqual(int(crc, 16), zlib.crc32(buf.tobytes()), sc["id"])
+            got_marks: dict[str, list[list[float]]] = {}
+            for chunk in mtext.split(";"):
+                if not chunk:
+                    continue
+                name, _, pts = chunk.partition(">")
+                got_marks[name] = [
+                    [int(a), float(b)]
+                    for a, b in (p.split(":") for p in pts.split(",") if p)
+                ]
+            self.assertEqual(got_marks, want_marks, sc["id"])
+
+    def test_the_real_show_renders_byte_identical(self) -> None:
+        """The closing gate of B3's synth path: five scenes straight out of
+        scenes/scenes.yaml — storm, approach, visitation, ballroom, crypt,
+        between them every voice class, takes, loops and the default
+        reverb — rendered by castle-core and held to render_audio's f64
+        buffer, marker dict AND int16 PCM, byte for byte. (The other three
+        synth scenes render the same voices for longer; runtime is why
+        they sit out.)"""
+        assert CARGO is not None
+        subprocess.run(
+            [
+                CARGO,
+                "build",
+                "--release",
+                "--quiet",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            capture_output=True,
+            check=True,
+            timeout=300,
+        )
+        import render_audio
+        import yaml
+        from synth_probes import kernel_modes
+
+        modes = kernel_modes()
+        umode = numpy_uniform_mode()
+        doc = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
+        wanted = {"storm", "approach", "visitation", "ballroom", "crypt"}
+        scenes = [sc for sc in doc["scenes"] if sc["id"] in wanted]
+        self.assertEqual(len(scenes), 5, "scenes.yaml no longer has these ids")
+
+        def ev_arg(ev: dict[str, object]) -> str:
+            return (
+                f"{ev['synth']}:{ev['t']}:{ev.get('gain', 1.0)}:"
+                f"{ev.get('dur', '-')}:{ev.get('take', '-')}"
+            )
+
+        lines = [
+            f"scene {sc['id']} {sc['duration_ms']} {sc.get('reverb', 0.42)} "
+            f"{1 if sc.get('loop') else 0} {umode} {modes} "
+            + ";".join(ev_arg(e) for e in sc["score"])
+            for sc in scenes
+        ]
+        run = subprocess.run(
+            [str(DUMP)],
+            input="\n".join(lines) + "\n",
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=600,
+        )
+        got = run.stdout.splitlines()
+        self.assertEqual(len(got), len(scenes))
+        for sc, reply in zip(scenes, got):
+            want_buf, want_marks = render_audio.render_scene(sc, {"sample_rate": SR})
+            buf = np.asarray(want_buf, dtype="<f8")
+            head, _, rest2 = reply.partition(" | ")
+            mtext, _, pcm_crc = rest2.partition(" | ")
+            crc, cnt, *probes = head.split()
+            self.assertEqual(int(cnt), len(buf), sc["id"])
+            stride = max(1, len(buf) // 16)
+            self.assertEqual(
+                [float(v) for v in probes],
+                [float(buf[i]) for i in range(0, len(buf), stride)],
+                f"show scene diverged: {sc['id']}",
+            )
+            self.assertEqual(int(crc, 16), zlib.crc32(buf.tobytes()), sc["id"])
+            pcm = (np.clip(buf, -1.0, 1.0) * 32767.0).astype("<i2")
+            self.assertEqual(int(pcm_crc, 16), zlib.crc32(pcm.tobytes()), sc["id"])
             got_marks: dict[str, list[list[float]]] = {}
             for chunk in mtext.split(";"):
                 if not chunk:

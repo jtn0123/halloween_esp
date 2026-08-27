@@ -280,7 +280,19 @@ fn main() {
                                 format!("{n}>{}", pts.join(","))
                             })
                             .collect();
-                        println!("{} | {}", digest(&buf), ms.join(";"));
+                        // third field: write_wav's own artifact — the
+                        // int16 PCM the flash gets, crc'd
+                        let pcm = master::quantize16(&buf);
+                        let mut pb = Vec::with_capacity(pcm.len() * 2);
+                        for v in &pcm {
+                            pb.extend_from_slice(&v.to_le_bytes());
+                        }
+                        println!(
+                            "{} | {} | {:08x}",
+                            digest(&buf),
+                            ms.join(";"),
+                            castle_core::bridge::crc32(&pb)
+                        );
                     }
                 }
             }
