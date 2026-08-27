@@ -104,6 +104,13 @@ green. One commit per completed iteration keeps every loop pass revertable.
 | A3 mypy strict | 1 module from the stays-list into strict overrides | mypy green, no new ignores | stays-list fully strict |
 | A4 typed boundaries | 1 data shape (scenes.yaml → tracks.json → markers) as TypedDict + typed loader | mypy green, Any count down | 3 shapes done |
 
+A1 outcome (2026-08-26): COMPLETE in 4 passes. All 16 test files converted; tests
+now import src directly (typed against the real modules, dist shims gone) and are
+esbuild-bundled per-test with --platform=node. One .mjs remains BY DESIGN:
+web/test/legacy_effects.mjs, the verbatim pre-migration reference fixture, typed
+via the legacy_effects.d.mts sidecar — converting it would destroy its purpose.
+tsconfig now covers test/*.ts (lib ES2022, @types/node).
+
 A2 outcome (2026-08-26): applied; six files are excluded in [tool.ruff.format]
 because formatting pushed them past the 500-line cap (castle_fuzz, import_track,
 gen_wiring_diagram, test_gen_esphome, test_generator_parity, test_studio_api).
