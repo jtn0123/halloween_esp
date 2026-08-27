@@ -14,11 +14,13 @@ does not have.
 
 from __future__ import annotations
 
+from typing import Any
+
 from rig_layout import Layout
 
 
 def emit_rig_header(
-    layouts: dict[str, Layout], zones: list[dict], max_volume_pct: int = 100
+    layouts: dict[str, Layout], zones: list[dict[str, Any]], max_volume_pct: int = 100
 ) -> str:
     """Bake each zone's geometry into a header the firmware only indexes.
 
@@ -154,7 +156,7 @@ RMT_TOTAL_SYMBOLS = 256
 RMT_BLOCK = 64
 
 
-def rmt_symbols(z: dict) -> int:
+def rmt_symbols(z: dict[str, Any]) -> int:
     """A zone's RMT memory. Whole blocks only — the hardware has no other
     granularity — and the longest strip is the one worth spending on."""
     n = int(z.get("rmt_symbols", RMT_BLOCK))
@@ -166,7 +168,7 @@ def rmt_symbols(z: dict) -> int:
     return n
 
 
-def check_rmt_budget(zones: list[dict], layouts: dict[str, Layout]) -> int:
+def check_rmt_budget(zones: list[dict[str, Any]], layouts: dict[str, Layout]) -> int:
     """Spend no more than the peripheral has; return what is left over."""
     live = [z for z in zones if layouts[z["id"]].n > 0]
     spent = sum(rmt_symbols(z) for z in live)
@@ -179,7 +181,9 @@ def check_rmt_budget(zones: list[dict], layouts: dict[str, Layout]) -> int:
     return RMT_TOTAL_SYMBOLS - spent
 
 
-def emit_lights(layouts: dict[str, Layout], zones: list[dict], per: int) -> str:
+def emit_lights(
+    layouts: dict[str, Layout], zones: list[dict[str, Any]], per: int
+) -> str:
     """One `light:` component per zone, each rendering itself.
 
     A strip per zone rather than one chain, because an RGBW fixture and an

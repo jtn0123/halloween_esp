@@ -7,8 +7,10 @@ top-level `show:` block and scene durations, nothing about cues.
 
 from __future__ import annotations
 
+from typing import Any
 
-def emit_show_playlist(doc: dict) -> list[str]:
+
+def emit_show_playlist(doc: dict[str, Any]) -> list[str]:
     """#19: the whole evening as one generated script.
 
     Each scene plays for its full length, then the castle goes quiet for the
@@ -41,7 +43,7 @@ def emit_show_playlist(doc: dict) -> list[str]:
     return out
 
 
-def emit_manifest_check(doc: dict) -> list[str]:
+def emit_manifest_check(doc: dict[str, Any]) -> list[str]:
     """#29: stat() every scene audio file once after mount; missing
     names land in /api/status instead of being discovered as silence
     when the cue fires. Generated: the file list IS the scene list."""
