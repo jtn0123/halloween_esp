@@ -273,7 +273,13 @@ class CastleEmu(ThreadingHTTPServer):
         pir = s["pir"]
         assert isinstance(pir, dict)
         b = {True: "true", False: "false"}
-        i, t = (lambda k: int(str(s[k]))), (lambda k: wire.json_escape(str(s[k])))
+
+        def i(k: str) -> int:
+            return int(str(s[k]))
+
+        def t(k: str) -> str:
+            return wire.json_escape(str(s[k]))
+
         return (
             '{"version":"%s","compiled":"%s","uptime_s":%d,'
             '"sd_mounted":%s,"psram_free_kb":%d,"heap_free_kb":%d,'

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import re
 import shutil
 import sys
@@ -222,9 +223,7 @@ class TestSceneSeeding(unittest.TestCase):
     def test_castle_scenes_env_is_honoured(self) -> None:
         tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
         tmp.write_text("scenes:\n  - id: only_this\n")
-        with unittest.mock.patch.dict(
-            castle_emu.os.environ, {"CASTLE_SCENES": str(tmp)}
-        ):
+        with unittest.mock.patch.dict(os.environ, {"CASTLE_SCENES": str(tmp)}):
             emu = castle_emu.CastleEmu(port=0)
         self.addCleanup(emu.server_close)
         self.assertEqual(emu.scenes, ["only_this", "stop"])
@@ -238,7 +237,7 @@ class TestSceneSeeding(unittest.TestCase):
     def test_unreadable_show_falls_back_to_the_defaults(self) -> None:
         self.assertIsNone(castle_emu.show_scene_ids(Path("/no/such/scenes.yaml")))
         with unittest.mock.patch.dict(
-            castle_emu.os.environ, {"CASTLE_SCENES": "/no/such/scenes.yaml"}
+            os.environ, {"CASTLE_SCENES": "/no/such/scenes.yaml"}
         ):
             emu = castle_emu.CastleEmu(port=0)
         self.addCleanup(emu.server_close)

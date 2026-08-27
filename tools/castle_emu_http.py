@@ -27,6 +27,7 @@ import json
 import re
 import time
 import zlib
+from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -185,7 +186,7 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return n if n >= 0 else None
 
-    def _body_chunks(self, remaining: int):
+    def _body_chunks(self, remaining: int) -> Iterator[bytes]:
         """httpd_req_recv in CHUNK-sized reads; stops short on a stall."""
         while remaining > 0:
             got = self.rfile.read(min(remaining, CHUNK))
