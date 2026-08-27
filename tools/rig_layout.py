@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import Any
 
 #: Pixel counts and shapes of the fixtures in the box. Mirrors FIXTURES in
 #: web/src/rig.ts; `rgb_only` is a purchasing fact, not a geometric one, so it
@@ -156,7 +157,7 @@ def build(n: int, kind: str, cols: int = 0, rows: int = 0) -> Layout:
     )
 
 
-def zone_layouts(zones: list[dict], per: int) -> dict[str, Layout]:
+def zone_layouts(zones: list[dict[str, Any]], per: int) -> dict[str, Layout]:
     """Each zone's geometry, from its own `fixture:` or the legacy fallback.
 
     A zone that names no fixture is the pre-rig castle: `pixels_per_zone`

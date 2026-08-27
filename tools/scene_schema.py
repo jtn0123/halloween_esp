@@ -145,7 +145,9 @@ def _check_cue(
         _color(f"{w}.color", c["color"], errs)
 
 
-def _pulse_zones(w: str, p: dict, zones: set[str] | None, errs: list[str]) -> None:
+def _pulse_zones(
+    w: str, p: dict[str, Any], zones: set[str] | None, errs: list[str]
+) -> None:
     """Where a pulse lands: one zone, or lists of them."""
     if "zone" in p:
         _zone(f"{w}.zone", p["zone"], zones, errs)
@@ -159,7 +161,7 @@ def _pulse_zones(w: str, p: dict, zones: set[str] | None, errs: list[str]) -> No
             _zone(f"{w}.{k}", z, zones, errs)
 
 
-def _pulse_colors(w: str, p: dict, errs: list[str]) -> None:
+def _pulse_colors(w: str, p: dict[str, Any], errs: list[str]) -> None:
     """A pulse's colours: two named ones, plus an optional palette to pick
     from. A `colors:` that is present but empty is a mistake worth a
     message — the render would silently fall back to white."""
@@ -175,7 +177,9 @@ def _pulse_colors(w: str, p: dict, errs: list[str]) -> None:
         _color(f"{w}.colors", c, errs)
 
 
-def _pulse_shape(w: str, p: dict, vocab: dict[str, set[str]], errs: list[str]) -> None:
+def _pulse_shape(
+    w: str, p: dict[str, Any], vocab: dict[str, set[str]], errs: list[str]
+) -> None:
     """How hard it hits and how it falls."""
     if "pixels" in p:
         _in(f"{w}.pixels", p["pixels"], "pixels", vocab, errs)
@@ -204,7 +208,7 @@ def _check_pulse(
     _pulse_colors(w, p, errs)
 
 
-def _scene_head(scene: dict, errs: list[str]) -> int | None:
+def _scene_head(scene: dict[str, Any], errs: list[str]) -> int | None:
     """id, name, kind, duration, volume, loop, audio_file — the scalars.
     Returns the scene's length in ms when it has a usable one."""
     errs.extend(f"missing required key {k!r}" for k in REQUIRED if k not in scene)
@@ -247,7 +251,10 @@ def _mapping(name: str, value: Any, complaint: str, errs: list[str]) -> bool:
 
 
 def _scene_zones(
-    scene: dict, zs: set[str] | None, vocab: dict[str, set[str]], errs: list[str]
+    scene: dict[str, Any],
+    zs: set[str] | None,
+    vocab: dict[str, set[str]],
+    errs: list[str],
 ) -> None:
     """base, levels and zones: three maps keyed by zone, each with its own
     idea of what a value is."""
