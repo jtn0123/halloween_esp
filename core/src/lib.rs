@@ -7,8 +7,10 @@
 //! here is f32, matching the device; `tests/test_castle_core.py` compares
 //! this crate's `parity_dump` against the host-compiled C++ one bit for bit.
 
+pub mod effects;
 pub mod noise;
 pub mod palette;
 
+pub use effects::render;
 pub use noise::{fbm, hash3, hashi, mix32, vnoise};
 pub use palette::{mix_pal, Rgbw, PALETTES};

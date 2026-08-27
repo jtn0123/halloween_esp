@@ -143,6 +143,53 @@ class TestCastleCoreParity(unittest.TestCase):
                     f"seed {SEED} row {i}: {k} differs — C++ {a[k]!r} vs Rust {b[k]!r}",
                 )
 
+    def test_effect_base_colours_are_bit_exact(self) -> None:
+        """Every px line's base colour: the same f32 bits from both renders.
+
+        The zone pixel counts are read from the C++ dump's own zone lines
+        and handed to the Rust dump, so both walk the identical corpus."""
+        cxx = subprocess.run(
+            [f"{self.tmp}/cxx_dump", SEED],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+        )
+        rows = [json.loads(ln) for ln in cxx.stdout.splitlines()]
+        zones = sorted(
+            (r for r in rows if r["kind"] == "zone"), key=lambda r: int(r["zi"])
+        )
+        csv = ",".join(str(r["n"]) for r in zones)
+        rust = subprocess.run(
+            [str(CORE / "target" / "release" / "parity_dump"), SEED, "3000", csv],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=60,
+        )
+        cxx_px = [r for r in rows if r["kind"] == "px"]
+        rust_px = [json.loads(ln) for ln in rust.stdout.splitlines() if '"px"' in ln]
+        self.assertEqual(len(cxx_px), len(rust_px))
+        self.assertGreater(len(cxx_px), 2000, "corpus suspiciously small")
+        for i, (a, b) in enumerate(zip(cxx_px, rust_px)):
+            for k in ("eff", "pal", "soft", "zi", "p", "ov", "mode", "epoch"):
+                self.assertEqual(
+                    a[k], b[k], f"seed {SEED} px {i}: corpus drift at {k!r}"
+                )
+            for k in ("hue", "t", "seed"):
+                self.assertEqual(
+                    f32_bits(a[k]),
+                    f32_bits(b[k]),
+                    f"seed {SEED} px {i}: input {k} differs",
+                )
+            for ch in range(4):
+                self.assertEqual(
+                    f32_bits(a["base"][ch]),
+                    f32_bits(b["base"][ch]),
+                    f"seed {SEED} px {i} (eff {a['eff']}, t {a['t']}): "
+                    f"base[{ch}] — C++ {a['base'][ch]!r} vs Rust {b['base'][ch]!r}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

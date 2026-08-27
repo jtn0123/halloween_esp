@@ -3,12 +3,14 @@
 //! firmware would. tests/test_castle_core.py runs both and compares the
 //! numbers bit for bit: same LCG, same draw order, same arithmetic.
 //!
-//!     parity_dump [seed] [cases]
+//!     parity_dump [seed] [cases] [zone-pixel-counts, e.g. 7,7,12]
 //!
-//! Pass 1 emits the noise-primitive lines only; the px (effect) lines
-//! arrive with the effects port.
+//! Without the zone list only the noise-primitive lines are emitted. With
+//! it, the px lines follow — the zone counts come from the C++ dump's own
+//! zone lines, so both sides walk the identical corpus. The px lines carry
+//! the base effect colour; overlay and gate arrive with the fixture port.
 
-use castle_core::{fbm, hash3, hashi, vnoise};
+use castle_core::{fbm, hash3, hashi, render, vnoise};
 
 struct Lcg(u32);
 
@@ -25,7 +27,11 @@ impl Lcg {
 fn main() {
     let mut args = std::env::args().skip(1);
     let seed: u32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(7);
-    let _cases: u32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(3000);
+    let cases: u32 = args.next().and_then(|s| s.parse().ok()).unwrap_or(3000);
+    let zones: Vec<u32> = args
+        .next()
+        .map(|z| z.split(',').filter_map(|n| n.parse().ok()).collect())
+        .unwrap_or_default();
     let mut rng = Lcg(seed);
 
     for i in 0..400u32 {
@@ -56,6 +62,44 @@ fn main() {
             x as f64,
             vnoise(x) as f64,
             fbm(x) as f64,
+        );
+    }
+
+    if zones.is_empty() {
+        return;
+    }
+    let nz = zones.len() as u32;
+    for i in 0..cases {
+        let eff = ((rng.next_u32() >> 16) % 13) as i32;
+        let pal = ((rng.next_u32() >> 16) % 4) as i32;
+        let hue = match i % 9 {
+            0 => 0.0,
+            1 => 1.0,
+            _ => rng.frand(),
+        };
+        let soft = ((rng.next_u32() >> 16) & 1) != 0;
+        let t = match i % 4 {
+            0 => rng.frand() * 10.0,
+            1 => rng.frand() * 600.0,
+            2 => rng.frand() * 36_000.0,
+            _ => ((rng.next_u32() >> 16) % 4096) as f32 / 64.0,
+        };
+        let zi = (rng.next_u32() >> 16) % nz;
+        let n = zones[zi as usize];
+        if n == 0 {
+            continue;
+        }
+        let p = (rng.next_u32() >> 16) % n;
+        let ov = (rng.next_u32() >> 16) % 4;
+        let mode = (rng.next_u32() >> 16) % 4;
+        let epoch = (rng.next_u32() >> 16) % 1000;
+        let seed_f = zi as f32 * 4.7 + p as f32 * 1.31;
+        let base = render(eff, t, seed_f, hue, soft, pal);
+        println!(
+            "{{\"kind\":\"px\",\"eff\":{},\"pal\":{},\"hue\":{:?},\"soft\":{},\"t\":{:?},\"zi\":{},\"p\":{},\"ov\":{},\"mode\":{},\"epoch\":{},\"seed\":{:?},\"base\":[{:?},{:?},{:?},{:?}]}}",
+            eff, pal, hue as f64, if soft { 1 } else { 0 }, t as f64, zi, p, ov, mode,
+            epoch, seed_f as f64, base.r as f64, base.g as f64, base.b as f64,
+            base.w as f64,
         );
     }
 }
