@@ -15,6 +15,7 @@ pub mod filters;
 pub mod hosts;
 pub mod master;
 pub mod noise;
+pub mod onsets;
 pub mod overlay;
 pub mod palette;
 pub mod pieces;

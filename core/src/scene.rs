@@ -58,7 +58,7 @@ fn voice(name: &str, dur: Option<f64>, d: &mut Dice, m: &Modes) -> Option<(Vec<f
 
 /// CPython round(v, 3): nearest 3-decimal value, ties to even — the same
 /// rounding {:.3} performs, so format-and-parse IS the semantics.
-fn round3(v: f64) -> f64 {
+pub fn round3(v: f64) -> f64 {
     format!("{v:.3}").parse().unwrap_or(v)
 }
 

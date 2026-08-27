@@ -14,6 +14,7 @@ use castle_core::atmos;
 use castle_core::bridge::crc32;
 use castle_core::filters;
 use castle_core::master;
+use castle_core::onsets;
 use castle_core::pieces;
 use castle_core::rng::Pcg64;
 use castle_core::scene;
@@ -306,6 +307,48 @@ fn main() {
                 let x: Vec<f64> = (0..n).map(|_| dx.uni2(-0.5, 0.5)).collect();
                 let mut dr = atmos::Dice::new(seed + 1, fused);
                 println!("{}", digest(&atmos::apply_reverb(&x, wet, &mut dr)));
+            }
+            "onsets" => {
+                // onsets <src> <p1> <p2> <sens> <umode> <modes>
+                // src: burst(seed=p1,n=p2) | waltz | heartbeat(dur=p1,seed=p2)
+                let _ = seed;
+                let mut rest = line.split_whitespace().skip(1);
+                let src = rest.next().unwrap_or("");
+                let p1: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                let p2: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                let sens: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(1.1);
+                let fused = rest.next() == Some("fma");
+                let m = filters::Modes::parse(rest.next().unwrap_or(""));
+                let x: Vec<f64> = match src {
+                    "burst" => {
+                        let mut d = atmos::Dice::new(p1 as u128, fused);
+                        let n = p2 as usize;
+                        (0..n)
+                            .map(|i| {
+                                let f = if (i / 2000) % 9 == 0 { 1.0 } else { 0.05 };
+                                d.uni2(-1.0, 1.0) * f
+                            })
+                            .collect()
+                    }
+                    "waltz" => pieces::waltz().0,
+                    "heartbeat" => {
+                        let mut d = atmos::Dice::new(p2 as u128, fused);
+                        atmos::heartbeat(p1, &mut d, &m).0
+                    }
+                    _ => {
+                        println!("ERR unknown onsets src {src}");
+                        continue;
+                    }
+                };
+                let bands: Vec<String> = onsets::analyze(&x, sens)
+                    .iter()
+                    .map(|(n, hits)| {
+                        let pts: Vec<String> =
+                            hits.iter().map(|(t, v)| format!("{t:?}:{v:?}")).collect();
+                        format!("{n}>{}", pts.join(","))
+                    })
+                    .collect();
+                println!("{}", bands.join(";"));
             }
             other => println!("ERR unknown op {other}"),
         }
