@@ -18,7 +18,9 @@ from typing import TypedDict
 
 DEVICES = Path(__file__).resolve().parent.parent / "devices.toml"
 
-_IP = re.compile(r"^\d{1,3}(\.\d{1,3}){3}$")
+# A bare IP, or IP:port — the emulator chain publishes to 127.0.0.1:<port>,
+# and refusing it here once broke the studio's auto-publish (B5 follow-up).
+_IP = re.compile(r"^\d{1,3}(\.\d{1,3}){3}(:\d{1,5})?$")
 
 
 class _Device(TypedDict):

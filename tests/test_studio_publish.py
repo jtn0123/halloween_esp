@@ -90,12 +90,19 @@ class TestPublish(unittest.TestCase):
         rootpatch = mock.patch.object(sd_sync, "ROOT", root)
         rootpatch.start()
         self.addCleanup(rootpatch.stop)
-        # studio_publish reads scene ids through build_paths.SCENES
+        # studio_publish reads scene ids through build_paths.SCENES, and
+        # sd_sync reads its artefacts through build_paths too — the fake
+        # repo must be the build root, or the REAL repo's renders leak in.
         import build_paths as bp
 
-        sc = mock.patch.object(bp, "SCENES", scenes)
-        sc.start()
-        self.addCleanup(sc.stop)
+        for attr, val in (
+            ("SCENES", scenes),
+            ("AUDIO", root / "audio"),
+            ("PREVIEW_HTML", root / "previewer" / "castle-cue-desk.html"),
+        ):
+            sc = mock.patch.object(bp, attr, val)
+            sc.start()
+            self.addCleanup(sc.stop)
 
     def test_publish_lands_tracks_and_page_and_reports_the_stale_scene(self) -> None:
         body, code = sp.publish(runner_via_sd_sync(self.host))

@@ -390,7 +390,7 @@ pub fn publish_body(app: &App) -> (Json, u16) {
         String::new()
     } else {
         format!(
-            "{} scene(s) missing from the running firmware — make sd-build,              stop audio, then OTA",
+            "{} scene(s) missing from the running firmware — make sd-build, stop audio, then OTA",
             stale.len()
         )
     };

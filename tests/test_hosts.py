@@ -62,6 +62,14 @@ class TestResolve(HostCase):
         self.host_env("10.9.9.9")
         self.assertEqual(hosts.resolve("192.168.1.5"), "192.168.1.5")
 
+    def test_an_explicit_host_port_wins_like_an_ip(self) -> None:
+        # The emulator chain publishes to 127.0.0.1:<port>; refusing it as
+        # "not an IP" once broke the studio's auto-publish (B5 follow-up).
+        self.assertEqual(hosts.resolve("127.0.0.1:8093"), "127.0.0.1:8093")
+        self.assertEqual(
+            hosts.maybe_host(["10.1.1.1:8080", "ls"]), ("10.1.1.1:8080", ["ls"])
+        )
+
     def test_an_explicit_name_is_looked_up_in_the_table(self) -> None:
         self.host_env("10.9.9.9")
         self.assertEqual(hosts.resolve("bench"), "10.0.0.9")

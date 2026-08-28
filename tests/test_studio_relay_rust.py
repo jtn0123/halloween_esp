@@ -102,11 +102,12 @@ class EmulatorRelay(StudioPair):
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
 class PublishToTwinCastles(StudioPair):
-    """Each server publishes toward its OWN emulator. sd_sync's host
-    validation currently refuses a nonstandard-port castle (the emulator
-    chain), so what parity can hold today is the FAILURE: both servers
-    spawn the same sd_sync, get the same refusal, and answer the same
-    body. The success path runs on the porch, against port 80."""
+    """Each server publishes toward its OWN emulator (a shared one would
+    let one side's push mark the other's files "unchanged, skipped").
+    The resolver accepts host:port now, so the full success path holds:
+    both servers spawn the same sd_sync, both cards end up with the same
+    bytes, and both report the one thing a push cannot fix — the storm
+    scene the running firmware was not built with."""
 
     emu_py: ClassVar[castle_emu.CastleEmu]
     emu_rs: ClassVar[castle_emu.CastleEmu]
@@ -133,7 +134,7 @@ class PublishToTwinCastles(StudioPair):
         assert host is not None
         return self.masked(text, side).replace(host, "<CASTLE>")
 
-    def cards_match(self) -> None:
+    def cards_match(self) -> list[str]:
         import gzip
 
         assert self.emu_py.sd_dir is not None and self.emu_rs.sd_dir is not None
@@ -148,17 +149,32 @@ class PublishToTwinCastles(StudioPair):
                 # the contract.
                 da, db = gzip.decompress(da), gzip.decompress(db)
             self.assertEqual(da, db, rel)
+        return la
 
-    def test_publish_reports_alike_even_in_refusal(self) -> None:
+    def test_publish_lands_on_both_cards_alike(self) -> None:
         a, b = self.both("/studio/publish", method="POST")
-        self.assertEqual(a[0], 500, a[2][:400])
+        self.assertEqual(a[0], 200, a[2][:400])
         da, db = self.parsed(a), self.parsed(b)
         assert isinstance(da, dict) and isinstance(db, dict)
         la, lb = str(da.pop("log")), str(db.pop("log"))
         self.assertEqual(da, db)
         self.assertEqual(self.masked_all(la, "py"), self.masked_all(lb, "rs"))
-        self.assertEqual(da["error"], "sd_sync scenes failed")
-        self.cards_match()  # nothing landed on either card
+        self.assertTrue(da["ok"] and da["pushed"], da)
+        # The emulators were built knowing only vigil; storm needs an OTA.
+        self.assertEqual(da["needs_firmware"], ["storm"])
+        self.assertIn("make sd-build", da["note"])
+        self.assertIn("01_vigil.mp3", la)
+        # Scene track to /sd/scenes, the lean page pair and the per-scene
+        # mp3 to /sd/site — the same four files, byte for byte, both cards.
+        self.assertEqual(
+            self.cards_match(),
+            [
+                "scenes/01_vigil.mp3",
+                "site/index.html",
+                "site/index.html.gz",
+                "site/vigil.mp3",
+            ],
+        )
 
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")

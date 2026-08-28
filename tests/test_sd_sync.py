@@ -90,6 +90,17 @@ class SdCase(unittest.TestCase):
         r = mock.patch.object(sd_sync, "ROOT", self.tmp)
         r.start()
         self.addCleanup(r.stop)
+        # The artefact paths go through build_paths now (a sandboxed studio's
+        # publish must push the sandbox's renders, not the repo's) — point
+        # them at the same tmp the ROOT patch uses. The end-to-end redirect
+        # via CASTLE_BUILD is held by tests/test_studio_relay_rust.py.
+        for attr, val in (
+            ("AUDIO", self.tmp / "audio"),
+            ("PREVIEW_HTML", self.tmp / "previewer" / "castle-cue-desk.html"),
+        ):
+            b = mock.patch.object(sd_sync.bp, attr, val)
+            b.start()
+            self.addCleanup(b.stop)
         self.out = io.StringIO()
 
     def run_quiet(self, fn, *a):

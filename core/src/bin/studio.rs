@@ -30,7 +30,7 @@ fn main() {
     };
     let app = Arc::new(App::new(repo_root()));
     let _ = std::fs::create_dir(&app.tracks);
-    let listener = match bind_reuse(host, port) {
+    let listener = match bind_retry(host, port) {
         Ok(l) => l,
         Err(e) => {
             eprintln!("studio: cannot bind {host}:{port}: {e}");
@@ -99,6 +99,28 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
     }
 }
 
+/// A restarted image races its own predecessor: the dying connections'
+/// server-side sockets keep the port "in use" for a few dozen ms after
+/// the exec (macOS SO_REUSEADDR only forgives TIME_WAIT), so a restart —
+/// and only a restart, marked by the env var the exec set — retries the
+/// bind. A port someone else really holds still fails on the first try.
+fn bind_retry(host: &str, port: u16) -> std::io::Result<TcpListener> {
+    let restarted = std::env::var_os("CASTLE_STUDIO_RESTART").is_some();
+    std::env::remove_var("CASTLE_STUDIO_RESTART");
+    let tries = if restarted { 100 } else { 1 };
+    let mut last = None;
+    for i in 0..tries {
+        match bind_reuse(host, port) {
+            Ok(l) => return Ok(l),
+            Err(e) => last = Some(e),
+        }
+        if i + 1 < tries {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("bind never attempted")))
+}
+
 /// os.execv(sys.executable, sys.argv): the same process image again, PID
 /// kept, after the response has actually gone out.
 #[cfg(target_arch = "wasm32")]
@@ -117,7 +139,10 @@ fn restart_self() -> ! {
     std::thread::sleep(std::time::Duration::from_millis(400));
     let exe = std::env::current_exe().unwrap_or_default();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let err = std::process::Command::new(exe).args(args).exec();
+    let err = std::process::Command::new(exe)
+        .args(args)
+        .env("CASTLE_STUDIO_RESTART", "1")
+        .exec();
     eprintln!("studio: restart failed: {err}");
     std::process::exit(1);
 }

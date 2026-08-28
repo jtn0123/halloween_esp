@@ -34,6 +34,7 @@ import urllib.request
 import zlib
 from pathlib import Path
 
+import build_paths as bp
 from hosts import maybe_host
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -108,13 +109,13 @@ def cmd_scenes(ip: str) -> int:
     # different one; audio/ itself is what the FLASH build embeds and is
     # deliberately smaller. Prefer the card copies — pushing the flash ones
     # would put a 32 kbps compromise onto a 31 GB card.
-    card = sorted(ROOT.glob("audio/card/[0-9][0-9]_*.mp3"))
+    card = sorted(bp.AUDIO.glob("card/[0-9][0-9]_*.mp3"))
     files = card or sorted(
-        p for p in ROOT.glob("audio/[0-9][0-9]_*.mp3") if not p.name.startswith("00_")
+        p for p in bp.AUDIO.glob("[0-9][0-9]_*.mp3") if not p.name.startswith("00_")
     )
     if not files:
         raise SystemExit("no audio/NN_*.mp3 — run `make audio` first")
-    print(f"  source: {files[0].parent.relative_to(ROOT)}/")
+    print(f"  source: {bp.rel(files[0].parent)}/")
     have = card_dir(ip, "scenes")
     sent = 0
     for src in files:
@@ -137,7 +138,7 @@ def cmd_scenes(ip: str) -> int:
 def cmd_tones(ip: str) -> int:
     """The 🏰 panel's speaker test: five tones at the card ROOT, because
     /api/play takes one path component. `make audio` renders them."""
-    files = sorted(ROOT.glob("audio/test/test_*.mp3"))
+    files = sorted(bp.AUDIO.glob("test/test_*.mp3"))
     if not files:
         raise SystemExit("no audio/test/test_*.mp3 — run `make audio` first")
     for src in files:
@@ -151,7 +152,7 @@ def cmd_site(ip: str) -> int:
     # what makes it servable by a microcontroller. Pushed pre-gzipped: the
     # firmware serves index.html.gz with Content-Encoding and the first load
     # drops from ~8 s to ~3 s over the porch WiFi.
-    src = ROOT / "previewer" / "castle-cue-desk.html"
+    src = bp.PREVIEW_HTML
     if not src.exists():
         raise SystemExit("previewer/castle-cue-desk.html missing — run `make preview`")
     # The DEVICE gets the LEAN rewrite (grade report G1/A5): the committed
@@ -171,7 +172,7 @@ def cmd_site(ip: str) -> int:
     have = card_dir(ip, "site")
     audio = [
         p
-        for p in sorted(ROOT.glob("audio/[0-9][0-9]_*.mp3"))
+        for p in sorted(bp.AUDIO.glob("[0-9][0-9]_*.mp3"))
         if not p.name.startswith("00_")
     ]
     for mp3 in audio:
