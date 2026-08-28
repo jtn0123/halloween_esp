@@ -18,6 +18,8 @@ use crate::atmos::{self, Dice};
 use crate::bridge::crc32;
 use crate::filters::Modes;
 use crate::master;
+use crate::media;
+use crate::onsets;
 use crate::pieces;
 
 const SR_F: f64 = 44100.0;
@@ -34,6 +36,25 @@ pub struct Ev {
     pub gain: f64,
     pub dur: Option<f64>,
     pub take: Option<f64>,
+}
+
+/// A marker row: truncated ms, then the hit's remaining values — one
+/// round3 velocity from a synth, vel (and pan when stereo) from a track
+/// band. The width varies, exactly like the Python's `[ms, *h[1:]]`.
+pub type MarkRows = Vec<(String, Vec<(i64, Vec<f64>)>)>;
+
+/// A scene's imported song, resolved by the caller: render_audio's
+/// audio_file leg with the path and every scenes.yaml default applied.
+pub struct Track {
+    pub path: String,
+    pub gain: f64,
+    pub at: f64,
+    pub sens: [f64; 3],
+}
+
+pub enum RenderErr {
+    UnknownSynth(String),
+    Undecodable(String),
 }
 
 fn voice(name: &str, dur: Option<f64>, d: &mut Dice, m: &Modes) -> Option<(Vec<f64>, Marks)> {
@@ -73,12 +94,86 @@ pub fn render_scene(
     uni_fused: bool,
     m: &Modes,
 ) -> Option<(Vec<f64>, SceneMarks)> {
+    match render_scene_full(id, duration_ms, None, score, wet, looped, uni_fused, m) {
+        Err(_) => None,
+        Ok((buf, rows)) => Some((
+            buf,
+            rows.into_iter()
+                .map(|(n, v)| (n, v.into_iter().map(|(ms, fs)| (ms, fs[0])).collect()))
+                .collect(),
+        )),
+    }
+}
+
+/// The band's slot, made on first touch — dict.setdefault, so a band
+/// whose every hit is filtered out still appears, holding [].
+fn slot<'a>(markers: &'a mut MarkRows, name: &str) -> &'a mut Vec<(i64, Vec<f64>)> {
+    if !markers.iter().any(|(n, _)| n == name) {
+        markers.push((name.to_string(), Vec::new()));
+    }
+    &mut markers.iter_mut().find(|(n, _)| n == name).unwrap().1
+}
+
+/// Python's sorted() over `[ms, *floats]` rows: element by element,
+/// shorter first on an equal prefix (never hit within one band).
+fn row_cmp(a: &(i64, Vec<f64>), b: &(i64, Vec<f64>)) -> std::cmp::Ordering {
+    a.0.cmp(&b.0)
+        .then_with(|| {
+            for (x, y) in a.1.iter().zip(b.1.iter()) {
+                let o = x.total_cmp(y);
+                if o != std::cmp::Ordering::Equal {
+                    return o;
+                }
+            }
+            std::cmp::Ordering::Equal
+        })
+        .then(a.1.len().cmp(&b.1.len()))
+}
+
+/// render_audio.render_scene whole: the imported-track leg (place the
+/// song, detect its onsets, report them under the same marker names the
+/// synths use) before the score, then the shared tail. The track draws
+/// nothing from the dice, so the score's seeds are untouched by it.
+#[allow(clippy::too_many_arguments)]
+pub fn render_scene_full(
+    id: &str,
+    duration_ms: f64,
+    track: Option<&Track>,
+    score: &[Ev],
+    wet: f64,
+    looped: bool,
+    uni_fused: bool,
+    m: &Modes,
+) -> Result<(Vec<f64>, MarkRows), RenderErr> {
     let dur = duration_ms / 1000.0;
     let mut buf = vec![0.0; (dur * SR_F) as usize];
     let mut d = Dice::new(u128::from(crc32(id.as_bytes())), uni_fused);
-    let mut markers: SceneMarks = Vec::new();
+    let mut markers: MarkRows = Vec::new();
+    if let Some(tr) = track {
+        let Some(x) = media::load_audio(&tr.path) else {
+            return Err(RenderErr::Undecodable(tr.path.clone()));
+        };
+        let scaled: Vec<f64> = x.iter().map(|v| v * tr.gain).collect();
+        pieces::place(&mut buf, &scaled, tr.at);
+        // Always loaded, like the Python: a mono file is two equal
+        // channels and its pans correctly read as centre.
+        let stereo_data = media::load_stereo(&tr.path);
+        let stereo = stereo_data
+            .as_ref()
+            .map(|(l, r)| (l.as_slice(), r.as_slice()));
+        for (band, hits) in onsets::analyze_full3(&x, tr.sens, stereo) {
+            let rows = slot(&mut markers, &band);
+            rows.extend(
+                hits.iter()
+                    .filter(|h| h[0] < dur - 0.1)
+                    .map(|h| (((h[0] + tr.at) * 1000.0) as i64, h[1..].to_vec())),
+            );
+        }
+    }
     for ev in score {
-        let (mut sig, mut marks) = voice(&ev.synth, ev.dur, &mut d, m)?;
+        let Some((mut sig, mut marks)) = voice(&ev.synth, ev.dur, &mut d, m) else {
+            return Err(RenderErr::UnknownSynth(ev.synth.clone()));
+        };
         if let Some(take) = ev.take {
             sig.truncate((take * SR_F) as usize);
             master::fade_tail(&mut sig, 0.4);
@@ -86,18 +181,12 @@ pub fn render_scene(
         }
         let scaled: Vec<f64> = sig.iter().map(|v| v * ev.gain).collect();
         pieces::place(&mut buf, &scaled, ev.t);
-        let slot = match markers.iter_mut().find(|(n, _)| *n == ev.synth) {
-            Some((_, v)) => v,
-            None => {
-                markers.push((ev.synth.clone(), Vec::new()));
-                &mut markers.last_mut().unwrap().1
-            }
-        };
-        slot.extend(
+        let rows = slot(&mut markers, &ev.synth);
+        rows.extend(
             marks
                 .iter()
                 .filter(|(t, _)| ev.t + t < dur - 0.1)
-                .map(|(t, v)| (((ev.t + t) * 1000.0) as i64, round3(*v))),
+                .map(|(t, v)| (((ev.t + t) * 1000.0) as i64, vec![round3(*v)])),
         );
     }
     buf = atmos::apply_reverb(&buf, wet, &mut d);
@@ -109,9 +198,9 @@ pub fn render_scene(
     buf = master::limit(&buf, 0.89);
     master::normalize(&mut buf, 0.89);
     for (_, v) in markers.iter_mut() {
-        v.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        v.sort_by(row_cmp);
     }
-    Some((buf, markers))
+    Ok((buf, markers))
 }
 
 #[cfg(test)]

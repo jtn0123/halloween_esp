@@ -26,6 +26,23 @@ pub struct Modes {
 }
 
 impl Modes {
+    /// The render's defined arithmetic: the kernel-fma profile of the
+    /// reference numpy wheel the pipeline was held bit-exact against
+    /// (arm64 macOS, "10121" + fused uniforms). Production renders use
+    /// this everywhere, so a scene is the same bytes on every machine;
+    /// the parity tests probe the HOST's wheel and pass an override so
+    /// the Python comparison stays exact off the reference platform too.
+    pub const CANONICAL: Modes = Modes {
+        mul_fused: true,
+        poly_fused: false,
+        div_fused: true,
+        sqrt_form: 2,
+        sos_fused: true,
+    };
+
+    /// The uniform draw's half of the same profile.
+    pub const CANONICAL_UNI_FUSED: bool = true;
+
     /// Five characters, one per kernel: mul, poly, div, sqrt, sosfilt.
     pub fn parse(s: &str) -> Self {
         let b: Vec<u8> = s.bytes().map(|c| c.saturating_sub(b'0')).collect();
