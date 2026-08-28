@@ -41,7 +41,7 @@ class TestRenderScene(unittest.TestCase):
         return sc
 
     def test_empty_scene_is_silence_of_the_right_length(self) -> None:
-        buf, marks = ra.render_scene(self.scene(), CFG)
+        buf, marks = ra.render_scene_py(self.scene(), CFG)
         self.assertEqual(len(buf), int(4.0 * 44100))
         self.assertEqual(marks, {})
         self.assertTrue(np.all(np.isfinite(buf)))
@@ -50,7 +50,7 @@ class TestRenderScene(unittest.TestCase):
         """Files should use the full range; quiet material stored quietly just
         sits closer to the DAC noise floor for no benefit."""
         sc = self.scene(score=[{"t": 0.0, "synth": "toll", "gain": 0.01}])
-        buf, _ = ra.render_scene(sc, CFG)
+        buf, _ = ra.render_scene_py(sc, CFG)
         self.assertAlmostEqual(float(np.abs(buf).max()), ra.TARGET_PEAK, delta=0.02)
 
     def test_output_never_exceeds_full_scale(self) -> None:
@@ -60,7 +60,7 @@ class TestRenderScene(unittest.TestCase):
                 {"t": 0.1, "synth": "shriek", "gain": 4.0},
             ]
         )
-        buf, _ = ra.render_scene(sc, CFG)
+        buf, _ = ra.render_scene_py(sc, CFG)
         self.assertLessEqual(float(np.abs(buf).max()), 1.0)
 
     def test_deterministic_for_the_same_scene_id(self) -> None:
@@ -68,21 +68,21 @@ class TestRenderScene(unittest.TestCase):
         real change in the score. The seed comes from the scene id via crc32
         rather than Python's hash(), which is salted per process."""
         sc = self.scene(score=[{"t": 0.0, "synth": "wind", "dur": 2.0}])
-        a, _ = ra.render_scene(sc, CFG)
-        b, _ = ra.render_scene(sc, CFG)
+        a, _ = ra.render_scene_py(sc, CFG)
+        b, _ = ra.render_scene_py(sc, CFG)
         np.testing.assert_array_equal(a, b)
 
     def test_different_scene_ids_differ(self) -> None:
         one = self.scene(id="alpha", score=[{"t": 0.0, "synth": "wind", "dur": 2.0}])
         two = self.scene(id="beta", score=[{"t": 0.0, "synth": "wind", "dur": 2.0}])
-        a, _ = ra.render_scene(one, CFG)
-        b, _ = ra.render_scene(two, CFG)
+        a, _ = ra.render_scene_py(one, CFG)
+        b, _ = ra.render_scene_py(two, CFG)
         self.assertFalse(np.array_equal(a, b), "scene id should seed the rng")
 
     def test_unknown_synth_fails_loudly(self) -> None:
         sc = self.scene(score=[{"t": 0.0, "synth": "does_not_exist"}])
         with self.assertRaises(SystemExit):
-            ra.render_scene(sc, CFG)
+            ra.render_scene_py(sc, CFG)
 
     def test_markers_are_offset_by_event_time(self) -> None:
         """A synth reports times relative to itself; the scene has to place
@@ -90,7 +90,7 @@ class TestRenderScene(unittest.TestCase):
         sc = self.scene(
             duration_ms=12000, score=[{"t": 5.0, "synth": "heartbeat", "dur": 6.0}]
         )
-        _, marks = ra.render_scene(sc, CFG)
+        _, marks = ra.render_scene_py(sc, CFG)
         self.assertIn("heartbeat", marks)
         first_ms = marks["heartbeat"][0][0]
         self.assertGreaterEqual(first_ms, 4900, "marker not shifted to t=5s")
@@ -100,7 +100,7 @@ class TestRenderScene(unittest.TestCase):
         sc = self.scene(
             duration_ms=3000, score=[{"t": 0.0, "synth": "heartbeat", "dur": 10.0}]
         )
-        _, marks = ra.render_scene(sc, CFG)
+        _, marks = ra.render_scene_py(sc, CFG)
         for hits in marks.values():
             for ms, _v in hits:
                 self.assertLess(ms, 3000)
@@ -111,7 +111,7 @@ class TestRenderScene(unittest.TestCase):
         sc = self.scene(
             duration_ms=20000, score=[{"t": 0.0, "synth": "organ", "take": 5.0}]
         )
-        _, marks = ra.render_scene(sc, CFG)
+        _, marks = ra.render_scene_py(sc, CFG)
         for hits in marks.values():
             for ms, _v in hits:
                 self.assertLess(ms, 5000)
@@ -124,7 +124,7 @@ class TestRenderScene(unittest.TestCase):
                 {"t": 1.0, "synth": "toll"},
             ],
         )
-        _, marks = ra.render_scene(sc, CFG)
+        _, marks = ra.render_scene_py(sc, CFG)
         times = [ms for ms, _ in marks["toll"]]
         self.assertEqual(times, sorted(times))
 
@@ -134,7 +134,7 @@ class TestRenderScene(unittest.TestCase):
         sc = self.scene(
             loop=True, duration_ms=6000, score=[{"t": 0.0, "synth": "wind", "dur": 6.0}]
         )
-        buf, _ = ra.render_scene(sc, CFG)
+        buf, _ = ra.render_scene_py(sc, CFG)
         # A hard cut leaves a step between the last and first sample.
         step = abs(float(buf[-1]) - float(buf[0]))
         self.assertLess(step, 0.5, "loop seam looks like a discontinuity")
@@ -145,15 +145,15 @@ class TestRenderScene(unittest.TestCase):
             duration_ms=4000,
             score=[{"t": 0.0, "synth": "wind", "dur": 4.0}],
         )
-        buf, _ = ra.render_scene(sc, CFG)
+        buf, _ = ra.render_scene_py(sc, CFG)
         self.assertLess(abs(float(buf[-1])), 0.02, "tail should fade to silence")
 
     def test_reverb_defaults_differ_for_imported_audio(self) -> None:
         """Imported tracks arrive already produced; stacking the stone hall on
         someone else's reverb just makes mud."""
         sc = self.scene(score=[{"t": 0.0, "synth": "toll"}])
-        dry, _ = ra.render_scene({**sc, "reverb": 0.0}, CFG)
-        wet, _ = ra.render_scene({**sc, "reverb": 0.6}, CFG)
+        dry, _ = ra.render_scene_py({**sc, "reverb": 0.0}, CFG)
+        wet, _ = ra.render_scene_py({**sc, "reverb": 0.6}, CFG)
         self.assertFalse(np.array_equal(dry, wet), "reverb setting had no effect")
 
 
@@ -177,10 +177,19 @@ class TestStaleSweep(unittest.TestCase):
         scenes = self.tmp / "scenes.yaml"
         scenes.write_text(self.SHOW)
         fake_encode = lambda wav, mp3, br: mp3.write_bytes(b"new")  # noqa: E731
+
+        # The sweep is what this class tests; the render itself is the
+        # crate's (held by tests/test_scene_render_rust.py), so stub it
+        # and keep this suite cargo-free.
+        def fake_render(scene: dict, cfg: dict, wav: Path) -> dict:
+            wav.write_bytes(b"RIFFstub")
+            return {}
+
         for target, value in (
             ("OUT", self.out),
             ("SCENES", scenes),
             ("encode_mp3", fake_encode),
+            ("render_scene", fake_render),
         ):
             p = mock.patch.object(ra, target, value)
             p.start()

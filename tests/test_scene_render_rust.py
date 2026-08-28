@@ -30,8 +30,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
-import build_paths as bp
 import helpers  # noqa: F401  (hermetic env)
+import render_audio as ra
 from helpers import make_click_track
 from synth_probes import kernel_modes, numpy_uniform_mode
 
@@ -56,25 +56,8 @@ CANON_SCENE: dict[str, Any] = {
 
 
 def spec_of(scene: dict[str, Any], out: Path) -> dict[str, Any]:
-    """The bin's stdin, from a scenes.yaml scene — every default applied
-    the way render_audio.render_scene applies it."""
-    spec: dict[str, Any] = {
-        "id": scene["id"],
-        "duration_ms": scene["duration_ms"],
-        "sample_rate": 44100,
-        "wet": float(scene.get("reverb", 0.0 if scene.get("audio_file") else 0.42)),
-        "loop": bool(scene.get("loop")),
-        "out": str(out),
-        "score": scene.get("score") or [],
-    }
-    if scene.get("audio_file"):
-        spec["track"] = {
-            "path": str(bp.track_source(scene["audio_file"])),
-            "gain": float(scene.get("track_gain", 1.0)),
-            "at": float(scene.get("track_at", 0.0)),
-            "sensitivity": scene.get("sensitivity", 1.1),
-        }
-    return spec
+    """The bin's stdin — render_audio's own builder, the single home."""
+    return ra.scene_spec(scene, {"sample_rate": 44100}, out)
 
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
@@ -127,9 +110,7 @@ class TestSceneRenderParity(unittest.TestCase):
     def python(
         self, scene: dict[str, Any]
     ) -> tuple[bytes, dict[str, list[list[float]]]]:
-        import render_audio as ra
-
-        buf, markers = ra.render_scene(scene, {"sample_rate": 44100})
+        buf, markers = ra.render_scene_py(scene, {"sample_rate": 44100})
         out = self.tmp / f"py_{scene['id']}.wav"
         ra.write_wav(out, buf, 44100)
         return out.read_bytes(), markers
@@ -185,10 +166,8 @@ class TestSceneRenderParity(unittest.TestCase):
             timeout=60,
         )
         self.assertEqual(run.returncode, 1)
-        import render_audio as ra
-
         with self.assertRaises(SystemExit) as cm:
-            ra.render_scene(scene, {"sample_rate": 44100})
+            ra.render_scene_py(scene, {"sample_rate": 44100})
         self.assertEqual(run.stderr.strip(), str(cm.exception))
 
     def test_the_canonical_profile_is_pinned(self) -> None:

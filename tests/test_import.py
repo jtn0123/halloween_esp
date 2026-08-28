@@ -364,7 +364,7 @@ class TestRenderIntegration(unittest.TestCase):
 
     def test_render_produces_audio_and_markers(self) -> None:
         cfg = {"sample_rate": 44100, "bitrate": 96, "channels": 1}
-        buf, marks = ra.render_scene(self.scene(), cfg)
+        buf, marks = ra.render_scene_py(self.scene(), cfg)
         self.assertAlmostEqual(len(buf) / 44100, 6.0, delta=0.1)
         self.assertIn("onset_low", marks)
         self.assertGreater(len(marks["onset_low"]), 5)
@@ -374,7 +374,7 @@ class TestRenderIntegration(unittest.TestCase):
         import gen_esphome as ge
 
         cfg = {"sample_rate": 44100, "bitrate": 96, "channels": 1}
-        _buf, marks = ra.render_scene(self.scene(), cfg)
+        _buf, marks = ra.render_scene_py(self.scene(), cfg)
         cues = ge.pulse_cues(self.scene(), {"_test_integration": marks})
         self.assertGreater(len(cues), 5)
         self.assertEqual(cues[0]["op"], "strike")
@@ -382,7 +382,7 @@ class TestRenderIntegration(unittest.TestCase):
 
     def test_render_normalises(self) -> None:
         cfg = {"sample_rate": 44100, "bitrate": 96, "channels": 1}
-        buf, _ = ra.render_scene(self.scene(), cfg)
+        buf, _ = ra.render_scene_py(self.scene(), cfg)
         self.assertAlmostEqual(float(np.abs(buf).max()), ra.TARGET_PEAK, delta=0.02)
 
     def test_missing_file_fails_loudly(self) -> None:
@@ -390,7 +390,7 @@ class TestRenderIntegration(unittest.TestCase):
         sc["audio_file"] = "tracks/does_not_exist.mp3"
         cfg = {"sample_rate": 44100, "bitrate": 96, "channels": 1}
         with self.assertRaises(SystemExit):
-            ra.render_scene(sc, cfg)
+            ra.render_scene_py(sc, cfg)
 
 
 class TestExternalTools(unittest.TestCase):

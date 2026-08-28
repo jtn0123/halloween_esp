@@ -258,7 +258,7 @@ class TestMasterChainParity(unittest.TestCase):
         got = run.stdout.splitlines()
         self.assertEqual(len(got), len(scenes))
         for sc, reply in zip(scenes, got):
-            want_buf, want_marks = render_audio.render_scene(sc, {"sample_rate": SR})
+            want_buf, want_marks = render_audio.render_scene_py(sc, {"sample_rate": SR})
             buf = np.asarray(want_buf, dtype="<f8")
             head, _, rest2 = reply.partition(" | ")
             mtext, _, pcm_crc = rest2.partition(" | ")
@@ -340,7 +340,7 @@ class TestMasterChainParity(unittest.TestCase):
         got = run.stdout.splitlines()
         self.assertEqual(len(got), len(scenes))
         for sc, reply in zip(scenes, got):
-            want_buf, want_marks = render_audio.render_scene(sc, {"sample_rate": SR})
+            want_buf, want_marks = render_audio.render_scene_py(sc, {"sample_rate": SR})
             buf = np.asarray(want_buf, dtype="<f8")
             head, _, rest2 = reply.partition(" | ")
             mtext, _, pcm_crc = rest2.partition(" | ")

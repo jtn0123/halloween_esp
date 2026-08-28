@@ -16,7 +16,9 @@ over after the ESPHome image.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
+import shutil
 import subprocess
 import sys
 import wave
@@ -59,7 +61,100 @@ def write_wav(path: Path, x: np.ndarray, sr: int) -> None:
         w.writeframes(pcm.tobytes())
 
 
-def render_scene(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
+def scene_spec(scene: dict, cfg: dict, out: Path) -> dict:
+    """One scene as castle-core's scene_render bin takes it: every
+    scenes.yaml default applied, the imported song resolved to a path.
+
+    The missing-song story is orchestration, so it lives here, not in the
+    crate: an absent file the manifest knows renders without its song
+    (NOT_HERE names it in the summary), an absent file nobody imported is
+    a typo and stops the render — same sentences as render_scene_py.
+    """
+    track = scene.get("audio_file")
+    if track:
+        path = bp.track_source(track)
+        if not path.exists():
+            if not known_track(track):
+                raise SystemExit(
+                    f"scene {scene['id']}: no such audio_file "
+                    f"{track} — not on disk, and no record of it "
+                    f"in tracks/tracks.json either"
+                )
+            NOT_HERE.append(scene["id"])
+            track = None
+    spec: dict = {
+        "id": scene["id"],
+        "duration_ms": scene["duration_ms"],
+        "sample_rate": cfg["sample_rate"],
+        "wet": float(scene.get("reverb", 0.0 if track else 0.42)),
+        "loop": bool(scene.get("loop")),
+        "out": str(out),
+        "score": scene.get("score") or [],
+    }
+    if track:
+        spec["track"] = {
+            "path": str(bp.track_source(track)),
+            "gain": float(scene.get("track_gain", 1.0)),
+            "at": float(scene.get("track_at", 0.0)),
+            "sensitivity": scene.get("sensitivity", 1.1),
+        }
+    return spec
+
+
+@functools.cache
+def scene_render_bin() -> Path:
+    """castle-core's scene_render, rebuilt when cargo is here to do it —
+    once per run, not once per scene (the cache).
+
+    The crate IS the renderer (its CANONICAL float profile makes a scene
+    the same bytes on every machine); no binary and no cargo is a hard
+    stop, never a silent fall-back to a machine-dependent render.
+    """
+    exe = ROOT / "core" / "target" / "release" / "scene_render"
+    cargo = shutil.which("cargo")
+    if cargo:
+        subprocess.run(
+            [
+                cargo,
+                "build",
+                "--release",
+                "--quiet",
+                "--bin",
+                "scene_render",
+                "--manifest-path",
+                str(ROOT / "core" / "Cargo.toml"),
+            ],
+            check=True,
+        )
+    if not exe.exists():
+        raise SystemExit(
+            "core/target/release/scene_render is missing and there is no "
+            "cargo to build it — install rust, or build the binary "
+            "elsewhere (cd core && cargo build --release)"
+        )
+    return exe
+
+
+def render_scene(scene: dict, cfg: dict, wav: Path) -> dict[str, list]:
+    """Render one scene through the crate: the bin writes the WAV where
+    `wav` says and answers the beat markers. render_scene_py below is the
+    same render in Python, kept as the parity reference —
+    tests/test_scene_render_rust.py holds the two byte-equal."""
+    run = subprocess.run(
+        [str(scene_render_bin())],
+        input=json.dumps(scene_spec(scene, cfg, wav)).encode(),
+        capture_output=True,
+        check=False,
+    )
+    if run.returncode != 0:
+        raise SystemExit(
+            run.stderr.decode().strip() or f"scene_render failed on {scene['id']}"
+        )
+    markers: dict[str, list] = json.loads(run.stdout)
+    return markers
+
+
+def render_scene_py(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]]:
     """Mix one scene's score into a single buffer.
 
     Also returns beat markers, keyed by synth name: the ACTUAL musical event
@@ -285,10 +380,9 @@ def render_one(scene: dict, i: int, cfg: dict, keep_wav: bool) -> tuple[int, dic
     The WAV is the encoder's input and nothing else's, so it goes again
     unless --wav asked to keep it.
     """
-    buf, markers = render_scene(scene, cfg)
     stem = f"{i:02d}_{scene['id']}"
     wav, mp3 = OUT / f"{stem}.wav", OUT / f"{stem}.mp3"
-    write_wav(wav, buf, cfg["sample_rate"])
+    markers = render_scene(scene, cfg, wav)
     encode_mp3(wav, mp3, cfg["bitrate"])
     # The same WAV, encoded again for the card. Synthesis is the expensive
     # half and it is already paid for here; a second LAME pass is cents.
@@ -298,10 +392,8 @@ def render_one(scene: dict, i: int, cfg: dict, keep_wav: bool) -> tuple[int, dic
     if not keep_wav:
         wav.unlink()
     size = mp3.stat().st_size
-    print(
-        f"{scene['id']:<12} {len(buf) / cfg['sample_rate']:>7.1f}s "
-        f"{size / 1024:>8.0f}K   {mp3.name}"
-    )
+    secs = int(scene["duration_ms"] / 1000.0 * cfg["sample_rate"]) / cfg["sample_rate"]
+    print(f"{scene['id']:<12} {secs:>7.1f}s {size / 1024:>8.0f}K   {mp3.name}")
     return size, markers
 
 
