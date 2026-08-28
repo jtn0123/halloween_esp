@@ -18,15 +18,17 @@ track will cost before you commit to it.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
-import analyze as ana
+import core_bins
 import manifest as mf
 from import_convert import _same_file as _same_file
 from import_convert import convert as convert
@@ -46,6 +48,31 @@ ROOT = Path(__file__).resolve().parent.parent
 TRACKS = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks"))
 BITRATE = 96  # matches hardware.audio.bitrate in scenes.yaml
 BUDGET = 2.9 * 1024 * 1024
+SR = 44100  # the analysis rate — analyze.SR, which the crate fixes too
+
+
+def crate_analysis(
+    path: Path, sensitivity: float | dict[str, float], stereo: bool
+) -> tuple[int, dict[str, list[list[float]]]]:
+    """analyze_full through castle-core's analyze_track bin: the mono
+    decode's sample count and the onset bands (with pans when `stereo`).
+    The crate is the importer's ears now; analyze.py remains only as the
+    parity reference — tests/test_analyze_track_rust.py holds the two
+    value-for-value. Failures raise ValueError so the caller keeps its
+    own sentences."""
+    req = {"path": str(path), "sensitivity": sensitivity, "stereo": stereo}
+    run = subprocess.run(
+        [str(core_bins.core_bin("analyze_track"))],
+        input=json.dumps(req).encode(),
+        capture_output=True,
+        check=False,
+    )
+    if run.returncode != 0:
+        raise ValueError(
+            run.stderr.decode().strip() or f"analyze_track failed on {path.name}"
+        )
+    out = json.loads(run.stdout)
+    return int(out["samples"]), out["bands"]
 
 
 def secs(v: str) -> float:
@@ -219,11 +246,12 @@ def main() -> int:
 
     if args.analyze_only:
         src = Path(args.source)
-        marks = ana.analyze_full(
-            ana.load_audio(src),
-            sensitivity=args.sensitivity if args.sensitivity is not None else 1.1,
+        samples, marks = crate_analysis(
+            src,
+            args.sensitivity if args.sensitivity is not None else 1.1,
+            stereo=False,
         )
-        dur = len(ana.load_audio(src)) / ana.SR
+        dur = samples / SR
         for band, hits in marks.items():
             print(f"  {band:<11} {len(hits):>4} onsets")
         print(f"\n{scene_block(src.stem, dur, marks, src.suffix.lstrip('.') or 'mp3')}")
@@ -336,17 +364,20 @@ def _import(
     convert(src, out, conv)
 
     try:
-        x = ana.load_audio(out)
-        if len(x) < ana.SR // 10:
+        # stereo= so import-time markers carry pan, same as the studio's
+        # live analysis — otherwise the pasteable scene block and the desk
+        # disagree.
+        samples, marks = crate_analysis(out, o["sensitivity"], stereo=True)
+        if samples < SR // 10:
             raise ValueError("the cut came out (nearly) empty")
-    except Exception as e:
+    except ValueError as e:
         # Never leave a broken row behind: the desk would offer to send it
         # to the castle. One line, no traceback.
         out.unlink(missing_ok=True)
         raise SystemExit(
             f"{src.name}: {e} — check start/length against the source"
         ) from None
-    dur = len(x) / ana.SR
+    dur = samples / SR
     size = out.stat().st_size
     # A refresh that changed the container leaves the old one behind, and
     # track_path() would keep finding it first. One file per id — but never
@@ -358,11 +389,6 @@ def _import(
             stale.unlink(missing_ok=True)
     if args.keep_source and not is_url:
         source = f"file:{keep_source(src, tid)}"
-    # stereo= so import-time markers carry pan, same as the studio's live
-    # analysis — otherwise the pasteable scene block and the desk disagree.
-    marks = ana.analyze_full(
-        x, sensitivity=o["sensitivity"], stereo=ana.load_stereo(out)
-    )
 
     mf.record(
         tid,

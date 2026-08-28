@@ -10,6 +10,7 @@
 //! tests/test_onsets_rust.py holds whole band dictionaries to the Python.
 
 use crate::fft::fft;
+use crate::jsonio::Json;
 use crate::scene::round3;
 
 pub const WIN: usize = 2048;
@@ -22,6 +23,29 @@ pub const BANDS: [(&str, f64, f64, f64); 3] = [
     ("onset_mid", 200.0, 2000.0, 0.11),
     ("onset_high", 2000.0, 16000.0, 0.09),
 ];
+
+/// band_sensitivity's JSON coercion, in BANDS order: a scalar means all
+/// three; a map answers by full band name, then short, then 1.1. Shared
+/// by the scene_render and analyze_track bins.
+pub fn sens3(v: Option<&Json>) -> [f64; 3] {
+    match v {
+        Some(m @ Json::Obj(_)) => {
+            let mut out = [1.1; 3];
+            for (i, short) in ["low", "mid", "high"].iter().enumerate() {
+                let hit = m
+                    .get(&format!("onset_{short}"))
+                    .or_else(|| m.get(short))
+                    .and_then(|j| j.as_f64());
+                if let Some(f) = hit {
+                    out[i] = f;
+                }
+            }
+            out
+        }
+        Some(j) => [j.as_f64().unwrap_or(1.1); 3],
+        None => [1.1; 3],
+    }
+}
 
 /// numpy's pairwise summation: sequential under 8, eight accumulators up
 /// to 128, recursive halving (on a multiple-of-8 boundary) above.

@@ -24,35 +24,13 @@
 use castle_core::filters::Modes;
 use castle_core::jsonio::{self, Json};
 use castle_core::master;
+use castle_core::onsets::sens3;
 use castle_core::scene::{render_scene_full, Ev, RenderErr, Track};
 use std::io::Read;
 
 fn die(msg: &str, code: i32) -> ! {
     eprintln!("{msg}");
     std::process::exit(code);
-}
-
-/// band_sensitivity's coercion, in BANDS order: a scalar means all
-/// three; a map answers by full band name, then short, then 1.1.
-fn sens_of(v: Option<&Json>) -> [f64; 3] {
-    match v {
-        Some(Json::Obj(_)) => {
-            let mut out = [1.1; 3];
-            for (i, short) in ["low", "mid", "high"].iter().enumerate() {
-                let m = v.unwrap();
-                let hit = m
-                    .get(&format!("onset_{short}"))
-                    .or_else(|| m.get(short))
-                    .and_then(|j| j.as_f64());
-                if let Some(f) = hit {
-                    out[i] = f;
-                }
-            }
-            out
-        }
-        Some(j) => [j.as_f64().unwrap_or(1.1); 3],
-        None => [1.1; 3],
-    }
 }
 
 fn events(spec: &Json) -> Result<Vec<Ev>, String> {
@@ -145,7 +123,7 @@ fn main() {
             path: t.str_or("path", ""),
             gain: t.get("gain").and_then(|j| j.as_f64()).unwrap_or(1.0),
             at: t.get("at").and_then(|j| j.as_f64()).unwrap_or(0.0),
-            sens: sens_of(t.get("sensitivity")),
+            sens: sens3(t.get("sensitivity")),
         });
     let score = match events(&spec) {
         Ok(evs) => evs,

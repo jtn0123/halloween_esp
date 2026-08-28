@@ -339,6 +339,23 @@ PARITY.md gained the scene-render row. Note: render_audio.py sits at
 next (off-season, with the desk swap): synth*.py/analyze.py bodies once
 nothing but render_scene_py needs them.
 
+Ninth-run pass 1 (2026-08-27): the importer's ears crossed. A new
+analyze_track bin (JSON in: path/sensitivity/stereo; JSON out: mono
+sample count + onset bands) is what import_track spawns for BOTH its
+analyses (--analyze-only and the import itself); analyze.py stays as
+the parity reference, held value-for-value by
+tests/test_analyze_track_rust.py — no kernel-mode probes needed, since
+the onset arithmetic was pinned unconditionally, so the gate is exact
+on every machine. Verified on the real library: the Ghostbusters
+track's crate counts (678/597/892) equal what the Python wrote into
+tracks.json at original import. The cargo dance moved to its one home,
+tools/core_bins.py (render_audio uses it too); sens3 (the JSON
+band-sensitivity coercion) moved into onsets.rs, shared by both bins.
+All 148 e2e pass. analyze.py's remaining production consumers:
+stems.py (per-stem onsets) and the Python studio's live analysis
+(studio_media/studio_tracks) — the stems leg is the natural next pass;
+the studio leg retires with the B5 flip.
+
 | Loop | Iteration unit | Gate per pass | Stops when |
 |---|---|---|---|
 | B1 core/effects | scaffold → int hash → 1 effect family per pass → WASM face → desk swap | Rust tests + frame-exact vs TS/C++ + page ≤4MB budget | old parity suite retired |

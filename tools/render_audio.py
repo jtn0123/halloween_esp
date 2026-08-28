@@ -16,9 +16,7 @@ over after the ESPHome image.
 from __future__ import annotations
 
 import argparse
-import functools
 import json
-import shutil
 import subprocess
 import sys
 import wave
@@ -31,6 +29,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze
 import build_paths as bp
+import core_bins
 import manifest as mf
 import synth
 
@@ -101,47 +100,13 @@ def scene_spec(scene: dict, cfg: dict, out: Path) -> dict:
     return spec
 
 
-@functools.cache
-def scene_render_bin() -> Path:
-    """castle-core's scene_render, rebuilt when cargo is here to do it —
-    once per run, not once per scene (the cache).
-
-    The crate IS the renderer (its CANONICAL float profile makes a scene
-    the same bytes on every machine); no binary and no cargo is a hard
-    stop, never a silent fall-back to a machine-dependent render.
-    """
-    exe = ROOT / "core" / "target" / "release" / "scene_render"
-    cargo = shutil.which("cargo")
-    if cargo:
-        subprocess.run(
-            [
-                cargo,
-                "build",
-                "--release",
-                "--quiet",
-                "--bin",
-                "scene_render",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            check=True,
-        )
-    if not exe.exists():
-        raise SystemExit(
-            "core/target/release/scene_render is missing and there is no "
-            "cargo to build it — install rust, or build the binary "
-            "elsewhere (cd core && cargo build --release)"
-        )
-    return exe
-
-
 def render_scene(scene: dict, cfg: dict, wav: Path) -> dict[str, list]:
     """Render one scene through the crate: the bin writes the WAV where
     `wav` says and answers the beat markers. render_scene_py below is the
     same render in Python, kept as the parity reference —
     tests/test_scene_render_rust.py holds the two byte-equal."""
     run = subprocess.run(
-        [str(scene_render_bin())],
+        [str(core_bins.core_bin("scene_render"))],
         input=json.dumps(scene_spec(scene, cfg, wav)).encode(),
         capture_output=True,
         check=False,
