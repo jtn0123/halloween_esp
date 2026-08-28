@@ -306,6 +306,39 @@ through Halloween; retiring it (and the desk swap) is the off-season
 flip. Deliberately not ported: the aioesphomeapi native leg (flash
 build; the esphome-native-api crate swap owns it) and gzip.
 
+B3 SWAP + B5 loose end (2026-08-27, eighth Track-B run, 4 passes):
+render_audio calls the crate — B3's stop condition, met and verified on
+the real show. Pass 1 closed B5's flag: hosts.resolve accepts host:port
+(candidates() always promised it), so the emulator chain publishes and
+PublishToTwinCastles runs the SUCCESS path — same bodies, same masked
+logs, both cards byte-equal, needs_firmware naming storm. Same pass:
+sd_sync reads audio/ and the previewer page through build_paths (it
+globbed the REPO before, so a sandboxed studio published the real
+renders), and the relay suite's restart flake diagnosed for real — the
+exec'd image races its predecessor's DYING CONNECTIONS for the port
+(macOS SO_REUSEADDR forgives only TIME_WAIT; lsof at the failure shows
+nobody holding it a moment later), fixed by a bind retry armed only when
+CASTLE_STUDIO_RESTART marks the exec (8/8 restarts from ~50%). Pass 2:
+scene.rs grew the imported-track leg (media decode + analyze_full3 +
+place were already in-crate) and the scene_render bin — one JSON scene
+spec on stdin, the WAV written where `out` says, markers as JSON on
+stdout; Modes::CANONICAL pins the render's float profile (the reference
+arm64 wheel: "10121" + fused uniforms). Pass 3: render_audio.render_scene
+spawns the bin (render_scene_py stays as the parity reference);
+tests/test_scene_render_rust.py holds WAV bytes AND marker dicts equal —
+probed modes make it exact on every host, the canonical render is
+crc-pinned so cross-machine determinism is a test, not a hope. The
+REAL scenes.yaml re-rendered into a sandbox: 27 files — ten scenes, two
+with imported songs, card copies, chirp, tones, markers.json — BYTE-
+IDENTICAL to the Python's renders. `make audio` now requires cargo
+(builds the bin itself; a missing toolchain is a hard stop, never a
+silent machine-dependent fallback — RUNBOOK says so). Pass 4: all 148
+e2e tests pass against BOTH studios with the crate rendering underneath;
+PARITY.md gained the scene-render row. Note: render_audio.py sits at
+477 lines; its next growth splits on the tones/chirp seam. Retirable
+next (off-season, with the desk swap): synth*.py/analyze.py bodies once
+nothing but render_scene_py needs them.
+
 | Loop | Iteration unit | Gate per pass | Stops when |
 |---|---|---|---|
 | B1 core/effects | scaffold → int hash → 1 effect family per pass → WASM face → desk swap | Rust tests + frame-exact vs TS/C++ + page ≤4MB budget | old parity suite retired |

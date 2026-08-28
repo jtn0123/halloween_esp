@@ -16,6 +16,7 @@ individual checks say how each one works.
 | Effect maths (colour per pixel per frame) | `firmware/castle_effects.h` (C++, float32) · `web/src/effects.ts` (TS, double) | `web/test/firmware_parity.ts` reading `tests/cxx/parity_dump.cpp` (host-compiled); `web/test/effects_equivalence.ts` |
 | Rig geometry (which pixel is where, what `core` means) | `tools/rig_layout.py` → `firmware/generated/rig.h` · `web/src/rig.ts` | `web/test/rig_parity.mjs`, `tests/test_rig_layout.py` |
 | Castle wire protocol (`/api/*` on the device) | `firmware/sd_web.h` · `tools/castle_emu_wire.py` | `tests/test_firmware_contract.py` parses the C |
+| Scene render (synth voices, onset detection, reverb, master chain) | `core/` (castle-core `scene_render` — the production renderer since the B3 swap) · `tools/synth*.py` + `tools/analyze.py` behind `render_audio.render_scene_py` (the reference) | `tests/test_scene_render_rust.py` (byte-equal WAV + markers, canonical crc pin), plus the per-layer gates `test_synth_rust`, `test_master_rust`, `test_onsets_rust` |
 
 ## Why
 

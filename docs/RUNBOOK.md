@@ -26,6 +26,12 @@ of the Witches' Road sat rendered on the Mac while the castle answered
 
 Terminal spelling of step 2's push, any time: `make publish`.
 
+The render itself is Rust: `make audio` (and the studio's rebuild) spawns
+castle-core's `scene_render`, rebuilding it with cargo on first use. A
+machine without the Rust toolchain stops with a sentence saying so — there
+is no Python fall-back, on purpose: the crate's fixed float profile is what
+makes a scene the same bytes on every machine.
+
 ## When a scene will not play
 
 Work down this list — it is ordered by how often each one was the answer:
