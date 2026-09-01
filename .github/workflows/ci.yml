@@ -228,7 +228,14 @@ jobs:
       # gitignored — CI has to render them before validation or the config
       # references files that do not exist.
       - uses: ./.github/actions/media-tools
-      - run: pip install "esphome==2026.7.4" pyyaml numpy scipy
+      # The esphome pin is read out of requirements.txt, never repeated here:
+      # "CI validates the pinned version" stops being an invariant the moment
+      # a literal in this file can fall behind the one the venv installs.
+      - name: install the pinned esphome
+        run: |
+          PIN=$(grep -E '^esphome==' requirements.txt)
+          echo "installing $PIN"
+          pip install "$PIN" pyyaml numpy scipy
       # Same reason as the web job: the renderer is the Rust binary now.
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -300,4 +307,4 @@ jobs:
       - name: newer esphome available?
         run: |
           pip index versions esphome 2>/dev/null | head -2 || true
-          echo "pin is 2026.7.4 — a bump clears the cryptography advisory (see .pip-audit-ignore)"
+          echo "pin is $(grep -E '^esphome==' requirements.txt | cut -d= -f3) — bump it in requirements.txt, then re-run make lock and make audit"

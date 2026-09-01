@@ -2,14 +2,13 @@
 # One advisory per line: id, why it is accepted, and when to look again.
 # Remove a line the moment the underlying pin moves (make lock, then make audit).
 #
-# starlette 0.52.1 arrives transitively through the pinned esphome==2026.7.4
-# BUILD toolchain (platformio's web layer). It never sees network input in
-# this repo — nothing here serves starlette. Review at the next esphome bump.
+# starlette 0.52.1 arrives transitively through the esphome BUILD toolchain
+# (platformio's web layer). It never sees network input in this repo — nothing
+# here serves starlette. The 2026.8.1 bump did NOT move it, so all five stay.
 PYSEC-2026-161   starlette, build-toolchain only              review 2026-10-01
 PYSEC-2026-248   starlette, build-toolchain only              review 2026-10-01
 PYSEC-2026-249   starlette, build-toolchain only              review 2026-10-01
 PYSEC-2026-2280  starlette, build-toolchain only              review 2026-10-01
 PYSEC-2026-2281  starlette, build-toolchain only              review 2026-10-01
-# cryptography 49 is dragged in by the same pin; the next esphome release
-# clears it (CLAUDE.md). Review at the next esphome bump.
-PYSEC-2026-3552  cryptography via esphome pin, clears on bump review 2026-10-01
+# The cryptography advisory (PYSEC-2026-3552) that sat here cleared exactly as
+# predicted: esphome 2026.8.1 pulls cryptography 50, so the line is gone.

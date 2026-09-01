@@ -3,12 +3,16 @@
 # which meant an esphome release dropping either would silently break
 # tools/device.py / tools/gen_eink_font.py.
 #
-# esphome is pinned to the version CI validates with (.github/workflows/
-# ci.yml) so the board is built with the config that was checked.
+# esphome is pinned here and NOWHERE else: CI's esphome job reads the pin out
+# of this file rather than repeating it (.github/workflows/ci.yml), so the
+# board is built with the config that was checked and the two cannot drift.
 numpy~=2.5
 scipy~=1.18
 PyYAML~=6.0
-esphome==2026.7.4
+esphome==2026.8.1
 segno~=1.6
-aioesphomeapi~=45.7
+# esphome pins aioesphomeapi EXACTLY (2026.8.1 wants ==45.10.3), so this line
+# can only ever track the range esphome's own pin sits in — Dependabot's 46.x
+# offers cannot be taken until esphome itself moves to 46.
+aioesphomeapi~=45.10
 Pillow~=12.3
