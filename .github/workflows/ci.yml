@@ -85,13 +85,20 @@ jobs:
       # CASTLE_* name on purpose: that prefix is the sandbox-knob namespace
       # test_hermetic.py holds empty.
       CI_RUST_GATES_ELSEWHERE: "1"
-      # GitHub's runners are AVX-512 hosts, where numpy dispatches Intel SVML
-      # vector kernels for exp/log/sin — arithmetic no probe profile can
-      # describe (tests/synth_probes.py assert_libm_transcendentals names this
-      # exact remedy). Pinning numpy to its baseline loops keeps the parity
-      # suites' reference arithmetic reproducible; on a non-AVX-512 runner the
-      # unknown features are a warning, not an error.
-      NPY_DISABLE_CPU_FEATURES: "AVX512F AVX512_SKX AVX512_CNL AVX512_ICL AVX512_SPR"
+      # GitHub's runners are AVX-512 hosts (Zen 5 EPYC as of 2026-09), where
+      # numpy dispatches vector kernels for exp/log/pow and for pocketfft —
+      # arithmetic no probe profile can describe, so the parity suites drift a
+      # last ulp (tests/synth_probes.py assert_libm_transcendentals). Pinning
+      # numpy to its baseline loops keeps the reference reproducible.
+      #
+      # These names must be numpy's OWN dispatch targets, and numpy 2.5's
+      # x86-64 wheel renamed them to microarchitecture LEVELS: `__cpu_dispatch__`
+      # is X86_V3 X86_V4 AVX512_ICL AVX512_SPR. The per-feature spelling this
+      # line used to carry (AVX512F, AVX512_SKX…) is no longer a target, so
+      # numpy answered with an ImportWarning, disabled nothing, and CI stayed
+      # red while looking like it had been told. The guard prints the live list
+      # when it fires — read it there rather than guessing here.
+      NPY_DISABLE_CPU_FEATURES: "X86_V3 X86_V4 AVX512_ICL AVX512_SPR"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

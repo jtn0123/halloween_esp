@@ -40,22 +40,43 @@ def numpy_uniform_mode() -> str:
     )
 
 
+def numpy_dispatch_names() -> str:
+    """The optimisation targets THIS wheel was built to dispatch — the
+    only names NPY_DISABLE_CPU_FEATURES accepts, and the reason the
+    remedy below is computed rather than written down.
+
+    numpy renames them between releases: the 2.5 x86-64 wheel dispatches
+    by microarchitecture LEVEL ("X86_V3 X86_V4 AVX512_ICL AVX512_SPR"),
+    so the per-feature names an older numpy took ("AVX512F AVX512_SKX"…)
+    are now rejected with nothing but an ImportWarning — the vector
+    kernels stay, and CI stays red while looking like it was told.
+    """
+    try:
+        import importlib
+
+        mu = importlib.import_module("numpy._core._multiarray_umath")
+        names = [str(n) for n in mu.__cpu_dispatch__]
+    except Exception:  # a wheel that does not expose it — say so plainly
+        return "<numpy._core._multiarray_umath.__cpu_dispatch__>"
+    return " ".join(names)
+
+
 def assert_libm_transcendentals() -> None:
     """The one class of divergence no mode character can describe.
 
     sin/exp/log/pow are libm calls on both sides — CPython's math module
     and Rust's f64 methods both go straight to the C library, and every
     wheel seen so far leaves numpy's element loops doing the same. A host
-    where numpy dispatches a VECTOR math library instead (Intel's SVML on
-    an AVX-512 machine is the known case) computes them to a different
-    last ulp, and no amount of probing can reproduce that in Rust.
+    where numpy dispatches a VECTOR math library instead (an AVX-512
+    machine is the known case) computes them to a different last ulp, and
+    no amount of probing can reproduce that in Rust. The same dispatch
+    moves pocketfft, so np.fft — the reverb's transform — drifts with it.
 
     So say it in words rather than letting it surface three suites later
     as an unexplained last digit. The remedy is numpy's own switch:
-    NPY_DISABLE_CPU_FEATURES="AVX512F AVX512_SKX AVX512_CNL AVX512_ICL
-    AVX512_SPR" in the environment BEFORE numpy is imported puts the
-    baseline element loops back, which is the arithmetic the canonical
-    render is defined in.
+    NPY_DISABLE_CPU_FEATURES, naming this wheel's dispatch targets, in
+    the environment BEFORE numpy is imported puts the baseline element
+    loops back — the arithmetic the canonical render is defined in.
     """
     t = np.arange(1, 4001) / 4000.0
     checks = (
@@ -73,9 +94,11 @@ def assert_libm_transcendentals() -> None:
                     f"(first at {float(v)!r}: {float(got[i])!r} vs "
                     f"{want(float(v))!r}). numpy is dispatching a vector "
                     "math kernel — the parity suites cannot reproduce it. "
-                    'Set NPY_DISABLE_CPU_FEATURES="AVX512F AVX512_SKX '
-                    'AVX512_CNL AVX512_ICL AVX512_SPR" before numpy is '
-                    "imported to get the baseline loops back."
+                    "Set NPY_DISABLE_CPU_FEATURES="
+                    f'"{numpy_dispatch_names()}" before numpy is imported '
+                    "to get the baseline loops back. Those names are this "
+                    "wheel's own dispatch targets; a name outside the list "
+                    "is a warning at import and disables nothing."
                 )
 
 
