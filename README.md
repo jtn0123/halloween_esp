@@ -32,8 +32,9 @@ cannot drift away from the ones on the device, because both come from here.
 scene audio (`scene_render`) and analyses imported tracks (`analyze_track`) —
 those are the production paths, not experiments; the Python originals survive
 only as the parity references the Rust is checked against. It also holds a
-WASM face the cue desk loads and a complete twin of the studio server that is
-gated but not yet the default. Everything reaches it through
+WASM face the cue desk loads and the studio server itself — the twin became
+the default on 2026-09-01, with the Python one behind it. Everything else
+reaches the crate through
 `tools/core_bins.py`, as a subprocess: no cargo means a hard stop with a
 sentence, never a quiet fall-back to arithmetic that differs per machine.
 
@@ -116,7 +117,7 @@ make studio     # http://127.0.0.1:8765 — the previewer plus a local server
 ```
 
 The previewer is one static HTML file (`previewer/castle-cue-desk.html`, built
-by `make preview` from `web/src/`). Behind it, `tools/studio.py` adds what a
+by `make preview` from `web/src/`). Behind it, the studio server adds what a
 static page cannot do: the **Tracks** panel imports audio (a file, or a link via
 yt-dlp), shows onsets and waveforms, auditions clips, writes scenes into
 `scenes/scenes.yaml`, and sends files to the castle's SD card when one answers.
@@ -127,11 +128,15 @@ server (`POST /studio/server/stop`), with no login. The route
 table — what the studio owns (`/studio/…`) and what it relays to the castle
 (`/api/…`) — is [docs/API.md](docs/API.md).
 
-There are two studio servers. `tools/studio.py` is the one `make studio`
-starts and the one to reach for. `core/src/bin/studio.rs` is a complete Rust
-twin of the same surface, held answer-for-answer against the Python one by
-`tests/studio_rust_case.py`; nothing runs it by default. A change to a route
-belongs in both, and [docs/PARITY.md](docs/PARITY.md) says why.
+There are two studio servers, and since 2026-09-01 the Rust one
+(`core/src/bin/studio.rs`) is what starts: `make studio` runs
+`tools/studio_launch.sh`, which builds the binary when cargo is present and
+execs it, and falls back to `tools/studio.py` — printing the reason — when it
+is not. Either can be asked for by name with `CASTLE_STUDIO=rust|python`. The
+two are held answer-for-answer by `tests/studio_rust_case.py` and the browser
+suite, so the Python one remains the reference rather than a leftover. A
+change to a route belongs in both, and [docs/PARITY.md](docs/PARITY.md) says
+why.
 
 Four environment variables sandbox it: `CASTLE_TRACKS` (track library
 directory), `CASTLE_SCENES` (the scenes file it may write), `CASTLE_HOST`

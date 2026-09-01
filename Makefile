@@ -27,7 +27,7 @@ help:
 	@echo "  make bench-logs tail the bench build's logs"
 	@echo "  make bench-audio  measure decode load on the bare board (no speakers)"
 	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
-	@echo "  make studio     serve the cue desk with track management (localhost)"
+	@echo "  make studio     serve the cue desk with track management (Rust, localhost)"
 	@echo "  make publish    push scene tracks + the lean desk page to the castle"
 	@echo "  make ota        build the SD firmware and flash it over HTTP"
 	@echo "  make test       python unit tests (~1 min)"
@@ -79,8 +79,13 @@ track:
 	@test -n "$(SRC)" || (echo "usage: make track SRC=<file|url> [ID=<name>] [ARGS=...]"; exit 1)
 	@$(PY) tools/import_track.py "$(SRC)" $(if $(ID),--id $(ID),) $(ARGS)
 
+# The Rust studio is what this starts now (grade report 2026-09-01 G1): the
+# launcher builds it when cargo is here and falls back to tools/studio.py with
+# a printed reason when it is not. The logic lives in the script, not here,
+# because .claude/launch.json needs the same decision and cannot express it.
+# ARGS passes the studio's own command line through: ARGS="8766 --lan".
 studio: preview
-	@$(PY) tools/studio.py
+	@tools/studio_launch.sh $(ARGS)
 
 # The publish chain (grade report A1/I4): everything the castle needs after
 # a scene edit, in one word. Host resolves via tools/hosts.py (CASTLE_HOST,

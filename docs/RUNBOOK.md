@@ -35,7 +35,8 @@ makes a scene the same bytes on every machine.
 Running the desk from a worktree, or from anywhere the project `.venv` is not
 one directory up? Export `CASTLE_PY=/path/to/.venv/bin/python`. The studio
 runs the generators and the importer as child processes, and the Rust studio
-bin has no `sys.executable` to fall back on — without `CASTLE_PY` it finds a
+bin — what `make studio` starts since 2026-09-01 — has no `sys.executable`
+to fall back on — without `CASTLE_PY` it finds a
 bare `python3`, and every rebuild dies on `import yaml` instead of on
 anything to do with the show. (CLAUDE.md, "Sandboxing", lists it beside
 `CASTLE_TRACKS` / `CASTLE_SCENES` / `CASTLE_HOST`.)

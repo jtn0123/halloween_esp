@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Local companion server for the cue desk (`make studio` -> 127.0.0.1:8765).
+"""Local companion server for the cue desk (127.0.0.1:8765).
+
+Since 2026-09-01 `make studio` starts the Rust twin instead
+(`tools/studio_launch.sh` -> `core/target/release/studio`); this is the
+fallback where there is no cargo, `CASTLE_STUDIO=python` on purpose, and the
+reference the parity suites hold the Rust to. Neither is going away.
 
 The previewer is one static HTML file; this small server is what lets its
 Tracks panel run yt-dlp/ffmpeg, write tracks/, and edit scenes.yaml. Routes:

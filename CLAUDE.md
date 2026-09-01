@@ -20,20 +20,29 @@ file is the one that governs.
 - `core/` — castle-core, the repo's Rust crate (zero dependencies, one
   `Cargo.lock` with nothing in it). Eight bins under `core/src/bin/`:
   `scene_render` (the production renderer — `tools/render_audio.py` spawns
-  it), `analyze_track` (the importer's onsets/beats), `studio` (a complete
-  twin of `tools/studio.py`, parity-gated but NOT what `make studio` runs),
-  `castle`, and the four parity dumps `parity_dump` / `synth_dump` /
+  it), `analyze_track` (the importer's onsets/beats), `studio` (the server
+  `make studio` runs since 2026-09-01, with `tools/studio.py` as the fallback
+  and the parity reference), `castle`, and the four parity dumps
+  `parity_dump` / `synth_dump` /
   `pulse_dump` / `netguard_dump` (the SSRF guard's corpus face).
-  `src/wasm.rs` is the face the desk page inlines.
+  `src/wasm.rs` is the face the desk page inlines — built
+  `cargo build --release --no-default-features --target wasm32-unknown-unknown`,
+  because the crate's default `native` feature is the whole server/ffmpeg/
+  flock half and none of it belongs in a module that never listens.
   `tools/core_bins.py` is the only door: subprocess, built on demand with
   cargo, a hard stop rather than a silent Python fall-back. The
   cross-language gates are `tests/test_*_rust.py` and
   `tests/studio_rust_case.py`; the copies they hold are listed in
   `docs/PARITY.md`.
-- `tools/studio.py` — the local server behind the desk (`make studio`,
-  127.0.0.1:8765): imports tracks (`tools/import_track.py`), serves waveforms,
-  edits scenes.yaml under `/studio/*`, relays `/api/*` to the castle
-  (`tools/castle_link.py`). Route table: `docs/API.md`.
+- `tools/studio.py` — the local server behind the desk on 127.0.0.1:8765:
+  imports tracks (`tools/import_track.py`), serves waveforms, edits
+  scenes.yaml under `/studio/*`, relays `/api/*` to the castle
+  (`tools/castle_link.py`). Route table: `docs/API.md`. It is no longer what
+  starts by default — `tools/studio_launch.sh` (behind `make studio` and
+  `.claude/launch.json`) builds and execs the Rust twin when cargo is
+  present and falls back here, with a printed reason, when it is not. The
+  Python stays the reference the parity gates measure against, and
+  `CASTLE_STUDIO=python` picks it deliberately.
 - `firmware/` — ESPHome YAML + C++ headers. `castle_flash.yaml` is the show
   build; `castle_sd.yaml` is the EXPERIMENTAL microSD variant whose web API
   (`sd_web.h`) the desk talks to. `firmware/pending/README.md` lists patches
@@ -69,8 +78,9 @@ file is the one that governs.
 `rust-lint`, and `tests/test_castle_core.py` shells out to those three, so the
 gate has one definition) · `bench*` (bare-board dry runs) · `sd-build` / `sd-upload`
 · `publish` (scene tracks + lean page → the castle) · `ota` (build, stop
-audio, flash). The studio's rebuild publishes on its own when a castle
-answers; `docs/RUNBOOK.md` is the operator's end-to-end view.
+audio, flash). `studio` runs `tools/studio_launch.sh`: the Rust server, the
+Python one as the fallback. The studio's rebuild publishes on its own when a
+castle answers; `docs/RUNBOOK.md` is the operator's end-to-end view.
 
 Run Python through `.venv/bin/python` (the Makefile falls back to `python3`
 only when `.venv` is absent). `make e2e` is `cd web && npx playwright test`;
@@ -108,6 +118,11 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   unset both and the target is the repo. It is the fourth name in
   `tests/helpers.SANDBOX_ENV`, cleared before any tools module reads it, so
   an emulator shell that exported these knobs cannot redden `make test`.
+- `CASTLE_STUDIO=rust|python` forces one of the two servers in
+  `tools/studio_launch.sh` (`make studio`, `.claude/launch.json`). Unset is
+  "Rust if cargo or a built binary is here, else Python with a printed
+  reason"; `rust` refuses rather than falling back, which is how the flip is
+  tested. It does not reach the e2e suite — that is `CASTLE_STUDIO_CMD`.
 - `CASTLE_STUDIO_CMD=<command>` swaps the SERVER the e2e suite runs against
   — the only local way to point the browser suite at the Rust twin:
   `cd web && CASTLE_STUDIO_CMD=../core/target/release/studio npx playwright

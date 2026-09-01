@@ -3,10 +3,8 @@
   "configurations": [
     {
       "name": "studio",
-      "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": [
-        "tools/studio.py"
-      ],
+      "runtimeExecutable": "tools/studio_launch.sh",
+      "runtimeArgs": [],
       "port": 8765
     }
   ]

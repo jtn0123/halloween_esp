@@ -306,6 +306,14 @@ through Halloween; retiring it (and the desk swap) is the off-season
 flip. Deliberately not ported: the aioesphomeapi native leg (flash
 build; the esphome-native-api crate swap owns it) and gzip.
 
+B5 FLIP (2026-09-01, grade report G1): `make studio` and
+`.claude/launch.json` start the Rust bin through `tools/studio_launch.sh`,
+which falls back to `tools/studio.py` — with a printed reason — when cargo
+and the binary are both absent. Done early because the e2e matrix now runs
+both axes on every push, so the flip is gated, not hoped. studio*.py is NOT
+retired: it stays the parity reference every `tests/test_studio*_rust.py`
+suite measures against, and the fallback, until retirement is its own pass.
+
 B3 SWAP + B5 loose end (2026-08-27, eighth Track-B run, 4 passes):
 render_audio calls the crate — B3's stop condition, met and verified on
 the real show. Pass 1 closed B5's flag: hosts.resolve accepts host:port
