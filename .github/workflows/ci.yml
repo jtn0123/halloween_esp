@@ -42,7 +42,7 @@ jobs:
     # (release + LTO for a zero-dependency crate) and clippy, twice over.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Keep the channel equal to core/rust-toolchain.toml's. The action
       # looks for a toolchain file at the REPO ROOT and ours lives in core/,
       # so it cannot read the pin — hence the literal. rustup does read it
@@ -100,8 +100,8 @@ jobs:
       # when it fires — read it there rather than guessing here.
       NPY_DISABLE_CPU_FEATURES: "X86_V3 X86_V4 AVX512_ICL AVX512_SPR"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       # The parity suites (test_*_rust) shell out to core/target/release/*,
@@ -129,7 +129,7 @@ jobs:
       # esbuild: the sandbox guard runs all three generators end to end, and
       # gen_previewer.py bundles web/src through it. Without node_modules that
       # test fails on the environment rather than on the guard it exists for.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -167,13 +167,13 @@ jobs:
       matrix:
         studio: [python, rust]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       # The e2e suite drives the REAL studio server, whose launch command is
@@ -242,8 +242,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       # ffmpeg + numpy/scipy: the flash build embeds audio/*.mp3, which are
@@ -300,8 +300,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - uses: ./.github/actions/media-tools
