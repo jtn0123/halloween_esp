@@ -15,14 +15,14 @@ the comparison demand exact bits instead of tolerances.
 Skipped, not failed, where cargo or a host C++ compiler is missing —
 except in CI, where losing either would silently retire the gate.
 
-Two classes, because they need different things (grade report D2). The
+Two classes, because they need different things (grade report 2026-08-31 D2). The
 bit-exact comparison needs cargo AND a host C++ compiler. The toolchain
 gates — build, test, fmt, clippy — need only cargo, and used to ride the
 same skipIf: on a machine without clang++ the entire Rust gate vanished
 without a word. They live in TestCastleCoreToolchain now, and they run the
 Makefile's rust targets rather than re-spelling the cargo invocation, so
 "the Rust gate" means one thing whether you type `make rust-lint`, run
-this suite, or read the CI job (grade report I1).
+this suite, or read the CI job (grade report 2026-08-31 I1).
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ COMPILER = shutil.which("clang++") or shutil.which("g++")
 IN_CI = bool(os.environ.get("CI"))
 # ci.yml's `python` job sets this because the dedicated `rust` job runs the
 # same three targets, on its own cargo cache and under its own name in the
-# checks list (grade report I3). It ROUTES the gates, it does not remove
+# checks list (grade report 2026-08-31 I3). It ROUTES the gates, it does not remove
 # them: the variable exists only in a workflow that also contains the rust
 # job, so deleting that job deletes the variable and the python job starts
 # paying for them again. Nothing local should ever set it.

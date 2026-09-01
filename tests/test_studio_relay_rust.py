@@ -242,7 +242,7 @@ class MediaAndOps(StudioPair):
     def test_03_restart_answers_then_comes_back(self) -> None:
         # Three times over, both servers: a restart races its own dying
         # sockets for the port, and the failure mode is a process that is
-        # simply gone (grade report A1). Once was a coin flip.
+        # simply gone (grade report 2026-08-31 A1). Once was a coin flip.
         for round_ in range(3):
             a, b = self.both("/studio/server/restart", "POST")
             self.assertEqual(a[0], 200)

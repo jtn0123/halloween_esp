@@ -1,9 +1,9 @@
 # One statement of the whitespace ground rules for every editor (grade
-# report I5's harmless half). A mechanical whole-tree reformat (ruff format
-# / prettier) was considered and deliberately NOT adopted: it would rewrite
-# all 89 Python files at once, bury real diffs, and press eight files that
-# sit within 25 lines of the 500-line cap. Revisit as its own commit if
-# formatting drift ever shows up in review noise.
+# report 2026-08-23 I5's harmless half). A mechanical whole-tree reformat
+# (ruff format / prettier) was considered and deliberately NOT adopted: it
+# would rewrite all 89 Python files at once, bury real diffs, and press
+# eight files that sit within 25 lines of the 500-line cap. Revisit as its
+# own commit if formatting drift ever shows up in review noise.
 root = true
 
 [*]

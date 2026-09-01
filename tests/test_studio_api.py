@@ -137,7 +137,8 @@ class TestReads(ServerCase):
         claims to be a range is not."""
         # "bytes=" and "bytes=-" name no range at all: the flag used to
         # be set anyway and they answered a 206 over the whole file — a
-        # partial response that is not partial (grade report follow-up).
+        # partial response that is not partial (grade report 2026-08-31,
+        # found while closing B1).
         for bad in (
             "bytes=99999999-",
             "bytes=abc-def",
@@ -258,7 +259,7 @@ class TestWrites(ServerCase):
         ):
             code, d = self.post_json("/studio/probe", {"url": "not a link at all"})
         # 400, not 200: a bad link is the caller's mistake, and the status
-        # code is allowed to say so (grade report B2).
+        # code is allowed to say so.
         self.assertEqual(code, 400)
         self.assertFalse(d["ok"])
         self.assertIn("link", d["error"])

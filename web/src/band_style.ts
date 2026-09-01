@@ -4,8 +4,8 @@
  *
  * This lived in track_lights.ts, which track_style.ts imported BACK from
  * while track_lights imported its helpers — a live value cycle that only
- * survived because BAND_STYLE was always read lazily inside functions
- * (grade report A1). A leaf everyone imports from cannot cycle.
+ * survived because BAND_STYLE was always read lazily inside functions.
+ * A leaf everyone imports from cannot cycle.
  */
 
 import type { BandName } from "./bands.js";

@@ -77,7 +77,7 @@ let settle = false;
 const markDirty = (): void => { dirty = true; };
 // `ms` is per-paint duration samples (capped), so a test can assert the
 // 95th-percentile paint cost without depending on rAF cadence — a hidden
-// tab throttles WHEN frames run, not how long each takes (grade report D4).
+// tab throttles WHEN frames run, not how long each takes (grade report 2026-08-23 D4).
 const draws = { frames: 0, ms: [] as number[] };
 (window as unknown as { __castleDraws: typeof draws }).__castleDraws = draws;
 const canvas = el<HTMLCanvasElement>("stage");
@@ -131,7 +131,8 @@ if (kiosk) installKiosk();
    closed over the consts directly with `?.` guards — but esbuild hoists
    top-level const to var, TypeScript typed them non-nullable, and nothing
    stopped a future edit from dropping a guard. This exact class of bug once
-   took out 26 tests (grade report C3); now the compiler enforces every access. */
+   took out 26 tests (grade report 2026-08-21 C3); now the compiler enforces
+   every access. */
 
 // Panels wires the cue-sheet row clicks itself, so seeking is a constructor
 // dependency rather than a separate binding.
@@ -389,7 +390,7 @@ const tracks = initTracks({
 dispatch({ type: "ready", players: { wave, tracks, codecs } });
 
 /* ── Frame loop ──────────────────────────────────────────────────────────
-   A stopped desk should cost nothing (grade report G3). Once the show is
+   A stopped desk should cost nothing (grade report 2026-08-21 G3). Once the show is
    stopped, no clip is being auditioned and the flash has decayed, nothing
    on screen changes between frames — so the paint is skipped until
    something marks the scene dirty (any slider, click or key, a rig change,

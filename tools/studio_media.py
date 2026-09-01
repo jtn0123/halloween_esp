@@ -179,7 +179,7 @@ def waveform(path: Path, sensitivity: float | dict = 1.1, buckets: int = PEAKS) 
 # 8 bytes a frame. Eight of those is ~2.5 GB, and auditioning eight songs is
 # an ordinary evening. The budget below is the same arithmetic read the
 # other way: 50M floats at 8 bytes each is ~400 MB resident, whatever mix of long
-# and short tracks gets there (grade report B3). The most recent entry is
+# and short tracks gets there (grade report 2026-08-31 B3). The most recent entry is
 # never evicted — a single track larger than the whole budget still caches,
 # because throwing it away the instant it was built would mean decoding it
 # again for the very next sensitivity nudge.

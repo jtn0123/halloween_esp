@@ -61,7 +61,7 @@ def upload(ip: str, route: str, name: str, data: bytes, timeout: float = 600) ->
     if got != len(data):
         raise SystemExit(f" FAILED ({got} of {len(data)} bytes)")
     # v5.42+ answers with a CRC32 of what actually hit the card — "bytes
-    # matched" cannot see a bad SD sector (grade report B5). Older firmware
+    # matched" cannot see a bad SD sector (grade report 2026-08-23 B5). Older firmware
     # omits the field; nothing to compare then.
     said = resp.get("crc32")
     want = zlib.crc32(data)
@@ -155,7 +155,7 @@ def cmd_site(ip: str) -> int:
     src = bp.PREVIEW_HTML
     if not src.exists():
         raise SystemExit("previewer/castle-cue-desk.html missing — run `make preview`")
-    # The DEVICE gets the LEAN rewrite (grade report G1/A5): the committed
+    # The DEVICE gets the LEAN rewrite (grade report 2026-08-23 G1/A5): the committed
     # build inlines every scene's audio as base64 — 89% of a 3.3 MB page the
     # porch phone downloads before anything appears, for tracks it may never
     # play. The device page links /site/<sid>.mp3 instead, pushed below and

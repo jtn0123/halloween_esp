@@ -2,7 +2,7 @@
 
 The rest of `docs/` describes the system; this page is the night-to-night
 view: what to run, in what order, and what to check when it doesn't take.
-(Grade report H1 — the missing last-mile documentation is how the Ballad
+(Grade report 2026-08-23 H1 — the missing last-mile documentation is how the Ballad
 of the Witches' Road sat rendered on the Mac while the castle answered
 `unknown scene` all evening.)
 

@@ -1,5 +1,5 @@
 /**
- * The lean page (grade report G4): served by the studio, the desk's scene
+ * The lean page (grade report 2026-08-21 G4): served by the studio, the desk's scene
  * audio is NOT inlined — each player points at /studio/scene-audio/<id>,
  * which the studio answers from the rendered files, Range and all. The
  * portable build on disk keeps its data URIs; this is purely what a phone

@@ -16,14 +16,19 @@ PY=$(command -v .venv/bin/python || command -v python3)
 # report 2026-09-01 I3). `make check` and CI still enforce the cap itself.
 "$PY" tools/check_loc.py --hook
 
-# The TS half gets the same gate as the Python half (grade report I1) —
+# The same walk, one line later: an audit citation with no date names six
+# reports at once, and the cheapest moment to date it is while the audit that
+# raised it is still the thing on screen.
+"$PY" tools/check_citations.py
+
+# The TS half gets the same gate as the Python half (grade report 2026-08-23 I1) —
 # with a tsconfig this strict, tsc is the highest-value check in the repo.
 # Guarded on node_modules so a Python-only clone still commits.
 if [ -d web/node_modules ]; then
   (cd web && npx tsc --noEmit)
 fi
 
-# The Rust half gets the cheap half of its gate too (grade report I2):
+# The Rust half gets the cheap half of its gate too (grade report 2026-08-31 I2):
 # fmt --check reads the sources and never builds, so it costs under a second
 # — the tests and clippy stay in `make rust-lint` / `make rust-test` and CI.
 # Guarded on cargo the same way, so a Python-only clone still commits.

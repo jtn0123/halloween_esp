@@ -96,7 +96,7 @@ class ServerCase(unittest.TestCase):
     # the four already-imported parent bindings are patched to match. The
     # old scheme (pid-tagged fixtures in the live tracks/, restored on
     # teardown) left debris in the user's library whenever a run crashed —
-    # the exact thing the env knob exists to prevent (grade report D2).
+    # the exact thing the env knob exists to prevent.
     sandbox: Path
     _sandbox_patches: list[Any]
     wave: Path

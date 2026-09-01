@@ -77,7 +77,7 @@ test("chip, castle panel, selects and tabs meet the 44px floor", async ({ page }
   expect(await minHeight(page, "#rigPanel select")).toBeGreaterThanOrEqual(44);
   expect(await minHeight(page, ".viewsel button")).toBeGreaterThanOrEqual(44);
   // Track-row actions and the studio strip: judge B measured these at 40px
-  // after the "44px" commit (grade report C5).
+  // after the "44px" commit (grade report 2026-08-21 C5).
   await expect(page.locator(`.trk[data-id="${MP3_ID}"] .trk__act button`).first()).toBeVisible();
   expect(await minHeight(page, ".trk__act button")).toBeGreaterThanOrEqual(44);
   expect(await minHeight(page, ".trk-srvbtn button")).toBeGreaterThanOrEqual(44);

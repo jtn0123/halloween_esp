@@ -8,7 +8,7 @@ missing binary with no cargo to build it is a hard stop with a sentence,
 never a silent fall-back to the machine-dependent Python reference.
 
 The build is skipped when the binary is already newer than every source
-it is built from (grade report B6). The studio spawns these children per
+it is built from (grade report 2026-08-31 B6). The studio spawns these children per
 job, and cargo's own "is it fresh?" pass is tens of milliseconds of
 process start and manifest parse on every one of them — cheap once,
 noticeable per render. A stat() sweep over core/src answers the same

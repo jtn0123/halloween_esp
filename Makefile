@@ -60,7 +60,7 @@ setup:
 	@# installer, and silently curl|sh-ing one is not this repo's style). Say so
 	@# instead of letting `make audio` be the thing that discovers it: without
 	@# cargo, render_audio.py hard-stops rather than falling back to the
-	@# machine-dependent Python reference. (grade report H3)
+	@# machine-dependent Python reference. (grade report 2026-08-31 H3)
 	@command -v cargo > /dev/null \
 		|| echo "note: no cargo on PATH — castle-core (core/) cannot build, so 'make audio', the importer and the Rust gates will not run. Install rustup: https://rustup.rs"
 	@echo "ready. 'make build' next."
@@ -87,7 +87,7 @@ track:
 studio: preview
 	@tools/studio_launch.sh $(ARGS)
 
-# The publish chain (grade report A1/I4): everything the castle needs after
+# The publish chain (grade report 2026-08-23 A1/I4): everything the castle needs after
 # a scene edit, in one word. Host resolves via tools/hosts.py (CASTLE_HOST,
 # else devices.toml). The studio's rebuild runs the same push automatically;
 # this is the terminal spelling. `make ota` builds first and sd_sync stops
@@ -134,7 +134,7 @@ bench-audio-logs:
 	$(ESPHOME) logs firmware/bench_audio.yaml
 
 # pyproject.toml says >=3.13; the bare-python3 fallback above could silently
-# hand an older interpreter to everything below (grade report F5).
+# hand an older interpreter to everything below (grade report 2026-08-23 F5).
 pycheck:
 	@$(PY) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else \
 		(print(f"python {sys.version.split()[0]} is too old — this repo needs 3.13+ (make setup)") or 1))'
@@ -157,16 +157,16 @@ test-fast:
 # the number is for deciding what to test next. `coverage-gate` is the same
 # run with the floor CI enforces (COVERAGE_MIN); raise it as coverage lands.
 # Measured 83% on 2026-08-23 — the floor is the measurement minus one, and
-# it moves UP whenever a fresh `make coverage` beats it (grade report D1).
+# it moves UP whenever a fresh `make coverage` beats it (grade report 2026-08-23 D1).
 #
 # SCOPE: this number describes `tools/` ONLY. The Rust half (core/, the
 # production renderer and importer) is outside `--source=tools` entirely, so
 # 82% is 82% of a shrinking fraction of the shipped code. `make rust-coverage`
-# reports the other half, non-gating (grade report D7).
+# reports the other half, non-gating (grade report 2026-08-31 D7).
 COVERAGE_MIN := 82
 # Both tools live in requirements-dev.txt; a venv from before they were added
 # dies with "No module named …", which reads as breakage instead of what it
-# is — a stale venv. Say so. (grade report I2, 2026-08-24)
+# is — a stale venv. Say so. (grade report 2026-08-24 I2)
 NEED_DEV_TOOL = @$(PY) -c "import $(1)" 2>/dev/null \
 	|| { echo "$(1) missing — .venv predates a dev dependency; run 'make setup'"; exit 1; }
 coverage:
@@ -180,7 +180,7 @@ coverage-gate: coverage
 
 # Known advisories against what the venv actually has. Non-gating. The
 # exception list lives in .pip-audit-ignore — one id per line WITH its reason
-# and a review date (grade report E1) — so the "why" survives longer than
+# and a review date (grade report 2026-08-23 E1) — so the "why" survives longer than
 # anyone's memory. Re-run after `make lock`.
 AUDIT_IGNORES := $(shell awk '/^[A-Z]/{print "--ignore-vuln " $$1}' .pip-audit-ignore)
 audit:
@@ -200,13 +200,13 @@ lock:
 	@$(PY) tools/lock_deps.py
 
 # castle-core, the Rust half — 9k lines that had no spelling here at all
-# (grade report I1). These three ARE the Rust gate: tests/test_castle_core.py
+# (grade report 2026-08-31 I1). These three ARE the Rust gate: tests/test_castle_core.py
 # shells out to them, so the definition lives in one place and `make rust-lint`
 # is exactly what the suite and the CI job check.
 #
 # `cd core` rather than --manifest-path, and it is load-bearing: rustup finds
 # rust-toolchain.toml by WORKING DIRECTORY, not by manifest. Run from the repo
-# root, the pin (core/rust-toolchain.toml, grade report F3) is silently
+# root, the pin (core/rust-toolchain.toml, grade report 2026-08-31 F3) is silently
 # ignored and the gate floats on whatever rustc is default.
 #
 # Optional-toolchain guard, same shape as the pre-commit hook's node_modules
@@ -220,7 +220,7 @@ rust:
 rust-test:
 	$(HAVE_CARGO) cd core && cargo test --release --quiet
 
-# The Rust side of the coverage question (grade report D7). Non-gating, the
+# The Rust side of the coverage question (grade report 2026-08-31 D7). Non-gating, the
 # same shape as `make audit`: cargo-llvm-cov is a separate install, so say
 # what is missing instead of failing a clone that never asked for it. No
 # ratchet here on purpose — this number exists to be looked at while the port
@@ -245,6 +245,7 @@ lint: rust-lint
 check: audio test lint
 	@$(PY) tools/check_image.py castle-sd
 	@$(PY) tools/check_loc.py
+	@$(PY) tools/check_citations.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"
 	@cd web && npm run --silent test
 	@echo "note: the browser e2e suite did NOT run — 'make e2e' (or 'make check-all') covers the UI"

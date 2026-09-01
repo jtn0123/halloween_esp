@@ -52,7 +52,7 @@ def fit_budget(
     and the card both answer; opened from disk those cannot be fetched, and
     the desk falls back to the live synth for exactly those scenes.
 
-    This is what stops the ratchet (grade report G2): before it, one more song
+    This is what stops the ratchet (grade report 2026-08-31 G2): before it, one more song
     meant one more megabyte and a raised constant. `linked` is returned so the
     build can SAY which scenes went that way — a silently un-inlined scene
     would be its own quiet surprise.

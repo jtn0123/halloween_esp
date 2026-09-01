@@ -262,7 +262,7 @@ class TestRouteBoundary(ServerCase):
     def test_card_pull_relays_the_file_name_only(self) -> None:
         """/studio/card/<name> is the one relay that builds a castle path,
         so it is name-stripped like every other file route (grade report
-        E1): "../api/status" must not reach any GET on the castle."""
+        2026-08-21 E1): "../api/status" must not reach any GET on the castle."""
         with mock.patch.object(
             studio.cl, "forward", return_value=(200, b"x", "audio/mpeg")
         ) as fw:

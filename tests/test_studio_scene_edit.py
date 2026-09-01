@@ -162,7 +162,7 @@ class TestSceneEditing(ServerCase):
     def test_a_block_that_is_not_a_scene_is_refused_with_every_reason(self) -> None:
         """Parses, names itself right, and is still wrong: an unknown effect
         and a cue past the end. These used to splice cleanly and fail inside
-        the re-render (grade report B4); now the list comes back as a 400
+        the re-render (grade report 2026-08-21 B4); now the list comes back as a 400
         and the file is untouched."""
         yaml = block(
             "storm",
@@ -193,7 +193,7 @@ class TestSceneEditing(ServerCase):
         """`make check` already fails a thirteenth scene, but the desk is
         where scenes get written — and discovering the ceiling as a red
         pre-commit hook means discovering it with scenes.yaml already
-        edited and the show already re-rendered (grade report A8)."""
+        edited and the show already re-rendered (grade report 2026-08-31 A8)."""
         self.scenes.write_text(self.FULL)
         code, d = self.post_json(
             "/studio/scene", {"id": "one_too_many", "yaml": block("one_too_many")}

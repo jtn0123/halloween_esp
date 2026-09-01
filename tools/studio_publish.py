@@ -2,12 +2,13 @@
 
 studio_scenes.rebuild() renders audio, firmware cues and the page, and used
 to stop at the Mac: three correct local artifacts and a board still running
-last week's show, with /api/status reporting nothing wrong (grade report A1
-— the Ballad-of-the-Witches failure of 2026-08-22). This module pushes the
-result out through tools/sd_sync.py (scene tracks, then the lean desk page)
-and reports the one thing a push cannot fix: scenes the RUNNING firmware was
-not built with, read from /api/status `scenes` (B1), which need a rebuild
-and an OTA before a pick stops answering "unknown scene".
+last week's show, with /api/status reporting nothing wrong (grade report
+2026-08-23 A1 — the Ballad-of-the-Witches failure of 2026-08-22). This
+module pushes the result out through tools/sd_sync.py (scene tracks, then
+the lean desk page) and reports the one thing a push cannot fix: scenes the
+RUNNING firmware was not built with, read from /api/status `scenes` (B1 of
+the same report), which need a rebuild and an OTA before a pick stops
+answering "unknown scene".
 
 Sandbox rules apply unchanged: castle_link honours CASTLE_HOST, and a
 set-but-empty value means "explicitly no castle" — publish then reports

@@ -19,7 +19,7 @@ const KEEP_WAVES: usize = 32;
 /// KEEP_SAMPLES, the same number for the same reason. An entry is a whole
 /// song in f64: the mono buffer plus both stereo channels, three buffers
 /// of 8 bytes a frame, ~318 MB for five minutes. Bounding eight of THOSE
-/// was bounding 2.5 GB. 50M floats × 8 bytes ≈ 400 MB (grade report B3).
+/// was bounding 2.5 GB. 50M floats × 8 bytes ≈ 400 MB (grade report 2026-08-31 B3).
 /// The newest entry is never evicted, however big it is — dropping it the
 /// instant it was built would re-decode for the next sensitivity nudge.
 const KEEP_SAMPLES: usize = 50_000_000;

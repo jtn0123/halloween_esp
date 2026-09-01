@@ -3,7 +3,7 @@
 # same standard. Run both with `make lint` (wired into `make check` and CI).
 
 # Not a distributable package — [project] exists to state the interpreter
-# floor (grade report F5): the venv is 3.13, CI is 3.13, and the Makefile's
+# floor (grade report 2026-08-23 F5): the venv is 3.13, CI is 3.13, and the Makefile's
 # bare-python3 fallback checks this before running anything.
 [project]
 name = "halloween-castle"
@@ -77,7 +77,8 @@ module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_sc
     "test_synth_rust", "synth_probes", "test_master_rust", "test_onsets_rust", "test_bridge_rust", "test_studio_rust",
     "studio_rust_case", "test_studio_media_rust", "test_studio_scenes_rust", "test_studio_import_rust", "test_studio_relay_rust",
     "test_scene_render_rust", "core_bins", "test_analyze_track_rust",
-    "cargo_gate", "lock_deps", "test_lock_deps"]
+    "cargo_gate", "lock_deps", "test_lock_deps",
+    "check_citations", "test_check_citations"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_decorators = true

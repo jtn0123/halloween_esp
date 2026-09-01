@@ -55,9 +55,9 @@ const FLAT_RANGE = 0.15;
  *  Binary search, not a scan: the envelope is time-sorted (the analyzer
  *  emits it that way), and this is called three times per 0.25 s step from
  *  three different passes — the full scan was ~4-8 MILLION comparisons per
- *  sections() call on a 4-minute track, running on every drag frame
- *  (grade report G1). Tie-breaking matches the old scan exactly: strict <,
- *  so the earlier point wins an exact tie. */
+ *  sections() call on a 4-minute track, running on every drag frame.
+ *  Tie-breaking matches the old scan exactly: strict <, so the earlier
+ *  point wins an exact tie. */
 function envAt(env: ReadonlyArray<readonly [number, number]>, sec: number): number {
   let lo = 0, hi = env.length;              // first index with t >= sec
   while (lo < hi) {

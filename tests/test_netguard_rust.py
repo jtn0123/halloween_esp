@@ -1,7 +1,7 @@
 """castle-core's netguard against tools/netguard.py, refusal for refusal.
 
 The SSRF guard was the one port held to a hand-copied snapshot rather than
-a cross-language corpus (grade report A3): tighten the Python and the Rust
+a cross-language corpus (grade report 2026-08-31 A3): tighten the Python and the Rust
 studio would keep the weaker policy silently, on the one seam where that
 means a LAN visitor reaching an address only this machine can see.
 

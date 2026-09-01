@@ -98,7 +98,7 @@ class TestDecodedCache(unittest.TestCase):
     def test_the_decoded_store_is_bounded_by_total_samples(self) -> None:
         # Counted in floats, not entries: an entry IS a whole song in
         # float64 (mono + both stereo channels), so eight of them was
-        # gigabytes (grade report B3).
+        # gigabytes (grade report 2026-08-31 B3).
         sm.waveform(self.track, buckets=10)
         one = sm._samples(next(iter(sm._DECODED.values())))
         with mock.patch.object(sm, "KEEP_SAMPLES", 2 * one):

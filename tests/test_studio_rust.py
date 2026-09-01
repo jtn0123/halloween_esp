@@ -69,7 +69,7 @@ class CastleLess(StudioPair):
             "bytes=5-2",
             # Neither side of the dash: no range at all, so 200 — the
             # Python used to answer 206 over the whole file here while
-            # the Rust answered 200 (grade report follow-up).
+            # the Rust answered 200 (grade report 2026-08-31 B1 follow-up).
             "bytes=",
             "bytes=-",
         ):
@@ -88,7 +88,7 @@ class CastleLess(StudioPair):
         # An interrupted render leaves a 0-byte mp3 behind, and the Rust
         # server used to answer a Range over it by promising one byte and
         # then writing nothing — desyncing the keep-alive connection for
-        # every later request on it (grade report B1).
+        # every later request on it (grade report 2026-08-31 B1).
         for build in (self.py_build, self.rs_build):
             (build / "audio" / "07_hollow.mp3").write_bytes(b"")
         for rng in (None, "bytes=0-", "bytes=0-0", "bytes=-50", "bytes=-"):

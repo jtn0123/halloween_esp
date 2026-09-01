@@ -6,7 +6,7 @@
 //! implementation, per the plan's stays-Python list). That delegation is
 //! what makes the SCENE CEILING the same refusal here as there: the
 //! thirteenth scene is turned away by `check()` below, before any splice,
-//! because the Python it asks counts the show first (grade report A8).
+//! because the Python it asks counts the show first (grade report 2026-08-31 A8).
 //! Do not reimplement the count on this side — one implementation is the
 //! whole point. The splice itself —
 //! the block scanner, the .bak + atomic replace — and the rebuild

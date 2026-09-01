@@ -1,9 +1,9 @@
 """The studio's route handlers — what each endpoint MEANS.
 
 Split from studio.py at the dispatch seam (the 500-line cap, and grade
-report B1): studio.py owns the server, the shared state — the lock, the
-job runner — and the thin per-method dispatch; this module owns the
-bodies. Handlers take the live request handler `h` and reach everything
+report 2026-08-24 B1): studio.py owns the server, the shared state — the
+lock, the job runner — and the thin per-method dispatch; this module owns
+the bodies. Handlers take the live request handler `h` and reach everything
 shared through the studio module AT CALL TIME (`app.run`, `app._runner`),
 never by from-import — the test suite patches attributes on studio
 (mock.patch.object(studio, "run")) and late attribute lookup is what keeps
@@ -228,7 +228,7 @@ def handle_post(h):
             # A typo in a number is the caller's mistake, not a server
             # fault: without this the ValueError climbed out to the error
             # boundary and came back a 500 with a traceback, alone among
-            # the routes (grade report A5).
+            # the routes (grade report 2026-08-31 A5).
             try:
                 return float(req.get(k) or d)
             except (TypeError, ValueError) as e:

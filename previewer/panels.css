@@ -278,7 +278,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
   box-shadow: 0 6px 24px rgba(0, 0, 0, .55);
 }
 /* The panel's rows (device_panel.ts renders them as innerHTML with these
-   class names only — grade report C2): header, show row, lights row, the
+   class names only — grade report 2026-08-21 C2): header, show row, lights row, the
    card's file list, the motion-sensor row, the drop zone, the boot-log foot.
    Tokens throughout, so the panel is themed like the chip rather than
    carrying a private palette of its own. */

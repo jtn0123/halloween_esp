@@ -6,7 +6,7 @@
  * the panel proper is now only the class that fetches, mounts and wires.
  *
  * Class names only — the rules live in previewer/panels.css's .dp__* block,
- * so theme and phone CSS reach every row (grade report C2).
+ * so theme and phone CSS reach every row (grade report 2026-08-21 C2).
  */
 
 import { esc } from "./dom.js";
@@ -154,7 +154,7 @@ export function panelMarkup(
   st: DeviceStatus, tracks: SdFile[], onCard: Set<string>,
 ): string {
   // Class names only — the rules are previewer/panels.css's .dp__* block,
-  // so theme and phone CSS reach every row (grade report C2).
+  // so theme and phone CSS reach every row (grade report 2026-08-21 C2).
   return (
     `<div class="dp__hd">` +
     `<span class="dp__grow"><b>🏰 v${esc(st.version)}</b>` +

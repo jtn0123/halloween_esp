@@ -72,7 +72,7 @@ def rebuild(lock: threading.Lock, run: Runner, py: str, root: Path) -> tuple[boo
             if not ok:
                 log += f"\n{tool} failed — the later steps were not run\n"
                 return False, log[-4000:]
-        # The fourth step (grade report A1): when a castle is answering,
+        # The fourth step (grade report 2026-08-23 A1): when a castle is answering,
         # PUSH what was just rebuilt — three correct local artifacts and a
         # board still on last week's show is exactly how the Ballad failed
         # on 08-22. No castle (or CASTLE_HOST="") publishes nothing and
@@ -146,7 +146,7 @@ def check(scenes: Path, req: dict) -> tuple[dict, int] | None:
     scenes.yaml is the hand-authored source of truth for the whole show,
     and a malformed splice used to corrupt it permanently. And it must be
     a SCENE — known effects, cues inside its length, the keys the
-    generators read (grade report B4); each problem is one line the desk
+    generators read (grade report 2026-08-21 B4); each problem is one line the desk
     can show next to the field.
 
     And it must FIT. The board holds SCENE_LIMIT scenes (~9 KB of dram0
@@ -154,7 +154,7 @@ def check(scenes: Path, req: dict) -> tuple[dict, int] | None:
     already refuses it, but the desk is where it gets written — and
     discovering the ceiling as a red pre-commit hook, after the splice, is
     discovering it with the show already edited. So the ceiling is answered
-    HERE, before `_write` touches anything (grade report A8).
+    HERE, before `_write` touches anything (grade report 2026-08-31 A8).
     """
     block = (req.get("yaml") or "").rstrip()
     sid = (req.get("id") or "").strip()

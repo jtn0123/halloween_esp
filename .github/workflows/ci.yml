@@ -2,7 +2,7 @@
 # ESPHome config validation of every buildable variant.
 #
 # Four parallel jobs on a PR: python, rust, web, esphome. The `rust` job is
-# newer than the rest (grade report I3) — castle-core landed with no job of
+# newer than the rest (grade report 2026-08-31 I3) — castle-core landed with no job of
 # its own, so a clippy finding or a failed cargo build reported itself as
 # "coverage-gated unit tests failed" three jobs away from the truth.
 #
@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   # castle-core on its own: fmt, clippy, the unit tests and the wasm face,
-  # nothing else in the way (grade report I3/D1). It is fast, it is cached,
+  # nothing else in the way (grade report 2026-08-31 I3/D1). It is fast, it is cached,
   # and when it is red the checks list says "rust".
   rust:
     if: github.event_name != 'schedule'
@@ -58,7 +58,7 @@ jobs:
           workspaces: core
       # The same words a developer types. `make rust-lint` is rustfmt --check
       # then clippy -D warnings; tests/test_castle_core.py asserts on these
-      # exact targets, so the gate has one definition (grade report I1).
+      # exact targets, so the gate has one definition (grade report 2026-08-31 I1).
       - name: fmt + clippy
         run: make rust-lint
       - name: unit tests
@@ -110,7 +110,7 @@ jobs:
       # The parity suites (test_*_rust) shell out to core/target/release/*,
       # and the wasm check needs the wasm32 std — neither existed on this
       # runner before, which is how the whole Rust port merged unvalidated
-      # (grade report D1). Built in an explicit step so a compile error reads
+      # (grade report 2026-08-31 D1). Built in an explicit step so a compile error reads
       # as one, and so tools/core_bins.py finds it fresh and skips its own
       # build in every child process it spawns (B6).
       - uses: dtolnay/rust-toolchain@stable
@@ -165,6 +165,10 @@ jobs:
         run: make coverage-gate PY=python
       - name: LOC cap
         run: python tools/check_loc.py
+      # Every grade-report citation names its audit. IDs renumber, so a bare
+      # one points at six reports and none of them.
+      - name: citation dates
+        run: python tools/check_citations.py
       # Advisories against the locked venv. Informational only — see the
       # `audit` target's comment in the Makefile for what is ignored and why.
       - name: pip-audit (non-gating)
@@ -177,7 +181,7 @@ jobs:
     timeout-minutes: 30
     # The 148-test browser suite is also the parity gate for the Rust studio:
     # both servers answer the same 20+19 routes, so the same specs passing
-    # against both IS the proof (grade report D5). It had been run against the
+    # against both IS the proof (grade report 2026-08-31 D5). It had been run against the
     # Rust half exactly once, by hand. fail-fast off — when one server breaks,
     # the other axis's result is the most useful thing on the page.
     strategy:
@@ -205,7 +209,7 @@ jobs:
       # no binary and no cargo it hard-stops rather than falling back to the
       # machine-dependent Python reference — tools/core_bins.py, by design.
       # Built once here, explicitly: the mtime check then keeps every render
-      # child from re-running cargo's freshness pass (grade report B6).
+      # child from re-running cargo's freshness pass (grade report 2026-08-31 B6).
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.88.0"
@@ -229,7 +233,7 @@ jobs:
         run: .venv/bin/python tools/gen_previewer.py
       # The page-weight budget can only be measured where the page exists,
       # which is here and not in the `python` job — where it had only ever
-      # produced a FileNotFoundError (grade report D1).
+      # produced a FileNotFoundError (grade report 2026-08-31 D1).
       - if: matrix.studio == 'python'
         name: previewer page budget
         run: .venv/bin/python -m unittest -q tests.test_previewer_budget.TestPageWeight
@@ -310,7 +314,7 @@ jobs:
 
   # `esphome config` cannot see the failure mode that is now closest: the
   # S2's dram0 sits at ~88% and each song scene costs ~9 KB (grade report
-  # D5/G2). Once a week, actually compile the SD build and fail while the
+  # 2026-08-23 D5/G2). Once a week, actually compile the SD build and fail while the
   # ceiling is still a warning — and say whether a newer esphome exists,
   # because the pin is what holds eight stale advisories in place (F1).
   firmware-weekly:
@@ -359,7 +363,7 @@ jobs:
         run: |
           PCT=$(grep -Eo 'RAM: *\[[^]]*\] *[0-9.]+%' /tmp/build.out | grep -Eo '[0-9.]+%' | tr -d '%')
           echo "dram0 at ${PCT}%"
-          python3 -c "import sys; p=float('${PCT}' or 101); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm — about one scene of headroom left (grade report G2); split or cap before adding more') or 1)"
+          python3 -c "import sys; p=float('${PCT}' or 101); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm — about one scene of headroom left (grade report 2026-08-23 G2); split or cap before adding more') or 1)"
       - name: newer esphome available?
         run: |
           pip index versions esphome 2>/dev/null | head -2 || true

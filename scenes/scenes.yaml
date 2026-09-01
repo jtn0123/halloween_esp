@@ -89,18 +89,18 @@ palette:
   green:  [0.14, 1.00, 0.42]
   flame:  [1.00, 0.42, 0.09]
 
-# ── THE CEILING (grade report A2/G2, decided 2026-08-23) ────────────────
+# ── THE CEILING (grade report 2026-08-23 A2/G2) ─────────────────────────
 # Scenes are COMPILE-TIME objects: each one becomes a generated ESPHome
 # script and costs ~9 KB of the S2's static RAM (dram0), which sits at
 # ~88% of 172,032 bytes after the tenth scene. Budget: **at most 12 scenes**
 # on this board. The weekly CI firmware compile alarms at 92% dram0; if the
 # show needs more scenes than that, the next step is the card-loaded cue
-# format sketched in the grade report (one interpreter, N scenes, flat RAM)
-# — not a thirteenth script. Each song scene also adds ~1.2 MB to the
-# committed inlined page (tests/test_gen_previewer.py budgets it).
+# format sketched in grade report 2026-08-23 A2 (one interpreter, N scenes,
+# flat RAM) — not a thirteenth script. Each song scene also adds ~1.2 MB to
+# the committed inlined page (tests/test_gen_previewer.py budgets it).
 #
-# THAT CEILING IS NOW THE RULE THIS FILE ANSWERS TO (grade report A8,
-# 2026-08-31). The repo's 500-line cap no longer applies here: this file is
+# THAT CEILING IS NOW THE RULE THIS FILE ANSWERS TO (grade report 2026-08-31
+# A8). The repo's 500-line cap no longer applies here: this file is
 # data, and a line count was about to block *content* — one more scene and
 # `make check` would have failed for a reason that has nothing to do with
 # what the board can hold. So scenes/scenes.yaml is exempt from the cap in

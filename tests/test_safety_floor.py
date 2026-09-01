@@ -2,8 +2,11 @@
 scene validation that keeps a bad request from corrupting scenes.yaml.
 
 Each of these pins a fix to a specific way the studio could previously lose
-or expose data (grade report items E1, E2, B3, B4, B5). If one starts
-failing, the hole is open again.
+or expose data: a path escaping its directory, a write interrupted halfway,
+a subprocess with no timeout, a splice that corrupted the show. (The audit
+that found them predates the reports kept in `.claude/`, so there is no item
+to cite — the list above is the citation.) If one starts failing, the hole
+is open again.
 """
 
 from __future__ import annotations

@@ -99,6 +99,13 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   studio asks through `tools/scene_check.py`) — the ceiling should not be
   discovered by a red pre-commit hook after the show is already edited.
   Nothing hand-written is exempt.
+- **Every grade-report citation names its audit**: `grade report 2026-08-31
+  B1`, never a bare `B1` — item IDs are renumbered by each audit, and six
+  reports now exist (`.claude/grade-report*.md`, plus older ones only in git
+  history). `tools/check_citations.py` runs in `make check`, the hook and CI,
+  and refuses an undated one. Date it by `git blame`, then confirm the ITEM
+  matches the topic; if nothing matches, describe the problem in words rather
+  than guess an ID.
 - ruff + mypy clean (`pyproject.toml`); tsc `--noEmit` clean for `web/`.
 - `make check` green before handing work back. Never skip or disable a test
   to get there — fix it or list it as follow-up work.

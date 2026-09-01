@@ -267,7 +267,7 @@ class StudioPair(unittest.TestCase):
         # busy machine (another suite, the user's own studio) can take the
         # port in between. One retry on fresh ports is the cheap answer:
         # the window is milliseconds, so losing it twice is not a race any
-        # more — it is a machine with no free ports (grade report D6).
+        # more — it is a machine with no free ports (grade report 2026-08-31 D6).
         for attempt in (0, 1):
             try:
                 cls._launch()

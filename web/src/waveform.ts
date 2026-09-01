@@ -171,8 +171,8 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
 
   /* The expensive half of sync() — sections() over the envelope, a
      localStorage write, and onClipChange (which rebuilds and re-sorts the
-     whole audition scene) — used to run on EVERY pointermove of a drag
-     (grade report G2). One trailing frame carries the same result. */
+     whole audition scene) — used to run on EVERY pointermove of a drag.
+     One trailing frame carries the same result. */
   let heavyPending = false;
   function syncSoon(): void {
     if (heavyPending) return;

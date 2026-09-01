@@ -1,4 +1,4 @@
-# The one toolchain castle-core is built and gated with (grade report F3).
+# The one toolchain castle-core is built and gated with (grade report 2026-08-31 F3).
 #
 # Everything else in this repo is pinned by conviction — python 3.13, a 113-
 # package pip lock, a committed npm lock — and the newest language arrived

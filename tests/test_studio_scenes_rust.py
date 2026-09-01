@@ -129,7 +129,7 @@ class SceneRoutes(StudioPair):
     def test_05_the_thirteenth_scene_is_refused_the_same_way(self) -> None:
         """A show already at the ceiling: both servers must turn the next
         scene away with the same sentence, and neither may touch the file
-        (grade report A8). Last of the five because it rewrites both
+        (grade report 2026-08-31 A8). Last of the five because it rewrites both
         sandboxes' scenes.yaml to a full show and does not put them back —
         nothing after it would be measuring the fixture any more.
 

@@ -306,7 +306,7 @@ through Halloween; retiring it (and the desk swap) is the off-season
 flip. Deliberately not ported: the aioesphomeapi native leg (flash
 build; the esphome-native-api crate swap owns it) and gzip.
 
-B5 FLIP (2026-09-01, grade report G1): `make studio` and
+B5 FLIP (grade report 2026-09-01 G1): `make studio` and
 `.claude/launch.json` start the Rust bin through `tools/studio_launch.sh`,
 which falls back to `tools/studio.py` — with a printed reason — when cargo
 and the binary are both absent. Done early because the e2e matrix now runs
