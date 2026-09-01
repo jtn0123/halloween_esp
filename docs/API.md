@@ -1,9 +1,15 @@
 # The cue desk's HTTP contract
 
-Three parties: the **desk** (the page, `web/src/`), the **studio**
-(`tools/studio.py`, the local server behind it) and the **castle**
-(`firmware/sd_web.h`, or `tools/castle_emu.py` standing in for it). The
-prefix says who owns a route:
+Four parties: the **desk** (the page, `web/src/`), the **studio**
+(`tools/studio.py` — the local server behind it, and the one `make studio`
+runs), the **Rust studio** (castle-core's `studio` bin, `core/src/bin/studio.rs`
+plus `core/src/studio*.rs`: the same surface again, both tables below, held
+answer-for-answer by `tests/studio_rust_case.py` and the five
+`tests/test_studio*_rust.py` suites — not started by anything yet, so the
+Python one is production), and the **castle** (`firmware/sd_web.h`, or
+`tools/castle_emu.py` standing in for it). A route added to one studio is
+added to both, or the parity suites go red (`docs/PARITY.md`). The prefix
+says who owns a route:
 
 - `/studio/…` — the studio's own authoring routes (`web/src/api.ts`).
 - `/api/…` — the castle's. The studio relays these untouched

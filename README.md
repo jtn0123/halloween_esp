@@ -18,7 +18,8 @@ will not play — see [docs/RUNBOOK.md](docs/RUNBOOK.md).
 ```
 scenes/scenes.yaml            ← THE SOURCE OF TRUTH
         │
-        ├── tools/render_audio.py ──▶ audio/NN_<id>.mp3      (embedded in flash)
+        ├── tools/render_audio.py ─▶ core/ scene_render ─▶ audio/NN_<id>.mp3
+        │                            (Rust: synths, reverb, master chain)
         ├── tools/gen_esphome.py  ──▶ firmware/generated/     (light cue scripts)
         └── previewer/            ──▶ browser cue desk        (tuning tool)
 ```
@@ -26,6 +27,15 @@ scenes/scenes.yaml            ← THE SOURCE OF TRUTH
 One file defines every scene: its light cues, its audio score, its length and its
 playback level. Everything else is generated. Cue timings tuned in the previewer
 cannot drift away from the ones on the device, because both come from here.
+
+`core/` is castle-core, the project's zero-dependency Rust crate. It renders the
+scene audio (`scene_render`) and analyses imported tracks (`analyze_track`) —
+those are the production paths, not experiments; the Python originals survive
+only as the parity references the Rust is checked against. It also holds a
+WASM face the cue desk loads and a complete twin of the studio server that is
+gated but not yet the default. Everything reaches it through
+`tools/core_bins.py`, as a subprocess: no cargo means a hard stop with a
+sentence, never a quiet fall-back to arithmetic that differs per machine.
 
 ### Why the audio is pre-rendered
 
@@ -79,9 +89,16 @@ before the Feather** rather than drawing it all through its USB trace.
 
 ## Getting started
 
+You need Python 3.13 and **a Rust toolchain** (`rustup`, which brings cargo).
+`make setup` does not install Rust, and the step after it does not work
+without one: `make audio` renders through castle-core and stops with a
+sentence rather than falling back to Python. Node 22+ is needed only for the
+cue desk's own build and tests.
+
 ```bash
-make setup      # venv + esphome + render deps
-make audio      # render the scene audio
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # once
+make setup      # venv + esphome + render deps + the commit hook
+make audio      # render the scene audio (builds core/ on first use)
 make validate   # check the config without a toolchain
 make build      # compile
 make upload     # flash over USB
@@ -110,6 +127,12 @@ server (`POST /studio/server/stop`), with no login. The route
 table — what the studio owns (`/studio/…`) and what it relays to the castle
 (`/api/…`) — is [docs/API.md](docs/API.md).
 
+There are two studio servers. `tools/studio.py` is the one `make studio`
+starts and the one to reach for. `core/src/bin/studio.rs` is a complete Rust
+twin of the same surface, held answer-for-answer against the Python one by
+`tests/studio_rust_case.py`; nothing runs it by default. A change to a route
+belongs in both, and [docs/PARITY.md](docs/PARITY.md) says why.
+
 Three environment variables sandbox it: `CASTLE_TRACKS` (track library
 directory), `CASTLE_SCENES` (the scenes file it may write), `CASTLE_HOST`
 (the castle's address; set-but-empty means "no castle"). The tests set all
@@ -128,9 +151,14 @@ make e2e        # Playwright against the real studio (CASTLE_E2E_PORT=8821 to ru
 make coverage   # non-gating coverage report     make audit  # pip-audit, non-gating
 ```
 
-The four implementations of the show's arithmetic (Python generators, TS
-effects, C++ firmware, host-compiled dump) are kept bit-exact by seeded fuzz —
-[docs/PARITY.md](docs/PARITY.md) is the contract and what to do when it goes red.
+The five implementations of the show's arithmetic (Python generators, TS
+effects, C++ firmware, host-compiled dump, and castle-core in `core/`) are kept
+bit-exact by seeded fuzz — [docs/PARITY.md](docs/PARITY.md) is the contract, the
+list of every duplicated copy, and what to do when one of them goes red.
+`make rust` builds the crate's binaries; `make rust-test` and `make rust-lint`
+(fmt --check + clippy -D warnings) are the crate's own gates, and the same
+checks ride inside `tests/test_castle_core.py` so `make check` covers `core/`
+too — but only on a machine that has cargo and a host C++ compiler.
 
 Every file is held to 500 lines (`tools/check_loc.py`, prose included).
 `make setup` installs the commit hook (`git config core.hooksPath githooks`).

@@ -1,11 +1,19 @@
 # Contributing
 
-**Setup.** `make setup` creates `.venv` (Python 3.13), installs the
-requirements and the commit hook (`git config core.hooksPath githooks`);
-`cd web && npm ci` for the TypeScript half. Run Python via `.venv/bin/python`.
+**Setup.** Install a Rust toolchain first (`rustup`, which brings cargo) —
+`make setup` does not, and without it `make audio` and the Rust half of
+`make check` cannot run. Then `make setup` creates `.venv` (Python 3.13),
+installs the requirements and the commit hook (`git config core.hooksPath
+githooks`); `cd web && npm ci` for the TypeScript half. Run Python via
+`.venv/bin/python`.
 
 **Before handing work back.** `make check` green — unit tests, ruff + mypy,
-the image/LOC guards, `tsc --noEmit`, the node suites (what CI runs).
+the image/LOC guards, `tsc --noEmit`, the node suites, and the castle-core
+gates (`cargo test`, `fmt --check`, `clippy -D warnings`, and the Rust↔Python
+parity suites) — what CI runs. `make rust-test` / `make rust-lint` are the same
+work one word away when only `core/` changed. The Rust gates SKIP without cargo
+and a host `clang++`/`g++`, so a green run on a machine missing either has not
+checked `core/`.
 `make test-fast` is the inner loop; `make e2e` when the page or studio changed
 (it builds the page and installs Chromium itself — no separate setup steps).
 Never skip or disable a test to get there: fix it or list it as follow-up.
