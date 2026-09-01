@@ -81,8 +81,17 @@ jobs:
     timeout-minutes: 25
     env:
       # The three toolchain gates belong to the `rust` job — routed, not
-      # dropped; see the constant of the same name in tests/test_castle_core.py.
-      CASTLE_RUST_GATES_ELSEWHERE: "1"
+      # dropped; see RUST_GATES_ELSEWHERE in tests/test_castle_core.py. Not a
+      # CASTLE_* name on purpose: that prefix is the sandbox-knob namespace
+      # test_hermetic.py holds empty.
+      CI_RUST_GATES_ELSEWHERE: "1"
+      # GitHub's runners are AVX-512 hosts, where numpy dispatches Intel SVML
+      # vector kernels for exp/log/sin — arithmetic no probe profile can
+      # describe (tests/synth_probes.py assert_libm_transcendentals names this
+      # exact remedy). Pinning numpy to its baseline loops keeps the parity
+      # suites' reference arithmetic reproducible; on a non-AVX-512 runner the
+      # unknown features are a warning, not an error.
+      NPY_DISABLE_CPU_FEATURES: "AVX512F AVX512_SKX AVX512_CNL AVX512_ICL AVX512_SPR"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

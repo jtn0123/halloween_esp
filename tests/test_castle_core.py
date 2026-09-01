@@ -57,7 +57,7 @@ IN_CI = bool(os.environ.get("CI"))
 # them: the variable exists only in a workflow that also contains the rust
 # job, so deleting that job deletes the variable and the python job starts
 # paying for them again. Nothing local should ever set it.
-RUST_GATES_ELSEWHERE = bool(os.environ.get("CASTLE_RUST_GATES_ELSEWHERE"))
+RUST_GATES_ELSEWHERE = bool(os.environ.get("CI_RUST_GATES_ELSEWHERE"))
 SEED = os.environ.get("CASTLE_CORE_SEED", "7")
 
 
