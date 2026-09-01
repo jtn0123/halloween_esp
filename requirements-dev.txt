@@ -3,5 +3,5 @@ ruff~=0.16
 mypy~=2.3
 types-PyYAML
 # `make coverage` (non-gating) and `make audit` (advisories; non-gating).
-coverage~=7.15
+coverage~=7.16
 pip-audit~=2.10
