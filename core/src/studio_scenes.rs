@@ -15,14 +15,53 @@ use crate::jsonio::{self, Json};
 use crate::studio::{scene_ids, App};
 use crate::studio_relay;
 
-/// The interpreter the studio's children run under — the project venv
-/// when it exists (which is sys.executable for the Python twin).
+/// The interpreter the studio's children run under.
+///
+/// The Python twin runs its children under `sys.executable` — whatever
+/// interpreter is running the server, which is the venv you launched it
+/// from. A binary has no such self-knowledge, so the answer is asked for
+/// in the same order: `CASTLE_PY` if the launcher named one (a worktree,
+/// CI, a venv somewhere else entirely), then the project venv, then
+/// `python3` — which, missing numpy/scipy/yaml, is the spelling that used
+/// to fail every rebuild confusingly. `check_py` says so at startup.
 pub fn py(root: &Path) -> String {
+    if let Some(p) = std::env::var_os("CASTLE_PY") {
+        if !p.is_empty() {
+            return p.to_string_lossy().into_owned();
+        }
+    }
     let v = root.join(".venv").join("bin").join("python");
     if v.exists() {
         v.to_string_lossy().into_owned()
     } else {
         "python3".to_string()
+    }
+}
+
+/// Can the interpreter `py()` picked actually run the studio's children?
+/// `import yaml` is the cheapest question that separates the project venv
+/// from a bare system python: every generator, the importer and the scene
+/// writer need it. Some(complaint) when it cannot — the caller prints it
+/// and stops, rather than letting every later rebuild fail confusingly.
+pub fn check_py(root: &Path) -> Option<String> {
+    let exe = py(root);
+    let out = Command::new(&exe)
+        .args(["-c", "import yaml"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    match out {
+        Ok(s) if s.success() => None,
+        Ok(_) => Some(format!(
+            "{exe} cannot `import yaml` — the studio's children (the \
+             generators, the importer) all need the project venv. Run \
+             `make setup`, or point CASTLE_PY at the right interpreter."
+        )),
+        Err(e) => Some(format!(
+            "{exe} will not run ({e}) — set CASTLE_PY to the project venv's \
+             python, or run `make setup`."
+        )),
     }
 }
 

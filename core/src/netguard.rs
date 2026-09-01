@@ -89,6 +89,19 @@ fn url_host(url: &str) -> Result<String, ()> {
 
 /// Why this caller may not fetch this URL — or None if they may.
 pub fn refuse_reason(url: &str, client_ip: &str) -> Option<String> {
+    refuse_reason_with(url, client_ip, &resolve)
+}
+
+/// The same decision over a resolver you supply. DNS is the one input the
+/// Python's tests mock and a binary cannot: tests/test_netguard_rust.py
+/// drives both implementations over one corpus by handing this a table
+/// (bin/netguard_dump.rs), which is what makes the SSRF guard a
+/// differential gate like every other port rather than a copied snapshot.
+pub fn refuse_reason_with(
+    url: &str,
+    client_ip: &str,
+    resolver: &dyn Fn(&str) -> Vec<IpAddr>,
+) -> Option<String> {
     if is_loopback(client_ip) {
         return None;
     }
@@ -102,7 +115,7 @@ pub fn refuse_reason(url: &str, client_ip: &str) -> Option<String> {
     if host == "localhost" || host == "localhost.localdomain" || host.ends_with(".local") {
         return Some(format!("{host} is not a public address"));
     }
-    let addrs = resolve(&host);
+    let addrs = resolver(&host);
     if let Some(bad) = addrs.iter().find(|a| !is_public(a)) {
         return Some(format!(
             "{host} is not a public address ({bad}) — only the studio's own \

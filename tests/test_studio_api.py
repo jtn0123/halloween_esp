@@ -135,7 +135,17 @@ class TestReads(ServerCase):
         """A media element occasionally asks for more than there is. Answering
         with the whole file is survivable; answering with a truncated 206 that
         claims to be a range is not."""
-        for bad in ("bytes=99999999-", "bytes=abc-def", "bytes=5-1", "nonsense"):
+        # "bytes=" and "bytes=-" name no range at all: the flag used to
+        # be set anyway and they answered a 206 over the whole file — a
+        # partial response that is not partial (grade report follow-up).
+        for bad in (
+            "bytes=99999999-",
+            "bytes=abc-def",
+            "bytes=5-1",
+            "nonsense",
+            "bytes=",
+            "bytes=-",
+        ):
             r = urllib.request.Request(
                 f"http://127.0.0.1:{self.port}/studio/track/{self.WAVE_ID}",
                 headers={"Range": bad},

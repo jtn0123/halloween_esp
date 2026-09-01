@@ -136,9 +136,15 @@ class JsonHandler(BaseHTTPRequestHandler):
             try:
                 if a:
                     lo, hi = int(a), (int(b) if b else total - 1)
+                    partial = True
                 elif b:  # bytes=-500 -> the last 500
                     lo, hi = max(0, total - int(b)), total - 1
-                partial = True
+                    partial = True
+                # Neither side present ("bytes=", "bytes=-") names no
+                # range at all. The flag used to be set regardless, so
+                # those answered 206 over the whole file — a partial
+                # response that is not partial, where the Rust twin (and
+                # the intent of the fall-through below) says 200.
             except ValueError:
                 partial = False
         hi = min(hi, total - 1)

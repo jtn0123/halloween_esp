@@ -283,6 +283,11 @@ mod tests {
             "items=0-10",       // not a byte range
             "bytes=-abc",       // an unreadable suffix length
             "0-10",             // no unit at all
+            // Neither side of the dash names no range at all. The Python
+            // twin set its `partial` flag here regardless and answered a
+            // 206 over the whole file; it now agrees with this line.
+            "bytes=",
+            "bytes=-",
         ] {
             assert_eq!(pick_range(3000, rng), (0, 3000, false), "{rng:?}");
         }

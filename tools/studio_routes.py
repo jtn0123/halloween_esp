@@ -223,10 +223,20 @@ def handle_post(h):
         p = app.track_path(Path((req.get("id") or "").strip()).name)
         if p is None:
             return h.send_json({"ok": False, "error": "no such track"}, 404)
-        num = lambda k, d: float(req.get(k) or d)  # noqa: E731
+
+        def num(k: str, d: float) -> float:
+            # A typo in a number is the caller's mistake, not a server
+            # fault: without this the ValueError climbed out to the error
+            # boundary and came back a 500 with a traceback, alone among
+            # the routes (grade report A5).
+            try:
+                return float(req.get(k) or d)
+            except (TypeError, ValueError) as e:
+                raise app.sh.BadRequest(f"{type(e).__name__}: {e}") from None
+
         opts = {
             "start": num("start", 0),
-            "take": (float(req["take"]) if req.get("take") else None),
+            "take": (num("take", 0) if req.get("take") else None),
             "fade_in": None,
             "fade_out": None,
             "normalize": False,

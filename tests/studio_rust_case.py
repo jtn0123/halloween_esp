@@ -276,6 +276,31 @@ class StudioPair(unittest.TestCase):
         cls.rs_scenes = cls.tmp / "rs_scenes.yaml"
         cls.py_scenes.write_text(scenes_text)
         cls.rs_scenes.write_text(scenes_text)
+        # free_port() closes the socket before the server binds it, so a
+        # busy machine (another suite, the user's own studio) can take the
+        # port in between. One retry on fresh ports is the cheap answer:
+        # the window is milliseconds, so losing it twice is not a race any
+        # more — it is a machine with no free ports (grade report D6).
+        for attempt in (0, 1):
+            try:
+                cls._launch()
+                return
+            except (AssertionError, OSError):
+                cls._kill()
+                if attempt:
+                    raise
+
+    @classmethod
+    def _kill(cls) -> None:
+        for p in getattr(cls, "procs", []):
+            p.terminate()
+        for p in getattr(cls, "procs", []):
+            p.wait(timeout=10)
+        cls.procs = []
+
+    @classmethod
+    def _launch(cls) -> None:
+        """Both servers on a fresh pair of ports, up and answering."""
         cls.py_port, cls.rs_port = free_port(), free_port()
         env = {**os.environ}
         env.pop("CASTLE_HOST", None)
@@ -319,10 +344,7 @@ class StudioPair(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls) -> None:
-        for p in cls.procs:
-            p.terminate()
-        for p in cls.procs:
-            p.wait(timeout=10)
+        cls._kill()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def both(

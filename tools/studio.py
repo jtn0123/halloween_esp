@@ -73,9 +73,31 @@ _runner = sj.JobRunner(gate=_lock)  # background jobs queue behind the same lock
 
 def _restart() -> None:
     """Replace this process with a fresh copy of itself. os.execv keeps the
-    PID, so whatever launched us (a launcher, launchd) notices nothing."""
+    PID, so whatever launched us (a launcher, launchd) notices nothing.
+
+    The marker rides along in the environment execv hands the new image:
+    it is the only way the fresh process can know it must outwait its own
+    predecessor's dying sockets (see bind_retry)."""
     time.sleep(0.4)  # let the HTTP response actually go out
+    os.environ["CASTLE_STUDIO_RESTART"] = "1"
     os.execv(sys.executable, [sys.executable, *sys.argv])
+
+
+def bind_retry(host: str, port: int) -> ThreadingHTTPServer:
+    """A restarted image races its own predecessor: the dying connections'
+    server-side sockets keep the port "in use" for a few dozen ms after the
+    exec (macOS SO_REUSEADDR only forgives TIME_WAIT), so a restart — and
+    only a restart, marked by the env var the exec set — retries the bind.
+    A port someone else really holds still fails on the first try."""
+    tries = 100 if os.environ.pop("CASTLE_STUDIO_RESTART", None) else 1
+    for i in range(tries):
+        try:
+            return ThreadingHTTPServer((host, port), Handler)
+        except OSError:
+            if i + 1 >= tries:
+                raise
+            time.sleep(0.1)
+    raise AssertionError("unreachable")  # pragma: no cover
 
 
 def run(cmd: list[str], timeout: int = 900) -> tuple[bool, str]:
@@ -190,7 +212,7 @@ def main() -> int:
     # native-API leg needs a second to connect, and the desk only probes
     # /api/status once.
     cl.status()
-    srv = ThreadingHTTPServer((host, port), Handler)
+    srv = bind_retry(host, port)
     print(f"cue desk studio  ->  http://127.0.0.1:{port}")
     if host == "0.0.0.0":
         print(f"  from your phone  ->  http://{lan_ip()}:{port}")

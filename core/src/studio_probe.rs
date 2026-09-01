@@ -177,13 +177,16 @@ pub fn compare(app: &App, req: &Json) -> (Json, u16) {
     })();
     let opts = match built {
         Ok(v) => v,
+        // A typo in a number is the caller's mistake, not a server fault:
+        // the Python raises BadRequest here for the same 400, rather than
+        // letting the ValueError reach its error boundary (report A5).
         Err(e) => {
             return (
                 Json::Obj(vec![
                     ("ok".into(), Json::Bool(false)),
                     ("error".into(), Json::Str(e)),
                 ]),
-                500,
+                400,
             )
         }
     };

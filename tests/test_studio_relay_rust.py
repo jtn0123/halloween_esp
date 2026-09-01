@@ -225,18 +225,33 @@ class MediaAndOps(StudioPair):
             hdrs,
             json.dumps({"id": "t_alpha", "start": "abc"}).encode(),
         )
-        self.assertEqual(a[0], 500)
+        # A typo in a number is a 400 like every other bad input, not the
+        # 500-with-a-traceback it used to be on both sides (report A5).
+        self.assertEqual(a[0], 400)
         self.assertEqual(a[2], b[2])
+        for bad in ({"bitrate": "high"}, {"take": "soon"}, {"channels": "two"}):
+            a, b = self.both(
+                "/studio/compare",
+                "POST",
+                hdrs,
+                json.dumps({"id": "t_alpha", **bad}).encode(),
+            )
+            self.assertEqual(a[0], 400, bad)
+            self.assertEqual(a[2], b[2], bad)
 
     def test_03_restart_answers_then_comes_back(self) -> None:
-        a, b = self.both("/studio/server/restart", "POST")
-        self.assertEqual(a[0], 200)
-        self.assertEqual(a[2], b[2])
-        time.sleep(1.0)
-        wait_up(self.py_port)
-        wait_up(self.rs_port)
-        a, b = self.both("/studio/tracks")
-        self.assertEqual(a[0], 200)
+        # Three times over, both servers: a restart races its own dying
+        # sockets for the port, and the failure mode is a process that is
+        # simply gone (grade report A1). Once was a coin flip.
+        for round_ in range(3):
+            a, b = self.both("/studio/server/restart", "POST")
+            self.assertEqual(a[0], 200)
+            self.assertEqual(a[2], b[2])
+            time.sleep(1.0)
+            wait_up(self.py_port)
+            wait_up(self.rs_port)
+            a, b = self.both("/studio/tracks")
+            self.assertEqual(a[0], 200, round_)
 
     def test_04_stop_answers_then_dies(self) -> None:
         a, b = self.both("/studio/server/stop", "POST")

@@ -5,7 +5,7 @@
 //! the Demucs split itself) arrive with the jobs and publish passes.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
 use crate::jsonio::{self, obj_update, Json};
 use crate::scene::round3;
@@ -15,7 +15,14 @@ use crate::{atmos, media, onsets};
 pub const PEAKS: usize = 1000;
 const SR: f64 = 44100.0;
 const KEEP_WAVES: usize = 32;
-const KEEP_DECODED: usize = 8;
+/// The decode cache's budget, in FLOATS, not entries — studio_media.py's
+/// KEEP_SAMPLES, the same number for the same reason. An entry is a whole
+/// song in f64: the mono buffer plus both stereo channels, three buffers
+/// of 8 bytes a frame, ~318 MB for five minutes. Bounding eight of THOSE
+/// was bounding 2.5 GB. 50M floats × 8 bytes ≈ 400 MB (grade report B3).
+/// The newest entry is never evicted, however big it is — dropping it the
+/// instant it was built would re-decode for the next sensitivity nudge.
+const KEEP_SAMPLES: usize = 50_000_000;
 
 /// CPython's round(v, 4), the way round3 already is: format and parse.
 fn round4(v: f64) -> f64 {
@@ -107,11 +114,33 @@ fn mtime_ns(path: &Path) -> Option<u128> {
 }
 
 type DecKey = (String, u128, usize);
-type DecCache = Mutex<Vec<(DecKey, Arc<Decoded>)>>;
 
-fn decoded_cache() -> &'static DecCache {
-    static C: OnceLock<DecCache> = OnceLock::new();
-    C.get_or_init(|| Mutex::new(Vec::new()))
+/// The cache and the set of keys currently being decoded, under one lock:
+/// a thread that finds neither an entry nor a marker does the work, and a
+/// thread that finds a marker waits for that answer instead of starting a
+/// second decode of the same track (the Python's _DEC_INFLIGHT).
+struct DecState {
+    cache: Vec<(DecKey, Arc<Decoded>)>,
+    busy: Vec<DecKey>,
+}
+
+fn decoded_cache() -> &'static (Mutex<DecState>, Condvar) {
+    static C: OnceLock<(Mutex<DecState>, Condvar)> = OnceLock::new();
+    C.get_or_init(|| {
+        (
+            Mutex::new(DecState {
+                cache: Vec::new(),
+                busy: Vec::new(),
+            }),
+            Condvar::new(),
+        )
+    })
+}
+
+/// Every float this entry holds — mono plus, when the track was read in
+/// stereo, both channels. studio_media._samples counts the same three.
+fn samples(d: &Decoded) -> usize {
+    d.x.len() + d.stereo.as_ref().map_or(0, |(l, r)| l.len() + r.len())
 }
 
 fn decoded(path: &Path, buckets: usize) -> Option<Arc<Decoded>> {
@@ -120,22 +149,40 @@ fn decoded(path: &Path, buckets: usize) -> Option<Arc<Decoded>> {
         mtime_ns(path)?,
         buckets,
     );
-    {
-        let mut c = decoded_cache().lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(at) = c.iter().position(|(k, _)| *k == key) {
-            let hit = c.remove(at);
+    let (lock, cv) = decoded_cache();
+    let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+    loop {
+        if let Some(at) = st.cache.iter().position(|(k, _)| *k == key) {
+            let hit = st.cache.remove(at);
             let out = Arc::clone(&hit.1);
-            c.push(hit);
+            st.cache.push(hit);
             return Some(out);
         }
+        if !st.busy.contains(&key) {
+            st.busy.push(key.clone());
+            break;
+        }
+        st = cv.wait(st).unwrap_or_else(|e| e.into_inner());
     }
-    let dec = Arc::new(build_decoded(path, buckets)?);
-    let mut c = decoded_cache().lock().unwrap_or_else(|e| e.into_inner());
-    c.push((key, Arc::clone(&dec)));
-    while c.len() > KEEP_DECODED {
-        c.remove(0);
+    drop(st);
+    // The decode itself runs outside the lock — it is most of a second.
+    let built = build_decoded(path, buckets).map(Arc::new);
+    let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(at) = st.busy.iter().position(|k| *k == key) {
+        st.busy.remove(at);
     }
-    Some(dec)
+    if let Some(dec) = &built {
+        st.cache.push((key, Arc::clone(dec)));
+        let mut total: usize = st.cache.iter().map(|(_, d)| samples(d)).sum();
+        while total > KEEP_SAMPLES && st.cache.len() > 1 {
+            let (_, gone) = st.cache.remove(0);
+            total -= samples(&gone);
+        }
+    }
+    // A failed decode wakes the waiters with neither entry nor marker,
+    // and one of them takes the work — the same shape as the Python.
+    cv.notify_all();
+    built
 }
 
 type WaveKey = (String, u128, String, usize);

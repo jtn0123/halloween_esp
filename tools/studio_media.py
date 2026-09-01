@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -171,9 +172,18 @@ def waveform(path: Path, sensitivity: float | dict = 1.1, buckets: int = PEAKS) 
 # The knob-independent part of a waveform — decode, stereo, peaks and the
 # loudness envelope (~70% of the work) — keyed by (path, mtime, buckets).
 # A sensitivity nudge used to pay for all of it again; only the onset pass
-# above depends on the knob. Smaller than _WAVES: one entry is a whole
-# decoded track in RAM, and the editor has one or two open at a time.
-KEEP_DECODED = 8
+# above depends on the knob.
+#
+# Bounded by SAMPLES, not by entry count: an entry is not one object, it is
+# a whole song in float64 — mono plus both stereo channels, three buffers of
+# 8 bytes a frame. Eight of those is ~2.5 GB, and auditioning eight songs is
+# an ordinary evening. The budget below is the same arithmetic read the
+# other way: 50M floats at 8 bytes each is ~400 MB resident, whatever mix of long
+# and short tracks gets there (grade report B3). The most recent entry is
+# never evicted — a single track larger than the whole budget still caches,
+# because throwing it away the instant it was built would mean decoding it
+# again for the very next sensitivity nudge.
+KEEP_SAMPLES = 50_000_000
 
 
 class Decoded:
@@ -210,19 +220,60 @@ class Decoded:
         self.env = [[round(t, 3), v] for t, v in env.get("level_full", [])]
 
 
+def _samples(dec: Decoded) -> int:
+    """Every float this entry holds — the mono buffer and, when the track
+    was read in stereo, both channels. This is the number the budget is
+    written in, and the Rust twin counts the same three buffers."""
+    n = len(dec.x)
+    if dec.stereo is not None:
+        n += sum(len(ch) for ch in dec.stereo)
+    return n
+
+
 _DECODED: collections.OrderedDict[tuple, Decoded] = collections.OrderedDict()
+# One condition guards the cache AND the set of keys currently being
+# decoded. The studio is threaded: two panels asking for the same cold
+# track used to run two decodes and store the second over the first —
+# double the ffmpeg, double the peak RAM, for one answer. The second
+# caller now waits for the first and takes its entry.
+_DEC_LOCK = threading.Condition()
+_DEC_INFLIGHT: set[tuple] = set()
+
+
+def _evict_decoded() -> None:
+    """Oldest-first until the resident float count is inside the budget,
+    always keeping the newest entry. Caller holds _DEC_LOCK."""
+    total = sum(_samples(d) for d in _DECODED.values())
+    while total > KEEP_SAMPLES and len(_DECODED) > 1:
+        _, gone = _DECODED.popitem(last=False)
+        total -= _samples(gone)
 
 
 def _decoded(path: Path, mtime: int, buckets: int) -> Decoded:
     key = (str(path), mtime, buckets)
-    hit = _DECODED.get(key)
-    if hit is not None:
-        _DECODED.move_to_end(key)
-        return hit
-    dec = Decoded(path, buckets)
-    _DECODED[key] = dec
-    while len(_DECODED) > KEEP_DECODED:
-        _DECODED.popitem(last=False)
+    with _DEC_LOCK:
+        while True:
+            hit = _DECODED.get(key)
+            if hit is not None:
+                _DECODED.move_to_end(key)
+                return hit
+            if key not in _DEC_INFLIGHT:
+                _DEC_INFLIGHT.add(key)
+                break
+            # Someone else is decoding this very track: wait for their
+            # answer rather than starting a second one. A decode that
+            # FAILS wakes us with neither entry nor marker, and this loop
+            # then takes the work itself.
+            _DEC_LOCK.wait()
+    try:
+        dec = Decoded(path, buckets)
+    finally:
+        with _DEC_LOCK:
+            _DEC_INFLIGHT.discard(key)
+            _DEC_LOCK.notify_all()
+    with _DEC_LOCK:
+        _DECODED[key] = dec
+        _evict_decoded()
     return dec
 
 

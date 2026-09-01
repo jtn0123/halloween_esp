@@ -14,6 +14,8 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -93,11 +95,52 @@ class TestDecodedCache(unittest.TestCase):
         self.assertEqual(decodes, 1)
         self.assertEqual(len(d["peaks"]), 50)
 
-    def test_the_decoded_store_is_bounded(self) -> None:
-        with mock.patch.object(sm, "KEEP_DECODED", 2):
+    def test_the_decoded_store_is_bounded_by_total_samples(self) -> None:
+        # Counted in floats, not entries: an entry IS a whole song in
+        # float64 (mono + both stereo channels), so eight of them was
+        # gigabytes (grade report B3).
+        sm.waveform(self.track, buckets=10)
+        one = sm._samples(next(iter(sm._DECODED.values())))
+        with mock.patch.object(sm, "KEEP_SAMPLES", 2 * one):
             for i in range(4):
-                sm.waveform(self.track, buckets=10 + i)
+                sm.waveform(self.track, buckets=20 + i)
         self.assertEqual(len(sm._DECODED), 2)
+        self.assertLessEqual(sum(sm._samples(d) for d in sm._DECODED.values()), 2 * one)
+
+    def test_one_track_bigger_than_the_whole_budget_still_caches(self) -> None:
+        with mock.patch.object(sm, "KEEP_SAMPLES", 1):
+            _, decodes, _ = self.counts(lambda: sm.waveform(self.track))
+            self.assertEqual(decodes, 1)
+            self.assertEqual(len(sm._DECODED), 1)
+            # Evicting it the instant it was built would mean decoding it
+            # again for the very next sensitivity nudge.
+            _, decodes, _ = self.counts(lambda: sm.waveform(self.track, 0.7))
+            self.assertEqual(decodes, 0)
+
+    def test_two_threads_wanting_one_cold_track_decode_it_once(self) -> None:
+        real_load = sm.ana.load_audio
+
+        def slow(path: Path):
+            # Wide enough that the second thread is certainly asking
+            # while the first is still decoding — which is the ordinary
+            # case anyway: a real decode is most of a second.
+            time.sleep(0.5)
+            return real_load(path)
+
+        with mock.patch.object(sm.ana, "load_audio", side_effect=slow) as ld:
+            out: list[dict] = []
+            threads = [
+                threading.Thread(target=lambda: out.append(sm.waveform(self.track)))
+                for _ in range(2)
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(timeout=30)
+        self.assertEqual(ld.call_count, 1)
+        self.assertEqual(len(sm._DECODED), 1)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0], out[1])
 
     def test_an_empty_file_is_answered_without_a_stereo_decode(self) -> None:
         with (

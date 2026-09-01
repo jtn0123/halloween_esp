@@ -65,6 +65,11 @@ class CastleLess(StudioPair):
             "bytes=2900-",
             "bytes=zz",
             "bytes=5-2",
+            # Neither side of the dash: no range at all, so 200 — the
+            # Python used to answer 206 over the whole file here while
+            # the Rust answered 200 (grade report follow-up).
+            "bytes=",
+            "bytes=-",
         ):
             a, b = self.both("/studio/scene-audio/vigil", headers={"Range": rng})
             self.assertEqual(a[2], b[2], rng)
@@ -84,7 +89,7 @@ class CastleLess(StudioPair):
         # every later request on it (grade report B1).
         for build in (self.py_build, self.rs_build):
             (build / "audio" / "07_hollow.mp3").write_bytes(b"")
-        for rng in (None, "bytes=0-", "bytes=0-0", "bytes=-50"):
+        for rng in (None, "bytes=0-", "bytes=0-0", "bytes=-50", "bytes=-"):
             a, b = self.both(
                 "/studio/scene-audio/hollow",
                 headers={"Range": rng} if rng else None,

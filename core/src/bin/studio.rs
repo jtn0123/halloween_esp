@@ -29,6 +29,13 @@ fn main() {
         "127.0.0.1"
     };
     let app = Arc::new(App::new(repo_root()));
+    // Every rebuild, import and generator run is a child of this
+    // interpreter. Asking it one question now beats watching each of them
+    // fail later with a stack trace about numpy.
+    if let Some(why) = castle_core::studio_scenes::check_py(&app.root) {
+        eprintln!("studio: {why}");
+        std::process::exit(1);
+    }
     let _ = std::fs::create_dir(&app.tracks);
     let listener = match bind_retry(host, port) {
         Ok(l) => l,
