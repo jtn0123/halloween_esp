@@ -130,13 +130,16 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   "Rust if cargo or a built binary is here, else Python with a printed
   reason"; `rust` refuses rather than falling back, which is how the flip is
   tested. It does not reach the e2e suite — that is `CASTLE_STUDIO_CMD`.
-- `CASTLE_STUDIO_CMD=<command>` swaps the SERVER the e2e suite runs against
-  — the only local way to point the browser suite at the Rust twin:
-  `cd web && CASTLE_STUDIO_CMD=../core/target/release/studio npx playwright
-  test` (build it first: `make rust`). The port and `--localhost` are
-  appended by `web/playwright.config.ts`, whose fall-back is `??`, so an
-  EMPTY value is not "absent" — it is a server command of `""` and the suite
-  fails to start. CI names it on both matrix axes for that reason.
+- `CASTLE_STUDIO_CMD=<command>` swaps the SERVER the e2e suite runs against.
+  Unset, `web/playwright.config.ts` mirrors the launcher since 2026-09-01:
+  the built `core/target/release/studio` when it exists (and `make e2e`
+  rebuilds it first when cargo is present), `tools/studio.py` otherwise —
+  so the default local run tests what production runs. Set it to pin one:
+  `CASTLE_STUDIO_CMD="../.venv/bin/python ../tools/studio.py"` for the
+  Python reference. The port and `--localhost` are appended by the config,
+  whose fall-back is `??`, so an EMPTY value is not "absent" — it is a
+  server command of `""` and the suite fails to start. CI names it on both
+  matrix axes for that reason.
 - `CASTLE_PY=<interpreter>` names the python the studio's children run
   under. The Python studio has `sys.executable` and never needs it; the
   Rust studio bin has no such self-knowledge and asks `CASTLE_PY` first,

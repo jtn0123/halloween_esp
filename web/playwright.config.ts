@@ -1,12 +1,13 @@
 import { defineConfig, devices } from "@playwright/test";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /**
  * End-to-end tests for the cue desk.
  *
- * These drive the real page against the real tools/studio.py, because the bugs
+ * These drive the real page against the real studio server — the built Rust
+ * one when it exists, tools/studio.py otherwise — because the bugs
  * worth catching here are the ones neither half sees alone: a button that
  * posts the wrong shape, a row that never redraws, a Play control that plays
  * nothing. The node tests cover the arithmetic; these cover the wiring.
@@ -70,13 +71,18 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 
   webServer: {
-    // CASTLE_PY names the interpreter (a worktree sharing the main
-    // checkout's venv, CI's runner python); the project venv otherwise.
-    // CASTLE_STUDIO_CMD swaps the SERVER wholesale — the Rust studio
-    // (core/target/release/studio) runs this same suite as its parity
-    // gate; the port and --localhost are appended either way.
+    // The default server mirrors tools/studio_launch.sh, because the suite
+    // should exercise what production runs: the built Rust studio when it
+    // exists, tools/studio.py otherwise (CASTLE_PY names the interpreter —
+    // a worktree sharing the main checkout's venv, CI's runner python).
+    // CASTLE_STUDIO_CMD still swaps the SERVER wholesale — CI's matrix sets
+    // it on BOTH axes so each server is named, never defaulted; the port
+    // and --localhost are appended either way. `make e2e` rebuilds the
+    // binary first when cargo is present, so "exists" also means "fresh".
     command: `${process.env.CASTLE_STUDIO_CMD
-      ?? `${process.env.CASTLE_PY ?? "../.venv/bin/python"} ../tools/studio.py`} ${PORT} --localhost`,
+      ?? (existsSync("../core/target/release/studio")
+        ? "../core/target/release/studio"
+        : `${process.env.CASTLE_PY ?? "../.venv/bin/python"} ../tools/studio.py`)} ${PORT} --localhost`,
     url: `http://127.0.0.1:${PORT}/studio/tracks`,
     // A studio the user is already running is pointed at their real tracks,
     // which is exactly what this suite must not touch.

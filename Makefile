@@ -260,6 +260,10 @@ check: audio test lint
 e2e: preview
 	@cd web && node -e "require('@playwright/test')" 2>/dev/null \
 		|| { echo "e2e needs its deps first: cd web && npm ci"; exit 1; }
+	@if command -v cargo >/dev/null 2>&1; then \
+		(cd core && cargo build --release --quiet --bin studio) \
+			|| { echo "e2e: the Rust studio failed to build — fix it rather than testing a stale binary"; exit 1; }; \
+	fi
 	@cd web && npx playwright install chromium
 	@cd web && npx playwright test
 
