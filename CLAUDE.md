@@ -44,7 +44,9 @@ file is the one that governs.
   is rebuilt, never committed. Anything that needs it builds it first — CI
   runs `gen_previewer.py` as a step, and the e2e global setup refuses to run
   without it. The inlined build is still the portable artifact (open from
-  disk, copy it to someone); `tests/test_gen_previewer.py` budgets its size.
+  disk, copy it to someone), so its weight is capped in two places:
+  `gen_previewer.PAGE_BUDGET_KB` (4 MB) now **fails the build** and writes
+  nothing, and `tests/test_gen_previewer.py` holds a tighter ratchet.
   The DEVICE never serves it — `sd_sync site` pushes the lean rewrite +
   per-scene mp3s, and the studio rewrites to the same lean form at serve time.
 
@@ -68,7 +70,11 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
 
 - **500 lines per file**, every text file the repo tracks, docs included —
   `tools/check_loc.py` runs in `make check` and the pre-commit hook. Split on
-  a real seam rather than trimming comments; only generated files are exempt.
+  a real seam rather than trimming comments. Generated files are exempt
+  (`EXEMPT_PATHS`, each with its generator named); `scenes/scenes.yaml` is
+  exempt as *data* (`DATA_EXEMPT`) and pays for it with the budget that
+  actually binds it — **at most 12 scenes**, counted and failed by the same
+  check (`SCENE_LIMIT`). Nothing hand-written is exempt.
 - ruff + mypy clean (`pyproject.toml`); tsc `--noEmit` clean for `web/`.
 - `make check` green before handing work back. Never skip or disable a test
   to get there — fix it or list it as follow-up work.
@@ -122,7 +128,7 @@ The studio server has no Origin/Host validation and the SD build's
 accepted both: it is a Halloween decoration on a private home LAN with one
 operator. Do not report these as findings or propose auth for them.
 Dependency advisories: `make audit` (starlette hits are in the ESPHome build
-toolchain and ignored by id; cryptography clears with the next esphome bump).
+toolchain and ignored by id; the cryptography one cleared with esphome 2026.8.1).
 
 ## Commit style
 

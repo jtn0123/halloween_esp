@@ -354,10 +354,52 @@ def inject_styles(html: str) -> str:
     return html[:i] + css + html[j:]
 
 
-#: Ceiling for the portable inlined build, in KB (see main()). 3 MB held
-#: for the nine-scene rig; scene 10 (the 3-minute Ballad) pushed the honest
-#: size past it, so the line moved rather than the warning becoming wallpaper.
+#: Ceiling for the portable inlined build, in KB — a HARD limit: past it the
+#: build fails and nothing is written (see enforce_budget below).
+#:
+#: History, because the number has moved and should not keep moving: 3 MB
+#: held the nine-scene rig; scene 10 (the 3-minute Ballad) pushed the honest
+#: size past it and the line was raised to 4 MB. Twice is a ratchet, and a
+#: warning nobody can fail is what let it happen — hence the hard stop. The
+#: page grows ~1.2 MB per song scene and is ~3.3 MB at ten scenes, so this
+#: budget has room for one more and then the show must answer for it.
 PAGE_BUDGET_KB = 4 * 1024
+
+
+def enforce_budget(body: bytes, audio: dict[str, str]) -> str | None:
+    """The complaint when the built page is over PAGE_BUDGET_KB, else None.
+
+    Why fail rather than warn (grade report G2): the page grows with scenes
+    times audio length and nothing bounds it, and the previous budget was a
+    warning — so when it was crossed the constant moved instead of the page.
+    A build that stops is the only version of this budget that is a budget.
+
+    The complaint names the heaviest scenes, because "the page is too big" is
+    not actionable and "the Ballad is 1.3 MB of it" is.
+    """
+    total_kb = len(body) // 1024
+    if total_kb <= PAGE_BUDGET_KB:
+        return None
+    heavy = sorted(((len(v) // 1024, k) for k, v in audio.items()), reverse=True)[:3]
+    worst = ", ".join(f"{sid} ({kb / 1024:.1f} MB)" for kb, sid in heavy)
+    return (
+        f"page budget FAILED — the portable build is {total_kb / 1024:.2f} MB, "
+        f"over its {PAGE_BUDGET_KB // 1024} MB ceiling. Nothing was written; "
+        f"{bp.rel(HTML)} still holds the last good build.\n"
+        f"  heaviest inlined audio: {worst}\n"
+        "  The weight is inlined mp3s, and they are inlined so the file plays "
+        "when opened from disk with no server. Ways out, best first:\n"
+        "   - shorten or re-render the heaviest scene (a song scene is "
+        "~1.2 MB of base64 here);\n"
+        "   - if the show genuinely needs the scenes, stop inlining past the "
+        "budget and emit /studio/scene-audio/<id> for the rest — the lean "
+        "rewrite already does exactly that, but a page opened from disk "
+        "cannot fetch those, so the desk needs a per-scene fallback to the "
+        "live synth first (web/src/audio.ts, main.ts: the rendered/synth "
+        "choice is one global switch today);\n"
+        "   - raising PAGE_BUDGET_KB is the third answer, not the first, and "
+        "belongs in its own commit that says why."
+    )
 
 
 def main() -> int:
@@ -399,25 +441,25 @@ def main() -> int:
 
     html = inject_styles(html)
     html = inject_bundle(html)
+
+    # Weighed BEFORE it is written: an over-budget build leaves the last good
+    # page in the tree rather than replacing it with the one that failed.
+    body = html.encode()
+    complaint = enforce_budget(body, audio)
+    if complaint is not None:
+        print(complaint, file=sys.stderr)
+        return 1
+
     HTML.parent.mkdir(parents=True, exist_ok=True)
-    HTML.write_text(html)
+    HTML.write_bytes(body)
 
     kb = sum(len(v) for v in audio.values()) // 1024
-    total_kb = len(html.encode()) // 1024
+    total_kb = len(body) // 1024
     print(
         f"wrote {len(scenes)} scenes + {len(audio)} audio files (~{kb} KB base64) "
-        f"into {bp.rel(HTML)} ({total_kb / 1024:.1f} MB)"
+        f"into {bp.rel(HTML)} ({total_kb / 1024:.1f} MB "
+        f"of the {PAGE_BUDGET_KB // 1024} MB budget)"
     )
-    # The inlined page scales with scenes x audio length and nothing else
-    # bounds it — it doubled (1.1 -> 2.2 MB) in the eight days before this
-    # budget existed. Warn, not fail: a heavy page is a nuisance, not a
-    # broken show. (grade report G2)
-    if total_kb > PAGE_BUDGET_KB:
-        print(
-            f"WARNING: page exceeds its {PAGE_BUDGET_KB // 1024} MB budget "
-            f"— trim scenes or shorten audio, or raise PAGE_BUDGET_KB "
-            f"here if the budget itself is stale"
-        )
     return 0
 
 

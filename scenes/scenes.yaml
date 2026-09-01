@@ -98,6 +98,15 @@ palette:
 # format sketched in the grade report (one interpreter, N scenes, flat RAM)
 # — not a thirteenth script. Each song scene also adds ~1.2 MB to the
 # committed inlined page (tests/test_gen_previewer.py budgets it).
+#
+# THAT CEILING IS NOW THE RULE THIS FILE ANSWERS TO (grade report A8,
+# 2026-08-31). The repo's 500-line cap no longer applies here: this file is
+# data, and a line count was about to block *content* — one more scene and
+# `make check` would have failed for a reason that has nothing to do with
+# what the board can hold. So scenes/scenes.yaml is exempt from the cap in
+# tools/check_loc.py, and that same check counts the scenes and FAILS above
+# twelve (SCENE_LIMIT there). Trade one budget for the one that binds; do
+# not leave the file with neither.
 scenes:
   - id: vigil
     name: Vigil
