@@ -57,8 +57,6 @@ export const BAND_BY_NAME: Readonly<Record<BandName, BandInfo>> =
 export const BAND_INK: Readonly<Record<BandName, string>> =
   Object.fromEntries(BANDS.map(b => [b.name, b.ink])) as Record<BandName, string>;
 
-export const isBand = (k: string): k is BandName => k in BAND_BY_NAME;
-
 /**
  * How the panel reports what was detected.
  *

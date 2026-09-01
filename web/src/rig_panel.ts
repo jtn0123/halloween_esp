@@ -16,7 +16,7 @@
 
 import {
   AUDIO_AMPS, FIXTURES, ZONE_DECL, ZONE_ORDER, ZONE_PIN, chainRanges, fixture,
-  layoutOf, rigPower, rigProblems, saveRig, zoneLayout, zoneRgbw,
+  rigPower, rigProblems, saveRig, zoneLayout, zoneRgbw,
   type RigState,
 } from "./rig.js";
 import type { ZoneId } from "./types.js";
@@ -245,10 +245,3 @@ export function emitConfig(rig: RigState): string {
   );
   return lines.join("\n");
 }
-
-/** The catalogue as the picker shows it, for tests and for the channel strip
- *  tooltip — exported so neither has to re-derive the pixel arithmetic. */
-export const fixtureSummary = (id: string): string => {
-  const fx = fixture(id);
-  return `${fx.name} — ${layoutOf(fx).n} pixels`;
-};

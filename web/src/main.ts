@@ -17,7 +17,7 @@ import { createCodecAb, type CodecAb } from "./codec_ab.js";
 import { auditioning, initialMode, transition,
          type DeskEvent, type DeskMode } from "./desk_mode.js";
 import { deviceBridge } from "./device.js";
-import { el, input, val } from "./dom.js";
+import { el, input, sel, val } from "./dom.js";
 import { defaultParams } from "./effects.js";
 import { PixelInsets } from "./insets.js";
 import { createZoneDesigner } from "./zone_designer.js";
@@ -122,7 +122,7 @@ if (kiosk) installKiosk();
    the first cut removed the element and initTracks then threw on its id,
    so every LAN phone read "studio not running" (judge B, JB2-1). */
 {
-  const host = document.querySelector<HTMLElement>(".trk-srvtxt b");
+  const host = sel(".trk-srvtxt b");
   if (host) host.textContent = location.host;
 }
 

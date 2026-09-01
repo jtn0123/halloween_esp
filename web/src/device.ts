@@ -28,12 +28,14 @@
  * runs its own show engine and this page only nudges it.
  */
 
-import { api } from "./api.js";
 import { isCastleBusy, onCastleChanged, setCastleLive } from "./castle_bus.js";
 import { castleAct } from "./castle_act.js";
-import { chipHtml, nowLine, sdText, wireChip } from "./device_chip.js";
-import { esc, el as byId } from "./dom.js";
+import { chipHtml, nowLine, sdText, seekingHtml, wireChip } from "./device_chip.js";
+import { el as byId, reqIn } from "./dom.js";
 import { DevicePanel } from "./device_panel.js";
+import {
+  POLL_MS, RETRY_MS, expectedCastle, probe, type Status,
+} from "./device_probe.js";
 
 // The action layer (toast, failReason, castleAct) lives in castle_act.ts
 // now; re-exported so the panel, the library rows and the tests keep their
@@ -47,60 +49,6 @@ export interface DeviceLink {
   /** Stop castle audio + scene — mirrored like a scene pick, so mirroring
    *  off keeps Stop local too. */
   stop(): void;
-}
-
-interface Status {
-  version: string;
-  /** Absent on the native-API fallback — render as unknown, never as "no SD"
-   *  (dogfood 001: the fallback's missing field displayed as a lie). */
-  sd_mounted?: boolean;
-  /** KB free on the card — v5.23+; older firmware omits it. */
-  sd_free_kb?: number;
-  /** The card's size in KB — v5.23+. The SD budget reads it (JB1-11). */
-  sd_total_kb?: number;
-  volume?: number;
-  scene?: string;
-  track?: string;
-  /** tools/studio.py answers the probe too (so it isn't a console error),
-   *  marked with this so we don't mistake the laptop for the castle. */
-  studio?: boolean;
-  /** On the studio's marker answer: the castle host it is configured to
-   *  relay to — present means "a castle is expected and not answering". */
-  castle?: string;
-  /** Comma-joined scene ids the firmware was BUILT with (v5.42+) — the
-   *  desk diffs them against its own list to spot a stale board (C6). */
-  scenes?: string;
-}
-
-/** Room for the studio to try two addresses (1 s connect each, castle_link
- *  PROBE_CONNECT_S) or one slow answer. A castle that is merely rebooting at
- *  page load is not lost either way — see RETRY_MS. */
-const PROBE_TIMEOUT_MS = 2500;
-/** While no castle answers, re-probe this often: a castle that boots after
- *  the page loaded must still get its chip (pass 1, J1-3). */
-const RETRY_MS = 5000;
-/** The slow poll once live; actions re-poll sooner via castleAct(). */
-const POLL_MS = 15000;
-
-/** Set when the studio answered FOR a castle it could not reach: the host
- *  it was trying. That is the one no-castle case worth surfacing (C3) — a
- *  page opened from disk, or a studio with no castle configured, is a
- *  simulator on purpose and gets no placeholder. */
-let expectedCastle: string | null = null;
-
-async function probe(): Promise<Status | null> {
-  try {
-    const r = await api.castleProbe(PROBE_TIMEOUT_MS);
-    if (!r.ok) return null;
-    const s = (await r.json()) as Status;
-    if (s.studio) {
-      expectedCastle = typeof s.castle === "string" && s.castle ? s.castle : null;
-      return null;
-    }
-    return s;
-  } catch {
-    return null;
-  }
 }
 
 export interface BridgeOpts {
@@ -442,17 +390,12 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
    *  desk opened from disk, or a studio with no castle set, is a simulator
    *  on purpose and stays quiet. */
   function seeking(): void {
-    if (live || !expectedCastle) return;
+    const host = expectedCastle();
+    if (live || !host) return;
     chip.classList.add("seeking");
-    chip.innerHTML =
-      `<div>🏰 looking for the castle… <small class="chip__seek">` +
-      `no answer from ${esc(expectedCastle)} — retrying every ` +
-      `${RETRY_MS / 1000} s</small></div>` +
-      `<button id="devRetry" class="chip__btn" type="button" ` +
-      `title="Probe the castle again right now">Retry</button>`;
-    chip.querySelector<HTMLButtonElement>("#devRetry")!
+    chip.innerHTML = seekingHtml(host, RETRY_MS / 1000);
+    reqIn<HTMLButtonElement>(chip, "#devRetry", "castle chip")
       .addEventListener("click", () =>
-
         void probe().then((now) => {
           if (now !== null && !live) firstContact(now);
         }));

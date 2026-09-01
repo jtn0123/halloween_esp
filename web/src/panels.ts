@@ -19,7 +19,7 @@ export { CHANNELS, SOUNDS, toYaml,
 import { fixture, zonePixels, zoneRgbw, ZONE_PIN, type RigState } from "./rig.js";
 import { sceneTint } from "./scene_tint.js";
 import type { ZoneRender } from "./show.js";
-import type { Scene, ZoneId } from "./types.js";
+import { isLed, type Scene, type ZoneId } from "./types.js";
 
 const STRIP: readonly ZoneId[] = ["towerL", "door", "towerR"];
 
@@ -214,7 +214,7 @@ export class Panels {
     // The summary has to answer "is it worth opening this" on its own — a
     // count of 2238 is itself the reason the panel is collapsed.
     const n = scene.cues.length;
-    const led = scene.cues.filter(c => c.bus === "LED").length;
+    const led = scene.cues.filter(isLed).length;
     this.sheetCount.textContent = n === 0
       ? "— none"
       : `— ${n} cue${n === 1 ? "" : "s"}, ${led} light`;

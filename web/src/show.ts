@@ -17,7 +17,10 @@ import {
   overlayIndex, paletteIndex, flashModeIndex, type EffectParams,
 } from "./effects.js";
 import { DEFAULT_RIG, zoneLayout, zoneRgbw, type Layout } from "./rig.js";
-import type { Cue, EffectName, Rgbw, Scene, StrikeColor, ZoneId } from "./types.js";
+import {
+  isAudio, isLed,
+  type Cue, type EffectName, type Rgbw, type Scene, type StrikeColor, type ZoneId,
+} from "./types.js";
 
 export const ZONE_IDS: readonly ZoneId[] = ["towerL", "towerR", "door"];
 
@@ -175,7 +178,7 @@ export function rebuildLightsAt(st: ShowState, sc: Scene, ms: number): void {
     // Same bug as the analyser's dropped t=0 onset, one layer up.
     if (c.t < ms) st.fired.add(i);
 
-    if (c.bus === "LED" && c.op === "set") {
+    if (isLed(c) && c.op === "set") {
       st.eff[c.zone] = c.eff;
       if (c.level !== undefined) st.level[c.zone] = c.level;
     }
@@ -202,7 +205,7 @@ export function fireCues(
     if (!c || elapsed < c.t || st.fired.has(i)) continue;
     st.fired.add(i);
 
-    if (c.bus === "AUD") {
+    if (isAudio(c)) {
       onAudio(c.snd);
     } else if (c.op === "set") {
       st.eff[c.zone] = c.eff;

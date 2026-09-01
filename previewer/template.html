@@ -1,3 +1,5 @@
+<!DOCTYPE html>
+<html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Castle Cue Desk</title>
@@ -58,7 +60,8 @@
                they represent, so you can see at a glance whether the light is
                actually following the audio. -->
           <div class="scrub" id="scrub" role="slider" tabindex="0"
-               aria-label="Scene position" aria-valuemin="0" aria-valuenow="0">
+               aria-label="Scene position" aria-valuemin="0" aria-valuemax="100"
+               aria-valuenow="0">
             <div class="scrub__track"><i id="ph"></i></div>
             <div class="scrub__ticks" id="ticks"></div>
           </div>
@@ -364,3 +367,4 @@
 <script id="app">
   /* @BUNDLE — replaced by tools/gen_previewer.py with web/dist/bundle.js */
 </script>
+</html>

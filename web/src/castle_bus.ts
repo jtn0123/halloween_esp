@@ -27,9 +27,6 @@ const changedFns = new Set<Fn>();
 let live = false;
 let busy = 0;
 
-/** Is a castle answering right now, as far as the probe knows. */
-export const castleLive = (): boolean => live;
-
 /** device.ts calls this on first contact, on loss, and on recovery. */
 export function setCastleLive(now: boolean): void {
   if (now === live) return;

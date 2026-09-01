@@ -16,7 +16,7 @@
  */
 
 import { defaultParams, effect, pixelSeed, toScreen } from "./effects.js";
-import type { Scene, ZoneId } from "./types.js";
+import { isLed, type Scene, type ZoneId } from "./types.js";
 
 /** Zones weighted by how much of the castle they are: the doorway is the
  *  widest aperture and the one an effect change reads on first. */
@@ -77,7 +77,7 @@ export function sceneTint(scene: Scene, alpha: number): string {
   }
   let strikes = 0;
   for (const c of scene.cues) {
-    if (c.bus !== "LED") continue;
+    if (!isLed(c)) continue;
     if (c.op === "strike") strikes += c.intensity ?? 1;
     else add(c.eff, 0.5);
   }

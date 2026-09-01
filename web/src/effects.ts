@@ -41,7 +41,6 @@ export const defaultParams = (): EffectParams => ({
    per zone; index 0 is the classic violet/green the show was built on. */
 
 export const PALETTE_NAMES = ["haunt", "ember", "moonlight", "toxic"] as const;
-export type PaletteName = (typeof PALETTE_NAMES)[number];
 
 type Pole = readonly [number, number, number];
 export const PALETTES: ReadonlyArray<readonly [Pole, Pole]> = [
@@ -250,7 +249,6 @@ export const pixelSeed = (zoneIndex: number, pixel: number): number =>
    replacement, so the candle keeps burning under the sparkle. */
 
 export const OVERLAY_NAMES = ["none", "sparkle", "chase", "meteor"] as const;
-export type OverlayName = (typeof OVERLAY_NAMES)[number];
 
 export const overlayIndex = (name: string): number => {
   const i = (OVERLAY_NAMES as readonly string[]).indexOf(name);

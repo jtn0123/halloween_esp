@@ -6,7 +6,7 @@
  * DOM and this stays trivially testable.
  */
 
-import type { Cue, Scene, ZoneId } from "./types.js";
+import { isAudio, isLed, type Cue, type Scene, type ZoneId } from "./types.js";
 
 /** A sound's home on the SD card, and the file the renderer produced.
  *
@@ -61,7 +61,7 @@ export function sheetRow(c: Cue, scene: Scene): string {
   let detail: string;
   let file: string;
 
-  if (c.bus === "AUD") {
+  if (isAudio(c)) {
     const snd = SOUNDS[c.snd];
     op = c.op;
     detail = snd?.label ?? c.snd;
@@ -89,7 +89,7 @@ export function sheetRow(c: Cue, scene: Scene): string {
 /** One tick under the scrub bar. Height carries intensity, so a heartbeat
  *  pulse reads as a stub and full lightning as a full-height mark. */
 export function tickMark(c: Cue, dur: number): string {
-  if (c.bus !== "LED") return "";
+  if (!isLed(c)) return "";
   const pct = (c.t / dur) * 100;
   const col = c.op === "strike" ? (c.color ?? [1, 1, 1, 1]) : null;
   const bg = col
@@ -112,7 +112,7 @@ export function toYaml(sc: Scene): string {
   for (const z of CHANNELS) lines.push(`  ${z.id}: ${sc.base[z.id]}`);
   lines.push("cues:");
   for (const c of sc.cues) {
-    if (c.bus === "AUD") {
+    if (isAudio(c)) {
       const snd = SOUNDS[c.snd];
       lines.push(`  - { t: ${c.t}, bus: AUD, op: ${c.op}, file: "${snd?.sd ?? c.snd}" }`
         + `   # ${snd?.label ?? c.snd}`);

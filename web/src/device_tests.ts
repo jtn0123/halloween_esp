@@ -16,7 +16,7 @@
  * See tools/gen_rig.py (lights_override) and docs/WIRING.md §5.
  */
 
-import { castleAct } from "./device.js";
+import { castleAct } from "./castle_act.js";
 import { ZONE_ORDER } from "./rig.js";
 
 /** The strips in porch order (left, door, right) for the per-line test. */

@@ -64,6 +64,15 @@ export function chipHtml(s: ChipStatus, vol: number, mirror: boolean): string {
     `</div>`);
 }
 
+/** The chip's other face: no castle yet, but one is expected. Said after
+ *  three missed probes so a blank corner stops being a mystery (C3) — the
+ *  host it is trying, how often, and a button to ask again now. */
+export const seekingHtml = (host: string, retryS: number): string =>
+  `<div>🏰 looking for the castle… <small class="chip__seek">` +
+  `no answer from ${esc(host)} — retrying every ${retryS} s</small></div>` +
+  `<button id="devRetry" class="chip__btn" type="button" ` +
+  `title="Probe the castle again right now">Retry</button>`;
+
 export interface ChipHandlers {
   mirror: (on: boolean) => void;
   stop: () => void;

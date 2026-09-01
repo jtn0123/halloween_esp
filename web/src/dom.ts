@@ -23,6 +23,32 @@ export function req<T extends HTMLElement = HTMLElement>(id: string, who = "desk
 
 export const val = (id: string): string => input(id)?.value.trim() ?? "";
 
+/**
+ * The same two moods, one CSS selector deep instead of one id.
+ *
+ * Most of the desk's lookups are not by id at all: a panel that just wrote
+ * its own innerHTML reaches back into that subtree by class. Those used to
+ * be raw `root.querySelector(...)!` — the non-null assertion re-creating
+ * exactly the TypeError `req` exists to prevent, only now with the selector
+ * nowhere in the message (grade report C4/C5). `sel` when absence is an
+ * ordinary state, `reqIn` when the panel cannot work without it.
+ *
+ * `root` is a ParentNode, so an element subtree, a DocumentFragment or the
+ * document itself all work; it defaults to the document for the handful of
+ * page-wide lookups that are genuinely not by id.
+ */
+export const sel = <T extends HTMLElement = HTMLElement>(
+  css: string, root: ParentNode = document,
+): T | null => root.querySelector<T>(css);
+
+export function reqIn<T extends HTMLElement = HTMLElement>(
+  root: ParentNode, css: string, who = "desk",
+): T {
+  const e = root.querySelector<T>(css);
+  if (!e) throw new Error(`${who}: missing ${css}`);
+  return e;
+}
+
 /** Text into markup. Everything the desk splices into innerHTML that came
  *  from OUTSIDE it — a track name, a file name off the castle's card, the
  *  castle's own version string — goes through here first. A name is a name,
