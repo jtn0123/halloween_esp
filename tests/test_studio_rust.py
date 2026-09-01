@@ -77,6 +77,24 @@ class CastleLess(StudioPair):
         self.assertEqual(a[0], 404)
         self.assertEqual(self.parsed(a), self.parsed(b))
 
+    def test_03b_a_zero_byte_scene_audio_is_an_empty_200(self) -> None:
+        # An interrupted render leaves a 0-byte mp3 behind, and the Rust
+        # server used to answer a Range over it by promising one byte and
+        # then writing nothing — desyncing the keep-alive connection for
+        # every later request on it (grade report B1).
+        for build in (self.py_build, self.rs_build):
+            (build / "audio" / "07_hollow.mp3").write_bytes(b"")
+        for rng in (None, "bytes=0-", "bytes=0-0", "bytes=-50"):
+            a, b = self.both(
+                "/studio/scene-audio/hollow",
+                headers={"Range": rng} if rng else None,
+            )
+            self.assertEqual(a[0], 200, rng)
+            self.assertEqual(a[2], b"", rng)
+            self.assertEqual(a[2], b[2], rng)
+            self.assertEqual(a[1]["content-length"], b[1]["content-length"], rng)
+            self.assertEqual(a[1].get("content-range"), b[1].get("content-range"), rng)
+
     def test_04_track_streams_by_id_and_extension(self) -> None:
         for path in ("/studio/track/t_alpha", "/studio/track/t_alpha.wav"):
             a, b = self.both(path)

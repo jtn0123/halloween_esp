@@ -9,7 +9,7 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 pub const AUDIO_ROUTE: &str = "/studio/scene-audio/";
 pub const API: &str = "/api/";
@@ -23,7 +23,10 @@ fn env_path(name: &str) -> Option<PathBuf> {
 
 struct LeanEntry {
     key: (String, u128, u64),
-    body: Vec<u8>,
+    /// Shared, not copied: the lean page is ~3 MB and identical for every
+    /// caller until the file under it changes, so a hit hands out a
+    /// pointer and the mutex is free again immediately.
+    body: Arc<Vec<u8>>,
 }
 
 pub struct App {
@@ -92,7 +95,7 @@ impl App {
 
     /// gen_previewer.lean_page: (body, etag), computed once per
     /// (path, mtime, size) — the rewrite is one pass over ~2.4 MB.
-    pub fn lean_page(&self, page: &Path) -> std::io::Result<(Vec<u8>, String)> {
+    pub fn lean_page(&self, page: &Path) -> std::io::Result<(Arc<Vec<u8>>, String)> {
         let md = std::fs::metadata(page)?;
         let mtime = md
             .modified()?
@@ -105,15 +108,18 @@ impl App {
         let mut slot = self.lean.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(hit) = slot.as_ref() {
             if hit.key == key {
-                return Ok((hit.body.clone(), etag));
+                let body = Arc::clone(&hit.body);
+                drop(slot); // before the caller does anything with 3 MB
+                return Ok((body, etag));
             }
         }
         let text = std::fs::read_to_string(page)?;
-        let body = lean(&text).into_bytes();
+        let body = Arc::new(lean(&text).into_bytes());
         *slot = Some(LeanEntry {
             key,
-            body: body.clone(),
+            body: Arc::clone(&body),
         });
+        drop(slot);
         Ok((body, etag))
     }
 }

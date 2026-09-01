@@ -194,7 +194,13 @@ mod so {
 #[cfg(not(target_arch = "wasm32"))]
 extern "C" {
     fn socket(domain: i32, ty: i32, protocol: i32) -> i32;
-    fn fcntl(fd: i32, cmd: i32, arg: i32) -> i32;
+    // Variadic for real: fcntl(2) is `int fcntl(int, int, ...)`, and on
+    // arm64 a variadic argument travels on the stack, not in x2. Declared
+    // with a fixed third parameter the flag never arrives — FD_CLOEXEC is
+    // set from whatever the stack happened to hold, so the restart's exec
+    // inherits the old listener and the fresh image cannot rebind its own
+    // port. It worked by luck until an unrelated edit moved the stack.
+    fn fcntl(fd: i32, cmd: i32, ...) -> i32;
     fn setsockopt(fd: i32, level: i32, name: i32, value: *const i32, len: u32) -> i32;
     fn bind(fd: i32, addr: *const so::SockaddrIn, len: u32) -> i32;
     fn listen(fd: i32, backlog: i32) -> i32;

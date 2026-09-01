@@ -1,8 +1,14 @@
-//! The studio's route handlers — what each endpoint MEANS (pass 1: the
-//! read side — page, tracks, streams — plus track deletion and the relay's
-//! allowlist walk). The write groups (import, jobs, scenes, publish) land
-//! with their own passes; until then those paths answer 404 like any
-//! unknown route, and DELETE ?scene=1 says plainly it is not here yet.
+//! The studio's route handlers — what each endpoint MEANS. The whole
+//! surface is here now: the read side (page, tracks, streams, waveforms),
+//! the write side (import and its jobs, scene edits, rebuild, publish),
+//! deletion, and the relay's allowlist walk out to the castle.
+//!
+//! This file is the dispatcher and the small answers; the work each verb
+//! stands for lives next door (`studio_import`, `studio_jobs`,
+//! `studio_media`, `studio_probe`, `studio_relay`, `studio_scenes`,
+//! `studio_tracks`). Route for route it answers what `tools/studio_routes.py`
+//! answers — docs/API.md is the table, and tests/test_studio_rust.py and
+//! its siblings hold the two servers' replies equal.
 
 use crate::httpd::{Reply, Request};
 use crate::jsonio::{self, Json};
