@@ -1,0 +1,259 @@
+# Garage Door — ESPHome device config
+#
+# Opener: Genie 4062 "Excelerator II" — Series III, Intellicode rolling code.
+# Board:  ESP32 DevKitC (esp32dev), NOT an S2 — see the board note below.
+#
+# The opener is triggered by shorting the button pads of a spare Genie remote
+# through an optocoupler, not by wiring into the opener itself. That choice is
+# forced by the opener generation:
+#
+#   Series III wall console terminals 1 and 2 are a POWERED, POLARITY-SENSITIVE
+#   signaling bus, not a dry contact. A relay across them does nothing. Genie
+#   sells the 38013R adapter to convert them to a real dry contact, which is
+#   the other valid approach — but hijacking a paired remote touches none of
+#   the opener's electronics, is fully reversible, and is guaranteed to speak
+#   correct Intellicode because it IS a factory remote.
+#
+# Door position comes from a reed switch, not from guessing. A button press is
+# only ever a toggle; without the reed this device cannot tell "open" from
+# "closed" and the phone app becomes a coin flip.
+#
+#   .venv/bin/esphome run firmware/garage.yaml
+
+substitutions:
+  name: garage
+  friendly: Garage Door
+
+  # Bump on every flash you intend to verify. Exposed as a text sensor so the
+  # web page proves which image is actually running, per the project's upload
+  # verification protocol — "it uploaded" is not "it changed".
+  version: "1.0"
+
+  # ── Pin map (ESP32 DevKitC GPIO numbers) ──
+  #
+  # pin_trigger is the dangerous one. It must be a pin that is LOW or
+  # high-impedance through the entire boot sequence, because a pin that
+  # glitches HIGH at reset OPENS THE GARAGE DOOR on every power cycle and
+  # every OTA reboot.
+  #
+  # That rules out the strapping and boot-noisy pins: 0, 2, 4, 5, 12, 15.
+  # GPIO6-11 are wired to the SPI flash. GPIO34-39 are input-only and have no
+  # internal pullup, so they are unusable for pin_reed as well.
+  #
+  # GPIO22 and GPIO21 are plain GPIOs with no strapping role and no boot
+  # activity. They are the ESP32's default I2C pins, which costs nothing here
+  # because this device has no I2C bus.
+  pin_trigger: "22"
+  pin_reed: "21"
+
+  # ── Trigger wiring ──
+  #
+  #   GPIO22 --[220R]--> PC817 pin 1 (anode)
+  #   GND -------------> PC817 pin 2 (cathode)
+  #   PC817 pin 4 (collector) --> remote button pad sitting at ~3V
+  #   PC817 pin 3 (emitter) ----> remote button pad sitting at 0V
+  #
+  # The opto is NOT here for isolation. The power section below deliberately
+  # bonds the remote's ground to the ESP32's, so there is nothing left to
+  # isolate. What it still buys is indifference to the button's topology: it
+  # is a contact, exactly like the finger it replaces, so it works whether
+  # that pad is pulled up, pulled down, or feeding a wake interrupt. Now that
+  # ground is common, a 2N7000 (source to GND, drain to the signal pad, gate
+  # to GPIO22) is the cheaper equivalent — but only if the pad really is
+  # pulled up, which is an assumption the opto does not have to make.
+  #
+  # Polarity matters on the output side: a phototransistor only conducts
+  # collector-to-emitter. With the remote powered and the meter's black probe
+  # on the holder's negative tab, the pad reading ~3V is the MCU's pulled-up
+  # input (that is the collector) and the pad reading 0V is ground (the
+  # emitter). Wired backwards it simply will not trigger — swap the two
+  # wires, nothing breaks. A TLP222A or AQY212GS PhotoMOS instead of the
+  # PC817 is a bidirectional contact and removes the polarity question.
+  #
+  # Before soldering: short the two candidate pads with tweezers. If the door
+  # moves you have the right pads, and if it does not you have learned that
+  # without having committed an iron to a $25 remote.
+  #
+  # Strain-relieve the wires to the remote's PCB with hot glue. Lifted pads
+  # from a tugged wire are the most common way this build dies.
+
+  # ── Powering the remote from the ESP32 (no coin cell) ──
+  #
+  # The G3T-A is a single CR2032, so the ESP32's own 3V3 rail replaces it and
+  # the battery comes out for good:
+  #
+  #   3V3 --[1N5819 Schottky]--> CR2032 holder + tab
+  #   GND ----------------------> CR2032 holder - tab
+  #
+  # TAKE THE CELL OUT FIRST. Feeding the holder with the cell still seated
+  # back-charges a non-rechargeable lithium coin cell, which vents or burns.
+  # This is the one step here that is genuinely dangerous to get wrong.
+  #
+  # The Schottky is reverse-polarity protection, not regulation. Its drop is
+  # current dependent — near zero at the remote's microamp idle, ~0.3V during
+  # a transmit burst — so the remote sees about 3.2V idle and 3.0V loaded. A
+  # fresh CR2032 measures 3.2-3.3V open circuit, so that is already inside
+  # what the circuit expects. For an actually regulated 3.0V, use an
+  # MCP1700-3002 LDO off 5V instead of the diode off 3V3.
+  #
+  # Put 100uF electrolytic + 100nF ceramic directly across the holder tabs.
+  # This is the part that is easy to skip and annoying to debug. The RF power
+  # amp draws a burst on every transmit, and the coin cell it was designed
+  # around sat at zero wire length with its own on-board reservoir. A foot of
+  # thin wire back to the ESP32 has enough inductance to sag the rail
+  # mid-packet, which does not fail cleanly — it transmits a corrupted
+  # rolling code, the opener ignores it, and the door just sometimes does not
+  # move.
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly}
+
+esp32:
+  # Deliberately NOT the ESP32-S2 Feather this project uses elsewhere. mDNS is
+  # unreliable on those (see HARDWARE_FINDINGS), and an appliance you reach
+  # from a phone must be findable. Classic ESP32 resolves garage.local fine —
+  # and the static IP below means it still works if mDNS ever fails anyway.
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret garage_api_key
+
+ota:
+  - platform: esphome
+    password: !secret garage_ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Static, on purpose. The Android home-screen shortcut is a bookmark to a
+  # bare IP; a DHCP lease change would silently break it. Adjust to your LAN.
+  manual_ip:
+    static_ip: 192.168.1.50
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+
+  # No `ap:` fallback and no captive_portal. A device that can open the garage
+  # must never fall back to broadcasting an open, unauthenticated join point in
+  # the driveway when WiFi hiccups. If it cannot reach the network it should be
+  # useless, not helpful.
+
+web_server:
+  port: 80
+  version: 3
+  # The whole interface for the phone. Without auth, every device on the LAN —
+  # including anything on a compromised IoT segment — can open the door with a
+  # single unauthenticated HTTP POST.
+  auth:
+    username: !secret garage_web_username
+    password: !secret garage_web_password
+
+text_sensor:
+  - platform: template
+    name: "Firmware Version"
+    id: firmware_version
+    lambda: 'return {"${version}"};'
+    update_interval: 60s
+    entity_category: diagnostic
+
+binary_sensor:
+  # Ground truth for door position. Magnet on the top door section, reed on the
+  # track, aligned when the door is FULLY CLOSED.
+  #
+  # Wiring is GPIO -> reed -> GND with the internal pullup, so a severed or
+  # disconnected wire reads HIGH, which inverts to "not closed". The failure
+  # mode of a broken sensor is therefore "reports open" — the safe direction.
+  # A sensor that failed to "closed" would let the cover silently refuse to
+  # believe an actually-open door.
+  - platform: gpio
+    id: door_closed
+    name: "Garage Door Closed"
+    pin:
+      number: ${pin_reed}
+      mode:
+        input: true
+        pullup: true
+      # Normally-open reed: magnet present closes it and pulls the pin LOW.
+      # LOW therefore means closed, so invert to get a sensor that reads true
+      # when the door is shut. If yours reads backwards it is a
+      # normally-closed reed — drop this line.
+      inverted: true
+    filters:
+      # Reed switches chatter as the magnet crosses the threshold, and the door
+      # visibly bounces when it seats. Without this the cover state flaps.
+      - delayed_on: 200ms
+      - delayed_off: 200ms
+
+switch:
+  - platform: gpio
+    id: remote_button
+    pin: ${pin_trigger}
+    # Not exposed to HA or the web UI. The only supported way to move the door
+    # is the cover below, which checks position first. A raw button exposed to
+    # the app is an invitation to double-tap the door to a halt mid-travel.
+    internal: true
+    # Load-bearing. The default (RESTORE_DEFAULT_OFF) reads the previous state
+    # back out of flash on boot; if the device lost power mid-pulse it would
+    # come back up holding the remote button down.
+    restore_mode: ALWAYS_OFF
+    # Failsafe independent of the script below. Even if a script is cancelled,
+    # a lambda throws, or someone toggles this over the API, the line cannot
+    # stay asserted for more than 400ms — a stuck-on optocoupler would hold the
+    # remote button forever and drain the coin cell inside a day.
+    on_turn_on:
+      - delay: 400ms
+      - switch.turn_off: remote_button
+
+script:
+  - id: pulse_button
+    # `single` is the double-tap guard. A second invocation while this script
+    # is running is DROPPED, not queued. Combined with the trailing cooldown,
+    # an impatient triple-tap in the app sends exactly one press instead of
+    # three — three presses being open, stop, reverse.
+    mode: single
+    then:
+      - switch.turn_on: remote_button
+      - delay: 300ms          # comfortably longer than the remote's own debounce
+      - switch.turn_off: remote_button
+      - delay: 3s             # cooldown; see `mode: single` above
+
+cover:
+  - platform: template
+    name: "Garage Door"
+    id: garage_door
+    device_class: garage
+    # State is read from the reed switch rather than tracked optimistically, so
+    # a door opened by the wall button, a keypad, or a real remote is still
+    # reported correctly. Mid-travel reads as open, which is honest.
+    lambda: |-
+      return id(door_closed).state ? COVER_CLOSED : COVER_OPEN;
+
+    # Open and close are guarded by current position. The opener has exactly
+    # one input and no notion of direction, so an unguarded "close" on a door
+    # that is already closed would OPEN it — the single worst bug this device
+    # could ship, since it turns a stray notification tap into an open garage.
+    open_action:
+      - if:
+          condition:
+            binary_sensor.is_on: door_closed
+          then:
+            - script.execute: pulse_button
+
+    close_action:
+      - if:
+          condition:
+            binary_sensor.is_off: door_closed
+          then:
+            - script.execute: pulse_button
+
+    # Stop is the one case where an unconditional press is correct: pressing
+    # during travel is exactly how a single-button opener halts.
+    stop_action:
+      - script.execute: pulse_button
