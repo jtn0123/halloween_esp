@@ -22,6 +22,17 @@ the castle was off the network when the work landed). One OTA covers it:
 After the OTA, `make publish` puts the LEAN desk page + per-scene audio on
 the card — first paint drops from 3.3 MB to ~150 KB gzipped.
 
+**Rehearsed 2026-09-01, castle still offline** — the whole flow ran against
+the emulator so flash day is only the board itself: v5.43 (which folds this
+v5.42 list in, plus the channel_colors migration) compiled clean, then
+`sd_sync scenes` (10 tracks, largest 2.3 MB, CRC-checked), `sd_sync site`
+(lean page, 90 KB gzipped) and `sd_sync ota` (the 1.1 MB image over HTTP,
+come-back polling, the confirm reminder) all passed. Flash day is therefore:
+`make ota` (rebuilds the image — the rehearsal binary lives on the
+512Flash volume and may be stale by then), confirm **5.43** on the panel,
+watch that first big upload for the watchdog cadence above, connect once so
+the image is confirmed, then `make publish`.
+
 Applied in v5.34 (flashed to the new porch board, 2026-08-22):
 
 - qr_castle — regenerated (tools/gen_qr.py) so the eInk QR lands on
