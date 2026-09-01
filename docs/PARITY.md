@@ -16,7 +16,7 @@ individual checks say how each one works.
 | Effect maths (colour per pixel per frame) | `firmware/castle_effects.h` (C++, float32) · `web/src/effects.ts` (TS, double) · `core/src/effects.rs` (Rust, f32) | `web/test/firmware_parity.ts` reading `tests/cxx/parity_dump.cpp` (host-compiled); `web/test/effects_equivalence.ts`; `tests/test_castle_core.py` compares the crate's `parity_dump` bin against the same host-compiled C++, bit for bit |
 | Rig geometry (which pixel is where, what `core` means) | `tools/rig_layout.py` → `firmware/generated/rig.h` · `web/src/rig.ts` | `web/test/rig_parity.ts`, `tests/test_rig_layout.py` |
 | Castle wire protocol (`/api/*` on the device) | `firmware/sd_web.h` · `tools/castle_emu_wire.py` · `core/src/bridge.rs` (the `castle` bin, a client of the same wire) | `tests/test_firmware_contract.py` parses the C; `tests/test_bridge_rust.py` runs every verb against `castle_emu` |
-| The studio's whole HTTP surface (both tables in `docs/API.md`) | `tools/studio.py` + `studio_*.py` (production) · `core/src/bin/studio.rs` + `core/src/studio*.rs` | `tests/studio_rust_case.py` runs the two servers over twin sandboxes; `tests/test_studio_rust.py` (reads, aliases, relay failures), `test_studio_scenes_rust.py`, `test_studio_media_rust.py`, `test_studio_import_rust.py`, `test_studio_relay_rust.py` compare bodies — and the rebuilt audio and scenes.yaml — byte for byte |
+| The studio's whole HTTP surface (both tables in `docs/API.md`) | `tools/studio.py` + `studio_*.py` (production) · `core/src/bin/studio.rs` + `core/src/studio*.rs` | `tests/studio_rust_case.py` runs the two servers over twin sandboxes; `tests/test_studio_rust.py` (reads, aliases, relay failures), `test_studio_scenes_rust.py`, `test_studio_media_rust.py`, `test_studio_import_rust.py`, `test_studio_relay_rust.py` compare bodies — and the rebuilt audio and scenes.yaml — byte for byte; the browser suite is the third gate, run against either server by `CASTLE_STUDIO_CMD` (`cd web && CASTLE_STUDIO_CMD=../core/target/release/studio npx playwright test`, after `make rust`) — CI runs both axes |
 | `tracks.json` (the provenance manifest, and its flock/atomic-rename protocol) | `tools/manifest.py` · `core/src/manifest.rs` | `tests/studio_rust_case.py` — the two servers' leftover `tracks.json` files are compared byte for byte after the live-analysis and write-back paths run in both |
 | Import URL policy (which hosts yt-dlp may be handed) | `tools/netguard.py` · `core/src/netguard.rs` (the `netguard_dump` bin, `core/src/bin/netguard_dump.rs` — a URL corpus and a DNS table on stdin, one verdict per line out) | `tests/test_netguard_rust.py` drives both over the corpus `tests/test_netguard.py` holds the Python to, DNS mocked from one table on both sides, and compares the **refusal sentences**, not just the verdicts — the desk shows the string |
 | Scene render (synth voices, onset detection, reverb, master chain) | `core/` (castle-core `scene_render` — the production renderer since the B3 swap) · `tools/synth*.py` + `tools/analyze.py` behind `render_audio.render_scene_py` (the reference) | `tests/test_scene_render_rust.py` (byte-equal WAV + markers, canonical crc pin), plus the per-layer gates `test_synth_rust`, `test_master_rust`, `test_onsets_rust` |
@@ -94,5 +94,17 @@ Rust row without cargo.
    TS port (`effects.ts`, `hashi/hash3` in the checker) must change the same
    way, and `legacy_effects.mjs` in `effects_equivalence.ts` is re-pinned
    only with a note in its header saying why.
+6. On x86_64 the render gates can fail before any digit is compared, with
+   `np.sin does not agree with libm on this host` from
+   `tests/synth_probes.assert_libm_transcendentals` — numpy is dispatching a
+   vector math kernel (AVX-512 is the known case), which computes sin/exp/
+   log/pow to a different last ulp than CPython's and Rust's plain libm calls
+   and moves pocketfft, the reverb's transform, with it. The remedy is
+   numpy's own switch: export `NPY_DISABLE_CPU_FEATURES` **before** numpy is
+   imported, naming this wheel's dispatch targets — the failure message
+   computes that list for the installed wheel rather than quoting one, since
+   numpy renames the targets between releases and a name outside the list is
+   an ImportWarning that disables nothing. CI's Linux x86_64 job exports
+   exactly that (`ci.yml:101`).
 
 Never skip or loosen a parity test to get a green run.

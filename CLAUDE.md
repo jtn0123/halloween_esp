@@ -45,9 +45,17 @@ file is the one that governs.
   is rebuilt, never committed. Anything that needs it builds it first — CI
   runs `gen_previewer.py` as a step, and the e2e global setup refuses to run
   without it. The inlined build is still the portable artifact (open from
-  disk, copy it to someone), so its weight is capped in two places:
-  `gen_previewer.PAGE_BUDGET_KB` (4 MB) now **fails the build** and writes
-  nothing, and `tests/test_gen_previewer.py` holds a tighter ratchet.
+  disk, copy it to someone), so its weight is governed by
+  `tools/previewer_budget.py` (`PAGE_BUDGET_KB`, 4 MB), and going over it
+  does not fail first — it **un-inlines**: scenes give up their data URI
+  from the BACK of the show, one at a time, for a
+  `/studio/scene-audio/<id>` link, until the page fits. The build prints
+  which scenes went that way; the desk falls back to the live synth for
+  exactly those when the link cannot be fetched (a page opened from disk).
+  The build **FAILS** — writing nothing, leaving the last good page in the
+  tree — only when the page is still over budget with NOTHING inlined,
+  which is markup and bundle and no scene's fault. Both halves are
+  `tests/test_previewer_budget.py`.
   The DEVICE never serves it — `sd_sync site` pushes the lean rewrite +
   per-scene mp3s, and the studio rewrites to the same lean form at serve time.
 
@@ -56,8 +64,9 @@ file is the one that governs.
 `setup` (python3.13 venv) · `audio` · `generate` · `preview` · `validate` ·
 `build` / `upload` / `logs` · `studio` · `track SRC=… ID=…` · `test` · `lint`
 · `check` (= CI) · `e2e` · `check-all` · `coverage` / `audit` (non-gating)
-· `lock` · `rust` / `rust-test` / `rust-lint` (castle-core; `lint` depends on
-`rust-lint`, and `tests/test_castle_core.py` shells out to all three, so the
+· `lock` · `rust` / `rust-test` / `rust-lint` / `rust-coverage` (castle-core;
+`rust-coverage` is a non-gating `cargo llvm-cov` summary; `lint` depends on
+`rust-lint`, and `tests/test_castle_core.py` shells out to those three, so the
 gate has one definition) · `bench*` (bare-board dry runs) · `sd-build` / `sd-upload`
 · `publish` (scene tracks + lean page → the castle) · `ota` (build, stop
 audio, flash). The studio's rebuild publishes on its own when a castle
@@ -92,6 +101,20 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
 - `CASTLE_SCENES=<file>` redirects scene writes.
 - `CASTLE_HOST=<host[,fallback…]>` names the castle; set-but-EMPTY (`""`)
   means "explicitly no castle" — castle_link returns None, no sockets.
+- `CASTLE_BUILD=<dir>` redirects everything the generators WRITE — `audio/`,
+  `firmware/generated/` and the previewer page (`tools/build_paths.py`
+  `build_root()`, `core/src/studio.rs`). Without it a sandboxed
+  `CASTLE_SCENES` still builds beside itself, in `<scenes-dir>/_build/`;
+  unset both and the target is the repo. It is the fourth name in
+  `tests/helpers.SANDBOX_ENV`, cleared before any tools module reads it, so
+  an emulator shell that exported these knobs cannot redden `make test`.
+- `CASTLE_STUDIO_CMD=<command>` swaps the SERVER the e2e suite runs against
+  — the only local way to point the browser suite at the Rust twin:
+  `cd web && CASTLE_STUDIO_CMD=../core/target/release/studio npx playwright
+  test` (build it first: `make rust`). The port and `--localhost` are
+  appended by `web/playwright.config.ts`, whose fall-back is `??`, so an
+  EMPTY value is not "absent" — it is a server command of `""` and the suite
+  fails to start. CI names it on both matrix axes for that reason.
 - `CASTLE_PY=<interpreter>` names the python the studio's children run
   under. The Python studio has `sys.executable` and never needs it; the
   Rust studio bin has no such self-knowledge and asks `CASTLE_PY` first,
@@ -100,7 +123,7 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   another tree's venv — otherwise the rebuild finds a system python with no
   yaml and every child fails confusingly. `web/playwright.config.ts` honours
   it for the same reason.
-- `tests/studio_case.py` and `web/playwright.config.ts` set all three.
+- `tests/studio_case.py` and `web/playwright.config.ts` set the first three.
 - Hardware-free castle: `.venv/bin/python tools/castle_emu.py 8093`, then
   `CASTLE_HOST=127.0.0.1:8093 .venv/bin/python tools/studio.py 8766 --localhost`
   gives the full desk→studio→castle chain. The emulator is a byte-level port

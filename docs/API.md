@@ -55,7 +55,8 @@ castle outage.
 `/api/…` spelling (`/api/tracks`, `/api/import`, … `/api/card/<name>`); the
 studio logs `DEPRECATED` once per route. The one exception is `/api/scene`:
 with `?s=<id>` it is the castle's fire-a-scene and relays; with a JSON body
-it is the editor above. The table is `STUDIO_ROUTES` in `tools/studio.py`.
+it is the editor above. The table is `STUDIO_ROUTES` in
+`tools/studio_http.py` (`tools/studio.py` only re-exports the name).
 
 ## Relayed to the castle (`/api/…`, `/remote`)
 

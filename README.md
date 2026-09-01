@@ -133,10 +133,11 @@ twin of the same surface, held answer-for-answer against the Python one by
 `tests/studio_rust_case.py`; nothing runs it by default. A change to a route
 belongs in both, and [docs/PARITY.md](docs/PARITY.md) says why.
 
-Three environment variables sandbox it: `CASTLE_TRACKS` (track library
+Four environment variables sandbox it: `CASTLE_TRACKS` (track library
 directory), `CASTLE_SCENES` (the scenes file it may write), `CASTLE_HOST`
-(the castle's address; set-but-empty means "no castle"). The tests set all
-three so a run can never touch the real show. `tools/castle_emu.py 8093` plus
+(the castle's address; set-but-empty means "no castle") and `CASTLE_BUILD`
+(where a rebuild's audio, generated firmware and previewer page land). The
+tests set them so a run can never touch the real show. `tools/castle_emu.py 8093` plus
 `CASTLE_HOST=127.0.0.1:8093` gives the whole desk→studio→castle chain with no
 hardware at all.
 
@@ -159,6 +160,8 @@ list of every duplicated copy, and what to do when one of them goes red.
 (fmt --check + clippy -D warnings) are the crate's own gates, and the same
 checks ride inside `tests/test_castle_core.py` so `make check` covers `core/`
 too — but only on a machine that has cargo and a host C++ compiler.
+`make rust-coverage` is the crate's `cargo llvm-cov` summary, non-gating like
+`make coverage`.
 
 Every file is held to 500 lines (`tools/check_loc.py`, prose included).
 `make setup` installs the commit hook (`git config core.hooksPath githooks`).
@@ -179,8 +182,15 @@ to the main checkout's. The short version of all of this is
 | Descent | showpiece | 27 s | 32′ pedal held throughout, chromatic descent, strikes on chord changes |
 | Visitation | triggered | 11 s | Candles gutter out, cold green, eyes open in the left window |
 | Approach | PIR | 8 s | Blackout, a beat of nothing, then the door blazes |
+| Crypt | ambient, loops | 24 s | Heartbeat at 48 bpm, tritone drone, whispers; near-darkness is the effect |
 
-All musical material is original, written in the haunted-parlour idiom
+Imported songs take the rest of the budget: the board holds **12 scenes**
+(`SCENE_LIMIT` in `tools/check_loc.py`, and the desk refuses the thirteenth),
+so the eight written above leave four slots for tracks brought in through the
+Tracks panel, whose cues are onset-detected from the audio itself. Two of
+those four are filled in `scenes/scenes.yaml` today.
+
+All musical material written for the castle is original, written in the haunted-parlour idiom
 (minor key, 3/4 or slow chords, raised 7th on the dominant). Nothing is a
 transcription of an existing work.
 
