@@ -44,6 +44,11 @@ BIN = ROOT / "core" / "target" / "release" / "scene_render"
 #: changed, which must be a deliberate, listened-to decision.
 CANON_CRC = "b812f2a6"
 
+#: The wheel profile that render was pinned against (macOS arm64) — the
+#: same six characters as Modes::CANONICAL. Off it, the Rust render is
+#: still canonical; only the Python comparison below is skipped.
+CANON_MODES = "101211"
+
 CANON_SCENE: dict[str, Any] = {
     "id": "vigil",
     "duration_ms": 5000,
@@ -175,7 +180,7 @@ class TestSceneRenderParity(unittest.TestCase):
         On the reference platform it equals the Python bytes too."""
         wav, _ = self.rust(CANON_SCENE, probed=False)
         self.assertEqual(f"{zlib.crc32(wav):08x}", CANON_CRC)
-        if kernel_modes() == "10121" and numpy_uniform_mode() == "fma":
+        if kernel_modes() == CANON_MODES and numpy_uniform_mode() == "fma":
             wav_py, _ = self.python(CANON_SCENE)
             self.assertEqual(wav, wav_py)
 

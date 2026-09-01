@@ -156,8 +156,9 @@ class TestSynthRngParity(unittest.TestCase):
             )
             for _ in range(12)
         )
+        modes = kernel_modes()
         lines = [
-            f"note {v} {fmt(f)} {fmt(dur)} {fmt(vel)} {fmt(stops)}"
+            f"note {v} {fmt(f)} {fmt(dur)} {fmt(vel)} {fmt(stops)} {modes}"
             for v, f, dur, vel, stops in cases
         ]
         run = subprocess.run(
@@ -218,8 +219,9 @@ class TestSynthRngParity(unittest.TestCase):
             ("drone", 20.0),
             ("drone", 7.3),
         ]
+        modes = kernel_modes()
         lines = [
-            f"piece {name}" + ("" if dur is None else f" {fmt(dur)}")
+            f"piece {name} {fmt(20.0 if dur is None else dur)} {modes}"
             for name, dur in cases
         ]
         run = subprocess.run(

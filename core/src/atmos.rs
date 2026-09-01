@@ -117,10 +117,10 @@ pub fn thunder(d: &mut Dice, m: &Modes) -> Vec<f64> {
     let mut out = Vec::with_capacity(n);
     for (i, (c, f)) in crack.iter().zip(&sub_f).enumerate() {
         let t = i as f64 / SR_F;
-        let cr = c * interp(t, &[0.0, 0.05, 3.0], &[0.0, 1.0, 0.0]).powf(1.6);
+        let cr = c * interp(t, &[0.0, 0.05, 3.0], &[0.0, 1.0, 0.0], m.interp_fused).powf(1.6);
         acc += f;
         let sub = (2.0 * PI * acc / SR_F).sin()
-            * interp(t, &[0.0, 0.14, 2.9], &[0.0, 1.0, 0.0]).powf(1.5);
+            * interp(t, &[0.0, 0.14, 2.9], &[0.0, 1.0, 0.0], m.interp_fused).powf(1.5);
         out.push(0.85 * cr + 0.55 * sub);
     }
     out
@@ -148,7 +148,7 @@ pub fn creak(d: &mut Dice, m: &Modes) -> Vec<f64> {
         .enumerate()
         .map(|(i, o)| {
             let t = i as f64 / SR_F;
-            o * interp(t, &[0.0, 0.06, dur], &[0.0, 1.0, 0.0]).powf(1.4) * 0.30
+            o * interp(t, &[0.0, 0.06, dur], &[0.0, 1.0, 0.0], m.interp_fused).powf(1.4) * 0.30
         })
         .collect()
 }
@@ -173,7 +173,7 @@ pub fn shriek(d: &mut Dice, m: &Modes) -> Vec<f64> {
         .enumerate()
         .map(|(i, o)| {
             let t = i as f64 / SR_F;
-            o * interp(t, &[0.0, 0.04, dur], &[0.0, 1.0, 0.0]).powf(1.3) * 0.34
+            o * interp(t, &[0.0, 0.04, dur], &[0.0, 1.0, 0.0], m.interp_fused).powf(1.3) * 0.34
         })
         .collect()
 }
@@ -200,7 +200,12 @@ pub fn wind(dur: f64, d: &mut Dice, m: &Modes) -> Vec<f64> {
         .map(|(i, o)| {
             let t = i as f64 / SR_F;
             let swell = 1.0 + 0.38 * (2.0 * PI * 0.06 * t).sin();
-            let fade = interp(t, &[0.0, up, down, dur], &[0.0, 1.0, 1.0, 0.0]);
+            let fade = interp(
+                t,
+                &[0.0, up, down, dur],
+                &[0.0, 1.0, 1.0, 0.0],
+                m.interp_fused,
+            );
             o * swell * fade * 0.10
         })
         .collect()
@@ -309,13 +314,7 @@ pub fn apply_reverb(x: &[f64], wet: f64, d: &mut Dice) -> Vec<f64> {
 mod tests {
     use super::*;
 
-    const M: Modes = Modes {
-        mul_fused: true,
-        poly_fused: false,
-        div_fused: true,
-        sqrt_form: 2,
-        sos_fused: true,
-    };
+    const M: Modes = Modes::CANONICAL;
 
     #[test]
     fn voices_have_their_advertised_shapes() {

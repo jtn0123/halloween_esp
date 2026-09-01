@@ -5,7 +5,11 @@
 //! synth._place does it (truncating index, clamped both ends, additive).
 //! The marker lists ride along because the lights are cued from them.
 //! tests/test_synth_rust.py compares whole buffers AND markers bit-exact.
+//! The three that reach an envelope (drone's fade, pipe's swell) take the
+//! host's kernel profile for np.interp's inner step; the rest are pure
+//! sines and exponentials with nothing left to vary.
 
+use crate::filters::Modes;
 use crate::synth::{interp, music_box, nt, piano, pipe, STOPS};
 use std::f64::consts::PI;
 
@@ -34,7 +38,7 @@ pub fn place(buf: &mut [f64], sig: &[f64], t0: f64) {
 }
 
 /// D2 against A-flat: the tritone, sustained.
-pub fn drone(dur: f64) -> Vec<f64> {
+pub fn drone(dur: f64, m: &Modes) -> Vec<f64> {
     let n = (dur * SR_F) as usize;
     let mut out = vec![0.0; n];
     let pairs = [
@@ -58,7 +62,7 @@ pub fn drone(dur: f64) -> Vec<f64> {
     for (i, o) in out.iter_mut().enumerate() {
         let t = i as f64 / SR_F;
         let wander = 0.75 + 0.25 * (ww * t + 1.0).sin();
-        let fade = interp(t, &xp, &fp);
+        let fade = interp(t, &xp, &fp, m.interp_fused);
         *o = *o * wander * fade * 0.16;
     }
     out
@@ -83,7 +87,7 @@ pub fn toll() -> (Vec<f64>, Vec<(f64, f64)>) {
 }
 
 /// Procession in D minor: i - bII - i - V7b9.
-pub fn organ() -> (Vec<f64>, Vec<(f64, f64)>) {
+pub fn organ(m: &Modes) -> (Vec<f64>, Vec<(f64, f64)>) {
     let chords: [(i32, &[i32]); 4] = [
         (-19, &[5, 8, 12]),
         (-18, &[6, 10, 13]),
@@ -93,16 +97,20 @@ pub fn organ() -> (Vec<f64>, Vec<(f64, f64)>) {
     let mut buf = vec![0.0; (28.0 * SR_F) as usize];
     for (i, &(ped, notes)) in chords.iter().enumerate() {
         let bt = i as f64 * 6.6;
-        place(&mut buf, &pipe(nt(f64::from(ped)), 7.5, 0.078, STOPS), bt);
         place(
             &mut buf,
-            &pipe(nt(f64::from(ped + 12)), 7.5, 0.038, STOPS),
+            &pipe(nt(f64::from(ped)), 7.5, 0.078, STOPS, m),
+            bt,
+        );
+        place(
+            &mut buf,
+            &pipe(nt(f64::from(ped + 12)), 7.5, 0.038, STOPS, m),
             bt,
         );
         for &s in notes {
             place(
                 &mut buf,
-                &pipe(nt(f64::from(s - 12)), 7.5, 0.030, STOPS),
+                &pipe(nt(f64::from(s - 12)), 7.5, 0.030, STOPS, m),
                 bt,
             );
         }
@@ -112,17 +120,17 @@ pub fn organ() -> (Vec<f64>, Vec<(f64, f64)>) {
 }
 
 /// 32' pedal held throughout; upper voices walk down chromatically.
-pub fn descent() -> Vec<f64> {
+pub fn descent(m: &Modes) -> Vec<f64> {
     let mut buf = vec![0.0; (27.5 * SR_F) as usize];
-    place(&mut buf, &pipe(nt(-19.0), 25.5, 0.090, STOPS), 0.0);
-    place(&mut buf, &pipe(nt(-31.0), 25.5, 0.060, STOPS), 0.0);
+    place(&mut buf, &pipe(nt(-19.0), 25.5, 0.090, STOPS, m), 0.0);
+    place(&mut buf, &pipe(nt(-31.0), 25.5, 0.060, STOPS, m), 0.0);
     let clusters: [[i32; 3]; 4] = [[17, 20, 24], [16, 19, 23], [15, 18, 22], [14, 17, 21]];
     for (i, cluster) in clusters.iter().enumerate() {
         let bt = 1.2 + i as f64 * 5.8;
         for &s in cluster {
             place(
                 &mut buf,
-                &pipe(nt(f64::from(s - 12)), 6.6, 0.030, STOPS),
+                &pipe(nt(f64::from(s - 12)), 6.6, 0.030, STOPS, m),
                 bt,
             );
         }
@@ -130,7 +138,7 @@ pub fn descent() -> Vec<f64> {
     for s in [5, 8, 11, 14] {
         place(
             &mut buf,
-            &pipe(nt(f64::from(s - 12)), 6.4, 0.034, STOPS),
+            &pipe(nt(f64::from(s - 12)), 6.4, 0.034, STOPS, m),
             20.4,
         );
     }

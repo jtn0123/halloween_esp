@@ -4,11 +4,14 @@
 //! rounding, pinned first by a pure-Python float-loop replica in the B3
 //! spike (2026-08-27) and held by tests/test_synth_rust.py: every sample
 //! bit-equal, no tolerances. Two findings that shape the code:
-//!   - np.interp's inner step is a FUSED slope*(x-xp)+fp on the wheels we
-//!     run (mul_add here, matching);
+//!   - np.interp's inner step is slope*(x-xp)+fp, FUSED on the macOS
+//!     arm64 wheel and plain on the manylinux ones — so it is a probed
+//!     mode (Modes::interp_fused), not a constant, and pipe() carries the
+//!     profile down for it;
 //!   - np.linspace(0,1,n) is i*delta with the endpoint forced, not
 //!     accumulated.
 
+use crate::filters::Modes;
 use std::f64::consts::PI;
 
 pub const SR: usize = 44100;
@@ -35,8 +38,8 @@ pub fn nt(semitones: f64) -> f64 {
     220.0 * 2f64.powf(semitones / 12.0)
 }
 
-/// np.interp for sorted xp — with the fused inner step numpy compiles to.
-pub fn interp(x: f64, xp: &[f64], fp: &[f64]) -> f64 {
+/// np.interp for sorted xp, in whichever inner step this wheel compiled.
+pub fn interp(x: f64, xp: &[f64], fp: &[f64], fused: bool) -> f64 {
     let last = xp.len() - 1;
     if x <= xp[0] {
         return fp[0];
@@ -47,7 +50,11 @@ pub fn interp(x: f64, xp: &[f64], fp: &[f64]) -> f64 {
     for j in 0..last {
         if x < xp[j + 1] {
             let slope = (fp[j + 1] - fp[j]) / (xp[j + 1] - xp[j]);
-            return slope.mul_add(x - xp[j], fp[j]);
+            return if fused {
+                slope.mul_add(x - xp[j], fp[j])
+            } else {
+                slope * (x - xp[j]) + fp[j]
+            };
         }
     }
     fp[last]
@@ -62,7 +69,7 @@ fn ramp01(i: usize, n: usize) -> f64 {
 }
 
 /// Additive drawbar organ rank with tremulant and a duration-scaled swell.
-pub fn pipe(f: f64, dur: f64, vel: f64, stops: f64) -> Vec<f64> {
+pub fn pipe(f: f64, dur: f64, vel: f64, stops: f64, m: &Modes) -> Vec<f64> {
     let n = (dur * SR_F) as usize;
     let mut out = vec![0.0; n];
     for &(m, amp, upper) in &RANKS {
@@ -86,7 +93,7 @@ pub fn pipe(f: f64, dur: f64, vel: f64, stops: f64) -> Vec<f64> {
     let fp = [0.0, 1.0, 1.0, 0.0];
     for (i, o) in out.iter_mut().enumerate() {
         let t = i as f64 / SR_F;
-        let env = interp(t, &xp, &fp);
+        let env = interp(t, &xp, &fp, m.interp_fused);
         let trem = 1.0 + TREM_DEPTH * (2.0 * PI * TREM_HZ * t).sin();
         *o = *o * env * trem * vel;
     }
@@ -156,15 +163,15 @@ mod tests {
     fn interp_holds_ends_and_hits_knees() {
         let xp = [0.0, 1.0, 3.0, 4.0];
         let fp = [0.0, 1.0, 1.0, 0.0];
-        assert_eq!(interp(-0.5, &xp, &fp), 0.0);
-        assert_eq!(interp(0.5, &xp, &fp), 0.5);
-        assert_eq!(interp(2.0, &xp, &fp), 1.0);
-        assert_eq!(interp(9.0, &xp, &fp), 0.0);
+        assert_eq!(interp(-0.5, &xp, &fp, true), 0.0);
+        assert_eq!(interp(0.5, &xp, &fp, true), 0.5);
+        assert_eq!(interp(2.0, &xp, &fp, false), 1.0);
+        assert_eq!(interp(9.0, &xp, &fp, false), 0.0);
     }
 
     #[test]
     fn voices_have_the_expected_shape() {
-        let p = pipe(nt(-19.0), 1.5, 0.078, STOPS);
+        let p = pipe(nt(-19.0), 1.5, 0.078, STOPS, &Modes::CANONICAL);
         assert_eq!(p.len(), (1.5 * SR_F) as usize);
         assert_eq!(p[0], 0.0); // the swell starts from silence
         assert!(p.iter().any(|&x| x.abs() > 1e-3));

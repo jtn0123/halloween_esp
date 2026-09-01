@@ -31,6 +31,17 @@ compares the digits. The firmware copy is the hard one — it is float32 on
 an S2 with no serial console — so `parity_dump.cpp` compiles the real
 header with the host compiler and prints what the device would compute.
 
+The scene-render row has one extra wrinkle: the Python's digits depend on
+which numpy/scipy wheel is installed, so `tests/synth_probes.py` measures the
+wheel's arithmetic (a six-character profile — multiply form, poly form,
+divide, csqrt, sosfilt, interp; the macOS arm64 reference wheel is `101211`)
+and the crate follows the measured forms. Linux manylinux wheels answer
+different forms (unfused interp, gcc's complex multiply, glibc's csqrt) and
+the probes cover them; `Modes::CANONICAL` pins the `101211` arithmetic so the
+published render is the same bytes on every machine regardless of the local
+wheel — held by the crc pin in `tests/test_scene_render_rust.py`, verified on
+macOS arm64, Linux aarch64 and Linux x86_64.
+
 ## How to run each check
 
 ```bash

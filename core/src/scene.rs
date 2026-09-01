@@ -63,14 +63,14 @@ fn voice(name: &str, dur: Option<f64>, d: &mut Dice, m: &Modes) -> Option<(Vec<f
     Some(match name {
         "wind" => (atmos::wind(dur.unwrap_or(30.0), d, m), Vec::new()),
         "heartbeat" => atmos::heartbeat(dur20, d, m),
-        "drone" => (pieces::drone(dur20), Vec::new()),
+        "drone" => (pieces::drone(dur20, m), Vec::new()),
         "whispers" => atmos::whispers(dur20, d, m),
         "thunder" => (atmos::thunder(d, m), Vec::new()),
         "creak" => (atmos::creak(d, m), Vec::new()),
         "shriek" => (atmos::shriek(d, m), Vec::new()),
         "toll" => pieces::toll(),
-        "organ" => pieces::organ(),
-        "descent" => (pieces::descent(), Vec::new()),
+        "organ" => pieces::organ(m),
+        "descent" => (pieces::descent(m), Vec::new()),
         "waltz" => pieces::waltz(),
         "musicbox" => (pieces::musicbox(), Vec::new()),
         _ => return None,
@@ -207,13 +207,7 @@ pub fn render_scene_full(
 mod tests {
     use super::*;
 
-    const M: Modes = Modes {
-        mul_fused: true,
-        poly_fused: false,
-        div_fused: true,
-        sqrt_form: 2,
-        sos_fused: true,
-    };
+    const M: Modes = Modes::CANONICAL;
 
     #[test]
     fn a_scene_mixes_normalises_and_reports_markers() {

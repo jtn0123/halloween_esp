@@ -75,16 +75,17 @@ fn main() {
                 println!("{}", vals.join(" "));
             }
             "note" => {
-                // note <voice> <f> <dur> <vel> [stops] — seed slot held the
-                // voice name here, so re-read it as text.
+                // note <voice> <f> <dur> <vel> <stops> <modes> — seed slot
+                // held the voice name here, so re-read it as text.
                 let _ = seed;
                 let mut rest = line.split_whitespace().skip(1);
                 let voice = rest.next().unwrap_or("");
                 let mut num =
                     |d: f64| -> f64 { rest.next().and_then(|v| v.parse().ok()).unwrap_or(d) };
-                let (f, dur, vel) = (num(220.0), num(1.0), num(1.0));
+                let (f, dur, vel, stops) = (num(220.0), num(1.0), num(1.0), num(synth::STOPS));
+                let m = filters::Modes::parse(rest.next().unwrap_or(""));
                 let buf = match voice {
-                    "pipe" => synth::pipe(f, dur, vel, num(synth::STOPS)),
+                    "pipe" => synth::pipe(f, dur, vel, stops, &m),
                     "piano" => synth::piano(f, dur, vel),
                     "box" => synth::music_box(f, dur, vel),
                     _ => {
@@ -95,16 +96,18 @@ fn main() {
                 println!("{}", digest(&buf));
             }
             "piece" => {
-                // piece <name> [dur] — buffer digest, then " | t:v" markers.
+                // piece <name> <dur> <modes> — buffer digest, then the
+                // " | t:v" markers. `dur` is drone's; the rest ignore it.
                 let _ = seed;
                 let mut rest = line.split_whitespace().skip(1);
                 let name = rest.next().unwrap_or("");
                 let dur: f64 = rest.next().and_then(|v| v.parse().ok()).unwrap_or(20.0);
+                let m = filters::Modes::parse(rest.next().unwrap_or(""));
                 let (buf, marks): (Vec<f64>, Vec<(f64, f64)>) = match name {
-                    "drone" => (pieces::drone(dur), Vec::new()),
+                    "drone" => (pieces::drone(dur, &m), Vec::new()),
                     "toll" => pieces::toll(),
-                    "organ" => pieces::organ(),
-                    "descent" => (pieces::descent(), Vec::new()),
+                    "organ" => pieces::organ(&m),
+                    "descent" => (pieces::descent(&m), Vec::new()),
                     "waltz" => pieces::waltz(),
                     "musicbox" => (pieces::musicbox(), Vec::new()),
                     _ => {
@@ -374,7 +377,7 @@ fn main() {
                             .collect()
                     }
                     "waltz" => pieces::waltz().0,
-                    "drone" => pieces::drone(p1),
+                    "drone" => pieces::drone(p1, &m),
                     "heartbeat" => {
                         let mut d = atmos::Dice::new(p2 as u128, fused);
                         atmos::heartbeat(p1, &mut d, &m).0

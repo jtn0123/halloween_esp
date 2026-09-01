@@ -10,6 +10,14 @@
 //! csqrt's hypot is sqrt(fma(x,x,y*y)) — so every kernel here takes a
 //! mode flag and tests/test_synth_rust.py PROBES the installed numpy to
 //! pick the matching form on whatever platform runs the suite.
+//!
+//! The manylinux wheels (2026-08-31, the first Linux run of the parity
+//! suites) turned every one of those answers around, and added two forms
+//! nobody had seen: gcc fuses a complex multiply on the SECOND product
+//! (`fma(-ai, bi, ar*br)`, the fnmsub) where clang fuses the first, and
+//! Linux's np.sqrt is glibc's csqrt — a different identity from the
+//! FreeBSD one numpy carries as a fallback. Hence mul/poly/sqrt are
+//! small integers rather than flags. See docs/PARITY.md.
 
 const SR_F: f64 = 44100.0;
 use std::f64::consts::PI;
@@ -17,42 +25,55 @@ use std::f64::consts::PI;
 /// Which compiled form each numpy/scipy kernel has on this host.
 #[derive(Clone, Copy)]
 pub struct Modes {
-    pub mul_fused: bool,
-    pub poly_fused: bool,
+    /// The complex-multiply forms, shared by the ufunc and np.poly's
+    /// convolve loop: 0 = naive, 1 = fused on the first product
+    /// (`fma(ar, br, -(ai*bi))`, clang), 2 = fused on the second
+    /// (`fma(-ai, bi, ar*br)`, gcc).
+    pub mul_form: u8,
+    pub poly_form: u8,
     pub div_fused: bool,
-    /// 0 = libm hypot, 1 = naive sqrt(x*x+y*y), 2 = sqrt(fma(x,x,y*y))
+    /// 0 = FreeBSD csqrt on libm hypot, 1 = the same on naive
+    /// sqrt(x*x+y*y), 2 = the same on sqrt(fma(x,x,y*y)), 3 = glibc's
+    /// csqrt (hypot, then the halve-first identity).
     pub sqrt_form: u8,
     pub sos_fused: bool,
+    /// np.interp's inner step: fused slope*(x-xp)+fp, or not.
+    pub interp_fused: bool,
 }
 
 impl Modes {
     /// The render's defined arithmetic: the kernel-fma profile of the
     /// reference numpy wheel the pipeline was held bit-exact against
-    /// (arm64 macOS, "10121" + fused uniforms). Production renders use
+    /// (arm64 macOS, "101211" + fused uniforms). Production renders use
     /// this everywhere, so a scene is the same bytes on every machine;
     /// the parity tests probe the HOST's wheel and pass an override so
     /// the Python comparison stays exact off the reference platform too.
     pub const CANONICAL: Modes = Modes {
-        mul_fused: true,
-        poly_fused: false,
+        mul_form: 1,
+        poly_form: 0,
         div_fused: true,
         sqrt_form: 2,
         sos_fused: true,
+        interp_fused: true,
     };
 
     /// The uniform draw's half of the same profile.
     pub const CANONICAL_UNI_FUSED: bool = true;
 
-    /// Five characters, one per kernel: mul, poly, div, sqrt, sosfilt.
+    /// Six characters, one per kernel: mul, poly, div, sqrt, sosfilt,
+    /// interp. Short strings keep the CANONICAL answer for the tail, so
+    /// an older five-character profile still names the same arithmetic.
     pub fn parse(s: &str) -> Self {
         let b: Vec<u8> = s.bytes().map(|c| c.saturating_sub(b'0')).collect();
-        let get = |i: usize| -> u8 { b.get(i).copied().unwrap_or(0) };
+        let c = Self::CANONICAL;
+        let get = |i: usize, d: u8| -> u8 { b.get(i).copied().unwrap_or(d) };
         Self {
-            mul_fused: get(0) != 0,
-            poly_fused: get(1) != 0,
-            div_fused: get(2) != 0,
-            sqrt_form: get(3),
-            sos_fused: get(4) != 0,
+            mul_form: get(0, c.mul_form),
+            poly_form: get(1, c.poly_form),
+            div_fused: get(2, u8::from(c.div_fused)) != 0,
+            sqrt_form: get(3, c.sqrt_form),
+            sos_fused: get(4, u8::from(c.sos_fused)) != 0,
+            interp_fused: get(5, u8::from(c.interp_fused)) != 0,
         }
     }
 }
@@ -81,14 +102,17 @@ impl Cx {
     }
 }
 
-fn cmul(a: Cx, b: Cx, fused: bool) -> Cx {
-    if fused {
-        Cx::new(
+fn cmul(a: Cx, b: Cx, form: u8) -> Cx {
+    match form {
+        1 => Cx::new(
             a.re.mul_add(b.re, -(a.im * b.im)),
             a.re.mul_add(b.im, a.im * b.re),
-        )
-    } else {
-        Cx::new(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re)
+        ),
+        2 => Cx::new(
+            (-a.im).mul_add(b.im, a.re * b.re),
+            a.im.mul_add(b.re, a.re * b.im),
+        ),
+        _ => Cx::new(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re),
     }
 }
 
@@ -116,11 +140,23 @@ fn cdiv(a: Cx, b: Cx, fused: bool) -> Cx {
     }
 }
 
-/// FreeBSD-style csqrt; the hypot inside varies per wheel (sqrt_form).
+/// numpy's csqrt: FreeBSD's, on a hypot that varies per wheel — or
+/// glibc's own, which the Linux wheels call instead (sqrt_form).
 fn csqrt(z: Cx, form: u8) -> Cx {
     let (x, y) = (z.re, z.im);
     if x == 0.0 && y == 0.0 {
         return Cx::new(0.0, y);
+    }
+    if form == 3 {
+        // glibc's __csqrt: the same identity, halved in a different
+        // order — and note x == 0 takes the second branch there.
+        let d = x.hypot(y);
+        if x > 0.0 {
+            let r = (0.5 * (d + x)).sqrt();
+            return Cx::new(r, 0.5 * (y / r));
+        }
+        let s = (0.5 * (d - x)).sqrt();
+        return Cx::new(((0.5 * y) / s).abs(), s.copysign(y));
     }
     let h = match form {
         2 => x.mul_add(x, y * y).sqrt(),
@@ -136,14 +172,14 @@ fn csqrt(z: Cx, form: u8) -> Cx {
 }
 
 /// np.poly by convolution, real coefficients when roots pair conjugate —
-/// numpy's convolve loop multiplies with its OWN form (poly_fused).
-fn poly(roots: &[Cx], fused: bool) -> Vec<f64> {
+/// numpy's convolve loop multiplies with its OWN form (poly_form).
+fn poly(roots: &[Cx], form: u8) -> Vec<f64> {
     let mut a = vec![Cx::new(1.0, 0.0)];
     for &r in roots {
         let mut b = vec![Cx::new(0.0, 0.0); a.len() + 1];
         for (i, &c) in a.iter().enumerate() {
             b[i] = b[i].add(c);
-            b[i + 1] = b[i + 1].add(cmul(c, r.neg(), fused));
+            b[i + 1] = b[i + 1].add(cmul(c, r.neg(), form));
         }
         a = b;
     }
@@ -178,12 +214,12 @@ pub fn butter_lp(n: usize, hz: f64, m: &Modes) -> [f64; 6] {
         .collect();
     let mut den = Cx::new(1.0, 0.0);
     for &x in &p {
-        den = cmul(den, four.sub(x), m.mul_fused);
+        den = cmul(den, four.sub(x), m.mul_form);
     }
     let kz = k * cdiv(Cx::new(1.0, 0.0), den, m.div_fused).re;
     let zeros = vec![Cx::new(-1.0, 0.0); n];
-    let b: Vec<f64> = poly(&zeros, m.poly_fused).iter().map(|c| kz * c).collect();
-    let a = poly(&pz, m.poly_fused);
+    let b: Vec<f64> = poly(&zeros, m.poly_form).iter().map(|c| kz * c).collect();
+    let a = poly(&pz, m.poly_form);
     let mut out = [0.0; 6];
     out[..b.len()].copy_from_slice(&b);
     out[3..3 + a.len()].copy_from_slice(&a);
@@ -209,7 +245,7 @@ pub fn butter_bp(lo: f64, hi: f64, m: &Modes) -> [f64; 12] {
         .iter()
         .map(|&x| {
             csqrt(
-                cmul(x, x, m.mul_fused).sub(Cx::new(wo * wo, 0.0)),
+                cmul(x, x, m.mul_form).sub(Cx::new(wo * wo, 0.0)),
                 m.sqrt_form,
             )
         })
@@ -224,7 +260,7 @@ pub fn butter_bp(lo: f64, hi: f64, m: &Modes) -> [f64; 12] {
         .collect();
     let mut den = Cx::new(1.0, 0.0);
     for &x in &p_bp {
-        den = cmul(den, four.sub(x), m.mul_fused);
+        den = cmul(den, four.sub(x), m.mul_form);
     }
     let kz = k * cdiv(Cx::new(16.0, 0.0), den, m.div_fused).re;
     // conjugate pairs, by exact match
@@ -261,8 +297,8 @@ pub fn butter_bp(lo: f64, hi: f64, m: &Modes) -> [f64; 12] {
     for (si, &idx) in sections.iter().enumerate() {
         let (p1, p2) = pairs[idx];
         let z = Cx::new(assign[idx], 0.0);
-        let bpoly = poly(&[z, z], m.poly_fused);
-        let apoly = poly(&[p1, p2], m.poly_fused);
+        let bpoly = poly(&[z, z], m.poly_form);
+        let apoly = poly(&[p1, p2], m.poly_form);
         let gain = if si == 0 { kz } else { 1.0 };
         for (t, v) in out[si * 6..si * 6 + 3].iter_mut().zip(&bpoly) {
             *t = gain * v;
@@ -303,13 +339,7 @@ pub fn sosfilt(sos: &[[f64; 6]], x: &[f64], fused: bool) -> Vec<f64> {
 mod tests {
     use super::*;
 
-    const ARM64_MODES: Modes = Modes {
-        mul_fused: true,
-        poly_fused: false,
-        div_fused: true,
-        sqrt_form: 2,
-        sos_fused: true,
-    };
+    const ARM64_MODES: Modes = Modes::CANONICAL;
 
     #[test]
     fn lowpass_is_normalised_and_plausible() {
