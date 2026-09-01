@@ -23,12 +23,12 @@ Origin/Host validation and the firmware's unauthenticated OTA/file endpoints
 
 ## ⚠ Two things before any item below
 
-1. **GitHub Actions is dead on billing.** Every run since 2026-08-31 fails in
+1. **RESOLVED 2026-09-01: making the repo public restored Actions (free public minutes).** Original finding: **GitHub Actions was dead on billing.** Every run since 2026-08-31 fails in
    ~5s with zero steps: *"The job was not started because recent account
    payments have failed or your spending limit needs to be increased."* Only
    the account owner can fix this, in GitHub → Settings → Billing & plans.
    Until then nothing else about CI can be verified.
-2. **Before the billing failure, main was already red in CI.** The last real
+2. **RESOLVED 2026-09-01 (run 33465422811, all jobs green).** Original finding: **Before the billing failure, main was already red in CI.** The last real
    runs (2026-08-28, commits `9fa1fba`/`1be4ef1`) failed with 15 failures + 1
    error in the `python` job — 12 of them Rust↔Python parity suites diverging
    on Linux (e.g. `test_synth_rust` "probe diverged: organ", last-digit float
@@ -308,7 +308,7 @@ the repo created, and the newest language has no toolchain pin.
 - **Effort:** M
 - **Grade lift:** B+ → A− (clears the whole advisory backlog and the PR queue)
 
-#### F2 — Merge the three GitHub Actions major bumps (PRs #9, #10, #11)
+#### ~~F2~~ ✓ done 2026-09-01 — Merge the three GitHub Actions major bumps (PRs #9, #10, #11)
 - **Where:** `ci.yml` — checkout v4→v7 ×4, setup-python v5→v7 ×4, setup-node v4→v7 ×2; the Aug-28 logs already show the Node 20 deprecation warning that becomes a hard failure
 - **Fix:** Merge all three (needs F-billing fixed first so checks can run); verify setup-node v7's cache inputs still resolve.
 - **Effort:** S
