@@ -19,7 +19,7 @@
 
 substitutions:
   pin_towerL: "18"      # A0 — overrides castle_sd.yaml's onboard 33
-  rgbw_towerL: "true"   # the Jewels are RGBW; the onboard pixel was RGB
+  channels_towerL: "GRBW"  # the Jewels are RGBW; the onboard pixel was RGB
 
 packages:
   base: !include castle_sd.yaml

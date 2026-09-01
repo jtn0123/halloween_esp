@@ -13,8 +13,7 @@ light:
     pin: GPIO${pin_towerL}
     num_leds: ${px_towerL}
     chipset: WS2812
-    rgb_order: GRB
-    is_rgbw: ${rgbw_towerL}
+    channel_colors: ${channels_towerL}
     rmt_symbols: 64
     use_psram: false
     default_transition_length: 0s
@@ -47,8 +46,8 @@ light:
           update_interval: 500ms
           lambda: |-
             // Red, green, blue repeating. Wrong first colour means
-            // rgb_order is wrong; a gap means a dead pixel; count the
-            // triplets to see how many pixels actually arrive.
+            // channel_colors is wrong; a gap means a dead pixel;
+            // count the triplets to see how many pixels arrive.
             for (int p = 0; p < it.size(); p++) {
               const int k = p % 3;
               it[p] = Color(k == 0 ? 255 : 0, k == 1 ? 255 : 0,
@@ -76,15 +75,14 @@ light:
               it[p] = Color(24, 24, 24, 0);
             if (it.size() > 0) it[0] = Color(255, 0, 0, 0);
             if (it.size() > 1) it[it.size() - 1] = Color(0, 0, 255, 0);
-    # towerL: jewel7 — 7 px, rgbw true, GPIO18
+    # towerL: jewel7 — 7 px, GRBW, GPIO18
   - platform: esp32_rmt_led_strip
     id: zone_towerR
     name: "Castle towerR"
     pin: GPIO${pin_towerR}
     num_leds: ${px_towerR}
     chipset: WS2812
-    rgb_order: GRB
-    is_rgbw: ${rgbw_towerR}
+    channel_colors: ${channels_towerR}
     rmt_symbols: 64
     use_psram: false
     default_transition_length: 0s
@@ -117,8 +115,8 @@ light:
           update_interval: 500ms
           lambda: |-
             // Red, green, blue repeating. Wrong first colour means
-            // rgb_order is wrong; a gap means a dead pixel; count the
-            // triplets to see how many pixels actually arrive.
+            // channel_colors is wrong; a gap means a dead pixel;
+            // count the triplets to see how many pixels arrive.
             for (int p = 0; p < it.size(); p++) {
               const int k = p % 3;
               it[p] = Color(k == 0 ? 255 : 0, k == 1 ? 255 : 0,
@@ -146,15 +144,14 @@ light:
               it[p] = Color(24, 24, 24, 0);
             if (it.size() > 0) it[0] = Color(255, 0, 0, 0);
             if (it.size() > 1) it[it.size() - 1] = Color(0, 0, 255, 0);
-    # towerR: jewel7 — 7 px, rgbw true, GPIO14
+    # towerR: jewel7 — 7 px, GRBW, GPIO14
   - platform: esp32_rmt_led_strip
     id: zone_door
     name: "Castle door"
     pin: GPIO${pin_door}
     num_leds: ${px_door}
     chipset: WS2812
-    rgb_order: GRB
-    is_rgbw: ${rgbw_door}
+    channel_colors: ${channels_door}
     rmt_symbols: 64
     use_psram: false
     default_transition_length: 0s
@@ -187,8 +184,8 @@ light:
           update_interval: 500ms
           lambda: |-
             // Red, green, blue repeating. Wrong first colour means
-            // rgb_order is wrong; a gap means a dead pixel; count the
-            // triplets to see how many pixels actually arrive.
+            // channel_colors is wrong; a gap means a dead pixel;
+            // count the triplets to see how many pixels arrive.
             for (int p = 0; p < it.size(); p++) {
               const int k = p % 3;
               it[p] = Color(k == 0 ? 255 : 0, k == 1 ? 255 : 0,
@@ -216,7 +213,7 @@ light:
               it[p] = Color(24, 24, 24, 0);
             if (it.size() > 0) it[0] = Color(255, 0, 0, 0);
             if (it.size() > 1) it[it.size() - 1] = Color(0, 0, 255, 0);
-    # door: ring12 — 12 px, rgbw false, GPIO16
+    # door: ring12 — 12 px, GRB, GPIO16
 # RMT: 192 of 256 symbols spent, 1 block(s) spare (the SD build's status pixel needs one).
 
 script:

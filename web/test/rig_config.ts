@@ -69,7 +69,10 @@ for (const z of declared) {
     ok(s.includes("use_psram: false"), `${z}: use_psram: false missing`);
     ok(s.includes(`pin: GPIO${ZONE_PIN[z]}`), `${z}: wrong pin in emitted strip`);
     ok(s.includes(`num_leds: ${zoneLayout(DEFAULT_RIG, z).n}`), `${z}: wrong num_leds`);
-    ok(s.includes(`is_rgbw: ${zoneRgbw(DEFAULT_RIG, z)}`), `${z}: wrong is_rgbw`);
+    const cc = zoneRgbw(DEFAULT_RIG, z) ? "GRBW" : "GRB";
+    ok(s.includes(`channel_colors: ${cc}`), `${z}: wrong channel_colors`);
+    ok(!s.includes("is_rgbw") && !s.includes("rgb_order"),
+       `${z}: still emits the pair ESPHome removes in 2027.3`);
     ok(s.includes(`id: zone_${z}`), `${z}: strip id`);
   });
   for (const z of declared) {
@@ -100,7 +103,8 @@ for (const fx of FIXTURES) {
     ok(strip !== undefined, `${fx.id}: no towerL strip`);
     ok(strip?.includes(`num_leds: ${L.n}`) === true, `${fx.id}: num_leds ${L.n}`);
     const want = fx.rgbOnly ? false : rgbw;
-    ok(strip?.includes(`is_rgbw: ${want}`) === true, `${fx.id} rgbw=${rgbw}: is_rgbw should be ${want}`);
+    ok(strip?.includes(`channel_colors: ${want ? "GRBW" : "GRB"}`) === true,
+       `${fx.id} rgbw=${rgbw}: channel_colors should carry ${want ? "W" : "no W"}`);
     ok((strip?.includes("rmt_symbols: 64") && strip?.includes("use_psram: false")) === true,
        `${fx.id}: S2 strip settings`);
   }

@@ -20,7 +20,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.42"
+  version: "5.43"
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
   #
@@ -53,9 +53,12 @@ substitutions:
   px_towerL: "7"
   px_towerR: "7"
   px_door: "12"
-  rgbw_towerL: "true"
-  rgbw_towerR: "true"
-  rgbw_door: "false"
+  # channel_colors: the order the strip clocks its bytes out, white die last
+  # when there is one. One key instead of the old rgb_order + is_rgbw pair,
+  # which ESPHome deprecated for removal in 2027.3.
+  channels_towerL: "GRBW"
+  channels_towerR: "GRBW"
+  channels_door: "GRB"
   pin_pir: "17"         # A1  <- AM312 PIR out (3V3 logic)
   pin_i2s_dout: "15"    # A3  -> MAX98357A DIN
   pin_i2s_bclk: "11"    # D11 -> MAX98357A BCLK   (clear of the wing)
@@ -363,8 +366,8 @@ switch:
 
 # The `light:` components are GENERATED into generated/lights.yaml — one
 # strip per zone, because an RGBW fixture and an RGB one cannot share a data
-# line (32 bits per pixel against 24, and `is_rgbw` is per component). The
-# per-pixel loop that used to live here as a sixty-line lambda is now
+# line (32 bits per pixel against 24, and `channel_colors` is per
+# component). The per-pixel loop that used to live here as a sixty-line lambda is now
 # castle_pixels.h, which a host compiler can check; see tests/test_firmware_cxx.py.
 #
 # Pin, count and colour type per zone come from the substitutions above, so

@@ -36,7 +36,7 @@ substitutions:
   # zone falls off the end of a wire that is not there. The other two zones
   # keep their real pins and clock into thin air, which costs nothing.
   pin_towerL: "33"      # onboard NeoPixel
-  rgbw_towerL: "false"  # the onboard pixel is plain RGB
+  channels_towerL: "GRB"  # the onboard pixel is plain RGB
 
 packages:
   # The flash variant, not the core — see the note in bench.yaml.

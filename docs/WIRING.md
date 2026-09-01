@@ -94,9 +94,10 @@ software fix:
 > **An RGBW pixel takes 32 bits. An RGB pixel takes 24.** A chain is one long
 > shift register with no framing, so a single RGB fixture halfway down an RGBW
 > chain shifts every downstream bit by 8 and everything past it turns to
-> garbage. `esp32_rmt_led_strip` has exactly one `is_rgbw` setting per chain,
-> and there is no per-fixture override, because the hardware has no concept of
-> one.
+> garbage. `esp32_rmt_led_strip` has exactly one `channel_colors` word per
+> chain (`GRB` or `GRBW` — it replaced the `rgb_order` + `is_rgbw` pair, which
+> ESPHome removes in 2027.3), and there is no per-fixture override, because
+> the hardware has no concept of one.
 
 Your **NeoPixel FeatherWing 4x8 is RGB only** — Adafruit #2945 is 24-bit, and
 no RGBW version of it exists. The mini PCB singles are RGB too. Your Jewels,

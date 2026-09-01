@@ -95,7 +95,11 @@ class TestEmittedStrips(unittest.TestCase):
             zid = z["id"]
             self.assertEqual(s["pin"], f"GPIO${{pin_{zid}}}")
             self.assertEqual(s["num_leds"], f"${{px_{zid}}}")
-            self.assertEqual(s["is_rgbw"], f"${{rgbw_{zid}}}")
+            self.assertNotIn(
+                "is_rgbw", s, "the deprecated pair is gone (ESPHome 2027.3)"
+            )
+            self.assertNotIn("rgb_order", s, "folded into channel_colors")
+            self.assertEqual(s["channel_colors"], f"${{channels_{zid}}}")
             self.assertEqual(s["default_transition_length"], "0s")
 
     def test_each_strip_renders_its_own_zone_index(self) -> None:
@@ -229,7 +233,7 @@ class TestCastleYamlSubstitutions(unittest.TestCase):
             self.assertEqual(int(self.SUBS[f"pin_{zid}"]), z["pin"], zid)
             self.assertEqual(int(self.SUBS[f"px_{zid}"]), LAYOUTS[zid].n, zid)
             self.assertEqual(
-                self.SUBS[f"rgbw_{zid}"], str(bool(z.get("rgbw", True))).lower(), zid
+                self.SUBS[f"channels_{zid}"], gen_rig.channel_colors(z), zid
             )
 
     def test_no_zone_pin_collides_with_the_rest_of_the_board(self) -> None:

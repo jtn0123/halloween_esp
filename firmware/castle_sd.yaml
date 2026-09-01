@@ -180,8 +180,7 @@ light:
     pin: GPIO33
     num_leds: 1
     chipset: WS2812
-    rgb_order: GRB
-    is_rgbw: false
+    channel_colors: GRB
     rmt_symbols: 64
     use_psram: false
     default_transition_length: 0s
