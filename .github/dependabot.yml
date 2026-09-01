@@ -21,6 +21,17 @@ updates:
         update-types:
           - minor
           - patch
+    ignore:
+      # aioesphomeapi majors are not ours to take: esphome pins the version
+      # EXACTLY (2026.8.1 wants ==45.10.3), so a 46.x offer is unmergeable on
+      # merit however green its checks look — the resolver would simply refuse
+      # it, or the lock would keep installing 45.10.3 and the PR would change
+      # nothing. PR #13 was that PR, and it sat UNSTABLE for weeks proving it.
+      # The version moves when esphome moves, which the group above already
+      # delivers as one PR. Drop this entry when esphome's own pin reaches 46.
+      # (grade report 2026-09-01 F2)
+      - dependency-name: aioesphomeapi
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: npm
     directory: /web

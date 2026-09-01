@@ -26,6 +26,12 @@ message so a run can be replayed here.
 
 Pointing it at a REAL castle (--host) is allowed but it writes and deletes
 files in the card root. Do it on the bench, not on the night.
+
+Three files, one fuzz, split at the cap on seams rather than by the yard:
+tools/fuzz_http.py sends a request on a bare socket, tools/fuzz_corpus.py
+decides what to send (atoms, names, query shapes, near-miss routes), and
+this file is the ORACLE — what each answer is allowed to be, and what must
+still be true after the storm.
 """
 
 from __future__ import annotations
@@ -43,76 +49,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import castle_emu_wire as wire
+import fuzz_corpus as corpus
+from fuzz_corpus import DOCUMENTED_5XX, poisoned_text
 from fuzz_http import SlowRead, Violation, raw_request
-
-#: What a fuzz name is built from: ASCII, unicode (2- and 3-byte UTF-8),
-#: the percent sign with valid and invalid hex, '+', dots, slashes.
-ATOMS = [
-    "a",
-    "b",
-    "Z",
-    "0",
-    "_",
-    "-",
-    "%20",
-    ".",
-    "..",
-    "/",
-    "%2F",
-    "%2e%2e",
-    "%00",
-    "%zz",
-    "%4",
-    "+",
-    "?",
-    "%3F",
-    "é",
-    "ü",
-    "名",
-    "%C3%A9",
-    "%E5%90%8D",
-    "'",
-    "(",
-    ")",
-    "[",
-    "]",
-    "~",
-    "!",
-    "$",
-    "&",
-    "=",
-    ";",
-    ".mp3",
-    "%ff",
-    "%80",
-    "%0a",
-    "%0d",
-]
-#: Decoded bytes the fuzz keeps OFF the card: the firmware's unescaped JSON
-#: listing breaks on them (a reported firmware bug; see
-#: tests/test_firmware_contract.py). Names holding them are only DELETEd.
-POISON = b'"\\' + bytes(range(0x20))
-
-DOCUMENTED_5XX = {
-    b"short write",
-    b"cannot create file",
-    b"ota write failed",
-    b"no SD card",
-}
-VERBS = ["GET", "POST", "PUT", "DELETE", "HEAD", "PATCH", "OPTIONS"]
-
-
-def poisoned_text(n: bytes) -> bool:
-    """Would this name, snprintf'd raw into the firmware's JSON, break it?
-    Quotes, backslashes, control bytes — and bytes that are not UTF-8,
-    which no JSON parser will take either."""
-    if any(b in POISON for b in n):
-        return True
-    try:
-        n.decode("utf-8")
-    except UnicodeDecodeError:
-        return True
-    return False
 
 
 class Fuzzer:
@@ -134,32 +73,6 @@ class Fuzzer:
         #: same short name is PUT/DELETEd concurrently and only containment
         #: (never content) is asserted.
         self.threads = 1
-
-    # -- generators ---------------------------------------------------------
-
-    def name(self, rng: random.Random) -> str:
-        k = rng.choice([1, 2, 3, 5, 8, 20, 40])
-        return "".join(rng.choice(ATOMS) for _ in range(k))
-
-    def query(self, rng: random.Random, key: str, good: list[str]) -> str:
-        mode = rng.random()
-        if mode < 0.25:
-            return f"?{key}={rng.choice(good)}"
-        if mode < 0.35:
-            return ""  # missing
-        if mode < 0.45:
-            return f"?{key}={rng.choice(good)}&{key}={self.name(rng)}"  # dup
-        if mode < 0.55:
-            return f"?{key}="  # empty
-        if mode < 0.62:
-            return (
-                "?" + key + "=" + "x" * rng.choice([118, 119, 120, 198, 199, 300, 600])
-            )
-        if mode < 0.70:
-            return f"?{key.upper()}={rng.choice(good)}"  # case
-        if mode < 0.78:
-            return f"?junk&{key}={rng.choice(good)}"  # derailer
-        return f"?{key}={self.name(rng)}"
 
     # -- one step ------------------------------------------------------------
 
@@ -231,7 +144,7 @@ class Fuzzer:
             raise Violation("overlong line not 414: " + ctx)
 
     def fuzz_file(self, rng: random.Random) -> None:
-        name = self.name(rng)
+        name = corpus.name(rng)
         raw = name.encode("utf-8").decode("latin-1")  # as the wire sees it
         decoded = wire.name_from_uri(b"/api/files/" + name.encode(), b"/api/files/")
         safe = wire.safe_name(decoded)
@@ -287,20 +200,8 @@ class Fuzzer:
                 raise Violation(f"seed={self.seed} {decoded!r} escaped the card")
 
     def fuzz_query(self, rng: random.Random) -> None:
-        route, key, good = rng.choice(
-            [
-                ("/api/volume", "v", ["0", "70", "100", "007", "101", "-1", "1e2"]),
-                ("/api/scene", "s", ["vigil", "storm", "nope", "stop"]),
-                (
-                    "/api/light",
-                    "c",
-                    ["show", "off", "ff00aa", "FF00AA", "ff00a", "gggggg"],
-                ),
-                ("/api/pir", "armed", ["0", "1", "x"]),
-                ("/api/play", "f", ["wicked_winds.mp3", "..", ".x"]),
-            ]
-        )
-        q = self.query(rng, key, good)
+        route, key, good = rng.choice(corpus.QUERY_ROUTES)
+        q = corpus.query(rng, key, good)
         target = route + q
         raw = target.encode("utf-8").decode("latin-1")
         code, body, _ = self.req("POST", raw)
@@ -329,22 +230,10 @@ class Fuzzer:
             )
 
     def fuzz_route(self, rng: random.Random) -> None:
-        path = rng.choice([p for p, _, _ in wire.ROUTES]).replace("*", self.name(rng))
+        path = rng.choice([p for p, _, _ in wire.ROUTES]).replace("*", corpus.name(rng))
         if rng.random() < 0.2:
-            path = rng.choice(
-                [
-                    "/api",
-                    "/api/",
-                    "/api/filesx",
-                    "/nope",
-                    "/sd",
-                    "/site",
-                    "/api/status/",
-                    "/API/status",
-                    "/remote/",
-                ]
-            )
-        verb = rng.choice(VERBS)
+            path = rng.choice(corpus.NEAR_MISSES)
+        verb = rng.choice(corpus.VERBS)
         raw = path.encode("utf-8").decode("latin-1")
         handler, err = wire.route(verb, path.encode("utf-8"))
         if handler == "h_put":
@@ -366,7 +255,7 @@ class Fuzzer:
             raise Violation(f"seed={self.seed} {verb} {path!r} routed nowhere")
 
     def fuzz_body(self, rng: random.Random) -> None:
-        size = rng.choice([0, 1, 8191, 8192, 8193, 65536])
+        size = rng.choice(corpus.BODY_SIZES)
         payload = bytes(rng.getrandbits(8) for _ in range(size))
         name = f"fz_{rng.randrange(1 << 30):x}.bin"
         mode = rng.random()

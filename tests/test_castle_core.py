@@ -40,7 +40,9 @@ from typing import ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
 
+import cargo_gate
 import rig_layout
 import scene_schema
 
@@ -94,16 +96,9 @@ def rig_spec() -> str:
 
 
 def cargo(*args: str) -> subprocess.CompletedProcess[str]:
-    assert CARGO is not None
-    # --manifest-path goes right after the subcommand: anything after a
-    # `--` separator belongs to the delegated tool, not to cargo.
-    return subprocess.run(
-        [CARGO, args[0], "--manifest-path", str(CORE / "Cargo.toml"), *args[1:]],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=300,
-    )
+    """cargo from core/ — see tests/cargo_gate.py for why the working
+    directory, not --manifest-path, is what makes the pin real."""
+    return cargo_gate.cargo(*args)
 
 
 def make(target: str) -> subprocess.CompletedProcess[str]:
@@ -120,6 +115,34 @@ def make(target: str) -> subprocess.CompletedProcess[str]:
         check=False,
         timeout=900,
     )
+
+
+@unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
+class TestCargoIsPinned(unittest.TestCase):
+    """One assertion, cheap enough to run in every job that has cargo —
+    deliberately NOT behind RUST_GATES_ELSEWHERE, because the thing it
+    guards is the test suite's own cargo, not the dedicated rust job's."""
+
+    def test_cargo_under_the_gate_is_the_pinned_toolchain(self) -> None:
+        """The pin is real, not aspirational (grade report 2026-09-01 D1).
+
+        rustup resolves core/rust-toolchain.toml by WORKING DIRECTORY, so a
+        cargo invoked with --manifest-path from the repo root silently runs
+        the machine's default compiler. Every gate now goes through
+        cargo_gate, and this is the assertion that says so out loud: the
+        cargo those helpers reach reports the channel the pin names. It
+        fails if a suite regresses to --manifest-path *and* the local
+        default differs — and it fails loudly if someone edits the pin
+        without a rustup that can honour it."""
+        want = cargo_gate.pinned_channel()
+        r = cargo_gate.cargo("--version", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(
+            want,
+            r.stdout,
+            f"cargo under core/ reports {r.stdout.strip()!r}, "
+            f"not the pinned {want} (core/rust-toolchain.toml)",
+        )
 
 
 @unittest.skipIf(
@@ -308,6 +331,9 @@ class TestCastleCoreParity(unittest.TestCase):
         assert CARGO is not None
         targets = subprocess.run(
             ["rustup", "target", "list", "--installed"],
+            # from core/: installed targets are per-toolchain, and which
+            # toolchain answers depends on the working directory.
+            cwd=CORE,
             capture_output=True,
             text=True,
             check=False,

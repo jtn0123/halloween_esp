@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import os
 import random
-import shutil
 import subprocess
 import sys
 import unittest
@@ -30,10 +29,12 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
 
+import cargo_gate
 from synth_probes import kernel_modes, numpy_uniform_mode
 
-CARGO = shutil.which("cargo")
+CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
 DUMP = ROOT / "core" / "target" / "release" / "synth_dump"
 
@@ -56,21 +57,7 @@ def fmt(v: float) -> str:
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
 class TestSynthRngParity(unittest.TestCase):
     def test_seeded_streams_match_numpy_digit_for_digit(self) -> None:
-        assert CARGO is not None
-        built = subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=300,
-        )
+        built = cargo_gate.build()
         self.assertEqual(built.returncode, 0, built.stderr)
         mode = numpy_uniform_mode()
 
@@ -120,20 +107,7 @@ class TestSynthRngParity(unittest.TestCase):
         bytes + 16 strided probes) must equal one computed from synth.py's
         numpy output. A probe mismatch names the sample; a crc mismatch
         with equal probes means a bit flipped somewhere between them."""
-        assert CARGO is not None
-        subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            check=True,
-            timeout=300,
-        )
+        cargo_gate.build(check=True)
         import synth
 
         r = random.Random(int(os.environ.get("CASTLE_SYNTH_SEED", "7")))
@@ -194,20 +168,7 @@ class TestSynthRngParity(unittest.TestCase):
     def test_pieces_match_bit_for_bit_markers_included(self) -> None:
         """The compositions: whole mixed buffers digest-equal, and the light
         markers (what the cue generators consume) float-equal."""
-        assert CARGO is not None
-        subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            check=True,
-            timeout=300,
-        )
+        cargo_gate.build(check=True)
         import synth
 
         cases: list[tuple[str, float | None]] = [
@@ -265,20 +226,7 @@ class TestSynthRngParity(unittest.TestCase):
         that differ per platform, so kernel_modes() probes each one on the
         installed wheels and the Rust side reproduces the observed form —
         exact everywhere, tolerant nowhere."""
-        assert CARGO is not None
-        subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            check=True,
-            timeout=300,
-        )
+        cargo_gate.build(check=True)
         from scipy import signal
 
         modes = kernel_modes()
@@ -363,20 +311,7 @@ class TestSynthRngParity(unittest.TestCase):
         """wind, heartbeat, creak, shriek, whispers, thunder: numpy dice
         through scipy filters, whole buffers and markers exact under the
         probed kernel modes."""
-        assert CARGO is not None
-        subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            check=True,
-            timeout=300,
-        )
+        cargo_gate.build(check=True)
         import synth
 
         modes = kernel_modes()

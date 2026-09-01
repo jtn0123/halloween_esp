@@ -126,6 +126,21 @@ jobs:
       # probe/import guards reject junk BEFORE shelling out to it.
       # The lock IS what was tested locally (frozen from the 3.13 venv by `make lock`).
       - run: pip install -r requirements.lock
+      # …but the lock is ALL any job installs, so nothing here ever asked the
+      # resolver whether requirements.txt is still satisfiable. Dependabot
+      # walked straight through that gap: PR #13's own log shows the job
+      # installing the version the PR claimed to replace (grade report
+      # 2026-09-01 F1). This resolves the constraint files and installs
+      # nothing — metadata only, seconds, no environment touched.
+      #
+      # tests/test_lock_deps.py holds the other half (every txt specifier is
+      # satisfied by its lock pin) and needs no network; this step catches the
+      # case that one cannot see — a constraint set that is internally
+      # unsatisfiable while each pin still looks fine on its own.
+      - name: resolve the requirement files
+        run: |
+          pip install --dry-run --quiet --report /dev/null \
+            -r requirements.txt -r requirements-dev.txt
       # esbuild: the sandbox guard runs all three generators end to end, and
       # gen_previewer.py bundles web/src through it. Without node_modules that
       # test fails on the environment rather than on the guard it exists for.
@@ -309,6 +324,22 @@ jobs:
       # every other gate tested against) and no sdist setup.py execution —
       # the two things Sonar rightly flagged on the unpinned spelling.
       - run: pip install --only-binary=":all:" -r requirements.lock
+      # Same four lines as the esphome job, for the same reason: render_audio
+      # spawns castle-core's scene_render, so this job builds the crate too —
+      # it was just doing it on the runner image's rustup, off the pin, with
+      # no cache, cold, weekly, unwatched (grade report 2026-09-01 F3). The
+      # channel is a literal because the action reads a toolchain file at the
+      # repo root and ours lives in core/; rustup reads the real pin once
+      # cargo runs (make rust cds into core/), so a mismatch here shows up as
+      # this step installing a toolchain nothing then uses.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88.0"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: build castle-core
+        run: make rust
       - name: render + generate
         run: |
           python tools/render_audio.py

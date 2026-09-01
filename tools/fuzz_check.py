@@ -96,15 +96,11 @@ def rust_strikes(
     if not PULSE_DUMP.exists():
         if shutil.which("cargo") is None:
             return None
+        # From core/, not --manifest-path: rustup resolves the toolchain pin
+        # by working directory (see tools/core_bins.py, Makefile:rust).
         subprocess.run(
-            [
-                "cargo",
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
+            ["cargo", "build", "--release", "--quiet"],
+            cwd=ROOT / "core",
             check=True,
             capture_output=True,
             timeout=300,

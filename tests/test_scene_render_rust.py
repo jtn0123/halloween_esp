@@ -30,12 +30,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import cargo_gate
 import helpers  # noqa: F401  (hermetic env)
 import render_audio as ra
 from helpers import make_click_track
 from synth_probes import kernel_modes, numpy_uniform_mode
 
-CARGO = shutil.which("cargo")
+CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
 BIN = ROOT / "core" / "target" / "release" / "scene_render"
 
@@ -71,21 +72,7 @@ class TestSceneRenderParity(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        assert CARGO is not None
-        built = subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=300,
-        )
+        built = cargo_gate.build()
         assert built.returncode == 0, built.stderr
         cls.tmp = Path(tempfile.mkdtemp(prefix="scene-render-"))
 

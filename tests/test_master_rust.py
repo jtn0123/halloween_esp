@@ -14,7 +14,6 @@ Skipped, not failed, without cargo — except in CI.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 import unittest
@@ -26,10 +25,12 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
 
+import cargo_gate
 from synth_probes import numpy_uniform_mode
 
-CARGO = shutil.which("cargo")
+CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
 DUMP = ROOT / "core" / "target" / "release" / "synth_dump"
 SR = 44100
@@ -38,21 +39,7 @@ SR = 44100
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
 class TestMasterChainParity(unittest.TestCase):
     def test_every_master_step_matches_bit_for_bit(self) -> None:
-        assert CARGO is not None
-        built = subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=300,
-        )
+        built = cargo_gate.build()
         self.assertEqual(built.returncode, 0, built.stderr)
         import synth
 
@@ -114,20 +101,7 @@ class TestMasterChainParity(unittest.TestCase):
     def test_reverb_matches_bit_for_bit(self) -> None:
         """The stone hall: defined-order FFT convolution both sides, so
         the wet tail is exact — no tolerances, 2^18-point transforms."""
-        assert CARGO is not None
-        subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            check=True,
-            timeout=300,
-        )
+        cargo_gate.build(check=True)
         import synth_master
 
         umode = numpy_uniform_mode()
@@ -163,20 +137,7 @@ class TestMasterChainParity(unittest.TestCase):
         normalise — buffer AND marker dict exact, the stone hall
         included (wet scenes convolve through the defined-order FFT,
         whose dice follow the score's on the same stream)."""
-        assert CARGO is not None
-        subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            check=True,
-            timeout=300,
-        )
+        cargo_gate.build(check=True)
         import render_audio
         from synth_probes import kernel_modes
 
@@ -292,20 +253,7 @@ class TestMasterChainParity(unittest.TestCase):
         buffer, marker dict AND int16 PCM, byte for byte. (The other three
         synth scenes render the same voices for longer; runtime is why
         they sit out.)"""
-        assert CARGO is not None
-        subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            check=True,
-            timeout=300,
-        )
+        cargo_gate.build(check=True)
         import render_audio
         import yaml
         from synth_probes import kernel_modes

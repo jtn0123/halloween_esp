@@ -24,10 +24,12 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
 
+import cargo_gate
 from synth_probes import kernel_modes, numpy_uniform_mode
 
-CARGO = shutil.which("cargo")
+CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
 DUMP = ROOT / "core" / "target" / "release" / "synth_dump"
 
@@ -35,21 +37,7 @@ DUMP = ROOT / "core" / "target" / "release" / "synth_dump"
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
 class TestOnsetParity(unittest.TestCase):
     def test_band_dictionaries_match_hit_for_hit(self) -> None:
-        assert CARGO is not None
-        built = subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=300,
-        )
+        built = cargo_gate.build()
         self.assertEqual(built.returncode, 0, built.stderr)
         import analyze
         import synth
@@ -109,20 +97,7 @@ class TestOnsetParity(unittest.TestCase):
         """What the importer actually calls: onsets grown a pan third
         element when stereo is known, and level envelopes for any band
         with no beat — rows equal, element for element."""
-        assert CARGO is not None
-        subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            check=True,
-            timeout=300,
-        )
+        cargo_gate.build(check=True)
         import analyze
         import synth
 
@@ -187,20 +162,7 @@ class TestOnsetParity(unittest.TestCase):
         """The whole importer path on a real file: both sides run the
         identical ffmpeg decode, then the identical detection — so a WAV
         rendered from the show comes back with equal band dictionaries."""
-        assert CARGO is not None
-        subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            check=True,
-            timeout=300,
-        )
+        cargo_gate.build(check=True)
         if shutil.which("ffmpeg") is None and not IN_CI:
             self.skipTest("no ffmpeg")
         import tempfile

@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
 """Enforce the 500-line file cap — on every text file in the repo.
 
-    tools/check_loc.py            # report, exit 1 if anything is over
+    tools/check_loc.py            # report, exit 1 if anything is over 500
+    tools/check_loc.py --hook     # the same, failing at 490 (pre-commit)
     tools/check_loc.py --list     # show the 15 largest files in scope
     tools/check_loc.py --exempt   # show the exemption list with reasons
 
 A cap is only a standard if something checks it, so this runs in `make check`.
+
+Two thresholds, on purpose (grade report 2026-09-01 I3). The cap is 500 and
+that is what CI and `make check` enforce. The pre-commit hook stops ten lines
+earlier, at 490, because a file is only ever ADDED to at commit time: with the
+hook at 500, `tools/castle_fuzz.py` legally reached 499 and the next one-line
+change — any change, in the middle of unrelated work — would have reddened the
+hook and forced a split under pressure. Failing at 490 means the split is
+always chosen with room to spare, and the 500 backstop still catches anything
+that arrives without passing through a hook.
 
 Scope is everything git tracks (plus untracked files it would not ignore):
 code, config, YAML, CSS, HTML, shell, Makefile, Markdown — prose included. A
@@ -13,7 +23,7 @@ code, config, YAML, CSS, HTML, shell, Makefile, Markdown — prose included. A
 "docs don't count" was how the record quietly reached 1194 lines. Binary files
 are skipped because line counts mean nothing for them.
 
-Two kinds of file are exempt, each listed below with its reason:
+Three kinds of file are exempt, each listed below with its reason:
 
   - generated and machine-written files. Their size is a property of the
     source they came from; the generator is what should stay small.
@@ -21,12 +31,15 @@ Two kinds of file are exempt, each listed below with its reason:
     budget for content — the number that actually constrains the show is how
     many scenes the board can hold — so the file trades the cap for that
     budget, enforced here (SCENE_LIMIT) in the same breath.
+  - audit output, `.claude/grade-report*.md`. Findings written ABOUT the
+    repo, by the machine, and long in proportion to what was found.
 
 Nothing hand-written gets an exemption. Split it instead.
 """
 
 from __future__ import annotations
 
+import fnmatch
 import re
 import subprocess
 import sys
@@ -34,6 +47,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 LIMIT = 500
+#: What `--hook` fails at. See the module docstring: the hook is the only
+#: gate a file passes through on its way UP, so it is the one that should
+#: stop before the cliff rather than at it.
+HOOK_LIMIT = 490
+#: The early warning, in both modes. Informational in check mode; in hook
+#: mode everything between it and HOOK_LIMIT is the room the warning buys.
+WARN_LIMIT = 450
 
 # Generated / machine-written files, each with WHY it is exempt. Hand-written
 # files never go here — split them instead. Anything not listed is held to
@@ -55,9 +75,30 @@ DATA_EXEMPT: dict[str, str] = {
     ),
 }
 
-# What measure() actually skips. Two dicts because they are exempt for two
+# Audit output: written ABOUT the repo, not part of it. The grade reports are
+# machine-produced findings kept in-tree deliberately (they are the record an
+# audit is graded against, and the next one verifies), and their length is a
+# property of how much was found — splitting one on a "seam" would be splitting
+# a list of findings in half. Two of them already sit within 20 lines of the
+# cap, which means the next audit could fail `make check` on its own output.
+#
+# A pattern, not a path list, because each audit writes a new file: enumerating
+# them would put a routine `make check` failure between the audit and the fix.
+# Kept narrow — one directory, one prefix, one suffix — so nothing hand-written
+# can drift into it. Everything else in .claude/ is still measured.
+AUDIT_EXEMPT: dict[str, str] = {
+    ".claude/grade-report*.md": "audit output, not code — findings written about the repo",
+}
+
+# What measure() actually skips. Three groups because they are exempt for three
 # different reasons and only one of them may ever grow casually.
 ALL_EXEMPT: dict[str, str] = {**EXEMPT_PATHS, **DATA_EXEMPT}
+
+
+def is_audit_output(rel: str) -> bool:
+    """True for a path one of the AUDIT_EXEMPT patterns covers."""
+    return any(fnmatch.fnmatchcase(rel, pat) for pat in AUDIT_EXEMPT)
+
 
 # ── The scene budget: what scenes.yaml is held to instead of the cap ──
 # Scenes are compile-time objects — each becomes a generated ESPHome script
@@ -155,7 +196,7 @@ def measure(
     rows = []
     for p in tracked_files() if files is None else files:
         rel = p.relative_to(root).as_posix()
-        if rel in exempt or not p.is_file() or is_binary(p):
+        if rel in exempt or is_audit_output(rel) or not p.is_file() or is_binary(p):
             continue
         try:
             n = count_lines(p)
@@ -217,53 +258,73 @@ def print_exemptions() -> None:
     print(f"{len(DATA_EXEMPT)} exempt (data, budgeted another way):")
     for rel, why in DATA_EXEMPT.items():
         print(f"  {rel:<34} {why}")
+    print(f"{len(AUDIT_EXEMPT)} exempt (audit output, by pattern):")
+    for pat, why in AUDIT_EXEMPT.items():
+        print(f"  {pat:<34} {why}")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
     rows = measure()
-    if "--list" in sys.argv:
+    if "--list" in args:
         for n, rel, is_over in rows[:15]:
             print(f"{n:>6}  {'OVER' if is_over else '    '}  {rel}")
         return 0
-    if "--exempt" in sys.argv:
+    if "--exempt" in args:
         print_exemptions()
         return 0
 
-    over = [(n, rel) for n, rel, o in rows if o]
+    # The hook stops ten lines early so the split is never forced mid-change.
+    hook = "--hook" in args
+    limit = HOOK_LIMIT if hook else LIMIT
+    where = "pre-commit threshold" if hook else "cap"
+
+    over = [(n, rel) for n, rel, _o in rows if n > limit]
     n_scenes, scene_complaint = scene_budget()
     if not over and scene_complaint is None:
         biggest = rows[0] if rows else (0, "-", False)
         print(
             f"LOC check PASS — {len(rows)} files in scope, largest "
-            f"{biggest[0]} lines ({biggest[1]}), cap {LIMIT}"
+            f"{biggest[0]} lines ({biggest[1]}), {where} {limit}"
         )
         print(f"  scope: {scope_summary(rows)}")
         print(
             f"  exempt: {len(EXEMPT_PATHS)} generated files, "
-            f"{len(DATA_EXEMPT)} data file{'' if len(DATA_EXEMPT) == 1 else 's'} "
+            f"{len(DATA_EXEMPT)} data file{'' if len(DATA_EXEMPT) == 1 else 's'}, "
+            f"{len(AUDIT_EXEMPT)} audit pattern"
+            f"{'' if len(AUDIT_EXEMPT) == 1 else 's'} "
             f"(--exempt lists them with reasons)"
         )
         print(f"  scenes: {n_scenes} of the {SCENE_LIMIT} this board can hold")
         # The early warning: a file within 50 lines of the cap will cross it
         # mid-feature, forcing a split under pressure instead of on a chosen
         # seam. Naming it now is what makes the cap serve design.
-        nearing = [(n, rel) for n, rel, _ in rows if LIMIT - 50 < n <= LIMIT]
+        nearing = [(n, rel) for n, rel, _ in rows if WARN_LIMIT < n <= limit]
         if nearing:
             print(
-                f"  nearing the cap ({LIMIT - 50}+): "
+                f"  nearing the {where} ({WARN_LIMIT}+): "
                 + ", ".join(f"{rel} ({n})" for n, rel in nearing)
             )
         return 0
 
     if over:
-        print(f"LOC check FAILED — {len(over)} file(s) over the {LIMIT}-line cap:\n")
+        print(
+            f"LOC check FAILED — {len(over)} file(s) over the {limit}-line {where}:\n"
+        )
         for n, rel in over:
-            print(f"  {n:>6}  {rel}   (+{n - LIMIT})")
+            print(f"  {n:>6}  {rel}   (+{n - limit})")
         print(
             "\nSplit along a real seam — one module per responsibility, one "
             "document per topic — rather than slicing at the line count. "
             "Only generated files may be exempted (EXEMPT_PATHS, with a reason)."
         )
+        if hook:
+            print(
+                f"\nThe cap itself is {LIMIT}; the hook fails at {HOOK_LIMIT} so "
+                "the split happens with room to spare rather than on the commit "
+                "that would have crossed. Split now — do not commit at "
+                f"{LIMIT - 1} and leave the next change to pay for it."
+            )
     if scene_complaint:
         if over:
             print()

@@ -2,18 +2,23 @@
 
 The cap used to skip every `.md` and `.json` by suffix, which is how the design
 record reached 1194 lines unremarked. Now scope is "every text file git knows
-about", with two explicit, reasoned exemption lists: generated files, and the
-show's data file, which pays for its exemption with a scene budget instead.
-These tests pin that down so the scope cannot quietly narrow again.
+about", with three explicit, reasoned exemptions: generated files; the show's
+data file, which pays for its exemption with a scene budget instead; and the
+grade reports, which are the machine's findings about the repo rather than
+part of it. These tests pin that down so the scope cannot quietly narrow
+again — and pin the two thresholds (the 500 cap, the hook's 490) with it.
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
 import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -29,11 +34,19 @@ DOCUMENTED_GENERATED = {
     "web/package-lock.json",
 }
 
-# The other exemption, and the only kind of file that may take it: data the
+# The second exemption, and the only kind of file that may take it: data the
 # show is written IN, held to a budget of its own rather than to the cap. One
 # entry, named here so a second one cannot appear without this line changing.
 DOCUMENTED_DATA = {
     "scenes/scenes.yaml",
+}
+
+# The third: audit output — findings written ABOUT the repo, by the machine,
+# long in proportion to what was found. A pattern rather than a path list
+# because every audit writes a new file; pinned here so the pattern cannot
+# quietly widen into "anything under .claude/".
+DOCUMENTED_AUDIT = {
+    ".claude/grade-report*.md",
 }
 
 
@@ -92,7 +105,11 @@ class TestExemptions(unittest.TestCase):
 
     def test_the_two_lists_are_the_whole_exemption_and_do_not_overlap(self) -> None:
         """`measure()` skips ALL_EXEMPT, so a path smuggled into neither
-        documented set — or quietly added to ALL_EXEMPT directly — fails here."""
+        documented set — or quietly added to ALL_EXEMPT directly — fails here.
+
+        The audit exemption is deliberately NOT in ALL_EXEMPT: it is a
+        pattern, matched separately by `is_audit_output`, and it is pinned by
+        its own tests below."""
         self.assertEqual(
             set(check_loc.ALL_EXEMPT), DOCUMENTED_GENERATED | DOCUMENTED_DATA
         )
@@ -118,10 +135,41 @@ class TestExemptions(unittest.TestCase):
         self.assertEqual(check_loc.SCENE_LIMIT, 12)
         self.assertTrue(callable(check_loc.scene_budget))
 
+    def test_audit_exemption_is_exactly_the_documented_pattern(self) -> None:
+        self.assertEqual(set(check_loc.AUDIT_EXEMPT), DOCUMENTED_AUDIT)
+
+    def test_the_audit_pattern_covers_the_reports_and_nothing_else(self) -> None:
+        """The reason it is a pattern is that each audit writes a new file;
+        the reason it is a NARROW pattern is that .claude/ also holds
+        hand-written material (the migration plan, launch.json) which stays
+        held to the cap like any other file."""
+        for rel in (
+            ".claude/grade-report.md",
+            ".claude/grade-report-2026-08-16.md",
+            ".claude/grade-report-2026-08-31-executed.md",
+        ):
+            self.assertTrue(check_loc.is_audit_output(rel), rel)
+        for rel in (
+            ".claude/typesafe-migration-plan.md",
+            ".claude/launch.json",
+            ".claude/grade-report.py",
+            "docs/grade-report.md",
+            ".claude/notes/grade-report.md",
+            "tools/check_loc.py",
+        ):
+            self.assertFalse(check_loc.is_audit_output(rel), rel)
+
+    def test_every_audit_exemption_says_it_is_not_code(self) -> None:
+        """Same rule as the other two lists: the reason carries the weight."""
+        for pat, why in check_loc.AUDIT_EXEMPT.items():
+            self.assertIn("audit output", why, f"{pat}: {why!r}")
+
     def test_exempt_files_are_not_measured(self) -> None:
         measured = {rel for _n, rel, _o in check_loc.measure()}
         for rel in check_loc.ALL_EXEMPT:
             self.assertNotIn(rel, measured)
+        for rel in measured:
+            self.assertFalse(check_loc.is_audit_output(rel), rel)
 
     def test_exempt_generators_exist(self) -> None:
         """If the generator is gone the file is no longer generated, and the
@@ -237,6 +285,59 @@ class TestSyntheticTree(unittest.TestCase):
 
     def test_missing_file_is_ignored(self) -> None:
         self.assertEqual(self._measure(["ghost.md"]), {})
+
+
+class TestThresholds(unittest.TestCase):
+    """Two numbers, and the reason there are two (grade report 2026-09-01 I3).
+
+    `make check` and CI enforce the 500-line cap. The pre-commit hook fails
+    ten lines earlier, because the hook is the only gate a file passes on its
+    way UP: at the cap, a file can legally sit at 499 (castle_fuzz.py did) and
+    the next one-line change in unrelated work reddens the commit. The band
+    between them is the room that makes a split a decision instead of an
+    emergency.
+    """
+
+    def test_the_hook_stops_before_the_cap_and_after_the_warning(self) -> None:
+        self.assertEqual(check_loc.LIMIT, 500)
+        self.assertEqual(check_loc.HOOK_LIMIT, 490)
+        self.assertEqual(check_loc.WARN_LIMIT, 450)
+        self.assertLess(check_loc.WARN_LIMIT, check_loc.HOOK_LIMIT)
+        self.assertLess(check_loc.HOOK_LIMIT, check_loc.LIMIT)
+
+    def test_the_hook_runs_check_loc_in_hook_mode(self) -> None:
+        """The threshold only bites if the hook asks for it — this is the
+        wiring, and it is one flag away from being silently lost."""
+        hook = (ROOT / "githooks" / "pre-commit").read_text()
+        self.assertIn("tools/check_loc.py --hook", hook)
+
+    def test_check_mode_passes_a_file_the_hook_would_refuse(self) -> None:
+        """495 lines: over the hook's threshold, under the cap. `make check`
+        must stay green on it — a tree that already contains such a file (a
+        rebase, a merge, a file that predates the threshold) is not broken,
+        it just cannot be added to."""
+        rows = [(495, "big.py", False)]
+        self.assertEqual([r for r in rows if r[0] > check_loc.LIMIT], [])
+        self.assertEqual(
+            [r for r in rows if r[0] > check_loc.HOOK_LIMIT], [(495, "big.py", False)]
+        )
+
+    def test_hook_mode_fails_and_check_mode_does_not_on_the_same_tree(self) -> None:
+        """End to end through main(), on a real tree: a 495-line file makes
+        `--hook` exit 1 and plain mode exit 0."""
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        (tmp / "big.py").write_text("x = 1\n" * 495)
+        rows = [(495, "big.py", False)]
+        with mock.patch.object(check_loc, "measure", return_value=rows):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(check_loc.main([]), 0)
+                self.assertEqual(check_loc.main(["--hook"]), 1)
+        text = out.getvalue()
+        self.assertIn("LOC check PASS", text)
+        self.assertIn("over the 490-line pre-commit threshold", text)
+        self.assertIn("The cap itself is 500", text)
 
 
 if __name__ == "__main__":

@@ -10,7 +10,11 @@ PY=$(command -v .venv/bin/python || command -v python3)
 "$PY" -m ruff format --check --quiet tools tests || { echo "pre-commit: formatting drift — run: $PY -m ruff format tools tests" >&2; exit 1; }
 "$PY" -m ruff check tools tests
 "$PY" -m mypy tools tests
-"$PY" tools/check_loc.py
+# --hook fails at 490, not the 500 cap: a file is only ever added to at
+# commit time, so this is the gate that should stop before the cliff. Ten
+# lines of room means the split is chosen, not forced mid-change (grade
+# report 2026-09-01 I3). `make check` and CI still enforce the cap itself.
+"$PY" tools/check_loc.py --hook
 
 # The TS half gets the same gate as the Python half (grade report I1) —
 # with a tsconfig this strict, tsc is the highest-value check in the repo.

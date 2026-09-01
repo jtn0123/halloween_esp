@@ -29,10 +29,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import cargo_gate
 import manifest as mf
 from helpers import make_click_track
 
-CARGO = shutil.which("cargo")
+CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
 BIN = ROOT / "core" / "target" / "release" / "studio"
 
@@ -80,21 +81,7 @@ PAGE = (
 
 
 def build_bin() -> None:
-    assert CARGO is not None
-    built = subprocess.run(
-        [
-            CARGO,
-            "build",
-            "--release",
-            "--quiet",
-            "--manifest-path",
-            str(ROOT / "core" / "Cargo.toml"),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=300,
-    )
+    built = cargo_gate.build()
     assert built.returncode == 0, built.stderr
 
 

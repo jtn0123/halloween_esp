@@ -18,7 +18,6 @@ import contextlib
 import io
 import os
 import random
-import shutil
 import subprocess
 import sys
 import unittest
@@ -26,11 +25,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
 
+import cargo_gate
 import pulse_dynamics as pd
 import pulse_expand as pe
 
-CARGO = shutil.which("cargo")
+CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
 SEED = int(os.environ.get("CASTLE_PULSE_SEED", "11"))
 NOTES = ("hush", "verse", "chorus", "silence")
@@ -44,21 +45,7 @@ def fmt(v: float) -> str:
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
 class TestPulseRustParity(unittest.TestCase):
     def test_seeded_corpus_matches_digit_for_digit(self) -> None:
-        assert CARGO is not None
-        built = subprocess.run(
-            [
-                CARGO,
-                "build",
-                "--release",
-                "--quiet",
-                "--manifest-path",
-                str(ROOT / "core" / "Cargo.toml"),
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=300,
-        )
+        built = cargo_gate.build()
         self.assertEqual(built.returncode, 0, built.stderr)
 
         r = random.Random(SEED)

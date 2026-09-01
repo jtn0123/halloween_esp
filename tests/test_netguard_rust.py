@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import unittest
@@ -32,10 +31,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import cargo_gate
 import netguard as ng
 from test_netguard import fake_dns
 
-CARGO = shutil.which("cargo")
+CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
 BIN = ROOT / "core" / "target" / "release" / "netguard_dump"
 
@@ -120,23 +120,7 @@ CASES: list[tuple[str, str]] = [
 
 def rust_answers() -> list[str | None]:
     """netguard_dump over the corpus: one entry per case, null = allowed."""
-    assert CARGO is not None
-    built = subprocess.run(
-        [
-            CARGO,
-            "build",
-            "--release",
-            "--quiet",
-            "--manifest-path",
-            str(ROOT / "core" / "Cargo.toml"),
-            "--bin",
-            "netguard_dump",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=300,
-    )
+    built = cargo_gate.build("--bin", "netguard_dump")
     assert built.returncode == 0, built.stderr
     doc = {"dns": DNS, "cases": [{"url": u, "ip": ip} for u, ip in CASES]}
     r = subprocess.run(

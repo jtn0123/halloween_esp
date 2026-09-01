@@ -233,13 +233,18 @@ class TestBuildFitsTheBudget(unittest.TestCase):
 
 
 class TestPageWeight(unittest.TestCase):
-    """G1's growth, made visible the moment it happens (grade report D3)."""
+    """The build honoured its own ceiling (grade report 2026-09-01 D3).
 
-    # The built page is 3.31 MB at ten scenes, ~89% inlined audio, growing
-    # ~1.2 MB per song scene. If a new scene pushes it over, raising this
-    # number must be a deliberate act in the same commit — the alternative
-    # is A5/G1: serve the lean page from the device and stop inlining.
-    BUDGET = 3_600_000
+    This used to carry a second, tighter number (3.6 MB against the
+    builder's 4 MB), which made a band 285 KB wide where a successful
+    build reddened CI — a page in that band is exactly what fit_budget
+    is *designed* to produce. The invariant worth pinning is not a size
+    an auditor liked, it is that what landed on disk obeys the ceiling
+    the builder enforces. One number, one definition: raising
+    previewer_budget.PAGE_BUDGET_KB moves both.
+    """
+
+    BUDGET = pgb.PAGE_BUDGET_KB * 1024
 
     def test_built_page_stays_under_its_byte_budget(self) -> None:
         # The page is generated and gitignored, so it is simply absent in
@@ -255,9 +260,12 @@ class TestPageWeight(unittest.TestCase):
             size,
             self.BUDGET,
             f"previewer/castle-cue-desk.html is {size:,} bytes, over the "
-            f"{self.BUDGET:,}-byte budget. Each song scene adds ~1.2 MB of "
-            "inlined audio (grade report G1/D3). If the growth is deliberate, "
-            "raise BUDGET here in the same commit that adds the scene.",
+            f"{self.BUDGET:,}-byte ceiling previewer_budget.PAGE_BUDGET_KB "
+            "names. The builder un-inlines scene audio until the page fits "
+            "and refuses to write one that doesn't, so a page on disk that "
+            "is over budget means it was written by something else — a stale "
+            "artifact, a hand edit, or an enforce_budget that stopped "
+            "enforcing.",
         )
 
 
