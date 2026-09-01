@@ -20,133 +20,10 @@ use crate::jsonio::{self, Json};
 use crate::studio::{scene_ids, App};
 use crate::studio_relay;
 
-/// The interpreter the studio's children run under.
-///
-/// The Python twin runs its children under `sys.executable` — whatever
-/// interpreter is running the server, which is the venv you launched it
-/// from. A binary has no such self-knowledge, so the answer is asked for
-/// in the same order: `CASTLE_PY` if the launcher named one (a worktree,
-/// CI, a venv somewhere else entirely), then the project venv, then
-/// `python3` — which, missing numpy/scipy/yaml, is the spelling that used
-/// to fail every rebuild confusingly. `check_py` says so at startup.
-pub fn py(root: &Path) -> String {
-    if let Some(p) = std::env::var_os("CASTLE_PY") {
-        if !p.is_empty() {
-            return p.to_string_lossy().into_owned();
-        }
-    }
-    let v = root.join(".venv").join("bin").join("python");
-    if v.exists() {
-        v.to_string_lossy().into_owned()
-    } else {
-        "python3".to_string()
-    }
-}
-
-/// Can the interpreter `py()` picked actually run the studio's children?
-/// `import yaml` is the cheapest question that separates the project venv
-/// from a bare system python: every generator, the importer and the scene
-/// writer need it. Some(complaint) when it cannot — the caller prints it
-/// and stops, rather than letting every later rebuild fail confusingly.
-pub fn check_py(root: &Path) -> Option<String> {
-    let exe = py(root);
-    let out = Command::new(&exe)
-        .args(["-c", "import yaml"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-    match out {
-        Ok(s) if s.success() => None,
-        Ok(_) => Some(format!(
-            "{exe} cannot `import yaml` — the studio's children (the \
-             generators, the importer) all need the project venv. Run \
-             `make setup`, or point CASTLE_PY at the right interpreter."
-        )),
-        Err(e) => Some(format!(
-            "{exe} will not run ({e}) — set CASTLE_PY to the project venv's \
-             python, or run `make setup`."
-        )),
-    }
-}
-
-/// Python's `s[-4000:]` — the last 4000 characters, not bytes.
-fn tail4000(s: &str) -> String {
-    let n = s.chars().count();
-    if n <= 4000 {
-        s.to_string()
-    } else {
-        s.chars().skip(n - 4000).collect()
-    }
-}
-
-/// studio.run(): capture a child completely, under the 900 s ceiling that
-/// keeps one hung tool from wedging every later rebuild.
-pub fn run(cmd: Command, timeout_s: u64) -> (bool, String) {
-    match run_split(cmd, timeout_s) {
-        Timed::Out => (
-            false,
-            format!("gave up after {timeout_s}s — the job stalled"),
-        ),
-        Timed::Done(ok, out, err) => (ok, tail4000(&format!("{out}{err}"))),
-    }
-}
-
-/// The two-stream form probe needs (yt-dlp's useful line is on stderr).
-pub fn run_split(mut cmd: Command, timeout_s: u64) -> Timed {
-    cmd.stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .stdin(Stdio::null());
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => return Timed::Done(false, String::new(), e.to_string()),
-    };
-    let mut out_pipe = child.stdout.take().expect("piped");
-    let mut err_pipe = child.stderr.take().expect("piped");
-    let out_t = std::thread::spawn(move || {
-        use std::io::Read;
-        let mut b = Vec::new();
-        let _ = out_pipe.read_to_end(&mut b);
-        b
-    });
-    let err_t = std::thread::spawn(move || {
-        use std::io::Read;
-        let mut b = Vec::new();
-        let _ = err_pipe.read_to_end(&mut b);
-        b
-    });
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_s);
-    let status = loop {
-        match child.try_wait() {
-            Ok(Some(st)) => break Some(st),
-            Ok(None) => {
-                if std::time::Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break None;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(50));
-            }
-            Err(_) => break None,
-        }
-    };
-    let out = out_t.join().unwrap_or_default();
-    let err = err_t.join().unwrap_or_default();
-    match status {
-        None => Timed::Out,
-        Some(st) => Timed::Done(
-            st.success(),
-            String::from_utf8_lossy(&out).into_owned(),
-            String::from_utf8_lossy(&err).into_owned(),
-        ),
-    }
-}
-
-/// run_split's answer: the child finished, or the watchdog fired.
-pub enum Timed {
-    Done(bool, String, String),
-    Out,
-}
+/// Which python the children run under, and how a child is captured —
+/// [`studio_proc`](crate::studio_proc), split off at the 500-line cap.
+/// Re-exported so every caller still says `studio_scenes::run`.
+pub use crate::studio_proc::{check_py, py, run, run_split, tail4000, Timed};
 
 /// studio_scenes.block_pattern: one scene's block, from its `  - id: `
 /// line to the next one (or EOF); a final unterminated line stays outside,
@@ -472,4 +349,121 @@ fn needs_firmware(app: &App, st: &Json) -> Vec<String> {
         .into_iter()
         .filter(|s| !fw.contains(s))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SHOW: &str = "scenes:\n  - id: vigil\n    len: 30\n  - id: storm\n    len: 40\n";
+
+    fn tmpdir(tag: &str) -> std::path::PathBuf {
+        let d = std::env::temp_dir().join(format!(
+            "castle-scenes-{tag}-{:?}",
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("temp dir");
+        d
+    }
+
+    #[test]
+    fn a_block_runs_from_its_own_header_to_the_next() {
+        let (s, e) = find_block(SHOW, "vigil").expect("vigil is in there");
+        assert_eq!(&SHOW[s..e], "  - id: vigil\n    len: 30\n");
+        let (s, e) = find_block(SHOW, "storm").expect("storm is in there");
+        assert_eq!(&SHOW[s..e], "  - id: storm\n    len: 40\n");
+        assert_eq!(find_block(SHOW, "crypt"), None);
+        // The last block runs to EOF — but a final line with no newline
+        // stays outside it, which is the regex's per-line `\n` in the
+        // Python twin, not an accident of this scanner.
+        let ragged = "scenes:\n  - id: only\n    len: 1";
+        let (s, e) = find_block(ragged, "only").expect("found");
+        assert_eq!(&ragged[s..e], "  - id: only\n");
+        let ended = "scenes:\n  - id: only\n    len: 1\n";
+        let (s, e) = find_block(ended, "only").expect("found");
+        assert_eq!(&ended[s..e], "  - id: only\n    len: 1\n");
+    }
+
+    #[test]
+    fn a_header_only_counts_at_the_start_of_a_line() {
+        // The id appears inside a comment first; the block is the real one.
+        let text = "scenes:\n  # not   - id: vigil\n here\n  - id: vigil\n    len: 3\n";
+        let (s, e) = find_block(text, "vigil").expect("the real header");
+        assert_eq!(&text[s..e], "  - id: vigil\n    len: 3\n");
+        // An id that only ever appears mid-line is not a block at all.
+        assert_eq!(
+            find_block("scenes:\n    note: - id: ghost\n", "ghost"),
+            None
+        );
+        // A longer id is not matched by a shorter one's header.
+        assert_eq!(find_block("scenes:\n  - id: vigilante\n", "vigil"), None);
+    }
+
+    #[test]
+    fn a_write_keeps_the_previous_show_beside_it() {
+        let d = tmpdir("write");
+        let scenes = d.join("scenes.yaml");
+        std::fs::write(&scenes, SHOW).expect("seed");
+        write_scenes(&scenes, SHOW, "scenes:\n  - id: crypt\n").expect("write");
+        assert_eq!(
+            std::fs::read_to_string(&scenes).expect("read"),
+            "scenes:\n  - id: crypt\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(d.join("scenes.yaml.bak")).expect("bak"),
+            SHOW
+        );
+        // The .tmp is renamed, never left behind.
+        assert!(!d.join("scenes.yaml.tmp").exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The scene ceiling is scene_check.py's answer, not this side's — so
+    /// what has to hold here is that an unanswerable check REFUSES. A
+    /// checker that cannot run must never read as "go ahead and splice"
+    /// (grade report 2026-09-01 D2; the ceiling itself is A8's delegation).
+    #[test]
+    fn a_check_that_cannot_run_refuses_the_splice() {
+        let d = tmpdir("check");
+        let mut app = App::new(d.clone()); // no tools/scene_check.py under it
+        app.scenes = d.join("scenes.yaml");
+        std::fs::write(&app.scenes, SHOW).expect("seed");
+        let req = Json::Obj(vec![
+            ("id".into(), Json::Str("crypt".into())),
+            ("yaml".into(), Json::Str("  - id: crypt\n".into())),
+        ]);
+        let (body, code) = check(&app, &req).expect("no verdict is a refusal");
+        assert_eq!(code, 500);
+        assert_eq!(
+            body.get("error").and_then(Json::as_str),
+            Some("scene validation unavailable")
+        );
+        assert_eq!(body.get("ok"), Some(&Json::Bool(false)));
+        // And the show on disk was not touched by the attempt.
+        assert_eq!(std::fs::read_to_string(&app.scenes).expect("read"), SHOW);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn only_scenes_the_running_firmware_lacks_are_named() {
+        let d = tmpdir("fw");
+        let mut app = App::new(d.clone());
+        app.scenes = d.join("scenes.yaml");
+        std::fs::write(&app.scenes, SHOW).expect("seed");
+        let st = |v: &str| Json::Obj(vec![("scenes".into(), Json::Str(v.into()))]);
+        assert_eq!(
+            needs_firmware(&app, &st("vigil,storm")),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            needs_firmware(&app, &st("vigil")),
+            vec!["storm".to_string()]
+        );
+        // A firmware that predates the field says nothing rather than
+        // guessing that every scene is missing.
+        assert_eq!(needs_firmware(&app, &st("")), Vec::<String>::new());
+        assert_eq!(needs_firmware(&app, &Json::obj()), Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(&d);
+    }
 }

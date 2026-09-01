@@ -210,3 +210,55 @@ fn from_manifest(meta: &Json, size: i64) -> Option<Vec<(String, Json)>> {
         ("onsets".into(), Json::Obj(counts)),
     ])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `^\w{1,64}$` with re.ASCII — the id is the contract every route
+    /// builds a path out of, so what it REFUSES is the load-bearing half.
+    #[test]
+    fn an_id_is_ascii_word_characters_and_at_most_sixty_four() {
+        for ok in ["a", "_", "vigil", "storm_2", "TRACK9", "_src9"] {
+            assert!(valid_id(ok), "{ok}");
+        }
+        assert!(valid_id(&"a".repeat(64)));
+        assert!(!valid_id(&"a".repeat(65)));
+        assert!(!valid_id(""));
+        for no in [
+            "a b", "a-b", "a.b", "a/b", "../etc", "a\0b", "a\n", ".hidden", "a%2f",
+            // re.ASCII: Python's \w stops at the ASCII word set, so an
+            // accented or non-Latin name is refused rather than reaching
+            // the filesystem under a different spelling.
+            "café", "трек", "🎃",
+        ] {
+            assert!(!valid_id(no), "{no}");
+        }
+        // 64 is a character count in Python; a multi-byte name that is
+        // refused for its characters must not be accepted for its bytes.
+        assert!(!valid_id(&"é".repeat(20)));
+    }
+
+    #[test]
+    fn every_container_has_a_type_and_anything_else_is_a_download() {
+        assert_eq!(mime("mp3"), "audio/mpeg");
+        assert_eq!(mime("wav"), "audio/wav");
+        assert_eq!(mime("flac"), "audio/flac");
+        assert_eq!(mime("opus"), "audio/ogg");
+        for ext in AUDIO_EXT {
+            assert_ne!(mime(ext), "application/octet-stream", "{ext}");
+        }
+        assert_eq!(mime("MP3"), "application/octet-stream"); // never folded
+        assert_eq!(mime(""), "application/octet-stream");
+    }
+
+    #[test]
+    fn only_a_file_source_can_go_missing() {
+        assert!(source_missing("file:/nowhere/_t_gone.wav"));
+        assert!(!source_missing("file:/"));
+        // A link is not a path: nothing about it is checkable on disk.
+        assert!(!source_missing("https://example.invalid/x.mp3"));
+        assert!(!source_missing(""));
+        assert!(!source_missing("/nowhere/_t_gone.wav"));
+    }
+}

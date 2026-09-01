@@ -142,6 +142,31 @@ class TestDecodedCache(unittest.TestCase):
         self.assertEqual(len(out), 2)
         self.assertEqual(out[0], out[1])
 
+    def test_a_poisoned_decode_does_not_wedge_the_next_caller(self) -> None:
+        # The in-flight marker has to come off however the decode ends.
+        # Left behind, every later request for that track waits on a
+        # condition nobody will ever notify — one pinned thread each. This
+        # side has always had the try/finally; the Rust twin grew a Drop
+        # guard for it (grade report 2026-09-01 E1), and the invariant is
+        # worth pinning on the reference implementation too.
+        with mock.patch.object(
+            sm.ana, "load_audio", side_effect=RuntimeError("decode blew up")
+        ):
+            with self.assertRaises(RuntimeError):
+                sm.waveform(self.track)
+        self.assertEqual(sm._DEC_INFLIGHT, set(), "the marker outlived the failure")
+        self.assertEqual(len(sm._DECODED), 0)
+
+        # And the next caller — on another thread, as the server's would
+        # be — gets a real answer instead of waiting forever.
+        out: list[dict] = []
+        t = threading.Thread(target=lambda: out.append(sm.waveform(self.track)))
+        t.start()
+        t.join(timeout=30)
+        self.assertFalse(t.is_alive(), "the next caller was wedged")
+        self.assertEqual(len(out), 1)
+        self.assertEqual(len(out[0]["peaks"]), sm.PEAKS)
+
     def test_an_empty_file_is_answered_without_a_stereo_decode(self) -> None:
         with (
             mock.patch.object(sm.ana, "load_audio", return_value=sm.np.zeros(0)),

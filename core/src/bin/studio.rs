@@ -96,6 +96,11 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
                     ),
                     Err(_) => break, // the client hung up mid-response
                 }
+                if conn.close {
+                    // The reply left the connection unusable — a body that
+                    // came up short of its own Content-Length.
+                    break;
+                }
                 match pending() {
                     Action::None => {}
                     Action::Stop => std::process::exit(0),

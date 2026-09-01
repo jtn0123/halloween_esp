@@ -47,6 +47,15 @@ class JsonHandler(BaseHTTPRequestHandler):
 
     protocol_version = "HTTP/1.1"
 
+    # StreamRequestHandler.setup() turns this into a socket timeout, and
+    # handle_one_request already answers a timed-out read by closing. A
+    # client that opens a socket and never finishes its head pins a thread
+    # for as long as it likes otherwise — harmless on loopback, not on
+    # --lan (grade report 2026-09-01 E3). Per socket operation, not per
+    # request: a 512 MB upload arrives in pieces and never waits this long
+    # between two of them. The Rust twin's Conn::new sets the same 30 s.
+    timeout = 30
+
     def log_message(self, fmt, *a):  # quieter console
         # The request line is whatever the client sent, control bytes and
         # all. Written straight through, a carriage return in a URL forges
@@ -168,7 +177,13 @@ class JsonHandler(BaseHTTPRequestHandler):
             while left > 0:
                 chunk = fh.read(min(65536, left))
                 if not chunk:
-                    break  # file shrank mid-serve
+                    # The file shrank mid-serve — an interrupted stem split,
+                    # a re-import over the top. Content-Length promised bytes
+                    # that no longer exist, so the connection has to close:
+                    # kept alive, the next request on it would be read as the
+                    # tail of this body (grade report 2026-09-01 B1).
+                    self.close_connection = True
+                    break
                 self.wfile.write(chunk)
                 left -= len(chunk)
 

@@ -63,6 +63,7 @@ pub mod studio_import;
 pub mod studio_jobs;
 pub mod studio_media;
 pub mod studio_probe;
+pub mod studio_proc;
 pub mod studio_reason;
 pub mod studio_relay;
 pub mod studio_routes;

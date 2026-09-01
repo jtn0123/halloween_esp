@@ -78,6 +78,9 @@ def rebuild(lock: threading.Lock, run: Runner, py: str, root: Path) -> tuple[boo
         # on 08-22. No castle (or CASTLE_HOST="") publishes nothing and
         # says so; a push failure is reported but does not fail the rebuild,
         # whose local artifacts are good.
+        # Imported here, not at the top: studio_publish imports this module
+        # back for scene_ids, so a module-level import would be a cycle
+        # (grade report 2026-09-01 A4).
         import studio_publish as sp
 
         body, _code = sp.publish(run)

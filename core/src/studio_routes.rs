@@ -141,7 +141,7 @@ fn get(app: &App, req: &Request) -> Reply {
             return jerr("no such track", 404);
         };
         return match sm::waveform(&p, sens) {
-            Some(obj) => Reply::Json(obj, 200),
+            Some(obj) => Reply::JsonShared(obj, 200),
             None => Reply::Json(
                 Json::Obj(vec![
                     ("ok".into(), Json::Bool(false)),
@@ -407,4 +407,72 @@ fn put(app: &App, req: &Request) -> Reply {
         return jerr("not found", 404);
     }
     relay(app, "PUT", &req.target, &req.body)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn code_of(r: &Reply) -> u16 {
+        match r {
+            Reply::Json(_, c) | Reply::JsonShared(_, c) | Reply::Raw { code: c, .. } => *c,
+            _ => 0,
+        }
+    }
+
+    /// Every id in a path goes through this before it reaches the disk:
+    /// Path(...).name is what stops `../` from meaning anything.
+    #[test]
+    fn the_last_segment_is_all_a_route_ever_trusts() {
+        assert_eq!(last_segment("vigil"), "vigil");
+        assert_eq!(last_segment("/studio/track/vigil"), "vigil");
+        assert_eq!(last_segment("../../etc/passwd"), "passwd");
+        assert_eq!(last_segment("/a/b/"), "b");
+        assert_eq!(last_segment("/a/b///"), "b");
+        assert_eq!(last_segment(""), "");
+        assert_eq!(last_segment("/"), "");
+        // Only the separator is structural — a dotted name survives whole.
+        assert_eq!(last_segment("a/b.c.mp3"), "b.c.mp3");
+    }
+
+    #[test]
+    fn a_body_is_an_object_an_empty_body_or_the_callers_mistake() {
+        assert_eq!(json_body(b""), Ok(Json::obj()));
+        assert_eq!(json_body(b"{}"), Ok(Json::obj()));
+        assert_eq!(
+            json_body(b"{\"id\": \"vigil\"}"),
+            Ok(Json::Obj(vec![("id".into(), Json::Str("vigil".into()))]))
+        );
+        // A list, a number or a bare string is valid JSON and still not a
+        // request body — the routes all index it by key.
+        for not_an_object in [&b"[1, 2]"[..], b"7", b"\"vigil\"", b"null"] {
+            assert_eq!(
+                json_body(not_an_object),
+                Err("request body must be a JSON object".to_string())
+            );
+        }
+        let e = json_body(b"{oops}").expect_err("not JSON at all");
+        assert!(e.starts_with("request body is not valid JSON:"), "{e}");
+    }
+
+    #[test]
+    fn the_two_error_shapes_are_the_ones_the_desk_reads() {
+        let r = jerr("not found", 404);
+        assert_eq!(code_of(&r), 404);
+        let Reply::Json(body, _) = &r else {
+            panic!("jerr answers JSON")
+        };
+        assert_eq!(body.get("error").and_then(Json::as_str), Some("not found"));
+        // bad_request carries the ok:false flag the desk switches on.
+        let r = bad_request("Content-Length is not a number");
+        assert_eq!(code_of(&r), 400);
+        let Reply::Json(body, _) = &r else {
+            panic!("bad_request answers JSON")
+        };
+        assert_eq!(body.get("ok"), Some(&Json::Bool(false)));
+        assert_eq!(
+            body.get("error").and_then(Json::as_str),
+            Some("Content-Length is not a number")
+        );
+    }
 }

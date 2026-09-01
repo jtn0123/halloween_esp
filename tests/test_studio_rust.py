@@ -11,7 +11,9 @@ Skipped, not failed, without cargo — except in CI.
 
 from __future__ import annotations
 
+import socket
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -144,6 +146,51 @@ class CastleLess(StudioPair):
         a, b = self.both("/studio/tracks/t_del", method="DELETE")
         self.assertEqual(a[0], 404)
         self.assertEqual(self.parsed(a), self.parsed(b))
+
+    def test_09_a_body_that_comes_up_short_ends_the_connection(self) -> None:
+        """A file that shrinks mid-serve must close, not stay keep-alive.
+
+        Content-Length promised bytes the file no longer has; kept alive,
+        the client reads the NEXT response as the tail of this body and
+        every later request on that connection is answered to the wrong
+        question. Both servers used to just stop writing and carry on
+        (grade report 2026-09-01 B1).
+        """
+        # Bigger than any socket buffer, so the server is certainly still
+        # writing (blocked) when the file is truncated under it.
+        size = 24 * 1024 * 1024
+        for tracks in (self.py_tracks, self.rs_tracks):
+            (tracks / "t_shrink.wav").write_bytes(bytes(size))
+            self.addCleanup((tracks / "t_shrink.wav").unlink, missing_ok=True)
+        for who, port, tracks in (
+            ("python", self.py_port, self.py_tracks),
+            ("rust", self.rs_port, self.rs_tracks),
+        ):
+            with socket.create_connection(("127.0.0.1", port), timeout=20) as s:
+                s.sendall(
+                    b"GET /studio/track/t_shrink HTTP/1.1\r\n"
+                    b"Host: 127.0.0.1\r\nConnection: keep-alive\r\n\r\n"
+                )
+                head = b""
+                while b"\r\n\r\n" not in head:
+                    part = s.recv(65536)
+                    self.assertTrue(part, f"{who}: closed before the head")
+                    head += part
+                head, rest = head.split(b"\r\n\r\n", 1)
+                self.assertIn(b" 200 ", head.split(b"\r\n", 1)[0], who)
+                self.assertIn(b"Content-Length: %d" % size, head, who)
+                time.sleep(0.5)  # the server is now blocked on the write
+                (tracks / "t_shrink.wav").write_bytes(b"")
+                got = len(rest)
+                try:
+                    while True:
+                        chunk = s.recv(65536)
+                        if not chunk:
+                            break
+                        got += len(chunk)
+                except TimeoutError:
+                    self.fail(f"{who}: kept a connection that owes {size - got} bytes")
+                self.assertLess(got, size, f"{who}: the body did not come up short")
 
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")

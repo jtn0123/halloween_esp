@@ -23,6 +23,9 @@ pub const CSP: &str = "default-src 'self'; script-src 'self' 'unsafe-inline'; \
 /// request's validators and Range header applied.
 pub enum Reply {
     Json(Json, u16),
+    /// The same answer, shared rather than owned — for a route handing
+    /// back a cached body it must not deep-clone (the waveform cache).
+    JsonShared(Arc<Json>, u16),
     /// send_bytes with an ETag: 304 on a match, no-cache + CSP on HTML.
     /// The body is shared, not owned: the lean page is ~3 MB and the same
     /// bytes for every caller until the file underneath it changes.
@@ -58,12 +61,22 @@ pub fn reason(code: u16) -> &'static str {
     }
 }
 
+/// One header value, with the two bytes that could end the line taken
+/// out. Most values here are ours, but a relayed castle answer's
+/// Content-Type is not: a CR or LF inside one would let whatever wrote it
+/// append headers of its own, or end the head early and have the rest read
+/// as a body. The full CRLF was already stopped by an incidental `trim()`
+/// upstream; a bare CR was not (grade report 2026-09-01 E2).
+fn header_value(v: &str) -> String {
+    v.chars().filter(|c| *c != '\r' && *c != '\n').collect()
+}
+
 fn head(code: u16, extra: &[(&str, String)]) -> String {
     let mut out = format!("HTTP/1.1 {code} {}\r\n", reason(code));
     for (k, v) in extra {
         out.push_str(k);
         out.push_str(": ");
-        out.push_str(v);
+        out.push_str(&header_value(v));
         out.push_str("\r\n");
     }
     out.push_str("\r\n");
@@ -145,12 +158,14 @@ pub(crate) fn pick_range(total: u64, rng: &str) -> (u64, u64, bool) {
     (lo, hi + 1 - lo, partial)
 }
 
+/// Answers `(status, hang up afterwards)` — see the short-read comment
+/// at the bottom of the copy loop.
 fn respond_range(
     s: &mut TcpStream,
     path: &std::path::Path,
     ctype: &str,
     range: Option<&str>,
-) -> std::io::Result<u16> {
+) -> std::io::Result<(u16, bool)> {
     let total = match std::fs::metadata(path) {
         Ok(m) => m.len(),
         Err(e) => {
@@ -159,7 +174,7 @@ fn respond_range(
                 ("error".into(), Json::Str(format!("OSError: {e}"))),
             ]);
             respond_json(s, &body, 500)?;
-            return Ok(500);
+            return Ok((500, false));
         }
     };
     let (lo, length, partial) = pick_range(total, range.unwrap_or(""));
@@ -184,21 +199,32 @@ fn respond_range(
         let want = chunk.len().min(left as usize);
         let n = fh.read(&mut chunk[..want])?;
         if n == 0 {
-            break; // file shrank mid-serve
+            // The file shrank mid-serve — an interrupted stem split, a
+            // re-import over the top. Content-Length promised bytes that
+            // no longer exist, so the only honest end to this response is
+            // the close the caller is being asked for here: kept alive,
+            // the next request on this connection would be read as the
+            // tail of this body (grade report 2026-09-01 B1).
+            return Ok((code, true));
         }
         s.write_all(&chunk[..n])?;
         left -= n as u64;
     }
-    Ok(code)
+    Ok((code, false))
 }
 
 /// Write one reply; returns the status code actually sent (for the log).
 pub fn deliver(conn: &mut Conn, req: &Request, reply: &Reply) -> std::io::Result<u16> {
     let inm = req.header("if-none-match").map(str::to_string);
     let range = req.header("range").map(str::to_string);
+    let mut hang_up = false;
     let s = conn.stream();
-    match reply {
+    let out = match reply {
         Reply::Json(obj, code) => {
+            respond_json(s, obj, *code)?;
+            Ok(*code)
+        }
+        Reply::JsonShared(obj, code) => {
             respond_json(s, obj, *code)?;
             Ok(*code)
         }
@@ -222,12 +248,18 @@ pub fn deliver(conn: &mut Conn, req: &Request, reply: &Reply) -> std::io::Result
             respond(s, 200, ctype, &hdrs, body.as_slice())?;
             Ok(200)
         }
-        Reply::FileRange { path, ctype } => respond_range(s, path, ctype, range.as_deref()),
+        Reply::FileRange { path, ctype } => {
+            let (code, short) = respond_range(s, path, ctype, range.as_deref())?;
+            hang_up = short;
+            Ok(code)
+        }
         Reply::Raw { code, body, ctype } => {
             respond(s, *code, ctype, &[], body)?;
             Ok(*code)
         }
-    }
+    };
+    conn.close |= hang_up;
+    out
 }
 
 #[cfg(test)]
@@ -315,5 +347,28 @@ mod tests {
         assert!(head(418, &[]).starts_with("HTTP/1.1 418 \r\n"));
         assert_eq!(reason(304), "Not Modified");
         assert_eq!(reason(999), "");
+    }
+
+    #[test]
+    fn a_header_value_cannot_end_its_own_line() {
+        // A relayed Content-Type is the castle's text, not ours. Neither
+        // spelling of a line ending may survive into the head.
+        let sneaky = "audio/mpeg\r\nX-Forged: yes";
+        let h = head(200, &[("Content-Type", sneaky.to_string())]);
+        assert_eq!(
+            h,
+            "HTTP/1.1 200 OK\r\nContent-Type: audio/mpegX-Forged: yes\r\n\r\n"
+        );
+        assert_eq!(h.matches("\r\n").count(), 3); // status, the one header, the blank
+                                                  // A bare CR is the half that used to get through an incidental
+                                                  // trim(): browsers and proxies still read it as a line break.
+        assert!(!head(200, &[("Content-Type", "a\rb".to_string())]).contains("a\rb"));
+        assert!(!head(200, &[("Content-Type", "a\nb".to_string())]).contains("a\nb"));
+        assert_eq!(header_value("audio/mpeg"), "audio/mpeg");
+        // Only those two bytes go; nothing else about the value changes.
+        assert_eq!(
+            header_value(" text/html; charset=utf-8 "),
+            " text/html; charset=utf-8 "
+        );
     }
 }

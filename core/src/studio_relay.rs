@@ -250,3 +250,64 @@ pub fn status_reply(app: &App) -> Reply {
     }
     Reply::Json(Json::Obj(o), 200)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_allowlist_is_the_whole_route_not_a_prefix_of_it() {
+        for ok in ["/api/status", "/api/show/start", "/remote", "/api/ota"] {
+            assert!(known_api(ok), "{ok}");
+        }
+        // The query string is not part of the decision.
+        assert!(known_api("/api/scene?id=vigil"));
+        assert!(known_api("/api/files?path=/sd"));
+        for no in [
+            "/api/statuses",  // not this route, just its name plus more
+            "/api/",          // the namespace is not a route
+            "/studio/tracks", // ours, never the castle's
+            "",
+            "/",
+            "/api/status/../../etc/passwd",
+        ] {
+            assert!(!known_api(no), "{no}");
+        }
+    }
+
+    #[test]
+    fn the_open_ended_prefixes_carry_a_path_after_them() {
+        for ok in [
+            "/api/files/boot.log",
+            "/sd/audio/01_vigil.mp3",
+            "/api/site/x",
+        ] {
+            assert!(known_api(ok), "{ok}");
+        }
+        // "/api/files" is on the exact list as well (a bare listing);
+        // "/api/scenes" without its slash is on neither.
+        assert!(!known_api("/api/scenes"));
+        assert!(known_api("/api/scenes/vigil.json"));
+    }
+
+    #[test]
+    fn a_write_gets_the_long_read_budget_a_get_does_not() {
+        assert_eq!(read_budget("PUT", "/api/ota"), 60.0);
+        assert_eq!(read_budget("DELETE", "/api/files/x"), 30.0);
+        // The card's own routes are slow to read even on a GET.
+        assert_eq!(read_budget("GET", "/sd/audio/01_vigil.mp3"), 60.0);
+        assert_eq!(read_budget("GET", "/api/files"), 5.0);
+        assert_eq!(read_budget("GET", "/api/files/boot.log"), 5.0);
+        // Everything else is the poll budget, query string and all.
+        assert_eq!(read_budget("GET", "/api/status"), TIMEOUT_S);
+        assert_eq!(read_budget("GET", "/sd/x?t=1"), 60.0);
+        assert_eq!(read_budget("POST", "/api/play"), TIMEOUT_S);
+    }
+
+    #[test]
+    fn a_host_without_a_port_is_reached_on_80() {
+        assert_eq!(with_port("castle.local"), "castle.local:80");
+        assert_eq!(with_port("10.0.0.7"), "10.0.0.7:80");
+        assert_eq!(with_port("10.0.0.7:8093"), "10.0.0.7:8093");
+    }
+}

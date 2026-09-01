@@ -35,9 +35,25 @@ opt-level = "s"
 lto = true
 strip = true
 
+# All eight, declared rather than autodiscovered: half of them used to
+# exist only because src/bin/ was scanned, so the manifest was not the
+# list of bins and `tools/core_bins.py` named four the file did not
+# (grade report 2026-09-01 A3). Adding a bin means adding a block.
 [[bin]]
 name = "castle"
 path = "src/bin/castle.rs"
+
+[[bin]]
+name = "scene_render"
+path = "src/bin/scene_render.rs"
+
+[[bin]]
+name = "analyze_track"
+path = "src/bin/analyze_track.rs"
+
+[[bin]]
+name = "studio"
+path = "src/bin/studio.rs"
 
 [[bin]]
 name = "parity_dump"
@@ -48,5 +64,9 @@ name = "synth_dump"
 path = "src/bin/synth_dump.rs"
 
 [[bin]]
-name = "studio"
-path = "src/bin/studio.rs"
+name = "pulse_dump"
+path = "src/bin/pulse_dump.rs"
+
+[[bin]]
+name = "netguard_dump"
+path = "src/bin/netguard_dump.rs"

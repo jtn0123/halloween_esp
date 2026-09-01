@@ -143,6 +143,40 @@ fn samples(d: &Decoded) -> usize {
     d.x.len() + d.stereo.as_ref().map_or(0, |(l, r)| l.len() + r.len())
 }
 
+/// The in-flight marker, held by the thread doing the decode and given
+/// back on the way out — returned, failed, or PANICKED.
+///
+/// The Python twin puts the same two lines in a `finally`. Here the
+/// cleanup used to sit on the success path only, so a panic inside
+/// `build_decoded` (which now unwinds to a clean 500 rather than aborting
+/// the process) left the key marked busy forever: every later request for
+/// that track waited on a condvar nobody would ever notify, one pinned
+/// thread each. A guard says it once, for every way out (grade report
+/// 2026-09-01 E1).
+struct Busy(DecKey);
+
+impl Busy {
+    /// Claim the key — the caller has already checked nobody else holds it.
+    fn claim(st: &mut DecState, key: DecKey) -> Busy {
+        st.busy.push(key.clone());
+        Busy(key)
+    }
+}
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        let (lock, cv) = decoded_cache();
+        let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(at) = st.busy.iter().position(|k| *k == self.0) {
+            st.busy.remove(at);
+        }
+        drop(st);
+        // A failed decode wakes the waiters with neither entry nor marker,
+        // and one of them takes the work — the same shape as the Python.
+        cv.notify_all();
+    }
+}
+
 fn decoded(path: &Path, buckets: usize) -> Option<Arc<Decoded>> {
     let key = (
         path.to_string_lossy().into_owned(),
@@ -151,7 +185,7 @@ fn decoded(path: &Path, buckets: usize) -> Option<Arc<Decoded>> {
     );
     let (lock, cv) = decoded_cache();
     let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
-    loop {
+    let marker = loop {
         if let Some(at) = st.cache.iter().position(|(k, _)| *k == key) {
             let hit = st.cache.remove(at);
             let out = Arc::clone(&hit.1);
@@ -159,18 +193,14 @@ fn decoded(path: &Path, buckets: usize) -> Option<Arc<Decoded>> {
             return Some(out);
         }
         if !st.busy.contains(&key) {
-            st.busy.push(key.clone());
-            break;
+            break Busy::claim(&mut st, key.clone());
         }
         st = cv.wait(st).unwrap_or_else(|e| e.into_inner());
-    }
+    };
     drop(st);
     // The decode itself runs outside the lock — it is most of a second.
     let built = build_decoded(path, buckets).map(Arc::new);
     let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(at) = st.busy.iter().position(|k| *k == key) {
-        st.busy.remove(at);
-    }
     if let Some(dec) = &built {
         st.cache.push((key, Arc::clone(dec)));
         let mut total: usize = st.cache.iter().map(|(_, d)| samples(d)).sum();
@@ -179,14 +209,20 @@ fn decoded(path: &Path, buckets: usize) -> Option<Arc<Decoded>> {
             total -= samples(&gone);
         }
     }
-    // A failed decode wakes the waiters with neither entry nor marker,
-    // and one of them takes the work — the same shape as the Python.
-    cv.notify_all();
+    // The entry has to be in the cache before the marker comes off, or a
+    // woken waiter finds neither and decodes the same track again.
+    drop(st);
+    drop(marker);
     built
 }
 
 type WaveKey = (String, u128, String, usize);
-type WaveCache = Mutex<Vec<(WaveKey, Json)>>;
+/// Shared, not owned: a waveform is a thousand peaks plus every onset the
+/// track has, and a hit used to deep-clone all of it WHILE HOLDING the
+/// cache's mutex — the Tracks panel's hottest route, slower in Rust than
+/// in Python, which hands the dict back by reference. Same shape as the
+/// lean page's Arc body (grade report 2026-09-01 G2).
+type WaveCache = Mutex<Vec<(WaveKey, Arc<Json>)>>;
 
 fn wave_cache() -> &'static WaveCache {
     static C: OnceLock<WaveCache> = OnceLock::new();
@@ -195,7 +231,7 @@ fn wave_cache() -> &'static WaveCache {
 
 /// studio_media.waveform: peak envelope plus detected onsets, cached by
 /// (path, mtime, sensitivity, buckets). None = the decode failed.
-pub fn waveform(path: &Path, sens: [f64; 3]) -> Option<Json> {
+pub fn waveform(path: &Path, sens: [f64; 3]) -> Option<Arc<Json>> {
     let key = (
         path.to_string_lossy().into_owned(),
         mtime_ns(path)?,
@@ -206,19 +242,21 @@ pub fn waveform(path: &Path, sens: [f64; 3]) -> Option<Json> {
         let mut c = wave_cache().lock().unwrap_or_else(|e| e.into_inner());
         if let Some(at) = c.iter().position(|(k, _)| *k == key) {
             let hit = c.remove(at);
-            let out = hit.1.clone();
+            let out = Arc::clone(&hit.1);
             c.push(hit);
+            drop(c); // before the caller does anything with the answer
             return Some(out);
         }
     }
     let dec = decoded(path, PEAKS)?;
     let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    let out = waveform_of(id, &dec, sens);
+    let out = Arc::new(waveform_of(id, &dec, sens));
     let mut c = wave_cache().lock().unwrap_or_else(|e| e.into_inner());
-    c.push((key, out.clone()));
+    c.push((key, Arc::clone(&out)));
     while c.len() > KEEP_WAVES {
         c.remove(0);
     }
+    drop(c);
     Some(out)
 }
 
@@ -361,4 +399,74 @@ pub fn compare_file(token: &str, codec: &str) -> Option<PathBuf> {
     let root = c.iter().find(|(t, _)| t == token)?.1.clone();
     let p = root.join(format!("{codec}.{codec}"));
     p.exists().then_some(p)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    fn busy_holds(key: &DecKey) -> bool {
+        let (lock, _) = decoded_cache();
+        let st = lock.lock().unwrap_or_else(|e| e.into_inner());
+        st.busy.contains(key)
+    }
+
+    /// E1: `build_decoded` panicking used to leave the key marked busy for
+    /// the life of the process, and every later request for that track sat
+    /// on the condvar forever. The decode itself is not what is under test
+    /// — the marker's lifetime is — so the panic is raised where the
+    /// decode would be, inside the guard's scope. (The panic message on
+    /// stderr during this test is the test working.)
+    #[test]
+    fn a_poisoned_decode_does_not_wedge_the_next_caller() {
+        let key: DecKey = ("/nowhere/_t_poison.wav".to_string(), 7, PEAKS);
+        let (claimed_tx, claimed_rx) = mpsc::channel::<()>();
+        let (go_tx, go_rx) = mpsc::channel::<()>();
+        let k = key.clone();
+        let doomed = std::thread::spawn(move || {
+            let (lock, _) = decoded_cache();
+            let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+            let _marker = Busy::claim(&mut st, k);
+            drop(st);
+            claimed_tx.send(()).expect("the waiter is listening");
+            go_rx.recv().expect("the waiter says when");
+            panic!("the decode blew up");
+        });
+        claimed_rx.recv().expect("claimed");
+        assert!(busy_holds(&key), "the marker was never taken");
+        go_tx.send(()).expect("the doomed thread is waiting");
+        assert!(doomed.join().is_err(), "that thread was meant to panic");
+
+        // The next caller's wait, with a deadline where the server has
+        // none: before the guard this loop never ended.
+        let (lock, cv) = decoded_cache();
+        let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while st.busy.contains(&key) {
+            assert!(Instant::now() < deadline, "the marker outlived the panic");
+            let (next, _) = cv
+                .wait_timeout(st, Duration::from_millis(50))
+                .unwrap_or_else(|e| e.into_inner());
+            st = next;
+        }
+    }
+
+    /// And the guard gives the key back on the ordinary path too — a
+    /// decode that simply failed (no such file) leaves nothing behind.
+    #[test]
+    fn a_failed_decode_clears_its_marker() {
+        let path = Path::new("/nowhere/_t_missing.wav");
+        assert!(decoded(path, PEAKS).is_none()); // no mtime: never claimed
+        let key: DecKey = ("/nowhere/_t_failed.wav".to_string(), 9, PEAKS);
+        {
+            let (lock, _) = decoded_cache();
+            let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+            let _marker = Busy::claim(&mut st, key.clone());
+            drop(st);
+            assert!(busy_holds(&key));
+        }
+        assert!(!busy_holds(&key));
+    }
 }

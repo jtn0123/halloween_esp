@@ -282,3 +282,68 @@ fn shim(py: &str, root: &Path, payload: &str) -> Option<Json> {
     let line = text.lines().rev().find(|l| !l.trim().is_empty())?;
     jsonio::parse(line.trim()).ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn req(pairs: Vec<(&str, Json)>) -> Json {
+        Json::Obj(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+    }
+
+    /// `float(req.get(k) or default)` — the `or` is Python's truthiness,
+    /// which is why 0 and "" take the DEFAULT rather than themselves.
+    #[test]
+    fn a_falsy_field_takes_the_default_the_way_pythons_or_does() {
+        let d = 96.0;
+        assert_eq!(num_of(&req(vec![]), "bitrate", d), Ok(d));
+        for falsy in [
+            Json::Null,
+            Json::Bool(false),
+            Json::Int(0),
+            Json::Num(0.0),
+            Json::Str(String::new()),
+        ] {
+            assert_eq!(num_of(&req(vec![("bitrate", falsy)]), "bitrate", d), Ok(d));
+        }
+    }
+
+    #[test]
+    fn a_number_arrives_as_itself_however_it_was_spelt() {
+        let d = 0.0;
+        assert_eq!(
+            num_of(&req(vec![("start", Json::Int(12))]), "start", d),
+            Ok(12.0)
+        );
+        assert_eq!(
+            num_of(&req(vec![("start", Json::Num(1.5))]), "start", d),
+            Ok(1.5)
+        );
+        assert_eq!(
+            num_of(&req(vec![("start", Json::Bool(true))]), "start", d),
+            Ok(1.0)
+        );
+        // The desk sends form fields as strings; Python's float() takes
+        // the surrounding whitespace with them.
+        let s = |v: &str| req(vec![("start", Json::Str(v.into()))]);
+        assert_eq!(num_of(&s("2.5"), "start", d), Ok(2.5));
+        assert_eq!(num_of(&s("  7 "), "start", d), Ok(7.0));
+        assert_eq!(num_of(&s("-3"), "start", d), Ok(-3.0));
+    }
+
+    /// A typo in a number is the caller's 400, in the Python's words —
+    /// not a 500, and not a silent fall-back to the default.
+    #[test]
+    fn a_typed_number_that_is_not_one_carries_the_pythons_words() {
+        let bad = req(vec![("start", Json::Str("1o".into()))]);
+        assert_eq!(
+            num_of(&bad, "start", 0.0),
+            Err("ValueError: could not convert string to float: '1o'".to_string())
+        );
+        let arr = req(vec![("start", Json::Arr(vec![Json::Int(1)]))]);
+        assert_eq!(
+            num_of(&arr, "start", 0.0),
+            Err("ValueError: bad number".to_string())
+        );
+    }
+}
