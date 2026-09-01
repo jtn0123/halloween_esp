@@ -18,6 +18,7 @@
 import { api, type StemsResponse } from "./api.js";
 import { startEta, type EtaHandle } from "./eta.js";
 import { drawSingle, drawStacked } from "./stems_draw.js";
+import { stemsJobs, type StemsJobs } from "./stems_jobs.js";
 
 export interface StemsDeps {
   /** Fired when a stem starts playing, so the host can stop its audition. */
@@ -25,6 +26,10 @@ export interface StemsDeps {
   /** The current track's duration in seconds, when the host knows it —
    *  it scales the split's ETA before the first analysis exists. */
   duration?: () => number | null;
+  /** Which tracks already have a Demucs split running. Defaults to the
+   *  app-wide registry; a test hands in `createStemsJobs()` (stems_jobs.ts
+   *  says why the state moved out of this file). */
+  jobs?: StemsJobs;
 }
 
 export interface StemsApi {
@@ -48,11 +53,6 @@ const LAYERS: readonly { key: Layer; label: string; hint: string; ink: string }[
     hint: "the original file, untouched — what the castle plays" },
 ];
 
-/** Demucs jobs in flight, by track. Switching tracks used to abandon the
- *  poll and re-enable "Split voices" — a second Demucs run on the same
- *  track was one click away (JB1-10). The job outlives the view of it. */
-const inflight = new Map<string, { jobId: string; eta: EtaHandle }>();
-
 const btn = (label: string): HTMLButtonElement => {
   const b = document.createElement("button");
   b.type = "button";
@@ -61,6 +61,8 @@ const btn = (label: string): HTMLButtonElement => {
 };
 
 export function createStemsView(deps: StemsDeps): StemsApi {
+  // The registry outlives this view on purpose — see stems_jobs.ts.
+  const inflight = deps.jobs ?? stemsJobs;
   const el = document.createElement("section");
   el.className = "stems";
   el.hidden = true;
@@ -308,7 +310,7 @@ export function createStemsView(deps: StemsDeps): StemsApi {
         if (showing()) say(eta.line());
         continue;
       }
-      inflight.delete(id);
+      inflight.release(id);
       if (job.phase === "failed") {
         eta.stop();
         if (showing()) {
@@ -321,22 +323,26 @@ export function createStemsView(deps: StemsDeps): StemsApi {
       if (showing()) await load();
       return;
     }
-    inflight.delete(id);
+    inflight.release(id);
     eta.stop();
     if (showing()) empty("Split is taking too long — check the studio terminal.");
   }
 
   /** A job already running on this track: say so, keep Split off. */
   function reflectInflight(): void {
-    const job = trackId ? inflight.get(trackId) : undefined;
-    if (!job) return;
+    if (!trackId || !inflight.busy(trackId)) return;
     split.disabled = true;
-    say(job.eta.line());
+    // Claimed but not yet answered by the studio has no line to show; the
+    // button still has to stay off.
+    const job = inflight.running(trackId);
+    if (job) say(job.eta.line());
   }
 
   split.addEventListener("click", () => {
     const id = trackId;
-    if (!id || inflight.has(id)) return;
+    // Claimed here, synchronously, BEFORE the request: a claim taken after
+    // the await would leave the window this guard exists to close (JB1-10).
+    if (!id || !inflight.claim(id)) return;
     void (async () => {
       split.disabled = true;
       // The split's cost scales with the track's length, so the learned rate
@@ -349,13 +355,15 @@ export function createStemsView(deps: StemsDeps): StemsApi {
       try {
         const job = await api.stemsSplit(id, data !== null);
         if (!job.id) {
+          inflight.release(id);
           eta.stop();
           empty(job.error || "The studio refused the split.");
           return;
         }
-        inflight.set(id, { jobId: job.id, eta });
+        inflight.attach(id, job.id, eta);
         void poll(id, job.id, eta);
       } catch (err) {
+        inflight.release(id);
         eta.stop();
         empty(`Could not reach the studio — ${String(err)}`);
       }

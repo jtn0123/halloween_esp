@@ -217,8 +217,10 @@ export function emitConfig(rig: RigState): string {
       `    pin: GPIO${ZONE_PIN[z]}`,
       `    num_leds: ${L.n}`,
       `    chipset: WS2812`,
-      `    rgb_order: GRB`,
-      `    is_rgbw: ${zoneRgbw(rig, z)}`,
+      // One key, not the old rgb_order + is_rgbw pair: ESPHome folded them
+      // into channel_colors and removes the pair in 2027.3. GRB is what a
+      // WS2812 clocks; the W of an RGBW part goes on the end.
+      `    channel_colors: ${zoneRgbw(rig, z) ? "GRBW" : "GRB"}`,
       `    rmt_symbols: 64`,
       `    use_psram: false`,
       `    default_transition_length: 0s`,
