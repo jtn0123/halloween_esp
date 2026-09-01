@@ -42,7 +42,7 @@ jobs:
     # (release + LTO for a zero-dependency crate) and clippy, twice over.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Keep the channel equal to core/rust-toolchain.toml's. The action
       # looks for a toolchain file at the REPO ROOT and ours lives in core/,
       # so it cannot read the pin — hence the literal. rustup does read it
@@ -100,7 +100,7 @@ jobs:
       # when it fires — read it there rather than guessing here.
       NPY_DISABLE_CPU_FEATURES: "X86_V3 X86_V4 AVX512_ICL AVX512_SPR"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -167,7 +167,7 @@ jobs:
       matrix:
         studio: [python, rust]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -242,7 +242,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -300,7 +300,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
