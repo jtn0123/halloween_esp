@@ -101,7 +101,7 @@ jobs:
       NPY_DISABLE_CPU_FEATURES: "X86_V3 X86_V4 AVX512_ICL AVX512_SPR"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       # The parity suites (test_*_rust) shell out to core/target/release/*,
@@ -173,7 +173,7 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       # The e2e suite drives the REAL studio server, whose launch command is
@@ -243,7 +243,7 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       # ffmpeg + numpy/scipy: the flash build embeds audio/*.mp3, which are
@@ -301,7 +301,7 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - uses: ./.github/actions/media-tools
