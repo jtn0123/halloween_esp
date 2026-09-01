@@ -1,0 +1,23 @@
+# The one toolchain castle-core is built and gated with (grade report F3).
+#
+# Everything else in this repo is pinned by conviction — python 3.13, a 113-
+# package pip lock, a committed npm lock — and the newest language arrived
+# with nothing. That matters more here than usual for two reasons: clippy runs
+# as `-D warnings`, so an unpinned rustc turns a new lint in a fresh release
+# into a red gate nobody changed anything to earn; and RUNBOOK's byte-
+# determinism claim ("the same bytes on every machine") rests on this
+# compiler's float codegen, which is not a thing to leave to whatever the
+# GitHub runner image happens to ship this month.
+#
+# 1.88.0 is what the show was rendered and verified with (2026-08-31).
+# Bumping it is a deliberate act: re-run `make rust-lint`, `make rust-test`
+# and the parity suites, and expect clippy to have opinions.
+#
+# rustup reads this on any cargo invocation under core/, and
+# dtolnay/rust-toolchain reads it in CI — which is also how the wasm32 target
+# and the two components get installed there without a separate step.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

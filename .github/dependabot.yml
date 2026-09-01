@@ -8,6 +8,15 @@ updates:
     open-pull-requests-limit: 5
     assignees: [jtn0123]
     groups:
+      # esphome and aioesphomeapi move together or not at all: requirements.txt
+      # constrains aioesphomeapi, and a new esphome almost always requires a
+      # newer one — so ungrouped, the two PRs block each other and the whole
+      # advisory backlog behind them sits still. One PR, one resolution.
+      # (grade report F1)
+      esphome:
+        patterns:
+          - esphome
+          - aioesphomeapi
       python-minor-and-patch:
         update-types:
           - minor
@@ -22,6 +31,23 @@ updates:
     assignees: [jtn0123]
     groups:
       npm-minor-and-patch:
+        update-types:
+          - minor
+          - patch
+
+  # castle-core is zero-dependency on purpose and Cargo.lock is empty, so this
+  # block is a no-op today — which is exactly when to add it (grade report F4).
+  # The first crate dependency the show ever takes arrives already scanned,
+  # instead of arriving and then waiting for someone to notice the gap.
+  - package-ecosystem: cargo
+    directory: /core
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    assignees: [jtn0123]
+    groups:
+      cargo-minor-and-patch:
         update-types:
           - minor
           - patch

@@ -19,6 +19,17 @@ if [ -d web/node_modules ]; then
   (cd web && npx tsc --noEmit)
 fi
 
+# The Rust half gets the cheap half of its gate too (grade report I2):
+# fmt --check reads the sources and never builds, so it costs under a second
+# — the tests and clippy stay in `make rust-lint` / `make rust-test` and CI.
+# Guarded on cargo the same way, so a Python-only clone still commits.
+# `cd core` for the same reason the Makefile does it: rustup reads
+# core/rust-toolchain.toml by working directory, not by manifest path.
+if command -v cargo > /dev/null 2>&1; then
+  (cd core && cargo fmt --check) \
+    || { echo "pre-commit: rustfmt drift — run: cd core && cargo fmt" >&2; exit 1; }
+fi
+
 # The repo's only real secret is one gitignore line away from history (E2):
 # refuse a staged secrets.yaml, and refuse any staged file that contains the
 # actual PSK (read from the live file, never echoed).

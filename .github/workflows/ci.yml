@@ -1,5 +1,10 @@
-# CI for the castle: the same three gates `make check` runs locally, plus an
+# CI for the castle: the same gates `make check` runs locally, plus an
 # ESPHome config validation of every buildable variant.
+#
+# Four parallel jobs on a PR: python, rust, web, esphome. The `rust` job is
+# newer than the rest (grade report I3) — castle-core landed with no job of
+# its own, so a clippy finding or a failed cargo build reported itself as
+# "coverage-gated unit tests failed" three jobs away from the truth.
 #
 # A full firmware COMPILE is deliberately not here: the xtensa toolchain +
 # ESP-IDF fetch is ~10 minutes of runner time per variant and the compile
@@ -27,18 +32,77 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # castle-core on its own: fmt, clippy, the unit tests and the wasm face,
+  # nothing else in the way (grade report I3/D1). It is fast, it is cached,
+  # and when it is red the checks list says "rust".
+  rust:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    # No media tools, no pip, no npm — this budget is a cold cargo cache
+    # (release + LTO for a zero-dependency crate) and clippy, twice over.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      # Keep the channel equal to core/rust-toolchain.toml's. The action
+      # looks for a toolchain file at the REPO ROOT and ours lives in core/,
+      # so it cannot read the pin — hence the literal. rustup does read it
+      # once cargo runs (the make targets cd into core/), so a mismatch here
+      # shows up as this step installing a toolchain nothing then uses.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88.0"
+          components: clippy, rustfmt
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      # The same words a developer types. `make rust-lint` is rustfmt --check
+      # then clippy -D warnings; tests/test_castle_core.py asserts on these
+      # exact targets, so the gate has one definition (grade report I1).
+      - name: fmt + clippy
+        run: make rust-lint
+      - name: unit tests
+        run: make rust-test
+      # The desk's wasm face. Built here rather than discovered mid-Python-
+      # suite; test_castle_core.py still loads and checks it in node.
+      - name: wasm face builds
+        run: cargo build --release --target wasm32-unknown-unknown
+        working-directory: core
+
   python:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     # Every timeout here has to clear the media-tools retry budget (~16.5 min
     # worst case) plus the job's own work, or a job that finished cleanly gets
     # failed by its own clock. That happened at 15 minutes on the first try.
+    # Held at 25 even though the `rust` job above took fmt/clippy/cargo-test
+    # out of here: what stayed is a cargo build (the parity suites spawn the
+    # release binaries) and the wasm check, and the media budget dominates.
     timeout-minutes: 25
+    env:
+      # The three toolchain gates belong to the `rust` job — routed, not
+      # dropped; see the constant of the same name in tests/test_castle_core.py.
+      CASTLE_RUST_GATES_ELSEWHERE: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      # The parity suites (test_*_rust) shell out to core/target/release/*,
+      # and the wasm check needs the wasm32 std — neither existed on this
+      # runner before, which is how the whole Rust port merged unvalidated
+      # (grade report D1). Built in an explicit step so a compile error reads
+      # as one, and so tools/core_bins.py finds it fresh and skips its own
+      # build in every child process it spawns (B6).
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88.0"
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: build castle-core
+        run: make rust
       # ffmpeg: analyze.py decodes through it, and several tests exercise
       # that path — without it the whole test_analysis module errors out.
       - uses: ./.github/actions/media-tools
@@ -77,6 +141,15 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The 148-test browser suite is also the parity gate for the Rust studio:
+    # both servers answer the same 20+19 routes, so the same specs passing
+    # against both IS the proof (grade report D5). It had been run against the
+    # Rust half exactly once, by hand. fail-fast off — when one server breaks,
+    # the other axis's result is the most useful thing on the page.
+    strategy:
+      fail-fast: false
+      matrix:
+        studio: [python, rust]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -94,6 +167,19 @@ jobs:
         run: |
           python3 -m venv .venv
           .venv/bin/pip install --quiet numpy scipy pyyaml
+      # render_audio.py renders THROUGH castle-core (scene_render), and with
+      # no binary and no cargo it hard-stops rather than falling back to the
+      # machine-dependent Python reference — tools/core_bins.py, by design.
+      # Built once here, explicitly: the mtime check then keeps every render
+      # child from re-running cargo's freshness pass (grade report B6).
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88.0"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: build castle-core
+        run: make rust
       # audio/*.mp3 are gitignored, and show_sim checks every scene has one.
       # Seconds to render, and it keeps that check real in CI instead of
       # skipped. The one scene built on the user's own import renders without
@@ -107,12 +193,23 @@ jobs:
       # without it. After npm ci: the build inlines an esbuild bundle.
       - name: build previewer page
         run: .venv/bin/python tools/gen_previewer.py
-      - run: npx tsc --noEmit
+      # Server-independent — once per push, not once per matrix axis.
+      - if: matrix.studio == 'python'
+        run: npx tsc --noEmit
         working-directory: web
       - name: engine unit tests
+        if: matrix.studio == 'python'
         run: npm test
         working-directory: web
       - name: browser tests
+        # Named for both axes rather than defaulted, because playwright.config
+        # falls back with `??`: an empty CASTLE_STUDIO_CMD is not absent, it is
+        # a server command of "". The paths are relative to web/, the config's
+        # own directory, and the port and --localhost are appended there.
+        env:
+          CASTLE_STUDIO_CMD: ${{ matrix.studio == 'rust'
+            && '../core/target/release/studio'
+            || '../.venv/bin/python ../tools/studio.py' }}
         run: |
           npx playwright install --with-deps chromium
           npx playwright test
@@ -132,6 +229,15 @@ jobs:
       # references files that do not exist.
       - uses: ./.github/actions/media-tools
       - run: pip install "esphome==2026.7.4" pyyaml numpy scipy
+      # Same reason as the web job: the renderer is the Rust binary now.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.88.0"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: core
+      - name: build castle-core
+        run: make rust
       - name: render scene audio
         run: python tools/render_audio.py
       - name: generate

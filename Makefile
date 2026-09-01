@@ -10,7 +10,7 @@ YAML := firmware/castle_flash.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload
+.PHONY: publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint
 
 help:
 	@echo "Halloween Castle"
@@ -31,8 +31,11 @@ help:
 	@echo "  make publish    push scene tracks + the lean desk page to the castle"
 	@echo "  make ota        build the SD firmware and flash it over HTTP"
 	@echo "  make test       python unit tests (~1 min)"
-	@echo "  make test-fast  the same minus the chaos/relay/fuzz suites (inner loop)"
-	@echo "  make lint       ruff + mypy over tools/ and tests/"
+	@echo "  make test-fast  the same minus the slow + Rust suites (inner loop)"
+	@echo "  make rust       build castle-core (release: the binaries the tools spawn)"
+	@echo "  make rust-test  cargo test the crate"
+	@echo "  make rust-lint  cargo fmt --check + clippy -D warnings"
+	@echo "  make lint       ruff + mypy over tools/ and tests/, plus rust-lint"
 	@echo "  make check      test + lint + image/LOC guards + tsc + node suites"
 	@echo "  make e2e        browser tests (needs: cd web && npx playwright install chromium)"
 	@echo "                  CASTLE_E2E_PORT=8821 make e2e   to run beside another suite"
@@ -52,6 +55,13 @@ setup:
 	.venv/bin/python -m pip install --quiet --upgrade pip
 	.venv/bin/pip install --quiet -r requirements.txt -r requirements-dev.txt
 	@git config core.hooksPath githooks && echo "pre-commit hook: githooks/"
+	@# castle-core is Rust and this target cannot install it (rustup is its own
+	@# installer, and silently curl|sh-ing one is not this repo's style). Say so
+	@# instead of letting `make audio` be the thing that discovers it: without
+	@# cargo, render_audio.py hard-stops rather than falling back to the
+	@# machine-dependent Python reference. (grade report H3)
+	@command -v cargo > /dev/null \
+		|| echo "note: no cargo on PATH — castle-core (core/) cannot build, so 'make audio', the importer and the Rust gates will not run. Install rustup: https://rustup.rs"
 	@echo "ready. 'make build' next."
 
 audio:
@@ -128,9 +138,11 @@ test: pycheck
 
 # The inner loop: everything except the suites that exist to wait — the
 # castle chaos/relay/protocol fuzz and the generator fuzz spend their time
-# in deliberate timeouts and random documents. `make test` before handing
-# work back; this while you are still typing.
-SLOW_SUITES := chaos|relay|fuzz
+# in deliberate timeouts and random documents, and the Rust suites (`_rust`,
+# `castle_core`) spend theirs in cargo, two release builds and clippy deep.
+# The Rust work is one word away (`make rust-test` / `make rust-lint`), not
+# gone. `make test` before handing work back; this while you are still typing.
+SLOW_SUITES := chaos|relay|fuzz|_rust|castle_core
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \
 		| sed 's/\.py$$//; s/^/tests./')
@@ -172,9 +184,35 @@ lock:
 	@$(PY) -m pip freeze --exclude-editable > requirements.lock
 	@echo "requirements.lock: $$(wc -l < requirements.lock) pins"
 
+# castle-core, the Rust half — 9k lines that had no spelling here at all
+# (grade report I1). These three ARE the Rust gate: tests/test_castle_core.py
+# shells out to them, so the definition lives in one place and `make rust-lint`
+# is exactly what the suite and the CI job check.
+#
+# `cd core` rather than --manifest-path, and it is load-bearing: rustup finds
+# rust-toolchain.toml by WORKING DIRECTORY, not by manifest. Run from the repo
+# root, the pin (core/rust-toolchain.toml, grade report F3) is silently
+# ignored and the gate floats on whatever rustc is default.
+#
+# Optional-toolchain guard, same shape as the pre-commit hook's node_modules
+# check: a Python-only clone still gets a green `make check`, with a sentence
+# saying what it did not run. CI asserts cargo is present (test_castle_core).
+HAVE_CARGO = @command -v cargo > /dev/null || { echo "no cargo — skipping $@ (install rustup: https://rustup.rs)"; exit 0; };
+
+rust:
+	$(HAVE_CARGO) cd core && cargo build --release --quiet
+
+rust-test:
+	$(HAVE_CARGO) cd core && cargo test --release --quiet
+
+rust-lint:
+	$(HAVE_CARGO) cd core && { cargo fmt --check \
+		|| { echo "rustfmt drift — run: cd core && cargo fmt"; exit 1; }; }
+	$(HAVE_CARGO) cd core && cargo clippy --quiet --all-targets -- -D warnings
+
 # Lint + type-check the Python half; config lives in pyproject.toml. The TS
-# half's equivalent is the tsc line in `check`.
-lint:
+# half's equivalent is the tsc line in `check`, the Rust half's is rust-lint.
+lint: rust-lint
 	@$(PY) -m ruff format --check --quiet tools tests || { echo "formatting drift — run: .venv/bin/python -m ruff format tools tests"; exit 1; }
 	@$(PY) -m ruff check tools tests
 	@$(PY) -m mypy tools tests

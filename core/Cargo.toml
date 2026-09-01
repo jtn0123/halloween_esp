@@ -5,7 +5,17 @@
 [package]
 name = "castle-core"
 version = "0.1.0"
+# Still 2021. `cargo fix --edition` runs clean (13 mechanical fixes across
+# wasm.rs, studio_jobs.rs, manifest.rs and bin/studio.rs — all of them the
+# 2024 `gen`/`unsafe_op_in_unsafe_fn`/tail-expr-drop class), but the bump
+# rewrites source in the middle of the Track-B port. Follow-up work, its own
+# commit, after the port settles.
 edition = "2021"
+# The floor, next to the exact pin in rust-toolchain.toml: the toolchain file
+# says what CI and this machine use, this says what the crate needs, so a
+# clone built with someone else's rustup default fails with a version message
+# instead of a syntax error. (grade report F3)
+rust-version = "1.88"
 
 [lib]
 name = "castle_core"
@@ -13,10 +23,16 @@ path = "src/lib.rs"
 crate-type = ["lib", "cdylib"]
 
 # The desk inlines the wasm as base64; every KB here is ~1.4 KB of page.
+#
+# No `panic = "abort"` here, deliberately (grade report E1). The studio bin
+# only ever builds in release (tools/core_bins.py), and it is thread-per-
+# connection behind a catch_unwind that promises "never a dead socket" — with
+# abort, one handler panic SIGABRTs the whole process and every in-flight
+# connection with it, where the Python twin would have degraded gracefully.
+# The wasm face loses nothing: wasm32 aborts on panic regardless of profile.
 [profile.release]
 opt-level = "s"
 lto = true
-panic = "abort"
 strip = true
 
 [[bin]]
