@@ -9,15 +9,13 @@ stopped at the first blank line inside a scene block.
 
 from __future__ import annotations
 
-import contextlib
-import io
 import shutil
 import sys
 import tempfile
 import types
 import unittest
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -311,165 +309,6 @@ class TestLeanRewrite(unittest.TestCase):
         out = gp.lean(self.HTML, route="/site/", suffix=".mp3")
         self.assertIn('"vigil": "/site/vigil.mp3"', out)
         self.assertIn('"storm": "/site/storm.mp3"', out)
-
-
-class TestBudgetComplaint(unittest.TestCase):
-    """The ceiling on the portable build is a ceiling, not a suggestion.
-
-    It was a warning through two audits, and both times it was crossed the
-    constant moved (3 -> 4 MB) instead of the page. `enforce_budget` is the
-    version that can actually stop a build (grade report G2).
-    """
-
-    AUDIO: ClassVar[dict[str, str]] = {
-        "vigil": "d" * 400_000,
-        "ballad": "d" * 2_000_000,
-    }
-
-    def setUp(self) -> None:
-        self._budget = gp.PAGE_BUDGET_KB
-
-    def tearDown(self) -> None:
-        gp.PAGE_BUDGET_KB = self._budget
-
-    def test_a_page_within_budget_has_no_complaint(self) -> None:
-        gp.PAGE_BUDGET_KB = 4 * 1024
-        self.assertIsNone(gp.enforce_budget(b"x" * 1024, self.AUDIO))
-
-    def test_the_budget_is_the_edge_not_a_range(self) -> None:
-        """Exactly at the ceiling passes; one KB past it does not."""
-        gp.PAGE_BUDGET_KB = 1
-        self.assertIsNone(gp.enforce_budget(b"x" * 2047, self.AUDIO))
-        self.assertIsNotNone(gp.enforce_budget(b"x" * 2048, self.AUDIO))
-
-    def test_an_over_budget_page_names_the_size_the_ceiling_and_the_scenes(
-        self,
-    ) -> None:
-        gp.PAGE_BUDGET_KB = 1024
-        got = gp.enforce_budget(b"x" * 3_000_000, self.AUDIO)
-        assert got is not None
-        self.assertIn("FAILED", got)
-        self.assertIn("2.86 MB", got)  # the honest size, not a rounded "3 MB"
-        self.assertIn("1 MB ceiling", got)
-        # The heaviest scene first: "the page is too big" is not actionable.
-        self.assertIn("ballad", got)
-        self.assertLess(got.index("ballad"), got.index("vigil"))
-
-    def test_the_complaint_says_the_last_good_page_was_kept(self) -> None:
-        """The operator's first question is whether the tree still has a page."""
-        gp.PAGE_BUDGET_KB = 0
-        got = gp.enforce_budget(b"x" * 4096, self.AUDIO)
-        assert got is not None
-        self.assertIn("Nothing was written", got)
-
-
-class TestBuildStopsAtTheBudget(unittest.TestCase):
-    """main() end to end on a scratch show: over budget, the build fails AND
-    leaves the previous page alone."""
-
-    TEMPLATE = (
-        "<style>/* @STYLES */</style>\n"
-        "<script>\n"
-        "  // @GEN-DATA-START\n"
-        "  // @GEN-DATA-END\n"
-        "</script>\n"
-        "<script>/* @BUNDLE */</script>\n"
-    )
-
-    def setUp(self) -> None:
-        self.tmp = Path(tempfile.mkdtemp())
-        self._saved = (
-            gp.SRC,
-            gp.MARKERS_FILE,
-            gp.TEMPLATE,
-            gp.HTML,
-            gp.AUDIO,
-            gp.STYLES,
-            gp.PANELS,
-            gp.MOBILE,
-            gp.WEB,
-            gp.BUNDLE,
-            gp.subprocess,
-            gp.PAGE_BUDGET_KB,
-        )
-        gp.SRC = self.tmp / "scenes.yaml"
-        gp.SRC.write_text(yaml.safe_dump({"scenes": [scene()]}))
-        gp.MARKERS_FILE = self.tmp / "markers.json"
-        gp.TEMPLATE = self.tmp / "template.html"
-        gp.TEMPLATE.write_text(self.TEMPLATE)
-        gp.HTML = self.tmp / "out" / "castle-cue-desk.html"
-        gp.HTML.parent.mkdir()
-        gp.HTML.write_text("the last good build")
-        gp.AUDIO = self.tmp / "audio"
-        gp.AUDIO.mkdir()
-        (gp.AUDIO / "01_probe.mp3").write_bytes(b"\xff\xfb" + b"m" * 40_000)
-        for name in ("STYLES", "PANELS", "MOBILE"):
-            p = self.tmp / f"{name.lower()}.css"
-            p.write_text("/* css */\n")
-            setattr(gp, name, p)
-        gp.WEB = self.tmp / "web"
-        (gp.WEB / "node_modules").mkdir(parents=True)
-        gp.BUNDLE = gp.WEB / "dist" / "bundle.js"
-        gp.BUNDLE.parent.mkdir(parents=True)
-
-        def run(*_a: object, **_k: object) -> types.SimpleNamespace:
-            gp.BUNDLE.write_text("console.log(1);")
-            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
-
-        gp.subprocess = types.SimpleNamespace(run=run)  # type: ignore[assignment]  # test double
-
-    def tearDown(self) -> None:
-        (
-            gp.SRC,
-            gp.MARKERS_FILE,
-            gp.TEMPLATE,
-            gp.HTML,
-            gp.AUDIO,
-            gp.STYLES,
-            gp.PANELS,
-            gp.MOBILE,
-            gp.WEB,
-            gp.BUNDLE,
-            gp.subprocess,
-            gp.PAGE_BUDGET_KB,
-        ) = self._saved
-        shutil.rmtree(self.tmp, ignore_errors=True)
-
-    def test_a_page_within_budget_is_written_and_the_build_succeeds(self) -> None:
-        gp.PAGE_BUDGET_KB = 4 * 1024
-        with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(gp.main(), 0)
-        self.assertIn("data:audio/mpeg;base64,", gp.HTML.read_text())
-
-    def test_over_budget_exits_nonzero_and_keeps_the_last_good_page(self) -> None:
-        gp.PAGE_BUDGET_KB = 1  # the 40 KB mp3 alone blows a 1 KB ceiling
-        err = io.StringIO()
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
-            self.assertEqual(gp.main(), 1)
-        self.assertIn("page budget FAILED", err.getvalue())
-        self.assertEqual(gp.HTML.read_text(), "the last good build")
-
-
-class TestPageWeight(unittest.TestCase):
-    """G1's growth, made visible the moment it happens (grade report D3)."""
-
-    # The built page is 3.31 MB at ten scenes, ~89% inlined audio, growing
-    # ~1.2 MB per song scene. If a new scene pushes it over, raising this
-    # number must be a deliberate act in the same commit — the alternative
-    # is A5/G1: serve the lean page from the device and stop inlining.
-    BUDGET = 3_600_000
-
-    def test_built_page_stays_under_its_byte_budget(self) -> None:
-        page = ROOT / "previewer" / "castle-cue-desk.html"
-        size = page.stat().st_size
-        self.assertLessEqual(
-            size,
-            self.BUDGET,
-            f"previewer/castle-cue-desk.html is {size:,} bytes, over the "
-            f"{self.BUDGET:,}-byte budget. Each song scene adds ~1.2 MB of "
-            "inlined audio (grade report G1/D3). If the growth is deliberate, "
-            "raise BUDGET here in the same commit that adds the scene.",
-        )
 
 
 if __name__ == "__main__":

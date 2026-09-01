@@ -37,6 +37,11 @@ from pathlib import Path
 from typing import Any
 
 import build_paths as bp
+
+# The page's weight budget and the un-inlining that keeps it: one question,
+# one module (previewer_budget.py). Imported as a module, not by name, so a
+# test that moves the ceiling moves it in one place.
+import previewer_budget as pgb
 import pulse_dynamics as pd
 import scene_schema
 import yaml
@@ -254,7 +259,9 @@ def to_previewer(
 # the audio/ directory the page was built from. Same bytes, fetched when
 # played. The rewrite happens at serve time, cached by the page's (mtime,
 # size), so `make preview` keeps one artefact and one source of truth.
-AUDIO_ROUTE = "/studio/scene-audio/"
+# The route itself lives with the budget that causes it to be used —
+# re-exported here because this is where callers have always found it.
+AUDIO_ROUTE = pgb.AUDIO_ROUTE
 _DATA_URI = re.compile(r'"(\w+)": ?"data:audio/mpeg;base64,[A-Za-z0-9+/=]*"')
 _lean_cache: dict[tuple[str, int, int], bytes] = {}
 
@@ -354,54 +361,6 @@ def inject_styles(html: str) -> str:
     return html[:i] + css + html[j:]
 
 
-#: Ceiling for the portable inlined build, in KB — a HARD limit: past it the
-#: build fails and nothing is written (see enforce_budget below).
-#:
-#: History, because the number has moved and should not keep moving: 3 MB
-#: held the nine-scene rig; scene 10 (the 3-minute Ballad) pushed the honest
-#: size past it and the line was raised to 4 MB. Twice is a ratchet, and a
-#: warning nobody can fail is what let it happen — hence the hard stop. The
-#: page grows ~1.2 MB per song scene and is ~3.3 MB at ten scenes, so this
-#: budget has room for one more and then the show must answer for it.
-PAGE_BUDGET_KB = 4 * 1024
-
-
-def enforce_budget(body: bytes, audio: dict[str, str]) -> str | None:
-    """The complaint when the built page is over PAGE_BUDGET_KB, else None.
-
-    Why fail rather than warn (grade report G2): the page grows with scenes
-    times audio length and nothing bounds it, and the previous budget was a
-    warning — so when it was crossed the constant moved instead of the page.
-    A build that stops is the only version of this budget that is a budget.
-
-    The complaint names the heaviest scenes, because "the page is too big" is
-    not actionable and "the Ballad is 1.3 MB of it" is.
-    """
-    total_kb = len(body) // 1024
-    if total_kb <= PAGE_BUDGET_KB:
-        return None
-    heavy = sorted(((len(v) // 1024, k) for k, v in audio.items()), reverse=True)[:3]
-    worst = ", ".join(f"{sid} ({kb / 1024:.1f} MB)" for kb, sid in heavy)
-    return (
-        f"page budget FAILED — the portable build is {total_kb / 1024:.2f} MB, "
-        f"over its {PAGE_BUDGET_KB // 1024} MB ceiling. Nothing was written; "
-        f"{bp.rel(HTML)} still holds the last good build.\n"
-        f"  heaviest inlined audio: {worst}\n"
-        "  The weight is inlined mp3s, and they are inlined so the file plays "
-        "when opened from disk with no server. Ways out, best first:\n"
-        "   - shorten or re-render the heaviest scene (a song scene is "
-        "~1.2 MB of base64 here);\n"
-        "   - if the show genuinely needs the scenes, stop inlining past the "
-        "budget and emit /studio/scene-audio/<id> for the rest — the lean "
-        "rewrite already does exactly that, but a page opened from disk "
-        "cannot fetch those, so the desk needs a per-scene fallback to the "
-        "live synth first (web/src/audio.ts, main.ts: the rendered/synth "
-        "choice is one global switch today);\n"
-        "   - raising PAGE_BUDGET_KB is the third answer, not the first, and "
-        "belongs in its own commit that says why."
-    )
-
-
 def main() -> int:
     raw = SRC.read_text()
     doc = yaml.safe_load(raw)
@@ -425,27 +384,31 @@ def main() -> int:
             " previewer will fall back to live synth for those scenes"
         )
 
-    block = (
-        f"{START} (written by tools/gen_previewer.py — do not edit, do not format)\n"
-        f"  window.CASTLE_GEN = {json.dumps({'scenes': scenes, 'audio': audio})};\n"
-        f"  {END}"
-    )
-
     html = TEMPLATE.read_text()
     pattern = re.compile(re.escape(START) + r".*?" + re.escape(END), re.DOTALL)
     if not pattern.search(html):
         sys.exit(f"markers not found in {TEMPLATE} — expected {START} ... {END}")
-    # sub() treats backslashes in the replacement as escapes, and the audio is
-    # base64 so it will contain them eventually. Pass a function instead.
-    html = pattern.sub(lambda _: block, html)
-
+    # Styles and bundle first, then the data block: fit_budget re-renders the
+    # page once per scene it gives away, and esbuild must not run each time.
     html = inject_styles(html)
     html = inject_bundle(html)
 
+    def page(src: dict[str, str]) -> bytes:
+        block = (
+            f"{START} (written by tools/gen_previewer.py — do not edit, "
+            "do not format)\n"
+            f"  window.CASTLE_GEN = "
+            f"{json.dumps({'scenes': scenes, 'audio': src})};\n"
+            f"  {END}"
+        )
+        # sub() treats backslashes in the replacement as escapes, and the
+        # audio is base64 so it will contain them eventually. Pass a function.
+        return pattern.sub(lambda _: block, html).encode()
+
     # Weighed BEFORE it is written: an over-budget build leaves the last good
     # page in the tree rather than replacing it with the one that failed.
-    body = html.encode()
-    complaint = enforce_budget(body, audio)
+    body, linked = pgb.fit_budget(page, audio, pgb.PAGE_BUDGET_KB * 1024)
+    complaint = pgb.enforce_budget(body, audio, HTML)
     if complaint is not None:
         print(complaint, file=sys.stderr)
         return 1
@@ -453,13 +416,21 @@ def main() -> int:
     HTML.parent.mkdir(parents=True, exist_ok=True)
     HTML.write_bytes(body)
 
-    kb = sum(len(v) for v in audio.values()) // 1024
+    inlined = len(audio) - len(linked)
+    kb = sum(len(v) for k, v in audio.items() if k not in set(linked)) // 1024
     total_kb = len(body) // 1024
     print(
-        f"wrote {len(scenes)} scenes + {len(audio)} audio files (~{kb} KB base64) "
-        f"into {bp.rel(HTML)} ({total_kb / 1024:.1f} MB "
-        f"of the {PAGE_BUDGET_KB // 1024} MB budget)"
+        f"wrote {len(scenes)} scenes + {inlined} inlined audio files "
+        f"(~{kb} KB base64) into {bp.rel(HTML)} ({total_kb / 1024:.1f} MB "
+        f"of the {pgb.PAGE_BUDGET_KB // 1024} MB budget)"
     )
+    if linked:
+        print(
+            f"note: {len(linked)} scene(s) over the budget kept their audio "
+            f"OUT of the page — {', '.join(linked)}. They play from "
+            f"{AUDIO_ROUTE}<id> under the studio or the castle; opened from "
+            "disk with no server, those scenes fall back to the live synth."
+        )
     return 0
 
 

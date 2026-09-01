@@ -193,6 +193,12 @@ jobs:
       # without it. After npm ci: the build inlines an esbuild bundle.
       - name: build previewer page
         run: .venv/bin/python tools/gen_previewer.py
+      # The page-weight budget can only be measured where the page exists,
+      # which is here and not in the `python` job — where it had only ever
+      # produced a FileNotFoundError (grade report D1).
+      - if: matrix.studio == 'python'
+        name: previewer page budget
+        run: .venv/bin/python -m unittest -q tests.test_previewer_budget.TestPageWeight
       # Server-independent — once per push, not once per matrix axis.
       - if: matrix.studio == 'python'
         run: npx tsc --noEmit
