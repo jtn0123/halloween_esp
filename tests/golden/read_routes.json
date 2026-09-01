@@ -1,0 +1,244 @@
+{
+  "health_castleless": {
+    "body": {
+      "error": "no castle configured"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/api/health"
+    },
+    "status": 502
+  },
+  "job_unknown": {
+    "body": {
+      "error": "no such job"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/studio/job/nope"
+    },
+    "status": 404
+  },
+  "scene_audio_traversal": {
+    "body": {
+      "error": "no such scene audio"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/studio/scene-audio/%2e%2e"
+    },
+    "status": 404
+  },
+  "scene_audio_unknown": {
+    "body": {
+      "error": "no such scene audio"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/studio/scene-audio/nope"
+    },
+    "status": 404
+  },
+  "status_castleless": {
+    "body": {
+      "studio": true
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/api/status"
+    },
+    "status": 200
+  },
+  "status_post_castleless": {
+    "body": {
+      "error": "no castle configured"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "POST",
+      "path": "/api/status"
+    },
+    "status": 502
+  },
+  "stems_unknown": {
+    "body": {
+      "error": "no such track",
+      "ok": false
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/studio/stems/nope"
+    },
+    "status": 404
+  },
+  "track_no_id": {
+    "body": {
+      "error": "not found"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/studio/track/"
+    },
+    "status": 404
+  },
+  "track_unknown": {
+    "body": {
+      "error": "not found"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/studio/track/nope"
+    },
+    "status": 404
+  },
+  "tracks_listing": {
+    "body": {
+      "scenes": [
+        "vigil",
+        "storm"
+      ],
+      "tracks": [
+        {
+          "fields": {
+            "bytes": "int",
+            "dur": "float",
+            "ext": "str",
+            "id": "str",
+            "imported": "str",
+            "kb": "int",
+            "notes": "str",
+            "onsets": "dict",
+            "opts": "dict",
+            "source": "str",
+            "source_missing": "bool",
+            "title": "str"
+          },
+          "id": "t_alpha"
+        }
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/studio/tracks"
+    },
+    "status": 200
+  },
+  "tracks_listing_alias": {
+    "body": {
+      "scenes": [
+        "vigil",
+        "storm"
+      ],
+      "tracks": [
+        {
+          "fields": {
+            "bytes": "int",
+            "dur": "float",
+            "ext": "str",
+            "id": "str",
+            "imported": "str",
+            "kb": "int",
+            "notes": "str",
+            "onsets": "dict",
+            "opts": "dict",
+            "source": "str",
+            "source_missing": "bool",
+            "title": "str"
+          },
+          "id": "t_alpha"
+        }
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/api/tracks"
+    },
+    "status": 200
+  },
+  "tracks_wrong_method": {
+    "body": {
+      "error": "not found"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "DELETE",
+      "path": "/studio/tracks"
+    },
+    "status": 404
+  },
+  "unknown_castle_route": {
+    "body": {
+      "error": "unknown castle route",
+      "known": [
+        "/api/blackout",
+        "/api/bootlog",
+        "/api/files",
+        "/api/files/",
+        "/api/health",
+        "/api/light",
+        "/api/ota",
+        "/api/pir",
+        "/api/play",
+        "/api/scene",
+        "/api/scenes/",
+        "/api/show/start",
+        "/api/show/stop",
+        "/api/site/",
+        "/api/status",
+        "/api/stop",
+        "/api/volume",
+        "/remote",
+        "/sd/"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/api/nonsense"
+    },
+    "status": 404
+  },
+  "unknown_root_route": {
+    "body": {
+      "error": "not found"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/nope"
+    },
+    "status": 404
+  },
+  "unknown_studio_route": {
+    "body": {
+      "error": "not found"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/studio/nope"
+    },
+    "status": 404
+  },
+  "waveform_unknown": {
+    "body": {
+      "error": "no such track"
+    },
+    "content_type": "application/json",
+    "request": {
+      "method": "GET",
+      "path": "/studio/waveform/nope"
+    },
+    "status": 404
+  }
+}

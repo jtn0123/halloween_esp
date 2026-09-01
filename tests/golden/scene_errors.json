@@ -1,0 +1,285 @@
+{
+  "audio_file_absolute": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: audio_file: must be a relative path, got '/etc/passwd'",
+      "errors": [
+        "audio_file: must be a relative path, got '/etc/passwd'"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\\n    audio_file: /etc/passwd\"}"
+    },
+    "status": 400
+  },
+  "base_unknown_effect": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: base.towerL: unknown effect 'disco' (one of blood, candle, chill, ember, eyes, furnace, mansion, off, seance, spirit, strobe, throb, wisp)",
+      "errors": [
+        "base.towerL: unknown effect 'disco' (one of blood, candle, chill, ember, eyes, furnace, mansion, off, seance, spirit, strobe, throb, wisp)"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: disco, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\"}"
+    },
+    "status": 400
+  },
+  "base_unknown_zone": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: base: no zone 'moat' (have door, towerL, towerR)",
+      "errors": [
+        "base: no zone 'moat' (have door, towerL, towerR)"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {moat: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\"}"
+    },
+    "status": 400
+  },
+  "body_not_json": {
+    "body": {
+      "error": "request body is not valid JSON: <parser detail>",
+      "ok": false
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{nope"
+    },
+    "status": 400
+  },
+  "cue_op_unknown": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: cues[0]: op must be one of set, strike, got 'wobble'",
+      "errors": [
+        "cues[0]: op must be one of set, strike, got 'wobble'"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues:\\n      - {t: 10, op: wobble}\"}"
+    },
+    "status": 400
+  },
+  "cue_past_the_end": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: cues[0]: t=99999 is past the scene's duration_ms=1200",
+      "errors": [
+        "cues[0]: t=99999 is past the scene's duration_ms=1200"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues:\\n      - {t: 99999, op: strike, ms: 70, pixels: scatter}\"}"
+    },
+    "status": 400
+  },
+  "cue_set_without_a_zone": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: cues[0]: a set cue needs a zone",
+      "errors": [
+        "cues[0]: a set cue needs a zone"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues:\\n      - {t: 10, op: set, effect: candle}\"}"
+    },
+    "status": 400
+  },
+  "cues_not_a_list": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: cues: must be a list",
+      "errors": [
+        "cues: must be a list"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: soon\"}"
+    },
+    "status": 400
+  },
+  "duration_not_positive": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: duration_ms: must be a whole number of ms > 0, got 0",
+      "errors": [
+        "duration_ms: must be a whole number of ms > 0, got 0"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 0\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\"}"
+    },
+    "status": 400
+  },
+  "head_fields_missing": {
+    "body": {
+      "error": "scene 'bad' has 3 problems: missing required key 'name'",
+      "errors": [
+        "missing required key 'name'",
+        "missing required key 'duration_ms'",
+        "missing required key 'base'"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"bad\", \"yaml\": \"  - id: bad\\n    kind: ambient\"}"
+    },
+    "status": 400
+  },
+  "id_mismatch": {
+    "body": {
+      "error": "expected exactly one scene with id 'x'"
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"x\", \"yaml\": \"  - id: y\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\"}"
+    },
+    "status": 400
+  },
+  "id_not_an_identifier": {
+    "body": {
+      "error": "scene 'no-dashes' has 1 problem: id: letters, digits and _ only, got 'no-dashes'",
+      "errors": [
+        "id: letters, digits and _ only, got 'no-dashes'"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"no-dashes\", \"yaml\": \"  - id: no-dashes\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\"}"
+    },
+    "status": 400
+  },
+  "id_without_yaml": {
+    "body": {
+      "error": "need id and yaml"
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"\"}"
+    },
+    "status": 400
+  },
+  "loop_not_a_boolean": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: loop: must be true or false, got 'maybe'",
+      "errors": [
+        "loop: must be true or false, got 'maybe'"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\\n    loop: maybe\"}"
+    },
+    "status": 400
+  },
+  "many_problems_at_once": {
+    "body": {
+      "error": "scene 'trial' has 6 problems: missing required key 'name'",
+      "errors": [
+        "missing required key 'name'",
+        "volume: must be a number from 0 to 1, got 4",
+        "duration_ms: must be a whole number of ms > 0, got -3",
+        "base: no zone 'moat' (have door, towerL, towerR)",
+        "base.moat: unknown effect 'disco' (one of blood, candle, chill, ember, eyes, furnace, mansion, off, seance, spirit, strobe, throb, wisp)",
+        "cues[0]: op must be one of set, strike, got 'wobble'"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    kind: seance\\n    volume: 4\\n    duration_ms: -3\\n    base: {moat: disco}\\n    cues: [{t: 5, op: wobble}]\"}"
+    },
+    "status": 400
+  },
+  "no_id_no_yaml": {
+    "body": {
+      "error": "need id and yaml"
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{}"
+    },
+    "status": 400
+  },
+  "pulse_without_a_synth": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: pulse[0]: needs a synth (the marker stream it follows)",
+      "errors": [
+        "pulse[0]: needs a synth (the marker stream it follows)"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\\n    pulse:\\n      - {zones: [towerL]}\"}"
+    },
+    "status": 400
+  },
+  "scene_ceiling": {
+    "body": {
+      "error": "the show is full — 12 scenes is the 12 this board can hold (~9 KB of dram0 each), so 'one_too_many' cannot be added. Remove a scene first, or move the cue timelines to the card-loaded format described in scenes/scenes.yaml's header — a thirteenth generated script is not the next step.",
+      "errors": [
+        "scene ceiling: 12/12 scenes"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"one_too_many\", \"yaml\": \"  - id: one_too_many\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\"}"
+    },
+    "status": 400
+  },
+  "volume_out_of_range": {
+    "body": {
+      "error": "scene 'trial' has 1 problem: volume: must be a number from 0 to 1, got 9",
+      "errors": [
+        "volume: must be a number from 0 to 1, got 9"
+      ]
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"trial\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 9\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\"}"
+    },
+    "status": 400
+  },
+  "yaml_holds_two_scenes": {
+    "body": {
+      "error": "expected exactly one scene with id 'a'"
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"a\", \"yaml\": \"  - id: a\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\\n  - id: b\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\"}"
+    },
+    "status": 400
+  },
+  "yaml_is_a_mapping": {
+    "body": {
+      "error": "expected exactly one scene with id 'x'"
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"x\", \"yaml\": \"id: x\\nname: X\"}"
+    },
+    "status": 400
+  },
+  "yaml_unparseable": {
+    "body": {
+      "error": "scene is not valid YAML: while parsing a flow node\nexpected the node content, but found '<stream end>'\n  in \"<unicode string>\", line 1, column 12:\n    nonsense: [\n               ^"
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"x\", \"yaml\": \"nonsense: [\"}"
+    },
+    "status": 400
+  },
+  "yaml_without_id": {
+    "body": {
+      "error": "need id and yaml"
+    },
+    "content_type": "application/json",
+    "request": {
+      "body": "{\"id\": \"\", \"yaml\": \"  - id: trial\\n    name: Trial\\n    kind: ambient\\n    volume: 0.4\\n    duration_ms: 1200\\n    base: {towerL: candle, towerR: candle, door: ember}\\n    score:\\n      - {t: 0, synth: toll, gain: 0.4}\\n    cues: []\"}"
+    },
+    "status": 400
+  }
+}
