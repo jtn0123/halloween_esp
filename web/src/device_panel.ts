@@ -20,7 +20,7 @@
  *   - the show: the evening playlist, the phone remote, the light override
  *   - the test bench: strip test and speaker test (device_tests.ts)
  *   - the card: every track on it, with play and delete, plus whether the
- *     show's own nine scene tracks are all present
+ *     show's own scene tracks are all present
  *   - the motion sensor, the drop zone, and the boot log
  * Volume lives on the chip (device.ts) alone — the same slider twice was
  * the scatter the dogfood pass called out, and two sliders drift.

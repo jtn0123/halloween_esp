@@ -29,7 +29,7 @@ import { createPreview } from "./preview.js";
 // re-exported so the panel modules keep their old import path.
 export type { TrackInfo, TrackOpts } from "./types.js";
 import type { Scene, TrackInfo } from "./types.js";
-import { req as byReq } from "./dom.js";
+import { closestIn, req as byReq } from "./dom.js";
 
 export interface TracksDeps {
   /** The show as loaded, for the capacity readout's "alongside the current show". */
@@ -239,8 +239,9 @@ export function initTracks(deps: TracksDeps): TracksApi {
     const btn = (e.target as HTMLElement | null)?.closest("button"); if (!btn) return;
     if (btn.dataset["cardact"]) return;   // card-only rows: track_card.ts owns them
     // Every button is rendered inside a .trk carrying the id, so the row and
-    // the attribute are both there or the markup above is broken.
-    const id = btn.closest<HTMLElement>(".trk")!.dataset["id"] ?? "";
+    // the attribute are both there or the markup above is broken — and if it
+    // is, closestIn says which selector went missing.
+    const id = closestIn(btn, ".trk", "tracks").dataset["id"] ?? "";
     const act = btn.dataset["act"];
     if (act === "play") {
       preview.toggle(id);

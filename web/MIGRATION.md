@@ -3,8 +3,10 @@
 All nine modules landed and the switchover is complete. Kept as a record of
 why it was done this way — a historical document, not a map. The layout table
 below is the plan as it stood in August 2026; `web/src/` has grown well past
-it since — 56 modules as of 2026-08-31, not nine. Read `web/src/` itself for
-the layout; this file only says why there is a `web/src/` at all.
+it since — dozens of modules now, not nine (`ls web/src/*.ts | wc -l` is the
+only count worth trusting; an exact number here goes stale in a week). Read
+`web/src/` itself for the layout; this file only says why there is a
+`web/src/` at all.
 
 (As it stood before the migration: one 1892-line HTML file with ~1400
 lines of untyped inline JavaScript, exempt from the LOC check as

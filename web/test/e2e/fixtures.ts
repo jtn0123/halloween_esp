@@ -126,8 +126,10 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
     if (p.startsWith("/api/files/") && method === "PUT") {
       const name = decodeURIComponent(p.slice("/api/files/".length));
       const real = route.request().postDataBuffer()?.length ?? 0;
-      const said = typeof c.putBytes === "function" ? c.putBytes(name, real)
-        : c.putBytes ?? real;
+      // Either arm may answer null, and it means the same thing in both:
+      // no opinion, report the length that actually arrived.
+      const said = (typeof c.putBytes === "function"
+        ? c.putBytes(name, real) : c.putBytes) ?? real;
       if (said === -1) return route.fulfill({ status: 500, body: "write failed" });
       if (said === -2) return route.fulfill({ status: 504, json: { error: "castle did not answer in time" } });
       const i = c.files.findIndex((f) => f.name === name);

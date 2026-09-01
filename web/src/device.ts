@@ -30,7 +30,9 @@
 
 import { isCastleBusy, onCastleChanged, setCastleLive } from "./castle_bus.js";
 import { castleAct } from "./castle_act.js";
-import { chipHtml, nowLine, sdText, seekingHtml, wireChip } from "./device_chip.js";
+import {
+  chipHtml, nowLine, sdText, seekingHtml, wireChip, type ChipEls,
+} from "./device_chip.js";
 import { el as byId, reqIn } from "./dom.js";
 import { DevicePanel } from "./device_panel.js";
 import {
@@ -171,6 +173,10 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
      on the chip (always on screen). Both call applyRoute; syncRouteUI keeps
      every rendering and the volume controls' enabled state agreeing. */
   let routeBtn: HTMLButtonElement | null = null;
+  // The chip's own controls, handed over by wireChip. Null until the first
+  // render, and again while the "looking for the castle…" placeholder holds
+  // the box — in both of those states there is nothing here to dim.
+  let els: ChipEls | null = null;
 
   function mountRouteBtn(): void {
     const muteEl = byId("mute");
@@ -192,7 +198,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
         + "Click to send sound to the castle instead. Lights always play on the castle."
       : "Sound comes out of the castle's speaker. Click to play it on this "
         + "Mac instead. Lights always play on the castle.";
-    for (const b of [routeBtn, chip.querySelector<HTMLButtonElement>("#devSnd")]) {
+    for (const b of [routeBtn, els?.snd]) {
       if (b) { b.textContent = label; b.title = title; }
     }
     // The castle-volume controls govern a speaker that ♪ Mac just silenced —
@@ -200,25 +206,20 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     // …and a castle that is not answering has no volume to set (J2-2):
     // flipping ♪ to Castle while it is down must not light the slider up.
     const hushed = soundRoute === "mac";
-    const vol = chip.querySelector<HTMLInputElement>("#devVol");
-    const muteB = chip.querySelector<HTMLButtonElement>("#devMute");
-    if (vol) {
-      vol.disabled = hushed || !lastOk;
-      vol.title = !lastOk ? "Castle not answering"
-        : hushed ? "Castle speaker is off while sound plays on the Mac (♪ switch)"
-        : "Castle speaker volume";
-    }
-    if (muteB) muteB.disabled = hushed || !lastOk;
-    for (const id of ["devStop", "devMirror"]) {
-      const el = chip.querySelector<HTMLInputElement | HTMLButtonElement>(`#${id}`);
-      if (el) el.disabled = !lastOk;
-    }
+    if (!els) return;
+    els.vol.disabled = hushed || !lastOk;
+    els.vol.title = !lastOk ? "Castle not answering"
+      : hushed ? "Castle speaker is off while sound plays on the Mac (♪ switch)"
+      : "Castle speaker volume";
+    els.mute.disabled = hushed || !lastOk;
+    els.stop.disabled = !lastOk;
+    els.mirror.disabled = !lastOk;
   }
 
   function applyRoute(route: "mac" | "castle", announce: boolean): void {
     soundRoute = route;
     localStorage.setItem("castleSoundRoute", route);
-    const vol = chip.querySelector<HTMLInputElement>("#devVol");
+    const vol = els?.vol;
     if (route === "mac") {
       // Hush the porch, sound the desk. Remember the amp level for the
       // flip back so "Castle" restores what the hand last set.
@@ -280,23 +281,21 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       // A hand or focus is on the chip: park the render, refresh only the
       // read-only now-playing line so the words stay honest.
       pendingStatus = s;
-      const nowEl = chip.querySelector<HTMLElement>("#devNow");
-      if (nowEl) { nowEl.textContent = nowLine(s); nowEl.title = ""; }
+      if (els) { els.now.textContent = nowLine(s); els.now.title = ""; }
       syncRouteUI();
       return;
     }
     if (markup === lastMarkup) {
       // Nothing visible changed (G4) — but the down-state may have written
       // "last seen …" into #devNow directly, so restore the live line.
-      const nowEl = chip.querySelector<HTMLElement>("#devNow");
-      if (nowEl && wasDown) { nowEl.textContent = nowLine(s); nowEl.title = ""; }
+      if (els && wasDown) { els.now.textContent = nowLine(s); els.now.title = ""; }
       syncRouteUI();
       afterRender(s);
       return;
     }
     lastMarkup = markup;
     chip.innerHTML = markup;
-    wireChip(chip, {
+    els = wireChip(chip, {
       mirror: (on) => {
         mirror = on;                 // the masthead says whether picks reach the porch
         if (lastStatus) sayStatus(lastStatus);
@@ -356,10 +355,10 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     // comes out is this desk's own decision — and 🏰 opens a panel that
     // says what happened. The ▶ line is from the past, and says so.
     syncRouteUI();
-    const nowEl = chip.querySelector<HTMLElement>("#devNow");
-    if (nowEl && lastSeen) {
-      nowEl.textContent = `last seen ${lastSeen.toLocaleTimeString([], { timeStyle: "short" })}`;
-      nowEl.title = `What the castle said then: ${lastPlaying}`;
+    if (els && lastSeen) {
+      els.now.textContent =
+        `last seen ${lastSeen.toLocaleTimeString([], { timeStyle: "short" })}`;
+      els.now.title = `What the castle said then: ${lastPlaying}`;
     }
     panel.refresh();
     setCastleLive(false);
@@ -394,6 +393,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     if (live || !host) return;
     chip.classList.add("seeking");
     chip.innerHTML = seekingHtml(host, RETRY_MS / 1000);
+    els = null;                      // the placeholder has none of the controls
     reqIn<HTMLButtonElement>(chip, "#devRetry", "castle chip")
       .addEventListener("click", () =>
         void probe().then((now) => {

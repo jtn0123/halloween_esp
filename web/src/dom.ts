@@ -49,6 +49,24 @@ export function reqIn<T extends HTMLElement = HTMLElement>(
   return e;
 }
 
+/**
+ * The third mood: upwards, not downwards.
+ *
+ * A delegated click handler has the button and wants the row that owns it.
+ * That was `btn.closest(".trk")!` — the same non-null assertion `reqIn`
+ * exists to retire, and with the same failure: a TypeError somewhere later
+ * that never mentions the selector nobody matched (grade report
+ * 2026-09-01 C3). The throw names it, and names the element it started from,
+ * because "no `.trk` above this button" is the whole diagnosis.
+ */
+export function closestIn<T extends HTMLElement = HTMLElement>(
+  from: Element, css: string, who = "desk",
+): T {
+  const e = from.closest<T>(css);
+  if (!e) throw new Error(`${who}: no ${css} above <${from.tagName.toLowerCase()}>`);
+  return e;
+}
+
 /** Text into markup. Everything the desk splices into innerHTML that came
  *  from OUTSIDE it — a track name, a file name off the castle's card, the
  *  castle's own version string — goes through here first. A name is a name,

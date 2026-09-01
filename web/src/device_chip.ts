@@ -8,7 +8,7 @@
  * so the chip follows the light/dark theme like the rest of the desk.
  */
 
-import { esc } from "./dom.js";
+import { esc, reqIn } from "./dom.js";
 
 /** The slice of /api/status the chip reads (device.ts owns the full type). */
 export interface ChipStatus {
@@ -84,19 +84,52 @@ export interface ChipHandlers {
   mute: (vol: HTMLInputElement) => void;
 }
 
-/** Attach the chip's listeners to freshly rendered markup. */
-export function wireChip(chip: HTMLElement, h: ChipHandlers): void {
-  const q = <T extends HTMLElement>(id: string): T => chip.querySelector<T>(`#${id}`)!;
-  q<HTMLInputElement>("devMirror").addEventListener("change", (e) =>
+/**
+ * The controls chipHtml just drew, resolved once.
+ *
+ * device.ts owns the bridge; this file owns the markup. The bridge still has
+ * to dim the volume slider when ♪ routes sound to the Mac and rewrite the ▶
+ * line between rebuilds — but it used to do that by reaching back into this
+ * subtree with eight raw `chip.querySelector("#devVol")` calls, so the ids
+ * here were part of device.ts's contract without ever being written down
+ * (grade report 2026-09-01 C4). Wiring hands the elements over instead: one
+ * place knows the ids, and a renamed control is a compile error rather than
+ * a control that silently stops being disabled.
+ */
+export interface ChipEls {
+  /** The read-only "▶ scene · track" line, rewritten in place by the poll. */
+  now: HTMLElement;
+  snd: HTMLButtonElement;
+  mute: HTMLButtonElement;
+  vol: HTMLInputElement;
+  mirror: HTMLInputElement;
+  stop: HTMLButtonElement;
+}
+
+/** Attach the chip's listeners to freshly rendered markup, and hand back the
+ *  elements the bridge goes on reading. */
+export function wireChip(chip: HTMLElement, h: ChipHandlers): ChipEls {
+  const q = <T extends HTMLElement>(id: string): T =>
+    reqIn<T>(chip, `#${id}`, "castle chip");
+  const els: ChipEls = {
+    now: q("devNow"),
+    snd: q<HTMLButtonElement>("devSnd"),
+    mute: q<HTMLButtonElement>("devMute"),
+    vol: q<HTMLInputElement>("devVol"),
+    mirror: q<HTMLInputElement>("devMirror"),
+    stop: q<HTMLButtonElement>("devStop"),
+  };
+  els.mirror.addEventListener("change", (e) =>
     h.mirror((e.target as HTMLInputElement).checked));
-  q("devStop").addEventListener("click", () => h.stop());
+  els.stop.addEventListener("click", () => h.stop());
   q("devMore").addEventListener("click", () => h.more());
-  q("devSnd").addEventListener("click", () => h.route());
-  const vol = q<HTMLInputElement>("devVol");
+  els.snd.addEventListener("click", () => h.route());
+  const vol = els.vol;
   let volTimer: number | undefined;
   vol.addEventListener("input", () => {
     clearTimeout(volTimer);
     volTimer = window.setTimeout(() => h.volume(Number(vol.value)), 150);
   });
-  q("devMute").addEventListener("click", () => h.mute(vol));
+  els.mute.addEventListener("click", () => h.mute(vol));
+  return els;
 }

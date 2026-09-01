@@ -11,17 +11,21 @@
  * `trkStart` and `trkTake` inputs the import has always read, so everything
  * downstream — import, re-import, the remembered options — keeps working
  * without knowing this file exists.
+ *
+ * The panel is what is left after the model moved out: wave_analysis.ts owns
+ * the four pieces of shared mutable state and the request that fills them,
+ * and this file owns the chrome, the pointer gestures and the audition.
  */
 
-import { api } from "./api.js";
-import { BAND_HELP, BANDS, bandSummary } from "./bands.js";
+import { BAND_HELP, BANDS } from "./bands.js";
 import type { BandEditor } from "./band_editor.js";
 import type { CodecAb } from "./codec_ab.js";
 import { createStemsView } from "./stems_view.js";
 import { createStyleLab } from "./style_lab.js";
 import { sections } from "./track_lights.js";
-import { EDGE_SLOP, WaveView, type WaveClip, type WaveData } from "./waveform_view.js";
-import { clock, loadClip, onsetTimes, saveClip, snapClip } from "./wave_clip.js";
+import { EDGE_SLOP, type WaveClip, type WaveData } from "./waveform_view.js";
+import { clock, onsetTimes, saveClip, snapClip } from "./wave_clip.js";
+import { loadWave, newWaveState } from "./wave_analysis.js";
 import { trimOwner } from "./import_opts.js";
 import { initOptsBridge } from "./wave_opts_bridge.js";
 import { buildWaveChrome } from "./wave_chrome.js";
@@ -75,8 +79,6 @@ export interface WaveformApi {
   destroy(): void;
 }
 
-const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
-
 export function initWaveform(deps: WaveformDeps): WaveformApi {
   const host = byId(deps.containerId ?? "trkWave");
   if (!host) {
@@ -88,7 +90,11 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
              destroy: () => {} };
   }
 
-  const view = new WaveView();
+  // The shared mutable state, in one injectable object (wave_analysis.ts).
+  // `view` is pulled out by name because it is the one field never
+  // reassigned — the canvas outlives every track shown on it.
+  const st = newWaveState();
+  const { view } = st;
 
   const { wrap, title, row, play, snap, readout, note, mirrorDots } =
     buildWaveChrome();
@@ -113,24 +119,20 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     note.classList.toggle("err", err);
   };
 
-  let trackId: string | null = null;
-  let clip: WaveClip | null = null;
-  /** Bumped per request, so a slow analysis cannot land on top of a newer one. */
-  let token = 0;
-
   // START/LENGTH in the Options row: dragging writes them, typing them
   // moves the clip. The whole two-way contract lives in wave_opts_bridge.
   const bridge = initOptsBridge(
     () => view.data?.duration ?? null,
-    (c) => { clip = c; sync(); },
+    (c) => { st.clip = c; sync(); },
     (msg) => say(msg),
     () => syncLight(),
   );
-  const pushOpts = (): void => { if (trackId) bridge.push(clip, trackId); };
+  const pushOpts = (): void => { if (st.trackId) bridge.push(st.clip, st.trackId); };
 
   /** The per-frame half: redraw and readout only. Cheap enough to run on
    *  every pointermove of a drag. */
   function syncLight(): void {
+    const clip = st.clip;
     view.clip = clip;
     view.draw();
     readout.textContent = clip
@@ -143,7 +145,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     hint.hidden = !partial;
     // After an import has consumed START/LENGTH they are blank, and "set
     // from it" would be a lie (JB2-5c): say what puts them back.
-    const stamped = !!trackId && trimOwner() === trackId;
+    const stamped = !!st.trackId && trimOwner() === st.trackId;
     hint.textContent = partial
       ? "This selection is for listening and for placing the lights. The castle "
         + "plays the whole file — to keep only this part, press Re-import on the "
@@ -157,14 +159,14 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     // The tier overlay, from the SAME sections() call the audition scene
     // makes for this window — a promise about the show, not a decoration.
     const d = view.data;
-    const start = clip?.start ?? 0, end = clip?.end ?? d?.duration ?? 0;
+    const start = st.clip?.start ?? 0, end = st.clip?.end ?? d?.duration ?? 0;
     view.sections = d?.env
       ? sections(d.env, start, end).map(([s, tier]) => [start + s, tier])
       : null;
     for (const b of BANDS) view.muted[b.name] = !deps.bands.active()[b.name];
     syncLight();
-    if (trackId && view.data) saveClip(trackId, clip, view.data.duration);
-    deps.onClipChange?.(clip, view.data);
+    if (st.trackId && view.data) saveClip(st.trackId, st.clip, view.data.duration);
+    deps.onClipChange?.(st.clip, view.data);
   }
 
   /* The expensive half of sync() — sections() over the envelope, a
@@ -178,78 +180,9 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     requestAnimationFrame(() => { heavyPending = false; sync(); });
   }
 
-  /* ── Analysis ── */
-
-  /** Either the data, or the sentence to show instead of it. */
-  function toWave(id: string, body: unknown): WaveData | string {
-    // The body comes from another process, so check the two fields the drawing
-    // genuinely cannot survive being wrong. The rest degrades quietly.
-    const b = body as Partial<WaveData> | null;
-    const peaks = b?.peaks, dur = b?.duration;
-    if (!Array.isArray(peaks) || typeof dur !== "number" || !(dur > 0))
-      return `Analysis for “${id}” came back without usable peaks.`;
-    return { id, duration: dur, peaks, onsets: b?.onsets ?? {},
-             ...(b?.env ? { env: b.env } : {}) };
-  }
-
-  async function analyse(id: string): Promise<WaveData | string> {
-    try {
-      const r = await api.waveform(id, deps.bands.query());
-      // A missing track is an ordinary outcome — the panel can be showing a row
-      // the server has since deleted — so it reads as a message, not a throw.
-      if (r.status === 404) return `No waveform for “${id}” — the studio has not analysed it.`;
-      if (r.body === null) return `Analysis failed — HTTP ${r.status}.`;
-      return toWave(id, r.body);
-    } catch (err) {
-      // Static mode: the page is open without tools/studio.py behind it.
-      return `Could not reach the studio — ${String(err)}`;
-    }
-  }
-
-  /** What was found, in the same words the track list uses. */
-  const counts = (d: WaveData): string => {
-    const n: Record<string, number> =
-      Object.fromEntries(Object.entries(d.onsets).map(([k, v]) => [k, v?.length ?? 0]));
-    deps.bands.report(n, d.duration);
-    const s = bandSummary(n, d.duration, deps.bands.zones());
-    return s === "no onsets" ? "no onsets at this sensitivity" : s;
-  };
-
-  async function load(): Promise<void> {
-    const id = trackId;
-    if (!id) {
-      view.data = null;
-      view.message = "No track selected.";
-      say("");
-      sync();
-      return;
-    }
-    const mine = ++token;
-    say(`Analysing ${id}…`);
-    const res = await analyse(id);
-    if (mine !== token) return;                 // a newer request is already out
-    if (typeof res === "string") {
-      view.data = null;
-      view.message = res;
-      say(res, true);
-      sync();
-      return;
-    }
-    view.data = res;
-    view.message = "";
-    // First look shows the whole track; a re-analysis at a new sensitivity must
-    // not throw away in and out points already placed by hand. And a clip
-    // dialed in last session comes back (round 2: the knobs survived a
-    // reload, the twenty minutes of trimming did not — backwards).
-    const remembered = clip ?? loadClip(id, res.duration);
-    clip = remembered
-      ? { start: clamp(remembered.start, 0, res.duration),
-          end: clamp(remembered.end, 0, res.duration) }
-      : { start: 0, end: res.duration };
-    say(counts(res));
-    sync();
-    pushOpts();
-  }
+  /** Fetch and settle on the answer; the model half lives in wave_analysis. */
+  const load = (): Promise<void> =>
+    loadWave(st, { bands: deps.bands, say, sync, pushOpts });
 
   /* ── Dragging the region ──────────────────────────────────────────────
      One gesture covers all three cases. Pressing on an edge pins the opposite
@@ -259,14 +192,14 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   let anchor = 0;
 
   const nearEdge = (x: number): boolean =>
-    !!clip && (Math.abs(x - view.secToX(clip.start)) <= EDGE_SLOP
-            || Math.abs(x - view.secToX(clip.end)) <= EDGE_SLOP);
+    !!st.clip && (Math.abs(x - view.secToX(st.clip.start)) <= EDGE_SLOP
+               || Math.abs(x - view.secToX(st.clip.end)) <= EDGE_SLOP);
 
   function drag(t: number): void {
     const lo = Math.min(anchor, t), hi = Math.max(anchor, t);
     // A floor on the length keeps the region from collapsing to nothing under
     // the pointer, which would leave the two edge handles stacked and ungrabbable.
-    clip = { start: lo, end: Math.max(hi, lo + 0.02) };
+    st.clip = { start: lo, end: Math.max(hi, lo + 0.02) };
     // Live rather than on release: those two inputs are the real output of this
     // editor, and watching them move is how you know the drag is landing.
     // Redraw NOW; the heavy half (sections, persistence, scene rebuild)
@@ -278,7 +211,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   }
 
   view.el.addEventListener("pointerdown", e => {
-    const c = clip;
+    const c = st.clip;
     if (!view.data) return;
     const x = view.eventX(e);
     if (c && Math.abs(x - view.secToX(c.start)) <= EDGE_SLOP) anchor = c.end;
@@ -301,8 +234,8 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     grabbing = false;
     if (view.el.hasPointerCapture(e.pointerId)) view.el.releasePointerCapture(e.pointerId);
     // A press with no drag is a misclick, not a request for an empty clip.
-    if (clip && clip.end - clip.start < 0.06)
-      clip = { start: 0, end: view.data?.duration ?? 0 };
+    if (st.clip && st.clip.end - st.clip.start < 0.06)
+      st.clip = { start: 0, end: view.data?.duration ?? 0 };
     sync();
     pushOpts();
   };
@@ -325,7 +258,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   let epoch = 0;
 
   const seekIntoClip = (): void => {
-    const c = clip;
+    const c = st.clip;
     if (!c) return;
     if (audio.currentTime < c.start || audio.currentTime > c.end) {
       try { audio.currentTime = c.start; }
@@ -334,7 +267,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   };
 
   function frame(): void {
-    const c = clip;
+    const c = st.clip;
     if (!playing || !c) return;
     // Region looping cannot use el.loop, and `timeupdate` fires about four
     // times a second — nowhere near fine enough to land an out point on.
@@ -362,7 +295,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
   }
 
   function start(): void {
-    if (!clip || !view.data) return;
+    if (!st.clip || !view.data) return;
     stems.stop();
     playing = true;
     audio.muted = false;               // the button press is the consent
@@ -379,17 +312,17 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
 
   play.addEventListener("click", () => { if (playing) stop(); else start(); });
   audio.addEventListener("error", () => {
-    if (playing) stop(`Could not load audio for “${trackId ?? ""}”.`);
+    if (playing) stop(`Could not load audio for “${st.trackId ?? ""}”.`);
   });
 
   /* ── Loop points ── the arithmetic lives in wave_clip.ts (snapClip). */
   snap.addEventListener("click", () => {
     const d = view.data;
-    if (!clip || !d) return;
+    if (!st.clip || !d) return;
     const times = onsetTimes(d.onsets);
     if (!times.length) return say("No onsets to snap to at these thresholds.", true);
-    const r = snapClip(times, clip);
-    clip = r.clip;
+    const r = snapClip(times, st.clip);
+    st.clip = r.clip;
     sync();
     pushOpts();
     if (playing) seekIntoClip();
@@ -419,18 +352,18 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
 
   return {
     show(id: string | null): void {
-      if (id === trackId) return;
+      if (id === st.trackId) return;
       stop();
       // The encodes belong to the track that was showing; keeping them would
       // let you A/B one track while looking at another.
       deps.codecs?.reset();
       host.hidden = id === null;       // nothing selected, nothing to show
-      trackId = id;
+      st.trackId = id;
       title.textContent = id ? `Clip editor — ${id}` : "";
       // The editor appears ABOVE the list; from a row at the bottom it opened
       // entirely off-screen with no cue that anything had happened.
       if (id) host.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      clip = null;                     // a new track's in/out points are its own
+      st.clip = null;                  // a new track's in/out points are its own
       bridge.clear();                  // …and so are its START/LENGTH (JB1-1)
       // Drop the previous track's analysis NOW, not when the new one lands.
       // Between show() and load() finishing, the old data was still live: a
@@ -448,7 +381,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       void load();
     },
     reanalyse,
-    clip: () => clip,
+    clip: () => st.clip,
     resync: () => sync(),
     stop: () => stop(),
     /** Paint the zone mirror from the frame the stage just drew. */
@@ -465,7 +398,7 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
       stop();
       stems.destroy();
       window.clearTimeout(sensTimer);
-      token++;                         // orphan any analysis still in flight
+      st.token++;                      // orphan any analysis still in flight
       view.destroy();
       wrap.remove();
     },

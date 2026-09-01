@@ -18,7 +18,7 @@
 import type { ShowState } from "./show.js";
 import type { EffectName, ZoneId } from "./types.js";
 import { OVERLAY_NAMES, PALETTE_NAMES } from "./effects.js";
-import { el as byId } from "./dom.js";
+import { el as byId, reqIn } from "./dom.js";
 
 const ZONES: readonly ZoneId[] = ["towerL", "towerR", "door"];
 const EFFECT_CHOICES: readonly string[] = [
@@ -87,7 +87,7 @@ export function createZoneDesigner(getState: () => ShowState): ZoneDesigner {
         getState().phase[el.dataset.z as ZoneId] = Number(el.value) || 0;
       }));
 
-    host.querySelector<HTMLButtonElement>("#zdYaml")!
+    reqIn<HTMLButtonElement>(host, "#zdYaml", "zone designer")
       .addEventListener("click", () => {
         const st2 = getState();
         const lines: string[] = ["    zones:"];
@@ -99,7 +99,7 @@ export function createZoneDesigner(getState: () => ShowState): ZoneDesigner {
           if (st2.phase[z]) bits.push(`phase: ${st2.phase[z]}`);
           if (bits.length) lines.push(`      ${z}: {${bits.join(", ")}}`);
         }
-        const out = host.querySelector<HTMLPreElement>("#zdOut")!;
+        const out = reqIn<HTMLPreElement>(host, "#zdOut", "zone designer");
         out.textContent = lines.length > 1 ? lines.join("\n")
                                            : "    # all zones at defaults";
         out.style.display = "block";
