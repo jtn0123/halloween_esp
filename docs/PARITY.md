@@ -18,7 +18,7 @@ individual checks say how each one works.
 | Castle wire protocol (`/api/*` on the device) | `firmware/sd_web.h` · `tools/castle_emu_wire.py` · `core/src/bridge.rs` (the `castle` bin, a client of the same wire) | `tests/test_firmware_contract.py` parses the C; `tests/test_bridge_rust.py` runs every verb against `castle_emu` |
 | The studio's whole HTTP surface (both tables in `docs/API.md`) | `tools/studio.py` + `studio_*.py` (production) · `core/src/bin/studio.rs` + `core/src/studio*.rs` | `tests/studio_rust_case.py` runs the two servers over twin sandboxes; `tests/test_studio_rust.py` (reads, aliases, relay failures), `test_studio_scenes_rust.py`, `test_studio_media_rust.py`, `test_studio_import_rust.py`, `test_studio_relay_rust.py` compare bodies — and the rebuilt audio and scenes.yaml — byte for byte |
 | `tracks.json` (the provenance manifest, and its flock/atomic-rename protocol) | `tools/manifest.py` · `core/src/manifest.rs` | `tests/studio_rust_case.py` — the two servers' leftover `tracks.json` files are compared byte for byte after the live-analysis and write-back paths run in both |
-| Import URL policy (which hosts yt-dlp may be handed) | `tools/netguard.py` · `core/src/netguard.rs` | **nothing crosses the two.** `tests/test_netguard.py` holds the Python to a corpus; the Rust holds itself to a hand-copied snapshot. Tighten one and the other keeps the older policy silently — see A3 in the grade report |
+| Import URL policy (which hosts yt-dlp may be handed) | `tools/netguard.py` · `core/src/netguard.rs` (the `netguard_dump` bin, `core/src/bin/netguard_dump.rs` — a URL corpus and a DNS table on stdin, one verdict per line out) | `tests/test_netguard_rust.py` drives both over the corpus `tests/test_netguard.py` holds the Python to, DNS mocked from one table on both sides, and compares the **refusal sentences**, not just the verdicts — the desk shows the string |
 | Scene render (synth voices, onset detection, reverb, master chain) | `core/` (castle-core `scene_render` — the production renderer since the B3 swap) · `tools/synth*.py` + `tools/analyze.py` behind `render_audio.render_scene_py` (the reference) | `tests/test_scene_render_rust.py` (byte-equal WAV + markers, canonical crc pin), plus the per-layer gates `test_synth_rust`, `test_master_rust`, `test_onsets_rust` |
 
 ## Why
@@ -41,6 +41,7 @@ make check                       # everything below except the browser suite
                               tests.test_master_rust tests.test_onsets_rust \
                               tests.test_pulse_rust tests.test_bridge_rust -q
 .venv/bin/python -m unittest discover -s tests -p 'test_studio*_rust.py' -q
+.venv/bin/python -m unittest tests.test_netguard tests.test_netguard_rust -q
 cd web && npm test               # bundles test/*.ts into dist/, then runs them
 ```
 

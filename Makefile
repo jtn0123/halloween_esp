@@ -10,7 +10,7 @@ YAML := firmware/castle_flash.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint
+.PHONY: publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
@@ -41,9 +41,10 @@ help:
 	@echo "                  CASTLE_E2E_PORT=8821 make e2e   to run beside another suite"
 	@echo "  make check-all  every check, including the browser tests"
 	@echo "  make coverage   unit tests under coverage.py, report on tools/ (non-gating)"
+	@echo "  make rust-coverage  cargo llvm-cov summary for core/ (non-gating)"
 	@echo "  make coverage-gate  the same, failing under $(COVERAGE_MIN)% (what CI enforces)"
 	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
-	@echo "  make lock       refreeze requirements.lock from .venv"
+	@echo "  make lock       relock requirements.lock from a clean throwaway venv"
 	@echo "  make clean      drop firmware/.esphome and rendered wavs"
 	@echo "  make sd-build / sd-upload   EXPERIMENTAL microSD variant (PROJECT_NOTES §12.9)"
 	@echo "  make bench-audio-logs       tail the bench-audio build's logs"
@@ -152,6 +153,11 @@ test-fast:
 # run with the floor CI enforces (COVERAGE_MIN); raise it as coverage lands.
 # Measured 83% on 2026-08-23 — the floor is the measurement minus one, and
 # it moves UP whenever a fresh `make coverage` beats it (grade report D1).
+#
+# SCOPE: this number describes `tools/` ONLY. The Rust half (core/, the
+# production renderer and importer) is outside `--source=tools` entirely, so
+# 82% is 82% of a shrinking fraction of the shipped code. `make rust-coverage`
+# reports the other half, non-gating (grade report D7).
 COVERAGE_MIN := 82
 # Both tools live in requirements-dev.txt; a venv from before they were added
 # dies with "No module named …", which reads as breakage instead of what it
@@ -178,11 +184,15 @@ audit:
 		$(AUDIT_IGNORES) \
 		|| echo "(advisories above are informational — see .pip-audit-ignore)"
 
-# The lock is the venv as it is: every package, pinned. requirements.txt says
-# what the project needs; this says exactly what was tested.
+# The lock is what a CLEAN install of requirements.txt + requirements-dev.txt
+# resolves to — NOT this venv. Freezing the live venv wrote the optional
+# demucs/torch stack into the file CI installs, and dropped the darwin markers
+# freeze cannot know about. tools/lock_deps.py builds a throwaway venv,
+# freezes that, and puts the markers (and the subprocess-only pins) back.
+# Takes a minute or two: it is a real install, on purpose. Re-run `make audit`
+# after.
 lock:
-	@$(PY) -m pip freeze --exclude-editable > requirements.lock
-	@echo "requirements.lock: $$(wc -l < requirements.lock) pins"
+	@$(PY) tools/lock_deps.py
 
 # castle-core, the Rust half — 9k lines that had no spelling here at all
 # (grade report I1). These three ARE the Rust gate: tests/test_castle_core.py
@@ -204,6 +214,16 @@ rust:
 
 rust-test:
 	$(HAVE_CARGO) cd core && cargo test --release --quiet
+
+# The Rust side of the coverage question (grade report D7). Non-gating, the
+# same shape as `make audit`: cargo-llvm-cov is a separate install, so say
+# what is missing instead of failing a clone that never asked for it. No
+# ratchet here on purpose — this number exists to be looked at while the port
+# is still moving, not to block a commit.
+rust-coverage:
+	$(HAVE_CARGO) command -v cargo-llvm-cov > /dev/null \
+		|| { echo "cargo-llvm-cov not installed — 'cargo install cargo-llvm-cov' for the Rust coverage summary"; exit 0; }; \
+		cd core && cargo llvm-cov --summary-only
 
 rust-lint:
 	$(HAVE_CARGO) cd core && { cargo fmt --check \

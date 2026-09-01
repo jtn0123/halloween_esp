@@ -18,12 +18,13 @@ file is the one that governs.
   `web/src/*.ts` bundled + minified, scene audio inlined). Generated, NOT
   tracked — `make preview` rebuilds it.
 - `core/` — castle-core, the repo's Rust crate (zero dependencies, one
-  `Cargo.lock` with nothing in it). Seven bins under `core/src/bin/`:
+  `Cargo.lock` with nothing in it). Eight bins under `core/src/bin/`:
   `scene_render` (the production renderer — `tools/render_audio.py` spawns
   it), `analyze_track` (the importer's onsets/beats), `studio` (a complete
   twin of `tools/studio.py`, parity-gated but NOT what `make studio` runs),
-  `castle`, and the three parity dumps `parity_dump` / `synth_dump` /
-  `pulse_dump`. `src/wasm.rs` is the face the desk page inlines.
+  `castle`, and the four parity dumps `parity_dump` / `synth_dump` /
+  `pulse_dump` / `netguard_dump` (the SSRF guard's corpus face).
+  `src/wasm.rs` is the face the desk page inlines.
   `tools/core_bins.py` is the only door: subprocess, built on demand with
   cargo, a hard stop rather than a silent Python fall-back. The
   cross-language gates are `tests/test_*_rust.py` and
@@ -74,7 +75,11 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   (`EXEMPT_PATHS`, each with its generator named); `scenes/scenes.yaml` is
   exempt as *data* (`DATA_EXEMPT`) and pays for it with the budget that
   actually binds it — **at most 12 scenes**, counted and failed by the same
-  check (`SCENE_LIMIT`). Nothing hand-written is exempt.
+  check (`SCENE_LIMIT`). The desk refuses the thirteenth too, at splice time
+  and before the file is touched (`studio_scenes.check()`, which the Rust
+  studio asks through `tools/scene_check.py`) — the ceiling should not be
+  discovered by a red pre-commit hook after the show is already edited.
+  Nothing hand-written is exempt.
 - ruff + mypy clean (`pyproject.toml`); tsc `--noEmit` clean for `web/`.
 - `make check` green before handing work back. Never skip or disable a test
   to get there — fix it or list it as follow-up work.
@@ -87,6 +92,14 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
 - `CASTLE_SCENES=<file>` redirects scene writes.
 - `CASTLE_HOST=<host[,fallback…]>` names the castle; set-but-EMPTY (`""`)
   means "explicitly no castle" — castle_link returns None, no sockets.
+- `CASTLE_PY=<interpreter>` names the python the studio's children run
+  under. The Python studio has `sys.executable` and never needs it; the
+  Rust studio bin has no such self-knowledge and asks `CASTLE_PY` first,
+  then `.venv/bin/python`, then bare `python3` (`core/src/studio_scenes.rs`
+  `py()`/`check_py()`). Set it from a worktree or a CI checkout that shares
+  another tree's venv — otherwise the rebuild finds a system python with no
+  yaml and every child fails confusingly. `web/playwright.config.ts` honours
+  it for the same reason.
 - `tests/studio_case.py` and `web/playwright.config.ts` set all three.
 - Hardware-free castle: `.venv/bin/python tools/castle_emu.py 8093`, then
   `CASTLE_HOST=127.0.0.1:8093 .venv/bin/python tools/studio.py 8766 --localhost`
