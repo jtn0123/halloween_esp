@@ -178,8 +178,13 @@ mod tests {
 
     #[test]
     fn the_watchdog_kills_a_child_that_will_not_finish() {
-        let mut c = Command::new("/bin/sh");
-        c.args(["-c", "sleep 30"]);
+        // sleep is spawned DIRECTLY, not through `sh -c`: Linux's sh forks a
+        // grandchild that inherits the pipe, so killing the shell leaves the
+        // stream drain blocked for the grandchild's full 30s — which is a
+        // property of the shell wrapper, not of the watchdog. Production
+        // children (the generators) are spawned directly, like this.
+        let mut c = Command::new("sleep");
+        c.arg("30");
         let start = std::time::Instant::now();
         let (ok, log) = run(c, 1);
         assert!(!ok);

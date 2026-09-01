@@ -14,7 +14,7 @@
 //! the castle refuses or the card's answer disagrees, 1 for transport.
 //! tests/test_bridge_rust.py round-trips every verb against castle_emu.
 
-use castle_core::bridge::{encode_query, list_entries, probe, request, upload, UploadFault};
+use castle_core::bridge::{UploadFault, encode_query, list_entries, probe, request, upload};
 use castle_core::hosts;
 
 fn fail(msg: &str) -> ! {

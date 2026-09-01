@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use crate::jsonio::{self, dumps, Json};
+use crate::jsonio::{self, Json, dumps};
 use crate::studio::App;
 use crate::studio_media::compares;
 
@@ -21,7 +21,7 @@ fn which(name: &str) -> bool {
 
 /// studio_media.probe — what is at this link, without downloading it.
 pub fn probe(url: &str) -> (Json, bool) {
-    use crate::studio_scenes::{run_split, Timed};
+    use crate::studio_scenes::{Timed, run_split};
     let fail = |msg: String| {
         (
             Json::Obj(vec![
@@ -187,7 +187,7 @@ pub fn compare(app: &App, req: &Json) -> (Json, u16) {
                     ("error".into(), Json::Str(e)),
                 ]),
                 400,
-            )
+            );
         }
     };
     let secs = std::time::SystemTime::now()

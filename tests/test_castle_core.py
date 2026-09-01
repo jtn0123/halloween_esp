@@ -343,8 +343,17 @@ class TestCastleCoreParity(unittest.TestCase):
         if NODE is None and not IN_CI:
             self.skipTest("no node")
         assert NODE is not None
+        # --no-default-features drops the `native` half (grade report
+        # 2026-09-01 A1): the server, ffmpeg and flock never compile for a
+        # target that cannot run them. WITH the default features this build
+        # fails, which is the point — the wasm face is the arithmetic only.
         built = cargo(
-            "build", "--release", "--quiet", "--target", "wasm32-unknown-unknown"
+            "build",
+            "--release",
+            "--quiet",
+            "--no-default-features",
+            "--target",
+            "wasm32-unknown-unknown",
         )
         self.assertEqual(built.returncode, 0, f"wasm build failed:\n{built.stderr}")
         wasm = (
@@ -352,7 +361,11 @@ class TestCastleCoreParity(unittest.TestCase):
         )
         size = wasm.stat().st_size
         # ~1.4x when base64-inlined; the page budget is 4 MB and ~3.3 used.
-        self.assertLess(size, 200_000, f"castle_core.wasm is {size:,} bytes")
+        # ~8 KB actual, so this bound is ~2.5x — a ratchet that can actually
+        # fire. The old 200 KB could not: it was 25x the artifact, and the
+        # feature split (A1) means an accidental `use crate::httpd` here now
+        # shows up as a size jump rather than as nothing at all.
+        self.assertLess(size, 20_000, f"castle_core.wasm is {size:,} bytes")
         script = Path(self.tmp) / "wasm_check.mjs"
         script.write_text(WASM_CHECK)
         r = subprocess.run(

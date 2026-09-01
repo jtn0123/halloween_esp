@@ -8,7 +8,7 @@
 //! here, so the parity corpus pins those numbers as well.
 
 use crate::pulse::{
-    drift_base, gate_mul, gate_note, is_accent, round3, tempo_decay, tempo_factor, PAN_DECISIVE,
+    PAN_DECISIVE, drift_base, gate_mul, gate_note, is_accent, round3, tempo_decay, tempo_factor,
 };
 
 pub const WHITE: [f64; 4] = [1.0, 1.0, 1.0, 1.0];

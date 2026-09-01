@@ -11,22 +11,13 @@ use std::path::{Path, PathBuf};
 
 use crate::jsonio::{self, Json};
 
-#[cfg(not(target_arch = "wasm32"))]
-extern "C" {
+unsafe extern "C" {
     fn flock(fd: i32, operation: i32) -> i32;
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn lock_file(f: &std::fs::File, op: i32) -> i32 {
     use std::os::unix::io::AsRawFd;
     unsafe { flock(f.as_raw_fd(), op) }
-}
-
-/// The wasm face never runs a server; the lock is a no-op there so the
-/// crate still compiles (and links) for the desk.
-#[cfg(target_arch = "wasm32")]
-fn lock_file(_f: &std::fs::File, _op: i32) -> i32 {
-    0
 }
 
 const LOCK_EX: i32 = 2;

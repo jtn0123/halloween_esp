@@ -7,19 +7,17 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::jsonio::{py_float, Json};
+use crate::jsonio::{Json, py_float};
 use crate::studio::App;
 use crate::studio_reason::explain;
 
-#[cfg(not(target_arch = "wasm32"))]
-extern "C" {
+unsafe extern "C" {
     fn dup2(oldfd: i32, newfd: i32) -> i32;
     fn kill(pid: i32, sig: i32) -> i32;
 }
 
 /// The child's stderr joins its stdout at the fd level (Python's
 /// stderr=STDOUT): after the pipe lands on fd 1, dup it onto fd 2.
-#[cfg(not(target_arch = "wasm32"))]
 fn merge_stderr(cmd: &mut Command) {
     use std::os::unix::process::CommandExt;
     unsafe {
@@ -30,18 +28,11 @@ fn merge_stderr(cmd: &mut Command) {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
-fn merge_stderr(_cmd: &mut Command) {}
-
-#[cfg(not(target_arch = "wasm32"))]
 fn kill9(pid: i32) {
     unsafe {
         kill(pid, 9);
     }
 }
-
-#[cfg(target_arch = "wasm32")]
-fn kill9(_pid: i32) {}
 
 /// The importer's CLI flags — shared by import, async import and refresh.
 pub const OPT_KEYS: [&str; 12] = [

@@ -360,8 +360,8 @@ mod tests {
             "HTTP/1.1 200 OK\r\nContent-Type: audio/mpegX-Forged: yes\r\n\r\n"
         );
         assert_eq!(h.matches("\r\n").count(), 3); // status, the one header, the blank
-                                                  // A bare CR is the half that used to get through an incidental
-                                                  // trim(): browsers and proxies still read it as a line break.
+        // A bare CR is the half that used to get through an incidental
+        // trim(): browsers and proxies still read it as a line break.
         assert!(!head(200, &[("Content-Type", "a\rb".to_string())]).contains("a\rb"));
         assert!(!head(200, &[("Content-Type", "a\nb".to_string())]).contains("a\nb"));
         assert_eq!(header_value("audio/mpeg"), "audio/mpeg");

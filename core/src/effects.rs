@@ -3,7 +3,7 @@
 //! `tests/test_castle_core.py` holds every channel to the same bits.
 
 use crate::noise::{fbm, vnoise};
-use crate::palette::{mix_pal, Rgbw};
+use crate::palette::{Rgbw, mix_pal};
 
 pub const EFF_OFF: i32 = 0;
 pub const EFF_CANDLE: i32 = 1;

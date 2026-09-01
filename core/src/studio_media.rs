@@ -7,7 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
-use crate::jsonio::{self, obj_update, Json};
+use crate::jsonio::{self, Json, obj_update};
 use crate::scene::round3;
 use crate::studio_tracks::AUDIO_EXT;
 use crate::{atmos, media, onsets};

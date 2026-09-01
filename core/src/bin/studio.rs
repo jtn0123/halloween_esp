@@ -11,9 +11,9 @@
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 
-use castle_core::httpd::{deliver, respond_json, scrub, Conn, Reply};
+use castle_core::httpd::{Conn, Reply, deliver, respond_json, scrub};
 use castle_core::jsonio::Json;
-use castle_core::studio::{pending, repo_root, Action, App};
+use castle_core::studio::{Action, App, pending, repo_root};
 use castle_core::studio_routes::handle;
 
 fn main() {
@@ -118,7 +118,11 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
 /// bind. A port someone else really holds still fails on the first try.
 fn bind_retry(host: &str, port: u16) -> std::io::Result<TcpListener> {
     let restarted = std::env::var_os("CASTLE_STUDIO_RESTART").is_some();
-    std::env::remove_var("CASTLE_STUDIO_RESTART");
+    // Unsafe since edition 2024, and the audit it asks for passes here: this
+    // runs from serve() before the accept loop exists, so no other thread can
+    // be reading the environment while it is written. The var is cleared so a
+    // child the studio spawns does not inherit "you are a restart".
+    unsafe { std::env::remove_var("CASTLE_STUDIO_RESTART") };
     let tries = if restarted { 100 } else { 1 };
     let mut last = None;
     for i in 0..tries {
@@ -135,17 +139,6 @@ fn bind_retry(host: &str, port: u16) -> std::io::Result<TcpListener> {
 
 /// os.execv(sys.executable, sys.argv): the same process image again, PID
 /// kept, after the response has actually gone out.
-#[cfg(target_arch = "wasm32")]
-fn restart_self() -> ! {
-    std::process::exit(0)
-}
-
-#[cfg(target_arch = "wasm32")]
-fn bind_reuse(host: &str, port: u16) -> std::io::Result<TcpListener> {
-    TcpListener::bind((host, port))
-}
-
-#[cfg(not(target_arch = "wasm32"))]
 fn restart_self() -> ! {
     use std::os::unix::process::CommandExt;
     std::thread::sleep(std::time::Duration::from_millis(400));
@@ -159,7 +152,7 @@ fn restart_self() -> ! {
     std::process::exit(1);
 }
 
-#[cfg(all(target_os = "macos", not(target_arch = "wasm32")))]
+#[cfg(target_os = "macos")]
 mod so {
     pub const SOL_SOCKET: i32 = 0xffff;
     pub const SO_REUSEADDR: i32 = 0x0004;
@@ -182,7 +175,7 @@ mod so {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_arch = "wasm32")))]
+#[cfg(not(target_os = "macos"))]
 mod so {
     pub const SOL_SOCKET: i32 = 1;
     pub const SO_REUSEADDR: i32 = 2;
@@ -203,8 +196,7 @@ mod so {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
-extern "C" {
+unsafe extern "C" {
     fn socket(domain: i32, ty: i32, protocol: i32) -> i32;
     // Variadic for real: fcntl(2) is `int fcntl(int, int, ...)`, and on
     // arm64 a variadic argument travels on the stack, not in x2. Declared
@@ -222,7 +214,6 @@ extern "C" {
 /// TcpListener::bind with SO_REUSEADDR — what ThreadingHTTPServer's
 /// allow_reuse_address does, without which a restart inside TIME_WAIT
 /// cannot rebind its own port.
-#[cfg(not(target_arch = "wasm32"))]
 fn bind_reuse(host: &str, port: u16) -> std::io::Result<TcpListener> {
     use std::os::unix::io::FromRawFd;
     let ip: u32 = if host == "0.0.0.0" { 0 } else { 0x7f00_0001 };

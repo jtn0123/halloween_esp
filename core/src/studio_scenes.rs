@@ -17,13 +17,13 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 
 use crate::jsonio::{self, Json};
-use crate::studio::{scene_ids, App};
+use crate::studio::{App, scene_ids};
 use crate::studio_relay;
 
 /// Which python the children run under, and how a child is captured —
 /// [`studio_proc`](crate::studio_proc), split off at the 500-line cap.
 /// Re-exported so every caller still says `studio_scenes::run`.
-pub use crate::studio_proc::{check_py, py, run, run_split, tail4000, Timed};
+pub use crate::studio_proc::{Timed, check_py, py, run, run_split, tail4000};
 
 /// studio_scenes.block_pattern: one scene's block, from its `  - id: `
 /// line to the next one (or EOF); a final unterminated line stays outside,

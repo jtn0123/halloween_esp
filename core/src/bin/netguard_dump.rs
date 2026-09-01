@@ -17,7 +17,7 @@
 use std::io::Read;
 use std::net::IpAddr;
 
-use castle_core::jsonio::{dumps, parse, Json};
+use castle_core::jsonio::{Json, dumps, parse};
 use castle_core::netguard::refuse_reason_with;
 
 fn main() {

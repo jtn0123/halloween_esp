@@ -25,8 +25,8 @@
 //!   Python one is what `make studio` still starts; the flip is off-season
 //!   work. Nothing here is the show's path *yet*.
 //! - `wasm` (module) — the desk's future effects engine, built to
-//!   wasm32-unknown-unknown and proven to load. The desk still runs the
-//!   TypeScript copy.
+//!   wasm32-unknown-unknown `--no-default-features` and proven to load. The
+//!   desk still runs the TypeScript copy.
 //! - `parity_dump` / `synth_dump` / `pulse_dump` (bins) — **parity only.**
 //!   They exist to be diffed: `parity_dump` against the host-compiled C++
 //!   in `tests/cxx/`, the other two against numpy, digit for digit.
@@ -34,45 +34,81 @@
 //! Everything with a Python or C++ twin is held to it by a test that
 //! compares values, not behaviour-in-spirit — see docs/PARITY.md. Change
 //! one side of a pair and the gate fails; that is the whole design.
+//!
+//! **Two halves, one crate (`native`, default on).** The modules below the
+//! `native` line need a machine: files, sockets, child processes, ffmpeg.
+//! The ones above it are arithmetic and nothing else, which is exactly what
+//! the desk's cdylib wants — so the wasm face is built
+//! `--no-default-features` and the whole HTTP server stops compiling into a
+//! module that will never listen on anything. That is not only weight: the
+//! stubs manifest.rs and studio_jobs.rs used to carry (a flock that does not
+//! lock, a kill that does not kill, both live only on wasm32) existed to get
+//! a server past a target that cannot run one. Gate the modules and the lies
+//! go away. Bins are native by definition and say so in Cargo.toml.
+//! The mods stay flat: a dsp::/net:: rename would touch every import in the
+//! crate and every test that names a path, for no gate a feature does not
+//! already give.
 
 pub mod atmos;
-pub mod bridge;
 pub mod effects;
 pub mod fft;
 pub mod filters;
-pub mod hosts;
-pub mod http_parse;
-pub mod http_resp;
-pub mod httpd;
 pub mod jsonio;
-pub mod manifest;
 pub mod master;
-pub mod media;
-pub mod netguard;
 pub mod noise;
-pub mod onsets;
 pub mod overlay;
 pub mod palette;
 pub mod pieces;
 pub mod pulse;
 pub mod pulse_expand;
 pub mod rng;
-pub mod scene;
-pub mod studio;
-pub mod studio_import;
-pub mod studio_jobs;
-pub mod studio_media;
-pub mod studio_probe;
-pub mod studio_proc;
-pub mod studio_reason;
-pub mod studio_relay;
-pub mod studio_routes;
-pub mod studio_scenes;
-pub mod studio_tracks;
 pub mod synth;
 pub mod wasm;
 
+#[cfg(feature = "native")]
+pub mod bridge;
+#[cfg(feature = "native")]
+pub mod hosts;
+#[cfg(feature = "native")]
+pub mod http_parse;
+#[cfg(feature = "native")]
+pub mod http_resp;
+#[cfg(feature = "native")]
+pub mod httpd;
+#[cfg(feature = "native")]
+pub mod manifest;
+#[cfg(feature = "native")]
+pub mod media;
+#[cfg(feature = "native")]
+pub mod netguard;
+#[cfg(feature = "native")]
+pub mod onsets;
+#[cfg(feature = "native")]
+pub mod scene;
+#[cfg(feature = "native")]
+pub mod studio;
+#[cfg(feature = "native")]
+pub mod studio_import;
+#[cfg(feature = "native")]
+pub mod studio_jobs;
+#[cfg(feature = "native")]
+pub mod studio_media;
+#[cfg(feature = "native")]
+pub mod studio_probe;
+#[cfg(feature = "native")]
+pub mod studio_proc;
+#[cfg(feature = "native")]
+pub mod studio_reason;
+#[cfg(feature = "native")]
+pub mod studio_relay;
+#[cfg(feature = "native")]
+pub mod studio_routes;
+#[cfg(feature = "native")]
+pub mod studio_scenes;
+#[cfg(feature = "native")]
+pub mod studio_tracks;
+
 pub use effects::render;
 pub use noise::{fbm, hash3, hashi, mix32, vnoise};
-pub use overlay::{apply_overlay, flash_gate, Fixture};
-pub use palette::{mix_pal, Rgbw, PALETTES};
+pub use overlay::{Fixture, apply_overlay, flash_gate};
+pub use palette::{PALETTES, Rgbw, mix_pal};

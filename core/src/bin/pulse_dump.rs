@@ -15,7 +15,7 @@
 use castle_core::pulse::{
     drift_base, gate_mul, gate_note, is_accent, round3, tempo_decay, tempo_factor, thin_pulses_idx,
 };
-use castle_core::pulse_expand::{pulse_cues, Hit, PulseCfg};
+use castle_core::pulse_expand::{Hit, PulseCfg, pulse_cues};
 use std::io::BufRead;
 
 fn floats(s: &str) -> Vec<f64> {
