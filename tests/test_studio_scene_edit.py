@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import studio
+from check_loc import SCENE_LIMIT
 from studio_case import ServerCase
 
 
@@ -181,6 +182,50 @@ class TestSceneEditing(ServerCase):
             0,
             "a rejected scene still triggered a rebuild",
         )
+
+    #: A show already at the board's ceiling — SCENE_LIMIT scenes, built
+    #: from the constant so raising it here cannot silently pass this by.
+    FULL = "scenes:\n" + "".join(
+        f"  - id: s{i}\n    duration_ms: 1000\n" for i in range(SCENE_LIMIT)
+    )
+
+    def test_a_thirteenth_scene_is_refused_before_anything_is_written(self) -> None:
+        """`make check` already fails a thirteenth scene, but the desk is
+        where scenes get written — and discovering the ceiling as a red
+        pre-commit hook means discovering it with scenes.yaml already
+        edited and the show already re-rendered (grade report A8)."""
+        self.scenes.write_text(self.FULL)
+        code, d = self.post_json(
+            "/studio/scene", {"id": "one_too_many", "yaml": block("one_too_many")}
+        )
+        self.assertEqual(code, 400)
+        self.assertIn("the show is full", d["error"])
+        self.assertIn(str(SCENE_LIMIT), d["error"])
+        self.assertIn("one_too_many", d["error"])
+        ceiling = f"scene ceiling: {SCENE_LIMIT}/{SCENE_LIMIT} scenes"
+        self.assertEqual(d["errors"], [ceiling])
+        self.assertEqual(self.scenes.read_text(), self.FULL, "the file was edited")
+        self.assertFalse(
+            self.scenes.with_suffix(".yaml.bak").exists(), "a .bak was written"
+        )
+        self.assertEqual(
+            studio.run.call_count,  # type: ignore[attr-defined]  # a Mock in the fixture
+            0,
+            "a refused scene still triggered a rebuild",
+        )
+
+    def test_a_full_show_still_takes_a_replacement(self) -> None:
+        """The ceiling counts scenes, not writes: re-saving a scene that is
+        already in the show never grows it, and a full show is exactly when
+        the operator is most likely to be editing rather than adding."""
+        self.scenes.write_text(self.FULL)
+        code, d = self.post_json(
+            "/studio/scene", {"id": "s0", "yaml": block("s0", duration_ms=4242)}
+        )
+        self.assertEqual(code, 200, d)
+        self.assertTrue(d["replaced"])
+        self.assertIn("duration_ms: 4242", self.scenes.read_text())
+        self.assertEqual(len(d["scenes"]), SCENE_LIMIT)
 
     def test_the_answer_carries_the_new_scene_list(self) -> None:
         """The row's "in the show" badge comes from this, so it has to be the

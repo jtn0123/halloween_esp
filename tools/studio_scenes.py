@@ -17,6 +17,7 @@ from pathlib import Path
 import build_paths as bp
 import scene_schema
 import yaml
+from check_loc import SCENE_LIMIT
 
 Runner = Callable[[list[str]], tuple[bool, str]]
 
@@ -144,6 +145,13 @@ def check(scenes: Path, req: dict) -> tuple[dict, int] | None:
     a SCENE — known effects, cues inside its length, the keys the
     generators read (grade report B4); each problem is one line the desk
     can show next to the field.
+
+    And it must FIT. The board holds SCENE_LIMIT scenes (~9 KB of dram0
+    each); a thirteenth is a scene that cannot be compiled. `make check`
+    already refuses it, but the desk is where it gets written — and
+    discovering the ceiling as a red pre-commit hook, after the splice, is
+    discovering it with the show already edited. So the ceiling is answered
+    HERE, before `_write` touches anything (grade report A8).
     """
     block = (req.get("yaml") or "").rstrip()
     sid = (req.get("id") or "").strip()
@@ -166,6 +174,19 @@ def check(scenes: Path, req: dict) -> tuple[dict, int] | None:
             "error": f"scene {sid!r} has {len(errors)} problem"
             f"{'s' if len(errors) > 1 else ''}: {errors[0]}",
             "errors": errors,
+        }, 400
+    # Replacing a scene that is already in the show never grows it, so only
+    # a NEW id is measured against the ceiling.
+    have = scene_ids(scenes)
+    if sid not in have and len(have) >= SCENE_LIMIT:
+        return {
+            "error": f"the show is full — {len(have)} scenes is the "
+            f"{SCENE_LIMIT} this board can hold (~9 KB of dram0 each), so "
+            f"{sid!r} cannot be added. Remove a scene first, or move the cue "
+            "timelines to the card-loaded format described in "
+            "scenes/scenes.yaml's header — a thirteenth generated script is "
+            "not the next step.",
+            "errors": [f"scene ceiling: {len(have)}/{SCENE_LIMIT} scenes"],
         }, 400
     return None
 

@@ -18,7 +18,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from studio_rust_case import CARGO, IN_CI, StudioPair
+from studio_rust_case import CARGO, IN_CI, StudioPair, scenes_fixture
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+
+from check_loc import SCENE_LIMIT
 
 TINY = (
     "  - id: {sid}\n"
@@ -121,6 +125,34 @@ class SceneRoutes(StudioPair):
         self.assertEqual(a[0], 200, a[2][:400])
         self.assert_bodies_match(a, b)
         self.assert_artifacts_match()
+
+    def test_05_the_thirteenth_scene_is_refused_the_same_way(self) -> None:
+        """A show already at the ceiling: both servers must turn the next
+        scene away with the same sentence, and neither may touch the file
+        (grade report A8). Last of the five because it rewrites both
+        sandboxes' scenes.yaml to a full show and does not put them back —
+        nothing after it would be measuring the fixture any more.
+
+        The Rust studio has no count of its own: it asks
+        tools/scene_check.py, which is where the ceiling lives. This test is
+        what would notice if that delegation were ever replaced by a port.
+        """
+        full = (
+            scenes_fixture().split("\nscenes:\n", 1)[0]
+            + "\nscenes:\n"
+            + "\n".join(tiny(f"s{i}") + "\n" for i in range(SCENE_LIMIT))
+        )
+        for path in (self.py_scenes, self.rs_scenes):
+            path.write_text(full)
+        a, b = self.post_scene({"id": "one_too_many", "yaml": tiny("one_too_many")})
+        self.assertEqual(a[0], 400, a[2][:400])
+        self.assertEqual(b[0], 400, b[2][:400])
+        self.assertEqual(a[2], b[2], "the two servers refuse differently")
+        d = self.parsed(a)
+        assert isinstance(d, dict)
+        self.assertIn("the show is full", str(d["error"]))
+        self.assertEqual(self.py_scenes.read_text(), full, "python edited the file")
+        self.assertEqual(self.rs_scenes.read_text(), full, "rust edited the file")
 
 
 if __name__ == "__main__":
