@@ -28,7 +28,7 @@ belongs to; start a new part when one nears the cap.
 | [02 — Mockup and bill of materials](docs/notes/02-mockup-and-bom.md) | §10–§11 | The Mac-side mockup and the Castle Cue Desk as built, with its fidelity caveats; board facts that constrain everything; the parts list; power plan; wiring map; speakers; where to buy what; the DFPlayer's honest assessment; gotchas |
 | [03 — Build: firmware, light, previewer, tracks](docs/notes/03-build.md) | §12–§12.8, §12.15 | What was pinned down during the build; the flash wall; what compiling verified and what still needs the board; dry-run work; making audio actually drive the light; the previewer transport rebuild; custom tracks; the flash wall winning, and the SD build becoming the only build (§12.15, filed here because it is where §12.2 recorded the wall) |
 | [04 — Build: microSD, pins, audio capacity, benchmark, logs](docs/notes/04-build-sd-pins-audio-bench.md) | §12.9–§12.14 | microSD audio — what's true and what it costs; the eInk FeatherWing taking three pins; audio capacity numbers; the on-board MP3 decode benchmark and its results; getting logs off the board; build trees moved off the internal disk (§12.12, filed after §12.14) |
-| [05 — Decision log and roadmap](docs/notes/05-decisions-and-roadmap.md) | §13–§14 | Every decision with date and rationale; the agreed roadmap and standing work |
+| [05 — Decision log and roadmap](docs/notes/05-decisions-and-roadmap.md) | §13–§14 | Every decision with date and rationale; the 2026-08-10 roadmap closed out, and where the project stands as of 2026-09-01 — what is done, what waits on the board |
 
 **Reading the quality gate:** [docs/ISSUE-sonar.md](docs/ISSUE-sonar.md) —
 SonarCloud reports two letters and nothing a command line can reach; that file

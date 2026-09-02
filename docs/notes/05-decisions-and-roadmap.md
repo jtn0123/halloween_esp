@@ -46,41 +46,61 @@ Part of the design record; the index is [`PROJECT_NOTES.md`](../../PROJECT_NOTES
 | 2026-08-27 | The Rust studio is a twin, not a replacement | Track B of [`.claude/typesafe-migration-plan.md`](../../.claude/typesafe-migration-plan.md): a rewrite in place would have swapped the desk's server mid-season on a decoration that has one operator and one October. So `core/src/bin/studio.rs` was built beside `tools/studio.py` and held answer-for-answer to it (`tests/studio_rust_case.py`, and the browser suite via `CASTLE_STUDIO_CMD`); the flip of `make studio` is off-season work, when a regression costs nothing |
 | 2026-09-01 | The flip: `make studio` starts the Rust one, Python is the fallback | The e2e matrix runs both servers on every push, so the twin is gated continuously rather than hoped about — the condition the 2026-08-27 row was waiting for. `tools/studio_launch.sh` (also `.claude/launch.json`) builds and execs `core/target/release/studio`, and falls back to `tools/studio.py` with a printed reason when there is no cargo; `CASTLE_STUDIO=rust\|python` names one outright. Nothing Python retires: it is still the reference every `tests/test_studio*_rust.py` suite measures against |
 
+| 2026-09-01 | `make e2e` tests the Rust server by default | The browser suite was still defaulting to `tools/studio.py` the day after production stopped running it. `web/playwright.config.ts` now mirrors the launcher — the built binary when it exists, Python otherwise — and `make e2e` rebuilds the binary first, refusing to test a stale one. `CASTLE_STUDIO_CMD` pins either; CI still runs both axes |
+| 2026-09-01 | The Python studio retires after the season, not before — and its answers are frozen now | [`docs/RETIREMENT.md`](../RETIREMENT.md): the server goes, the toolchain it spawns (generators, importer, sd_sync) stays. Retiring mid-season would delete the only measuring stick while the Rust server has run for one day; so the season is the soak test. What CAN be done early was: 39 golden fixtures (`tests/golden/`, read routes and every scene-splice refusal string) captured while Python is still the trusted reference, held against the Rust server by a test that never launches the Python one |
+| 2026-09-01 | One firmware build — the SD one | The all-in-flash `castle_flash.yaml` could not hold the show once scenes 9–10 were real songs (3.2 MB of audio into a 1.75 MB OTA slot), had not compiled in a week, and had not been on the porch since 2026-08-22. CI only proof-read it, never cooked it. Deleted rather than nursed, on the operator's word that the card is not optional (§12.15). v5.43's binary is unchanged by the cleanup |
+
 ---
 
-## 14. Roadmap
+## 14. Roadmap and where things stand
 
-Agreed order, 2026-08-10. Each step makes the next one easier, which is why
-they are in this order rather than by appetite.
+### The 2026-08-10 roadmap, closed out
 
-### 1. TypeScript migration — `web/MIGRATION.md`
-The previewer is 1892 lines of HTML wrapping ~1400 lines of untyped inline JS.
-Eight modules, all under 500 lines, split by responsibility. The inline script
-stays authoritative until the final commit flips over, so the page is never
-half-migrated. Doing this first because the bundler it introduces is what makes
-step 3 a build flag instead of a fork.
+1. **TypeScript migration — done 2026-08-10** (`web/MIGRATION.md`, kept as
+   the record). Every desk module is typed and under the cap.
+2. **~~SD card streaming~~ — not possible**, and the whole-file path
+   (`firmware/sd_audio.h`, whole file into PSRAM) shipped instead; since
+   2026-09-01 it is the only build (§12.15).
+3. **A cut-down cue desk served off the device — done.** `sd_sync site`
+   pushes the lean page (90 KB gzipped) and per-scene mp3s to the card; the
+   studio serves the same lean form. The full inlined page stays the
+   portable artifact, governed by `tools/previewer_budget.py`.
 
-### 2. ~~SD card streaming~~ — NOT POSSIBLE, and the whole-file path already ships
-Corrected 2026-08-10 after reading the decoder, not just the base class.
-`media_source::MediaSource` is pluggable, but a source does not decode — it
-feeds `micro_decoder` 0.2.0, whose only two entry points are a whole buffer in
-RAM or a URL it fetches itself. No pull interface exists, so a source cannot
-stream a file from a card. See HARDWARE_FINDINGS §3b.
+### Where the project stands — 2026-09-01
 
-`firmware/sd_audio.h` already does the reachable thing: whole file into PSRAM,
-which fits ~4:52 at 48 kbps. The card was always about escaping the 2.9 MB
-flash budget rather than about length, and that it does. Remaining work is to
-put a card in the slot and confirm it mounts on the real pins.
+Software, all committed and CI-green at `8e55f4e`:
 
-### 3. A cut-down cue desk served off the device
-Flash headroom is ~1.1 MB. The current page is 2.6 MB, almost entirely embedded
-audio — and the device *is* the audio, so that goes. Drop the synth and the
-Tracks panel too; keep the stage, scene buttons and cue sheet. Plausibly under
-100 KB. With step 1 done this is a build target, not a second codebase.
+- **The Rust studio is production** (`make studio`, `make e2e`); the Python
+  one is the fallback and the parity reference until the season is over —
+  [`docs/RETIREMENT.md`](../RETIREMENT.md), Phase 0 complete.
+- **One firmware build**, `castle_sd.yaml`, v5.43, compiled at 88 % dram0
+  (the alarm is 92 %). `make publish` and `make ota` rehearsed end to end
+  against the emulator, so flash day is the board and nothing else.
+- **The gates**: 994 Python tests, 76 Rust, 148 browser, 13 cross-language
+  parity suites, 39 golden fixtures, the 500-line and dated-citation
+  guards. The grade report 2026-09-01 (`.claude/grade-report.md`) is A−
+  with every item closed.
+- **The show**: 10 of the 12 scene slots this board can hold.
 
-### Standing work
-- Split `tools/synth.py` (395 lines, will pass 500 with the next scene) into
-  `voices.py` and `pieces.py`
-- Verify the remapped pins against hardware with a meter (§12.10 inference flag)
-- Re-run the benchmark with a real idle window, and again with pixels and amp
-  drawing current (§12.13 caveat)
+Waiting on hardware — the castle is off the network:
+
+- OTA to **5.43**, confirm it on the panel, watch the first big upload for
+  the 32 KB watchdog cadence, connect once so the image is confirmed, then
+  `make publish` — the checklist is `firmware/pending/README.md`.
+- The door-ring flicker bench tests, in the order
+  [`docs/ISSUE-ring-flicker.md`](../ISSUE-ring-flicker.md) gives them; the
+  second-RMT-block lever waits until those come back clean.
+- The `bench*.yaml` variants lost their onboard-pixel cue display when they
+  were rebased on the SD build (§12.15). Restore it only if a bare-board
+  dry run is wanted again.
+
+Standing work, reviewed 2026-09-01:
+
+- `tools/synth.py` is 447 lines: split into voices and pieces when the next
+  scene pushes it over, not before.
+- ~~Verify the remapped pins with a meter~~ — the rig has run on them since
+  2026-08-22; struck.
+- Re-run the decode benchmark with pixels and amp drawing current (§12.13
+  caveat) — still open, needs the board.
+- Off-season: retirement phases 1–4; scene slots 11 and 12 when there are
+  songs for them.
