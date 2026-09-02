@@ -6,34 +6,45 @@
 #   - the open risk from PROJECT_NOTES §12.4: MP3 decode + WiFi + RMT all at
 #     once on a single core. The audio pipeline runs in full; the I2S pins
 #     just have nothing listening. Watch `esphome logs` for buffer underruns.
+#     One caveat since the flash build was retired (2026-09-01): the scene
+#     tracks live on the card now, so with an empty slot each scene decodes
+#     the one-second chirp instead of its song and the decode risk is NOT
+#     what this run measures. Put the show card in the wing for that, or use
+#     bench_audio.yaml, which exists to measure exactly it.
 #   - the whole scene engine: cue timing, effect switching, PIR debounce
 #     (GPIO6 is pulled down, so it stays quiet unwired).
-#   - the ONBOARD NeoPixel (GPIO33) plays pixel 0 of towerL — you can watch
-#     the candle flicker, strikes and palette changes on the board itself.
+#   - that the board comes up, joins WiFi and serves the desk: the ONBOARD
+#     NeoPixel (GPIO33) is the show build's status pixel, so it is the one
+#     thing on a bare Feather you can actually watch.
 #
-# The onboard pixel is plain RGB, so tower L's colour type is overridden. Its
-# other six pixels, and the two zones nothing is wired to, clock out into
-# unconnected pins harmlessly.
+# It used to be tower L's strip instead — you could see the candle flicker on
+# the board itself — but that trick died with the flash build (see the
+# substitutions below). All three zones now clock out into unconnected pins
+# harmlessly, and the cue timings are read from the log, not from a pixel.
 
 substitutions:
   name: castle-bench
   friendly: Castle Bench
-  # The onboard pixel replaces tower L's strip: same pin substitution as
-  # before, now per zone. It plays tower L's pixel 0 and the rest of that
-  # zone falls off the end of a wire that is not there. The other two zones
-  # keep their real pins and clock into thin air, which costs nothing.
-  pin_towerL: "33"      # onboard NeoPixel
-  channels_towerL: "GRB"  # the onboard pixel is plain RGB
+  # NO pin override any more. This used to point tower L at the onboard
+  # NeoPixel (GPIO33) so a bare board could show the candle flicker, which
+  # worked while the base was castle_flash.yaml and nothing else wanted that
+  # pin. The show build claims GPIO33 for its own status pixel, and ESPHome
+  # refuses two strips on one pin outright — so all three zones now clock
+  # into unconnected pins (which costs nothing) and the onboard pixel says
+  # what the DEVICE is doing instead of what tower L is. (2026-09-01)
 
 packages:
-  # The flash variant, not the core: the bench needs `sfx` + embedded audio
-  # too, and castle_flash.yaml is exactly "castle with audio in the image".
-  base: !include castle_flash.yaml
+  # The show build, not the core: the bench needs an `sfx` dispatch script,
+  # and castle.yaml deliberately defines none. It used to base on
+  # castle_flash.yaml, which carried the whole show in the image; since that
+  # build was retired (2026-09-01, docs/notes/03-build.md §12.15) the show
+  # build is castle_sd.yaml. With no card in the slot every scene plays the
+  # embedded chirp instead of its track, which is exactly what this dry run
+  # wants: the pipeline runs, the cues run, and nothing needs soldering.
+  base: !include castle_sd.yaml
 
-# The onboard pixel is dark until its power rail (GPIO21) is driven high.
-switch:
-  - platform: gpio
-    id: neopixel_power
-    pin: GPIO21
-    restore_mode: ALWAYS_ON
-    internal: true
+# NO `switch:` for the onboard pixel's power rail here any more. Both bench
+# files carried their own copy while they based on castle_flash.yaml, which
+# had none; castle_sd.yaml declares neopixel_power itself (it drives the
+# status pixel), and a second declaration is a hard "ID redefined" error
+# rather than a merge. (2026-09-01)

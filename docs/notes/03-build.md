@@ -58,6 +58,9 @@ flash. The binary fits in neither. That leaves **801 KB for audio** — we use 1
 **Resolution: single app partition** (`firmware/partitions_single_app.csv`),
 3.87 MB. Compiles at **64.2 % flash, 74.4 % RAM**.
 
+*(Both the file and the build it served were deleted on 2026-09-01 — the same
+wall came back taller once the show had real songs in it. §12.15.)*
+
 **Cost: OTA is gone.** Over-the-air needs a second slot to write into while the
 first runs. Two 2.5 MB slots do not fit in 4 MB. The `ota:` block is commented
 out in `castle.yaml` rather than left in place failing silently.
@@ -285,3 +288,44 @@ a full song does not fit alongside the existing show. `--take` a loopable
 
 Files in `tracks/` are git-ignored (they're Justin's, and large); the scene
 definitions referencing them are tracked, so the show stays reproducible.
+
+## 12.15 One build, on the card (2026-09-01)
+
+**Decision, in the operator's words:** *"The SD card should be the only
+version, as it will always be run with an SD card because there's literally
+not enough space."* `firmware/castle_flash.yaml` and
+`firmware/partitions_single_app.csv` are deleted, and `castle_sd.yaml` is what
+`make build`, `make upload`, `make logs` and `make validate` mean.
+
+**What forced it.** §12.2 recorded the flash wall and bought past it with a
+single 3.87 MB app partition, at the price of OTA. §12.8 recorded the ceiling
+that replaced it — ~2.9 MB for all scenes combined, and *"a full song does not
+fit alongside the existing show"*. Scenes 9 and 10 became full songs anyway,
+because the card made that free, and `audio/` is 2.2 MB now: the image is
+3.2 MB and esphome answers **"All app partitions are too small"**. There is no
+bitrate that fixes this and leaves a show worth listening to. The wall won.
+
+**Why nobody noticed for a week.** CI only ran `esphome config` on the flash
+build — which resolves happily, since nothing about a config says how big the
+binary will be — and its weekly *compile* job had always pointed at
+`castle_sd.yaml`. So the build rotted with every check green. The validate
+loop now lists only variants that can actually be built, which is the real
+fix; `esphome config` is not a build and this is what that costs.
+
+**Why it costs nothing.** The porch board has run the SD build since
+2026-08-22. The desk, `tools/sd_sync.py`, `make publish` and `make ota` all
+targeted it already. Deleting the other one removed a build nobody had flashed
+in ten days and could not have flashed if they tried.
+
+**What is genuinely lost.** The safety net: an empty card slot used to fall
+back to embedded scenes, and now it plays a one-second chirp. `make publish`
+is therefore part of flash day rather than an optional extra — the runbook and
+`make help` both say so now. `bench.yaml` and `bench_audio.yaml` based on the
+flash build for its embedded audio; they base on `castle_sd.yaml` and want the
+show card in the wing to mean anything. And `bench.yaml` can no longer route
+tower L to the onboard NeoPixel, because the show build claims GPIO33 for its
+status pixel and ESPHome refuses two strips on one pin.
+
+**Not lost:** OTA. The default dual-slot layout is the one this build has
+always used, and with the audio off the image it has room to spare —
+`tools/check_image.py` still measures against the 1.75 MB slot.

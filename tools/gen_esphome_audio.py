@@ -1,10 +1,14 @@
 """The audio half of the firmware generator, split from gen_esphome.py.
 
-Three emitters, all fed by the same scenes.yaml doc: the media-file manifest
-(one `snd_<id>` per scene), the FLASH `sfx` (play the embedded file) and the
-SD `sfx` (stream the same track off the card over loopback) plus its boot
-manifest check. Split at the 500-line cap on the honest seam — nothing here
-knows about cues or rigs, only which bytes play and from where.
+One emitter, fed by the scenes.yaml doc: the SD `sfx` — stream each scene's
+track off the card over loopback — plus its boot manifest check. Split at the
+500-line cap on the honest seam: nothing here knows about cues or rigs, only
+which bytes play and from where.
+
+It emitted three until 2026-09-01. The other two — a `media_player` manifest
+naming one embedded `snd_<id>` per scene, and a FLASH `sfx` that played it —
+belonged to the all-in-flash build, which was retired when the show's songs
+grew past what an OTA slot can hold. See docs/notes/03-build.md §12.15.
 """
 
 from __future__ import annotations
@@ -28,64 +32,11 @@ MODE_RESTART = "    mode: restart"
 THEN = "    then:"
 
 
-def emit_media_files(doc: Mapping[str, Any]) -> str:
-    """One entry per scene, matching the `snd_<id>` ids the scripts
-    reference. Both halves come from scenes.yaml so they cannot disagree —
-    the hand-maintained list once shipped a config referencing an id
-    nothing declared (see gen_esphome.py's history of the Ballad)."""
-    files = [
-        HEADER,
-        "",
-        "# One entry per scene, matching the `snd_<id>` ids the scripts",
-        "# above reference. Generated: do not hand-edit.",
-        "",
-    ]
-    for i, scene in enumerate(doc["scenes"], start=1):
-        files.append(f"- id: snd_{scene['id']}")
-        files.append(f"  file: ../audio/{i:02d}_{scene['id']}.mp3")
-    return "\n".join(files) + "\n"
-
-
-def emit_audio_flash(doc: Mapping[str, Any]) -> str:
-    """FLASH sfx: play the file embedded in the image. Costs ~600 KB of a
-    1.75 MB OTA slot, works with nothing attached."""
-    flash = [
-        HEADER,
-        "",
-        "script:",
-        "  - id: sfx",
-        MODE_RESTART,
-        "    parameters:",
-        "      track: string",
-        THEN,
-        "      - text_sensor.template.publish:",
-        "          id: current_track",
-        "          state: !lambda 'return track;'",
-        LAMBDA,
-        "          esphome::audio::AudioFile *f = nullptr;",
-    ]
-    for i, scene in enumerate(doc["scenes"], start=1):
-        kw = "if" if i == 1 else "else if"
-        flash.append(
-            f'          {kw} (track == "{i:02d}_{scene["id"]}") '
-            f"f = id(snd_{scene['id']});"
-        )
-    flash += [
-        "          if (f != nullptr) id(castle_media)->play_file(f, true, false);",
-        (
-            '          else ESP_LOGW("castle", "no embedded audio for \'%s\'",'
-            " track.c_str());"
-        ),
-        "",
-    ]
-    return "\n".join(flash)
-
-
 def emit_audio_sd(doc: Mapping[str, Any]) -> str:
-    """SD sfx: STREAM the same track off the card through the device's own
+    """SD sfx: STREAM the scene's track off the card through the device's own
     web server over loopback — a real streaming source with zero new
     decoder code, no PSRAM cap, no whole-file loads. A missing card plays
-    the embedded chirp (the only file the SD build keeps in flash)."""
+    the embedded chirp, which is the only audio left in the image."""
     sd = [
         HEADER,
         "",

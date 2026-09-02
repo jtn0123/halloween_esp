@@ -41,8 +41,6 @@ OUTPUT_PATHS = (
     "SRC",
     "MARKERS",
     "OUT",
-    "MEDIA_OUT",
-    "AUDIO_FLASH",
     "AUDIO_SD",
     "RIG_OUT",
     "LIGHTS_OUT",
@@ -272,7 +270,7 @@ class TestGeneratorFuzz(unittest.TestCase):
         self.assertEqual(
             out["select"][0]["options"][:-1], [s["id"] for s in doc["scenes"]]
         )
-        for path in (ge.AUDIO_FLASH, ge.AUDIO_SD, ge.LIGHTS_OUT, ge.MEDIA_OUT):
+        for path in (ge.AUDIO_SD, ge.LIGHTS_OUT):
             yaml.load(path.read_text(), Loader=EsphomeLoader)
         # The rig outputs agree with the layouts the cues were emitted against.
         layouts = rl.zone_layouts(zones, doc["hardware"]["pixels_per_zone"])

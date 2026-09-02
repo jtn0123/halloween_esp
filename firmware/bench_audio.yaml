@@ -1,4 +1,9 @@
-# Audio benchmark — the bare Feather, no speakers, no jewels, no card.
+# Audio benchmark — the bare Feather, no speakers and no jewels. It DOES need
+# the eInk/SD wing and the show card now: this measured embedded audio until
+# the all-in-flash build was retired (2026-09-01, docs/notes/03-build.md
+# §12.15), and the scene tracks stream off the card since. Run `make publish`
+# first (or put the show card in) or every scene decodes the fallback chirp
+# and the numbers below mean nothing.
 #
 #   make bench-audio        flash it
 #   make bench-audio-logs   watch the numbers
@@ -31,24 +36,23 @@
 substitutions:
   name: castle-benchaudio
   friendly: Castle Audio Bench
-  # The onboard pixel replaces tower L's strip: same pin substitution as
-  # before, now per zone. It plays tower L's pixel 0 and the rest of that
-  # zone falls off the end of a wire that is not there. The other two zones
-  # keep their real pins and clock into thin air, which costs nothing.
-  pin_towerL: "33"      # onboard NeoPixel
-  channels_towerL: "GRB"  # the onboard pixel is plain RGB
+  # NO pin override any more. This used to point tower L at the onboard
+  # NeoPixel (GPIO33) so a bare board could show the candle flicker, which
+  # worked while the base was castle_flash.yaml and nothing else wanted that
+  # pin. The show build claims GPIO33 for its own status pixel, and ESPHome
+  # refuses two strips on one pin outright — so all three zones now clock
+  # into unconnected pins (which costs nothing) and the onboard pixel says
+  # what the DEVICE is doing instead of what tower L is. (2026-09-01)
 
 packages:
-  # The flash variant, not the core — see the note in bench.yaml.
-  base: !include castle_flash.yaml
+  # The show build, not the core — see the note in bench.yaml.
+  base: !include castle_sd.yaml
 
-# The onboard pixel is dark until its power rail is driven high.
-switch:
-  - platform: gpio
-    id: neopixel_power
-    pin: GPIO21
-    restore_mode: ALWAYS_ON
-    internal: true
+# NO `switch:` for the onboard pixel's power rail here any more. Both bench
+# files carried their own copy while they based on castle_flash.yaml, which
+# had none; castle_sd.yaml declares neopixel_power itself (it drives the
+# status pixel), and a second declaration is a hard "ID redefined" error
+# rather than a merge. (2026-09-01)
 
 logger:
   level: DEBUG          # the audio pipeline reports underruns at DEBUG

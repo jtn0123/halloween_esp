@@ -58,29 +58,35 @@ sensitivity: 0.7      # lower finds more; default 1.1
   sensitivity: 1.1     # onset detection threshold
 ```
 
-## Flash or microSD?
+## Where the audio actually lives
 
-By default everything is embedded in flash, which is why the budget below
-exists. There is an **experimental** microSD variant (`make sd-build`) that
-lets the card hold a much bigger library — read PROJECT_NOTES §12.9 first,
-because it comes with real caveats: no ESP32-S2 has ever been shown doing
-this, one track is capped by PSRAM (~1.5 MB, about two minutes), and the
-Feather needs a wing to have a card slot at all.
+On the microSD card, and only there. `make publish` pushes the rendered
+scenes to `/sd/scenes` and the imported library to the card root, and the
+device streams both off the card through its own web server.
 
-The flash scenes keep working with no card in the slot. That's deliberate.
+It used to be embedded in flash instead, with the card as an experiment. On
+2026-09-01 that flipped for good: two of the scenes became real songs, the
+image grew past the 1.75 MB OTA slot, and the all-in-flash build was retired
+(PROJECT_NOTES §12.15). One consequence is worth knowing before a show — an
+empty card slot no longer falls back to embedded scenes, it plays a
+one-second chirp. No card, no show.
 
-## The flash budget is the real constraint
+## What a track costs you now
 
-Everything the device plays is embedded in one 3.87 MB app partition next to
-~1 MB of firmware, leaving **~2.9 MB for all scenes combined**. The eight
-generated scenes currently use about 1.8 MB of that.
+Nothing you will notice. The card is 32 GB and playback streams, so length is
+not the constraint it used to be: a full song is fine where a 20–30 second
+`--take` loop was once the only option. Two of the built-in scenes are whole
+songs for exactly that reason.
 
-At 96 kbps mono, one minute costs roughly 700 KB. A three-minute song will not
-fit alongside the existing show. Use `--take` to keep a loopable section rather
-than a whole piece — a good 20–30 second loop reads better on a porch than a
-full track anyway, because nobody stands there for three minutes.
+What still costs something:
 
-`make audio` fails loudly if the total goes over budget.
+- **Decode load.** §12.13 measured 96 kbps mono clean on this chip. Higher is
+  untested and the S2 has one core, which the light cues also want.
+- **Upload time.** `make publish` pushes over WiFi to a microcontroller.
+  `make audio` prints the show's total so you know what you are asking for.
+- **The porch, not the file.** A good short loop still reads better than three
+  minutes nobody stands there for. `--take` is a taste decision now rather
+  than a budget one.
 
 ## A note on sources
 

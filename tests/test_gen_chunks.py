@@ -102,7 +102,7 @@ class TestChunking(unittest.TestCase):
         doc = {"zones": ZONES, "hardware": {"pixels_per_zone": 7}, "scenes": [scene]}
         # Every output path redirected — main() writes rig.h, lights.yaml
         # and the audio dispatch too, and the real ones are tracked files.
-        names = ("MEDIA_OUT", "AUDIO_FLASH", "AUDIO_SD", "RIG_OUT", "LIGHTS_OUT", "OUT")
+        names = ("AUDIO_SD", "RIG_OUT", "LIGHTS_OUT", "OUT")
         with (
             tempfile.TemporaryDirectory() as td,
             contextlib.redirect_stdout(io.StringIO()),

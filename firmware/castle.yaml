@@ -178,8 +178,11 @@ esp32:
       # OWE is WPA3's OPEN-network encryption; this castle joins a PSK
       # network. WPA2/WPA3-PSK association is untouched.
       CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA: "n"
-  # Default dual-OTA layout: two 1.75 MB app slots. Audio at 48 kbps keeps the
-  # image inside one, which is what buys OTA back — see the ota: block below.
+  # Default dual-OTA layout: two 1.75 MB app slots. Keeping the scene audio
+  # OFF the image entirely — it streams off the card, see castle_sd.yaml — is
+  # what buys OTA back and keeps it bought however long the show grows. The
+  # custom single-app partition table this once needed went away with the
+  # all-in-flash build (2026-09-01, docs/notes/03-build.md §12.15).
 
 psram:
   mode: quad
@@ -248,11 +251,13 @@ wifi:
 # network means a USB cable and `esphome run`, not a walk to a rooftop.
 
 # NOTE: this file is the CORE, not a buildable target. It deliberately
-# defines no `sfx` audio dispatch and no media files — every variant composes
-# those (castle_flash.yaml embeds them, castle_sd.yaml streams them off the
-# card). Building this file directly fails with "sfx unknown", by design:
-# ESPHome's !extend appends to lists instead of replacing them, so a variant
-# cannot cleanly swap an implementation the core already provides.
+# defines no `sfx` audio dispatch and no media files — the variants compose
+# those (castle_sd.yaml streams them off the card; bench*.yaml inherit that).
+# Building this file directly fails with "sfx unknown", by design: ESPHome's
+# !extend appends to lists instead of replacing them, so a variant cannot
+# cleanly swap an implementation the core already provides. That mattered
+# most when there were two audio implementations to swap between; it is kept
+# now because it is still the seam bench*.yaml and the jewels build sit on.
 packages:
   # The generated scene scripts.
   scenes: !include generated/scenes.yaml

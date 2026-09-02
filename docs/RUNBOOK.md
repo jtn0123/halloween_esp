@@ -17,7 +17,8 @@ of the Witches' Road sat rendered on the Mac while the castle answered
    it says what was pushed and what it could not do.
 3. **Firmware, if the log says so.** A brand-new scene is a *compile-time*
    object: the running board does not know it until you
-   `make ota` (builds `castle_sd.yaml`, stops audio, flashes over HTTP).
+   `make ota` (builds `castle_sd.yaml` — the only castle build since
+   2026-09-01, PROJECT_NOTES §12.15 — stops audio, flashes over HTTP).
    The desk shows the same fact two ways: the scene's tile is dimmed, and
    the 🏰 panel's health row says "N scene(s) newer than the firmware".
 4. **Verify** — the panel shows the new version; press the scene; the chip's
@@ -67,6 +68,11 @@ Work down this list — it is ordered by how often each one was the answer:
 - Motion: the PIR row in the panel — armed, which scene, cooldown.
 - **Stop audio before any OTA.** `make ota` does this itself; if you flash
   another way, press ■ first.
+- **The card is not optional.** Since the all-in-flash build was retired
+  (§12.15) there is no embedded copy of the show to fall back on: a castle
+  with an empty slot, or a card that was never published to, plays a
+  one-second chirp per scene and nothing else. A fresh board is `make ota`
+  **and** `make publish`, in either order, before it can do anything.
 
 ## After changing firmware
 

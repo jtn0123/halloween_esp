@@ -306,7 +306,7 @@ jobs:
       # away turned every validation failure into a bare "exit code 2".
       - name: validate every buildable variant
         run: |
-          for y in castle_flash castle_sd castle_sd_jewels bench; do
+          for y in castle_sd castle_sd_jewels bench bench_audio; do
             esphome config "firmware/$y.yaml" > "/tmp/$y.out" 2>&1 \
               || { echo "== $y FAILED"; cat "/tmp/$y.out"; exit 1; }
             echo "$y OK"

@@ -364,11 +364,13 @@ if __name__ == "__main__":
 class TestNativeLegIsOptional(unittest.TestCase):
     """aioesphomeapi is a nicety, not a dependency.
 
-    The native leg exists for the all-in-flash build, which serves no HTTP.
-    Everything else — the porch's SD build, the emulator, every test — is
-    reached over port 80, so a studio whose environment lacks the library
-    must still start and still relay. It did not: the import was top-level
-    and took the whole server down with it (CI, 2026-08-22).
+    The native leg is the fallback for a castle that is not answering on
+    port 80 — it was written for the all-in-flash build, which served no
+    HTTP at all, and outlived it (2026-09-01). Everything routine — the
+    porch build, the emulator, every test — is reached over port 80, so a
+    studio whose environment lacks the library must still start and still
+    relay. It did not: the import was top-level and took the whole server
+    down with it (CI, 2026-08-22).
     """
 
     def setUp(self) -> None:

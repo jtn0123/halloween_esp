@@ -7,21 +7,24 @@
  * answers that: every scene is a band you can click, and the band tells you
  * its own size, its share, and what it is.
  *
- * Two builds, because there are two:
+ * Two views, and only one of them is a build:
  *
- *   Flash (`make build`, firmware/castle_flash.yaml) — one 3.87 MB app
- *     partition (firmware/partitions_single_app.csv), roughly 1.1 MB of it
- *     firmware, leaving ~2.9 MB for every scene combined. `make audio` fails
- *     loudly when the total goes over. This is the real constraint.
+ *   Card (`make build` + `make publish`, firmware/castle_sd.yaml) — THE
+ *     castle. tools/sd_sync.py puts the imported library in the card root,
+ *     the rendered scenes in /sd/scenes and this page in /sd/site, and the
+ *     device streams off the card. This is the view that answers "will it
+ *     fit", and the answer is almost always yes.
  *
- *   SD (`make sd-build`, firmware/castle_sd.yaml) — EXPERIMENTAL, see
- *     PROJECT_NOTES §12.9. tools/sd_sync.py puts the imported library in the
- *     card root, the eight rendered scenes in /sd/scenes and this page in
- *     /sd/site, and the device streams off the card. Storage stops being the
- *     ceiling; the caveats move to the hardware instead.
+ *   In flash — a counterfactual, kept because it is the reason the card
+ *     exists. It is the arithmetic of the all-in-flash build that was
+ *     retired on 2026-09-01 (PROJECT_NOTES §12.15): one 3.87 MB app
+ *     partition, roughly 1.1 MB of it firmware, ~2.9 MB for every scene
+ *     combined. Two of the scenes are real songs now, so switching to it
+ *     shows the show blowing through a ceiling nothing is measured against
+ *     any more. Nothing here is embedded; the image carries one chirp.
  *
  * Every figure here is measured rather than quoted, with one stated exception
- * per build — the card's capacity, which nothing reports, and the size of a
+ * per view — the card's capacity, which nothing reports, and the size of a
  * scene that has not been rendered yet.
  */
 
@@ -29,11 +32,11 @@ import { sceneTint } from "./scene_tint.js";
 import type { Scene } from "./types.js";
 import { el as byId } from "./dom.js";
 
-/** firmware/partitions_single_app.csv — app0, 0x3E0000. */
+/** The single-app partition the retired flash build used — app0, 0x3E0000.
+ *  Its .csv is gone with the build; the number is kept here because the
+ *  counterfactual view above is the only place it still means anything. */
 const APP_PARTITION = 0x3E0000;
-/** Flash left for ALL scene audio after the firmware — the figure
- *  tools/render_audio.py budgets against and tracks/README.md quotes. If one
- *  moves, all three have to. */
+/** Flash that would have been left for ALL scene audio after the firmware. */
 const FLASH_BUDGET = 2.9 * 1024 * 1024;
 /** Whatever is not the scenes' to spend: firmware, effects, the web server. */
 const FIRMWARE = APP_PARTITION - FLASH_BUDGET;
@@ -128,7 +131,9 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
   const rowsEl = must("budRows");
   const noteEl = must("budNote");
 
-  let build: "flash" | "sd" = "flash";
+  // The card, not flash: the card IS the build (2026-09-01, §12.15), and a
+  // panel that opens on a retired build's arithmetic teaches the wrong thing.
+  let build: "flash" | "sd" = "sd";
   let picked: string | null = null;
   let library: readonly LibraryTrack[] = [];
   /** Bytes the castle reports for its card; null = assume. */
@@ -150,7 +155,7 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
           { key: "scenes", label: `/sd/scenes — the show's ${scenes.length} rendered scenes`,
             bytes: showBytes, color: "var(--accent)",
             meta: `${scenes.length} files · tools/sd_sync.py scenes`,
-            blurb: "The same rendered show the flash build embeds, streamed off the card instead of out of the app partition." },
+            blurb: "The whole show, streamed off the card. `make publish` puts it here, and a castle without it plays one chirp per scene." },
           { key: "tracks", label: `Card root — imported library (${library.length} tracks)`,
             bytes: lib, color: "var(--cool)",
             meta: library.length
@@ -165,7 +170,7 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
             meta: cardKb
               ? `${size(card)} card — as the castle reports it`
               : "32 GB card, assumed — no castle is answering to say",
-            blurb: "The card holds as many tracks as you like. The ceiling that mattered was flash, not storage." },
+            blurb: "The card holds as many tracks as you like. The ceiling that mattered was flash, and moving here is what removed it." },
         ],
       };
     }
@@ -175,8 +180,8 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
       used: showBytes + FIRMWARE,
       items: [
         { key: "fw", label: "Firmware + effects", bytes: FIRMWARE, color: "var(--line-2)",
-          meta: "app0, 3.87 MB single-app partition",
-          blurb: "One app partition, so no OTA slot: embedded audio pushed the binary past both 1.75 MB halves." },
+          meta: "app0, 3.87 MB single-app partition — a build that no longer exists",
+          blurb: "One app partition, so no OTA slot: embedded audio pushed the binary past both 1.75 MB halves. Retired 2026-09-01 (PROJECT_NOTES §12.15) when the show outgrew this too." },
         ...scenes.map((s, i) => ({
           key: `s${i}`,
           label: s.name,
@@ -188,8 +193,8 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
           scene: true,
         })),
         { key: "free", label: "Free flash", bytes: Math.max(0, FLASH_BUDGET - showBytes),
-          color: "var(--line)", meta: `of the ${size(FLASH_BUDGET)} the scenes share`,
-          blurb: "`make audio` fails loudly if the total goes over. At 32 kbps mono one minute costs about 235 KB." },
+          color: "var(--line)", meta: `of the ${size(FLASH_BUDGET)} the scenes would have shared`,
+          blurb: "At 32 kbps mono one minute costs about 235 KB — which is why two real songs ended the embedded build rather than the other way round." },
       ],
     };
   }
@@ -243,8 +248,8 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
       + `<span>${it.label}</span><b>${size(it.bytes)}</b></button>`).join("");
 
     noteEl.textContent = build === "sd"
-      ? "Experimental (`make sd-build`, PROJECT_NOTES §12.9): no ESP32-S2 has been shown doing this, and the Feather needs a wing to have a slot at all. The flash scenes keep working with no card in."
-      : "Click a band for the scene behind it. `make audio` fails loudly if the total goes over.";
+      ? "This is the castle (`make build`, firmware/castle_sd.yaml). `make publish` is what puts the show here, and there is no embedded copy to fall back on: an empty slot plays one chirp per scene."
+      : "Not a build any more — the arithmetic of the all-in-flash castle, retired 2026-09-01 (PROJECT_NOTES §12.15). Click a band for the scene behind it, and note what the two songs do to it.";
   }
 
   /** One handler for the bar and the legend — the tiny bands on the card view

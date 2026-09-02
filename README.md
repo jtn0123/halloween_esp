@@ -101,12 +101,20 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # once
 make setup      # venv + esphome + render deps + the commit hook
 make audio      # render the scene audio (builds core/ on first use)
 make validate   # check the config without a toolchain
-make build      # compile
+make build      # compile firmware/castle_sd.yaml — the one castle build
 make upload     # flash over USB
+make publish    # push the rendered show to the castle's microSD card
 ```
 
 Copy `firmware/secrets.yaml.example` to `firmware/secrets.yaml` and set real
 WiFi credentials before flashing. `make help` lists every target.
+
+The scene audio lives on the card, not in the image — `make publish` is what
+puts it there, and a board flashed without it chirps instead of playing. That
+used to be a choice between two builds; the show's real songs weigh 2.2 MB
+and an OTA slot holds 1.75 MB, so on 2026-09-01 the all-in-flash build was
+retired and the card became the only way the castle plays (`docs/notes/03-build.md`
+§12.15).
 
 ---
 

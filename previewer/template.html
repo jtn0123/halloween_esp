@@ -207,17 +207,18 @@
           </label>
         </div>
       </section>
-      <!-- What the show is allowed to cost. Two builds, two different
-           ceilings, and the same eight scenes measured against each — see
-           budget.ts for where every figure comes from. -->
+      <!-- What the show is allowed to cost. The card is the castle; "In
+           flash" is the retired build's arithmetic, kept as the reason the
+           card exists (PROJECT_NOTES §12.15). See budget.ts for where every
+           figure comes from. -->
       <section class="panel budget" id="budget">
         <div class="panel__hd">
           <h2>Budgets</h2>
-          <div class="budget__tabs" id="budTabs" role="toolbar" aria-label="Which build">
-            <button type="button" data-bud="flash" aria-pressed="true"
-                    title="Everything embedded in the 3.87 MB app partition.">Flash</button>
-            <button type="button" data-bud="sd" aria-pressed="false"
-                    title="The experimental `make sd-build` variant: the card holds the library and the device streams off it.">SD card</button>
+          <div class="budget__tabs" id="budTabs" role="toolbar" aria-label="Which ceiling">
+            <button type="button" data-bud="sd" aria-pressed="true"
+                    title="The castle: the card holds the library and the device streams off it.">SD card</button>
+            <button type="button" data-bud="flash" aria-pressed="false"
+                    title="Retired 2026-09-01: what the show would have cost embedded in the 3.87 MB app partition.">In flash</button>
           </div>
         </div>
         <div class="panel__bd budget__bd">

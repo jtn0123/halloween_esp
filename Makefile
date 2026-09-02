@@ -3,7 +3,11 @@
 # below — this fallback must never point a fresh install at the system python.
 PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
 ESPHOME := .venv/bin/esphome
-YAML := firmware/castle_flash.yaml
+# The one castle build. It was firmware/castle_flash.yaml until 2026-09-01,
+# when the show's two real songs put 2.2 MB of audio in an image that has to
+# fit a 1.75 MB OTA slot; the SD build had been the one on the porch since
+# 2026-08-22 anyway. docs/notes/03-build.md §12.15 records the decision.
+YAML := firmware/castle_sd.yaml
 # The documented target; pyproject/CI/mypy all say 3.13. Found on PATH rather
 # than at one Homebrew path, which is not where every machine keeps it.
 # Recursive (=), not :=, so the lookup — and the error — only happen when
@@ -20,7 +24,7 @@ help:
 	@echo "  make generate   render scenes.yaml -> firmware/generated/scenes.yaml"
 	@echo "  make preview    splice scenes + rendered audio into the previewer"
 	@echo "  make validate   check the ESPHome config (fast, no toolchain)"
-	@echo "  make build      compile firmware (implies audio + generate)"
+	@echo "  make build      compile firmware/castle_sd.yaml (implies audio + generate)"
 	@echo "  make upload     compile and flash over USB"
 	@echo "  make logs       tail device logs"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
@@ -46,10 +50,12 @@ help:
 	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
 	@echo "  make lock       relock requirements.lock from a clean throwaway venv"
 	@echo "  make clean      drop firmware/.esphome and rendered wavs"
-	@echo "  make sd-build / sd-upload   EXPERIMENTAL microSD variant (PROJECT_NOTES §12.9)"
+	@echo "  make sd-build / sd-upload   old names for build / upload — one castle build now"
 	@echo "  make bench-audio-logs       tail the bench-audio build's logs"
 	@echo ""
 	@echo "scenes/scenes.yaml is the source of truth for audio, cues AND the previewer."
+	@echo "The castle is firmware/castle_sd.yaml and the show lives on the card:"
+	@echo "'make publish' before 'make ota', or the board boots to a chirp."
 
 setup:
 	$(PY_SETUP) -m venv .venv
@@ -96,15 +102,17 @@ publish: preview
 	@$(PY) tools/sd_sync.py scenes
 	@$(PY) tools/sd_sync.py site
 
-ota: sd-build
+ota: build
 	@$(PY) tools/sd_sync.py ota
 
-# EXPERIMENTAL microSD variant — see PROJECT_NOTES §12.9 before relying on it.
-sd-build: audio generate
-	$(ESPHOME) compile firmware/castle_sd.yaml
+# Kept as aliases, not as a second build. They named the microSD variant back
+# when there were two castles to choose between; there is one now, so they
+# point at it. Muscle memory, `make ota`'s old dependency and every note that
+# says `make sd-build` all keep working, and nothing has to be remembered
+# twice. (2026-09-01)
+sd-build: build
 
-sd-upload: audio generate
-	$(ESPHOME) run firmware/castle_sd.yaml
+sd-upload: upload
 
 bench: audio generate
 	$(ESPHOME) run firmware/bench.yaml

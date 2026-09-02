@@ -30,8 +30,6 @@ OUTPUT_PATHS = (
     "SRC",
     "MARKERS",
     "OUT",
-    "MEDIA_OUT",
-    "AUDIO_FLASH",
     "AUDIO_SD",
     "RIG_OUT",
     "LIGHTS_OUT",

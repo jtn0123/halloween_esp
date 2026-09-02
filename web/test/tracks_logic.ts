@@ -42,22 +42,30 @@ for (const raw of ["-5", "-1", "0", "abc", "", "1", "9999"]) {
   ok(!/>-|-\d+:/.test(html),
      `no negative time in the capacity line for bitrate ${JSON.stringify(raw)}`);
 }
-// The readout names the two builds that exist, and must not claim a third.
-// It used to end with "streamed from SD: no limit" in green — a promise the
+// The readout names where a track actually plays from, and must not claim a
+// build that no longer exists. There is one castle build now (2026-09-01,
+// PROJECT_NOTES §12.15) and it reads off the card; the flash half of the line
+// is explicitly hypothetical, which is why "in flash" is asserted and "flash
+// build" is forbidden.
 // This guard has flipped sides once: it used to forbid the word "stream"
 // because micro-decoder 0.2.0 had no pull API and the readout was making a
 // promise the stack could not keep. Then the loopback stream shipped
 // (firmware/sd_web_site.h, verified on the device), and the same guard now
 // requires the claim it once banned. The invariant underneath is constant:
 // the readout must match what the hardware actually does TODAY.
-ok(/flash build/.test(capacityHtml("96", "1", 0)), "the flash build's ceiling is named");
-ok(/SD build/.test(capacityHtml("96", "1", 0)), "the SD build is named");
+ok(/if it were in flash/.test(capacityHtml("96", "1", 0)),
+   "the flash ceiling is named as the counterfactual it now is");
+ok(!/flash build/.test(capacityHtml("96", "1", 0)),
+   "and never as a build you could flash — there is only the card one");
+ok(/on the card/.test(capacityHtml("96", "1", 0)), "the card is named");
 ok(/stream/i.test(capacityHtml("96", "1", 0)),
-   "the SD build streams now — the readout must say so");
+   "the castle streams off the card — the readout must say so");
 ok(!/under 4 min|one track:/.test(capacityHtml("96", "1", 0)),
    "and the dead PSRAM per-track ceiling must not resurface");
 ok(/stereo/.test(capacityHtml("96", "2", 0)), "channels reach the readout");
-// More of the show on the flash means less room left for the next track.
+// More of the show in the hypothetical flash means less room left for the
+// next track — the arithmetic still has to hold for the number to be worth
+// printing at all.
 {
   const room = (used: number) => capacityHtml("96", "1", used).match(/show: <b>(\d+):(\d+)</);
   const empty = room(0), full = room(2.5 * 1024 * 1024);

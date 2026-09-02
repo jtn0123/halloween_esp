@@ -240,7 +240,7 @@ class TestScenesSandbox(unittest.TestCase):
         "audio/markers.json",
         "previewer/castle-cue-desk.html",
         "firmware/generated/scenes.yaml",
-        "firmware/generated/media_files.yaml",
+        "firmware/generated/audio_sd.yaml",
     )
 
     def _stamp(self) -> dict[str, float]:

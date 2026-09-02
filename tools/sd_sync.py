@@ -106,9 +106,11 @@ def cmd_push(ip: str, args: list[str]) -> int:
 def cmd_scenes(ip: str) -> int:
     """The show's own audio, to where the streaming sfx expects it."""
     # audio/card/ holds the card_bitrate copies when scenes.yaml asks for a
-    # different one; audio/ itself is what the FLASH build embeds and is
-    # deliberately smaller. Prefer the card copies — pushing the flash ones
-    # would put a 32 kbps compromise onto a 31 GB card.
+    # different one; audio/ itself is the smaller render — 32 kbps, sized for
+    # the all-in-flash build that used to embed it (retired 2026-09-01,
+    # PROJECT_NOTES §12.15) and kept since as what the desk page inlines.
+    # Prefer the card copies either way: pushing a 32 kbps compromise onto a
+    # 31 GB card would be paying a price nothing charges any more.
     card = sorted(bp.AUDIO.glob("card/[0-9][0-9]_*.mp3"))
     files = card or sorted(
         p for p in bp.AUDIO.glob("[0-9][0-9]_*.mp3") if not p.name.startswith("00_")

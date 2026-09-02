@@ -40,14 +40,12 @@ class TestGenEsphomeMain(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
-        # EVERY module-level output path must be redirected here. MEDIA_OUT was
-        # forgotten when it was added, and these tests then wrote their two
-        # fixture scenes into the real firmware/generated/media_files.yaml —
-        # which broke the next firmware build with "cannot find 01_a.mp3".
         # EVERY module-level output path, checked against the module rather
-        # than listed by hand — the list went stale twice (MEDIA_OUT when it
-        # was added, then RIG_OUT and LIGHTS_OUT), and both times these tests
-        # wrote their two fixture scenes into the real firmware/generated/.
+        # than listed by hand — the list went stale twice (the media manifest
+        # when it was added, then RIG_OUT and LIGHTS_OUT), and both times
+        # these tests wrote their two fixture scenes into the real
+        # firmware/generated/, which broke the next firmware build with
+        # "cannot find 01_a.mp3".
         # test_every_output_path_is_redirected below is what keeps it honest.
         self._saved = {name: getattr(ge, name) for name in OUTPUT_PATHS}
         # The generator narrates ("wrote …", "note: …"); keep -q output clean.

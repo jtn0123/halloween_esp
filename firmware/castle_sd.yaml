@@ -1,11 +1,15 @@
-# Castle + microSD audio (EXPERIMENTAL — see PROJECT_NOTES §12.9)
+# Castle + microSD audio — THE build. There is no other one.
 #
-# The stock build embeds every scene in flash. This variant adds the ability
-# to play arbitrary files off a microSD card as well, so the card can hold a
-# library far larger than the ~2.9 MB flash budget.
+# It began as the experimental alternative to an all-in-flash image (the
+# history is PROJECT_NOTES §12.9), ran the porch from 2026-08-22, and became
+# the only build on 2026-09-01 when scenes 9 and 10 turned into real songs:
+# 2.2 MB of audio cannot be embedded in a 1.75 MB OTA slot at any bitrate
+# worth listening to, so castle_flash.yaml stopped compiling and was retired
+# rather than nursed. docs/notes/03-build.md §12.15 has the decision.
 #
-#   make sd-build      compile this variant
-#   make sd-upload     flash it
+#   make build         compile it
+#   make upload        flash it over USB
+#   make ota           build, stop audio, flash it over HTTP
 #
 # HOW IT WORKS: ESPHome has no SD component and its audio pipeline cannot read
 # a filesystem — but it can read a URL. sd_audio.h mounts the card over SPI
@@ -14,11 +18,13 @@
 # http://127.0.0.1:8080/sd/<file>. True streaming, no PSRAM cap. See
 # firmware/sd_audio.h for the whole story.
 #
-# THE PART THAT IS NOT PROVEN: nobody has published ESPHome SD audio on an
+# THE PART THAT WAS NOT PROVEN: nobody had published ESPHome SD audio on an
 # ESP32-S2, and the two well-known ESP32 audio libraries decline to support
-# the S2 at all. This compiles; whether it plays cleanly on your board is an
-# open question that only hardware answers. The flash scenes are untouched
-# and keep working with no card in the slot, which is the safety net.
+# the S2 at all. The porch has answered that by running it since 2026-08-22.
+# What is gone with the flash build is the safety net: an empty card slot no
+# longer falls back to embedded scenes, it plays the chirp below. A card that
+# is not in the wing is now a show that does not play, so `make publish`
+# belongs in the same breath as `make ota`.
 
 substitutions:
   name: castle-sd
@@ -57,10 +63,11 @@ packages:
   # core deliberately defines none — see the note atop castle.yaml).
   audio_sd: !include generated/audio_sd.yaml
 
-# The SD build embeds ONE file: a chirp that plays when a scene starts with
-# no card in the slot, so a missing card is audible instead of silent. The
-# eight scene tracks stream from /sd/scenes/ instead of living in flash —
-# that is ~600 KB back out of a 1.75 MB OTA slot.
+# The build embeds ONE file: a chirp that plays when a scene starts with
+# no card in the slot, so a missing card is audible instead of silent. Every
+# scene track streams from /sd/scenes/ instead of living in flash — which is
+# what keeps the image inside a 1.75 MB OTA slot no matter how long the show
+# gets. The show weighed 2.2 MB the day this became the only build.
 media_player:
   - id: !extend castle_media
     files:

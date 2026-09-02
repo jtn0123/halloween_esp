@@ -9,8 +9,10 @@ reverb happens here, where CPU is free.
     tools/render_audio.py --wav      # keep the intermediate WAVs too
     tools/render_audio.py --only storm
 
-Output is mono at the bitrate set in scenes.yaml, sized to fit the flash left
-over after the ESPHome image.
+Output is mono at the bitrate set in scenes.yaml. It used to be sized to fit
+the flash left over after the ESPHome image; since 2026-09-01 the scenes live
+on the microSD card instead (PROJECT_NOTES §12.15), so the bitrate is a
+fidelity-versus-decode-load choice and nothing else.
 """
 
 from __future__ import annotations
@@ -151,7 +153,7 @@ def render_scene_py(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]
             # clone or CI has the scene but not its song. That is a fact about
             # the machine, and the rest of the scene (synth score, cue times,
             # length) still renders, which keeps every downstream step honest:
-            # the mp3 exists, the flash build embeds it, the show is the right
+            # the mp3 exists, `make publish` pushes it, the show is the right
             # shape. An audio_file nobody ever imported is a typo, and still
             # stops the render — tracks/tracks.json is what tells them apart.
             if not known_track(track):
@@ -238,8 +240,9 @@ def render_scene_py(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]
 
 
 def card_bitrate(cfg: dict) -> int:
-    """What the SD build streams. Absent means "same as flash" — the card
-    copies are then redundant and never written."""
+    """A SECOND, higher-bitrate encode for the card, when scenes.yaml asks for
+    one. Absent means "the same bitrate as everything else" — the card copies
+    would then be byte-identical, so they are redundant and never written."""
     return int(cfg.get("card_bitrate", cfg["bitrate"]))
 
 
@@ -417,23 +420,28 @@ def main() -> int:
         print(
             f"beat markers: {n} across {len(all_markers)} scenes -> audio/markers.json"
         )
-    # 3.87 MB single-app partition minus ~0.97 MB of firmware (measured,
-    # PROJECT_NOTES §12.2).
-    budget = 2.9 * 1024 * 1024
-    pct = total / budget * 100
-    verdict = "fits" if total < budget else "OVER BUDGET"
+    # These two lines said "N% of the ~2.9 MB single-app partition — fits"
+    # until 2026-09-01, when the all-in-flash build they measured was retired
+    # (PROJECT_NOTES §12.15). Nothing here goes into the image any more, so
+    # there is no ceiling left to report a percentage of. The sizes are still
+    # worth printing — one is what the desk page has to carry, the other is
+    # what `make publish` uploads over porch WiFi — but as facts, not verdicts.
+    #
+    # WHICH IS WHICH matters and used to be got wrong: when scenes.yaml asks
+    # for a card_bitrate, audio/ is the desk's copy and audio/card/ is the
+    # castle's. With one bitrate there is one render and it is both.
+    second = card_bitrate(cfg) != cfg["bitrate"]
     print(
-        f"\nflash build  {cfg['bitrate']:>3} kbps  {total / 1024:>6.0f}K  "
-        f"{pct:.0f}% of the ~2.9 MB single-app partition — {verdict}"
+        f"\ndesk  {cfg['bitrate']:>3} kbps  {total / 1024:>6.0f}K  "
+        + ("inlined into the cue desk page" if second else "-> the desk AND /sd/scenes")
     )
-    # The card is 31 GB. Printed for symmetry, not as a limit: the only
-    # ceiling the SD build has is decode load, and §12.13 measured 96 kbps
-    # clean on this chip.
-    if card_bitrate(cfg) != cfg["bitrate"]:
+    # The card is 31 GB, so no budget line: the only ceiling the show has is
+    # decode load, and §12.13 measured 96 kbps clean on this chip.
+    if second:
         ctotal = sum(f.stat().st_size for f in card_dir().glob("[0-9][0-9]_*.mp3"))
         print(
-            f"card  (SD)  {card_bitrate(cfg):>3} kbps  {ctotal / 1024:>6.0f}K  "
-            f"streamed off the card — no budget"
+            f"card  {card_bitrate(cfg):>3} kbps  {ctotal / 1024:>6.0f}K  "
+            f"-> /sd/scenes (make publish) — streamed, no budget"
         )
     return 0
 

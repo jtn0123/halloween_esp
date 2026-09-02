@@ -12,7 +12,8 @@ file is the one that governs.
 
 - `scenes/scenes.yaml` — THE source of truth: every scene's light cues, audio
   score, length and level. Everything else is generated from it.
-- `tools/render_audio.py` → `audio/NN_<id>.mp3` (gitignored, embedded in flash).
+- `tools/render_audio.py` → `audio/NN_<id>.mp3` (gitignored; the desk's
+  inlined copy) and `audio/card/` (the 96 kbps files `sd_sync scenes` pushes).
 - `tools/gen_esphome.py` → `firmware/generated/` (light cue scripts, rig.h).
 - `tools/gen_previewer.py` → `previewer/castle-cue-desk.html` (the whole desk,
   `web/src/*.ts` bundled + minified, scene audio inlined). Generated, NOT
@@ -43,10 +44,15 @@ file is the one that governs.
   present and falls back here, with a printed reason, when it is not. The
   Python stays the reference the parity gates measure against, and
   `CASTLE_STUDIO=python` picks it deliberately.
-- `firmware/` — ESPHome YAML + C++ headers. `castle_flash.yaml` is the show
-  build; `castle_sd.yaml` is the EXPERIMENTAL microSD variant whose web API
-  (`sd_web.h`) the desk talks to. `firmware/pending/README.md` lists patches
-  written but not yet flashed.
+- `firmware/` — ESPHome YAML + C++ headers. `castle_sd.yaml` is THE build:
+  scene audio streams off the microSD card and its web API (`sd_web.h`) is
+  what the desk talks to. There was a second, all-in-flash build until
+  2026-09-01 (`castle_flash.yaml`, every scene embedded in the image); the
+  show outgrew a 1.75 MB OTA slot and it was deleted rather than nursed —
+  docs/notes/03-build.md §12.15. `castle_sd_jewels.yaml` and `bench*.yaml`
+  are variants OF the SD build, and `castle.yaml` is the shared core, not a
+  buildable target. `firmware/pending/README.md` lists patches written but
+  not yet flashed.
 - `tracks/` — the user's imported audio (gitignored except `tracks.json`, the
   provenance manifest) — never a test fixture directory.
 - `previewer/castle-cue-desk.html` is generated and **gitignored**
@@ -76,9 +82,10 @@ file is the one that governs.
 · `lock` · `rust` / `rust-test` / `rust-lint` / `rust-coverage` (castle-core;
 `rust-coverage` is a non-gating `cargo llvm-cov` summary; `lint` depends on
 `rust-lint`, and `tests/test_castle_core.py` shells out to those three, so the
-gate has one definition) · `bench*` (bare-board dry runs) · `sd-build` / `sd-upload`
-· `publish` (scene tracks + lean page → the castle) · `ota` (build, stop
-audio, flash). `studio` runs `tools/studio_launch.sh`: the Rust server, the
+gate has one definition) · `bench*` (bare-board dry runs) · `sd-build` /
+`sd-upload` (kept as aliases of `build` / `upload` — there is one castle
+build now) · `publish` (scene tracks + lean page → the castle) · `ota`
+(build, stop audio, flash). `studio` runs `tools/studio_launch.sh`: the Rust server, the
 Python one as the fallback. The studio's rebuild publishes on its own when a
 castle answers; `docs/RUNBOOK.md` is the operator's end-to-end view.
 

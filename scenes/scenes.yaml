@@ -20,20 +20,24 @@ hardware:
   rgb_order: GRB
   audio:
     sample_rate: 44100
-    # TWO bitrates, because the two builds have nothing in common here.
+    # TWO bitrates, for two different destinations.
     #
-    # `bitrate` is what castle_flash.yaml EMBEDS. That build carries every
-    # scene inside the image, so it is bounded by the 2.9 MB the single-app
-    # partition leaves after firmware — 32 kbps is 46% of it, 96 kbps would
-    # be 138% and the build would simply not fit. It stays low so the
-    # no-card fallback keeps working.
+    # `card_bitrate` is what the CASTLE plays: audio/card/*.mp3, which
+    # sd_sync pushes to /sd/scenes and the device streams off a 31 GB card.
+    # 96 kbps is what the show was tuned at, and PROJECT_NOTES §12.13
+    # measured it decoding on this exact chip with zero underruns, zero
+    # decode errors and zero blocking warnings. This is the one that matters.
     #
-    # `card_bitrate` is what castle_sd.yaml STREAMS off a 31 GB card, where
-    # that budget does not exist and never did. 32 kbps was only ever a
-    # flash compromise: measured, it brickwalls the show at ~6 kHz, which is
-    # telephone quality and audibly so. 96 kbps is what the show was tuned
-    # at, and PROJECT_NOTES §12.13 measured it decoding on this exact chip
-    # with zero underruns, zero decode errors and zero blocking warnings.
+    # `bitrate` is the smaller render, audio/*.mp3. It existed because
+    # castle_flash.yaml embedded every scene in a 2.9 MB partition — 32 kbps
+    # is 46% of it, 96 kbps would have been 138% and the build would not fit.
+    # That build was retired on 2026-09-01 (PROJECT_NOTES §12.15) and nothing
+    # embeds these any more; what still reads them is the cue desk page,
+    # which inlines every scene as a data URI and has a 4 MB budget of its
+    # own (tools/previewer_budget.py). So the number stays low for a
+    # different reason than it was chosen for. Measured, 32 kbps brickwalls
+    # the show at ~6 kHz — telephone quality, and audibly so — which is
+    # tolerable in a browser preview and was never tolerable on the porch.
     bitrate: 32
     card_bitrate: 96
     # Mono on purpose, and it is full level: both amps have SD pinned LEFT
