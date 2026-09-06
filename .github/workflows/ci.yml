@@ -306,7 +306,7 @@ jobs:
       # away turned every validation failure into a bare "exit code 2".
       - name: validate every buildable variant
         run: |
-          for y in castle_sd castle_sd_jewels bench bench_audio; do
+          for y in castle_sd castle_s3 castle_sd_jewels bench bench_audio; do
             esphome config "firmware/$y.yaml" > "/tmp/$y.out" 2>&1 \
               || { echo "== $y FAILED"; cat "/tmp/$y.out"; exit 1; }
             echo "$y OK"
@@ -320,7 +320,9 @@ jobs:
   firmware-weekly:
     if: github.event_name == 'schedule'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Two chips now, two ESP-IDF toolchains to fetch: the S2 porch build and
+    # the S3 carrier build (2026-09-05).
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -364,6 +366,18 @@ jobs:
           PCT=$(grep -Eo 'RAM: *\[[^]]*\] *[0-9.]+%' /tmp/build.out | grep -Eo '[0-9.]+%' | tr -d '%')
           echo "dram0 at ${PCT}%"
           python3 -c "import sys; p=float('${PCT}' or 101); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm — about one scene of headroom left (grade report 2026-08-23 G2); split or cap before adding more') or 1)"
+      # The carrier build has no porch and no operator to notice it rotting:
+      # `esphome config` is the only gate it passes through on a PR, and a
+      # config-valid YAML can still fail to LINK (the S3's own frameworks, the
+      # includes, the I2C component). Compiled here for the same reason the S2
+      # is — while a break is still a warning rather than a flash day.
+      # No dram0 alarm on this one: the S3's data segment is not the S2's
+      # 99.99%-full cliff, and a threshold invented before the board exists
+      # would be a number nobody measured. Report the figures instead.
+      - name: compile the S3 carrier build
+        run: esphome compile firmware/castle_s3.yaml | tee /tmp/build_s3.out
+      - name: S3 RAM and flash
+        run: grep -E '^(RAM|Flash):' /tmp/build_s3.out || true
       - name: newer esphome available?
         run: |
           pip index versions esphome 2>/dev/null | head -2 || true

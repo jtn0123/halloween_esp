@@ -33,6 +33,7 @@ OUTPUT_PATHS = (
     "AUDIO_SD",
     "RIG_OUT",
     "LIGHTS_OUT",
+    "LIGHTS_S3_OUT",
 )
 
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]

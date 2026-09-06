@@ -1,6 +1,10 @@
 # Halloween Castle — ESPHome device config
 #
-# Board:   Adafruit ESP32-S2 Feather (240 MHz, 4 MB flash, 2 MB PSRAM)
+# Board:   Adafruit ESP32-S2 Feather (240 MHz, 4 MB flash, 2 MB PSRAM).
+#          The `esp32:` block below is the Feather's; firmware/castle_s3.yaml
+#          removes it and says `variant: esp32s3` instead, for the carrier
+#          board (2026-09-05). Everything else in this file is the SHOW and
+#          is true of both — not one GPIO number differs between them.
 # Audio:   MAX98357A I2S class-D amp -> 4 ohm speaker
 # Light:   one strip per zone, three zones. What is in each is set in
 #          scenes/scenes.yaml and generated into generated/lights.yaml —
@@ -20,7 +24,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.44"
+  version: "5.45"
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
   #

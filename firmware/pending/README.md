@@ -33,6 +33,58 @@ come-back polling, the confirm reminder) all passed. Flash day is therefore:
 watch that first big upload for the watchdog cadence above, connect once so
 the image is confirmed, then `make publish`.
 
+Applied in v5.45 (2026-09-05, compiled, NOT yet flashed) — and the first
+change here that is not about the board in the yard:
+
+- **`firmware/castle_s3.yaml` — the ESP32-S3 carrier build.** Written from
+  §13 of `docs/V5-SPEC.md` in the castle-carrier v5 project, with no board
+  in hand. It is a SECOND target: `make build-s3` / `upload-s3` / `logs-s3`,
+  validated beside castle_sd.yaml by `make validate` and compiled by the
+  weekly CI job. The S2 build is untouched and stays the porch's.
+  `castle_sd_common.yaml` is the show both of them read; what is left in
+  `castle_sd.yaml` is the Feather's own NeoPixel, which the S3 build has no
+  hardware for and therefore does not include.
+
+  **Nothing here has been on hardware.** Bring-up, when the board exists:
+
+  1. Flash over the module's own USB Serial/JTAG (`make upload-s3`) — no
+     adapter, and no BOOT-button dance. Confirm **5.45** on the web page.
+  2. Watch the boot log on the same USB port. The S2 could never do this;
+     it is the first time this firmware has had a console.
+  3. Three strips, not one: check tower L, doorway and tower R each light.
+     A dark strip past the first is the RMT block size, and the number to
+     look at is `rmt_symbols: 48` in `generated/lights_s3.yaml`.
+  4. `i2c: scan: true` should find **0x41**. 0x40 means a Qwiic breakout is
+     answering instead of the carrier's INA219 and the reading is not the
+     castle's rail.
+  5. Read "Castle 5V current" through a whole show. That is V5-SPEC open
+     question 1 — how much this thing actually draws — and the answer has
+     never been measured, only estimated.
+  6. Only then start giving the dram0 diet back, one `sdkconfig_options`
+     line at a time, measuring each (V5-SPEC §13.5). mDNS is the one worth
+     having: it has never worked on the S2, and `devices.toml` holds a
+     hard-coded address because of that.
+
+  Two places this build deliberately departs from the spec, both written
+  down rather than argued:
+
+  - §13.8 asks the first S3 image to announce itself as **v6.00**, on the
+    grounds that a board this different should not share a major number.
+    This is v5.45, because the port did not replace the S2 build and one
+    version string still serves both — a v6.00 on the porch board would say
+    something untrue. Renumber when the S3 becomes the only castle.
+  - §13.1–13.3 are written as edits to `castle.yaml` and `castle_sd.yaml` —
+    a port in place, ending with one build. This is a variant beside them
+    instead, for as long as the S2 is the castle in the yard.
+
+  One thing the carrier's own checker will still report: `gen/check_firmware_pins.py`
+  reads `castle.yaml` and `castle_sd.yaml` (its `ROOTS`), not `castle_s3.yaml`,
+  so its platform pass will keep saying "no `variant: esp32s3`" and "no i2c:
+  block" while the S2 build exists. That is the checker measuring the porch
+  board, correctly. Its eInk precondition — the exit-2 one — is genuinely
+  gone: v5.44 deleted `eink_cs`, `sram_cs` and `eink_dc`, and nothing here
+  brought them back.
+
 Applied in v5.44 (2026-09-04, compiled, NOT yet flashed):
 
 - The eInk status panel is gone: castle_eink.h, its font and QR headers

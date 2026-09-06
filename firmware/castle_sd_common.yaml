@@ -1,0 +1,331 @@
+# The microSD show, without a word about which chip is playing it.
+#
+# Split out of castle_sd.yaml on 2026-09-05, when the ESP32-S3 carrier build
+# (castle_s3.yaml) needed every line of it EXCEPT the S2 Feather's on-board
+# NeoPixel. That pixel is the whole seam: a WROOM-1 has no such LED and does
+# not even bring GPIO33 out (docs/V5-SPEC.md §13.3), and ESPHome packages
+# append lists rather than subtract from them — so the thing one build has
+# and the other cannot must live in the file only one build includes.
+#
+# What is here: the card mount, the loopback stream, the web server and its
+# main-loop bridge, the SD diagnostics. What is NOT: `name`/`friendly` (the
+# build's identity), the platform, and the status pixel. Nothing here names
+# a chip.
+#
+# HOW IT WORKS: ESPHome has no SD component and its audio pipeline cannot read
+# a filesystem — but it can read a URL. sd_audio.h mounts the card over SPI
+# at /sd, sd_web_site.h serves any file on it at GET /sd/<path>, and playing
+# a card file is the ordinary media_player URL call pointed at loopback:
+# http://127.0.0.1:8080/sd/<file>. True streaming, no PSRAM cap. See
+# firmware/sd_audio.h for the whole story.
+
+substitutions:
+  # ── SD pins ──────────────────────────────────────────────────────────
+  # The carrier board's microSD socket sits on the Feather's SPI header with
+  # its chip select on D5 — the same pin the eInk FeatherWing used for its
+  # card slot, so the card needed no re-wiring when the wing went. The wing
+  # itself (and the status panel v5.11–v5.43 drew on it, with its parked
+  # SRAM/eInk chip selects on D6/D9/D10) is gone since v5.44: its job moved
+  # to the web page, and D6/D9/D10 are free for the carrier — a 5 V sense
+  # divider on D6 and the wired button on D10.
+  #
+  # All four numbers survive the ESP32-S3 port unchanged: GPIO35/36/37 are
+  # free on a QUAD-PSRAM WROOM-1 and belong to the PSRAM die only on the
+  # octal parts, which is why docs/V5-SPEC.md §1.1 forbids an …R8 module.
+  sd_cs: "5"            # D5
+  sd_sck: "36"          # SCK
+  sd_mosi: "35"         # MOSI
+  sd_miso: "37"         # MISO
+
+packages:
+  # This build's `sfx`: streams each track from the card over loopback (the
+  # core deliberately defines none — see the note atop castle.yaml).
+  audio_sd: !include generated/audio_sd.yaml
+
+# The build embeds ONE file: a chirp that plays when a scene starts with
+# no card in the slot, so a missing card is audible instead of silent. Every
+# scene track streams from /sd/scenes/ instead of living in flash — which is
+# what keeps the image inside a 1.75 MB OTA slot no matter how long the show
+# gets. The show weighed 2.2 MB the day this became the only build.
+media_player:
+  - id: !extend castle_media
+    files:
+      - id: snd_chirp
+        file: ../audio/00_chirp.mp3
+
+# ESPHome tunes ESP-IDF for its own filesystem use — a FAT image on a flash
+# partition behind the wear-levelling layer — and both of its defaults are
+# wrong for a real SD card. Neither failure is loud: the card mounts, reports
+# its correct name and size, and then nothing works.
+#
+#   VFS_SUPPORT_DIR=n    ESPHome turns directory support off to save flash,
+#                        because it never lists anything. That removes
+#                        opendir/readdir entirely, so listing the card failed
+#                        with an errno the FATFS layer cannot even produce —
+#                        which is what made it look like a card fault.
+#
+#   FATFS_SECTOR_4096    Correct for wear-levelled flash. An SD card reports
+#                        512-byte sectors (this one does: "sector 512" in the
+#                        mount log), and FATFS built for 4096 misreads it.
+#
+# All of it is a fact about SD cards, not about the S2 — docs/V5-SPEC.md
+# §13.5 keeps the whole block on the S3.
+esp32:
+  framework:
+    sdkconfig_options:
+      CONFIG_VFS_SUPPORT_DIR: "y"
+      CONFIG_FATFS_SECTOR_4096: "n"
+      CONFIG_FATFS_SECTOR_512: "y"
+      # Long filenames, so "Halloween Songs - Ghostbusters.mp3" survives
+      # instead of arriving as HALLOW~1.MP3. ESPHome defaults this off too.
+      CONFIG_FATFS_LFN_NONE: "n"
+      CONFIG_FATFS_LFN_HEAP: "y"
+
+esphome:
+  includes:
+    - sd_audio.h
+    - sd_web_util.h
+    - sd_web_state.h
+    - sd_web_stream.h
+    - sd_web.h
+    - sd_web_ota.h
+    - sd_web_site.h
+    - sd_web_remote.h
+  on_boot:
+    # A LIST, not a mapping, and that matters more than it looks. ESPHome
+    # merges a package's lists by appending them, but a mapping written over a
+    # list REPLACES it — so spelling this `priority: -200` at the top level
+    # silently deleted every on_boot entry castle.yaml had, including the
+    # `light.turn_on` + `scene_vigil` at -100. The SD build booted with its
+    # pixels dark and its opening scene never started, and nothing said so.
+    - priority: -200
+      then:
+        - lambda: |-
+            if (castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso})) {
+              castle_sd::list_root();
+              // One line per boot on the card: the season-long paper trail.
+              castle_health::log_boot_to_sd(CASTLE_VERSION);
+            }
+            // Started whether or not the card mounted: the server is also how
+            // you find out the card is missing without walking to the castle.
+            castle_web::start();
+            // The web layer 404s unknown scene ids instead of queueing lies —
+            // this is where it learns which ids are real. Element-wise copy:
+            // get_options() returns FixedVector<const char*> on current
+            // ESPHome (std::vector<std::string> before) — emplace takes both.
+            {
+              std::vector<std::string> scene_ids;
+              for (const auto &opt : id(pir_scene).traits.get_options())
+                scene_ids.emplace_back(opt);
+              castle_web::set_scene_ids(std::move(scene_ids));
+            }
+        # #29: prove every scene file exists BEFORE a cue plays silence.
+        - script.execute: manifest_check
+        # #26: a visible sweep of every colour channel at plug-in, so a dead
+        # channel is a porch-step diagnosis, not a mid-show mystery.
+        - script.execute: boot_selftest
+
+# Play a card file by name from the "Play SD file" button — the same
+# loopback stream the PLAY action in the interval below uses (sd_web_site.h),
+# just reachable without a browser: set the `SD file` text, press the button.
+script:
+  # #26: boot self-test — every zone flashes R, G, B, W in turn, riding the
+  # strike machinery over whatever scene is starting. No tone on purpose:
+  # vigil's own opening audio is the speaker test, and a chirp here would
+  # stomp it (one announcement pipeline).
+  - id: boot_selftest
+    then:
+      - lambda: |-
+          for (int z = 0; z < 3; z++) {
+            id(zone_flash_col)[z*4+0] = 1; id(zone_flash_col)[z*4+1] = 0;
+            id(zone_flash_col)[z*4+2] = 0; id(zone_flash_col)[z*4+3] = 0;
+            id(zone_flash)[z] = 1.0f; id(zone_flash_decay)[z] = 0.86f;
+          }
+      - delay: 350ms
+      - lambda: |-
+          for (int z = 0; z < 3; z++) {
+            id(zone_flash_col)[z*4+1] = 1; id(zone_flash_col)[z*4+0] = 0;
+            id(zone_flash)[z] = 1.0f;
+          }
+      - delay: 350ms
+      - lambda: |-
+          for (int z = 0; z < 3; z++) {
+            id(zone_flash_col)[z*4+2] = 1; id(zone_flash_col)[z*4+1] = 0;
+            id(zone_flash)[z] = 1.0f;
+          }
+      - delay: 350ms
+      - lambda: |-
+          for (int z = 0; z < 3; z++) {
+            id(zone_flash_col)[z*4+3] = 1; id(zone_flash_col)[z*4+2] = 0;
+            id(zone_flash)[z] = 1.0f;
+          }
+
+  - id: play_sd
+    mode: restart
+    parameters:
+      path: string
+    then:
+      - lambda: |-
+          // STREAMED off the card through our own server over loopback —
+          // identical to what the web PLAY action does (interval below).
+          // The PSRAM load-then-decode path this once took is gone
+          // (sd_audio.h); there is no second way to play a card file.
+          auto call = id(castle_media)->make_call();
+          call.set_media_url("http://127.0.0.1:8080/sd/" + path);
+          call.set_announcement(true);
+          call.perform();
+          id(current_track).publish_state(path);
+
+# The bridge between the web server's httpd task and ESPHome's main loop.
+# HTTP handlers only *record* play/scene/stop requests (scripts and the media
+# player are not thread-safe off the loop); this picks them up and runs them.
+# 200 ms of latency on a button press is imperceptible next to an MP3 spin-up.
+interval:
+  - interval: 200ms
+    then:
+      - lambda: |-
+          // Mirror live state OUT to the web server (its handlers must never
+          // read ESPHome objects), then execute anything it queued.
+          castle_web::g_volume.store((int) (id(castle_media)->volume * 100.0f + 0.5f));
+          castle_web::g_show_on.store(id(show_playlist)->is_running());
+          castle_web::g_pir_armed.store(id(pir_armed).state);
+          castle_web::g_pir_cooldown.store((int) id(pir_cooldown).state);
+          castle_web::mirror_show_state(id(current_scene).state,
+                                        id(current_track).state,
+                                        id(pir_scene).current_option().str());
+          auto act = castle_web::take_pending();
+          if (act.type == castle_web::NONE) return;
+          if (act.type == castle_web::PLAY) {
+            // A looping scene would re-fire its own track over this file
+            // within 30 s: run_scene("halt") stops every scene script and
+            // starts nothing (lights keep their texture, see gen_esphome).
+            id(run_scene)->execute("halt");
+            // STREAMED off the card through our own server over loopback —
+            // no PSRAM cap, start is near-instant. See sd_web_site.h.
+            auto call = id(castle_media)->make_call();
+            call.set_media_url("http://127.0.0.1:8080/sd/" + act.arg);
+            call.set_announcement(true);
+            call.perform();
+            id(current_track).publish_state(act.arg);
+          } else if (act.type == castle_web::STOP) {
+            id(scene_stop)->execute();
+          } else if (act.type == castle_web::VOLUME) {
+            // 0 is the desk's hush (sound routed to the Mac): remembered so
+            // scene scripts keep quiet too — see speaker_hush in castle.yaml.
+            int pct = atoi(act.arg.c_str());
+            // Never past the measured ceiling (rig.h, from scenes.yaml).
+            if (pct > castle::kMaxVolumePct) pct = castle::kMaxVolumePct;
+            id(speaker_hush) = pct == 0;
+            auto call = id(castle_media)->make_call();
+            call.set_volume(pct / 100.0f);
+            call.perform();
+          } else if (act.type == castle_web::LIGHT) {
+            // Manual override for every strip (or one, "<zone>:"): a colour,
+            // a bench pattern, "off", or "show" to hand the pixels back. One
+            // script rather than a list of ids here, because the zone list
+            // lives in scenes.yaml and is generated into lights_override.
+            //
+            // Anything but "show" stops the scene first. A looping scene
+            // re-runs its audio every 30 s (Vigil), and the SD read + SPI
+            // burst that goes with it starves the RMT refill ISR: two or
+            // three pixels on the longest strip flick to a wrong colour and
+            // back, which reads as a hardware fault while you are staring at
+            // a test pattern (reported 2026-08-21, the 12 px ring). A hex
+            // colour can never spell "show" — s, h, o and w are not digits.
+            if (act.arg.find("show") == std::string::npos)
+              id(scene_stop)->execute();
+            id(lights_override)->execute(act.arg);
+          } else if (act.type == castle_web::SCENE) {
+            id(run_scene)->execute(act.arg);
+          } else if (act.type == castle_web::PIRCFG) {
+            // "armed|cooldown|scene", empty fields untouched.
+            const size_t p1 = act.arg.find('|');
+            const size_t p2 = act.arg.rfind('|');
+            const std::string a = act.arg.substr(0, p1);
+            const std::string c = act.arg.substr(p1 + 1, p2 - p1 - 1);
+            const std::string s = act.arg.substr(p2 + 1);
+            if (!a.empty()) {
+              if (a == "1") id(pir_armed).turn_on(); else id(pir_armed).turn_off();
+            }
+            if (!c.empty()) {
+              auto call = id(pir_cooldown).make_call();
+              call.set_value(atof(c.c_str()));
+              call.perform();
+            }
+            if (!s.empty()) {
+              auto call = id(pir_scene).make_call();
+              call.set_option(s);
+              call.perform();
+            }
+          } else if (act.type == castle_web::SHOW) {
+            // The evening playlist (#19). Stopping also stops whatever
+            // scene it was mid-way through — "stop the show" means quiet.
+            if (act.arg == "1") {
+              id(show_playlist)->execute();
+            } else {
+              id(show_playlist)->stop();
+              id(scene_stop)->execute();
+            }
+          } else if (act.type == castle_web::BLACKOUT) {
+            // #25: the panic switch. Show, scene, audio, pixels — off.
+            id(show_playlist)->stop();
+            id(scene_stop)->execute();
+            id(lights_override)->execute("off");
+          } else if (act.type == castle_web::RESTART) {
+            // Queued by the web OTA so its HTTP reply gets out first.
+            esphome::App.safe_reboot();
+          }
+
+# A card check you can see in Home Assistant without reading logs.
+binary_sensor:
+  - platform: template
+    name: "SD card present"
+    lambda: "return castle_sd::g_mounted;"
+
+# ── SD diagnostics, driven remotely ──────────────────────────────────
+# The mount and its listing happen at boot priority -200, before the API is
+# up, so their log lines are gone by the time anything can read them. The boot
+# log ring (boot_log.h) keeps them, and these re-run the checks on demand —
+# which is what you want when the card is swapped without a reboot.
+button:
+  - platform: template
+    name: "List SD card"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          if (!castle_sd::g_mounted) {
+            ESP_LOGW("castle_sd", "not mounted — mounting now");
+            castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso});
+          }
+          castle_sd::list_root();
+
+  # A stuck FATFS lock cannot be waited out — see remount() for why. This is
+  # the recovery, and pressing it is also the experiment that tells us whether
+  # the lock is the fault or the card is.
+  - platform: template
+    name: "Remount SD"
+    entity_category: diagnostic
+    on_press:
+      - lambda: |-
+          castle_sd::remount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso});
+          castle_sd::list_root();
+
+  # Plays whatever `SD file` names. Separate from the script so it can be
+  # pressed from anywhere that speaks the API, with no YAML edit.
+  - platform: template
+    name: "Play SD file"
+    entity_category: config
+    on_press:
+      - script.execute:
+          id: play_sd
+          path: !lambda 'return id(sd_path).state;'
+
+text:
+  - platform: template
+    name: "SD file"
+    id: sd_path
+    optimistic: true
+    mode: text
+    # Relative to the card root: play_sd prefixes /sd/ (the loopback URL).
+    initial_value: "test.mp3"
+    entity_category: config

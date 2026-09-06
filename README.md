@@ -99,13 +99,20 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # once
 make setup      # venv + esphome + render deps + the commit hook
 make audio      # render the scene audio (builds core/ on first use)
 make validate   # check the config without a toolchain
-make build      # compile firmware/castle_sd.yaml — the one castle build
+make build      # compile firmware/castle_sd.yaml — the castle in the yard
+make build-s3   # compile firmware/castle_s3.yaml — the ESP32-S3 carrier board
 make upload     # flash over USB
 make publish    # push the rendered show to the castle's microSD card
 ```
 
 Copy `firmware/secrets.yaml.example` to `firmware/secrets.yaml` and set real
 WiFi credentials before flashing. `make help` lists every target.
+
+There are two targets because there are two boards. `castle_sd.yaml` is the
+ESP32-S2 Feather that runs the porch; `castle_s3.yaml` (2026-09-05) is the
+ESP32-S3-WROOM-1 carrier board, written from that project's spec and never
+yet on hardware. They share every line of the show and not one GPIO number
+differs between them — see `firmware/pending/README.md` for the bring-up list.
 
 The scene audio lives on the card, not in the image — `make publish` is what
 puts it there, and a board flashed without it chirps instead of playing. That

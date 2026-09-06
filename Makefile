@@ -8,13 +8,18 @@ ESPHOME := .venv/bin/esphome
 # fit a 1.75 MB OTA slot; the SD build had been the one on the porch since
 # 2026-08-22 anyway. docs/notes/03-build.md §12.15 records the decision.
 YAML := firmware/castle_sd.yaml
+# The SECOND build, and deliberately not the default: the ESP32-S3-WROOM-1
+# carrier board (castle-carrier v5, docs/V5-SPEC.md §13). It shares every
+# line of the show with $(YAML) and differs only in the chip. The S2 is
+# what is in the yard; this one has never been on hardware.
+YAML_S3 := firmware/castle_s3.yaml
 # The documented target; pyproject/CI/mypy all say 3.13. Found on PATH rather
 # than at one Homebrew path, which is not where every machine keeps it.
 # Recursive (=), not :=, so the lookup — and the error — only happen when
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: build-s3 upload-s3 logs-s3 validate-s3 publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
@@ -27,6 +32,7 @@ help:
 	@echo "  make build      compile firmware/castle_sd.yaml (implies audio + generate)"
 	@echo "  make upload     compile and flash over USB"
 	@echo "  make logs       tail device logs"
+	@echo "  make build-s3 / upload-s3 / logs-s3   the same for the ESP32-S3 carrier"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"
 	@echo "  make bench-audio  measure decode load on the bare board (no speakers)"
@@ -120,8 +126,13 @@ bench: audio generate
 bench-logs:
 	$(ESPHOME) logs firmware/bench.yaml
 
-validate: generate
+validate: generate validate-s3
 	@$(ESPHOME) config $(YAML) > /dev/null && echo "config OK"
+
+# The carrier build is validated by the same target, not by a habit anyone
+# has to remember: it is the build with no hardware to catch its mistakes.
+validate-s3: generate
+	@$(ESPHOME) config $(YAML_S3) > /dev/null && echo "config OK (s3)"
 
 build: audio generate
 	$(ESPHOME) compile $(YAML)
@@ -131,6 +142,18 @@ upload: audio generate
 
 logs:
 	$(ESPHOME) logs $(YAML)
+
+# The ESP32-S3 carrier board. Same three verbs, same generated show — the
+# only difference is which YAML names the chip. `upload-s3` goes over the
+# module's own USB Serial/JTAG: no adapter, and no BOOT-button dance.
+build-s3: audio generate
+	$(ESPHOME) compile $(YAML_S3)
+
+upload-s3: audio generate
+	$(ESPHOME) run $(YAML_S3)
+
+logs-s3:
+	$(ESPHOME) logs $(YAML_S3)
 
 clean:
 	rm -rf firmware/.esphome audio/*.wav
