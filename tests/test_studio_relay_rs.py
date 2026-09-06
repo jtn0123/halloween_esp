@@ -40,6 +40,8 @@ from studio_rs_case import CARGO, IN_CI, ROOT, StudioCase
 
 sys.path.insert(0, str(ROOT / "tools"))
 import castle_emu
+import castle_emu_flash
+import castle_emu_wire as wire
 
 #: Verbatim from tests/test_studio_relay_fuzz.py — encoded separators,
 #: bare dots, a backslash, a NUL and a hidden name. The corpus is the
@@ -152,7 +154,7 @@ class CardCase(StudioCase):
         """Wait out the emulator's mailbox tick, then forget what it ran.
 
         The castle applies a queued command ~200 ms after it answers
-        {"queued": true}, so a verb sent by the PREVIOUS test can still be
+        {"queued":true}, so a verb sent by the PREVIOUS test can still be
         in flight — and it would turn up in `applied` as evidence against
         a test that never sent anything.
         """
@@ -194,7 +196,10 @@ class Bridge(CardCase):
     def test_02_transport_verbs_relay_verbatim(self) -> None:
         for path in ("/api/scene?s=vigil", "/api/volume?v=40", "/api/stop"):
             code, hdrs, body = self.req(path, "POST")
-            self.assertEqual((code, body), (200, b'{"queued": true}'), path)
+            # Compact, as the firmware's snprintf writes it — the
+            # emulator lost its json.dumps spacing when the C harness
+            # started reading these bodies instead of parsing them.
+            self.assertEqual((code, body), (200, b'{"queued":true}'), path)
             self.assertEqual(hdrs.get("content-type"), "application/json")
 
     def test_03_firmware_verdicts_reach_the_desk_unchanged(self) -> None:
@@ -213,7 +218,7 @@ class Bridge(CardCase):
     def test_04_an_unclaimed_api_route_relays(self) -> None:
         code, hdrs, body = self.req("/api/bootlog")
         self.assertEqual(code, 200)
-        self.assertEqual(body, b"boot log: 2 lines, 0 dropped\n[I][emu] up\n")
+        self.assertEqual(body, castle_emu_flash.BOOTLOG)
         self.assertEqual(hdrs.get("content-type"), "text/plain")
 
     def test_05_scene_with_a_query_fires_on_the_castle(self) -> None:
@@ -349,7 +354,7 @@ class CardPush(CardCase):
                 {"name": f"relay_{size}.bin", "size": size, "dir": False}, listed
             )
             code, _, out = self.req(f"/api/files/relay_{size}.bin", "DELETE")
-            self.assertEqual((code, out), (200, b'{"deleted": true}'), size)
+            self.assertEqual((code, out), (200, b'{"deleted":true}'), size)
             self.assertFalse((self.card / f"relay_{size}.bin").exists())
 
     def test_traversal_names_are_refused_by_the_castle_verbatim(self) -> None:
@@ -376,9 +381,9 @@ class CardPush(CardCase):
                 path, method, None, b"x" if method == "PUT" else None
             )
             self.assertEqual(code, 405, path)
-            self.assertEqual(
-                out, b"Request method for this URI is not handled by server", path
-            )
+            # esp_http_server's own 405 page, not the studio's — spelled
+            # once in castle_emu_wire so a framework bump moves it here too.
+            self.assertEqual(out, wire.IDF_ERRORS[405].encode(), path)
         self.assertEqual((self.card / "song.mp3").read_bytes(), b"\xff\xfbsong")
         self.assertEqual(self.emu.applied, [])
         self.assertEqual(self.req("/api/files")[0], 200)

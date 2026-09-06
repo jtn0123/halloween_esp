@@ -35,6 +35,21 @@ was rehearsed — never a number typed here),
 watch that first big upload for the watchdog cadence above, connect once so
 the image is confirmed, then `make publish`.
 
+Applied in v5.48 (2026-09-06, compiled, NOT yet flashed):
+
+- **`h_list` builds its stat path with a std::string** (`sd_web.h`). The
+  `char full[300]` it used to snprintf into could not hold a 160-byte
+  directory plus a 255-byte FATFS long name; it never had to, because
+  `safe_name` two lines above caps the name at 99 bytes, but nothing at the
+  call site said so and the truncation would have been silent (a `size` of
+  -1 in the listing, from a `stat` on a cut-off path). The buffer is gone,
+  the httpd task's tight stack is 300 bytes lighter, and the loop was
+  already allocating for `out` and `json_escape`. Behaviour is identical, so
+  the emulator needs nothing. Found by the new host harness
+  (`tests/cxx/web_check.cpp`), which compiles this header under
+  `-Wall -Wextra -Werror` with a desktop g++ — where `d_name` is big enough
+  for the compiler to see the overrun the device's toolchain does not.
+
 Applied in v5.47 (2026-09-06, compiled, NOT yet flashed):
 
 - **DELETE reaches `scenes/` and `site/`** (`sd_web.h` `route_dir`, shared

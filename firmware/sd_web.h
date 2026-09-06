@@ -166,10 +166,17 @@ inline esp_err_t h_list(httpd_req_t *req) {
     // onto the card. Counted, not listed: the desk should not offer a
     // track the castle will then refuse by name.
     if (!safe_name(e->d_name)) { skipped++; continue; }
-    char full[300];
-    snprintf(full, sizeof(full), "%s/%s", dirpath, e->d_name);
+    // A std::string rather than the char[300] this used to be: dirpath is
+    // 160 and a FATFS long name is 255, so the two together could overrun
+    // a fixed buffer on paper. They cannot in practice — safe_name just
+    // above caps the name at 99 bytes — but the reader has to prove that to
+    // themselves, and -Wformat-truncation cannot, which is what the host
+    // harness (tests/cxx/web_check.cpp) hit first. This also takes 300
+    // bytes off the httpd task's stack, which is hand-raised because it is
+    // tight; the loop already allocates for `out` and json_escape.
+    const std::string full = std::string(dirpath) + "/" + e->d_name;
     struct stat st{};
-    long size = (stat(full, &st) == 0) ? (long) st.st_size : -1;
+    long size = (stat(full.c_str(), &st) == 0) ? (long) st.st_size : -1;
     char tail[48];
     snprintf(tail, sizeof(tail), "\",\"size\":%ld,\"dir\":%s}", size,
              (e->d_type == DT_DIR) ? "true" : "false");

@@ -16,6 +16,7 @@ individual checks say how each one works.
 | Effect maths (colour per pixel per frame) | `firmware/castle_effects.h` (C++, float32) · `web/src/effects.ts` (TS, double) · `core/src/effects.rs` (Rust, f32) | `web/test/firmware_parity.ts` reading `tests/cxx/parity_dump.cpp` (host-compiled); `web/test/effects_equivalence.ts`; `tests/test_castle_core.py` compares the crate's `parity_dump` bin against the same host-compiled C++, bit for bit |
 | Rig geometry (which pixel is where, what `core` means) | `tools/rig_layout.py` → `firmware/generated/rig.h` · `web/src/rig.ts` | `web/test/rig_parity.ts`, `tests/test_rig_layout.py` |
 | Castle wire protocol (`/api/*` on the device, and the stream server's port) | `firmware/sd_web.h` + `sd_web_stream.h` · `tools/castle_emu_wire.py` · `core/src/bridge.rs` (the `castle` bin, a client of the same wire) | `tests/test_firmware_contract.py` (routes, error strings, status and health keys, the stream port every loopback URL must spell) and `tests/test_firmware_names.py` (the byte rules) parse the C; `tests/test_bridge_rust.py` runs every verb against `castle_emu` |
+| The castle's HTTP **handlers**, run rather than read (`sd_web.h` + `sd_web_util/state/site/remote/ota/stream.h`, over `sd_audio.h`, `castle_health.h`, `boot_log.h`) | `firmware/` itself · `tools/castle_emu*.py` | `tests/cxx/web_check.cpp` compiles the real headers against a fake ESP-IDF (`tests/cxx/shim/` — `httpd_uri_match_wildcard`, `httpd_query_key_value` and the error table ported from IDF 5.5.5, the card redirected to a temp directory with FatFs's path rules) and answers requests on a pipe. `tests/test_firmware_web_cxx.py` (routes, every other verb, the served pages, the JSON replies, the validators) and `tests/test_firmware_web_card.py` (PUT/DELETE, the crc, the sidecar, 413/507/short write, the OTA window per board, the no-card 503s) put ~380 identical requests to the C and to `castle_emu` over identical cards and compare status, body, content type and headers; `tests/test_firmware_web_storm.py` fires ~2000 seeded `fuzz_corpus` names at both — and both cards must match afterwards — then runs `safe_name`/`url_decode`/`json_escape` in C (`web_check --rules`) against `castle_emu_wire`'s port, byte for byte |
 | The studio's whole HTTP surface (both tables in `docs/API.md`) | `core/src/bin/studio.rs` + `core/src/studio*.rs` — ONE copy since docs/RETIREMENT.md, where `tools/studio.py` + `studio_*.py` used to be the second | Nothing compares two servers any more, so three gates stand in its place: `tests/test_studio_golden.py` replays the Python studio's recorded answers (`tests/golden/*.json`) against the binary; the black-box suites `tests/test_studio_reads_rs.py`, `test_studio_writes_rs.py`, `test_studio_media_rs.py`, `test_studio_import_rs.py` and `test_studio_relay_rs.py` drive it over a seeded sandbox and state what each answer IS; and `make e2e` runs the browser suite against the built binary (`CASTLE_STUDIO_CMD` pins another). The crate's own `#[test]`s carry what has no HTTP face — `studio_progress`/`studio_jobs` (a job's phases and its wire shape), `studio_media`/`studio_wave` (the decode caches), `studio_proc`, `studio_relay`, `http_parse`/`http_resp` |
 | `tracks.json` (the provenance manifest, and its flock/atomic-rename protocol) | `tools/manifest.py` · `core/src/manifest.rs` | `tests/test_import*.py` drive the Python's own writes; `tests/test_studio_reads_rs.py` reads back what the studio wrote — the cached duration and onsets, the provenance it must not clobber, and the `level_*` entries that are not onsets. The byte-for-byte comparison of two servers' leftover manifests went with the second server (docs/RETIREMENT.md) |
 | Import URL policy (which hosts yt-dlp may be handed) | `tools/netguard.py` · `core/src/netguard.rs` (the `netguard_dump` bin, `core/src/bin/netguard_dump.rs` — a URL corpus and a DNS table on stdin, one verdict per line out) | `tests/test_netguard_rust.py` drives both over the corpus `tests/test_netguard.py` holds the Python to, DNS mocked from one table on both sides, and compares the **refusal sentences**, not just the verdicts — the desk shows the string |
@@ -31,6 +32,17 @@ only defence is a check that throws the same seeded cases at every copy and
 compares the digits. The firmware copy is the hard one — it is float32 on
 an S2 with no serial console — so `parity_dump.cpp` compiles the real
 header with the host compiler and prints what the device would compute.
+
+The wire row underneath it was, until 2026-09-06, the one place where the
+two copies were only ever compared by READING one of them: the emulator was
+held to `sd_web.h` by parsing the C, which catches a renamed route or a
+changed error string and cannot catch a handler that decides differently.
+`web_check.cpp` closed that by running the handlers. It found five
+divergences on its first pass — every queued reply's JSON spacing, a CSP
+header missing from `/site/`'s refusals, an IDF error table a major version
+stale, `GET //` served instead of refused, and `GET /sd/<file>/` served
+instead of refused — none of which any parse could have seen, and every one
+of which the emulator had been telling the desk about for months.
 
 The scene-render row has one extra wrinkle: the Python's digits depend on
 which numpy/scipy wheel is installed, so `tests/synth_probes.py` measures the
@@ -81,6 +93,10 @@ the track listing is recorded as its shape, not its onset counts).
 make check                       # everything below except the browser suite
 .venv/bin/python -m unittest tests.test_generator_parity tests.test_stream_dynamics \
                               tests.test_gen_fuzz tests.test_firmware_cxx -q
+.venv/bin/python -m unittest tests.test_firmware_web_cxx tests.test_firmware_web_card \
+                              tests.test_firmware_web_storm -q   # the C handlers vs the emulator
+CASTLE_STORM_SEED=99 CASTLE_STORM_CASES=8000 \
+  .venv/bin/python -m unittest tests.test_firmware_web_storm -q  # go hunting
 .venv/bin/python -m unittest tests.test_scene_render_rust tests.test_synth_rust \
                               tests.test_master_rust tests.test_onsets_rust \
                               tests.test_pulse_rust tests.test_bridge_rust -q
@@ -107,10 +123,10 @@ cd web && node dist/rig_parity.mjs
 
 The env knobs are read at run time, so a rebuild is only needed when a source
 file changed. Seeds are fixed by default so a red run reproduces; the knobs are
-for going hunting. `test_firmware_cxx` and `firmware_parity` need a host
-`clang++`/`g++` and SKIP (loudly) without one — a green run on a machine with
-no compiler has not checked the firmware layer, and the same is true of every
-Rust row without cargo.
+for going hunting. `test_firmware_cxx`, the three `test_firmware_web_*`
+suites and `firmware_parity` need a host `clang++`/`g++` and SKIP (loudly)
+without one — a green run on a machine with no compiler has not checked the
+firmware layer, and the same is true of every Rust row without cargo.
 
 ## When it fails
 

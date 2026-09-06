@@ -24,7 +24,6 @@ Fidelity choices worth knowing when a test surprises you:
 from __future__ import annotations
 
 import json
-import re
 import time
 import zlib
 from collections.abc import Iterator
@@ -33,6 +32,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import castle_emu_wire as wire
+from castle_emu_flash import BOOTLOG, CSP, FALLBACK_PAGE, REMOTE_PAGE, TYPES
 
 if TYPE_CHECKING:
     from castle_emu import CastleEmu
@@ -54,63 +54,6 @@ JSON_MIME = "application/json"
 #: sd_web.h's 503 for every route that needs the card, spelled once.
 NO_SD = "no SD card"
 
-#: sd_web_site.h content_type(): suffix → MIME.
-_TYPES = {
-    ".html": "text/html; charset=utf-8",
-    ".js": "application/javascript",
-    ".css": "text/css",
-    ".svg": "image/svg+xml",
-    ".png": "image/png",
-    ".json": JSON_MIME,
-    ".mp3": "audio/mpeg",
-    ".wav": "audio/wav",
-}
-
-#: firmware/sd_web_remote.h kRemotePage, byte for byte — the phone remote
-#: is embedded in flash, so the emulator lifts it out of the C raw string
-#: rather than keeping a placeholder nobody could test against (JB2-6).
-_REMOTE_H = Path(__file__).resolve().parent.parent / "firmware" / "sd_web_remote.h"
-
-
-def _remote_page() -> str:
-    m = re.search(
-        r'kRemotePage\[\] = R"HTML\((.*?)\)HTML";', _REMOTE_H.read_text(), re.DOTALL
-    )
-    if not m:
-        raise RuntimeError(f"no kRemotePage raw string in {_REMOTE_H}")
-    return m.group(1)
-
-
-REMOTE_PAGE = _remote_page()
-#: sd_web_site.h set_csp(), byte for byte (E4) — sent on every served page.
-CSP = (
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-    "media-src 'self' data: blob:; connect-src 'self'"
-)
-FALLBACK_PAGE = (
-    "<!doctype html><meta charset=utf-8><title>Castle</title>"
-    "<h1>Castle</h1><p>emulated fallback page</p>"
-)
-
-
-_ZONE_CHARS = set(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
-
-
-def light_spec_ok(c: bytes) -> bool:
-    """sd_web_state.h light_spec_ok, byte for byte: "RRGGBB"|show|off with an
-    optional "<zone>:" prefix that drives one strip (the desk's channel test)."""
-    zone, sep, spec = c.partition(b":")
-    if not sep:
-        zone, spec = b"", c
-    elif not zone or len(zone) > 16 or any(b not in _ZONE_CHARS for b in zone):
-        return False
-    spec, at, pct = spec.partition(b"@")
-    if at and (not pct.isdigit() or len(pct) > 3 or not 1 <= int(pct) <= 100):
-        return False
-    hex6 = len(spec) == 6 and all(chr(b) in "0123456789abcdefABCDEF" for b in spec)
-    return hex6 or spec in (b"white", b"bars", b"chase", b"ends", b"show", b"off")
-
 
 class Handler(BaseHTTPRequestHandler):
     server: CastleEmu  # narrowed for handlers
@@ -128,7 +71,13 @@ class Handler(BaseHTTPRequestHandler):
             super().handle()
 
     def _json(self, body: dict[str, object] | list[object]) -> None:
-        self._raw(200, json.dumps(body).encode(), JSON_MIME)
+        # Compact separators, because the firmware's replies are snprintf
+        # templates with no room for pretty-printing: `{"queued":true}` on
+        # the board against json.dumps's `{"queued": true}` here was two
+        # bytes of drift in every queued answer, invisible to every test
+        # that parsed the body instead of reading it
+        # (tests/test_firmware_web_cxx.py now reads it).
+        self._raw(200, json.dumps(body, separators=(",", ":")).encode(), JSON_MIME)
 
     def _raw(
         self, code: int, raw: bytes, ctype: str, extra: dict[str, str] | None = None
@@ -141,9 +90,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
-    def _err(self, code: int, msg: str) -> None:
-        """reply_err(): a status line and a one-line text/plain body."""
-        self._raw(code, msg.encode(), "text/plain")
+    def _err(self, code: int, msg: str, extra: dict[str, str] | None = None) -> None:
+        """reply_err(): a status line and a one-line text/plain body.
+
+        `extra` carries headers a handler set BEFORE it decided to fail —
+        the served pages set their CSP first thing, and httpd keeps a
+        header once set, so the refusal goes out carrying it too."""
+        self._raw(code, msg.encode(), "text/plain", extra)
 
     def _idf(self, code: int) -> None:
         """esp_http_server's own verdicts, before any handler runs."""
@@ -161,9 +114,13 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(0.25)
 
     def _dispatch(self) -> None:
-        # self.path is the request target decoded as latin-1, so this is
-        # the exact byte string the board's parser would see.
-        raw = self.path.encode("latin-1")
+        # The target off the REQUEST LINE, not self.path: http.server
+        # collapses a leading "//" to "/" before it hands the path over,
+        # and esp_http_server does not — so "GET //" served the desk here
+        # and 404'd on the board. Everything after this is the exact byte
+        # string the board's parser would see.
+        words = self.requestline.split()
+        raw = (words[1] if len(words) > 1 else self.path).encode("latin-1")
         self._wedge()
         if len(raw) > wire.MAX_URI:
             return self._idf(414)
@@ -229,7 +186,10 @@ class Handler(BaseHTTPRequestHandler):
         if sub:
             if not wire.safe_subpath(sub):
                 return self._err(400, "bad path")
-            base = base / wire.fs_name(sub)
+            name = wire.fat_path(sub)
+            if name is None:
+                return self._err(404, "no such directory")
+            base = base / name
             if not base.is_dir():
                 return self._err(404, "no such directory")
         items = []
@@ -258,7 +218,7 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def h_bootlog(self, _raw: bytes) -> None:
-        self._raw(200, b"boot log: 2 lines, 0 dropped\n[I][emu] up\n", "text/plain")
+        self._raw(200, BOOTLOG, "text/plain")
 
     def h_remote(self, _raw: bytes) -> None:
         self._raw(
@@ -290,7 +250,7 @@ class Handler(BaseHTTPRequestHandler):
         self._raw(
             200,
             f.read_bytes(),
-            ctype or _TYPES.get(f.suffix, "application/octet-stream"),
+            ctype or TYPES.get(f.suffix, "application/octet-stream"),
             extra or None,
         )
         return True
@@ -301,21 +261,30 @@ class Handler(BaseHTTPRequestHandler):
         rel = self._subpath(raw, b"/sd/")
         if not wire.safe_subpath(rel):
             return self._err(400, "bad path")
-        if not self._send_file(self.server.sd_dir / wire.fs_name(rel)):
+        name = wire.fat_path(rel)
+        if name is None or not self._send_file(self.server.sd_dir / name):
             return self._err(404, "no such file")
 
     def h_site(self, raw: bytes) -> None:
+        # set_csp() runs FIRST in the firmware, so the refusals below carry
+        # the header too — httpd holds a header once set, whatever the
+        # handler decides afterwards.
         rel = self._subpath(raw, b"/site/")
         if not wire.safe_subpath(rel):
-            return self._err(400, "bad path")
-        f = self.server.sd_dir / "site" / wire.fs_name(rel)
-        if not self.server.sd_mounted or not self._send_file(f, csp=True):
-            return self._err(404, "not on card")
+            return self._err(400, "bad path", {"Content-Security-Policy": CSP})
+        name = wire.fat_path(rel)
+        f = self.server.sd_dir / "site" / (name or "")
+        if (
+            not self.server.sd_mounted
+            or name is None
+            or not self._send_file(f, csp=True)
+        ):
+            return self._err(404, "not on card", {"Content-Security-Policy": CSP})
 
     def h_root(self, _raw: bytes) -> None:
         site = self.server.sd_dir / "site"
         if self.server.sd_mounted and (
-            self._send_file(site / "index.html.gz", "gzip", _TYPES[".html"], csp=True)
+            self._send_file(site / "index.html.gz", "gzip", TYPES[".html"], csp=True)
             or self._send_file(site / "index.html", csp=True)
         ):
             return
@@ -372,7 +341,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def h_light(self, raw: bytes) -> None:
         c = wire.query_param(raw, "c")
-        if not light_spec_ok(c):
+        if not wire.light_spec_ok(c):
             return self._err(
                 400, "need ?c=[zone:]RRGGBB|white|bars|chase|ends|show|off[@pct]"
             )

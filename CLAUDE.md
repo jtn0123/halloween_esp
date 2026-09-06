@@ -167,7 +167,10 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   `CASTLE_HOST=127.0.0.1:8093 tools/studio_launch.sh 8766 --localhost`
   gives the full desk→studio→castle chain. The emulator is a byte-level port
   of `sd_web.h` (`tools/castle_emu_wire.py`); `tests/test_firmware_contract.py`
-  parses the C and fails if the two drift — change both in one commit.
+  parses the C and fails if the two drift — change both in one commit. And
+  `tests/test_firmware_web_cxx.py` + `_card` + `_storm` RUN the drift check:
+  `tests/cxx/web_check.cpp` compiles the real headers against a fake ESP-IDF
+  (`tests/cxx/shim/`) and every request goes to both castles.
 - Ports 8765/8766/8093 may be in use by the user's own sessions; tests bind
   port 0, e2e uses `CASTLE_E2E_PORT`.
 

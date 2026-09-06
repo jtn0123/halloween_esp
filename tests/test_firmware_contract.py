@@ -84,11 +84,11 @@ class TestErrorStrings(unittest.TestCase):
 
     def test_no_emulator_error_string_is_invented(self) -> None:
         all_fw = set().union(*(reply_errs(b) for b in FUNCS.values()))
-        spelled = re.findall(r'self\._err\((\d{3}), "([^"]*)"\)', EMU_HTTP)
+        spelled = re.findall(r'self\._err\((\d{3}), "([^"]*)"', EMU_HTTP)
         named = [
             (c, EMU_CONSTS[n])
             for c, n in re.findall(
-                r"self\._err\((\d{3}), ([A-Z][A-Z0-9_]*)\)", EMU_HTTP
+                r"self\._err\((\d{3}), ([A-Z][A-Z0-9_]*)[,)]", EMU_HTTP
             )
         ]
         for c, msg in spelled + named:
@@ -132,7 +132,7 @@ class TestValidatorConstants(unittest.TestCase):
             (b"sparkle", False),
             (b"door:bars@0", False),
         ):
-            self.assertEqual(castle_emu_http.light_spec_ok(c), ok, c)
+            self.assertEqual(wire.light_spec_ok(c), ok, c)
         pat = r"content_len < (\d+) \|\| req->content_len > ([\w>-]+)"
         self.assertEqual(int(grab(pat, FUNCS["h_ota"], 1)), castle_emu_http.OTA_MIN)
         self.assertEqual(grab(pat, FUNCS["h_ota"], 2), "part->size")  # the slot

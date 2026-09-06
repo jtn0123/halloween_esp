@@ -57,14 +57,21 @@ ROUTES: tuple[tuple[str, str, str], ...] = (
     ("/", "GET", "h_root"),
 )
 
-#: esp_http_server's own error pages (httpd_txrx.c), for verdicts the
-#: firmware never sees: an unparseable header, no route, wrong method, an
-#: oversized request line, a body that stopped arriving. text/html there.
+#: esp_http_server's own error pages, for verdicts the firmware never sees:
+#: an unparseable header, no route, wrong method, an oversized request line,
+#: a body that stopped arriving. text/html there (HTTPD_TYPE_TEXT is
+#: "text/html", not "text/plain" — the reply_err pages are the plain ones).
+#:
+#: Copied from httpd_resp_send_err's table in ESP-IDF 5.5.5
+#: (components/esp_http_server/src/httpd_txrx.c), which is the framework
+#: esphome pulls for this board. The wording here was IDF 4.x's until
+#: tests/test_firmware_web_cxx.py ran the real headers beside this file and
+#: found the two tables had drifted apart a major version ago.
 IDF_ERRORS = {
-    400: "Server unable to understand request due to invalid syntax",
-    404: "This URI does not exist",
-    405: "Request method for this URI is not handled by server",
-    408: "Server closed this connection due to timeout",
+    400: "Bad request syntax",
+    404: "Nothing matches the given URI",
+    405: "Specified method is invalid for this resource",
+    408: "Server closed this connection",
     414: "URI is too long",
 }
 
@@ -145,6 +152,29 @@ def safe_name(n: bytes) -> bool:
     return not any(c < 0x20 or c >= 0x80 or c == 0x7F or c in (0x22, 0x5C) for c in n)
 
 
+_ZONE_CHARS = set(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+
+
+def light_spec_ok(c: bytes) -> bool:
+    """sd_web_state.h light_spec_ok, byte for byte: "RRGGBB"|show|off with an
+    optional "<zone>:" prefix that drives one strip (the desk's channel test).
+
+    Here rather than beside the handler that calls it because it is a byte
+    rule like the ones above it — a decision about a value, taken before any
+    card or mailbox is touched — and this file is where the firmware's byte
+    rules are ported."""
+    zone, sep, spec = c.partition(b":")
+    if not sep:
+        zone, spec = b"", c
+    elif not zone or len(zone) > 16 or any(b not in _ZONE_CHARS for b in zone):
+        return False
+    spec, at, pct = spec.partition(b"@")
+    if at and (not pct.isdigit() or len(pct) > 3 or not 1 <= int(pct) <= 100):
+        return False
+    hex6 = len(spec) == 6 and all(chr(b) in "0123456789abcdefABCDEF" for b in spec)
+    return hex6 or spec in (b"white", b"bars", b"chase", b"ends", b"show", b"off")
+
+
 def safe_subpath(p: bytes) -> bool:
     """sd_web_site.h safe_subpath: subdirectories allowed, no escapes."""
     if not p or len(p) > SUBPATH_MAX or p[0:1] in (b"/", b"."):
@@ -179,6 +209,24 @@ def c_str(n: bytes) -> bytes:
 def fs_name(n: bytes) -> str:
     """The bytes a handler hands to the filesystem, as a Python path part."""
     return c_str(n).decode("utf-8", "surrogateescape")
+
+
+def fat_path(n: bytes) -> str | None:
+    """`n` as a card-relative path, or None when FatFs would not find it.
+
+    ESP-IDF builds FatFs with FF_FS_RPATH = 0 (its ffconf.h), so "." is not
+    a directory reference — it is looked up as an ordinary file name and
+    never found — and a trailing separator demands that what precedes it be
+    a directory before failing on the empty segment after it. Python's
+    pathlib deletes both silently, so "GET /sd/a/" served the file `a` here
+    and answered FR_NO_PATH on the board (found by the C harness's storm,
+    tests/test_firmware_web_storm.py)."""
+    name = fs_name(n)
+    if not name or name.endswith("/"):
+        return None
+    if any(seg in (".", "..") for seg in name.split("/")):
+        return None
+    return name
 
 
 def query_param(raw_target: bytes, key: str) -> bytes:

@@ -76,12 +76,13 @@ def emu_errs(handler: str) -> set[tuple[int, str]]:
     m = re.search(rf"    def {handler}\(self.*?(?=\n    def |\Z)", EMU_HTTP, re.DOTALL)
     assert m, f"emulator has no {handler}"
     out: set[tuple[int, str]] = set()
-    for code, msg in re.findall(
-        r'self\._err\(\s*(\d{3}),\s*(?:"([^"]*)")\s*\)', m.group(0)
-    ):
+    # The message is the second argument; a third (headers the handler had
+    # already set, as h_site's CSP) may follow it, so the match stops at
+    # the string rather than at the closing paren.
+    for code, msg in re.findall(r'self\._err\(\s*(\d{3}),\s*"([^"]*)"', m.group(0)):
         out.add((int(code), msg))
     for code, name in re.findall(
-        r"self\._err\(\s*(\d{3}),\s*([A-Z][A-Z0-9_]*)\s*\)", m.group(0)
+        r"self\._err\(\s*(\d{3}),\s*([A-Z][A-Z0-9_]*)\s*[,)]", m.group(0)
     ):
         assert name in EMU_CONSTS, f"{handler}: unknown constant {name}"
         out.add((int(code), EMU_CONSTS[name]))
