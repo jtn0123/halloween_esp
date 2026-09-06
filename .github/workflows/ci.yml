@@ -376,6 +376,18 @@ jobs:
         run: |
           printf 'wifi_ssid: "ci"\nwifi_password: "%s"\n' "$RUN" \
             > firmware/secrets.yaml
+      # firmware/build_path.yaml points every build tree at the USB drive
+      # the developer's Mac has mounted; on the runner that is
+      # "Permission denied: /Volumes", which is where the third hand
+      # dispatch (run 34046501575, 2026-09-06) died — the first time the job
+      # had got as far as the compile. Point it under the checkout instead:
+      # ESPHome's own default layout, and where check_image.py looks second.
+      # (${name} is ESPHome's substitution, not the shell's — single quotes.)
+      - name: build under the checkout, not the USB drive
+        run: |
+          printf 'esphome:\n  build_path: %s/firmware/.esphome/build/${name}\n' \
+            "$GITHUB_WORKSPACE" > firmware/build_path.yaml
+          cat firmware/build_path.yaml
       - name: compile the SD build
         run: esphome compile firmware/castle_sd.yaml | tee /tmp/build.out
       - name: dram0 ceiling
