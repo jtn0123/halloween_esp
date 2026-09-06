@@ -202,6 +202,7 @@ class TestVocabularyAgreement(unittest.TestCase):
         self.assertEqual(re.findall(r'"(\w+)"', union), list(ev.EFFECT_IDS))
 
     def test_effects_ts_name_arrays_match_in_order(self) -> None:
+        self.assertEqual(self.ts_array(self.TS, "EFFECT_NAMES"), list(ev.EFFECT_IDS))
         self.assertEqual(self.ts_array(self.TS, "OVERLAY_NAMES"), list(ev.OVERLAY_IDS))
         self.assertEqual(self.ts_array(self.TS, "PALETTE_NAMES"), list(ev.PALETTE_IDS))
         self.assertEqual(self.ts_array(self.TS, "FLASH_MODES"), list(ev.FLASH_MODE_IDS))
@@ -224,6 +225,9 @@ class TestVocabularyAgreement(unittest.TestCase):
 
     def test_firmware_enums_match_names_and_ids(self) -> None:
         eff = {n.lower(): int(i) for n, i in re.findall(r"EFF_(\w+) = (\d+)", self.CXX)}
+        # EFF_COUNT is the sentinel the parity dump draws from, not a name:
+        # one past the last id, and exactly the vocabulary's size.
+        self.assertEqual(eff.pop("count"), len(ev.EFFECT_IDS))
         self.assertEqual(eff, ev.EFFECT_IDS)
         ov = {n.lower(): int(i) for n, i in re.findall(r"OV_(\w+) = (\d+)", self.CXX)}
         self.assertEqual(ov, ev.OVERLAY_IDS)

@@ -60,6 +60,10 @@ int main(int argc, char **argv) {
   // seed*k, t up to a few hours, plus the negative side and the int32 rim),
   // hash3 at the (cell, pixel, zone) / (pixel, zone, epoch) triples the
   // overlays and gates build, and vnoise/fbm at real arguments.
+  // The reader checks its own effect table against this before trusting a
+  // single row: a name list one short would otherwise skip the newest
+  // effect with a green report (grade report 2026-09-06 D4).
+  std::printf("{\"kind\":\"meta\",\"effects\":%d}\n", (int) EFF_COUNT);
   for (int i = 0; i < 400; i++) {
     int32_t k;
     switch (i % 4) {
@@ -81,7 +85,7 @@ int main(int argc, char **argv) {
   }
 
   for (int i = 0; i < cases; i++) {
-    const auto eff = (int) ((next_u32() >> 16) % 13);
+    const auto eff = (int) ((next_u32() >> 16) % EFF_COUNT);
     const auto pal = (int) ((next_u32() >> 16) % 4);
     const float hue = (i % 9 == 0) ? 0.0f : (i % 9 == 1) ? 1.0f : frand();
     const bool soft = ((next_u32() >> 16) & 1) != 0;

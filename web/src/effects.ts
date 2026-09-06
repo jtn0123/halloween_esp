@@ -137,6 +137,17 @@ const scaled = (c: Rgb, k: number): Rgbw => [c[0] * k, c[1] * k, c[2] * k, 0];
 
 export type EffectFn = (t: number, seed: number, P: EffectParams) => Rgbw;
 
+/** The base effects in ID order — the integer the firmware's switch wants
+ *  is the index here, as with OVERLAY_NAMES and PALETTE_NAMES. EFFECTS below
+ *  is keyed by name and its key order is not the id order, which is why
+ *  the parity harness reads this list and not Object.keys (grade report
+ *  2026-09-06 D4). tests/test_pulse_dynamics_parity.py holds it equal to
+ *  tools/effect_vocab.py and the firmware enum. */
+export const EFFECT_NAMES = [
+  "off", "candle", "ember", "furnace", "spirit", "eyes", "seance",
+  "wisp", "mansion", "chill", "throb", "strobe", "blood",
+] as const;
+
 export const EFFECTS: Record<EffectName, EffectFn> = {
   off: () => [0, 0, 0, 0],
 
