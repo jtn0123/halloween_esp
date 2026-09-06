@@ -63,9 +63,11 @@ Part of the design record; the index is [`PROJECT_NOTES.md`](../../PROJECT_NOTES
 
 1. **TypeScript migration — done 2026-08-10** (`web/MIGRATION.md`, kept as
    the record). Every desk module is typed and under the cap.
-2. **~~SD card streaming~~ — not possible**, and the whole-file path
-   (`firmware/sd_audio.h`, whole file into PSRAM) shipped instead; since
-   2026-09-01 it is the only build (§12.15).
+2. **SD card streaming — done**, by loopback: the decoder fetches
+   `http://127.0.0.1:8080/sd/<file>` from the board's own second HTTP
+   server (`firmware/sd_web_stream.h`, `sd_audio.h`). The whole-file-into-
+   PSRAM path that came first is gone; since 2026-09-01 the card build is
+   the only build (§12.15).
 3. **A cut-down cue desk served off the device — done.** `sd_sync site`
    pushes the lean page (90 KB gzipped) and per-scene mp3s to the card; the
    studio serves the same lean form. The full inlined page stays the
@@ -73,24 +75,27 @@ Part of the design record; the index is [`PROJECT_NOTES.md`](../../PROJECT_NOTES
 
 ### Where the project stands — 2026-09-01
 
-Software, all committed and CI-green at `8e55f4e`:
+Software, all committed and CI-green at `ec357df` (2026-09-06):
 
-- **The Rust studio is production** (`make studio`, `make e2e`); the Python
-  one is the fallback and the parity reference until the season is over —
-  [`docs/RETIREMENT.md`](../RETIREMENT.md), Phase 0 complete.
-- **One firmware build**, `castle_sd.yaml`, v5.43, compiled at 88 % dram0
-  (the alarm is 92 %). `make publish` and `make ota` rehearsed end to end
-  against the emulator, so flash day is the board and nothing else.
-- **The gates**: 994 Python tests, 76 Rust, 148 browser, 13 cross-language
+- **One studio server, the Rust one** (`make studio`, `make e2e`). The
+  Python server retired 2026-09-06 — [`docs/RETIREMENT.md`](../RETIREMENT.md);
+  the tag `python-studio-final` is its last tree.
+- **Two firmware targets, one show**: `castle_sd.yaml` (the S2 on the
+  porch, compiled at 88 % dram0 against a 92 % alarm) and `castle_s3.yaml`
+  (the carrier, no hardware yet), both reading `castle_sd_common.yaml`. The
+  version string in `firmware/castle.yaml` is what an OTA must show on the
+  web page. `make publish` and `make ota` rehearsed end to end against the
+  emulator, so flash day is the board and nothing else.
+- **The gates**: 907 Python tests, 154 Rust `#[test]`s, 148 browser, 13 cross-language
   parity suites, 39 golden fixtures, the 500-line and dated-citation
-  guards. The grade report 2026-09-01 (`.claude/grade-report.md`) is A−
-  with every item closed.
+  guards. The grade report 2026-09-06 (`.claude/grade-report.md`) is B+.
 - **The show**: 10 of the 12 scene slots this board can hold.
 
 Waiting on hardware — the castle is off the network:
 
-- OTA to **5.43**, confirm it on the panel, watch the first big upload for
-  the 32 KB watchdog cadence, connect once so the image is confirmed, then
+- OTA to the version in `firmware/castle.yaml`, confirm it on the web page
+  (the eInk panel is gone since v5.44), watch the first big upload for the
+  32 KB watchdog cadence, connect once so the image is confirmed, then
   `make publish` — the checklist is `firmware/pending/README.md`.
 - The door-ring flicker bench tests, in the order
   [`docs/ISSUE-ring-flicker.md`](../ISSUE-ring-flicker.md) gives them; the

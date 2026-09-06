@@ -47,15 +47,22 @@ file is the one that governs.
   Python server (`tools/studio.py` and its `studio_*.py`) until 2026-09-06;
   `docs/RETIREMENT.md` is the plan that removed it and the tag
   `python-studio-final` is the last tree that carries it.
-- `firmware/` — ESPHome YAML + C++ headers. `castle_sd.yaml` is THE build:
-  scene audio streams off the microSD card and its web API (`sd_web.h`) is
-  what the desk talks to. There was a second, all-in-flash build until
+- `firmware/` — ESPHome YAML + C++ headers. Two buildable targets, one
+  show: `castle_sd.yaml` is the ESP32-S2 Feather in the yard (THE build:
+  `make build` / `upload` / `ota`), and `castle_s3.yaml` (2026-09-05) is
+  the ESP32-S3 carrier board — `make build-s3` / `upload-s3` / `logs-s3` /
+  `validate-s3`, compiled by the weekly CI job, never yet on hardware. The
+  show itself — the card, the loopback stream, the web API (`sd_web.h`)
+  the desk talks to — is `castle_sd_common.yaml`, which both include;
+  `castle.yaml` is the shared core, not a buildable target. What is left in
+  `castle_sd.yaml` is the Feather's own NeoPixel, which the S3 has no
+  hardware for (ESPHome packages APPEND lists, so a build cannot subtract a
+  light its base declared). There was a third, all-in-flash build until
   2026-09-01 (`castle_flash.yaml`, every scene embedded in the image); the
   show outgrew a 1.75 MB OTA slot and it was deleted rather than nursed —
   docs/notes/03-build.md §12.15. `castle_sd_jewels.yaml` and `bench*.yaml`
-  are variants OF the SD build, and `castle.yaml` is the shared core, not a
-  buildable target. `firmware/pending/README.md` lists patches written but
-  not yet flashed.
+  are variants OF the SD build. `firmware/pending/README.md` lists patches
+  written but not yet flashed.
 - `tracks/` — the user's imported audio (gitignored except `tracks.json`, the
   provenance manifest) — never a test fixture directory.
 - `previewer/castle-cue-desk.html` is generated and **gitignored**
@@ -80,14 +87,14 @@ file is the one that governs.
 ## Make targets (see `make help`)
 
 `setup` (python3.13 venv) · `audio` · `generate` · `preview` · `validate` ·
-`build` / `upload` / `logs` · `studio` · `track SRC=… ID=…` · `test` · `lint`
+`build` / `upload` / `logs` (the S2) · `build-s3` / `upload-s3` / `logs-s3`
+/ `validate-s3` (the carrier) · `studio` · `track SRC=… ID=…` · `test` · `lint`
 · `check` (= CI) · `e2e` · `check-all` · `coverage` / `audit` (non-gating)
 · `lock` · `rust` / `rust-test` / `rust-lint` / `rust-coverage` (castle-core;
 `rust-coverage` is a non-gating `cargo llvm-cov` summary; `lint` depends on
 `rust-lint`, and `tests/test_castle_core.py` shells out to those three, so the
 gate has one definition) · `bench*` (bare-board dry runs) · `sd-build` /
-`sd-upload` (kept as aliases of `build` / `upload` — there is one castle
-build now) · `publish` (scene tracks + lean page → the castle) · `ota`
+`sd-upload` (old names for `build` / `upload`) · `publish` (scene tracks + lean page → the castle) · `ota`
 (build, stop audio, flash). `studio` runs `tools/studio_launch.sh`, which builds the
 binary before it execs it. The studio's rebuild publishes on its own when a
 castle answers; `docs/RUNBOOK.md` is the operator's end-to-end view.
@@ -179,9 +186,10 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   copy, every check, what to do when one fails — is `docs/PARITY.md`.
 - Stop audio before an OTA (`make ota` and `sd_sync ota` do it themselves).
   The ring is RGB, not RGBW (`rgbw: false`).
-- Scene ceiling: **12 scenes max** on this board (~9 KB dram0 each; see the
+- Scene ceiling: **12 scenes max** on the S2 (~9 KB dram0 each; see the
   header comment in `scenes/scenes.yaml` and the weekly CI compile's 92%
-  alarm). Past that, cue timelines move to a card-loaded format, not a
+  alarm). The S3 carrier has the RAM but keeps the same ceiling until it is
+  measured on the board. Past that, cue timelines move to a card-loaded format, not a
   thirteenth generated script.
 - v5.42 feeds the upload watchdog every 32 KB (was 8 KB). Verified on the
   emulator only — watch the first big push on real hardware; if an upload

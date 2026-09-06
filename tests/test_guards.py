@@ -25,6 +25,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 import check_image
+
+#: The S2's app0 — what the two image tests write into their partitions.csv.
+S2_SLOT = 0x1C0000
 import check_loc
 
 
@@ -120,7 +123,23 @@ class TestLocCli(unittest.TestCase):
 class TestImageCheck(unittest.TestCase):
     def test_slot_size_matches_esphome_default(self) -> None:
         """Two 1.75 MB app slots is ESPHome's default layout on 4 MB flash."""
-        self.assertEqual(check_image.SLOT, 1_835_008)
+        # The slot is the app0 row of the table beside the image — the
+        # S2's 1.75 MB or the S3's 3.75 MB — and never a guess.
+        with tempfile.TemporaryDirectory() as d:
+            build = Path(d) / "castle-sd" / "build"
+            build.mkdir(parents=True)
+            img = build / "castle-sd.bin"
+            img.write_bytes(b"\xe9")
+            table = build.parent / "partitions.csv"
+            table.write_text(
+                "otadata, data, ota, , 0x2000,\napp0, app, ota_0, , 0x1C0000,\n"
+            )
+            self.assertEqual(check_image.slot_size(img), 1_835_008)
+            table.write_text("app0, app, ota_0, , 0x3C0000,\n")
+            self.assertEqual(check_image.slot_size(img), 3_932_160)
+            table.unlink()
+            with self.assertRaises(SystemExit):
+                check_image.slot_size(img)
 
     def test_fail_threshold_is_below_the_cliff(self) -> None:
         """The guard must complain before the build actually breaks, or it
@@ -164,7 +183,10 @@ class TestImageCheck(unittest.TestCase):
         try:
             build = tmp / "big" / "build"
             build.mkdir(parents=True)
-            (build / "big.bin").write_bytes(b"x" * (check_image.SLOT + 1))
+            (build.parent / "partitions.csv").write_text(
+                "app0, app, ota_0, , 0x1C0000,\n"
+            )
+            (build / "big.bin").write_bytes(b"x" * (S2_SLOT + 1))
             orig = check_image.find_image
             check_image.find_image = lambda _n: build / "big.bin"  # type: ignore[assignment]  # test double
             argv = sys.argv
@@ -186,7 +208,10 @@ class TestImageCheck(unittest.TestCase):
         try:
             build = tmp / "small" / "build"
             build.mkdir(parents=True)
-            (build / "small.bin").write_bytes(b"x" * int(check_image.SLOT * 0.5))
+            (build.parent / "partitions.csv").write_text(
+                "app0, app, ota_0, , 0x1C0000,\n"
+            )
+            (build / "small.bin").write_bytes(b"x" * int(S2_SLOT * 0.5))
             orig = check_image.find_image
             check_image.find_image = lambda _n: build / "small.bin"  # type: ignore[assignment]  # test double
             argv = sys.argv

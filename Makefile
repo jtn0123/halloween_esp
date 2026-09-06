@@ -56,7 +56,7 @@ help:
 	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
 	@echo "  make lock       relock requirements.lock from a clean throwaway venv"
 	@echo "  make clean      drop firmware/.esphome and rendered wavs"
-	@echo "  make sd-build / sd-upload   old names for build / upload — one castle build now"
+	@echo "  make sd-build / sd-upload   old names for build / upload (the S2)"
 	@echo "  make bench-audio-logs       tail the bench-audio build's logs"
 	@echo ""
 	@echo "scenes/scenes.yaml is the source of truth for audio, cues AND the previewer."
@@ -277,6 +277,7 @@ lint: rust-lint
 
 check: audio test lint
 	@$(PY) tools/check_image.py castle-sd
+	@$(PY) tools/check_image.py castle-s3
 	@$(PY) tools/check_loc.py
 	@$(PY) tools/check_citations.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"
@@ -300,4 +301,4 @@ e2e: preview
 	@cd web && npx playwright install chromium
 	@cd web && npx playwright test
 
-check-all: check e2e
+check-all: check validate e2e

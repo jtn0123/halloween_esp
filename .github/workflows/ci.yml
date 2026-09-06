@@ -22,6 +22,19 @@ on:
   # The weekly firmware job below — PRs never pay the ~10 min toolchain fetch.
   schedule:
     - cron: "0 9 * * 1"
+  # ...and by hand, so a firmware change can be compiled the day it lands
+  # instead of the following Monday: `gh workflow run ci.yml`. Only the
+  # firmware job answers a dispatch (grade report 2026-09-06 D1).
+  workflow_dispatch:
+
+# Every `run:` step is `bash -eo pipefail`. GitHub's default for a plain
+# step is `bash -e` with NO pipefail, so `esphome compile … | tee` reported
+# tee's exit status — always 0 — and the weekly compile could not fail
+# (grade report 2026-09-06 D1). Composite actions already ran with pipefail
+# (.github/actions/media-tools); now the workflow's own steps do too.
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
 
 # A push that supersedes a commit should supersede its CI too. Three runs for
 # this branch were alive at once on 2026-08-18, the oldest for 38 minutes on a
@@ -156,6 +169,11 @@ jobs:
         working-directory: web
       - name: lint
         run: ruff check tools tests
+      # `make lint` and the pre-commit hook run this; CI did not, so a web
+      # edit or a Dependabot PR could land formatting drift that reddened the
+      # next person's `make check` (grade report 2026-09-06 D3).
+      - name: ruff format
+        run: ruff format --check tools tests
       - name: type check
         run: mypy tools tests
       # The unit suite runs under coverage.py so the number is a ratchet,
@@ -309,7 +327,7 @@ jobs:
   # ceiling is still a warning — and say whether a newer esphome exists,
   # because the pin is what holds eight stale advisories in place (F1).
   firmware-weekly:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     # Two chips now, two ESP-IDF toolchains to fetch: the S2 porch build and
     # the S3 carrier build (2026-09-05).
@@ -354,9 +372,15 @@ jobs:
         run: esphome compile firmware/castle_sd.yaml | tee /tmp/build.out
       - name: dram0 ceiling
         run: |
-          PCT=$(grep -Eo 'RAM: *\[[^]]*\] *[0-9.]+%' /tmp/build.out | grep -Eo '[0-9.]+%' | tr -d '%')
+          PCT=$(grep -Eo 'RAM: *\[[^]]*\] *[0-9.]+%' /tmp/build.out | grep -Eo '[0-9.]+%' | tr -d '%' || true)
+          [ -n "$PCT" ] || { echo "no RAM line in the compile output — the compile did not finish"; exit 1; }
           echo "dram0 at ${PCT}%"
-          python3 -c "import sys; p=float('${PCT}' or 101); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm — about one scene of headroom left (grade report 2026-08-23 G2); split or cap before adding more') or 1)"
+          python3 -c "import sys; p=float('${PCT}'); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm — about one scene of headroom left (grade report 2026-08-23 G2); split or cap before adding more') or 1)"
+      # The OTA-slot guard, run where an image exists (grade report
+      # 2026-09-06 D3): --require makes a missing image a failure here,
+      # because the compile just ran.
+      - name: S2 OTA slot
+        run: python tools/check_image.py castle-sd --require
       # The carrier build has no porch and no operator to notice it rotting:
       # `esphome config` is the only gate it passes through on a PR, and a
       # config-valid YAML can still fail to LINK (the S3's own frameworks, the
@@ -368,7 +392,11 @@ jobs:
       - name: compile the S3 carrier build
         run: esphome compile firmware/castle_s3.yaml | tee /tmp/build_s3.out
       - name: S3 RAM and flash
-        run: grep -E '^(RAM|Flash):' /tmp/build_s3.out || true
+        run: |
+          grep -E '^(RAM|Flash):' /tmp/build_s3.out \
+            || { echo "no RAM/Flash summary in the S3 compile output — the compile did not finish"; exit 1; }
+      - name: S3 OTA slot
+        run: python tools/check_image.py castle-s3 --require
       - name: newer esphome available?
         run: |
           pip index versions esphome 2>/dev/null | head -2 || true
