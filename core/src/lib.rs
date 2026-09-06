@@ -20,16 +20,19 @@
 //! - `castle` (bin) — the bridge CLI, a hand tool for the operator. No
 //!   Python path goes through it; `tools/castle_link.py` still talks to
 //!   the castle for the desk.
-//! - `studio` (bin) — a complete twin of `tools/studio.py`, HTTP surface
-//!   and all (`httpd`, `studio*`). Finished and parity-gated, but the
-//!   Python one is what `make studio` still starts; the flip is off-season
-//!   work. Nothing here is the show's path *yet*.
+//! - `studio` (bin) — **production.** The cue desk's server, HTTP surface
+//!   and all (`httpd`, `studio*`), and since docs/RETIREMENT.md the only
+//!   one: it validates scenes itself (`yaml*`, `scene_schema`,
+//!   `scene_cues`, `studio_check`) and spawns the Python toolchain for
+//!   every rebuild, import and push.
 //! - `wasm` (module) — the desk's future effects engine, built to
 //!   wasm32-unknown-unknown `--no-default-features` and proven to load. The
 //!   desk still runs the TypeScript copy.
-//! - `parity_dump` / `synth_dump` / `pulse_dump` (bins) — **parity only.**
-//!   They exist to be diffed: `parity_dump` against the host-compiled C++
-//!   in `tests/cxx/`, the other two against numpy, digit for digit.
+//! - `parity_dump` / `synth_dump` / `pulse_dump` / `netguard_dump` /
+//!   `scene_dump` (bins) — **parity only.** They exist to be diffed:
+//!   `parity_dump` against the host-compiled C++ in `tests/cxx/`, the
+//!   others against the Python they replaced, digit for digit and
+//!   sentence for sentence.
 //!
 //! Everything with a Python or C++ twin is held to it by a test that
 //! compares values, not behaviour-in-spirit — see docs/PARITY.md. Change
@@ -87,17 +90,31 @@ pub mod onsets;
 #[cfg(feature = "native")]
 pub mod scene;
 #[cfg(feature = "native")]
+pub mod scene_cues;
+#[cfg(feature = "native")]
+pub mod scene_schema;
+#[cfg(feature = "native")]
 pub mod studio;
+#[cfg(feature = "native")]
+pub mod studio_alias;
+#[cfg(feature = "native")]
+pub mod studio_check;
 #[cfg(feature = "native")]
 pub mod studio_import;
 #[cfg(feature = "native")]
 pub mod studio_jobs;
+#[cfg(feature = "native")]
+pub mod studio_lean;
 #[cfg(feature = "native")]
 pub mod studio_media;
 #[cfg(feature = "native")]
 pub mod studio_probe;
 #[cfg(feature = "native")]
 pub mod studio_proc;
+#[cfg(feature = "native")]
+pub mod studio_progress;
+#[cfg(feature = "native")]
+pub mod studio_publish;
 #[cfg(feature = "native")]
 pub mod studio_reason;
 #[cfg(feature = "native")]
@@ -108,6 +125,21 @@ pub mod studio_routes;
 pub mod studio_scenes;
 #[cfg(feature = "native")]
 pub mod studio_tracks;
+#[cfg(feature = "native")]
+pub mod studio_wave;
+/// Fixtures and probes for the crate's own tests — never built otherwise.
+#[cfg(test)]
+pub mod testkit;
+#[cfg(feature = "native")]
+pub mod vocab;
+#[cfg(feature = "native")]
+pub mod yaml;
+#[cfg(feature = "native")]
+pub mod yaml_flow;
+#[cfg(feature = "native")]
+pub mod yaml_lines;
+#[cfg(feature = "native")]
+pub mod yaml_parse;
 
 pub use effects::render;
 pub use noise::{fbm, hash3, hashi, mix32, vnoise};

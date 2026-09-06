@@ -1,9 +1,15 @@
-# Retiring the Python studio — the off-season plan
+# Retiring the Python studio — the plan, and what happened
+
+**DONE, 2026-09-06.** Phases 0 and 1 ran as written; phases 2, 3 and 4 ran
+together on 2026-09-06 rather than off-season, because the owner ended the
+soak early: *"Remove fallback, I don't want to maintain old code."* The
+plan is kept as the record — what was intended, what it cost, and the two
+places it turned out to be wrong (below).
 
 Written 2026-09-01, the day after the Rust studio became what `make studio`
-starts and what `make e2e` tests. The Python server is now a fallback and a
-measuring stick; this is the plan for removing it without losing either the
-safety or the tests, staged so nothing risky happens before Halloween runs.
+starts and what `make e2e` tests. The Python server was then a fallback and
+a measuring stick; this was the plan for removing it without losing either
+the safety or the tests, staged so nothing risky happened before Halloween.
 
 The one-line rule: **the server retires, the toolchain does not.** The Rust
 studio spawns Python children for every rebuild and import — that is the
@@ -45,14 +51,20 @@ of `tests/studio_case.py`'s consumers (the map is in phase 3).
   reference. `tests/test_studio_golden.py` holds the RUST studio to them
   and never launches the Python one, so it survives the deletion.
 
-## Phase 1 — the season is the soak test (Sep–Oct 2026)
+## Phase 1 — the season was to be the soak test (Sep–Oct 2026)
+
+**Cut short on purpose.** The exit gate below was never reached: the owner
+chose to stop maintaining the second server rather than keep it alive for
+the season. `CASTLE_STUDIO=python` had not been needed in the five days it
+existed as a fallback.
+
 
 Run the show on the Rust studio. The exit gate for everything below: the
 season ends without `CASTLE_STUDIO=python` having been needed. If it WAS
 needed, whatever forced it becomes a bug with a parity gate still alive to
 bisect against — fix first, retire later. Nothing else in this phase.
 
-## Phase 2 — native scene validation (Nov 2026)
+## Phase 2 — native scene validation (done 2026-09-06)
 
 The one real port. The Rust studio's splice route shells to
 `tools/scene_check.py` because validation strings must come from one
@@ -71,7 +83,7 @@ deliberately:
   the numbers sourced from one constant each side and cross-checked by a
   test, as today.
 
-## Phase 3 — the deletion (Nov–Dec 2026)
+## Phase 3 — the deletion (done 2026-09-06)
 
 - Split `studio_tracks.py`: the importer keeps the library/manifest half it
   imports today; the server-only half goes.
@@ -99,16 +111,37 @@ deliberately:
   the escape hatch), the python job drops the server suites, total runtime
   falls.
 
-## Phase 4 — the docs sweep (with phase 3, same PRs)
+## Phase 4 — the docs sweep (done 2026-09-06, in phase 3's commits)
 
 `CLAUDE.md` (layout, sandbox knobs: `CASTLE_STUDIO` dies, `CASTLE_PY`
 stays), `docs/API.md` (one server), `docs/PARITY.md` (the studio row
 becomes the golden suite), `docs/RUNBOOK.md`, `web/playwright.config.ts`
 comments, this file (marked done, kept as the record).
 
-## What would cancel this plan
+## What would have cancelled this plan
 
 A second operator, a port off the home LAN, or the S2 being replaced by a
-board that changes the toolchain story — any of those reopens the question
-of what the reference implementation is. Absent that: the plan above, in
-order, none of it before the season ends.
+board that changes the toolchain story — any of those would have reopened
+the question of what the reference implementation is. None of them
+happened; what ended the plan early was the opposite pressure, an owner
+who did not want a second implementation to maintain.
+
+## Where the plan was wrong
+
+Two things it got wrong, recorded because the next retirement will be
+planned the same way:
+
+1. **It assumed the goldens were the only thing at risk.** They were the
+   easy part — 39 fixtures, replayed against the Rust studio, one entry
+   regenerated on purpose. What actually cost the work was the ~150 unit
+   tests over `studio_jobs.py`, `studio_media.py`, `studio_http.py` and
+   `studio.py`'s helpers: pure functions with no HTTP face, which no golden
+   could hold and no black-box suite could reach. Those became Rust
+   `#[test]`s (34 in the job runner and the reason-explainer alone), and
+   that porting — not the deletion — was the bulk of phase 3.
+2. **It listed `tools/scene_check.py` as the only thing phase 2 removes.**
+   It also ends a PARITY row: `tools/scene_schema.py` stays (gen_esphome
+   runs it), so the port created a second implementation of the rules
+   rather than removing one. `tests/test_scene_schema_rust.py` and the
+   `scene_dump` bin are the gate that had to be written to replace the
+   delegation, and the plan did not budget for them.

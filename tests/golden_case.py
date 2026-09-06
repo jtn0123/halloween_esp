@@ -1,22 +1,20 @@
 """The golden-fixture harness: one studio, one sandbox, one recorded answer.
 
-Why this exists alongside studio_rust_case.py. That fixture holds the two
-servers answer-for-answer over twin sandboxes — the strongest check we have,
-and the one that dies with `tools/studio.py` when the Python studio is
-retired off-season (after Halloween 2026). What must NOT die with it is the
-evidence: the exact bytes the trusted implementation answered. So this module
-drives ONE server over ONE sandbox and writes its answers down
-(`tools/gen_golden.py`, run against the Python studio while it is still the
-reference); `tests/test_studio_golden.py` then replays the same script against
-the Rust studio and diffs. After the retirement the goldens are the contract,
-and a future native-Rust validator — one that no longer shells out to
-`tools/scene_check.py` — has something to be written against.
+Why this exists. `tests/studio_rust_case.py` used to hold the two servers
+answer-for-answer over twin sandboxes — the strongest check the project had,
+and the one that died with `tools/studio.py` (docs/RETIREMENT.md). What did
+NOT die with it is the evidence: the exact bytes the trusted implementation
+answered. This module drives ONE server over ONE sandbox and writes its
+answers down (`tools/gen_golden.py`); `tests/test_studio_golden.py` replays
+the same script and diffs. The goldens are what the native Rust validator
+that replaced `tools/scene_check.py` was written against, and one entry in
+them is the record of the day byte-parity for that route ended on purpose.
 
-Deliberately self-contained: it shares no code with studio_rust_case.py even
-where the two overlap (fetch, wait_up, free_port, the scenes fixture), because
-that module is scheduled for deletion and a golden harness that follows it
-into the grave would be worse than the duplication. `helpers.make_click_track`
-is the one import from the live suite, and it outlives the Python studio.
+Deliberately self-contained: it shared no code with studio_rust_case.py even
+where the two overlapped (fetch, wait_up, free_port, the scenes fixture),
+because that module was scheduled for deletion and a golden harness that
+followed it into the grave would have been worse than the duplication. It
+outlived it, as intended.
 
 The corpus itself — which routes, which malformed scene blocks — is
 `golden_corpus.py`: the half that grows, kept apart from the machinery so
@@ -251,8 +249,8 @@ def load(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise AssertionError(
             f"missing golden {path} — regenerate with "
-            "`.venv/bin/python tools/gen_golden.py` while the Python studio "
-            "still exists, and commit the result"
+            "`.venv/bin/python tools/gen_golden.py`, read the diff, and "
+            "commit the result"
         )
     data = json.loads(path.read_text())
     if not isinstance(data, dict) or not data:
@@ -270,7 +268,7 @@ def launch(
 
     free_port() closes the socket before the server binds it, so a busy
     machine can take the port in between; one retry on a fresh port is the
-    same cheap answer studio_rust_case.py settled on.
+    same cheap answer tests/studio_rs_case.py settles on.
     """
     for attempt in (0, 1):
         port = free_port()

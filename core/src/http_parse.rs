@@ -101,7 +101,17 @@ pub(crate) type Head = (String, String, Vec<(String, String)>);
 /// malformed shapes can be asserted without a socket.
 pub(crate) fn parse_head(head: &str) -> Result<Head, String> {
     let mut lines = head.split("\r\n");
-    let mut first = lines.next().unwrap_or("").split_whitespace();
+    let request_line = lines.next().unwrap_or("");
+    // A control byte in the request line is the caller's mistake, not a
+    // separator to be tolerated. `split_whitespace` treats a bare CR as
+    // whitespace, so `GET /a\rX HTTP/1.1` used to be served as `/a` —
+    // harmless (nothing can carry a CR out into a relayed request line)
+    // but a request answered to a question nobody asked. The Python
+    // studio's http.server refused the line outright, and so does this.
+    if request_line.bytes().any(|b| b < 0x20 || b == 0x7f) {
+        return Err("malformed request line".to_string());
+    }
+    let mut first = request_line.split_whitespace();
     let (Some(method), Some(target)) = (first.next(), first.next()) else {
         return Err("malformed request line".to_string());
     };
@@ -335,6 +345,26 @@ pub fn parse_multipart(raw: &[u8], ctype: &str) -> Result<(String, Vec<u8>), Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_control_byte_in_the_request_line_is_the_callers_mistake() {
+        // `split_whitespace` would treat the CR as a separator and serve
+        // the truncated target; the Python studio answered 400 and so
+        // does this (docs/RETIREMENT.md's port pass).
+        for bad in [
+            "GET /studio/card/a\rX HTTP/1.1\r\n\r\n",
+            "GET /api/status\rX HTTP/1.1\r\n\r\n",
+            "GET /a\x00b HTTP/1.1\r\n\r\n",
+            "GET\t/a HTTP/1.1\r\n\r\n",
+        ] {
+            assert_eq!(
+                parse_head(bad),
+                Err("malformed request line".to_string()),
+                "{bad:?}"
+            );
+        }
+        assert!(parse_head("GET /api/status HTTP/1.1\r\n\r\n").is_ok());
+    }
 
     #[test]
     fn a_request_line_wants_two_words() {

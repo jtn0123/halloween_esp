@@ -37,7 +37,7 @@ help:
 	@echo "  make bench-logs tail the bench build's logs"
 	@echo "  make bench-audio  measure decode load on the bare board (no speakers)"
 	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
-	@echo "  make studio     serve the cue desk with track management (Rust, localhost)"
+	@echo "  make studio     serve the cue desk with track management (localhost)"
 	@echo "  make publish    push scene tracks + the lean desk page to the castle"
 	@echo "  make ota        build the SD firmware and flash it over HTTP"
 	@echo "  make test       python unit tests (~1 min)"
@@ -91,11 +91,12 @@ track:
 	@test -n "$(SRC)" || (echo "usage: make track SRC=<file|url> [ID=<name>] [ARGS=...]"; exit 1)
 	@$(PY) tools/import_track.py "$(SRC)" $(if $(ID),--id $(ID),) $(ARGS)
 
-# The Rust studio is what this starts now (grade report 2026-09-01 G1): the
-# launcher builds it when cargo is here and falls back to tools/studio.py with
-# a printed reason when it is not. The logic lives in the script, not here,
-# because .claude/launch.json needs the same decision and cannot express it.
-# ARGS passes the studio's own command line through: ARGS="8766 --lan".
+# The Rust studio is the studio (grade report 2026-09-01 G1, finished by
+# docs/RETIREMENT.md): the launcher builds it when cargo is here and refuses
+# with a printed reason when it cannot. The logic lives in the script, not
+# here, because .claude/launch.json needs the same decision and cannot
+# express it. ARGS passes the studio's own command line through:
+# ARGS="8766 --lan".
 studio: preview
 	@tools/studio_launch.sh $(ARGS)
 
@@ -175,11 +176,12 @@ test: pycheck
 
 # The inner loop: everything except the suites that exist to wait — the
 # castle chaos/relay/protocol fuzz and the generator fuzz spend their time
-# in deliberate timeouts and random documents, and the Rust suites (`_rust`,
-# `castle_core`) spend theirs in cargo, two release builds and clippy deep.
-# The Rust work is one word away (`make rust-test` / `make rust-lint`), not
-# gone. `make test` before handing work back; this while you are still typing.
-SLOW_SUITES := chaos|relay|fuzz|_rust|castle_core
+# in deliberate timeouts and random documents, and the suites that drive the
+# studio binary (`_rust`, `_rs`, `castle_core`) spend theirs in cargo, two
+# release builds and clippy deep. The Rust work is one word away
+# (`make rust-test` / `make rust-lint`), not gone. `make test` before handing
+# work back; this while you are still typing.
+SLOW_SUITES := chaos|relay|fuzz|_rust|_rs|castle_core|studio
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \
 		| sed 's/\.py$$//; s/^/tests./')

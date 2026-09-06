@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-"""Record the PYTHON studio's answers into tests/golden/ — run while it is
-still the reference.
+"""Record the studio's answers into tests/golden/.
 
-`tools/studio.py` is retired off-season (after Halloween 2026). The five
-live-twin parity suites go with it, and with them the only thing that has
-ever said what the desk's error strings are supposed to be. This tool boots
-the Python studio over a throwaway sandbox, walks the deterministic surface
-defined in `tests/golden_case.py`, and writes the answers down as JSON. From
-then on `tests/test_studio_golden.py` replays the same script against the
-Rust studio alone and diffs — no Python studio required, and none imported.
+Written while `tools/studio.py` was still the reference, to survive its
+retirement: the five live-twin parity suites went with that server, and
+with them the only thing that had ever said what the desk's error strings
+are supposed to be. The goldens are what said it instead — and they still
+do, which is why this tool now boots the ONE studio there is (castle-core's
+`studio` bin) over a throwaway sandbox, walks the deterministic surface
+defined in `tests/golden_case.py`, and writes the answers down as JSON.
+`tests/test_studio_golden.py` replays the same script and diffs.
+
+Regenerating is therefore a UX DECISION, never a way to green a failure:
+these bytes are what the desk shows an operator, and the only reason to
+move one is that it should say something different. The refusals'
+cross-implementation gate is elsewhere — `tests/test_scene_schema_rust.py`
+holds the validator to `tools/scene_schema.py`, which gen_esphome still
+runs.
 
     .venv/bin/python tools/gen_golden.py            # rewrite the goldens
     .venv/bin/python tools/gen_golden.py --check    # fail if they'd change
@@ -37,13 +44,18 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(ROOT / "tools"))
 
+import cargo_gate  # noqa: E402
 import golden_case as gc  # noqa: E402
 from check_loc import SCENE_LIMIT  # noqa: E402
 from helpers import SANDBOX_ENV  # noqa: E402
 
+BIN = ROOT / "core" / "target" / "release" / "studio"
+
 
 def capture() -> tuple[dict[str, Any], dict[str, Any]]:
-    """Boot the Python studio in a sandbox and walk the corpus."""
+    """Boot the Rust studio in a sandbox and walk the corpus."""
+    built = cargo_gate.build("--bin", "studio")
+    assert built.returncode == 0, built.stderr
     tmp = Path(tempfile.mkdtemp(prefix="studio-golden-"))
     proc = None
     try:
@@ -54,9 +66,7 @@ def capture() -> tuple[dict[str, Any], dict[str, Any]]:
         # sandboxing note — an emulator shell is the usual way this goes
         # wrong), so they are stripped here rather than merely overwritten.
         env = {k: v for k, v in os.environ.items() if k not in SANDBOX_ENV}
-        proc, port = gc.launch(
-            [sys.executable, str(ROOT / "tools" / "studio.py")], box, env
-        )
+        proc, port = gc.launch([str(BIN)], box, env)
         read = gc.capture_read(port)
         scenes = gc.capture_scene_errors(port, box, SCENE_LIMIT)
         return read, scenes

@@ -1,17 +1,15 @@
 # The cue desk's HTTP contract
 
-Four parties: the **desk** (the page, `web/src/`), the **Rust studio**
+Three parties: the **desk** (the page, `web/src/`), the **studio**
 (castle-core's `studio` bin, `core/src/bin/studio.rs` plus
 `core/src/studio*.rs` — the local server behind the desk, and what
-`make studio` runs since 2026-09-01), the **Python studio**
-(`tools/studio.py` and its `studio_*.py`: the same surface again, both tables
-below, the launcher's fallback when there is no cargo, and the reference the
-parity gates measure the Rust against — `tests/studio_rust_case.py` and the
-five `tests/test_studio*_rust.py` suites hold the two answer-for-answer), and
-the **castle** (`firmware/sd_web.h`, or
-`tools/castle_emu.py` standing in for it). A route added to one studio is
-added to both, or the parity suites go red (`docs/PARITY.md`). The prefix
-says who owns a route:
+`make studio` runs), and the **castle** (`firmware/sd_web.h`, or
+`tools/castle_emu.py` standing in for it). There was a second studio, in
+Python, answering the same two tables; docs/RETIREMENT.md retired it, and
+what holds this surface steady now is `tests/golden/` (the recorded
+answers, replayed by `tests/test_studio_golden.py`), the black-box suites
+`tests/test_studio_*_rs.py`, and the browser suite. The prefix says who
+owns a route:
 
 - `/studio/…` — the studio's own authoring routes (`web/src/api.ts`).
 - `/api/…` — the castle's. The studio relays these untouched
@@ -58,7 +56,8 @@ castle outage.
 studio logs `DEPRECATED` once per route. The one exception is `/api/scene`:
 with `?s=<id>` it is the castle's fire-a-scene and relays; with a JSON body
 it is the editor above. The table is `STUDIO_ROUTES` in
-`tools/studio_http.py` (`tools/studio.py` only re-exports the name).
+`core/src/studio_alias.rs`, which is the whole shim and goes with the
+aliases when they do.
 
 ## Relayed to the castle (`/api/…`, `/remote`)
 

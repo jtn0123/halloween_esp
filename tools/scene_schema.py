@@ -191,7 +191,9 @@ def _zone(where: str, z: Any, zones: set[str] | None, errs: list[str]) -> None:
 
 
 def _effect(where: str, e: Any, vocab: dict[str, set[str]], errs: list[str]) -> None:
-    if e not in vocab["effect"]:
+    # `isinstance` first: `{"door": {"a": 1}}` is a hand-editable mistake,
+    # and `dict not in set` is a TypeError, not a verdict.
+    if not isinstance(e, str) or e not in vocab["effect"]:
         errs.append(
             f"{where}: unknown effect {e!r} "
             f"(one of {', '.join(sorted(vocab['effect']))})"
@@ -201,7 +203,7 @@ def _effect(where: str, e: Any, vocab: dict[str, set[str]], errs: list[str]) -> 
 def _in(
     where: str, v: Any, kind: str, vocab: dict[str, set[str]], errs: list[str]
 ) -> None:
-    if v not in vocab[kind]:
+    if not isinstance(v, str) or v not in vocab[kind]:
         errs.append(
             f"{where}: unknown {kind} {v!r} (one of {', '.join(sorted(vocab[kind]))})"
         )

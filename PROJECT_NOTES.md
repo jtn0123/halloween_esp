@@ -75,8 +75,9 @@ migration in [`web/MIGRATION.md`](web/MIGRATION.md).
 
 **The Rust half:** `core/` (castle-core) is why a render is the same bytes on
 every machine, and it is the newest thing this record has to explain. The
-three decisions behind it — why a crate at all, why zero dependencies, why the
-studio was twinned instead of rewritten — are §13's last rows in
+four decisions behind it — why a crate at all, why zero dependencies, why the
+studio was twinned instead of rewritten, and why the twin's Python original
+was then deleted — are §13's last rows in
 [05 — Decision log](docs/notes/05-decisions-and-roadmap.md); the contract
 holding every remaining duplicate copy bit-exact is
 [`docs/PARITY.md`](docs/PARITY.md), and the migration it came out of is

@@ -7,10 +7,9 @@ The corpus is the half that grows — every new refusal the desk can show
 adds a case here — and it was already within two lines of the 500-line cap
 sitting in one file with the driver.
 
-Both `tools/gen_golden.py` (which records the Python studio's answers) and
-`tests/test_studio_golden.py` (which replays them against the Rust one)
-read the corpus from here, so there is exactly one definition of what the
-goldens cover.
+Both `tools/gen_golden.py` (which records the studio's answers) and
+`tests/test_studio_golden.py` (which replays them) read the corpus from
+here, so there is exactly one definition of what the goldens cover.
 """
 
 from __future__ import annotations
@@ -99,10 +98,11 @@ READ_CASES: tuple[tuple[str, str, str], ...] = (
 )
 
 #: The bodies the desk shows next to the field when a splice is refused.
-#: Today every one of these strings comes from ONE Python implementation
-#: (studio_scenes.check → scene_schema.validate, reached by the Rust studio
-#: through tools/scene_check.py). These goldens are what a native Rust
-#: validator would have to reproduce, sentence for sentence.
+#: These strings came from ONE Python implementation (studio_scenes.check →
+#: scene_schema.validate, reached by the Rust studio through
+#: tools/scene_check.py) and are what the native Rust validator that
+#: replaced it had to reproduce, sentence for sentence. It does, but for
+#: `yaml_unparseable`, whose tail was PyYAML's own prose (docs/PARITY.md).
 SCENE_CASES: tuple[tuple[str, bytes], ...] = (
     ("body_not_json", b"{nope"),
     ("no_id_no_yaml", json.dumps({}).encode()),

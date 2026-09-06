@@ -39,9 +39,9 @@ class TestHermeticEnv(unittest.TestCase):
                 sys.executable,
                 "-c",
                 (
-                    "import os, helpers, studio_tracks, build_paths;"
+                    "import os, helpers, track_lib, build_paths;"
                     "print(sorted(k for k in os.environ if k.startswith('CASTLE_')));"
-                    "print(studio_tracks.TRACKS);"
+                    "print(track_lib.TRACKS);"
                     "print(build_paths.scenes_file())"
                 ),
             ],

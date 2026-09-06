@@ -1,5 +1,5 @@
 /**
- * The real relay, end to end: a real tools/studio.py bridged to a real
+ * The real relay, end to end: the real studio binary bridged to a real
  * tools/castle_emu.py, driven from the desk UI. Every other castle spec
  * plays the castle with page.route, which is hermetic but can only ever
  * test the shapes the spec author imagined — the J2-1 "vundefined" panel
@@ -20,6 +20,8 @@ import { lanePort } from "./ports.js";
 
 const ROOT = resolve(__dirname, "../../..");
 const PY = join(ROOT, ".venv", "bin", "python");
+/** The studio is the built binary — `make e2e` rebuilds it first. */
+const STUDIO_BIN = join(ROOT, "core", "target", "release", "studio");
 
 /** Ports: CASTLE_E2E_BRIDGE_PORTS="<emu>,<studio>" pins them outright;
  *  otherwise the lane's CASTLE_E2E_PORT +1 / +2 (a free port if taken), so
@@ -58,7 +60,7 @@ test.beforeAll(async () => {
   EMU_PORT = emuPort;
   STUDIO = `http://127.0.0.1:${studioPort}`;
   emu = startEmu();
-  studio = spawn(PY, ["-u", join(ROOT, "tools", "studio.py"), String(studioPort), "--localhost"], {
+  studio = spawn(STUDIO_BIN, [String(studioPort), "--localhost"], {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, CASTLE_HOST: `127.0.0.1:${EMU_PORT}` },
   });

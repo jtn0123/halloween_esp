@@ -1,24 +1,27 @@
 //! The scenes.yaml editor and the rebuild chain — tools/studio_scenes.py.
 //!
-//! Validation is NOT ported: tools/scene_check.py answers with
-//! studio_scenes.check()'s own strings, so the desk sees identical
-//! messages whichever server runs (scene_schema stays the single
-//! implementation, per the plan's stays-Python list). That delegation is
-//! what makes the SCENE CEILING the same refusal here as there: the
-//! thirteenth scene is turned away by `check()` below, before any splice,
-//! because the Python it asks counts the show first (grade report 2026-08-31 A8).
-//! Do not reimplement the count on this side — one implementation is the
-//! whole point. The splice itself —
-//! the block scanner, the .bak + atomic replace — and the rebuild
-//! orchestration are ported; the generators and the publish push remain
-//! the same spawned venv tools, exactly as the plan intended.
+//! Validation is native now (docs/RETIREMENT.md phase 2): `check()` below
+//! parses the block with [`crate::yaml`], runs [`crate::scene_schema`] and
+//! counts the show against [`vocab::SCENE_LIMIT`], where it used to pipe
+//! the request through `tools/scene_check.py` so that two servers could
+//! answer the desk in one voice. There is one server now, so the second
+//! voice went with the Python one; what holds the sentences steady is
+//! `tests/golden/scene_errors.json` (every refusal the desk shows, frozen)
+//! and `tests/test_scene_schema_rust.py` (this validator against
+//! `tools/scene_schema.py`, which gen_esphome still runs). The SCENE
+//! CEILING is still answered HERE, before any splice: the thirteenth scene
+//! must not be discovered as a red pre-commit hook with the show already
+//! edited (grade report 2026-08-31 A8). The splice itself — the block
+//! scanner, the .bak + atomic replace — and the rebuild orchestration were
+//! ported earlier; the generators and the publish push remain the same
+//! spawned venv tools, exactly as the plan intended.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
-use crate::jsonio::{self, Json};
+use crate::jsonio::Json;
 use crate::studio::{App, scene_ids};
-use crate::studio_relay;
+use crate::studio_check::check;
 
 /// Which python the children run under, and how a child is captured —
 /// [`studio_proc`](crate::studio_proc), split off at the 500-line cap.
@@ -57,69 +60,6 @@ fn write_scenes(scenes: &Path, before: &str, raw: &str) -> std::io::Result<()> {
     let tmp = scenes.with_extension("yaml.tmp");
     std::fs::write(&tmp, format!("{}\n", raw.trim_end()))?;
     std::fs::rename(&tmp, scenes)
-}
-
-fn unavailable() -> (Json, u16) {
-    (
-        Json::Obj(vec![
-            ("ok".into(), Json::Bool(false)),
-            (
-                "error".into(),
-                Json::Str("scene validation unavailable".into()),
-            ),
-        ]),
-        500,
-    )
-}
-
-/// tools/scene_check.py's verdict on a splice request; None = may splice.
-fn check(app: &App, req: &Json) -> Option<(Json, u16)> {
-    let payload = jsonio::dumps(&Json::Obj(vec![
-        ("id".into(), req.get("id").cloned().unwrap_or(Json::Null)),
-        (
-            "yaml".into(),
-            req.get("yaml").cloned().unwrap_or(Json::Null),
-        ),
-        (
-            "scenes".into(),
-            Json::Str(app.scenes.to_string_lossy().into_owned()),
-        ),
-    ]));
-    let mut cmd = Command::new(py(&app.root));
-    cmd.arg(app.root.join("tools").join("scene_check.py"))
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(_) => return Some(unavailable()),
-    };
-    {
-        use std::io::Write;
-        let Some(stdin) = child.stdin.as_mut() else {
-            return Some(unavailable());
-        };
-        if stdin.write_all(payload.as_bytes()).is_err() {
-            let _ = child.kill();
-            return Some(unavailable());
-        }
-    }
-    drop(child.stdin.take());
-    let out = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(_) => return Some(unavailable()),
-    };
-    let Ok(v) = jsonio::parse(String::from_utf8_lossy(&out.stdout).trim()) else {
-        return Some(unavailable());
-    };
-    if v.get("ok").is_some() {
-        return None;
-    }
-    let code = v.get("code").and_then(Json::as_f64).unwrap_or(400.0) as u16;
-    match v.get("body").cloned() {
-        Some(body) => Some((body, code)),
-        None => Some(unavailable()),
-    }
 }
 
 /// studio_scenes.splice — insert or replace one scene block, then rebuild.
@@ -245,7 +185,7 @@ pub fn rebuild(app: &App) -> (bool, String) {
             return (false, tail4000(&log));
         }
     }
-    let (body, _code) = publish_body(app);
+    let (body, _code) = crate::studio_publish::publish_body(app);
     let extra = ["log", "error"]
         .iter()
         .find_map(|k| body.get(k).and_then(Json::as_str).filter(|s| !s.is_empty()))
@@ -260,95 +200,6 @@ pub fn rebuild(app: &App) -> (bool, String) {
         }
     }
     (true, tail4000(&log))
-}
-
-/// studio_publish.publish — push scene tracks and the lean page to the
-/// castle through tools/sd_sync.py (whose repo-glob conveniences stay
-/// Python by design), and report the one thing a push cannot fix:
-/// scenes the RUNNING firmware was not built with.
-pub fn publish_body(app: &App) -> (Json, u16) {
-    let Some(st) = studio_relay::status(app) else {
-        return (
-            Json::Obj(vec![
-                ("ok".into(), Json::Bool(false)),
-                ("pushed".into(), Json::Bool(false)),
-                (
-                    "error".into(),
-                    Json::Str("no castle answered — nothing pushed".into()),
-                ),
-            ]),
-            502,
-        );
-    };
-    let host = st
-        .get("bridged")
-        .and_then(Json::as_str)
-        .map(str::to_string)
-        .or_else(|| studio_relay::castle_host(app))
-        .unwrap_or_default();
-    let mut log = String::new();
-    for cmd in ["scenes", "site"] {
-        let mut c = Command::new(py(&app.root));
-        c.arg(app.root.join("tools").join("sd_sync.py"))
-            .arg(&host)
-            .arg(cmd);
-        let (ok, out) = run(c, 900);
-        log.push_str(&out);
-        if !ok {
-            return (
-                Json::Obj(vec![
-                    ("ok".into(), Json::Bool(false)),
-                    ("pushed".into(), Json::Bool(false)),
-                    ("log".into(), Json::Str(tail4000(&log))),
-                    ("error".into(), Json::Str(format!("sd_sync {cmd} failed"))),
-                ]),
-                500,
-            );
-        }
-    }
-    let stale = needs_firmware(app, &st);
-    let note = if stale.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "{} scene(s) missing from the running firmware — make sd-build, stop audio, then OTA",
-            stale.len()
-        )
-    };
-    (
-        Json::Obj(vec![
-            ("ok".into(), Json::Bool(true)),
-            ("pushed".into(), Json::Bool(true)),
-            ("log".into(), Json::Str(tail4000(&log))),
-            (
-                "needs_firmware".into(),
-                Json::Arr(stale.into_iter().map(Json::Str).collect()),
-            ),
-            ("note".into(), Json::Str(note)),
-        ]),
-        200,
-    )
-}
-
-/// studio_publish.needs_firmware — scene ids in scenes.yaml that the
-/// castle's firmware does not know; empty too when the firmware predates
-/// the `scenes` field, because guessing would be worse than silence.
-fn needs_firmware(app: &App, st: &Json) -> Vec<String> {
-    let fw: Vec<String> = st
-        .get("scenes")
-        .and_then(Json::as_str)
-        .unwrap_or("")
-        .split(',')
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect();
-    if fw.is_empty() {
-        return Vec::new();
-    }
-    scene_ids(&app.scenes)
-        .into_iter()
-        .filter(|s| !fw.contains(s))
-        .collect()
 }
 
 #[cfg(test)]
@@ -416,54 +267,6 @@ mod tests {
         );
         // The .tmp is renamed, never left behind.
         assert!(!d.join("scenes.yaml.tmp").exists());
-        let _ = std::fs::remove_dir_all(&d);
-    }
-
-    /// The scene ceiling is scene_check.py's answer, not this side's — so
-    /// what has to hold here is that an unanswerable check REFUSES. A
-    /// checker that cannot run must never read as "go ahead and splice"
-    /// (grade report 2026-09-01 D2; the ceiling itself is A8's delegation).
-    #[test]
-    fn a_check_that_cannot_run_refuses_the_splice() {
-        let d = tmpdir("check");
-        let mut app = App::new(d.clone()); // no tools/scene_check.py under it
-        app.scenes = d.join("scenes.yaml");
-        std::fs::write(&app.scenes, SHOW).expect("seed");
-        let req = Json::Obj(vec![
-            ("id".into(), Json::Str("crypt".into())),
-            ("yaml".into(), Json::Str("  - id: crypt\n".into())),
-        ]);
-        let (body, code) = check(&app, &req).expect("no verdict is a refusal");
-        assert_eq!(code, 500);
-        assert_eq!(
-            body.get("error").and_then(Json::as_str),
-            Some("scene validation unavailable")
-        );
-        assert_eq!(body.get("ok"), Some(&Json::Bool(false)));
-        // And the show on disk was not touched by the attempt.
-        assert_eq!(std::fs::read_to_string(&app.scenes).expect("read"), SHOW);
-        let _ = std::fs::remove_dir_all(&d);
-    }
-
-    #[test]
-    fn only_scenes_the_running_firmware_lacks_are_named() {
-        let d = tmpdir("fw");
-        let mut app = App::new(d.clone());
-        app.scenes = d.join("scenes.yaml");
-        std::fs::write(&app.scenes, SHOW).expect("seed");
-        let st = |v: &str| Json::Obj(vec![("scenes".into(), Json::Str(v.into()))]);
-        assert_eq!(
-            needs_firmware(&app, &st("vigil,storm")),
-            Vec::<String>::new()
-        );
-        assert_eq!(
-            needs_firmware(&app, &st("vigil")),
-            vec!["storm".to_string()]
-        );
-        // A firmware that predates the field says nothing rather than
-        // guessing that every scene is missing.
-        assert_eq!(needs_firmware(&app, &st("")), Vec::<String>::new());
-        assert_eq!(needs_firmware(&app, &Json::obj()), Vec::<String>::new());
         let _ = std::fs::remove_dir_all(&d);
     }
 }

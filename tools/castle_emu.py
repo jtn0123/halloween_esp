@@ -6,7 +6,7 @@ and the same queued-action semantics, so the whole chain — desk → studio
 relay → castle — runs end-to-end on the Mac with zero hardware:
 
     .venv/bin/python tools/castle_emu.py 8093 &
-    CASTLE_HOST=127.0.0.1:8093 .venv/bin/python tools/studio.py
+    CASTLE_HOST=127.0.0.1:8093 tools/studio_launch.sh
 
 Three files: this one is the castle's STATE (the card directory, the
 mirrored show state, the pending-action mailbox and its 200 ms tick);

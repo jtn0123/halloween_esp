@@ -141,15 +141,15 @@ server (`POST /studio/server/stop`), with no login. The route
 table — what the studio owns (`/studio/…`) and what it relays to the castle
 (`/api/…`) — is [docs/API.md](docs/API.md).
 
-There are two studio servers, and since 2026-09-01 the Rust one
-(`core/src/bin/studio.rs`) is what starts: `make studio` runs
+The studio is `core/src/bin/studio.rs`: `make studio` runs
 `tools/studio_launch.sh`, which builds the binary when cargo is present and
-execs it, and falls back to `tools/studio.py` — printing the reason — when it
-is not. Either can be asked for by name with `CASTLE_STUDIO=rust|python`. The
-two are held answer-for-answer by `tests/studio_rust_case.py` and the browser
-suite, so the Python one remains the reference rather than a leftover. A
-change to a route belongs in both, and [docs/PARITY.md](docs/PARITY.md) says
-why.
+execs it, and says why it cannot when there is no cargo and no build. There
+was a second studio in Python until 2026-09-06, kept as the reference the
+Rust one was measured against; [docs/RETIREMENT.md](docs/RETIREMENT.md) is
+the plan that retired it and the tag `python-studio-final` is the last tree
+carrying it. The server is Rust; the toolchain it spawns for every rebuild,
+import and push is still Python, and that is the design rather than a
+leftover — [docs/PARITY.md](docs/PARITY.md) says what is held equal to what.
 
 Four environment variables sandbox it: `CASTLE_TRACKS` (track library
 directory), `CASTLE_SCENES` (the scenes file it may write), `CASTLE_HOST`

@@ -72,10 +72,18 @@ module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_sc
     "helpers", "test_scene_schema", "test_gen_chunks", "test_castle_emu",
     "test_emu_modes", "test_gen_previewer", "test_protocol_fuzz", "test_rig_config",
     "test_firmware_contract", "test_gen_esphome", "test_gen_esphome_main", "test_import",
-    "test_guards", "studio_case", "test_gen_fuzz", "test_generator_parity",
+    "test_guards", "test_gen_fuzz", "test_generator_parity",
     "test_pulse_dynamics_parity", "test_castle_core", "test_pulse_rust",
-    "test_synth_rust", "synth_probes", "test_master_rust", "test_onsets_rust", "test_bridge_rust", "test_studio_rust",
-    "studio_rust_case", "test_studio_media_rust", "test_studio_scenes_rust", "test_studio_import_rust", "test_studio_relay_rust",
+    "test_synth_rust", "synth_probes", "test_master_rust", "test_onsets_rust", "test_bridge_rust",
+    # The studio suites that outlived tools/studio.py (docs/RETIREMENT.md):
+    # the black-box ones and the fixture they share. The names they replace
+    # (studio_case, studio_rust_case, test_studio*_rust) left this list with
+    # the modules they tested — the ratchet's "never leave" is about
+    # loosening, not about deleting the code.
+    "track_lib", "studio_rs_case", "test_studio_reads_rs", "test_studio_writes_rs",
+    "test_studio_media_rs", "test_studio_import_rs", "test_studio_import_opts_rs",
+    "test_studio_relay_rs", "test_studio_ops_rs", "test_scene_schema_rust",
+    "golden_case", "golden_corpus", "test_studio_golden", "gen_golden",
     "test_scene_render_rust", "core_bins", "test_analyze_track_rust",
     "cargo_gate", "lock_deps", "test_lock_deps",
     "check_citations", "test_check_citations"]

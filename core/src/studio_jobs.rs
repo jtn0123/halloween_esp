@@ -1,6 +1,7 @@
 //! Background jobs — tools/studio_jobs.py: the runner that babysits
-//! yt-dlp/ffmpeg children, the progress reader, and the one-line reason()
-//! verdicts the desk shows instead of raw shell output.
+//! yt-dlp/ffmpeg children, feeds their output to the progress reader next
+//! door (`studio_progress`), and hands the desk a one-line reason
+//! (`studio_reason`) instead of raw shell when one of them dies.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
@@ -9,6 +10,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::jsonio::{Json, py_float};
 use crate::studio::App;
+use crate::studio_progress::{Job, interpret};
 use crate::studio_reason::explain;
 
 unsafe extern "C" {
@@ -76,42 +78,6 @@ pub fn opt_args(req: &Json, keys: &[&str]) -> Vec<String> {
     args
 }
 
-pub struct Job {
-    pub id: String,
-    pub phase: String,
-    pub percent: f64,
-    pub detail: String,
-    pub log: Vec<String>,
-    pub error: String,
-}
-
-fn round1(v: f64) -> f64 {
-    format!("{v:.1}").parse().unwrap_or(v)
-}
-
-impl Job {
-    pub fn as_json(&self) -> Json {
-        let done = self.phase == "done" || self.phase == "failed";
-        let tail = if self.log.len() > 40 {
-            &self.log[self.log.len() - 40..]
-        } else {
-            &self.log[..]
-        };
-        Json::Obj(vec![
-            ("id".into(), Json::Str(self.id.clone())),
-            ("phase".into(), Json::Str(self.phase.clone())),
-            ("percent".into(), Json::Num(round1(self.percent))),
-            ("detail".into(), Json::Str(self.detail.clone())),
-            ("error".into(), Json::Str(self.error.clone())),
-            ("done".into(), Json::Bool(done)),
-            (
-                "log".into(),
-                Json::Arr(tail.iter().map(|l| Json::Str(l.clone())).collect()),
-            ),
-        ])
-    }
-}
-
 type Registry = Mutex<Vec<(String, Arc<Mutex<Job>>)>>;
 
 fn jobs() -> &'static Registry {
@@ -144,14 +110,7 @@ pub fn get(job_id: &str) -> Option<Json> {
 /// JobRunner.start: a job begins queued, runs behind the studio's encode
 /// lock, and reports as yt-dlp prints.
 pub fn start(app: &Arc<App>, argv: Vec<String>) -> Json {
-    let job = Arc::new(Mutex::new(Job {
-        id: new_id(),
-        phase: "queued".to_string(),
-        percent: 0.0,
-        detail: String::new(),
-        log: Vec::new(),
-        error: String::new(),
-    }));
+    let job = Arc::new(Mutex::new(Job::new(new_id())));
     let id = job.lock().unwrap_or_else(|e| e.into_inner()).id.clone();
     {
         let mut reg = jobs().lock().unwrap_or_else(|e| e.into_inner());
@@ -264,80 +223,230 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
     });
 }
 
-/// JobRunner._interpret — yt-dlp's progress line and the phase markers.
-fn interpret(job: &mut Job, line: &str) {
-    if let Some((pct, size, rate, eta)) = progress(line) {
-        job.phase = "fetching".to_string();
-        job.percent = pct;
-        job.detail = size;
-        if let Some(r) = rate {
-            job.detail.push_str(&format!(" at {r}"));
-        }
-        if let Some(e) = eta {
-            job.detail.push_str(&format!(", {e} left"));
-        }
-        return;
-    }
-    if line.contains("ExtractAudio") || line.starts_with("[ffmpeg]") {
-        job.phase = "converting".to_string();
-        job.percent = 100.0;
-        job.detail = "extracting audio".to_string();
-    } else if line.starts_with("imported ") {
-        job.phase = "analysing".to_string();
-        job.detail = "detecting onsets".to_string();
-    }
-}
-
-/// `[download]  41.8% of ~2.39MiB at 15.81MiB/s ETA 00:00`
-fn progress(line: &str) -> Option<(f64, String, Option<String>, Option<String>)> {
-    let at = line.find("[download]")?;
-    let mut rest = line[at + 10..].trim_start();
-    let pct_end = rest.find('%')?;
-    let pct: f64 = rest[..pct_end]
-        .trim()
-        .parse()
-        .ok()
-        .filter(|_| !rest[..pct_end].trim().is_empty())?;
-    rest = rest[pct_end + 1..].trim_start();
-    rest = rest.strip_prefix("of")?.trim_start();
-    rest = rest.strip_prefix('~').map(str::trim_start).unwrap_or(rest);
-    let mut words = rest.split_whitespace();
-    let size = words.next()?.to_string();
-    let toks: Vec<&str> = words.collect();
-    let mut rate = None;
-    let mut eta = None;
-    let mut i = 0;
-    while i + 1 < toks.len() {
-        if toks[i] == "at" && rate.is_none() && eta.is_none() {
-            rate = Some(toks[i + 1].to_string());
-            i += 2;
-        } else if toks[i] == "ETA" {
-            eta = Some(toks[i + 1].to_string());
-            break;
-        } else {
-            break;
-        }
-    }
-    Some((pct, size, rate, eta))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    use std::time::{Duration, Instant};
 
+    /// The registry is process-global, one per server, and cargo runs the
+    /// tests in threads of one process — so the tests that put jobs in it
+    /// queue behind this instead of counting each other's work.
+    fn registry_gate() -> &'static Mutex<()> {
+        static G: OnceLock<Mutex<()>> = OnceLock::new();
+        G.get_or_init(|| Mutex::new(()))
+    }
+
+    fn app() -> Arc<App> {
+        Arc::new(App::new(PathBuf::from(".")))
+    }
+
+    fn start_id(app: &Arc<App>, argv: &[&str]) -> String {
+        let snap = start(app, argv.iter().map(|s| s.to_string()).collect());
+        snap.get("id")
+            .and_then(Json::as_str)
+            .expect("start() returned no id")
+            .to_string()
+    }
+
+    fn text(id: &str, key: &str) -> String {
+        let j = get(id).expect("the job left the registry");
+        j.get(key)
+            .and_then(Json::as_str)
+            .unwrap_or_default()
+            .to_string()
+    }
+
+    fn log_of(id: &str) -> Vec<String> {
+        let j = get(id).expect("the job left the registry");
+        match j.get("log") {
+            Some(Json::Arr(v)) => v
+                .iter()
+                .map(|l| l.as_str().unwrap_or_default().to_string())
+                .collect(),
+            _ => panic!("the log is not an array"),
+        }
+    }
+
+    /// Spin rather than sleep a fixed time, so the assertions are not racy
+    /// on a loaded machine.
+    fn wait_done(id: &str) -> String {
+        for _ in 0..2000 {
+            let phase = text(id, "phase");
+            if phase == "done" || phase == "failed" {
+                return phase;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("job {id} never finished");
+    }
+
+    /// The whole point of the runner: the HTTP request hands back an id
+    /// and lets go, instead of holding the connection open for a
+    /// forty-minute download.
     #[test]
-    fn progress_lines_parse_like_the_regex() {
-        let (pct, size, rate, eta) =
-            progress("[download]  41.8% of 2.39MiB at 15.81MiB/s ETA 00:00").unwrap();
-        assert_eq!(pct, 41.8);
-        assert_eq!(size, "2.39MiB");
-        assert_eq!(rate.as_deref(), Some("15.81MiB/s"));
-        assert_eq!(eta.as_deref(), Some("00:00"));
-        let (pct, size, rate, eta) = progress("[download] 100% of ~ 4.0MiB").unwrap();
-        assert_eq!(
-            (pct, size.as_str(), rate, eta),
-            (100.0, "4.0MiB", None, None)
+    fn start_returns_at_once_with_an_id_the_page_can_poll() {
+        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let app = app();
+        let t0 = Instant::now();
+        let id = start_id(&app, &["sleep", "1"]);
+        assert!(
+            t0.elapsed() < Duration::from_millis(300),
+            "start() blocked on the child process"
         );
-        assert!(progress("[youtube] extracting").is_none());
+        assert_eq!(id.len(), 12);
+        let phase = text(&id, "phase");
+        assert!(phase == "queued" || phase == "fetching", "{phase}");
+        assert_eq!(text(&id, "id"), id);
+    }
+
+    /// A poll for a job that has been pruned, or was never started, must
+    /// answer "no such job" rather than invent one.
+    #[test]
+    fn a_poll_for_an_unknown_id_finds_nothing() {
+        assert!(get("nosuchjob").is_none());
+    }
+
+    /// The studio's synchronous encodes and its background jobs take turns
+    /// at ffmpeg: while the oplock is held the job sits queued — visibly
+    /// in line, not hung — and it runs the moment the lock is free.
+    ///
+    /// Python's JobRunner takes its gate as an argument and defaults to
+    /// None; the Rust runner has no such knob, because there is exactly
+    /// one runner and the App's oplock is always its gate. There is no
+    /// ungated case here to test.
+    #[test]
+    fn a_job_waits_while_the_studios_oplock_is_held() {
+        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let app = app();
+        let held = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        let id = start_id(&app, &["true"]);
+        std::thread::sleep(Duration::from_millis(150));
+        assert_eq!(text(&id, "phase"), "queued");
+        drop(held);
+        assert_eq!(wait_done(&id), "done");
+    }
+
+    /// The gate is held for the life of the child, not just for the
+    /// paperwork around it — otherwise two ffmpegs race for the CPU and
+    /// both take longer than either would alone.
+    #[test]
+    fn a_running_job_holds_the_oplock_until_its_child_exits() {
+        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let app = app();
+        let id = start_id(&app, &["sleep", "0.3"]);
+        std::thread::sleep(Duration::from_millis(100));
+        assert!(app.oplock.try_lock().is_err(), "the gate was free mid-job");
+        wait_done(&id);
+        // The worker drops the gate just after it writes the phase, so
+        // give that last instruction a moment rather than a lucky read.
+        let mut freed = false;
+        for _ in 0..200 {
+            if app.oplock.try_lock().is_ok() {
+                freed = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(freed, "the gate was never released");
+    }
+
+    /// A finished import leaves the bar full and the error box empty —
+    /// the page reads both, and a stale percentage reads as a stall.
+    #[test]
+    fn a_successful_child_ends_done_at_a_hundred_with_no_error() {
+        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let id = start_id(&app(), &["true"]);
+        assert_eq!(wait_done(&id), "done");
+        let j = get(&id).unwrap();
+        assert_eq!(j.get("percent").and_then(Json::as_f64), Some(100.0));
+        assert_eq!(text(&id, "error"), "");
+    }
+
+    /// A failure with nothing to explain still needs a non-empty message:
+    /// an empty error box tells the person nothing at all.
+    #[test]
+    fn a_failing_child_ends_failed_naming_the_exit_code() {
+        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let id = start_id(&app(), &["false"]);
+        assert_eq!(wait_done(&id), "failed");
+        let err = text(&id, "error");
+        assert!(err.contains("exit 1"), "{err}");
+    }
+
+    /// When the child did say something worth reading, the desk gets the
+    /// sentence — and the raw line stays in the log for whoever wants it.
+    #[test]
+    fn a_failing_childs_output_is_translated_before_the_desk_sees_it() {
+        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let id = start_id(
+            &app(),
+            &[
+                "sh",
+                "-c",
+                "echo 'ERROR: [youtube] x: Private video'; exit 1",
+            ],
+        );
+        assert_eq!(wait_done(&id), "failed");
+        assert_eq!(text(&id, "error"), "That video is private.");
+        assert!(
+            log_of(&id).contains(&"ERROR: [youtube] x: Private video".to_string()),
+            "the raw line was dropped from the log"
+        );
+    }
+
+    /// The worker thread has nobody to raise to, so a binary that is not
+    /// there has to land on the job as a failure rather than take the
+    /// thread down silently.
+    #[test]
+    fn a_missing_binary_fails_the_job_instead_of_killing_its_thread() {
+        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let id = start_id(&app(), &["/nonexistent/definitely-not-here"]);
+        assert_eq!(wait_done(&id), "failed");
+        assert!(!text(&id, "error").is_empty(), "failure carried no reason");
+    }
+
+    /// End to end through the pipe: a line the child printed reaches the
+    /// log the browser polls.
+    #[test]
+    fn progress_from_a_real_child_reaches_the_jobs_log() {
+        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let line = "[download]  41.8% of 2.39MiB at 1.0MiB/s ETA 00:03";
+        let id = start_id(&app(), &["sh", "-c", &format!("echo '{line}'")]);
+        assert_eq!(wait_done(&id), "done");
+        assert_eq!(log_of(&id), vec![line.to_string()]);
+    }
+
+    /// yt-dlp pads its output with blank lines; logging them would push
+    /// the useful forty out of the tail the desk is shown.
+    #[test]
+    fn blank_output_lines_are_not_logged() {
+        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let id = start_id(&app(), &["sh", "-c", "echo; echo kept; echo"]);
+        assert_eq!(wait_done(&id), "done");
+        assert_eq!(log_of(&id), vec!["kept".to_string()]);
+    }
+
+    /// A studio left open all October must not accumulate every import it
+    /// ever ran — and the prune must never take the job that just began,
+    /// which is the one somebody is watching.
+    #[test]
+    fn finished_jobs_are_pruned_but_the_newest_survives() {
+        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        jobs().lock().unwrap_or_else(|e| e.into_inner()).clear();
+        let app = app();
+        for _ in 0..40 {
+            let id = start_id(&app, &["true"]);
+            wait_done(&id);
+        }
+        let before = jobs().lock().unwrap_or_else(|e| e.into_inner()).len();
+        assert_eq!(before, 40);
+        let newest = start_id(&app, &["true"]);
+        let after = jobs().lock().unwrap_or_else(|e| e.into_inner()).len();
+        assert!(after < 41, "finished jobs were never pruned ({after})");
+        assert!(
+            get(&newest).is_some(),
+            "pruning threw away the job that just started"
+        );
     }
 }
