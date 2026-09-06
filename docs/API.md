@@ -56,7 +56,8 @@ castle outage.
 studio logs `DEPRECATED` once per route. The one exception is `/api/scene`:
 with `?s=<id>` it is the castle's fire-a-scene and relays; with a JSON body
 it is the editor above. The table is `STUDIO_ROUTES` in
-`core/src/studio.rs`.
+`core/src/studio_alias.rs`, which is the whole shim and goes with the
+aliases when they do.
 
 ## Relayed to the castle (`/api/…`, `/remote`)
 
