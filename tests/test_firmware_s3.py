@@ -401,6 +401,20 @@ class TestRmtBudget(unittest.TestCase):
         zones = [{**z, "rmt_symbols": 128} for z in self.LIVE[:1]] + self.LIVE[1:]
         self.assertEqual(gen_rig.check_rmt_budget(zones, self.LAYOUTS, gen_rig.S3), 0)
 
+    def test_the_carrier_reserves_nothing_for_a_pixel_it_does_not_have(self) -> None:
+        """§13.3: there is no LED on a WROOM-1. The S2's status-pixel
+        reservation (grade report 2026-09-06 J2) must not follow the port
+        across — so the 128 the S2 now refuses is still spendable here, and
+        nothing in this build's banner mentions a pixel."""
+        self.assertEqual(
+            gen_rig.check_rmt_budget(self.ZONES, self.LAYOUTS, gen_rig.S3),
+            gen_rig.check_rmt_budget(
+                self.ZONES, self.LAYOUTS, gen_rig.S3, reserved_blocks=0
+            ),
+        )
+        self.assertNotIn("status pixel", self.text())
+        self.assertNotIn("status pixel", gen_rig.emit_rmt_override.__doc__ or "")
+
     def test_overspending_stops_the_build_naming_this_chip(self) -> None:
         zones = [{**z, "rmt_symbols": 192} for z in self.LIVE]
         with self.assertRaises(SystemExit) as e:

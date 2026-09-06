@@ -154,8 +154,9 @@ TEST_EFFECTS = [
 # how the 192-symbol default once left strips 2 and 3 dead (bench-diagnosed
 # 2026-08-19). A bigger block is not a luxury either: the refill ISR must top
 # the block up every half-block — 32 symbols is 40 us of WS2812 bits — and a
-# late refill is a garbled pixel. The SD build's status pixel takes one block,
-# so the S2 leaves one spare (see castle_sd.yaml).
+# late refill is a garbled pixel. The SD build's status pixel takes the
+# fourth block (castle_sd.yaml), which is why the S2's four zones' worth of
+# budget is really three — see STATUS_PIXEL_BLOCKS.
 #
 # On the ESP32-S3 the same peripheral is shaped differently and the numbers
 # are NOT interchangeable: SOC_RMT_MEM_WORDS_PER_CHANNEL is 48, and of the
@@ -190,6 +191,14 @@ CHIPS = {"esp32s2": S2, "esp32s3": S3}
 #: opinion gets, and what the S2 half of the test suite reads.
 RMT_TOTAL_SYMBOLS = S2.total
 RMT_BLOCK = S2.block
+#: The fourth consumer, and the one this file does not write: castle_sd.yaml
+#: declares a `status_pixel` on GPIO33 with `rmt_symbols: 64` by hand,
+#: because it is the Feather's own LED rather than part of the rig. The
+#: budget below has to be TOLD about it — until 2026-09-06 it was not, and
+#: the generator would hand out a block that was already gone while printing
+#: a banner that said so (grade report 2026-09-06 J2). The S3 carrier has no
+#: such LED and reserves nothing.
+STATUS_PIXEL_BLOCKS = 1
 
 
 def rmt_blocks(z: Mapping[str, Any]) -> int:
@@ -217,18 +226,35 @@ def rmt_symbols(z: Mapping[str, Any], chip: Chip = S2) -> int:
 
 
 def check_rmt_budget(
-    zones: Sequence[Mapping[str, Any]], layouts: dict[str, Layout], chip: Chip = S2
+    zones: Sequence[Mapping[str, Any]],
+    layouts: dict[str, Layout],
+    chip: Chip = S2,
+    reserved_blocks: int = 0,
 ) -> int:
-    """Spend no more than the peripheral has; return what is left over."""
+    """Spend no more than the peripheral has; return what is genuinely free.
+
+    `reserved_blocks` is what the BUILD spends outside the strips written
+    here — on the S2 the status pixel's one block, on the S3 nothing. A
+    reservation that is not counted is worse than no budget at all: the
+    caller reads "0 block(s) spare" and the peripheral has already been
+    oversubscribed by a strip that will simply stay dark.
+    """
     live = [z for z in zones if layouts[z["id"]].n > 0]
-    spent = sum(rmt_symbols(z, chip) for z in live)
-    if spent > chip.total:
-        raise SystemExit(
-            f"RMT budget: {len(live)} strips ask for {spent} symbols, the "
-            f"{chip.name} has {chip.total}. Strips past the limit get no "
-            f"channel and stay dark. Lower a zone's rmt_symbols."
+    strips = sum(rmt_symbols(z, chip) for z in live)
+    reserved = reserved_blocks * chip.block
+    if strips + reserved > chip.total:
+        held = (
+            f" and the status pixel holds {reserved} more "
+            f"(castle_sd.yaml `status_pixel`)"
+            if reserved
+            else ""
         )
-    return chip.total - spent
+        raise SystemExit(
+            f"RMT budget: {len(live)} strips ask for {strips} symbols{held}, "
+            f"but the {chip.name} has {chip.total}. Strips past the limit get "
+            f"no channel and stay dark. Lower a zone's rmt_symbols."
+        )
+    return chip.total - strips - reserved
 
 
 def channel_colors(zone: Mapping[str, Any]) -> str:
@@ -334,13 +360,14 @@ def emit_lights(
     # sequence want to talk to "the pixels", and with a strip per zone that is
     # no longer a single `id()`. Generated rather than hand-written in
     # castle_sd.yaml so the zone list stays in exactly one place.
-    spare = check_rmt_budget(zones, layouts)
-    out.append(
-        f"# RMT: {RMT_TOTAL_SYMBOLS - spare} of {RMT_TOTAL_SYMBOLS} "
-        f"symbols spent, {spare // RMT_BLOCK} block(s) spare "
-        f"(the SD build's status pixel needs one)."
-    )
+    spare = check_rmt_budget(zones, layouts, reserved_blocks=STATUS_PIXEL_BLOCKS)
     live = [z["id"] for z in zones if layouts[z["id"]].n > 0]
+    out.append(
+        f"# RMT: {RMT_TOTAL_SYMBOLS - spare} of {RMT_TOTAL_SYMBOLS} symbols "
+        f"spent — {len(live)} strip(s) and the SD build's status pixel "
+        f"({STATUS_PIXEL_BLOCKS} block, castle_sd.yaml) — "
+        f"{spare // RMT_BLOCK} block(s) spare."
+    )
     zone_rgbw = {z["id"]: bool(z.get("rgbw", True)) for z in zones}
     out += [
         "",
