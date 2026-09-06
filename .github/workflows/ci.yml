@@ -417,6 +417,29 @@ jobs:
             || { echo "no RAM/Flash summary in the S3 compile output — the compile did not finish"; exit 1; }
       - name: S3 OTA slot
         run: python tools/check_image.py castle-s3 --require
+      # The images, the linker maps and the exact configuration, kept for
+      # two weeks: a build from a clean machine to flash from, and the one
+      # way to explain why the runner's S2 image is 8 points of dram0 and
+      # 76 KB of flash SMALLER than the Mac's with the same ESP-IDF 5.5.5,
+      # toolchain and sdkconfig (measured 2026-09-06 — a clean rebuild on
+      # the Mac reproduced the Mac's numbers, so it is not a stale tree).
+      - name: keep the images and maps
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            firmware/.esphome/build/castle-sd/build/castle-sd.bin
+            firmware/.esphome/build/castle-sd/build/firmware.factory.bin
+            firmware/.esphome/build/castle-sd/build/castle-sd.map
+            firmware/.esphome/build/castle-sd/sdkconfig*
+            firmware/.esphome/build/castle-sd/partitions.csv
+            firmware/.esphome/build/castle-s3/build/castle-s3.bin
+            firmware/.esphome/build/castle-s3/build/firmware.factory.bin
+            firmware/.esphome/build/castle-s3/build/castle-s3.map
+            firmware/.esphome/build/castle-s3/sdkconfig*
+            firmware/.esphome/build/castle-s3/partitions.csv
       - name: newer esphome available?
         run: |
           pip index versions esphome 2>/dev/null | head -2 || true
