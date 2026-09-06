@@ -134,6 +134,7 @@ validate: generate validate-s3
 # has to remember: it is the build with no hardware to catch its mistakes.
 validate-s3: generate
 	@$(ESPHOME) config $(YAML_S3) > /dev/null && echo "config OK (s3)"
+	@$(ESPHOME) config firmware/castle_s3_qemu.yaml > /dev/null && echo "config OK (s3 qemu)"
 
 build: audio generate
 	$(ESPHOME) compile $(YAML)

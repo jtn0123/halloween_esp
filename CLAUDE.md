@@ -61,8 +61,10 @@ file is the one that governs.
   2026-09-01 (`castle_flash.yaml`, every scene embedded in the image); the
   show outgrew a 1.75 MB OTA slot and it was deleted rather than nursed —
   docs/notes/03-build.md §12.15. `castle_sd_jewels.yaml` and `bench*.yaml`
-  are variants OF the SD build. `firmware/pending/README.md` lists patches
-  written but not yet flashed.
+  are variants OF the SD build; `castle_s3_qemu.yaml` is the S3 with UART0
+  and Wi-Fi off, for `tools/qemu_boot.sh` (docs/QEMU.md: a hand-run
+  bring-up tool, deliberately not a CI gate). `firmware/pending/README.md`
+  lists patches written but not yet flashed.
 - `tracks/` — the user's imported audio (gitignored except `tracks.json`, the
   provenance manifest) — never a test fixture directory.
 - `previewer/castle-cue-desk.html` is generated and **gitignored**

@@ -1,0 +1,71 @@
+# The S3 carrier build, re-pointed at a console QEMU can actually hear.
+#
+#   tools/qemu_boot.sh          compile it and boot it under Espressif's QEMU
+#
+# This is NOT a build for hardware, and `make upload-s3` must never be pointed
+# at it. It exists so the S3 image — which has never run on a board — can be
+# booted in Espressif's ESP32-S3 QEMU machine and made to say something. It
+# includes castle_s3.yaml whole and changes exactly three things:
+#
+#   1. `name`, so the emulator's build tree is its own directory and a QEMU
+#      run can never overwrite the image `make upload-s3` would flash.
+#   2. `logger: hardware_uart:`, because QEMU has no USB Serial/JTAG.
+#   3. `wifi: enable_on_boot: false`, because QEMU has no radio at all.
+#
+# Neither (2) nor (3) is a preference: leaving either alone means the run
+# produces no usable log at all. They are written out one at a time below so
+# that the day QEMU grows the missing peripheral, the line to delete is
+# obvious. docs/QEMU.md is the wider write-up — what a run proves, what it
+# cannot, and where the boot stops even with these two in place.
+#
+# On (2): the real carrier logs over the S3's USB Serial/JTAG peripheral
+# (castle_s3.yaml §2) and that is right for hardware — it is the port the
+# board is plugged into. Espressif's QEMU emulates the UARTs and does not
+# emulate USB Serial/JTAG at all (`-device help` lists no such device), so a
+# USJ console under QEMU is a console into a void: the ROM's own UART0 chatter
+# appears, and then everything from the second-stage bootloader onward is
+# lost. UART0 (GPIO43/44 on the carrier, brought out to J10) is the same
+# console any adapter would see, so this is not a fictional path — it is the
+# other real one.
+#
+# On (3): Espressif's QEMU emulates no Wi-Fi for the S3 (`-nic model=help` on
+# the esp32s3 machine offers only `open_eth`), so the radio's registers read
+# back as zeros. `esp_wifi_start()` then never returns — the PHY calibration
+# ROM routine spins forever:
+#
+#   ppTask -> wifi_start_process -> wifi_hw_start -> esp_phy_enable
+#          -> esp_phy_load_cal_and_init -> register_chipv7_phy -> rf_init
+#          -> set_chan_freq_hw_init -> get_bias_ref_code -> ram_read_sar2_code
+#
+# That task runs at priority 23 and starves the priority-1 main task pinned to
+# the same core, so setup() stops dead wherever it happened to be.
+# `enable_on_boot: false` means `esp_wifi_start()` is simply never called.
+# Everything that needs the network — the API, OTA, the card's web server — is
+# still COMPILED IN and still set up; it just never associates, which is the
+# part QEMU could not have told us anything about anyway.
+#
+# WHAT IS DELIBERATELY NOT OVERRIDDEN: the SD card. The show's card is an SD
+# in SPI mode on SPI2_HOST (sd_audio.h `mount`), and this QEMU emulates only
+# the SPI1 flash controller — GPSPI2's registers read as zeros, so
+# `spi_hal_usr_is_done()` never sees transaction-done and the mount's
+# `spi_device_polling_transmit()` (portMAX_DELAY) never returns. That is the
+# main loop task, so the boot ends there. It was tried: moving `sd_cs`/`sck`/
+# `mosi`/`miso` to GPIO99 to make `spi_bus_initialize()` refuse the bus does
+# NOT work — IDF accepts the config and the mount hangs identically one call
+# later. Skipping it would take an edit to castle_sd_common.yaml, which is
+# the shared show and not this file's to change for an emulator's sake.
+#
+# Everything else is left alone, including the parts QEMU cannot run.
+
+substitutions:
+  name: castle-s3-qemu
+  friendly: Castle S3 (QEMU)
+
+packages:
+  s3: !include castle_s3.yaml
+
+logger:
+  hardware_uart: UART0
+
+wifi:
+  enable_on_boot: false

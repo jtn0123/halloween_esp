@@ -87,7 +87,11 @@ change here that is not about the board in the yard:
      adapter, and no BOOT-button dance. Confirm the version string in
      `firmware/castle.yaml` on the web page.
   2. Watch the boot log on the same USB port. The S2 could never do this;
-     it is the first time this firmware has had a console.
+     it is the first time this firmware has had a console on hardware —
+     `tools/qemu_boot.sh` has shown the log up to the SD mount in QEMU
+     (2026-09-06, docs/QEMU.md), so what to expect before that point is
+     known: health counter, I2C recovery, the INA219 failing cleanly when
+     absent, the media player up.
   3. Three strips, not one: check tower L, doorway and tower R each light.
      A dark strip past the first is the RMT block size, and the number to
      look at is `rmt_symbols: 48` in `generated/lights_s3.yaml`.
