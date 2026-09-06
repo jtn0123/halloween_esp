@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import sys
 import tempfile
 import threading
 import time
@@ -131,6 +132,21 @@ class CastleEmu(ThreadingHTTPServer):
     # The desk polls, the studio relays and a fuzz storms; a 5-deep backlog
     # (the Python default) turns bursts into refused connects.
     request_queue_size = 64
+
+    def handle_error(self, request: object, client_address: object) -> None:
+        """A client that hung up mid-reply is not an error worth a traceback.
+
+        socketserver prints every exception a handler thread lets through.
+        Handler._dispatch already swallows EPIPE/ECONNRESET from a handler,
+        but the reply's status line and headers are written by http.server
+        itself, outside that try - so the same hang-up can surface here.
+        The real httpd's send just fails and the handler returns; so does
+        this. Everything else still prints, as it should.
+        """
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
+            return
+        super().handle_error(request, client_address)  # type: ignore[arg-type]
 
     def __init__(
         self,

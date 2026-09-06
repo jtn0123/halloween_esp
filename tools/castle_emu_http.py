@@ -168,6 +168,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._idf(err)
         try:
             getattr(self, handler)(raw)
+        except (BrokenPipeError, ConnectionResetError):
+            # The client hung up before the reply was written - castle_link's
+            # 2 s read budget for a POST runs out under a loaded test run and
+            # it closes the socket. That is the client's verdict, not an
+            # emulator bug, and there is nobody left to send a 500 to: the
+            # 500 below would EPIPE on the same dead socket and socketserver
+            # would print both tracebacks into the test log (seen 2026-09-06).
+            self.close_connection = True
         except Exception as e:  # the fuzz asserts this never happens
             self._err(500, f"emulator bug: {type(e).__name__}: {e}")
 
