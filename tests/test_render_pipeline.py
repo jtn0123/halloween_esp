@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import shutil
 import sys
 import tempfile
@@ -229,6 +230,32 @@ class TestStaleSweep(unittest.TestCase):
             sorted(f"{stem}.mp3" for stem, _ in ra.TEST_TONES),
         )
         self.assertEqual((self.out / "02_two.mp3").read_bytes(), b"new")
+
+    def test_a_song_not_on_this_machine_keeps_its_markers(self) -> None:
+        """The song's onsets and beats cannot be recomputed without the song;
+        the tracked markers.json is the last analysis. A full render on a
+        machine without the song (CI, a fresh clone) used to write the file
+        without them, and the weekly compile then built a show with no
+        pulse cues for the two real songs — 13.6 KB of dram0 short of the
+        porch's image (2026-09-06). Previous song-derived keys survive under
+        this render's fresh synth ones; a scene whose song IS here is
+        rewritten whole."""
+        (self.out / "markers.json").write_text(
+            '{"one": {"wind": [0], "stale": [1]}, '
+            '"two": {"wind": [0], "onset_high": [5, 9], "beat": [2]}}'
+        )
+
+        def absent_song(scene: dict, cfg: dict, wav: Path) -> dict:
+            wav.write_bytes(b"RIFFstub")
+            if scene["id"] == "two":
+                ra.NOT_HERE.append("two")
+            return {"wind": [7]}
+
+        with mock.patch.object(ra, "render_scene", absent_song):
+            self.run_main()
+        got = json.loads((self.out / "markers.json").read_text())
+        self.assertEqual(got["two"], {"wind": [7], "onset_high": [5, 9], "beat": [2]})
+        self.assertEqual(got["one"], {"wind": [7]})  # here: fresh, nothing kept
 
     def test_a_partial_render_sweeps_nothing(self) -> None:
         self.run_main("--only", "one")

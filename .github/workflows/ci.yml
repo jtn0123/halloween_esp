@@ -375,6 +375,18 @@ jobs:
         run: |
           python tools/render_audio.py
           python tools/gen_esphome.py
+      # The show this job compiles must be the show in the repo. It was not:
+      # the runner has no tracks/, render_audio wrote audio/markers.json
+      # without the two songs' onsets, gen_esphome emitted no pulse cues
+      # for them, and the image measured here was 13.6 KB of dram0 and
+      # 71 KB of flash smaller than the porch's (2026-09-06, the maps of run
+      # 34049090300) — the 92% alarm was judging a smaller show. The tracked
+      # generated files and markers are what the Mac produced; a diff here
+      # means either the generators have drifted from what is committed or
+      # this machine lacks an input, and both are a red run, not a smaller
+      # number.
+      - name: the generated show is the committed show
+        run: git diff --exit-code --stat -- firmware/generated audio/markers.json
       - name: fake secrets
         env:
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}

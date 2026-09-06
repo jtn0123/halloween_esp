@@ -415,6 +415,21 @@ def main() -> int:
                 if stale.name not in produced:
                     stale.unlink()
                     print(f"swept stale {stale.relative_to(OUT.parent)}")
+        # A scene whose song is not on this machine cannot recompute the
+        # markers the song gives it (its onsets and beats), and the tracked
+        # markers.json is the last analysis that could. Writing without them
+        # is what CI did: gen_esphome then emitted no pulse cues for the two
+        # real songs, and the weekly compile measured a show 13.6 KB of dram0
+        # and 71 KB of flash smaller than the porch's — the 92% alarm judging
+        # a smaller show (2026-09-06, the maps of run 34049090300). Keep the
+        # previous entry's song-derived keys under this render's fresh ones.
+        try:
+            prev = json.loads((OUT / "markers.json").read_text())
+        except (OSError, ValueError):
+            prev = {}
+        for sid in NOT_HERE:
+            if sid in prev:
+                all_markers[sid] = {**prev[sid], **all_markers.get(sid, {})}
         (OUT / "markers.json").write_text(json.dumps(all_markers, indent=0))
         n = sum(len(m) for v in all_markers.values() for m in v.values())
         print(
