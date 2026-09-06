@@ -40,8 +40,13 @@ defaults:
 # this branch were alive at once on 2026-08-18, the oldest for 38 minutes on a
 # commit two pushes stale, all of them queueing behind the same apt mirror.
 # Main is exempt: every commit that lands there deserves its own answer.
+# A hand dispatch gets its own group: GitHub keeps ONE pending run per
+# group and cancels the older, so a dispatched firmware compile queued
+# behind a push to main was cancelled by the next push (run 34048857272,
+# 2026-09-06) — and a dispatch queued the other way round would cancel the
+# push's checks.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
