@@ -135,10 +135,12 @@ def safe_name(n: bytes) -> bool:
     """One path component, nothing hidden, nothing that breaks the JSON it
     is later printed into — sd_web.h safe_name on the raw bytes. Control
     bytes (NUL included — the C length counts it), DEL, '"' and '\\' are
-    refused because h_list/h_status snprintf names into JSON unescaped."""
+    refused because h_list/h_status snprintf names into JSON unescaped —
+    and since v5.46 so is every byte >= 0x80, which json_escape passes
+    through raw and which therefore made the body invalid UTF-8."""
     if not n or len(n) >= NAME_MAX or n[0:1] == b"." or b"/" in n or b".." in n:
         return False
-    return not any(c < 0x20 or c == 0x7F or c in (0x22, 0x5C) for c in n)
+    return not any(c < 0x20 or c >= 0x80 or c == 0x7F or c in (0x22, 0x5C) for c in n)
 
 
 def safe_subpath(p: bytes) -> bool:

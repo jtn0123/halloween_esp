@@ -40,9 +40,13 @@ inline bool safe_name(const std::string &n) {
     return false;
   // Names go out inside /api/files and /api/status JSON. json_escape keeps
   // the parse alive whatever the card holds; this keeps a quote, backslash
-  // or control byte from ever getting ONTO the card through us.
+  // or control byte from ever getting ONTO the card through us. Since v5.46
+  // that includes everything above ASCII: json_escape passes a high byte
+  // through raw, so one lone 0x80 in a name made the whole body invalid
+  // UTF-8 and every Python client of the castle raised instead of parsing
+  // (make publish, the desk's device panel). ASCII names only.
   for (unsigned char c : n)
-    if (c < 0x20 || c == 0x7f || c == '"' || c == '\\') return false;
+    if (c < 0x20 || c >= 0x80 || c == 0x7f || c == '"' || c == '\\') return false;
   return true;
 }
 

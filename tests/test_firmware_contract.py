@@ -1,116 +1,51 @@
 """The emulator held to the firmware — by reading the firmware.
 
 firmware/sd_web.h (+ sd_web_ota.h, sd_web_site.h, sd_web_remote.h,
-sd_web_state.h, sd_web_util.h) is the contract the studio speaks to; tools/castle_emu*.py is the stand-in every
-hardware-free test drives. The two can only be trusted together if a change
-to either is caught here. So these tests PARSE the C at test time — the
-reg() table, every reply_err() string per handler, safe_name's rule,
-query_param's buffer sizes, h_status's JSON keys — and hold the emulator's
-port to what they find. Nothing below is hand-copied from the firmware;
-that is the point.
+sd_web_state.h, sd_web_util.h) is the contract the studio speaks to;
+tools/castle_emu*.py is the stand-in every hardware-free test drives. The
+two can only be trusted together if a change to either is caught here. So
+these tests PARSE the C at test time — the reg() table, every reply_err()
+string per handler, h_status's JSON keys, the validators' constants — and
+hold the emulator's port to what they find, then drive a live emulator for
+the verdicts the source cannot show (routing, 404/405, the OTA leg).
+Nothing below is hand-copied from the firmware; that is the point.
+
+The byte rules underneath the handlers — safe_name, safe_subpath,
+url_decode, name_from_uri, query_param's buffers — are the same discipline
+one header down, and live in tests/test_firmware_names.py. The parsing both
+suites do is tests/firmware_source.py.
 """
 
 from __future__ import annotations
 
 import http.client
 import json
-import random
 import re
 import sys
 import tempfile
 import time
 import unittest
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))  # firmware_source
 
 import castle_emu
 import castle_emu_http
 import castle_emu_wire as wire
-
-FW = ROOT / "firmware"
-SD_WEB = (FW / "sd_web.h").read_text()
-SD_OTA = (FW / "sd_web_ota.h").read_text()
-SD_SITE = (FW / "sd_web_site.h").read_text()
-SD_REMOTE = (FW / "sd_web_remote.h").read_text()
-SD_STATE = (FW / "sd_web_state.h").read_text()
-SD_UTIL = (FW / "sd_web_util.h").read_text()
-EMU_HTTP = (ROOT / "tools" / "castle_emu_http.py").read_text()
-
-#: reply_err strings the emulator has no way to produce: flash, heap and
-#: FAT failures of the real board. Everything else must be mirrored.
-HARDWARE_ONLY = {
-    "no memory",
-    "opendir failed",
-    "no OTA slot",
-    "ota begin failed",
-    "ota end failed",
-    "could not select slot",
-}
-
-
-def c_functions(*sources: str) -> dict[str, str]:
-    """name → body for every `inline <type> name(` at column 0."""
-    out: dict[str, str] = {}
-    pat = re.compile(r"^inline [\w:]+(?: \*)? ?(\w+)\(", re.MULTILINE)
-    for src in sources:
-        hits = list(pat.finditer(src))
-        for i, m in enumerate(hits):
-            end = hits[i + 1].start() if i + 1 < len(hits) else len(src)
-            out[m.group(1)] = src[m.start() : end]
-    return out
-
-
-def reply_errs(body: str) -> set[tuple[int, str]]:
-    return {
-        (int(c), msg)
-        for c, msg in re.findall(r'reply_err\(req, "(\d{3}) [^"]*", "([^"]*)"\)', body)
-    }
-
-
-#: Module-level string constants in the emulator, so a message spelled once
-#: and reused (NO_SD) reads the same to this contract as a bare literal.
-EMU_CONSTS: dict[str, str] = dict(
-    re.findall(r'^([A-Z][A-Z0-9_]*) = "([^"]*)"', EMU_HTTP, re.MULTILINE)
+from firmware_source import (
+    EMU_CONSTS,
+    EMU_HTTP,
+    FUNCS,
+    HARDWARE_ONLY,
+    SD_STATE,
+    SD_WEB,
+    emu_errs,
+    firmware_routes,
+    grab,
+    reply_errs,
 )
-
-
-def emu_errs(handler: str) -> set[tuple[int, str]]:
-    """Every self._err(code, msg) inside one emulator handler method, with a
-    named constant resolved to the string it holds."""
-    m = re.search(rf"    def {handler}\(self.*?(?=\n    def |\Z)", EMU_HTTP, re.DOTALL)
-    assert m, f"emulator has no {handler}"
-    out: set[tuple[int, str]] = set()
-    for code, msg in re.findall(
-        r'self\._err\(\s*(\d{3}),\s*(?:"([^"]*)")\s*\)', m.group(0)
-    ):
-        out.add((int(code), msg))
-    for code, name in re.findall(
-        r"self\._err\(\s*(\d{3}),\s*([A-Z][A-Z0-9_]*)\s*\)", m.group(0)
-    ):
-        assert name in EMU_CONSTS, f"{handler}: unknown constant {name}"
-        out.add((int(code), EMU_CONSTS[name]))
-    return out
-
-
-def firmware_routes() -> list[tuple[str, str, str]]:
-    return [
-        (p, m, h)
-        for p, m, h in re.findall(r'reg\("([^"]+)", HTTP_(\w+), (\w+)\);', SD_WEB)
-    ]
-
-
-FUNCS = c_functions(SD_WEB, SD_OTA, SD_SITE, SD_REMOTE, SD_UTIL)
-
-
-def grab(pattern: str, text: str, group: int = 1) -> str:
-    """One regex capture, or a loud failure naming what the parser expected."""
-    m = re.search(pattern, text)
-    assert m, f"firmware no longer matches /{pattern}/ — update the contract test"
-    return m.group(group)
 
 
 class TestRouteTable(unittest.TestCase):
@@ -156,170 +91,6 @@ class TestErrorStrings(unittest.TestCase):
         ]
         for c, msg in spelled + named:
             self.assertIn((int(c), msg), all_fw)
-
-
-class TestNameRules(unittest.TestCase):
-    """safe_name / safe_subpath / url_decode / query_param, re-derived."""
-
-    def ref_safe_name(self) -> Callable[..., Any]:
-        body = FUNCS["safe_name"]
-        limit = int(grab(r"n\.size\(\) >= (\d+)", body))
-        lead = grab(r"n\[0\] == '(.)'", body).encode()
-        finds = [f.encode() for f in re.findall(r"""n\.find\(["'](.+?)["']\)""", body)]
-        # The per-byte loop: `c < 0x20` and each `c == <literal>`, read off
-        # the C so a new forbidden byte in the firmware fails here first.
-        below = int(grab(r"c < (0x[0-9a-fA-F]+)", body), 16)
-        bad = set()
-        for lit in re.findall(r"c == (0x[0-9a-fA-F]+|'[^']+')", body):
-            bad.add(
-                int(lit, 16)
-                if lit.startswith("0x")
-                else ord(lit[1:-1].encode().decode("unicode_escape"))
-            )
-        self.assertEqual(limit, wire.NAME_MAX)
-        self.assertEqual(bad, {0x7F, ord('"'), ord("\\")})
-        return lambda n: (
-            bool(n)
-            and len(n) < limit
-            and n[:1] != lead
-            and all(f not in n for f in finds)
-            and all(c >= below and c not in bad for c in n)
-        )
-
-    def ref_safe_subpath(self) -> Callable[..., Any]:
-        body = FUNCS["safe_subpath"]
-        limit = int(grab(r"p\.size\(\) > (\d+)", body))
-        leads = [c.encode() for c in re.findall(r"p\[0\] == '(.)'", body)]
-        finds = [f.encode() for f in re.findall(r"""p\.find\(["'](.+?)["']\)""", body)]
-        self.assertEqual(limit, wire.SUBPATH_MAX)
-        return lambda p: (
-            bool(p)
-            and len(p) <= limit
-            and p[:1] not in leads
-            and all(f not in p for f in finds)
-        )
-
-    def corpus(self, seed: int = 7) -> list[bytes]:
-        rng = random.Random(seed)
-        alphabet = b"ab./\\?%+ \x00\xc3\xa9\"'\t\x1f\x7f"
-        out = [
-            b"",
-            b".",
-            b"..",
-            b"a",
-            b"a/b",
-            b"/a",
-            b".a",
-            b"a..b",
-            b"a" * 99,
-            b"a" * 100,
-            b"a" * 140,
-            b"a" * 141,
-            b"\xc3\xa9" * 50,
-            b"\x00",
-            b"a\x00/..",
-            b"..\\x",
-            b"a?b",
-            b'a"b.mp3',
-            b"a\\b.mp3",
-            b"a\tb",
-            b"a\x1fb",
-            b"a\x7fb",
-            b"a b",
-            b"a'b",
-            b"\xc3\xa9.mp3",
-            b"a\x80b",
-        ]
-        out += [
-            bytes(rng.choice(alphabet) for _ in range(rng.randint(0, 150)))
-            for _ in range(1500)
-        ]
-        return out
-
-    def test_safe_name_matches_the_c_rule_byte_for_byte(self) -> None:
-        ref = self.ref_safe_name()
-        for n in self.corpus():
-            self.assertEqual(wire.safe_name(n), ref(n), repr(n))
-
-    def test_safe_subpath_matches_the_c_rule(self) -> None:
-        ref = self.ref_safe_subpath()
-        for p in self.corpus(8):
-            self.assertEqual(wire.safe_subpath(p), ref(p), repr(p))
-
-    def test_safe_name_counts_bytes_not_characters(self) -> None:
-        """60 accented characters are 120 UTF-8 bytes: the board says no."""
-        self.assertFalse(wire.safe_name("é".encode() * 60))
-        self.assertTrue(wire.safe_name("é".encode() * 40))
-
-    def test_safe_name_refuses_what_would_break_the_json(self) -> None:
-        """A quote, a backslash, a control byte or DEL never gets ONTO the
-        card through us: safe_name says no at the door (and since v5.25
-        json_escape keeps the parse alive for names that got there another
-        way). High bytes (UTF-8) and spaces stay welcome."""
-        for bad in (
-            b'a"b.mp3',
-            b"a\\b.mp3",
-            b"a\tb",
-            b"a\nb",
-            b"a\rb",
-            b"\x00",
-            b"ab\x00cd.mp3",
-            b"a\x1fb",
-            b"a\x7fb",
-            b'"',
-            b"\\",
-        ):
-            self.assertFalse(wire.safe_name(bad), repr(bad))
-        for good in (
-            b"a b.mp3",
-            b"a'b.mp3",
-            "é.mp3".encode(),
-            b"a\x80b",
-            b"x-y_z (1).mp3",
-            b"a~b",
-            b"a\xffb",
-        ):
-            self.assertTrue(wire.safe_name(good), repr(good))
-
-    def test_query_param_buffers_are_the_firmwares(self) -> None:
-        body = FUNCS["query_param"]
-        self.assertEqual(int(grab(r"char q\[(\d+)\]", body)), wire.QUERY_BUF)
-        self.assertEqual(int(grab(r"char val\[(\d+)\]", body)), wire.VALUE_BUF)
-        self.assertIn("url_decode(val)", body)  # values ARE decoded
-
-    def test_url_decode_plus_and_bad_hex(self) -> None:
-        """'+' is a space and "%zz" is strtol's 0 — both read off the C."""
-        self.assertIn("'+'", FUNCS["url_decode"])
-        self.assertIn("strtol", FUNCS["url_decode"])
-        self.assertEqual(wire.url_decode(b"a+b%20c"), b"a b c")
-        self.assertEqual(wire.url_decode(b"a%zzb"), b"a\x00b")
-        self.assertEqual(wire.url_decode(b"a%4"), b"a%4")  # needs two chars
-        self.assertEqual(wire.url_decode(b"%4g"), b"\x04")  # leading digit only
-
-    def test_name_from_uri_cuts_at_the_decoded_question_mark(self) -> None:
-        self.assertIn("n.find('?')", FUNCS["name_from_uri"])
-        self.assertEqual(
-            wire.name_from_uri(b"/api/files/a%3Fb.mp3", b"/api/files/"), b"a"
-        )
-        self.assertEqual(
-            wire.name_from_uri(b"/api/files/a.mp3?x=1", b"/api/files/"), b"a.mp3"
-        )
-
-    def test_query_param_semantics(self) -> None:
-        """httpd_query_key_value: case-insensitive key, first '=' wins, a
-        pair without '=' derails the scan, oversize → ""."""
-        self.assertEqual(wire.query_param(b"/api/scene?s=vigil", "s"), b"vigil")
-        self.assertEqual(wire.query_param(b"/api/scene?S=vigil", "s"), b"vigil")
-        self.assertEqual(wire.query_param(b"/api/scene?s=a&s=b", "s"), b"a")
-        self.assertEqual(wire.query_param(b"/api/scene?x&s=vigil", "s"), b"")
-        self.assertEqual(wire.query_param(b"/api/scene?s=vigil&x", "s"), b"vigil")
-        self.assertEqual(wire.query_param(b"/api/scene?s=", "s"), b"")
-        self.assertEqual(wire.query_param(b"/api/scene?", "s"), b"")
-        self.assertEqual(wire.query_param(b"/api/scene?s=" + b"v" * 120, "s"), b"")
-        self.assertEqual(
-            wire.query_param(b"/api/scene?s=" + b"v" * 119, "s"), b"v" * 119
-        )
-        self.assertEqual(wire.query_param(b"/api/scene?s=v&" + b"x" * 197, "s"), b"")
 
 
 class TestValidatorConstants(unittest.TestCase):

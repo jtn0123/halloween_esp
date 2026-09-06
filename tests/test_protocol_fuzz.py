@@ -168,22 +168,39 @@ class TestNulAndOddNames(FuzzCase):
         for n in ("a b.mp3", "cut"):
             (self.card / n).unlink()
 
-    def test_unicode_name_is_measured_in_bytes(self) -> None:
-        ok = "é" * 49 + ".mp3"  # 98 + 4 = 102 bytes → too long
-        self.assertEqual(
-            self.req("PUT", "/api/files/" + ok.encode().decode("latin-1"), body=b"x")[
-                0
-            ],
-            400,
-        )
-        fine = "é" * 40 + ".mp3"  # 84 bytes
-        self.assertEqual(
-            self.req("PUT", "/api/files/" + fine.encode().decode("latin-1"), body=b"x")[
-                0
-            ],
-            200,
-        )
+    def test_name_length_is_measured_in_bytes(self) -> None:
+        """The ceiling is std::string::size(): 99 bytes fit, 100 do not."""
+        fine = "a" * 95 + ".mp3"  # 99 bytes
+        self.assertEqual(self.req("PUT", "/api/files/" + fine, body=b"x")[0], 200)
         (self.card / fine).unlink()
+        over = "a" * 96 + ".mp3"  # 100 bytes
+        self.assertEqual(self.req("PUT", "/api/files/" + over, body=b"x")[0], 400)
+
+    def test_a_high_byte_never_reaches_the_json_it_would_break(self) -> None:
+        """grade report 2026-09-06 J1. Before v5.46 safe_name stopped at
+        0x7f, so a name with a high byte was ACCEPTED: play queued it and
+        /api/status came back as bytes json.loads refuses, which is every
+        Python client of the castle (make publish, the desk's device
+        panel). CI found it as a PUT on ext4, where the file can be
+        created; APFS refuses the same name with a 500, which is why the
+        Mac never saw it. Neither of these needs the file to exist."""
+        for enc in ("%80.mp3", "%C3%A9.mp3", "%E5%90%8D.mp3", "a%FFb.mp3"):
+            code, body, _ = self.req("POST", "/api/play?f=" + enc)
+            self.assertEqual((code, body), (400, b"need ?f=<file>"), enc)
+            code, body, _ = self.req("PUT", "/api/files/" + enc, body=b"x")
+            self.assertEqual((code, body), (400, b"bad filename"), enc)
+            code, body, _ = self.req("DELETE", "/api/files/" + enc)
+            self.assertEqual((code, body), (400, b"bad filename"), enc)
+        # nothing was queued, so the status body is still a JSON document
+        code, body, _ = self.req("GET", "/api/status")
+        self.assertEqual(code, 200)
+        self.assertEqual(json.loads(body)["track"], "")
+        # and the listing holds no name a client cannot decode
+        code, body, _ = self.req("GET", "/api/files")
+        self.assertEqual(code, 200)
+        for entry in json.loads(body):
+            self.assertNotIn("skipped", entry)
+            entry["name"].encode("ascii")
 
 
 if __name__ == "__main__":

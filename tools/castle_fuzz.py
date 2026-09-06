@@ -148,10 +148,18 @@ class Fuzzer:
         raw = name.encode("utf-8").decode("latin-1")  # as the wire sees it
         decoded = wire.name_from_uri(b"/api/files/" + name.encode(), b"/api/files/")
         safe = wire.safe_name(decoded)
-        poisoned = poisoned_text(wire.c_str(decoded))
+        # The door is the whole rule now: a name that would break the JSON
+        # it is printed into must never be accepted (grade report
+        # 2026-09-06 J1 — a lone 0x80 got through and, on a filesystem that
+        # would store it, made /api/files un-parseable for every client).
+        # This used to be dodged by PUTting something else; the dodge was
+        # why the high half was only ever exercised on Linux.
+        if poisoned_text(wire.c_str(decoded)) and safe:
+            raise Violation(
+                f"seed={self.seed} JSON-breaking name accepted by safe_name: "
+                f"{decoded!r}"
+            )
         verb = rng.choice(["PUT", "DELETE", "PLAY", "SD"])
-        if verb == "PUT" and poisoned:
-            verb = "DELETE"
         if verb == "PUT":
             payload = bytes(
                 rng.getrandbits(8) for _ in range(rng.choice([0, 1, 7, 300]))
@@ -166,8 +174,6 @@ class Fuzzer:
                 raise Violation(f"seed={self.seed} DELETE {name!r} → {code} {body!r}")
         elif verb == "PLAY":
             f = wire.query_param(b"/api/play?f=" + name.encode(), "f")
-            if poisoned_text(wire.c_str(f)):
-                return  # would poison the status JSON's "track" (same bug)
             code, _, _ = self.req("POST", "/api/play?f=" + raw)
             want = 200 if wire.safe_name(f) else 400
             if code != want:
@@ -236,12 +242,6 @@ class Fuzzer:
         verb = rng.choice(corpus.VERBS)
         raw = path.encode("utf-8").decode("latin-1")
         handler, err = wire.route(verb, path.encode("utf-8"))
-        if handler == "h_put":
-            decoded = wire.name_from_uri(
-                path.encode(), b"/api/" + path.split("/")[2].encode() + b"/"
-            )
-            if poisoned_text(wire.c_str(decoded)):
-                return  # a 0-byte file with a JSON-breaking name (see POISON)
         code, body, _ = self.req(verb, raw)
         if handler is None and code != err:
             raise Violation(

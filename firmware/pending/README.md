@@ -33,6 +33,19 @@ come-back polling, the confirm reminder) all passed. Flash day is therefore:
 watch that first big upload for the watchdog cadence above, connect once so
 the image is confirmed, then `make publish`.
 
+Applied in v5.46 (2026-09-06, compiled, NOT yet flashed):
+
+- **safe_name refuses every byte >= 0x80** (`sd_web_util.h`). v5.24 closed
+  this outage class for quotes, backslashes and control bytes and left the
+  high half open: `json_escape` passes a high byte through raw, so one file
+  named with a lone 0x80 made `/api/status` and `/api/files` invalid UTF-8
+  and every Python client of the castle raised instead of parsing —
+  `make publish` and the desk's device panel both. Card names are ASCII
+  now; `h_list`'s existing skip-and-count path covers what the Mac wrote
+  onto the card directly, and `h_put` answers 400. Mirrored in
+  `tools/castle_emu_wire.py`; the contract test re-derives the new bound
+  out of the C. Stack-only — zero static RAM. (grade report 2026-09-06 J1)
+
 Applied in v5.45 (2026-09-05, compiled, NOT yet flashed) — and the first
 change here that is not about the board in the yard:
 
@@ -48,7 +61,7 @@ change here that is not about the board in the yard:
   **Nothing here has been on hardware.** Bring-up, when the board exists:
 
   1. Flash over the module's own USB Serial/JTAG (`make upload-s3`) — no
-     adapter, and no BOOT-button dance. Confirm **5.45** on the web page.
+     adapter, and no BOOT-button dance. Confirm **5.46** on the web page.
   2. Watch the boot log on the same USB port. The S2 could never do this;
      it is the first time this firmware has had a console.
   3. Three strips, not one: check tower L, doorway and tower R each light.
