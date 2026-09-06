@@ -89,17 +89,15 @@ USE = {
 }
 CLAIM = {
     "D5": "SD CS",
-    "D6": "SRAM CS",
-    "D9": "eInk CS",
-    "D10": "eInk D/C",
-    "SCK": "wing",
-    "MOSI": "wing",
-    "MISO": "wing",
+    "D10": "button",
+    "SCK": "SD",
+    "MOSI": "SD",
+    "MISO": "SD",
     "A1": "PIR",
     "D13": "red LED",
 }
 
-A(box(FX, FY, FW, FH, "ESP32-S2 Feather", "eInk + SD wing stacked"))
+A(box(FX, FY, FW, FH, "ESP32-S2 Feather", "on the carrier, microSD on SPI"))
 A(
     f'<rect class="usbc" x="{FX + FW / 2 - 26}" y="{FY - 13}" width="52" height="16" rx="5"/>'
     f'<text class="pinsub" x="{FX + FW / 2}" y="{FY - 19}" text-anchor="middle">USB-C</text>'

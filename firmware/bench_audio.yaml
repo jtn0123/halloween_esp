@@ -1,5 +1,5 @@
 # Audio benchmark — the bare Feather, no speakers and no jewels. It DOES need
-# the eInk/SD wing and the show card now: this measured embedded audio until
+# the microSD socket and the show card now: this measured embedded audio until
 # the all-in-flash build was retired (2026-09-01, docs/notes/03-build.md
 # §12.15), and the scene tracks stream off the card since. Run `make publish`
 # first (or put the show card in) or every scene decodes the fallback chirp

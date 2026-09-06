@@ -33,7 +33,8 @@ inline esp_err_t h_ota(httpd_req_t *req) {
 
   // Nothing else may touch the SPI bus or burn CPU while flash is being
   // written — the v5.12 upload watchdogged twice, with audio already
-  // stopped, because the eInk panel picked that moment to refresh.
+  // stopped, because the eInk panel (gone in v5.44) picked that moment to
+  // refresh. The flag also turns the status pixel amber.
   castle_sd::g_quiesce = true;
 
   esp_ota_handle_t ota;
@@ -97,7 +98,7 @@ inline esp_err_t h_ota(httpd_req_t *req) {
   esp_err_t r = reply_json(req, "{\"flashed\":true,\"rebooting\":true}");
   vTaskDelay(pdMS_TO_TICKS(250));
   set_pending(RESTART, "");
-  // Flash is written; the eInk task may move again. The restart is one
+  // Flash is written; the pixel may leave amber. The restart is one
   // pending slot away, and a slot can be overwritten by the next request —
   // a castle that then failed to reboot must not stay frozen as well.
   castle_sd::g_quiesce = false;

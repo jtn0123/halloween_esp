@@ -30,8 +30,9 @@ export const ZONE_ORDER: readonly ZoneId[] = ["towerL", "door", "towerR"];
  * The data pin each zone is wired to, one per zone rather than one chain.
  *
  * towerL keeps GPIO18 because that is what is already soldered; the other two
- * are the pins left free once the eInk FeatherWing has taken D5/D6/D9/D10 and
- * SPI. Separate pins are what make a mixed rig possible at all — see
+ * were the pins left free while the eInk FeatherWing held D5/D6/D9/D10 and
+ * SPI (gone since v5.44; the pins stayed). Separate pins are what make a
+ * mixed rig possible at all — see
  * docs/WIRING.md §1 and §2 for the full budget and why these three.
  */
 export const ZONE_PIN: Record<ZoneId, number> = { towerL: 18, door: 16, towerR: 14 };

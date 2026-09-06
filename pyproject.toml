@@ -53,7 +53,7 @@ warn_unused_ignores = true
 # tools on esphome's transitive deps; missing stubs there are noise, not
 # signal.
 [[tool.mypy.overrides]]
-module = ["scipy.*", "aioesphomeapi.*", "PIL.*", "esphome.*", "segno.*"]
+module = ["scipy.*", "aioesphomeapi.*", "esphome.*"]
 ignore_missing_imports = true
 
 # The strict ratchet (typesafe-migration-plan A3): modules join this list one
@@ -61,7 +61,7 @@ ignore_missing_imports = true
 # per-module-legal half of --strict; warn_redundant_casts is global-only.
 [[tool.mypy.overrides]]
 module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_schema", "rig_layout", "gen_rig", "gen_show",
-    "gen_esphome_audio", "gen_qr", "gen_eink_font",
+    "gen_esphome_audio",
     "import_track", "import_convert", "import_fetch", "import_scene",
     "castle_emu_wire", "castle_emu", "castle_emu_http", "gen_esphome", "gen_previewer",
     "gen_wiring_diagram", "wiring_svg", "fuzz_http",

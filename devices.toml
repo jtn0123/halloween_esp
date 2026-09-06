@@ -16,4 +16,4 @@ host = "10.27.27.247"
 # the safety net until that reservation exists. .238 and .142 were the
 # leases the previous board had; harmless to keep until the new one moves.
 fallbacks = ["10.27.27.238", "10.27.27.142"]
-# The SD-equipped castle on the porch stack: eInk FeatherWing + 32 GB card.
+# The SD-equipped castle on the porch stack: carrier board + 32 GB card.

@@ -46,11 +46,13 @@ static const char *const TAG = "castle_sd";
 
 inline sdmmc_card_t *g_card = nullptr;
 inline bool g_mounted = false;
-/// Raised by the web OTA while it burns flash. Background chores (the eInk
-/// panel) must sit still: flash writes suspend the cache, and any ready task
-/// above the main loop's priority eats the breathing ticks h_ota inserts so
-/// the watchdog stays fed. sd_web_ota.h clears it on every way out of the
-/// handler — failure, and success once the restart is queued.
+/// Raised by the web OTA while it burns flash. Its reader today is the status
+/// pixel (amber while this is set); until v5.44 the eInk panel's task read it
+/// too and sat still, because flash writes suspend the cache and any ready
+/// task above the main loop's priority eats the breathing ticks h_ota inserts
+/// so the watchdog stays fed. Anything that runs beside the main loop again
+/// must honour it. sd_web_ota.h clears it on every way out of the handler —
+/// failure, and success once the restart is queued.
 inline volatile bool g_quiesce = false;
 
 /// Mount the card. Safe to call when no card is present — it logs and returns

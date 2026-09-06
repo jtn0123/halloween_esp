@@ -71,16 +71,14 @@ contend for hardware.
 | USB | — | 5 V to amp, pixels, level shifter |
 | GND | — | common ground |
 
-**Why not D5/D6/D10, which would be the obvious choices?** The 2.13" eInk
-FeatherWing — the thing that carries the microSD slot — hard-wires exactly
-those: SD chip select on D5, SRAM chip select on D6, eInk chip select on D9,
-eInk data/command on D10. Only the first two are cuttable, and putting
-800 kHz NeoPixel data on the SD card's chip select is not a mistake you find
-quickly. D11/D12/D13 are untouched by the wing, and A0–A3 are free.
-
-If you are **not** stacking the wing, those three signals can move back to
-D5/D6/D10 by editing the substitutions at the top of `firmware/castle.yaml` —
-nothing else refers to them.
+**Why not D5/D6/D10, which would be the obvious choices?** History: until
+v5.44 the microSD slot came on a 2.13" eInk FeatherWing, which hard-wires SD
+chip select on D5, SRAM chip select on D6, eInk chip select on D9 and eInk
+data/command on D10 — and putting 800 kHz NeoPixel data on the SD card's
+chip select is not a mistake you find quickly. The wing and its status
+panel are gone (the page does that job now), the carrier board's own card
+socket kept D5, and D6/D10 went to the carrier's 5 V sense and wired button
+instead. The signals stayed where they were soldered.
 
 Put a 1000 µF capacitor across 5 V/GND at the pixels. With 26 pixels the
 worst case (a full-white lightning strike) is ~2 A, so **split the 5 V supply

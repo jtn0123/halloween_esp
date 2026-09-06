@@ -7,7 +7,7 @@ firmware session, recompile, and update tools/castle_emu_wire.py in step
 
 Pending: **v5.42, written and compiled, NOT yet flashed** (2026-08-23 —
 the castle was off the network when the work landed). One OTA covers it:
-`make ota`, then confirm on the panel and re-push the page (`make publish`).
+`make ota`, then confirm the version on the web page and re-push the page (`make publish`).
 
 - sd_web_util.h split out of sd_web.h (helper layer; contract test reads it).
 - /api/status gains `scenes` (the build's ids) — the desk's stale-firmware
@@ -29,9 +29,18 @@ v5.42 list in, plus the channel_colors migration) compiled clean, then
 (lean page, 90 KB gzipped) and `sd_sync ota` (the 1.1 MB image over HTTP,
 come-back polling, the confirm reminder) all passed. Flash day is therefore:
 `make ota` (rebuilds the image — the rehearsal binary lives on the
-512Flash volume and may be stale by then), confirm **5.43** on the panel,
+512Flash volume and may be stale by then), confirm **5.44** on the web page,
 watch that first big upload for the watchdog cadence above, connect once so
 the image is confirmed, then `make publish`.
+
+Applied in v5.44 (2026-09-04, compiled, NOT yet flashed):
+
+- The eInk status panel is gone: castle_eink.h, its font and QR headers
+  and their generators, the two parked chip selects, the "Refresh eInk"
+  button and the OTA quiesce flag that existed only for the panel's task.
+  The carrier board has no wing; the page shows what the panel showed;
+  D6 and D10 are free for the carrier's 5 V sense and wired button.
+  Verify with /api/status (`version` 5.44) — there is no panel to read.
 
 Applied in v5.34 (flashed to the new porch board, 2026-08-22):
 

@@ -1,9 +1,10 @@
 # Wiring the castle: three pixel zones and two speakers
 
 Everything here is for the board this project already runs on — an **Adafruit
-ESP32-S2 Feather** with the **2.13" eInk FeatherWing** (which is what carries
-the microSD slot) already seated on it. That wing has claimed a lot of pins,
-so the pin choices below are not arbitrary; see [Pin budget](#pin-budget).
+ESP32-S2 Feather** on the castle carrier board, which carries the microSD
+socket. The pins were chosen while a 2.13" eInk FeatherWing held the card
+slot (gone since v5.44) and stayed put, so the choices below are not
+arbitrary; see [Pin budget](#pin-budget).
 
 Two claims up front, because they shape the whole build:
 
@@ -24,8 +25,8 @@ Two claims up front, because they shape the whole build:
 
 The rig as declared in `scenes/scenes.yaml` right now: **Jewel 7** in each
 tower, **Ring 12** in the doorway — 26 pixels, all three zones RGBW. Your
-parts box: pixels, two MAX98357A amps, speakers, the Feather with the eInk/SD
-wing, and an SN74AHCT125. That is genuinely enough. Here is what each missing
+parts box: pixels, two MAX98357A amps, speakers, the Feather on its carrier
+with the microSD socket, and an SN74AHCT125. That is genuinely enough. Here is what each missing
 "best practice" part actually does, and why you can start without it:
 
 **The 470 Ω data resistors — skip for now.** They damp the reflection that
@@ -128,11 +129,10 @@ Everything already spoken for on this board:
 
 | GPIO | Silk | Used by |
 |---|---|---|
-| 5 | D5 | microSD chip select (eInk wing) |
-| 6 | D6 | SRAM chip select (eInk wing) |
-| 9 | D9 | eInk chip select |
-| 10 | D10 | eInk data/command |
-| 35 / 36 / 37 | MOSI / SCK / MISO | SPI, shared by eInk + SD |
+| 5 | D5 | microSD chip select |
+| 6 | D6 | carrier 5 V sense divider (v4 board; free on v3.3a) |
+| 10 | D10 | wired button (carrier J12) |
+| 35 / 36 / 37 | MOSI / SCK / MISO | SPI to the microSD |
 | 11 | D11 | I2S BCLK |
 | 12 | D12 | I2S LRCLK |
 | 15 | A3 | I2S DOUT |
