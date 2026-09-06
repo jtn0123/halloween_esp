@@ -1,7 +1,12 @@
 """The Rust studio's scenes group against the Python's — B5 pass 3.
 
-Validation errors must be BYTE-identical (both servers ask
-tools/scene_check.py, so the strings have one home). Splices and removals
+Validation errors are byte-identical with ONE deliberate exception: the
+Rust studio validates scenes natively since docs/RETIREMENT.md phase 2,
+and a block that does not PARSE is now described by castle-core's own
+parser rather than PyYAML's. That sentence is compared by its head, the
+way the malformed-JSON case already was; the rest still have to match to
+the byte, and tests/test_scene_schema_rust.py holds the two rule sets
+together over a corpus. Splices and removals
 are compared as parsed bodies minus the log — the logs carry each
 sandbox's own paths — and then the logs themselves are compared with those
 paths masked. The artifacts are the real proof: after every rebuild the
@@ -74,7 +79,6 @@ class SceneRoutes(StudioPair):
     def test_01_validation_speaks_with_one_voice(self) -> None:
         cases: list[dict[str, object]] = [
             {"id": "x", "yaml": ""},
-            {"id": "x", "yaml": "nonsense: ["},
             {"id": "x", "yaml": tiny("y")},
             {"id": "bad", "yaml": "  - id: bad\n    kind: ambient"},
         ]
@@ -82,6 +86,14 @@ class SceneRoutes(StudioPair):
             a, b = self.post_scene(obj)
             self.assertEqual(a[0], 400, str(obj))
             self.assertEqual(a[2], b[2], str(obj))
+        # The one route where the two no longer agree to the byte: each
+        # parser writes its own complaint after the colon (phase 2).
+        a, b = self.post_scene({"id": "x", "yaml": "nonsense: ["})
+        self.assertEqual(a[0], 400)
+        pa, pb = self.parsed(a), self.parsed(b)
+        assert isinstance(pa, dict) and isinstance(pb, dict)
+        for d in (pa, pb):
+            self.assertTrue(str(d["error"]).startswith("scene is not valid YAML:"))
         a, b = self.both("/studio/scene", "POST", JSON_HDRS, b"{nope")
         self.assertEqual(a[0], 400)
         pa, pb = self.parsed(a), self.parsed(b)

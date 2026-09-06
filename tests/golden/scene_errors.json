@@ -264,7 +264,7 @@
   },
   "yaml_unparseable": {
     "body": {
-      "error": "scene is not valid YAML: while parsing a flow node\nexpected the node content, but found '<stream end>'\n  in \"<unicode string>\", line 1, column 12:\n    nonsense: [\n               ^"
+      "error": "scene is not valid YAML: line 1: unterminated flow collection"
     },
     "content_type": "application/json",
     "request": {

@@ -391,7 +391,7 @@ fn post(app: &Arc<App>, req: &Request) -> Reply {
         // an OTA; rebuild() runs it too when a castle answers.
         let (out, code) = {
             let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
-            ssc::publish_body(app)
+            crate::studio_publish::publish_body(app)
         };
         return Reply::Json(out, code);
     }

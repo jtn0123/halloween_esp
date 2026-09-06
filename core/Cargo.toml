@@ -45,7 +45,7 @@ opt-level = "s"
 lto = true
 strip = true
 
-# All eight, declared rather than autodiscovered: half of them used to
+# All nine, declared rather than autodiscovered: half of them used to
 # exist only because src/bin/ was scanned, so the manifest was not the
 # list of bins and `tools/core_bins.py` named four the file did not
 # (grade report 2026-09-01 A3). Adding a bin means adding a block.
@@ -87,4 +87,9 @@ required-features = ["native"]
 [[bin]]
 name = "netguard_dump"
 path = "src/bin/netguard_dump.rs"
+required-features = ["native"]
+
+[[bin]]
+name = "scene_dump"
+path = "src/bin/scene_dump.rs"
 required-features = ["native"]

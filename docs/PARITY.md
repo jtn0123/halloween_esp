@@ -19,6 +19,7 @@ individual checks say how each one works.
 | The studio's whole HTTP surface (both tables in `docs/API.md`) | `core/src/bin/studio.rs` + `core/src/studio*.rs` (what `make studio` starts since 2026-09-01) · `tools/studio.py` + `studio_*.py` (the reference, and the launcher's fallback where there is no cargo) | `tests/studio_rust_case.py` runs the two servers over twin sandboxes; `tests/test_studio_rust.py` (reads, aliases, relay failures), `test_studio_scenes_rust.py`, `test_studio_media_rust.py`, `test_studio_import_rust.py`, `test_studio_relay_rust.py` compare bodies — and the rebuilt audio and scenes.yaml — byte for byte; the browser suite is the third gate: `make e2e` runs it against the built Rust studio by default (mirroring the launcher; `CASTLE_STUDIO_CMD` pins either server explicitly) — CI runs both axes; and `tests/test_studio_golden.py` holds the Rust studio to `tests/golden/*.json`, the Python studio's recorded answers, which is the half of this row that survives its retirement (below) |
 | `tracks.json` (the provenance manifest, and its flock/atomic-rename protocol) | `tools/manifest.py` · `core/src/manifest.rs` | `tests/studio_rust_case.py` — the two servers' leftover `tracks.json` files are compared byte for byte after the live-analysis and write-back paths run in both |
 | Import URL policy (which hosts yt-dlp may be handed) | `tools/netguard.py` · `core/src/netguard.rs` (the `netguard_dump` bin, `core/src/bin/netguard_dump.rs` — a URL corpus and a DNS table on stdin, one verdict per line out) | `tests/test_netguard_rust.py` drives both over the corpus `tests/test_netguard.py` holds the Python to, DNS mocked from one table on both sides, and compares the **refusal sentences**, not just the verdicts — the desk shows the string |
+| Scene validation (what a scene block may say, and the sentences a refusal shows) | `tools/scene_schema.py` (what `gen_esphome.py` runs before it emits) · `core/src/scene_schema.rs` + `scene_cues.rs`, over the crate's own YAML subset parser `core/src/yaml*.rs` (what the studio runs before it writes) | `tests/test_scene_schema_rust.py` drives both over one corpus — the whole show, the golden refusals, and the shapes `tests/test_scene_schema.py` holds the Python to — through the `scene_dump` bin, comparing the SENTENCES, not just the verdicts; and `tests/golden/scene_errors.json` freezes what the desk shows |
 | Scene render (synth voices, onset detection, reverb, master chain) | `core/` (castle-core `scene_render` — the production renderer since the B3 swap) · `tools/synth*.py` + `tools/analyze.py` behind `render_audio.render_scene_py` (the reference) | `tests/test_scene_render_rust.py` (byte-equal WAV + markers, canonical crc pin), plus the per-layer gates `test_synth_rust`, `test_master_rust`, `test_onsets_rust` |
 
 ## Why
@@ -44,9 +45,9 @@ macOS arm64, Linux aarch64 and Linux x86_64.
 
 ## When one side is going away: the goldens
 
-`tools/studio.py` is retired off-season (after Halloween 2026). Its row above
-is the only one whose *reference* is scheduled for deletion, and a live-twin
-comparison cannot outlive the twin. So the evidence was written down while the
+`tools/studio.py` is retired (docs/RETIREMENT.md). Its row above was the only
+one whose *reference* was scheduled for deletion, and a live-twin comparison
+cannot outlive the twin. So the evidence was written down while the
 Python studio was still trusted: `tools/gen_golden.py` boots it over a
 throwaway sandbox and records the deterministic surface — the castle-less read
 routes, the 404 and 502 shapes, the `/studio/tracks` field shape, and the whole
@@ -56,11 +57,16 @@ alone and diffs; it neither imports nor launches the Python one, so nothing
 about it changes on the day that file is deleted.
 
 The splice refusals are the part worth the trouble. Every string the desk shows
-next to a bad scene block comes today from ONE implementation — `scene_schema`
-behind `studio_scenes.check()`, which the Rust studio reaches by piping through
-`tools/scene_check.py`. When that delegation is finally replaced by a native
-Rust validator, the goldens are what it has to reproduce, sentence for
-sentence, including the ceiling refusal that explains the board's dram0 limit.
+next to a bad scene block used to come from ONE implementation — `scene_schema`
+behind `studio_scenes.check()`, which the Rust studio reached by piping through
+`tools/scene_check.py`. That delegation went with the Python server
+(docs/RETIREMENT.md phase 2): the validator is native now, the goldens are what
+it had to reproduce, and it does — sentence for sentence, ceiling refusal
+included — with ONE entry regenerated on purpose. `yaml_unparseable`'s tail was
+PyYAML's own prose about a stream that ended mid-flow; a parser that is not
+PyYAML writes its own, and the diff in that file is the record of the day
+byte-parity for that route ended. The row above it in the table is what keeps
+the two rule sets together now that nothing compares them at run time.
 
 Adding a case is: edit `tests/golden_corpus.py`, run
 `.venv/bin/python tools/gen_golden.py`, read the diff, commit both. Regenerate

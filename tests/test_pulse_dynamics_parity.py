@@ -206,6 +206,22 @@ class TestVocabularyAgreement(unittest.TestCase):
         self.assertEqual(self.ts_array(self.TS, "PALETTE_NAMES"), list(ev.PALETTE_IDS))
         self.assertEqual(self.ts_array(self.TS, "FLASH_MODES"), list(ev.FLASH_MODE_IDS))
 
+    def test_castle_core_carries_the_same_names_in_the_same_order(self) -> None:
+        """The fifth copy (grade report 2026-09-01 G1's successor: the studio
+        validates scenes in Rust now, so the crate needs the vocabulary the
+        generators and the firmware share). Names AND order — the index is
+        the id the firmware's switch wants."""
+        rust = (ROOT / "core" / "src" / "vocab.rs").read_text()
+
+        def rust_array(name: str) -> list[str]:
+            body = rust.split(f"pub const {name}: [&str; ", 1)[1].split("];", 1)[0]
+            return re.findall(r'"(\w+)"', body)
+
+        self.assertEqual(rust_array("EFFECTS"), list(ev.EFFECT_IDS))
+        self.assertEqual(rust_array("OVERLAYS"), list(ev.OVERLAY_IDS))
+        self.assertEqual(rust_array("PALETTES"), list(ev.PALETTE_IDS))
+        self.assertEqual(rust_array("FLASH_MODES"), list(ev.FLASH_MODE_IDS))
+
     def test_firmware_enums_match_names_and_ids(self) -> None:
         eff = {n.lower(): int(i) for n, i in re.findall(r"EFF_(\w+) = (\d+)", self.CXX)}
         self.assertEqual(eff, ev.EFFECT_IDS)
