@@ -341,7 +341,14 @@ jobs:
       # From the LOCK, wheels only: exact resolved versions (the same set
       # every other gate tested against) and no sdist setup.py execution —
       # the two things Sonar rightly flagged on the unpinned spelling.
-      - run: pip install --only-binary=":all:" -r requirements.lock
+      # One exception, named: crcmod 1.7 (esphome → smpclient → smp) has
+      # never had a wheel on PyPI, only a 2010 sdist, so wheels-only refused
+      # the whole install and this job died here on every run it ever had
+      # (2026-08-31, and the first hand dispatch on 2026-09-06). pip's
+      # format control lets one package back to source while :all: holds
+      # for the rest. The python job installs the same lock without the
+      # flag and builds it fine.
+      - run: pip install --only-binary=":all:" --no-binary crcmod -r requirements.lock
       # Same four lines as the esphome job, for the same reason: render_audio
       # spawns castle-core's scene_render, so this job builds the crate too —
       # it was just doing it on the runner image's rustup, off the pin, with
