@@ -98,7 +98,8 @@ Found and fixed while the gate was unreadable, most of them real:
 - **Five backtracking regexes** (`S5852`) across the studio, the generators
   and two test harnesses.
 - **Log injection** — the request line reached the console verbatim, so a CR
-  in a URL forged a second log entry (`studio_http.scrub`).
+  in a URL forged a second log entry (`studio_http.scrub`, now
+  `core/src/http_parse.rs`'s `scrub`).
 - **Hardcoded credentials** — the two `wifi_password:` literals above.
 - **Bugs** — a sort with no comparator, `.map` handed a callback with an
   index, untyped recorder arrays that made real comparisons read as

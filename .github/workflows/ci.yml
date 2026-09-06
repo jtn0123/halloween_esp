@@ -179,15 +179,10 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # The 148-test browser suite is also the parity gate for the Rust studio:
-    # both servers answer the same 20+19 routes, so the same specs passing
-    # against both IS the proof (grade report 2026-08-31 D5). It had been run against the
-    # Rust half exactly once, by hand. fail-fast off — when one server breaks,
-    # the other axis's result is the most useful thing on the page.
-    strategy:
-      fail-fast: false
-      matrix:
-        studio: [python, rust]
+    # One axis since docs/RETIREMENT.md. This job ran the 148-test browser
+    # suite twice, once per server, because the same specs passing against
+    # both WAS the parity proof (grade report 2026-08-31 D5). There is one
+    # server now, so the second run proved nothing and cost the same.
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -198,8 +193,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      # The e2e suite drives the REAL studio server, whose launch command is
-      # .venv/bin/python — so the venv and its media tools must exist here.
+      # The studio spawns Python children for every render, import and
+      # generator run — so the venv and its media tools must exist here even
+      # though the server itself is a Rust binary.
       - uses: ./.github/actions/media-tools
       - name: studio server venv
         run: |
@@ -234,26 +230,21 @@ jobs:
       # The page-weight budget can only be measured where the page exists,
       # which is here and not in the `python` job — where it had only ever
       # produced a FileNotFoundError (grade report 2026-08-31 D1).
-      - if: matrix.studio == 'python'
-        name: previewer page budget
+
+      - name: previewer page budget
         run: .venv/bin/python -m unittest -q tests.test_previewer_budget.TestPageWeight
-      # Server-independent — once per push, not once per matrix axis.
-      - if: matrix.studio == 'python'
-        run: npx tsc --noEmit
+      - run: npx tsc --noEmit
         working-directory: web
       - name: engine unit tests
-        if: matrix.studio == 'python'
         run: npm test
         working-directory: web
       - name: browser tests
-        # Named for both axes rather than defaulted, because playwright.config
-        # falls back with `??`: an empty CASTLE_STUDIO_CMD is not absent, it is
-        # a server command of "". The paths are relative to web/, the config's
-        # own directory, and the port and --localhost are appended there.
+        # Named rather than defaulted, because playwright.config falls back
+        # with `??`: an empty CASTLE_STUDIO_CMD is not absent, it is a server
+        # command of "". The path is relative to web/, the config's own
+        # directory, and the port and --localhost are appended there.
         env:
-          CASTLE_STUDIO_CMD: ${{ matrix.studio == 'rust'
-            && '../core/target/release/studio'
-            || '../.venv/bin/python ../tools/studio.py' }}
+          CASTLE_STUDIO_CMD: ../core/target/release/studio
         run: |
           npx playwright install --with-deps chromium
           npx playwright test

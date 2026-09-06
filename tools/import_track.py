@@ -39,13 +39,10 @@ from import_fetch import is_web_url as is_web_url
 from import_scene import FRAME as FRAME
 from import_scene import fit_to_density as fit_to_density
 from import_scene import scene_block as scene_block
-from studio_tracks import AUDIO_EXT
+from track_lib import AUDIO_EXT
+from track_lib import TRACKS as TRACKS  # re-exported: the CLI tests patch it here
 
 ROOT = Path(__file__).resolve().parent.parent
-# CASTLE_TRACKS is the whole sandbox story (see playwright.config.ts): the
-# studio honored it but this subprocess wrote to the real tracks/ anyway —
-# an e2e import quietly landed files in (or over!) the user's library.
-TRACKS = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks"))
 BITRATE = 96  # matches hardware.audio.bitrate in scenes.yaml
 BUDGET = 2.9 * 1024 * 1024
 SR = 44100  # the analysis rate — analyze.SR, which the crate fixes too

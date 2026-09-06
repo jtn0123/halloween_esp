@@ -21,9 +21,9 @@ file is the one that governs.
 - `core/` — castle-core, the repo's Rust crate (zero dependencies, one
   `Cargo.lock` with nothing in it). Nine bins under `core/src/bin/`:
   `scene_render` (the production renderer — `tools/render_audio.py` spawns
-  it), `analyze_track` (the importer's onsets/beats), `studio` (the server
-  `make studio` runs since 2026-09-01, with `tools/studio.py` as the fallback
-  and the parity reference), `castle`, and the five parity dumps
+  it), `analyze_track` (the importer's onsets/beats), `studio` (THE server behind
+  the desk — the Python one retired 2026-09-06, docs/RETIREMENT.md),
+  `castle`, and the five parity dumps
   `parity_dump` / `synth_dump` /
   `pulse_dump` / `netguard_dump` (the SSRF guard's corpus face) /
   `scene_dump` (the scene validator's).
@@ -36,15 +36,17 @@ file is the one that governs.
   cross-language gates are `tests/test_*_rust.py` and
   `tests/studio_rust_case.py`; the copies they hold are listed in
   `docs/PARITY.md`.
-- `tools/studio.py` — the local server behind the desk on 127.0.0.1:8765:
-  imports tracks (`tools/import_track.py`), serves waveforms, edits
-  scenes.yaml under `/studio/*`, relays `/api/*` to the castle
-  (`tools/castle_link.py`). Route table: `docs/API.md`. It is no longer what
-  starts by default — `tools/studio_launch.sh` (behind `make studio` and
-  `.claude/launch.json`) builds and execs the Rust twin when cargo is
-  present and falls back here, with a printed reason, when it is not. The
-  Python stays the reference the parity gates measure against, and
-  `CASTLE_STUDIO=python` picks it deliberately.
+- `tools/studio_launch.sh` — what `make studio` and `.claude/launch.json`
+  start: it builds `core/target/release/studio` when cargo is present and
+  execs it, and refuses with a printed reason when there is neither cargo
+  nor a build. The server itself is castle-core's `studio` bin on
+  127.0.0.1:8765 — it imports tracks, serves waveforms, edits scenes.yaml
+  under `/studio/*` and relays `/api/*` to the castle, spawning the Python
+  toolchain (`import_track.py`, the generators, `sd_sync.py`) for the work
+  that stayed Python. Route table: `docs/API.md`. There was a second,
+  Python server (`tools/studio.py` and its `studio_*.py`) until 2026-09-06;
+  `docs/RETIREMENT.md` is the plan that removed it and the tag
+  `python-studio-final` is the last tree that carries it.
 - `firmware/` — ESPHome YAML + C++ headers. `castle_sd.yaml` is THE build:
   scene audio streams off the microSD card and its web API (`sd_web.h`) is
   what the desk talks to. There was a second, all-in-flash build until
@@ -86,8 +88,8 @@ file is the one that governs.
 gate has one definition) · `bench*` (bare-board dry runs) · `sd-build` /
 `sd-upload` (kept as aliases of `build` / `upload` — there is one castle
 build now) · `publish` (scene tracks + lean page → the castle) · `ota`
-(build, stop audio, flash). `studio` runs `tools/studio_launch.sh`: the Rust server, the
-Python one as the fallback. The studio's rebuild publishes on its own when a
+(build, stop audio, flash). `studio` runs `tools/studio_launch.sh`, which builds the
+binary before it execs it. The studio's rebuild publishes on its own when a
 castle answers; `docs/RUNBOOK.md` is the operator's end-to-end view.
 
 Run Python through `.venv/bin/python` (the Makefile falls back to `python3`
@@ -103,8 +105,9 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   exempt as *data* (`DATA_EXEMPT`) and pays for it with the budget that
   actually binds it — **at most 12 scenes**, counted and failed by the same
   check (`SCENE_LIMIT`). The desk refuses the thirteenth too, at splice time
-  and before the file is touched (`studio_scenes.check()`, which the Rust
-  studio asks through `tools/scene_check.py`) — the ceiling should not be
+  and before the file is touched (`core/src/studio_check.rs`, whose count
+  and refusal are the studio's own since the phase-2 port) — the ceiling
+  should not be
   discovered by a red pre-commit hook after the show is already edited.
   Nothing hand-written is exempt.
 - **Every grade-report citation names its audit**: `grade report 2026-08-31
@@ -133,32 +136,26 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   unset both and the target is the repo. It is the fourth name in
   `tests/helpers.SANDBOX_ENV`, cleared before any tools module reads it, so
   an emulator shell that exported these knobs cannot redden `make test`.
-- `CASTLE_STUDIO=rust|python` forces one of the two servers in
-  `tools/studio_launch.sh` (`make studio`, `.claude/launch.json`). Unset is
-  "Rust if cargo or a built binary is here, else Python with a printed
-  reason"; `rust` refuses rather than falling back, which is how the flip is
-  tested. It does not reach the e2e suite — that is `CASTLE_STUDIO_CMD`.
-- `CASTLE_STUDIO_CMD=<command>` swaps the SERVER the e2e suite runs against.
-  Unset, `web/playwright.config.ts` mirrors the launcher since 2026-09-01:
-  the built `core/target/release/studio` when it exists (and `make e2e`
-  rebuilds it first when cargo is present), `tools/studio.py` otherwise —
-  so the default local run tests what production runs. Set it to pin one:
-  `CASTLE_STUDIO_CMD="../.venv/bin/python ../tools/studio.py"` for the
-  Python reference. The port and `--localhost` are appended by the config,
-  whose fall-back is `??`, so an EMPTY value is not "absent" — it is a
-  server command of `""` and the suite fails to start. CI names it on both
-  matrix axes for that reason.
+- `CASTLE_STUDIO_CMD=<command>` swaps the SERVER the e2e suite runs
+  against — the escape hatch for bisecting against an older build. Unset,
+  `web/playwright.config.ts` runs `core/target/release/studio`, which
+  `make e2e` rebuilds first when cargo is present, so the default local run
+  tests what production runs. The port and `--localhost` are appended by the
+  config, whose fall-back is `??`, so an EMPTY value is not "absent" — it is
+  a server command of `""` and the suite fails to start. CI names it
+  explicitly for that reason. (`CASTLE_STUDIO=rust|python` chose between the
+  two servers until 2026-09-06; there is one, so it is gone.)
 - `CASTLE_PY=<interpreter>` names the python the studio's children run
-  under. The Python studio has `sys.executable` and never needs it; the
-  Rust studio bin has no such self-knowledge and asks `CASTLE_PY` first,
-  then `.venv/bin/python`, then bare `python3` (`core/src/studio_scenes.rs`
-  `py()`/`check_py()`). Set it from a worktree or a CI checkout that shares
+  under. The studio bin has no `sys.executable` to fall back on and asks
+  `CASTLE_PY` first, then `.venv/bin/python`, then bare `python3`
+  (`core/src/studio_proc.rs` `py()`/`check_py()`). Set it from a worktree
+  or a CI checkout that shares
   another tree's venv — otherwise the rebuild finds a system python with no
   yaml and every child fails confusingly. `web/playwright.config.ts` honours
   it for the same reason.
-- `tests/studio_case.py` and `web/playwright.config.ts` set the first three.
+- `tests/studio_rs_case.py` and `web/playwright.config.ts` set them.
 - Hardware-free castle: `.venv/bin/python tools/castle_emu.py 8093`, then
-  `CASTLE_HOST=127.0.0.1:8093 .venv/bin/python tools/studio.py 8766 --localhost`
+  `CASTLE_HOST=127.0.0.1:8093 tools/studio_launch.sh 8766 --localhost`
   gives the full desk→studio→castle chain. The emulator is a byte-level port
   of `sd_web.h` (`tools/castle_emu_wire.py`); `tests/test_firmware_contract.py`
   parses the C and fails if the two drift — change both in one commit.

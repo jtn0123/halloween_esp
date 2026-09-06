@@ -27,12 +27,12 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # studio_case
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # helpers
 
 import castle_emu
 import castle_emu_wire as wire
 import castle_link
-from studio_case import HostEnv
+from helpers import HostEnv
 
 
 def _wait(cond: Callable[[], object], timeout_s: float = 2.0) -> bool:

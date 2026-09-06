@@ -7,6 +7,15 @@ a subprocess with no timeout, a splice that corrupted the show. (The audit
 that found them predates the reports kept in `.claude/`, so there is no item
 to cite — the list above is the citation.) If one starts failing, the hole
 is open again.
+
+Two thirds of it moved when the Python studio retired
+(docs/RETIREMENT.md): the id sanitiser is
+`core/src/studio_import.rs`'s and is tested there, and the server-side
+guards — a traversal id on refresh, import and compare, a scene write that
+does not parse or lies about its own id — are
+`tests/test_studio_import_rs.py`, `tests/test_studio_media_rs.py` and
+`tests/golden/scene_errors.json`. What is left is the manifest's own
+crash-safety, which was never the server's.
 """
 
 from __future__ import annotations
@@ -25,67 +34,6 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import manifest as mf
-import studio
-from studio_case import ServerCase
-
-
-class TestIdGuards(unittest.TestCase):
-    """E1: the write-side id sanitiser."""
-
-    def test_safe_ids_pass(self) -> None:
-        for tid in ("chant", "organ_loop", "a1_b2_c3"):
-            self.assertEqual(studio.safe_id(tid), tid)
-
-    def test_traversal_and_junk_die(self) -> None:
-        for tid in (
-            "../../audio/01_vigil",
-            "a/b",
-            "a\\b",
-            "a.b",
-            "",
-            "  ",
-            "x;rm -rf",
-            "a b",
-        ):
-            self.assertIsNone(studio.safe_id(tid), tid)
-
-
-class TestServerGuards(ServerCase):
-    """The HTTP boundary refuses what the sanitiser refuses."""
-
-    def test_refresh_rejects_a_traversal_id(self) -> None:
-        code, out = self.post_json("/api/refresh", {"id": "../../audio/01_vigil"})
-        self.assertEqual(code, 400)
-        self.assertIn("error", out)
-
-    def test_import_rejects_a_traversal_id(self) -> None:
-        code, out = self.post_json(
-            "/api/import", {"url": "https://example.com/x", "id": "../evil"}
-        )
-        self.assertEqual(code, 400)
-        self.assertIn("error", out)
-
-    def test_compare_strips_a_traversal_id_to_nothing(self) -> None:
-        """E2: '../../<real file elsewhere>' must NOT resolve and stream."""
-        code, out = self.post_json("/api/compare", {"id": "../../audio/01_vigil"})
-        self.assertEqual(code, 404)
-        self.assertEqual(out.get("error"), "no such track")
-
-    def test_scene_write_refuses_invalid_yaml(self) -> None:
-        """B4: a block that does not parse must never reach the file."""
-        code, out = self.post_json(
-            "/api/scene", {"id": "x", "yaml": "  - id: x\n   broken: ["}
-        )
-        self.assertEqual(code, 400)
-        self.assertIn("YAML", out["error"])
-
-    def test_scene_write_refuses_a_lying_id(self) -> None:
-        """B4: the block must be the one scene it claims to be."""
-        code, out = self.post_json(
-            "/api/scene", {"id": "x", "yaml": "  - id: y\n    name: n"}
-        )
-        self.assertEqual(code, 400)
-        self.assertIn("expected exactly one scene", out["error"])
 
 
 class TestManifestSafety(unittest.TestCase):

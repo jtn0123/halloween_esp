@@ -1,19 +1,17 @@
-"""The Rust studio against the recorded answers — the parity that outlives
-the Python one.
+"""The studio against the recorded answers — the parity that outlived the
+Python one.
 
-`tests/test_studio*_rust.py` compare two LIVE servers; when `tools/studio.py`
-is retired off-season (after Halloween 2026) those comparisons have no second
-side left. This suite has no second side to lose: it boots ONLY castle-core's
-`studio` bin and holds it against `tests/golden/*.json`, captured from the
-Python studio while that was still the reference
-(`tools/gen_golden.py`). Nothing here imports or launches the Python studio,
-and nothing here may start doing so — that is the entire point.
+`tests/test_studio*_rust.py` compared two LIVE servers; `tools/studio.py`
+retired (docs/RETIREMENT.md) and those comparisons lost their second side.
+This suite never had one to lose: it boots ONLY castle-core's `studio` bin
+and holds it against `tests/golden/*.json`, captured from the Python studio
+while that was still the reference (`tools/gen_golden.py`, which records
+from the one server there is now).
 
 What it guards, in order of what it would cost to lose: the splice-refusal
-strings (the desk's UX contract, and today the product of ONE Python
-implementation the Rust studio reaches through `tools/scene_check.py` — these
-goldens are the spec a native Rust validator would be written against), then
-the castle-less read surface and the shapes of its 404s.
+strings (the desk's UX contract — these goldens are the spec the native Rust
+validator was written against), then the castle-less read surface and the
+shapes of its 404s.
 
 Skipped, not failed, without cargo — except in CI. The corpus, the sandbox
 and the normalisation all live in golden_case.py.
@@ -62,9 +60,9 @@ class GoldenReplay(unittest.TestCase):
         cls.proc = None
         box = gc.Sandbox(cls.tmp)
         box.seed()
-        # The operator's own exported knobs must not reach the child; the
-        # Rust studio's own children (tools/scene_check.py) still need
-        # CASTLE_PY, which is not one of the four (CLAUDE.md).
+        # The operator's own exported knobs must not reach the child;
+        # CASTLE_PY, which the studio's children need, is not one of the
+        # four and survives (CLAUDE.md).
         env = {k: v for k, v in os.environ.items() if k not in SANDBOX_ENV}
         cls.proc, port = gc.launch([str(BIN)], box, env)
         cls.read = gc.capture_read(port)

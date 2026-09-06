@@ -31,11 +31,8 @@ pub fn probe(url: &str) -> (Json, bool) {
             false,
         )
     };
-    if !which("yt-dlp") {
-        return fail("yt-dlp is not installed (brew install yt-dlp)".into());
-    }
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        return fail("that does not look like a link".into());
+    if let Some(why) = preflight(url, which("yt-dlp")) {
+        return fail(why);
     }
     let mut cmd = std::process::Command::new("yt-dlp");
     cmd.args(["--dump-json", "--no-playlist", "--no-warnings", url]);
@@ -44,17 +41,41 @@ pub fn probe(url: &str) -> (Json, bool) {
         Timed::Done(ok, out, err) => (ok, out, err),
     };
     if !ok {
-        // yt-dlp's own message is usually the useful one — its last line.
-        let tail = err
-            .lines()
-            .rev()
-            .find(|l| !l.trim().is_empty())
-            .unwrap_or("could not read that link");
-        return fail(tail.to_string());
+        return fail(tail_line(&err));
     }
-    let first = out.lines().next().unwrap_or("");
+    match describe(out.lines().next().unwrap_or("")) {
+        Some(answer) => (answer, true),
+        None => fail("could not parse what came back".into()),
+    }
+}
+
+/// The refusals probe can give before it spawns anything — the two the
+/// desk can reach without a network, and the two the studio's HTTP tests
+/// assert on (docs/RETIREMENT.md's port of tests/test_media_failures.py).
+fn preflight(url: &str, have_ytdlp: bool) -> Option<String> {
+    if !have_ytdlp {
+        return Some("yt-dlp is not installed (brew install yt-dlp)".into());
+    }
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Some("that does not look like a link".into());
+    }
+    None
+}
+
+/// yt-dlp's own message is usually the useful one — its last line.
+fn tail_line(err: &str) -> String {
+    err.lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("could not read that link")
+        .to_string()
+}
+
+/// What the desk shows about a link, from yt-dlp's `--dump-json` line.
+/// None when that line is not JSON at all.
+fn describe(first: &str) -> Option<Json> {
     let Ok(d) = jsonio::parse(first) else {
-        return fail("could not parse what came back".into());
+        return None;
     };
     let s = |k: &str| d.str_or(k, "");
     let dur = d
@@ -68,34 +89,31 @@ pub fn probe(url: &str) -> (Json, bool) {
         s("uploader")
     };
     let live = matches!(d.get("is_live"), Some(Json::Bool(true)));
-    (
-        Json::Obj(vec![
-            ("ok".into(), Json::Bool(true)),
-            ("title".into(), Json::Str(s("title"))),
-            ("uploader".into(), Json::Str(uploader)),
-            ("duration".into(), dur.clone().unwrap_or(Json::Int(0))),
-            (
-                "duration_text".into(),
-                Json::Str(if dur.is_some() {
-                    format!("{}:{:02}", dur_secs / 60, dur_secs % 60)
-                } else {
-                    "?".to_string()
-                }),
-            ),
-            ("thumbnail".into(), Json::Str(s("thumbnail"))),
-            ("is_live".into(), Json::Bool(live)),
-            ("extractor".into(), Json::Str(s("extractor_key"))),
-            (
-                "warning".into(),
-                Json::Str(if live {
-                    "this is a live stream — it has no end to trim from".to_string()
-                } else {
-                    String::new()
-                }),
-            ),
-        ]),
-        true,
-    )
+    Some(Json::Obj(vec![
+        ("ok".into(), Json::Bool(true)),
+        ("title".into(), Json::Str(s("title"))),
+        ("uploader".into(), Json::Str(uploader)),
+        ("duration".into(), dur.clone().unwrap_or(Json::Int(0))),
+        (
+            "duration_text".into(),
+            Json::Str(if dur.is_some() {
+                format!("{}:{:02}", dur_secs / 60, dur_secs % 60)
+            } else {
+                "?".to_string()
+            }),
+        ),
+        ("thumbnail".into(), Json::Str(s("thumbnail"))),
+        ("is_live".into(), Json::Bool(live)),
+        ("extractor".into(), Json::Str(s("extractor_key"))),
+        (
+            "warning".into(),
+            Json::Str(if live {
+                "this is a live stream — it has no end to trim from".to_string()
+            } else {
+                String::new()
+            }),
+        ),
+    ]))
 }
 
 /// float(req.get(k) or default) — the compare route's coercion.
@@ -285,6 +303,72 @@ fn shim(py: &str, root: &Path, payload: &str) -> Option<Json> {
 
 #[cfg(test)]
 mod tests {
+
+    /// The two refusals the desk can reach without a network — and the
+    /// order they are asked in, which is why a `ftp://` link on a machine
+    /// with no yt-dlp complains about yt-dlp first.
+    #[test]
+    fn the_refusals_that_come_before_anything_is_spawned() {
+        assert_eq!(
+            preflight("https://example.test/a", false).as_deref(),
+            Some("yt-dlp is not installed (brew install yt-dlp)")
+        );
+        assert_eq!(
+            preflight("ftp://example.test/a", true).as_deref(),
+            Some("that does not look like a link")
+        );
+        assert_eq!(
+            preflight("not a url", true).as_deref(),
+            Some("that does not look like a link")
+        );
+        assert_eq!(
+            preflight("", true).as_deref(),
+            Some("that does not look like a link")
+        );
+        assert_eq!(preflight("https://example.test/a", true), None);
+        assert_eq!(preflight("http://example.test/a", true), None);
+    }
+
+    /// A failed probe shows yt-dlp's own last word, not a wall of shell —
+    /// and never an empty string, which reads as "it worked".
+    #[test]
+    fn a_failed_probe_carries_yt_dlps_last_line() {
+        assert_eq!(
+            tail_line("warn\nERROR: Private video"),
+            "ERROR: Private video"
+        );
+        assert_eq!(tail_line("ERROR: gone\n\n   \n"), "ERROR: gone");
+        assert_eq!(tail_line(""), "could not read that link");
+        assert_eq!(tail_line("   \n\n"), "could not read that link");
+    }
+
+    /// The answer the panel draws, from yt-dlp's --dump-json line: a
+    /// duration spelled the way a person reads one, a channel from
+    /// whichever field carried it, and a live stream saying so.
+    #[test]
+    fn the_link_is_described_the_way_the_panel_shows_it() {
+        let d = describe(r#"{"title":"T","duration":125}"#).expect("json");
+        assert_eq!(d.get("duration_text").and_then(Json::as_str), Some("2:05"));
+        assert_eq!(d.get("title").and_then(Json::as_str), Some("T"));
+        assert_eq!(d.get("ok"), Some(&Json::Bool(true)));
+        // No duration at all is "?" rather than 0:00, which would be a lie
+        // a person could act on.
+        let d = describe(r#"{"title":"T","channel":"C","is_live":true}"#).expect("json");
+        assert_eq!(d.get("duration_text").and_then(Json::as_str), Some("?"));
+        assert_eq!(d.get("uploader").and_then(Json::as_str), Some("C"));
+        assert!(
+            d.get("warning")
+                .and_then(Json::as_str)
+                .is_some_and(|w| w.contains("live stream"))
+        );
+        // An hour-long track is not "63:20".
+        let d = describe(r#"{"duration":3800}"#).expect("json");
+        assert_eq!(d.get("duration_text").and_then(Json::as_str), Some("63:20"));
+        // And a line that is not JSON is not an answer.
+        assert_eq!(describe("not json"), None);
+        assert_eq!(describe(""), None);
+    }
+
     use super::*;
 
     fn req(pairs: Vec<(&str, Json)>) -> Json {

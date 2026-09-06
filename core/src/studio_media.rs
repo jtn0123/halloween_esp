@@ -3,31 +3,23 @@
 //! the crate's bit-exact decode/analysis so the JSON matches the Python's
 //! byte for byte. The subprocess-driven halves (probe, compare encodes,
 //! the Demucs split itself) arrive with the jobs and publish passes.
+//!
+//! The floor under the waveform — one decode per (file, mtime, buckets),
+//! shared by every sensitivity — is `studio_wave`. This module is the
+//! answer: what the knob changes, and what the desk gets back.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::jsonio::{self, Json, obj_update};
+use crate::onsets;
 use crate::scene::round3;
 use crate::studio_tracks::AUDIO_EXT;
-use crate::{atmos, media, onsets};
+use crate::studio_wave::{Decoded, decoded, mtime_ns};
 
 pub const PEAKS: usize = 1000;
 const SR: f64 = 44100.0;
 const KEEP_WAVES: usize = 32;
-/// The decode cache's budget, in FLOATS, not entries — studio_media.py's
-/// KEEP_SAMPLES, the same number for the same reason. An entry is a whole
-/// song in f64: the mono buffer plus both stereo channels, three buffers
-/// of 8 bytes a frame, ~318 MB for five minutes. Bounding eight of THOSE
-/// was bounding 2.5 GB. 50M floats × 8 bytes ≈ 400 MB (grade report 2026-08-31 B3).
-/// The newest entry is never evicted, however big it is — dropping it the
-/// instant it was built would re-decode for the next sensitivity nudge.
-const KEEP_SAMPLES: usize = 50_000_000;
-
-/// CPython's round(v, 4), the way round3 already is: format and parse.
-fn round4(v: f64) -> f64 {
-    format!("{v:.4}").parse().unwrap_or(v)
-}
 
 /// studio_tracks.parse_sensitivity — `?sensitivity=` plus any per-band
 /// `?sens_low=` overrides, as [low, mid, high] in BANDS order (a band the
@@ -50,170 +42,6 @@ pub fn parse_sensitivity(q: &[(String, String)]) -> [f64; 3] {
         }
     }
     out
-}
-
-/// One track, decoded once — what every sensitivity shares (Decoded).
-struct Decoded {
-    x: Vec<f64>,
-    stereo: Option<(Vec<f64>, Vec<f64>)>,
-    peaks: Vec<f64>,
-    env: Vec<(f64, f64)>,
-}
-
-fn build_decoded(path: &Path, buckets: usize) -> Option<Decoded> {
-    let x = media::load_audio(path.to_str()?)?;
-    if x.is_empty() {
-        return Some(Decoded {
-            x,
-            stereo: None,
-            peaks: Vec::new(),
-            env: Vec::new(),
-        });
-    }
-    let n = buckets.min(x.len());
-    // np.linspace(0, len, n+1).astype(int): abs-max per bucket, normalised.
-    let e = atmos::edges(x.len(), n);
-    let mut peaks: Vec<f64> = e
-        .windows(2)
-        .map(|w| {
-            if w[1] > w[0] {
-                x[w[0]..w[1]].iter().fold(0.0f64, |a, v| a.max(v.abs()))
-            } else {
-                0.0
-            }
-        })
-        .collect();
-    let top = peaks.iter().fold(0.0f64, |a, v| a.max(*v));
-    let top = if top == 0.0 { 1.0 } else { top };
-    for p in &mut peaks {
-        *p = round4(*p / top);
-    }
-    let stereo = media::load_stereo(path.to_str()?);
-    let env_pts = onsets::envelope(&x, &[("onset_full", 20.0, 16000.0, 0.0)]);
-    let env: Vec<(f64, f64)> = env_pts
-        .iter()
-        .find(|(name, _)| name == "level_full")
-        .map(|(_, pts)| pts.iter().map(|(t, v)| (round3(*t), *v)).collect())
-        .unwrap_or_default();
-    Some(Decoded {
-        x,
-        stereo,
-        peaks,
-        env,
-    })
-}
-
-fn mtime_ns(path: &Path) -> Option<u128> {
-    std::fs::metadata(path)
-        .ok()?
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()
-        .map(|d| d.as_nanos())
-}
-
-type DecKey = (String, u128, usize);
-
-/// The cache and the set of keys currently being decoded, under one lock:
-/// a thread that finds neither an entry nor a marker does the work, and a
-/// thread that finds a marker waits for that answer instead of starting a
-/// second decode of the same track (the Python's _DEC_INFLIGHT).
-struct DecState {
-    cache: Vec<(DecKey, Arc<Decoded>)>,
-    busy: Vec<DecKey>,
-}
-
-fn decoded_cache() -> &'static (Mutex<DecState>, Condvar) {
-    static C: OnceLock<(Mutex<DecState>, Condvar)> = OnceLock::new();
-    C.get_or_init(|| {
-        (
-            Mutex::new(DecState {
-                cache: Vec::new(),
-                busy: Vec::new(),
-            }),
-            Condvar::new(),
-        )
-    })
-}
-
-/// Every float this entry holds — mono plus, when the track was read in
-/// stereo, both channels. studio_media._samples counts the same three.
-fn samples(d: &Decoded) -> usize {
-    d.x.len() + d.stereo.as_ref().map_or(0, |(l, r)| l.len() + r.len())
-}
-
-/// The in-flight marker, held by the thread doing the decode and given
-/// back on the way out — returned, failed, or PANICKED.
-///
-/// The Python twin puts the same two lines in a `finally`. Here the
-/// cleanup used to sit on the success path only, so a panic inside
-/// `build_decoded` (which now unwinds to a clean 500 rather than aborting
-/// the process) left the key marked busy forever: every later request for
-/// that track waited on a condvar nobody would ever notify, one pinned
-/// thread each. A guard says it once, for every way out (grade report
-/// 2026-09-01 E1).
-struct Busy(DecKey);
-
-impl Busy {
-    /// Claim the key — the caller has already checked nobody else holds it.
-    fn claim(st: &mut DecState, key: DecKey) -> Busy {
-        st.busy.push(key.clone());
-        Busy(key)
-    }
-}
-
-impl Drop for Busy {
-    fn drop(&mut self) {
-        let (lock, cv) = decoded_cache();
-        let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(at) = st.busy.iter().position(|k| *k == self.0) {
-            st.busy.remove(at);
-        }
-        drop(st);
-        // A failed decode wakes the waiters with neither entry nor marker,
-        // and one of them takes the work — the same shape as the Python.
-        cv.notify_all();
-    }
-}
-
-fn decoded(path: &Path, buckets: usize) -> Option<Arc<Decoded>> {
-    let key = (
-        path.to_string_lossy().into_owned(),
-        mtime_ns(path)?,
-        buckets,
-    );
-    let (lock, cv) = decoded_cache();
-    let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
-    let marker = loop {
-        if let Some(at) = st.cache.iter().position(|(k, _)| *k == key) {
-            let hit = st.cache.remove(at);
-            let out = Arc::clone(&hit.1);
-            st.cache.push(hit);
-            return Some(out);
-        }
-        if !st.busy.contains(&key) {
-            break Busy::claim(&mut st, key.clone());
-        }
-        st = cv.wait(st).unwrap_or_else(|e| e.into_inner());
-    };
-    drop(st);
-    // The decode itself runs outside the lock — it is most of a second.
-    let built = build_decoded(path, buckets).map(Arc::new);
-    let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(dec) = &built {
-        st.cache.push((key, Arc::clone(dec)));
-        let mut total: usize = st.cache.iter().map(|(_, d)| samples(d)).sum();
-        while total > KEEP_SAMPLES && st.cache.len() > 1 {
-            let (_, gone) = st.cache.remove(0);
-            total -= samples(&gone);
-        }
-    }
-    // The entry has to be in the cache before the marker comes off, or a
-    // woken waiter finds neither and decodes the same track again.
-    drop(st);
-    drop(marker);
-    built
 }
 
 type WaveKey = (String, u128, String, usize);
@@ -269,6 +97,8 @@ fn waveform_of(id: &str, dec: &Decoded, sens: [f64; 3]) -> Json {
             ("onsets".into(), Json::obj()),
         ]);
     }
+    #[cfg(test)]
+    crate::testkit::note("analyze", id);
     let stereo = dec
         .stereo
         .as_ref()
@@ -404,69 +234,178 @@ pub fn compare_file(token: &str, codec: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::mpsc;
-    use std::time::{Duration, Instant};
+    use crate::studio_wave::{decoded_of, seed};
+    use crate::testkit;
 
-    fn busy_holds(key: &DecKey) -> bool {
-        let (lock, _) = decoded_cache();
-        let st = lock.lock().unwrap_or_else(|e| e.into_inner());
-        st.busy.contains(key)
+    // Far enough apart that this fixture's onsets really do differ: at 0.4
+    // the hats' shoulders pass the threshold, at 2.5 only the kicks do.
+    const SOFT: [f64; 3] = [0.4, 0.4, 0.4];
+    const LOUD: [f64; 3] = [2.5, 2.5, 2.5];
+    const BAND: [f64; 3] = [0.9, 1.1, 1.6];
+
+    /// A track the waveform cache already holds. The file is real, because
+    /// the key is built from its mtime; the decode is put in by hand,
+    /// because the crate's tests run where there is no ffmpeg — so a
+    /// `decode` note appearing at all means the cache was missed, which is
+    /// the assertion the Python gets from `mock.patch(ana.load_audio)`.
+    fn primed(tag: &str, seconds: f64) -> PathBuf {
+        let track = testkit::tmpdir(tag).join(format!("_t_{tag}.wav"));
+        let x = testkit::click_samples(seconds);
+        testkit::write_wav(&track, &x);
+        let stereo = Some((x.clone(), x.clone()));
+        seed(&track, PEAKS, decoded_of(x, stereo, PEAKS)).expect("seeded");
+        track
     }
 
-    /// E1: `build_decoded` panicking used to leave the key marked busy for
-    /// the life of the process, and every later request for that track sat
-    /// on the condvar forever. The decode itself is not what is under test
-    /// — the marker's lifetime is — so the panic is raised where the
-    /// decode would be, inside the guard's scope. (The panic message on
-    /// stderr during this test is the test working.)
-    #[test]
-    fn a_poisoned_decode_does_not_wedge_the_next_caller() {
-        let key: DecKey = ("/nowhere/_t_poison.wav".to_string(), 7, PEAKS);
-        let (claimed_tx, claimed_rx) = mpsc::channel::<()>();
-        let (go_tx, go_rx) = mpsc::channel::<()>();
-        let k = key.clone();
-        let doomed = std::thread::spawn(move || {
-            let (lock, _) = decoded_cache();
-            let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
-            let _marker = Busy::claim(&mut st, k);
-            drop(st);
-            claimed_tx.send(()).expect("the waiter is listening");
-            go_rx.recv().expect("the waiter says when");
-            panic!("the decode blew up");
-        });
-        claimed_rx.recv().expect("claimed");
-        assert!(busy_holds(&key), "the marker was never taken");
-        go_tx.send(()).expect("the doomed thread is waiting");
-        assert!(doomed.join().is_err(), "that thread was meant to panic");
+    fn field<'a>(d: &'a Json, key: &str) -> &'a Json {
+        d.get(key)
+            .unwrap_or_else(|| panic!("no {key} in the answer"))
+    }
 
-        // The next caller's wait, with a deadline where the server has
-        // none: before the guard this loop never ended.
-        let (lock, cv) = decoded_cache();
-        let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while st.busy.contains(&key) {
-            assert!(Instant::now() < deadline, "the marker outlived the panic");
-            let (next, _) = cv
-                .wait_timeout(st, Duration::from_millis(50))
-                .unwrap_or_else(|e| e.into_inner());
-            st = next;
+    fn rows(d: &Json, key: &str) -> Vec<Json> {
+        match field(d, key) {
+            Json::Arr(a) => a.clone(),
+            other => panic!("{key} is not an array: {other:?}"),
         }
     }
 
-    /// And the guard gives the key back on the ordinary path too — a
-    /// decode that simply failed (no such file) leaves nothing behind.
-    #[test]
-    fn a_failed_decode_clears_its_marker() {
-        let path = Path::new("/nowhere/_t_missing.wav");
-        assert!(decoded(path, PEAKS).is_none()); // no mtime: never claimed
-        let key: DecKey = ("/nowhere/_t_failed.wav".to_string(), 9, PEAKS);
-        {
-            let (lock, _) = decoded_cache();
-            let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
-            let _marker = Busy::claim(&mut st, key.clone());
-            drop(st);
-            assert!(busy_holds(&key));
+    fn keys(d: &Json) -> Vec<String> {
+        match d {
+            Json::Obj(o) => o.iter().map(|(k, _)| k.clone()).collect(),
+            other => panic!("not an object: {other:?}"),
         }
-        assert!(!busy_holds(&key));
+    }
+
+    fn decodes(path: &Path) -> usize {
+        testkit::count("decode", path.to_string_lossy().as_ref())
+    }
+
+    fn wave_entries(path: &Path) -> usize {
+        let want = path.to_string_lossy().into_owned();
+        let c = wave_cache().lock().unwrap_or_else(|e| e.into_inner());
+        c.iter().filter(|((p, ..), _)| *p == want).count()
+    }
+
+    /// The waveform store is one cache for the process and its bound is
+    /// global, so a test that fills it would quietly evict another test's
+    /// entry mid-assertion. These cases take turns instead.
+    fn cache_turn() -> std::sync::MutexGuard<'static, ()> {
+        static TURN: OnceLock<Mutex<()>> = OnceLock::new();
+        TURN.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The audition nudges sensitivity a dozen times per track, and each
+    /// nudge used to pay for the decode, the peaks and the envelope again
+    /// — ~70% of the work — although only the onset pass depends on the
+    /// knob. Three knobs, one decode, three onset passes; and asking again
+    /// for a knob already answered is neither.
+    #[test]
+    fn a_sensitivity_change_reanalyses_but_does_not_redecode() {
+        let _turn = cache_turn();
+        let track = primed("sens", 2.0);
+        for sens in [[1.1; 3], SOFT, BAND] {
+            waveform(&track, sens).expect("a waveform");
+        }
+        assert_eq!(decodes(&track), 0, "the knob re-decoded");
+        assert_eq!(testkit::count("analyze", "_t_sens"), 3);
+        waveform(&track, SOFT).expect("a waveform");
+        assert_eq!(testkit::count("analyze", "_t_sens"), 3, "a hit re-analysed");
+    }
+
+    /// What the knob does not touch must be identical between two answers
+    /// — the Python asserts that by identity (`assertIs`), since its dict
+    /// hands the same list back; here the two answers are built from the
+    /// same `Arc<Decoded>` and the values are copied in, so equality is
+    /// the assertion and the onsets are what must differ.
+    #[test]
+    fn the_knob_independent_parts_are_shared_between_two_answers() {
+        let _turn = cache_turn();
+        let track = primed("shared", 2.0);
+        let a = waveform(&track, SOFT).expect("a waveform");
+        let b = waveform(&track, LOUD).expect("a waveform");
+        assert_eq!(field(&a, "peaks"), field(&b, "peaks"));
+        assert_eq!(field(&a, "env"), field(&b, "env"));
+        assert_eq!(field(&a, "duration"), field(&b, "duration"));
+        assert_ne!(
+            field(&a, "onsets"),
+            field(&b, "onsets"),
+            "the knob changed nothing"
+        );
+        assert_eq!(decodes(&track), 0);
+    }
+
+    /// The desk draws exactly these five fields, and each has a shape it
+    /// relies on: peaks normalised so the tallest is 1.0 and one per
+    /// bucket, an onset hit of [t, strength, pan] (the pan is how the
+    /// audition routes a hit between the towers), and an envelope with
+    /// real points in it — that is what lets a generated scene dim for a
+    /// verse instead of holding one level for three minutes.
+    #[test]
+    fn the_answer_is_id_duration_peaks_onsets_and_env() {
+        let _turn = cache_turn();
+        let track = primed("shape", 2.0);
+        let w = waveform(&track, [1.1; 3]).expect("a waveform");
+        assert_eq!(keys(&w), ["id", "duration", "peaks", "onsets", "env"]);
+        assert_eq!(field(&w, "id"), &Json::Str("_t_shape".into()));
+        assert_eq!(field(&w, "duration").as_f64(), Some(2.0));
+        let peaks = rows(&w, "peaks");
+        assert_eq!(peaks.len(), PEAKS);
+        let top = peaks.iter().filter_map(Json::as_f64).fold(0.0f64, f64::max);
+        assert_eq!(top, 1.0, "the peaks are not normalised");
+        let low = rows(field(&w, "onsets"), "onset_low");
+        assert!(low.len() > 2, "the clicks were not heard: {}", low.len());
+        match &low[0] {
+            Json::Arr(hit) => assert_eq!(hit.len(), 3, "t, strength, pan"),
+            other => panic!("an onset hit is not a row: {other:?}"),
+        }
+        assert!(rows(&w, "env").len() > 5);
+    }
+
+    /// A track with no frames still answers — four keys, no `env` at all,
+    /// which is the Python's early return and what the panel checks for
+    /// when it decides there is nothing to draw. Nothing is analysed, and
+    /// the decode it came from holds no peaks, no envelope and no stereo:
+    /// there is nothing to pan, so the second ffmpeg run never happens.
+    #[test]
+    fn an_empty_track_is_answered_without_an_envelope() {
+        let _turn = cache_turn();
+        let track = testkit::tmpdir("silent").join("_t_silent.wav");
+        testkit::write_wav(&track, &[]);
+        let dec = decoded_of(Vec::new(), None, PEAKS);
+        assert!(dec.x.is_empty() && dec.peaks.is_empty() && dec.env.is_empty());
+        assert!(dec.stereo.is_none());
+        seed(&track, PEAKS, dec).expect("seeded");
+        let w = waveform(&track, [1.1; 3]).expect("an empty file still answers");
+        assert_eq!(keys(&w), ["id", "duration", "peaks", "onsets"]);
+        assert_eq!(field(&w, "duration").as_f64(), Some(0.0));
+        assert!(rows(&w, "peaks").is_empty());
+        assert_eq!(keys(field(&w, "onsets")), Vec::<String>::new());
+        assert_eq!(testkit::count("analyze", "_t_silent"), 0);
+    }
+
+    /// The waveform store is bounded as well: an evening spent auditioning
+    /// a big library must not grow it without limit. KEEP_WAVES is a
+    /// constant here where the Python patches it, so the cache is filled
+    /// for real — one seeded decode under thirty-three knobs — and the
+    /// oldest of them has to be gone, which shows as a fresh onset pass.
+    #[test]
+    fn the_waveform_cache_is_bounded() {
+        let _turn = cache_turn();
+        let track = primed("waves", 0.4);
+        let first = [0.5; 3];
+        waveform(&track, first).expect("a waveform");
+        for i in 1..=KEEP_WAVES {
+            waveform(&track, [0.5 + i as f64 / 100.0; 3]).expect("a waveform");
+        }
+        assert_eq!(wave_entries(&track), KEEP_WAVES);
+        let before = testkit::count("analyze", "_t_waves");
+        waveform(&track, first).expect("a waveform");
+        assert_eq!(
+            testkit::count("analyze", "_t_waves"),
+            before + 1,
+            "the oldest knob was still cached"
+        );
     }
 }

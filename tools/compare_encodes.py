@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run one codec comparison for a caller that is not Python — the Rust
 studio pipes {"path", "opts", "dest"} in as JSON and gets back exactly
-what studio_media.compare computes before it decorates: the encode rows
+what the studio's compare route needs before it decorates: the encode rows
 (via codec_compare.encode_set) or the same one-line SystemExit error.
 Keeping this in Python keeps the scores and the error strings in one
 implementation whichever server is running.

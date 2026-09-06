@@ -95,17 +95,23 @@ pub mod scene_schema;
 #[cfg(feature = "native")]
 pub mod studio;
 #[cfg(feature = "native")]
+pub mod studio_alias;
+#[cfg(feature = "native")]
 pub mod studio_check;
 #[cfg(feature = "native")]
 pub mod studio_import;
 #[cfg(feature = "native")]
 pub mod studio_jobs;
 #[cfg(feature = "native")]
+pub mod studio_lean;
+#[cfg(feature = "native")]
 pub mod studio_media;
 #[cfg(feature = "native")]
 pub mod studio_probe;
 #[cfg(feature = "native")]
 pub mod studio_proc;
+#[cfg(feature = "native")]
+pub mod studio_progress;
 #[cfg(feature = "native")]
 pub mod studio_publish;
 #[cfg(feature = "native")]
@@ -118,6 +124,11 @@ pub mod studio_routes;
 pub mod studio_scenes;
 #[cfg(feature = "native")]
 pub mod studio_tracks;
+#[cfg(feature = "native")]
+pub mod studio_wave;
+/// Fixtures and probes for the crate's own tests — never built otherwise.
+#[cfg(test)]
+pub mod testkit;
 #[cfg(feature = "native")]
 pub mod vocab;
 #[cfg(feature = "native")]

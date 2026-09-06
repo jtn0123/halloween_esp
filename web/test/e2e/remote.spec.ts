@@ -1,7 +1,7 @@
 /**
  * The phone remote, for real: firmware/sd_web_remote.h's kRemotePage as the
  * emulator serves it (byte for byte — see castle_emu_http.py), relayed by a
- * real tools/studio.py at GET /remote, and tapped. Until the emulator lifted
+ * the real studio binary at GET /remote, and tapped. Until the emulator lifted
  * the page out of the C, the remote had zero e2e coverage and the studio's
  * relay in the test rig was a 118-byte placeholder (judge B, JB2-6).
  *
@@ -18,6 +18,8 @@ import { lanePort } from "./ports.js";
 
 const ROOT = resolve(__dirname, "../../..");
 const PY = join(ROOT, ".venv", "bin", "python");
+/** The studio is the built binary — `make e2e` rebuilds it first. */
+const STUDIO_BIN = join(ROOT, "core", "target", "release", "studio");
 
 let STUDIO = "";
 let emu: ChildProcess | undefined;
@@ -44,7 +46,7 @@ test.beforeAll(async () => {
   const card = mkdtempSync(join(tmpdir(), "castle-e2e-remote-card-"));
   emu = spawn(PY, [join(ROOT, "tools", "castle_emu.py"), String(emuPort), "--dir", card],
               { stdio: "ignore" });
-  studio = spawn(PY, ["-u", join(ROOT, "tools", "studio.py"), String(studioPort), "--localhost"], {
+  studio = spawn(STUDIO_BIN, [String(studioPort), "--localhost"], {
     stdio: "ignore",
     env: { ...process.env, CASTLE_HOST: `127.0.0.1:${emuPort}` },
   });

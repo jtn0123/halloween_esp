@@ -1,11 +1,19 @@
-"""The two-studio parity fixture — shared by every test that holds the Rust
-studio (castle-core's `studio` bin) answer-for-answer with the Python one.
+"""The studio fixture: one server, one seeded sandbox, black-box HTTP.
 
-Split along tests/studio_case.py's own seam: this is infrastructure — two
-servers over twin copies of one fixture library — and the test files keep
-the assertions. Twin copies rather than one shared sandbox on purpose: the
-live-analysis path and the manifest write-back must run in BOTH languages,
-and the leftover tracks.json files are then compared byte for byte.
+This was the two-studio parity fixture until `tools/studio.py` retired
+(docs/RETIREMENT.md phase 3). It launched both servers over twin copies of
+one library so their answers could be diffed; there is one server now, so
+it launches one — and the suites that used to assert "the two agree" state
+what the answer IS instead.
+
+The library it seeds is the rich one the parity suites needed and the
+absolute assertions still want: four click tracks of known length, a
+zero-frame WAV, a kept `_src` original, a manifest with a cached entry and
+a dead `file:` source, and two stem directories (one fresh, one stale).
+
+Nothing here reaches the network or the operator's own files: the four
+CASTLE_* knobs are set explicitly and `CASTLE_HOST` is empty unless a
+subclass names an emulator (CLAUDE.md's sandboxing section).
 """
 
 from __future__ import annotations
@@ -23,7 +31,7 @@ import urllib.error
 import urllib.request
 import wave
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -132,7 +140,10 @@ def _empty_wav(p: Path) -> None:
 
 
 def seed_library(tracks: Path) -> None:
-    """One fixture library — built identically for each server."""
+    """The fixture library, from scratch. Re-seedable: a suite whose cases
+    delete out of the sandbox calls it again in setUp, and a half-torn
+    library is worse than none."""
+    shutil.rmtree(tracks, ignore_errors=True)
     tracks.mkdir(parents=True, exist_ok=True)
     make_click_track(tracks / "t_alpha.wav", seconds=2.0)
     make_click_track(tracks / "t_beta.wav", seconds=3.0, bpm=90.0)
@@ -140,7 +151,7 @@ def seed_library(tracks: Path) -> None:
     make_click_track(tracks / "t_del.wav", seconds=2.0, hats=False)
     _empty_wav(tracks / "t_empty.wav")
     src = tracks / "_src"
-    src.mkdir()
+    src.mkdir(exist_ok=True)
     (src / "t_del.orig.wav").write_bytes(b"RIFFxxxx-original")
     meta_bytes = (tracks / "t_meta.wav").stat().st_size
     entries: dict[str, mf.Entry] = {
@@ -171,7 +182,7 @@ def seed_library(tracks: Path) -> None:
     # freshness stamps written here stay true in both twins.
     st_alpha = (tracks / "t_alpha.wav").stat()
     d = tracks / "stems" / "t_alpha"
-    d.mkdir(parents=True)
+    d.mkdir(parents=True, exist_ok=True)
     (d / "analysis.json").write_text(
         json.dumps(
             {
@@ -191,7 +202,7 @@ def seed_library(tracks: Path) -> None:
     (d / "vocals.mp3").write_bytes(b"\xff\xfbSTEMBYTES" * 40)
     st_beta = (tracks / "t_beta.wav").stat()
     d = tracks / "stems" / "t_beta"
-    d.mkdir(parents=True)
+    d.mkdir(parents=True, exist_ok=True)
     (d / "analysis.json").write_text(
         json.dumps(
             {
@@ -217,55 +228,35 @@ class mock_manifest_path:
         mf.PATH = self.old
 
 
-class StudioPair(unittest.TestCase):
-    """Base fixture: the two servers over twin copies of one sandbox."""
+class StudioCase(unittest.TestCase):
+    """Base fixture: the studio bin over a seeded sandbox of its own."""
 
-    HOST_ENV = ""  # explicitly castle-less unless a subclass says otherwise
-    #: Per-side overrides, for suites that give each server its own castle
-    #: (a shared emulator would let one server's push mark the other's
-    #: files "unchanged, skipped" and split the logs).
-    HOST_ENV_PY: str | None = None
-    HOST_ENV_RS: str | None = None
+    #: "" is explicitly castle-less; a subclass names an emulator host.
+    HOST_ENV = ""
 
     tmp: ClassVar[Path]
-    py_tracks: ClassVar[Path]
-    rs_tracks: ClassVar[Path]
-    py_port: ClassVar[int]
-    rs_port: ClassVar[int]
+    tracks: ClassVar[Path]
+    port: ClassVar[int]
     procs: ClassVar[list[subprocess.Popen[bytes]]]
-
-    py_scenes: ClassVar[Path]
-    rs_scenes: ClassVar[Path]
-    py_build: ClassVar[Path]
-    rs_build: ClassVar[Path]
+    scenes: ClassVar[Path]
+    build: ClassVar[Path]
 
     @classmethod
     def setUpClass(cls) -> None:
         build_bin()
-        cls.tmp = Path(tempfile.mkdtemp(prefix="studio-rust-"))
-        scenes_text = scenes_fixture()
-        template_build = cls.tmp / "template_build"
-        (template_build / "previewer").mkdir(parents=True)
-        (template_build / "previewer" / "castle-cue-desk.html").write_text(PAGE)
-        (template_build / "audio").mkdir()
-        (template_build / "audio" / "01_vigil.mp3").write_bytes(bytes(range(256)) * 12)
-        template = cls.tmp / "template"
-        seed_library(template)
-        cls.py_tracks = cls.tmp / "py_tracks"
-        cls.rs_tracks = cls.tmp / "rs_tracks"
-        shutil.copytree(template, cls.py_tracks)
-        shutil.copytree(template, cls.rs_tracks)
-        cls.py_build = cls.tmp / "py_build"
-        cls.rs_build = cls.tmp / "rs_build"
-        shutil.copytree(template_build, cls.py_build)
-        shutil.copytree(template_build, cls.rs_build)
-        cls.py_scenes = cls.tmp / "py_scenes.yaml"
-        cls.rs_scenes = cls.tmp / "rs_scenes.yaml"
-        cls.py_scenes.write_text(scenes_text)
-        cls.rs_scenes.write_text(scenes_text)
+        cls.tmp = Path(tempfile.mkdtemp(prefix="studio-rs-"))
+        cls.build = cls.tmp / "build"
+        (cls.build / "previewer").mkdir(parents=True)
+        (cls.build / "previewer" / "castle-cue-desk.html").write_text(PAGE)
+        (cls.build / "audio").mkdir()
+        (cls.build / "audio" / "01_vigil.mp3").write_bytes(bytes(range(256)) * 12)
+        cls.tracks = cls.tmp / "tracks"
+        seed_library(cls.tracks)
+        cls.scenes = cls.tmp / "scenes.yaml"
+        cls.scenes.write_text(scenes_fixture())
         # free_port() closes the socket before the server binds it, so a
         # busy machine (another suite, the user's own studio) can take the
-        # port in between. One retry on fresh ports is the cheap answer:
+        # port in between. One retry on a fresh port is the cheap answer:
         # the window is milliseconds, so losing it twice is not a race any
         # more — it is a machine with no free ports (grade report 2026-08-31 D6).
         for attempt in (0, 1):
@@ -287,78 +278,71 @@ class StudioPair(unittest.TestCase):
 
     @classmethod
     def _launch(cls) -> None:
-        """Both servers on a fresh pair of ports, up and answering."""
-        cls.py_port, cls.rs_port = free_port(), free_port()
+        cls.port = free_port()
         env = {**os.environ}
-        env.pop("CASTLE_HOST", None)
+        for k in ("CASTLE_HOST", "CASTLE_TRACKS", "CASTLE_SCENES", "CASTLE_BUILD"):
+            env.pop(k, None)
+        # The importer, the generators and the manifest write are Python
+        # children of the server, and a BINARY has no sys.executable to
+        # hand them: it asks CASTLE_PY, then <root>/.venv/bin/python, then
+        # a bare python3 with no yaml (core/src/studio_proc.rs py()). Named
+        # HERE, in the child's environment only — a suite that exported it
+        # into this process would leak it into every other one, which is
+        # the hermeticity tests/test_hermetic.py exists to catch. An
+        # interpreter the operator named on purpose still wins.
+        venv = ROOT / ".venv" / "bin" / "python"
+        if "CASTLE_PY" not in env and venv.exists():
+            env["CASTLE_PY"] = str(venv)
         cls.procs = [
             subprocess.Popen(
-                [
-                    sys.executable,
-                    str(ROOT / "tools" / "studio.py"),
-                    str(cls.py_port),
-                    "--localhost",
-                ],
+                [str(BIN), str(cls.port), "--localhost"],
                 env={
                     **env,
-                    "CASTLE_HOST": cls.HOST_ENV_PY
-                    if cls.HOST_ENV_PY is not None
-                    else cls.HOST_ENV,
-                    "CASTLE_TRACKS": str(cls.py_tracks),
-                    "CASTLE_SCENES": str(cls.py_scenes),
-                    "CASTLE_BUILD": str(cls.py_build),
+                    "CASTLE_HOST": cls.HOST_ENV,
+                    "CASTLE_TRACKS": str(cls.tracks),
+                    "CASTLE_SCENES": str(cls.scenes),
+                    "CASTLE_BUILD": str(cls.build),
                 },
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-            ),
-            subprocess.Popen(
-                [str(BIN), str(cls.rs_port), "--localhost"],
-                env={
-                    **env,
-                    "CASTLE_HOST": cls.HOST_ENV_RS
-                    if cls.HOST_ENV_RS is not None
-                    else cls.HOST_ENV,
-                    "CASTLE_TRACKS": str(cls.rs_tracks),
-                    "CASTLE_SCENES": str(cls.rs_scenes),
-                    "CASTLE_BUILD": str(cls.rs_build),
-                },
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            ),
+            )
         ]
-        wait_up(cls.py_port)
-        wait_up(cls.rs_port)
+        wait_up(cls.port)
 
     @classmethod
     def tearDownClass(cls) -> None:
         cls._kill()
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
-    def both(
+    def req(
         self,
         path: str,
         method: str = "GET",
         headers: dict[str, str] | None = None,
         body: bytes | None = None,
-    ) -> tuple[tuple[int, dict[str, str], bytes], tuple[int, dict[str, str], bytes]]:
-        a = fetch(self.py_port, path, method, headers, body)
-        b = fetch(self.rs_port, path, method, headers, body)
-        self.assertEqual(
-            a[0], b[0], f"{method} {path}: {a[0]} vs {b[0]} — {a[2]!r} vs {b[2]!r}"
+    ) -> tuple[int, dict[str, str], bytes]:
+        return fetch(self.port, path, method, headers, body)
+
+    def json(
+        self,
+        path: str,
+        method: str = "GET",
+        obj: object | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        """One request, its status and its parsed object body."""
+        headers = {"Content-Type": "application/json"} if obj is not None else None
+        raw = self.req(
+            path, method, headers, json.dumps(obj).encode() if obj is not None else None
         )
-        return a, b
+        parsed = json.loads(raw[2])
+        assert isinstance(parsed, dict), parsed
+        return raw[0], parsed
 
-    def parsed(self, raw: tuple[int, dict[str, str], bytes]) -> object:
-        return json.loads(raw[2])
-
-    def masked(self, text: str, side: str) -> str:
-        """A log with this server's sandbox paths replaced by tokens, so
-        the two sides' logs can be compared byte for byte."""
-        build = self.py_build if side == "py" else self.rs_build
-        scenes = self.py_scenes if side == "py" else self.rs_scenes
-        tracks = self.py_tracks if side == "py" else self.rs_tracks
+    def masked(self, text: str) -> str:
+        """A log with this sandbox's paths replaced by tokens, so what a
+        rebuild says can be asserted without naming a temp directory."""
         return (
-            text.replace(str(build), "<BUILD>")
-            .replace(str(scenes), "<SCENES>")
-            .replace(str(tracks), "<TRACKS>")
+            text.replace(str(self.build), "<BUILD>")
+            .replace(str(self.scenes), "<SCENES>")
+            .replace(str(self.tracks), "<TRACKS>")
         )
