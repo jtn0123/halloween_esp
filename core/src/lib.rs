@@ -54,6 +54,7 @@ pub mod effects;
 pub mod fft;
 pub mod filters;
 pub mod jsonio;
+pub mod jsonio_parse;
 pub mod master;
 pub mod noise;
 pub mod overlay;
