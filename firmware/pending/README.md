@@ -29,9 +29,32 @@ v5.42 list in, plus the channel_colors migration) compiled clean, then
 (lean page, 90 KB gzipped) and `sd_sync ota` (the 1.1 MB image over HTTP,
 come-back polling, the confirm reminder) all passed. Flash day is therefore:
 `make ota` (rebuilds the image — the rehearsal binary lives on the
-512Flash volume and may be stale by then), confirm **5.44** on the web page,
+512Flash volume and may be stale by then), confirm the version string in
+`firmware/castle.yaml` on the web page (it has moved four times since this
+was rehearsed — never a number typed here),
 watch that first big upload for the watchdog cadence above, connect once so
 the image is confirmed, then `make publish`.
+
+Applied in v5.47 (2026-09-06, compiled, NOT yet flashed):
+
+- **DELETE reaches `scenes/` and `site/`** (`sd_web.h` `route_dir`, shared
+  with PUT). Until now a file could be put into either directory and never
+  removed over the wire, so a renamed scene stranded its old 2 MB track
+  until someone pulled the card. `sd_sync rm scenes/<name>` and `castle rm
+  scenes/<name>` use it; the emulator mirrors the two routes and the
+  contract test counts them. Two more handlers, 25 of the 32 registered.
+  (grade report 2026-09-06 J4)
+- **The missing-card log line tells the truth** (`sd_audio.h`): "scenes
+  will play the chirp, not the show" — it said the flash scenes still
+  worked, which has not been so since the flash build went. Comments in
+  `flash_mode.h` and `castle_inputs.yaml` that described OTA as off and the
+  S2's missing console as this board's are rewritten for both chips.
+  (grade report 2026-09-06 J6, H4)
+- Host-side, same commit: the OTA-slot guard reads each build's partition
+  table instead of the S2's number, the emulator carries both slots
+  (`--chip s3`), the stream server's port and `/api/health`'s keys join the
+  firmware contract, and the weekly CI compile can fail and be run by hand
+  (`gh workflow run ci.yml`). (grade report 2026-09-06 J5, J3, D1)
 
 Applied in v5.46 (2026-09-06, compiled, NOT yet flashed):
 
@@ -61,7 +84,8 @@ change here that is not about the board in the yard:
   **Nothing here has been on hardware.** Bring-up, when the board exists:
 
   1. Flash over the module's own USB Serial/JTAG (`make upload-s3`) — no
-     adapter, and no BOOT-button dance. Confirm **5.46** on the web page.
+     adapter, and no BOOT-button dance. Confirm the version string in
+     `firmware/castle.yaml` on the web page.
   2. Watch the boot log on the same USB port. The S2 could never do this;
      it is the first time this firmware has had a console.
   3. Three strips, not one: check tower L, doorway and tower R each light.

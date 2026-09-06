@@ -45,12 +45,15 @@ button:
       - lambda: 'castle_log::dump();'
 
   # ── Remote flashing escape hatch ─────────────────────────────────
-  # This board has no USB serial console, and OTA is off because the embedded
-  # audio makes the binary too big for two app slots. So new firmware has
-  # meant physically holding BOOT and tapping RESET — fine at the desk,
-  # useless once the castle is on a porch and you are not.
+  # OTA (PUT /api/ota, `make ota`) is how firmware normally arrives. This is
+  # the last resort for when the network is gone: without it, new firmware
+  # means physically holding BOOT and tapping RESET — fine at the desk,
+  # useless once the castle is on a porch and you are not. The S2 Feather
+  # has no USB serial console to fall back on; the S3 carrier does, and the
+  # button is still nearer than the porch.
   #
-  # The ESP32-S2 ROM checks a bit in an always-on RTC register at boot. Set
+  # The ROM (S2 and S3 alike) checks a bit in an always-on RTC register at
+  # boot. Set
   # it, reboot, and the chip comes up with its USB bootloader enumerated,
   # ready for esptool over the wire. No buttons.
   #

@@ -37,6 +37,8 @@ ROUTES: tuple[tuple[str, str, str], ...] = (
     ("/api/site/*", "PUT", "h_put"),
     ("/api/scenes/*", "PUT", "h_put"),
     ("/api/files/*", "DELETE", "h_delete"),
+    ("/api/site/*", "DELETE", "h_delete"),
+    ("/api/scenes/*", "DELETE", "h_delete"),
     ("/api/play", "POST", "h_play"),
     ("/api/scene", "POST", "h_scene"),
     ("/api/stop", "POST", "h_stop"),
@@ -148,6 +150,16 @@ def safe_subpath(p: bytes) -> bool:
     if not p or len(p) > SUBPATH_MAX or p[0:1] in (b"/", b"."):
         return False
     return b".." not in p
+
+
+def route_dir(raw_target: bytes) -> tuple[str, bytes]:
+    """sd_web.h route_dir: the card subdirectory a /api/files|site|scenes/*
+    route addresses and the prefix to cut, shared by h_put and h_delete."""
+    if raw_target.startswith(b"/api/site/"):
+        return "site", b"/api/site/"
+    if raw_target.startswith(b"/api/scenes/"):
+        return "scenes", b"/api/scenes/"
+    return "", b"/api/files/"
 
 
 def name_from_uri(raw_target: bytes, prefix: bytes) -> bytes:

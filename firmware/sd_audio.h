@@ -19,10 +19,11 @@
 // lights for the second the SPI read took, and at the end was never polled
 // by anything. ~130 lines of dead code in the file nearest the RAM wall.
 //
-// WHAT THE CARD BUYS: it holds as many tracks as you like. Flash only ever
-// holds one show's worth (~2.9 MB total), and every track competes with
-// every other. The built-in scenes deliberately stay in flash: they are the
-// show, they are small, and they must work when there is no card in the slot.
+// WHAT THE CARD BUYS: it holds as many tracks as you like — and since the
+// all-in-flash build was retired (2026-09-01) it holds the show. Flash keeps
+// exactly one sound, the chirp, which is what a scene plays when the card is
+// missing: a signal that the card is missing, not a show. docs/RUNBOOK.md
+// says it plainly — the card is not optional.
 
 #pragma once
 
@@ -91,7 +92,7 @@ inline bool mount(int cs, int sck, int mosi, int miso, int max_files = 4) {
 
   err = esp_vfs_fat_sdspi_mount("/sd", &host, &slot, &mcfg, &g_card);
   if (err != ESP_OK) {
-    ESP_LOGW(TAG, "no SD card mounted (%s) — flash scenes still work",
+    ESP_LOGW(TAG, "no SD card mounted (%s) — scenes will play the chirp, not the show",
              esp_err_to_name(err));
     return false;
   }

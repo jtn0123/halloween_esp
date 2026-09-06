@@ -267,6 +267,21 @@ class TestCardRoundTrip(EmuCase):
         self.assertEqual(self.http("DELETE", "/api/files/e2e_song.mp3")[0], 200)
         self.assertEqual(self.http("DELETE", "/api/files/e2e_song.mp3")[0], 404)
 
+    def test_scene_and_site_files_can_be_deleted_where_they_were_put(self) -> None:
+        """v5.47: DELETE knows the two subdirectories PUT does (grade report
+        2026-09-06 J4) — before, a renamed scene stranded its old track."""
+        for sub in ("scenes", "site"):
+            self.assertEqual(
+                self.http("PUT", f"/api/{sub}/gone.mp3", b"\xff\xfbx")[0], 200
+            )
+            self.assertTrue((self.card / sub / "gone.mp3").exists())
+            self.assertEqual(self.http("DELETE", f"/api/{sub}/gone.mp3")[0], 200)
+            self.assertFalse((self.card / sub / "gone.mp3").exists())
+            self.assertEqual(self.http("DELETE", f"/api/{sub}/gone.mp3")[0], 404)
+        # The root route still cannot reach into a directory: '/' is not a
+        # safe_name byte, on the board or here.
+        self.assertEqual(self.http("DELETE", "/api/files/scenes%2Fgone.mp3")[0], 400)
+
 
 class TestAtomicUpload(EmuCase):
     """sd_web.h write_body: `<name>.part`, then unlink + rename. The

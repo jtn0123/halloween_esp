@@ -258,21 +258,28 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
   return reply_json(req, body);
 }
 
+/// Which card directory a /api/files|site|scenes/* route addresses, and the
+/// prefix to cut off the URI: the one switch h_put and h_delete share, so a
+/// file that can be put somewhere can be deleted from the same place (until
+/// v5.47 DELETE knew only the root, and a renamed scene stranded its old
+/// 2 MB track on the card — grade report 2026-09-06 J4).
+inline void route_dir(httpd_req_t *req, const char *&dir, const char *&prefix) {
+  dir = ""; prefix = "/api/files/";
+  if (strncmp(req->uri, "/api/site/", 10) == 0) { dir = "site/"; prefix = "/api/site/"; }
+  if (strncmp(req->uri, "/api/scenes/", 12) == 0) { dir = "scenes/"; prefix = "/api/scenes/"; }
+}
+
 /// PUT into /sd, /sd/site or /sd/scenes depending on the route. The scenes
 /// directory is where the show's own tracks live (see audio_sd.yaml).
 inline esp_err_t h_put(httpd_req_t *req) {
   if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
-  const char *dir = "";
-  const char *prefix = "/api/files/";
-  if (strncmp(req->uri, "/api/site/", 10) == 0) {
-    dir = "site/"; prefix = "/api/site/";
-    // E3: a desk page has a known plausible size (3.3 MB today); a mistake
-    // must not eat the card. The free-space check in write_body bounds the
-    // rest.
-    if (req->content_len > 8u * 1024 * 1024)
-      return reply_err(req, "413 Payload Too Large", "site file too large");
-  }
-  if (strncmp(req->uri, "/api/scenes/", 12) == 0) { dir = "scenes/"; prefix = "/api/scenes/"; }
+  const char *dir, *prefix;
+  route_dir(req, dir, prefix);
+  // E3: a desk page has a known plausible size (3.3 MB today); a mistake
+  // must not eat the card. The free-space check in write_body bounds the
+  // rest.
+  if (strcmp(dir, "site/") == 0 && req->content_len > 8u * 1024 * 1024)
+    return reply_err(req, "413 Payload Too Large", "site file too large");
   std::string name = name_from_uri(req, prefix);
   if (!safe_name(name)) return reply_err(req, "400 Bad Request", "bad filename");
   if (dir[0] != '\0') {
@@ -288,10 +295,12 @@ inline esp_err_t h_put(httpd_req_t *req) {
 
 inline esp_err_t h_delete(httpd_req_t *req) {
   if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
-  std::string name = name_from_uri(req, "/api/files/");
+  const char *dir, *prefix;
+  route_dir(req, dir, prefix);
+  std::string name = name_from_uri(req, prefix);
   if (!safe_name(name)) return reply_err(req, "400 Bad Request", "bad filename");
-  char path[160];
-  snprintf(path, sizeof(path), "/sd/%s", name.c_str());
+  char path[200];
+  snprintf(path, sizeof(path), "/sd/%s%s", dir, name.c_str());
   if (unlink(path) != 0) return reply_err(req, "404 Not Found", "no such file");
   ESP_LOGI(TAG, "deleted %s", path);
   return reply_json(req, "{\"deleted\":true}");
@@ -400,7 +409,7 @@ inline void start() {
   // player's loopback fetch take the rest.
   cfg.max_open_sockets = 4;
   cfg.uri_match_fn = httpd_uri_match_wildcard;
-  // MUST exceed the reg() count below (23 today). At 20, the LAST THREE
+  // MUST exceed the reg() count below (25 today). At 20, the LAST THREE
   // registrations failed silently on the device — /sd/* (the very URL the
   // media pipeline streams scene audio through), /site/* and / — so the
   // cue desk 404'd and SD streaming was dead while every /api route worked.
@@ -428,6 +437,8 @@ inline void start() {
   reg("/api/site/*", HTTP_PUT, h_put);
   reg("/api/scenes/*", HTTP_PUT, h_put);
   reg("/api/files/*", HTTP_DELETE, h_delete);
+  reg("/api/site/*", HTTP_DELETE, h_delete);
+  reg("/api/scenes/*", HTTP_DELETE, h_delete);
   reg("/api/play", HTTP_POST, h_play);
   reg("/api/scene", HTTP_POST, h_scene);
   reg("/api/stop", HTTP_POST, h_stop);

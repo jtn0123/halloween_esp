@@ -157,6 +157,18 @@ fn do_ota(host: &str, args: &[String]) -> ! {
     }
 }
 
+/// `rm scenes/x.mp3` and `rm site/x` go through the subdirectory's own DELETE
+/// route — v5.47 registers one wherever PUT already was (grade report
+/// 2026-09-06 J4); the root route refuses a '/' in the name.
+fn delete_route(name: &str) -> String {
+    for sub in ["scenes", "site"] {
+        if let Some(rest) = name.strip_prefix(&format!("{sub}/")) {
+            return format!("/api/{sub}/{}", encode_query(rest));
+        }
+    }
+    format!("/api/files/{}", encode_query(name))
+}
+
 fn main() {
     let mut args: Vec<String> = std::env::args().skip(1).collect();
     let mut arg_host: Option<String> = None;
@@ -219,7 +231,7 @@ fn main() {
         ("bootlog", None) => ("GET", "/api/bootlog".to_string(), 5.0),
         ("files", None) => ("GET", "/api/files".to_string(), 5.0),
         ("files", Some(d)) => ("GET", format!("/api/files?d={}", encode_query(d)), 5.0),
-        ("rm", Some(n)) => ("DELETE", format!("/api/files/{}", encode_query(n)), 10.0),
+        ("rm", Some(n)) => ("DELETE", delete_route(n), 10.0),
         _ => fail(
             "usage: castle [--host H:P] status|health|stop|scene ID|play FILE|\
              volume N|show start|show stop|blackout|files [DIR]|bootlog|\
@@ -234,5 +246,25 @@ fn main() {
                 std::process::exit(2);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rm_reaches_the_subdirectories_by_their_own_routes() {
+        assert_eq!(delete_route("a b.mp3"), "/api/files/a%20b.mp3");
+        assert_eq!(
+            delete_route("scenes/09 song.mp3"),
+            "/api/scenes/09%20song.mp3"
+        );
+        assert_eq!(
+            delete_route("site/index.html.gz"),
+            "/api/site/index.html.gz"
+        );
+        // Anything else with a slash stays on the root route, which refuses it.
+        assert_eq!(delete_route("x/y"), "/api/files/x%2Fy");
     }
 }

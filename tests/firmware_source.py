@@ -30,13 +30,13 @@ SD_SITE = (FW / "sd_web_site.h").read_text()
 SD_REMOTE = (FW / "sd_web_remote.h").read_text()
 SD_STATE = (FW / "sd_web_state.h").read_text()
 SD_UTIL = (FW / "sd_web_util.h").read_text()
+SD_STREAM = (FW / "sd_web_stream.h").read_text()
 EMU_HTTP = (ROOT / "tools" / "castle_emu_http.py").read_text()
 
 #: reply_err strings the emulator has no way to produce: flash, heap and
 #: FAT failures of the real board. Everything else must be mirrored.
 HARDWARE_ONLY = {
     "no memory",
-    "opendir failed",
     "no OTA slot",
     "ota begin failed",
     "ota end failed",
@@ -103,3 +103,10 @@ def grab(pattern: str, text: str, group: int = 1) -> str:
     m = re.search(pattern, text)
     assert m, f"firmware no longer matches /{pattern}/ — update the contract test"
     return m.group(group)
+
+
+def stream_port() -> int:
+    """The port the SECOND server listens on — sd_web_stream.h, every note
+    of audio in the show. It is outside sd_web.h's reg() table, so the
+    contract reads it here (grade report 2026-09-06 J3)."""
+    return int(grab(r"cfg\.server_port = (\d+);", SD_STREAM))

@@ -48,7 +48,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import castle_emu_wire as wire
-from castle_emu_http import Handler
+from castle_emu_http import OTA_SLOT, OTA_SLOTS, Handler
 
 #: The device applies queued actions on its main-loop interval.
 APPLY_DELAY_S = 0.2
@@ -157,6 +157,7 @@ class CastleEmu(ThreadingHTTPServer):
         wedge: bool = False,
         sd_mounted: bool = True,
         serial: bool = False,
+        ota_slot: int = OTA_SLOT,
     ) -> None:
         super().__init__(("127.0.0.1", port), Handler)
         self.state = _State()
@@ -171,6 +172,8 @@ class CastleEmu(ThreadingHTTPServer):
         self.missing = ""
         self.wedge = wedge
         self.sd_mounted = sd_mounted
+        #: h_ota's ceiling: the app partition of the build being rehearsed.
+        self.ota_slot = ota_slot
         #: write_body's free-space precondition (B3): KB free the emulated
         #: card claims. None = report the disk's real number and never 507.
         self.sd_free_kb: int | None = None
@@ -350,6 +353,12 @@ def main() -> None:
     )
     ap.add_argument("--no-sd", action="store_true", help="pretend the card is missing")
     ap.add_argument(
+        "--chip",
+        choices=sorted(OTA_SLOTS),
+        default="s2",
+        help="whose OTA slot /api/ota measures against (default: the S2 Feather)",
+    )
+    ap.add_argument(
         "--serial",
         action="store_true",
         help="one request at a time, like the device's single httpd task",
@@ -375,6 +384,7 @@ def main() -> None:
         sd_mounted=not args.no_sd,
         serial=args.serial,
         scenes=scenes,
+        ota_slot=OTA_SLOTS[args.chip],
     )
     if args.dir is None:
         _seed(emu.sd_dir)

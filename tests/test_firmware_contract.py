@@ -40,11 +40,13 @@ from firmware_source import (
     FUNCS,
     HARDWARE_ONLY,
     SD_STATE,
+    SD_STREAM,
     SD_WEB,
     emu_errs,
     firmware_routes,
     grab,
     reply_errs,
+    stream_port,
 )
 
 
@@ -91,6 +93,10 @@ class TestErrorStrings(unittest.TestCase):
         ]
         for c, msg in spelled + named:
             self.assertIn((int(c), msg), all_fw)
+        # And the exemptions must still be strings the firmware says: an
+        # entry that outlives its message would exempt a renamed one
+        # silently ("opendir failed" had, grade report 2026-09-06 J6).
+        self.assertLessEqual(HARDWARE_ONLY, {msg for _c, msg in all_fw})
 
 
 class TestValidatorConstants(unittest.TestCase):
@@ -145,6 +151,45 @@ class TestValidatorConstants(unittest.TestCase):
         """sd_web_state.h: set_pending overwrites; take_pending empties."""
         self.assertIn("g_pending = {type, std::move(arg)};", SD_STATE)
         self.assertIn('g_pending = {NONE, ""};', SD_STATE)
+
+
+class TestStreamServer(unittest.TestCase):
+    """sd_web_stream.h is the second server — every note of audio in the
+    show — and it is outside sd_web.h's reg() table, so this is where its
+    port is held to every caller that spells it (grade report 2026-09-06
+    J3): change it in one place and every scene goes silent with a green
+    suite otherwise."""
+
+    def test_every_loopback_url_names_the_stream_port(self) -> None:
+        port = stream_port()
+        for name in (
+            "tools/gen_esphome_audio.py",
+            "firmware/castle_sd_common.yaml",
+            "firmware/sd_audio.h",
+        ):
+            text = (ROOT / name).read_text()
+            spelled = {
+                int(p) for p in re.findall(r"http://127\.0\.0\.1:(\d+)/sd/", text)
+            }
+            self.assertEqual(spelled, {port}, name)
+
+    def test_the_stream_server_serves_the_card_and_nothing_else(self) -> None:
+        self.assertEqual(re.findall(r'u\.uri = "([^"]+)";', SD_STREAM), ["/sd/*"])
+        self.assertIn("castle_stream::start(h_sd_get);", SD_WEB)
+
+    def test_health_keys_are_the_firmwares(self) -> None:
+        """h_health is the one reply whose shape the emulator types by hand;
+        h_status already had this check."""
+        keys = set(re.findall(r'\\"(\w+)\\":', FUNCS["h_health"]))
+        emu = castle_emu.CastleEmu(port=0)
+        self.addCleanup(emu.server_close)
+        emu.start()
+        self.addCleanup(emu.shutdown)
+        c = http.client.HTTPConnection("127.0.0.1", emu.port, timeout=5)
+        c.request("GET", "/api/health")
+        body = json.loads(c.getresponse().read())
+        c.close()
+        self.assertEqual(set(body), keys)
 
 
 class TestWireBehaviour(unittest.TestCase):

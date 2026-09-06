@@ -41,9 +41,13 @@ if TYPE_CHECKING:
 #: next body byte before giving up on the upload.
 RECV_WAIT_S = 5.0
 #: h_ota's plausibility window: under 64 KB is no firmware, over the OTA
-#: partition (1.75 MB on the S2 layout) cannot fit.
+#: partition cannot fit. The board compares against its own partition
+#: (part->size, sd_web_ota.h), so the emulator carries one per build's
+#: flash: the S2 Feather's 4 MB layout and the S3 carrier's 8 MB one
+#: (grade report 2026-09-06 J5). CastleEmu(ota_slot=...) picks.
 OTA_MIN = 65536
-OTA_SLOT = 0x1C0000
+OTA_SLOTS = {"s2": 0x1C0000, "s3": 0x3C0000}
+OTA_SLOT = OTA_SLOTS["s2"]
 CHUNK = 8192
 #: The one content type the API answers with — sd_web.h reply_json().
 JSON_MIME = "application/json"
@@ -387,11 +391,7 @@ class Handler(BaseHTTPRequestHandler):
     def h_put(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
-        sub, prefix = "", b"/api/files/"
-        if raw.startswith(b"/api/site/"):
-            sub, prefix = "site", b"/api/site/"
-        if raw.startswith(b"/api/scenes/"):
-            sub, prefix = "scenes", b"/api/scenes/"
+        sub, prefix = wire.route_dir(raw)
         if sub == "site":
             m = self._content_len()
             # E3: a desk page has a known plausible size; the firmware
@@ -445,11 +445,13 @@ class Handler(BaseHTTPRequestHandler):
     def h_delete(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
-        name = wire.name_from_uri(raw, b"/api/files/")
+        sub, prefix = wire.route_dir(raw)
+        name = wire.name_from_uri(raw, prefix)
         if not wire.safe_name(name):
             return self._err(400, "bad filename")
+        dest = self.server.sd_dir / sub if sub else self.server.sd_dir
         try:
-            (self.server.sd_dir / wire.fs_name(name)).unlink()
+            (dest / wire.fs_name(name)).unlink()
         except OSError:
             return self._err(404, "no such file")
         self._json({"deleted": True})
@@ -458,7 +460,7 @@ class Handler(BaseHTTPRequestHandler):
         n = self._content_len()
         if n is None:
             return self._idf(400)
-        if n < OTA_MIN or n > OTA_SLOT:
+        if n < OTA_MIN or n > self.server.ota_slot:
             return self._err(400, "implausible image size")
         got, first = 0, True
         try:

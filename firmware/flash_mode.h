@@ -5,12 +5,17 @@
 // moment the castle is on a porch and you are not in the same building — and
 // it has already blocked work twice.
 //
-// Neither usual escape hatch is available here. There is no USB serial
-// console (the ESP32-S2 has no USB Serial/JTAG peripheral, so the application
-// never enumerates a port), and OTA is off because the embedded audio makes
-// the binary too large for two app slots.
+// OTA is the normal way in (PUT /api/ota, `make ota`) and has been since the
+// all-in-flash build was retired: the SD build fits its slot with room to
+// spare. This is the LAST resort, for when the network is gone and the
+// application is the only thing still answering. On the ESP32-S2 Feather it
+// is also the only other way: that chip has no USB Serial/JTAG peripheral, so
+// the application never enumerates a port. The ESP32-S3 carrier has the
+// peripheral and a console on it (castle_s3.yaml); this button is still
+// nearer than the porch.
 //
-// But the ROM bootloader checks a bit in an always-on RTC register during
+// The ROM bootloader, S2 and S3 alike, checks a bit in an always-on RTC
+// register during
 // early boot. That register survives a software reset, so setting it and
 // restarting brings the chip up in download mode with its USB bootloader
 // enumerated, ready for esptool over the wire.

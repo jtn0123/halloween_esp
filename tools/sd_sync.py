@@ -12,7 +12,7 @@
                                              build streams (audio/ -> /sd/scenes)
     tools/sd_sync.py [ip|name] site          push the cue desk page (gzipped)
     tools/sd_sync.py [ip|name] ota <bin>     flash firmware over plain HTTP
-    tools/sd_sync.py [ip|name] rm <name>     delete one file
+    tools/sd_sync.py [ip|name] rm <name>     delete one file (scenes/x, site/x too)
     tools/sd_sync.py [ip|name] play <name>   stream a file on the castle
     tools/sd_sync.py [ip|name] bootlog       the device's early-boot log ring
 
@@ -253,6 +253,16 @@ def cmd_ls(ip: str) -> int:
     return 0
 
 
+def delete_route(name: str) -> str:
+    """`rm scenes/x.mp3` reaches the scenes directory through its own route:
+    v5.47 registers DELETE where PUT already was (grade report 2026-09-06
+    J4), and the root route refuses a '/' in the name."""
+    for sub in ("scenes", "site"):
+        if name.startswith(sub + "/"):
+            return f"/api/{sub}/{urllib.parse.quote(name[len(sub) + 1 :])}"
+    return f"/api/files/{urllib.parse.quote(name)}"
+
+
 def cmd_purge(ip: str) -> int:
     victims = [f["name"] for f in listing(ip) if not f["dir"]]
     if not victims:
@@ -288,7 +298,7 @@ def main() -> int:
     if cmd == "ota":
         return cmd_ota(ip, args)
     if cmd == "rm":
-        api(ip, "DELETE", f"/api/files/{urllib.parse.quote(args[0])}")
+        api(ip, "DELETE", delete_route(args[0]))
         print(f"deleted {args[0]}")
         return 0
     if cmd == "play":
