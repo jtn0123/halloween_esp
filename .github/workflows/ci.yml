@@ -441,7 +441,7 @@ jobs:
       # toolchain and sdkconfig (measured 2026-09-06 — a clean rebuild on
       # the Mac reproduced the Mac's numbers, so it is not a stale tree).
       - name: keep the images and maps
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: firmware-${{ github.run_id }}
           retention-days: 14
