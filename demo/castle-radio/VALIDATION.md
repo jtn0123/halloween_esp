@@ -151,3 +151,36 @@ illustrative renderers. Device publishing remains unconnected.
   custom color and brightness, plus sweep/1 kHz/200 Hz/4 kHz/silence tests.
 - At 390 x 844 and 1440 x 900, the bench has no horizontal overflow. OLED night
   resolves the page background to true black and persists through reloads.
+
+## Castle sync overhaul and firmware 5.52 (2026-09-15)
+
+- Root causes found on the live board: (1) firmware never reported whether
+  audio was playing or how far in, so the page counted from its own click and
+  a raw file "played" forever; (2) a poll fired right after a command still
+  named the previous song and the page flipped back to it; (3) `/api/play`
+  left `current_scene` on the halted scene, so the first streamed light frame
+  ran `scene_stop` and silenced the imported song; (4) three pollers and an
+  inventory sweep asked the four-socket castle httpd for status separately.
+- Firmware 5.52 mirrors the speaker pipeline state into `/api/status` as
+  `playing` and keeps a main-loop clock as `position_ms`; play and scene
+  commands restart it; a raw file publishes `scene:"stop"` and clears `track`
+  the tick its audio ends. The emulator and the C host harness answer the same
+  bytes (66 parity, contract and emulator tests pass).
+- Bridge: one cached `/api/status` per 250 ms, a 2.5 s settling window that
+  reports the requested song until the castle agrees, and light frames aligned
+  to `position_ms` (first frame waits for the mailbox tick and for decoding).
+- Page: one shared poll, header chip, castle clock on both scrubbers, stop
+  instead of restart, previous/next/shuffle/repeat on the castle, automatic
+  queue advance that skips unsynced songs, motion arm/cooldown round-trip,
+  castle volume reflected, friendlier outage messages.
+- Live board (Feather S3 in v3.3a, OTA to 5.52 verified by `/api/status`):
+  Storm (6.5 s) played from the page, the clock matched `position_ms`, the
+  castle went idle at the end and Descent started by itself; Stop pressed
+  mid-song stayed stopped; the 6.5 s "Storm · link import" played from the SD
+  card with 24 of 26 generated frames sent by 5.9 s, cleared at the end, the
+  unsynced Ghostbusters import was skipped with a toast and "Vigil · split
+  preview" started with its own 98 frames; arming motion from Run settings
+  read back `armed:true` from the castle and disarming read back `false`.
+  All checks ran at castle volume 0 and the volume was restored to 45.
+- 50 demo unit tests pass (status caching, settling, castle clock, frame
+  alignment, mailbox tolerance). Ruff and JavaScript syntax checks pass.

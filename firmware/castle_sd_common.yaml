@@ -190,6 +190,21 @@ interval:
           castle_web::g_show_on.store(id(show_playlist)->is_running());
           castle_web::g_pir_armed.store(id(pir_armed).state);
           castle_web::g_pir_cooldown.store((int) id(pir_cooldown).state);
+          // v5.52: the audio clock. Scenes go out as announcements, so
+          // ANNOUNCING is "playing" here. The tick the pipeline goes idle
+          // under a raw file (no scene script to clear it) is the tick
+          // /api/status stops naming that file — a browser following the
+          // castle sees the song end instead of a track that plays forever.
+          {
+            const auto ms = id(castle_media)->state;
+            const bool playing =
+                ms == media_player::MEDIA_PLAYER_STATE_PLAYING ||
+                ms == media_player::MEDIA_PLAYER_STATE_ANNOUNCING;
+            if (castle_web::mirror_audio(playing, esp_timer_get_time()) &&
+                id(current_scene).state == "stop" &&
+                !id(current_track).state.empty())
+              id(current_track).publish_state("");
+          }
           castle_web::mirror_show_state(id(current_scene).state,
                                         id(current_track).state,
                                         id(pir_scene).current_option().str());
@@ -207,6 +222,12 @@ interval:
             call.set_announcement(true);
             call.perform();
             id(current_track).publish_state(act.arg);
+            // A raw file has no scene. Until v5.52 current_scene kept the
+            // halted scene's name, so the first live light frame (LIGHT
+            // below) ran scene_stop and its media_player.stop took the
+            // file with it: an imported song went silent one frame in.
+            id(current_scene).publish_state("stop");
+            castle_web::restart_audio_clock(esp_timer_get_time());
           } else if (act.type == castle_web::STOP) {
             id(scene_stop)->execute();
           } else if (act.type == castle_web::VOLUME) {
@@ -241,6 +262,8 @@ interval:
             id(lights_override)->execute(act.arg);
           } else if (act.type == castle_web::SCENE) {
             id(run_scene)->execute(act.arg);
+            if (act.arg != "halt" && act.arg != "stop")
+              castle_web::restart_audio_clock(esp_timer_get_time());
           } else if (act.type == castle_web::PIRCFG) {
             // "armed|cooldown|scene", empty fields untouched.
             const size_t p1 = act.arg.find('|');

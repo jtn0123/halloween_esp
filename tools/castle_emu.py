@@ -119,6 +119,8 @@ class _State:
         self.scene = ""
         self.track = ""
         self.track_ends = 0.0
+        #: v5.52's audio clock: when the current track began, for position_ms.
+        self.track_started = 0.0
         self.show_on = False
         self.pir = {"armed": True, "cooldown_s": 60, "scene": "storm"}
         self.light = "show"
@@ -227,7 +229,11 @@ class CastleEmu(ThreadingHTTPServer):
                 f = self.sd_dir / arg
                 size = f.stat().st_size if f.is_file() else 0
                 st.track = arg
-                st.track_ends = time.monotonic() + max(1, size // BYTES_PER_S)
+                # A raw file has no scene (v5.52: the firmware publishes
+                # "stop" so a live light frame does not stop the file).
+                st.scene = "stop"
+                st.track_started = time.monotonic()
+                st.track_ends = st.track_started + max(1, size // BYTES_PER_S)
             elif action == "SCENE":
                 st.scene = arg
                 # run_scene hands the strips back to Show (gen_esphome.py);
@@ -237,7 +243,8 @@ class CastleEmu(ThreadingHTTPServer):
                 audio = self.sd_dir / "scenes" / f"{arg}.mp3"
                 if audio.is_file():
                     st.track = audio.name
-                    st.track_ends = time.monotonic() + max(
+                    st.track_started = time.monotonic()
+                    st.track_ends = st.track_started + max(
                         1, audio.stat().st_size // BYTES_PER_S
                     )
             elif action in ("STOP", "BLACKOUT"):
@@ -281,6 +288,11 @@ class CastleEmu(ThreadingHTTPServer):
                 # /api/scene checks, so the desk can spot a stale board.
                 "scenes": ",".join(self.scenes),
                 "show_on": st.show_on,
+                # v5.52: the pipeline's own state and the main loop's clock.
+                "playing": bool(st.track),
+                "position_ms": (
+                    int((time.monotonic() - st.track_started) * 1000) if st.track else 0
+                ),
                 "pir": {
                     "armed": st.pir["armed"],
                     "cooldown_s": st.pir["cooldown_s"],
@@ -308,7 +320,7 @@ class CastleEmu(ThreadingHTTPServer):
             '"sd_mounted":%s,"psram_free_kb":%d,"heap_free_kb":%d,'
             '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
             '"volume":%d,"scene":"%s","track":"%s","scenes":"%s",'
-            '"show_on":%s,'
+            '"show_on":%s,"playing":%s,"position_ms":%d,'
             '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
             % (
                 t("version"),
@@ -325,6 +337,8 @@ class CastleEmu(ThreadingHTTPServer):
                 t("track"),
                 t("scenes"),
                 b[bool(s["show_on"])],
+                b[bool(s["playing"])],
+                i("position_ms"),
                 b[bool(pir["armed"])],
                 int(pir["cooldown_s"]),
                 wire.json_escape(str(pir["scene"])),

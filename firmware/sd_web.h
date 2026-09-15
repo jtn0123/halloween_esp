@@ -119,9 +119,14 @@ inline esp_err_t h_status(httpd_req_t *req) {
     }
     out += json_escape(ids);
   }
+  // v5.52: `playing` is the pipeline's own word, `position_ms` the main
+  // loop's clock since it came alive (sd_web_state.h). A browser that
+  // follows the castle reads these instead of counting from its own click.
   snprintf(buf, sizeof(buf),
-           "\",\"show_on\":%s,\"pir\":{\"armed\":%s,\"cooldown_s\":%d,\"scene\":\"",
+           "\",\"show_on\":%s,\"playing\":%s,\"position_ms\":%lld,"
+           "\"pir\":{\"armed\":%s,\"cooldown_s\":%d,\"scene\":\"",
            g_show_on.load() ? "true" : "false",
+           g_playing.load() ? "true" : "false", g_position_ms.load(),
            g_pir_armed.load() ? "true" : "false", g_pir_cooldown.load());
   out += buf;
   out += json_escape(pir_scene);

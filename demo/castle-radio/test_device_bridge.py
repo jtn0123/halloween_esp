@@ -1,5 +1,6 @@
 """Control requests must address an installed scene and reject unsupported transport."""
 
+import threading
 import unittest
 from unittest.mock import patch
 
@@ -177,3 +178,133 @@ class PlaybackClockTests(unittest.TestCase):
         )
         self.assertEqual(result["position_s"], 12)
         self.assertEqual(result["track"], "radio_monster.mp3")
+
+
+class SharedStatusTests(unittest.TestCase):
+    def setUp(self):
+        device_bridge._status_cache.update(at=0.0, state=None)
+        device_bridge._expected.update(scene=None, track=None, until=0.0)
+
+    @patch("device_bridge.urllib.request.urlopen")
+    def test_status_polls_share_one_castle_request(self, urlopen):
+        urlopen.return_value.__enter__.return_value.read.return_value = (
+            b'{"version":"5.52","scene":"stop","track":""}'
+        )
+        first = device_bridge.call("/api/status")
+        second = device_bridge.call("/api/status")
+        self.assertEqual(first, second)
+        self.assertEqual(urlopen.call_count, 1)
+        device_bridge.call("/api/status", fresh=True)
+        self.assertEqual(urlopen.call_count, 2)
+
+    @patch("device_bridge.time.monotonic")
+    def test_stale_poll_after_play_reports_the_requested_song(self, now):
+        now.return_value = 100.0
+        device_bridge.expect(scene="stop", track="radio_new.mp3")
+        stale = {
+            "scene": "vigil",
+            "track": "",
+            "playing": True,
+            "position_ms": 8000,
+        }
+        settled = device_bridge.settle(stale)
+        self.assertEqual(settled["track"], "radio_new.mp3")
+        self.assertEqual(settled["scene"], "stop")
+        self.assertTrue(settled["settling"])
+        self.assertEqual(settled["position_ms"], 0)
+        landed = device_bridge.settle(
+            {"scene": "stop", "track": "radio_new.mp3", "playing": True}
+        )
+        self.assertNotIn("settling", landed)
+        self.assertEqual(device_bridge.settle(stale), stale)
+
+    @patch("device_bridge.time.monotonic")
+    def test_settling_gives_up_after_the_window(self, now):
+        now.return_value = 100.0
+        device_bridge.expect(scene="storm")
+        now.return_value = 100.0 + device_bridge.SETTLE_S + 0.1
+        stale = {"scene": "vigil", "track": ""}
+        self.assertEqual(device_bridge.settle(stale), stale)
+
+    def test_firmware_clock_replaces_the_estimate(self):
+        result = device_bridge.playback_clock(
+            {
+                "scene": "stop",
+                "track": "radio_a.mp3",
+                "playing": True,
+                "position_ms": 12500,
+            }
+        )
+        self.assertEqual(result["position_s"], 12.5)
+        self.assertFalse(result["estimated"])
+        self.assertEqual(result["origin"], "castle")
+        self.assertTrue(result["playing"])
+        idle = device_bridge.playback_clock(
+            {"scene": "stop", "track": "", "playing": False, "position_ms": 0}
+        )
+        self.assertEqual(idle["position_s"], 0)
+        self.assertFalse(idle["playing"])
+
+    @patch("device_bridge.urllib.request.urlopen")
+    def test_status_reports_clock_capabilities(self, urlopen):
+        urlopen.return_value.__enter__.return_value.read.return_value = (
+            b'{"version":"5.52","scene":"stop","track":"","playing":false,'
+            b'"position_ms":0,"scenes":"vigil,stop"}'
+        )
+        result = device_bridge.status()
+        self.assertTrue(result["capabilities"]["position"])
+        self.assertTrue(result["capabilities"]["track_end"])
+        self.assertTrue(result["capabilities"]["dynamic_lights"])
+        self.assertFalse(result["playback"]["estimated"])
+
+
+class FrameAlignmentTests(unittest.TestCase):
+    @patch("device_bridge.time.monotonic", return_value=50.0)
+    @patch("device_bridge.call")
+    def test_frames_follow_the_castle_clock(self, call, now):
+        call.return_value = {
+            "track": "radio_a.mp3",
+            "playing": True,
+            "position_ms": 4000,
+        }
+        started = device_bridge._align("radio_a.mp3", 10.0, threading.Event())
+        self.assertEqual(started, 46.0)
+
+    @patch("device_bridge.call", return_value={"track": "", "playing": False})
+    def test_alignment_stops_when_the_castle_moved_on(self, call):
+        self.assertIsNone(device_bridge._align("radio_a.mp3", 10.0, threading.Event()))
+
+    @patch("device_bridge.call", return_value={"track": "radio_a.mp3"})
+    def test_older_firmware_keeps_the_estimate(self, call):
+        self.assertEqual(
+            device_bridge._align("radio_a.mp3", 10.0, threading.Event()), 10.0
+        )
+
+    @patch("device_bridge.time.monotonic")
+    @patch("device_bridge.call")
+    def test_first_frame_waits_for_decoding_to_begin(self, call, now):
+        now.return_value = 70.0
+        call.side_effect = [
+            {"track": "radio_a.mp3", "playing": False, "position_ms": 0},
+            {"track": "radio_a.mp3", "playing": False, "position_ms": 0},
+            {"track": "radio_a.mp3", "playing": True, "position_ms": 100},
+        ]
+        stop = threading.Event()
+        with patch.object(stop, "wait", return_value=False) as wait:
+            started = device_bridge._align("radio_a.mp3", 10.0, stop)
+        self.assertEqual(wait.call_count, 2)
+        self.assertAlmostEqual(started, 69.9)
+
+    @patch("device_bridge.time.monotonic", return_value=90.0)
+    @patch("device_bridge.call")
+    def test_first_alignment_waits_for_the_mailbox_tick(self, call, now):
+        call.side_effect = [
+            {"track": "01_vigil", "playing": True, "position_ms": 8000},
+            {"track": "01_vigil", "playing": True, "position_ms": 8200},
+            {"track": "radio_a.mp3", "playing": True, "position_ms": 300},
+        ]
+        stop = threading.Event()
+        with patch.object(stop, "wait", return_value=False):
+            started = device_bridge._align("radio_a.mp3", 10.0, stop, first=True)
+        self.assertAlmostEqual(started, 89.7)
+        self.assertEqual(call.call_count, 3)

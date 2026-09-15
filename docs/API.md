@@ -63,7 +63,7 @@ aliases when they do.
 
 | Method | Path | Does (firmware `sd_web.h`) |
 |---|---|---|
-| GET | `/api/status`, `/api/health`, `/api/bootlog` | status (studio answers when no castle), health, boot log. v5.42 status adds `scenes`: the comma-joined ids the RUNNING BUILD was compiled with. **`missing` only covers those ids** — a nine-scene build reports `missing:""` while the tenth scene's track is absent; diff `scenes` against scenes.yaml for that (the desk does) |
+| GET | `/api/status`, `/api/health`, `/api/bootlog` | status (studio answers when no castle), health, boot log. v5.42 status adds `scenes`: the comma-joined ids the RUNNING BUILD was compiled with. **`missing` only covers those ids** — a nine-scene build reports `missing:""` while the tenth scene's track is absent; diff `scenes` against scenes.yaml for that (the desk does). v5.52 adds `playing` (the audio pipeline is running) and `position_ms` (the main loop's clock since it started; 0 when idle), and a raw `/api/play` file now reports `scene:"stop"` and clears `track` the tick its audio ends |
 | GET | `/api/files[?d=<subdir>]` | list the card root, or (v5.42) a subdirectory — `?d=scenes` is how the desk finally sees the show's own tracks |
 | PUT | `/api/files/<name>`, `/api/site/<name>`, `/api/scenes/<name>` | write a file to the card (body = bytes). v5.42: refuses `507 not enough room on the card` before the first byte, `413 site file too large` for an implausible page, and answers `{bytes, crc32}` — sd_sync compares the CRC so a bad SD sector fails loudly |
 | DELETE | `/api/files/<name>` | remove a card file |

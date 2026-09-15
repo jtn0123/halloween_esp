@@ -6,7 +6,7 @@ let waveformData=null, waveformEpoch=0, switchEpoch=0, switching=false, pendingT
 let sceneData=[], lightState=null, lightScene=null, lightKey='', lightTick=-16;
 let lastRemoved=null, lastFrame=0;
 const waveformCache=new Map();
-const colors={combined:'#d9ee9c',vocals:'#f49cb4',backing:'#89bad2'};
+const waveColor=layer=>getComputedStyle(document.documentElement).getPropertyValue(`--wave-${layer}`).trim()||'#c9a7ff';
 const layerNames={combined:'Full song',vocals:'Voice',backing:'Background'};
 const params=V.defaultParams();
 fetch('/scenes.json').then(r=>r.json()).then(s=>{sceneData=s;lightKey='';}).catch(()=>toast('Built-in light scenes could not load. Reload to retry.'));
@@ -17,6 +17,7 @@ function mountPreview(name=location.hash.slice(1)||'play'){
 }
 function openPreview(){mountPreview();$('split-preview').scrollIntoView({behavior:'smooth',block:'start'});}
 window.addEventListener('radio-page',e=>{mountPreview(e.detail);drawWaveforms();});
+window.addEventListener('radio-theme',()=>drawWaveforms());
 
 function syncLayer(){
   const t=tracks[current], layer=window.radioLayer;
@@ -85,7 +86,7 @@ function drawWaveforms(){
     const canvas=row.querySelector('canvas'),box=canvas.getBoundingClientRect();
     canvas.width=Math.max(300,Math.round(box.width*devicePixelRatio));canvas.height=90*devicePixelRatio;
     const g=canvas.getContext('2d');
-    V.drawSingle(g,layers[layer].both,undefined,waveformData.duration,'both',canvas.width,canvas.height,colors[layer]);
+    V.drawSingle(g,layers[layer].both,undefined,waveformData.duration,'both',canvas.width,canvas.height,waveColor(layer));
     const surface=row.querySelector('.wave-surface');
     const scrub=e=>{const rect=surface.getBoundingClientRect();seekTo((e.clientX-rect.left)/rect.width*(audio.duration||waveformData.duration));};
     surface.onpointerdown=e=>{surface.setPointerCapture(e.pointerId);scrub(e);};
@@ -153,7 +154,7 @@ function drawCastle(now){
   const wash=flash.flash*params.bright;
   if(!$('play').hidden)heroStage.draw(out,clock/1000,wash,flash.color);
   if(!$('play').hidden||!$('import').hidden)detailStage.draw(out,clock/1000,wash,flash.color);
-  $('light-state').textContent=blacked?'Blackout':`${remote?'Castle · estimated':layerNames[window.radioLayer]} · ${fmt(clock/1000)}`;
+  $('light-state').textContent=blacked?'Blackout':`${remote?(window.castleLink?.capabilities().position?'Castle clock':'Castle · estimated'):layerNames[window.radioLayer]} · ${fmt(clock/1000)}`;
 }
 
 function rememberHidden(){try{localStorage.setItem('castle-radio-hidden',JSON.stringify(tracks.filter(t=>!t.key&&t.deleted).map(t=>t.file)));}catch{}}

@@ -9,6 +9,15 @@ import urllib.parse
 import urllib.request
 
 HOST = "10.27.27.81"
+# The castle's httpd has four sockets and answers on one task. Three browser
+# pollers and an inventory sweep used to ask /api/status separately within the
+# same second; one answer now serves everyone for a quarter second.
+STATUS_CACHE_S = 0.25
+# A queued command lands on the next 200 ms main-loop tick and the pipeline
+# takes a moment more, so a poll fired right after "play" still names the old
+# track. Until the castle agrees (or this long passes) the reply says what was
+# asked for, so the page never flips back to the previous song.
+SETTLE_S = 2.5
 _CLOCK_LOCK = threading.Lock()
 _clock = {
     "media": None,
@@ -17,6 +26,9 @@ _clock = {
     "started": 0.0,
     "origin": "observed",
 }
+_STATUS_LOCK = threading.Lock()
+_status_cache = {"at": 0.0, "state": None}
+_expected = {"scene": None, "track": None, "until": 0.0}
 _SHOW_LOCK = threading.Lock()
 _show_control = {"stop": None}
 _show_status = {"active": False, "track": None, "frames_sent": 0, "error": None}
@@ -31,8 +43,23 @@ _ZONE_LIGHT = {
 
 
 def playback_clock(state, started_scene=None, started_track=None):
-    """Firmware 5.50 has no position; expose an estimated scene/file clock."""
+    """The castle's own clock when the firmware reports one (5.52), else an
+    estimate counted from the moment this bridge sent the command."""
     now = time.monotonic()
+    if "position_ms" in state and started_scene is None and started_track is None:
+        scene = state.get("scene", "stop")
+        track = state.get("track", "")
+        playing = bool(state.get("playing"))
+        return {
+            "position_s": max(0.0, float(state.get("position_ms") or 0) / 1000)
+            if playing
+            else 0,
+            "estimated": False,
+            "origin": "castle",
+            "playing": playing,
+            "scene": scene,
+            "track": track,
+        }
     with _CLOCK_LOCK:
         scene = state.get("scene", "stop")
         track = state.get("track", "")
@@ -50,21 +77,67 @@ def playback_clock(state, started_scene=None, started_track=None):
             "position_s": max(0, now - _clock["started"]) if media else 0,
             "estimated": True,
             "origin": _clock["origin"],
+            "playing": bool(media),
             "scene": scene,
             "track": track,
         }
 
 
-def call(path, method="GET", data=None, timeout=8):
+def call(path, method="GET", data=None, timeout=8, fresh=False):
+    if path == "/api/status" and method == "GET":
+        with _STATUS_LOCK:
+            cached = _status_cache["state"]
+            if (
+                not fresh
+                and cached is not None
+                and time.monotonic() - _status_cache["at"] < STATUS_CACHE_S
+            ):
+                return dict(cached)
     request = urllib.request.Request(f"http://{HOST}{path}", data=data, method=method)
     with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read())
+        result = json.loads(response.read())
+    if path == "/api/status" and method == "GET":
+        with _STATUS_LOCK:
+            _status_cache.update(at=time.monotonic(), state=dict(result))
+        return dict(result)
+    return result
+
+
+def expect(scene=None, track=None):
+    """Remember what a command asked for until the castle reports it."""
+    with _STATUS_LOCK:
+        _expected.update(scene=scene, track=track, until=time.monotonic() + SETTLE_S)
+        _status_cache["state"] = None
+
+
+def settle(state):
+    """Overlay the pending command on a stale poll; drop it once it lands."""
+    with _STATUS_LOCK:
+        if _expected["until"] <= time.monotonic():
+            return state
+        scene, track = _expected["scene"], _expected["track"]
+        scene_ok = scene is None or state.get("scene") == scene
+        track_ok = track is None or state.get("track") == track
+        if scene_ok and track_ok:
+            _expected["until"] = 0.0
+            return state
+        state = dict(state)
+        if scene is not None:
+            state["scene"] = scene
+        if track is not None:
+            state["track"] = track
+        state["settling"] = True
+        if "position_ms" in state:
+            state["playing"] = bool(track or (scene not in ("", "stop")))
+            state["position_ms"] = 0
+        return state
 
 
 def status():
-    state = call("/api/status")
+    state = settle(call("/api/status"))
     with _SHOW_LOCK:
         show = dict(_show_status)
+    version = state.get("version")
     return {
         "connected": True,
         "host": HOST,
@@ -77,7 +150,9 @@ def status():
             "pir": True,
             "pause": False,
             "seek": False,
-            "dynamic_lights": _version_at_least(state.get("version"), (5, 51)),
+            "dynamic_lights": _version_at_least(version, (5, 51)),
+            "position": "position_ms" in state,
+            "track_end": _version_at_least(version, (5, 52)),
         },
         "light_show": show,
     }
@@ -124,11 +199,47 @@ def stop_imported_show():
         _show_status.update(active=False, track=None)
 
 
+def _align(filename, started, stop_event, first=False):
+    """Pull the frame clock onto the castle's own (5.52 position_ms).
+
+    Returns the corrected start, or None once the castle has moved on. The
+    first call tolerates the mailbox: a play lands on the next 200 ms tick,
+    so the status right after the command still names the previous track."""
+    state = call("/api/status", timeout=3, fresh=True)
+    for _ in range(15):
+        if state.get("track") == filename or not first:
+            break
+        if stop_event.wait(0.2):
+            return None
+        state = call("/api/status", timeout=3, fresh=True)
+    if state.get("track") != filename:
+        return None
+    if "position_ms" not in state:
+        return started
+    if not state.get("playing"):
+        # Queued, not decoding yet: hold the first frame for the real start.
+        for _ in range(10):
+            if stop_event.wait(0.2):
+                return None
+            state = call("/api/status", timeout=3, fresh=True)
+            if state.get("track") != filename:
+                return None
+            if state.get("playing"):
+                break
+        else:
+            return started
+    return time.monotonic() - float(state.get("position_ms") or 0) / 1000
+
+
 def _run_imported_show(filename, frames, duration, stop_event):
     started = time.monotonic() + 0.24
     sent = 0
     error = None
     try:
+        aligned = _align(filename, started, stop_event, first=True)
+        if aligned is None:
+            return
+        started = aligned
         for index, (at, spec) in enumerate(frames):
             delay = started + at - time.monotonic()
             if stop_event.wait(max(0, delay)):
@@ -139,9 +250,10 @@ def _run_imported_show(filename, frames, duration, stop_event):
                 if stop_event is _show_control["stop"]:
                     _show_status["frames_sent"] = sent
             if index and index % 20 == 0:
-                state = call("/api/status", timeout=3)
-                if state.get("track") != filename:
+                aligned = _align(filename, started, stop_event)
+                if aligned is None:
                     return
+                started = aligned
         stop_event.wait(max(0, started + float(duration or 0) - time.monotonic()))
     except OSError as exc:
         error = str(exc)
@@ -252,13 +364,19 @@ def command(body, imported_show=None):
         time.sleep(0.3)
     result = call(path, "POST")
     if action == "scene":
+        expect(scene=scene)
         playback_clock({"scene": scene}, started_scene=scene)
     elif action == "file":
+        expect(scene="stop", track=filename)
         playback_clock({"scene": "stop", "track": filename}, started_track=filename)
         if imported_show:
             start_imported_show(
                 filename, imported_show.get("cues"), imported_show.get("duration")
             )
     elif action in ("stop", "blackout", "show/stop"):
+        expect(scene="stop", track="")
         playback_clock({"scene": "stop"}, started_scene="stop")
+    elif action in ("volume", "pir"):
+        with _STATUS_LOCK:
+            _status_cache["state"] = None
     return result

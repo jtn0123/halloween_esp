@@ -34,6 +34,13 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(HERE), **kwargs)
 
+    def handle(self):
+        # A browser that navigates away mid-stream is not a server error.
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def reply(self, value, status=200):
         body = json.dumps(value).encode()
         self.send_response(status)

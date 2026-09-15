@@ -37,6 +37,16 @@ scene MP3 files (01 through 10) from the main checkout's `audio/` directory.
 - Locally saved style/run preferences and blackout for all demo audio/lights.
 - Physical playback for synced imports, with generated cue frames streamed to
   firmware 5.51 or newer while the castle reads audio from its SD card.
+- One shared castle link (device-link.js): a single status poll a second feeds
+  the header chip, the player, the bench and the motion settings; it slows to
+  every 4 s in a background tab and the server answers all of them from one
+  cached `/api/status` per quarter second.
+- Firmware 5.52 reports `playing` and `position_ms`, so the scrubber follows the
+  castle's own clock, a raw file clears `track` when it ends, and the queue
+  moves on by itself (songs that are not synced are skipped with a toast).
+- Play on the castle is a stop button while something plays; a command that has
+  not landed yet is shown as "starting" instead of flipping back to the old song.
+- Motion arming and cooldown are sent to the castle and read back from it.
 - The original LED-channel and speaker diagnostic bench under Your castle.
 - OLED night and castle-green themes, both saved in the browser.
 
@@ -52,9 +62,10 @@ In-memory job history/retry disappears on server restart; completed songs persis
 Built-in tracks retain illustrative lighting. New imports use real analyzed cues
 with a simplified browser renderer, not production firmware parity. Standard
 unsplit scene recipes are saved alongside the split-aware browser cue catalog.
-No firmware, SD transfer, production scene edits, or device-owned playback is
-implemented. Audio still plays on this computer and stops if the page closes.
-Motion controls remain conceptual preferences. Link support follows yt-dlp;
+Production scene edits are not implemented. Computer playback stops if the
+page closes; castle playback continues, and the queue only advances while this
+page is open. Pause and seek are not supported by the castle firmware. "While
+music is playing" remains a preview preference. Link support follows yt-dlp;
 login-protected or unsupported sources may fail with a visible error.
 
 ## Shared audio, castle preview, waveforms, and removal

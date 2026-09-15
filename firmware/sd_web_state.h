@@ -68,6 +68,39 @@ inline void mirror_show_state(const std::string &scene, const std::string &track
   g_pir_scene = pir_scene;
 }
 
+// ── the audio clock (v5.52) ─────────────────────────────────────────────
+// The speaker media player knows whether it is playing but not how far in
+// it is, so the main loop keeps a clock of its own: started on the tick the
+// pipeline came alive, restarted by every play/scene command (two tracks
+// back to back never show the pipeline idle), zeroed the tick it stops.
+// /api/status reports both, and that is how a browser follows the castle's
+// own position instead of guessing from the moment it pressed a button.
+inline std::atomic<bool> g_playing{false};
+inline std::atomic<long long> g_position_ms{0};
+inline long long g_audio_started_us = 0;   // main loop only
+inline bool g_audio_was_playing = false;   // main loop only
+
+/// One call per mirror tick with the pipeline's state. Returns true on the
+/// tick playback ENDED on its own (playing -> idle), so the caller can clear
+/// a raw track the way scene_stop clears an authored one.
+inline bool mirror_audio(bool playing, long long now_us) {
+  if (playing && !g_audio_was_playing) g_audio_started_us = now_us;
+  const bool ended = !playing && g_audio_was_playing;
+  g_audio_was_playing = playing;
+  g_playing.store(playing);
+  g_position_ms.store(playing ? (now_us - g_audio_started_us) / 1000 : 0);
+  return ended;
+}
+
+/// A play or scene command: the clock starts over even when the pipeline
+/// never went idle between the old track and the new one.
+inline void restart_audio_clock(long long now_us) {
+  g_audio_started_us = now_us;
+  g_audio_was_playing = true;
+  g_playing.store(true);
+  g_position_ms.store(0);
+}
+
 // /api/light?c= — "RRGGBB" | "white" | "bars" | "chase" | "ends" | "show" |
 // "off" (the three named patterns are the bench effects in gen_rig), "<zone>:"
 // in front to drive ONE strip (the desk's channel test: which data line is
