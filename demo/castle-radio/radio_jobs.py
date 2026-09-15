@@ -35,6 +35,7 @@ JOBS = {}
 LOCK = threading.RLock()
 POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 CATALOG = DATA / "catalog.json"
+FILE_PREFIX = "file:"
 QUALITY_BITRATES = {
     "standard": {"mp3": 96, "opus": 64},
     "high": {"mp3": 160, "opus": 96},
@@ -72,8 +73,8 @@ def source_metadata(key, manifest=None):
             "playback_bytes": audio.get("bytes"),
             "playback_quality": quality,
         }
-    if source.startswith("file:"):
-        path = Path(source.removeprefix("file:"))
+    if source.startswith(FILE_PREFIX):
+        path = Path(source.removeprefix(FILE_PREFIX))
         return {
             "source_kind": "file",
             "source_label": path.name,
@@ -159,18 +160,17 @@ def playback_options(audio_format, quality):
     return QUALITY_BITRATES[quality][audio_format], PLAYBACK_FORMATS[audio_format][1]
 
 
+def _cookies(header):
+    pairs = (part.strip().partition("=") for part in (header or "").split(";"))
+    return {name: value for name, sep, value in pairs if sep}
+
+
 def cookie_audio_format(header):
-    values = dict(
-        part.strip().split("=", 1) for part in (header or "").split(";") if "=" in part
-    )
-    return values.get("castle_audio_format")
+    return _cookies(header).get("castle_audio_format")
 
 
 def cookie_audio_quality(header):
-    values = dict(
-        part.strip().split("=", 1) for part in (header or "").split(";") if "=" in part
-    )
-    return values.get("castle_audio_quality")
+    return _cookies(header).get("castle_audio_quality")
 
 
 def reprocess_job(key, audio_format, audio_quality, split=None):
@@ -179,8 +179,8 @@ def reprocess_job(key, audio_format, audio_quality, split=None):
     source = str(entry.get("source") or "")
     if row is None or not source:
         raise ValueError("That song has no saved source to reprocess.")
-    if source.startswith("file:"):
-        source = source.removeprefix("file:")
+    if source.startswith(FILE_PREFIX):
+        source = source.removeprefix(FILE_PREFIX)
         if not Path(source).is_file():
             raise ValueError("The saved source file is no longer available.")
     else:

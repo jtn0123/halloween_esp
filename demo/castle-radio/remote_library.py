@@ -9,6 +9,7 @@ import zlib
 from pathlib import Path
 
 import device_bridge
+from device_bridge import FILES_PATH, STATUS_PATH
 
 _POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 _LOCK = threading.Lock()
@@ -41,9 +42,9 @@ def job(key):
 
 
 def inventory(root, library, rows):
-    state = device_bridge.call("/api/status")
-    files = device_bridge.call("/api/files")
-    scenes = device_bridge.call("/api/files?d=scenes")
+    state = device_bridge.call(STATUS_PATH)
+    files = device_bridge.call(FILES_PATH)
+    scenes = device_bridge.call(f"{FILES_PATH}?d=scenes")
     installed = set(state.get("scenes", "").split(","))
     audio = {f["name"]: f["size"] for f in files if not f.get("dir")}
     scene_audio = {f["name"] for f in scenes if not f.get("dir")}
@@ -99,7 +100,7 @@ def delete_audio(name):
     listed = next(
         (
             str(row["name"])
-            for row in device_bridge.call("/api/files")
+            for row in device_bridge.call(FILES_PATH)
             if row.get("name") == name and not row.get("dir")
         ),
         None,
@@ -107,7 +108,7 @@ def delete_audio(name):
     if listed is None:
         raise ValueError("That audio file is not on the castle.")
     return device_bridge.call(
-        "/api/files/" + urllib.parse.quote(listed, safe=""), "DELETE"
+        f"{FILES_PATH}/" + urllib.parse.quote(listed, safe=""), "DELETE"
     )
 
 
@@ -117,7 +118,7 @@ def start(root, library, rows, key):
     row = next((row for row in rows if row["key"] == key), None)
     if row is not None:
         key = str(row["key"])
-        source, route = playback_path(library, row), "/api/files"
+        source, route = playback_path(library, row), FILES_PATH
     else:
         # A built-in scene track: the file the media directory actually holds.
         source = next(
@@ -127,9 +128,9 @@ def start(root, library, rows, key):
             raise ValueError("Song audio is no longer available on this computer.")
         key, route = source.name, "/api/scenes"
         scene = source.stem.split("_", 1)[-1]
-        if source.suffix != ".mp3" or scene not in device_bridge.call(
-            "/api/status"
-        ).get("scenes", "").split(","):
+        if source.suffix != ".mp3" or scene not in device_bridge.call(STATUS_PATH).get(
+            "scenes", ""
+        ).split(","):
             raise ValueError(
                 "The light show needs matching firmware before this scene can sync."
             )

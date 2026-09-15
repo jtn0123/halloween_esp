@@ -13,39 +13,40 @@
 #include <atomic>
 #include <mutex>
 #include <string>
+#include <string_view>
 
 namespace castle_web {
 
 // ── pending action, handed from httpd task to the main loop ─────────────
-enum ActionType {
+enum class ActionType {
   NONE = 0, PLAY = 1, SCENE = 2, STOP = 3, VOLUME = 4, LIGHT = 5,
   PIRCFG = 6, RESTART = 7, SHOW = 8,   // arg "1" starts the playlist, "0" stops
   BLACKOUT = 9,                        // #25: everything off, NOW
 };
 struct Action {
-  int type{NONE};
+  ActionType type{ActionType::NONE};
   std::string arg;
 };
 inline std::mutex g_mu;
 inline Action g_pending{};
 
-inline void set_pending(int type, std::string arg) {
-  std::lock_guard<std::mutex> lk(g_mu);
+inline void set_pending(ActionType type, std::string arg) {
+  std::scoped_lock lk(g_mu);
   g_pending = {type, std::move(arg)};
 }
 /// Called by the YAML interval on the main loop. Returns NONE most of the time.
 inline Action take_pending() {
-  std::lock_guard<std::mutex> lk(g_mu);
+  std::scoped_lock lk(g_mu);
   Action a = g_pending;
-  g_pending = {NONE, ""};
+  g_pending = {ActionType::NONE, ""};
   return a;
 }
 
 // ── state mirrored FROM the main loop, readable by handlers ─────────────
-inline std::atomic<int> g_volume{70};
-inline std::atomic<bool> g_pir_armed{true};
-inline std::atomic<int> g_pir_cooldown{60};
-inline std::atomic<bool> g_show_on{false};   // is the playlist running
+inline std::atomic g_volume{70};
+inline std::atomic g_pir_armed{true};
+inline std::atomic g_pir_cooldown{60};
+inline std::atomic g_show_on{false};   // is the playlist running
 inline std::mutex g_state_mu;
 inline std::string g_scene;        // current scene id, "" until one runs
 inline std::string g_track;        // current audio track, "" when idle
@@ -55,14 +56,14 @@ inline std::string g_pir_scene;    // what motion triggers
 // case). Set once at boot by the generated manifest_check script.
 inline std::string g_missing;
 
-inline void set_missing(const std::string &csv) {
-  std::lock_guard<std::mutex> lk(g_state_mu);
+inline void set_missing(std::string_view csv) {
+  std::scoped_lock lk(g_state_mu);
   g_missing = csv;
 }
 
-inline void mirror_show_state(const std::string &scene, const std::string &track,
-                              const std::string &pir_scene) {
-  std::lock_guard<std::mutex> lk(g_state_mu);
+inline void mirror_show_state(std::string_view scene, std::string_view track,
+                              std::string_view pir_scene) {
+  std::scoped_lock lk(g_state_mu);
   g_scene = scene;
   g_track = track;
   g_pir_scene = pir_scene;
@@ -75,8 +76,8 @@ inline void mirror_show_state(const std::string &scene, const std::string &track
 // back to back never show the pipeline idle), zeroed the tick it stops.
 // /api/status reports both, and that is how a browser follows the castle's
 // own position instead of guessing from the moment it pressed a button.
-inline std::atomic<bool> g_playing{false};
-inline std::atomic<long long> g_position_ms{0};
+inline std::atomic g_playing{false};
+inline std::atomic g_position_ms{0LL};
 inline long long g_audio_started_us = 0;   // main loop only
 inline bool g_audio_was_playing = false;   // main loop only
 
@@ -111,12 +112,12 @@ inline bool light_spec_ok(const std::string &c) {
   const auto colon = c.find(':');
   const std::string zone = colon == std::string::npos ? "" : c.substr(0, colon);
   std::string spec = colon == std::string::npos ? c : c.substr(colon + 1);
-  const auto at = spec.find('@');
-  if (at != std::string::npos) {
+  if (const auto at = spec.find('@'); at != std::string::npos) {
     const std::string pct = spec.substr(at + 1);
-    const bool digits = !pct.empty() && pct.size() <= 3 &&
-        pct.find_first_not_of("0123456789") == std::string::npos;
-    if (!digits || atoi(pct.c_str()) < 1 || atoi(pct.c_str()) > 100) return false;
+    if (const bool digits = !pct.empty() && pct.size() <= 3 &&
+            pct.find_first_not_of("0123456789") == std::string::npos;
+        !digits || atoi(pct.c_str()) < 1 || atoi(pct.c_str()) > 100)
+      return false;
     spec.resize(at);
   }
   if (colon != std::string::npos &&

@@ -27,6 +27,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <algorithm>
+#include <array>
+#include <memory>
+#include <string_view>
 #include <vector>
 
 #include "sd_web_util.h"
@@ -63,9 +66,11 @@ inline void set_scene_ids(std::vector<std::string> ids) { g_scene_ids = std::mov
 /// should pay. A minute of staleness on "GB free" costs nothing.
 inline void sd_space_kb(unsigned &total, unsigned &free_) {
   static int64_t at = -60 * 1000000LL;
-  static unsigned t = 0, f = 0;
+  static unsigned t = 0;
+  static unsigned f = 0;
   if (castle_sd::g_mounted && esp_timer_get_time() - at > 60 * 1000000LL) {
-    uint64_t tb = 0, fb = 0;
+    uint64_t tb = 0;
+    uint64_t fb = 0;
     if (esp_vfs_fat_info("/sd", &tb, &fb) == ESP_OK) {
       t = (unsigned) (tb / 1024);
       f = (unsigned) (fb / 1024);
@@ -77,40 +82,46 @@ inline void sd_space_kb(unsigned &total, unsigned &free_) {
 }
 
 inline esp_err_t h_status(httpd_req_t *req) {
-  std::string scene, track, pir_scene, missing;
+  std::string scene;
+  std::string track;
+  std::string pir_scene;
+  std::string missing;
   {
-    std::lock_guard<std::mutex> lk(g_state_mu);
-    scene = g_scene; track = g_track; pir_scene = g_pir_scene;
+    std::scoped_lock lk(g_state_mu);
+    scene = g_scene;
+    track = g_track;
+    pir_scene = g_pir_scene;
     missing = g_missing;
   }
-  unsigned sd_total = 0, sd_free = 0;
+  unsigned sd_total = 0;
+  unsigned sd_free = 0;
   sd_space_kb(sd_total, sd_free);
   // Numbers through snprintf, strings through json_escape into a
   // std::string: a fixed buffer truncated silently when the boot manifest
   // listed more than a few missing files, and every client's parse died.
-  char buf[240];
-  snprintf(buf, sizeof(buf),
-           "{\"version\":\"%s\",\"compiled\":\"%s %s\",\"uptime_s\":%lld,"
-           "\"sd_mounted\":%s,\"psram_free_kb\":%u,\"heap_free_kb\":%u,"
-           "\"sd_total_kb\":%u,\"sd_free_kb\":%u,\"missing\":\"",
+  std::array<char, 240> buf{};
+  snprintf(buf.data(), buf.size(),
+           R"({"version":"%s","compiled":"%s %s","uptime_s":%lld,)"
+           R"("sd_mounted":%s,"psram_free_kb":%u,"heap_free_kb":%u,)"
+           R"("sd_total_kb":%u,"sd_free_kb":%u,"missing":")",
            CASTLE_VERSION, __DATE__, __TIME__,
            (long long) (esp_timer_get_time() / 1000000),
            castle_sd::g_mounted ? "true" : "false",
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
            sd_total, sd_free);
-  std::string out = buf;
+  std::string out = buf.data();
   out += json_escape(missing);
-  snprintf(buf, sizeof(buf), "\",\"volume\":%d,\"scene\":\"", g_volume.load());
-  out += buf;
+  snprintf(buf.data(), buf.size(), R"(","volume":%d,"scene":")", g_volume.load());
+  out += buf.data();
   out += json_escape(scene);
-  out += "\",\"track\":\"";
+  out += R"(","track":")";
   out += json_escape(track);
   // B1: the ids this BUILD was compiled with (seeded at boot, same list
   // /api/scene checks). `missing` can only speak about these — the desk
   // diffs them against scenes.yaml to spot a stale board before a pick
   // answers "unknown scene".
-  out += "\",\"scenes\":\"";
+  out += R"(","scenes":")";
   {
     std::string ids;
     for (const auto &id : g_scene_ids) {
@@ -122,28 +133,28 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // v5.52: `playing` is the pipeline's own word, `position_ms` the main
   // loop's clock since it came alive (sd_web_state.h). A browser that
   // follows the castle reads these instead of counting from its own click.
-  snprintf(buf, sizeof(buf),
-           "\",\"show_on\":%s,\"playing\":%s,\"position_ms\":%lld,"
-           "\"pir\":{\"armed\":%s,\"cooldown_s\":%d,\"scene\":\"",
+  snprintf(buf.data(), buf.size(),
+           R"(","show_on":%s,"playing":%s,"position_ms":%lld,)"
+           R"("pir":{"armed":%s,"cooldown_s":%d,"scene":")",
            g_show_on.load() ? "true" : "false",
            g_playing.load() ? "true" : "false", g_position_ms.load(),
            g_pir_armed.load() ? "true" : "false", g_pir_cooldown.load());
-  out += buf;
+  out += buf.data();
   out += json_escape(pir_scene);
-  out += "\"}}";
+  out += R"("}})";
   return reply_json(req, out);
 }
 
 // ── /api/health — the season-long counters ──────────────────────────────
 inline esp_err_t h_health(httpd_req_t *req) {
-  char buf[200];
-  snprintf(buf, sizeof(buf),
-           "{\"boots\":%u,\"crashes\":%u,\"last_reset\":\"%s\","
-           "\"was_crash\":%s}",
+  std::array<char, 200> buf{};
+  snprintf(buf.data(), buf.size(),
+           R"({"boots":%u,"crashes":%u,"last_reset":"%s",)"
+           R"("was_crash":%s})",
            (unsigned) castle_health::g_boots, (unsigned) castle_health::g_crashes,
            castle_health::reason_str(),
            castle_health::was_crash() ? "true" : "false");
-  return reply_json(req, buf);
+  return reply_json(req, buf.data());
 }
 
 // ── /api/files — list the card root ─────────────────────────────────────
@@ -152,18 +163,18 @@ inline esp_err_t h_list(httpd_req_t *req) {
   // B2: ?d=<subdir> lists inside the card (scenes/, site/) — the desk could
   // never SEE the directory that holds the show. Validated like /sd/ paths.
   std::string sub = query_param(req, "d");
-  char dirpath[160];
+  std::array<char, 160> dirpath{};
   if (sub.empty()) {
-    snprintf(dirpath, sizeof(dirpath), "/sd");
+    snprintf(dirpath.data(), dirpath.size(), "/sd");
   } else {
     if (!safe_subpath(sub)) return reply_err(req, "400 Bad Request", "bad path");
-    snprintf(dirpath, sizeof(dirpath), "/sd/%s", sub.c_str());
+    snprintf(dirpath.data(), dirpath.size(), "/sd/%s", sub.c_str());
   }
-  DIR *d = opendir(dirpath);
+  DIR *d = opendir(dirpath.data());
   if (d == nullptr) return reply_err(req, "404 Not Found", "no such directory");
   std::string out = "[";
   unsigned skipped = 0;
-  struct dirent *e;
+  const struct dirent *e = nullptr;
   while ((e = readdir(d)) != nullptr) {
     if (e->d_name[0] == '.') continue;
     // A name safe_name refuses is one the desk could never have uploaded
@@ -179,25 +190,25 @@ inline esp_err_t h_list(httpd_req_t *req) {
     // harness (tests/cxx/web_check.cpp) hit first. This also takes 300
     // bytes off the httpd task's stack, which is hand-raised because it is
     // tight; the loop already allocates for `out` and json_escape.
-    const std::string full = std::string(dirpath) + "/" + e->d_name;
+    const std::string full = std::string(dirpath.data()) + "/" + e->d_name;
     struct stat st{};
     long size = (stat(full.c_str(), &st) == 0) ? (long) st.st_size : -1;
-    char tail[48];
-    snprintf(tail, sizeof(tail), "\",\"size\":%ld,\"dir\":%s}", size,
+    std::array<char, 48> tail{};
+    snprintf(tail.data(), tail.size(), R"(","size":%ld,"dir":%s})", size,
              (e->d_type == DT_DIR) ? "true" : "false");
     if (out.size() > 1) out += ",";
-    out += "{\"name\":\"";
+    out += R"({"name":")";
     out += json_escape(e->d_name);
-    out += tail;
+    out += tail.data();
   }
   closedir(d);
   // One trailing {"skipped":N} element, only when N > 0. Every reader of
   // this array filters on name/dir, so an element with neither is invisible
   // to them — and visible to anyone wondering why a file is not listed.
   if (skipped > 0) {
-    char t[40];
-    snprintf(t, sizeof(t), "%s{\"skipped\":%u}", out.size() > 1 ? "," : "", skipped);
-    out += t;
+    std::array<char, 40> t{};
+    snprintf(t.data(), t.size(), R"(%s{"skipped":%u})", out.size() > 1 ? "," : "", skipped);
+    out += t.data();
   }
   out += "]";
   return reply_json(req, out);
@@ -213,7 +224,8 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
   // B3/E3: refuse what cannot fit, before the first byte — "short write"
   // at 80% of a full card told the operator nothing. 64 KB of slack keeps
   // FAT metadata and the .part sidecar honest.
-  unsigned sd_total = 0, sd_free = 0;
+  unsigned sd_total = 0;
+  unsigned sd_free = 0;
   sd_space_kb(sd_total, sd_free);
   if (sd_total > 0 && req->content_len / 1024 + 64 > sd_free)
     return reply_err(req, "507 Insufficient Storage", "not enough room on the card");
@@ -221,23 +233,24 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
   FILE *f = fopen(part.c_str(), "wb");
   if (f == nullptr) return reply_err(req, "500 Internal Server Error", "cannot create file");
   static constexpr size_t CHUNK = 8192;
-  char *buf = (char *) malloc(CHUNK);
+  // nothrow: exceptions are off, and a full heap must answer 500, not abort.
+  const std::unique_ptr<char[]> buf(new (std::nothrow) char[CHUNK]);
   if (buf == nullptr) {
     fclose(f);
     return reply_err(req, "500 Internal Server Error", "no memory");
   }
-  size_t remaining = req->content_len, written = 0;
+  size_t remaining = req->content_len;
+  size_t written = 0;
   unsigned chunks = 0;
   uint32_t crc = 0;
   bool ok = true;
   while (remaining > 0) {
-    int got = httpd_req_recv(req, buf, remaining < CHUNK ? remaining : CHUNK);
-    if (got <= 0) { ok = false; break; }
-    if (fwrite(buf, 1, got, f) != (size_t) got) { ok = false; break; }
+    const int got = httpd_req_recv(req, buf.get(), remaining < CHUNK ? remaining : CHUNK);
+    if (got <= 0 || fwrite(buf.get(), 1, got, f) != (size_t) got) { ok = false; break; }
     // B5: a cheap running checksum, returned to the sender — "bytes
     // matched" catches truncation but not a bad SD sector, which is a live
     // hypothesis in docs/ISSUE-scene-start-audio.md. sd_sync compares.
-    crc = esp_rom_crc32_le(crc, (const uint8_t *) buf, got);
+    crc = esp_rom_crc32_le(crc, (const uint8_t *) buf.get(), got);
     remaining -= got;
     written += got;
     // The third appearance of this bug class (h_ota and send_sd_file were
@@ -248,7 +261,6 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
     // push on show night; if uploads reboot the board, go back to per-chunk.
     if ((++chunks & 3u) == 0) vTaskDelay(1);
   }
-  free(buf);
   fclose(f);
   if (!ok) {
     unlink(part.c_str());  // the sidecar only; whatever `path` held still plays
@@ -264,18 +276,18 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
     return reply_err(req, "500 Internal Server Error", "rename failed");
   }
   ESP_LOGI(TAG, "uploaded %s (%u KB)", path, (unsigned) (written / 1024));
-  char body[220];
-  snprintf(body, sizeof(body), "{\"path\":\"%s\",\"bytes\":%u,\"crc32\":\"%08lx\"}",
+  std::array<char, 220> body{};
+  snprintf(body.data(), body.size(), R"({"path":"%s","bytes":%u,"crc32":"%08lx"})",
            path, (unsigned) written, (unsigned long) crc);
-  return reply_json(req, body);
+  return reply_json(req, body.data());
 }
 
-/// Which card directory a /api/files|site|scenes/* route addresses, and the
+/// Which card directory a /api/files, /api/site or /api/scenes route addresses, and the
 /// prefix to cut off the URI: the one switch h_put and h_delete share, so a
 /// file that can be put somewhere can be deleted from the same place (until
 /// v5.47 DELETE knew only the root, and a renamed scene stranded its old
 /// 2 MB track on the card — grade report 2026-09-06 J4).
-inline void route_dir(httpd_req_t *req, const char *&dir, const char *&prefix) {
+inline void route_dir(const httpd_req_t *req, const char *&dir, const char *&prefix) {
   dir = ""; prefix = "/api/files/";
   if (strncmp(req->uri, "/api/site/", 10) == 0) { dir = "site/"; prefix = "/api/site/"; }
   if (strncmp(req->uri, "/api/scenes/", 12) == 0) { dir = "scenes/"; prefix = "/api/scenes/"; }
@@ -285,7 +297,7 @@ inline void route_dir(httpd_req_t *req, const char *&dir, const char *&prefix) {
 /// directory is where the show's own tracks live (see audio_sd.yaml).
 inline esp_err_t h_put(httpd_req_t *req) {
   if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
-  const char *dir, *prefix;
+  const char *dir = nullptr; const char *prefix = nullptr;
   route_dir(req, dir, prefix);
   // E3: a desk page has a known plausible size (3.3 MB today); a mistake
   // must not eat the card. The free-space check in write_body bounds the
@@ -295,34 +307,33 @@ inline esp_err_t h_put(httpd_req_t *req) {
   std::string name = name_from_uri(req, prefix);
   if (!safe_name(name)) return reply_err(req, "400 Bad Request", "bad filename");
   if (dir[0] != '\0') {
-    char d[32];
-    snprintf(d, sizeof(d), "/sd/%s", dir);
-    d[strlen(d) - 1] = '\0';   // mkdir without the trailing slash
-    mkdir(d, 0775);
+    std::string d = std::string("/sd/") + dir;
+    d.pop_back();   // mkdir without the trailing slash
+    mkdir(d.c_str(), 0775);
   }
-  char path[200];
-  snprintf(path, sizeof(path), "/sd/%s%s", dir, name.c_str());
-  return write_body(req, path);
+  std::array<char, 200> path{};
+  snprintf(path.data(), path.size(), "/sd/%s%s", dir, name.c_str());
+  return write_body(req, path.data());
 }
 
 inline esp_err_t h_delete(httpd_req_t *req) {
   if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
-  const char *dir, *prefix;
+  const char *dir = nullptr; const char *prefix = nullptr;
   route_dir(req, dir, prefix);
   std::string name = name_from_uri(req, prefix);
   if (!safe_name(name)) return reply_err(req, "400 Bad Request", "bad filename");
-  char path[200];
-  snprintf(path, sizeof(path), "/sd/%s%s", dir, name.c_str());
-  if (unlink(path) != 0) return reply_err(req, "404 Not Found", "no such file");
-  ESP_LOGI(TAG, "deleted %s", path);
-  return reply_json(req, "{\"deleted\":true}");
+  std::array<char, 200> path{};
+  snprintf(path.data(), path.size(), "/sd/%s%s", dir, name.c_str());
+  if (unlink(path.data()) != 0) return reply_err(req, "404 Not Found", "no such file");
+  ESP_LOGI(TAG, "deleted %s", path.data());
+  return reply_json(req, R"({"deleted":true})");
 }
 
 // ── show control: play/scene/stop/volume/light/pir — all queued ─────────
 inline esp_err_t h_play(httpd_req_t *req) {
   std::string f = query_param(req, "f");
   if (!safe_name(f)) return reply_err(req, "400 Bad Request", "need ?f=<file>");
-  set_pending(PLAY, f);
+  set_pending(ActionType::PLAY, f);
   return reply_json(req, "{\"queued\":true}");
 }
 
@@ -334,12 +345,12 @@ inline esp_err_t h_scene(httpd_req_t *req) {
   if (!g_scene_ids.empty() &&
       std::find(g_scene_ids.begin(), g_scene_ids.end(), s) == g_scene_ids.end())
     return reply_err(req, "404 Not Found", "unknown scene");
-  set_pending(SCENE, s);
+  set_pending(ActionType::SCENE, s);
   return reply_json(req, "{\"queued\":true}");
 }
 
 inline esp_err_t h_stop(httpd_req_t *req) {
-  set_pending(STOP, "");
+  set_pending(ActionType::STOP, "");
   return reply_json(req, "{\"queued\":true}");
 }
 
@@ -354,7 +365,7 @@ inline esp_err_t h_volume(httpd_req_t *req) {
       v.find_first_not_of("0123456789") == std::string::npos;
   int pct = digits ? atoi(v.c_str()) : -1;
   if (pct < 0 || pct > 100) return reply_err(req, "400 Bad Request", "need ?v=0..100");
-  set_pending(VOLUME, std::to_string(pct));
+  set_pending(ActionType::VOLUME, std::to_string(pct));
   return reply_json(req, "{\"queued\":true}");
 }
 
@@ -362,7 +373,7 @@ inline esp_err_t h_light(httpd_req_t *req) {
   std::string c = query_param(req, "c");
   if (!light_spec_ok(c))    // RRGGBB|show|off, optionally "<zone>:" first
     return reply_err(req, "400 Bad Request", "need ?c=[zone:]RRGGBB|white|bars|chase|ends|show|off[@pct]");
-  set_pending(LIGHT, c);
+  set_pending(ActionType::LIGHT, c);
   return reply_json(req, "{\"queued\":true}");
 }
 
@@ -374,7 +385,7 @@ inline esp_err_t h_pir(httpd_req_t *req) {
   std::string s = query_param(req, "scene");
   if (a.empty() && c.empty() && s.empty())
     return reply_err(req, "400 Bad Request", "need armed=, cooldown= or scene=");
-  set_pending(PIRCFG, a + "|" + c + "|" + s);
+  set_pending(ActionType::PIRCFG, a + "|" + c + "|" + s);
   return reply_json(req, "{\"queued\":true}");
 }
 
@@ -390,10 +401,10 @@ inline esp_err_t h_bootlog(httpd_req_t *req) {
                                                              : castle_log::LINES;
   const size_t first = castle_log::g_head < castle_log::LINES
                            ? 0 : castle_log::g_head - castle_log::LINES;
-  char hdr[80];
-  snprintf(hdr, sizeof(hdr), "boot log: %u lines, %u dropped\n", (unsigned) held,
+  std::array<char, 80> hdr{};
+  snprintf(hdr.data(), hdr.size(), "boot log: %u lines, %u dropped\n", (unsigned) held,
            (unsigned) castle_log::g_dropped);
-  httpd_resp_send_chunk(req, hdr, HTTPD_RESP_USE_STRLEN);
+  httpd_resp_send_chunk(req, hdr.data(), HTTPD_RESP_USE_STRLEN);
   for (size_t i = 0; i < held; i++) {
     const char *line =
         castle_log::g_buf + ((first + i) % castle_log::LINES) * castle_log::WIDTH;
@@ -422,8 +433,8 @@ inline void start() {
   cfg.max_open_sockets = 4;
   cfg.uri_match_fn = httpd_uri_match_wildcard;
   // MUST exceed the reg() count below (25 today). At 20, the LAST THREE
-  // registrations failed silently on the device — /sd/* (the very URL the
-  // media pipeline streams scene audio through), /site/* and / — so the
+  // registrations failed silently on the device — the /sd/ wildcard (the very
+  // URL the media pipeline streams scene audio through), /site/ and / — so the
   // cue desk 404'd and SD streaming was dead while every /api route worked.
   // Found on the live board 2026-08-15; headroom so the next route is free.
   cfg.max_uri_handlers = 32;

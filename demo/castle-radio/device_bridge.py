@@ -2,13 +2,18 @@
 
 import json
 import math
+import os
 import re
 import threading
 import time
 import urllib.parse
 import urllib.request
 
-HOST = "10.27.27.81"
+# The porch castle's private address; CASTLE_RADIO_HOST points the bridge at
+# another castle (a bench unit, a QEMU build) without editing this file.
+HOST = os.environ.get("CASTLE_RADIO_HOST", "10.27.27.81")
+STATUS_PATH = "/api/status"
+FILES_PATH = "/api/files"
 # The castle's httpd has four sockets and answers on one task. Three browser
 # pollers and an inventory sweep used to ask /api/status separately within the
 # same second; one answer now serves everyone for a quarter second.
@@ -33,7 +38,7 @@ _SHOW_LOCK = threading.Lock()
 _show_control = {"stop": None}
 _show_status = {"active": False, "track": None, "frames_sent": 0, "error": None}
 _LIGHT_SPEC = re.compile(
-    r"(?:(?:towerL|towerR|door):)?(?:[0-9a-fA-F]{6}|white|off|show|bars|chase|ends)(?:@(?:[1-9]|[1-9][0-9]|100))?"
+    r"(?:(?:towerL|towerR|door):)?(?:[0-9a-fA-F]{6}|white|off|show|bars|chase|ends)(?:@(?:[1-9]|[1-9]\d|100))?"
 )
 _ZONE_LIGHT = {
     "left": ("towerL", "a832ff"),
@@ -45,34 +50,46 @@ _ZONE_LIGHT = {
 def playback_clock(state, started_scene=None, started_track=None):
     """The castle's own clock when the firmware reports one (5.52), else an
     estimate counted from the moment this bridge sent the command."""
-    now = time.monotonic()
     if "position_ms" in state and started_scene is None and started_track is None:
-        scene = state.get("scene", "stop")
-        track = state.get("track", "")
-        playing = bool(state.get("playing"))
-        return {
-            "position_s": max(0.0, float(state.get("position_ms") or 0) / 1000)
-            if playing
-            else 0,
-            "estimated": False,
-            "origin": "castle",
-            "playing": playing,
-            "scene": scene,
-            "track": track,
-        }
+        return _castle_clock(state)
+    commanded = started_track if started_track is not None else started_scene
+    return _estimated_clock(state, commanded, time.monotonic())
+
+
+def _castle_clock(state):
+    playing = bool(state.get("playing"))
+    position = float(state.get("position_ms") or 0) / 1000
+    return {
+        "position_s": max(0.0, position) if playing else 0,
+        "estimated": False,
+        "origin": "castle",
+        "playing": playing,
+        "scene": state.get("scene", "stop"),
+        "track": state.get("track", ""),
+    }
+
+
+def _playing_media(scene, track, commanded):
+    """What is sounding: the commanded name when there is one, else what the
+    castle reports; None for silence."""
+    if commanded is not None:
+        return commanded if commanded not in ("", "stop") else None
+    return track or (scene if scene not in ("", "stop") else None)
+
+
+def _estimated_clock(state, commanded, now):
+    scene = state.get("scene", "stop")
+    track = state.get("track", "")
     with _CLOCK_LOCK:
-        scene = state.get("scene", "stop")
-        track = state.get("track", "")
-        media = track or (scene if scene not in ("", "stop") else None)
-        commanded = started_track if started_track is not None else started_scene
-        if commanded is not None:
-            media = commanded if commanded not in ("", "stop") else None
+        media = _playing_media(scene, track, commanded)
         if commanded is not None or media != _clock["media"]:
-            _clock["media"] = media
-            _clock["scene"] = scene
-            _clock["track"] = track
-            _clock["started"] = now
-            _clock["origin"] = "command" if commanded is not None else "observed"
+            _clock.update(
+                media=media,
+                scene=scene,
+                track=track,
+                started=now,
+                origin="command" if commanded is not None else "observed",
+            )
         return {
             "position_s": max(0, now - _clock["started"]) if media else 0,
             "estimated": True,
@@ -84,7 +101,7 @@ def playback_clock(state, started_scene=None, started_track=None):
 
 
 def call(path, method="GET", data=None, timeout=8, fresh=False):
-    if path == "/api/status" and method == "GET":
+    if path == STATUS_PATH and method == "GET":
         with _STATUS_LOCK:
             cached = _status_cache["state"]
             if (
@@ -96,7 +113,7 @@ def call(path, method="GET", data=None, timeout=8, fresh=False):
     request = urllib.request.Request(f"http://{HOST}{path}", data=data, method=method)
     with urllib.request.urlopen(request, timeout=timeout) as response:
         result = json.loads(response.read())
-    if path == "/api/status" and method == "GET":
+    if path == STATUS_PATH and method == "GET":
         with _STATUS_LOCK:
             _status_cache.update(at=time.monotonic(), state=dict(result))
         return dict(result)
@@ -134,7 +151,7 @@ def settle(state):
 
 
 def status():
-    state = settle(call("/api/status"))
+    state = settle(call(STATUS_PATH))
     with _SHOW_LOCK:
         show = dict(_show_status)
     version = state.get("version")
@@ -199,76 +216,105 @@ def stop_imported_show():
         _show_status.update(active=False, track=None)
 
 
+def _fresh_status(stop_event):
+    """The castle's status after one mailbox tick, or None once stopped."""
+    if stop_event.wait(0.2):
+        return None
+    return call(STATUS_PATH, timeout=3, fresh=True)
+
+
+def _await_track(filename, stop_event, first):
+    """The status naming `filename`, or None once the castle has moved on.
+    The first call tolerates the mailbox: a play lands on the next 200 ms
+    tick, so the status right after the command still names the previous
+    track."""
+    state = call(STATUS_PATH, timeout=3, fresh=True)
+    for _ in range(15 if first else 0):
+        if state.get("track") == filename:
+            break
+        state = _fresh_status(stop_event)
+        if state is None:
+            return None
+    return state if state.get("track") == filename else None
+
+
+def _await_playing(filename, state, stop_event):
+    """Poll until the castle is decoding `filename` (about two seconds at
+    most); None once it stopped or moved on. The status returned may still
+    say not playing when the window ran out."""
+    for _ in range(10):
+        if state.get("playing"):
+            break
+        state = _fresh_status(stop_event)
+        if state is None or state.get("track") != filename:
+            return None
+    return state
+
+
 def _align(filename, started, stop_event, first=False):
     """Pull the frame clock onto the castle's own (5.52 position_ms).
 
-    Returns the corrected start, or None once the castle has moved on. The
-    first call tolerates the mailbox: a play lands on the next 200 ms tick,
-    so the status right after the command still names the previous track."""
-    state = call("/api/status", timeout=3, fresh=True)
-    for _ in range(15):
-        if state.get("track") == filename or not first:
-            break
-        if stop_event.wait(0.2):
-            return None
-        state = call("/api/status", timeout=3, fresh=True)
-    if state.get("track") != filename:
+    Returns the corrected start, or None once the castle has moved on."""
+    state = _await_track(filename, stop_event, first)
+    if state is None:
         return None
     if "position_ms" not in state:
         return started
     if not state.get("playing"):
         # Queued, not decoding yet: hold the first frame for the real start.
-        for _ in range(10):
-            if stop_event.wait(0.2):
-                return None
-            state = call("/api/status", timeout=3, fresh=True)
-            if state.get("track") != filename:
-                return None
-            if state.get("playing"):
-                break
-        else:
+        state = _await_playing(filename, state, stop_event)
+        if state is None:
+            return None
+        if not state.get("playing"):
             return started
     return time.monotonic() - float(state.get("position_ms") or 0) / 1000
 
 
+def _imported_frames(filename, frames, duration, stop_event):
+    """Send each frame on the castle's clock, yielding the running count."""
+    started = _align(filename, time.monotonic() + 0.24, stop_event, first=True)
+    if started is None:
+        return
+    for index, (at, spec) in enumerate(frames):
+        if stop_event.wait(max(0, started + at - time.monotonic())):
+            return
+        call("/api/light?" + urllib.parse.urlencode({"c": spec}), "POST", timeout=3)
+        yield index + 1
+        if index and index % 20 == 0:
+            started = _align(filename, started, stop_event)
+            if started is None:
+                return
+    stop_event.wait(max(0, started + float(duration or 0) - time.monotonic()))
+
+
+def _note_frames_sent(stop_event, sent):
+    with _SHOW_LOCK:
+        if stop_event is _show_control["stop"]:
+            _show_status["frames_sent"] = sent
+
+
+def _finish_imported_show(stop_event, sent, error):
+    with _SHOW_LOCK:
+        current = stop_event is _show_control["stop"]
+        if current:
+            _show_status.update(active=False, track=None, frames_sent=sent, error=error)
+    if current and not stop_event.is_set():
+        try:
+            call("/api/light?c=off", "POST", timeout=3)
+        except OSError:
+            pass
+
+
 def _run_imported_show(filename, frames, duration, stop_event):
-    started = time.monotonic() + 0.24
     sent = 0
     error = None
     try:
-        aligned = _align(filename, started, stop_event, first=True)
-        if aligned is None:
-            return
-        started = aligned
-        for index, (at, spec) in enumerate(frames):
-            delay = started + at - time.monotonic()
-            if stop_event.wait(max(0, delay)):
-                return
-            call("/api/light?" + urllib.parse.urlencode({"c": spec}), "POST", timeout=3)
-            sent += 1
-            with _SHOW_LOCK:
-                if stop_event is _show_control["stop"]:
-                    _show_status["frames_sent"] = sent
-            if index and index % 20 == 0:
-                aligned = _align(filename, started, stop_event)
-                if aligned is None:
-                    return
-                started = aligned
-        stop_event.wait(max(0, started + float(duration or 0) - time.monotonic()))
+        for sent in _imported_frames(filename, frames, duration, stop_event):
+            _note_frames_sent(stop_event, sent)
     except OSError as exc:
         error = str(exc)
     finally:
-        with _SHOW_LOCK:
-            current = stop_event is _show_control["stop"]
-            if current:
-                _show_status.update(
-                    active=False, track=None, frames_sent=sent, error=error
-                )
-        if current and not stop_event.is_set():
-            try:
-                call("/api/light?c=off", "POST", timeout=3)
-            except OSError:
-                pass
+        _finish_imported_show(stop_event, sent, error)
 
 
 def start_imported_show(filename, cues, duration):
@@ -308,14 +354,14 @@ _COOLDOWNS = {30: 30, 60: 60, 120: 120}
 
 
 def _installed_scene(name):
-    for scene in call("/api/status").get("scenes", "").split(","):
+    for scene in call(STATUS_PATH).get("scenes", "").split(","):
         if scene == name:
             return scene
     raise ValueError("This light show is not installed in the current firmware.")
 
 
 def _castle_file(name, missing):
-    for row in call("/api/files"):
+    for row in call(FILES_PATH):
         if row.get("name") == name and not row.get("dir"):
             return str(row["name"])
     raise ValueError(missing)
@@ -409,7 +455,7 @@ def command(body, imported_show=None):
     if action in _PLAIN or action == "scene":
         stop_imported_show()
     if action == "file" and imported_show:
-        if not _version_at_least(call("/api/status").get("version"), (5, 51)):
+        if not _version_at_least(call(STATUS_PATH).get("version"), (5, 51)):
             raise ValueError(
                 "Generated imported lights require castle firmware 5.51 or newer."
             )

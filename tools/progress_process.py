@@ -12,6 +12,20 @@ import time
 from typing import BinaryIO, cast
 
 
+def _kill(process: subprocess.Popen[bytes]) -> None:
+    os.killpg(process.pid, signal.SIGKILL)
+    process.wait()
+
+
+def _emit_lines(pending: str) -> str:
+    """Print each complete line as a progress record; return the remainder."""
+    while "\n" in pending:
+        line, pending = pending.split("\n", 1)
+        if line.strip():
+            print("CASTLE_PROGRESS " + json.dumps({"line": line.strip()}), flush=True)
+    return pending
+
+
 def run_progress(args: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
     process = subprocess.Popen(
         args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True
@@ -29,8 +43,7 @@ def run_progress(args: list[str], timeout: float) -> subprocess.CompletedProcess
     try:
         while selector.get_map():
             if time.monotonic() - started > timeout:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
+                _kill(process)
                 raise subprocess.TimeoutExpired(args, timeout)
             for key, _ in selector.select(0.2):
                 stream = cast(BinaryIO, key.fileobj)
@@ -42,14 +55,7 @@ def run_progress(args: list[str], timeout: float) -> subprocess.CompletedProcess
                 name = key.data
                 text = decoders[name].decode(chunk)
                 buffers[name] += text
-                pending[name] += text.replace("\r", "\n")
-                while "\n" in pending[name]:
-                    line, pending[name] = pending[name].split("\n", 1)
-                    if line.strip():
-                        print(
-                            "CASTLE_PROGRESS " + json.dumps({"line": line.strip()}),
-                            flush=True,
-                        )
+                pending[name] = _emit_lines(pending[name] + text.replace("\r", "\n"))
         code = process.wait(timeout=max(0.1, timeout - (time.monotonic() - started)))
         return subprocess.CompletedProcess(
             args, code, buffers["stdout"], buffers["stderr"]
@@ -57,5 +63,4 @@ def run_progress(args: list[str], timeout: float) -> subprocess.CompletedProcess
     finally:
         selector.close()
         if process.poll() is None:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.wait()
+            _kill(process)

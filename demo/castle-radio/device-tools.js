@@ -73,6 +73,15 @@
   $('tone-level').oninput=()=>{$('tone-level-value').textContent=`${$('tone-level').value}%`;};
   bench.querySelectorAll('[data-tone]').forEach(button=>button.onclick=()=>command({action:'tone',file:button.dataset.tone,volume:Number($('tone-level').value)},button.querySelector('b').textContent));
   $('bench-audio-stop').onclick=()=>command({action:'stop'},'speaker stop');
+  function capabilityText(caps) {
+    if (caps.track_end) {
+      return 'Installed scenes and imported songs run physical lights, the scrubber follows the castle’s own clock, and the queue moves on when a song ends. Pausing and seeking are not supported by the firmware.';
+    }
+    if (caps.dynamic_lights) {
+      return 'Installed scenes and imported songs run physical lights. Firmware 5.52 adds the castle’s own clock and automatic queue advance.';
+    }
+    return 'Manual tests work now. Imported generated lights need castle firmware 5.51 or newer.';
+  }
   // One poll for the whole page: the shared castle link feeds this bench.
   window.castleLink.subscribe(({connected,state,caps,lightShow,error})=>{
     if(!connected){
@@ -82,11 +91,7 @@
     }
     $('bench-connection').textContent=`Online · firmware ${state.version}${caps.position?' · castle clock':''}`;
     $('bench-connection').classList.add('online');
-    capabilityNote.textContent=caps.track_end
-      ? 'Installed scenes and imported songs run physical lights, the scrubber follows the castle’s own clock, and the queue moves on when a song ends. Pausing and seeking are not supported by the firmware.'
-      : caps.dynamic_lights
-        ? 'Installed scenes and imported songs run physical lights. Firmware 5.52 adds the castle’s own clock and automatic queue advance.'
-        : 'Manual tests work now. Imported generated lights need castle firmware 5.51 or newer.';
+    capabilityNote.textContent=capabilityText(caps);
     if(lightShow?.active) {result('Generated lights are live',`${lightShow.frames_sent} of ${lightShow.frames_total} light frames sent with ${lightShow.track}`);}
   });
 })();

@@ -238,3 +238,25 @@ illustrative renderers. Device publishing remains unconnected.
 - Measured with a contrast probe on the running page: play 9.65:1 (13.3:1 in
   the castle theme), previous, next, shuffle, repeat and stop 9.61:1, all
   above the 4.5:1 text minimum and the 3:1 control minimum.
+
+## Sonar smell sweep and firmware 5.53 (2026-09-15)
+
+- With API access the PR listed 195 open code smells: 103 in the three
+  firmware headers (scored whole-file), 60 in the demo scripts, 19 in Python,
+  13 in HTML and CSS. Bugs and vulnerabilities were already at zero.
+- Firmware 5.53 is a refactor with no behaviour change: the action enum is an
+  `enum class`, `scoped_lock` and class-template deduction replace the spelled
+  out `lock_guard<std::mutex>` and `atomic<T>`, fixed buffers are `std::array`,
+  the two `malloc`/`free` pairs are `unique_ptr<char[]>` with `nothrow`, JSON
+  format strings are raw string literals, `string_view` parameters replace
+  `const std::string &`, `strlen` on literals is gone, the nested `break` in
+  the upload loop is one condition, comments no longer spell `/*`. The host
+  harness (clang, C++17) and the emulator still answer byte for byte (76
+  parity, contract and emulator tests); the OTA image is 1,283,419 bytes at
+  69.9 % flash; the castle came back on 5.53 with the clock advancing and was
+  returned to idle.
+- Left as accepted on the dashboard with reasons: mutable globals (the
+  mailbox and mirror state are the design), `snprintf` (no `std::format` on
+  the host harness's C++17 or worth its flash), the mid-file includes (the
+  serving half must see the handlers above it), the httpd function-pointer
+  registration (the ESP-IDF API), and `std::ranges::find` (C++17 harness).

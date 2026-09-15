@@ -9,33 +9,58 @@
   document.body.append(panel);
   panel.setAttribute('aria-labelledby','sync-title');
   const key = t => t.key || t.file;
+  const pending = job => !!job && !job.done;
+  function itemLabel(item) {
+    if (item.status === 'ready') {return 'On castle · audio + lights';}
+    return item.audio ? 'On castle · audio only' : 'Not synced to castle';
+  }
   function label(t) {
     const item = inventory?.tracks[key(t)], job = inventory?.jobs[key(t)];
-    if (job && !job.done) {return 'Syncing to castle…';}
+    if (pending(job)) {return 'Syncing to castle…';}
     if (job?.error) {return 'Sync failed · retry';}
     if (!item) {return inventoryError ? 'Castle check failed · retrying' : 'Checking castle…';}
-    return item.status === 'ready' ? 'On castle · audio + lights' : item.audio ? 'On castle · audio only' : 'Not synced to castle';
+    return itemLabel(item);
+  }
+  function progressText(item, job) {
+    if (job?.error) {return job.error;}
+    if (pending(job)) {return job.phase;}
+    if (item?.audio) {return 'Audio is on the castle. Select the castle output and press Play.';}
+    return label(selected);
+  }
+  function measureText(job) {
+    if (pending(job)) {
+      return `${formatBytes(job.sent_bytes || 0)} of ${formatBytes(job.bytes || 0)} · ${Math.round(job.percent || 0)}%`;
+    }
+    return job?.done && !job.error ? 'Transfer complete · byte count and CRC verified' : '';
+  }
+  function startLabel(item, job) {
+    if (job?.error) {return 'Retry audio sync';}
+    return item?.audio ? 'Audio is on castle' : 'Sync audio to castle';
   }
   function paintDialog() {
     if (!selected) {return;}
-    const item = inventory?.tracks[key(selected)], job = activeJob?.key === key(selected) ? activeJob : inventory?.jobs[key(selected)];
+    const item = inventory?.tracks[key(selected)];
+    const job = activeJob?.key === key(selected) ? activeJob : inventory?.jobs[key(selected)];
     $('sync-title').textContent = selected.title;
     $('sync-explanation').textContent = selected.key
       ? 'Sync copies the song audio to the castle’s SD card. When it plays there, this control room streams its generated lights to the castle, so keep this page open.'
       : 'Sync restores this installed scene’s audio to the castle’s SD card. The original light show is already in the firmware.';
-    $('sync-progress').textContent = job?.error || (job && !job.done ? job.phase : item?.audio ? 'Audio is on the castle. Select the castle output and press Play.' : label(selected));
-    $('sync-busy').hidden = !job || job.done;
+    $('sync-progress').textContent = progressText(item, job);
+    $('sync-busy').hidden = !pending(job);
     $('sync-busy').value = job?.percent || 0;
-    $('sync-measure').textContent = job && !job.done
-      ? `${formatBytes(job.sent_bytes || 0)} of ${formatBytes(job.bytes || 0)} · ${Math.round(job.percent || 0)}%`
-      : job?.done && !job.error ? 'Transfer complete · byte count and CRC verified' : '';
-    $('sync-start').disabled = !item || !item.can_sync || (!!item.audio && !job?.error) || !!(job && !job.done);
-    $('sync-start').textContent = job?.error ? 'Retry audio sync' : item?.audio ? 'Audio is on castle' : 'Sync audio to castle';
+    $('sync-measure').textContent = measureText(job);
+    $('sync-start').disabled = !item || !item.can_sync || (!!item.audio && !job?.error) || pending(job);
+    $('sync-start').textContent = startLabel(item, job);
+  }
+  function buttonLabel(t) {
+    const item = inventory?.tracks[key(t)];
+    if (item?.status === 'ready') {return '✓ Castle';}
+    return item?.audio ? '✓ Audio' : '⇧ Sync';
   }
   function offer(t) {selected=t;paintDialog();if(!panel.open){panel.showModal();}refreshInventory();}
   window.remoteLibrary = {
     badge:t=>`<span class="remote-badge">${safe(label(t))}</span>`,
-    button:t=>`<button data-sync-song="${t.id}" aria-label="Castle sync for ${safe(t.title)}">${inventory?.tracks[key(t)]?.status==='ready'?'✓ Castle':inventory?.tracks[key(t)]?.audio?'✓ Audio':'⇧ Sync'}</button>`,
+    button:t=>`<button data-sync-song="${t.id}" aria-label="Castle sync for ${safe(t.title)}">${buttonLabel(t)}</button>`,
     offer,
     syncing:()=>!!activeJob && !activeJob.done,
     item:t=>inventory?.tracks[key(t)]||null,
@@ -64,7 +89,7 @@
       }
       if (!activeJob?.error) {await refreshInventory();}
     } catch(error) {
-      activeJob = {...(activeJob||{}),done:true,error:error.message};
+      activeJob = {...activeJob,done:true,error:error.message};
       paintDialog();
     }
   }

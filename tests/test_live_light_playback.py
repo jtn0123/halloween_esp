@@ -13,16 +13,23 @@ def branch(start, end):
 
 class LiveLightPlaybackTests(unittest.TestCase):
     def test_light_override_only_stops_an_authored_scene(self):
-        light = branch("act.type == castle_web::LIGHT", "act.type == castle_web::SCENE")
+        light = branch(
+            "act.type == castle_web::ActionType::LIGHT",
+            "act.type == castle_web::ActionType::SCENE",
+        )
         self.assertIn('id(current_scene).state != "stop"', light)
         self.assertIn("id(scene_stop)->execute()", light)
 
     def test_raw_play_reports_no_scene_and_restarts_the_clock(self):
-        play = branch("act.type == castle_web::PLAY", "act.type == castle_web::STOP")
+        play = branch(
+            "act.type == castle_web::ActionType::PLAY",
+            "act.type == castle_web::ActionType::STOP",
+        )
         self.assertIn('id(current_scene).publish_state("stop")', play)
         self.assertIn("castle_web::restart_audio_clock(", play)
         scene = branch(
-            "act.type == castle_web::SCENE", "act.type == castle_web::PIRCFG"
+            "act.type == castle_web::ActionType::SCENE",
+            "act.type == castle_web::ActionType::PIRCFG",
         )
         self.assertIn("castle_web::restart_audio_clock(", scene)
 
@@ -34,7 +41,7 @@ class LiveLightPlaybackTests(unittest.TestCase):
 
     def test_status_reports_the_audio_clock(self):
         web = (ROOT / "firmware" / "sd_web.h").read_text()
-        self.assertIn('\\"playing\\":%s,\\"position_ms\\":%lld', web)
+        self.assertIn('"playing":%s,"position_ms":%lld', web)
         state = (ROOT / "firmware" / "sd_web_state.h").read_text()
         self.assertIn("inline bool mirror_audio(bool playing, long long now_us)", state)
 

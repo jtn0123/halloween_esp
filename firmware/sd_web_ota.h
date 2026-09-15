@@ -97,7 +97,7 @@ inline esp_err_t h_ota(httpd_req_t *req) {
   // response still in the TCP buffer, so the client saw only a timeout.
   esp_err_t r = reply_json(req, "{\"flashed\":true,\"rebooting\":true}");
   vTaskDelay(pdMS_TO_TICKS(250));
-  set_pending(RESTART, "");
+  set_pending(ActionType::RESTART, "");
   // Flash is written; the pixel may leave amber. The restart is one
   // pending slot away, and a slot can be overwritten by the next request —
   // a castle that then failed to reboot must not stay frozen as well.

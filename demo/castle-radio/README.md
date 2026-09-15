@@ -57,6 +57,7 @@ scene MP3 files (01 through 10) from the main checkout's `audio/` directory.
 All imported audio, sources, analysis, generated recipes, and catalog data go in
 ignored `.radio-data/`. The device bridge is limited to the configured private
 castle address and explicit playback, lighting, test, sync, and cleanup actions.
+Set `CASTLE_RADIO_HOST` to point the bridge at another castle (default 10.27.27.81).
 The local server only binds 127.0.0.1. Upload limit: 100 MB. Jobs run one at a time.
 Closing the page does not cancel preparation; quitting the server interrupts it.
 In-memory job history/retry disappears on server restart; completed songs persist.

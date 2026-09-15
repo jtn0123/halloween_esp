@@ -1,6 +1,6 @@
 /* One link to the castle: a single poll that every panel shares, the castle's
    own clock on the scrubber, and the queue carried from song to song. */
-/* global $, audio, blacked, current, drawPlayheads, fmt, load, next, queue, renderQueue, repeat, sceneData, shuffle, stopped, switchEpoch, switching, syncLayer, syncVolume, toast, tracks, updatePlayer */
+/* global $, audio, blacked, current, drawPlayheads, fmt, history, load, next, queue, renderQueue, repeat, sceneData, shuffle, stopped, switchEpoch, switching, syncLayer, syncVolume, toast, tracks, updatePlayer */
 (() => {
   const target = $('output-target');
   const chip = $('castle-chip');
@@ -14,10 +14,15 @@
   // only name a scene or a track, which never clears when a raw file ends.
   const isPlaying = s => !!s && (caps.position ? !!s.playing || !!s.settling : hasTrack(s));
   const sceneId = t => t.key ? null : t.file.replace(/^\d+_/, '').replace(/\.mp3$/, '');
-  const friendly = message => /timed out/i.test(message) ? 'Castle not answering · request timed out'
-    : /refused|unreachable|No route|Errno/i.test(message) ? 'Castle unreachable at 10.27.27.81'
-    : /Failed to fetch|NetworkError/i.test(message) ? 'Control room server is not running' : message;
-  function remoteScene() { return state && state.scene && state.scene !== 'stop' ? sceneData.find(s => s.id === state.scene) : null; }
+  function friendly(message) {
+    if (/timed out/i.test(message)) {return 'Castle not answering · request timed out';}
+    if (/refused|unreachable|No route|Errno/i.test(message)) {return 'Castle unreachable at 10.27.27.81';}
+    if (/Failed to fetch|NetworkError/i.test(message)) {return 'Control room server is not running';}
+    return message;
+  }
+  function remoteScene() {
+    return state?.scene && state.scene !== 'stop' ? sceneData.find(s => s.id === state.scene) : null;
+  }
   // What the castle is playing, as a library entry: an installed scene by its
   // id, an imported file by its synced name, or a scene track by its stem.
   function remoteTrack() {
@@ -57,35 +62,92 @@
     }
     note.textContent = `Live from the castle · motion ${pir.armed ? 'armed' : 'off'} · triggers “${pir.scene || '—'}” · ${pir.cooldown_s ?? '—'} s cooldown. “While music is playing” stays a preview preference.`;
   }
-  function paint() {
-    const online = !!state, playing = isPlaying(state), name = remoteTitle();
-    chip.className = `castle-chip ${!online ? 'offline' : playing ? 'playing' : 'online'}`;
-    chip.textContent = !online ? 'Castle offline' : state.settling ? 'Castle · starting…' : playing ? `Castle · ${name} · ${fmt(remoteTime())}` : `Castle ${state.version} · idle`;
-    chip.title = online ? `Firmware ${state.version} · ${caps.position ? 'castle clock' : 'estimated clock'}` : error;
-    target.options[1].textContent = `Porch castle · ${!online ? 'offline' : playing ? 'playing' : 'ready'}`;
+  const castleClockLabel = () => caps.position ? 'castle clock' : 'estimated clock';
+  function chipStatus(online, playing) {
+    if (!online) {return 'offline';}
+    return playing ? 'playing' : 'online';
+  }
+  function chipText(online, playing, name) {
+    if (!online) {return 'Castle offline';}
+    if (state.settling) {return 'Castle · starting…';}
+    if (playing) {return `Castle · ${name} · ${fmt(remoteTime())}`;}
+    return `Castle ${state.version} · idle`;
+  }
+  function targetStatus(online, playing) {
+    if (!online) {return 'offline';}
+    return playing ? 'playing' : 'ready';
+  }
+  function paintChip(online, playing, name) {
+    chip.className = `castle-chip ${chipStatus(online, playing)}`;
+    chip.textContent = chipText(online, playing, name);
+    chip.title = online ? `Firmware ${state.version} · ${castleClockLabel()}` : error;
+    target.options[1].textContent = `Porch castle · ${targetStatus(online, playing)}`;
+  }
+  function healthText(online) {
+    if (!online) {return error || 'Cannot reach castle';}
+    const sd = state.sd_mounted ? 'SD ready' : 'SD unavailable';
+    return `Firmware ${state.version} · ${sd} · ${castleClockLabel()}`;
+  }
+  function paintDevicePanel(online) {
     $('live-connection').textContent = online ? 'Connected' : 'Unavailable';
-    $('live-health').textContent = online ? `Firmware ${state.version} · ${state.sd_mounted ? 'SD ready' : 'SD unavailable'} · ${caps.position ? 'castle clock' : 'estimated clock'}` : (error || 'Cannot reach castle');
+    $('live-health').textContent = healthText(online);
     $('live-destination').textContent = onCastle() ? 'Porch castle' : 'This computer';
-    $('live-ready').textContent = online ? `${state.scenes.split(',').filter(s => s !== 'stop').length} installed shows` : 'Connection needed';
-    paintMotion();
-    if (!onCastle()) {return;}
+    $('live-ready').textContent = online
+      ? `${state.scenes.split(',').filter(s => s !== 'stop').length} installed shows`
+      : 'Connection needed';
+  }
+  function splitStateText(online) {
+    if (!online) {return error || 'Castle unavailable';}
+    if (caps.position) {return 'Following the castle’s own clock · seeking unavailable';}
+    return 'Following castle · estimated timing · seeking unavailable';
+  }
+  function playLabel(playing) {
+    if (busy) {return 'Sending…';}
+    return playing ? '■ Stop castle' : '▶ Play on castle';
+  }
+  function queueDescription() {
+    if (!caps.track_end) {return 'Manual skip on castle · automatic queue needs firmware 5.52';}
+    return shuffle ? 'Shuffle is on · the castle plays what comes next' : 'The castle plays your queue in order';
+  }
+  function currentDetail(online, playing, name) {
+    if (busy) {return 'Sending command to castle…';}
+    if (!online) {return `${error || 'Castle unavailable'} · retry Play`;}
+    if (state.settling) {return 'Starting on castle…';}
+    if (playing) {return `Playing on castle · ${name}${lightShow?.active ? ' · generated lights live' : ''}`;}
+    return 'Castle idle · press Play';
+  }
+  function paintTransport(online, playing, name) {
     $('preview-seek').disabled = true; $('seek').disabled = true;
     $('seek').title = 'Seeking is not supported by the castle firmware';
-    $('split-state').textContent = !online ? (error || 'Castle unavailable') : caps.position ? 'Following the castle’s own clock · seeking unavailable' : 'Following castle · estimated timing · seeking unavailable';
-    const label = busy ? 'Sending…' : playing ? '■ Stop castle' : '▶ Play on castle';
+    $('split-state').textContent = splitStateText(online);
+    const label = playLabel(playing);
     $('preview-toggle').textContent = label;
     $('hero-play').textContent = label;
     $('toggle').textContent = playing ? '■' : '▶';
     $('toggle').setAttribute('aria-label', playing ? 'Stop castle' : 'Play on castle');
-    $('queue-description').textContent = !caps.track_end ? 'Manual skip on castle · automatic queue needs firmware 5.52' : shuffle ? 'Shuffle is on · the castle plays what comes next' : 'The castle plays your queue in order';
-    $('current-detail').textContent = busy ? 'Sending command to castle…' : !online ? `${error || 'Castle unavailable'} · retry Play` : state.settling ? 'Starting on castle…' : playing ? `Playing on castle · ${name}${lightShow?.active ? ' · generated lights live' : ''}` : 'Castle idle · press Play';
+    $('queue-description').textContent = queueDescription();
+    $('current-detail').textContent = currentDetail(online, playing, name);
     for (const id of ['toggle', 'hero-play', 'shuffle', 'repeat']) {$(id).disabled = busy;}
     $('next').disabled = busy || (!queue.length && !repeat);
     $('previous').disabled = busy || !history.length;
+  }
+  function paintClock(online) {
     $('elapsed').textContent = fmt(remoteTime());
     $('duration').textContent = fmt(tracks[current].duration);
     $('seek').value = tracks[current].duration ? remoteTime() / tracks[current].duration * 1000 : 0;
-    if (online && performance.now() - volumeTouched > 1500 && Number($('volume').value) !== state.volume) { $('volume').value = state.volume; syncVolume(); }
+    if (online && performance.now() - volumeTouched > 1500 && Number($('volume').value) !== state.volume) {
+      $('volume').value = state.volume;
+      syncVolume();
+    }
+  }
+  function paint() {
+    const online = !!state, playing = isPlaying(state), name = remoteTitle();
+    paintChip(online, playing, name);
+    paintDevicePanel(online);
+    paintMotion();
+    if (!onCastle()) {return;}
+    paintTransport(online, playing, name);
+    paintClock(online);
   }
   // Only what the castle can play moves the queue on: an installed scene or a
   // synced import. Anything else is skipped with a word, not a sync dialog.
@@ -124,6 +186,12 @@
     inflight = poll();
     try { await inflight; } finally { inflight = null; }
   }
+  function liveStateText() {
+    if (state.show_on) {return 'Installed playlist running on castle';}
+    if (state.track) {return `Castle audio: ${state.track}${lightShow?.active ? ' · generated lights live' : ''}`;}
+    if (hasTrack(state)) {return `Castle scene: ${state.scene}`;}
+    return 'Castle idle';
+  }
   async function poll() {
     const started = epoch;
     try {
@@ -133,7 +201,7 @@
       if (started !== epoch) {return;}
       data = next; state = data.state; lightShow = data.light_show; clock = data.playback; caps = data.capabilities || {}; received = performance.now(); error = '';
       if (onCastle()) {follow();}
-      $('live-state').textContent = state.show_on ? 'Installed playlist running on castle' : state.track ? `Castle audio: ${state.track}${lightShow?.active ? ' · generated lights live' : ''}` : hasTrack(state) ? `Castle scene: ${state.scene}` : 'Castle idle';
+      $('live-state').textContent = liveStateText();
     } catch (e) { state = null; lightShow = null; clock = null; error = e.message; $('live-state').textContent = e.message; }
     finally { paint(); for (const fn of listeners) {fn({connected: !!state, state, data, caps, lightShow, error});} }
   }
@@ -199,7 +267,7 @@
   const sendMotion = () => {
     pirTouched = performance.now();
     if (!state) { toast('Castle unavailable · motion settings were not sent'); return; }
-    command({action: 'pir', armed: $('motion').checked, cooldown: parseInt($('cooldown').value, 10)}).then(ok => { if (ok) {toast(`Motion ${$('motion').checked ? 'armed' : 'off'} on the castle`);} });
+    command({action: 'pir', armed: $('motion').checked, cooldown: Number.parseInt($('cooldown').value, 10)}).then(ok => { if (ok) {toast(`Motion ${$('motion').checked ? 'armed' : 'off'} on the castle`);} });
   };
   $('motion').addEventListener('change', sendMotion);
   $('cooldown').addEventListener('change', sendMotion);

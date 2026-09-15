@@ -8,6 +8,20 @@ import subprocess
 import threading
 import time
 
+_NUMBER = re.compile(r"\d+(?:\.\d+)?")
+
+
+def percent_value(text):
+    """The number written just before the first `%` (`41.8% of` is 41.8),
+    clamped to 0..100; None when no percentage is on the line. Splitting on
+    the sign first keeps the parse linear: the number is matched whole,
+    never searched for."""
+    for chunk in text.split("%")[:-1]:
+        tail = chunk[len(chunk.rstrip("0123456789.")) :].lstrip(".")
+        if _NUMBER.fullmatch(tail):
+            return min(100, max(0, float(tail)))
+    return None
+
 
 def interpret(line, stage, analyzed):
     if line.startswith("CASTLE_PROGRESS "):
@@ -16,9 +30,10 @@ def interpret(line, stage, analyzed):
         except (ValueError, KeyError):
             return {}, analyzed
     clean = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", line)
-    pct = re.search(r"(\d+(?:\.\d+)?)%", clean)
-    if pct and ("[download]" in clean or (stage == "split" and "|" in clean)):
-        value = min(100, max(0, float(pct[1])))
+    value = percent_value(clean)
+    if value is not None and (
+        "[download]" in clean or (stage == "split" and "|" in clean)
+    ):
         return {
             "phase": "Downloading audio"
             if "[download]" in clean
