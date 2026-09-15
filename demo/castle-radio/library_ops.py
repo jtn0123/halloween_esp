@@ -18,9 +18,23 @@ def track_path(library, key):
     )
 
 
-def waveform(root, library, key):
+def known_key(root, catalog_path, key):
+    """The library's own spelling of a song key: a catalog row or a media
+    file. Paths are built from that, never from the request's string."""
     if not key or Path(key).name != key:
         raise ValueError("Unknown song")
+    if catalog_path.exists():
+        for row in json.loads(catalog_path.read_text()):
+            if row.get("key") == key:
+                return str(row["key"])
+    for path in (root / "media").glob("*.mp3"):
+        if path.name == key:
+            return path.name
+    raise ValueError("Unknown song")
+
+
+def waveform(root, library, key):
+    key = known_key(root, root / ".radio-data" / "catalog.json", key)
     split = library / "stems" / key / "analysis.json"
     if split.exists():
         return json.loads(split.read_text())
@@ -55,6 +69,7 @@ def remove(data, library, catalog_path, key):
     row = next((r for r in rows if r["key"] == key), None)
     if row is None:
         raise ValueError("This song is no longer in the library")
+    key = str(row["key"])
     trash = data / "trash" / key
     if trash.exists():
         raise ValueError("Restore the previous removed copy before removing again")
@@ -87,7 +102,10 @@ def remove(data, library, catalog_path, key):
 
 
 def restore(data, catalog_path, key):
-    trash = data / "trash" / key
+    trash = next((d for d in (data / "trash").glob("radio_*") if d.name == key), None)
+    if trash is None:
+        raise ValueError("Unknown removed song")
+    key = trash.name
     record = json.loads((trash / "record.json").read_text())
     rows = json.loads(catalog_path.read_text())
     if any(r["key"] == key for r in rows):

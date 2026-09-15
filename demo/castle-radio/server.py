@@ -29,6 +29,12 @@ from radio_jobs import (
     update,
 )
 
+MEDIA_SUFFIXES = (".mp3", ".opus", ".wav", ".json")
+# The suffix written to disk is this table's value, never the header's text.
+UPLOAD_SUFFIXES = {
+    s: s for s in (".mp3", ".wav", ".flac", ".opus", ".m4a", ".ogg", ".aac")
+}
+
 
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -51,12 +57,20 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def media(self, relative):
-        path = (LIBRARY / unquote(relative)).resolve()
-        if (
-            not path.is_relative_to(LIBRARY)
-            or path.suffix not in (".mp3", ".opus", ".wav", ".json")
-            or not path.is_file()
-        ):
+        # The file served is one the library directory lists, matched by its
+        # relative name; the request string never becomes a path itself.
+        wanted = unquote(relative)
+        path = next(
+            (
+                p
+                for p in LIBRARY.rglob("*")
+                if p.is_file()
+                and p.suffix in MEDIA_SUFFIXES
+                and p.relative_to(LIBRARY).as_posix() == wanted
+            ),
+            None,
+        )
+        if path is None:
             self.send_error(404)
             return
         size = path.stat().st_size
@@ -311,16 +325,8 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 name = Path(unquote(self.headers.get("X-Filename", "song.mp3"))).name
                 source_name = name
-                ext = Path(name).suffix.lower()
-                if ext not in (
-                    ".mp3",
-                    ".wav",
-                    ".flac",
-                    ".opus",
-                    ".m4a",
-                    ".ogg",
-                    ".aac",
-                ):
+                ext = UPLOAD_SUFFIXES.get(Path(name).suffix.lower())
+                if ext is None:
                     raise ValueError(
                         "Choose an MP3, WAV, FLAC, Opus, M4A, OGG, or AAC file."
                     )

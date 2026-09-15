@@ -293,65 +293,120 @@ def start_imported_show(filename, cues, duration):
     thread.start()
 
 
+# Every value that reaches a castle URL is the castle's own spelling (a name
+# it listed, a scene it reported) or is rebuilt from known tokens and ints.
+# Nothing the browser sent is forwarded as-is.
+_ZONES = {"towerL": "towerL", "towerR": "towerR", "door": "door"}
+_LIGHT_WORDS = {
+    word: word for word in ("white", "off", "show", "bars", "chase", "ends")
+}
+_TONES = {
+    f"test_{n}.mp3": f"test_{n}.mp3" for n in ("sweep", "1k", "200", "4k", "silence")
+}
+_PLAIN = {a: "/api/" + a for a in ("stop", "blackout", "show/start", "show/stop")}
+_COOLDOWNS = {30: 30, 60: 60, 120: 120}
+
+
+def _installed_scene(name):
+    for scene in call("/api/status").get("scenes", "").split(","):
+        if scene == name:
+            return scene
+    raise ValueError("This light show is not installed in the current firmware.")
+
+
+def _castle_file(name, missing):
+    for row in call("/api/files"):
+        if row.get("name") == name and not row.get("dir"):
+            return str(row["name"])
+    raise ValueError(missing)
+
+
+def _light_spec(value):
+    if not _LIGHT_SPEC.fullmatch(value):
+        raise ValueError("Choose a valid castle light test.")
+    zone, _, spec = value.rpartition(":")
+    spec, _, pct = spec.partition("@")
+    colour = _LIGHT_WORDS.get(spec) or f"{int(spec, 16):06x}"
+    out = f"{_ZONES[zone]}:{colour}" if zone else colour
+    return f"{out}@{int(pct)}" if pct else out
+
+
+def _percent(value, what="Volume"):
+    number = int(value)
+    if not 0 <= number <= 100:
+        raise ValueError(f"{what} must be between 0 and 100.")
+    return number
+
+
+def _scene_path(body):
+    scene = _installed_scene(str(body.get("scene", "")))
+    return "/api/scene?" + urllib.parse.urlencode({"s": scene}), scene, None
+
+
+def _file_path(body):
+    filename = str(body.get("file", ""))
+    if (
+        not filename
+        or "/" in filename
+        or "\\" in filename
+        or filename.rsplit(".", 1)[-1].lower() not in ("mp3", "opus", "wav")
+    ):
+        raise ValueError("Choose a playable castle audio file.")
+    filename = _castle_file(filename, "That audio file is not on the castle.")
+    return "/api/play?" + urllib.parse.urlencode({"f": filename}), None, filename
+
+
+def _light_path(body):
+    spec = _light_spec(str(body.get("value", "")))
+    stop_imported_show()
+    return "/api/light?" + urllib.parse.urlencode({"c": spec}), None, None
+
+
+def _tone_path(body):
+    wanted = _TONES.get(str(body.get("file", "")))
+    if wanted is None:
+        raise ValueError("Choose a diagnostic tone.")
+    volume = _percent(body.get("volume", 50))
+    filename = _castle_file(wanted, "That diagnostic tone is not on the castle.")
+    stop_imported_show()
+    call("/api/volume?" + urllib.parse.urlencode({"v": volume}), "POST")
+    time.sleep(0.3)
+    return "/api/play?" + urllib.parse.urlencode({"f": filename}), None, None
+
+
+def _volume_path(body):
+    volume = _percent(body.get("volume", 0))
+    return "/api/volume?" + urllib.parse.urlencode({"v": volume}), None, None
+
+
+def _pir_path(body):
+    cooldown = _COOLDOWNS.get(int(body.get("cooldown", 60)))
+    if cooldown is None:
+        raise ValueError("Choose a supported motion cooldown.")
+    query = {"armed": int(bool(body.get("armed"))), "cooldown": cooldown}
+    return "/api/pir?" + urllib.parse.urlencode(query), None, None
+
+
+_BUILDERS = {
+    "scene": _scene_path,
+    "file": _file_path,
+    "light": _light_path,
+    "tone": _tone_path,
+    "volume": _volume_path,
+    "pir": _pir_path,
+}
+
+
 def command(body, imported_show=None):
-    action = body.get("action")
-    if action == "scene":
-        scene = str(body.get("scene", ""))
-        if scene not in call("/api/status").get("scenes", "").split(","):
-            raise ValueError(
-                "This light show is not installed in the current firmware."
-            )
-        path = "/api/scene?" + urllib.parse.urlencode({"s": scene})
-    elif action == "file":
-        filename = str(body.get("file", ""))
-        if (
-            not filename
-            or "/" in filename
-            or "\\" in filename
-            or filename.rsplit(".", 1)[-1].lower() not in ("mp3", "opus", "wav")
-        ):
-            raise ValueError("Choose a playable castle audio file.")
-        files = call("/api/files")
-        if not any(row.get("name") == filename and not row.get("dir") for row in files):
-            raise ValueError("That audio file is not on the castle.")
-        path = "/api/play?" + urllib.parse.urlencode({"f": filename})
-    elif action == "light":
-        value = str(body.get("value", ""))
-        if not _LIGHT_SPEC.fullmatch(value):
-            raise ValueError("Choose a valid castle light test.")
-        stop_imported_show()
-        path = "/api/light?" + urllib.parse.urlencode({"c": value})
-    elif action == "tone":
-        filename = str(body.get("file", ""))
-        volume = int(body.get("volume", 50))
-        if not re.fullmatch(r"test_(?:sweep|1k|200|4k|silence)\.mp3", filename):
-            raise ValueError("Choose a diagnostic tone.")
-        if not 0 <= volume <= 100:
-            raise ValueError("Volume must be between 0 and 100.")
-        files = call("/api/files")
-        if not any(row.get("name") == filename and not row.get("dir") for row in files):
-            raise ValueError("That diagnostic tone is not on the castle.")
-        stop_imported_show()
-        call("/api/volume?" + urllib.parse.urlencode({"v": volume}), "POST")
-        time.sleep(0.3)
-        path = "/api/play?" + urllib.parse.urlencode({"f": filename})
-    elif action == "volume":
-        volume = int(body.get("volume", 0))
-        if not 0 <= volume <= 100:
-            raise ValueError("Volume must be between 0 and 100.")
-        path = "/api/volume?" + urllib.parse.urlencode({"v": volume})
-    elif action == "pir":
-        cooldown = int(body.get("cooldown", 60))
-        if cooldown not in (30, 60, 120):
-            raise ValueError("Choose a supported motion cooldown.")
-        path = "/api/pir?" + urllib.parse.urlencode(
-            {"armed": int(bool(body.get("armed"))), "cooldown": cooldown}
-        )
-    elif action in ("stop", "blackout", "show/start", "show/stop"):
-        path = "/api/" + action
+    action = str(body.get("action", ""))
+    scene = filename = None
+    if action in _PLAIN:
+        path = _PLAIN[action]
+    elif action in _BUILDERS:
+        path, scene, filename = _BUILDERS[action](body)
     else:
         raise ValueError("This control is not supported by the running firmware.")
-    if action in ("stop", "blackout", "show/start", "show/stop", "scene"):
+    if action in _PLAIN or action == "scene":
         stop_imported_show()
     if action == "file" and imported_show:
         if not _version_at_least(call("/api/status").get("version"), (5, 51)):

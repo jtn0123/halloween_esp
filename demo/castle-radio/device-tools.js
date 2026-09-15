@@ -51,7 +51,7 @@
     try {
       const response=await fetch('/radio/device/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
       const data=await response.json();
-      if(!response.ok||data.error)throw new Error(data.error||'Castle command failed');
+      if(!response.ok||data.error){throw new Error(data.error||'Castle command failed');}
       result(`${label} is running`,'Command accepted by the physical castle. Watch and listen at the device.');
       toast(`${label} sent to castle`);
     } catch(error) {
@@ -65,7 +65,7 @@
   });
   bench.querySelectorAll('[data-led]').forEach(button=>button.onclick=()=>{
     let spec=button.dataset.led.replace(/^:/,'');
-    if(!spec.endsWith('off'))spec+=`@${brightness}`;
+    if(!spec.endsWith('off')){spec+=`@${brightness}`;}
     command({action:'light',value:spec},button.getAttribute('aria-label')||button.textContent.trim());
   });
   $('bench-color-send').onclick=()=>command({action:'light',value:`${$('bench-color').value.slice(1)}@${brightness}`},'custom color');
@@ -86,6 +86,6 @@
       : caps.dynamic_lights
         ? 'Installed scenes and imported songs run physical lights. Firmware 5.52 adds the castle’s own clock and automatic queue advance.'
         : 'Manual tests work now. Imported generated lights need castle firmware 5.51 or newer.';
-    if(lightShow?.active) result('Generated lights are live',`${lightShow.frames_sent} of ${lightShow.frames_total} light frames sent with ${lightShow.track}`);
+    if(lightShow?.active) {result('Generated lights are live',`${lightShow.frames_sent} of ${lightShow.frames_total} light frames sent with ${lightShow.track}`);}
   });
 })();

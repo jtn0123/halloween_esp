@@ -100,6 +100,7 @@ class RemoteLibraryTests(unittest.TestCase):
                 {"scenes": ""},
                 [{"name": "orphan.mp3", "size": 2048}],
                 [],
+                [{"name": "orphan.mp3", "size": 2048}],
                 {"deleted": True},
             ]
             other = remote_library.inventory(root, root, [])["other_audio"]
@@ -108,6 +109,12 @@ class RemoteLibraryTests(unittest.TestCase):
                 remote_library.delete_audio("orphan.mp3"), {"deleted": True}
             )
             self.assertEqual(call.call_args.args, ("/api/files/orphan.mp3", "DELETE"))
+
+    @patch("device_bridge.call", return_value=[{"name": "other.mp3", "size": 1}])
+    def test_delete_refuses_a_file_the_castle_does_not_list(self, call):
+        with self.assertRaisesRegex(ValueError, "not on the castle"):
+            remote_library.delete_audio("orphan.mp3")
+        self.assertEqual(call.call_count, 1)
 
     @patch("device_bridge.call")
     def test_delete_rejects_non_audio_and_paths(self, call):

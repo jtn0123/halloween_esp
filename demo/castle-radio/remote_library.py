@@ -94,20 +94,38 @@ def delete_audio(name):
         or Path(name).suffix.removeprefix(".").lower() not in AUDIO_SUFFIXES
     ):
         raise ValueError("Choose a castle audio file.")
+    # The castle's own spelling of the name, from its listing, is what goes
+    # back into the URL; the browser's spelling only selects it.
+    listed = next(
+        (
+            str(row["name"])
+            for row in device_bridge.call("/api/files")
+            if row.get("name") == name and not row.get("dir")
+        ),
+        None,
+    )
+    if listed is None:
+        raise ValueError("That audio file is not on the castle.")
     return device_bridge.call(
-        "/api/files/" + urllib.parse.quote(name, safe=""), "DELETE"
+        "/api/files/" + urllib.parse.quote(listed, safe=""), "DELETE"
     )
 
 
 def start(root, library, rows, key):
     if not isinstance(key, str) or Path(key).name != key:
         raise ValueError("Unknown song")
-    imported = any(row["key"] == key for row in rows)
-    if imported:
-        row = next(row for row in rows if row["key"] == key)
+    row = next((row for row in rows if row["key"] == key), None)
+    if row is not None:
+        key = str(row["key"])
         source, route = playback_path(library, row), "/api/files"
     else:
-        source, route = root / "media" / key, "/api/scenes"
+        # A built-in scene track: the file the media directory actually holds.
+        source = next(
+            (p for p in (root / "media").glob("*.mp3") if p.name == key), None
+        )
+        if source is None:
+            raise ValueError("Song audio is no longer available on this computer.")
+        key, route = source.name, "/api/scenes"
         scene = source.stem.split("_", 1)[-1]
         if source.suffix != ".mp3" or scene not in device_bridge.call(
             "/api/status"

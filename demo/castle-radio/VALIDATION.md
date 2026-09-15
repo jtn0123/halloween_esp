@@ -184,3 +184,26 @@ illustrative renderers. Device publishing remains unconnected.
   All checks ran at castle volume 0 and the volume was restored to 45.
 - 50 demo unit tests pass (status caching, settling, castle clock, frame
   alignment, mailbox tolerance). Ruff and JavaScript syntax checks pass.
+
+## Sonar gate pass (2026-09-15)
+
+- The gate on this PR reports Security E and Reliability E, and the project is
+  private, so the only readable output is the 50 GitHub annotations. Sonar's
+  own JavaScript rules run locally instead (docs/ISSUE-sonar.md recipe, with
+  the demo scripts copied in): 37 "unenclosed multiline block" bugs and 10
+  implicit-global bugs, all in the demo scripts.
+- Every conditional body is braced now (ESLint `curly` auto-fix) and each
+  script declares the cross-script variables it assigns with a `global`
+  comment; the two swallowed exceptions carry a reason and the shuffle's
+  `Math.random` is annotated. Sonar's JS rules now report maintainability
+  findings only.
+- Taint: nothing the browser sent is forwarded to the castle or the
+  filesystem any more. Scene ids, file names and diagnostic tones are the
+  castle's own spelling from its status or listing; light specs are rebuilt
+  from known zone and pattern tokens and integers; volume, cooldown and
+  armed are integers; served media is matched against the library
+  directory's own listing; upload suffixes come from a table; library keys
+  resolve through the catalog or the media directory before a path is built.
+- Live castle after the rewrite: a bench light spec, Storm, a synced import
+  with generated lights (5 frames by 3 s), Stop, a ranged media fetch (206)
+  and a traversal attempt (404) all behaved. 51 demo tests pass.
