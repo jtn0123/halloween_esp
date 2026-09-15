@@ -227,3 +227,14 @@ illustrative renderers. Device publishing remains unconnected.
   (30 px hit area), checkboxes (22 to 24 px inside 40 px labels) and inline
   links. Screenshots of Listen, the collection, the sync dialog, castle mode
   and prepared songs were checked by eye.
+
+## Transport contrast and size (2026-09-15)
+
+- The OLED block coloured every transport button, which outranked the play
+  disc's own colour: a pale glyph sat on a pale purple disc, and a disabled
+  Previous arrow faded to near nothing. The transport rules now come last:
+  play disc 52 px (64 px on phones) with the dark ink on purple, the other
+  buttons 44 px (48 px on phones) in near-white, disabled at 42 % opacity.
+- Measured with a contrast probe on the running page: play 9.65:1 (13.3:1 in
+  the castle theme), previous, next, shuffle, repeat and stop 9.61:1, all
+  above the 4.5:1 text minimum and the 3:1 control minimum.
