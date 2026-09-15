@@ -164,7 +164,7 @@ def transfer(key, route, name, data):
                 sent_bytes=len(data),
                 percent=100,
             )
-    except (Exception, SystemExit) as exc:
+    except (OSError, ValueError, http.client.HTTPException) as exc:
         with _LOCK:
             _JOBS[key].update(done=True, phase="Sync failed", error=str(exc))
 
