@@ -30,10 +30,28 @@ from radio_jobs import (
 )
 
 MEDIA_SUFFIXES = (".mp3", ".opus", ".wav", ".json")
-# The suffix written to disk is this table's value, never the header's text.
-UPLOAD_SUFFIXES = {
-    s: s for s in (".mp3", ".wav", ".flac", ".opus", ".m4a", ".ogg", ".aac")
-}
+UPLOAD_SUFFIXES = (".mp3", ".wav", ".flac", ".opus", ".m4a", ".ogg", ".aac")
+
+
+def upload_suffix(head, declared):
+    """The suffix an upload is stored under, read from its first bytes. The
+    browser's filename only says which of the known suffixes to assume when
+    the bytes are not recognisable; the header's text never names a file."""
+    if head.startswith(b"ID3") or head[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        return ".mp3"
+    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
+        return ".wav"
+    if head[:4] == b"fLaC":
+        return ".flac"
+    if head[:4] == b"OggS":
+        return ".opus" if b"OpusHead" in head[:128] else ".ogg"
+    if head[4:8] == b"ftyp":
+        return ".m4a"
+    if head[:2] in (b"\xff\xf1", b"\xff\xf9"):
+        return ".aac"
+    if declared not in UPLOAD_SUFFIXES:
+        raise ValueError("Choose an MP3, WAV, FLAC, Opus, M4A, OGG, or AAC file.")
+    return UPLOAD_SUFFIXES[UPLOAD_SUFFIXES.index(declared)]
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -325,13 +343,10 @@ class Handler(SimpleHTTPRequestHandler):
             else:
                 name = Path(unquote(self.headers.get("X-Filename", "song.mp3"))).name
                 source_name = name
-                ext = UPLOAD_SUFFIXES.get(Path(name).suffix.lower())
-                if ext is None:
-                    raise ValueError(
-                        "Choose an MP3, WAV, FLAC, Opus, M4A, OGG, or AAC file."
-                    )
+                body = self.rfile.read(length)
+                ext = upload_suffix(body[:128], Path(name).suffix.lower())
                 source = str(DATA / (tid + ext))
-                Path(source).write_bytes(self.rfile.read(length))
+                Path(source).write_bytes(body)
                 title = Path(name).stem[:200]
                 split = self.headers.get("X-Split", "true") == "true"
                 audio_format = playback_format(

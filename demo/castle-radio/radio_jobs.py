@@ -187,7 +187,7 @@ def reprocess_job(key, audio_format, audio_quality, split=None):
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
             raise ValueError("That song has no usable saved source.")
     return {
-        "id": key,
+        "id": str(row["key"]),
         "source": source,
         "title": row["title"],
         "split": row.get("split", True) if split is None else split is True,

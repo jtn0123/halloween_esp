@@ -63,3 +63,29 @@ class PlaybackFormatTests(unittest.TestCase):
         self.assertEqual(job["audio_format"], "opus")
         self.assertEqual(job["audio_quality"], "high")
         self.assertFalse(job["split"])
+
+
+class UploadSuffixTests(unittest.TestCase):
+    def test_suffix_comes_from_the_bytes(self):
+        import server
+
+        self.assertEqual(
+            server.upload_suffix(b"ID3\x04" + b"\x00" * 60, ".wav"), ".mp3"
+        )
+        self.assertEqual(
+            server.upload_suffix(b"RIFF\x00\x00\x00\x00WAVEfmt ", ".mp3"), ".wav"
+        )
+        self.assertEqual(server.upload_suffix(b"fLaC" + b"\x00" * 8, ".mp3"), ".flac")
+        self.assertEqual(
+            server.upload_suffix(b"OggS" + b"\x00" * 24 + b"OpusHead", ".ogg"), ".opus"
+        )
+        self.assertEqual(
+            server.upload_suffix(b"\x00\x00\x00\x18ftypM4A ", ".aac"), ".m4a"
+        )
+
+    def test_unrecognised_bytes_fall_back_to_a_known_suffix_only(self):
+        import server
+
+        self.assertEqual(server.upload_suffix(b"\x00" * 16, ".ogg"), ".ogg")
+        with self.assertRaises(ValueError):
+            server.upload_suffix(b"\x00" * 16, ".exe")
