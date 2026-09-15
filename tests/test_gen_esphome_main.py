@@ -133,6 +133,27 @@ class TestGenEsphomeMain(unittest.TestCase):
             self.assertIn(f"id({sid})->stop();", lam)
         self.assertLess(lam.index("->stop();"), lam.index('"halt"'))
 
+    def test_run_scene_hands_the_strips_back_to_show_except_on_halt(self) -> None:
+        """A colour or "off" from the desk takes the strips off the Show
+        effect; until 2026-09-14 nothing gave them back before a reboot, so
+        every scene ran dark after a channel test. run_scene relights any
+        zone that is off or on another effect — and "halt" (the /api/play
+        path, which must leave the lights alone) is excluded."""
+        ge.main()
+        doc = yaml.safe_load(ge.OUT.read_text())
+        lam = next(s for s in doc["script"] if s["id"] == "run_scene")["then"][0][
+            "lambda"
+        ]
+        guard = lam[lam.index('if (scene != "halt")') : lam.index('if (scene == "a")')]
+        self.assertIn('id(lights_override)->execute("show")', guard)
+        self.assertIn('z->get_effect_name() != "Show"', guard)
+        self.assertIn("!z->remote_values.is_on()", guard)
+        for z in ZONES:
+            self.assertIn(f"id(zone_{z['id']})", guard)
+        # After the stops, before any scene starts: the relight is never
+        # overtaken by a scene's first frame.
+        self.assertLess(lam.rindex("->stop();"), lam.index('if (scene != "halt")'))
+
     def test_max_volume_caps_every_scene_and_reaches_rig_h(self) -> None:
         """hardware.audio.max_volume is the porch's measured ceiling: a scene
         asking for more is generated under it, and rig.h carries the same

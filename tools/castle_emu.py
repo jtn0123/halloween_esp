@@ -230,6 +230,10 @@ class CastleEmu(ThreadingHTTPServer):
                 st.track_ends = time.monotonic() + max(1, size // BYTES_PER_S)
             elif action == "SCENE":
                 st.scene = arg
+                # run_scene hands the strips back to Show (gen_esphome.py);
+                # only "halt" leaves whatever a test pattern set.
+                if arg != "halt":
+                    st.light = "show"
                 audio = self.sd_dir / "scenes" / f"{arg}.mp3"
                 if audio.is_file():
                     st.track = audio.name

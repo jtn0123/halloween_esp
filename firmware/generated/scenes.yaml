@@ -1717,6 +1717,10 @@ script:
           id(cont_the_ballad_of_the_witches__road__14)->stop();
           id(cont_the_ballad_of_the_witches__road__15)->stop();
           id(cont_the_ballad_of_the_witches__road__16)->stop();
+          if (scene != "halt") for (auto *z : {id(zone_towerL), id(zone_towerR), id(zone_door)}) {
+            if (!z->remote_values.is_on() ||
+                z->get_effect_name() != "Show") {
+              id(lights_override)->execute("show"); break; } }
           if (scene == "vigil") id(scene_vigil)->execute();
           else if (scene == "storm") id(scene_storm)->execute();
           else if (scene == "seance") id(scene_seance)->execute();

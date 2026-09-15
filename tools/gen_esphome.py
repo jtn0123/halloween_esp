@@ -389,6 +389,15 @@ def main() -> int:
         "          // scripts, see CHUNK — the one mid-delay may be any of them."
     )
     out.extend(f"          id({sid})->stop();" for sid in script_ids)
+    # A scene is meant to be seen: a colour, a bench pattern or "off" from the
+    # desk takes the strips off the Show effect and nothing handed them back
+    # before the next boot (2026-09-14: every scene ran dark on the S3 bring-up
+    # after a channel test). "halt" is the one caller that must not relight.
+    zs = ", ".join(f"id(zone_{z['id']})" for z in zones)
+    out.append(f'          if (scene != "halt") for (auto *z : {{{zs}}}) {{')
+    out.append("            if (!z->remote_values.is_on() ||")
+    out.append('                z->get_effect_name() != "Show") {')
+    out.append('              id(lights_override)->execute("show"); break; } }')
     for j, scene in enumerate(doc["scenes"]):
         kw = "if" if j == 0 else "else if"
         out.append(
