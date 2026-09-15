@@ -77,15 +77,15 @@ inline bool send_sd_file(httpd_req_t *req, const char *path,
   static constexpr size_t CHUNK = 4096;
   // nothrow: exceptions are off in the ESP-IDF build, and a full heap must
   // answer 500 rather than abort the board.
-  const std::unique_ptr<char[]> buf(new (std::nothrow) char[CHUNK]);
+  const auto buf = std::unique_ptr<std::array<char, CHUNK>>(new (std::nothrow) std::array<char, CHUNK>);
   if (buf == nullptr) {
     fclose(f);
     reply_err(req, "500 Internal Server Error", "no memory");
     return true;
   }
   size_t got = 0;
-  while ((got = fread(buf.get(), 1, CHUNK, f)) > 0) {
-    if (httpd_resp_send_chunk(req, buf.get(), got) != ESP_OK) break;
+  while ((got = fread(buf->data(), 1, CHUNK, f)) > 0) {
+    if (httpd_resp_send_chunk(req, buf->data(), got) != ESP_OK) break;
     // Yield between chunks. Without this, a bulk download (the 1 MB site
     // page) is hundreds of back-to-back SD reads + TCP sends on the httpd
     // task, and on this single-core S2 the watched main loop starves —

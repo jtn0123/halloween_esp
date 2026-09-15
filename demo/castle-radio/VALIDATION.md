@@ -239,7 +239,7 @@ illustrative renderers. Device publishing remains unconnected.
   the castle theme), previous, next, shuffle, repeat and stop 9.61:1, all
   above the 4.5:1 text minimum and the 3:1 control minimum.
 
-## Sonar smell sweep and firmware 5.53 (2026-09-15)
+## Sonar smell sweep and firmware 5.53 / 5.54 (2026-09-15)
 
 - With API access the PR listed 195 open code smells: 103 in the three
   firmware headers (scored whole-file), 60 in the demo scripts, 19 in Python,
@@ -260,3 +260,14 @@ illustrative renderers. Device publishing remains unconnected.
   the host harness's C++17 or worth its flash), the mid-file includes (the
   serving half must see the handlers above it), the httpd function-pointer
   registration (the ESP-IDF API), and `std::ranges::find` (C++17 harness).
+- Second pass (5.54): the OTA handler's upload loop is one condition with
+  one exit and a `unique_ptr<std::array>` buffer instead of malloc/free, the
+  two other chunk buffers are the same shape, the reply is a raw string
+  literal. 195 open findings became 48, then 43 after this pass: 17 mutable
+  globals, 14 snprintf, the mid-file includes, the httpd function pointer,
+  ranges::find, one init-statement pair the dedicated-statement rule
+  forbids, two "top-level await" hints that a classic script cannot take,
+  and the default castle address. All accepted on the dashboard with the
+  reason next to each. Flashed over the new OTA handler itself: the castle
+  came back on 5.54, Storm played from the page with the clock at 0:02, Stop
+  left it idle.

@@ -49,7 +49,7 @@
     $('sync-busy').hidden = !pending(job);
     $('sync-busy').value = job?.percent || 0;
     $('sync-measure').textContent = measureText(job);
-    $('sync-start').disabled = !item || !item.can_sync || (!!item.audio && !job?.error) || pending(job);
+    $('sync-start').disabled = !item?.can_sync || (!!item.audio && !job?.error) || pending(job);
     $('sync-start').textContent = startLabel(item, job);
   }
   function buttonLabel(t) {

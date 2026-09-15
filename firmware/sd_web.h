@@ -234,7 +234,7 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
   if (f == nullptr) return reply_err(req, "500 Internal Server Error", "cannot create file");
   static constexpr size_t CHUNK = 8192;
   // nothrow: exceptions are off, and a full heap must answer 500, not abort.
-  const std::unique_ptr<char[]> buf(new (std::nothrow) char[CHUNK]);
+  const auto buf = std::unique_ptr<std::array<char, CHUNK>>(new (std::nothrow) std::array<char, CHUNK>);
   if (buf == nullptr) {
     fclose(f);
     return reply_err(req, "500 Internal Server Error", "no memory");
@@ -245,12 +245,12 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
   uint32_t crc = 0;
   bool ok = true;
   while (remaining > 0) {
-    const int got = httpd_req_recv(req, buf.get(), remaining < CHUNK ? remaining : CHUNK);
-    if (got <= 0 || fwrite(buf.get(), 1, got, f) != (size_t) got) { ok = false; break; }
+    const int got = httpd_req_recv(req, buf->data(), remaining < CHUNK ? remaining : CHUNK);
+    if (got <= 0 || fwrite(buf->data(), 1, got, f) != (size_t) got) { ok = false; break; }
     // B5: a cheap running checksum, returned to the sender — "bytes
     // matched" catches truncation but not a bad SD sector, which is a live
     // hypothesis in docs/ISSUE-scene-start-audio.md. sd_sync compares.
-    crc = esp_rom_crc32_le(crc, (const uint8_t *) buf.get(), got);
+    crc = esp_rom_crc32_le(crc, (const uint8_t *) buf->data(), got);
     remaining -= got;
     written += got;
     // The third appearance of this bug class (h_ota and send_sd_file were

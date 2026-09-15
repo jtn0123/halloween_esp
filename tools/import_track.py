@@ -166,18 +166,17 @@ def _build_parser() -> argparse.ArgumentParser:
     return ap
 
 
-def _list_tracks() -> int:
+def _list_tracks() -> None:
     data = mf.load()
     if not data:
         print("no tracks imported yet")
-        return 0
+        return
     for tid, e in sorted(data.items()):
         a = e.get("audio", {})
         print(
             f"{tid:<20} {a.get('duration', 0):>6.1f}s "
             f"{a.get('bytes', 0) / 1024:>7.0f}K  {e.get('source', '')[:60]}"
         )
-    return 0
 
 
 def _analyze_only(args: argparse.Namespace) -> int:
@@ -252,7 +251,8 @@ def main() -> int:
     TRACKS.mkdir(exist_ok=True)
 
     if args.list:
-        return _list_tracks()
+        _list_tracks()
+        return 0
     if args.analyze_only:
         return _analyze_only(args)
 
