@@ -65,6 +65,15 @@ esp32:
 logger:
   hardware_uart: USB_SERIAL_JTAG
 
+# Keep the playback choices on the S3 build so the older S2 does not pay their
+# flash cost. The pipeline still prefers MP3, while SD URLs select their decoder
+# from the file. FLAC is deliberately excluded.
+audio:
+  codecs:
+    mp3:
+    opus:
+    wav:
+
 # ── 3. The status pixel's RMT block ──────────────────────────────────
 # castle_sd.yaml asks for 64 symbols, one S2 block. On the S3 that is not a
 # block at all, and a strip that asks for one gets no channel and stays

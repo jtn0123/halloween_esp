@@ -407,7 +407,7 @@ def _import(
     )
 
     ch = "mono" if o["channels"] == 1 else "stereo"
-    print(f"\nimported  tracks/{tid}.mp3")
+    print(f"\nimported  tracks/{tid}.{o['format']}")
     lossy = o["format"] in ("mp3", "opus")
     rate_txt = f"{o['bitrate']}kbps " if lossy else ""
     print(

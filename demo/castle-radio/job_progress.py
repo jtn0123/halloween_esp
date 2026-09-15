@@ -1,0 +1,102 @@
+"""Measured progress records; no fabricated percentage for opaque stages."""
+
+import json
+import os
+import re
+import signal
+import subprocess
+import threading
+import time
+
+
+def interpret(line, stage, analyzed):
+    if line.startswith("CASTLE_PROGRESS "):
+        try:
+            line = json.loads(line[len("CASTLE_PROGRESS ") :])["line"]
+        except (ValueError, KeyError):
+            return {}, analyzed
+    clean = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", line)
+    pct = re.search(r"(\d+(?:\.\d+)?)%", clean)
+    if pct and ("[download]" in clean or (stage == "split" and "|" in clean)):
+        value = min(100, max(0, float(pct[1])))
+        return {
+            "phase": "Downloading audio"
+            if "[download]" in clean
+            else "Separating voice and background",
+            "percent": value,
+            "detail": clean[-220:],
+        }, analyzed
+    if "ExtractAudio" in clean or "[ffmpeg]" in clean:
+        return {
+            "phase": "Converting audio",
+            "percent": None,
+            "detail": "Preparing the playable audio file",
+        }, analyzed
+    if "encoding stems" in clean:
+        return {
+            "phase": "Encoding separated audio",
+            "percent": None,
+            "detail": "Saving voice and background previews",
+        }, analyzed
+    if re.match(r"\s*(vocals|backing|combined)\s+(left|right|both)\s", clean):
+        analyzed += 1
+        return {
+            "phase": "Analyzing separated audio",
+            "percent": min(100, analyzed / 9 * 100),
+            "detail": f"{analyzed} of 9 layer/channel analyses finished",
+        }, analyzed
+    if "analysing" in clean.lower() or "analyzing" in clean.lower():
+        return {
+            "phase": "Analyzing audio",
+            "percent": None,
+            "detail": "Finding timing and rhythm",
+        }, analyzed
+    return {}, analyzed
+
+
+def run(args, timeout, stage, report):
+    env = {**os.environ, "CASTLE_PROGRESS_STREAM": "1"}
+    process = subprocess.Popen(
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=env,
+        start_new_session=True,
+    )
+    timed_out = threading.Event()
+
+    def expire():
+        timed_out.set()
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    timer = threading.Timer(timeout, expire)
+    timer.start()
+    tail = []
+    analyzed = 0
+    started = time.time()
+    report(started_at=started, percent=None, detail="Starting the audio tools")
+    try:
+        for line in process.stdout:
+            tail.append(line)
+            tail = tail[-100:]
+            values, analyzed = interpret(line.strip(), stage, analyzed)
+            if values:
+                report(**values)
+        code = process.wait()
+        if timed_out.is_set():
+            raise ValueError("Preparation timed out. Retry this song.")
+        if code:
+            raise ValueError("".join(tail)[-1800:] or "Audio preparation failed")
+        return "".join(tail)
+    finally:
+        timer.cancel()
+        process.stdout.close()
+        if process.poll() is None:
+            expire()
+            process.wait()

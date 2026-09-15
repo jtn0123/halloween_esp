@@ -57,6 +57,7 @@ inline const char *content_type(const std::string &p) {
   if (ends(".png")) return "image/png";
   if (ends(".json")) return "application/json";
   if (ends(".mp3")) return "audio/mpeg";
+  if (ends(".opus")) return "audio/ogg";
   if (ends(".wav")) return "audio/wav";
   return "application/octet-stream";
 }

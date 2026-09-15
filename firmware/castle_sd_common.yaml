@@ -225,14 +225,18 @@ interval:
             // script rather than a list of ids here, because the zone list
             // lives in scenes.yaml and is generated into lights_override.
             //
-            // Anything but "show" stops the scene first. A looping scene
+            // Anything but "show" stops an authored scene first. Raw imported
+            // audio reports current_scene="stop" and must survive live colour
+            // frames streamed by the radio bridge.
+            // A looping scene
             // re-runs its audio every 30 s (Vigil), and the SD read + SPI
             // burst that goes with it starves the RMT refill ISR: two or
             // three pixels on the longest strip flick to a wrong colour and
             // back, which reads as a hardware fault while you are staring at
             // a test pattern (reported 2026-08-21, the 12 px ring). A hex
             // colour can never spell "show" — s, h, o and w are not digits.
-            if (act.arg.find("show") == std::string::npos)
+            if (act.arg.find("show") == std::string::npos &&
+                id(current_scene).state != "stop")
               id(scene_stop)->execute();
             id(lights_override)->execute(act.arg);
           } else if (act.type == castle_web::SCENE) {
