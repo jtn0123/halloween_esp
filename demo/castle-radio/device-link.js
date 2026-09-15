@@ -5,7 +5,7 @@
   const target = $('output-target');
   const chip = $('castle-chip');
   let data = null, state = null, lightShow = null, clock = null, caps = {}, received = 0, error = '';
-  let busy = false, polling = false, timer = null, epoch = 0;
+  let busy = false, inflight = null, timer = null, epoch = 0;
   let wasPlaying = false, idlePolls = 0, userStopped = true, volumeTouched = 0, pirTouched = 0, advancedFor = '';
   const listeners = new Set();
   const onCastle = () => target.value === 'castle';
@@ -120,8 +120,11 @@
     if (!userStopped && caps.track_end) {advance();}
   }
   async function refresh() {
-    if (polling || busy || window.remoteLibrary?.syncing()) {return;}
-    polling = true;
+    if (inflight || busy || window.remoteLibrary?.syncing()) {return;}
+    inflight = poll();
+    try { await inflight; } finally { inflight = null; }
+  }
+  async function poll() {
     const started = epoch;
     try {
       const next = await api('/radio/device');
@@ -132,7 +135,7 @@
       if (onCastle()) {follow();}
       $('live-state').textContent = state.show_on ? 'Installed playlist running on castle' : state.track ? `Castle audio: ${state.track}${lightShow?.active ? ' · generated lights live' : ''}` : hasTrack(state) ? `Castle scene: ${state.scene}` : 'Castle idle';
     } catch (e) { state = null; lightShow = null; clock = null; error = e.message; $('live-state').textContent = e.message; }
-    finally { polling = false; paint(); for (const fn of listeners) {fn({connected: !!state, state, data, caps, lightShow, error});} }
+    finally { paint(); for (const fn of listeners) {fn({connected: !!state, state, data, caps, lightShow, error});} }
   }
   async function command(body) {
     if (busy) {return false;}
@@ -141,7 +144,8 @@
     catch (e) { $('live-state').textContent = e.message; toast(e.message); return false; }
     finally {
       busy = false;
-      while (polling) {await new Promise(r => setTimeout(r, 40));}
+      // A poll already in flight finishes (and is dropped by the epoch guard) before the fresh one.
+      if (inflight) {await inflight;}
       await refresh();
     }
   }

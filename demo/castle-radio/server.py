@@ -2,6 +2,7 @@
 
 import json
 import mimetypes
+import os
 import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -345,7 +346,8 @@ class Handler(SimpleHTTPRequestHandler):
                 source_name = name
                 body = self.rfile.read(length)
                 ext = upload_suffix(body[:128], Path(name).suffix.lower())
-                source = str(DATA / (tid + ext))
+                # basename: the name written is one component, never a path.
+                source = str(DATA / os.path.basename(tid + ext))
                 Path(source).write_bytes(body)
                 title = Path(name).stem[:200]
                 split = self.headers.get("X-Split", "true") == "true"
