@@ -54,8 +54,8 @@ def interpret(line, stage, analyzed):
     return {}, analyzed
 
 
-def run(args, timeout, stage, report):
-    env = {**os.environ, "CASTLE_PROGRESS_STREAM": "1"}
+def run(args, timeout, stage, report, extra_env=None):
+    env = {**os.environ, "CASTLE_PROGRESS_STREAM": "1", **(extra_env or {})}
     process = subprocess.Popen(
         args,
         stdout=subprocess.PIPE,

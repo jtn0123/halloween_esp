@@ -1,6 +1,6 @@
 /* One link to the castle: a single poll that every panel shares, the castle's
    own clock on the scrubber, and the queue carried from song to song. */
-/* global stopped, blacked, switchEpoch, switching */
+/* global $, audio, blacked, current, drawPlayheads, fmt, load, next, queue, renderQueue, repeat, sceneData, shuffle, stopped, switchEpoch, switching, syncLayer, syncVolume, toast, tracks, updatePlayer */
 (() => {
   const target = $('output-target');
   const chip = $('castle-chip');

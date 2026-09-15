@@ -1,5 +1,5 @@
 /* The existing fixture geometry with demo-only per-channel/per-pixel routing. */
-/* global lightKey */
+/* global $, escapeHTML, lightKey, V, waveformData */
 const rig=V.loadRig();
 const routeDefaults=()=>({towerL:{source:'backing:left',pixels:{}},door:{source:'vocals:both',pixels:{}},towerR:{source:'backing:right',pixels:{}}});
 let routing=routeDefaults(),routingRevision=0,routeLevels=new Map(),routeData=null;

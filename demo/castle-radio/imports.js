@@ -1,5 +1,5 @@
 /* Import UI backed by server.py and the existing project tools. */
-/* global queue, history */
+/* global $, art, current, deleteSong, history, load, openPreview, queue, renderQueue, renderTracks, start, toast, tracks */
 const imported = new Map();
 
 let  lastJobs='', lastLibrary='', pollBusy=false;

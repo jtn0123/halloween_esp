@@ -109,12 +109,13 @@ def update(job, **values):
         job.update(values)
 
 
-def run_tool(job, script, args, timeout):
+def run_tool(job, script, args, timeout, extra_env=None):
     return job_progress.run(
         [sys.executable, "-u", str(ROOT / "tools" / script), *args],
         timeout,
         "split" if script == "stems.py" else "import",
         lambda **values: update(job, **values),
+        extra_env,
     )
 
 
@@ -207,8 +208,9 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
     try:
         update(job, phase="Importing and analyzing", error=None)
         bitrate, sample_rate = playback_options(audio_format, audio_quality)
+        # The source (a link someone pasted, or the upload's path) travels in
+        # the environment, never as an argument: see import_track.py.
         args = [
-            source,
             "--id",
             tid,
             "--channels",
@@ -222,7 +224,7 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
         ]
         if not source.startswith(("http://", "https://")):
             args += ["--keep-source"]
-        run_tool(job, "import_track.py", args, 1000)
+        run_tool(job, "import_track.py", args, 1000, {"CASTLE_IMPORT_SOURCE": source})
         path = LIBRARY / f"{tid}.{audio_format}"
         update(
             job,

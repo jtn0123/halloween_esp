@@ -1,4 +1,5 @@
 /* Hardware diagnostics adapted from the original castle cue desk. */
+/* global $, toast */
 (() => {
   const device = $('device');
   const grid = device.querySelector('.settings-grid');

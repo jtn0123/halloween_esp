@@ -285,7 +285,14 @@ def main() -> int:
     if args.normalize is not None:
         o["normalize"] = args.normalize
 
-    source = args.source or (prev or {}).get("source", "")
+    # A caller that holds a link typed by someone else (the radio demo's
+    # server) hands it over in the environment rather than on the command
+    # line: a link is data, and data does not belong in an argument list.
+    source = (
+        args.source
+        or os.environ.get("CASTLE_IMPORT_SOURCE")
+        or (prev or {}).get("source", "")
+    )
     if not source:
         raise SystemExit("need a source (file or URL)")
     source = source.removeprefix("file:")

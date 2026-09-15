@@ -1,4 +1,5 @@
 /* Inventory is read from the SD card; syncing audio is not firmware deployment. */
+/* global $, renderImports, renderTracks, request, safe, toast, tracks */
 (() => {
   let inventory = null, polling = false, signature = '', selected = null, activeJob = null, inventoryError = '';
   let inflight = null;

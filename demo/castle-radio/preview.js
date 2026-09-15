@@ -1,5 +1,5 @@
 /* One audio element owns full-song and stem playback, seeking, and both visuals. */
-/* global stopped, blacked, queue, history, lastLibrary */
+/* global $, audio, blacked, CastleVisuals, current, fmt, history, imported, lastLibrary, load, queue, refresh, renderImports, renderQueue, renderTracks, request, stopped, toast, toggle, tracks, updatePlayer */
 const V = CastleVisuals;
 const heroStage = new V.Stage($('hero-canvas'));
 const detailStage = new V.Stage($('preview-canvas'));
