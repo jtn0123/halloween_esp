@@ -320,7 +320,7 @@ jobs:
       # away turned every validation failure into a bare "exit code 2".
       - name: validate every buildable variant
         run: |
-          for y in castle_sd castle_s3 castle_s3_qemu castle_sd_jewels bench bench_audio; do
+          for y in castle_sd castle_s3 castle_s3_qemu castle_feather_s3 castle_sd_jewels bench bench_audio; do
             esphome config "firmware/$y.yaml" > "/tmp/$y.out" 2>&1 \
               || { echo "== $y FAILED"; cat "/tmp/$y.out"; exit 1; }
             echo "$y OK"
@@ -334,9 +334,10 @@ jobs:
   firmware-weekly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    # Two chips now, two ESP-IDF toolchains to fetch: the S2 porch build and
-    # the S3 carrier build (2026-09-05).
-    timeout-minutes: 70
+    # Two chips, two ESP-IDF toolchains to fetch, three images: the S2 porch
+    # build, the S3 carrier build (2026-09-05) and the S3 Feather on v3.3a
+    # (2026-09-14), which shares the S3 toolchain but not its build tree.
+    timeout-minutes: 85
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -434,6 +435,17 @@ jobs:
             || { echo "no RAM/Flash summary in the S3 compile output — the compile did not finish"; exit 1; }
       - name: S3 OTA slot
         run: python tools/check_image.py castle-s3 --require
+      # The S3 Feather on the v3.3a carrier: the porch's build on the other
+      # chip, compiled here for the same reason as the carrier build — no
+      # board has run it yet. Same report, same guard.
+      - name: compile the S3 Feather build
+        run: esphome compile firmware/castle_feather_s3.yaml | tee /tmp/build_fs3.out
+      - name: S3 Feather RAM and flash
+        run: |
+          grep -E '^(RAM|Flash):' /tmp/build_fs3.out \
+            || { echo "no RAM/Flash summary in the S3 Feather compile output — the compile did not finish"; exit 1; }
+      - name: S3 Feather OTA slot
+        run: python tools/check_image.py castle-feather-s3 --require
       # The images, the linker maps and the exact configuration, kept for
       # two weeks: a build from a clean machine to flash from, and the one
       # way to explain why the runner's S2 image is 8 points of dram0 and
@@ -457,6 +469,11 @@ jobs:
             firmware/.esphome/build/castle-s3/build/castle-s3.map
             firmware/.esphome/build/castle-s3/sdkconfig*
             firmware/.esphome/build/castle-s3/partitions.csv
+            firmware/.esphome/build/castle-feather-s3/build/castle-feather-s3.bin
+            firmware/.esphome/build/castle-feather-s3/build/firmware.factory.bin
+            firmware/.esphome/build/castle-feather-s3/build/castle-feather-s3.map
+            firmware/.esphome/build/castle-feather-s3/sdkconfig*
+            firmware/.esphome/build/castle-feather-s3/partitions.csv
       - name: newer esphome available?
         run: |
           pip index versions esphome 2>/dev/null | head -2 || true

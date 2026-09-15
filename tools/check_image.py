@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Guard the OTA slot budget.
 
-    tools/check_image.py [castle-sd|castle-s3] [--require]
+    tools/check_image.py [castle-sd|castle-s3|castle-feather-s3] [--require]
 
 OTA is the only way onto this board, so an image that outgrows its slot is
 not a build error — it is a device nobody can reach. ESPHome does fail the
@@ -13,8 +13,8 @@ check` (a missing image is "nothing to check" there) and into the weekly CI
 compile with --require (there a missing image is a failure, because the
 compile just ran — grade report 2026-09-06 D1).
 
-The slot is READ, not typed: two builds, two flash sizes (the S2's 4 MB
-gives 1.75 MB slots, the S3 carrier's 8 MB gives 3.75 MB), and ESPHome
+The slot is READ, not typed: three builds, two flash sizes (both Feathers'
+4 MB gives 1.75 MB slots, the S3 carrier's 8 MB gives 3.75 MB), and ESPHome
 writes the table it used as partitions.csv beside the build (grade report
 2026-09-06 J5).
 

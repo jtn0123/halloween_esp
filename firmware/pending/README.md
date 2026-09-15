@@ -35,6 +35,32 @@ was rehearsed — never a number typed here),
 watch that first big upload for the watchdog cadence above, connect once so
 the image is confirmed, then `make publish`.
 
+Applied in v5.49 (2026-09-14, compiled, NOT yet flashed):
+
+- **`firmware/castle_feather_s3.yaml` — an ESP32-S3 Feather in the v3.3a
+  carrier**, for the v3.3a boards that arrived 2026-09-14. The porch build
+  with the chip swapped: `castle_sd.yaml` included whole (the S3 Feather
+  has the same NeoPixel on GPIO33 behind GPIO21), the Feather S3 board
+  definition at 4 MB, the USB Serial/JTAG console, and every RMT block —
+  three strips and the pixel — re-spent at 48 symbols, which is all 192.
+  No pin moves. `make build-fs3` / `upload-fs3` / `logs-fs3`; the weekly
+  CI compile builds it. The S2 image changes only in its version string.
+  Bring-up:
+
+  1. **Check the Feather is #5477** (4 MB flash, 2 MB PSRAM). #5323 has
+     no PSRAM; the boot log's PSRAM line is where that shows.
+  2. First flash over the Feather's USB-C, barrel jack unplugged: hold
+     BOOT, tap RESET, release BOOT, then `make upload-fs3`. A factory
+     Feather runs Adafruit's own USB stack, not the S3's ROM port. Once
+     this image is on it, uploads and `make logs-fs3` need no buttons.
+  3. Watch the boot log: PSRAM found, card mounted, media player up.
+     Confirm the version string in `firmware/castle.yaml` on the web page.
+  4. Barrel jack in: tower L, doorway and tower R each light, and the
+     status pixel shows blue at boot. A dark one is an RMT block —
+     `rmt_symbols: 48` in `generated/lights_s3.yaml` and in
+     `castle_feather_s3.yaml`.
+  5. Then `make publish`, as on the S2.
+
 Applied in v5.48 (2026-09-06, compiled, NOT yet flashed):
 
 - **`h_list` builds its stat path with a std::string** (`sd_web.h`). The

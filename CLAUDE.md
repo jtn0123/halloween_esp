@@ -47,17 +47,22 @@ file is the one that governs.
   Python server (`tools/studio.py` and its `studio_*.py`) until 2026-09-06;
   `docs/RETIREMENT.md` is the plan that removed it and the tag
   `python-studio-final` is the last tree that carries it.
-- `firmware/` — ESPHome YAML + C++ headers. Two buildable targets, one
+- `firmware/` — ESPHome YAML + C++ headers. Three buildable targets, one
   show: `castle_sd.yaml` is the ESP32-S2 Feather in the yard (THE build:
-  `make build` / `upload` / `ota`), and `castle_s3.yaml` (2026-09-05) is
+  `make build` / `upload` / `ota`), `castle_s3.yaml` (2026-09-05) is
   the ESP32-S3 carrier board — `make build-s3` / `upload-s3` / `logs-s3` /
-  `validate-s3`, compiled by the weekly CI job, never yet on hardware. The
+  `validate-s3` — and `castle_feather_s3.yaml` (2026-09-14) is an ESP32-S3
+  Feather (#5477) in the v3.3a carrier the S2 was drawn for (`make
+  build-fs3` / `upload-fs3` / `logs-fs3`). Both S3 builds are compiled by
+  the weekly CI job; neither has been on hardware. The
   show itself — the card, the loopback stream, the web API (`sd_web.h`)
-  the desk talks to — is `castle_sd_common.yaml`, which both include;
+  the desk talks to — is `castle_sd_common.yaml`, which all three include;
   `castle.yaml` is the shared core, not a buildable target. What is left in
-  `castle_sd.yaml` is the Feather's own NeoPixel, which the S3 has no
-  hardware for (ESPHome packages APPEND lists, so a build cannot subtract a
-  light its base declared). There was a third, all-in-flash build until
+  `castle_sd.yaml` is the Feather's own NeoPixel, which the S3 carrier has
+  no hardware for (ESPHome packages APPEND lists, so a build cannot subtract
+  a light its base declared). The S3 Feather has the same pixel, so its
+  build includes `castle_sd.yaml` whole and writes the S3 board, the USB
+  Serial/JTAG console and 48-symbol RMT blocks over it. There was a third, all-in-flash build until
   2026-09-01 (`castle_flash.yaml`, every scene embedded in the image); the
   show outgrew a 1.75 MB OTA slot and it was deleted rather than nursed —
   docs/notes/03-build.md §12.15. `castle_sd_jewels.yaml` and `bench*.yaml`
@@ -90,7 +95,8 @@ file is the one that governs.
 
 `setup` (python3.13 venv) · `audio` · `generate` · `preview` · `validate` ·
 `build` / `upload` / `logs` (the S2) · `build-s3` / `upload-s3` / `logs-s3`
-/ `validate-s3` (the carrier) · `studio` · `track SRC=… ID=…` · `test` · `lint`
+/ `validate-s3` (the carrier) · `build-fs3` / `upload-fs3` / `logs-fs3`
+(the S3 Feather) · `studio` · `track SRC=… ID=…` · `test` · `lint`
 · `check` (= CI) · `e2e` · `check-all` · `coverage` / `audit` (non-gating)
 · `lock` · `rust` / `rust-test` / `rust-lint` / `rust-coverage` (castle-core;
 `rust-coverage` is a non-gating `cargo llvm-cov` summary; `lint` depends on

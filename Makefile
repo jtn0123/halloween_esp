@@ -13,13 +13,16 @@ YAML := firmware/castle_sd.yaml
 # line of the show with $(YAML) and differs only in the chip. The S2 is
 # what is in the yard; this one has never been on hardware.
 YAML_S3 := firmware/castle_s3.yaml
+# The THIRD: the same S3 chip on an Adafruit Feather (#5477), in the v3.3a
+# carrier the S2 was drawn for — castle_sd.yaml with the chip swapped.
+YAML_FS3 := firmware/castle_feather_s3.yaml
 # The documented target; pyproject/CI/mypy all say 3.13. Found on PATH rather
 # than at one Homebrew path, which is not where every machine keeps it.
 # Recursive (=), not :=, so the lookup — and the error — only happen when
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: build-s3 upload-s3 logs-s3 validate-s3 publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
@@ -33,6 +36,7 @@ help:
 	@echo "  make upload     compile and flash over USB"
 	@echo "  make logs       tail device logs"
 	@echo "  make build-s3 / upload-s3 / logs-s3   the same for the ESP32-S3 carrier"
+	@echo "  make build-fs3 / upload-fs3 / logs-fs3   the same for an S3 Feather on v3.3a"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"
 	@echo "  make bench-audio  measure decode load on the bare board (no speakers)"
@@ -129,6 +133,7 @@ bench-logs:
 
 validate: generate validate-s3
 	@$(ESPHOME) config $(YAML) > /dev/null && echo "config OK"
+	@$(ESPHOME) config $(YAML_FS3) > /dev/null && echo "config OK (feather s3)"
 
 # The carrier build is validated by the same target, not by a habit anyone
 # has to remember: it is the build with no hardware to catch its mistakes.
@@ -156,6 +161,18 @@ upload-s3: audio generate
 
 logs-s3:
 	$(ESPHOME) logs $(YAML_S3)
+
+# An ESP32-S3 Feather in the v3.3a carrier. Its USB-C is the S3's own USB
+# Serial/JTAG, so uploads and logs share the cable — except the FIRST flash
+# of a factory Feather, which wants BOOT held while RESET is tapped.
+build-fs3: audio generate
+	$(ESPHOME) compile $(YAML_FS3)
+
+upload-fs3: audio generate
+	$(ESPHOME) run $(YAML_FS3)
+
+logs-fs3:
+	$(ESPHOME) logs $(YAML_FS3)
 
 clean:
 	rm -rf firmware/.esphome audio/*.wav
@@ -279,6 +296,7 @@ lint: rust-lint
 check: audio test lint
 	@$(PY) tools/check_image.py castle-sd
 	@$(PY) tools/check_image.py castle-s3
+	@$(PY) tools/check_image.py castle-feather-s3
 	@$(PY) tools/check_loc.py
 	@$(PY) tools/check_citations.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"

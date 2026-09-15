@@ -20,6 +20,10 @@
 # of them extending the other: ESPHome packages APPEND lists, so a build
 # cannot subtract a light its base declared.
 #
+# castle_feather_s3.yaml (2026-09-14) includes THIS file whole: an ESP32-S3
+# Feather has the same pixel on the same two pins, so that build is the
+# porch's on the other chip. Anything added here lands on both Feathers.
+#
 # THE PART THAT WAS NOT PROVEN: nobody had published ESPHome SD audio on an
 # ESP32-S2, and the two well-known ESP32 audio libraries decline to support
 # the S2 at all. The porch has answered that by running it since 2026-08-22.

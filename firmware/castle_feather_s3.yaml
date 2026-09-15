@@ -1,0 +1,75 @@
+# The castle on an ESP32-S3 FEATHER, plugged into the castle-carrier v3.3a.
+#
+#   make build-fs3     compile it
+#   make upload-fs3    flash it over the Feather's USB-C
+#   make logs-fs3      tail its logs over the same cable
+#
+# A THIRD build, and not the same thing as castle_s3.yaml. That one is the
+# v5 carrier, a bare ESP32-S3-WROOM-1 soldered to a four-layer board with an
+# ammeter on it. This one is the two-layer v3.3a carrier the S2 Feather was
+# designed for, with Adafruit's ESP32-S3 Feather (#5477 — 4 MB flash, 2 MB
+# quad PSRAM) in its sockets instead. The carrier was drawn for either chip:
+# every Feather pad it uses carries the same GPIO on both
+# (castle-carrier-v3 gen/design.py, checked against both variants'
+# pins_arduino.h), so the pins are castle.yaml's, untouched.
+#
+# So this is castle_sd.yaml — the whole S2 build, status pixel included,
+# because the S3 Feather has the same NeoPixel on GPIO33 behind the same
+# GPIO21 rail — with the four things that are the chip and not the board:
+#
+#   1. the platform — the S3 Feather's board definition, 4 MB like the S2's
+#   2. the console — the S3's USB Serial/JTAG peripheral, on the USB-C
+#   3. RMT blocks are 48 words here, not 64 — the strips AND the pixel
+#   4. nothing else: no i2c:, because v3.3a leaves SDA/SCL unconnected
+#
+# NOT #5323. That Feather is 8 MB of flash and NO PSRAM, and castle.yaml's
+# `psram:` block — which the show's audio buffers live in — would find
+# nothing. If that is the board in hand, this file needs a no-PSRAM
+# decision first, not a board-string swap.
+#
+# NOTHING HERE HAS BEEN ON HARDWARE. firmware/pending/README.md carries the
+# bring-up list.
+
+substitutions:
+  name: castle-feather-s3
+  friendly: Castle Feather S3
+
+packages:
+  # castle.yaml + the show + the Feather's own NeoPixel, exactly as the porch
+  # runs them. Everything below is written over it.
+  sd: !include castle_sd.yaml
+  # The strips re-spent in 48-word blocks. Generated, and shared with
+  # castle_s3.yaml. Must come after `sd`, which declares the strips.
+  rmt_s3: !include generated/lights_s3.yaml
+
+# ── 1. The platform ──────────────────────────────────────────────────
+# A real board definition this time, not castle_s3.yaml's `!remove`: there
+# IS a Feather here, and ESPHome knows it (`adafruit_feather_esp32s3` is the
+# 2 MB PSRAM one; `_nopsram` is #5323). The board implies the variant; it is
+# written out as well so the two cannot quietly disagree. The framework
+# block, dram0 diet and all, carries over unchanged — same rule as the v5
+# port: boot it first, then give lines back one at a time.
+esp32:
+  board: adafruit_feather_esp32s3
+  variant: esp32s3
+  # The S2's number, so the OTA slots are the porch's 1.75 MB and
+  # tools/check_image.py is measuring the same budget on both Feathers.
+  flash_size: 4MB
+
+# ── 2. The console ───────────────────────────────────────────────────
+# The S3 Feather's USB-C goes straight to GPIO19/20, and on this chip that
+# is a hardware USB Serial/JTAG peripheral, not the S2's TinyUSB CDC that
+# faulted inside sinf() (castle.yaml's logger note). So this Feather gets
+# what the one in the yard never had: a boot log on the cable it is
+# flashed over.
+logger:
+  hardware_uart: USB_SERIAL_JTAG
+
+# ── 3. The status pixel's RMT block ──────────────────────────────────
+# castle_sd.yaml asks for 64 symbols, one S2 block. On the S3 that is not a
+# block at all, and a strip that asks for one gets no channel and stays
+# dark without a word. Three strips at 48 plus this one is 192 of 192:
+# every TX channel the S3 has, spent.
+light:
+  - id: !extend status_pixel
+    rmt_symbols: 48

@@ -101,6 +101,7 @@ make audio      # render the scene audio (builds core/ on first use)
 make validate   # check the config without a toolchain
 make build      # compile firmware/castle_sd.yaml — the castle in the yard
 make build-s3   # compile firmware/castle_s3.yaml — the ESP32-S3 carrier board
+make build-fs3  # compile firmware/castle_feather_s3.yaml — an S3 Feather on v3.3a
 make upload     # flash over USB
 make publish    # push the rendered show to the castle's microSD card
 ```
@@ -108,11 +109,14 @@ make publish    # push the rendered show to the castle's microSD card
 Copy `firmware/secrets.yaml.example` to `firmware/secrets.yaml` and set real
 WiFi credentials before flashing. `make help` lists every target.
 
-There are two targets because there are two boards. `castle_sd.yaml` is the
-ESP32-S2 Feather that runs the porch; `castle_s3.yaml` (2026-09-05) is the
-ESP32-S3-WROOM-1 carrier board, written from that project's spec and never
-yet on hardware. They share every line of the show and not one GPIO number
-differs between them — see `firmware/pending/README.md` for the bring-up list.
+There are three targets because there are three boards. `castle_sd.yaml` is
+the ESP32-S2 Feather that runs the porch; `castle_s3.yaml` (2026-09-05) is the
+ESP32-S3-WROOM-1 carrier board (castle-carrier v5), written from that
+project's spec; `castle_feather_s3.yaml` (2026-09-14) is an ESP32-S3 Feather
+(#5477, the 2 MB PSRAM one) in the v3.3a carrier the S2 was drawn for.
+Neither S3 build has been on hardware yet. All three share every line of the
+show and not one GPIO number differs between them — see
+`firmware/pending/README.md` for the bring-up lists.
 
 The scene audio lives on the card, not in the image — `make publish` is what
 puts it there, and a board flashed without it chirps instead of playing. That
