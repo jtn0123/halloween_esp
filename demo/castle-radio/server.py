@@ -348,7 +348,8 @@ class Handler(SimpleHTTPRequestHandler):
                 ext = upload_suffix(body[:128], Path(name).suffix.lower())
                 # basename: the name written is one component, never a path.
                 source = str(DATA / os.path.basename(tid + ext))
-                Path(source).write_bytes(body)
+                with open(source, "wb") as upload:
+                    upload.write(body)
                 title = Path(name).stem[:200]
                 split = self.headers.get("X-Split", "true") == "true"
                 audio_format = playback_format(
