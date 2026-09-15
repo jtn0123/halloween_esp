@@ -47,6 +47,8 @@ scene MP3 files (01 through 10) from the main checkout's `audio/` directory.
 - Play on the castle is a stop button while something plays; a command that has
   not landed yet is shown as "starting" instead of flipping back to the old song.
 - Motion arming and cooldown are sent to the castle and read back from it.
+- Phone layout: sticky top bar, two-row header, 40 px controls, safe-area
+  aware player bar; audited at 390 x 844 with no horizontal overflow.
 - The original LED-channel and speaker diagnostic bench under Your castle.
 - OLED night and castle-green themes, both saved in the browser.
 

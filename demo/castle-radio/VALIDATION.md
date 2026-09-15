@@ -207,3 +207,23 @@ illustrative renderers. Device publishing remains unconnected.
 - Live castle after the rewrite: a bench light spec, Storm, a synced import
   with generated lights (5 frames by 3 s), Stop, a ranged media fetch (206)
   and a traversal attempt (404) all behaved. 51 demo tests pass.
+
+## Phone layout pass (2026-09-15)
+
+- Audited every view at 390 x 844 with a touch context: no horizontal
+  overflow on any page, but the header crammed breadcrumb, castle chip and
+  output picker into one row, the top bar scrolled away on the 6,400 px Your
+  castle page, and a dozen controls were under 32 px (row actions 17 px wide,
+  filter chips, preview Stop, LED dots, transport buttons, the output select).
+- The top bar is sticky with a bottom-edge selected indicator; the header is
+  two rows (breadcrumb and chip, then a full-width output picker); pages carry
+  a scroll margin so anchors land below the bar; the player bar and toast
+  respect the home-indicator safe area (`viewport-fit=cover`).
+- Every button, chip, select and row action is at least 40 px tall on phones;
+  the collection row fits sync, add and remove at 44/38/38 px; prepared songs
+  show art beside the title with a two-column button grid; LED dots are 36 px;
+  the LED bench grid uses 40 px cells; hover styles are off on touch devices.
+- Re-audited after the change: the only elements under 32 px are range inputs
+  (30 px hit area), checkboxes (22 to 24 px inside 40 px labels) and inline
+  links. Screenshots of Listen, the collection, the sync dialog, castle mode
+  and prepared songs were checked by eye.

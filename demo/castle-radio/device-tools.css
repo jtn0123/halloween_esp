@@ -57,3 +57,67 @@
 :root:not([data-theme="castle"]) .queue-panel{box-shadow:0 20px 60px #0009}
 :root:not([data-theme="castle"]) input[type=range]{accent-color:var(--accent)}
 :root:not([data-theme="castle"]) .player{border-top-color:#2b1d3c;box-shadow:0 -20px 60px #000}
+
+/* Phone layout (<=720px): a sticky top bar, a two-row header, and every
+   control at least 40px tall. Desktop is untouched above this width. */
+@media(max-width:720px){
+  .sidebar{position:sticky;top:0;z-index:12;background:#000;height:auto;min-height:64px;padding:8px 12px;box-shadow:0 10px 30px #000c}
+  :root[data-theme="castle"] .sidebar{background:var(--bg)}
+  nav{gap:0}nav button{min-width:56px;min-height:48px;padding:6px 4px;font-size:18px;border-radius:9px}nav button span{font-size:8px;margin-top:2px}
+  header{height:auto;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 14px 12px}
+  header>span{order:1;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:9px}
+  .castle-chip{order:2;margin:0;max-width:56vw;font-size:9px;padding:7px 10px;min-height:32px}
+  .output-picker{order:3;flex-basis:100%;width:100%;font-size:11px;gap:10px}
+  .output-picker select{flex:1;max-width:none;min-height:42px;font-size:13px;padding:8px 10px}
+  main{padding:14px 14px 40px}
+  .hero-copy .primary,.primary{min-height:46px}
+  .filters{flex-wrap:wrap;gap:6px;margin:6px 0 14px}.filters button{min-height:38px;padding:8px 13px;font-size:11px}.filters>span{width:100%;margin:6px 0 0;text-align:right}
+  .search{padding:12px 13px}.search input{font-size:14px}
+  .table-head{display:none}
+  .table-head,.track{grid-template-columns:20px minmax(0,1fr) 36px 128px;gap:6px}
+  .page{scroll-margin-top:84px}
+  .track{padding:12px 6px;min-height:72px}
+  .row-actions{gap:4px;justify-content:flex-end;flex-wrap:nowrap}.row-actions button{min-width:38px;min-height:40px;display:grid;place-items:center;border-radius:8px;padding:4px}
+  .row-actions [data-sync-song]{min-width:44px;font-size:9px;padding:4px 5px;border:1px solid var(--line)}
+  .add{font-size:22px}.remove-song{font-size:18px}
+  .remote-badge{font-size:9px}
+  .queue-toggle{min-height:44px;width:100%;text-align:center;font-size:12px}
+  .queue-item button{min-width:44px;min-height:44px}
+  .split-buttons button{min-height:42px;padding:9px 12px;font-size:12px}
+  .preview-transport{flex-wrap:wrap;gap:10px}.preview-transport button{min-height:44px;padding:10px 16px;font-size:13px}#split-stop{border:1px solid var(--line);border-radius:8px}
+  .preview-transport>span{width:100%;margin:0;text-align:right}
+  input[type=range]{min-height:30px;padding:0}
+  .switch-row input,.reprocess-dialog .switch-row input{width:24px;height:24px}
+  .codec-card input{width:22px;height:22px}
+  select{min-height:46px}
+  .player{padding:10px 14px calc(14px + env(safe-area-inset-bottom));min-height:0;gap:8px}
+  .current .cover{width:44px;height:44px}
+  .buttons{gap:6px;justify-content:space-between}.buttons button{min-width:44px;min-height:44px;font-size:17px;padding:4px;border-radius:10px}.buttons .round-play{width:52px;height:52px}
+  .timeline{margin-top:2px}.timeline span{min-width:30px;font-size:10px}
+  .output-controls button{min-height:40px;padding:8px 12px;font-size:11px}
+  #toast{bottom:calc(178px + env(safe-area-inset-bottom));max-width:86vw;text-align:center}
+  #undo-bar{bottom:calc(170px + env(safe-area-inset-bottom))}#undo-bar button{min-height:40px}
+  .workspace{padding-bottom:calc(178px + env(safe-area-inset-bottom))}
+  .prepared-track{gap:10px 8px;padding:16px 0}.prepared-track button{min-height:42px;padding:9px 12px;font-size:12px;flex:1 1 44%}.prepared-track>div:nth-child(2){flex:1 1 calc(100% - 60px);min-width:0}
+  .import-job button{min-height:44px}
+  .routing-presets button,.clear-routing{min-height:44px}
+  .pixel-dot{width:36px;height:36px;font-size:11px}.fixture-dots{height:210px;width:210px}
+  .rig-card select{min-height:44px}
+  .led-test-head,.led-test-row{grid-template-columns:minmax(52px,1fr) repeat(5,40px);gap:5px}.led-test-row button{height:40px}
+  .bench-brightness button,.bench-patterns button,.bench-custom button,.bench-stop{min-height:42px;padding:8px 12px;font-size:11px}
+  .bench-custom input[type=color]{width:44px;height:42px}
+  .tone-list button{min-height:52px;padding:11px 14px}
+  .tone-level input{margin-top:10px}
+  .live-device-actions{flex-wrap:wrap}.live-device-actions button{flex:1 1 46%;min-height:46px;font-size:12px}
+  .remote-inventory{padding:18px}.remote-inventory li button{min-height:42px;padding:8px 14px}
+  .sync-dialog{padding:20px}.sync-dialog button{min-height:46px;padding:10px 16px;margin:6px 4px 0 0}
+  .reprocess-dialog{padding:20px}.reprocess-dialog button{min-height:46px}
+  .steps li{padding:10px 0 10px 6px}
+  h1{font-size:34px;letter-spacing:-1.6px}
+  .hardware-bench{padding:16px}.bench-card{padding:14px}
+  .rig-setup{padding:16px}.rig-card{padding:16px}
+  .settings-grid{gap:16px}.settings-grid article{padding:20px}
+  .codec-settings{padding:18px 16px}
+}
+@media(max-width:720px){:root:not([data-theme="castle"]) nav button.selected::before{left:10px;right:10px;top:auto;bottom:0;width:auto;height:3px}}
+@media(max-width:720px) and (hover:none){button:hover{background:none}.codec-card:hover{transform:none;border-color:#2c2038}}

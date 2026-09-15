@@ -21,7 +21,7 @@
     const item = inventory?.tracks[key(selected)], job = activeJob?.key === key(selected) ? activeJob : inventory?.jobs[key(selected)];
     $('sync-title').textContent = selected.title;
     $('sync-explanation').textContent = selected.key
-      ? 'Sync copies the song audio to the castle’s SD card. Its generated light show still requires a firmware update; this does not make the full show ready to play.'
+      ? 'Sync copies the song audio to the castle’s SD card. When it plays there, this control room streams its generated lights to the castle, so keep this page open.'
       : 'Sync restores this installed scene’s audio to the castle’s SD card. The original light show is already in the firmware.';
     $('sync-progress').textContent = job?.error || (job && !job.done ? job.phase : item?.audio ? 'Audio is on the castle. Select the castle output and press Play.' : label(selected));
     $('sync-busy').hidden = !job || job.done;
