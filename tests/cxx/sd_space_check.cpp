@@ -9,6 +9,7 @@
 // The shim's esp_vfs_fat_info reads CASTLE_SD_FREE_KB every call, so moving
 // the environment between calls shows exactly which call touched the card.
 // tests/test_sd_space_cxx.py compiles and runs this.
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 

@@ -82,5 +82,5 @@ test("the real remote page, relayed by the studio, drives the castle", async ({ 
   await expect(page.locator("#show")).toHaveClass(/on/);
 
   await page.locator("#black").click();
-  await expect.poll(castleScene, { timeout: 5000 }).toBe("");
+  await expect.poll(castleScene, { timeout: 5000 }).toBe("stop");
 });
