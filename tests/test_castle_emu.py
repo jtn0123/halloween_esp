@@ -162,7 +162,8 @@ class TestQueuedSemantics(EmuCase):
             "queued scene never applied",
         )
         self.http("POST", "/api/stop")
-        self.assertTrue(_wait(lambda: self._status()["scene"] == ""))
+        # scene_stop publishes "stop", not "" — see test_emu_stop_semantics.
+        self.assertTrue(_wait(lambda: self._status()["scene"] == "stop"))
 
     def test_play_sets_the_track_and_stop_clears_it(self) -> None:
         self.http("POST", "/api/play?f=wicked_winds.mp3")
@@ -179,7 +180,7 @@ class TestShowNightRoutes(EmuCase):
         code, body = self.http("GET", "/api/blackout")
         self.assertEqual(code, 200)
         self.assertEqual(json.loads(body), {"queued": True})
-        self.assertTrue(_wait(lambda: self._status()["scene"] == ""))
+        self.assertTrue(_wait(lambda: self._status()["scene"] == "stop"))
 
 
 class TestRemotePage(EmuCase):

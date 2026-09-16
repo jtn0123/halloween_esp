@@ -64,6 +64,9 @@
     offer,
     syncing:()=>!!activeJob && !activeJob.done,
     item:t=>inventory?.tracks[key(t)]||null,
+    // Whether the card has been listed at all. item() returning null is
+    // otherwise indistinguishable from "that song is not on the castle".
+    known:()=>!!inventory,
     trackByFilename:name=>tracks.find(t=>inventory?.tracks[key(t)]?.filename===name)||null,
     // Play must not offer a sync dialog just because the first inventory
     // sweep (three SD listings on the castle) has not answered yet.

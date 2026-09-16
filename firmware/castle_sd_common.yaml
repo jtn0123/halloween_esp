@@ -233,7 +233,13 @@ interval:
             id(current_scene).publish_state("stop");
             castle_web::restart_audio_clock(esp_timer_get_time());
           } else if (act.type == castle_web::ActionType::STOP) {
+            // scene_stop zeroes the zone arrays, but a page light show
+            // drives the strips through lights_override (LIGHT below) and
+            // that keeps painting its last colour over them. Stop means
+            // dark, so the override goes with the scene — the same one
+            // line BLACKOUT has always had.
             id(scene_stop)->execute();
+            id(lights_override)->execute("off");
           } else if (act.type == castle_web::ActionType::VOLUME) {
             // 0 is the desk's hush (sound routed to the Mac): remembered so
             // scene scripts keep quiet too — see speaker_hush in castle.yaml.
@@ -299,6 +305,7 @@ interval:
             } else {
               id(show_playlist)->stop();
               id(scene_stop)->execute();
+              id(lights_override)->execute("off");  // and the manual colour
             }
           } else if (act.type == castle_web::ActionType::BLACKOUT) {
             // #25: the panic switch. Show, scene, audio, pixels — off.

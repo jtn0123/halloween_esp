@@ -47,6 +47,18 @@ scene MP3 files (01 through 10) from the main checkout's `audio/` directory.
   moves on by itself (songs that are not synced are skipped with a toast).
 - Play on the castle is a stop button while something plays; a command that has
   not landed yet is shown as "starting" instead of flipping back to the old song.
+- The link survives a rough minute: one dropped poll keeps the last good state
+  on screen and says "reconnecting", and only three in a row read as offline.
+  An `uptime_s` that goes backwards is an OTA or a brownout, not the end of a
+  song — the follower resets, says the castle is starting up while its scene
+  table is empty, and starts the interrupted track again. A `/api/files`
+  listing that has not answered yet makes the queue wait, never skip.
+- Generated lights respect the firmware's one-command-per-200 ms drain: frames
+  are never sent faster than that, a frame the next one has already overtaken
+  is dropped rather than burst, a castle that never reports `position_ms` has
+  its frame clock re-based on now, and every stop waits for its light-off to be
+  drained before STOP can evict it. The show holds a screen wake lock and
+  re-aligns when a throttled tab comes back.
 - Motion arming and cooldown are sent to the castle and read back from it.
 - Phone layout: sticky top bar, two-row header, 40 px controls, safe-area
   aware player bar; audited at 390 x 844 with no horizontal overflow.

@@ -1,118 +1,15 @@
 /* Behaviour tests for the castle-facing browser code.
  *
- *   node --test demo/castle-radio/
+ *   node --test demo/castle-radio/test_castle_radio.test.mjs
  *
- * These files are plain browser scripts with no module boundary, so each test
- * runs the real source in a node:vm context with a hand-stubbed page: the
- * assertions are about what the castle is actually sent, not about text. */
+ * The page stub, the vm contexts and the canned castle answers live in
+ * test_support.mjs; everything here is an assertion about what the castle is
+ * actually sent when the control room is driving it. */
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
 import test from 'node:test';
 import vm from 'node:vm';
-import {fileURLToPath} from 'node:url';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const read = name => fs.readFileSync(path.join(HERE, name), 'utf8');
-
-/* ---------------------------------------------------------------- page stub */
-
-function element(id) {
-  const node = {
-    id, textContent: '', className: '', title: '', value: '', checked: false,
-    disabled: false, hidden: false, innerHTML: '', attributes: {},
-    options: [{textContent: ''}, {textContent: ''}],
-    onclick: null, oninput: null, onchange: null, listeners: [],
-    setAttribute(key, value) { this.attributes[key] = value; },
-    getAttribute(key) { return this.attributes[key]; },
-    addEventListener(type, fn) { this.listeners.push([type, fn]); },
-    dispatch(type) { for (const [t, fn] of this.listeners) { if (t === type) {fn();} } },
-    classList: {add() {}, remove() {}, toggle() {}},
-    append() {}, querySelector: () => element(`${id}-child`), querySelectorAll: () => [],
-  };
-  return node;
-}
-
-function page() {
-  const nodes = new Map();
-  const $ = id => { if (!nodes.has(id)) {nodes.set(id, element(id));} return nodes.get(id); };
-  return {$, nodes};
-}
-
-const fmt = s => `${Math.floor((s || 0) / 60)}:${String(Math.floor((s || 0) % 60)).padStart(2, '0')}`;
-const settle = () => new Promise(resolve => setImmediate(resolve));
-
-/* device-link.js in a context whose castle answers with `ctx.payload`. */
-function linkContext(options = {}) {
-  const {$} = page();
-  const calls = {fetch: [], commands: [], next: 0, toasts: [], load: [], offers: [], retries: 0};
-  const scene = {id: 'citizens', dur: 193360, loop: true, ...(options.scene || {})};
-  const tracks = options.tracks || [
-    {id: 0, file: '09_citizens.mp3', kind: 'song', duration: 193, title: 'Citizens'},
-    {id: 1, file: '01_vigil.mp3', kind: 'scene', duration: 60, title: 'Vigil'},
-  ];
-  const ctx = {
-    payload: options.payload,
-    now: 1000, step: 0.2,
-    console,
-    tracks, current: options.current ?? 0, queue: options.queue ?? [1], history: [],
-    repeat: false, shuffle: false, blacked: false, stopped: true,
-    switchEpoch: 0, switching: false, sceneData: [scene],
-    fmt, syncLayer() {}, syncVolume() {}, drawPlayheads() {}, renderQueue() {}, updatePlayer() {},
-    toast(message) { calls.toasts.push(message); },
-    load(id) { calls.load.push(id); },
-    next() { calls.next++; },
-    audio: {pause() {}, currentTime: 0},
-    // A real page clock moves between the poll landing and the code that
-    // reads it, and never by the same amount twice: a frozen or evenly
-    // stepped clock hides exactly the key B01 is about.
-    performance: {now: () => { ctx.step += 0.11; ctx.now += ctx.step; return ctx.now; }},
-    setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0,
-    document: {hidden: false, addEventListener() {}},
-    async fetch(url, init) {
-      calls.fetch.push(url);
-      const post = init?.method === 'POST';
-      if (post) {calls.commands.push(JSON.parse(init.body));}
-      return {ok: true, json: async () => (post ? {ok: true} : ctx.payload)};
-    },
-  };
-  ctx.$ = $;
-  ctx.window = {
-    remoteLibrary: {
-      syncing: () => !!options.syncing,
-      item: () => options.item ?? null,
-      trackByFilename: () => null,
-      ensure: async () => options.inventory ?? null,
-      offer: t => calls.offers.push(t),
-      retry: () => {calls.retries++;},
-    },
-  };
-  ctx.globalThis = ctx;
-  vm.createContext(ctx);
-  vm.runInContext(read('device-link.js'), ctx, {filename: 'device-link.js'});
-  return {ctx, calls, $, scene};
-}
-
-/* A castle that is playing the looping song `citizens` at `position_s`. */
-const playingAt = position_s => ({
-  state: {scene: 'citizens', track: '', version: '5.55', playing: true, settling: false,
-    volume: 45, show_on: false, sd_mounted: true, scenes: 'stop,citizens,vigil', pir: {armed: true, cooldown_s: 60}},
-  playback: {position_s},
-  capabilities: {position: true, track_end: true},
-  light_show: null,
-});
-
-const idle = () => ({
-  state: {scene: 'stop', track: '', version: '5.55', playing: false, settling: false,
-    volume: 45, show_on: false, sd_mounted: true, scenes: 'stop,citizens,vigil', pir: {armed: true, cooldown_s: 60}},
-  playback: {position_s: 0}, capabilities: {position: true, track_end: true}, light_show: null,
-});
-
-async function pollAt(ctx, position_s) {
-  ctx.payload = playingAt(position_s);
-  await ctx.window.castleLink.refresh();
-  await settle();
-}
+import {directContext, element, fmt, idle, linkContext, page, playingAt, poll, pollAt, read, runFrames, settle, settlingOn, showContext} from './test_support.mjs';
 
 /* ------------------------------------------------------------------- B01/B20 */
 
@@ -348,12 +245,6 @@ test('B47: load() gives the audio element no source while the castle is the outp
 
 /* ---------------------------------------------------------------------- B51 */
 
-/* A castle that has been told to start `scene` but has not left the old one. */
-const settlingOn = scene => ({
-  state: {scene, track: '', version: '5.55', playing: false, settling: true,
-    volume: 45, show_on: false, sd_mounted: true, scenes: 'stop,citizens,vigil', pir: {armed: true, cooldown_s: 60}},
-  playback: {position_s: 0}, capabilities: {position: true, track_end: true}, light_show: null,
-});
 
 test('B51: a command still settling reads as starting, and offers no stop', async () => {
   const {ctx, calls} = linkContext({payload: playingAt(10)});
@@ -372,42 +263,8 @@ test('B51: a command still settling reads as starting, and offers no stop', asyn
   assert.deepEqual(calls.commands, [], 'the toggle must not stop the scene being left');
   assert.equal(calls.next, 0, 'and a settling poll is not the end of a song');
 });
-
 /* ---------------------------------------------------------------------- B60 */
 
-/* castle-direct.js with a hand-stubbed castle: `answers` maps an /api path
-   prefix to the JSON the firmware would return, and every sleep is recorded
-   and then resolved at once, so the frame clock is read and not waited on. */
-function directContext(answers, library) {
-  const delays = [];
-  const asked = [];
-  const nodes = {
-    'radio-scenes': {textContent: '[]'},
-    'radio-library': {textContent: JSON.stringify(library)},
-  };
-  const ctx = {
-    console, URL, Response, AbortController, Promise,
-    JSON, Math, Number, String, Set, Map, Object,
-    performance: {now: () => 1000},
-    setTimeout(fn, ms) { delays.push(ms); setImmediate(fn); return delays.length; },
-    clearTimeout() {},
-    location: {href: 'http://castle.local/', origin: 'http://castle.local', host: 'castle.local'},
-    document: {
-      getElementById: id => nodes[id] || null,
-      querySelectorAll: () => [],
-      addEventListener() {},
-    },
-  };
-  ctx.window = ctx;
-  ctx.fetch = async path => {
-    asked.push(path);
-    const key = Object.keys(answers).find(p => path.startsWith(p));
-    return {ok: true, status: 200, text: async () => JSON.stringify(answers[key] ?? {})};
-  };
-  vm.createContext(ctx);
-  vm.runInContext(read('castle-direct.js'), ctx, {filename: 'castle-direct.js'});
-  return {ctx, delays, asked};
-}
 
 test('B60: the direct frame clock waits for the speaker, like the Python bridge', async () => {
   const row = {key: 'radio_a', filename: 'radio_a.mp3', bytes: 9, duration: 30,
@@ -427,4 +284,175 @@ test('B60: the direct frame clock waits for the speaker, like the Python bridge'
   assert.ok(delays.some(ms => Math.abs(ms - 740) < 1),
     `the first frame waits 0.74 s, not 0.24 s (waits seen: ${delays})`);
   assert.ok(!delays.some(ms => Math.abs(ms - 240) < 1), 'no speaker-blind 0.24 s seed');
+});
+
+/* ---------------------------------------------------------------------- B61 */
+
+test('B61: one dropped poll keeps the castle on screen; three go offline', async () => {
+  const {ctx} = linkContext({payload: playingAt(10)});
+  await settle();
+  ctx.$('output-target').value = 'castle';
+  await pollAt(ctx, 30);
+  ctx.fail = true;
+  await poll(ctx, null);
+  assert.ok(ctx.window.castleLink.state(), 'a single failure is a hiccup, not an offline castle');
+  assert.notEqual(ctx.$('elapsed').textContent, '0:00', 'and it does not zero the clock');
+  assert.match(ctx.$('castle-chip').textContent, /reconnecting/i);
+  assert.match(ctx.$('live-state').textContent, /reconnecting/i);
+  await poll(ctx, null);
+  assert.ok(ctx.window.castleLink.state(), 'two is still a hiccup');
+  await poll(ctx, null);
+  assert.equal(ctx.window.castleLink.state(), null, 'three strikes is offline');
+  assert.match(ctx.$('castle-chip').textContent, /offline/i);
+  ctx.fail = false;
+  await pollAt(ctx, 34);
+  assert.ok(ctx.window.castleLink.state(), 'and one good poll is back online');
+  assert.doesNotMatch(ctx.$('castle-chip').textContent, /reconnecting/i);
+});
+
+/* ---------------------------------------------------------------------- B62 */
+
+test('B62: the same looping scene queued again still advances', async () => {
+  const {ctx, calls} = linkContext({payload: playingAt(10), queue: [1, 1]});
+  await settle();
+  ctx.$('output-target').value = 'castle';
+  calls.next = 0;
+  await pollAt(ctx, 193.5);                    // the first play finishes a cycle
+  assert.equal(calls.next, 1);
+  await pollAt(ctx, 2);                        // the same scene, started over
+  assert.equal(calls.next, 1, 'a restart is not itself an advance');
+  await pollAt(ctx, 193.5);
+  assert.equal(calls.next, 2, 'the guard from the first play must not outlive it');
+});
+
+/* ---------------------------------------------------------------------- B63 */
+
+const IMPORTED = {id: 2, key: 'radio_x', file: '', kind: 'song', duration: 100, title: 'Imported'};
+const withImport = () => [
+  {id: 0, file: '09_citizens.mp3', kind: 'song', duration: 193, title: 'Citizens'},
+  {id: 1, file: '01_vigil.mp3', kind: 'scene', duration: 60, title: 'Vigil'},
+  IMPORTED,
+];
+
+test('B63: a listing that has not answered does not throw the queue away', async () => {
+  const {ctx, calls} = linkContext({payload: playingAt(10), queue: [2], tracks: withImport(), known: false});
+  await settle();
+  ctx.$('output-target').value = 'castle';
+  calls.next = 0;
+  await pollAt(ctx, 193.5);
+  assert.deepEqual(ctx.queue, [2], 'the song is still queued');
+  assert.equal(calls.next, 0, 'and nothing was advanced past');
+  assert.equal(calls.retries, 1, 'the listing is retried instead');
+  assert.match(calls.toasts.at(-1), /listing slow/i);
+  // The listing answers: the queue moves on its own, without a second end.
+  ctx.known = true; ctx.item = {audio: true, filename: 'radio_x.mp3'};
+  await pollAt(ctx, 200);
+  assert.equal(calls.next, 1);
+  assert.deepEqual(ctx.queue, [2], 'nothing was discarded on the way');
+});
+
+test('B63: a song that really is missing is still skipped', async () => {
+  const {ctx, calls} = linkContext({payload: playingAt(10), queue: [2], tracks: withImport(), known: true});
+  await settle();
+  ctx.$('output-target').value = 'castle';
+  calls.next = 0;
+  await pollAt(ctx, 193.5);
+  assert.deepEqual(ctx.queue, []);
+  assert.ok(calls.toasts.some(t => /not synced to the castle/i.test(t)), calls.toasts.join(' | '));
+});
+
+/* ---------------------------------------------------------------------- B65 */
+
+test('B65: an uptime that goes backwards is a reboot, not the end of a song', async () => {
+  const {ctx, calls} = linkContext({payload: playingAt(10, 400)});
+  await settle();
+  ctx.$('output-target').value = 'castle';
+  await ctx.window.castlePlayer.play();           // this page owns the song
+  await pollAt(ctx, 30, 420);
+  calls.next = 0; calls.commands.length = 0;
+  // An OTA lands mid-song: the castle comes back with no scene table yet.
+  await poll(ctx, idle(3, ''));
+  assert.equal(calls.next, 0, 'a reboot is not a finished song');
+  assert.match(ctx.$('live-state').textContent, /starting up/i);
+  assert.match(ctx.$('live-ready').textContent, /starting up/i);
+  assert.deepEqual(calls.commands, [], 'nothing is sent to a castle that is still booting');
+  // Once the shows are loaded the interrupted song is started again.
+  await poll(ctx, idle(6));
+  assert.equal(JSON.stringify(calls.commands.at(-1)), '{"action":"scene","scene":"citizens"}');
+});
+
+test('B65: a castle nobody here started is not restarted for us', async () => {
+  const {ctx, calls} = linkContext({payload: playingAt(10, 400)});
+  await settle();
+  ctx.$('output-target').value = 'castle';
+  await pollAt(ctx, 30, 420);
+  calls.commands.length = 0;
+  await poll(ctx, idle(2, ''));
+  await poll(ctx, idle(5));
+  assert.deepEqual(calls.commands, []);
+});
+
+/* ---------------------------------------------------------------------- B66 */
+
+test('B66: a scene whose lights outlast its audio is not over when it falls quiet', async () => {
+  const vigil = {id: 'vigil', dur: 60000, loop: false};
+  const playingVigil = position_s => {
+    const payload = playingAt(position_s);
+    payload.state.scene = 'vigil';
+    return payload;
+  };
+  const {ctx, calls} = linkContext({payload: playingVigil(1), current: 1, queue: [0], scene: vigil});
+  await settle();
+  ctx.$('output-target').value = 'castle';
+  await ctx.window.castlePlayer.play();
+  await poll(ctx, playingVigil(2));
+  calls.next = 0;
+  for (let i = 0; i < 3; i++) {await poll(ctx, idle());}   // the audio ends early
+  assert.equal(calls.next, 0, 'the light script still has 58 s to run');
+  // Past the scene's authored duration, the queue does move on.
+  ctx.now += 61000;
+  await poll(ctx, playingVigil(61));
+  for (let i = 0; i < 3; i++) {await poll(ctx, idle());}
+  assert.equal(calls.next, 1);
+});
+
+/* ---------------------------------------------------------------- B64/B67/B68 */
+
+test('B64: a castle that never reports a clock does not get every frame at once', async () => {
+  // position_ms stays 0 through the whole give-up budget: the baseline has to
+  // move to now, or frames 0…4 s all come due the moment align returns.
+  const sent = await runFrames([[0, '111111'], [1, '222222'], [2, '333333']]);
+  const colours = sent.filter(l => l.c !== 'off');
+  assert.equal(colours.length, 3, `every frame goes out once (${JSON.stringify(sent)})`);
+  for (let i = 1; i < colours.length; i++) {
+    assert.ok(colours[i].at - colours[i - 1].at >= 200,
+      `frames are never faster than the 200 ms drain (${JSON.stringify(colours)})`);
+  }
+  assert.ok(colours[1].at - colours[0].at >= 900, 'and the authored 1 s gap survives');
+});
+
+test('B64: frames the next one has already overtaken are dropped, not burst', async () => {
+  const sent = await runFrames([[0, '111111'], [0.05, '222222'], [0.06, '333333'], [0.07, '444444'], [1, '555555']]);
+  const colours = sent.filter(l => l.c !== 'off').map(l => l.c);
+  assert.ok(colours.length < 5, `a frame overtaken inside one drain is skipped (${colours})`);
+  assert.equal(colours.at(-1), '555555', 'the last authored colour is still the one on the strips');
+  const times = sent.filter(l => l.c !== 'off').map(l => l.at);
+  for (let i = 1; i < times.length; i++) {assert.ok(times[i] - times[i - 1] >= 200);}
+});
+
+test('B67: stop waits for the light-off to be drained before it evicts it', async () => {
+  const {ctx, asked} = showContext([[0, '111111']]);
+  await ctx.window.fetch('/radio/device/command', {method: 'POST', body: JSON.stringify({action: 'stop'})});
+  const paths = asked.map(a => a.path);
+  const off = asked.findIndex(a => a.path === '/api/light?c=off');
+  const stop = asked.findIndex(a => a.path === '/api/stop');
+  assert.ok(off >= 0 && stop > off, `the strips are darkened first (${paths})`);
+  assert.ok(asked[stop].at - asked[off].at >= 250,
+    'and STOP waits out the 200 ms drain, or it evicts the pending LIGHT');
+});
+
+test('B68: the inventory sweep is serial, so it cannot purge its own socket', async () => {
+  const {ctx, peak} = showContext([]);
+  await ctx.window.fetch('/radio/device/library');
+  assert.equal(peak(), 1, 'the castle keeps four sockets with an LRU purge: no fan-out');
 });

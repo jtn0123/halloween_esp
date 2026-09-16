@@ -14,6 +14,10 @@
   const library = parse('radio-library') || [];
   const nativeFetch = window.fetch.bind(window);
   const SETTLE_MS = 2500, STATUS_MS = 250, LISTING_MS = 4000, TIMEOUT_MS = 8000;
+  // The firmware drains ONE pending command per 200 ms, and a STOP or a
+  // VOLUME evicts a pending LIGHT. Frames go out no faster than the drain,
+  // and anything that follows an off frame waits for it to land.
+  const FRAME_MS = 200, DRAIN_MS = 250;
   // The speaker takes this long to run after PLAY while position_ms stays 0
   // (firmware 5.55, SPEAKER_START_S in device_bridge.py and tools/castle_emu.py).
   // The seeded frame clock has to include it, or every frame of a show whose
@@ -59,7 +63,7 @@
     listings.set(dir, {at: performance.now(), rows});
     return rows;
   }
-  const forget = () => { statusPromise = null; listings.clear(); };
+  const forget = () => { statusPromise = null; listings.clear(); expected.until = 0; };
   const versionAtLeast = (value, [major, minor]) => {
     const m = /^(\d+)\.(\d+)/.exec(String(value || ''));
     if (!m) {return false;}
@@ -93,14 +97,35 @@
   }
 
   // ── generated lights for a synced import, on the castle's clock ────────
-  const show = {active: false, track: null, frames_sent: 0, frames_total: 0, error: null, token: 0};
+  const show = {active: false, track: null, frames_sent: 0, frames_total: 0, error: null, token: 0, hidden: false, realign: false};
+  const now = () => performance.now() / 1000;
+  let lastLight = -Infinity;
+  // Off is the one frame that must land, so it waits out the drain instead of
+  // being dropped by the frame floor — and whatever follows it waits too.
+  async function lightOff() {
+    lastLight = now();
+    await castle('/api/light?c=off', 'POST').catch(() => {});
+    await sleep(DRAIN_MS);
+  }
   // Stop always darkens: the frame loop can have a colour in flight, so the
   // off frame is part of stopping rather than only of finishing.
   async function stopShow() {
     show.token++; show.active = false; show.track = null;
-    await castle('/api/light?c=off', 'POST').catch(() => {});
+    releaseScreen();
+    await lightOff();
   }
-  const now = () => performance.now() / 1000;
+  // A locked phone throttles setTimeout to a crawl while the castle's audio
+  // runs on: hold the screen awake for as long as the show does.
+  let wakeLock = null;
+  async function holdScreen() {
+    try { wakeLock = (await window.navigator?.wakeLock?.request('screen')) || null; }
+    catch { wakeLock = null; }
+  }
+  function releaseScreen() {
+    const held = wakeLock;
+    wakeLock = null;
+    try { held?.release?.()?.catch?.(() => {}); } catch { /* the lock is already gone */ }
+  }
   async function awaitTrack(filename, token, first) {
     let state = await status(true);
     // A mid-song realign gets a small budget too: one stale mirror answer
@@ -124,17 +149,32 @@
       state = await status(true);
       if (state.track !== filename) {return null;}
     }
-    return sounding(state) ? now() - state.position_ms / 1000 : started;
+    // Giving up after seconds of polling must not leave the baseline in the
+    // past: every past-due frame would fire at once, a burst of POSTs the
+    // castle drains one per 200 ms. A show that never got a clock starts now.
+    if (sounding(state)) {return now() - state.position_ms / 1000;}
+    return first ? now() : started;
   }
   async function runShow(filename, frames, duration) {
     const token = ++show.token;
-    Object.assign(show, {active: true, track: filename, frames_sent: 0, frames_total: frames.length, error: null});
+    Object.assign(show, {active: true, track: filename, frames_sent: 0, frames_total: frames.length, error: null, realign: false});
+    holdScreen();
     try {
       let started = await align(filename, now() + 0.24 + SPEAKER_START_S, token, true);
+      const due = i => i < frames.length && started + frames[i][0] <= now();
       for (let index = 0; started !== null && index < frames.length; index++) {
         const [at, spec] = frames[index];
         await sleep(Math.max(0, (started + at - now()) * 1000));
         if (token !== show.token) {return;}
+        // Coming back from a throttled tab: read the castle's clock again
+        // before deciding which frames are still ahead of it.
+        if (show.realign) { show.realign = false; started = await align(filename, started, token); if (started === null) {return;} }
+        // A frame the next one has already overtaken would only be overwritten
+        // inside the same 200 ms drain: skip it rather than burst.
+        if (due(index + 1)) { show.frames_sent = index + 1; continue; }
+        await sleep(Math.max(0, (lastLight + FRAME_MS / 1000 - now()) * 1000));
+        if (token !== show.token) {return;}
+        lastLight = now();
         await castle(`/api/light?c=${encodeURIComponent(spec)}`, 'POST');
         show.frames_sent = index + 1;
         if (index && index % 20 === 0) {started = await align(filename, started, token);}
@@ -144,7 +184,8 @@
     finally {
       if (token === show.token) {
         show.active = false; show.track = null;
-        castle('/api/light?c=off', 'POST').catch(() => {});
+        releaseScreen();
+        lightOff();
       }
     }
   }
@@ -223,7 +264,11 @@
     return rows.filter(f => f.name && !f.dir);
   }
   async function inventory() {
-    const [state, files, sceneFiles] = await Promise.all([status(), listing(), listing('scenes')]);
+    // Serial, not Promise.all: the castle keeps four sockets with an LRU purge,
+    // and a three-way fan-out throws the page's own keep-alive socket out.
+    const state = await status();
+    const files = await listing();
+    const sceneFiles = await listing('scenes');
     const installed = new Set(state.scenes.split(','));
     const audio = new Map(namedFiles(files).map(f => [f.name, f.size]));
     const sceneAudio = new Set(namedFiles(sceneFiles).map(f => f.name));
@@ -258,7 +303,8 @@
     try {
       const state = settle(await status());
       return json({connected: true, host: location.host, state, playback: playback(state), capabilities: capabilities(state),
-        light_show: {active: show.active, track: show.track, frames_sent: show.frames_sent, frames_total: show.frames_total, error: show.error}});
+        light_show: {active: show.active, track: show.track, frames_sent: show.frames_sent, frames_total: show.frames_total,
+          error: show.error, hidden: show.hidden, note: show.active && show.hidden ? 'lights paused — screen off' : null}});
     } catch (error) { return json({connected: false, host: location.host, error: error.message}, 502); }
   }
   async function answer(path, options) {
@@ -298,5 +344,10 @@
     for (const control of form.querySelectorAll('input, button')) {control.disabled = true;}
     byId('import-message').textContent = COMPUTER_ONLY;
   }
-  window.castleDirect = {scenes, library, show};
+  // A throttled tab freezes the frame loop; the castle's audio does not stop.
+  document.addEventListener('visibilitychange', () => {
+    show.hidden = !!document.hidden;
+    if (!document.hidden && show.active) {show.realign = true;}
+  });
+  window.castleDirect = {scenes, library, show, forget};
 })();

@@ -50,6 +50,7 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import castle_emu_wire as wire
+from castle_emu_clock import BYTES_PER_S, audio_state, silence_until
 from castle_emu_http import OTA_SLOT, OTA_SLOTS, Handler
 
 #: The device applies queued actions on its main-loop interval.
@@ -57,13 +58,6 @@ APPLY_DELAY_S = 0.2
 #: castle_sd.yaml clamps /api/volume to rig.h's kMaxVolumePct — scenes.yaml
 #: hardware.audio.max_volume — and so does this. test_castle_emu holds them equal.
 MAX_VOLUME_PCT = 100
-#: Rough playback clock: 96 kbps MP3 is ~12 kB of file per second.
-BYTES_PER_S = 12000
-#: Firmware 5.55's audio clock is sound-true: the decoder and the I2S ring
-#: take a moment after PLAY, and position_ms stays 0 until the speaker
-#: itself runs. Lights aligned to a clock that started at the command fire
-#: that much too early on the porch, so the emulator waits the same way.
-SPEAKER_START_S = 0.5
 
 #: Used only when no scenes.yaml can be found — the firmware seeds its list
 #: from the generated show, so the emulator reads the same source of truth
@@ -128,10 +122,23 @@ class _State:
         self.track_ends = 0.0
         #: v5.52's audio clock: when the current track began, for position_ms.
         self.track_started = 0.0
+        #: Armed-clock grace: "starting" until here, with nothing playing.
+        self.starting_until = 0.0
         self.show_on = False
         self.pir = {"armed": True, "cooldown_s": 60, "scene": "storm"}
         self.light = "show"
         self.boot = time.monotonic()
+
+
+def _scene_stop(st: _State) -> None:
+    """`scene_stop` and the one line beside it, on state the caller locks.
+
+    The firmware publishes scene="stop" (not ""), silences the media player,
+    and since v5.58 hands the strips back — a page light show drove them
+    through lights_override and they held its colour through a stop.
+    """
+    st.starting_until = silence_until(st.track, st.track_started, time.monotonic())
+    st.scene, st.track, st.light = "stop", "", "off"
 
 
 class CastleEmu(ThreadingHTTPServer):
@@ -240,8 +247,12 @@ class CastleEmu(ThreadingHTTPServer):
                 else:
                     taken, self._pending = self._pending, None
                 st = self.state
-                if st.track and time.monotonic() > st.track_ends:
-                    st.track = ""  # the song ended on its own
+                # The song ended. Only a RAW file loses its name here:
+                # castle_sd_common.yaml clears current_track on that tick
+                # only when current_scene is "stop", so an authored scene
+                # keeps naming its track until scene_stop.
+                if st.track and st.scene == "stop" and time.monotonic() > st.track_ends:
+                    st.track = ""
             if taken is not None:
                 try:
                     self._apply(*taken)
@@ -262,6 +273,7 @@ class CastleEmu(ThreadingHTTPServer):
                 st.scene = "stop"
                 st.track_started = time.monotonic()
                 st.track_ends = st.track_started + max(1, size // BYTES_PER_S)
+                st.starting_until = 0.0  # restart_audio_clock: armed anew
             elif action == "SCENE":
                 st.scene = arg
                 # run_scene hands the strips back to Show (gen_esphome.py);
@@ -275,16 +287,22 @@ class CastleEmu(ThreadingHTTPServer):
                     st.track_ends = st.track_started + max(
                         1, audio.stat().st_size // BYTES_PER_S
                     )
+                    st.starting_until = 0.0
             elif action == "STOP":
                 # Firmware STOP is `scene_stop` only: the evening playlist
                 # keeps running and starts the next scene after the gap.
                 # Ending the night is SHOW "0" (/api/show/stop), below.
-                st.scene, st.track = "", ""
+                _scene_stop(st)
             elif action == "BLACKOUT":
                 # #25, the panic switch: playlist, scene and audio all off.
-                st.scene, st.track, st.show_on = "", "", False
+                _scene_stop(st)
+                st.show_on = False
             elif action == "SHOW":
                 st.show_on = arg == "1"
+                if not st.show_on:
+                    # Quiet means the playlist AND the scene it was mid-way
+                    # through — castle_sd_common.yaml runs scene_stop too.
+                    _scene_stop(st)
             elif action == "LIGHT":
                 st.light = arg
             elif action == "PIRCFG":
@@ -298,13 +316,18 @@ class CastleEmu(ThreadingHTTPServer):
             elif action == "RESTART":
                 st.boot = time.monotonic()
                 st.scene, st.track, st.show_on = "", "", False
+                st.starting_until = 0.0
 
     def status_json(self) -> dict[str, object]:
         st = self.state
         # Real numbers from the disk under the card dir — the point is that
         # the field EXISTS and is honest, same as v5.23's esp_vfs_fat_info.
         du = shutil.disk_usage(self.sd_dir)
+        now = time.monotonic()
         with st.lock:
+            playing, position_ms = audio_state(
+                st.track, st.track_started, st.track_ends, st.starting_until, now
+            )
             return {
                 "version": self.version,
                 "compiled": "emulated",
@@ -322,21 +345,10 @@ class CastleEmu(ThreadingHTTPServer):
                 # /api/scene checks, so the desk can spot a stale board.
                 "scenes": ",".join(self.scenes),
                 "show_on": st.show_on,
-                # v5.52: the pipeline's own state and the main loop's clock.
-                "playing": bool(st.track),
-                # Sound-true (5.55): 0 until the speaker has started, then
-                # counted from that moment, not from the command.
-                "position_ms": (
-                    max(
-                        0,
-                        int(
-                            (time.monotonic() - st.track_started - SPEAKER_START_S)
-                            * 1000
-                        ),
-                    )
-                    if st.track
-                    else 0
-                ),
+                # v5.52/5.55: the speaker's word, not the mailbox's, and a
+                # clock that counts from the sound (castle_emu_clock).
+                "playing": playing,
+                "position_ms": position_ms,
                 "pir": {
                     "armed": st.pir["armed"],
                     "cooldown_s": st.pir["cooldown_s"],
