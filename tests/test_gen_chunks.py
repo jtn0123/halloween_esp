@@ -22,9 +22,11 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import gen_esphome as ge
 import yaml
+from test_gen_esphome import OUTPUT_PATHS
 
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 
@@ -102,7 +104,7 @@ class TestChunking(unittest.TestCase):
         doc = {"zones": ZONES, "hardware": {"pixels_per_zone": 7}, "scenes": [scene]}
         # Every output path redirected — main() writes rig.h, lights.yaml
         # and the audio dispatch too, and the real ones are tracked files.
-        names = ("AUDIO_SD", "RIG_OUT", "LIGHTS_OUT", "OUT")
+        names = OUTPUT_PATHS  # the shared list: a new output must never hit the tree
         with (
             tempfile.TemporaryDirectory() as td,
             contextlib.redirect_stdout(io.StringIO()),
