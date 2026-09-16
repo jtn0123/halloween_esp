@@ -72,7 +72,7 @@ class EmuCase(unittest.TestCase):
             with e:
                 return e.code, e.read()
 
-    def status(self) -> dict[str, Any]:
+    def _status(self) -> dict[str, Any]:
         return dict(json.loads(self.http("GET", "/api/status")[1]))
 
 
@@ -80,7 +80,7 @@ class TestStatusShape(EmuCase):
     def test_has_every_key_the_desk_reads(self) -> None:
         """device.ts, device_panel.ts and castle_link between them read all
         of these; a missing one renders as a lie (dogfood ISSUE-001)."""
-        st = self.status()
+        st = self._status()
         for key in (
             "version",
             "uptime_s",
@@ -120,7 +120,7 @@ class TestValidationParity(EmuCase):
         above 80 on the porch); the emulator must land on the same number."""
         self.assertEqual(self.http("POST", "/api/volume?v=100")[0], 200)
         time.sleep(castle_emu.APPLY_DELAY_S * 2)
-        self.assertEqual(self.status()["volume"], castle_emu.MAX_VOLUME_PCT)
+        self.assertEqual(self._status()["volume"], castle_emu.MAX_VOLUME_PCT)
 
     def test_ceiling_matches_scenes_yaml(self) -> None:
         """The one number lives in scenes.yaml (hardware.audio.max_volume);
@@ -158,28 +158,28 @@ class TestQueuedSemantics(EmuCase):
         self.assertEqual(code, 200)
         self.assertEqual(json.loads(body), {"queued": True})
         self.assertTrue(
-            _wait(lambda: self.status()["scene"] == "storm"),
+            _wait(lambda: self._status()["scene"] == "storm"),
             "queued scene never applied",
         )
         self.http("POST", "/api/stop")
-        self.assertTrue(_wait(lambda: self.status()["scene"] == ""))
+        self.assertTrue(_wait(lambda: self._status()["scene"] == ""))
 
     def test_play_sets_the_track_and_stop_clears_it(self) -> None:
         self.http("POST", "/api/play?f=wicked_winds.mp3")
-        self.assertTrue(_wait(lambda: self.status()["track"] == "wicked_winds.mp3"))
+        self.assertTrue(_wait(lambda: self._status()["track"] == "wicked_winds.mp3"))
         self.http("POST", "/api/stop")
-        self.assertTrue(_wait(lambda: self.status()["track"] == ""))
+        self.assertTrue(_wait(lambda: self._status()["track"] == ""))
 
 
 class TestShowNightRoutes(EmuCase):
     def test_blackout_is_bookmarkable(self) -> None:
         """sd_web.h registers /api/blackout for GET as well as POST."""
         self.http("POST", "/api/scene?s=storm")
-        self.assertTrue(_wait(lambda: self.status()["scene"] == "storm"))
+        self.assertTrue(_wait(lambda: self._status()["scene"] == "storm"))
         code, body = self.http("GET", "/api/blackout")
         self.assertEqual(code, 200)
         self.assertEqual(json.loads(body), {"queued": True})
-        self.assertTrue(_wait(lambda: self.status()["scene"] == ""))
+        self.assertTrue(_wait(lambda: self._status()["scene"] == ""))
 
 
 class TestRemotePage(EmuCase):
@@ -343,7 +343,7 @@ class TestJsonEscaping(EmuCase):
         with self.emu.state.lock:
             self.emu.state.track = 'say "boo".mp3'
         try:
-            st = self.status()
+            st = self._status()
         finally:
             self.emu.missing = ""
             with self.emu.state.lock:

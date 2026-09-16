@@ -22,7 +22,8 @@ namespace castle_web {
 inline std::string url_decode(const char *s) {
   std::string out;
   const std::string_view in{s};
-  for (size_t i = 0; i < in.size(); i++) {
+  size_t i = 0;
+  while (i < in.size()) {
     const char c = in[i];
     if (c == '%' && i + 2 < in.size()) {
       const auto a = static_cast<unsigned char>(in[i + 1]);
@@ -32,12 +33,11 @@ inline std::string url_decode(const char *s) {
       }
       const std::array<char, 3> hex{{in[i + 1], in[i + 2], '\0'}};
       out.push_back(static_cast<char>(strtol(hex.data(), nullptr, 16)));
-      i += 2;
-    } else if (c == '+') {
-      out.push_back(' ');
-    } else {
-      out.push_back(c);
+      i += 3;
+      continue;
     }
+    out.push_back(c == '+' ? ' ' : c);
+    i++;
   }
   return out;
 }
@@ -103,8 +103,8 @@ inline std::string json_escape(const std::string &s) {
       default:
         if (c < 0x20) {
           out += R"(\u00)";
-          out.push_back(kHex[c >> 4]);
-          out.push_back(kHex[c & 0xf]);
+          out.push_back(kHex[c / 16]);
+          out.push_back(kHex[c % 16]);
         } else {
           out.push_back((char) c);
         }
