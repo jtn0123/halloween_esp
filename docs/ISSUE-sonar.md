@@ -46,6 +46,12 @@ cp -R ~/…/halloween_esp/web/src src && cp -R ~/…/halloween_esp/web/test test
 npx eslint src test
 ```
 
+The Castle Radio demo's classic scripts are checked the same way with
+`sourceType: "script"` (copy `demo/castle-radio/*.js`, minus the bundled
+`visuals.js`); the `curly` core rule with `--fix` clears every
+`no-unenclosed-multiline-block` at once, and a `/* global … */` comment is
+what the implicit-global rule accepts for variables another script declares.
+
 Line numbers match the originals. What the output means:
 
 - **Bug rules** (`no-unenclosed-multiline-block`, `no-identical-expressions`,

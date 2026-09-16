@@ -20,7 +20,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +29,10 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).parent))
 import core_bins
 import manifest as mf
+from import_args import secs as secs  # re-exported: tests and codec_compare use it here
+from import_args import sensitivity_arg as sensitivity_arg
+from import_args import text_arg as text_arg
+from import_args import time_arg as time_arg
 from import_convert import _same_file as _same_file
 from import_convert import convert as convert
 from import_convert import keep_source as keep_source
@@ -72,71 +75,7 @@ def crate_analysis(
     return int(out["samples"]), out["bands"]
 
 
-def secs(v: str) -> float:
-    """Accept 12, 1:05 or 1:02:03."""
-    parts = [float(p) for p in str(v).split(":")]
-    out = 0.0
-    for p in parts:
-        out = out * 60 + p
-    return out
-
-
-_NUM = re.compile(r"^\d+(?:\.\d+)?$")
-
-
-def time_arg(raw: str) -> str:
-    """`12`, `1:05` or `1:02:03` — what `secs()` reads. Anything else (a
-    flag-shaped "-x", a word, 1:99) is refused before it reaches ffmpeg."""
-    parts = raw.strip().split(":")
-    ok = (
-        1 <= len(parts) <= 3
-        and all(_NUM.match(p) for p in parts)
-        and all(float(p) < 60 for p in parts[1:])
-    )
-    if not ok:
-        raise argparse.ArgumentTypeError(
-            f"not a time: {raw!r} — use seconds (24) or m:ss (0:12)"
-        )
-    return raw.strip()
-
-
-def text_arg(raw: str) -> str:
-    """Free text that must not look like an option (the studio passes it as
-    `--notes=<v>`; a value starting with '-' is refused even so)."""
-    if raw.startswith("-"):
-        raise argparse.ArgumentTypeError(f"{raw!r} looks like an option, not text")
-    return raw
-
-
-def sensitivity_arg(raw: str) -> float | dict[str, float]:
-    """`1.1`, or `low=0.8,mid=1.1,high=1.6`.
-
-    One number for all three bands is usually the wrong answer — a crisp kick
-    and a wash of cymbals want different thresholds — but it is the right
-    default, so both spellings are accepted and a bare number still means
-    "the same everywhere".
-    """
-    if "=" not in raw:
-        try:
-            return float(raw)
-        except ValueError:
-            raise argparse.ArgumentTypeError(f"not a number: {raw!r}") from None
-    out: dict[str, float] = {}
-    for part in raw.split(","):
-        k, _, v = part.partition("=")
-        k = k.strip().replace("onset_", "")
-        if k not in ("low", "mid", "high"):
-            raise argparse.ArgumentTypeError(
-                f"unknown band {k!r} — expected low, mid or high"
-            )
-        try:
-            out[f"onset_{k}"] = float(v)
-        except ValueError:
-            raise argparse.ArgumentTypeError(f"not a number for {k}: {v!r}") from None
-    return out
-
-
-def main() -> int:
+def _build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         description="Import audio into tracks/, remembering where it came from."
     )
@@ -224,42 +163,38 @@ def main() -> int:
     ap.add_argument(
         "--analyze-only", action="store_true", help="just report onsets, don't import"
     )
-    args = ap.parse_args()
+    return ap
 
-    TRACKS.mkdir(exist_ok=True)
 
-    if args.list:
-        data = mf.load()
-        if not data:
-            print("no tracks imported yet")
-            return 0
-        for tid, e in sorted(data.items()):
-            a = e.get("audio", {})
-            print(
-                f"{tid:<20} {a.get('duration', 0):>6.1f}s "
-                f"{a.get('bytes', 0) / 1024:>7.0f}K  {e.get('source', '')[:60]}"
-            )
-        return 0
-
-    if args.analyze_only:
-        src = Path(args.source)
-        samples, marks = crate_analysis(
-            src,
-            args.sensitivity if args.sensitivity is not None else 1.1,
-            stereo=False,
+def _list_tracks() -> None:
+    data = mf.load()
+    if not data:
+        print("no tracks imported yet")
+        return
+    for tid, e in sorted(data.items()):
+        a = e.get("audio", {})
+        print(
+            f"{tid:<20} {a.get('duration', 0):>6.1f}s "
+            f"{a.get('bytes', 0) / 1024:>7.0f}K  {e.get('source', '')[:60]}"
         )
-        dur = samples / SR
-        for band, hits in marks.items():
-            print(f"  {band:<11} {len(hits):>4} onsets")
-        print(f"\n{scene_block(src.stem, dur, marks, src.suffix.lstrip('.') or 'mp3')}")
-        return 0
 
-    # Options: remembered defaults, overridden by whatever was passed now.
-    prev = mf.get(args.refresh) if args.refresh else None
-    if args.refresh and prev is None:
-        raise SystemExit(
-            f"no remembered track {args.refresh!r} (tools/import_track.py --list)"
-        )
+
+def _analyze_only(args: argparse.Namespace) -> int:
+    src = Path(args.source)
+    samples, marks = crate_analysis(
+        src,
+        args.sensitivity if args.sensitivity is not None else 1.1,
+        stereo=False,
+    )
+    dur = samples / SR
+    for band, hits in marks.items():
+        print(f"  {band:<11} {len(hits):>4} onsets")
+    print(f"\n{scene_block(src.stem, dur, marks, src.suffix.lstrip('.') or 'mp3')}")
+    return 0
+
+
+def _options(args: argparse.Namespace, prev: mf.Entry | None) -> dict[str, Any]:
+    """Remembered defaults, overridden by whatever was passed now."""
     base = dict(prev.get("opts", {})) if prev else {}
     o: dict[str, Any] = {
         "start": base.get("start", "0"),
@@ -284,8 +219,20 @@ def main() -> int:
     # an explicit --no-normalize is a False the loop above would drop.
     if args.normalize is not None:
         o["normalize"] = args.normalize
+    return o
 
-    source = args.source or (prev or {}).get("source", "")
+
+def _source(args: argparse.Namespace, prev: mf.Entry | None) -> tuple[str, bool]:
+    """The source to import and whether it is a web link.
+
+    A caller that holds a link typed by someone else (the radio demo's
+    server) hands it over in the environment rather than on the command
+    line: a link is data, and data does not belong in an argument list."""
+    source = (
+        args.source
+        or os.environ.get("CASTLE_IMPORT_SOURCE")
+        or (prev or {}).get("source", "")
+    )
     if not source:
         raise SystemExit("need a source (file or URL)")
     source = source.removeprefix("file:")
@@ -295,6 +242,27 @@ def main() -> int:
     # local file name, which is a confusing way to fail at best.
     if not is_url and "://" in source:
         raise SystemExit(f"not a link this can fetch: {source!r} — http(s) only")
+    return source, is_url
+
+
+def main() -> int:
+    args = _build_parser().parse_args()
+
+    TRACKS.mkdir(exist_ok=True)
+
+    if args.list:
+        _list_tracks()
+        return 0
+    if args.analyze_only:
+        return _analyze_only(args)
+
+    prev = mf.get(args.refresh) if args.refresh else None
+    if args.refresh and prev is None:
+        raise SystemExit(
+            f"no remembered track {args.refresh!r} (tools/import_track.py --list)"
+        )
+    o = _options(args, prev)
+    source, is_url = _source(args, prev)
 
     # Per-run scratch dir. A shared one races: two imports at once, and the
     # first to finish deletes the other's half-downloaded file out from under
@@ -310,14 +278,11 @@ def main() -> int:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _import(
-    args: argparse.Namespace,
-    o: dict[str, Any],
-    source: str,
-    is_url: bool,
-    tmp: Path,
-    prev: mf.Entry | None,
-) -> int:
+def _source_file(
+    source: str, is_url: bool, tmp: Path, prev: mf.Entry | None
+) -> tuple[Path, str]:
+    """The local file to convert and its title (a link's own, else the
+    remembered one)."""
     title = (prev or {}).get("title", "")
     if is_url:
         src, title = fetch_url(source, tmp)
@@ -330,7 +295,10 @@ def _import(
             f"no such file: {src.name} — the remembered source "
             "is gone; import it again from the original"
         )
+    return src, title
 
+
+def _track_id(args: argparse.Namespace, src: Path) -> str:
     # Truncate BEFORE stripping, and cut at the last word boundary inside
     # the limit — "the_citizens_of_halloween___this" (cut mid-title, dangling
     # separators kept) is what the other order produces, on the desk and on
@@ -345,8 +313,10 @@ def _import(
     # audio. Same alphabet for every spelling, no exceptions.
     if not tid or not all(c.isalnum() or c == "_" for c in tid):
         raise SystemExit(f"track id {tid!r} — letters, digits and _ only")
+    return tid
 
-    out = TRACKS / f"{tid}.{o['format']}"
+
+def _convert(src: Path, out: Path, o: dict[str, Any]) -> None:
     conv = dict(o)
     conv["start"] = secs(o["start"]) if o["start"] else 0
     conv["take"] = secs(o["take"]) if o["take"] else None
@@ -360,6 +330,13 @@ def _import(
         )
     convert(src, out, conv)
 
+
+def _analyse(
+    out: Path, src: Path, o: dict[str, Any]
+) -> tuple[float, dict[str, list[list[float]]]]:
+    """Duration and onset marks of the converted track. A broken cut is
+    deleted, never left behind: the desk would offer to send it to the
+    castle. One line, no traceback."""
     try:
         # stereo= so import-time markers carry pan, same as the studio's
         # live analysis — otherwise the pasteable scene block and the desk
@@ -368,25 +345,77 @@ def _import(
         if samples < SR // 10:
             raise ValueError("the cut came out (nearly) empty")
     except ValueError as e:
-        # Never leave a broken row behind: the desk would offer to send it
-        # to the castle. One line, no traceback.
         out.unlink(missing_ok=True)
         raise SystemExit(
             f"{src.name}: {e} — check start/length against the source"
         ) from None
-    dur = samples / SR
-    size = out.stat().st_size
+    return samples / SR, marks
+
+
+def _sweep_stale(tid: str, fmt: str, src: Path) -> None:
     # A refresh that changed the container leaves the old one behind, and
     # track_path() would keep finding it first. One file per id — but never
     # the source itself: `import_track.py tracks/foo.wav --id foo` used to
     # convert the original and then delete it (judge B, JB2-2).
     for other in AUDIO_EXT:
         stale = TRACKS / f"{tid}.{other}"
-        if other != o["format"] and not _same_file(stale, src):
+        if other != fmt and not _same_file(stale, src):
             stale.unlink(missing_ok=True)
+
+
+def _report(
+    tid: str, o: dict[str, Any], dur: float, size: int, marks: dict[str, Any]
+) -> None:
+    ch = "mono" if o["channels"] == 1 else "stereo"
+    rate_txt = f"{o['bitrate']}kbps " if o["format"] in ("mp3", "opus") else ""
+    print(f"\nimported  tracks/{tid}.{o['format']}")
+    print(
+        f"  {dur:.1f}s   {size / 1024:.0f} KB   {o['format']} "
+        f"{rate_txt}{ch} {o['sample_rate']}Hz"
+    )
+    if o["format"] == "wav":
+        print(
+            "  wav costs the device no decode CPU at all — worth it if MP3 "
+            "ever stutters"
+        )
+    print(
+        f"  source remembered — rebuild any time with: "
+        f"tools/import_track.py --refresh {tid}\n"
+        f"  {size / BUDGET * 100:.0f}% of the flash audio budget "
+        f"({BUDGET / 1024 / 1024:.1f} MB for ALL scenes)"
+    )
+    if size > BUDGET * 0.45:
+        print(
+            "  ⚠ that is a big share — trim it with --take, or drop "
+            "--bitrate / --sample-rate"
+        )
+    print()
+    for band, hits in marks.items():
+        print(f"  {band:<11} {len(hits):>4} onsets ({len(hits) / dur * 60:.0f}/min)")
+    if not marks:
+        print("  no onsets detected — try --sensitivity 0.6")
+    print("\nPaste into scenes/scenes.yaml under `scenes:` —\n")
+    print(scene_block(tid, dur, marks, o["format"]))
+    print("\nthen:  make audio && make generate && make preview")
+
+
+def _import(
+    args: argparse.Namespace,
+    o: dict[str, Any],
+    source: str,
+    is_url: bool,
+    tmp: Path,
+    prev: mf.Entry | None,
+) -> int:
+    src, title = _source_file(source, is_url, tmp, prev)
+    tid = _track_id(args, src)
+    out = TRACKS / f"{tid}.{o['format']}"
+    _convert(src, out, o)
+    dur, marks = _analyse(out, src, o)
+    size = out.stat().st_size
+    _sweep_stale(tid, o["format"], src)
     if args.keep_source and not is_url:
         source = f"file:{keep_source(src, tid)}"
-
     mf.record(
         tid,
         source=source
@@ -405,42 +434,7 @@ def _import(
         },
         onsets={k: len(v) for k, v in marks.items()},
     )
-
-    ch = "mono" if o["channels"] == 1 else "stereo"
-    print(f"\nimported  tracks/{tid}.mp3")
-    lossy = o["format"] in ("mp3", "opus")
-    rate_txt = f"{o['bitrate']}kbps " if lossy else ""
-    print(
-        f"  {dur:.1f}s   {size / 1024:.0f} KB   {o['format']} "
-        f"{rate_txt}{ch} {o['sample_rate']}Hz"
-    )
-    if o["format"] == "wav":
-        print(
-            "  wav costs the device no decode CPU at all — worth it if MP3 "
-            "ever stutters"
-        )
-    print(
-        f"  source remembered — rebuild any time with: "
-        f"tools/import_track.py --refresh {tid}"
-    )
-    print(
-        f"  {size / BUDGET * 100:.0f}% of the flash audio budget "
-        f"({BUDGET / 1024 / 1024:.1f} MB for ALL scenes)"
-    )
-    if size > BUDGET * 0.45:
-        print(
-            "  ⚠ that is a big share — trim it with --take, or drop "
-            "--bitrate / --sample-rate"
-        )
-    print()
-    for band, hits in marks.items():
-        print(f"  {band:<11} {len(hits):>4} onsets ({len(hits) / dur * 60:.0f}/min)")
-    if not marks:
-        print("  no onsets detected — try --sensitivity 0.6")
-
-    print("\nPaste into scenes/scenes.yaml under `scenes:` —\n")
-    print(scene_block(tid, dur, marks, o["format"]))
-    print("\nthen:  make audio && make generate && make preview")
+    _report(tid, o, dur, size, marks)
     return 0
 
 

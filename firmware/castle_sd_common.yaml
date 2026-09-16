@@ -190,12 +190,27 @@ interval:
           castle_web::g_show_on.store(id(show_playlist)->is_running());
           castle_web::g_pir_armed.store(id(pir_armed).state);
           castle_web::g_pir_cooldown.store((int) id(pir_cooldown).state);
+          // v5.52: the audio clock. Scenes go out as announcements, so
+          // ANNOUNCING is "playing" here. The tick the pipeline goes idle
+          // under a raw file (no scene script to clear it) is the tick
+          // /api/status stops naming that file — a browser following the
+          // castle sees the song end instead of a track that plays forever.
+          {
+            const auto ms = id(castle_media)->state;
+            const bool playing =
+                ms == media_player::MEDIA_PLAYER_STATE_PLAYING ||
+                ms == media_player::MEDIA_PLAYER_STATE_ANNOUNCING;
+            if (castle_web::mirror_audio(playing, esp_timer_get_time()) &&
+                id(current_scene).state == "stop" &&
+                !id(current_track).state.empty())
+              id(current_track).publish_state("");
+          }
           castle_web::mirror_show_state(id(current_scene).state,
                                         id(current_track).state,
                                         id(pir_scene).current_option().str());
           auto act = castle_web::take_pending();
-          if (act.type == castle_web::NONE) return;
-          if (act.type == castle_web::PLAY) {
+          if (act.type == castle_web::ActionType::NONE) return;
+          if (act.type == castle_web::ActionType::PLAY) {
             // A looping scene would re-fire its own track over this file
             // within 30 s: run_scene("halt") stops every scene script and
             // starts nothing (lights keep their texture, see gen_esphome).
@@ -207,9 +222,15 @@ interval:
             call.set_announcement(true);
             call.perform();
             id(current_track).publish_state(act.arg);
-          } else if (act.type == castle_web::STOP) {
+            // A raw file has no scene. Until v5.52 current_scene kept the
+            // halted scene's name, so the first live light frame (LIGHT
+            // below) ran scene_stop and its media_player.stop took the
+            // file with it: an imported song went silent one frame in.
+            id(current_scene).publish_state("stop");
+            castle_web::restart_audio_clock(esp_timer_get_time());
+          } else if (act.type == castle_web::ActionType::STOP) {
             id(scene_stop)->execute();
-          } else if (act.type == castle_web::VOLUME) {
+          } else if (act.type == castle_web::ActionType::VOLUME) {
             // 0 is the desk's hush (sound routed to the Mac): remembered so
             // scene scripts keep quiet too — see speaker_hush in castle.yaml.
             int pct = atoi(act.arg.c_str());
@@ -219,25 +240,31 @@ interval:
             auto call = id(castle_media)->make_call();
             call.set_volume(pct / 100.0f);
             call.perform();
-          } else if (act.type == castle_web::LIGHT) {
+          } else if (act.type == castle_web::ActionType::LIGHT) {
             // Manual override for every strip (or one, "<zone>:"): a colour,
             // a bench pattern, "off", or "show" to hand the pixels back. One
             // script rather than a list of ids here, because the zone list
             // lives in scenes.yaml and is generated into lights_override.
             //
-            // Anything but "show" stops the scene first. A looping scene
+            // Anything but "show" stops an authored scene first. Raw imported
+            // audio reports current_scene="stop" and must survive live colour
+            // frames streamed by the radio bridge.
+            // A looping scene
             // re-runs its audio every 30 s (Vigil), and the SD read + SPI
             // burst that goes with it starves the RMT refill ISR: two or
             // three pixels on the longest strip flick to a wrong colour and
             // back, which reads as a hardware fault while you are staring at
             // a test pattern (reported 2026-08-21, the 12 px ring). A hex
             // colour can never spell "show" — s, h, o and w are not digits.
-            if (act.arg.find("show") == std::string::npos)
+            if (act.arg.find("show") == std::string::npos &&
+                id(current_scene).state != "stop")
               id(scene_stop)->execute();
             id(lights_override)->execute(act.arg);
-          } else if (act.type == castle_web::SCENE) {
+          } else if (act.type == castle_web::ActionType::SCENE) {
             id(run_scene)->execute(act.arg);
-          } else if (act.type == castle_web::PIRCFG) {
+            if (act.arg != "halt" && act.arg != "stop")
+              castle_web::restart_audio_clock(esp_timer_get_time());
+          } else if (act.type == castle_web::ActionType::PIRCFG) {
             // "armed|cooldown|scene", empty fields untouched.
             const size_t p1 = act.arg.find('|');
             const size_t p2 = act.arg.rfind('|');
@@ -257,7 +284,7 @@ interval:
               call.set_option(s);
               call.perform();
             }
-          } else if (act.type == castle_web::SHOW) {
+          } else if (act.type == castle_web::ActionType::SHOW) {
             // The evening playlist (#19). Stopping also stops whatever
             // scene it was mid-way through — "stop the show" means quiet.
             if (act.arg == "1") {
@@ -266,12 +293,12 @@ interval:
               id(show_playlist)->stop();
               id(scene_stop)->execute();
             }
-          } else if (act.type == castle_web::BLACKOUT) {
+          } else if (act.type == castle_web::ActionType::BLACKOUT) {
             // #25: the panic switch. Show, scene, audio, pixels — off.
             id(show_playlist)->stop();
             id(scene_stop)->execute();
             id(lights_override)->execute("off");
-          } else if (act.type == castle_web::RESTART) {
+          } else if (act.type == castle_web::ActionType::RESTART) {
             // Queued by the web OTA so its HTTP reply gets out first.
             esphome::App.safe_reboot();
           }

@@ -5,6 +5,9 @@
 // includes this and registers h_ota from its start().
 #pragma once
 
+#include <array>
+#include <memory>
+
 #include <esp_http_server.h>
 #include <esp_ota_ops.h>
 #include <freertos/FreeRTOS.h>
@@ -51,17 +54,19 @@ inline esp_err_t h_ota(httpd_req_t *req) {
   }
 
   static constexpr size_t CHUNK = 8192;
-  char *buf = (char *) malloc(CHUNK);
+  // nothrow: exceptions are off, and a full heap must answer 500, not abort.
+  const auto buf = std::unique_ptr<std::array<char, CHUNK>>(new (std::nothrow) std::array<char, CHUNK>);
   size_t remaining = req->content_len;
-  bool first = true, ok = buf != nullptr;
+  bool first = true;
+  bool ok = buf != nullptr;
   while (ok && remaining > 0) {
-    int got = httpd_req_recv(req, buf, remaining < CHUNK ? remaining : CHUNK);
-    if (got <= 0) { ok = false; break; }
-    if (first) {
-      first = false;
-      if ((uint8_t) buf[0] != 0xE9) { ok = false; break; }   // app image magic
-    }
-    if (esp_ota_write(ota, buf, got) != ESP_OK) { ok = false; break; }
+    const int got = httpd_req_recv(req, buf->data(), remaining < CHUNK ? remaining : CHUNK);
+    // 0xE9 is the app image magic: a body that does not start with it is
+    // not firmware, and must not reach the slot.
+    const bool magic_ok = !first || (got > 0 && (uint8_t) (*buf)[0] == 0xE9);
+    first = false;
+    ok = got > 0 && magic_ok && esp_ota_write(ota, buf->data(), got) == ESP_OK;
+    if (!ok) break;
     remaining -= got;
     // Breathe. Every flash write suspends the cache, blocking every task
     // that executes from flash — including the watched main loop. Sequential
@@ -71,7 +76,6 @@ inline esp_err_t h_ota(httpd_req_t *req) {
     // polite 1.5 s to the flash; the alternative is a reboot at 60%.
     vTaskDelay(1);
   }
-  free(buf);
   if (!ok) {
     // A short body, bad magic or a write error leaves the handle open
     // unless it is abandoned explicitly — esp_ota_end would refuse the
@@ -95,9 +99,9 @@ inline esp_err_t h_ota(httpd_req_t *req) {
   // Reply BEFORE queueing the restart, and give lwip a beat to flush the
   // segment — the first live test flashed perfectly but rebooted with the
   // response still in the TCP buffer, so the client saw only a timeout.
-  esp_err_t r = reply_json(req, "{\"flashed\":true,\"rebooting\":true}");
+  esp_err_t r = reply_json(req, R"({"flashed":true,"rebooting":true})");
   vTaskDelay(pdMS_TO_TICKS(250));
-  set_pending(RESTART, "");
+  set_pending(ActionType::RESTART, "");
   // Flash is written; the pixel may leave amber. The restart is one
   // pending slot away, and a slot can be overwritten by the next request —
   // a castle that then failed to reboot must not stay frozen as well.

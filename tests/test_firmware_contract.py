@@ -107,7 +107,7 @@ class TestValidatorConstants(unittest.TestCase):
         # The validator lives in sd_web_state.h; its shape is pinned by example.
         self.assertIn("spec.size() == 6", SD_STATE)
         self.assertIn("zone.size() > 16", SD_STATE)
-        self.assertIn("> 100) return false", SD_STATE)
+        self.assertIn("> 100)\n      return false", SD_STATE)
         for c, ok in (
             (b"ff0000", True),
             (b"show", True),
@@ -139,7 +139,7 @@ class TestValidatorConstants(unittest.TestCase):
 
     def test_status_keys_are_the_firmwares(self) -> None:
         fmt = FUNCS["h_status"]
-        keys = set(re.findall(r'\\"(\w+)\\":', fmt))
+        keys = set(re.findall(r'"(\w+)":', fmt))
         emu = castle_emu.CastleEmu(port=0)
         self.addCleanup(emu.server_close)
         st = emu.status_json()
@@ -150,7 +150,7 @@ class TestValidatorConstants(unittest.TestCase):
     def test_pending_mailbox_is_one_slot(self) -> None:
         """sd_web_state.h: set_pending overwrites; take_pending empties."""
         self.assertIn("g_pending = {type, std::move(arg)};", SD_STATE)
-        self.assertIn('g_pending = {NONE, ""};', SD_STATE)
+        self.assertIn('g_pending = {ActionType::NONE, ""};', SD_STATE)
 
 
 class TestStreamServer(unittest.TestCase):
@@ -180,7 +180,7 @@ class TestStreamServer(unittest.TestCase):
     def test_health_keys_are_the_firmwares(self) -> None:
         """h_health is the one reply whose shape the emulator types by hand;
         h_status already had this check."""
-        keys = set(re.findall(r'\\"(\w+)\\":', FUNCS["h_health"]))
+        keys = set(re.findall(r'"(\w+)":', FUNCS["h_health"]))
         emu = castle_emu.CastleEmu(port=0)
         self.addCleanup(emu.server_close)
         emu.start()

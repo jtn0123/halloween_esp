@@ -12,13 +12,14 @@
 
 import type { ZoneId } from "./types.js";
 import { hash } from "./effects.js";
+import { DEFAULT_RIG, zoneLayout, type Layout } from "./rig.js";
 
 /** Screen RGB, 0..1 per channel — what a pixel actually looks like. */
 export type Rgb = readonly [r: number, g: number, b: number];
 
-/** One zone's frame: the seven jewel pixels, plus their mean for the glow. */
+/** One zone's frame: the fixture pixels, plus their mean for the glow. */
 export interface ZoneFrame {
-  /** Seven entries, centre first, then the ring — see the jewel loop below. */
+  /** One entry per configured pixel, in fixture order. */
   readonly pix: readonly Rgb[];
   readonly avg: Rgb;
 }
@@ -90,6 +91,13 @@ export class Stage {
   private readonly g2: CanvasRenderingContext2D;
   /** viewBox units -> backing-store pixels. Recomputed on every resize. */
   private scale = 1;
+  private layouts: Record<ZoneId, Layout> = {
+    towerL: zoneLayout(DEFAULT_RIG, "towerL"),
+    door: zoneLayout(DEFAULT_RIG, "door"),
+    towerR: zoneLayout(DEFAULT_RIG, "towerR"),
+  };
+
+  setLayouts(layouts: Record<ZoneId, Layout>): void { this.layouts = layouts; }
 
   constructor(canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -256,7 +264,7 @@ export class Stage {
     g2.restore();
   }
 
-  /** The openings themselves: dark pane, wash, then the jewel behind it. */
+  /** The openings themselves: dark pane, wash, then the configured fixture behind it. */
   private drawApertures(out: ZoneRender): void {
     const g2 = this.g2;
     for (const id of ZONE_IDS) {
@@ -266,9 +274,8 @@ export class Stage {
       g2.fillStyle = "#02030a";
       g2.fill();
 
-      // A faint pane wash from the average, then the jewel itself: one pixel
-      // at centre, six around — the same layout as the physical part, so
-      // motion across the jewel reads on screen the way it will in the window.
+      // A pane wash plus every pixel in the configured fixture geometry.
+      // Rings have no invented center; grids and sticks retain their layout.
       const lum = luma(zone.avg);
       if (lum > 0.005) {
         const ig = g2.createLinearGradient(0, a.top, 0, a.base);
@@ -281,12 +288,13 @@ export class Stage {
       this.archPath(a);
       g2.clip();
       g2.globalCompositeOperation = "lighter";
-      const jr = a.w * 0.26;             // ring radius
-      const pr = a.w * 0.15;             // pixel dot radius
-      for (let p = 0; p < 7; p++) {
-        const ang = (p - 1) * (Math.PI / 3) - Math.PI / 2;
-        const px = p === 0 ? a.cx : a.cx + jr * Math.cos(ang);
-        const py = p === 0 ? a.cy : a.cy + jr * Math.sin(ang);
+      const layout = this.layouts[id];
+      const pr = a.w * Math.min(0.12, 0.38 / Math.sqrt(Math.max(1, layout.n)));
+      for (let p = 0; p < layout.n; p++) {
+        const point = layout.pos[p];
+        if (!point) continue;
+        const px = a.cx + (point[0] - 0.5) * a.w * 0.8;
+        const py = a.cy + (point[1] - 0.5) * a.w * 0.8;
         // A short frame is a caller bug, but skipping beats throwing mid-paint.
         const c = zone.pix[p];
         if (!c) continue;

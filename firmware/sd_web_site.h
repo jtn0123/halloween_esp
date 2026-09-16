@@ -1,4 +1,8 @@
 #pragma once
+
+#include <array>
+#include <memory>
+#include <string_view>
 // The serving half of the castle's web server: static files off the card,
 // the built-in fallback page, and the /sd/ streaming route.
 //
@@ -43,9 +47,8 @@ inline void set_csp(httpd_req_t *req) {
 }
 
 inline const char *content_type(const std::string &p) {
-  auto ends = [&p](const char *s) {
-    size_t n = strlen(s);
-    return p.size() >= n && p.compare(p.size() - n, n, s) == 0;
+  auto ends = [&p](std::string_view s) {
+    return p.size() >= s.size() && p.compare(p.size() - s.size(), s.size(), s) == 0;
   };
   // charset matters: the desk is a megabyte of UTF-8, and its <meta charset>
   // sits too deep in the file for the browser's pre-scan — without the header
@@ -57,6 +60,7 @@ inline const char *content_type(const std::string &p) {
   if (ends(".png")) return "image/png";
   if (ends(".json")) return "application/json";
   if (ends(".mp3")) return "audio/mpeg";
+  if (ends(".opus")) return "audio/ogg";
   if (ends(".wav")) return "audio/wav";
   return "application/octet-stream";
 }
@@ -71,15 +75,17 @@ inline bool send_sd_file(httpd_req_t *req, const char *path,
   httpd_resp_set_type(req, type_override ? type_override : content_type(path));
   if (encoding != nullptr) httpd_resp_set_hdr(req, "Content-Encoding", encoding);
   static constexpr size_t CHUNK = 4096;
-  char *buf = (char *) malloc(CHUNK);
+  // nothrow: exceptions are off in the ESP-IDF build, and a full heap must
+  // answer 500 rather than abort the board.
+  const auto buf = std::unique_ptr<std::array<char, CHUNK>>(new (std::nothrow) std::array<char, CHUNK>);
   if (buf == nullptr) {
     fclose(f);
     reply_err(req, "500 Internal Server Error", "no memory");
     return true;
   }
-  size_t got;
-  while ((got = fread(buf, 1, CHUNK, f)) > 0) {
-    if (httpd_resp_send_chunk(req, buf, got) != ESP_OK) break;
+  size_t got = 0;
+  while ((got = fread(buf->data(), 1, CHUNK, f)) > 0) {
+    if (httpd_resp_send_chunk(req, buf->data(), got) != ESP_OK) break;
     // Yield between chunks. Without this, a bulk download (the 1 MB site
     // page) is hundreds of back-to-back SD reads + TCP sends on the httpd
     // task, and on this single-core S2 the watched main loop starves —
@@ -89,22 +95,20 @@ inline bool send_sd_file(httpd_req_t *req, const char *path,
     // what audio playback (16 KB/s) or a page load needs.
     vTaskDelay(1);
   }
-  free(buf);
   fclose(f);
   httpd_resp_send_chunk(req, nullptr, 0);
   return true;
 }
 
-// ── GET /sd/* — stream any card file (subdirectories allowed) ───────────
+// ── GET /sd/<path> — stream any card file (subdirectories allowed) ──────
 inline esp_err_t h_sd_get(httpd_req_t *req) {
   if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
-  std::string rel = url_decode(req->uri + strlen("/sd/"));
-  auto q = rel.find('?');
-  if (q != std::string::npos) rel.resize(q);
+  std::string rel = url_decode(req->uri + std::string_view("/sd/").size());
+  if (const auto q = rel.find('?'); q != std::string::npos) rel.resize(q);
   if (!safe_subpath(rel)) return reply_err(req, "400 Bad Request", "bad path");
-  char path[200];
-  snprintf(path, sizeof(path), "/sd/%s", rel.c_str());
-  if (!send_sd_file(req, path)) return reply_err(req, "404 Not Found", "no such file");
+  std::array<char, 200> path{};
+  snprintf(path.data(), path.size(), "/sd/%s", rel.c_str());
+  if (!send_sd_file(req, path.data())) return reply_err(req, "404 Not Found", "no such file");
   return ESP_OK;
 }
 
@@ -149,13 +153,12 @@ inline esp_err_t h_root(httpd_req_t *req) {
 
 inline esp_err_t h_site(httpd_req_t *req) {
   set_csp(req);
-  std::string rel = url_decode(req->uri + strlen("/site/"));
-  auto q = rel.find('?');
-  if (q != std::string::npos) rel.resize(q);
+  std::string rel = url_decode(req->uri + std::string_view("/site/").size());
+  if (const auto q = rel.find('?'); q != std::string::npos) rel.resize(q);
   if (!safe_subpath(rel)) return reply_err(req, "400 Bad Request", "bad path");
-  char path[200];
-  snprintf(path, sizeof(path), "/sd/site/%s", rel.c_str());
-  if (!castle_sd::g_mounted || !send_sd_file(req, path))
+  std::array<char, 200> path{};
+  snprintf(path.data(), path.size(), "/sd/site/%s", rel.c_str());
+  if (!castle_sd::g_mounted || !send_sd_file(req, path.data()))
     return reply_err(req, "404 Not Found", "not on card");
   return ESP_OK;
 }

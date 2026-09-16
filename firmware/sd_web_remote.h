@@ -21,12 +21,12 @@ namespace castle_web {
 // looping until told to stop. The script itself is generated into
 // scenes.yaml; these just flip it.
 inline esp_err_t h_show_start(httpd_req_t *req) {
-  set_pending(SHOW, "1");
+  set_pending(ActionType::SHOW, "1");
   return reply_json(req, "{\"queued\":true}");
 }
 
 inline esp_err_t h_show_stop(httpd_req_t *req) {
-  set_pending(SHOW, "0");
+  set_pending(ActionType::SHOW, "0");
   return reply_json(req, "{\"queued\":true}");
 }
 
@@ -35,7 +35,7 @@ inline esp_err_t h_show_stop(httpd_req_t *req) {
 // browser bookmark, because the night you need this is the night you are
 // not going to type curl flags.
 inline esp_err_t h_blackout(httpd_req_t *req) {
-  set_pending(BLACKOUT, "");
+  set_pending(ActionType::BLACKOUT, "");
   return reply_json(req, "{\"queued\":true}");
 }
 
