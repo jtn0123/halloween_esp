@@ -74,16 +74,20 @@
   // +mm:ss.s against the NEWEST entry, so the last thing the castle did reads
   // +00:00.0 and everything above it says how long before that it happened.
   function stamp(t, newest) {
+    if (!Number.isFinite(Number(t))) {return ' ??:??.?';}
     const delta = (Number(t) - newest) / 1000, size = Math.abs(delta);
     const mm = String(Math.floor(size / 60)).padStart(2, '0');
     return `${delta < 0 ? '-' : '+'}${mm}:${(size % 60).toFixed(1).padStart(4, '0')}`;
   }
-  function renderEvents(rows) {
-    if (!Array.isArray(rows) || !rows.length) {
+  // Only rows shaped like the firmware's are shown; one odd entry must not
+  // turn a 63-line record into "not supported" (found by the events fuzz).
+  function renderEvents(answer) {
+    const rows = Array.isArray(answer) ? answer.filter(row => row && typeof row === 'object') : [];
+    if (!rows.length) {
       $('bench-events-log').textContent = 'The castle has not recorded anything since it booted.';
       return;
     }
-    const newest = Number(rows.at(-1).t) || 0;
+    const newest = Number(rows.findLast(row => Number.isFinite(Number(row.t)))?.t) || 0;
     $('bench-events-log').textContent = rows.map(row => `${stamp(row.t, newest)}  ${row.e}  ${row.a ?? ''}`.trimEnd()).join('\n');
   }
   $('bench-events-load').onclick = async () => {

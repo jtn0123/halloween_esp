@@ -34,6 +34,10 @@
   const sceneCount = s => String(s?.scenes ?? '').split(',').filter(x => x && x !== 'stop').length;
   const booting = s => !!s && sceneCount(s) === 0;
   const reconnecting = () => failures > 0 && !!state;
+  // A version is a string or it is nothing: anything else read as a reboot
+  // on every poll and printed as "[object Object]" (found by the link fuzz).
+  const versionOf = s => (typeof s?.version === 'string' ? s.version : '');
+  const uptimeOf = s => (Number.isFinite(s?.uptime_s) && s.uptime_s >= 0 ? s.uptime_s : null);
   // A phone with its screen off freezes the frame loop while the castle's
   // audio runs on; the castle page says so rather than claiming lights.
   const lightNote = () => (lightShow?.active ? ` · ${lightShow.note || framesText(lightShow) || 'generated lights live'}` : '');
@@ -105,15 +109,14 @@
     if (!ok) {missed++;}
   }
   function upFor(seconds) {
-    if (typeof seconds !== 'number' || seconds < 0) {return null;}
+    if (seconds === null) {return null;}
     const whole = Math.floor(seconds);
     return `${Math.floor(whole / 3600)}:${String(Math.floor(whole / 60) % 60).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`;
   }
   const health = () => ({
     rtt_ms: rtt, worst_ms: rtts.length ? Math.max(...rtts) : null,
     failures, missed_total: missed,
-    uptime_s: typeof state?.uptime_s === 'number' ? state.uptime_s : null,
-    uptime: upFor(state?.uptime_s), version: state?.version || null,
+    uptime_s: uptimeOf(state), uptime: upFor(uptimeOf(state)), version: versionOf(state) || null,
   });
   // One muted line, in the order a fault is read: how slow, how bad it gets,
   // what never came back, how long the castle has been up, what it runs.
@@ -303,11 +306,12 @@
   // An OTA or a brownout restarts the castle mid-song: uptime goes backwards
   // (or the version changes) and everything this page believed is stale.
   function rebooted(s) {
-    const up = typeof s?.uptime_s === 'number' ? s.uptime_s : null;
+    const up = uptimeOf(s);
     const back = lastUptime !== null && up !== null && up < lastUptime;
-    const changed = !!lastVersion && !!s?.version && s.version !== lastVersion;
+    const version = versionOf(s);
+    const changed = !!lastVersion && !!version && version !== lastVersion;
     if (up !== null) {lastUptime = up;}
-    if (s?.version) {lastVersion = s.version;}
+    if (version) {lastVersion = version;}
     return back || changed;
   }
   function reboot() {
