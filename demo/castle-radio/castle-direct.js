@@ -56,7 +56,7 @@
   }
   const forget = () => { statusPromise = null; listings.clear(); };
   const versionAtLeast = (value, [major, minor]) => {
-    const m = String(value || '').match(/^(\d+)\.(\d+)/);
+    const m = /^(\d+)\.(\d+)/.exec(String(value || ''));
     if (!m) {return false;}
     const a = Number(m[1]), b = Number(m[2]);
     return a > major || (a === major && b >= minor);

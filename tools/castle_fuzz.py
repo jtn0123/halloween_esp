@@ -53,6 +53,8 @@ import fuzz_corpus as corpus
 from fuzz_corpus import DOCUMENTED_5XX, poisoned_text
 from fuzz_http import SlowRead, Violation, raw_request
 
+EMPTY_BODY = b"empty body"
+
 
 class Fuzzer:
     """One fuzz session against one castle. `card` is the emulator's
@@ -197,16 +199,10 @@ class Fuzzer:
         self, code: int, body: bytes, safe: bool, decoded: bytes, payload: bytes
     ) -> None:
         if not payload:
-            if (code, body) != (400, b"empty body"):
-                raise Violation(
-                    f"seed={self.seed} empty PUT {decoded!r} → {code} {body!r}"
-                )
+            self._want(code, body, (400, EMPTY_BODY), f"empty PUT {decoded!r}")
             return
         if not safe:
-            if (code, body) != (400, b"bad filename"):
-                raise Violation(
-                    f"seed={self.seed} unsafe {decoded!r} → {code} {body!r}"
-                )
+            self._want(code, body, (400, b"bad filename"), f"unsafe {decoded!r}")
             return
         if code == 500:
             return  # "cannot create file": NUL-empty or un-storable name
@@ -218,6 +214,12 @@ class Fuzzer:
                 raise Violation(f"seed={self.seed} {decoded!r} not on the card intact")
             if f.exists() and f.resolve().parent != self.card.resolve():
                 raise Violation(f"seed={self.seed} {decoded!r} escaped the card")
+
+    def _want(
+        self, code: int, body: bytes, expected: tuple[int, bytes], label: str
+    ) -> None:
+        if (code, body) != expected:
+            raise Violation(f"seed={self.seed} {label} → {code} {body!r}")
 
     def fuzz_query(self, rng: random.Random) -> None:
         route, key, good = rng.choice(corpus.QUERY_ROUTES)
@@ -286,50 +288,60 @@ class Fuzzer:
         name = f"fz_{rng.randrange(1 << 30):x}.bin"
         mode = rng.random()
         if mode < 0.4:
-            code, body, _ = self.req("PUT", f"/api/files/{name}", body=payload)
-            if not payload:
-                if (code, body) != (400, b"empty body"):
-                    raise Violation(f"seed={self.seed} empty PUT → {code} {body!r}")
-            else:
-                self.expect_name_verdict(code, body, True, name.encode(), payload)
-            self.req("DELETE", f"/api/files/{name}")
-        elif mode < 0.6:  # declared MORE than sent: short write, nothing left behind
-            code, body, _ = self.req(
-                "PUT", f"/api/files/{name}", body=payload, declared=size + 10
+            self._fuzz_honest_put(name, payload)
+        elif mode < 0.6:
+            self._fuzz_short_put(name, payload, size)
+        elif mode < 0.8:
+            self._fuzz_trunc_cl_put(name, payload, size)
+        else:
+            self._fuzz_bad_cl_put(name, payload, rng)
+
+    def _fuzz_honest_put(self, name: str, payload: bytes) -> None:
+        code, body, _ = self.req("PUT", f"/api/files/{name}", body=payload)
+        if not payload:
+            self._want(code, body, (400, EMPTY_BODY), "empty PUT")
+        else:
+            self.expect_name_verdict(code, body, True, name.encode(), payload)
+        self.req("DELETE", f"/api/files/{name}")
+
+    def _fuzz_short_put(self, name: str, payload: bytes, size: int) -> None:
+        code, body, _ = self.req(
+            "PUT", f"/api/files/{name}", body=payload, declared=size + 10
+        )
+        self._want(code, body, (500, b"short write"), "short body")
+        if self.card is not None and (self.card / name).exists():
+            raise Violation(f"seed={self.seed} short write left {name}")
+
+    def _fuzz_trunc_cl_put(self, name: str, payload: bytes, size: int) -> None:
+        declared = max(0, size - 5)
+        code, body, _ = self.req_unread(
+            "PUT", f"/api/files/{name}", body=payload, declared=declared
+        )
+        if declared == 0:
+            if code:
+                self._want(code, body, (400, EMPTY_BODY), "CL 0")
+        elif code:
+            self.expect_name_verdict(
+                code, body, True, name.encode(), payload[:declared]
             )
-            if (code, body) != (500, b"short write"):
-                raise Violation(f"seed={self.seed} short body → {code} {body!r}")
-            if self.card is not None and (self.card / name).exists():
-                raise Violation(f"seed={self.seed} short write left {name}")
-        elif mode < 0.8:  # declared LESS than sent: the extra is not the file's
-            declared = max(0, size - 5)
-            code, body, _ = self.req_unread(
-                "PUT", f"/api/files/{name}", body=payload, declared=declared
-            )
-            if declared == 0:
-                if code and (code, body) != (400, b"empty body"):
-                    raise Violation(f"seed={self.seed} CL 0 → {code} {body!r}")
-            elif code:
-                self.expect_name_verdict(
-                    code, body, True, name.encode(), payload[:declared]
-                )
-            elif (
-                self.threads == 1
-                and self.card is not None
-                and (self.card / name).exists()
-                and (self.card / name).read_bytes() != payload[:declared]
-            ):
-                raise Violation(f"seed={self.seed} extra bytes reached the file")
-            self.req("DELETE", f"/api/files/{name}")
-        else:  # a garbage Content-Length is the parser's 400
-            code, _, _ = self.req_unread(
-                "PUT",
-                f"/api/files/{name}",
-                body=payload[:8],
-                headers={"Content-Length": rng.choice(["x", "-4", ""])},
-            )
-            if code not in (0, 400):
-                raise Violation(f"seed={self.seed} bad Content-Length → {code}")
+        elif (
+            self.threads == 1
+            and self.card is not None
+            and (self.card / name).exists()
+            and (self.card / name).read_bytes() != payload[:declared]
+        ):
+            raise Violation(f"seed={self.seed} extra bytes reached the file")
+        self.req("DELETE", f"/api/files/{name}")
+
+    def _fuzz_bad_cl_put(self, name: str, payload: bytes, rng: random.Random) -> None:
+        code, _, _ = self.req_unread(
+            "PUT",
+            f"/api/files/{name}",
+            body=payload[:8],
+            headers={"Content-Length": rng.choice(["x", "-4", ""])},
+        )
+        if code not in (0, 400):
+            raise Violation(f"seed={self.seed} bad Content-Length → {code}")
 
     # -- the storm -----------------------------------------------------------
 

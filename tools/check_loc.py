@@ -238,7 +238,7 @@ def count_scenes(path: Path = SCENES_FILE) -> int:
     m = re.search(r"^scenes:[ \t]*$", text, re.MULTILINE)
     if not m:
         return 0
-    return len(re.findall(r"^  - id:\s", text[m.end() :], re.MULTILINE))
+    return len(re.findall(r"^ {2}- id:\s", text[m.end() :], re.MULTILINE))
 
 
 def scene_budget(path: Path = SCENES_FILE) -> tuple[int, str | None]:
@@ -270,54 +270,47 @@ def print_exemptions() -> None:
         print(f"  {pat:<34} {why}")
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = sys.argv[1:] if argv is None else argv
-    rows = measure()
-    if "--list" in args:
-        for n, rel, is_over in rows[:15]:
-            print(f"{n:>6}  {'OVER' if is_over else '    '}  {rel}")
-        return 0
-    if "--exempt" in args:
-        print_exemptions()
-        return 0
-
-    # The hook stops ten lines early so the split is never forced mid-change.
-    hook = "--hook" in args
-    limit = HOOK_LIMIT if hook else LIMIT
-    where = "pre-commit threshold" if hook else "cap"
-
-    over = [(n, rel) for n, rel, _o in rows if n > limit]
-    n_scenes, scene_complaint = scene_budget()
-    if not over and scene_complaint is None:
-        biggest = rows[0] if rows else (0, "-", False)
+def _pass_report(
+    rows: list[tuple[int, str, bool]], limit: int, where: str, n_scenes: int
+) -> int:
+    biggest = rows[0] if rows else (0, "-", False)
+    print(
+        f"LOC check PASS — {len(rows)} files in scope, largest "
+        f"{biggest[0]} lines ({biggest[1]}), {where} {limit}"
+    )
+    print(f"  scope: {scope_summary(rows)}")
+    print(
+        f"  exempt: {len(EXEMPT_PATHS)} generated files, "
+        f"{len(DATA_EXEMPT)} data file{'' if len(DATA_EXEMPT) == 1 else 's'}, "
+        f"{len(AUDIT_EXEMPT)} audit pattern"
+        f"{'' if len(AUDIT_EXEMPT) == 1 else 's'} "
+        f"(--exempt lists them with reasons)"
+    )
+    print(f"  scenes: {n_scenes} of the {SCENE_LIMIT} this board can hold")
+    # The early warning: a file within 50 lines of the cap will cross it
+    # mid-feature, forcing a split under pressure instead of on a chosen
+    # seam. Naming it now is what makes the cap serve design.
+    nearing = [(n, rel) for n, rel, _ in rows if WARN_LIMIT < n <= limit]
+    if nearing:
         print(
-            f"LOC check PASS — {len(rows)} files in scope, largest "
-            f"{biggest[0]} lines ({biggest[1]}), {where} {limit}"
+            f"  nearing the {where} ({WARN_LIMIT}+): "
+            + ", ".join(f"{rel} ({n})" for n, rel in nearing)
         )
-        print(f"  scope: {scope_summary(rows)}")
-        print(
-            f"  exempt: {len(EXEMPT_PATHS)} generated files, "
-            f"{len(DATA_EXEMPT)} data file{'' if len(DATA_EXEMPT) == 1 else 's'}, "
-            f"{len(AUDIT_EXEMPT)} audit pattern"
-            f"{'' if len(AUDIT_EXEMPT) == 1 else 's'} "
-            f"(--exempt lists them with reasons)"
-        )
-        print(f"  scenes: {n_scenes} of the {SCENE_LIMIT} this board can hold")
-        # The early warning: a file within 50 lines of the cap will cross it
-        # mid-feature, forcing a split under pressure instead of on a chosen
-        # seam. Naming it now is what makes the cap serve design.
-        nearing = [(n, rel) for n, rel, _ in rows if WARN_LIMIT < n <= limit]
-        if nearing:
-            print(
-                f"  nearing the {where} ({WARN_LIMIT}+): "
-                + ", ".join(f"{rel} ({n})" for n, rel in nearing)
-            )
-        return 0
+    return 0
 
+
+def _fail_report(
+    over: list[tuple[int, str]],
+    hook: bool,
+    scene_complaint: str | None,
+) -> int:
     if over:
         print(
-            f"LOC check FAILED — {len(over)} file(s) over the {limit}-line {where}:\n"
+            f"LOC check FAILED — {len(over)} file(s) over the "
+            f"{HOOK_LIMIT if hook else LIMIT}-line "
+            f"{'pre-commit threshold' if hook else 'cap'}:\n"
         )
+        limit = HOOK_LIMIT if hook else LIMIT
         for n, rel in over:
             print(f"  {n:>6}  {rel}   (+{n - limit})")
         print(
@@ -337,6 +330,29 @@ def main(argv: list[str] | None = None) -> int:
             print()
         print(scene_complaint)
     return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    rows = measure()
+    if "--list" in args:
+        for n, rel, is_over in rows[:15]:
+            print(f"{n:>6}  {'OVER' if is_over else '    '}  {rel}")
+        return 0
+    if "--exempt" in args:
+        print_exemptions()
+        return 0
+
+    # The hook stops ten lines early so the split is never forced mid-change.
+    hook = "--hook" in args
+    limit = HOOK_LIMIT if hook else LIMIT
+    where = "pre-commit threshold" if hook else "cap"
+
+    over = [(n, rel) for n, rel, _o in rows if n > limit]
+    n_scenes, scene_complaint = scene_budget()
+    if not over and scene_complaint is None:
+        return _pass_report(rows, limit, where, n_scenes)
+    return _fail_report(over, hook, scene_complaint)
 
 
 if __name__ == "__main__":

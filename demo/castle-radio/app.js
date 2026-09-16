@@ -102,7 +102,22 @@ function next(){if(!queue.length){if(repeat){queue=shuffle?mix(tracks.filter(t=>
 function stop(){if(window.castlePlayer?.active()){return window.castlePlayer.stop();}audio.pause();audio.currentTime=0;stopped=true;updatePlayer();}
 $('toggle').onclick=toggle;$('hero-play').onclick=toggle;$('next').onclick=next;$('stop').onclick=stop;
 $('previous').onclick=()=>{if(audio.currentTime>3){audio.currentTime=0;return;}if(history.length){queue.unshift(current);load(history.pop());renderQueue();play();}};
-$('shuffle').onclick=()=>{shuffle=!shuffle;if(shuffle){unshuffled=queue.slice();queue=mix(queue);}else if(unshuffled){const live=new Set(queue);const kept=unshuffled.filter(id=>live.has(id));queue=kept.concat(queue.filter(id=>!unshuffled.includes(id)));unshuffled=null;}renderQueue();updatePlayer();toast(shuffle?'Shuffle on — up next is mixed':'Shuffle off — collection order restored');};
+function applyShuffle(){
+  shuffle=!shuffle;
+  if(shuffle){
+    unshuffled=queue.slice();
+    queue=mix(queue);
+  }else if(unshuffled){
+    const live=new Set(queue);
+    const kept=unshuffled.filter(id=>live.has(id));
+    queue=kept.concat(queue.filter(id=>!unshuffled.includes(id)));
+    unshuffled=null;
+  }
+  renderQueue();
+  updatePlayer();
+  toast(shuffle?'Shuffle on — up next is mixed':'Shuffle off — collection order restored');
+}
+$('shuffle').onclick=applyShuffle;
 $('repeat').onclick=()=>{repeat=!repeat;updatePlayer();toast(repeat?'The collection will repeat':'Repeat off');};
 $('blackout').onclick=()=>{stop();blacked=true;updatePlayer();toast('Preview blacked out. Press Play to start again.');};
 $('volume').oninput=()=>{audio.volume=Number($('volume').value)/100;savePreferences();};

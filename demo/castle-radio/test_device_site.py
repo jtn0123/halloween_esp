@@ -122,7 +122,7 @@ class TestBuild(FakeData):
     def test_inventory_and_version_parse_match_the_python_bridge(self):
         page = (HERE / "castle-direct.js").read_text()
         self.assertIn("f.name && !f.dir", page)
-        self.assertIn("match(/^(\\d+)\\.(\\d+)/)", page)
+        self.assertIn("/^(\\d+)\\.(\\d+)/.exec(", page)
         self.assertIn("hex.toLowerCase()", page)
 
 
