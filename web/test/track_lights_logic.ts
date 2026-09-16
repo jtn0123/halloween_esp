@@ -170,8 +170,8 @@ for (const [name, s] of Object.entries(BAND_STYLE)) {
      "0.25 s gaps clamp the factor at 0.7");
   ok(Math.abs(tempoFactor(Array.from({length: 8}, (_, i) => i * 0.9)) - 1.6) < 1e-9,
      "0.9 s gaps clamp at 1.6");
-  ok(tempoDecay(0.90, 0.7) === 0.8571, "fast decay digit matches Python");
-  ok(tempoDecay(0.90, 1.6) === 0.9375, "slow decay digit matches Python");
+  ok(Math.abs(tempoDecay(0.90, 0.7) - 0.8571) < 1e-9, "fast decay digit matches Python");
+  ok(Math.abs(tempoDecay(0.90, 1.6) - 0.9375) < 1e-9, "slow decay digit matches Python");
   const fast = bandStrikes("onset_low",
     Array.from({length: 8}, (_, i): Hit => [i * 0.25, 0.5]), 0, 10);
   ok(fast.every(c => c.ms === Math.floor(BAND_STYLE.onset_low.ms * 0.7 + 0.5)

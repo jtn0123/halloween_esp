@@ -113,8 +113,8 @@ static void check_render() {
   // Something must actually light for every real effect.
   for (int eff = 1; eff <= 12; eff++) {
     float total = 0;
-    for (float t = 0; t < 10; t += 0.25f) {
-      Rgbw c = render(eff, t, 1.31f, 0.5f, false, 0);
+    for (int step = 0; step < 40; step++) {
+      Rgbw c = render(eff, step * 0.25f, 1.31f, 0.5f, false, 0);
       total += c.r + c.g + c.b + c.w;
     }
     CHECK(total > 0.1f, "eff %d never lights", eff);
