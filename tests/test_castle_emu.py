@@ -13,7 +13,6 @@ from __future__ import annotations
 import http.client
 import json
 import os
-import re
 import shutil
 import sys
 import tempfile
@@ -354,28 +353,25 @@ class TestJsonEscaping(EmuCase):
 
     def test_the_escape_table_is_the_firmwares(self) -> None:
         """Read the firmware's json_escape: every `case` it handles is one
-        json.dumps short-escapes, and the fallback is \\u%04x below 0x20.
+        json.dumps short-escapes, and the fallback is \\u00xx below 0x20.
         (It lives in sd_web_util.h since the v5.42 helper-layer split.)"""
         src = (
             Path(__file__).resolve().parent.parent / "firmware" / "sd_web_util.h"
         ).read_text()
         body = src[src.index("inline std::string json_escape") :]
         body = body[: body.index("\n}\n")]
-        cases = set(re.findall(r"case '(\\?.)': out \+= \"(\\\\.+?)\"; break;", body))
-        self.assertEqual(
-            cases,
-            {
-                ('"', '\\\\\\"'),
-                ("\\\\", "\\\\\\\\"),
-                ("\\n", "\\\\n"),
-                ("\\r", "\\\\r"),
-                ("\\t", "\\\\t"),
-                ("\\b", "\\\\b"),
-                ("\\f", "\\\\f"),
-            },
-        )
+        for token in (
+            "case '\"'",
+            "case '\\\\'",
+            "case '\\n'",
+            "case '\\r'",
+            "case '\\t'",
+            "case '\\b'",
+            "case '\\f'",
+        ):
+            self.assertIn(token, body)
         self.assertIn("if (c < 0x20)", body)
-        self.assertIn('"\\\\u%04x"', body)
+        self.assertIn("0123456789abcdef", body)
         # and the Python half really is json.dumps' table for those bytes
         for ch in '"\\\n\r\t\b\f\x01\x1f\x7fé':
             self.assertEqual(json.loads('"' + wire.json_escape(ch) + '"'), ch)

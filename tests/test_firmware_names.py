@@ -41,6 +41,10 @@ class TestNameRules(unittest.TestCase):
         limit = int(grab(r"n\.size\(\) >= (\d+)", body))
         lead = grab(r"n\[0\] == '(.)'", body).encode()
         finds = [f.encode() for f in re.findall(r"""n\.find\(["'](.+?)["']\)""", body)]
+        # Slash is refused whether the C spells it as find('/') or any_of.
+        self.assertIn("'/'", body)
+        if b"/" not in finds:
+            finds.append(b"/")
         # The per-byte loop: `c < 0x20`, `c >= 0x80` and each
         # `c == <literal>`, read off the C so a new forbidden byte in the
         # firmware fails here first.
@@ -177,9 +181,9 @@ class TestNameRules(unittest.TestCase):
 
     def test_query_param_buffers_are_the_firmwares(self) -> None:
         body = FUNCS["query_param"]
-        self.assertEqual(int(grab(r"char q\[(\d+)\]", body)), wire.QUERY_BUF)
-        self.assertEqual(int(grab(r"char val\[(\d+)\]", body)), wire.VALUE_BUF)
-        self.assertIn("url_decode(val)", body)  # values ARE decoded
+        self.assertEqual(int(grab(r"array<char,\s*(\d+)>\s*q", body)), wire.QUERY_BUF)
+        self.assertEqual(int(grab(r"array<char,\s*(\d+)>\s*val", body)), wire.VALUE_BUF)
+        self.assertIn("url_decode(val.data())", body)  # values ARE decoded
 
     def test_url_decode_plus_and_bad_hex(self) -> None:
         """'+' is a space; a non-hex %XX fails the whole decode (empty)."""

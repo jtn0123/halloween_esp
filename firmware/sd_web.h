@@ -306,9 +306,8 @@ inline esp_err_t h_put(httpd_req_t *req) {
     d.pop_back();   // mkdir without the trailing slash
     mkdir(d.c_str(), 0775);
   }
-  std::array<char, 200> path{};
-  snprintf(path.data(), path.size(), "/sd/%s%s", dir, name.c_str());
-  return write_body(req, path.data());
+  const std::string path = std::string("/sd/") + dir + name;
+  return write_body(req, path.c_str());
 }
 
 inline esp_err_t h_delete(httpd_req_t *req) {
@@ -317,10 +316,9 @@ inline esp_err_t h_delete(httpd_req_t *req) {
   route_dir(req, dir, prefix);
   std::string name = name_from_uri(req, prefix);
   if (!safe_name(name)) return reply_err(req, "400 Bad Request", "bad filename");
-  std::array<char, 200> path{};
-  snprintf(path.data(), path.size(), "/sd/%s%s", dir, name.c_str());
-  if (unlink(path.data()) != 0) return reply_err(req, "404 Not Found", "no such file");
-  ESP_LOGI(TAG, "deleted %s", path.data());
+  const std::string path = std::string("/sd/") + dir + name;
+  if (unlink(path.c_str()) != 0) return reply_err(req, "404 Not Found", "no such file");
+  ESP_LOGI(TAG, "deleted %s", path.c_str());
   return reply_json(req, R"({"deleted":true})");
 }
 

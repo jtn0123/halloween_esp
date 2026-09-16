@@ -6,11 +6,12 @@
 // with the handler headers, so the emulator's port stays byte-exact.
 
 #include <esp_http_server.h>
+#include <algorithm>
+#include <array>
 #include <cctype>
-#include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <string>
+#include <string_view>
 
 namespace castle_web {
 
@@ -20,18 +21,22 @@ namespace castle_web {
 /// A `%` that is not two hex digits is a failure (empty result), not NUL.
 inline std::string url_decode(const char *s) {
   std::string out;
-  for (const char *p = s; *p; p++) {
-    if (*p == '%' && p[1] && p[2]) {
-      const unsigned char a = (unsigned char) p[1];
-      const unsigned char b = (unsigned char) p[2];
-      if (!isxdigit(a) || !isxdigit(b)) return {};
-      char hex[3] = {p[1], p[2], 0};
-      out.push_back((char) strtol(hex, nullptr, 16));
-      p += 2;
-    } else if (*p == '+') {
+  const std::string_view in{s};
+  for (size_t i = 0; i < in.size(); i++) {
+    const char c = in[i];
+    if (c == '%' && i + 2 < in.size()) {
+      const auto a = static_cast<unsigned char>(in[i + 1]);
+      if (const auto b = static_cast<unsigned char>(in[i + 2]);
+          !isxdigit(a) || !isxdigit(b)) {
+        return {};
+      }
+      const std::array<char, 3> hex{{in[i + 1], in[i + 2], '\0'}};
+      out.push_back(static_cast<char>(strtol(hex.data(), nullptr, 16)));
+      i += 2;
+    } else if (c == '+') {
       out.push_back(' ');
     } else {
-      out.push_back(*p);
+      out.push_back(c);
     }
   }
   return out;
@@ -41,7 +46,7 @@ inline std::string url_decode(const char *s) {
 /// the whole name (it starts with `.`); `foo..bar` is a legal FAT name.
 inline bool safe_name(const std::string &n) {
   if (n.empty() || n.size() >= 100 || n[0] == '.' ||
-      n.find('/') != std::string::npos)
+      std::any_of(n.begin(), n.end(), [](char ch) { return ch == '/'; }))
     return false;
   // Names go out inside /api/files and /api/status JSON. json_escape keeps
   // the parse alive whatever the card holds; this keeps a quote, backslash
@@ -50,17 +55,18 @@ inline bool safe_name(const std::string &n) {
   // through raw, so one lone 0x80 in a name made the whole body invalid
   // UTF-8 and every Python client of the castle raised instead of parsing
   // (make publish, the desk's device panel). ASCII names only.
-  for (unsigned char c : n)
-    if (c < 0x20 || c >= 0x80 || c == 0x7f || c == '"' || c == '\\') return false;
-  return true;
+  return std::none_of(n.begin(), n.end(), [](unsigned char c) {
+    return c < 0x20 || c >= 0x80 || c == 0x7f || c == '"' || c == '\\';
+  });
 }
 
 /// The filename after a fixed prefix like "/api/files/".
-inline std::string name_from_uri(httpd_req_t *req, const char *prefix) {
-  const char *p = req->uri + strlen(prefix);
-  std::string n = url_decode(p);
-  auto q = n.find('?');
-  if (q != std::string::npos) n.resize(q);
+inline std::string name_from_uri(const httpd_req_t *req, const char *prefix) {
+  const std::string_view uri{req->uri};
+  const std::string_view pre{prefix};
+  std::string n = url_decode(
+      uri.size() >= pre.size() ? uri.data() + pre.size() : "");
+  if (const auto q = n.find('?'); q != std::string::npos) n.resize(q);
   return n;
 }
 
@@ -84,20 +90,21 @@ inline esp_err_t reply_err(httpd_req_t *req, const char *status, const char *msg
 inline std::string json_escape(const std::string &s) {
   std::string out;
   out.reserve(s.size() + 8);
+  constexpr char kHex[] = "0123456789abcdef";
   for (unsigned char c : s) {
     switch (c) {
-      case '"': out += "\\\""; break;
-      case '\\': out += "\\\\"; break;
-      case '\n': out += "\\n"; break;
-      case '\r': out += "\\r"; break;
-      case '\t': out += "\\t"; break;
-      case '\b': out += "\\b"; break;
-      case '\f': out += "\\f"; break;
+      case '"': out += R"(\")"; break;
+      case '\\': out += R"(\\)"; break;
+      case '\n': out += R"(\n)"; break;
+      case '\r': out += R"(\r)"; break;
+      case '\t': out += R"(\t)"; break;
+      case '\b': out += R"(\b)"; break;
+      case '\f': out += R"(\f)"; break;
       default:
         if (c < 0x20) {
-          char u[8];
-          snprintf(u, sizeof(u), "\\u%04x", c);
-          out += u;
+          out += R"(\u00)";
+          out.push_back(kHex[c >> 4]);
+          out.push_back(kHex[c & 0xf]);
         } else {
           out.push_back((char) c);
         }
@@ -109,16 +116,18 @@ inline std::string json_escape(const std::string &s) {
 /// httpd_req_get_url_query_str into 200 bytes: a longer query is TRUNC, not
 /// a silently empty parameter (that used to look like "need ?f=").
 inline bool query_truncated(httpd_req_t *req) {
-  char q[200] = {0};
-  return httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_ERR_HTTPD_RESULT_TRUNC;
+  std::array<char, 200> q{};
+  return httpd_req_get_url_query_str(req, q.data(), q.size()) ==
+         ESP_ERR_HTTPD_RESULT_TRUNC;
 }
 
 inline std::string query_param(httpd_req_t *req, const char *key) {
-  char q[200] = {0};
-  if (httpd_req_get_url_query_str(req, q, sizeof(q)) != ESP_OK) return "";
-  char val[120] = {0};
-  if (httpd_query_key_value(q, key, val, sizeof(val)) != ESP_OK) return "";
-  return url_decode(val);
+  std::array<char, 200> q{};
+  if (httpd_req_get_url_query_str(req, q.data(), q.size()) != ESP_OK) return "";
+  std::array<char, 120> val{};
+  if (httpd_query_key_value(q.data(), key, val.data(), val.size()) != ESP_OK)
+    return "";
+  return url_decode(val.data());
 }
 
 /// A path that may contain subdirectories but must stay inside /sd:
@@ -129,8 +138,8 @@ inline bool safe_subpath(const std::string &p) {
   while (i <= p.size()) {
     size_t j = p.find('/', i);
     if (j == std::string::npos) j = p.size();
-    const std::string s = p.substr(i, j - i);
-    if (s.empty() || s[0] == '.') return false;
+    if (const std::string s = p.substr(i, j - i); s.empty() || s[0] == '.')
+      return false;
     if (j == p.size()) break;
     i = j + 1;
   }
@@ -152,7 +161,7 @@ inline bool pir_armed_ok(std::string &a) {
   return false;
 }
 
-inline bool pir_cooldown_ok(const std::string &c) {
+inline bool pir_cooldown_ok(std::string_view c) {
   return c.empty() || c == "30" || c == "60" || c == "120";
 }
 
