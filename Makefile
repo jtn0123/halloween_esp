@@ -42,7 +42,7 @@ help:
 	@echo "  make bench-audio  measure decode load on the bare board (no speakers)"
 	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
 	@echo "  make studio     serve the cue desk with track management (localhost)"
-	@echo "  make publish    push scene tracks + the lean desk page to the castle"
+	@echo "  make publish    push scene tracks + the Castle Radio page to the castle"
 	@echo "  make ota        build the SD firmware and flash it over HTTP"
 	@echo "  make test       python unit tests (~1 min)"
 	@echo "  make test-fast  the same minus the slow + Rust suites (inner loop)"
@@ -109,7 +109,7 @@ studio: preview
 # else devices.toml). The studio's rebuild runs the same push automatically;
 # this is the terminal spelling. `make ota` builds first and sd_sync stops
 # audio before flashing (the standing OTA rule).
-publish: preview
+publish: audio
 	@$(PY) tools/sd_sync.py scenes
 	@$(PY) tools/sd_sync.py site
 

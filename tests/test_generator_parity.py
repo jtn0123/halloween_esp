@@ -221,9 +221,13 @@ class TestTimelineParity(unittest.TestCase):
         self, scene: dict[str, Any], markers: dict[str, Any]
     ) -> list[int]:
         """Replay the ESPHome script's delays to recover absolute cue times."""
-        then = yaml.safe_load(
+        scripts = yaml.safe_load(
             "script:\n" + "\n".join(ge.emit_scene(scene, ZONES, 1, markers))
-        )["script"][0]["then"]
+        )["script"]
+        # The head script, then its cont_<id>_N continuations in order — the
+        # walk the device makes (gen_esphome CHUNK), so a cue that lands in
+        # a continuation still counts.
+        then = [st for script in scripts for st in script["then"]]
         start = next(
             i
             for i, st in enumerate(then)

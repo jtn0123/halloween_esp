@@ -282,11 +282,14 @@ class FrameAlignmentTests(unittest.TestCase):
 
     @patch("device_bridge.time.monotonic")
     @patch("device_bridge.call")
-    def test_first_frame_waits_for_decoding_to_begin(self, call, now):
+    def test_first_frame_waits_for_sound_not_the_pipeline(self, call, now):
+        """5.55 reports playing with position_ms 0 while the speaker is still
+        buffering; a frame aligned to that tick would fire before the
+        sound. Only a moving clock is the sound."""
         now.return_value = 70.0
         call.side_effect = [
             {"track": "radio_a.mp3", "playing": False, "position_ms": 0},
-            {"track": "radio_a.mp3", "playing": False, "position_ms": 0},
+            {"track": "radio_a.mp3", "playing": True, "position_ms": 0},
             {"track": "radio_a.mp3", "playing": True, "position_ms": 100},
         ]
         stop = threading.Event()
@@ -294,6 +297,14 @@ class FrameAlignmentTests(unittest.TestCase):
             started = device_bridge._align("radio_a.mp3", 10.0, stop)
         self.assertEqual(wait.call_count, 2)
         self.assertAlmostEqual(started, 69.9)
+
+    @patch("device_bridge.time.monotonic", return_value=70.0)
+    @patch("device_bridge.call")
+    def test_a_speaker_that_never_sounds_keeps_the_estimate(self, call, now):
+        call.return_value = {"track": "radio_a.mp3", "playing": True, "position_ms": 0}
+        stop = threading.Event()
+        with patch.object(stop, "wait", return_value=False):
+            self.assertEqual(device_bridge._align("radio_a.mp3", 10.0, stop), 10.0)
 
     @patch("device_bridge.time.monotonic", return_value=90.0)
     @patch("device_bridge.call")

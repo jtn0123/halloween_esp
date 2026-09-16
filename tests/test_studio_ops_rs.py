@@ -36,7 +36,7 @@ JSON_HDRS = {"Content-Type": "application/json"}
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
 class Publish(StudioCase):
     """POST /studio/publish with a castle answering: the scene tracks and
-    the lean page go to the card, and what a push CANNOT fix is named."""
+    the Castle Radio page go to the card, and what a push CANNOT fix is named."""
 
     emu: ClassVar[castle_emu.CastleEmu]
 
@@ -73,9 +73,11 @@ class Publish(StudioCase):
         self.assertIn("source: <BUILD>/audio/", masked)
         self.assertIn("uploading 01_vigil.mp3", masked)
         self.assertIn("1 scene tracks in /sd/scenes/", masked)
-        self.assertIn("http://<CASTLE>/ now serves the LEAN cue desk", masked)
-        # The scene track to /sd/scenes, the lean page pair and the
-        # per-scene mp3 to /sd/site — those four files and nothing else.
+        self.assertIn("http://<CASTLE>/ now serves Castle Radio", masked)
+        # The scene track to /sd/scenes and the Castle Radio page pair to
+        # /sd/site (2026-09-15) — those three files and nothing else: the
+        # page streams scene audio from /sd/scenes/, so nothing is pushed
+        # beside it.
         sd = Path(self.emu.sd_dir)
         self.assertEqual(
             sorted(str(f.relative_to(sd)) for f in sd.rglob("*") if f.is_file()),
@@ -83,14 +85,12 @@ class Publish(StudioCase):
                 "scenes/01_vigil.mp3",
                 "site/index.html",
                 "site/index.html.gz",
-                "site/vigil.mp3",
             ],
         )
-        # The lean page is the rewrite, not the inlined desk: the scene
-        # data URIs are gone and the non-scene one survived.
+        # One self-contained page with the castle shim ahead of the app.
         page = (sd / "site" / "index.html").read_bytes()
-        self.assertNotIn(b"SGVsbG8=", page)
-        self.assertIn(b"data:audio/mpeg;base64,QUJD", page)
+        self.assertLess(page.find(b"Castle direct:"), page.find(b"Standalone concept"))
+        self.assertNotIn(b'src="', page)
 
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")

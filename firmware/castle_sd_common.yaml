@@ -200,7 +200,10 @@ interval:
             const bool playing =
                 ms == media_player::MEDIA_PLAYER_STATE_PLAYING ||
                 ms == media_player::MEDIA_PLAYER_STATE_ANNOUNCING;
-            if (castle_web::mirror_audio(playing, esp_timer_get_time()) &&
+            // The speaker's own state is the sound: the pipeline says
+            // PLAYING half a second before the amplifier gets a sample.
+            const bool sounding = id(castle_speaker)->is_running();
+            if (castle_web::mirror_audio(playing, sounding, esp_timer_get_time()) &&
                 id(current_scene).state == "stop" &&
                 !id(current_track).state.empty())
               id(current_track).publish_state("");

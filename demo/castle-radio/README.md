@@ -41,7 +41,8 @@ scene MP3 files (01 through 10) from the main checkout's `audio/` directory.
   the header chip, the player, the bench and the motion settings; it slows to
   every 4 s in a background tab and the server answers all of them from one
   cached `/api/status` per quarter second.
-- Firmware 5.52 reports `playing` and `position_ms`, so the scrubber follows the
+- Firmware 5.52 reports `playing` and `position_ms` (sound-true since 5.55:
+  0 until the speaker runs), so the scrubber follows the
   castle's own clock, a raw file clears `track` when it ends, and the queue
   moves on by itself (songs that are not synced are skipped with a toast).
 - Play on the castle is a stop button while something plays; a command that has
@@ -51,6 +52,24 @@ scene MP3 files (01 through 10) from the main checkout's `audio/` directory.
   aware player bar; audited at 390 x 844 with no horizontal overflow.
 - The original LED-channel and speaker diagnostic bench under Your castle.
 - OLED night and castle-green themes, both saved in the browser.
+
+## On the castle itself
+
+`make publish` (or `tools/sd_sync.py site`) pushes this control room to the
+castle's SD card as ONE self-contained page, and http://10.27.27.81/ serves
+it: 68 KB gzipped, about 1.5 s to first paint over the porch Wi-Fi.
+`device_site.py` builds it; `castle-direct.js`, inlined first, answers every
+`/radio/*` route from the firmware's own `/api` (status settling, the command
+builders, the SD inventory and the generated-light streamer are ports of
+`device_bridge.py` and `remote_library.py`). Scene audio streams from
+`/sd/scenes/`; synced imports from the card root, with their lights reduced
+to mailbox-rate frames at build time and streamed by the phone's browser on
+the castle's own clock. Importing, separation, waveforms and syncing stay on
+the computer, and the page says so where those controls appear. The castle
+keeps the previous cue desk build as `site/index.old.html(.gz)`.
+
+Tests: `python -m unittest test_device_site` in this directory, and
+`tests/test_sd_sync.py` for the push.
 
 ## Isolation and limitations
 

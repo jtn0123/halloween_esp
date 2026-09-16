@@ -43,7 +43,10 @@ class LiveLightPlaybackTests(unittest.TestCase):
         web = (ROOT / "firmware" / "sd_web.h").read_text()
         self.assertIn('"playing":%s,"position_ms":%lld', web)
         state = (ROOT / "firmware" / "sd_web_state.h").read_text()
-        self.assertIn("inline bool mirror_audio(bool playing, long long now_us)", state)
+        self.assertIn(
+            "inline bool mirror_audio(bool playing, bool sounding, long long now_us)",
+            state,
+        )
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@
                                              desk's 🏰 panel plays (audio/test -> /sd)
     tools/sd_sync.py [ip|name] scenes        upload the 8 scene tracks the SD
                                              build streams (audio/ -> /sd/scenes)
-    tools/sd_sync.py [ip|name] site          push the cue desk page (gzipped)
+    tools/sd_sync.py [ip|name] site          push the Castle Radio page (gzipped)
     tools/sd_sync.py [ip|name] ota <bin>     flash firmware over plain HTTP
     tools/sd_sync.py [ip|name] rm <name>     delete one file (scenes/x, site/x too)
     tools/sd_sync.py [ip|name] play <name>   stream a file on the castle
@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import contextlib
 import gzip
+import importlib.util
 import json
 import sys
 import urllib.parse
@@ -149,45 +150,44 @@ def cmd_tones(ip: str) -> int:
     return 0
 
 
-def cmd_site(ip: str) -> int:
-    # ONE self-contained file (see gen_previewer.py) — that constraint is
-    # what makes it servable by a microcontroller. Pushed pre-gzipped: the
-    # firmware serves index.html.gz with Content-Encoding and the first load
-    # drops from ~8 s to ~3 s over the porch WiFi.
-    src = bp.PREVIEW_HTML
-    if not src.exists():
-        raise SystemExit("previewer/castle-cue-desk.html missing — run `make preview`")
-    # The DEVICE gets the LEAN rewrite (grade report 2026-08-23 G1/A5): the committed
-    # build inlines every scene's audio as base64 — 89% of a 3.3 MB page the
-    # porch phone downloads before anything appears, for tracks it may never
-    # play. The device page links /site/<sid>.mp3 instead, pushed below and
-    # served by the firmware's existing /site/* handler; the inlined build
-    # stays on disk for portability.
-    import gen_previewer as gp
+def build_site() -> bytes:
+    """The one-file Castle Radio page, built by demo/castle-radio/device_site.py
+    (loaded by path: the demo is its own program, not a tools/ module)."""
+    source = ROOT / "demo" / "castle-radio" / "device_site.py"
+    if not source.exists():
+        raise SystemExit(
+            f"{source} missing — the Castle Radio demo is the castle's page"
+        )
+    spec = importlib.util.spec_from_file_location("device_site", source)
+    if spec is None or spec.loader is None:
+        raise SystemExit(f"cannot load {source}")
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, str(source.parent))
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(str(source.parent))
+    return bytes(module.build())
 
-    plain = gp.lean(src.read_text(), route="/site/", suffix=".mp3").encode()
+
+def cmd_site(ip: str) -> int:
+    # ONE self-contained file — that constraint is what makes it servable by
+    # a microcontroller. Pushed pre-gzipped: the firmware serves index.html.gz
+    # with Content-Encoding, and the first load is one request.
+    #
+    # Since 2026-09-15 this is the Castle Radio control room (demo/castle-radio),
+    # not the cue desk: the card keeps the desk's last build as index.old.html
+    # for the day it is wanted back. Scene audio is not pushed beside the page;
+    # the page streams it from /sd/scenes/, where `scenes` already put it.
+    plain = build_site()
     packed = gzip.compress(plain, 9)
     upload(ip, "/api/site", "index.html.gz", packed)
     # The plain copy too, for any client that cannot take gzip — the firmware
     # prefers .gz but falls back, and a stale pair would be worse than bytes.
     upload(ip, "/api/site", "index.html", plain)
-    have = card_dir(ip, "site")
-    audio = [
-        p
-        for p in sorted(bp.AUDIO.glob("[0-9][0-9]_*.mp3"))
-        if not p.name.startswith("00_")
-    ]
-    for mp3 in audio:
-        name = mp3.name[3:]  # NN_<sid>.mp3 -> <sid>.mp3, the URL
-        data = mp3.read_bytes()
-        if have.get(name) == len(data):
-            print(f"  {name} unchanged, skipped")
-            continue
-        upload(ip, "/api/site", name, data)
     print(
-        f"  http://{ip}/ now serves the LEAN cue desk "
-        f"({len(packed) // 1024} KB gzipped + {len(audio)} scene tracks "
-        f"fetched on first play)"
+        f"  http://{ip}/ now serves Castle Radio "
+        f"({len(packed) // 1024} KB gzipped, {len(plain) // 1024} KB plain)"
     )
     return 0
 

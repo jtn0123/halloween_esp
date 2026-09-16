@@ -271,3 +271,49 @@ illustrative renderers. Device publishing remains unconnected.
   reason next to each. Flashed over the new OTA handler itself: the castle
   came back on 5.54, Storm played from the page with the clock at 0:02, Stop
   left it idle.
+
+## 2026-09-15 · the castle serves Castle Radio
+
+- `tools/sd_sync.py 10.27.27.81 site` pushed the one-file build (321 KB, 68 KB
+  gzipped). Root load over porch Wi-Fi: 1.1 s by curl, 1.7 s to `load` in
+  Chromium at 1440 x 900 and 390 x 844, versus 11 to 12 s for the 2.2 MB
+  cue desk it replaced. No page errors, no horizontal overflow.
+- Header chip reads `Castle 5.54 · idle` within two seconds of load. A first
+  build preloaded the current song's metadata and the castle streamed the
+  whole 2.3 MB file through the same task that answers `/api/status`, so the
+  chip read offline for eight seconds; the device build now sets
+  `preload="none"`.
+- Play Storm from the castle-served page (speaker hushed): castle reports
+  `scene storm, playing true` within 2.5 s; chip `Castle · Storm · 0:02`.
+  Stop from the page: `scene stop, playing false`, chip idle.
+- Synced import `radio_d0183bda099a.mp3` from Import music: castle plays the
+  raw file (`position_ms` advancing), the page streams its 26 light frames
+  itself (`castleDirect.show.frames_sent` advancing, no error), Stop clears
+  the show and lights. Import form disabled with the reason shown; waveform
+  panel says analysis happens on the computer.
+- Your castle: Connected, `Firmware 5.54 · SD ready · castle clock`, device
+  address from `location.host`, eleven other audio files listed from the card
+  root, bench online.
+- Volume restored to 45 and confirmed after every hardware run.
+
+## 2026-09-15 · lights lead the sound (firmware 5.55)
+
+- Report: LEDs not matching the audio. Cause, from the device log and
+  `/api/status` samples on 5.54: a scene's first cue fired 80 ms after the play
+  call, the media pipeline reported PLAYING 0.50 s after the command, and the
+  speaker's own task started later still; the position clock also started at
+  the command, so streamed light frames inherited the same lead.
+- Fix: every generated scene now waits (`wait_until` on
+  `castle_speaker->is_running()`, 1500 ms timeout) before its first cue; the
+  firmware clock is armed by a play and starts on the first tick the speaker
+  runs; both light streamers wait for a moving clock rather than `playing`.
+- Measured on the porch after flashing 5.55 (speaker hushed, three starts):
+  pipeline PLAYING at +0.32 to +0.69 s from the command, speaker running
+  0.44 to 0.67 s after that. The lights were 0.6 to 1.0 s early before this.
+- Tests: `tests/test_audio_clock_cxx.py` runs the clock on the host one tick at
+  a time; `tests/test_gen_esphome.py` checks the wait follows `sfx` and leaves
+  the cue deltas untouched; `tests/test_generator_parity.py` now replays
+  continuation scripts; `test_device_bridge.py` covers a playing-but-silent
+  tick and a speaker that never runs.
+- Castle-served page rerun on 5.55: play, stop, synced import with streamed
+  lights, all as before. Volume restored to 45.
