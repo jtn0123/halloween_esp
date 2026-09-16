@@ -72,9 +72,16 @@ typedef struct httpd_uri {
 
 typedef bool (*httpd_uri_match_func_t)(const char *tpl, const char *uri, size_t len);
 
+#ifndef tskNO_AFFINITY
+#define tskNO_AFFINITY 0x7fffffff
+#endif
+
 typedef struct httpd_config {
   unsigned task_priority;
   size_t stack_size;
+  // IDF pins the httpd task when this is 0 or 1 and leaves it floating at
+  // tskNO_AFFINITY. sd_web.h sets it, so the struct must carry it.
+  int core_id;
   uint16_t server_port;
   uint16_t ctrl_port;
   uint16_t max_open_sockets;
@@ -90,7 +97,8 @@ typedef struct httpd_config {
 
 #define HTTPD_DEFAULT_CONFIG()                                                 \
   {                                                                            \
-    /*task_priority*/ 5, /*stack_size*/ 4096, /*server_port*/ 80,              \
+    /*task_priority*/ 5, /*stack_size*/ 4096, /*core_id*/ tskNO_AFFINITY,       \
+        /*server_port*/ 80,                                                    \
         /*ctrl_port*/ 32768, /*max_open_sockets*/ 7,                           \
         /*max_uri_handlers*/ 8, /*max_resp_headers*/ 8, /*backlog_conn*/ 5,    \
         /*lru_purge_enable*/ false, /*recv_wait_timeout*/ 5,                   \

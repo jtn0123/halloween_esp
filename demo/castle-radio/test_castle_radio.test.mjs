@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import {directContext, element, fmt, idle, linkContext, page, playingAt, poll, pollAt, read, runFrames, settle, settlingOn, showContext} from './test_support.mjs';
+import {EVENTS, directContext, element, eventLog, fmt, healthRun, idle, landedShow, linkContext, page, playingAt, poll, pollAt, read, runFrames, settle, settlingOn, showContext, wordings} from './test_support.mjs';
 
 /* ------------------------------------------------------------------- B01/B20 */
 
@@ -455,4 +455,36 @@ test('B68: the inventory sweep is serial, so it cannot purge its own socket', as
   const {ctx, peak} = showContext([]);
   await ctx.window.fetch('/radio/device/library');
   assert.equal(peak(), 1, 'the castle keeps four sockets with an LRU purge: no fan-out');
+});
+
+/* ---------------------------------------------------------------- B69/B70/B71 */
+
+test('B69: a show is judged by the frames the castle drew, not the frames posted', async () => {
+  const live = await landedShow({light_applied: 100, light_evicted: 3}, {light_applied: 106, light_evicted: 5});
+  assert.deepEqual([live.frames_landed, live.frames_evicted], [6, 2]);
+  const old = await landedShow({}, {});
+  assert.deepEqual([old.frames_landed, old.frames_evicted], [null, null], 'unknown, never a confident zero');
+  const {ctx} = linkContext({payload: playingAt(10)});
+  await settle();
+  assert.deepEqual(wordings(ctx.window.castleLink.framesText), ['40 of 50 light frames sent', '38 landed of 40 sent', '36 landed of 40 sent (2 overwritten before the castle drew them)']);
+});
+
+test('B70: the health line times a fast poll, a slow one, and one that never lands', async () => {
+  const {ctx} = linkContext({payload: playingAt(10, 3671)});
+  await settle();
+  const [fast, slow, lost] = await healthRun(ctx);
+  assert.ok(fast.rtt_ms < 100 && fast.missed_total === 0, `a fast poll is milliseconds (${fast.rtt_ms})`);
+  assert.deepEqual([fast.uptime, fast.version], ['1:01:11', '5.55']);
+  assert.ok(slow.rtt_ms >= 500, 'a slow poll is reported slow');
+  assert.deepEqual([lost.failures, lost.missed_total], [1, 1]);
+  assert.ok(lost.worst_ms >= 500, 'the worst of the last ten still remembers the slow poll');
+  assert.match(ctx.window.castleLink.healthLine(), /missed 1 \(1 in a row\) · up 1:01:1\d · firmware 5\.55$/);
+});
+
+test('B71: recent castle events read oldest first, the newest at +00:00.0', async () => {
+  const {log, health} = await eventLog(async () => EVENTS);
+  assert.deepEqual(log.split('\n'), ['-00:10.0  play  radio_a.mp3', '-00:04.5  light_evicted  3', '+00:00.0  stop']);
+  assert.equal(health, 'link 4 ms', 'the panel takes its health line from the shared poll');
+  const failed = await eventLog(async () => { throw new Error('Castle answered 404'); });
+  assert.match(failed.log, /not supported by this firmware/);
 });

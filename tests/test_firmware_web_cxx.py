@@ -81,10 +81,10 @@ class TestRouteMatrix(WebPairCase):
         self.assertGreaterEqual(len(routes), 25, "the route table shrank")
         for path, method, handler in routes:
             with self.subTest(route=path, method=method):
-                # h_status and h_list are the two whose bodies carry numbers
-                # off the machine (the compile date, the free heap, FAT
-                # order); TestJsonReplies compares them field by field.
-                if handler in ("h_status", "h_list"):
+                # The three whose bodies carry numbers off the machine or
+                # a ring the two castles fill on their own clocks; they are
+                # compared field by field (here, and _events_cxx for events).
+                if handler in ("h_status", "h_list", "h_events"):
                     c, e = self.pair.both(method, concrete(path))
                     self.assertEqual((c.status, c.ctype), (e.status, e.ctype))
                     continue

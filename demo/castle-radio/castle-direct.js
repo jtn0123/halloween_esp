@@ -52,7 +52,7 @@
   function status(fresh = false) {
     if (!fresh && statusPromise && performance.now() - statusAt < STATUS_MS) {return statusPromise;}
     statusAt = performance.now();
-    statusPromise = castle('/api/status').catch(error => { statusPromise = null; throw error; });
+    statusPromise = castle('/api/status').then(baseline).catch(error => { statusPromise = null; throw error; });
     return statusPromise;
   }
   const listings = new Map();
@@ -97,7 +97,23 @@
   }
 
   // ── generated lights for a synced import, on the castle's clock ────────
-  const show = {active: false, track: null, frames_sent: 0, frames_total: 0, error: null, token: 0, hidden: false, realign: false};
+  const show = {active: false, track: null, frames_sent: 0, frames_total: 0, error: null, token: 0, hidden: false, realign: false,
+    base: null, awaitingBase: false};
+  // Frames the castle actually DREW, not frames this page posted. Firmware
+  // 5.59 counts LIGHT frames applied and frames evicted before the drain;
+  // a show is judged by the difference since it started. Older firmware
+  // reports neither, and that is unknown — never zero.
+  const count = value => (typeof value === 'number' ? value : null);
+  const counters = state => ({applied: count(state?.light_applied), evicted: count(state?.light_evicted)});
+  function baseline(state) {
+    if (show.awaitingBase) { show.awaitingBase = false; show.base = counters(state); }
+    return state;
+  }
+  function drawn(state) {
+    const base = show.base, live = counters(state);
+    const since = key => (base && base[key] !== null && live[key] !== null ? live[key] - base[key] : null);
+    return {frames_landed: since('applied'), frames_evicted: since('evicted')};
+  }
   const now = () => performance.now() / 1000;
   let lastLight = -Infinity;
   // Off is the one frame that must land, so it waits out the drain instead of
@@ -157,7 +173,8 @@
   }
   async function runShow(filename, frames, duration) {
     const token = ++show.token;
-    Object.assign(show, {active: true, track: filename, frames_sent: 0, frames_total: frames.length, error: null, realign: false});
+    Object.assign(show, {active: true, track: filename, frames_sent: 0, frames_total: frames.length, error: null, realign: false,
+      base: null, awaitingBase: true});
     holdScreen();
     try {
       let started = await align(filename, now() + 0.24 + SPEAKER_START_S, token, true);
@@ -304,6 +321,7 @@
       const state = settle(await status());
       return json({connected: true, host: location.host, state, playback: playback(state), capabilities: capabilities(state),
         light_show: {active: show.active, track: show.track, frames_sent: show.frames_sent, frames_total: show.frames_total,
+          ...drawn(state),
           error: show.error, hidden: show.hidden, note: show.active && show.hidden ? 'lights paused — screen off' : null}});
     } catch (error) { return json({connected: false, host: location.host, error: error.message}, 502); }
   }
@@ -312,6 +330,8 @@
     if (path === '/radio/device') {return device();}
     if (path === '/radio/device/command' && method === 'POST') {return json(await command(JSON.parse(options.body || '{}')));}
     if (path === '/radio/device/library') {return json(await inventory());}
+    // The firmware's own ring of what happened; 404 on anything older.
+    if (path === '/radio/device/events') {return json(await castle('/api/events'));}
     if (path.startsWith('/radio/device/audio/') && method === 'DELETE') {return json(await deleteAudio(decodeURIComponent(path.slice('/radio/device/audio/'.length))));}
     if (path === '/radio/library') {return json(await presentRows());}
     if (path === '/radio/jobs') {return json([]);}

@@ -39,7 +39,6 @@ uploads and deletes are real files, so a send can be verified with ls.
 
 from __future__ import annotations
 
-import argparse
 import os
 import shutil
 import sys
@@ -50,8 +49,9 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import castle_emu_wire as wire
-from castle_emu_clock import BYTES_PER_S, audio_state, silence_until
-from castle_emu_http import OTA_SLOT, OTA_SLOTS, Handler
+from castle_emu_clock import BYTES_PER_S, SPEAKER_START_S, audio_state, silence_until
+from castle_emu_events import Events
+from castle_emu_http import OTA_SLOT, Handler
 
 #: The device applies queued actions on its main-loop interval.
 APPLY_DELAY_S = 0.2
@@ -202,6 +202,9 @@ class CastleEmu(ThreadingHTTPServer):
         #: RESTART's own latch, drained ahead of the slot (sd_web_state.h).
         self._restart_pending = False
         self.applied: list[tuple[str, str]] = []  # what the tick ran, for tests
+        #: The event ring and the light counters (castle_emu_events.py):
+        #: what the main loop DID, which a 1 Hz status poll cannot see.
+        self.events = Events()
         threading.Thread(
             target=self._ticker, daemon=True, name="castle-emu-tick"
         ).start()
@@ -232,6 +235,10 @@ class CastleEmu(ThreadingHTTPServer):
                 and self._pending[0] != "LIGHT"
             ):
                 return
+            # LIGHT over LIGHT: the frame underneath never runs, and is
+            # counted — /api/status carries the total, /api/events a line.
+            if action == "LIGHT" and self._pending is not None:
+                self.events.light_evicted += 1
             self._pending = (action, arg)
 
     def _ticker(self) -> None:
@@ -253,11 +260,33 @@ class CastleEmu(ThreadingHTTPServer):
                 # keeps naming its track until scene_stop.
                 if st.track and st.scene == "stop" and time.monotonic() > st.track_ends:
                     st.track = ""
+            self._mirror()
             if taken is not None:
+                self.events.record_action(*taken, self.uptime_ms())
                 try:
                     self._apply(*taken)
                 finally:
                     self.applied.append(taken)
+
+    def uptime_ms(self) -> int:
+        """esp_timer's clock as the ring stamps it: milliseconds since boot."""
+        return int((time.monotonic() - self.state.boot) * 1000)
+
+    def _mirror(self) -> None:
+        """The interval's mirroring half: the dropped-frame line (at most one
+        a second) and the audio clock's start/end transitions."""
+        st = self.state
+        now = time.monotonic()
+        with st.lock:
+            playing, _pos = audio_state(
+                st.track, st.track_started, st.track_ends, st.starting_until, now
+            )
+            sounding = bool(st.track) and (
+                st.track_started + SPEAKER_START_S <= now < st.track_ends
+            )
+        t_ms = self.uptime_ms()
+        self.events.note_light_evictions(t_ms)
+        self.events.note_audio(sounding, playing, t_ms)
 
     def _apply(self, action: str, arg: str) -> None:
         st = self.state
@@ -349,6 +378,10 @@ class CastleEmu(ThreadingHTTPServer):
                 # clock that counts from the sound (castle_emu_clock).
                 "playing": playing,
                 "position_ms": position_ms,
+                # v5.59: LIGHT frames the main loop ran, and the ones the
+                # one-slot mailbox dropped before it could (sd_web_state.h).
+                "light_applied": self.events.light_applied,
+                "light_evicted": self.events.light_evicted,
                 "pir": {
                     "armed": st.pir["armed"],
                     "cooldown_s": st.pir["cooldown_s"],
@@ -377,6 +410,7 @@ class CastleEmu(ThreadingHTTPServer):
             '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
             '"volume":%d,"scene":"%s","track":"%s","scenes":"%s",'
             '"show_on":%s,"playing":%s,"position_ms":%d,'
+            '"light_applied":%d,"light_evicted":%d,'
             '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
             % (
                 t("version"),
@@ -395,6 +429,8 @@ class CastleEmu(ThreadingHTTPServer):
                 b[bool(s["show_on"])],
                 b[bool(s["playing"])],
                 i("position_ms"),
+                i("light_applied"),
+                i("light_evicted"),
                 b[bool(pir["armed"])],
                 int(pir["cooldown_s"]),
                 wire.json_escape(str(pir["scene"])),
@@ -402,75 +438,7 @@ class CastleEmu(ThreadingHTTPServer):
         )
 
 
-def _seed(card: Path) -> None:
-    """Two placeholder 'songs' so the desk has something to list and play."""
-    for name, kb in (("wicked_winds.mp3", 280), ("ghostbusters.mp3", 960)):
-        f = card / name
-        if not f.exists():
-            f.write_bytes(b"\xff\xfb" + b"\x00" * (kb * 1024 - 2))
-    (card / "logs").mkdir(exist_ok=True)
+if __name__ == "__main__":  # `python tools/castle_emu.py 8093` — the CLI
+    from castle_emu_cli import main
 
-
-def main() -> None:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("port", nargs="?", type=int, default=8093)
-    ap.add_argument(
-        "--dir",
-        type=Path,
-        default=None,
-        help="directory that plays the SD card (default: temp, seeded)",
-    )
-    ap.add_argument(
-        "--wedge",
-        action="store_true",
-        help="replay the pre-v5.22 wedge: stall requests while playing",
-    )
-    ap.add_argument("--no-sd", action="store_true", help="pretend the card is missing")
-    ap.add_argument(
-        "--chip",
-        choices=sorted(OTA_SLOTS),
-        default="s2",
-        help="whose OTA slot /api/ota measures against (default: the S2 Feather)",
-    )
-    ap.add_argument(
-        "--serial",
-        action="store_true",
-        help="one request at a time, like the device's single httpd task",
-    )
-    ap.add_argument(
-        "--scenes",
-        default=None,
-        help="scene ids: a comma list, or a scenes.yaml "
-        "(default: $CASTLE_SCENES, else scenes/scenes.yaml)",
-    )
-    args = ap.parse_args()
-    scenes: list[str] | None = None
-    if args.scenes:
-        scenes = (
-            show_scene_ids(Path(args.scenes))
-            if args.scenes.endswith(".yaml")
-            else [x.strip() for x in args.scenes.split(",") if x.strip()]
-        )
-    emu = CastleEmu(
-        port=args.port,
-        sd_dir=args.dir,
-        wedge=args.wedge,
-        sd_mounted=not args.no_sd,
-        serial=args.serial,
-        scenes=scenes,
-        ota_slot=OTA_SLOTS[args.chip],
-    )
-    if args.dir is None:
-        _seed(emu.sd_dir)
-    print(
-        f"castle emulator on http://127.0.0.1:{emu.port}  card={emu.sd_dir}"
-        + ("  [WEDGE MODE]" if args.wedge else "")
-        + ("  [SERIAL]" if args.serial else "")
-    )
-    print(f"  scenes: {', '.join(emu.scenes)}")
-    print(f"  point the studio at it:  CASTLE_HOST=127.0.0.1:{emu.port}")
-    emu.serve_forever()
-
-
-if __name__ == "__main__":
     main()

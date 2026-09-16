@@ -10,7 +10,11 @@
 // a different transport could reuse unchanged.
 #pragma once
 
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <cstdint>
+#include <cstring>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -35,6 +39,14 @@ inline Action g_pending{};
 // be talked out of rebooting by a status poll or a light frame.
 inline std::atomic g_restart_pending{false};
 
+// ── light frame counters ────────────────────────────────────────────────
+// A synced import streams light frames faster than the 200 ms drain, so
+// some of them never run. `applied` is what the main loop executed,
+// `evicted` what the one slot dropped on the way in; /api/status carries
+// both so a page can see it is over-sending instead of guessing.
+inline std::atomic<unsigned> g_light_applied{0};
+inline std::atomic<unsigned> g_light_evicted{0};
+
 inline void set_pending(ActionType type, std::string arg) {
   if (type == ActionType::RESTART) {
     g_restart_pending.store(true);
@@ -48,6 +60,10 @@ inline void set_pending(ActionType type, std::string arg) {
   if (type == ActionType::LIGHT && g_pending.type != ActionType::NONE &&
       g_pending.type != ActionType::LIGHT)
     return;
+  // LIGHT over LIGHT: the frame underneath is dropped, and counted, so
+  // /api/status and the ring can say how much of a stream never ran.
+  if (type == ActionType::LIGHT && g_pending.type == ActionType::LIGHT)
+    g_light_evicted.fetch_add(1);
   g_pending = {type, std::move(arg)};
 }
 /// Called by the YAML interval on the main loop. Returns NONE most of the time.
@@ -57,6 +73,111 @@ inline Action take_pending() {
   Action a = g_pending;
   g_pending = {ActionType::NONE, ""};
   return a;
+}
+
+// ── the event ring (v5.59) ──────────────────────────────────────────────
+// What the castle actually DID, 64 entries deep, in RAM and never growing.
+// The main loop appends one line per command it executed; /api/events hands
+// the ring back oldest-first. A page polling /api/status once a second can
+// never see a scene that started and stopped between two polls — this is
+// the record of the ticks in between.
+//
+// Nothing here writes the SD card. A card write on the main loop stalls the
+// audio pipeline and the pixel refill, which is the very class of glitch
+// the ring exists to explain; the log on the card stays a boot-time affair
+// (castle_health::log_boot_to_sd).
+enum class EventKind : uint8_t {
+  PLAY = 0, SCENE, STOP, VOLUME, SHOW, BLACKOUT, RESTART,
+  LIGHT_EVICTED,   // light frames dropped from the one slot, arg = how many
+  SOUND,           // the speaker started: the armed audio clock began running
+  SILENT,          // playback ended on its own
+};
+
+inline const char *event_kind_str(EventKind k) {
+  switch (k) {
+    case EventKind::PLAY: return "play";
+    case EventKind::SCENE: return "scene";
+    case EventKind::STOP: return "stop";
+    case EventKind::VOLUME: return "volume";
+    case EventKind::SHOW: return "show";
+    case EventKind::BLACKOUT: return "blackout";
+    case EventKind::RESTART: return "restart";
+    case EventKind::LIGHT_EVICTED: return "light_evicted";
+    case EventKind::SOUND: return "sound";
+    case EventKind::SILENT: return "silent";
+  }
+  return "";
+}
+
+inline constexpr size_t kEventRing = 64;
+//: Longest arg kept, NUL included. A scene id and a volume fit whole; a
+//: 99-byte track name is truncated rather than growing the ring.
+inline constexpr size_t kEventArgMax = 48;
+
+struct Event {
+  long long t_ms{0};             // uptime when the main loop ran it
+  EventKind kind{EventKind::STOP};
+  char arg[kEventArgMax]{};
+};
+
+inline std::mutex g_events_mu;
+inline std::array<Event, kEventRing> g_events{};
+//: Total ever recorded; the live window is the last kEventRing of them.
+inline size_t g_events_written = 0;
+
+inline void record_event(EventKind kind, std::string_view arg, long long now_us) {
+  std::scoped_lock lk(g_events_mu);
+  Event &e = g_events[g_events_written % kEventRing];
+  e.t_ms = now_us / 1000;
+  e.kind = kind;
+  const size_t n = std::min(arg.size(), kEventArgMax - 1);
+  if (n > 0) memcpy(e.arg, arg.data(), n);
+  e.arg[n] = '\0';
+  g_events_written++;
+}
+
+/// Oldest first into `out` (which must hold kEventRing entries); returns how
+/// many are live. A handler copies rather than formats under the lock: the
+/// main loop must never wait on a browser.
+inline size_t copy_events(Event *out) {
+  std::scoped_lock lk(g_events_mu);
+  const size_t held = std::min(g_events_written, kEventRing);
+  const size_t first = g_events_written - held;
+  for (size_t i = 0; i < held; i++) out[i] = g_events[(first + i) % kEventRing];
+  return held;
+}
+
+// ── light frame counters, the main loop's side ──────────────────────────
+inline unsigned g_light_evicted_seen = 0;      // main loop only
+inline long long g_light_evict_event_us = 0;   // main loop only
+
+/// Main loop, once per tick: at most ONE light_evicted event per second,
+/// carrying the number of frames dropped since the last one. Unrated, a
+/// 4 Hz import would push every other event out of a 64-entry ring.
+inline void note_light_evictions(long long now_us) {
+  const unsigned total = g_light_evicted.load();
+  if (total == g_light_evicted_seen) return;
+  if (g_light_evict_event_us != 0 && now_us - g_light_evict_event_us < 1000000) return;
+  record_event(EventKind::LIGHT_EVICTED, std::to_string(total - g_light_evicted_seen),
+               now_us);
+  g_light_evicted_seen = total;
+  g_light_evict_event_us = now_us;
+}
+
+/// Main loop, on the tick an action is executed: the ring line for it, and
+/// the applied counter for a LIGHT (which is far too frequent to record).
+inline void record_action(ActionType type, const std::string &arg, long long now_us) {
+  switch (type) {
+    case ActionType::PLAY: record_event(EventKind::PLAY, arg, now_us); break;
+    case ActionType::SCENE: record_event(EventKind::SCENE, arg, now_us); break;
+    case ActionType::STOP: record_event(EventKind::STOP, arg, now_us); break;
+    case ActionType::VOLUME: record_event(EventKind::VOLUME, arg, now_us); break;
+    case ActionType::SHOW: record_event(EventKind::SHOW, arg, now_us); break;
+    case ActionType::BLACKOUT: record_event(EventKind::BLACKOUT, arg, now_us); break;
+    case ActionType::RESTART: record_event(EventKind::RESTART, arg, now_us); break;
+    case ActionType::LIGHT: g_light_applied.fetch_add(1); break;
+    default: break;   // NONE and PIRCFG are not show events
+  }
 }
 
 // ── state mirrored FROM the main loop, readable by handlers ─────────────
@@ -122,6 +243,7 @@ inline bool mirror_audio(bool playing, bool sounding, long long now_us) {
   if (g_clock_armed && playing && sounding) {
     g_audio_started_us = now_us;
     g_clock_armed = false;
+    record_event(EventKind::SOUND, "", now_us);   // the amplifier has it
   }
   // Armed but the pipeline is not up yet: hold "starting" for the grace
   // rather than reporting an end the sound never had.
@@ -132,6 +254,7 @@ inline bool mirror_audio(bool playing, bool sounding, long long now_us) {
     return false;
   }
   const bool ended = !playing && g_audio_was_playing;
+  if (ended) record_event(EventKind::SILENT, "", now_us);
   if (!playing) g_clock_armed = false;
   g_audio_was_playing = playing;
   g_playing.store(playing);

@@ -38,7 +38,8 @@
         <button id="bench-audio-stop" class="bench-stop">■ Stop speaker</button>
       </article>
     </div>
-    <div class="bench-console"><span class="bench-lamp"></span><div><b id="bench-result">Bench ready</b><small id="bench-detail">Choose one test. The result and castle state will appear here.</small></div></div>`;
+    <div class="bench-console"><span class="bench-lamp"></span><div><b id="bench-result">Bench ready</b><small id="bench-detail">Choose one test. The result and castle state will appear here.</small></div></div>
+    <div class="bench-events"><button id="bench-events-load">Recent castle events</button><pre id="bench-events-log" class="subtle">The castle keeps a short record of what it did. Ask for it when something looked wrong.</pre></div>`;
   grid.parentNode.insertBefore(bench, grid);
 
   let brightness = 50;
@@ -70,6 +71,26 @@
   $('tone-level').oninput=()=>{$('tone-level-value').textContent=`${$('tone-level').value}%`;};
   bench.querySelectorAll('[data-tone]').forEach(button=>button.onclick=()=>command({action:'tone',file:button.dataset.tone,volume:Number($('tone-level').value)},button.querySelector('b').textContent));
   $('bench-audio-stop').onclick=()=>command({action:'stop'},'speaker stop','The speaker is quiet. This does not end the installed playlist — use “Stop castle” in Your castle for that.');
+  // +mm:ss.s against the NEWEST entry, so the last thing the castle did reads
+  // +00:00.0 and everything above it says how long before that it happened.
+  function stamp(t, newest) {
+    const delta = (Number(t) - newest) / 1000, size = Math.abs(delta);
+    const mm = String(Math.floor(size / 60)).padStart(2, '0');
+    return `${delta < 0 ? '-' : '+'}${mm}:${(size % 60).toFixed(1).padStart(4, '0')}`;
+  }
+  function renderEvents(rows) {
+    if (!Array.isArray(rows) || !rows.length) {
+      $('bench-events-log').textContent = 'The castle has not recorded anything since it booted.';
+      return;
+    }
+    const newest = Number(rows.at(-1).t) || 0;
+    $('bench-events-log').textContent = rows.map(row => `${stamp(row.t, newest)}  ${row.e}  ${row.a ?? ''}`.trimEnd()).join('\n');
+  }
+  $('bench-events-load').onclick = async () => {
+    $('bench-events-log').textContent = 'Asking the castle…';
+    try { renderEvents(await window.castleLink.events()); }
+    catch { $('bench-events-log').textContent = 'Recent castle events are not supported by this firmware.'; }
+  };
   function capabilityText(caps) {
     if (caps.track_end) {
       return 'Installed scenes and imported songs run physical lights, the scrubber follows the castle’s own clock, and the queue moves on when a song ends. Pausing and seeking are not supported by the firmware.';
@@ -80,7 +101,8 @@
     return 'Manual tests work now. Imported generated lights need castle firmware 5.51 or newer.';
   }
   // One poll for the whole page: the shared castle link feeds this bench.
-  window.castleLink.subscribe(({connected,state,caps,lightShow,error})=>{
+  window.castleLink.subscribe(({connected,state,caps,lightShow,error,healthLine,framesText})=>{
+    $('live-link-health').textContent=healthLine||'';
     if(!connected){
       $('bench-connection').textContent=error?`Castle unavailable · ${error}`:'Castle unavailable';
       $('bench-connection').classList.remove('online');
@@ -89,6 +111,6 @@
     $('bench-connection').textContent=`Online · firmware ${state.version}${caps.position?' · castle clock':''}`;
     $('bench-connection').classList.add('online');
     capabilityNote.textContent=capabilityText(caps);
-    if(lightShow?.active) {result('Generated lights are live',`${lightShow.frames_sent} of ${lightShow.frames_total} light frames sent with ${lightShow.track}`);}
+    if(lightShow?.active) {result('Generated lights are live',`${framesText} with ${lightShow.track}`);}
   });
 })();

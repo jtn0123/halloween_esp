@@ -32,6 +32,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))  # firmware_source
 
 import castle_emu
+import castle_emu_events
 import castle_emu_http
 import castle_emu_wire as wire
 from firmware_source import (
@@ -39,6 +40,7 @@ from firmware_source import (
     EMU_HTTP,
     FUNCS,
     HARDWARE_ONLY,
+    SD_EVENTS,
     SD_STATE,
     SD_STREAM,
     SD_WEB,
@@ -150,10 +152,77 @@ class TestValidatorConstants(unittest.TestCase):
         assert isinstance(pir, dict)
         self.assertEqual(set(st) | set(pir), keys)
 
+    def test_the_light_counters_are_spelled_in_both_status_replies(self) -> None:
+        """v5.59. The key-set test above already compares the two sides; this
+        names them, so a rename cannot pass by moving in both files."""
+        emu = castle_emu.CastleEmu(port=0)
+        self.addCleanup(emu.server_close)
+        for key in ("light_applied", "light_evicted"):
+            self.assertIn(f'"{key}":%u', FUNCS["h_status"])
+            self.assertIn(f'"{key}":0', emu.status_text())
+        st = emu.status_json()
+        self.assertEqual((st["light_applied"], st["light_evicted"]), (0, 0))
+        # The eviction is counted where the firmware counts it: in the
+        # mailbox, when a LIGHT replaces a LIGHT and nowhere else.
+        self.assertIn("ActionType::LIGHT)\n    g_light_evicted.fetch_add(1)", SD_STATE)
+        emu.queue("LIGHT", "ff0000")
+        emu.queue("LIGHT", "00ff00")
+        self.assertEqual(emu.status_json()["light_evicted"], 1)
+        emu.queue("STOP", "")
+        emu.queue("LIGHT", "0000ff")
+        self.assertEqual(emu.status_json()["light_evicted"], 1)
+
     def test_pending_mailbox_is_one_slot(self) -> None:
         """sd_web_state.h: set_pending overwrites; take_pending empties."""
         self.assertIn("g_pending = {type, std::move(arg)};", SD_STATE)
         self.assertIn('g_pending = {ActionType::NONE, ""};', SD_STATE)
+
+
+class TestEventRing(unittest.TestCase):
+    """/api/events (v5.59): the ring the main loop fills. Its SHAPE is the
+    contract a page codes against, so the two castles are held to the same
+    size, the same kind words and the same JSON template."""
+
+    def test_the_ring_is_the_same_size_on_both_sides(self) -> None:
+        self.assertEqual(
+            int(grab(r"kEventRing = (\d+);", SD_STATE)), castle_emu_events.RING
+        )
+        # The C keeps the NUL; the emulator counts the bytes beside it.
+        self.assertEqual(
+            int(grab(r"kEventArgMax = (\d+);", SD_STATE)),
+            castle_emu_events.ARG_MAX + 1,
+        )
+        # No heap: a fixed std::array, not a vector that grows per event.
+        self.assertIn("std::array<Event, kEventRing> g_events{}", SD_STATE)
+
+    def test_the_kind_words_are_the_firmwares(self) -> None:
+        fw = set(re.findall(r'case EventKind::\w+: return "(\w+)";', SD_STATE))
+        emu = set(castle_emu_events.ACTION_KIND.values()) | {
+            "light_evicted",
+            "sound",
+            "silent",
+        }
+        self.assertEqual(emu, fw)
+
+    def test_the_rate_limit_on_dropped_light_frames_matches(self) -> None:
+        us = int(grab(r"g_light_evict_event_us < (\d+)\)", SD_STATE))
+        self.assertEqual(us // 1000, castle_emu_events.EVICT_GAP_MS)
+
+    def test_the_json_template_is_the_firmwares(self) -> None:
+        self.assertIn(R'{"t":%lld,"e":"', SD_EVENTS)
+        self.assertIn(R'","a":"', SD_EVENTS)
+        ring = castle_emu_events.Events()
+        ring.record("play", 'a"b.mp3', 7)
+        self.assertEqual(ring.json(), R'[{"t":7,"e":"play","a":"a\"b.mp3"}]')
+        self.assertEqual(json.loads(ring.json())[0]["a"], 'a"b.mp3')
+
+    def test_the_handler_never_writes_the_card_or_blocks_the_loop(self) -> None:
+        """A per-event SD write on the main loop stalls audio and pixels —
+        the very glitch the ring exists to explain."""
+        body = FUNCS["h_events"]
+        for forbidden in ("fopen", "log_boot_to_sd", "/sd/"):
+            self.assertNotIn(forbidden, body)
+        self.assertIn("copy_events", body)  # a copy, then format outside the lock
 
 
 class TestStreamServer(unittest.TestCase):

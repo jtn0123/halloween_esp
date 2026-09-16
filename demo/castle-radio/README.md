@@ -47,6 +47,14 @@ scene MP3 files (01 through 10) from the main checkout's `audio/` directory.
   moves on by itself (songs that are not synced are skipped with a toast).
 - Play on the castle is a stop button while something plays; a command that has
   not landed yet is shown as "starting" instead of flipping back to the old song.
+- Firmware 5.59 counts the LIGHT frames it actually drew (`light_applied`) and
+  the ones overwritten before the drain (`light_evicted`). A running generated
+  show is reported as "N landed of M sent" against the counts the castle held
+  when the show started, and names what was overwritten; older firmware reports
+  neither number, which is unknown rather than zero, and keeps the old wording.
+- Your castle carries a link-health line — last round trip, the worst of the
+  last ten, missed polls, castle uptime and firmware — and the bench can ask
+  the castle for its own record of what it did (`/api/events`, 5.59 or newer).
 - The link survives a rough minute: one dropped poll keeps the last good state
   on screen and says "reconnecting", and only three in a row read as offline.
   An `uptime_s` that goes backwards is an OTA or a brownout, not the end of a

@@ -10,6 +10,10 @@
   // B61: one dropped poll is a hiccup, not an offline castle. The last good
   // state stays on screen for three strikes, with a word about reconnecting.
   let failures = 0;
+  // How the link itself is doing: one round trip, the worst of the last ten,
+  // and every poll that never came back, counted for the whole evening.
+  let rtt = null, missed = 0;
+  const rtts = [];
   // B62: a restart of the SAME scene has to clear the advance guard, or a
   // looping song re-queued later never advances again. B65: an uptime that
   // goes backwards is a reboot, not a song.
@@ -32,7 +36,18 @@
   const reconnecting = () => failures > 0 && !!state;
   // A phone with its screen off freezes the frame loop while the castle's
   // audio runs on; the castle page says so rather than claiming lights.
-  const lightNote = () => (lightShow?.active ? ` · ${lightShow.note || 'generated lights live'}` : '');
+  const lightNote = () => (lightShow?.active ? ` · ${lightShow.note || framesText(lightShow) || 'generated lights live'}` : '');
+  // Frames SENT is what this page posted; frames LANDED is what the castle
+  // drew. Firmware older than 5.59 counts neither, so it keeps the old words
+  // rather than being told a confident zero.
+  function framesText(s) {
+    if (!s || typeof s.frames_sent !== 'number') {return '';}
+    const line = typeof s.frames_landed === 'number'
+      ? `${s.frames_landed} landed of ${s.frames_sent} sent`
+      : `${s.frames_sent} of ${s.frames_total} light frames sent`;
+    return s.frames_evicted > 0
+      ? `${line} (${s.frames_evicted} overwritten before the castle drew them)` : line;
+  }
   const isLive = s => isPlaying(s) || isStarting(s);
   const sceneId = t => t.key ? null : t.file.replace(/^\d+_/, '').replace(/\.mp3$/, '');
   function friendly(message) {
@@ -82,6 +97,32 @@
       if ([...$('cooldown').options].some(o => o.value === cooldown)) {$('cooldown').value = cooldown;}
     }
     note.textContent = `Live from the castle · motion ${pir.armed ? 'armed' : 'off'} · triggers “${pir.scene || '—'}” · ${pir.cooldown_s ?? '—'} s cooldown. “While music is playing” stays a preview preference.`;
+  }
+  function timed(ms, ok) {
+    rtt = Math.round(ms);
+    rtts.push(rtt);
+    if (rtts.length > 10) {rtts.shift();}
+    if (!ok) {missed++;}
+  }
+  function upFor(seconds) {
+    if (typeof seconds !== 'number' || seconds < 0) {return null;}
+    const whole = Math.floor(seconds);
+    return `${Math.floor(whole / 3600)}:${String(Math.floor(whole / 60) % 60).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`;
+  }
+  const health = () => ({
+    rtt_ms: rtt, worst_ms: rtts.length ? Math.max(...rtts) : null,
+    failures, missed_total: missed,
+    uptime_s: typeof state?.uptime_s === 'number' ? state.uptime_s : null,
+    uptime: upFor(state?.uptime_s), version: state?.version || null,
+  });
+  // One muted line, in the order a fault is read: how slow, how bad it gets,
+  // what never came back, how long the castle has been up, what it runs.
+  function healthLine() {
+    const h = health();
+    return [`link ${h.rtt_ms === null ? '—' : `${h.rtt_ms} ms`}`,
+      `worst ${h.worst_ms === null ? '—' : `${h.worst_ms} ms`}`,
+      `missed ${h.failures ? `${h.missed_total} (${h.failures} in a row)` : h.missed_total}`,
+      `up ${h.uptime || '—'}`, `firmware ${h.version || '—'}`].join(' · ');
   }
   const castleClockLabel = () => caps.position ? 'castle clock' : 'estimated clock';
   function chipStatus(online, playing) {
@@ -283,9 +324,10 @@
     return 'Castle idle';
   }
   async function poll() {
-    const started = epoch;
+    const started = epoch, sent = performance.now();
     try {
       const next = await api('/radio/device');
+      timed(performance.now() - sent, true);
       // A poll that left before a command and lands after it describes the
       // castle the user just changed; dropping it is what keeps Stop stopped.
       if (started !== epoch) {return;}
@@ -294,13 +336,14 @@
       if (onCastle()) {follow();}
       $('live-state').textContent = liveStateText();
     } catch (e) {
+      timed(performance.now() - sent, false);
       error = e.message;
       // Three strikes: a single dropped poll must not blank the transport or
       // zero the elapsed clock for a second.
       if (++failures >= 3) { state = null; lightShow = null; clock = null; }
       $('live-state').textContent = failures >= 3 ? e.message : `${e.message} · reconnecting…`;
     }
-    finally { paint(); for (const fn of listeners) {fn({connected: !!state, state, data, caps, lightShow, error});} }
+    finally { paint(); publish(); }
   }
   async function command(body) {
     if (busy) {return false;}
@@ -319,9 +362,14 @@
     timer = setTimeout(async () => { await refresh(); schedule(); }, document.hidden ? 4000 : 1000);
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) {refresh();} schedule(); });
+  const snapshot = () => ({connected: !!state, state, data, caps, lightShow, error, health: health(), healthLine: healthLine(), framesText: framesText(lightShow)});
+  function publish() { const s = snapshot(); for (const fn of listeners) {fn(s);} }
   window.castleLink = {
-    subscribe(fn) { listeners.add(fn); if (data || error) {fn({connected: !!state, state, data, caps, lightShow, error});} return () => listeners.delete(fn); },
-    refresh, command, state: () => state, capabilities: () => caps, lastError: () => lastError
+    subscribe(fn) { listeners.add(fn); if (data || error) {fn(snapshot());} return () => listeners.delete(fn); },
+    refresh, command, state: () => state, capabilities: () => caps, lastError: () => lastError,
+    health, healthLine, framesText,
+    // The firmware's own record of what it did; 404 on anything older.
+    events: () => api('/radio/device/events'),
   };
   window.castlePlayer = {
     active: onCastle,
