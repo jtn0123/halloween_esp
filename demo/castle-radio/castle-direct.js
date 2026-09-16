@@ -100,13 +100,15 @@
     let state = await awaitTrack(filename, token, first);
     if (!state) {return null;}
     if (!('position_ms' in state)) {return started;}
-    for (let tries = 10; tries > 0 && !state.playing; tries--) {
+    // Firmware 5.55 holds position_ms at 0 until the speaker itself runs.
+    const sounding = s => !!s.playing && (s.position_ms || 0) > 0;
+    for (let tries = 10; tries > 0 && !sounding(state); tries--) {
       await sleep(200);
       if (token !== show.token) {return null;}
       state = await status(true);
       if (state.track !== filename) {return null;}
     }
-    return state.playing ? now() - (state.position_ms || 0) / 1000 : started;
+    return sounding(state) ? now() - state.position_ms / 1000 : started;
   }
   async function runShow(filename, frames, duration) {
     const token = ++show.token;

@@ -238,12 +238,18 @@ def _await_track(filename, stop_event, first):
     return state if state.get("track") == filename else None
 
 
+def _sounding(state):
+    """Firmware 5.55 holds position_ms at 0 until the speaker itself runs;
+    a moving clock is the first sound, not the pipeline's start."""
+    return bool(state.get("playing")) and int(state.get("position_ms") or 0) > 0
+
+
 def _await_playing(filename, state, stop_event):
-    """Poll until the castle is decoding `filename` (about two seconds at
+    """Poll until the castle is sounding `filename` (about two seconds at
     most); None once it stopped or moved on. The status returned may still
     say not playing when the window ran out."""
     for _ in range(10):
-        if state.get("playing"):
+        if _sounding(state):
             break
         state = _fresh_status(stop_event)
         if state is None or state.get("track") != filename:
@@ -260,12 +266,12 @@ def _align(filename, started, stop_event, first=False):
         return None
     if "position_ms" not in state:
         return started
-    if not state.get("playing"):
-        # Queued, not decoding yet: hold the first frame for the real start.
+    if not _sounding(state):
+        # Queued or buffering, not sounding yet: hold the first frame.
         state = _await_playing(filename, state, stop_event)
         if state is None:
             return None
-        if not state.get("playing"):
+        if not _sounding(state):
             return started
     return time.monotonic() - float(state.get("position_ms") or 0) / 1000
 

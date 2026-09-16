@@ -308,6 +308,26 @@ class TestEmitScene(unittest.TestCase):
         lines = ge.emit_scene(scene(loop=True), ZONES, 1, {})
         self.assertIn("      - script.execute: scene_probe", lines)
 
+    def test_cues_wait_for_the_speaker_before_the_first_delay(self) -> None:
+        """5.55: the pipeline reports PLAYING half a second before the first
+        sample sounds. The statement after `sfx` must hold the timeline
+        until the speaker's own task runs, bounded so a dead speaker still
+        gets the old behaviour, and the cue deltas after it are untouched."""
+        s = scene(cues=[{"t": 80, "op": "set", "zone": "door", "effect": "wisp"}])
+        then = parse_script(ge.emit_scene(s, ZONES, 1, {}))["then"]
+        at = next(
+            i
+            for i, st in enumerate(then)
+            if isinstance(st.get("script.execute"), dict)
+            and st["script.execute"].get("id") == "sfx"
+        )
+        wait = then[at + 1]["wait_until"]
+        self.assertEqual(
+            wait["condition"]["lambda"], "return id(castle_speaker)->is_running();"
+        )
+        self.assertEqual(wait["timeout"], f"{ge.SOUND_WAIT_MS}ms")
+        self.assertEqual(then[at + 2], {"delay": "80ms"})
+
     def test_non_looping_scene_ends(self) -> None:
         """Ambient scenes loop; a triggered scare that looped would never stop."""
         lines = ge.emit_scene(scene(), ZONES, 1, {})

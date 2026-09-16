@@ -35,6 +35,7 @@ from scene_schema import load_markers, load_show
 from scene_schema import validate as validate_scene
 
 ROOT = Path(__file__).resolve().parent.parent
+SOUND_WAIT_MS = 1500  # a scene holds its first cue this long for the speaker
 # Source and outputs both follow build_paths.py: a sandboxed studio (its own
 # CASTLE_SCENES) generates under its own build root, never the repo's.
 SRC = bp.SCENES
@@ -202,26 +203,25 @@ def emit_scene(
 
     sets = " ".join(zone_sets(i, z) for i, z in enumerate(zone_ids))
     a(f"      - lambda: '{sets}'")
-    # The scene's own level — unless the desk has hushed the porch (sound
-    # routed to the Mac): then the amp stays at 0 however many scenes start.
-    # A lambda rather than `media_player.volume_set: !lambda` so the file
-    # stays plain YAML for every tool that loads it with safe_load.
+    # The scene's own level, unless the desk has hushed the porch (amp at 0).
+    # A lambda, not `volume_set: !lambda`, so the file stays safe_load YAML.
     a(LAMBDA)
     a("          auto call = id(castle_media)->make_call();")
     a(
         f"          call.set_volume(id(speaker_hush) ? 0.0f : {float(scene.get('volume', 0.8))}f);"
     )
     a("          call.perform();")
-    # Audio goes through the generated `sfx` dispatch script rather than a
-    # direct play action. That indirection outlived the second build it was
-    # written for — until 2026-09-01 there was also an all-in-flash variant
-    # that played an embedded copy — but it still earns its keep: `sfx` is
-    # where "no card in the slot" becomes an audible chirp instead of
-    # silence, and the cue script stays ignorant of where bytes come from
-    # (see audio_sd.yaml below).
+    # Audio goes through the generated `sfx` dispatch script (audio_sd.yaml):
+    # that is where "no card in the slot" becomes an audible chirp, and the
+    # cue script stays ignorant of where bytes come from.
     a("      - script.execute:")
     a("          id: sfx")
     a(f"          track: '{idx:02d}_{sid}'")
+    # Cues start when the SOUND does (~0.5 s after play, measured 2026-09-15).
+    a("      - wait_until:")
+    a("          condition:")
+    a("            lambda: 'return id(castle_speaker)->is_running();'")
+    a(f"          timeout: {SOUND_WAIT_MS}ms")
 
     prev = 0
     pulses = pulse_cues(scene, markers)
