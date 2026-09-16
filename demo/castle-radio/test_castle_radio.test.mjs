@@ -407,12 +407,12 @@ test('B66: a scene whose lights outlast its audio is not over when it falls quie
   await ctx.window.castlePlayer.play();
   await poll(ctx, playingVigil(2));
   calls.next = 0;
-  for (let i = 0; i < 3; i++) {await poll(ctx, idle());}   // the audio ends early
+  for (let i = 0; i < 3; i++) { ctx.now += 1000; await poll(ctx, idle()); }  // the audio ends early
   assert.equal(calls.next, 0, 'the light script still has 58 s to run');
   // Past the scene's authored duration, the queue does move on.
   ctx.now += 61000;
   await poll(ctx, playingVigil(61));
-  for (let i = 0; i < 3; i++) {await poll(ctx, idle());}
+  for (let i = 0; i < 3; i++) { ctx.now += 1000; await poll(ctx, idle()); }
   assert.equal(calls.next, 1);
 });
 

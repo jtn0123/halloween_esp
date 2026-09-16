@@ -89,6 +89,14 @@ async function followerRun(seed) {
     if (h.failures >= 3) {assert.equal(link.state(), null, `${where}: three strikes must clear the state`);}
     assert.ok(calls.next - nexts <= 1, `${where}: the queue moved ${calls.next - nexts} times on one poll`);
     nexts = calls.next;
+    // The chip and the health line are read on every poll the castle
+    // answered, however short of a field that answer was: a missing version
+    // is "—", never "undefined" or "[object Object]".
+    if (!ctx.fail) {
+      for (const id of ['castle-chip', 'live-health']) {
+        assert.doesNotMatch($(id).textContent, BAD_WORDS, `${where}: ${id} says "${$(id).textContent}"`);
+      }
+    }
     if (!ctx.fail && !s.mangled) {
       assert.equal(h.failures, 0, `${where}: an honest answer must reset the strikes`);
       assert.notEqual(link.state(), null, where);
@@ -168,7 +176,11 @@ async function showRun(seed) {
   assert.equal(sent.at(-1).c, 'off', `${where}: the last frame was ${sent.at(-1).c}`);
   const report = JSON.parse(await (await ctx.window.fetch('/radio/device')).text()).light_show;
   assert.equal(report.active, false, where);
-  assert.equal(report.frames_sent, onCastle ? frames.length : 0, `${where}: frames_sent`);
+  // Sent is what this page POSTed and coalesced is what the next frame
+  // overtook inside one drain; together they are the whole frame list.
+  assert.equal(report.frames_sent, onCastle ? colours.length : 0, `${where}: frames_sent`);
+  assert.equal(report.frames_sent + (onCastle ? report.frames_coalesced : frames.length), frames.length,
+    `${where}: ${report.frames_sent} sent + ${report.frames_coalesced} coalesced is not ${frames.length}`);
   assert.equal(report.frames_total, frames.length, where);
   if ('light_applied' in extra) {assert.equal(typeof report.frames_landed, 'number', where);}
   else {assert.equal(report.frames_landed, null, `${where}: old firmware must read as unknown, not zero`);}

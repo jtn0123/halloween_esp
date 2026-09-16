@@ -39,7 +39,8 @@ export function page() {
 /* device-link.js in a context whose castle answers with `ctx.payload`. */
 export function linkContext(options = {}) {
   const {$} = page();
-  const calls = {fetch: [], commands: [], next: 0, toasts: [], load: [], offers: [], retries: 0};
+  const calls = {fetch: [], commands: [], next: 0, toasts: [], load: [], offers: [], retries: 0,
+    timers: [], screen: []};
   const scene = {id: 'citizens', dur: 193360, loop: true, ...(options.scene || {})};
   const tracks = options.tracks || [
     {id: 0, file: '09_citizens.mp3', kind: 'song', duration: 193, title: 'Citizens'},
@@ -67,7 +68,10 @@ export function linkContext(options = {}) {
     // reads it, and never by the same amount twice: a frozen or evenly
     // stepped clock hides exactly the key B01 is about.
     performance: {now: () => { ctx.step += 0.11; ctx.now += ctx.step; return ctx.now; }},
-    setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0,
+    AbortController,
+    // Nothing fires on its own: a test that wants the 8 s abort or the next
+    // scheduled poll reaches into calls.timers and fires it by hand.
+    setTimeout: (fn, ms) => calls.timers.push({fn, ms}), clearTimeout: () => {}, setInterval: () => 0,
     document: {hidden: false, addEventListener() {}},
     async fetch(url, init) {
       calls.fetch.push(url);
@@ -79,6 +83,9 @@ export function linkContext(options = {}) {
   };
   ctx.$ = $;
   ctx.window = {
+    // Who is holding the screen awake, in the order it was asked for.
+    castleDirect: {forget() {}, holdScreen: who => calls.screen.push(`hold:${who}`),
+      releaseScreen: who => calls.screen.push(`free:${who}`)},
     remoteLibrary: {
       syncing: () => !!options.syncing,
       item: () => ctx.item,
@@ -91,6 +98,7 @@ export function linkContext(options = {}) {
   };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
+  vm.runInContext(read('device-words.js'), ctx, {filename: 'device-words.js'});
   vm.runInContext(read('device-link.js'), ctx, {filename: 'device-link.js'});
   return {ctx, calls, $, scene};
 }
@@ -149,6 +157,8 @@ export function directContext(answers, library) {
       return delays.length;
     },
     clearTimeout() {},
+    // What the browser would give a wake-lock request, and a record of it.
+    locks: {taken: 0, released: 0},
     location: {href: 'http://castle.local/', origin: 'http://castle.local', host: 'castle.local'},
     document: {
       hidden: false,
@@ -158,6 +168,10 @@ export function directContext(answers, library) {
     },
   };
   ctx.window = ctx;
+  ctx.navigator = {wakeLock: {request: async () => {
+    ctx.locks.taken++;
+    return {release: async () => { ctx.locks.released++; }, addEventListener() {}};
+  }}};
   ctx.fetch = async path => {
     asked.push({path, at: ctx.clock});
     live.push(path);
@@ -206,13 +220,14 @@ export async function landedShow(before, after) {
 
 /* device-tools.js in a context whose castle link is a stub: `answer` is what
    /api/events gives back, and `push` is one update from the shared poll. */
-export function toolsContext(answer) {
+export function toolsContext(answer, link = {}) {
   const {$} = page();
   const ctx = {console, JSON, Number, String, Array, Math, Object, Promise, $, toast() {}};
   let push = () => {};
   ctx.document = {createElement: () => element('bench')};
   ctx.window = {castleLink: {
-    subscribe(fn) { push = fn; }, command: async () => true, lastError: () => '', events: answer,
+    BUSY: 'busy',
+    subscribe(fn) { push = fn; }, command: async () => true, lastError: () => '', events: answer, ...link,
   }};
   ctx.globalThis = ctx;
   vm.createContext(ctx);
