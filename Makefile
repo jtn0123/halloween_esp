@@ -207,8 +207,8 @@ SLOW_SUITES := chaos|relay|fuzz|_rust|_rs|castle_core|studio
 # Castle Radio: the Python suite next to the sources plus the browser
 # sources run under node:test (needs node 22, no npm install).
 test-radio:
-	@cd demo/castle-radio && $(PY) -m unittest discover -s . -p 'test_*.py' -q \
-		&& node --test test_castle_radio.test.mjs
+	@$(PY) -m unittest discover -s demo/castle-radio -t demo/castle-radio -p 'test_*.py' -q \
+		&& node --test demo/castle-radio/test_castle_radio.test.mjs
 
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \
