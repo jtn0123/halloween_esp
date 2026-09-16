@@ -22,6 +22,8 @@ Fidelity notes, each mirrored from sd_web.h on purpose:
   - The mailbox is ONE slot: two commands inside the same 200 ms tick and
     only the later one runs (set_pending overwrites). A colour-picker drag
     lands its last colour; a stop-then-scene inside a tick loses the stop.
+    Two exceptions, both the firmware's: a LIGHT never evicts a command of
+    another kind, and RESTART waits in a latch of its own.
   - /api/volume takes digits only, 0..100 — atoi("abc")-is-0 was dogfood
     ISSUE-007 — and clamps to MAX_VOLUME_PCT like castle_sd.yaml does.
   - /api/scene 404s an unknown id — {"queued":true} for a typo was 008.
@@ -57,6 +59,11 @@ APPLY_DELAY_S = 0.2
 MAX_VOLUME_PCT = 100
 #: Rough playback clock: 96 kbps MP3 is ~12 kB of file per second.
 BYTES_PER_S = 12000
+#: Firmware 5.55's audio clock is sound-true: the decoder and the I2S ring
+#: take a moment after PLAY, and position_ms stays 0 until the speaker
+#: itself runs. Lights aligned to a clock that started at the command fire
+#: that much too early on the porch, so the emulator waits the same way.
+SPEAKER_START_S = 0.5
 
 #: Used only when no scenes.yaml can be found — the firmware seeds its list
 #: from the generated show, so the emulator reads the same source of truth
@@ -185,6 +192,8 @@ class CastleEmu(ThreadingHTTPServer):
         self.serial = threading.Lock() if serial else None
         #: set_pending's single slot: (action, arg) or None.
         self._pending: tuple[str, str] | None = None
+        #: RESTART's own latch, drained ahead of the slot (sd_web_state.h).
+        self._restart_pending = False
         self.applied: list[tuple[str, str]] = []  # what the tick ran, for tests
         threading.Thread(
             target=self._ticker, daemon=True, name="castle-emu-tick"
@@ -202,15 +211,34 @@ class CastleEmu(ThreadingHTTPServer):
     # -- the pending-action mailbox ---------------------------------------
 
     def queue(self, action: str, arg: str) -> None:
-        """set_pending(): the newest command replaces whatever waited."""
+        """set_pending(): the newest command replaces whatever waited, with
+        the two exceptions firmware/sd_web_state.h makes. RESTART has a latch
+        of its own, so a flashed image always reboots; and a LIGHT (streamed
+        at ~4 Hz by a synced import) never evicts a command of another kind."""
         with self.state.lock:
+            if action == "RESTART":
+                self._restart_pending = True
+                return
+            if (
+                action == "LIGHT"
+                and self._pending is not None
+                and self._pending[0] != "LIGHT"
+            ):
+                return
             self._pending = (action, arg)
 
     def _ticker(self) -> None:
         while True:
             time.sleep(APPLY_DELAY_S)
             with self.state.lock:
-                taken, self._pending = self._pending, None
+                # take_pending(): the restart latch drains first and leaves
+                # the slot alone, so a command queued beside it still lands.
+                taken: tuple[str, str] | None
+                if self._restart_pending:
+                    self._restart_pending = False
+                    taken = ("RESTART", "")
+                else:
+                    taken, self._pending = self._pending, None
                 st = self.state
                 if st.track and time.monotonic() > st.track_ends:
                     st.track = ""  # the song ended on its own
@@ -247,7 +275,13 @@ class CastleEmu(ThreadingHTTPServer):
                     st.track_ends = st.track_started + max(
                         1, audio.stat().st_size // BYTES_PER_S
                     )
-            elif action in ("STOP", "BLACKOUT"):
+            elif action == "STOP":
+                # Firmware STOP is `scene_stop` only: the evening playlist
+                # keeps running and starts the next scene after the gap.
+                # Ending the night is SHOW "0" (/api/show/stop), below.
+                st.scene, st.track = "", ""
+            elif action == "BLACKOUT":
+                # #25, the panic switch: playlist, scene and audio all off.
                 st.scene, st.track, st.show_on = "", "", False
             elif action == "SHOW":
                 st.show_on = arg == "1"
@@ -290,8 +324,18 @@ class CastleEmu(ThreadingHTTPServer):
                 "show_on": st.show_on,
                 # v5.52: the pipeline's own state and the main loop's clock.
                 "playing": bool(st.track),
+                # Sound-true (5.55): 0 until the speaker has started, then
+                # counted from that moment, not from the command.
                 "position_ms": (
-                    int((time.monotonic() - st.track_started) * 1000) if st.track else 0
+                    max(
+                        0,
+                        int(
+                            (time.monotonic() - st.track_started - SPEAKER_START_S)
+                            * 1000
+                        ),
+                    )
+                    if st.track
+                    else 0
                 ),
                 "pir": {
                     "armed": st.pir["armed"],

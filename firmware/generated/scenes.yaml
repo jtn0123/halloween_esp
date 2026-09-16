@@ -1780,39 +1780,39 @@ script:
     mode: restart
     then:
       - script.execute: {id: run_scene, scene: vigil}
-      - delay: 30000ms
+      - delay: 31500ms
       - script.execute: scene_stop
       - delay: 12000ms
       - script.execute: {id: run_scene, scene: storm}
-      - delay: 6500ms
+      - delay: 8000ms
       - script.execute: scene_stop
       - delay: 12000ms
       - script.execute: {id: run_scene, scene: seance}
-      - delay: 35000ms
+      - delay: 36500ms
       - script.execute: scene_stop
       - delay: 12000ms
       - script.execute: {id: run_scene, scene: ballroom}
-      - delay: 15000ms
+      - delay: 16500ms
       - script.execute: scene_stop
       - delay: 12000ms
       - script.execute: {id: run_scene, scene: descent}
-      - delay: 27000ms
+      - delay: 28500ms
       - script.execute: scene_stop
       - delay: 12000ms
       - script.execute: {id: run_scene, scene: visitation}
-      - delay: 11000ms
+      - delay: 12500ms
       - script.execute: scene_stop
       - delay: 12000ms
       - script.execute: {id: run_scene, scene: crypt}
-      - delay: 24000ms
+      - delay: 25500ms
       - script.execute: scene_stop
       - delay: 12000ms
       - script.execute: {id: run_scene, scene: the_citizens_of_halloween___this}
-      - delay: 193360ms
+      - delay: 194860ms
       - script.execute: scene_stop
       - delay: 12000ms
       - script.execute: {id: run_scene, scene: the_ballad_of_the_witches__road_}
-      - delay: 200540ms
+      - delay: 202040ms
       - script.execute: scene_stop
       - delay: 12000ms
       - script.execute: show_playlist

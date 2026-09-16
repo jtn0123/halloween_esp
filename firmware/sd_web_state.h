@@ -29,13 +29,30 @@ struct Action {
 };
 inline std::mutex g_mu;
 inline Action g_pending{};
+// A flashed image MUST reboot. The one slot can be replaced by whatever the
+// next request queues, so RESTART keeps a latch of its own and is drained
+// ahead of the slot — a web OTA that reported {"flashed":true} can no longer
+// be talked out of rebooting by a status poll or a light frame.
+inline std::atomic g_restart_pending{false};
 
 inline void set_pending(ActionType type, std::string arg) {
+  if (type == ActionType::RESTART) {
+    g_restart_pending.store(true);
+    return;
+  }
   std::scoped_lock lk(g_mu);
+  // A synced import streams light frames at ~4 Hz, faster than the 200 ms
+  // drain: a LIGHT must never evict the stop, volume or play a hand pressed
+  // in the same tick. LIGHT over LIGHT still wins (a colour-picker drag
+  // lands its last colour); everything else takes the slot as before.
+  if (type == ActionType::LIGHT && g_pending.type != ActionType::NONE &&
+      g_pending.type != ActionType::LIGHT)
+    return;
   g_pending = {type, std::move(arg)};
 }
 /// Called by the YAML interval on the main loop. Returns NONE most of the time.
 inline Action take_pending() {
+  if (g_restart_pending.exchange(false)) return {ActionType::RESTART, ""};
   std::scoped_lock lk(g_mu);
   Action a = g_pending;
   g_pending = {ActionType::NONE, ""};
@@ -86,6 +103,12 @@ inline std::atomic g_position_ms{0LL};
 inline long long g_audio_started_us = 0;   // main loop only
 inline bool g_audio_was_playing = false;   // main loop only
 inline bool g_clock_armed = false;         // main loop only: sound not yet heard
+// How long an ARMED clock is allowed to report "starting" before a silent
+// pipeline counts as a track that ended. The same grace the scene scripts
+// give the speaker (gen_esphome's SOUND_WAIT_MS): a decoder that takes its
+// time must not read as "finished" on the very next 200 ms tick, because a
+// browser following the castle would clear the track and skip the song.
+inline constexpr long long kSoundWaitUs = 1500000;
 
 /// One call per mirror tick: `playing` is the pipeline's state, `sounding`
 /// the speaker's. Returns true on the tick playback ENDED on its own
@@ -100,7 +123,16 @@ inline bool mirror_audio(bool playing, bool sounding, long long now_us) {
     g_audio_started_us = now_us;
     g_clock_armed = false;
   }
+  // Armed but the pipeline is not up yet: hold "starting" for the grace
+  // rather than reporting an end the sound never had.
+  if (!playing && g_clock_armed && g_audio_was_playing &&
+      now_us - g_audio_started_us < kSoundWaitUs) {
+    g_playing.store(true);
+    g_position_ms.store(0);
+    return false;
+  }
   const bool ended = !playing && g_audio_was_playing;
+  if (!playing) g_clock_armed = false;
   g_audio_was_playing = playing;
   g_playing.store(playing);
   g_position_ms.store(playing && !g_clock_armed ? (now_us - g_audio_started_us) / 1000 : 0);
@@ -124,6 +156,17 @@ inline void restart_audio_clock(long long now_us) {
 // dead) and "@<1..100>" behind for brightness. Shape only; lights_override
 // knows the real zone ids. The emulator mirrors this byte for byte
 // (castle_emu_http.light_spec_ok).
+/// True only for the texture hand-back command itself — "show", "<zone>:show"
+/// or "show@50". A substring test read a zone named "show" or "shower"
+/// ("show:off", "shower:off") as the hand-back and left the scene script
+/// firing underneath a bench colour.
+inline bool light_spec_is_show(const std::string &c) {
+  const auto colon = c.find(':');
+  std::string spec = colon == std::string::npos ? c : c.substr(colon + 1);
+  if (const auto at = spec.find('@'); at != std::string::npos) spec.resize(at);
+  return spec == "show";
+}
+
 inline bool light_spec_ok(const std::string &c) {
   const auto colon = c.find(':');
   const std::string zone = colon == std::string::npos ? "" : c.substr(0, colon);

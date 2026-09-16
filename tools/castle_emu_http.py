@@ -309,7 +309,9 @@ class Handler(BaseHTTPRequestHandler):
         if not s:
             return self._err(400, "need ?s=<scene>")
         ids = [i.encode() for i in self.server.scenes]
-        if ids and s not in ids:
+        if not ids:
+            return self._err(503, "scene list not ready")
+        if s not in ids:
             return self._err(404, "unknown scene")
         self.server.queue("SCENE", wire.fs_name(s))
         self._json({"queued": True})

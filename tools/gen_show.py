@@ -10,11 +10,19 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+#: A scene script holds its first cue this long waiting for the speaker task
+#: (gen_esphome.py re-exports it for the cue emitter). It lives here because
+#: the playlist has to bill the same wait: `run_scene` spends up to this long
+#: before its own `duration_ms` timeline starts.
+SOUND_WAIT_MS = 1500
+
 
 def emit_show_playlist(doc: Mapping[str, Any]) -> list[str]:
     """#19: the whole evening as one generated script.
 
-    Each scene plays for its full length, then the castle goes quiet for the
+    Each scene plays for its full length — SOUND_WAIT_MS of speaker wait
+    plus the authored `duration_ms`, because `run_scene` does not start its
+    timeline until the speaker runs — then the castle goes quiet for the
     gap (scene_stop — a dark porch between songs reads as anticipation, not
     breakage), then the next starts. The script re-executes itself at the
     end, so one button press covers the night; the web SHOW action stops it.
@@ -36,7 +44,11 @@ def emit_show_playlist(doc: Mapping[str, Any]) -> list[str]:
         if sid not in by_id:
             raise SystemExit(f"show.order names unknown scene {sid!r}")
         out.append(f"      - script.execute: {{id: run_scene, scene: {sid}}}")
-        out.append(f"      - delay: {int(by_id[sid]['duration_ms'])}ms")
+        # The wait is bounded (a dead speaker times out), so the playlist
+        # can be at most SOUND_WAIT_MS long per scene, never short: stopping
+        # early clipped the authored tail of every scene.
+        hold = SOUND_WAIT_MS + int(by_id[sid]["duration_ms"])
+        out.append(f"      - delay: {hold}ms")
         out.append("      - script.execute: scene_stop")
         out.append(f"      - delay: {gap}ms")
     out.append("      - script.execute: show_playlist")

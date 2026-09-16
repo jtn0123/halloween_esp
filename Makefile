@@ -22,7 +22,7 @@ YAML_FS3 := firmware/castle_feather_s3.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
@@ -200,6 +200,12 @@ test: pycheck
 # (`make rust-test` / `make rust-lint`), not gone. `make test` before handing
 # work back; this while you are still typing.
 SLOW_SUITES := chaos|relay|fuzz|_rust|_rs|castle_core|studio
+# Castle Radio: the Python suite next to the sources plus the browser
+# sources run under node:test (needs node 22, no npm install).
+test-radio:
+	@cd demo/castle-radio && $(PY) -m unittest discover -s . -p 'test_*.py' -q \
+		&& node --test test_castle_radio.test.mjs
+
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \
 		| sed 's/\.py$$//; s/^/tests./')

@@ -76,6 +76,33 @@ int main() {
   CHECK(!mirror_audio(true, false, 9000 * MS));
   CHECK(pos() == 0);
 
+  // A command whose sound is slow: the YAML mirrors BEFORE it drains the
+  // mailbox, so the tick after a play asks about a pipeline that has not
+  // started yet. An armed clock must read "starting", not "ended" — a
+  // browser following the castle would clear the track and skip the song.
+  restart_audio_clock(10000 * MS);
+  CHECK(!mirror_audio(false, false, 10200 * MS));
+  CHECK(playing() && pos() == 0);
+  CHECK(!mirror_audio(false, false, 11000 * MS));
+  CHECK(playing() && pos() == 0);
+  // Sound arrives late but inside the grace: the clock starts there.
+  CHECK(!mirror_audio(true, true, 11200 * MS));
+  CHECK(pos() == 0);
+  CHECK(!mirror_audio(true, true, 11400 * MS));
+  CHECK(pos() == 200);
+  CHECK(mirror_audio(false, false, 11600 * MS));
+  CHECK(!playing());
+
+  // A command whose sound never comes ends ONCE, after the grace, and the
+  // board is idle from then on — not an "ended" every 200 ms tick.
+  restart_audio_clock(20000 * MS);
+  CHECK(!mirror_audio(false, false, 21400 * MS));
+  CHECK(playing());
+  CHECK(mirror_audio(false, false, 21600 * MS));
+  CHECK(!playing() && pos() == 0);
+  CHECK(!mirror_audio(false, false, 21800 * MS));
+  CHECK(!mirror_audio(false, false, 30000 * MS));
+
   if (failures == 0) std::printf("audio clock OK\n");
   return failures == 0 ? 0 : 1;
 }

@@ -61,7 +61,8 @@ it: 68 KB gzipped, about 1.5 s to first paint over the porch Wi-Fi.
 `device_site.py` builds it; `castle-direct.js`, inlined first, answers every
 `/radio/*` route from the firmware's own `/api` (status settling, the command
 builders, the SD inventory and the generated-light streamer are ports of
-`device_bridge.py` and `remote_library.py`). Scene audio streams from
+`device_bridge.py` with its light-show runner
+`light_show.py`, and `remote_library.py`). Scene audio streams from
 `/sd/scenes/`; synced imports from the card root, with their lights reduced
 to mailbox-rate frames at build time and streamed by the phone's browser on
 the castle's own clock. Importing, separation, waveforms and syncing stay on

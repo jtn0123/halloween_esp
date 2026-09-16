@@ -66,16 +66,14 @@ DURATIONS = (
 # (file, computer text, castle text) — each must occur exactly once.
 REWRITES: tuple[tuple[str, str, str], ...] = (
     ("style.css", FONT_IMPORT, ""),
-    # No audio element source while the castle is the output: Chromium asks
-    # for the file even at preload=none, and one such stream can hold the
-    # castle's HTTP task for seconds. The browser output loads it on switch.
+    # load() itself refuses to give the audio element a source while the
+    # castle is the output (Chromium asks for the file even at preload=none,
+    # and one such stream holds the castle's single HTTP task for seconds),
+    # so all this build has to move is where the browser branch reads from.
     (
         APP,
         "audio.src=tracks[id].url||`media/${tracks[id].file}`;audio.load();",
-        (
-            "if($('output-target').value==='castle'){audio.removeAttribute('src');audio.load();}"
-            "else{audio.src=tracks[id].url||`/sd/scenes/${tracks[id].file}`;audio.load();}"
-        ),
+        "audio.src=tracks[id].url||`/sd/scenes/${tracks[id].file}`;audio.load();",
     ),
     (APP, PROBE, DURATIONS),
     (PREVIEW, "`media/${t.file}`", "`/sd/scenes/${t.file}`"),
