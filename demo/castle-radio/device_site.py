@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the one-file Castle Radio page the castle serves from its SD card.
 
-    demo/castle-radio/device_site.py [out.html]     default: dist/index.html
+    demo/castle-radio/device_site.py      writes dist/index.html and index.html.gz
 
 The computer build is a directory of files behind server.py. The castle has
 one HTTP task, four sockets, no Python and a strict CSP, so the device gets
@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import gzip
 import json
-import sys
 from pathlib import Path
 
 import device_bridge
@@ -33,13 +32,18 @@ import remote_library
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / ".radio-data"
+INDEX = "index.html"
+APP = "app.js"
+IMPORTS = "imports.js"
+PREVIEW = "preview.js"
+LINK = "device-link.js"
 SCRIPTS = (
     "visuals.js",
-    "app.js",
-    "imports.js",
-    "preview.js",
+    APP,
+    IMPORTS,
+    PREVIEW,
     "rig-options.js",
-    "device-link.js",
+    LINK,
     "remote-library.js",
     "device-tools.js",
 )
@@ -66,23 +70,23 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
     # for the file even at preload=none, and one such stream can hold the
     # castle's HTTP task for seconds. The browser output loads it on switch.
     (
-        "app.js",
+        APP,
         "audio.src=tracks[id].url||`media/${tracks[id].file}`;audio.load();",
         (
             "if($('output-target').value==='castle'){audio.removeAttribute('src');audio.load();}"
             "else{audio.src=tracks[id].url||`/sd/scenes/${tracks[id].file}`;audio.load();}"
         ),
     ),
-    ("app.js", PROBE, DURATIONS),
-    ("preview.js", "`media/${t.file}`", "`/sd/scenes/${t.file}`"),
+    (APP, PROBE, DURATIONS),
+    (PREVIEW, "`media/${t.file}`", "`/sd/scenes/${t.file}`"),
     (
-        "preview.js",
+        PREVIEW,
         "'Waveform unavailable. Reopen this song to retry.'",
         "'Waveforms are analyzed in the control room on your computer.'",
     ),
-    ("device-link.js", "'Castle unreachable at 10.27.27.81'", "'Castle unreachable'"),
+    (LINK, "'Castle unreachable at 10.27.27.81'", "'Castle unreachable'"),
     (
-        "device-link.js",
+        LINK,
         "'Control room server is not running'",
         "'Castle not answering'",
     ),
@@ -92,17 +96,17 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
         "'Sending command to the castle'",
     ),
     (
-        "imports.js",
+        IMPORTS,
         "'Import service ready · files stay in this demo'",
         "'Songs synced to the castle appear below · importing runs in the control room on your computer'",
     ),
     (
-        "imports.js",
+        IMPORTS,
         "'Import service unavailable. Start server.py to import songs.'",
         "'Castle library unavailable · retrying'",
     ),
     (
-        "index.html",
+        INDEX,
         '<option value="computer">This computer</option>',
         '<option value="computer">This browser</option>',
     ),
@@ -111,7 +115,7 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
     # first song is 2.3 MB and eight seconds of "Castle offline" on every
     # page open. Nothing is fetched until Play in the browser is pressed.
     (
-        "index.html",
+        INDEX,
         '<audio id="audio" preload="metadata">',
         '<audio id="audio" preload="none">',
     ),
@@ -183,11 +187,9 @@ def scene_rows(root: Path) -> list[dict]:
 
 
 def build(root: Path = HERE, data: Path = DATA) -> bytes:
-    page = rewritten("index.html", (root / "index.html").read_text())
+    page = rewritten(INDEX, (root / INDEX).read_text())
     if page.count(STYLE_TAGS) != 1 or page.count(SCRIPT_TAGS) != 1:
-        raise SystemExit(
-            "index.html no longer links its styles and scripts as expected"
-        )
+        raise SystemExit(f"{INDEX} no longer links its styles and scripts as expected")
     styles = "".join(
         f"<style>{rewritten(name, (root / name).read_text())}</style>"
         for name in STYLES
@@ -207,8 +209,8 @@ def build(root: Path = HERE, data: Path = DATA) -> bytes:
     return page.encode()
 
 
-def main(argv: list[str]) -> int:
-    out = Path(argv[0]) if argv else HERE / "dist" / "index.html"
+def main() -> int:
+    out = HERE / "dist" / INDEX
     out.parent.mkdir(parents=True, exist_ok=True)
     plain = build()
     out.write_bytes(plain)
@@ -219,4 +221,4 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(main())
