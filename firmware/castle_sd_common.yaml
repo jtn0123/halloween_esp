@@ -87,6 +87,7 @@ esphome:
     - sd_web_util.h
     - sd_space.h
     - sd_web_state.h
+    - sd_web_events.h
     - sd_web_stream.h
     - sd_web.h
     - generated/fallback_scenes.h
@@ -213,8 +214,14 @@ interval:
           castle_web::mirror_show_state(id(current_scene).state,
                                         id(current_track).state,
                                         id(pir_scene).current_option().str());
+          // The event ring (sd_web_state.h): light frames the one-slot
+          // mailbox dropped, at most one line a second, and then one line
+          // per command this tick actually runs. RAM only — a card write
+          // here would stall the very audio and pixels it describes.
+          castle_web::note_light_evictions(esp_timer_get_time());
           auto act = castle_web::take_pending();
           if (act.type == castle_web::ActionType::NONE) return;
+          castle_web::record_action(act.type, act.arg, esp_timer_get_time());
           if (act.type == castle_web::ActionType::PLAY) {
             // A looping scene would re-fire its own track over this file
             // within 30 s: run_scene("halt") stops every scene script and

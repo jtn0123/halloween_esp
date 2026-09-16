@@ -32,6 +32,7 @@ SUBPATH_MAX = 140
 ROUTES: tuple[tuple[str, str, str], ...] = (
     ("/api/status", "GET", "h_status"),
     ("/api/health", "GET", "h_health"),
+    ("/api/events", "GET", "h_events"),
     ("/api/files", "GET", "h_list"),
     ("/api/files/*", "PUT", "h_put"),
     ("/api/site/*", "PUT", "h_put"),

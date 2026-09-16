@@ -117,11 +117,17 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // v5.52: `playing` is the pipeline's own word, `position_ms` the main
   // loop's clock since it came alive (sd_web_state.h). A browser that
   // follows the castle reads these instead of counting from its own click.
+  // v5.59: the light frame counters. `light_applied` is what the main loop
+  // ran, `light_evicted` what the one-slot mailbox dropped — a page
+  // streaming colour faster than the 200 ms drain can see it, instead of
+  // wondering why its frames look coarse. /api/events carries the rest.
   snprintf(buf.data(), buf.size(),
            R"(","show_on":%s,"playing":%s,"position_ms":%lld,)"
+           R"("light_applied":%u,"light_evicted":%u,)"
            R"("pir":{"armed":%s,"cooldown_s":%d,"scene":")",
            g_show_on.load() ? "true" : "false",
            g_playing.load() ? "true" : "false", g_position_ms.load(),
+           g_light_applied.load(), g_light_evicted.load(),
            g_pir_armed.load() ? "true" : "false", g_pir_cooldown.load());
   out += buf.data();
   out += json_escape(pir_scene);
@@ -376,33 +382,9 @@ inline esp_err_t h_pir(httpd_req_t *req) {
   return reply_json(req, "{\"queued\":true}");
 }
 
-// ── /api/bootlog — the ring buffer, as text ─────────────────────────────
-inline esp_err_t h_bootlog(httpd_req_t *req) {
-  httpd_resp_set_type(req, "text/plain");
-  if (castle_log::g_buf == nullptr) {
-    const char *msg = castle_log::g_init_called ? "boot log: init ran but no memory\n"
-                                                : "boot log: init never ran\n";
-    return httpd_resp_send(req, msg, HTTPD_RESP_USE_STRLEN);
-  }
-  const size_t held = castle_log::g_head < castle_log::LINES ? castle_log::g_head
-                                                             : castle_log::LINES;
-  const size_t first = castle_log::g_head < castle_log::LINES
-                           ? 0 : castle_log::g_head - castle_log::LINES;
-  std::array<char, 80> hdr{};
-  snprintf(hdr.data(), hdr.size(), "boot log: %u lines, %u dropped\n", (unsigned) held,
-           (unsigned) castle_log::g_dropped);
-  httpd_resp_send_chunk(req, hdr.data(), HTTPD_RESP_USE_STRLEN);
-  for (size_t i = 0; i < held; i++) {
-    const char *line =
-        castle_log::g_buf + ((first + i) % castle_log::LINES) * castle_log::WIDTH;
-    httpd_resp_send_chunk(req, line, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, "\n", 1);
-  }
-  return httpd_resp_send_chunk(req, nullptr, 0);
-}
-
 }  // namespace castle_web
 
+#include "sd_web_events.h"
 #include "sd_web_ota.h"
 #include "sd_web_site.h"
 #include "sd_web_remote.h"
@@ -426,6 +408,18 @@ inline void start() {
   // Found on the live board 2026-08-15; headroom so the next route is free.
   cfg.max_uri_handlers = 32;
   cfg.stack_size = 6144;   // default 4 KB is too tight for FATFS + our buffers
+  // The control plane, off the main loop's back. A scene start is an SD read
+  // and an MP3 decode on ESPHome's loop task, and at HTTPD_DEFAULT_CONFIG
+  // (task_priority 5, tskNO_AFFINITY) a status poll landed behind all of it:
+  // /api/status went unanswered for 1.8-3 s on the board and the desk read
+  // the castle as hung. Priority 6 is one above the ESP32 loop task ESPHome
+  // creates at priority 1 (esphome/components/esp32/core.cpp) with headroom
+  // to spare, and far below the audio and WiFi/lwIP tasks, which must never
+  // wait on a browser. The same file pins that loop task to core 1, so the
+  // httpd is pinned to the OTHER core rather than competing for its time
+  // slices. The stream server (sd_web_stream.h) is untouched.
+  cfg.task_priority = 6;
+  cfg.core_id = 0;
   cfg.lru_purge_enable = true;
 
   esp_err_t err = httpd_start(&g_server, &cfg);
@@ -442,6 +436,7 @@ inline void start() {
   };
   reg("/api/status", HTTP_GET, h_status);
   reg("/api/health", HTTP_GET, h_health);
+  reg("/api/events", HTTP_GET, h_events);
   reg("/api/files", HTTP_GET, h_list);
   reg("/api/files/*", HTTP_PUT, h_put);
   reg("/api/site/*", HTTP_PUT, h_put);

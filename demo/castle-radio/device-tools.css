@@ -143,3 +143,7 @@
   .buttons #stop{font-size:17px}
   .player{gap:6px}
 }
+
+.bench-events{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.bench-events button{align-self:flex-start}
+.bench-events pre{margin:0;max-height:220px;overflow:auto;white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}

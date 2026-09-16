@@ -11,7 +11,7 @@ nothing.
 Split out when the names suite left (grade report 2026-09-06 J1 grew it
 past the 500-line rule) — on the seam the firmware already has: sd_web.h is
 the routes and the handlers, sd_web_util.h is the byte rules underneath
-them. Nothing here is a test; nothing here is hand-copied from the C.
+them, sd_web_events.h the two read-only rings. Nothing here is a test; nothing here is hand-copied from the C.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ SD_WEB = (FW / "sd_web.h").read_text()
 SD_OTA = (FW / "sd_web_ota.h").read_text()
 SD_SITE = (FW / "sd_web_site.h").read_text()
 SD_REMOTE = (FW / "sd_web_remote.h").read_text()
+SD_EVENTS = (FW / "sd_web_events.h").read_text()
 SD_STATE = (FW / "sd_web_state.h").read_text()
 SD_UTIL = (FW / "sd_web_util.h").read_text()
 SD_STREAM = (FW / "sd_web_stream.h").read_text()
@@ -96,7 +97,7 @@ def firmware_routes() -> list[tuple[str, str, str]]:
     ]
 
 
-FUNCS = c_functions(SD_WEB, SD_OTA, SD_SITE, SD_REMOTE, SD_UTIL)
+FUNCS = c_functions(SD_WEB, SD_OTA, SD_SITE, SD_REMOTE, SD_EVENTS, SD_UTIL)
 
 
 def grab(pattern: str, text: str, group: int = 1) -> str:

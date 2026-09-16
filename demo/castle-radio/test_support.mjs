@@ -25,6 +25,7 @@ export function element(id) {
     addEventListener(type, fn) { this.listeners.push([type, fn]); },
     dispatch(type) { for (const [t, fn] of this.listeners) { if (t === type) {fn();} } },
     classList: {add() {}, remove() {}, toggle() {}},
+    parentNode: {insertBefore() {}},
     append() {}, querySelector: () => element(`${id}-child`), querySelectorAll: () => [],
   };
 }
@@ -179,13 +180,54 @@ const SOUNDLESS = {version: '5.55', scene: 'stop', track: 'radio_a.mp3', playing
 export const lightsSent = asked => asked.filter(a => a.path.startsWith('/api/light?c='))
   .map(a => ({c: a.path.slice('/api/light?c='.length), at: a.at}));
 
-export function showContext(frames) {
+export function showContext(frames, extra = {}) {
   const row = {key: 'radio_a', filename: 'radio_a.mp3', bytes: 9, duration: 30, frames};
-  return directContext({
-    '/api/status': SOUNDLESS,
+  const state = {...SOUNDLESS, ...extra};
+  return {...directContext({
+    '/api/status': state,
     '/api/files': [{name: 'radio_a.mp3', size: 9, dir: false}],
     '/api/light': {ok: true}, '/api/play': {ok: true}, '/api/stop': {ok: true},
-  }, [row]);
+  }, [row]), state};
+}
+
+/* The light_show the castle page reports for a generated show whose castle
+   counted `before` applied/evicted LIGHT frames when the show started and
+   `after` by the time the panel asked. */
+export async function landedShow(before, after) {
+  const {ctx, state} = showContext([[0, '111111'], [1, '222222']], before);
+  await ctx.window.fetch('/radio/device/command', {method: 'POST',
+    body: JSON.stringify({action: 'file', file: 'radio_a.mp3', key: 'radio_a'})});
+  for (let i = 0; i < 40; i++) {await settle();}
+  Object.assign(state, after);
+  ctx.window.castleDirect.forget();
+  const response = await ctx.window.fetch('/radio/device');
+  return JSON.parse(await response.text()).light_show;
+}
+
+/* device-tools.js in a context whose castle link is a stub: `answer` is what
+   /api/events gives back, and `push` is one update from the shared poll. */
+export function toolsContext(answer) {
+  const {$} = page();
+  const ctx = {console, JSON, Number, String, Array, Math, Object, Promise, $, toast() {}};
+  let push = () => {};
+  ctx.document = {createElement: () => element('bench')};
+  ctx.window = {castleLink: {
+    subscribe(fn) { push = fn; }, command: async () => true, lastError: () => '', events: answer,
+  }};
+  ctx.globalThis = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(read('device-tools.js'), ctx, {filename: 'device-tools.js'});
+  return {ctx, $, push: payload => push(payload)};
+}
+
+/* The castle's own record, and the bench panel after asking for it. */
+export const EVENTS = [{t: 1000, e: 'play', a: 'radio_a.mp3'},
+  {t: 6500, e: 'light_evicted', a: '3'}, {t: 11000, e: 'stop', a: ''}];
+export async function eventLog(answer) {
+  const {$, push} = toolsContext(answer);
+  push({connected: false, error: 'offline', healthLine: 'link 4 ms', framesText: ''});
+  await $('bench-events-load').onclick();
+  return {log: $('bench-events-log').textContent, health: $('live-link-health').textContent};
 }
 
 export async function runFrames(frames) {
@@ -194,4 +236,21 @@ export async function runFrames(frames) {
     body: JSON.stringify({action: 'file', file: 'radio_a.mp3', key: 'radio_a'})});
   for (let i = 0; i < 200; i++) {await settle();}
   return lightsSent(asked).filter(l => l.c !== 'show');
+}
+
+/* The three wordings for a running show: no counters, counters, evictions. */
+export const wordings = text => [text({frames_sent: 40, frames_total: 50}),
+  text({frames_sent: 40, frames_total: 50, frames_landed: 38, frames_evicted: 0}),
+  text({frames_sent: 40, frames_total: 50, frames_landed: 36, frames_evicted: 2})];
+
+/* One fast poll, one that takes half a second, and one that never lands. */
+export async function healthRun(ctx) {
+  const readings = [ctx.window.castleLink.health()];
+  const quick = ctx.fetch;
+  ctx.fetch = async (...args) => { ctx.now += 500; return quick(...args); };
+  await pollAt(ctx, 12, 3673);
+  readings.push(ctx.window.castleLink.health());
+  ctx.fetch = quick; ctx.fail = true;
+  await ctx.window.castleLink.refresh(); await settle();
+  return [...readings, ctx.window.castleLink.health()];
 }

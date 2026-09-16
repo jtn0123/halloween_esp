@@ -93,6 +93,8 @@ class TestStatusShape(EmuCase):
             "scene",
             "track",
             "show_on",
+            "light_applied",  # v5.59: what the main loop ran ...
+            "light_evicted",  # ... and what the one slot dropped
             "pir",
         ):
             self.assertIn(key, st)

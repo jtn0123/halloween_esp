@@ -178,6 +178,10 @@ class Handler(BaseHTTPRequestHandler):
             {"boots": 3, "crashes": 0, "last_reset": "power-on", "was_crash": False}
         )
 
+    def h_events(self, _raw: bytes) -> None:
+        """The main loop's own record (castle_emu_events.py), oldest first."""
+        self._raw(200, self.server.events.json().encode(), JSON_MIME)
+
     def h_list(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)

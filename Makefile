@@ -208,7 +208,7 @@ SLOW_SUITES := chaos|relay|fuzz|_rust|_rs|castle_core|studio
 # sources run under node:test (needs node 22, no npm install).
 test-radio:
 	@$(PY) -m unittest discover -s demo/castle-radio -t demo/castle-radio -p 'test_*.py' -q \
-		&& node --test demo/castle-radio/test_castle_radio.test.mjs
+		&& node --test demo/castle-radio/test_castle_radio.test.mjs demo/castle-radio/test_castle_fuzz.test.mjs
 
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \
