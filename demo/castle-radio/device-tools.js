@@ -51,6 +51,12 @@
   async function command(body, label, note) {
     result(`Running ${label}…`,'Sending command to 10.27.27.81');
     const ok=await window.castleLink.command(body);
+    // Still sending is not a failure: a second press while the first command
+    // was in the air used to paint the console red and say the test failed.
+    if(ok===window.castleLink.BUSY){
+      result(`${label} is waiting`,'Still sending the previous command · press again in a moment');
+      return;
+    }
     if(!ok){
       result(`${label} failed`,window.castleLink.lastError()||'Castle command failed',true);
       return;
@@ -105,14 +111,14 @@
     return 'Manual tests work now. Imported generated lights need castle firmware 5.51 or newer.';
   }
   // One poll for the whole page: the shared castle link feeds this bench.
-  window.castleLink.subscribe(({connected,state,caps,lightShow,error,healthLine,framesText})=>{
+  window.castleLink.subscribe(({connected,caps,health,lightShow,error,healthLine,framesText})=>{
     $('live-link-health').textContent=healthLine||'';
     if(!connected){
       $('bench-connection').textContent=error?`Castle unavailable · ${error}`:'Castle unavailable';
       $('bench-connection').classList.remove('online');
       return;
     }
-    $('bench-connection').textContent=`Online · firmware ${state.version}${caps.position?' · castle clock':''}`;
+    $('bench-connection').textContent=`Online · firmware ${health?.version||'—'}${caps.position?' · castle clock':''}`;
     $('bench-connection').classList.add('online');
     capabilityNote.textContent=capabilityText(caps);
     if(lightShow?.active) {result('Generated lights are live',`${framesText} with ${lightShow.track}`);}
