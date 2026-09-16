@@ -66,12 +66,12 @@ jobs:
       # so it cannot read the pin — hence the literal. rustup does read it
       # once cargo runs (the make targets cd into core/), so a mismatch here
       # shows up as this step installing a toolchain nothing then uses.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:
           toolchain: "1.88.0"
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
       # The same words a developer types. `make rust-lint` is rustfmt --check
@@ -87,7 +87,7 @@ jobs:
       # half (server, ffmpeg, flock) is gated off for a target that cannot
       # run it, and building WITH the defaults here would fail (A1).
       - name: wasm face builds
-        run: cargo build --release --no-default-features --target wasm32-unknown-unknown
+        run: cargo build --locked --release --no-default-features --target wasm32-unknown-unknown
         working-directory: core
 
   python:
@@ -131,11 +131,11 @@ jobs:
       # (grade report 2026-08-31 D1). Built in an explicit step so a compile error reads
       # as one, and so tools/core_bins.py finds it fresh and skips its own
       # build in every child process it spawns (B6).
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:
           toolchain: "1.88.0"
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
       - name: build castle-core
@@ -160,7 +160,7 @@ jobs:
       # unsatisfiable while each pin still looks fine on its own.
       - name: resolve the requirement files
         run: |
-          pip install --dry-run --quiet --report /dev/null \
+          pip install --dry-run --quiet --report /dev/null --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt \
             -r requirements.txt -r requirements-dev.txt
       # esbuild: the sandbox guard runs all three generators end to end, and
       # gen_previewer.py bundles web/src through it. Without node_modules that
@@ -233,10 +233,10 @@ jobs:
       # machine-dependent Python reference — tools/core_bins.py, by design.
       # Built once here, explicitly: the mtime check then keeps every render
       # child from re-running cargo's freshness pass (grade report 2026-08-31 B6).
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:
           toolchain: "1.88.0"
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
       - name: build castle-core
@@ -299,10 +299,10 @@ jobs:
           echo "installing $PIN"
           pip install --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -c requirements.lock "$PIN" pyyaml numpy scipy
       # Same reason as the web job: the renderer is the Rust binary now.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:
           toolchain: "1.88.0"
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
       - name: build castle-core
@@ -368,10 +368,10 @@ jobs:
       # repo root and ours lives in core/; rustup reads the real pin once
       # cargo runs (make rust cds into core/), so a mismatch here shows up as
       # this step installing a toolchain nothing then uses.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:
           toolchain: "1.88.0"
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
       - name: build castle-core
