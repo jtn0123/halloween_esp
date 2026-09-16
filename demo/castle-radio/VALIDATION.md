@@ -271,3 +271,27 @@ illustrative renderers. Device publishing remains unconnected.
   reason next to each. Flashed over the new OTA handler itself: the castle
   came back on 5.54, Storm played from the page with the clock at 0:02, Stop
   left it idle.
+
+## 2026-09-15 · the castle serves Castle Radio
+
+- `tools/sd_sync.py 10.27.27.81 site` pushed the one-file build (321 KB, 68 KB
+  gzipped). Root load over porch Wi-Fi: 1.1 s by curl, 1.7 s to `load` in
+  Chromium at 1440 x 900 and 390 x 844, versus 11 to 12 s for the 2.2 MB
+  cue desk it replaced. No page errors, no horizontal overflow.
+- Header chip reads `Castle 5.54 · idle` within two seconds of load. A first
+  build preloaded the current song's metadata and the castle streamed the
+  whole 2.3 MB file through the same task that answers `/api/status`, so the
+  chip read offline for eight seconds; the device build now sets
+  `preload="none"`.
+- Play Storm from the castle-served page (speaker hushed): castle reports
+  `scene storm, playing true` within 2.5 s; chip `Castle · Storm · 0:02`.
+  Stop from the page: `scene stop, playing false`, chip idle.
+- Synced import `radio_d0183bda099a.mp3` from Import music: castle plays the
+  raw file (`position_ms` advancing), the page streams its 26 light frames
+  itself (`castleDirect.show.frames_sent` advancing, no error), Stop clears
+  the show and lights. Import form disabled with the reason shown; waveform
+  panel says analysis happens on the computer.
+- Your castle: Connected, `Firmware 5.54 · SD ready · castle clock`, device
+  address from `location.host`, eleven other audio files listed from the card
+  root, bench online.
+- Volume restored to 45 and confirmed after every hardware run.

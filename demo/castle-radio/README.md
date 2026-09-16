@@ -52,6 +52,24 @@ scene MP3 files (01 through 10) from the main checkout's `audio/` directory.
 - The original LED-channel and speaker diagnostic bench under Your castle.
 - OLED night and castle-green themes, both saved in the browser.
 
+## On the castle itself
+
+`make publish` (or `tools/sd_sync.py site`) pushes this control room to the
+castle's SD card as ONE self-contained page, and http://10.27.27.81/ serves
+it: 68 KB gzipped, about 1.5 s to first paint over the porch Wi-Fi.
+`device_site.py` builds it; `castle-direct.js`, inlined first, answers every
+`/radio/*` route from the firmware's own `/api` (status settling, the command
+builders, the SD inventory and the generated-light streamer are ports of
+`device_bridge.py` and `remote_library.py`). Scene audio streams from
+`/sd/scenes/`; synced imports from the card root, with their lights reduced
+to mailbox-rate frames at build time and streamed by the phone's browser on
+the castle's own clock. Importing, separation, waveforms and syncing stay on
+the computer, and the page says so where those controls appear. The castle
+keeps the previous cue desk build as `site/index.old.html(.gz)`.
+
+Tests: `python -m unittest test_device_site` in this directory, and
+`tests/test_sd_sync.py` for the push.
+
 ## Isolation and limitations
 
 All imported audio, sources, analysis, generated recipes, and catalog data go in

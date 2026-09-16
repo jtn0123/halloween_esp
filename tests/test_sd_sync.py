@@ -198,52 +198,35 @@ class TestPush(SdCase):
 
 
 class TestSiteScenesOta(SdCase):
-    def test_site_pushes_the_lean_page_and_the_scene_audio(self) -> None:
-        """The DEVICE gets the lean rewrite (G1/A5): inlined data URIs become
-        /site/<sid>.mp3 links and the tracks are pushed beside the page."""
-        (self.tmp / "previewer").mkdir(exist_ok=True)
-        (self.tmp / "previewer" / "castle-cue-desk.html").write_text(
-            '<html>"vigil": "data:audio/mpeg;base64,AAAA"</html>'
-        )
-        (self.tmp / "audio").mkdir(exist_ok=True)
-        (self.tmp / "audio" / "01_vigil.mp3").write_bytes(b"MP3" * 10)
-        self.assertEqual(self.run_quiet(sd_sync.cmd_site, "10.0.0.9"), 0)
-        by_path = {p: n for p, n in self.puts()}
-        self.assertIn("/api/site/index.html", by_path)
-        self.assertIn("/api/site/index.html.gz", by_path)
-        self.assertIn("/api/site/vigil.mp3", by_path)
-        # the pushed page links the card copy, and carries no data URI
-        import gzip as _gz
-
-        put_bodies = [b for m, p, b in self.card.calls if m == "PUT"]
-        self.assertTrue(put_bodies)
-        # sizes only are recorded; re-derive the lean text to check the link
-        import gen_previewer as gp
-
-        lean = gp.lean(
-            (self.tmp / "previewer" / "castle-cue-desk.html").read_text(),
-            route="/site/",
-            suffix=".mp3",
-        )
-        self.assertIn('"vigil": "/site/vigil.mp3"', lean)
-        self.assertNotIn("data:audio/mpeg", lean)
-        _ = _gz  # gzip round-trip covered by the size assertions above
-
-    def test_site_pushes_gzipped_and_plain_copies(self) -> None:
-        page = self.tmp / "previewer" / "castle-cue-desk.html"
-        page.parent.mkdir()
-        page.write_bytes(b"<html>" + b"desk " * 4000 + b"</html>")
-        self.assertEqual(self.run_quiet(sd_sync.cmd_site, "1.2.3.4"), 0)
+    def test_site_pushes_the_castle_radio_page_gzipped_and_plain(self) -> None:
+        """The DEVICE gets the one-file Castle Radio page (2026-09-15): the
+        gzipped copy first, then the plain fallback, and nothing beside them —
+        scene audio is streamed from /sd/scenes/, where `scenes` puts it."""
+        page = b"<html>" + b"radio " * 4000 + b"</html>"
+        with mock.patch.object(sd_sync, "build_site", return_value=page):
+            self.assertEqual(self.run_quiet(sd_sync.cmd_site, "1.2.3.4"), 0)
         names = [p for p, _ in self.puts()]
         self.assertEqual(names, ["/api/site/index.html.gz", "/api/site/index.html"])
         gz_len, plain_len = (n for _, n in self.puts())
         self.assertLess(gz_len, plain_len // 4)
-        self.assertEqual(plain_len, page.stat().st_size)
+        self.assertEqual(plain_len, len(page))
+        self.assertIn("serves Castle Radio", self.out.getvalue())
 
-    def test_site_without_a_built_page_says_to_build_it(self) -> None:
+    def test_site_without_the_demo_says_so(self) -> None:
+        # ROOT is the empty tmp here: no demo/castle-radio/device_site.py.
         with self.assertRaises(SystemExit) as cm:
             self.run_quiet(sd_sync.cmd_site, "1.2.3.4")
-        self.assertIn("make preview", str(cm.exception))
+        self.assertIn("device_site.py missing", str(cm.exception))
+
+    def test_build_site_is_the_demo_builder(self) -> None:
+        """The real builder, on the real demo: one self-contained document
+        that answers /radio/* from the castle before any other script runs."""
+        real_root = Path(sd_sync.__file__).resolve().parent.parent
+        with mock.patch.object(sd_sync, "ROOT", real_root):
+            page = sd_sync.build_site().decode()
+        self.assertLess(page.find("Castle direct:"), page.find("Standalone concept"))
+        self.assertNotIn('src="', page)
+        self.assertNotIn("googleapis", page)
 
     def test_scenes_skips_tracks_the_card_already_holds(self) -> None:
         """Same name, same size in /sd/scenes (the v5.42 ?d= listing) — not
