@@ -1,13 +1,10 @@
-# The project venv is required. CI passes PY= on the command line.
+# The project venv is required for Python recipes. CI passes PY= on the
+# command line for those; `make rust` must still parse without a venv.
 ifeq ($(origin PY),command line)
+else ifneq ($(wildcard .venv/bin/python),)
+  PY := .venv/bin/python
 else
-  PY := $(shell test -x .venv/bin/python && echo .venv/bin/python)
-  ifeq ($(strip $(PY)),)
-    ifeq ($(filter setup help,$(or $(MAKECMDGOALS),help)),)
-      $(error .venv is missing — run make setup)
-    endif
-    PY := python3
-  endif
+  PY = $(error .venv is missing — run make setup)
 endif
 ESPHOME := .venv/bin/esphome
 # The one castle build. It was firmware/castle_flash.yaml until 2026-09-01,

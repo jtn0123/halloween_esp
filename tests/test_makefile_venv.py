@@ -11,6 +11,7 @@ class MakefileVenvTests(unittest.TestCase):
         text = (ROOT / "Makefile").read_text()
         self.assertIn("run make setup", text)
         self.assertIn("origin PY),command line", text)
+        self.assertIn("PY = $(error", text)
         self.assertNotIn("|| echo python3", text)
 
 
