@@ -186,6 +186,10 @@ jobs:
       # tools/ as of 2026-08-23); raise it there as coverage lands.
       - name: unit tests (coverage-gated)
         run: make coverage-gate PY=python
+      # The control room's own suite (bridge, jobs, device page, browser
+      # sources under node:test) lived only in `make test-radio` until 2026-09-15.
+      - name: castle radio tests
+        run: make test-radio PY=python
       - name: LOC cap
         run: python tools/check_loc.py
       # Every grade-report citation names its audit. IDs renumber, so a bare

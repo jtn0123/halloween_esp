@@ -47,18 +47,15 @@
     $('bench-detail').textContent=detail;
     bench.classList.toggle('has-error',error);
   };
-  async function command(body, label) {
+  async function command(body, label, note) {
     result(`Running ${label}…`,'Sending command to 10.27.27.81');
-    try {
-      const response=await fetch('/radio/device/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-      const data=await response.json();
-      if(!response.ok||data.error){throw new Error(data.error||'Castle command failed');}
-      result(`${label} is running`,'Command accepted by the physical castle. Watch and listen at the device.');
-      toast(`${label} sent to castle`);
-    } catch(error) {
-      result(`${label} failed`,error.message,true);
-      toast(error.message);
+    const ok=await window.castleLink.command(body);
+    if(!ok){
+      result(`${label} failed`,window.castleLink.lastError()||'Castle command failed',true);
+      return;
     }
+    result(`${label} is running`,note||'Command accepted by the physical castle. Watch and listen at the device.');
+    toast(`${label} sent to castle`);
   }
   bench.querySelectorAll('[data-bright]').forEach(button=>button.onclick=()=>{
     brightness=Number(button.dataset.bright);
@@ -72,7 +69,7 @@
   $('bench-color-send').onclick=()=>command({action:'light',value:`${$('bench-color').value.slice(1)}@${brightness}`},'custom color');
   $('tone-level').oninput=()=>{$('tone-level-value').textContent=`${$('tone-level').value}%`;};
   bench.querySelectorAll('[data-tone]').forEach(button=>button.onclick=()=>command({action:'tone',file:button.dataset.tone,volume:Number($('tone-level').value)},button.querySelector('b').textContent));
-  $('bench-audio-stop').onclick=()=>command({action:'stop'},'speaker stop');
+  $('bench-audio-stop').onclick=()=>command({action:'stop'},'speaker stop','The speaker is quiet. This does not end the installed playlist — use “Stop castle” in Your castle for that.');
   function capabilityText(caps) {
     if (caps.track_end) {
       return 'Installed scenes and imported songs run physical lights, the scrubber follows the castle’s own clock, and the queue moves on when a song ends. Pausing and seeking are not supported by the firmware.';
