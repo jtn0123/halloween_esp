@@ -146,7 +146,7 @@ jobs:
       # yt-dlp: two tests assert the import toolchain is present and that
       # probe/import guards reject junk BEFORE shelling out to it.
       # The lock IS what was tested locally (frozen from the 3.13 venv by `make lock`).
-      - run: pip install -r requirements.lock
+      - run: pip install --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
       # …but the lock is ALL any job installs, so nothing here ever asked the
       # resolver whether requirements.txt is still satisfiable. Dependabot
       # walked straight through that gap: PR #13's own log shows the job
@@ -170,7 +170,7 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         working-directory: web
       - name: lint
         run: ruff check tools tests
@@ -227,7 +227,7 @@ jobs:
       - name: studio server venv
         run: |
           python3 -m venv .venv
-          .venv/bin/pip install --quiet numpy scipy pyyaml
+          .venv/bin/pip install --quiet --only-binary=":all:" -c requirements.lock numpy scipy pyyaml
       # render_audio.py renders THROUGH castle-core (scene_render), and with
       # no binary and no cargo it hard-stops rather than falling back to the
       # machine-dependent Python reference — tools/core_bins.py, by design.
@@ -247,7 +247,7 @@ jobs:
       # it (tracks/ is theirs, not the repo's) and says so.
       - name: render scene audio
         run: .venv/bin/python tools/render_audio.py
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         working-directory: web
       # The previewer page is generated, not tracked (2 MB a revision was
       # the whole repo's growth); the e2e global-setup refuses to run
@@ -260,7 +260,7 @@ jobs:
 
       - name: previewer page budget
         run: .venv/bin/python -m unittest -q tests.test_previewer_budget.TestPageWeight
-      - run: npx tsc --noEmit
+      - run: npx --no-install tsc --noEmit
         working-directory: web
       - name: engine unit tests
         run: npm test
@@ -273,8 +273,8 @@ jobs:
         env:
           CASTLE_STUDIO_CMD: ../core/target/release/studio
         run: |
-          npx playwright install --with-deps chromium
-          npx playwright test
+          npx --no-install playwright install --with-deps chromium
+          npx --no-install playwright test
         working-directory: web
 
   esphome:
@@ -297,7 +297,7 @@ jobs:
         run: |
           PIN=$(grep -E '^esphome==' requirements.txt)
           echo "installing $PIN"
-          pip install "$PIN" pyyaml numpy scipy
+          pip install --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -c requirements.lock "$PIN" pyyaml numpy scipy
       # Same reason as the web job: the renderer is the Rust binary now.
       - uses: dtolnay/rust-toolchain@stable
         with:

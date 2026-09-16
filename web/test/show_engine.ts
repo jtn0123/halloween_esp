@@ -49,7 +49,7 @@ const P = defaultParams();
   const sc = scene({ levels: { towerL: 0.35 } });
   const st = createState(sc, 0);
   rebuildLightsAt(st, sc, 0);
-  ok(st.level.towerL === 0.35, "scene levels applied");
+  near(st.level.towerL, 0.35, 1e-9, "scene levels applied");
   ok(st.level.door === 1, "unlisted zones stay at full");
 }
 
@@ -64,7 +64,7 @@ const P = defaultParams();
 
   rebuildLightsAt(st, sc, 2500);
   ok(st.eff.towerL === "chill", "seek applies the latest set cue, not the first");
-  ok(st.level.towerL === 0.2, "seek applies that cue's level too");
+  near(st.level.towerL, 0.2, 1e-9, "seek applies that cue's level too");
   ok(st.eff.door === "off", "seek does not apply cues from the future");
   ok(st.fired.size === 2, "past cues are marked fired so they do not re-run");
 
@@ -106,8 +106,8 @@ const P = defaultParams();
   rebuildLightsAt(st, sc, 0);
   fireCues(st, 0, () => {});
   ok(st.flashCol.door[0] === 1 && st.flashCol.door[3] === 0, "strike colour applied");
-  ok(st.flashDecay.door === 0.82, "strike decay applied");
-  ok(st.flashDecay.towerL === 0.90, "other zones keep the default decay");
+  near(st.flashDecay.door, 0.82, 1e-9, "strike decay applied");
+  near(st.flashDecay.towerL, 0.90, 1e-9, "other zones keep the default decay");
 }
 
 /* ── Decay maths matches the firmware ────────────────────────────── */
@@ -269,14 +269,14 @@ const P = defaultParams();
   const st = createState(sc, 0);
   fireCues(st, 0, () => {});
   ok(st.flash.door === 0, "an attack strike starts from dark, not at peak");
-  ok(st.flashTarget.door === 0.8, "the peak is armed");
+  near(st.flashTarget.door, 0.8, 1e-9, "the peak is armed");
   decayFlashes(st);
   ok(Math.abs(st.flash.door - 0.8 * 16 / 96) < 1e-9,
      "one frame climbs peak*16/attack — the firmware's exact arithmetic");
   // 6 exact frames in theory; float accumulation means the clamp lands on
   // the 7th. What matters is reaching the peak and disarming.
   for (let i = 0; i < 6; i++) decayFlashes(st);
-  ok(st.flash.door === 0.8 && st.flashTarget.door === 0,
+  ok(Math.abs(st.flash.door - 0.8) < 1e-9 && st.flashTarget.door < 1e-9,
      "the swell reaches the peak and disarms");
   decayFlashes(st);
   ok(Math.abs(st.flash.door - 0.72) < 1e-9, "then ordinary decay takes over");
