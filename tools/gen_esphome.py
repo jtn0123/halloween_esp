@@ -22,6 +22,7 @@ import build_paths as bp
 import gen_esphome_audio as ga
 from effect_vocab import EFFECT_IDS, FLASH_MODE_IDS, OVERLAY_IDS, PALETTE_IDS
 from gen_rig import CHIPS, emit_lights, emit_rig_header, emit_rmt_override
+from gen_show import SOUND_WAIT_MS as SOUND_WAIT_MS
 from gen_show import emit_show_playlist
 
 # The pulse expansion (what a `pulse:` stream MEANS) lives in
@@ -35,7 +36,6 @@ from scene_schema import load_markers, load_show
 from scene_schema import validate as validate_scene
 
 ROOT = Path(__file__).resolve().parent.parent
-SOUND_WAIT_MS = 1500  # a scene holds its first cue this long for the speaker
 # Source and outputs both follow build_paths.py: a sandboxed studio (its own
 # CASTLE_SCENES) generates under its own build root, never the repo's.
 SRC = bp.SCENES

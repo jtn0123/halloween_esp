@@ -14,6 +14,11 @@
   const library = parse('radio-library') || [];
   const nativeFetch = window.fetch.bind(window);
   const SETTLE_MS = 2500, STATUS_MS = 250, LISTING_MS = 4000, TIMEOUT_MS = 8000;
+  // The speaker takes this long to run after PLAY while position_ms stays 0
+  // (firmware 5.55, SPEAKER_START_S in device_bridge.py and tools/castle_emu.py).
+  // The seeded frame clock has to include it, or every frame of a show whose
+  // castle never reports a position lands half a second early.
+  const SPEAKER_START_S = 0.5;
   const AUDIO = /\.(mp3|opus|wav)$/i;
   const LIGHT = /^(?:(?:towerL|towerR|door):)?(?:[0-9a-fA-F]{6}|white|off|show|bars|chase|ends)(?:@(?:[1-9]|[1-9]\d|100))?$/;
   const TONES = new Set(['test_sweep.mp3', 'test_1k.mp3', 'test_200.mp3', 'test_4k.mp3', 'test_silence.mp3']);
@@ -73,7 +78,9 @@
     const next = {...state, settling: true};
     if (expected.scene !== null) {next.scene = expected.scene;}
     if (expected.track !== null) {next.track = expected.track;}
-    if ('position_ms' in state) { next.playing = !!(expected.track || (expected.scene && expected.scene !== 'stop')); next.position_ms = 0; }
+    // Settling is starting, not playing: the transport must not offer Stop
+    // for the scene the castle has not left yet.
+    if ('position_ms' in state) { next.playing = false; next.position_ms = 0; }
     return next;
   }
   function playback(state) {
@@ -87,11 +94,18 @@
 
   // ── generated lights for a synced import, on the castle's clock ────────
   const show = {active: false, track: null, frames_sent: 0, frames_total: 0, error: null, token: 0};
-  async function stopShow() { show.token++; show.active = false; show.track = null; }
+  // Stop always darkens: the frame loop can have a colour in flight, so the
+  // off frame is part of stopping rather than only of finishing.
+  async function stopShow() {
+    show.token++; show.active = false; show.track = null;
+    await castle('/api/light?c=off', 'POST').catch(() => {});
+  }
   const now = () => performance.now() / 1000;
   async function awaitTrack(filename, token, first) {
     let state = await status(true);
-    for (let tries = first ? 15 : 0; tries > 0 && state.track !== filename; tries--) {
+    // A mid-song realign gets a small budget too: one stale mirror answer
+    // used to end the light show for the rest of the track.
+    for (let tries = first ? 15 : 3; tries > 0 && state.track !== filename; tries--) {
       await sleep(200);
       if (token !== show.token) {return null;}
       state = await status(true);
@@ -116,7 +130,7 @@
     const token = ++show.token;
     Object.assign(show, {active: true, track: filename, frames_sent: 0, frames_total: frames.length, error: null});
     try {
-      let started = await align(filename, now() + 0.24, token, true);
+      let started = await align(filename, now() + 0.24 + SPEAKER_START_S, token, true);
       for (let index = 0; started !== null && index < frames.length; index++) {
         const [at, spec] = frames[index];
         await sleep(Math.max(0, (started + at - now()) * 1000));

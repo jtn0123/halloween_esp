@@ -19,6 +19,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import gen_esphome as ge
 import gen_previewer as gp
+import gen_show as gs
 import rig_layout as rl
 import yaml
 
@@ -418,3 +419,43 @@ class TestEmitScene(unittest.TestCase):
         self.assertEqual(got["mode"], "restart")
         vol = got["then"][3]["lambda"]  # scene level, unless hushed
         self.assertIn("id(speaker_hush) ? 0.0f : 0.45f", vol)
+
+
+class TestShowPlaylistLength(unittest.TestCase):
+    """B04/B60: the playlist has to bill the same speaker wait the scene
+    script spends before its own timeline starts, or `scene_stop` lands
+    SOUND_WAIT_MS early and cuts the authored tail off every scene."""
+
+    @staticmethod
+    def _doc(*scenes: dict[str, Any]) -> dict[str, Any]:
+        return {"scenes": list(scenes), "show": {"gap_ms": 12000}}
+
+    def test_playlist_delay_is_wait_plus_duration(self) -> None:
+        lines = gs.emit_show_playlist(self._doc(scene(duration_ms=6500)))
+        then = yaml.safe_load("script:\n" + "\n".join(lines))["script"][0]["then"]
+        self.assertEqual(
+            then[0]["script.execute"], {"id": "run_scene", "scene": "probe"}
+        )
+        self.assertEqual(then[1], {"delay": f"{gs.SOUND_WAIT_MS + 6500}ms"})
+        self.assertEqual(then[2], {"script.execute": "scene_stop"})
+        self.assertEqual(then[3], {"delay": "12000ms"})
+
+    def test_every_scene_in_the_order_gets_the_wait(self) -> None:
+        doc = self._doc(
+            scene(id="a", duration_ms=1000), scene(id="b", duration_ms=193360)
+        )
+        then = yaml.safe_load("script:\n" + "\n".join(gs.emit_show_playlist(doc)))[
+            "script"
+        ][0]["then"]
+        delays = [st["delay"] for st in then if "delay" in st]
+        wait = gs.SOUND_WAIT_MS
+        self.assertEqual(
+            delays, [f"{wait + 1000}ms", "12000ms", f"{wait + 193360}ms", "12000ms"]
+        )
+
+    def test_the_cue_script_waits_for_exactly_that_long(self) -> None:
+        """The two numbers are one constant: gen_esphome re-exports it."""
+        self.assertIs(ge.SOUND_WAIT_MS, gs.SOUND_WAIT_MS)
+        then = parse_script(ge.emit_scene(scene(), ZONES, 1, {}))["then"]
+        wait = next(st["wait_until"] for st in then if "wait_until" in st)
+        self.assertEqual(wait["timeout"], f"{gs.SOUND_WAIT_MS}ms")

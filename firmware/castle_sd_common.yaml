@@ -258,9 +258,11 @@ interval:
             // burst that goes with it starves the RMT refill ISR: two or
             // three pixels on the longest strip flick to a wrong colour and
             // back, which reads as a hardware fault while you are staring at
-            // a test pattern (reported 2026-08-21, the 12 px ring). A hex
-            // colour can never spell "show" — s, h, o and w are not digits.
-            if (act.arg.find("show") == std::string::npos &&
+            // a test pattern (reported 2026-08-21, the 12 px ring). The
+            // hand-back is the COMMAND "show", not a substring of it: a
+            // zone named "show" or "shower" is a colour test, and used to
+            // leave the scene script firing underneath it.
+            if (!castle_web::light_spec_is_show(act.arg) &&
                 id(current_scene).state != "stop")
               id(scene_stop)->execute();
             id(lights_override)->execute(act.arg);

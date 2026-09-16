@@ -103,6 +103,19 @@ class TestBuild(FakeData):
         self.assertIn("This browser", page)
         self.assertIn('<audio id="audio" preload="none">', page)
 
+    def test_the_castle_guard_is_in_the_source_not_only_the_build(self):
+        """B47: the control-room laptop must not fetch media/ either, so the
+        castle-mode guard lives in app.js and the build only moves the path."""
+        source = (HERE / "app.js").read_text()
+        self.assertIn(
+            "if($('output-target').value==='castle')"
+            "{audio.removeAttribute('src');audio.load();}",
+            source,
+        )
+        page = device_site.build(HERE, self.data).decode()
+        self.assertIn("audio.removeAttribute('src')", page)
+        self.assertNotIn("media/${", page)
+
     def test_no_catalog_means_an_empty_library(self):
         rows = embedded(
             device_site.build(HERE, self.data / "nowhere").decode(), "radio-library"

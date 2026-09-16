@@ -55,8 +55,9 @@ static const char *const TAG = "castle_web";
 
 inline httpd_handle_t g_server = nullptr;
 // Scene ids the firmware actually has, seeded at boot from the pir_scene
-// select (castle_sd.yaml). Empty means "not seeded yet" — then /api/scene
-// falls back to accepting anything, which only lasts the first seconds.
+// select (castle_sd.yaml). Empty means "not seeded yet": /api/scene used to
+// accept ANYTHING then, so a client retrying from boot could be told its
+// typo was queued. An empty list now answers "not ready" instead.
 inline std::vector<std::string> g_scene_ids;
 inline void set_scene_ids(std::vector<std::string> ids) { g_scene_ids = std::move(ids); }
 
@@ -337,8 +338,9 @@ inline esp_err_t h_scene(httpd_req_t *req) {
   if (s.empty()) return reply_err(req, "400 Bad Request", "need ?s=<scene>");
   // {"queued":true} for a scene that does not exist is a lie the desk then
   // toasts as success. The id list is seeded at boot from pir_scene's options.
-  if (!g_scene_ids.empty() &&
-      std::find(g_scene_ids.begin(), g_scene_ids.end(), s) == g_scene_ids.end())
+  if (g_scene_ids.empty())
+    return reply_err(req, "503 Service Unavailable", "scene list not ready");
+  if (std::find(g_scene_ids.begin(), g_scene_ids.end(), s) == g_scene_ids.end())
     return reply_err(req, "404 Not Found", "unknown scene");
   set_pending(ActionType::SCENE, s);
   return reply_json(req, "{\"queued\":true}");

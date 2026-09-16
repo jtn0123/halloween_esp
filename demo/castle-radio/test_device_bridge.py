@@ -324,3 +324,100 @@ class FrameAlignmentTests(unittest.TestCase):
             started = device_bridge._align("radio_a.mp3", 10.0, stop, first=True)
         self.assertAlmostEqual(started, 89.7)
         self.assertEqual(call.call_count, 3)
+
+
+class ShowStopContractTests(unittest.TestCase):
+    """B59: the two stops are different castle endpoints and must stay so.
+
+    /api/stop is `scene_stop` — the current scene goes dark and the evening
+    playlist starts the next one after the gap. Ending the night is
+    /api/show/stop (SHOW "0"), which also stops show_playlist. The Your-castle
+    "stop the show" control is the one that has to reach the second path.
+    """
+
+    @patch("device_bridge.call", return_value={"ok": True})
+    def test_stop_maps_to_the_scene_stop_endpoint(self, call):
+        device_bridge.command({"action": "stop"})
+        self.assertEqual(call.call_args.args, ("/api/stop", "POST"))
+
+    @patch("device_bridge.call", return_value={"ok": True})
+    def test_show_stop_maps_to_the_playlist_endpoint(self, call):
+        device_bridge.command({"action": "show/stop"})
+        self.assertEqual(call.call_args.args, ("/api/show/stop", "POST"))
+
+    @patch("device_bridge.call", return_value={"ok": True})
+    def test_show_start_maps_to_the_playlist_endpoint(self, call):
+        device_bridge.command({"action": "show/start"})
+        self.assertEqual(call.call_args.args, ("/api/show/start", "POST"))
+
+    def test_the_two_stops_are_not_the_same_path(self):
+        self.assertNotEqual(
+            device_bridge._PLAIN["stop"], device_bridge._PLAIN["show/stop"]
+        )
+        self.assertEqual(device_bridge._PLAIN["show/stop"], "/api/show/stop")
+
+
+class SoundTrueStartTests(unittest.TestCase):
+    """B09/B26/B51/B52: a start is not a sound, and one stale poll is not a
+    track change."""
+
+    def setUp(self):
+        device_bridge._expected.update(scene=None, track=None, until=0.0)
+
+    @patch("device_bridge.time.monotonic", return_value=90.0)
+    @patch("device_bridge.call")
+    def test_a_realign_survives_one_stale_status(self, call, now):
+        call.side_effect = [
+            {"track": "", "playing": False, "position_ms": 0},
+            {"track": "radio_a.mp3", "playing": True, "position_ms": 300},
+        ]
+        stop = threading.Event()
+        with patch.object(stop, "wait", return_value=False):
+            started = device_bridge._align("radio_a.mp3", 10.0, stop)
+        self.assertAlmostEqual(started, 89.7)
+
+    @patch("device_bridge.time.monotonic", return_value=90.0)
+    @patch("device_bridge.call")
+    def test_a_track_that_really_changed_still_ends_the_show(self, call, now):
+        call.return_value = {"track": "01_vigil", "playing": True, "position_ms": 900}
+        stop = threading.Event()
+        with patch.object(stop, "wait", return_value=False):
+            self.assertIsNone(device_bridge._align("radio_a.mp3", 10.0, stop))
+        self.assertEqual(call.call_count, 1 + device_bridge.REALIGN_POLLS)
+
+    @patch("device_bridge.time.sleep")
+    @patch("device_bridge.call")
+    def test_a_tone_is_expected_like_any_other_file(self, call, sleep):
+        call.side_effect = [
+            [{"name": "test_1k.mp3", "size": 1234}],
+            {"queued": True},
+            {"queued": True},
+        ]
+        device_bridge.command({"action": "tone", "file": "test_1k.mp3", "volume": 25})
+        self.assertEqual(device_bridge._expected["track"], "test_1k.mp3")
+        self.assertEqual(device_bridge._expected["scene"], "stop")
+        overlay = device_bridge.settle(
+            {"scene": "vigil", "track": "", "playing": True, "position_ms": 8000}
+        )
+        self.assertEqual(overlay["track"], "test_1k.mp3")
+        self.assertTrue(overlay["settling"])
+
+    @patch("device_bridge.time.monotonic", return_value=100.0)
+    def test_settling_is_starting_not_playing(self, now):
+        device_bridge.expect(scene="stop", track="radio_new.mp3")
+        overlay = device_bridge.settle(
+            {"scene": "vigil", "track": "", "playing": True, "position_ms": 8000}
+        )
+        self.assertTrue(overlay["settling"])
+        self.assertFalse(overlay["playing"])
+        self.assertEqual(overlay["position_ms"], 0)
+
+    @patch("device_bridge.time.monotonic")
+    def test_the_estimate_waits_for_the_speaker_like_555(self, now):
+        now.side_effect = [400, 400.3, 401.5]
+        device_bridge.playback_clock(
+            {"scene": "stop", "track": "radio_a.mp3"}, started_track="radio_a.mp3"
+        )
+        state = {"scene": "stop", "track": "radio_a.mp3"}
+        self.assertEqual(device_bridge.playback_clock(state)["position_s"], 0)
+        self.assertEqual(device_bridge.playback_clock(state)["position_s"], 1.5)

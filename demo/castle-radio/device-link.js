@@ -5,14 +5,19 @@
   const target = $('output-target');
   const chip = $('castle-chip');
   let data = null, state = null, lightShow = null, clock = null, caps = {}, received = 0, error = '';
-  let busy = false, inflight = null, timer = null, epoch = 0;
+  let busy = false, inflight = null, timer = null, epoch = 0, polled = -Infinity, lastError = '';
   let wasPlaying = false, idlePolls = 0, userStopped = true, volumeTouched = 0, pirTouched = 0, advancedFor = '';
   const listeners = new Set();
   const onCastle = () => target.value === 'castle';
   const hasTrack = s => !!s && ((s.scene !== 'stop' && s.scene !== '') || !!s.track);
   // 5.52 firmware says whether the audio pipeline is running; older builds
   // only name a scene or a track, which never clears when a raw file ends.
-  const isPlaying = s => !!s && (caps.position ? !!s.playing || !!s.settling : hasTrack(s));
+  const isPlaying = s => !!s && (caps.position ? !!s.playing : hasTrack(s));
+  // B51: a command that has not landed yet is STARTING, not playing. Folding
+  // it into isPlaying offered "Stop castle" for a scene the castle had not
+  // left: the press stopped the old scene and the new one arrived anyway.
+  const isStarting = s => !!s && !!s.settling;
+  const isLive = s => isPlaying(s) || isStarting(s);
   const sceneId = t => t.key ? null : t.file.replace(/^\d+_/, '').replace(/\.mp3$/, '');
   function friendly(message) {
     if (/timed out/i.test(message)) {return 'Castle not answering · request timed out';}
@@ -101,8 +106,9 @@
     if (caps.position) {return 'Following the castle’s own clock · seeking unavailable';}
     return 'Following castle · estimated timing · seeking unavailable';
   }
-  function playLabel(playing) {
+  function playLabel(playing, starting) {
     if (busy) {return 'Sending…';}
+    if (starting) {return '… Starting on castle';}
     return playing ? '■ Stop castle' : '▶ Play on castle';
   }
   function queueDescription() {
@@ -120,16 +126,20 @@
     $('preview-seek').disabled = true; $('seek').disabled = true;
     $('seek').title = 'Seeking is not supported by the castle firmware';
     $('split-state').textContent = splitStateText(online);
-    const label = playLabel(playing);
+    const starting = isStarting(state);
+    const label = playLabel(playing, starting);
     $('preview-toggle').textContent = label;
     $('hero-play').textContent = label;
-    $('toggle').textContent = playing ? '■' : '▶';
-    $('toggle').setAttribute('aria-label', playing ? 'Stop castle' : 'Play on castle');
+    $('toggle').textContent = starting ? '…' : (playing ? '■' : '▶');
+    $('toggle').setAttribute('aria-label', starting ? 'Starting on castle' : (playing ? 'Stop castle' : 'Play on castle'));
     $('queue-description').textContent = queueDescription();
     $('current-detail').textContent = currentDetail(online, playing, name);
-    for (const id of ['toggle', 'hero-play', 'shuffle', 'repeat']) {$(id).disabled = busy;}
+    // Nothing to press while the command is in the air: the transport waits
+    // for the castle rather than offering a stop of the scene it is leaving.
+    for (const id of ['toggle', 'hero-play', 'preview-toggle']) {$(id).disabled = busy || starting;}
+    for (const id of ['shuffle', 'repeat']) {$(id).disabled = busy;}
     $('next').disabled = busy || (!queue.length && !repeat);
-    $('previous').disabled = busy || !history.length;
+    $('previous').disabled = busy || (!history.length && !(playing && remoteTime() > 3));
   }
   function paintClock(online) {
     $('elapsed').textContent = fmt(remoteTime());
@@ -171,7 +181,12 @@
       const scene = remoteScene();
       if (scene?.loop && tracks[current].kind === 'song' && caps.position && !state.settling && (queue.length || repeat)) {
         const elapsed = clock.position_s + (performance.now() - received) / 1000;
-        if (elapsed >= scene.dur / 1000 - 0.5 && advancedFor !== `${state.scene}@${clock.position_s - elapsed}`) { advancedFor = `${state.scene}@${clock.position_s - elapsed}`; advance(); }
+        // The key counts whole loop cycles, not the live clock: a key built
+        // from position_s changed on every poll and advanced the queue once a
+        // second, and "past the threshold this cycle" still fires when a
+        // hidden tab polls every 4 s and lands well after the 0.5 s window.
+        const cycle = Math.floor((elapsed + 0.5) / (scene.dur / 1000));
+        if (cycle >= 1 && advancedFor !== `${state.scene}@${cycle}`) { advancedFor = `${state.scene}@${cycle}`; advance(); }
       }
       return;
     }
@@ -182,7 +197,11 @@
     if (!userStopped && caps.track_end) {advance();}
   }
   async function refresh() {
-    if (inflight || busy || window.remoteLibrary?.syncing()) {return;}
+    if (inflight || busy) {return;}
+    // A background copy must not blind the header clock, the scrubber or the
+    // queue for the length of the transfer; it only slows the poll down.
+    if (window.remoteLibrary?.syncing() && performance.now() - polled < 2000) {return;}
+    polled = performance.now();
     inflight = poll();
     try { await inflight; } finally { inflight = null; }
   }
@@ -208,8 +227,8 @@
   async function command(body) {
     if (busy) {return false;}
     busy = true; epoch++; paint();
-    try { await api('/radio/device/command', body); return true; }
-    catch (e) { $('live-state').textContent = e.message; toast(e.message); return false; }
+    try { lastError = ''; await api('/radio/device/command', body); return true; }
+    catch (e) { lastError = e.message; $('live-state').textContent = e.message; toast(e.message); return false; }
     finally {
       busy = false;
       // A poll already in flight finishes (and is dropped by the epoch guard) before the fresh one.
@@ -224,7 +243,7 @@
   document.addEventListener('visibilitychange', () => { if (!document.hidden) {refresh();} schedule(); });
   window.castleLink = {
     subscribe(fn) { listeners.add(fn); if (data || error) {fn({connected: !!state, state, data, caps, lightShow, error});} return () => listeners.delete(fn); },
-    refresh, command, state: () => state, capabilities: () => caps
+    refresh, command, state: () => state, capabilities: () => caps, lastError: () => lastError
   };
   window.castlePlayer = {
     active: onCastle,
@@ -235,14 +254,21 @@
       audio.pause(); userStopped = false;
       const t = tracks[current], scene = sceneId(t);
       if (!scene) {
-        await window.remoteLibrary?.ensure();
+        const inventory = await window.remoteLibrary?.ensure();
         const item = window.remoteLibrary?.item(t);
         if (item?.audio && item.filename) { await command({action: 'file', file: item.filename, key: t.key}); return; }
+        // ensure() gives up after 6 s. A slow SD listing then looks exactly
+        // like a missing file, and the sync dialog is the wrong answer.
+        if (!inventory) { toast('Castle listing slow · press Play again'); window.remoteLibrary?.retry(); return; }
         window.remoteLibrary?.offer(t); return;
       }
       await command({action: 'scene', scene});
     },
-    toggle() { return isPlaying(state) && !busy ? this.stop() : this.play(); },
+    toggle() { if (isStarting(state)) {return false;} return isPlaying(state) && !busy ? this.stop() : this.play(); },
+    // Previous on the castle cannot read audio.currentTime (nothing is loaded
+    // here), so the castle's own clock decides restart-or-go-back.
+    previous() { if (busy || !isPlaying(state) || remoteTime() <= 3) {return false;} this.play(); return true; },
+    owns(t) { return !userStopped && isLive(state) && !!t && remoteTrack()?.id === t.id; },
     stop() { audio.pause(); userStopped = true; wasPlaying = false; idlePolls = 0; stopped = true; return command({action: 'stop'}); }
   };
   target.onchange = () => {
@@ -271,8 +297,13 @@
   };
   $('motion').addEventListener('change', sendMotion);
   $('cooldown').addEventListener('change', sendMotion);
-  $('live-show-start').onclick = () => command({action: 'show/start'});
-  $('live-show-stop').onclick = () => { userStopped = true; wasPlaying = false; command({action: 'stop'}); };
+  // B53: playlist mode is not radio mode. Starting the installed show parks
+  // the radio queue (userStopped) and clears the follow state, so the dark
+  // gaps between playlist scenes are not read as "this song ended".
+  $('live-show-start').onclick = () => { userStopped = true; wasPlaying = false; idlePolls = 0; advancedFor = ''; command({action: 'show/start'}); };
+  // /api/stop is scene_stop only; the generated playlist steps on after the
+  // gap. Ending the evening is /api/show/stop.
+  $('live-show-stop').onclick = () => { userStopped = true; wasPlaying = false; idlePolls = 0; advancedFor = ''; command({action: 'show/stop'}); };
   refresh().then(schedule);
   setInterval(() => { if (onCastle() || state) {paint();} if (onCastle()) {drawPlayheads();} }, 100);
 })();

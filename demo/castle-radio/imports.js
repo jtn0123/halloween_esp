@@ -1,4 +1,7 @@
 /* Import UI backed by server.py and the existing project tools. */
+/* A library refresh that drops the current song stops the castle only when
+   this page is the one playing it there: an import finishing must not
+   black out a song somebody else (or the installed playlist) started. */
 /* global $, art, current, deleteSong, history, load, openPreview, queue, renderQueue, renderTracks, start, toast, tracks */
 const imported = new Map();
 
@@ -13,7 +16,7 @@ document.body.append(reprocessDialog);
 let reprocessTrack=null;
 function integrate(rows){const keys=new Set(rows.map(r=>r.key));for(const t of tracks){if(t.key&&!keys.has(t.key)){t.deleted=true;imported.delete(t.key);}}for(const record of rows){let t=tracks.find(t=>t.key===record.key);if(!t){t={id:tracks.length,key:record.key,file:'',color:'#6c927b',symbol:'✧',kind:'song'};tracks.push(t);}Object.assign(t,record,{deleted:false});imported.set(record.key,t);}
 const count=tracks.filter(t=>!t.deleted).length;$('collection-count').textContent=count;$('collection-caption').textContent=`${count} tracks · automatic light shows`;
-queue=queue.filter(id=>!tracks[id].deleted);history=history.filter(id=>!tracks[id].deleted);if(tracks[current].deleted){stop();load(tracks.find(t=>!t.deleted)?.id??0);}renderTracks();renderQueue();renderImports();}
+queue=queue.filter(id=>!tracks[id].deleted);history=history.filter(id=>!tracks[id].deleted);if(tracks[current].deleted){if(!window.castlePlayer?.active()||window.castlePlayer.owns(tracks[current])){stop();}load(tracks.find(t=>!t.deleted)?.id??0);}renderTracks();renderQueue();renderImports();}
 function renderImports(){const list=$('imported-list');list.innerHTML='';for(const t of imported.values()){const row=document.createElement('div');row.className='prepared-track';const source=t.source_url?`<a href="${escapeHTML(t.source_url)}" target="_blank" rel="noreferrer">Saved link · ${escapeHTML(t.source_label)}</a>`:`Saved source · ${escapeHTML(t.source_label||'unavailable')}`;const bitrate=t.playback_bitrate?` · ${t.playback_bitrate} kbps`:'';const format=`${String(t.playback_format||'mp3').toUpperCase()}${bitrate} · ${importBytes(t.playback_bytes)}`;row.innerHTML=`${art(t)}<div><strong>${escapeHTML(t.title)}</strong><small>${t.split?'Voice + background lights':'Combined-audio lights'} · ${format}</small><small class="saved-source">${source}</small>${window.remoteLibrary?.badge(t)||''}</div>${window.remoteLibrary?.button(t)||''}<button data-import-play="${t.id}">▶ Play</button><button data-split-open="${t.id}">${t.split?'Hear split':'Preview'}</button><button data-reprocess="${t.id}" ${t.source_available?'':'disabled'}>Change audio</button><button data-delete-song="${t.id}" aria-label="Remove ${escapeHTML(t.title)}">Remove</button>`;list.append(row);}if(!imported.size){list.innerHTML='<p class="subtle">Your imported songs will appear here and in Listen.</p>';}}
 function jobProgressText(j){
   if(Number.isFinite(j.percent)){return `${Math.round(j.percent)}% of this stage`;}

@@ -67,6 +67,9 @@
     trackByFilename:name=>tracks.find(t=>inventory?.tracks[key(t)]?.filename===name)||null,
     // Play must not offer a sync dialog just because the first inventory
     // sweep (three SD listings on the castle) has not answered yet.
+    // ensure() can time out with inventory still null; retry() is how a
+    // caller asks for another listing instead of guessing "not synced".
+    retry:()=>{refreshInventory(true);},
     ensure:async()=>{if(inventory){return inventory;}if(!inflight){refreshInventory(true);}await Promise.race([inflight,new Promise(r=>setTimeout(r,6000))]);return inventory;}
   };
   $('sync-close').onclick = () => panel.close();
