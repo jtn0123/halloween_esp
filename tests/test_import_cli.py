@@ -153,7 +153,8 @@ class TestImportFromFile(CliCase):
         """Every import competes for the same budget, so the cost belongs in
         front of you at the moment you make the choice."""
         _code, out = self.run_cli(str(self.src), "--id", "demo")
-        self.assertIn("budget", out)
+        self.assertIn("SD card", out)
+        self.assertNotIn("flash audio budget", out)
 
     def test_missing_file_fails_loudly(self) -> None:
         with self.assertRaises(SystemExit):

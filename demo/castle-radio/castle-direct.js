@@ -56,8 +56,10 @@
   }
   const forget = () => { statusPromise = null; listings.clear(); };
   const versionAtLeast = (value, [major, minor]) => {
-    const [a, b] = String(value || '').split('.').map(Number);
-    return a > major || (a === major && (b || 0) >= minor);
+    const m = String(value || '').match(/^(\d+)\.(\d+)/);
+    if (!m) {return false;}
+    const a = Number(m[1]), b = Number(m[2]);
+    return a > major || (a === major && b >= minor);
   };
 
   // ── what a command asked for, until the castle reports it ──────────────
@@ -152,7 +154,7 @@
   }
   function lightSpec(value) {
     if (!LIGHT.test(value)) {throw new Error('Choose a valid castle light test.');}
-    return value;
+    return value.replace(/[0-9a-fA-F]{6}/, hex => hex.toLowerCase());
   }
   async function scenePath(body) {
     const scene = await installedScene(String(body.scene || ''));
@@ -203,11 +205,14 @@
   }
 
   // ── what the card holds, as the sync panel understands it ──────────────
+  function namedFiles(rows) {
+    return rows.filter(f => f.name && !f.dir);
+  }
   async function inventory() {
     const [state, files, sceneFiles] = await Promise.all([status(), listing(), listing('scenes')]);
     const installed = new Set(state.scenes.split(','));
-    const audio = new Map(files.filter(f => !f.dir).map(f => [f.name, f.size]));
-    const sceneAudio = new Set(sceneFiles.filter(f => !f.dir).map(f => f.name));
+    const audio = new Map(namedFiles(files).map(f => [f.name, f.size]));
+    const sceneAudio = new Set(namedFiles(sceneFiles).map(f => f.name));
     const tracks = {};
     for (const scene of scenes) {
       const ready = installed.has(scene.id) && sceneAudio.has(scene.file);
@@ -223,7 +228,7 @@
     return {tracks, jobs: {}, other_audio: other};
   }
   async function presentRows() {
-    const audio = new Map((await listing()).filter(f => !f.dir).map(f => [f.name, f.size]));
+    const audio = new Map(namedFiles(await listing()).map(f => [f.name, f.size]));
     return library.filter(row => audio.get(row.filename) === row.bytes).map(({frames, ...row}) => row);
   }
   async function deleteAudio(name) {

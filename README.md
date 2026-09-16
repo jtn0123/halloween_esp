@@ -125,6 +125,13 @@ and an OTA slot holds 1.75 MB, so on 2026-09-01 the all-in-flash build was
 retired and the card became the only way the castle plays (`docs/notes/03-build.md`
 §12.15).
 
+When both `site/index.html.gz` and `site/index.html` are on the card, `/`
+serves the gzipped copy. `make publish` / `sd_sync site` writes both; a hand
+copy must include the `.gz` or a newer plain file is ignored. A PUT whose
+`Content-Length` is larger than the body that arrives is a known ESP-IDF
+httpd limit (the socket closes on the short read). The API server has four
+open sockets (`firmware/sd_web.h`); that is the board's pool, not a desk bug.
+
 ---
 
 ## The cue desk

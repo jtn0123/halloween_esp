@@ -173,6 +173,14 @@ class Fuzzer:
             if safe and code not in (200, 404):
                 raise Violation(f"seed={self.seed} DELETE {name!r} → {code} {body!r}")
         elif verb == "PLAY":
+            if wire.query_truncated(b"/api/play?f=" + name.encode()):
+                want = 414
+                code, _, _ = self.req("POST", "/api/play?f=" + raw)
+                if code != want:
+                    raise Violation(
+                        f"seed={self.seed} play {name!r}: {code} want {want}"
+                    )
+                return
             f = wire.query_param(b"/api/play?f=" + name.encode(), "f")
             code, _, _ = self.req("POST", "/api/play?f=" + raw)
             want = 200 if wire.safe_name(f) else 400
@@ -181,13 +189,19 @@ class Fuzzer:
         else:
             code, _, _ = self.req("GET", "/sd/" + raw)
             rel = wire.url_decode(name.encode()).split(b"?")[0]
-            wants = (400,) if not wire.safe_subpath(rel) else (200, 404)
+            wants = (400,) if not rel or not wire.safe_subpath(rel) else (200, 404)
             if code not in wants:
                 raise Violation(f"seed={self.seed} sd {name!r}: {code} want {wants}")
 
     def expect_name_verdict(
         self, code: int, body: bytes, safe: bool, decoded: bytes, payload: bytes
     ) -> None:
+        if not payload:
+            if (code, body) != (400, b"empty body"):
+                raise Violation(
+                    f"seed={self.seed} empty PUT {decoded!r} → {code} {body!r}"
+                )
+            return
         if not safe:
             if (code, body) != (400, b"bad filename"):
                 raise Violation(
@@ -213,22 +227,34 @@ class Fuzzer:
         code, body, _ = self.req("POST", raw)
         if len(raw) > wire.MAX_URI:
             return
-        val = wire.query_param(target.encode(), key)
-        want: tuple[int, ...]
-        if route == "/api/volume":
-            digits = bool(val) and len(val) <= 3 and val.isdigit()
-            want = (200,) if digits and int(val) <= 100 else (400,)
-        elif route == "/api/scene":
-            want = (400,) if not val else (200, 404)
-        elif route == "/api/light":
-            hex6 = len(val) == 6 and all(
-                chr(b) in "0123456789abcdefABCDEF" for b in val
-            )
-            want = (200,) if hex6 or val in (b"show", b"off") else (400,)
-        elif route == "/api/pir":
-            want = (200,) if val else (400,)
+        if wire.query_truncated(target.encode()):
+            want: tuple[int, ...] = (414,)
+            val = b""
         else:
-            want = (200,) if wire.safe_name(val) else (400,)
+            val = wire.query_param(target.encode(), key)
+            if route == "/api/volume":
+                digits = bool(val) and len(val) <= 3 and val.isdigit()
+                want = (200,) if digits and int(val) <= 100 else (400,)
+            elif route == "/api/scene":
+                want = (400,) if not val else (200, 404)
+            elif route == "/api/light":
+                hex6 = len(val) == 6 and all(
+                    chr(b) in "0123456789abcdefABCDEF" for b in val
+                )
+                want = (200,) if hex6 or val in (b"show", b"off") else (400,)
+            elif route == "/api/pir":
+                a, c, s = (
+                    wire.query_param(target.encode(), k)
+                    for k in ("armed", "cooldown", "scene")
+                )
+                ok, _ = wire.pir_armed_ok(a)
+                want = (
+                    (200,)
+                    if (a or c or s) and ok and wire.pir_cooldown_ok(c)
+                    else (400,)
+                )
+            else:
+                want = (200,) if wire.safe_name(val) else (400,)
         if code not in want:
             raise Violation(
                 f"seed={self.seed} POST {target!r} → {code} {body!r}, "
@@ -261,7 +287,11 @@ class Fuzzer:
         mode = rng.random()
         if mode < 0.4:
             code, body, _ = self.req("PUT", f"/api/files/{name}", body=payload)
-            self.expect_name_verdict(code, body, True, name.encode(), payload)
+            if not payload:
+                if (code, body) != (400, b"empty body"):
+                    raise Violation(f"seed={self.seed} empty PUT → {code} {body!r}")
+            else:
+                self.expect_name_verdict(code, body, True, name.encode(), payload)
             self.req("DELETE", f"/api/files/{name}")
         elif mode < 0.6:  # declared MORE than sent: short write, nothing left behind
             code, body, _ = self.req(
@@ -276,7 +306,10 @@ class Fuzzer:
             code, body, _ = self.req_unread(
                 "PUT", f"/api/files/{name}", body=payload, declared=declared
             )
-            if code:
+            if declared == 0:
+                if code and (code, body) != (400, b"empty body"):
+                    raise Violation(f"seed={self.seed} CL 0 → {code} {body!r}")
+            elif code:
                 self.expect_name_verdict(
                     code, body, True, name.encode(), payload[:declared]
                 )

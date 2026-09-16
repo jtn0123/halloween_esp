@@ -104,6 +104,9 @@ class TestValidatorConstants(unittest.TestCase):
         self.assertIn("v.size() <= 3", FUNCS["h_volume"])
         self.assertIn("pct > 100", FUNCS["h_volume"])
         self.assertIn("light_spec_ok(c)", FUNCS["h_light"])
+        self.assertIn("S_ISDIR", FUNCS["h_list"])
+        self.assertIn("content_len == 0", FUNCS["h_put"])
+        self.assertIn("empty body", FUNCS["h_put"])
         # The validator lives in sd_web_state.h; its shape is pinned by example.
         self.assertIn("spec.size() == 6", SD_STATE)
         self.assertIn("zone.size() > 16", SD_STATE)

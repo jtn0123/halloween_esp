@@ -68,6 +68,18 @@ class RemovalTests(unittest.TestCase):
         library_ops.restore(self.data, self.catalog, self.key)
         self.assertEqual(opus.read_bytes(), b"compact playback")
 
+    def test_named_playback_file_is_trashed(self):
+        mp3 = self.library / f"{self.key}.mp3"
+        mp3.unlink()
+        named = self.library / "custom_play.opus"
+        named.write_bytes(b"named mix")
+        self.row["playback_file"] = "custom_play.opus"
+        self.catalog.write_text(json.dumps([self.row, self.other]))
+        library_ops.remove(self.data, self.library, self.catalog, self.key)
+        self.assertFalse(named.exists())
+        library_ops.restore(self.data, self.catalog, self.key)
+        self.assertEqual(named.read_bytes(), b"named mix")
+
 
 if __name__ == "__main__":
     unittest.main()

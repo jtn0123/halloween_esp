@@ -27,6 +27,7 @@
 
 #include "esphome/core/log.h"
 #include "sd_audio.h"
+#include "fallback_scenes.h"
 
 namespace castle_web {
 
@@ -127,7 +128,7 @@ small{color:#9a8fb0}h1{font-size:1.3rem}</style>
 <button onclick="api('/api/stop')">■ Stop</button>
 <h3>SD card</h3><ul id=files></ul><pre id=log></pre>
 <script>
-const S=['vigil','storm','seance','ballroom','descent','visitation','approach','crypt'];
+const S=[__FALLBACK_SCENES__];
 const api=(u,m)=>fetch(u,{method:m||'POST'});
 scenes.innerHTML=S.map(s=>`<button onclick="api('/api/scene?s=${s}')">${s}</button>`).join('');
 fetch('/api/status').then(r=>r.json()).then(s=>v.textContent=s.version+' · '+(s.sd_mounted?'SD ok':'no SD'));
@@ -141,14 +142,19 @@ inline esp_err_t h_root(httpd_req_t *req) {
   if (castle_sd::g_mounted) {
     // Prefer the pre-compressed desk: ~3x fewer bytes over the radio, and
     // every browser this decade sends Accept-Encoding: gzip. sd_sync pushes
-    // both forms, so a stale .gz cannot shadow a newer plain file.
+    // both forms. The .gz wins when both exist — a newer plain index.html
+    // is ignored until the gzipped copy is replaced too (see README).
     if (send_sd_file(req, "/sd/site/index.html.gz", "gzip",
                      "text/html; charset=utf-8"))
       return ESP_OK;
     if (send_sd_file(req, "/sd/site/index.html")) return ESP_OK;
   }
   httpd_resp_set_type(req, "text/html; charset=utf-8");
-  return httpd_resp_send(req, kFallbackPage, HTTPD_RESP_USE_STRLEN);
+  std::string page = kFallbackPage;
+  static constexpr const char kMark[] = "__FALLBACK_SCENES__";
+  if (const auto at = page.find(kMark); at != std::string::npos)
+    page.replace(at, sizeof(kMark) - 1, kFallbackSceneIds);
+  return httpd_resp_send(req, page.c_str(), page.size());
 }
 
 inline esp_err_t h_site(httpd_req_t *req) {

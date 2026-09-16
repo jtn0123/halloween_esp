@@ -176,10 +176,10 @@ def status():
 
 
 def _version_at_least(value, wanted):
-    try:
-        return tuple(int(part) for part in str(value).split(".")[:2]) >= wanted
-    except ValueError:
+    match = re.match(r"^\s*(\d+)\.(\d+)", str(value))
+    if not match:
         return False
+    return (int(match.group(1)), int(match.group(2))) >= wanted
 
 
 def imported_light_frames(cues, frame_s=0.25):

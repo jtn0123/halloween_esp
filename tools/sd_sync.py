@@ -8,7 +8,7 @@
     tools/sd_sync.py [ip|name] push [f...]   upload tracks (default: tracks/*)
     tools/sd_sync.py [ip|name] tones         upload the speaker-test tones the
                                              desk's 🏰 panel plays (audio/test -> /sd)
-    tools/sd_sync.py [ip|name] scenes        upload the 8 scene tracks the SD
+    tools/sd_sync.py [ip|name] scenes        upload the scene tracks the SD
                                              build streams (audio/ -> /sd/scenes)
     tools/sd_sync.py [ip|name] site          push the Castle Radio page (gzipped)
     tools/sd_sync.py [ip|name] ota <bin>     flash firmware over plain HTTP
@@ -90,6 +90,15 @@ def card_dir(ip: str, d: str) -> dict[str, int]:
     }
 
 
+def _scene_bytes_match(ip: str, name: str, data: bytes) -> bool:
+    """True when GET /sd/scenes/<name> is the same bytes we would PUT."""
+    try:
+        remote = api(ip, "GET", f"/sd/scenes/{urllib.parse.quote(name)}")
+    except OSError:
+        return False
+    return remote == data
+
+
 def cmd_push(ip: str, args: list[str]) -> int:
     files = [Path(a) for a in args] if args else sorted(ROOT.glob("tracks/*.mp3"))
     if not files:
@@ -126,7 +135,7 @@ def cmd_scenes(ip: str) -> int:
         # Same name, same size: almost certainly the same render — a full
         # ten-scene push is minutes over porch WiFi, and publish (the studio
         # runs this after every scene save) must not pay that every time.
-        if have.get(src.name) == len(data):
+        if have.get(src.name) == len(data) and _scene_bytes_match(ip, src.name, data):
             print(f"  {src.name} unchanged, skipped")
             continue
         upload(ip, "/api/scenes", src.name, data)

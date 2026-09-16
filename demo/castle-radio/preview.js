@@ -231,7 +231,8 @@ async function deleteSong(id){
   }catch(e){toast(`Could not remove song: ${e.message}`);}
 }
 $('tracks').addEventListener('click',e=>{const b=e.target.closest('[data-delete-song]');if(b){deleteSong(Number(b.dataset.deleteSong));}});
-$('undo-delete').onclick=async()=>{if(!lastRemoved){return;}const t=lastRemoved;try{if(t.key){await request(`/radio/restore/${t.key}`,{method:'POST'});}t.deleted=false;rememberHidden();lastLibrary='';await refresh();renderTracks();$('undo-bar').hidden=true;lastRemoved=null;}catch(e){toast(`Could not restore song: ${e.message}`);}};
+$('undo-delete').onclick=async()=>{if(!lastRemoved){return;}const t=lastRemoved;try{if(t.key){await request(`/radio/restore/${t.key}`,{method:'POST'});}t.deleted=false;if(!queue.includes(t.id)){queue.push(t.id);}rememberHidden();lastLibrary='';await refresh();renderTracks();renderQueue();$('undo-bar').hidden=true;lastRemoved=null;}catch(e){toast(`Could not restore song: ${e.message}`);}};
 $('dismiss-undo').onclick=()=>{$('undo-bar').hidden=true;};
 try{const hidden=JSON.parse(localStorage.getItem('castle-radio-hidden')||'[]');for(const t of tracks){if(!t.key&&hidden.includes(t.file)){t.deleted=true;}}}catch{}
+queue=queue.filter(i=>!tracks[i].deleted);history=history.filter(i=>!tracks[i].deleted);
 mountPreview();syncLayer();loadWaveforms();requestAnimationFrame(drawCastle);

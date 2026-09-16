@@ -23,9 +23,10 @@ PY=$(command -v .venv/bin/python || command -v python3)
 
 # The TS half gets the same gate as the Python half (grade report 2026-08-23 I1) —
 # with a tsconfig this strict, tsc is the highest-value check in the repo.
-# Guarded on node_modules so a Python-only clone still commits.
-if [ -d web/node_modules ]; then
-  (cd web && npx tsc --noEmit)
+# Guarded on the local compiler so a Python-only clone still commits, and so
+# `npx tsc` cannot fetch the unrelated npm `tsc` package.
+if [ -x web/node_modules/.bin/tsc ]; then
+  (cd web && ./node_modules/.bin/tsc --noEmit)
 fi
 
 # The Rust half gets the cheap half of its gate too (grade report 2026-08-31 I2):

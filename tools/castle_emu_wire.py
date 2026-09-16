@@ -8,8 +8,8 @@ the httpd's buffer limits. tests/test_firmware_contract.py parses the C at
 test time and holds this file to it.
 
 Everything works on BYTES. The firmware sees raw octets: safe_name's
-"size() < 100" counts UTF-8 bytes, not characters, and url_decode can mint
-a NUL ("%zz" → strtol → 0) that later truncates the C string. A str port
+"size() < 100" counts UTF-8 bytes, not characters, and a bad %XX makes
+url_decode fail empty rather than minting a NUL. A str port
 would silently disagree with the board on exactly the inputs a fuzz throws.
 """
 
@@ -20,7 +20,7 @@ import json
 #: esp_http_server's request-line ceiling (HTTPD_MAX_URI_LEN). Longer → 414.
 MAX_URI = 512
 #: query_param()'s stack buffers in sd_web.h: the whole query string, and
-#: one value. A query at or over the buffer length is TRUNC → "".
+#: one value. A query at or over the buffer length is TRUNC → 414.
 QUERY_BUF = 200
 VALUE_BUF = 120
 #: safe_name's / safe_subpath's length ceilings.
@@ -105,14 +105,15 @@ def route(method: str, raw_target: bytes) -> tuple[str | None, int]:
 
 def url_decode(raw: bytes) -> bytes:
     """sd_web.h url_decode: %XX and '+'. A '%' followed by two non-hex
-    bytes is strtol → 0 — a NUL lands in the name, exactly as on the
-    board (where the C string then ends there)."""
+    bytes is a failure (empty result), not strtol's NUL."""
     out = bytearray()
     i, n = 0, len(raw)
     while i < n:
         c = raw[i]
         if c == 0x25 and i + 2 < n and raw[i + 1] and raw[i + 2]:  # '%'
-            out.append(_strtol16(raw[i + 1 : i + 3]) & 0xFF)
+            if _hexval(raw[i + 1]) < 0 or _hexval(raw[i + 2]) < 0:
+                return b""
+            out.append((_hexval(raw[i + 1]) * 16 + _hexval(raw[i + 2])) & 0xFF)
             i += 3
         elif c == 0x2B:  # '+'
             out.append(0x20)
@@ -121,18 +122,6 @@ def url_decode(raw: bytes) -> bytes:
             out.append(c)
             i += 1
     return bytes(out)
-
-
-def _strtol16(two: bytes) -> int:
-    """strtol(hex, nullptr, 16) on a 2-byte buffer: leading hex digits
-    only, 0 when there are none."""
-    val = 0
-    for b in two:
-        d = _hexval(b)
-        if d < 0:
-            break
-        val = val * 16 + d
-    return val
 
 
 def _hexval(b: int) -> int:
@@ -147,7 +136,7 @@ def safe_name(n: bytes) -> bool:
     refused because h_list/h_status snprintf names into JSON unescaped —
     and since v5.46 so is every byte >= 0x80, which json_escape passes
     through raw and which therefore made the body invalid UTF-8."""
-    if not n or len(n) >= NAME_MAX or n[0:1] == b"." or b"/" in n or b".." in n:
+    if not n or len(n) >= NAME_MAX or n[0:1] == b"." or b"/" in n:
         return False
     return not any(c < 0x20 or c >= 0x80 or c == 0x7F or c in (0x22, 0x5C) for c in n)
 
@@ -176,10 +165,11 @@ def light_spec_ok(c: bytes) -> bool:
 
 
 def safe_subpath(p: bytes) -> bool:
-    """sd_web_site.h safe_subpath: subdirectories allowed, no escapes."""
-    if not p or len(p) > SUBPATH_MAX or p[0:1] in (b"/", b"."):
+    """sd_web_util.h safe_subpath: subdirectories allowed; `.` / `..` /
+    leading-dot names refused as whole path segments."""
+    if not p or len(p) > SUBPATH_MAX or p[0:1] == b"/":
         return False
-    return b".." not in p
+    return all(seg and not seg.startswith(b".") for seg in p.split(b"/"))
 
 
 def route_dir(raw_target: bytes) -> tuple[str, bytes]:
@@ -227,6 +217,30 @@ def fat_path(n: bytes) -> str | None:
     if any(seg in (".", "..") for seg in name.split("/")):
         return None
     return name
+
+
+def query_truncated(raw_target: bytes) -> bool:
+    """httpd_req_get_url_query_str TRUNC when the query plus NUL exceeds 200."""
+    if b"?" not in raw_target:
+        return False
+    qry = raw_target.split(b"?", 1)[1]
+    return bool(qry) and len(qry) + 1 > QUERY_BUF
+
+
+def pir_armed_ok(a: bytes) -> tuple[bool, bytes]:
+    """sd_web_util.h pir_armed_ok: empty, or 1/true/on / 0/false/off → 1/0."""
+    if not a:
+        return True, a
+    low = a.lower()
+    if low in (b"1", b"true", b"on"):
+        return True, b"1"
+    if low in (b"0", b"false", b"off"):
+        return True, b"0"
+    return False, a
+
+
+def pir_cooldown_ok(c: bytes) -> bool:
+    return (not c) or c in (b"30", b"60", b"120")
 
 
 def query_param(raw_target: bytes, key: str) -> bytes:

@@ -1,7 +1,14 @@
-# The project venv when it exists, else whatever python3 is on PATH (CI
-# installs into the runner's interpreter). `make setup` names .venv outright
-# below — this fallback must never point a fresh install at the system python.
-PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
+# The project venv is required. CI passes PY= on the command line.
+ifeq ($(origin PY),command line)
+else
+  PY := $(shell test -x .venv/bin/python && echo .venv/bin/python)
+  ifeq ($(strip $(PY)),)
+    ifeq ($(filter setup help,$(or $(MAKECMDGOALS),help)),)
+      $(error .venv is missing — run make setup)
+    endif
+    PY := python3
+  endif
+endif
 ESPHOME := .venv/bin/esphome
 # The one castle build. It was firmware/castle_flash.yaml until 2026-09-01,
 # when the show's two real songs put 2.2 MB of audio in an image that has to

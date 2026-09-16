@@ -64,10 +64,11 @@ inline void set_scene_ids(std::vector<std::string> ids) { g_scene_ids = std::mov
 /// Card capacity, cached: f_getfree walks the FAT when FSINFO is stale,
 /// which can cost seconds on a big card — not a price every 15 s poll
 /// should pay. A minute of staleness on "GB free" costs nothing.
-inline void sd_space_kb(unsigned &total, unsigned &free_) {
+inline void sd_space_kb(unsigned &total, unsigned &free_, bool refresh = false) {
   static int64_t at = -60 * 1000000LL;
   static unsigned t = 0;
   static unsigned f = 0;
+  if (refresh) at = -60 * 1000000LL;
   if (castle_sd::g_mounted && esp_timer_get_time() - at > 60 * 1000000LL) {
     uint64_t tb = 0;
     uint64_t fb = 0;
@@ -160,6 +161,7 @@ inline esp_err_t h_health(httpd_req_t *req) {
 // ── /api/files — list the card root ─────────────────────────────────────
 inline esp_err_t h_list(httpd_req_t *req) {
   if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
+  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
   // B2: ?d=<subdir> lists inside the card (scenes/, site/) — the desk could
   // never SEE the directory that holds the show. Validated like /sd/ paths.
   std::string sub = query_param(req, "d");
@@ -182,20 +184,17 @@ inline esp_err_t h_list(httpd_req_t *req) {
     // onto the card. Counted, not listed: the desk should not offer a
     // track the castle will then refuse by name.
     if (!safe_name(e->d_name)) { skipped++; continue; }
-    // A std::string rather than the char[300] this used to be: dirpath is
-    // 160 and a FATFS long name is 255, so the two together could overrun
-    // a fixed buffer on paper. They cannot in practice — safe_name just
-    // above caps the name at 99 bytes — but the reader has to prove that to
-    // themselves, and -Wformat-truncation cannot, which is what the host
-    // harness (tests/cxx/web_check.cpp) hit first. This also takes 300
-    // bytes off the httpd task's stack, which is hand-raised because it is
-    // tight; the loop already allocates for `out` and json_escape.
     const std::string full = std::string(dirpath.data()) + "/" + e->d_name;
     struct stat st{};
-    long size = (stat(full.c_str(), &st) == 0) ? (long) st.st_size : -1;
+    long size = -1;
+    bool is_dir = false;
+    if (stat(full.c_str(), &st) == 0) {
+      size = (long) st.st_size;
+      is_dir = S_ISDIR(st.st_mode);
+    }
     std::array<char, 48> tail{};
     snprintf(tail.data(), tail.size(), R"(","size":%ld,"dir":%s})", size,
-             (e->d_type == DT_DIR) ? "true" : "false");
+             is_dir ? "true" : "false");
     if (out.size() > 1) out += ",";
     out += R"({"name":")";
     out += json_escape(e->d_name);
@@ -221,12 +220,12 @@ inline esp_err_t h_list(httpd_req_t *req) {
 /// writing and unlinked it on failure). The studio side was fixed for this
 /// class in 3ccdd8b; this is the device side.
 inline esp_err_t write_body(httpd_req_t *req, const char *path) {
-  // B3/E3: refuse what cannot fit, before the first byte — "short write"
-  // at 80% of a full card told the operator nothing. 64 KB of slack keeps
-  // FAT metadata and the .part sidecar honest.
+  // B3/E3: refuse what cannot fit, before the first byte. Refresh the
+  // 60 s free-space cache so a just-finished upload is not 507'd. A
+  // Content-Length that lies high is an IDF close; we can refuse a low one.
   unsigned sd_total = 0;
   unsigned sd_free = 0;
-  sd_space_kb(sd_total, sd_free);
+  sd_space_kb(sd_total, sd_free, true);
   if (sd_total > 0 && req->content_len / 1024 + 64 > sd_free)
     return reply_err(req, "507 Insufficient Storage", "not enough room on the card");
   const std::string part = std::string(path) + ".part";
@@ -253,13 +252,7 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
     crc = esp_rom_crc32_le(crc, (const uint8_t *) buf->data(), got);
     remaining -= got;
     written += got;
-    // The third appearance of this bug class (h_ota and send_sd_file were
-    // the first two): back-to-back recv+SD-write on the httpd task starves
-    // the watched main loop and the watchdog resets the castle mid-upload.
-    // One tick per 32 KB (every 4th chunk, G6) keeps it fed at 4x the old
-    // per-chunk cadence — RE-VERIFY ON THE BENCH before trusting a big
-    // push on show night; if uploads reboot the board, go back to per-chunk.
-    if ((++chunks & 3u) == 0) vTaskDelay(1);
+    if ((++chunks & 3u) == 0) vTaskDelay(1);  // feed the watchdog every 32 KB
   }
   fclose(f);
   if (!ok) {
@@ -297,6 +290,8 @@ inline void route_dir(const httpd_req_t *req, const char *&dir, const char *&pre
 /// directory is where the show's own tracks live (see audio_sd.yaml).
 inline esp_err_t h_put(httpd_req_t *req) {
   if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
+  if (req->content_len == 0)
+    return reply_err(req, "400 Bad Request", "empty body");
   const char *dir = nullptr; const char *prefix = nullptr;
   route_dir(req, dir, prefix);
   // E3: a desk page has a known plausible size (3.3 MB today); a mistake
@@ -331,6 +326,7 @@ inline esp_err_t h_delete(httpd_req_t *req) {
 
 // ── show control: play/scene/stop/volume/light/pir — all queued ─────────
 inline esp_err_t h_play(httpd_req_t *req) {
+  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
   std::string f = query_param(req, "f");
   if (!safe_name(f)) return reply_err(req, "400 Bad Request", "need ?f=<file>");
   set_pending(ActionType::PLAY, f);
@@ -338,6 +334,7 @@ inline esp_err_t h_play(httpd_req_t *req) {
 }
 
 inline esp_err_t h_scene(httpd_req_t *req) {
+  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
   std::string s = query_param(req, "s");
   if (s.empty()) return reply_err(req, "400 Bad Request", "need ?s=<scene>");
   // {"queued":true} for a scene that does not exist is a lie the desk then
@@ -358,6 +355,7 @@ inline esp_err_t h_stop(httpd_req_t *req) {
 // sd_web_remote.h with the page that presses them.
 
 inline esp_err_t h_volume(httpd_req_t *req) {
+  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
   std::string v = query_param(req, "v");
   // Digits only. atoi("abc") is 0, which turned a malformed request into a
   // silent mute — the kind of "worked, but wrong" a fuzz pass exists to find.
@@ -370,6 +368,7 @@ inline esp_err_t h_volume(httpd_req_t *req) {
 }
 
 inline esp_err_t h_light(httpd_req_t *req) {
+  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
   std::string c = query_param(req, "c");
   if (!light_spec_ok(c))    // RRGGBB|show|off, optionally "<zone>:" first
     return reply_err(req, "400 Bad Request", "need ?c=[zone:]RRGGBB|white|bars|chase|ends|show|off[@pct]");
@@ -377,14 +376,17 @@ inline esp_err_t h_light(httpd_req_t *req) {
   return reply_json(req, "{\"queued\":true}");
 }
 
-/// POST /api/pir?armed=0|1&cooldown=<s>&scene=<id> — any subset of the three.
-/// Encoded "a|c|scene" for the main loop; empty field = leave alone.
+/// POST /api/pir?armed=0|1|true|false|on|off&cooldown=30|60|120&scene=<id>
+/// — any subset of the three. Encoded "a|c|scene"; empty field = leave alone.
 inline esp_err_t h_pir(httpd_req_t *req) {
+  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
   std::string a = query_param(req, "armed");
   std::string c = query_param(req, "cooldown");
   std::string s = query_param(req, "scene");
   if (a.empty() && c.empty() && s.empty())
     return reply_err(req, "400 Bad Request", "need armed=, cooldown= or scene=");
+  if (!pir_armed_ok(a)) return reply_err(req, "400 Bad Request", "bad armed");
+  if (!pir_cooldown_ok(c)) return reply_err(req, "400 Bad Request", "bad cooldown");
   set_pending(ActionType::PIRCFG, a + "|" + c + "|" + s);
   return reply_json(req, "{\"queued\":true}");
 }

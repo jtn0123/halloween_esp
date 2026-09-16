@@ -6,6 +6,7 @@
 // with the handler headers, so the emulator's port stays byte-exact.
 
 #include <esp_http_server.h>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -16,10 +17,14 @@ namespace castle_web {
 // ── helpers ─────────────────────────────────────────────────────────────
 
 /// %20 and friends. Uploaded names arrive URL-encoded in the path.
+/// A `%` that is not two hex digits is a failure (empty result), not NUL.
 inline std::string url_decode(const char *s) {
   std::string out;
   for (const char *p = s; *p; p++) {
     if (*p == '%' && p[1] && p[2]) {
+      const unsigned char a = (unsigned char) p[1];
+      const unsigned char b = (unsigned char) p[2];
+      if (!isxdigit(a) || !isxdigit(b)) return {};
       char hex[3] = {p[1], p[2], 0};
       out.push_back((char) strtol(hex, nullptr, 16));
       p += 2;
@@ -32,11 +37,11 @@ inline std::string url_decode(const char *s) {
   return out;
 }
 
-/// A filename from a URL is untrusted input even on a porch prop. One path
-/// component only: no slashes, no "..", nothing hidden.
+/// One path component: no slashes, nothing hidden. `..` is refused only as
+/// the whole name (it starts with `.`); `foo..bar` is a legal FAT name.
 inline bool safe_name(const std::string &n) {
   if (n.empty() || n.size() >= 100 || n[0] == '.' ||
-      n.find('/') != std::string::npos || n.find("..") != std::string::npos)
+      n.find('/') != std::string::npos)
     return false;
   // Names go out inside /api/files and /api/status JSON. json_escape keeps
   // the parse alive whatever the card holds; this keeps a quote, backslash
@@ -101,6 +106,13 @@ inline std::string json_escape(const std::string &s) {
   return out;
 }
 
+/// httpd_req_get_url_query_str into 200 bytes: a longer query is TRUNC, not
+/// a silently empty parameter (that used to look like "need ?f=").
+inline bool query_truncated(httpd_req_t *req) {
+  char q[200] = {0};
+  return httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_ERR_HTTPD_RESULT_TRUNC;
+}
+
 inline std::string query_param(httpd_req_t *req, const char *key) {
   char q[200] = {0};
   if (httpd_req_get_url_query_str(req, q, sizeof(q)) != ESP_OK) return "";
@@ -110,11 +122,38 @@ inline std::string query_param(httpd_req_t *req, const char *key) {
 }
 
 /// A path that may contain subdirectories but must stay inside /sd:
-/// no "..", no leading dot segments, no absolute escapes. Used by the
-/// /sd/ and /site/ serving routes (sd_web_site.h) and /api/files?d=.
+/// no empty, `.` or `..` segments, and no name that starts with `.`.
 inline bool safe_subpath(const std::string &p) {
-  if (p.empty() || p.size() > 140 || p[0] == '/' || p[0] == '.') return false;
-  return p.find("..") == std::string::npos;
+  if (p.empty() || p.size() > 140 || p[0] == '/') return false;
+  size_t i = 0;
+  while (i <= p.size()) {
+    size_t j = p.find('/', i);
+    if (j == std::string::npos) j = p.size();
+    const std::string s = p.substr(i, j - i);
+    if (s.empty() || s[0] == '.') return false;
+    if (j == p.size()) break;
+    i = j + 1;
+  }
+  return true;
+}
+
+/// POST /api/pir: desk tokens only. Mutates armed to "1" or "0".
+inline bool pir_armed_ok(std::string &a) {
+  if (a.empty()) return true;
+  for (char &c : a) c = (char) tolower((unsigned char) c);
+  if (a == "1" || a == "true" || a == "on") {
+    a = "1";
+    return true;
+  }
+  if (a == "0" || a == "false" || a == "off") {
+    a = "0";
+    return true;
+  }
+  return false;
+}
+
+inline bool pir_cooldown_ok(const std::string &c) {
+  return c.empty() || c == "30" || c == "60" || c == "120";
 }
 
 }  // namespace castle_web
