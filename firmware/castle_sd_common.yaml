@@ -88,6 +88,7 @@ esphome:
     - sd_web_state.h
     - sd_web_stream.h
     - sd_web.h
+    - generated/fallback_scenes.h
     - sd_web_ota.h
     - sd_web_site.h
     - sd_web_remote.h
@@ -277,7 +278,8 @@ interval:
             const std::string c = act.arg.substr(p1 + 1, p2 - p1 - 1);
             const std::string s = act.arg.substr(p2 + 1);
             if (!a.empty()) {
-              if (a == "1") id(pir_armed).turn_on(); else id(pir_armed).turn_off();
+              if (a == "1" || a == "true" || a == "on") id(pir_armed).turn_on();
+              else if (a == "0" || a == "false" || a == "off") id(pir_armed).turn_off();
             }
             if (!c.empty()) {
               auto call = id(pir_cooldown).make_call();

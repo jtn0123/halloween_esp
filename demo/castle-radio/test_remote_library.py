@@ -146,3 +146,18 @@ class RemoteLibraryTests(unittest.TestCase):
                 "test", "/api/files", "test.mp3", b"audio", lambda: connection
             )
         del remote_library._JOBS["test"]
+
+
+class ListingTrailerTests(unittest.TestCase):
+    @patch("device_bridge.call")
+    def test_skipped_trailer_is_not_treated_as_a_file(self, call):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "media").mkdir()
+            call.side_effect = [
+                {"scenes": ""},
+                [{"name": "keep.mp3", "size": 4}, {"skipped": 1}],
+                [],
+            ]
+            other = remote_library.inventory(root, root, [])["other_audio"]
+            self.assertEqual(other, [{"name": "keep.mp3", "bytes": 4}])

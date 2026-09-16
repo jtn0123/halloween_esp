@@ -80,6 +80,9 @@ def remove(data, library, catalog_path, key):
         data / "waveforms" / f"{key}.json",
     ]
     candidates += [library / f"{key}.{suffix}" for suffix in AUDIO_SUFFIXES]
+    named = row.get("playback_file")
+    if named:
+        candidates.append(library / Path(named).name)
     candidates += list((library / "_src").glob(key + ".*"))
     candidates += list(data.glob(key + ".*"))
     moved = []

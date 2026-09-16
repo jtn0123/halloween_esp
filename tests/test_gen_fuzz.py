@@ -45,6 +45,7 @@ OUTPUT_PATHS = (
     "RIG_OUT",
     "LIGHTS_OUT",
     "LIGHTS_S3_OUT",
+    "FALLBACK_SCENES_OUT",
 )
 
 

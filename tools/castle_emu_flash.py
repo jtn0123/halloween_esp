@@ -53,8 +53,20 @@ def flash_page(header: str, symbol: str) -> str:
 
 
 REMOTE_PAGE = flash_page("sd_web_remote.h", "kRemotePage")
+
+
+def _fallback_scene_ids() -> str:
+    text = (_FW / "generated" / "fallback_scenes.h").read_text()
+    m = re.search(r'kFallbackSceneIds\[\] = "(.*)";', text)
+    if not m:
+        raise RuntimeError("no kFallbackSceneIds in fallback_scenes.h")
+    return m.group(1)
+
+
 #: h_root's answer when the card has no /site/index.html — or no card.
-FALLBACK_PAGE = flash_page("sd_web_site.h", "kFallbackPage")
+FALLBACK_PAGE = flash_page("sd_web_site.h", "kFallbackPage").replace(
+    "__FALLBACK_SCENES__", _fallback_scene_ids()
+)
 #: sd_web_site.h set_csp(), byte for byte (E4) — sent on every served page.
 CSP = (
     "default-src 'self'; script-src 'self' 'unsafe-inline'; "

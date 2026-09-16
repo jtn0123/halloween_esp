@@ -10,9 +10,8 @@ built from the onsets actually detected in the file.
     tools/import_track.py <url> --id chant --start 0:12 --take 20
     tools/import_track.py tracks/chant.mp3 --analyze-only
 
-Flash is the hard constraint: everything the device plays lives in one 3.87 MB
-app partition alongside ~1 MB of firmware. This script always tells you what a
-track will cost before you commit to it.
+Flash is not the hard constraint any more: playback lives on the SD card.
+This script still prints the converted size so you can see what you made.
 """
 
 from __future__ import annotations
@@ -47,7 +46,6 @@ from track_lib import TRACKS as TRACKS  # re-exported: the CLI tests patch it he
 
 ROOT = Path(__file__).resolve().parent.parent
 BITRATE = 96  # matches hardware.audio.bitrate in scenes.yaml
-BUDGET = 2.9 * 1024 * 1024
 SR = 44100  # the analysis rate — analyze.SR, which the crate fixes too
 
 
@@ -115,7 +113,7 @@ def _build_parser() -> argparse.ArgumentParser:
     g.add_argument(
         "--bitrate",
         type=int,
-        help=f"kbps (default {BITRATE}, matching the flash budget)",
+        help=f"kbps (default {BITRATE}, matching scenes.yaml)",
     )
     g.add_argument(
         "--format",
@@ -381,14 +379,8 @@ def _report(
     print(
         f"  source remembered — rebuild any time with: "
         f"tools/import_track.py --refresh {tid}\n"
-        f"  {size / BUDGET * 100:.0f}% of the flash audio budget "
-        f"({BUDGET / 1024 / 1024:.1f} MB for ALL scenes)"
+        f"  audio lives on the SD card, not in the flash partition"
     )
-    if size > BUDGET * 0.45:
-        print(
-            "  ⚠ that is a big share — trim it with --take, or drop "
-            "--bitrate / --sample-rate"
-        )
     print()
     for band, hits in marks.items():
         print(f"  {band:<11} {len(hits):>4} onsets ({len(hits) / dur * 60:.0f}/min)")

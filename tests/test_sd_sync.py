@@ -42,6 +42,7 @@ class FakeCard:
         self.short_by = 0  # report fewer bytes than sent, to test the check
         self.crc: str | None = None  # a v5.42 reply's crc32; None = old firmware
         self.subdirs: dict[str, dict[str, int]] = {}  # ?d= listings (v5.42)
+        self.blobs: dict[str, bytes] = {}  # GET /sd/... bodies for CRC skip
 
     def __call__(
         self,
@@ -74,6 +75,11 @@ class FakeCard:
         if method == "DELETE":
             self.files.pop(urllib.parse.unquote(path.rsplit("/", 1)[1]), None)
             return b"{}"
+        if method == "GET" and path.startswith("/sd/"):
+            rel = urllib.parse.unquote(path[len("/sd/") :])
+            if rel in self.blobs:
+                return self.blobs[rel]
+            return json.dumps({"path": path}).encode()
         if method == "GET":
             return json.dumps({"path": path}).encode()
         return b"{}"
@@ -236,10 +242,19 @@ class TestSiteScenesOta(SdCase):
         (self.tmp / "audio" / "01_vigil.mp3").write_bytes(b"x" * 100)
         (self.tmp / "audio" / "02_storm.mp3").write_bytes(b"y" * 200)
         self.card.subdirs["scenes"] = {"01_vigil.mp3": 100}  # already there
+        self.card.blobs["scenes/01_vigil.mp3"] = b"x" * 100
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
         sent = [p for p, _n in self.puts()]
         self.assertEqual(sent, ["/api/scenes/02_storm.mp3"])
         self.assertIn("01_vigil.mp3 unchanged, skipped", self.out.getvalue())
+
+    def test_scenes_same_size_different_bytes_are_reuploaded(self) -> None:
+        (self.tmp / "audio").mkdir()
+        (self.tmp / "audio" / "01_vigil.mp3").write_bytes(b"x" * 100)
+        self.card.subdirs["scenes"] = {"01_vigil.mp3": 100}
+        self.card.blobs["scenes/01_vigil.mp3"] = b"y" * 100
+        self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
+        self.assertEqual([p for p, _n in self.puts()], ["/api/scenes/01_vigil.mp3"])
 
     def test_scenes_uploads_the_numbered_tracks_but_not_00(self) -> None:
         audio = self.tmp / "audio"

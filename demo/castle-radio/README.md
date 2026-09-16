@@ -68,6 +68,9 @@ to mailbox-rate frames at build time and streamed by the phone's browser on
 the castle's own clock. Importing, separation, waveforms and syncing stay on
 the computer, and the page says so where those controls appear. The castle
 keeps the previous cue desk build as `site/index.old.html(.gz)`.
+Firmware serves `index.html.gz` in preference to the plain file, so a card
+copy that only updates `index.html` leaves the previous gzipped page in
+place — push the `.gz` (as `sd_sync site` does) or delete the stale gzip.
 
 Tests: `python -m unittest test_device_site` in this directory, and
 `tests/test_sd_sync.py` for the push.

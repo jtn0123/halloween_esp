@@ -53,6 +53,7 @@ CHUNK = 8192
 JSON_MIME = "application/json"
 #: sd_web.h's 503 for every route that needs the card, spelled once.
 NO_SD = "no SD card"
+QUERY_TOO_LONG = "query too long"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -180,6 +181,8 @@ class Handler(BaseHTTPRequestHandler):
     def h_list(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         # B2: ?d=<subdir> lists inside the card, validated like /sd/ paths.
         sub = wire.query_param(raw, "d")
         base = self.server.sd_dir
@@ -298,6 +301,8 @@ class Handler(BaseHTTPRequestHandler):
     # -- POST: show control, all queued ------------------------------------
 
     def h_play(self, raw: bytes) -> None:
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         f = wire.query_param(raw, "f")
         if not wire.safe_name(f):
             return self._err(400, "need ?f=<file>")
@@ -305,6 +310,8 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"queued": True})
 
     def h_scene(self, raw: bytes) -> None:
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         s = wire.query_param(raw, "s")
         if not s:
             return self._err(400, "need ?s=<scene>")
@@ -333,6 +340,8 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"queued": True})
 
     def h_volume(self, raw: bytes) -> None:
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         v = wire.query_param(raw, "v")
         digits = bool(v) and len(v) <= 3 and v.isdigit()
         pct = int(v) if digits else -1
@@ -342,6 +351,8 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"queued": True})
 
     def h_light(self, raw: bytes) -> None:
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         c = wire.query_param(raw, "c")
         if not wire.light_spec_ok(c):
             return self._err(
@@ -351,9 +362,16 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"queued": True})
 
     def h_pir(self, raw: bytes) -> None:
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         a, c, s = (wire.query_param(raw, k) for k in ("armed", "cooldown", "scene"))
         if not (a or c or s):
             return self._err(400, "need armed=, cooldown= or scene=")
+        ok, a = wire.pir_armed_ok(a)
+        if not ok:
+            return self._err(400, "bad armed")
+        if not wire.pir_cooldown_ok(c):
+            return self._err(400, "bad cooldown")
         self.server.queue("PIRCFG", "|".join(wire.fs_name(x) for x in (a, c, s)))
         self._json({"queued": True})
 
@@ -362,19 +380,20 @@ class Handler(BaseHTTPRequestHandler):
     def h_put(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
+        n = self._content_len()
+        if n is None:
+            return self._idf(400)
+        if n == 0:
+            return self._err(400, "empty body")
         sub, prefix = wire.route_dir(raw)
         if sub == "site":
-            m = self._content_len()
             # E3: a desk page has a known plausible size; the firmware
             # refuses before reading a byte.
-            if m is not None and m > 8 * 1024 * 1024:
+            if n > 8 * 1024 * 1024:
                 return self._err(413, "site file too large")
         name = wire.name_from_uri(raw, prefix)
         if not wire.safe_name(name):
             return self._err(400, "bad filename")
-        n = self._content_len()
-        if n is None:
-            return self._idf(400)
         # B3: write_body's free-space precondition (64 KB slack), when the
         # emulated card declares a size (sd_free_kb None = plenty of room).
         free_kb = self.server.sd_free_kb

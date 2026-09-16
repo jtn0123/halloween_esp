@@ -1,7 +1,11 @@
-# The project venv when it exists, else whatever python3 is on PATH (CI
-# installs into the runner's interpreter). `make setup` names .venv outright
-# below — this fallback must never point a fresh install at the system python.
-PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
+# The project venv is required for Python recipes. CI passes PY= on the
+# command line for those; `make rust` must still parse without a venv.
+ifeq ($(origin PY),command line)
+else ifneq ($(wildcard .venv/bin/python),)
+  PY := .venv/bin/python
+else
+  PY = $(error .venv is missing — run make setup)
+endif
 ESPHOME := .venv/bin/esphome
 # The one castle build. It was firmware/castle_flash.yaml until 2026-09-01,
 # when the show's two real songs put 2.2 MB of audio in an image that has to
@@ -203,8 +207,8 @@ SLOW_SUITES := chaos|relay|fuzz|_rust|_rs|castle_core|studio
 # Castle Radio: the Python suite next to the sources plus the browser
 # sources run under node:test (needs node 22, no npm install).
 test-radio:
-	@cd demo/castle-radio && $(PY) -m unittest discover -s . -p 'test_*.py' -q \
-		&& node --test test_castle_radio.test.mjs
+	@$(PY) -m unittest discover -s demo/castle-radio -t demo/castle-radio -p 'test_*.py' -q \
+		&& node --test demo/castle-radio/test_castle_radio.test.mjs
 
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \

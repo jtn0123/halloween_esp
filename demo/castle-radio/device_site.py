@@ -56,7 +56,7 @@ FONT_IMPORT = (
 )
 PROBE = (
     "tracks.forEach(t=>{const probe=new Audio();probe.preload='metadata';"
-    "probe.src=`media/${t.file}`;probe.onloadedmetadata=()=>{t.duration=probe.duration;"
+    "probe.src=`media/${t.file}`;probe.onloadedmetadata=()=>{if(!Number.isFinite(probe.duration)){return;}t.duration=probe.duration;"
     "renderTracks();};});"
 )
 DURATIONS = (

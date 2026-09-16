@@ -52,10 +52,6 @@ class StreamingTests(unittest.TestCase):
             )
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class ExtraEnvTests(unittest.TestCase):
     def test_extra_env_reaches_the_child(self):
         import sys
@@ -74,3 +70,7 @@ class ExtraEnvTests(unittest.TestCase):
             {"CASTLE_IMPORT_SOURCE": "https://example.test/song"},
         )
         self.assertIn("https://example.test/song", output)
+
+
+if __name__ == "__main__":
+    unittest.main()

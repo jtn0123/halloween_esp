@@ -7,7 +7,7 @@ import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 from uuid import uuid4
 
 import device_bridge
@@ -138,7 +138,8 @@ def imported_show(body):
     key = str(body.get("key") or "")
     if body.get("action") != "file" or not key:
         return None
-    row = next((item for item in catalog() if item["key"] == key), None)
+    with LOCK:
+        row = next((item for item in catalog() if item["key"] == key), None)
     if not row:
         raise ValueError("That imported light show is unavailable.")
     return {"cues": row.get("cues", []), "duration": row.get("duration", 0)}
@@ -224,7 +225,7 @@ class Handler(SimpleHTTPRequestHandler):
                 remaining -= len(block)
 
     def get_sync_status(self, parsed):
-        key = unquote(parsed.query.removeprefix("key="))
+        key = (parse_qs(parsed.query).get("key") or [""])[0]
         self.guard(lambda: self.reply(remote_library.job(key)), 404)
 
     def get_device_library(self, _parsed):
@@ -368,10 +369,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.guard(answer, 400)
 
     def post_retry(self):
-        length = self.upload_length()
-        if length is None:
-            return
-        payload = json.loads(self.rfile.read(length))
+        payload = self.json_body("Invalid retry request")
         with LOCK:
             job = JOBS.get(payload.get("id"))
             if not job or not job["done"]:
@@ -380,10 +378,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.queue(job)
 
     def post_reprocess(self):
-        length = self.upload_length()
-        if length is None:
-            return
-        payload = json.loads(self.rfile.read(length))
+        payload = self.json_body("Invalid reprocess request")
         job = reprocess_job(
             str(payload.get("key") or ""),
             payload.get("audio_format") or "mp3",

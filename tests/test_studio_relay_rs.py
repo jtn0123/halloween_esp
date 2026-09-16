@@ -337,8 +337,13 @@ class CardPush(CardCase):
         code, _, out = self.req(f"/api/files/{name}", "PUT", OCTETS, body)
         return code, out
 
+    def test_empty_body_is_refused(self) -> None:
+        code, body = self.put("relay_empty.bin", b"")
+        self.assertEqual((code, body), (400, b"empty body"))
+        self.assertFalse((self.card / "relay_empty.bin").exists())
+
     def test_bodies_of_every_size_land_intact(self) -> None:
-        for size in (0, 1, 8 * 1024, 2 * 1024 * 1024):
+        for size in (1, 8 * 1024, 2 * 1024 * 1024):
             payload = os.urandom(size)
             code, body = self.put(f"relay_{size}.bin", payload)
             self.assertEqual(code, 200, f"{size}: {body!r}")

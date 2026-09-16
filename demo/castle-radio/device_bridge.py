@@ -184,10 +184,10 @@ def status():
 
 
 def _version_at_least(value, wanted):
-    try:
-        return tuple(int(part) for part in str(value).split(".")[:2]) >= wanted
-    except ValueError:
+    match = re.match(r"^\s*(\d+)\.(\d+)", str(value))
+    if not match:
         return False
+    return (int(match.group(1)), int(match.group(2))) >= wanted
 
 
 # Every value that reaches a castle URL is the castle's own spelling (a name

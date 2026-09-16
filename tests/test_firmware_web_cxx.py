@@ -214,9 +214,7 @@ class TestServedPages(WebPairCase):
             with self.subTest(target=target):
                 r = self.same("GET", target)
                 if target.endswith(b"/") or b"/./" in target:
-                    # 400 when safe_subpath catches it first (an empty
-                    # remainder, or a leading dot), 404 when FatFs does.
-                    self.assertIn(r.status, (400, 404), target)
+                    self.assertEqual(r.status, 400, target)
 
     def test_only_the_page_routes_carry_a_csp(self) -> None:
         """E4: set_csp is on /, /remote and /site/*, and deliberately not on

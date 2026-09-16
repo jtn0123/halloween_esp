@@ -67,6 +67,8 @@ def build(out: Path) -> subprocess.CompletedProcess[str]:
             str(CXX_DIR / "shim"),
             "-I",
             str(FIRMWARE),
+            "-I",
+            str(FIRMWARE / "generated"),
             str(CXX_DIR / "web_check.cpp"),
             "-o",
             str(out),

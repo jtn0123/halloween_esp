@@ -41,13 +41,22 @@ def job(key):
         return dict(value)
 
 
+def _listed_files(rows):
+    """Name+size of files in an /api/files listing, ignoring {"skipped":N}."""
+    return {
+        f["name"]: f["size"]
+        for f in rows
+        if isinstance(f, dict) and f.get("name") and not f.get("dir")
+    }
+
+
 def inventory(root, library, rows):
     state = device_bridge.call(STATUS_PATH)
     files = device_bridge.call(FILES_PATH)
     scenes = device_bridge.call(f"{FILES_PATH}?d=scenes")
     installed = set(state.get("scenes", "").split(","))
-    audio = {f["name"]: f["size"] for f in files if not f.get("dir")}
-    scene_audio = {f["name"] for f in scenes if not f.get("dir")}
+    audio = _listed_files(files)
+    scene_audio = set(_listed_files(scenes))
     result = {}
     for path in (root / "media").glob("*.mp3"):
         scene = path.stem.split("_", 1)[1]

@@ -257,6 +257,11 @@ class SharedStatusTests(unittest.TestCase):
         self.assertTrue(result["capabilities"]["dynamic_lights"])
         self.assertFalse(result["playback"]["estimated"])
 
+    def test_dev_suffix_still_counts_as_the_numeric_version(self):
+        self.assertTrue(device_bridge._version_at_least("5.52-dev", (5, 52)))
+        self.assertFalse(device_bridge._version_at_least("5.51-dev", (5, 52)))
+        self.assertFalse(device_bridge._version_at_least("dev", (5, 52)))
+
 
 class FrameAlignmentTests(unittest.TestCase):
     @patch("device_bridge.time.monotonic", return_value=50.0)
