@@ -146,7 +146,8 @@ class Board:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        assert self.proc.stdin is not None and self.proc.stdout is not None
+        assert self.proc.stdin is not None
+        assert self.proc.stdout is not None
         self.inp, self.out = self.proc.stdin, self.proc.stdout
 
     def send(self, line: str) -> None:

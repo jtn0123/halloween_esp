@@ -122,9 +122,9 @@
   // what never came back, how long the castle has been up, what it runs.
   function healthLine() {
     const h = health();
-    return [`link ${h.rtt_ms === null ? '—' : `${h.rtt_ms} ms`}`,
-      `worst ${h.worst_ms === null ? '—' : `${h.worst_ms} ms`}`,
-      `missed ${h.failures ? `${h.missed_total} (${h.failures} in a row)` : h.missed_total}`,
+    const ms = v => (v === null ? '—' : v + ' ms');
+    const missed = h.failures ? h.missed_total + ' (' + h.failures + ' in a row)' : h.missed_total;
+    return [`link ${ms(h.rtt_ms)}`, `worst ${ms(h.worst_ms)}`, `missed ${missed}`,
       `up ${h.uptime || '—'}`, `firmware ${h.version || '—'}`].join(' · ');
   }
   const castleClockLabel = () => caps.position ? 'castle clock' : 'estimated clock';

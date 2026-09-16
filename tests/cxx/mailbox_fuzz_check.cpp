@@ -19,7 +19,6 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <string>
 
 #include "sd_web_events.h"
@@ -91,7 +90,6 @@ int main() {
       fprintf(stderr, "mailbox_fuzz_check: bad line %s\n", line.c_str());
       return 2;
     }
-    memset(buf, 0, sizeof buf);
   }
   return 0;
 }
