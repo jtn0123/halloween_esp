@@ -16,9 +16,7 @@ class ServerFixTests(unittest.TestCase):
     def test_retry_and_reprocess_use_the_json_body_cap(self):
         self.assertIn("json_body", inspect.getsource(server.Handler.post_retry))
         self.assertIn("json_body", inspect.getsource(server.Handler.post_reprocess))
-        self.assertNotIn(
-            "upload_length", inspect.getsource(server.Handler.post_retry)
-        )
+        self.assertNotIn("upload_length", inspect.getsource(server.Handler.post_retry))
 
     def test_imported_show_reads_the_catalog_under_lock(self):
         src = inspect.getsource(server.imported_show)

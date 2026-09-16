@@ -48,6 +48,7 @@
 #include "boot_log.h"
 #include "castle_health.h"
 #include "sd_audio.h"
+#include "sd_space.h"
 
 namespace castle_web {
 
@@ -62,27 +63,8 @@ inline std::vector<std::string> g_scene_ids;
 inline void set_scene_ids(std::vector<std::string> ids) { g_scene_ids = std::move(ids); }
 
 // ── /api/status ─────────────────────────────────────────────────────────
-/// Card capacity, cached: f_getfree walks the FAT when FSINFO is stale,
-/// which can cost seconds on a big card — not a price every 15 s poll
-/// should pay. A minute of staleness on "GB free" costs nothing.
-inline void sd_space_kb(unsigned &total, unsigned &free_, bool refresh = false) {
-  static int64_t at = -60 * 1000000LL;
-  static unsigned t = 0;
-  static unsigned f = 0;
-  if (refresh) at = -60 * 1000000LL;
-  if (castle_sd::g_mounted && esp_timer_get_time() - at > 60 * 1000000LL) {
-    uint64_t tb = 0;
-    uint64_t fb = 0;
-    if (esp_vfs_fat_info("/sd", &tb, &fb) == ESP_OK) {
-      t = (unsigned) (tb / 1024);
-      f = (unsigned) (fb / 1024);
-    }
-    at = esp_timer_get_time();
-  }
-  total = castle_sd::g_mounted ? t : 0;
-  free_ = castle_sd::g_mounted ? f : 0;
-}
-
+// Card capacity comes from sd_space.h, which only reads the card when a
+// writer says it changed — h_status must stay cheap, it is polled.
 inline esp_err_t h_status(httpd_req_t *req) {
   std::string scene;
   std::string track;
@@ -221,8 +203,8 @@ inline esp_err_t h_list(httpd_req_t *req) {
 /// writing and unlinked it on failure). The studio side was fixed for this
 /// class in 3ccdd8b; this is the device side.
 inline esp_err_t write_body(httpd_req_t *req, const char *path) {
-  // B3/E3: refuse what cannot fit, before the first byte. Refresh the
-  // 60 s free-space cache so a just-finished upload is not 507'd. A
+  // B3/E3: refuse what cannot fit, before the first byte. Re-read the
+  // free-space cache so a just-finished upload is not 507'd. A
   // Content-Length that lies high is an IDF close; we can refuse a low one.
   unsigned sd_total = 0;
   unsigned sd_free = 0;
@@ -270,6 +252,7 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
     return reply_err(req, "500 Internal Server Error", "rename failed");
   }
   ESP_LOGI(TAG, "uploaded %s (%u KB)", path, (unsigned) (written / 1024));
+  sd_space_kb(sd_total, sd_free, true);   // the card just shrank; /api/status reads this
   std::array<char, 220> body{};
   snprintf(body.data(), body.size(), R"({"path":"%s","bytes":%u,"crc32":"%08lx"})",
            path, (unsigned) written, (unsigned long) crc);
@@ -320,6 +303,8 @@ inline esp_err_t h_delete(httpd_req_t *req) {
   const std::string path = std::string("/sd/") + dir + name;
   if (unlink(path.c_str()) != 0) return reply_err(req, "404 Not Found", "no such file");
   ESP_LOGI(TAG, "deleted %s", path.c_str());
+  unsigned t = 0, f = 0;
+  sd_space_kb(t, f, true);   // the only other way free space moves
   return reply_json(req, R"({"deleted":true})");
 }
 

@@ -7,6 +7,14 @@
   let data = null, state = null, lightShow = null, clock = null, caps = {}, received = 0, error = '';
   let busy = false, inflight = null, timer = null, epoch = 0, polled = -Infinity, lastError = '';
   let wasPlaying = false, idlePolls = 0, userStopped = true, volumeTouched = 0, pirTouched = 0, advancedFor = '';
+  // B61: one dropped poll is a hiccup, not an offline castle. The last good
+  // state stays on screen for three strikes, with a word about reconnecting.
+  let failures = 0;
+  // B62: a restart of the SAME scene has to clear the advance guard, or a
+  // looping song re-queued later never advances again. B65: an uptime that
+  // goes backwards is a reboot, not a song.
+  let followKey = '', lastElapsed = 0, playStartedAt = 0, pendingAdvance = false;
+  let lastUptime = null, lastVersion = '', resumeBoot = false;
   const listeners = new Set();
   const onCastle = () => target.value === 'castle';
   const hasTrack = s => !!s && ((s.scene !== 'stop' && s.scene !== '') || !!s.track);
@@ -17,6 +25,14 @@
   // it into isPlaying offered "Stop castle" for a scene the castle had not
   // left: the press stopped the old scene and the new one arrived anyway.
   const isStarting = s => !!s && !!s.settling;
+  // A castle that has just booted answers /api/status before its scene table
+  // exists; "not installed" is the wrong word for a show that is still loading.
+  const sceneCount = s => String(s?.scenes ?? '').split(',').filter(x => x && x !== 'stop').length;
+  const booting = s => !!s && sceneCount(s) === 0;
+  const reconnecting = () => failures > 0 && !!state;
+  // A phone with its screen off freezes the frame loop while the castle's
+  // audio runs on; the castle page says so rather than claiming lights.
+  const lightNote = () => (lightShow?.active ? ` · ${lightShow.note || 'generated lights live'}` : '');
   const isLive = s => isPlaying(s) || isStarting(s);
   const sceneId = t => t.key ? null : t.file.replace(/^\d+_/, '').replace(/\.mp3$/, '');
   function friendly(message) {
@@ -74,6 +90,7 @@
   }
   function chipText(online, playing, name) {
     if (!online) {return 'Castle offline';}
+    if (reconnecting()) {return 'Castle · reconnecting…';}
     if (state.settling) {return 'Castle · starting…';}
     if (playing) {return `Castle · ${name} · ${fmt(remoteTime())}`;}
     return `Castle ${state.version} · idle`;
@@ -90,6 +107,8 @@
   }
   function healthText(online) {
     if (!online) {return error || 'Cannot reach castle';}
+    if (reconnecting()) {return `${error} · reconnecting (${failures} of 3)`;}
+    if (booting(state)) {return `Firmware ${state.version} · castle is starting up`;}
     const sd = state.sd_mounted ? 'SD ready' : 'SD unavailable';
     return `Firmware ${state.version} · ${sd} · ${castleClockLabel()}`;
   }
@@ -98,7 +117,7 @@
     $('live-health').textContent = healthText(online);
     $('live-destination').textContent = onCastle() ? 'Porch castle' : 'This computer';
     $('live-ready').textContent = online
-      ? `${state.scenes.split(',').filter(s => s !== 'stop').length} installed shows`
+      ? (booting(state) ? 'Castle is starting up' : `${sceneCount(state)} installed shows`)
       : 'Connection needed';
   }
   function splitStateText(online) {
@@ -118,8 +137,10 @@
   function currentDetail(online, playing, name) {
     if (busy) {return 'Sending command to castle…';}
     if (!online) {return `${error || 'Castle unavailable'} · retry Play`;}
+    if (reconnecting()) {return 'Castle did not answer · reconnecting…';}
+    if (booting(state)) {return 'Castle is starting up · its light shows are not loaded yet';}
     if (state.settling) {return 'Starting on castle…';}
-    if (playing) {return `Playing on castle · ${name}${lightShow?.active ? ' · generated lights live' : ''}`;}
+    if (playing) {return `Playing on castle · ${name}${lightNote()}`;}
     return 'Castle idle · press Play';
   }
   function paintTransport(online, playing, name) {
@@ -162,20 +183,53 @@
   // Only what the castle can play moves the queue on: an installed scene or a
   // synced import. Anything else is skipped with a word, not a sync dialog.
   const playableOnCastle = t => !t.deleted && (sceneId(t) ? true : !!window.remoteLibrary?.item(t)?.audio);
+  // B63: item() is null both for "not on the card" and for "the listing has
+  // not answered yet". Only the first is a reason to throw a song away.
+  const unknownOnCastle = t => !t.deleted && !sceneId(t) && !window.remoteLibrary?.known?.();
   function advance() {
     if (remoteScene()?.loop && tracks[current].kind !== 'song') {return;}
     const skipped = [];
-    while (queue.length && !playableOnCastle(tracks[queue[0]])) {skipped.push(tracks[queue.shift()].title);}
+    while (queue.length && !playableOnCastle(tracks[queue[0]])) {
+      if (unknownOnCastle(tracks[queue[0]])) {
+        // Wait for the listing rather than discarding the rest of the evening.
+        pendingAdvance = true; window.remoteLibrary?.retry();
+        toast(skipped.length ? `Skipped ${skipped.join(', ')} · not synced to the castle`
+          : 'Castle listing slow · the queue is waiting');
+        return;
+      }
+      skipped.push(tracks[queue.shift()].title);
+    }
     if (skipped.length) {toast(`Skipped ${skipped.join(', ')} · not synced to the castle`);}
     if (queue.length || repeat) { if (!skipped.length) {toast('Song finished · the castle plays the next one');} next(); }
     else { toast('End of the queue · the castle is idle'); renderQueue(); updatePlayer(); }
+  }
+  // The castle names no track id, so a fresh start of the same scene shows up
+  // only as its clock going backwards. Both are a new song for the guard.
+  function watchStart(elapsed) {
+    const key = `${state.scene}|${state.track}`;
+    if (key !== followKey || elapsed + 1 < lastElapsed) {
+      followKey = key; advancedFor = ''; playStartedAt = performance.now() - elapsed * 1000;
+    }
+    lastElapsed = elapsed;
+  }
+  // A non-looping scene whose lights outlast its audio is not over when the
+  // speaker stops; only a song ends with its audio.
+  function ended() {
+    if (tracks[current].kind === 'song') {return true;}
+    // Not remoteScene(): a castle that has fallen quiet already says "stop",
+    // and the authored duration is the library's, not the status line's.
+    const scene = sceneData.find(s => s.id === sceneId(tracks[current]));
+    return !scene?.dur || performance.now() - playStartedAt >= scene.dur;
   }
   function follow() {
     const playing = isPlaying(state);
     const known = remoteTrack();
     if (known && known.id !== current && !state.settling) {load(known.id);}
+    if (pendingAdvance && window.remoteLibrary?.known?.()) { pendingAdvance = false; advance(); }
+    if (resumeBoot && !booting(state) && !playing && !state.settling) { resumeBoot = false; toast('Castle restarted · starting the song again'); window.castlePlayer.play(); return; }
     if (playing) {
       wasPlaying = true; idlePolls = 0; stopped = false; blacked = false;
+      watchStart(clock.position_s + (performance.now() - received) / 1000);
       // A song installed as a looping scene never ends on the castle; the
       // castle's clock says when the song itself is over, and the queue moves.
       const scene = remoteScene();
@@ -194,7 +248,7 @@
     // A looping scene re-fires its audio every 30 s; wait longer before calling that an ending.
     if (++idlePolls < (remoteScene()?.loop ? 5 : 2)) {return;}
     wasPlaying = false; idlePolls = 0; stopped = true;
-    if (!userStopped && caps.track_end) {advance();}
+    if (!userStopped && caps.track_end && ended()) {advance();}
   }
   async function refresh() {
     if (inflight || busy) {return;}
@@ -205,9 +259,26 @@
     inflight = poll();
     try { await inflight; } finally { inflight = null; }
   }
+  // An OTA or a brownout restarts the castle mid-song: uptime goes backwards
+  // (or the version changes) and everything this page believed is stale.
+  function rebooted(s) {
+    const up = typeof s?.uptime_s === 'number' ? s.uptime_s : null;
+    const back = lastUptime !== null && up !== null && up < lastUptime;
+    const changed = !!lastVersion && !!s?.version && s.version !== lastVersion;
+    if (up !== null) {lastUptime = up;}
+    if (s?.version) {lastVersion = s.version;}
+    return back || changed;
+  }
+  function reboot() {
+    resumeBoot = wasPlaying && !userStopped;
+    wasPlaying = false; idlePolls = 0; advancedFor = ''; followKey = ''; lastElapsed = 0; pendingAdvance = false;
+    window.castleDirect?.forget?.();
+    toast(resumeBoot ? 'Castle restarted · the song will start again' : 'Castle restarted');
+  }
   function liveStateText() {
+    if (booting(state)) {return 'Castle is starting up · light shows are still loading';}
     if (state.show_on) {return 'Installed playlist running on castle';}
-    if (state.track) {return `Castle audio: ${state.track}${lightShow?.active ? ' · generated lights live' : ''}`;}
+    if (state.track) {return `Castle audio: ${state.track}${lightNote()}`;}
     if (hasTrack(state)) {return `Castle scene: ${state.scene}`;}
     return 'Castle idle';
   }
@@ -218,10 +289,17 @@
       // A poll that left before a command and lands after it describes the
       // castle the user just changed; dropping it is what keeps Stop stopped.
       if (started !== epoch) {return;}
-      data = next; state = data.state; lightShow = data.light_show; clock = data.playback; caps = data.capabilities || {}; received = performance.now(); error = '';
+      data = next; state = data.state; lightShow = data.light_show; clock = data.playback; caps = data.capabilities || {}; received = performance.now(); error = ''; failures = 0;
+      if (rebooted(state)) {reboot();}
       if (onCastle()) {follow();}
       $('live-state').textContent = liveStateText();
-    } catch (e) { state = null; lightShow = null; clock = null; error = e.message; $('live-state').textContent = e.message; }
+    } catch (e) {
+      error = e.message;
+      // Three strikes: a single dropped poll must not blank the transport or
+      // zero the elapsed clock for a second.
+      if (++failures >= 3) { state = null; lightShow = null; clock = null; }
+      $('live-state').textContent = failures >= 3 ? e.message : `${e.message} · reconnecting…`;
+    }
     finally { paint(); for (const fn of listeners) {fn({connected: !!state, state, data, caps, lightShow, error});} }
   }
   async function command(body) {

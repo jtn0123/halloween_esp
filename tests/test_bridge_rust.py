@@ -100,7 +100,7 @@ class TestBridgeVerbs(unittest.TestCase):
         self.wait_status("scene", "storm")
         code, _ = self.castle("stop")
         self.assertEqual(code, 0)
-        self.wait_status("scene", "")
+        self.wait_status("scene", "stop")
 
     def test_volume_lands_clamped_by_the_rig(self) -> None:
         code, _ = self.castle("volume", "60")
