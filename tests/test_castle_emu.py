@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # helpers
 
 import castle_emu
+import castle_emu_scenes
 import castle_emu_wire as wire
 import castle_link
 from helpers import HostEnv
@@ -222,7 +223,9 @@ class TestSceneSeeding(unittest.TestCase):
     def test_ids_come_from_a_scenes_yaml(self) -> None:
         tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
         tmp.write_text("scenes:\n  - id: seance\n  - id: crypt\n")
-        self.assertEqual(castle_emu.show_scene_ids(tmp), ["seance", "crypt", "stop"])
+        self.assertEqual(
+            castle_emu_scenes.show_scene_ids(tmp), ["seance", "crypt", "stop"]
+        )
 
     def test_castle_scenes_env_is_honoured(self) -> None:
         tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
@@ -236,10 +239,12 @@ class TestSceneSeeding(unittest.TestCase):
         """'scenes:' with nothing under it is what the e2e sandbox writes."""
         tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
         tmp.write_text("scenes:\n")
-        self.assertIsNone(castle_emu.show_scene_ids(tmp))
+        self.assertIsNone(castle_emu_scenes.show_scene_ids(tmp))
 
     def test_unreadable_show_falls_back_to_the_defaults(self) -> None:
-        self.assertIsNone(castle_emu.show_scene_ids(Path("/no/such/scenes.yaml")))
+        self.assertIsNone(
+            castle_emu_scenes.show_scene_ids(Path("/no/such/scenes.yaml"))
+        )
         with unittest.mock.patch.dict(
             os.environ, {"CASTLE_SCENES": "/no/such/scenes.yaml"}
         ):
@@ -248,7 +253,7 @@ class TestSceneSeeding(unittest.TestCase):
         self.assertEqual(emu.scenes, castle_emu.DEFAULT_SCENES)
 
     def test_the_repo_show_seeds_the_default_emulator(self) -> None:
-        ids = castle_emu.show_scene_ids()
+        ids = castle_emu_scenes.show_scene_ids()
         assert ids is not None
         self.assertIn("vigil", ids)
         self.assertGreater(len(ids), 5)
@@ -447,27 +452,27 @@ class TestShowFileGuard(unittest.TestCase):
     def test_a_yaml_file_is_a_show(self) -> None:
         p = self.tmp / "scenes.yaml"
         p.write_text("scenes:\n  - {id: vigil}\n")
-        self.assertEqual(castle_emu.a_show_file(p), p.resolve())
-        self.assertEqual(castle_emu.show_scene_ids(p), ["vigil", "stop"])
+        self.assertEqual(castle_emu_scenes.a_show_file(p), p.resolve())
+        self.assertEqual(castle_emu_scenes.show_scene_ids(p), ["vigil", "stop"])
 
     def test_a_directory_is_not(self) -> None:
         d = self.tmp / "scenes.yaml"
         d.mkdir()
-        self.assertIsNone(castle_emu.a_show_file(d))
-        self.assertIsNone(castle_emu.show_scene_ids(d))
+        self.assertIsNone(castle_emu_scenes.a_show_file(d))
+        self.assertIsNone(castle_emu_scenes.show_scene_ids(d))
 
     def test_something_that_is_not_yaml_is_not(self) -> None:
         p = self.tmp / "passwd"
         p.write_text("root:x:0:0\n")
-        self.assertIsNone(castle_emu.a_show_file(p))
-        self.assertIsNone(castle_emu.show_scene_ids(p))
+        self.assertIsNone(castle_emu_scenes.a_show_file(p))
+        self.assertIsNone(castle_emu_scenes.show_scene_ids(p))
 
     def test_a_parent_hop_is_resolved_before_it_is_used(self) -> None:
         (self.tmp / "sub").mkdir()
         p = self.tmp / "scenes.yaml"
         p.write_text("scenes:\n  - {id: storm}\n")
         hop = self.tmp / "sub" / ".." / "scenes.yaml"
-        self.assertEqual(castle_emu.a_show_file(hop), p.resolve())
+        self.assertEqual(castle_emu_scenes.a_show_file(hop), p.resolve())
 
     def test_a_missing_file_is_not_a_show(self) -> None:
-        self.assertIsNone(castle_emu.a_show_file(self.tmp / "nope.yaml"))
+        self.assertIsNone(castle_emu_scenes.a_show_file(self.tmp / "nope.yaml"))

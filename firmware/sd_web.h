@@ -99,6 +99,9 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // ran, `light_evicted` what the one-slot mailbox dropped — a page
   // streaming colour faster than the 200 ms drain can see it, instead of
   // wondering why its frames look coarse. /api/events carries the rest.
+  // v5.63: `cues` is the size of the card show loaded for this track
+  // (castle_cues.h), 0 when it has none — a page with frames of its own to
+  // stream reads it and leaves the strips to the castle.
   // L2 (v5.62): `epoch` is unix seconds, or 0 until SNTP has answered. The
   // ring's t_ms is uptime and always will be (it is written from an ISR-ish
   // hot path and a wall clock there would be a lie half the night); this is
@@ -112,11 +115,11 @@ inline esp_err_t h_status(httpd_req_t *req) {
   const time_t wall = ::time(nullptr);
   snprintf(buf.data(), buf.size(),
            R"(","show_on":%s,"playing":%s,"position_ms":%lld,)"
-           R"("light_applied":%u,"light_evicted":%u,"epoch":%lld,"rssi":%d,)"
+           R"("light_applied":%u,"light_evicted":%u,"cues":%u,"epoch":%lld,"rssi":%d,)"
            R"("pir":{"armed":%s,"cooldown_s":%d,"scene":")",
            st.show_on ? "true" : "false",
            st.playing ? "true" : "false", st.position_ms,
-           st.light_applied, st.light_evicted,
+           st.light_applied, st.light_evicted, st.cues,
            (long long) (wall > 1577836800 ? wall : 0), st.rssi,
            st.pir_armed ? "true" : "false", st.pir_cooldown);
   out += buf.data();

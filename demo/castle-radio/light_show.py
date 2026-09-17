@@ -147,6 +147,12 @@ def _imported_frames(filename, frames, duration, stop_event):
     started = _align(filename, seed, stop_event, first=True)
     if started is None:
         return
+    # Firmware 5.63 runs the song's own show from the card when there is a
+    # cue file, and /api/status says how big it is. Frames from here would
+    # only paint four solid colours a second over the real thing.
+    if int(_status(timeout=3).get("cues") or 0) > 0:
+        _show_status["castle_cues"] = True
+        return
     for index, (at, spec) in enumerate(frames):
         if stop_event.wait(max(0, started + at - time.monotonic())):
             return
@@ -170,6 +176,8 @@ def _finish_imported_show(stop_event, sent, error):
         current = stop_event is _show_control["stop"]
         if current:
             _show_status.update(active=False, track=None, frames_sent=sent, error=error)
+    if current and _show_status.pop("castle_cues", False):
+        return  # "off" is a colour too: it would black out the castle's own show
     if current:  # stopped too: a frame in flight would paint after /api/stop
         try:
             _call("/api/light?c=off", "POST", timeout=3)

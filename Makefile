@@ -29,13 +29,14 @@ YAML_FS3 := firmware/castle_feather_s3.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
 	@echo ""
 	@echo "  make setup      create .venv and install esphome + render deps"
 	@echo "  make audio      render scenes/scenes.yaml -> audio/*.mp3"
+	@echo "  make cues       render every track's light show to a card cue file (TRACKS=\"a b\" for some)"
 	@echo "  make generate   render scenes.yaml -> firmware/generated/scenes.yaml"
 	@echo "  make preview    splice scenes + rendered audio into the previewer"
 	@echo "  make validate   check the ESPHome config (fast, no toolchain)"
@@ -123,7 +124,16 @@ studio: preview
 # audio before flashing (the standing OTA rule).
 publish: audio
 	@$(PY) tools/sd_sync.py scenes
+	@if ls audio/card/cues/*.cue > /dev/null 2>&1; then $(PY) tools/sd_sync.py cues; fi
 	@$(PY) tools/sd_sync.py site
+
+# A song's own light show as a file on the card (firmware 5.63,
+# tools/render_cues.py): any song, every beat, no scene slot and no OTA.
+#   make cues                 every track in tracks/
+#   make cues TRACKS="a b"    just those
+# `make publish` pushes what this writes.
+cues:
+	@$(PY) tools/render_cues.py $(if $(TRACKS),$(TRACKS),--all)
 
 ota: build
 	@$(PY) tools/sd_sync.py ota
@@ -217,7 +227,7 @@ SLOW_SUITES := chaos|relay|fuzz|_rust|_rs|castle_core|studio
 test-radio:
 	@$(PY) -m unittest discover -s demo/castle-radio -t demo/castle-radio -p 'test_*.py' -q \
 		&& node --test demo/castle-radio/test_castle_radio.test.mjs demo/castle-radio/test_castle_fuzz.test.mjs \
-		demo/castle-radio/test_castle_honesty.test.mjs demo/castle-radio/test_desktop_tools.test.mjs demo/castle-radio/test_companion.test.mjs demo/castle-radio/test_device_helper.test.mjs
+		demo/castle-radio/test_castle_honesty.test.mjs demo/castle-radio/test_desktop_tools.test.mjs demo/castle-radio/test_companion.test.mjs demo/castle-radio/test_device_helper.test.mjs demo/castle-radio/test_card_cues.test.mjs
 
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \

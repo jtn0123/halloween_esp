@@ -15,6 +15,15 @@ file is the one that governs.
 - `tools/render_audio.py` → `audio/NN_<id>.mp3` (gitignored; the desk's
   inlined copy) and `audio/card/` (the 96 kbps files `sd_sync scenes` pushes).
 - `tools/gen_esphome.py` → `firmware/generated/` (light cue scripts, rig.h).
+- `tools/render_cues.py` → `audio/card/cues/<track>.cue` (`make cues`): a
+  song's light show as a FILE the firmware loads from the card when the
+  track is played (`firmware/castle_cues.h`, v5.63) — any track in `tracks/`,
+  every pulse (no PULSE_CAP), no scene slot, no OTA. The scene block is the
+  one in scenes.yaml when the song is a scene, else the desk's own
+  `sceneYaml` run headless (`web/src/scene_cli.ts`, bundled with esbuild).
+  `tools/cue_file.py` is the format; `tests/test_cue_file_cxx.py` runs the
+  real header against it. `sd_sync cues` (and `make publish`) puts each file
+  beside its song in the card root.
 - `tools/gen_previewer.py` → `previewer/castle-cue-desk.html` (the whole desk,
   `web/src/*.ts` bundled + minified, scene audio inlined). Generated, NOT
   tracked — `make preview` rebuilds it.
@@ -200,8 +209,11 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
 - Scene ceiling: **12 scenes max** on the S2 (~9 KB dram0 each; see the
   header comment in `scenes/scenes.yaml` and the weekly CI compile's 92%
   alarm). The S3 carrier has the RAM but keeps the same ceiling until it is
-  measured on the board. Past that, cue timelines move to a card-loaded format, not a
-  thirteenth generated script.
+  measured on the board. Past that, cue timelines are card-loaded (v5.63:
+  `make cues`, `firmware/castle_cues.h`) — a song played as a raw card file
+  with a `.cue` beside it gets the full show from PSRAM — not a thirteenth
+  generated script. The twelve slots are for what the PIR, the buttons and
+  the evening playlist must start by name.
 - v5.42 feeds the upload watchdog every 32 KB (was 8 KB). Verified on the
   emulator only — watch the first big push on real hardware; if an upload
   reboots the board, revert the cadence in `sd_web.h write_body`.
