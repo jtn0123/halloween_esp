@@ -16,12 +16,23 @@ The installer prepares a dedicated `.venv-desktop`, system audio tools, the
 Rust audio analyzer, and the Demucs model. Run it again explicitly to repair
 missing dependencies. It does not flash the castle or sync the music library.
 
-For everyday use, double-click **Open Castle Studio.command** in the project
-folder. It checks the tools, starts the Mac helper, and opens the castle website
-(default http://10.27.27.81). On that page, choose **Import music → Connect Mac
-tools**. Allow the small connection window to open and keep it open along with
-the launcher's Terminal window. The castle page then imports, separates, and
-previews through the Mac. You do not have to switch to a separate desktop site.
+For everyday use, click **Start Mac tools** on the castle website and allow the
+browser to open Castle Tools. Then choose **Connect Mac tools**. The existing
+script runs in the background without a Terminal window. Keep the small
+connection window open. Imports, separation, and previews stay on the website.
+
+Existing installations can enable this once by double-clicking **Enable Website
+Startup.command** in the project folder. The full installer also registers it.
+Registration compiles a small native URL handler into `~/Applications/Castle
+Tools.app` using Apple's Command Line Tools. It accepts only the fixed
+`castle-tools://start` action; no URL-supplied shell command, path, or host is
+executed. It remembers this checkout's location, so register again after moving
+it. It does not install audio dependencies or add a login item.
+
+The **♜** menu-bar icon offers Start, Open startup log, and Quit. Logs are at
+`~/Library/Logs/Castle Tools/startup.log`. Quitting stops a helper started by
+this app; a helper already running elsewhere is reused and left alone.
+**Open Castle Studio.command** remains a manual fallback.
 
 The connection uses a narrowly scoped popup message bridge because the castle's
 HTTP page deliberately blocks external fetches and media. Audio previews arrive
@@ -37,8 +48,8 @@ phone to another computer's helper over the LAN.
 
 The launcher never installs or upgrades packages or downloads the voice model.
 A missing optional splitter still allows ordinary imports and playback. Run
-the installer explicitly for repairs, then restart the launcher. Its Terminal
-window can be stopped with Ctrl-C. A second launch reuses the running helper.
+the installer explicitly for repairs, then restart the launcher. The manual fallback launcher
+can be stopped with Ctrl-C. A second launch reuses the running helper.
 Set `CASTLE_RADIO_HOST` before launching to use another castle; the same address
 must be used in the browser. The helper remains bound to loopback only.
 

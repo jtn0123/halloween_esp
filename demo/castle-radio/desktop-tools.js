@@ -7,6 +7,7 @@
   const checks = byId('tools-checks');
   const retry = byId('tools-recheck');
   const open = byId('tools-open');
+  const start = byId('tools-start');
   // A navigation link, not an external dependency of the self-contained page.
   open.href = 'http://127.0.0.1:8871/';
   let busy = false;
@@ -21,9 +22,10 @@
     if (busy) { return; }
     const connect = byId('tools-connect');
     connect.hidden = !window.castleDirect;
+    start.hidden = !window.castleDirect || !!window.castleDesktop?.connected;
     if (window.castleDirect && !window.castleDesktop?.connected) {
       show('Connect your Mac',
-        'Keep Castle Tools running on your Mac, then connect below. You can import and split songs here while the castle handles playback.', false);
+        'Click Start Mac tools, allow Castle Tools to open, then click Connect Mac tools. You can import and split songs here while the castle handles playback.', false);
       open.hidden = true;
       retry.hidden = true;
       connect.textContent = 'Connect Mac tools';
@@ -56,7 +58,7 @@
     } catch {
       checks.replaceChildren();
       show('Desktop tools not connected',
-        'Start Open Castle Studio.command on your Mac, then connect Mac tools from this page. For first-time setup, follow the instructions below.', true);
+        'Click Start Mac tools, then Connect Mac tools. If the browser cannot open Castle Tools, follow Setup & startup below.', true);
       details.open = true;
       open.hidden = false;
     } finally {
@@ -64,6 +66,11 @@
       retry.disabled = false;
     }
   }
+
+  start.addEventListener('click', () => {
+    show('Starting Mac tools…', 'Allow your browser to open Castle Tools, then click Connect Mac tools. If nothing opens, expand Setup & startup to enable this once on your Mac.', false);
+    details.open = true;
+  });
 
   byId('tools-connect').addEventListener('click', () => {
     try { window.castleDesktop.connect(); show('Connecting to your Mac…', 'Keep the small connection window open. You can return to this page while it works.', false); }

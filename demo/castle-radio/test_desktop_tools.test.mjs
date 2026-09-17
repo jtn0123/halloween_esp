@@ -3,7 +3,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 import {page, read, element, settle} from './test_support.mjs';
 
-function boot(payload, {direct = false, fail = false} = {}) {
+function boot(payload, {direct = false, fail = false, connected = false} = {}) {
   const {$} = page();
   const rows = [];
   $('tools-checks').replaceChildren = () => { rows.length = 0; };
@@ -11,7 +11,7 @@ function boot(payload, {direct = false, fail = false} = {}) {
   $('tools-state').dataset = {};
   let calls = 0;
   const ctx = {
-    window: {castleDirect: direct ? {} : undefined, addEventListener() {}},
+    window: {castleDirect: direct ? {} : undefined, castleDesktop: {connected}, addEventListener() {}},
     document: {getElementById: $, createElement: () => element('li')},
     AbortSignal,
     fetch: async () => { calls++; if (fail) {throw Error('offline');} return {ok: true, json: async () => payload}; },
@@ -55,4 +55,22 @@ test('castle page offers a user-initiated Mac connection without fetching localh
   assert.match(ctx.$('tools-summary').textContent, /Mac/);
   assert.equal(ctx.$('tools-connect').hidden, false);
   assert.equal(ctx.$('tools-recheck').hidden, true);
+  assert.equal(ctx.$('tools-start').hidden, false);
+});
+
+test('website startup gives honest setup guidance without claiming a connection', async () => {
+  const ctx = boot(null, {direct:true});
+  ctx.$('tools-start').dispatch('click');
+  assert.equal(ctx.$('tools-state').textContent, 'Starting Mac tools…');
+  assert.equal(ctx.$('tools-setup').open, true);
+  assert.match(ctx.$('tools-summary').textContent, /If nothing opens/);
+  assert.equal(ctx.calls(), 0);
+});
+
+test('an established device connection hides the unnecessary startup action', async () => {
+  const ctx = boot({service:'castle-radio', protocol:1, ready:true, checks:[]},
+    {direct:true, connected:true});
+  await settle();
+  assert.equal(ctx.$('tools-start').hidden, true);
+  assert.equal(ctx.$('tools-state').textContent, 'Desktop tools connected');
 });
