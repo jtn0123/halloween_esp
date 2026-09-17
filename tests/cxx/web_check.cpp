@@ -58,10 +58,13 @@ void seed_from_env() {
   }
   castle_web::set_scene_ids(ids);
   castle_web::set_missing(castle_shim::env("CASTLE_MISSING"));
+  castle_web::g_volume = (int) castle_shim::env_ul("CASTLE_VOLUME", 70);
+  // LAST, and for the same reason the device calls it last: since v5.60
+  // this is the one publish point, copying every atomic above into the
+  // snapshot /api/status answers from (sd_web_state.h).
   castle_web::mirror_show_state(castle_shim::env("CASTLE_SCENE"),
                                 castle_shim::env("CASTLE_TRACK"),
                                 castle_shim::env("CASTLE_PIR_SCENE"));
-  castle_web::g_volume = (int) castle_shim::env_ul("CASTLE_VOLUME", 70);
 
   // /api/health's counters. The device reads them out of NVS at boot; here
   // they are given, so the reply is deterministic and every branch of

@@ -10,6 +10,7 @@
 #include <array>
 #include <cctype>
 #include <cstdlib>
+#include <initializer_list>
 #include <string>
 #include <string_view>
 
@@ -121,13 +122,62 @@ inline bool query_truncated(httpd_req_t *req) {
          ESP_ERR_HTTPD_RESULT_TRUNC;
 }
 
-inline std::string query_param(httpd_req_t *req, const char *key) {
+/// One query value, URL-decoded. `too_long` (when given) comes back true
+/// for the value buffer's own TRUNC — a 414, never a missing parameter.
+///
+/// v5.60 (A10): the buffer was 120 bytes while safe_name admits names up to
+/// 99 characters, and a name with spaces URL-encodes to roughly three bytes
+/// a character. "Halloween Songs - Ghostbusters.mp3" is fine; an 80-char
+/// name with 27 spaces is 134 bytes on the wire, httpd_query_key_value
+/// answered ESP_ERR_HTTPD_RESULT_TRUNC, this returned "" and /api/play said
+/// 400 "need ?f=<file>" for a file /api/files had just listed. The buffer is
+/// now 3*99 + 2 = 301, past anything safe_name can admit, and a truncation
+/// that somehow still happens is reported instead of swallowed.
+inline std::string query_param(httpd_req_t *req, const char *key,
+                               bool *too_long = nullptr) {
+  if (too_long != nullptr) *too_long = false;
   std::array<char, 200> q{};
   if (httpd_req_get_url_query_str(req, q.data(), q.size()) != ESP_OK) return "";
-  std::array<char, 120> val{};
-  if (httpd_query_key_value(q.data(), key, val.data(), val.size()) != ESP_OK)
+  std::array<char, 301> val{};
+  if (const esp_err_t err =
+          httpd_query_key_value(q.data(), key, val.data(), val.size());
+      err != ESP_OK) {
+    if (err == ESP_ERR_HTTPD_RESULT_TRUNC && too_long != nullptr) *too_long = true;
     return "";
+  }
   return url_decode(val.data());
+}
+
+/// The query-length guard every parameterised handler opens with: the whole
+/// query string against esp_http_server's 200-byte ceiling, and then each
+/// value the handler is about to read against query_param's own buffer.
+/// Returns false when the request has been REFUSED — the reply is already
+/// out, in `sent`, and the handler returns it unchanged.
+///
+/// One place rather than a line per handler, because the failure it guards
+/// is the one A10 was: a truncation that reached a validator dressed as an
+/// empty string, and a 400 "need ?f=<file>" for a file the card holds.
+///
+/// Both legs answer the SAME 414, deliberately. Behind the 200-byte query
+/// ceiling a 301-byte value buffer cannot truncate, so the second leg is
+/// unreachable today and a request that could reach it would be refused by
+/// the first with this very message — the emulator's port therefore needs
+/// only the first, and the two sides agree on every input that exists.
+inline bool query_ok(httpd_req_t *req, std::initializer_list<const char *> keys,
+                     esp_err_t &sent) {
+  if (query_truncated(req)) {
+    sent = reply_err(req, "414 URI Too Long", "query too long");
+    return false;
+  }
+  for (const char *key : keys) {
+    bool too_long = false;
+    query_param(req, key, &too_long);
+    if (too_long) {
+      sent = reply_err(req, "414 URI Too Long", "query too long");
+      return false;
+    }
+  }
+  return true;
 }
 
 /// A path that may contain subdirectories but must stay inside /sd:

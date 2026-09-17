@@ -138,8 +138,8 @@ fn do_ota(host: &str, args: &[String]) -> ! {
                 let v = castle_core::bridge::json_str(&body, "version").unwrap_or_default();
                 println!("up — v{v}");
                 println!(
-                    "now CONFIRM it (connect once with tools/device.py or HA) — \
-                     an unconfirmed image rolls back on its next reboot"
+                    "CONFIRMED by that very poll — since v5.60 the first \
+                     /api/status a boot answers cancels the rollback"
                 );
                 std::process::exit(0)
             }

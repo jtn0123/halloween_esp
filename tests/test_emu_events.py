@@ -136,12 +136,16 @@ class TestLightCounters(EventCase):
         self.assertEqual(st["light_applied"], 1)
         self.assertEqual(st["light_evicted"], 3)
 
-    def test_a_light_that_waits_behind_another_command_is_not_an_eviction(
+    def test_a_light_dropped_behind_another_command_is_still_an_eviction(
         self,
     ) -> None:
+        """v5.60 (A6): the STOP keeps the slot — but the frame that bounced
+        off it never ran either, and a page reconciling what it sent against
+        applied + evicted has to be told about it."""
         self.emu.queue("STOP", "")
         self.emu.queue("LIGHT", "ff0000")
-        self.assertEqual(self.status()["light_evicted"], 0)
+        self.assertEqual(self.status()["light_evicted"], 1)
+        self.assertEqual(self.emu._pending, ("STOP", ""))
 
     def test_dropped_frames_get_one_ring_line_a_second_at_most(self) -> None:
         for i in range(20):

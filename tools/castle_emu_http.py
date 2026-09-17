@@ -319,10 +319,9 @@ class Handler(BaseHTTPRequestHandler):
         s = wire.query_param(raw, "s")
         if not s:
             return self._err(400, "need ?s=<scene>")
-        ids = [i.encode() for i in self.server.scenes]
-        if not ids:
+        if not self.server.scenes:
             return self._err(503, "scene list not ready")
-        if s not in ids:
+        if wire.fs_name(s) not in self.server.scenes:
             return self._err(404, "unknown scene")
         self.server.queue("SCENE", wire.fs_name(s))
         self._json({"queued": True})
@@ -376,6 +375,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._err(400, "bad armed")
         if not wire.pir_cooldown_ok(c):
             return self._err(400, "bad cooldown")
+        # A4/C5/C7: the fields ride packed with '|' and the YAML unpacks
+        # them with find/rfind while this splits, so a '|' in a value is
+        # refused here; and the scene faces the list /api/scene checks.
+        if any(b"|" in x for x in (a, c, s)):
+            return self._err(400, "bad separator")
+        if s and not self.server.scenes:
+            return self._err(503, "scene list not ready")
+        if s and wire.fs_name(s) not in self.server.scenes:
+            return self._err(404, "unknown scene")
         self.server.queue("PIRCFG", "|".join(wire.fs_name(x) for x in (a, c, s)))
         self._json({"queued": True})
 

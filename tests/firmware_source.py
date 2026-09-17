@@ -57,6 +57,12 @@ def c_functions(*sources: str) -> dict[str, str]:
     return out
 
 
+#: Helpers a handler delegates a reply_err to. reply_errs() is per-function,
+#: so a 414 that moved into a shared guard (query_ok) would otherwise look
+#: like a verdict the firmware stopped giving.
+ERR_HELPERS = ("write_body", "send_sd_file", "query_ok")
+
+
 def reply_errs(body: str) -> set[tuple[int, str]]:
     return {
         (int(c), msg)

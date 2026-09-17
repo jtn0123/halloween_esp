@@ -55,28 +55,18 @@ namespace castle_web {
 static const char *const TAG = "castle_web";
 
 inline httpd_handle_t g_server = nullptr;
-// Scene ids the firmware actually has, seeded at boot from the pir_scene
-// select (castle_sd.yaml). Empty means "not seeded yet": /api/scene used to
-// accept ANYTHING then, so a client retrying from boot could be told its
-// typo was queued. An empty list now answers "not ready" instead.
-inline std::vector<std::string> g_scene_ids;
-inline void set_scene_ids(std::vector<std::string> ids) { g_scene_ids = std::move(ids); }
+// g_scene_ids, set_scene_ids() and scene_id_state() moved to sd_web_state.h
+// in v5.60: the list is read by the httpd task and written by the boot
+// lambda, so it belongs beside the mutex that now guards it (A5).
 
 // ── /api/status ─────────────────────────────────────────────────────────
 // Card capacity comes from sd_space.h, which only reads the card when a
 // writer says it changed — h_status must stay cheap, it is polled.
 inline esp_err_t h_status(httpd_req_t *req) {
-  std::string scene;
-  std::string track;
-  std::string pir_scene;
-  std::string missing;
-  {
-    std::scoped_lock lk(g_state_mu);
-    scene = g_scene;
-    track = g_track;
-    pir_scene = g_pir_scene;
-    missing = g_missing;
-  }
+  // ONE instant of everything the reply prints (sd_web_state.h): the track
+  // name and the audio clock that describes it must not be read a lock
+  // apart, or a poll on the tick a track ends carries one of them stale.
+  const Status st = status_snapshot();
   unsigned sd_total = 0;
   unsigned sd_free = 0;
   sd_space_kb(sd_total, sd_free);
@@ -95,25 +85,18 @@ inline esp_err_t h_status(httpd_req_t *req) {
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
            sd_total, sd_free);
   std::string out = buf.data();
-  out += json_escape(missing);
-  snprintf(buf.data(), buf.size(), R"(","volume":%d,"scene":")", g_volume.load());
+  out += json_escape(st.missing);
+  snprintf(buf.data(), buf.size(), R"(","volume":%d,"scene":")", st.volume);
   out += buf.data();
-  out += json_escape(scene);
+  out += json_escape(st.scene);
   out += R"(","track":")";
-  out += json_escape(track);
+  out += json_escape(st.track);
   // B1: the ids this BUILD was compiled with (seeded at boot, same list
   // /api/scene checks). `missing` can only speak about these — the desk
   // diffs them against scenes.yaml to spot a stale board before a pick
   // answers "unknown scene".
   out += R"(","scenes":")";
-  {
-    std::string ids;
-    for (const auto &id : g_scene_ids) {
-      if (!ids.empty()) ids += ",";
-      ids += id;
-    }
-    out += json_escape(ids);
-  }
+  out += json_escape(st.scenes);
   // v5.52: `playing` is the pipeline's own word, `position_ms` the main
   // loop's clock since it came alive (sd_web_state.h). A browser that
   // follows the castle reads these instead of counting from its own click.
@@ -125,13 +108,19 @@ inline esp_err_t h_status(httpd_req_t *req) {
            R"(","show_on":%s,"playing":%s,"position_ms":%lld,)"
            R"("light_applied":%u,"light_evicted":%u,)"
            R"("pir":{"armed":%s,"cooldown_s":%d,"scene":")",
-           g_show_on.load() ? "true" : "false",
-           g_playing.load() ? "true" : "false", g_position_ms.load(),
-           g_light_applied.load(), g_light_evicted.load(),
-           g_pir_armed.load() ? "true" : "false", g_pir_cooldown.load());
+           st.show_on ? "true" : "false",
+           st.playing ? "true" : "false", st.position_ms,
+           st.light_applied, st.light_evicted,
+           st.pir_armed ? "true" : "false", st.pir_cooldown);
   out += buf.data();
-  out += json_escape(pir_scene);
+  out += json_escape(st.pir_scene);
   out += R"("}})";
+  // A2: this reply is the proof a web-OTA'd image needs — WiFi associated
+  // and the web server came up. The main loop confirms the image on the
+  // strength of it (castle_sd_common.yaml -> castle_sd::mark_firmware_healthy),
+  // so an update delivered to a castle with no Home Assistant on the
+  // network no longer rolls itself back on the next power cycle.
+  g_status_served.store(true);
   return reply_json(req, out);
 }
 
@@ -150,7 +139,7 @@ inline esp_err_t h_health(httpd_req_t *req) {
 // ── /api/files — list the card root ─────────────────────────────────────
 inline esp_err_t h_list(httpd_req_t *req) {
   if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
-  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
+  if (esp_err_t sent; !query_ok(req, {"d"}, sent)) return sent;
   // B2: ?d=<subdir> lists inside the card (scenes/, site/) — the desk could
   // never SEE the directory that holds the show. Validated like /sd/ paths.
   std::string sub = query_param(req, "d");
@@ -316,7 +305,7 @@ inline esp_err_t h_delete(httpd_req_t *req) {
 
 // ── show control: play/scene/stop/volume/light/pir — all queued ─────────
 inline esp_err_t h_play(httpd_req_t *req) {
-  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
+  if (esp_err_t sent; !query_ok(req, {"f"}, sent)) return sent;
   std::string f = query_param(req, "f");
   if (!safe_name(f)) return reply_err(req, "400 Bad Request", "need ?f=<file>");
   set_pending(ActionType::PLAY, f);
@@ -324,15 +313,15 @@ inline esp_err_t h_play(httpd_req_t *req) {
 }
 
 inline esp_err_t h_scene(httpd_req_t *req) {
-  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
+  if (esp_err_t sent; !query_ok(req, {"s"}, sent)) return sent;
   std::string s = query_param(req, "s");
   if (s.empty()) return reply_err(req, "400 Bad Request", "need ?s=<scene>");
   // {"queued":true} for a scene that does not exist is a lie the desk then
   // toasts as success. The id list is seeded at boot from pir_scene's options.
-  if (g_scene_ids.empty())
+  const int known = scene_id_state(s);
+  if (known == 0)
     return reply_err(req, "503 Service Unavailable", "scene list not ready");
-  if (std::find(g_scene_ids.begin(), g_scene_ids.end(), s) == g_scene_ids.end())
-    return reply_err(req, "404 Not Found", "unknown scene");
+  if (known < 0) return reply_err(req, "404 Not Found", "unknown scene");
   set_pending(ActionType::SCENE, s);
   return reply_json(req, "{\"queued\":true}");
 }
@@ -346,7 +335,7 @@ inline esp_err_t h_stop(httpd_req_t *req) {
 // sd_web_remote.h with the page that presses them.
 
 inline esp_err_t h_volume(httpd_req_t *req) {
-  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
+  if (esp_err_t sent; !query_ok(req, {"v"}, sent)) return sent;
   std::string v = query_param(req, "v");
   // Digits only. atoi("abc") is 0, which turned a malformed request into a
   // silent mute — the kind of "worked, but wrong" a fuzz pass exists to find.
@@ -359,7 +348,7 @@ inline esp_err_t h_volume(httpd_req_t *req) {
 }
 
 inline esp_err_t h_light(httpd_req_t *req) {
-  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
+  if (esp_err_t sent; !query_ok(req, {"c"}, sent)) return sent;
   std::string c = query_param(req, "c");
   if (!light_spec_ok(c))    // RRGGBB|show|off, optionally "<zone>:" first
     return reply_err(req, "400 Bad Request", "need ?c=[zone:]RRGGBB|white|bars|chase|ends|show|off[@pct]");
@@ -370,7 +359,7 @@ inline esp_err_t h_light(httpd_req_t *req) {
 /// POST /api/pir?armed=0|1|true|false|on|off&cooldown=30|60|120&scene=<id>
 /// — any subset of the three. Encoded "a|c|scene"; empty field = leave alone.
 inline esp_err_t h_pir(httpd_req_t *req) {
-  if (query_truncated(req)) return reply_err(req, "414 URI Too Long", "query too long");
+  if (esp_err_t sent; !query_ok(req, {"armed", "cooldown", "scene"}, sent)) return sent;
   std::string a = query_param(req, "armed");
   std::string c = query_param(req, "cooldown");
   std::string s = query_param(req, "scene");
@@ -378,6 +367,22 @@ inline esp_err_t h_pir(httpd_req_t *req) {
     return reply_err(req, "400 Bad Request", "need armed=, cooldown= or scene=");
   if (!pir_armed_ok(a)) return reply_err(req, "400 Bad Request", "bad armed");
   if (!pir_cooldown_ok(c)) return reply_err(req, "400 Bad Request", "bad cooldown");
+  // A4/C5/C7: the three fields ride to the main loop packed with '|', and
+  // the YAML decoder unpacks them with find/rfind while the emulator uses
+  // split — so a '|' inside a value is decoded differently by each. It is
+  // refused here instead, at the one door it can come through.
+  if (a.find('|') != std::string::npos || c.find('|') != std::string::npos ||
+      s.find('|') != std::string::npos)
+    return reply_err(req, "400 Bad Request", "bad separator");
+  // And the scene is checked against the SAME list /api/scene checks: this
+  // route used to pass any string straight through to pir_scene's select,
+  // where an unknown option is a log line nobody reads.
+  if (!s.empty()) {
+    const int known = scene_id_state(s);
+    if (known == 0)
+      return reply_err(req, "503 Service Unavailable", "scene list not ready");
+    if (known < 0) return reply_err(req, "404 Not Found", "unknown scene");
+  }
   set_pending(ActionType::PIRCFG, a + "|" + c + "|" + s);
   return reply_json(req, "{\"queued\":true}");
 }

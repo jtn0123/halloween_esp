@@ -242,8 +242,8 @@ def cmd_ota(ip: str, args: list[str]) -> int:
             st = json.loads(api(ip, "GET", "/api/status", timeout=3))
             print(f" up — v{st.get('version')} compiled {st.get('compiled')}")
             print(
-                "  now CONFIRM it (connect once with tools/device.py or HA) —"
-                " an unconfirmed image rolls back on its next reboot"
+                "  CONFIRMED by that very poll — since v5.60 the first"
+                " /api/status a boot answers cancels the rollback"
             )
             return 0
         except OSError:

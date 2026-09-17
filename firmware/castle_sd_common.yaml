@@ -109,19 +109,24 @@ esphome:
               // One line per boot on the card: the season-long paper trail.
               castle_health::log_boot_to_sd(ESPHOME_PROJECT_VERSION);
             }
-            // Started whether or not the card mounted: the server is also how
-            // you find out the card is missing without walking to the castle.
-            castle_web::start();
             // The web layer 404s unknown scene ids instead of queueing lies —
             // this is where it learns which ids are real. Element-wise copy:
             // get_options() returns FixedVector<const char*> on current
             // ESPHome (std::vector<std::string> before) — emplace takes both.
+            //
+            // BEFORE start(), since v5.60 (A5): the httpd task begins taking
+            // requests the instant start() returns, and it used to race this
+            // assignment — the first /api/scene of a boot could read a vector
+            // mid-move, and the first /api/status could print half a list.
             {
               std::vector<std::string> scene_ids;
               for (const auto &opt : id(pir_scene).traits.get_options())
                 scene_ids.emplace_back(opt);
               castle_web::set_scene_ids(std::move(scene_ids));
             }
+            // Started whether or not the card mounted: the server is also how
+            // you find out the card is missing without walking to the castle.
+            castle_web::start();
         # #29: prove every scene file exists BEFORE a cue plays silence.
         - script.execute: manifest_check
         # #26: a visible sweep of every colour channel at plug-in, so a dead
@@ -219,6 +224,15 @@ interval:
           // per command this tick actually runs. RAM only — a card write
           // here would stall the very audio and pixels it describes.
           castle_web::note_light_evictions(esp_timer_get_time());
+          // A2: the OTHER image confirmation, beside api: on_client_connected
+          // (castle.yaml). A castle with no Home Assistant on the network
+          // never gets that client, so a web-OTA'd image stayed in
+          // PENDING_VERIFY and the bootloader rolled it back on the next
+          // power cycle. One /api/status answered proves the same things a
+          // client connect does — WiFi is up and the server that delivers
+          // the NEXT update is answering. Cheap no-op after the first call.
+          if (castle_web::g_status_served.load())
+            castle_sd::mark_firmware_healthy();
           auto act = castle_web::take_pending();
           if (act.type == castle_web::ActionType::NONE) return;
           castle_web::record_action(act.type, act.arg, esp_timer_get_time());

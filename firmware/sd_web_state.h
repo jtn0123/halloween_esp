@@ -18,6 +18,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace castle_web {
 
@@ -44,6 +45,12 @@ inline std::atomic g_restart_pending{false};
 // some of them never run. `applied` is what the main loop executed,
 // `evicted` what the one slot dropped on the way in; /api/status carries
 // both so a page can see it is over-sending instead of guessing.
+//
+// v5.60 (A6/C8): EVERY light frame that never reaches the main loop counts,
+// not just the ones a later LIGHT replaced. Until now a frame that arrived
+// behind a stop, a volume or a play was dropped silently, so a page could
+// not reconcile "sent" against "applied + evicted" — the two numbers simply
+// did not add up, and the one that was wrong was the one that looked right.
 inline std::atomic<unsigned> g_light_applied{0};
 inline std::atomic<unsigned> g_light_evicted{0};
 
@@ -57,13 +64,15 @@ inline void set_pending(ActionType type, std::string arg) {
   // drain: a LIGHT must never evict the stop, volume or play a hand pressed
   // in the same tick. LIGHT over LIGHT still wins (a colour-picker drag
   // lands its last colour); everything else takes the slot as before.
-  if (type == ActionType::LIGHT && g_pending.type != ActionType::NONE &&
-      g_pending.type != ActionType::LIGHT)
-    return;
-  // LIGHT over LIGHT: the frame underneath is dropped, and counted, so
-  // /api/status and the ring can say how much of a stream never ran.
-  if (type == ActionType::LIGHT && g_pending.type == ActionType::LIGHT)
+  //
+  // Either way a frame is lost: LIGHT over LIGHT drops the one underneath,
+  // and LIGHT behind another kind drops ITSELF. Both are evictions and both
+  // are counted — until v5.60 only the first was, so a page could never
+  // make applied + evicted add up to what it had sent (A6/C8).
+  if (type == ActionType::LIGHT && g_pending.type != ActionType::NONE) {
     g_light_evicted.fetch_add(1);
+    if (g_pending.type != ActionType::LIGHT) return;
+  }
   g_pending = {type, std::move(arg)};
 }
 /// Called by the YAML interval on the main loop. Returns NONE most of the time.
@@ -186,26 +195,85 @@ inline std::atomic g_pir_armed{true};
 inline std::atomic g_pir_cooldown{60};
 inline std::atomic g_show_on{false};   // is the playlist running
 inline std::mutex g_state_mu;
-inline std::string g_scene;        // current scene id, "" until one runs
-inline std::string g_track;        // current audio track, "" when idle
-inline std::string g_pir_scene;    // what motion triggers
-// #29: scene audio files the boot manifest check could not find on the
-// card, comma-separated; empty = all present (the overwhelmingly normal
-// case). Set once at boot by the generated manifest_check script.
-inline std::string g_missing;
+
+// ── /api/status as ONE instant (v5.60, A7) ──────────────────────────────
+// h_status used to copy the strings under g_state_mu, drop the lock, and
+// only then load show_on / playing / position_ms / volume as independent
+// atomics. The 200 ms mirror in castle_sd_common.yaml lands in between often
+// enough to matter: a poll on the tick a track ends carried the track's name
+// beside playing:false, or playing:true beside an empty track, and a browser
+// following the castle skipped or stuck. Everything the reply prints now
+// lives in ONE struct, written by the main loop under one lock at one
+// instant and copied out by the handler the same way.
+struct Status {
+  std::string scene;       // current scene id, "" until one runs
+  std::string track;       // current audio track, "" when idle
+  std::string pir_scene;   // what motion triggers
+  // #29: scene audio files the boot manifest check could not find on the
+  // card, comma-separated; empty = all present (the overwhelmingly normal
+  // case). Set once at boot by the generated manifest_check script.
+  std::string missing;
+  // B1: the scene ids this BUILD was compiled with, comma-joined.
+  std::string scenes;
+  int volume{70};
+  bool show_on{false};
+  bool playing{false};
+  long long position_ms{0};
+  unsigned light_applied{0};
+  unsigned light_evicted{0};
+  bool pir_armed{true};
+  int pir_cooldown{60};
+};
+inline Status g_status{};   // guarded by g_state_mu
+
+inline Status status_snapshot() {
+  std::scoped_lock lk(g_state_mu);
+  return g_status;
+}
 
 inline void set_missing(std::string_view csv) {
   std::scoped_lock lk(g_state_mu);
-  g_missing = csv;
+  g_status.missing = csv;
 }
 
-inline void mirror_show_state(std::string_view scene, std::string_view track,
-                              std::string_view pir_scene) {
+// Scene ids the firmware actually has, seeded at boot from the pir_scene
+// select (castle_sd.yaml). Empty means "not seeded yet": /api/scene used to
+// accept ANYTHING then, so a client retrying from boot could be told its
+// typo was queued. An empty list now answers "not ready" instead.
+//
+// v5.60 (A5): guarded by g_state_mu. The httpd task reads this list on
+// every /api/scene and /api/status while the boot lambda writes it, and a
+// bare std::vector read across two tasks is a data race TSAN names — the
+// boot order was also wrong (start() before set_scene_ids), so the very
+// first polls raced a vector that was being assigned underneath them.
+inline std::vector<std::string> g_scene_ids;   // guarded by g_state_mu
+
+inline void set_scene_ids(std::vector<std::string> ids) {
   std::scoped_lock lk(g_state_mu);
-  g_scene = scene;
-  g_track = track;
-  g_pir_scene = pir_scene;
+  g_scene_ids = std::move(ids);
+  g_status.scenes.clear();
+  for (const auto &id : g_scene_ids) {
+    if (!g_status.scenes.empty()) g_status.scenes += ",";
+    g_status.scenes += id;
+  }
 }
+
+/// What /api/scene and /api/pir must know about an id, read under the lock:
+/// 0 = the list is not seeded yet, 1 = known, -1 = no such scene.
+inline int scene_id_state(const std::string &s) {
+  std::scoped_lock lk(g_state_mu);
+  if (g_scene_ids.empty()) return 0;
+  return std::find(g_scene_ids.begin(), g_scene_ids.end(), s) == g_scene_ids.end()
+             ? -1
+             : 1;
+}
+
+// A2: the first /api/status this boot has answered. The bootloader holds a
+// freshly-OTA'd image in PENDING_VERIFY, and the only confirmation used to
+// be `api: on_client_connected` — with no Home Assistant on the network a
+// web-OTA'd image was never confirmed and rolled back on the next power
+// cycle. The main loop watches this flag and confirms once (flash_mode.h).
+inline std::atomic g_status_served{false};
 
 // ── the audio clock (v5.52, sound-true since v5.55) ─────────────────────
 // The speaker media player knows whether its pipeline is running but not
@@ -271,6 +339,28 @@ inline void restart_audio_clock(long long now_us) {
   g_clock_armed = true;
   g_playing.store(true);
   g_position_ms.store(0);
+}
+
+/// The ONE publish point: called last in the 200 ms mirror tick, after the
+/// atomics above have been stored, it copies the whole of /api/status into
+/// g_status under one lock. Lives down here rather than beside the other
+/// mirrored state because it has to see the audio clock's atomics — the
+/// audio fields and the track name MUST move together or a poll lands
+/// between them (A7).
+inline void mirror_show_state(std::string_view scene, std::string_view track,
+                              std::string_view pir_scene) {
+  std::scoped_lock lk(g_state_mu);
+  g_status.scene = scene;
+  g_status.track = track;
+  g_status.pir_scene = pir_scene;
+  g_status.volume = g_volume.load();
+  g_status.show_on = g_show_on.load();
+  g_status.playing = g_playing.load();
+  g_status.position_ms = g_position_ms.load();
+  g_status.light_applied = g_light_applied.load();
+  g_status.light_evicted = g_light_evicted.load();
+  g_status.pir_armed = g_pir_armed.load();
+  g_status.pir_cooldown = g_pir_cooldown.load();
 }
 
 // /api/light?c= — "RRGGBB" | "white" | "bars" | "chase" | "ends" | "show" |
