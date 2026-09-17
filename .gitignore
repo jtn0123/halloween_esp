@@ -5,6 +5,7 @@
 # as untracked and were one `git add .` away from committing an absolute path
 # to somebody's home directory.
 .venv
+.venv-desktop
 firmware/.esphome/
 firmware/secrets.yaml
 audio/*.wav

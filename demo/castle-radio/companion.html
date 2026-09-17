@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Castle Radio · Mac connection</title>
+  <style>
+    :root { color-scheme: dark; font: 16px/1.5 system-ui, sans-serif; background: #0d0b10; color: #f6efe2; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; }
+    main { width: min(34rem, calc(100% - 3rem)); padding: 2rem; border: 1px solid #5a4b66; border-radius: 1rem; background: #18131d; box-shadow: 0 1rem 4rem #0008; }
+    .eyebrow { color: #d8a85c; font-size: .75rem; font-weight: 700; letter-spacing: .16em; }
+    h1 { margin: .4rem 0; font: 700 2rem/1.1 Georgia, serif; }
+    p { color: #c9c0cc; }
+    output { display: block; margin: 1.5rem 0; padding: 1rem; border-radius: .6rem; background: #0d0b10; }
+    output[data-state="ready"] { border-left: .25rem solid #65c78b; }
+    output[data-state="error"] { border-left: .25rem solid #df755f; }
+    button { border: 0; border-radius: 999px; padding: .75rem 1.1rem; color: #171019; background: #e3ad59; font: inherit; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    small { display: block; margin-top: 1.5rem; color: #978d9b; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="eyebrow">CASTLE RADIO</div>
+    <h1>Mac connection</h1>
+    <p>This window connects the castle page to the music tools running on this Mac.</p>
+    <output id="companion-state" data-state="connecting" aria-live="polite">Connecting…</output>
+    <button id="companion-reconnect" type="button">Reconnect</button>
+    <small>Keep this window open while you import, prepare, or sync music.</small>
+  </main>
+  <script src="companion.js"></script>
+</body>
+</html>

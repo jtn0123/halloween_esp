@@ -1,0 +1,6 @@
+# Small environment for Castle Radio on a desktop. Hardware builds use requirements.txt.
+numpy~=2.5
+scipy~=1.18
+PyYAML~=6.0
+demucs==4.1.0
+yt-dlp
