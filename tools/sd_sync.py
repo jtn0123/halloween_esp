@@ -35,6 +35,7 @@ import importlib.util
 import json
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
@@ -283,6 +284,15 @@ def cmd_ota(ip: str, args: list[str]) -> int:
     try:
         resp = json.loads(api(ip, "PUT", "/api/ota", data, timeout=180))
         print(" ok" if resp.get("flashed") else f" UNEXPECTED: {resp}")
+    except urllib.error.HTTPError as err:
+        # An ANSWER is not a lost reply: the castle is still up and said no.
+        # "ota end failed" is an image for another chip (the S2's build sent
+        # to a Feather S3) — which used to read as "rebooting", then "up".
+        reason = err.read().decode(errors="replace").strip()
+        raise SystemExit(
+            f" REFUSED ({err.code}: {reason}) — still running the old image. "
+            "Is this build for the chip at that address?"
+        ) from err
     except OSError:
         # The device reboots moments after the last byte lands; losing the
         # response race is normal, not failure. The status poll below is the

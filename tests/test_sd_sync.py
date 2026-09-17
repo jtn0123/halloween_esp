@@ -16,7 +16,9 @@ import shutil
 import sys
 import tempfile
 import unittest
+import urllib.error
 import urllib.parse
+from email.message import Message
 from pathlib import Path
 from unittest import mock
 
@@ -279,6 +281,26 @@ class TestSiteScenesOta(SdCase):
             self.run_quiet(sd_sync.cmd_ota, "1.2.3.4", [str(junk)])
         self.assertIn("0xE9", str(cm.exception))
         self.assertEqual(self.puts(), [])
+
+    def test_ota_the_castle_refused_is_a_failure_not_a_reboot(self) -> None:
+        """An S2 image sent to a Feather S3 answered 500 "ota end failed", and
+        the tool printed "rebooting", then "up" — on the image it never left."""
+        image = self.tmp / "firmware.bin"
+        image.write_bytes(b"\xe9" + b"\0" * 64)
+
+        def refuse(
+            _ip: str, method: str, path: str, *_a: object, **_k: object
+        ) -> bytes:
+            if method == "PUT":
+                raise urllib.error.HTTPError(
+                    path, 500, "x", Message(), io.BytesIO(b"ota end failed")
+                )
+            return b"{}"
+
+        with mock.patch.object(sd_sync, "api", refuse):
+            with self.assertRaises(SystemExit) as cm:
+                self.run_quiet(sd_sync.cmd_ota, "1.2.3.4", [str(image)])
+        self.assertIn("REFUSED (500: ota end failed)", str(cm.exception))
 
     def test_ota_with_no_build_anywhere_says_so(self) -> None:
         with self.assertRaises(SystemExit) as cm:
