@@ -134,6 +134,14 @@ open sockets (`firmware/sd_web.h`); that is the board's pool, not a desk bug.
 
 ---
 
+## Castle Radio on your desktop
+
+Run `./tools/install_castle_tools.sh` once on an Apple Silicon Mac, then double-click
+**Open Castle Studio.command** to open the castle website. Choose **Import music → Connect Mac tools**
+to import, split voice/background, and preview using this Mac. Keep the small
+connection window open. The launcher checks tools
+without installing anything. [Desktop setup and limitations](demo/castle-radio/README.md).
+
 ## The cue desk
 
 ```bash

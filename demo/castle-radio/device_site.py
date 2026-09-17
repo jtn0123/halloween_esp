@@ -39,6 +39,7 @@ PREVIEW = "preview.js"
 WORDS = "device-words.js"
 LINK = "device-link.js"
 SCRIPTS = (
+    "device-helper.js",
     "visuals.js",
     APP,
     IMPORTS,
@@ -48,6 +49,7 @@ SCRIPTS = (
     LINK,
     "remote-library.js",
     "device-tools.js",
+    "desktop-tools.js",
 )
 STYLES = ("style.css", "device-tools.css")
 STYLE_TAGS = "".join(f'<link rel="stylesheet" href="{name}">' for name in STYLES)
@@ -74,15 +76,15 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
     # so all this build has to move is where the browser branch reads from.
     (
         APP,
-        "audio.src=tracks[id].url||`media/${tracks[id].file}`;audio.load();",
-        "audio.src=tracks[id].url||`/sd/scenes/${tracks[id].file}`;audio.load();",
+        "setAudioSource(tracks[id].url||`media/${tracks[id].file}`);",
+        "setAudioSource(tracks[id].url||`/sd/scenes/${tracks[id].file}`);",
     ),
     (APP, PROBE, DURATIONS),
     (PREVIEW, "`media/${t.file}`", "`/sd/scenes/${t.file}`"),
     (
         PREVIEW,
         "'Waveform unavailable. Reopen this song to retry.'",
-        "'Waveforms are analyzed in the control room on your computer.'",
+        "'Connect Mac tools to view waveforms, then reopen this song.'",
     ),
     (WORDS, "'Castle unreachable at 10.27.27.81'", "'Castle unreachable'"),
     (
@@ -98,7 +100,7 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
     (
         IMPORTS,
         "'Import service ready · files stay in this demo'",
-        "'Songs synced to the castle appear below · importing runs in the control room on your computer'",
+        "(window.castleDesktop?.connected ? 'Mac tools connected · imports are prepared on your Mac' : 'Castle library ready · connect Mac tools to import')",
     ),
     (
         IMPORTS,

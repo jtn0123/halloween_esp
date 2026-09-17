@@ -234,7 +234,7 @@ test('B47: load() gives the audio element no source while the castle is the outp
       CustomEvent: class { constructor(type) { this.type = type; } },
     };
     vm.createContext(ctx);
-    vm.runInContext(`${line}\nload(0);`, ctx);
+    vm.runInContext(`${source.slice(source.indexOf("let audioSourceEpoch"), source.indexOf("function load(id)"))}\n${line}\nload(0);`, ctx);
     return calls;
   };
   const castle = run('castle');

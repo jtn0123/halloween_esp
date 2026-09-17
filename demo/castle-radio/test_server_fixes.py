@@ -64,6 +64,25 @@ class DeviceEventsRouteTests(unittest.TestCase):
                 )
 
 
+class DesktopRoutesTests(unittest.TestCase):
+    def test_tools_endpoint_returns_the_launchers_identity_contract(self):
+        payload = {
+            "service": "castle-radio",
+            "protocol": 1,
+            "ready": False,
+            "checks": [{"name": "model", "ok": False}],
+        }
+        caller = _Caller()
+        with patch("desktop_tools.status", return_value=payload):
+            server.Handler.GET_ROUTES["/radio/tools"](caller, None)
+        self.assertEqual(caller.sent, (200, {**payload, "castle_origin": "http://" + server.device_bridge.HOST}))
+
+    def test_every_page_script_is_served_by_the_desktop(self):
+        page = (HERE / "index.html").read_text()
+        for name in re.findall(r'<script src="([^"]+)"', page):
+            self.assertIn("/" + name, server.STATIC_ROUTES)
+
+
 class ServerFixTests(unittest.TestCase):
     def test_sync_status_reads_key_as_a_query_param(self):
         self.assertEqual((parse_qs("x=1&key=job").get("key") or [""])[0], "job")

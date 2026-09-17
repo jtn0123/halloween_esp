@@ -94,8 +94,21 @@ function playerDetail(){
   return `Playing ${layer} · this computer`;
 }
 function updatePlayer(){const t=tracks[current];$('toggle').disabled=!!t.deleted;$('hero-play').disabled=!!t.deleted;$('current-title').textContent=t.title;$('current-art').style.setProperty('--c',t.color);$('current-art').textContent=t.symbol;$('current-detail').textContent=playerDetail();$('toggle').textContent=audio.paused?'▶':'Ⅱ';$('toggle').setAttribute('aria-label',audio.paused?'Play':'Pause');$('hero-play').textContent=audio.paused?'▶ Play the night':'Ⅱ Pause the night';$('shuffle').setAttribute('aria-pressed',String(shuffle));$('repeat').setAttribute('aria-pressed',String(repeat));$('next').disabled=!queue.length&&!repeat;$('previous').disabled=!history.length&&audio.currentTime<3;renderTracks();window.castlePlayer?.paint();}
-function load(id){current=id;window.radioLayer='combined';window.dispatchEvent(new CustomEvent('radio-track')); if($('output-target').value==='castle'){audio.removeAttribute('src');audio.load();}else{audio.src=tracks[id].url||`media/${tracks[id].file}`;audio.load();}$('seek').value=0;$('elapsed').textContent='0:00';$('duration').textContent=fmt(tracks[id].duration);updatePlayer();}
-async function play(){if(window.castlePlayer?.active()){return window.castlePlayer.play();}blacked=false;stopped=false;const source=audio.src,id=current;try{await audio.play();}catch(e){if(audio.src!==source||current!==id||e.name==='AbortError'){return;}stopped=true;toast('Audio could not start. Press Play to retry.');}if(audio.src===source&&current===id){updatePlayer();}}
+let audioSourceEpoch=0, audioPending=Promise.resolve();
+function setAudioSource(source){
+  const epoch=++audioSourceEpoch;
+  if(audio.src?.startsWith('blob:')){URL.revokeObjectURL(audio.src);}
+  if(window.castleDesktop?.connected && source.startsWith('/radio/audio/')){
+    audio.removeAttribute('src');audio.load();
+    audioPending=window.castleDesktop.media(source).then(url=>{
+      if(epoch===audioSourceEpoch && $('output-target').value!=='castle'){audio.src=url;audio.load();}else{URL.revokeObjectURL(url);}
+    });
+    audioPending.catch(()=>toast('Mac audio unavailable. Reconnect Mac tools and select the song again.'));
+  }else{audio.src=source;audio.load();audioPending=Promise.resolve();}
+  return audioPending;
+}
+function load(id){current=id;window.radioLayer='combined';window.dispatchEvent(new CustomEvent('radio-track')); if($('output-target').value==='castle'){audio.removeAttribute('src');audio.load();}else{setAudioSource(tracks[id].url||`media/${tracks[id].file}`);}$('seek').value=0;$('elapsed').textContent='0:00';$('duration').textContent=fmt(tracks[id].duration);updatePlayer();}
+async function play(){if(window.castlePlayer?.active()){return window.castlePlayer.play();}blacked=false;stopped=false;const id=current;try{await audioPending;}catch{return;}if(current!==id||window.castlePlayer?.active()){return;}const source=audio.src;try{await audio.play();}catch(e){if(audio.src!==source||current!==id||e.name==='AbortError'){return;}stopped=true;toast('Audio could not start. Press Play to retry.');}if(audio.src===source&&current===id){updatePlayer();}}
 function toggle(){if(window.castlePlayer?.active()){return window.castlePlayer.toggle();}if(audio.paused){play();}else {audio.pause();}}
 function start(id){history.push(current);queue=tracks.slice(id+1).filter(t=>!t.deleted).map(t=>t.id);if(shuffle){queue=mix(tracks.filter(t=>!t.deleted&&t.id!==id).map(t=>t.id));}load(id);renderQueue();play();}
 function next(){if(!queue.length){if(repeat){queue=shuffle?mix(tracks.filter(t=>!t.deleted).map(t=>t.id)):tracks.filter(t=>!t.deleted).map(t=>t.id);}else{stop();return;}}if(!queue.length){stop();return;}history.push(current);load(queue.shift());renderQueue();play();}

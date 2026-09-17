@@ -4,8 +4,9 @@
    answered here from the firmware's own /api, so the page needs nothing but
    the castle: status settling, the command builders, the SD inventory and the
    generated-light streamer are ports of device_bridge.py and remote_library.py.
-   Importing, separation and waveforms stay on the computer; those routes
-   answer with a sentence that says so. */
+   Importing, separation and waveforms stay on the computer; device-helper.js
+   routes them through a connected Mac companion, or these routes explain
+   how to connect one. */
 /* global current, load */
 (() => {
   const byId = id => document.getElementById(id);
@@ -319,7 +320,7 @@
   }
   async function presentRows() {
     const audio = new Map(namedFiles(await listing()).map(f => [f.name, f.size]));
-    return library.filter(row => audio.get(row.filename) === row.bytes).map(({frames, ...row}) => row);
+    return library.filter(row => audio.get(row.filename) === row.bytes).map(({frames, ...row}) => ({...row, url:`/sd/${row.filename}`, split:false, source_available:false}));
   }
   async function deleteAudio(name) {
     if (!isAudioName(name)) {throw new Error('Choose a castle audio file.');}

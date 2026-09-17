@@ -10,6 +10,7 @@ from typing import ClassVar
 from urllib.parse import parse_qs, unquote, urlsplit
 from uuid import uuid4
 
+import desktop_tools
 import device_bridge
 import library_ops
 import remote_library
@@ -56,6 +57,11 @@ STATIC_ROUTES = frozenset(
         "/device-link.js",
         "/remote-library.js",
         "/device-tools.js",
+        "/device-words.js",
+        "/desktop-tools.js",
+        "/device-helper.js",
+        "/companion.html",
+        "/companion.js",
     }
 )
 REQUEST_ERRORS = (ValueError, OSError)
@@ -265,7 +271,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def get_library(self, _parsed):
         with LOCK:
-            self.reply(catalog())
+            self.reply(desktop_tools.catalog(catalog(), LIBRARY))
 
     def get_jobs(self, _parsed):
         with LOCK:
@@ -288,6 +294,7 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/device": get_device,
         "/radio/library": get_library,
         "/radio/jobs": get_jobs,
+        "/radio/tools": desktop_tools.get_status,
     }
 
     def do_GET(self):
