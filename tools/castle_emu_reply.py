@@ -71,7 +71,13 @@ class Replies(BaseHTTPRequestHandler):
 
         `extra` carries headers a handler set BEFORE it decided to fail —
         the served pages set their CSP first thing, and httpd keeps a
-        header once set, so the refusal goes out carrying it too."""
+        header once set, so the refusal goes out carrying it too.
+
+        L11 (v5.62): the firmware leaves one rate-limited ring line per
+        refusal (sd_web_util.h note_reply_error), so the emulator does too —
+        a page that reads "http_err 404" off the ring must read it off both
+        castles."""
+        self.server.events.note_reply_error(code, self.server.uptime_ms())
         self._raw(code, msg.encode(), "text/plain", extra)
 
     def _idf(self, code: int) -> None:

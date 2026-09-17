@@ -347,6 +347,10 @@
     if (path === '/radio/device/library') {return json(await inventory());}
     // The firmware's own ring of what happened; 404 on anything older.
     if (path === '/radio/device/events') {return json(await castle('/api/events'));}
+    // L7/L9 (v5.62): the season counters, the heap low-water mark and the
+    // card's last read error. The runbook sends the operator to look at heap
+    // on a panel this page did not have.
+    if (path === '/radio/device/health') {return json(await castle('/api/health'));}
     if (path.startsWith('/radio/device/audio/') && method === 'DELETE') {return json(await deleteAudio(decodeURIComponent(path.slice('/radio/device/audio/'.length))));}
     if (path === '/radio/library') {return json(await presentRows());}
     if (path === '/radio/jobs') {return json([]);}

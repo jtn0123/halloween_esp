@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <string>
 
+#include "castle_rtc.h"
 #include "sd_web_events.h"
 #include "sd_web_state.h"
 
@@ -35,6 +36,11 @@ int main() {
   using castle_web::EventKind;
   using castle_web::record_action;
   using castle_web::record_event;
+
+  // What castle_health::init() does first thing, and the firmware's own
+  // precondition for the RTC copy: decide whether the segment holds a
+  // previous life's block, and stamp a fresh one when it does not.
+  castle_rtc::begin();
 
   // Nothing has happened yet: an empty ARRAY, not a null or an object.
   CHECK(json() == "[]");
@@ -91,18 +97,29 @@ int main() {
   CHECK(json().find(R"({"t":6200,"e":"light_evicted","a":"4"})") != std::string::npos);
 
   // The audio clock's two transitions: the speaker started (sound), and
-  // playback ended on its own (silent). Both carry an empty arg.
+  // playback ended on its own (silent). v5.62 (L10): the first NAMES the
+  // track and the second says how many milliseconds of it were audible —
+  // both carried an empty arg until then, which made the pair useless for
+  // the only question worth asking of it the next morning ("did the track
+  // that killed it always kill it").
   castle_web::restart_audio_clock(10000 * MS);
-  castle_web::mirror_audio(true, false, 10200 * MS);   // armed, not audible
+  castle_web::mirror_audio(true, false, 10200 * MS, "10_ballad.mp3");
   const size_t quiet = castle_web::g_events_written;
-  castle_web::mirror_audio(true, true, 10400 * MS);    // the amplifier has it
+  castle_web::mirror_audio(true, true, 10400 * MS, "10_ballad.mp3");
   CHECK(castle_web::g_events_written == quiet + 1);
-  castle_web::mirror_audio(true, true, 10600 * MS);    // still sounding: no line
+  castle_web::mirror_audio(true, true, 10600 * MS, "10_ballad.mp3");
   CHECK(castle_web::g_events_written == quiet + 1);
-  castle_web::mirror_audio(false, false, 10800 * MS);  // the song ended
+  castle_web::mirror_audio(false, false, 10800 * MS, "10_ballad.mp3");
   CHECK(castle_web::g_events_written == quiet + 2);
-  CHECK(json().find(R"({"t":10400,"e":"sound","a":""})") != std::string::npos);
-  CHECK(json().find(R"({"t":10800,"e":"silent","a":""})") != std::string::npos);
+  CHECK(json().find(R"({"t":10400,"e":"sound","a":"10_ballad.mp3"})") !=
+        std::string::npos);
+  CHECK(json().find(R"({"t":10800,"e":"silent","a":"400"})") != std::string::npos);
+  // A clock that was still ARMED when the pipeline gave up never made a
+  // sound: the honest answer is 0 ms, not "however long we waited".
+  castle_web::restart_audio_clock(12000 * MS);
+  castle_web::mirror_audio(false, false, 12100 * MS, "quiet.mp3");
+  castle_web::mirror_audio(false, false, 13800 * MS, "quiet.mp3");
+  CHECK(json().find(R"({"t":13800,"e":"silent","a":"0"})") != std::string::npos);
 
   // An arg longer than the ring's slot is truncated, not heaped.
   record_event(EventKind::PLAY, std::string(80, 'a'), 11000 * MS);
@@ -126,6 +143,43 @@ int main() {
   CHECK(out.size() > 64 && out.back() == ']');
   CHECK(out.find(R"({"t":20099,"e":"volume","a":"99"}])") != std::string::npos);
   CHECK(out.find(R"("t":20035)") == std::string::npos);
+
+  // ── L1: the copy that survives the crash (castle_rtc.h) ───────────────
+  // Every line above also went into RTC slow memory, 10 characters of arg
+  // each. The ring in RAM is gone after a panic; this one is the whole of
+  // what castle_health::log_boot_to_sd writes to the card at the next boot.
+  CHECK(castle_rtc::g_rtc.written == castle_web::g_events_written);
+  CHECK(castle_rtc::g_rtc.magic == castle_rtc::kMagic);
+  CHECK(castle_rtc::g_rtc.check == castle_rtc::compute_check());
+  // The truncation is the RTC ring's own, not the RAM ring's.
+  castle_web::record_event(EventKind::PLAY, "a_very_long_track_name.mp3",
+                           30000 * MS);
+  const castle_rtc::Slot &last =
+      castle_rtc::g_rtc.ev[(castle_rtc::g_rtc.written - 1) % castle_rtc::kRing];
+  CHECK(std::string(last.arg) == "a_very_lon");
+  CHECK(std::string(last.arg).size() == castle_rtc::kArg - 1);
+
+  // A reboot: begin() decides whether what is in the segment is a previous
+  // life's, the boot-time dump reads it, and then this life starts fresh.
+  const uint32_t lived = castle_rtc::g_rtc.written;
+  castle_rtc::begin();
+  CHECK(castle_rtc::g_prev_valid);
+  CHECK(castle_rtc::prev_held() == castle_rtc::kRing);
+  CHECK(std::string(castle_rtc::prev_slot(castle_rtc::kRing - 1).arg) ==
+        "a_very_lon");
+  CHECK(castle_rtc::g_prev_written == lived);
+  castle_rtc::start_fresh();
+  CHECK(castle_rtc::g_rtc.written == 0);
+  CHECK(castle_rtc::g_rtc.check == castle_rtc::compute_check());
+
+  // A COLD boot is the segment holding anything else at all: one flipped
+  // byte and the block is refused rather than dumped as a story.
+  castle_rtc::record(castle_rtc::Kind::PLAY, "vigil", 100 * MS);
+  castle_rtc::g_rtc.ev[0].arg[0] ^= 0x20;
+  castle_rtc::begin();
+  CHECK(!castle_rtc::g_prev_valid);
+  CHECK(castle_rtc::prev_held() == 0);
+  CHECK(castle_rtc::g_rtc.written == 0);   // begin() wiped what it refused
 
   if (failures == 0) std::printf("event ring OK\n");
   return failures == 0 ? 0 : 1;

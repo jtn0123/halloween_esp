@@ -39,7 +39,7 @@
       </article>
     </div>
     <div class="bench-console"><span class="bench-lamp"></span><div><b id="bench-result">Bench ready</b><small id="bench-detail">Choose one test. The result and castle state will appear here.</small></div></div>
-    <div class="bench-events"><button id="bench-events-load">Recent castle events</button><pre id="bench-events-log" class="subtle">The castle keeps a short record of what it did. Ask for it when something looked wrong.</pre></div>`;
+    <div class="bench-events"><button id="bench-events-load">Recent castle events</button><b id="bench-health-row" class="subtle"></b><pre id="bench-events-log" class="subtle">The castle keeps a short record of what it did. Ask for it when something looked wrong.</pre></div>`;
   grid.parentNode.insertBefore(bench, grid);
 
   let brightness = 50;
@@ -77,10 +77,24 @@
   $('tone-level').oninput=()=>{$('tone-level-value').textContent=`${$('tone-level').value}%`;};
   bench.querySelectorAll('[data-tone]').forEach(button=>button.onclick=()=>command({action:'tone',file:button.dataset.tone,volume:Number($('tone-level').value)},button.querySelector('b').textContent));
   $('bench-audio-stop').onclick=()=>command({action:'stop'},'speaker stop','The speaker is quiet. This does not end the installed playlist — use “Stop castle” in Your castle for that.');
+  // The castle's own answer to /api/status, kept so the ring's uptime
+  // stamps can be turned into wall-clock times (L2, v5.62).
+  let status = null;
+  // Unix ms of the instant this boot started, or null until SNTP has
+  // answered. epoch is 0 until then and the ring only ever knows uptime, so
+  // without both numbers there is nothing to convert with.
+  function bootWallMs() {
+    const epoch = Number(status?.epoch), up = Number(status?.uptime_s);
+    if (!(epoch > 0) || !Number.isFinite(up)) {return null;}
+    return (epoch - up) * 1000;
+  }
   // +mm:ss.s against the NEWEST entry, so the last thing the castle did reads
   // +00:00.0 and everything above it says how long before that it happened.
-  function stamp(t, newest) {
+  // Once the castle has a clock, the real time is what the operator actually
+  // remembers ("it went dark some time after nine") and it wins.
+  function stamp(t, newest, base) {
     if (!Number.isFinite(Number(t))) {return ' ??:??.?';}
+    if (base !== null) {return new Date(base + Number(t)).toTimeString().slice(0, 8);}
     const delta = (Number(t) - newest) / 1000, size = Math.abs(delta);
     const mm = String(Math.floor(size / 60)).padStart(2, '0');
     return `${delta < 0 ? '-' : '+'}${mm}:${(size % 60).toFixed(1).padStart(4, '0')}`;
@@ -94,10 +108,29 @@
       return;
     }
     const newest = Number(rows.findLast(row => Number.isFinite(Number(row.t)))?.t) || 0;
-    $('bench-events-log').textContent = rows.map(row => `${stamp(row.t, newest)}  ${row.e}  ${row.a ?? ''}`.trimEnd()).join('\n');
+    const base = bootWallMs();
+    $('bench-events-log').textContent = rows.map(row => `${stamp(row.t, newest, base)}  ${row.e}  ${row.a ?? ''}`.trimEnd()).join('\n');
+  }
+  // L7/L9: the row the runbook sends you to look at. heap_min_kb is the
+  // LOW-WATER mark — heap_free_kb reads healthy again the moment the
+  // allocation that failed is handed back, which is why "look at heap" has
+  // never once caught the fault it was written for.
+  function renderHealth(h) {
+    if (!h || typeof h !== 'object') {$('bench-health-row').textContent = ''; return;}
+    const kb = v => (Number.isFinite(Number(v)) ? `${v} KB` : '—');
+    const sd = status?.sd_mounted === false ? 'SD unavailable'
+      : `SD ${Number.isFinite(Number(status?.sd_free_kb)) ? `${Math.round(Number(status.sd_free_kb) / 1024)} MB free` : 'ready'}`;
+    const parts = [`${h.boots ?? '—'} boots · ${h.crashes ?? '—'} crashes`,
+      `last reset ${h.last_reset || '—'}`,
+      `heap now ${kb(status?.heap_free_kb)} · lowest ${kb(h.heap_min_kb)}`, sd];
+    if (h.sd_read_errors) {parts.push(`${h.sd_read_errors} card read errors${h.sd_last_error ? ` · last ${h.sd_last_error}` : ''}`);}
+    if (Number.isFinite(Number(status?.rssi)) && Number(status?.rssi)) {parts.push(`signal ${status.rssi} dBm`);}
+    $('bench-health-row').textContent = parts.join(' · ');
   }
   $('bench-events-load').onclick = async () => {
     $('bench-events-log').textContent = 'Asking the castle…';
+    try { renderHealth(await (await fetch('/radio/device/health')).json()); }
+    catch { $('bench-health-row').textContent = ''; }
     try { renderEvents(await window.castleLink.events()); }
     catch { $('bench-events-log').textContent = 'Recent castle events are not supported by this firmware.'; }
   };
@@ -111,7 +144,8 @@
     return 'Manual tests work now. Imported generated lights need castle firmware 5.51 or newer.';
   }
   // One poll for the whole page: the shared castle link feeds this bench.
-  window.castleLink.subscribe(({connected,caps,health,lightShow,error,healthLine,framesText})=>{
+  window.castleLink.subscribe(({connected,state,caps,health,lightShow,error,healthLine,framesText})=>{
+    status = state;
     $('live-link-health').textContent=healthLine||'';
     if(!connected){
       $('bench-connection').textContent=error?`Castle unavailable · ${error}`:'Castle unavailable';

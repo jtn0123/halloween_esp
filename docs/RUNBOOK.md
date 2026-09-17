@@ -54,9 +54,20 @@ Work down this list — it is ordered by how often each one was the answer:
 - **Nothing answers at all** → `tools/sd_sync.py status`. No reply: check
   power, then the router's DHCP table for the board's MAC
   (`84:f7:03:d7:99:3c`). The desk chip says which host it is probing.
-- **Audio starts then breaks up** → look at heap in the 🏰 panel; under
-  ~20 KB playing is the documented failure floor. Also
-  `docs/ISSUE-scene-start-audio.md` for the open scene-start issue.
+- **Audio starts then breaks up** → the Castle Radio page, "Recent castle
+  events": the row above the log carries `heap now … · lowest …`. The
+  *lowest* number is the one that matters — `heap_min_kb` in `/api/health`,
+  the low-water mark since boot; the free figure recovers the moment the
+  allocation that failed is handed back, which is why "look at heap" used to
+  come back clean an hour after the fault. Under ~20 KB while playing is the
+  documented failure floor. The same row shows card read errors and the last
+  path one happened on. Also `docs/ISSUE-scene-start-audio.md`.
+- **It fell over and you want to know what it was doing** →
+  `tools/sd_sync.py logs` (or `castle logs`). Since v5.62 each boot line in
+  `/sd/logs/castle.log` is followed by the last 64 things the *previous*
+  life did, read out of RTC memory, which a panic does not clear — plus the
+  reset reason, the card errors that life saw and which OTA slot it ran
+  from. Live, the same ring is "Recent castle events" on the page.
 
 ## Show night
 

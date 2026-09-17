@@ -98,3 +98,38 @@ inline esp_err_t esp_ota_set_boot_partition(const esp_partition_t *part) {
   (void) part;
   return ESP_OK;
 }
+
+// ── L8 (v5.62): the running slot and its probation state ────────────────
+// castle_health.h puts both on the boot line, because a castle that quietly
+// rolled back to the previous image looks exactly like one that never took
+// the update. CASTLE_RUNNING_SLOT / CASTLE_OTA_STATE let a test drive either
+// verdict without an OTA.
+typedef enum {
+  ESP_OTA_IMG_NEW = 0,
+  ESP_OTA_IMG_PENDING_VERIFY = 1,
+  ESP_OTA_IMG_VALID = 2,
+  ESP_OTA_IMG_INVALID = 3,
+  ESP_OTA_IMG_ABORTED = 4,
+  ESP_OTA_IMG_UNDEFINED = 5,
+} esp_ota_img_states_t;
+
+inline const esp_partition_t *esp_ota_get_running_partition() {
+  static esp_partition_t p{};
+  static bool init = false;
+  if (!init) {
+    const char *v = getenv("CASTLE_RUNNING_SLOT");
+    snprintf(p.label, sizeof(p.label), "%s",
+             (v != nullptr && *v != '\0') ? v : "ota_0");
+    init = true;
+  }
+  return &p;
+}
+
+inline esp_err_t esp_ota_get_state_partition(const esp_partition_t *part,
+                                             esp_ota_img_states_t *out) {
+  (void) part;
+  const char *v = getenv("CASTLE_OTA_STATE");
+  *out = (esp_ota_img_states_t) ((v != nullptr && *v != '\0') ? atoi(v)
+                                                             : ESP_OTA_IMG_VALID);
+  return ESP_OK;
+}

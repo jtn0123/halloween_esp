@@ -22,8 +22,12 @@ import build_paths as bp
 import gen_esphome_audio as ga
 from effect_vocab import EFFECT_IDS, FLASH_MODE_IDS, OVERLAY_IDS, PALETTE_IDS
 from gen_rig import CHIPS, emit_lights, emit_rig_header, emit_rmt_override
+from gen_show import LAMBDA as LAMBDA
+from gen_show import MODE_RESTART as MODE_RESTART
+from gen_show import SCRIPT_HEAD as SCRIPT_HEAD
 from gen_show import SOUND_WAIT_MS as SOUND_WAIT_MS
-from gen_show import emit_show_playlist
+from gen_show import THEN as THEN
+from gen_show import emit_dispatch
 
 # The pulse expansion (what a `pulse:` stream MEANS) lives in
 # pulse_expand.py; this file only decides how the device is told.
@@ -117,14 +121,6 @@ def eff_id(name: str, scene_id: str) -> int:
 # most CHUNK actions, each chained to the next by its final action. The
 # delays inside a continuation are untouched, so the timeline is identical.
 CHUNK = 32
-
-#: The opener of every generated multi-line lambda action.
-LAMBDA = "      - lambda: |-"
-#: A script's two fixed lines. `restart` throughout: a scene re-fired while it
-#: is running starts again rather than stacking a second copy on the strips.
-MODE_RESTART = "    mode: restart"
-THEN = "    then:"
-SCRIPT_HEAD = (MODE_RESTART, THEN)
 
 
 def chunked(sid: str, items: list[list[str]], loop: bool) -> list[str]:
@@ -336,87 +332,7 @@ def main() -> int:
         ]
         out.extend(lines)
 
-    # A single stop script, so "blackout" is one call from anywhere.
-    #
-    # It clears the whole per-zone texture, not just the base effect. The
-    # render loop draws the centre pixel from zone_center whenever that is
-    # set, and composites the overlay on top of whatever the base is — so a
-    # stop that only zeroed zone_effect left vigil's centre embers burning
-    # and the door still sparkling, on a castle that was supposed to be dark
-    # (tests/cxx/render_check.cpp shows sparkle/meteor/chase all ADD light
-    # to a black base). A pending strike swell is cancelled for the same
-    # reason: it would otherwise climb, then fall, after the stop.
-    out.append("  # ── Blackout ─────────────────────────────────────")
-    out.append("  - id: scene_stop")
-    out.extend(SCRIPT_HEAD)
-    stop = " ".join(
-        f"id(zone_effect)[{i}] = 0; id(zone_center)[{i}] = -1;"
-        f" id(zone_overlay)[{i}] = 0; id(zone_flash)[{i}] = 0.0f;"
-        f" id(zone_flash_target)[{i}] = 0.0f;"
-        for i in range(len(zones))
-    )
-    out.append(f"      - lambda: '{stop}'")
-    # And it stops the scene SCRIPTS, not only their output. Until v5.35 it
-    # did not: a looping scene's pending delay survived the stop, re-fired
-    # within 30 s, and Vigil walked back on — volume, lights and its wind
-    # track — under whatever the operator was doing (every "quiet board"
-    # test in docs/ISSUE-ring-flicker.md had it playing underneath).
-    out.append(LAMBDA)
-    out.extend(f"          id({sid})->stop();" for sid in script_ids)
-    out.append("      - media_player.stop:")
-    out.append("      - text_sensor.template.publish:")
-    out.append("          id: current_scene")
-    out.append("          state: 'stop'")
-    out.append("      - text_sensor.template.publish:")
-    out.append("          id: current_track")
-    out.append("          state: ''")
-    out.append("")
-
-    # Scene dispatch by NAME, for every caller that only has a string: the
-    # web server's /api/scene, the PIR's configurable scene select, tools.
-    # Generated so a new scene is automatically reachable everywhere.
-    out.append("  # ── Dispatch by name ─────────────────────────────")
-    out.append("  - id: run_scene")
-    out.append(MODE_RESTART)
-    out.append("    parameters:")
-    out.append("      scene: string")
-    out.append(THEN)
-    out.append(LAMBDA)
-    out.append("          // Stop every scene script first. Without this a looping")
-    out.append("          // scene's pending delay re-fires AFTER the new scene starts")
-    out.append("          // and takes the stage back — two loops fighting forever.")
-    out.append("          // Continuations too (cont_*): a scene is several short")
-    out.append(
-        "          // scripts, see CHUNK — the one mid-delay may be any of them."
-    )
-    out.extend(f"          id({sid})->stop();" for sid in script_ids)
-    # A scene is meant to be seen: a colour, a bench pattern or "off" from the
-    # desk takes the strips off the Show effect and nothing handed them back
-    # before the next boot (2026-09-14: every scene ran dark on the S3 bring-up
-    # after a channel test). "halt" is the one caller that must not relight.
-    zs = ", ".join(f"id(zone_{z['id']})" for z in zones)
-    out.append(f'          if (scene != "halt") for (auto *z : {{{zs}}}) {{')
-    out.append("            if (!z->remote_values.is_on() ||")
-    out.append('                z->get_effect_name() != "Show") {')
-    out.append('              id(lights_override)->execute("show"); break; } }')
-    for j, scene in enumerate(doc["scenes"]):
-        kw = "if" if j == 0 else "else if"
-        out.append(
-            f'          {kw} (scene == "{scene["id"]}") '
-            f"id(scene_{scene['id']})->execute();"
-        )
-    out.append('          else if (scene == "stop") id(scene_stop)->execute();')
-    # "halt": the stops above and nothing else — lights keep their texture,
-    # audio is untouched. /api/play runs it first so a looping scene's 30 s
-    # re-fire cannot take the speakers back from the file the operator chose
-    # (a song, the panel's speaker test). A branch here rather than its own
-    # script: a script is a static object, and the S2's dram0 is on a diet.
-    out.append('          else if (scene == "halt") {}')
-    out.append(
-        '          else ESP_LOGW("castle", "unknown scene \'%s\'", scene.c_str());'
-    )
-    out.append("")
-    out.extend(emit_show_playlist(doc))
+    out.extend(emit_dispatch(doc, zones, script_ids))
 
     # Show-state sensors and the PIR's configuration entities. Generated here
     # because the scene list is: the PIR select's options ARE the scenes.

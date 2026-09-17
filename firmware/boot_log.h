@@ -46,6 +46,19 @@ inline size_t g_head = 0;
 inline size_t g_dropped = 0;
 /// Set while dumping, so printing the buffer does not append to it.
 inline bool g_dumping = false;
+/// L5 (v5.62): set once the web server is up, after which nothing more is
+/// captured.
+///
+/// The ring used to roll for the whole life of the boot — the callback is
+/// installed permanently (castle.yaml, priority 800) and nothing ever gated
+/// it — so by the time anyone pressed "Dump boot log" the 48 lines held
+/// whatever the show had printed in the last few seconds and the mount, the
+/// listing and the manifest check were long gone. Those lines are the ONLY
+/// record of the window the API cannot see, and they are what the button
+/// exists for. Freezing costs the later lines, which the API and
+/// /api/events can both speak about; not freezing costs the only ones
+/// nothing else can.
+inline bool g_frozen = false;
 /// Whether init() ever ran, and what it managed to get. Without this,
 /// "buffer is null" cannot distinguish "init never ran" from "init ran
 /// and both allocations failed" — two very different bugs.
@@ -69,7 +82,7 @@ inline void init() {
 }
 
 inline void capture(int level, const char *tag, const char *message) {
-  if (g_buf == nullptr || g_dumping) return;
+  if (g_buf == nullptr || g_dumping || g_frozen) return;
   char *slot = g_buf + (g_head % LINES) * WIDTH;
   // The level is kept as its single-letter ESPHome prefix so a dumped line
   // reads like a log line rather than like a struct.
@@ -79,6 +92,10 @@ inline void capture(int level, const char *tag, const char *message) {
   g_head++;
   if (g_head > LINES) g_dropped = g_head - LINES;
 }
+
+/// Called once castle_web::start() returns: the boot window is over and
+/// what the ring holds now is what it will hold at 3 a.m.
+inline void freeze() { g_frozen = true; }
 
 /// Print everything held, oldest first. Safe to call repeatedly.
 inline void dump() {
@@ -90,9 +107,10 @@ inline void dump() {
   }
   const size_t held = g_head < LINES ? g_head : LINES;
   g_dumping = true;
-  ESP_LOGI(TAG, "──── boot log: %u lines held, %u dropped, in %s ────",
+  ESP_LOGI(TAG, "──── boot log: %u lines held, %u dropped, in %s, %s ────",
            (unsigned) held, (unsigned) g_dropped,
-           g_from_psram ? "PSRAM" : "internal RAM");
+           g_from_psram ? "PSRAM" : "internal RAM",
+           g_frozen ? "frozen at the end of boot" : "still capturing");
   const size_t first = g_head < LINES ? 0 : g_head - LINES;
   for (size_t i = 0; i < held; i++) {
     ESP_LOGI(TAG, "  %s", g_buf + ((first + i) % LINES) * WIDTH);

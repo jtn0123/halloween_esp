@@ -117,8 +117,11 @@ class TestTheRingRecordsTheMainLoop(EventCase):
     def test_the_audio_clock_starts_and_ends_the_record(self) -> None:
         self.http("POST", "/api/play?f=wicked_winds.mp3")
         self.assertEqual(self.wait_for("play")["a"], "wicked_winds.mp3")
-        self.assertEqual(self.wait_for("sound")["a"], "")
-        self.assertEqual(self.wait_for("silent", timeout_s=6)["a"], "")
+        # L10 (v5.62): the two lines name the track and say how much of it
+        # was audible. An empty arg on both made the pair useless the next
+        # morning — "the speaker started and stopped" and nothing else.
+        self.assertEqual(self.wait_for("sound")["a"], "wicked_winds.mp3")
+        self.assertGreaterEqual(int(self.wait_for("silent", timeout_s=6)["a"]), 0)
         order = [e["e"] for e in self.events() if e["e"] in ("play", "sound", "silent")]
         self.assertEqual(order, ["play", "sound", "silent"])
 

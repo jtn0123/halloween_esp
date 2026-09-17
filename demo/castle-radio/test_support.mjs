@@ -220,9 +220,13 @@ export async function landedShow(before, after) {
 
 /* device-tools.js in a context whose castle link is a stub: `answer` is what
    /api/events gives back, and `push` is one update from the shared poll. */
-export function toolsContext(answer, link = {}) {
+export function toolsContext(answer, link = {}, health = null) {
   const {$} = page();
-  const ctx = {console, JSON, Number, String, Array, Math, Object, Promise, $, toast() {}};
+  const ctx = {console, JSON, Number, String, Array, Math, Object, Promise, Date, $, toast() {}};
+  /* v5.62: the bench asks /radio/device/health for itself. No answer given
+     means no fetch at all in the context, which is the old firmware case —
+     the row must stay empty rather than throw the event log away. */
+  if (health !== null) {ctx.fetch = async () => ({json: async () => health});}
   let push = () => {};
   ctx.document = {createElement: () => element('bench')};
   ctx.window = {castleLink: {
@@ -238,11 +242,12 @@ export function toolsContext(answer, link = {}) {
 /* The castle's own record, and the bench panel after asking for it. */
 export const EVENTS = [{t: 1000, e: 'play', a: 'radio_a.mp3'},
   {t: 6500, e: 'light_evicted', a: '3'}, {t: 11000, e: 'stop', a: ''}];
-export async function eventLog(answer) {
-  const {$, push} = toolsContext(answer);
-  push({connected: false, error: 'offline', healthLine: 'link 4 ms', framesText: ''});
+export async function eventLog(answer, {health = null, state} = {}) {
+  const {$, push} = toolsContext(answer, {}, health);
+  push({connected: false, state, error: 'offline', healthLine: 'link 4 ms', framesText: ''});
   await $('bench-events-load').onclick();
-  return {log: $('bench-events-log').textContent, health: $('live-link-health').textContent};
+  return {log: $('bench-events-log').textContent, health: $('live-link-health').textContent,
+    row: $('bench-health-row').textContent};
 }
 
 export async function runFrames(frames) {

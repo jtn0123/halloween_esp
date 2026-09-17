@@ -4,15 +4,23 @@
 // 500-line rule; the seam is honest: nothing here touches a route, a card
 // or ESPHome state. tests/test_firmware_contract.py parses this file along
 // with the handler headers, so the emulator's port stays byte-exact.
+//
+// The one thing here that is not plumbing is reply_err, which since v5.62
+// (L11) also leaves a line in the event ring — hence the include of
+// sd_web_state.h below. Still no route, no card and no ESPHome object.
 
 #include <esp_http_server.h>
+#include <esp_timer.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cstdlib>
 #include <initializer_list>
 #include <string>
 #include <string_view>
+
+#include "sd_web_state.h"
 
 namespace castle_web {
 
@@ -76,7 +84,31 @@ inline esp_err_t reply_json(httpd_req_t *req, const std::string &body) {
   return httpd_resp_send(req, body.c_str(), body.size());
 }
 
+/// L11 (v5.62): every refusal this server ever gave went out and vanished.
+/// A desk that shows "castle command failed" and a castle that answered
+/// "404 unknown scene" are the same picture from the porch, and the ring —
+/// the one record that now survives a reset — said nothing about either.
+///
+/// Rate-limited hard, and on purpose: a client in a retry loop refusing
+/// 4xx twice a second would flush a 64-entry ring in half a minute and take
+/// the scene starts with it. One line per two seconds carries "something is
+/// being refused, here is the code" without costing the story.
+inline std::atomic<long long> g_err_event_us{0};
+
+inline void note_reply_error(const char *status) {
+  const long long now = esp_timer_get_time();
+  long long last = g_err_event_us.load();
+  if (last != 0 && now - last < 2000000) return;
+  if (!g_err_event_us.compare_exchange_strong(last, now)) return;
+  // The code only. The message is the castle's own words, but a request
+  // target is the CLIENT's and has no business in a ring that is written
+  // to the card at the next boot.
+  const std::array<char, 4> code{{status[0], status[1], status[2], '\0'}};
+  record_event(EventKind::HTTP_ERR, code.data(), now);
+}
+
 inline esp_err_t reply_err(httpd_req_t *req, const char *status, const char *msg) {
+  note_reply_error(status);
   httpd_resp_set_status(req, status);
   httpd_resp_set_type(req, "text/plain");
   return httpd_resp_send(req, msg, HTTPD_RESP_USE_STRLEN);

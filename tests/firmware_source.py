@@ -32,6 +32,11 @@ SD_SITE = (FW / "sd_web_site.h").read_text()
 SD_REMOTE = (FW / "sd_web_remote.h").read_text()
 SD_EVENTS = (FW / "sd_web_events.h").read_text()
 SD_STATE = (FW / "sd_web_state.h").read_text()
+#: v5.62 (L1): the event ring's kind table and the copy of it that
+#: survives a panic live here, under both sd_web_state.h and
+#: castle_health.h — the two headers that need it cannot see each other.
+SD_RTC = (FW / "castle_rtc.h").read_text()
+HEALTH = (FW / "castle_health.h").read_text()
 SD_UTIL = (FW / "sd_web_util.h").read_text()
 SD_STREAM = (FW / "sd_web_stream.h").read_text()
 #: The emulator's handlers, read as ONE text. They live in two files since

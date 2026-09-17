@@ -25,6 +25,26 @@ RING = 64
 ARG_MAX = 47
 #: note_light_evictions(): at most one light_evicted line per second.
 EVICT_GAP_MS = 1000
+#: note_reply_error() (sd_web_util.h, L11): at most one http_err line per
+#: two seconds, or a client in a retry loop would flush the ring.
+ERR_GAP_MS = 2000
+#: The kind words that are NOT a drained mailbox action — the ring lines the
+#: main loop, the PIR, the buttons and the server itself write. Held to
+#: castle_rtc.h's table by tests/test_firmware_contract.py.
+OTHER_KINDS = (
+    "light_evicted",
+    "sound",
+    "silent",
+    # v5.62 (L3/L6/L11): everything the ring used to miss.
+    "scene_start",
+    "pir",
+    "pir_cooldown",
+    "pir_off",
+    "button",
+    "wifi_up",
+    "wifi_down",
+    "http_err",
+)
 
 #: ActionType → the "e" field of /api/events. LIGHT and PIRCFG are not show
 #: events (a LIGHT only bumps the applied counter), so they are absent.
@@ -52,6 +72,8 @@ class Events:
         self._evict_event_ms = 0
         self._sounding = False
         self._playing = False
+        self._err_event_ms = 0
+        self._started_ms = 0
 
     # -- recording (the main loop's side) ----------------------------------
 
@@ -85,15 +107,31 @@ class Events:
             self._evict_event_ms = t_ms
         self.record("light_evicted", str(dropped), t_ms)
 
-    def note_audio(self, sounding: bool, playing: bool, t_ms: int) -> None:
+    def note_audio(
+        self, sounding: bool, playing: bool, t_ms: int, track: str = ""
+    ) -> None:
         """mirror_audio's two transitions: the speaker started (the armed
-        clock began running) and playback ended on its own."""
+        clock began running) and playback ended on its own.
+
+        L10 (v5.62): `sound` carries the track the amplifier got and
+        `silent` the milliseconds of it that played — an empty arg on both
+        made the pair useless for the only question worth asking of them.
+        """
         was_sounding, was_playing = self._sounding, self._playing
         self._sounding, self._playing = sounding, playing
         if sounding and not was_sounding:
-            self.record("sound", "", t_ms)
+            self._started_ms = t_ms
+            self.record("sound", track, t_ms)
         if was_playing and not playing:
-            self.record("silent", "", t_ms)
+            played = t_ms - self._started_ms if was_sounding else 0
+            self.record("silent", str(max(played, 0)), t_ms)
+
+    def note_reply_error(self, code: int, t_ms: int) -> None:
+        """L11: one line per refusal, rate-limited exactly as reply_err is."""
+        if self._err_event_ms and t_ms - self._err_event_ms < ERR_GAP_MS:
+            return
+        self._err_event_ms = t_ms
+        self.record("http_err", str(code), t_ms)
 
     # -- reading (the handler's side) --------------------------------------
 

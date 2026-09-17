@@ -24,15 +24,40 @@ binary_sensor:
         # Which scene, how often, and whether at all — all runtime settings
         # (see the generated pir_* entities), not code. The cooldown is the
         # difference between a haunted castle and a car alarm.
+        # L3 (v5.62): every one of these three outcomes is now a line in the
+        # event ring. Until now the PIR — the thing that drives most of a
+        # real night — was recorded by NOTHING: record_action is only
+        # reached from the web mailbox, and a trip the cooldown swallowed
+        # returned here without even a log line. "The castle did nothing
+        # between 8 and 9" and "the castle was triggered forty times and
+        # suppressed all of them" looked identical the next morning.
+        #
+        # Every build that compiles this file also compiles the web layer
+        # (castle.yaml is not a buildable target — see the note atop it —
+        # and every target that includes it includes castle_sd_common.yaml),
+        # so castle_web is always in reach here.
         - lambda: |-
             static uint32_t last_ms = 0;
-            if (!id(pir_armed).state) return;
+            const int64_t now_us = esp_timer_get_time();
+            const std::string want = id(pir_scene).current_option().str();
+            if (!id(pir_armed).state) {
+              castle_web::record_event(castle_web::EventKind::PIR_OFF, "", now_us);
+              return;
+            }
             const uint32_t now = millis();
             const uint32_t hold = (uint32_t)(id(pir_cooldown).state * 1000.0f);
-            if (last_ms != 0 && (now - last_ms) < hold) return;
+            if (last_ms != 0 && (now - last_ms) < hold) {
+              // The arg is how many seconds of the cooldown were left, which
+              // is what tells a busy pavement from a cooldown set too long.
+              castle_web::record_event(castle_web::EventKind::PIR_COOLDOWN,
+                                       std::to_string((hold - (now - last_ms)) / 1000),
+                                       now_us);
+              return;
+            }
             last_ms = now;
-            ESP_LOGI("castle", "motion -> scene '%s'", id(pir_scene).current_option().c_str());
-            id(run_scene)->execute(id(pir_scene).current_option().str());
+            castle_web::record_event(castle_web::EventKind::PIR, want, now_us);
+            ESP_LOGI("castle", "motion -> scene '%s'", want.c_str());
+            id(run_scene)->execute(want);
 
 button:
   # ── Diagnostics ──────────────────────────────────────────────────
@@ -42,7 +67,10 @@ button:
     name: "Dump boot log"
     entity_category: diagnostic
     on_press:
-      - lambda: 'castle_log::dump();'
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "bootlog",
+                                   esp_timer_get_time());
+          castle_log::dump();
 
   # ── Remote flashing escape hatch ─────────────────────────────────
   # OTA (PUT /api/ota, `make ota`) is how firmware normally arrives. This is
@@ -63,40 +91,90 @@ button:
     entity_category: config
     on_press:
       - logger.log: "rebooting into download mode — reflash over USB to recover"
+      # L3: the last line the ring gets before the ROM takes the board. A
+      # castle found in download mode the next morning is otherwise a
+      # complete mystery — it looks exactly like a dead board.
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "flashmode",
+                                   esp_timer_get_time());
       - delay: 300ms          # let the log and the API response get out
       - lambda: 'castle_sd::reboot_to_download_mode();'
   - platform: template
     name: "Scene: Vigil"
     on_press:
+      # L3: which BUTTON was pressed. run_scene logs the scene start
+      # itself; this is the one bit only the button knows.
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "vigil",
+                                   esp_timer_get_time());
       - script.execute: {id: run_scene, scene: vigil}
   - platform: template
     name: "Scene: Storm"
     on_press:
+      # L3: which BUTTON was pressed. run_scene logs the scene start
+      # itself; this is the one bit only the button knows.
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "storm",
+                                   esp_timer_get_time());
       - script.execute: {id: run_scene, scene: storm}
   - platform: template
     name: "Scene: Seance"
     on_press:
+      # L3: which BUTTON was pressed. run_scene logs the scene start
+      # itself; this is the one bit only the button knows.
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "seance",
+                                   esp_timer_get_time());
       - script.execute: {id: run_scene, scene: seance}
   - platform: template
     name: "Scene: Ballroom"
     on_press:
+      # L3: which BUTTON was pressed. run_scene logs the scene start
+      # itself; this is the one bit only the button knows.
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "ballroom",
+                                   esp_timer_get_time());
       - script.execute: {id: run_scene, scene: ballroom}
   - platform: template
     name: "Scene: Descent"
     on_press:
+      # L3: which BUTTON was pressed. run_scene logs the scene start
+      # itself; this is the one bit only the button knows.
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "descent",
+                                   esp_timer_get_time());
       - script.execute: {id: run_scene, scene: descent}
   - platform: template
     name: "Scene: Visitation"
     on_press:
+      # L3: which BUTTON was pressed. run_scene logs the scene start
+      # itself; this is the one bit only the button knows.
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "visitation",
+                                   esp_timer_get_time());
       - script.execute: {id: run_scene, scene: visitation}
   - platform: template
     name: "Scene: Approach"
     on_press:
+      # L3: which BUTTON was pressed. run_scene logs the scene start
+      # itself; this is the one bit only the button knows.
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "approach",
+                                   esp_timer_get_time());
       - script.execute: {id: run_scene, scene: approach}
   - platform: template
     name: "Scene: Crypt"
     on_press:
+      # L3: which BUTTON was pressed. run_scene logs the scene start
+      # itself; this is the one bit only the button knows.
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "crypt",
+                                   esp_timer_get_time());
       - script.execute: {id: run_scene, scene: crypt}
   - platform: template
     name: "Blackout"
-    on_press: {script.execute: scene_stop}
+    on_press:
+      - lambda: |-
+          castle_web::record_event(castle_web::EventKind::BUTTON, "blackout",
+                                   esp_timer_get_time());
+      - script.execute: scene_stop

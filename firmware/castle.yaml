@@ -26,7 +26,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.61"
+  version: "5.62"
   # Which checkout this build tree belongs to — see build_path.yaml. The
   # Makefile passes the directory name (-s checkout <dir>); a bare
   # `esphome compile` gets the main checkout's tree.
@@ -101,6 +101,9 @@ esphome:
     - castle_pixels.h
     - flash_mode.h
     - boot_log.h
+    # L1 (v5.62): the event ring's copy in RTC slow memory. BEFORE
+    # castle_health.h, which dumps the previous life's tail to the card.
+    - castle_rtc.h
     - castle_health.h
 
   on_boot:
@@ -182,6 +185,12 @@ esp32:
       # loopback fetch and the native API need more than the default ten
       # sockets — v5.26 hit ENFILE on accept and the song never played.
       # Each socket slot is ~50 bytes of static RAM; sixteen is plenty.
+      # v5.62 (L2) spends one more of these on SNTP's UDP socket — see the
+      # `time:` block below. The counted users are: two httpd listeners plus
+      # their accepted connections (lru_purge_enable caps those), the media
+      # player's loopback fetch, the native API listener and its client, and
+      # now SNTP. Sixteen still has room; if a future build runs out, the
+      # symptom is ENFILE on accept and a song that never plays (v5.26).
       CONFIG_LWIP_MAX_SOCKETS: "16"
       # WPS never had a button on this porch; its supplicant state was more
       # of the same static RAM.
@@ -254,6 +263,24 @@ api:
   # Marking valid at boot instead would confirm a brick.
   on_client_connected:
     - lambda: 'castle_sd::mark_firmware_healthy();'
+
+# L2 (v5.62): a wall clock, at last.
+#
+# Everything the castle wrote was in uptime — the event ring's t_ms, the boot
+# line, the dumped tail — and uptime cannot be lined up against the only
+# thing the operator remembers ("it went dark some time after nine"). SNTP
+# costs one UDP socket (see CONFIG_LWIP_MAX_SOCKETS above) and no flash worth
+# counting, and it is a DNS name, not mDNS: `mdns: disabled` above turns the
+# responder off and CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES off with it, but
+# ordinary DNS is untouched and pool.ntp.org resolves through it.
+#
+# The ring keeps recording uptime and always will: it is written from the
+# main loop's hot path, and a wall clock there reads 1970 for the first
+# minute of every boot. /api/status carries `epoch` so a page can convert,
+# and the boot line carries an ISO stamp when the clock has landed.
+time:
+  - platform: sntp
+    id: castle_time
 
 ota:
   - platform: esphome

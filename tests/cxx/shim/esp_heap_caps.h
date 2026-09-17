@@ -22,6 +22,15 @@ inline size_t heap_caps_get_free_size(uint32_t caps) {
   return 96u * 1024u;
 }
 
+/// The low-water mark /api/health reports (L7, v5.62). Fixed at 64 KB, two
+/// thirds of the free figure above: the number is meaningless on a host,
+/// but /api/health is compared BYTE for byte against the emulator, so both
+/// sides have to say the same thing. tools/castle_emu_http.py spells 64.
+inline size_t heap_caps_get_minimum_free_size(uint32_t caps) {
+  (void) caps;
+  return 64u * 1024u;
+}
+
 inline void *heap_caps_malloc(size_t size, uint32_t caps) {
   (void) caps;
   return malloc(size);
