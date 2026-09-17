@@ -70,4 +70,5 @@ echo "Downloading the htdemucs model..."
 PATH="$PWD/.venv-desktop/bin:$PATH" .venv-desktop/bin/python \
   tools/castle_tools_status.py --human --require-ready
 echo
-echo "Castle Tools are installed. Double-click Open Castle Studio.command."
+.venv-desktop/bin/python tools/register_castle_launcher.py
+echo "Castle Tools are installed. Use Start Mac tools on the castle website."
