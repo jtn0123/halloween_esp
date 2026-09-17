@@ -107,7 +107,7 @@ esphome:
             if (castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso})) {
               castle_sd::list_root();
               // One line per boot on the card: the season-long paper trail.
-              castle_health::log_boot_to_sd(CASTLE_VERSION);
+              castle_health::log_boot_to_sd(ESPHOME_PROJECT_VERSION);
             }
             // The web layer 404s unknown scene ids instead of queueing lies —
             // this is where it learns which ids are real. Element-wise copy:

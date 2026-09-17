@@ -27,6 +27,10 @@ substitutions:
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
   version: "5.60"
+  # Which checkout this build tree belongs to — see build_path.yaml. The
+  # Makefile passes the directory name (-s checkout <dir>); a bare
+  # `esphome compile` gets the main checkout's tree.
+  checkout: halloween_esp
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
   #
@@ -79,12 +83,15 @@ esphome:
   # The studio's fallback bridge leg read the esphome framework version
   # instead and the desk displayed "castle v2026.7.4" — a lie with the
   # right font. HTTP /api/status always had it; now both legs agree.
+  # The firmware reads the version back as ESPHOME_PROJECT_VERSION, which
+  # this writes into esphome/core/defines.h. It used to ALSO go in as a
+  # -DCASTLE_VERSION build flag, and a build flag is global to the ESP-IDF
+  # build: every version bump recompiled 1267 of the 1376 objects (74 s)
+  # for a string two files read. defines.h reaches only ESPHome's own 99,
+  # which is the floor a bump can have (42 s, measured 2026-09-16).
   project:
     name: jtn.halloween-castle
     version: ${version}
-  platformio_options:
-    build_flags:
-      - '-DCASTLE_VERSION=\"${version}\"'
   includes:
     # Order matters: rig.h and castle_pixels.h both need Fixture. ESPHome
     # copies each of these into the build's src/ by basename, which is why

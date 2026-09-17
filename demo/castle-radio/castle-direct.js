@@ -97,8 +97,8 @@
   }
 
   // ── generated lights for a synced import, on the castle's clock ────────
-  const show = {active: false, track: null, frames_sent: 0, frames_total: 0, error: null, token: 0, hidden: false, realign: false,
-    base: null, awaitingBase: false};
+  const show = {active: false, track: null, frames_sent: 0, frames_coalesced: 0, frames_total: 0, error: null,
+    token: 0, hidden: false, realign: false, base: null, awaitingBase: false};
   // Frames the castle actually DREW, not frames this page posted. Firmware
   // 5.59 counts LIGHT frames applied and frames evicted before the drain;
   // a show is judged by the difference since it started. Older firmware
@@ -131,13 +131,23 @@
     await lightOff();
   }
   // A locked phone throttles setTimeout to a crawl while the castle's audio
-  // runs on: hold the screen awake for as long as the show does.
+  // runs on: hold the screen awake for as long as anything here needs it.
+  // Two owners ask for it — the generated show and the radio queue in
+  // device-link.js — so the lock is named and only dropped by the last one.
   let wakeLock = null;
-  async function holdScreen() {
+  const wakeFor = new Set();
+  async function holdScreen(who = 'show') {
+    wakeFor.add(who);
+    // iOS refuses a request while the page is hidden and silently drops the
+    // lock on every hide, so the want is remembered and re-asked on show.
+    if (wakeLock || document.hidden) {return;}
     try { wakeLock = (await window.navigator?.wakeLock?.request('screen')) || null; }
     catch { wakeLock = null; }
+    try { wakeLock?.addEventListener?.('release', () => { wakeLock = null; }); } catch { /* no events on this lock */ }
   }
-  function releaseScreen() {
+  function releaseScreen(who = 'show') {
+    wakeFor.delete(who);
+    if (wakeFor.size) {return;}
     const held = wakeLock;
     wakeLock = null;
     try { held?.release?.()?.catch?.(() => {}); } catch { /* the lock is already gone */ }
@@ -173,8 +183,8 @@
   }
   async function runShow(filename, frames, duration) {
     const token = ++show.token;
-    Object.assign(show, {active: true, track: filename, frames_sent: 0, frames_total: frames.length, error: null, realign: false,
-      base: null, awaitingBase: true});
+    Object.assign(show, {active: true, track: filename, frames_sent: 0, frames_coalesced: 0, frames_total: frames.length,
+      error: null, realign: false, base: null, awaitingBase: true});
     holdScreen();
     try {
       let started = await align(filename, now() + 0.24 + SPEAKER_START_S, token, true);
@@ -187,13 +197,17 @@
         // before deciding which frames are still ahead of it.
         if (show.realign) { show.realign = false; started = await align(filename, started, token); if (started === null) {return;} }
         // A frame the next one has already overtaken would only be overwritten
-        // inside the same 200 ms drain: skip it rather than burst.
-        if (due(index + 1)) { show.frames_sent = index + 1; continue; }
+        // inside the same 200 ms drain: skip it rather than burst. It was
+        // never posted, so it is coalesced, not sent — counting it as sent
+        // made "N landed of M sent" unreconcilable with what the castle drew.
+        if (due(index + 1)) { show.frames_coalesced++; continue; }
         await sleep(Math.max(0, (lastLight + FRAME_MS / 1000 - now()) * 1000));
         if (token !== show.token) {return;}
         lastLight = now();
         await castle(`/api/light?c=${encodeURIComponent(spec)}`, 'POST');
-        show.frames_sent = index + 1;
+        // A count of what was POSTed, not the position reached: an assignment
+        // of index + 1 reported every coalesced frame as sent as well.
+        show.frames_sent++;
         if (index && index % 20 === 0) {started = await align(filename, started, token);}
       }
       if (started !== null) {await sleep(Math.max(0, (started + (duration || 0) - now()) * 1000));}
@@ -320,7 +334,8 @@
     try {
       const state = settle(await status());
       return json({connected: true, host: location.host, state, playback: playback(state), capabilities: capabilities(state),
-        light_show: {active: show.active, track: show.track, frames_sent: show.frames_sent, frames_total: show.frames_total,
+        light_show: {active: show.active, track: show.track, frames_sent: show.frames_sent,
+          frames_coalesced: show.frames_coalesced, frames_total: show.frames_total,
           ...drawn(state),
           error: show.error, hidden: show.hidden, note: show.active && show.hidden ? 'lights paused — screen off' : null}});
     } catch (error) { return json({connected: false, host: location.host, error: error.message}, 502); }
@@ -367,7 +382,10 @@
   // A throttled tab freezes the frame loop; the castle's audio does not stop.
   document.addEventListener('visibilitychange', () => {
     show.hidden = !!document.hidden;
-    if (!document.hidden && show.active) {show.realign = true;}
+    if (document.hidden) {return;}
+    if (show.active) {show.realign = true;}
+    // Coming back from a hide: iOS has dropped the lock, so ask again.
+    if (wakeFor.size) { wakeFor.forEach(who => holdScreen(who)); }
   });
-  window.castleDirect = {scenes, library, show, forget};
+  window.castleDirect = {scenes, library, show, forget, holdScreen, releaseScreen};
 })();

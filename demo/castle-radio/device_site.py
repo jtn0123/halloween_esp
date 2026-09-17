@@ -36,6 +36,7 @@ INDEX = "index.html"
 APP = "app.js"
 IMPORTS = "imports.js"
 PREVIEW = "preview.js"
+WORDS = "device-words.js"
 LINK = "device-link.js"
 SCRIPTS = (
     "visuals.js",
@@ -43,6 +44,7 @@ SCRIPTS = (
     IMPORTS,
     PREVIEW,
     "rig-options.js",
+    WORDS,
     LINK,
     "remote-library.js",
     "device-tools.js",
@@ -82,9 +84,9 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
         "'Waveform unavailable. Reopen this song to retry.'",
         "'Waveforms are analyzed in the control room on your computer.'",
     ),
-    (LINK, "'Castle unreachable at 10.27.27.81'", "'Castle unreachable'"),
+    (WORDS, "'Castle unreachable at 10.27.27.81'", "'Castle unreachable'"),
     (
-        LINK,
+        WORDS,
         "'Control room server is not running'",
         "'Castle not answering'",
     ),

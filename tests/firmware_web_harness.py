@@ -42,7 +42,8 @@ IN_CI = bool(os.environ.get("CI"))
 
 
 def firmware_version() -> str:
-    """The version string the device build compiles in (-DCASTLE_VERSION),
+    """The version string the device build compiles in (castle.yaml's
+    project.version, ESPHOME_PROJECT_VERSION in the real build's defines.h),
     so the harness and the emulator answer /api/status the same."""
     for line in (FIRMWARE / "castle.yaml").read_text().splitlines():
         if line.strip().startswith("version:"):
@@ -62,7 +63,7 @@ def build(out: Path) -> subprocess.CompletedProcess[str]:
             "-Wall",
             "-Wextra",
             "-Werror",
-            f'-DCASTLE_VERSION="{firmware_version()}"',
+            f'-DESPHOME_PROJECT_VERSION="{firmware_version()}"',
             "-I",
             str(CXX_DIR / "shim"),
             "-I",

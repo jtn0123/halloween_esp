@@ -78,7 +78,7 @@ inline esp_err_t h_status(httpd_req_t *req) {
            R"({"version":"%s","compiled":"%s %s","uptime_s":%lld,)"
            R"("sd_mounted":%s,"psram_free_kb":%u,"heap_free_kb":%u,)"
            R"("sd_total_kb":%u,"sd_free_kb":%u,"missing":")",
-           CASTLE_VERSION, __DATE__, __TIME__,
+           ESPHOME_PROJECT_VERSION, __DATE__, __TIME__,
            (long long) (esp_timer_get_time() / 1000000),
            castle_sd::g_mounted ? "true" : "false",
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
