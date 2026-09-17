@@ -9,7 +9,9 @@ numpy~=2.5
 scipy~=1.18
 PyYAML~=6.0
 esphome==2026.9.0
-# esphome pins aioesphomeapi EXACTLY (2026.9.0 wants ==46.3.0), so this line
-# can only ever track the range esphome's own pin sits in — it moved to 46
-# with esphome 2026.9.0, and the next major waits for esphome the same way.
-aioesphomeapi~=46.3
+# esphome pins aioesphomeapi EXACTLY (2026.9.0 wants ==46.3.0), so the version
+# is esphome's to choose and this line only says "we import it directly". A
+# floor, not a range: `~=46.3` made Dependabot offer ~=46.4 the day it shipped
+# (PR #38), which pip can never resolve against esphome's pin. requirements.lock
+# records the version that actually installs.
+aioesphomeapi>=46.3
