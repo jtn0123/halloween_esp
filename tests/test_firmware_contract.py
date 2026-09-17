@@ -72,11 +72,20 @@ class TestErrorStrings(unittest.TestCase):
     """Each handler's reply_err set, firmware vs emulator, string for string."""
 
     def errs_for(self, handler: str) -> set[tuple[int, str]]:
-        body = FUNCS[handler]
-        found = reply_errs(body)
-        for helper in ERR_HELPERS:
-            if f"{helper}(" in body:
-                found |= reply_errs(FUNCS[helper])
+        """Every verdict this route can give, the helpers it delegates to
+        included — and the helpers THEY delegate to, since v5.61: h_put
+        answers through upload_offload, which answers through write_body."""
+        seen: set[str] = set()
+        todo = [handler]
+        found: set[tuple[int, str]] = set()
+        while todo:
+            name = todo.pop()
+            if name in seen:
+                continue
+            seen.add(name)
+            body = FUNCS[name]
+            found |= reply_errs(body)
+            todo += [h for h in ERR_HELPERS if f"{h}(" in body]
         return found
 
     def test_emulator_uses_the_firmwares_strings_and_codes(self) -> None:

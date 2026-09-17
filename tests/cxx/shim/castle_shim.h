@@ -1,7 +1,9 @@
 #pragma once
 // Include this FIRST, before any firmware header. It pulls in every system
-// header the firmware will ask for, and only then renames the six calls
-// that would otherwise reach for a card this machine does not have.
+// header the firmware will ask for, and only then renames the calls that
+// would otherwise reach for a card this machine does not have — the six
+// path-taking ones, plus fread/ferror/fclose, which carry the injected
+// read fault A8's torn-transfer path is reached through.
 //
 // WHY THE ORDER MATTERS. The redirection is a set of function-like macros —
 // `stat(p, s)` and not `stat`, so `struct stat` keeps its meaning. A macro
@@ -42,6 +44,9 @@
 #include <esp_http_server.h>
 
 #define fopen(p, m) castle_shim_fopen((p), (m))
+#define fread(d, s, n, f) castle_shim_fread((d), (s), (n), (f))
+#define ferror(f) castle_shim_ferror((f))
+#define fclose(f) castle_shim_fclose((f))
 #define opendir(p) castle_shim_opendir((p))
 #define stat(p, s) castle_shim_stat((p), (s))
 #define unlink(p) castle_shim_unlink((p))

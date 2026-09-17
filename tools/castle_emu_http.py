@@ -23,23 +23,14 @@ Fidelity choices worth knowing when a test surprises you:
 
 from __future__ import annotations
 
-import json
 import time
-import zlib
-from collections.abc import Iterator
-from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import castle_emu_wire as wire
 from castle_emu_flash import BOOTLOG, CSP, FALLBACK_PAGE, REMOTE_PAGE, TYPES
+from castle_emu_reply import JSON_MIME, NO_SD, QUERY_TOO_LONG
+from castle_emu_upload import Uploads
 
-if TYPE_CHECKING:
-    from castle_emu import CastleEmu
-
-#: httpd_config_t recv_wait_timeout: how long httpd_req_recv waits for the
-#: next body byte before giving up on the upload.
-RECV_WAIT_S = 5.0
 #: h_ota's plausibility window: under 64 KB is no firmware, over the OTA
 #: partition cannot fit. The board compares against its own partition
 #: (part->size, sd_web_ota.h), so the emulator carries one per build's
@@ -48,60 +39,20 @@ RECV_WAIT_S = 5.0
 OTA_MIN = 65536
 OTA_SLOTS = {"s2": 0x1C0000, "s3": 0x3C0000}
 OTA_SLOT = OTA_SLOTS["s2"]
-CHUNK = 8192
-#: The one content type the API answers with — sd_web.h reply_json().
-JSON_MIME = "application/json"
-#: sd_web.h's 503 for every route that needs the card, spelled once.
-NO_SD = "no SD card"
-QUERY_TOO_LONG = "query too long"
 
 
-class Handler(BaseHTTPRequestHandler):
-    server: CastleEmu  # narrowed for handlers
-    timeout = RECV_WAIT_S
+class Handler(Uploads):
+    """Every route the castle serves. The reply layer is castle_emu_reply's
+    and the two card-writing routes are castle_emu_upload's; what is left
+    here is reading, control and the flasher."""
 
     # -- plumbing ----------------------------------------------------------
-
-    def log_message(self, fmt: str, *args: object) -> None:
-        pass  # tests and background use; the port banner is enough
 
     def handle(self) -> None:
         if self.server.serial is None:
             return super().handle()
         with self.server.serial:
             super().handle()
-
-    def _json(self, body: dict[str, object] | list[object]) -> None:
-        # Compact separators, because the firmware's replies are snprintf
-        # templates with no room for pretty-printing: `{"queued":true}` on
-        # the board against json.dumps's `{"queued": true}` here was two
-        # bytes of drift in every queued answer, invisible to every test
-        # that parsed the body instead of reading it
-        # (tests/test_firmware_web_cxx.py now reads it).
-        self._raw(200, json.dumps(body, separators=(",", ":")).encode(), JSON_MIME)
-
-    def _raw(
-        self, code: int, raw: bytes, ctype: str, extra: dict[str, str] | None = None
-    ) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(raw)))
-        for k, v in (extra or {}).items():
-            self.send_header(k, v)
-        self.end_headers()
-        self.wfile.write(raw)
-
-    def _err(self, code: int, msg: str, extra: dict[str, str] | None = None) -> None:
-        """reply_err(): a status line and a one-line text/plain body.
-
-        `extra` carries headers a handler set BEFORE it decided to fail —
-        the served pages set their CSP first thing, and httpd keeps a
-        header once set, so the refusal goes out carrying it too."""
-        self._raw(code, msg.encode(), "text/plain", extra)
-
-    def _idf(self, code: int) -> None:
-        """esp_http_server's own verdicts, before any handler runs."""
-        self._raw(code, wire.IDF_ERRORS[code].encode(), "text/html")
 
     def _wedge(self) -> None:
         """Pre-v5.22: the single HTTP task is busy streaming the song."""
@@ -144,27 +95,6 @@ class Handler(BaseHTTPRequestHandler):
     do_GET = do_POST = do_PUT = do_DELETE = _dispatch
     do_HEAD = do_PATCH = do_OPTIONS = _dispatch
 
-    def _content_len(self) -> int | None:
-        """req->content_len, or None when http_parser would have 400'd the
-        header (not a non-negative integer)."""
-        raw = self.headers.get("Content-Length")
-        if raw is None:
-            return 0
-        try:
-            n = int(raw)
-        except ValueError:
-            return None
-        return n if n >= 0 else None
-
-    def _body_chunks(self, remaining: int) -> Iterator[bytes]:
-        """httpd_req_recv in CHUNK-sized reads; stops short on a stall."""
-        while remaining > 0:
-            got = self.rfile.read(min(remaining, CHUNK))
-            if not got:
-                return
-            remaining -= len(got)
-            yield got
-
     # -- GET ---------------------------------------------------------------
 
     def h_status(self, raw: bytes) -> None:
@@ -174,8 +104,19 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def h_health(self, _raw: bytes) -> None:
+        # sd_read_errors (A8, v5.61): transfers off the card that failed and
+        # were torn down instead of being framed as a short success. Always
+        # 0 here — the emulated card is a host directory, and a read of one
+        # does not NAK a sector — but the KEY is part of the reply's shape,
+        # and a desk that shows the number must find it on both castles.
         self._json(
-            {"boots": 3, "crashes": 0, "last_reset": "power-on", "was_crash": False}
+            {
+                "boots": 3,
+                "crashes": 0,
+                "last_reset": "power-on",
+                "was_crash": False,
+                "sd_read_errors": 0,
+            }
         )
 
     def h_events(self, _raw: bytes) -> None:
@@ -388,75 +329,6 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"queued": True})
 
     # -- PUT/DELETE: the card ----------------------------------------------
-
-    def h_put(self, raw: bytes) -> None:
-        if not self.server.sd_mounted:
-            return self._err(503, NO_SD)
-        n = self._content_len()
-        if n is None:
-            return self._idf(400)
-        if n == 0:
-            return self._err(400, "empty body")
-        sub, prefix = wire.route_dir(raw)
-        if sub == "site":
-            # E3: a desk page has a known plausible size; the firmware
-            # refuses before reading a byte.
-            if n > 8 * 1024 * 1024:
-                return self._err(413, "site file too large")
-        name = wire.name_from_uri(raw, prefix)
-        if not wire.safe_name(name):
-            return self._err(400, "bad filename")
-        # B3: write_body's free-space precondition (64 KB slack), when the
-        # emulated card declares a size (sd_free_kb None = plenty of room).
-        free_kb = self.server.sd_free_kb
-        if free_kb is not None and n // 1024 + 64 > free_kb:
-            return self._err(507, "not enough room on the card")
-        dest = self.server.sd_dir / sub if sub else self.server.sd_dir
-        dest.mkdir(parents=True, exist_ok=True)
-        target = dest / wire.fs_name(name)
-        # write_body: into the sidecar, then unlink + rename (FAT's rename
-        # will not overwrite). A short upload costs the sidecar only; the
-        # previous copy of `target` is untouched.
-        part = target.with_name(target.name + ".part")
-        try:
-            f = open(part, "wb")
-        except OSError:
-            return self._err(500, "cannot create file")
-        written = 0
-        crc = 0
-        with f:
-            try:
-                for chunk in self._body_chunks(n):
-                    f.write(chunk)
-                    written += len(chunk)
-                    crc = zlib.crc32(chunk, crc)  # B5: sd_sync compares
-            except OSError:  # TimeoutError is one of these
-                pass
-        if written != n:
-            part.unlink(missing_ok=True)  # the sidecar only
-            return self._err(500, "short write")
-        try:
-            target.unlink(missing_ok=True)
-            part.rename(target)
-        except OSError:
-            part.unlink(missing_ok=True)
-            return self._err(500, "rename failed")
-        card = f"/sd/{sub}/{target.name}" if sub else f"/sd/{target.name}"
-        self._json({"path": card, "bytes": written, "crc32": "%08x" % crc})
-
-    def h_delete(self, raw: bytes) -> None:
-        if not self.server.sd_mounted:
-            return self._err(503, NO_SD)
-        sub, prefix = wire.route_dir(raw)
-        name = wire.name_from_uri(raw, prefix)
-        if not wire.safe_name(name):
-            return self._err(400, "bad filename")
-        dest = self.server.sd_dir / sub if sub else self.server.sd_dir
-        try:
-            (dest / wire.fs_name(name)).unlink()
-        except OSError:
-            return self._err(404, "no such file")
-        self._json({"deleted": True})
 
     def h_ota(self, _raw: bytes) -> None:
         n = self._content_len()

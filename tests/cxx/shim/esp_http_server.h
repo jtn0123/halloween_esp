@@ -143,6 +143,12 @@ struct Response {
   std::string type = HTTPD_TYPE_TEXT;   //!< httpd's own default
   std::vector<Hdr> hdrs;
   std::string body;
+  /// The handler returned something other than ESP_OK. On the device that
+  /// is httpd closing the socket under a half-sent body — the only way a
+  /// chunked reply can say "this is not the whole file" once its 200 has
+  /// gone out (A8, v5.61). Reported by the harness as a header so a test
+  /// can tell a torn transfer from a short one.
+  bool aborted = false;
 };
 
 /// One request in flight: the body the caller supplied and how much of the
@@ -179,6 +185,10 @@ inline Server *server_on(uint16_t port) {
 }
 
 inline ReqCtx *ctx_of(httpd_req_t *r) { return static_cast<ReqCtx *>(r->aux); }
+
+/// Set by the harness to the worker pump it wants run after each handler.
+/// Null in the byte-rules mode, which registers no routes at all.
+inline void (*drain_async)() = nullptr;
 
 }  // namespace castle_shim
 
@@ -261,6 +271,33 @@ inline esp_err_t httpd_resp_send(httpd_req_t *r, const char *buf, ssize_t len) {
 inline esp_err_t httpd_resp_send_chunk(httpd_req_t *r, const char *buf, ssize_t len) {
   if (buf == nullptr) return ESP_OK;   // the terminating zero-length chunk
   return httpd_resp_send(r, buf, len);
+}
+
+// ── async handlers (IDF 5.5.5 httpd_main.c) ─────────────────────────────
+// On the device the copy owns the socket so the httpd task can return; here
+// there is one thread and one request in flight, so the "copy" is the
+// request itself and completing it is bookkeeping. What the harness holds
+// the firmware to is the PROTOCOL — begin before handing the request on,
+// complete exactly once afterwards — and that is checked by the count
+// below, which web_check reads at exit.
+namespace castle_shim {
+inline int &async_open() {
+  static int n = 0;
+  return n;
+}
+}  // namespace castle_shim
+
+inline esp_err_t httpd_req_async_handler_begin(httpd_req_t *r, httpd_req_t **out) {
+  if (r == nullptr || out == nullptr) return ESP_ERR_INVALID_ARG;
+  *out = r;
+  castle_shim::async_open()++;
+  return ESP_OK;
+}
+
+inline esp_err_t httpd_req_async_handler_complete(httpd_req_t *r) {
+  if (r == nullptr) return ESP_ERR_INVALID_ARG;
+  castle_shim::async_open()--;
+  return ESP_OK;
 }
 
 // ── request body ────────────────────────────────────────────────────────
@@ -377,7 +414,13 @@ inline Response dispatch(uint16_t port, int method, const std::string &uri,
   req.content_len = declared_len;
   req.aux = &ctx;
   req.user_ctx = route->user_ctx;
-  route->handler(&req);
+  const esp_err_t verdict = route->handler(&req);
+  // An async handler (sd_web_upload.h) returns the instant the job is
+  // queued and the REPLY is the worker's to send. There is no worker
+  // thread here, so the harness runs its pump — while `ctx` is still
+  // alive, because the body the worker reads lives in it.
+  if (drain_async != nullptr) drain_async();
+  ctx.resp.aborted = verdict != ESP_OK;
   return ctx.resp;
 }
 

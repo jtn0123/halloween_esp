@@ -92,6 +92,7 @@ esphome:
     - sd_web.h
     - generated/fallback_scenes.h
     - sd_web_ota.h
+    - sd_web_upload.h
     - sd_web_site.h
     - sd_web_remote.h
   on_boot:

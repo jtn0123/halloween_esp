@@ -9,6 +9,7 @@
 // ESPHome), and one line per boot is appended to the SD card once the card is
 // up — safely after the fragile window, which is the ring's job to cover.
 
+#include <atomic>
 #include <cstdio>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -23,6 +24,23 @@ static const char *const TAG = "health";
 inline uint32_t g_boots = 0;
 inline uint32_t g_crashes = 0;
 inline esp_reset_reason_t g_reason = ESP_RST_UNKNOWN;
+
+/// A8 (v5.61): reads off the card that FAILED, this boot.
+///
+/// Not in NVS with the two counters above, deliberately: those answer "how
+/// has the season been going" and survive power loss, this one answers "is
+/// the card going bad RIGHT NOW" and a reboot is exactly the event that
+/// makes the old number meaningless. A flake mid-song is a truncated
+/// response the listener hears as a stop (sd_web_site.h aborts the transfer
+/// rather than framing a short body as a success); this is the number that
+/// says it happened, and how often, without reading the log.
+///
+/// Written by the httpd tasks — two of them since sd_web_stream.h, three
+/// since the upload worker — so it is an atomic rather than a bare unsigned.
+inline std::atomic<unsigned> g_sd_read_errors{0};
+
+/// Called where a read failed, once per failed transfer.
+inline void note_sd_read_error() { g_sd_read_errors.fetch_add(1); }
 
 inline const char *reason_str() {
   switch (g_reason) {
