@@ -8,6 +8,8 @@
     tools/sd_sync.py [ip|name] push [f...]   upload tracks (default: tracks/*)
     tools/sd_sync.py [ip|name] tones         upload the speaker-test tones the
                                              desk's 🏰 panel plays (audio/test -> /sd)
+    tools/sd_sync.py [ip|name] cues          upload the card light shows
+                                             (audio/card/cues/*.cue -> /sd)
     tools/sd_sync.py [ip|name] scenes        upload the scene tracks the SD
                                              build streams (audio/ -> /sd/scenes)
     tools/sd_sync.py [ip|name] site          push the Castle Radio page (gzipped)
@@ -31,6 +33,7 @@ import contextlib
 import gzip
 import importlib.util
 import json
+import re
 import sys
 import urllib.parse
 import urllib.request
@@ -92,13 +95,17 @@ def card_dir(ip: str, d: str) -> dict[str, int]:
     }
 
 
-def _scene_bytes_match(ip: str, name: str, data: bytes) -> bool:
-    """True when GET /sd/scenes/<name> is the same bytes we would PUT."""
+def _card_bytes_match(ip: str, name: str, data: bytes, d: str = "") -> bool:
+    """True when GET /sd/<d><name> is the same bytes we would PUT."""
     try:
-        remote = api(ip, "GET", f"/sd/scenes/{urllib.parse.quote(name)}")
+        remote = api(ip, "GET", f"/sd/{d}{urllib.parse.quote(name)}")
     except OSError:
         return False
     return remote == data
+
+
+def _scene_bytes_match(ip: str, name: str, data: bytes) -> bool:
+    return _card_bytes_match(ip, name, data, "scenes/")
 
 
 def cmd_push(ip: str, args: list[str]) -> int:
@@ -149,6 +156,34 @@ def cmd_scenes(ip: str) -> int:
     return 0
 
 
+def cmd_cues(ip: str) -> int:
+    """The card light shows tools/render_cues.py wrote, beside their songs.
+
+    A cue file is only ever loaded for a song that is on the card under the
+    same name, so one whose song is not there is said out loud rather than
+    pushed: it would sit on the card lighting nothing."""
+    files = sorted(bp.AUDIO.glob("card/cues/*.cue"))
+    if not files:
+        raise SystemExit(
+            "no audio/card/cues/*.cue — tools/render_cues.py <track> first"
+        )
+    have = {f["name"]: int(f["size"]) for f in listing(ip) if not f.get("dir")}
+    songs = {name.rsplit(".", 1)[0] for name in have if not name.endswith(".cue")}
+    sent = 0
+    for src in files:
+        data = src.read_bytes()
+        if src.stem not in songs:
+            print(f"  {src.name}: no song called {src.stem} on the card — skipped")
+            continue
+        if have.get(src.name) == len(data) and _card_bytes_match(ip, src.name, data):
+            print(f"  {src.name} unchanged, skipped")
+            continue
+        upload(ip, "/api/files", src.name, data)
+        sent += 1
+    print(f"  {len(files)} cue files, {sent} sent")
+    return 0
+
+
 def cmd_tones(ip: str) -> int:
     """The 🏰 panel's speaker test: five tones at the card ROOT, because
     /api/play takes one path component. `make audio` renders them."""
@@ -181,6 +216,14 @@ def build_site() -> bytes:
     return bytes(module.build())
 
 
+def library_size(page: bytes) -> int:
+    """How many imported songs the built page carries inline."""
+    found = re.search(
+        rb'<script id="radio-library"[^>]*>(.*?)</script>', page, re.DOTALL
+    )
+    return len(json.loads(found.group(1))) if found else 0
+
+
 def cmd_site(ip: str) -> int:
     # ONE self-contained file — that constraint is what makes it servable by
     # a microcontroller. Pushed pre-gzipped: the firmware serves index.html.gz
@@ -191,6 +234,16 @@ def cmd_site(ip: str) -> int:
     # for the day it is wanted back. Scene audio is not pushed beside the page;
     # the page streams it from /sd/scenes/, where `scenes` already put it.
     plain = build_site()
+    songs = library_size(plain)
+    if songs == 0:
+        # Not an error — a castle with only scenes is a real castle — but it
+        # was once a silent one: the page went out from a checkout with no
+        # .radio-data and every imported song on the card lost its row.
+        print(
+            "  WARNING: this page lists NO imported songs — this checkout has "
+            "no demo/castle-radio/.radio-data/catalog.json. Songs already on "
+            "the card show up only if they have a .cue beside them."
+        )
     packed = gzip.compress(plain, 9)
     upload(ip, "/api/site", "index.html.gz", packed)
     # The plain copy too, for any client that cannot take gzip — the firmware
@@ -335,6 +388,8 @@ def main() -> int:
         return cmd_push(ip, args)
     if cmd == "scenes":
         return cmd_scenes(ip)
+    if cmd == "cues":
+        return cmd_cues(ip)
     if cmd == "tones":
         return cmd_tones(ip)
     if cmd == "site":

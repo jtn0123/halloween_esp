@@ -41,6 +41,8 @@ packages:
   # This build's `sfx`: streams each track from the card over loopback (the
   # core deliberately defines none — see the note atop castle.yaml).
   audio_sd: !include generated/audio_sd.yaml
+  # v5.63: a card song's own light show — cues_begin / cues_end, called below.
+  cues: !include castle_cues.yaml
 
 # The build embeds ONE file: a chirp that plays when a scene starts with
 # no card in the slot, so a missing card is audible instead of silent. Every
@@ -201,6 +203,7 @@ script:
           call.set_announcement(true);
           call.perform();
           id(current_track).publish_state(path);
+          id(cues_begin)->execute(path);
 
 # The bridge between the web server's httpd task and ESPHome's main loop.
 # HTTP handlers only *record* play/scene/stop requests (scripts and the media
@@ -235,8 +238,15 @@ interval:
             if (castle_web::mirror_audio(playing, sounding, esp_timer_get_time(),
                                          id(current_track).state) &&
                 id(current_scene).state == "stop" &&
-                !id(current_track).state.empty())
+                !id(current_track).state.empty()) {
               id(current_track).publish_state("");
+              // v5.63: a card show ends with its song, and ends DARK — the
+              // zones would otherwise hold the last section's look all night.
+              if (castle_cues::active()) {
+                id(cues_end)->execute();
+                id(scene_stop)->execute();
+              }
+            }
           }
           castle_web::mirror_show_state(id(current_scene).state,
                                         id(current_track).state,
@@ -268,6 +278,15 @@ interval:
           auto act = castle_web::take_pending();
           if (act.type == castle_web::ActionType::NONE) return;
           castle_web::record_action(act.type, act.arg, esp_timer_get_time());
+          // v5.63: whatever was asked for, the card show that was running is
+          // over — a scene, a stop, a blackout and the next song all replace
+          // it. The two that do not are a volume change and a PIR setting,
+          // and a LIGHT frame: a colour test paints over the show through
+          // lights_override, and "show" hands the strips back to it.
+          if (act.type != castle_web::ActionType::VOLUME &&
+              act.type != castle_web::ActionType::PIRCFG &&
+              act.type != castle_web::ActionType::LIGHT)
+            id(cues_end)->execute();
           if (act.type == castle_web::ActionType::PLAY) {
             // A looping scene would re-fire its own track over this file
             // within 30 s: run_scene("halt") stops every scene script and
@@ -286,6 +305,7 @@ interval:
             // file with it: an imported song went silent one frame in.
             id(current_scene).publish_state("stop");
             castle_web::restart_audio_clock(esp_timer_get_time());
+            id(cues_begin)->execute(act.arg);
           } else if (act.type == castle_web::ActionType::STOP) {
             // scene_stop zeroes the zone arrays, but a page light show
             // drives the strips through lights_override (LIGHT below) and

@@ -13,8 +13,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from castle_emu import CastleEmu, show_scene_ids
+from castle_emu import CastleEmu
 from castle_emu_http import OTA_SLOTS
+from castle_emu_scenes import show_scene_ids
 
 
 def seed(card: Path) -> None:

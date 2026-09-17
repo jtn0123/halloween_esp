@@ -12,10 +12,17 @@
 //! one home. `sensitivity` is a number or the per-band map. No kernel
 //! modes here: the onset path's arithmetic is pinned unconditionally,
 //! so the answer is the same on every machine.
+//!
+//! `"waveform": true` answers what GET /studio/waveform/<id> answers instead
+//! (duration, peaks, onsets and the loudness envelope — studio_media's own
+//! function, not a copy), for tools/render_cues.py: the desk's scene builder
+//! needs the envelope for its sections, and re-rendering a song should not
+//! need a server running to get it.
 
 use castle_core::jsonio::{self, Json};
 use castle_core::media;
 use castle_core::onsets::{analyze_full3, sens3};
+use castle_core::studio_media;
 use std::io::Read;
 
 fn die(msg: &str, code: i32) -> ! {
@@ -37,6 +44,13 @@ fn main() {
         die("analyze_track: no `path`", 2);
     }
     let sens = sens3(spec.get("sensitivity"));
+    if matches!(spec.get("waveform"), Some(Json::Bool(true))) {
+        let Some(wave) = studio_media::waveform(std::path::Path::new(&path), sens) else {
+            die(&format!("analyze_track: cannot decode {path}"), 1);
+        };
+        println!("{}", jsonio::dumps(&wave));
+        return;
+    }
     let want_stereo = matches!(spec.get("stereo"), Some(Json::Bool(true)));
     let Some(x) = media::load_audio(&path) else {
         die(&format!("analyze_track: cannot decode {path}"), 1);

@@ -1,0 +1,64 @@
+# The card-loaded light show (v5.63): a song played off the card may have a
+# cue file beside it, and this is the YAML half of firmware/castle_cues.h —
+# the two scripts castle_sd_common.yaml calls and the clock that walks the
+# file. A package of its own because it is one responsibility, and because
+# castle_sd_common.yaml had no lines left to give it.
+#
+# Included by castle_sd_common.yaml, so every target that has a card has it.
+# A board with no PSRAM (Feather #5323) simply never loads a file: load()
+# answers false and the song plays as it always did.
+
+esphome:
+  includes:
+    - castle_cues.h
+
+script:
+  # v5.63: a card file's own light show (castle_cues.h). Looks for
+  # /sd/<track>.cue, and when there is one puts the scene's base state
+  # on the zones and hands the strips back to the Show effect, exactly as a
+  # generated scene's first lambda and run_scene do. No file, nothing
+  # happens: the song plays as it always did. `cues_end` is the other half —
+  # the PSRAM goes back, and /api/status stops claiming a show.
+  - id: cues_begin
+    parameters:
+      track: string
+    then:
+      - lambda: |-
+          if (!castle_cues::load(track, esp_timer_get_time())) {
+            castle_web::g_cues.store(0);
+            return;
+          }
+          castle_web::g_cues.store(castle_cues::count());
+          ESP_LOGI("castle_cues", "%s: %u cues from the card", track.c_str(),
+                   (unsigned) castle_cues::count());
+          id(lights_override)->execute("show");
+          castle_cues::apply_base({id(zone_effect), id(zone_flash), id(zone_flash_col),
+              id(zone_flash_decay), id(zone_flash_target), id(zone_flash_rise),
+              id(zone_level), id(zone_center), id(zone_overlay), id(zone_palette),
+              id(zone_phase), id(zone_flash_mode), id(zone_flash_epoch)});
+  - id: cues_end
+    then:
+      - lambda: |-
+          castle_cues::unload();
+          castle_web::g_cues.store(0);
+
+interval:
+  # v5.63: the card show's clock, once a render frame (the strips redraw
+  # every 16 ms, so a finer tick would be writing numbers nobody reads).
+  # Costs one pointer test when no show is loaded.
+  - interval: 16ms
+    then:
+      - lambda: |-
+          if (!castle_cues::active()) return;
+          // The PIR, a button and the evening playlist start scenes without
+          // going through the web mailbox below. A scene names itself in
+          // current_scene the moment it starts; a raw file's is "stop".
+          if (id(current_scene).state != "stop") {
+            id(cues_end)->execute();
+            return;
+          }
+          castle_cues::tick({id(zone_effect), id(zone_flash), id(zone_flash_col),
+              id(zone_flash_decay), id(zone_flash_target), id(zone_flash_rise),
+              id(zone_level), id(zone_center), id(zone_overlay), id(zone_palette),
+              id(zone_phase), id(zone_flash_mode), id(zone_flash_epoch)},
+              id(castle_speaker)->is_running(), esp_timer_get_time());

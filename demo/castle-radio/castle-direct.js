@@ -161,6 +161,10 @@
       if (token !== show.token) {return null;}
       state = await status(true);
     }
+    // Firmware 5.63 runs a song's own light show from the card when there is
+    // a cue file for it, and says how big it is. Frames from here would only
+    // paint four solid colours a second over the real thing.
+    if (first && state.track === filename) {show.castle_cues = state.cues || 0;}
     return state.track === filename ? state : null;
   }
   async function align(filename, started, token, first = false) {
@@ -184,10 +188,11 @@
   async function runShow(filename, frames, duration) {
     const token = ++show.token;
     Object.assign(show, {active: true, track: filename, frames_sent: 0, frames_coalesced: 0, frames_total: frames.length,
-      error: null, realign: false, base: null, awaitingBase: true});
+      error: null, realign: false, base: null, awaitingBase: true, castle_cues: 0});
     holdScreen();
     try {
       let started = await align(filename, now() + 0.24 + SPEAKER_START_S, token, true);
+      if (show.castle_cues > 0) {return;}
       const due = i => i < frames.length && started + frames[i][0] <= now();
       for (let index = 0; started !== null && index < frames.length; index++) {
         const [at, spec] = frames[index];
@@ -216,7 +221,9 @@
       if (token === show.token) {
         show.active = false; show.track = null;
         releaseScreen();
-        lightOff();
+        // Not when the castle owns the lights: "off" is a colour too, and it
+        // would black out the show the castle is running for this song.
+        if (!show.castle_cues) {lightOff();}
       }
     }
   }
@@ -277,6 +284,9 @@
     else {throw new Error('This control is not supported by the running firmware.');}
     if (action in PLAIN || action === 'scene') {await stopShow();}
     const imported = action === 'file' && body.key ? library.find(row => row.key === body.key) : null;
+    // A song the page is NOT about to stream for: a show still running for the
+    // previous one would end by posting "off" over this one's card show.
+    if (action === 'file' && !imported && show.active) {await stopShow();}
     if (imported) {
       if (!versionAtLeast((await status()).version, [5, 51])) {throw new Error('Generated imported lights require castle firmware 5.51 or newer.');}
       await castle('/api/light?c=show', 'POST');
@@ -317,9 +327,29 @@
     const other = [...audio].filter(([name]) => AUDIO.test(name) && !known.has(name)).map(([name, bytes]) => ({name, bytes})).sort((a, b) => a.name.localeCompare(b.name));
     return {tracks, jobs: {}, other_audio: other};
   }
+  // Firmware 5.63: a song with `<name>.cue` beside it carries its own light
+  // show, and the castle runs it. That makes the CARD the library — such a
+  // song is listed whether or not the computer that built this page had ever
+  // heard of it, which is how four songs came to play in the dark.
+  const stem = name => name.replace(/\.[^.]+$/, '');
+  const titleOf = name => stem(name).replace(/_+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase());
+  function cardShows(files) {
+    const cues = new Set(files.filter(f => /\.cue$/i.test(f.name)).map(f => stem(f.name)));
+    return files.filter(f => AUDIO.test(f.name) && cues.has(stem(f.name)));
+  }
   async function presentRows() {
-    const audio = new Map(namedFiles(await listing()).map(f => [f.name, f.size]));
-    return library.filter(row => audio.get(row.filename) === row.bytes).map(({frames, ...row}) => row);
+    const files = namedFiles(await listing());
+    const audio = new Map(files.map(f => [f.name, f.size]));
+    const rows = library.filter(row => audio.get(row.filename) === row.bytes).map(({frames, ...row}) => row);
+    const listed = new Set(rows.map(row => row.filename));
+    for (const f of cardShows(files)) {
+      if (listed.has(f.name)) {continue;}
+      rows.push({key: stem(f.name), title: titleOf(f.name), artist: 'On the castle', style: 'Card light show', duration: 0,
+        split: false, split_error: null, source_kind: 'castle', source_label: 'light show on the card', source_available: false,
+        playback_format: f.name.split('.').pop().toLowerCase(), playback_bytes: f.size, url: `/sd/${encodeURIComponent(f.name)}`,
+        filename: f.name, bytes: f.size});
+    }
+    return rows;
   }
   async function deleteAudio(name) {
     if (!isAudioName(name)) {throw new Error('Choose a castle audio file.');}

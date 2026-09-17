@@ -55,6 +55,10 @@ inline std::atomic g_restart_pending{false};
 // did not add up, and the one that was wrong was the one that looked right.
 inline std::atomic<unsigned> g_light_applied{0};
 inline std::atomic<unsigned> g_light_evicted{0};
+// v5.63: cues in the card show loaded for the playing track (castle_cues.h),
+// 0 when the track has none. A page that streams its own light frames reads
+// this and keeps quiet: the castle is already running the song's lights.
+inline std::atomic<unsigned> g_cues{0};
 
 inline void set_pending(ActionType type, std::string arg) {
   if (type == ActionType::RESTART) {
@@ -251,6 +255,7 @@ struct Status {
   long long position_ms{0};
   unsigned light_applied{0};
   unsigned light_evicted{0};
+  unsigned cues{0};
   bool pir_armed{true};
   int pir_cooldown{60};
   // L6 (v5.62): the radio, which nothing reported at all. A castle that
@@ -405,6 +410,7 @@ inline void mirror_show_state(std::string_view scene, std::string_view track,
   g_status.position_ms = g_position_ms.load();
   g_status.light_applied = g_light_applied.load();
   g_status.light_evicted = g_light_evicted.load();
+  g_status.cues = g_cues.load();
   g_status.pir_armed = g_pir_armed.load();
   g_status.pir_cooldown = g_pir_cooldown.load();
   g_status.rssi = g_rssi.load();
