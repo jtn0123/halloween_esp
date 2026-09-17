@@ -5,11 +5,11 @@ set -eu
 cd "$(dirname "$0")/.."
 export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
-if [ "$(uname -s)" != "Darwin" ]; then
+if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "This installer currently supports macOS."
   exit 1
 fi
-if [ "$(uname -m)" != "arm64" ]; then
+if [[ "$(uname -m)" != "arm64" ]]; then
   echo "Castle Tools currently requires an Apple Silicon Mac (M1 or newer)."
   exit 1
 fi
@@ -23,7 +23,7 @@ FORMULAE=""
 command -v python3.13 >/dev/null 2>&1 || FORMULAE="$FORMULAE python@3.13"
 command -v ffmpeg >/dev/null 2>&1 || FORMULAE="$FORMULAE ffmpeg"
 command -v rustup >/dev/null 2>&1 || FORMULAE="$FORMULAE rustup"
-if [ -n "$FORMULAE" ]; then
+if [[ -n "$FORMULAE" ]]; then
   echo "Installing desktop system tools:$FORMULAE"
   # This is a space-separated list of fixed formula names, not user input.
   # shellcheck disable=SC2086
@@ -46,12 +46,12 @@ for candidate in python3.13 /opt/homebrew/bin/python3.13 /usr/local/bin/python3.
     break
   fi
 done
-if [ -z "$PYTHON" ]; then
+if [[ -z "$PYTHON" ]]; then
   echo "Python 3.13 was installed but could not be found. Open a new Terminal and retry."
   exit 1
 fi
 
-if [ ! -x .venv-desktop/bin/python ]; then
+if [[ ! -x .venv-desktop/bin/python ]]; then
   echo "Creating the isolated Castle Radio environment..."
   "$PYTHON" -m venv .venv-desktop
 fi

@@ -74,7 +74,7 @@
   }
 
   function checkedRequest(message) {
-    if (!message || message.type !== 'castle-tools-request' ||
+    if (message?.type !== 'castle-tools-request' ||
         !['string', 'number'].includes(typeof message.id) || typeof message.path !== 'string') {
       throw new Error('Invalid bridge request.');
     }

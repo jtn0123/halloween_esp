@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TypedDict
 
 ROOT = Path(__file__).resolve().parent.parent
+MODEL_NAME = "htdemucs model"
 INSTALL_COMMAND = "./tools/install_castle_tools.sh"
 
 
@@ -82,7 +83,7 @@ def _model() -> Check:
         import yaml
     except ImportError:
         return {
-            "name": "htdemucs model",
+            "name": MODEL_NAME,
             "ok": False,
             "detail": "PyYAML is missing; model cache cannot be checked",
             "required": False,
@@ -101,7 +102,7 @@ def _model() -> Check:
                 path.is_file() and path.stat().st_size for path in weights
             ):
                 return {
-                    "name": "htdemucs model",
+                    "name": MODEL_NAME,
                     "ok": True,
                     "detail": f"cached ({len(weights)} model file(s))",
                     "required": False,
@@ -109,7 +110,7 @@ def _model() -> Check:
         except (OSError, ValueError, TypeError, yaml.YAMLError):
             continue
     return {
-        "name": "htdemucs model",
+        "name": MODEL_NAME,
         "ok": False,
         "detail": "not fully cached; run the installer to download it",
         "required": False,
@@ -145,7 +146,7 @@ def status() -> dict[str, object]:
         )
     )
     separating = importing and all(
-        by_name[name] for name in ("demucs", "torch", "htdemucs model")
+        by_name[name] for name in ("demucs", "torch", MODEL_NAME)
     )
     return {
         "service": "castle-radio",
