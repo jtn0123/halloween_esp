@@ -72,9 +72,10 @@ async function changeLayer(layer){
   const shouldPlay=!audio.paused||(switching&&window.layerWasPlaying);
   window.layerWasPlaying=shouldPlay;pendingTime=position;switching=true;
   audio.pause();window.radioLayer=layer;
-  audio.src=layerSource(t,layer);
-  audio.load();syncLayer();drawWaveforms();
+  syncLayer();drawWaveforms();
   try{
+    await setAudioSource(layerSource(t,layer));
+    if(token!==switchEpoch){return;}
     await resumeLayer(token,position,shouldPlay);
   }catch(e){
     if(token!==switchEpoch){return;}

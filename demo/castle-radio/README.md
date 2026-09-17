@@ -3,23 +3,58 @@
 Responsive music-player prototype with real importing, voice/background
 separation, and a bounded bridge to the porch castle.
 
-## Run
+## Desktop setup and everyday startup
 
-Use the project's Python environment with ffmpeg, yt-dlp, Demucs, and PyTorch.
-The existing importer also requires the Rust analyze_track binary (built on
-first use when needed). For this worktree, the main checkout's environment is:
+On an Apple Silicon Mac, install [Homebrew](https://brew.sh) if it is not already available,
+then run this once from the project root:
 
 ```sh
-/Users/justin/Documents/Github/halloween_esp/.venv/bin/python \
-  demo/castle-radio/server.py
+./tools/install_castle_tools.sh
 ```
 
-Open http://127.0.0.1:8871. Optional first argument changes the port.
-The previous static `http.server` command supports playback only; use server.py
-for importing. Only one server can bind the same port.
+The installer prepares a dedicated `.venv-desktop`, system audio tools, the
+Rust audio analyzer, and the Demucs model. Run it again explicitly to repair
+missing dependencies. It does not flash the castle or sync the music library.
 
-Audio files in `media/` are ignored local copies of the ten numbered rendered
-scene MP3 files (01 through 10) from the main checkout's `audio/` directory.
+For everyday use, double-click **Open Castle Studio.command** in the project
+folder. It checks the tools, starts the Mac helper, and opens the castle website
+(default http://10.27.27.81). On that page, choose **Import music → Connect Mac
+tools**. Allow the small connection window to open and keep it open along with
+the launcher's Terminal window. The castle page then imports, separates, and
+previews through the Mac. You do not have to switch to a separate desktop site.
+
+The connection uses a narrowly scoped popup message bridge because the castle's
+HTTP page deliberately blocks external fetches and media. Audio previews arrive
+as local blob URLs; the existing firmware security policy is unchanged. Both
+ends verify the other window and its exact origin, and the helper verifies that
+its configured castle matches the page. Physical playback and lighting commands
+stay on the castle's own API. Sync uses the Mac's existing verified SD uploader.
+
+If the helper or popup closes, imports are disabled and the page offers
+**Connect Mac tools** again. Installed castle playback still works. A phone
+without a local helper retains device controls. This does not yet connect a
+phone to another computer's helper over the LAN.
+
+The launcher never installs or upgrades packages or downloads the voice model.
+A missing optional splitter still allows ordinary imports and playback. Run
+the installer explicitly for repairs, then restart the launcher. Its Terminal
+window can be stopped with Ctrl-C. A second launch reuses the running helper.
+Set `CASTLE_RADIO_HOST` before launching to use another castle; the same address
+must be used in the browser. The helper remains bound to loopback only.
+
+The direct desktop site is still available at http://127.0.0.1:8871 for standalone
+use. **Castle Cue Desk.command** opens the older desk on port 8765.
+
+For development, the server can still be run directly:
+
+```sh
+.venv/bin/python demo/castle-radio/server.py
+```
+
+An optional first argument changes its port. A static `http.server` only
+supports playback. The launcher copies missing numbered sample MP3s from the
+project's existing `audio/` outputs into ignored `media/`; it preserves existing
+copies. Sample audio is local and is not distributed with the repository.
 
 ## Working interactions
 
@@ -85,8 +120,10 @@ builders, the SD inventory and the generated-light streamer are ports of
 `light_show.py`, and `remote_library.py`). Scene audio streams from
 `/sd/scenes/`; synced imports from the card root, with their lights reduced
 to mailbox-rate frames at build time and streamed by the phone's browser on
-the castle's own clock. Importing, separation, waveforms and syncing stay on
-the computer, and the page says so where those controls appear. The castle
+the castle's own clock. Importing, separation, waveforms and syncing run on the computer.
+**Connect Mac tools** makes them available from this same device page through
+the local companion window; without that connection the page remains a device
+player. The castle
 keeps the previous cue desk build as `site/index.old.html(.gz)`.
 Firmware serves `index.html.gz` in preference to the plain file, so a card
 copy that only updates `index.html` leaves the previous gzipped page in
