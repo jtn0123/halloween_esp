@@ -3,8 +3,12 @@
 The dangerous failure in this area is silent: a suite that resolved the real
 porch address from devices.toml would drive live hardware from the tests.
 Every test below points CASTLE_HOST somewhere it controls — a fake castle on
-a loopback port, or a port nothing listens on. (studio_case.ServerCase pins
-the same env for every other studio test, for the same reason.)
+a loopback port, or a port nothing listens on. (tests/studio_rs_case.py pins
+the same env for every studio test, for the same reason.)
+
+The five cases that stood the STUDIO up in front of a fake castle moved to
+tests/test_studio_relay_rs.py when the Python server retired
+(docs/RETIREMENT.md) — they need a server, and there is one binary now.
 """
 
 from __future__ import annotations
@@ -17,8 +21,6 @@ import tempfile
 import threading
 import time
 import unittest
-import urllib.error
-import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
@@ -31,7 +33,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import castle_link as cl
 import castle_native as cn
 import hosts
-from studio_case import HostEnv, ServerCase
+from helpers import HostEnv
 
 DEAD = "127.0.0.1:1"  # nothing listens; connect refuses instantly
 
@@ -282,81 +284,6 @@ class TestSlowCard(HostEnv, unittest.TestCase):
         self.assertEqual(code, 200)
 
 
-class TestStudioBridge(HostEnv, ServerCase):
-    """The studio's routes, with a fake castle behind them."""
-
-    castle: ThreadingHTTPServer
-    castle_host: str
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        super().setUpClass()
-        cls.castle, cls.castle_host = start_fake_castle()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.castle.shutdown()
-        cls.castle.server_close()
-        super().tearDownClass()
-
-    def setUp(self) -> None:
-        self.host_env(self.castle_host)
-        cl._cache.clear()
-        FakeCastle.seen = []
-
-    def tearDown(self) -> None:
-        self.host_env(DEAD)
-        cl._cache.clear()
-
-    def get(self, path: str) -> tuple[int, dict]:
-        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}") as r:
-            return r.status, json.loads(r.read())
-
-    def post(self, path: str, body: bytes = b"") -> tuple[int, dict]:
-        req = urllib.request.Request(
-            f"http://127.0.0.1:{self.port}{path}", data=body, method="POST"
-        )
-        with urllib.request.urlopen(req) as r:
-            return r.status, json.loads(r.read())
-
-    def test_status_is_the_castles_own_when_it_answers(self) -> None:
-        _, s = self.get("/api/status")
-        self.assertEqual(s.get("version"), "9.9")
-        self.assertNotIn("studio", s)  # this is what flips the desk's mode
-
-    def test_status_falls_back_to_the_studio_marker(self) -> None:
-        self.host_env(DEAD)
-        cl._cache.clear()
-        _, s = self.get("/api/status")
-        # `castle` names the configured host (C3): the desk can say WHO is
-        # not answering instead of rendering a blank box.
-        self.assertEqual(s, {"studio": True, "castle": DEAD})
-
-    def test_scene_with_a_query_fires_on_the_castle(self) -> None:
-        code, body = self.post("/api/scene?s=vigil")
-        self.assertEqual(code, 200)
-        self.assertEqual(body, {"queued": True})
-        self.assertIn("POST /api/scene?s=vigil", FakeCastle.seen)
-
-    def test_scene_with_a_json_body_stays_the_studios_own(self) -> None:
-        # The studio's scenes.yaml editor and the castle's fire-a-scene
-        # share a path; the JSON body must never end up on the hardware.
-        try:
-            self.post("/api/scene", json.dumps({"id": ""}).encode())
-        except urllib.error.HTTPError as e:
-            e.close()  # the editor rejecting the stub is fine — and local
-        self.assertEqual(FakeCastle.seen, [])
-
-    def test_unclaimed_api_gets_relay(self) -> None:
-        _, body = self.get("/api/pir?armed=1")
-        self.assertEqual(body, {"ok": True})
-        self.assertIn("GET /api/pir?armed=1", FakeCastle.seen)
-
-    def test_studios_own_routes_are_not_relayed(self) -> None:
-        self.get("/api/tracks")
-        self.assertEqual(FakeCastle.seen, [])
-
-
 if __name__ == "__main__":
     unittest.main()
 
@@ -364,11 +291,13 @@ if __name__ == "__main__":
 class TestNativeLegIsOptional(unittest.TestCase):
     """aioesphomeapi is a nicety, not a dependency.
 
-    The native leg exists for the all-in-flash build, which serves no HTTP.
-    Everything else — the porch's SD build, the emulator, every test — is
-    reached over port 80, so a studio whose environment lacks the library
-    must still start and still relay. It did not: the import was top-level
-    and took the whole server down with it (CI, 2026-08-22).
+    The native leg is the fallback for a castle that is not answering on
+    port 80 — it was written for the all-in-flash build, which served no
+    HTTP at all, and outlived it (2026-09-01). Everything routine — the
+    porch build, the emulator, every test — is reached over port 80, so a
+    studio whose environment lacks the library must still start and still
+    relay. It did not: the import was top-level and took the whole server
+    down with it (CI, 2026-08-22).
     """
 
     def setUp(self) -> None:

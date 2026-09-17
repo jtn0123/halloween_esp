@@ -32,8 +32,9 @@ cannot drift away from the ones on the device, because both come from here.
 scene audio (`scene_render`) and analyses imported tracks (`analyze_track`) —
 those are the production paths, not experiments; the Python originals survive
 only as the parity references the Rust is checked against. It also holds a
-WASM face the cue desk loads and a complete twin of the studio server that is
-gated but not yet the default. Everything reaches it through
+WASM face the cue desk loads and the studio server itself — the twin became
+the default on 2026-09-01, with the Python one behind it. Everything else
+reaches the crate through
 `tools/core_bins.py`, as a subprocess: no cargo means a hard stop with a
 sentence, never a quiet fall-back to arithmetic that differs per machine.
 
@@ -70,16 +71,14 @@ contend for hardware.
 | USB | — | 5 V to amp, pixels, level shifter |
 | GND | — | common ground |
 
-**Why not D5/D6/D10, which would be the obvious choices?** The 2.13" eInk
-FeatherWing — the thing that carries the microSD slot — hard-wires exactly
-those: SD chip select on D5, SRAM chip select on D6, eInk chip select on D9,
-eInk data/command on D10. Only the first two are cuttable, and putting
-800 kHz NeoPixel data on the SD card's chip select is not a mistake you find
-quickly. D11/D12/D13 are untouched by the wing, and A0–A3 are free.
-
-If you are **not** stacking the wing, those three signals can move back to
-D5/D6/D10 by editing the substitutions at the top of `firmware/castle.yaml` —
-nothing else refers to them.
+**Why not D5/D6/D10, which would be the obvious choices?** History: until
+v5.44 the microSD slot came on a 2.13" eInk FeatherWing, which hard-wires SD
+chip select on D5, SRAM chip select on D6, eInk chip select on D9 and eInk
+data/command on D10 — and putting 800 kHz NeoPixel data on the SD card's
+chip select is not a mistake you find quickly. The wing and its status
+panel are gone (the page does that job now), the carrier board's own card
+socket kept D5, and D6/D10 went to the carrier's 5 V sense and wired button
+instead. The signals stayed where they were soldered.
 
 Put a 1000 µF capacitor across 5 V/GND at the pixels. With 26 pixels the
 worst case (a full-white lightning strike) is ~2 A, so **split the 5 V supply
@@ -100,14 +99,48 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # once
 make setup      # venv + esphome + render deps + the commit hook
 make audio      # render the scene audio (builds core/ on first use)
 make validate   # check the config without a toolchain
-make build      # compile
+make build      # compile firmware/castle_sd.yaml — the castle in the yard
+make build-s3   # compile firmware/castle_s3.yaml — the ESP32-S3 carrier board
+make build-fs3  # compile firmware/castle_feather_s3.yaml — an S3 Feather on v3.3a
 make upload     # flash over USB
+make publish    # push the rendered show to the castle's microSD card
 ```
 
 Copy `firmware/secrets.yaml.example` to `firmware/secrets.yaml` and set real
 WiFi credentials before flashing. `make help` lists every target.
 
+There are three targets because there are three boards. `castle_sd.yaml` is
+the ESP32-S2 Feather that runs the porch; `castle_s3.yaml` (2026-09-05) is the
+ESP32-S3-WROOM-1 carrier board (castle-carrier v5), written from that
+project's spec; `castle_feather_s3.yaml` (2026-09-14) is an ESP32-S3 Feather
+(#5477, the 2 MB PSRAM one) in the v3.3a carrier the S2 was drawn for.
+Neither S3 build has been on hardware yet. All three share every line of the
+show and not one GPIO number differs between them — see
+`firmware/pending/README.md` for the bring-up lists.
+
+The scene audio lives on the card, not in the image — `make publish` is what
+puts it there, and a board flashed without it chirps instead of playing. That
+used to be a choice between two builds; the show's real songs weigh 2.2 MB
+and an OTA slot holds 1.75 MB, so on 2026-09-01 the all-in-flash build was
+retired and the card became the only way the castle plays (`docs/notes/03-build.md`
+§12.15).
+
+When both `site/index.html.gz` and `site/index.html` are on the card, `/`
+serves the gzipped copy. `make publish` / `sd_sync site` writes both; a hand
+copy must include the `.gz` or a newer plain file is ignored. A PUT whose
+`Content-Length` is larger than the body that arrives is a known ESP-IDF
+httpd limit (the socket closes on the short read). The API server has four
+open sockets (`firmware/sd_web.h`); that is the board's pool, not a desk bug.
+
 ---
+
+## Castle Radio on your desktop
+
+Run `./tools/install_castle_tools.sh` once on an Apple Silicon Mac. Existing
+installations can double-click **Enable Website Startup.command** once instead.
+Then use **Import music → Start Mac tools → Connect Mac tools** on the castle
+website. The helper runs in the background without Terminal; keep the small
+connection window open. Startup checks tools without installing anything. [Desktop setup and limitations](demo/castle-radio/README.md).
 
 ## The cue desk
 
@@ -116,7 +149,7 @@ make studio     # http://127.0.0.1:8765 — the previewer plus a local server
 ```
 
 The previewer is one static HTML file (`previewer/castle-cue-desk.html`, built
-by `make preview` from `web/src/`). Behind it, `tools/studio.py` adds what a
+by `make preview` from `web/src/`). Behind it, the studio server adds what a
 static page cannot do: the **Tracks** panel imports audio (a file, or a link via
 yt-dlp), shows onsets and waveforms, auditions clips, writes scenes into
 `scenes/scenes.yaml`, and sends files to the castle's SD card when one answers.
@@ -127,11 +160,15 @@ server (`POST /studio/server/stop`), with no login. The route
 table — what the studio owns (`/studio/…`) and what it relays to the castle
 (`/api/…`) — is [docs/API.md](docs/API.md).
 
-There are two studio servers. `tools/studio.py` is the one `make studio`
-starts and the one to reach for. `core/src/bin/studio.rs` is a complete Rust
-twin of the same surface, held answer-for-answer against the Python one by
-`tests/studio_rust_case.py`; nothing runs it by default. A change to a route
-belongs in both, and [docs/PARITY.md](docs/PARITY.md) says why.
+The studio is `core/src/bin/studio.rs`: `make studio` runs
+`tools/studio_launch.sh`, which builds the binary when cargo is present and
+execs it, and says why it cannot when there is no cargo and no build. There
+was a second studio in Python until 2026-09-06, kept as the reference the
+Rust one was measured against; [docs/RETIREMENT.md](docs/RETIREMENT.md) is
+the plan that retired it and the tag `python-studio-final` is the last tree
+carrying it. The server is Rust; the toolchain it spawns for every rebuild,
+import and push is still Python, and that is the design rather than a
+leftover — [docs/PARITY.md](docs/PARITY.md) says what is held equal to what.
 
 Four environment variables sandbox it: `CASTLE_TRACKS` (track library
 directory), `CASTLE_SCENES` (the scenes file it may write), `CASTLE_HOST`

@@ -1,116 +1,57 @@
 """The emulator held to the firmware — by reading the firmware.
 
 firmware/sd_web.h (+ sd_web_ota.h, sd_web_site.h, sd_web_remote.h,
-sd_web_state.h, sd_web_util.h) is the contract the studio speaks to; tools/castle_emu*.py is the stand-in every
-hardware-free test drives. The two can only be trusted together if a change
-to either is caught here. So these tests PARSE the C at test time — the
-reg() table, every reply_err() string per handler, safe_name's rule,
-query_param's buffer sizes, h_status's JSON keys — and hold the emulator's
-port to what they find. Nothing below is hand-copied from the firmware;
-that is the point.
+sd_web_state.h, sd_web_util.h) is the contract the studio speaks to;
+tools/castle_emu*.py is the stand-in every hardware-free test drives. The
+two can only be trusted together if a change to either is caught here. So
+these tests PARSE the C at test time — the reg() table, every reply_err()
+string per handler, h_status's JSON keys, the validators' constants — and
+hold the emulator's port to what they find, then drive a live emulator for
+the verdicts the source cannot show (routing, 404/405, the OTA leg).
+Nothing below is hand-copied from the firmware; that is the point.
+
+The byte rules underneath the handlers — safe_name, safe_subpath,
+url_decode, name_from_uri, query_param's buffers — are the same discipline
+one header down, and live in tests/test_firmware_names.py. The parsing both
+suites do is tests/firmware_source.py.
 """
 
 from __future__ import annotations
 
 import http.client
 import json
-import random
 import re
 import sys
 import tempfile
 import time
 import unittest
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
+sys.path.insert(0, str(ROOT / "tests"))  # firmware_source
 
 import castle_emu
+import castle_emu_events
 import castle_emu_http
 import castle_emu_wire as wire
-
-FW = ROOT / "firmware"
-SD_WEB = (FW / "sd_web.h").read_text()
-SD_OTA = (FW / "sd_web_ota.h").read_text()
-SD_SITE = (FW / "sd_web_site.h").read_text()
-SD_REMOTE = (FW / "sd_web_remote.h").read_text()
-SD_STATE = (FW / "sd_web_state.h").read_text()
-SD_UTIL = (FW / "sd_web_util.h").read_text()
-EMU_HTTP = (ROOT / "tools" / "castle_emu_http.py").read_text()
-
-#: reply_err strings the emulator has no way to produce: flash, heap and
-#: FAT failures of the real board. Everything else must be mirrored.
-HARDWARE_ONLY = {
-    "no memory",
-    "opendir failed",
-    "no OTA slot",
-    "ota begin failed",
-    "ota end failed",
-    "could not select slot",
-}
-
-
-def c_functions(*sources: str) -> dict[str, str]:
-    """name → body for every `inline <type> name(` at column 0."""
-    out: dict[str, str] = {}
-    pat = re.compile(r"^inline [\w:]+(?: \*)? ?(\w+)\(", re.MULTILINE)
-    for src in sources:
-        hits = list(pat.finditer(src))
-        for i, m in enumerate(hits):
-            end = hits[i + 1].start() if i + 1 < len(hits) else len(src)
-            out[m.group(1)] = src[m.start() : end]
-    return out
-
-
-def reply_errs(body: str) -> set[tuple[int, str]]:
-    return {
-        (int(c), msg)
-        for c, msg in re.findall(r'reply_err\(req, "(\d{3}) [^"]*", "([^"]*)"\)', body)
-    }
-
-
-#: Module-level string constants in the emulator, so a message spelled once
-#: and reused (NO_SD) reads the same to this contract as a bare literal.
-EMU_CONSTS: dict[str, str] = dict(
-    re.findall(r'^([A-Z][A-Z0-9_]*) = "([^"]*)"', EMU_HTTP, re.MULTILINE)
+from firmware_source import (
+    EMU_CONSTS,
+    EMU_HTTP,
+    ERR_HELPERS,
+    FUNCS,
+    HARDWARE_ONLY,
+    SD_EVENTS,
+    SD_RTC,
+    SD_STATE,
+    SD_STREAM,
+    SD_WEB,
+    emu_errs,
+    firmware_routes,
+    grab,
+    reply_errs,
+    stream_port,
 )
-
-
-def emu_errs(handler: str) -> set[tuple[int, str]]:
-    """Every self._err(code, msg) inside one emulator handler method, with a
-    named constant resolved to the string it holds."""
-    m = re.search(rf"    def {handler}\(self.*?(?=\n    def |\Z)", EMU_HTTP, re.DOTALL)
-    assert m, f"emulator has no {handler}"
-    out: set[tuple[int, str]] = set()
-    for code, msg in re.findall(
-        r'self\._err\(\s*(\d{3}),\s*(?:"([^"]*)")\s*\)', m.group(0)
-    ):
-        out.add((int(code), msg))
-    for code, name in re.findall(
-        r"self\._err\(\s*(\d{3}),\s*([A-Z][A-Z0-9_]*)\s*\)", m.group(0)
-    ):
-        assert name in EMU_CONSTS, f"{handler}: unknown constant {name}"
-        out.add((int(code), EMU_CONSTS[name]))
-    return out
-
-
-def firmware_routes() -> list[tuple[str, str, str]]:
-    return [
-        (p, m, h)
-        for p, m, h in re.findall(r'reg\("([^"]+)", HTTP_(\w+), (\w+)\);', SD_WEB)
-    ]
-
-
-FUNCS = c_functions(SD_WEB, SD_OTA, SD_SITE, SD_REMOTE, SD_UTIL)
-
-
-def grab(pattern: str, text: str, group: int = 1) -> str:
-    """One regex capture, or a loud failure naming what the parser expected."""
-    m = re.search(pattern, text)
-    assert m, f"firmware no longer matches /{pattern}/ — update the contract test"
-    return m.group(group)
 
 
 class TestRouteTable(unittest.TestCase):
@@ -132,11 +73,20 @@ class TestErrorStrings(unittest.TestCase):
     """Each handler's reply_err set, firmware vs emulator, string for string."""
 
     def errs_for(self, handler: str) -> set[tuple[int, str]]:
-        body = FUNCS[handler]
-        found = reply_errs(body)
-        for helper in ("write_body", "send_sd_file"):
-            if f"{helper}(" in body:
-                found |= reply_errs(FUNCS[helper])
+        """Every verdict this route can give, the helpers it delegates to
+        included — and the helpers THEY delegate to, since v5.61: h_put
+        answers through upload_offload, which answers through write_body."""
+        seen: set[str] = set()
+        todo = [handler]
+        found: set[tuple[int, str]] = set()
+        while todo:
+            name = todo.pop()
+            if name in seen:
+                continue
+            seen.add(name)
+            body = FUNCS[name]
+            found |= reply_errs(body)
+            todo += [h for h in ERR_HELPERS if f"{h}(" in body]
         return found
 
     def test_emulator_uses_the_firmwares_strings_and_codes(self) -> None:
@@ -147,179 +97,19 @@ class TestErrorStrings(unittest.TestCase):
 
     def test_no_emulator_error_string_is_invented(self) -> None:
         all_fw = set().union(*(reply_errs(b) for b in FUNCS.values()))
-        spelled = re.findall(r'self\._err\((\d{3}), "([^"]*)"\)', EMU_HTTP)
+        spelled = re.findall(r'self\._err\((\d{3}), "([^"]*)"', EMU_HTTP)
         named = [
             (c, EMU_CONSTS[n])
             for c, n in re.findall(
-                r"self\._err\((\d{3}), ([A-Z][A-Z0-9_]*)\)", EMU_HTTP
+                r"self\._err\((\d{3}), ([A-Z][A-Z0-9_]*)[,)]", EMU_HTTP
             )
         ]
         for c, msg in spelled + named:
             self.assertIn((int(c), msg), all_fw)
-
-
-class TestNameRules(unittest.TestCase):
-    """safe_name / safe_subpath / url_decode / query_param, re-derived."""
-
-    def ref_safe_name(self) -> Callable[..., Any]:
-        body = FUNCS["safe_name"]
-        limit = int(grab(r"n\.size\(\) >= (\d+)", body))
-        lead = grab(r"n\[0\] == '(.)'", body).encode()
-        finds = [f.encode() for f in re.findall(r"""n\.find\(["'](.+?)["']\)""", body)]
-        # The per-byte loop: `c < 0x20` and each `c == <literal>`, read off
-        # the C so a new forbidden byte in the firmware fails here first.
-        below = int(grab(r"c < (0x[0-9a-fA-F]+)", body), 16)
-        bad = set()
-        for lit in re.findall(r"c == (0x[0-9a-fA-F]+|'[^']+')", body):
-            bad.add(
-                int(lit, 16)
-                if lit.startswith("0x")
-                else ord(lit[1:-1].encode().decode("unicode_escape"))
-            )
-        self.assertEqual(limit, wire.NAME_MAX)
-        self.assertEqual(bad, {0x7F, ord('"'), ord("\\")})
-        return lambda n: (
-            bool(n)
-            and len(n) < limit
-            and n[:1] != lead
-            and all(f not in n for f in finds)
-            and all(c >= below and c not in bad for c in n)
-        )
-
-    def ref_safe_subpath(self) -> Callable[..., Any]:
-        body = FUNCS["safe_subpath"]
-        limit = int(grab(r"p\.size\(\) > (\d+)", body))
-        leads = [c.encode() for c in re.findall(r"p\[0\] == '(.)'", body)]
-        finds = [f.encode() for f in re.findall(r"""p\.find\(["'](.+?)["']\)""", body)]
-        self.assertEqual(limit, wire.SUBPATH_MAX)
-        return lambda p: (
-            bool(p)
-            and len(p) <= limit
-            and p[:1] not in leads
-            and all(f not in p for f in finds)
-        )
-
-    def corpus(self, seed: int = 7) -> list[bytes]:
-        rng = random.Random(seed)
-        alphabet = b"ab./\\?%+ \x00\xc3\xa9\"'\t\x1f\x7f"
-        out = [
-            b"",
-            b".",
-            b"..",
-            b"a",
-            b"a/b",
-            b"/a",
-            b".a",
-            b"a..b",
-            b"a" * 99,
-            b"a" * 100,
-            b"a" * 140,
-            b"a" * 141,
-            b"\xc3\xa9" * 50,
-            b"\x00",
-            b"a\x00/..",
-            b"..\\x",
-            b"a?b",
-            b'a"b.mp3',
-            b"a\\b.mp3",
-            b"a\tb",
-            b"a\x1fb",
-            b"a\x7fb",
-            b"a b",
-            b"a'b",
-            b"\xc3\xa9.mp3",
-            b"a\x80b",
-        ]
-        out += [
-            bytes(rng.choice(alphabet) for _ in range(rng.randint(0, 150)))
-            for _ in range(1500)
-        ]
-        return out
-
-    def test_safe_name_matches_the_c_rule_byte_for_byte(self) -> None:
-        ref = self.ref_safe_name()
-        for n in self.corpus():
-            self.assertEqual(wire.safe_name(n), ref(n), repr(n))
-
-    def test_safe_subpath_matches_the_c_rule(self) -> None:
-        ref = self.ref_safe_subpath()
-        for p in self.corpus(8):
-            self.assertEqual(wire.safe_subpath(p), ref(p), repr(p))
-
-    def test_safe_name_counts_bytes_not_characters(self) -> None:
-        """60 accented characters are 120 UTF-8 bytes: the board says no."""
-        self.assertFalse(wire.safe_name("é".encode() * 60))
-        self.assertTrue(wire.safe_name("é".encode() * 40))
-
-    def test_safe_name_refuses_what_would_break_the_json(self) -> None:
-        """A quote, a backslash, a control byte or DEL never gets ONTO the
-        card through us: safe_name says no at the door (and since v5.25
-        json_escape keeps the parse alive for names that got there another
-        way). High bytes (UTF-8) and spaces stay welcome."""
-        for bad in (
-            b'a"b.mp3',
-            b"a\\b.mp3",
-            b"a\tb",
-            b"a\nb",
-            b"a\rb",
-            b"\x00",
-            b"ab\x00cd.mp3",
-            b"a\x1fb",
-            b"a\x7fb",
-            b'"',
-            b"\\",
-        ):
-            self.assertFalse(wire.safe_name(bad), repr(bad))
-        for good in (
-            b"a b.mp3",
-            b"a'b.mp3",
-            "é.mp3".encode(),
-            b"a\x80b",
-            b"x-y_z (1).mp3",
-            b"a~b",
-            b"a\xffb",
-        ):
-            self.assertTrue(wire.safe_name(good), repr(good))
-
-    def test_query_param_buffers_are_the_firmwares(self) -> None:
-        body = FUNCS["query_param"]
-        self.assertEqual(int(grab(r"char q\[(\d+)\]", body)), wire.QUERY_BUF)
-        self.assertEqual(int(grab(r"char val\[(\d+)\]", body)), wire.VALUE_BUF)
-        self.assertIn("url_decode(val)", body)  # values ARE decoded
-
-    def test_url_decode_plus_and_bad_hex(self) -> None:
-        """'+' is a space and "%zz" is strtol's 0 — both read off the C."""
-        self.assertIn("'+'", FUNCS["url_decode"])
-        self.assertIn("strtol", FUNCS["url_decode"])
-        self.assertEqual(wire.url_decode(b"a+b%20c"), b"a b c")
-        self.assertEqual(wire.url_decode(b"a%zzb"), b"a\x00b")
-        self.assertEqual(wire.url_decode(b"a%4"), b"a%4")  # needs two chars
-        self.assertEqual(wire.url_decode(b"%4g"), b"\x04")  # leading digit only
-
-    def test_name_from_uri_cuts_at_the_decoded_question_mark(self) -> None:
-        self.assertIn("n.find('?')", FUNCS["name_from_uri"])
-        self.assertEqual(
-            wire.name_from_uri(b"/api/files/a%3Fb.mp3", b"/api/files/"), b"a"
-        )
-        self.assertEqual(
-            wire.name_from_uri(b"/api/files/a.mp3?x=1", b"/api/files/"), b"a.mp3"
-        )
-
-    def test_query_param_semantics(self) -> None:
-        """httpd_query_key_value: case-insensitive key, first '=' wins, a
-        pair without '=' derails the scan, oversize → ""."""
-        self.assertEqual(wire.query_param(b"/api/scene?s=vigil", "s"), b"vigil")
-        self.assertEqual(wire.query_param(b"/api/scene?S=vigil", "s"), b"vigil")
-        self.assertEqual(wire.query_param(b"/api/scene?s=a&s=b", "s"), b"a")
-        self.assertEqual(wire.query_param(b"/api/scene?x&s=vigil", "s"), b"")
-        self.assertEqual(wire.query_param(b"/api/scene?s=vigil&x", "s"), b"vigil")
-        self.assertEqual(wire.query_param(b"/api/scene?s=", "s"), b"")
-        self.assertEqual(wire.query_param(b"/api/scene?", "s"), b"")
-        self.assertEqual(wire.query_param(b"/api/scene?s=" + b"v" * 120, "s"), b"")
-        self.assertEqual(
-            wire.query_param(b"/api/scene?s=" + b"v" * 119, "s"), b"v" * 119
-        )
-        self.assertEqual(wire.query_param(b"/api/scene?s=v&" + b"x" * 197, "s"), b"")
+        # And the exemptions must still be strings the firmware says: an
+        # entry that outlives its message would exempt a renamed one
+        # silently ("opendir failed" had, grade report 2026-09-06 J6).
+        self.assertLessEqual(HARDWARE_ONLY, {msg for _c, msg in all_fw})
 
 
 class TestValidatorConstants(unittest.TestCase):
@@ -327,10 +117,13 @@ class TestValidatorConstants(unittest.TestCase):
         self.assertIn("v.size() <= 3", FUNCS["h_volume"])
         self.assertIn("pct > 100", FUNCS["h_volume"])
         self.assertIn("light_spec_ok(c)", FUNCS["h_light"])
+        self.assertIn("S_ISDIR", FUNCS["h_list"])
+        self.assertIn("content_len == 0", FUNCS["h_put"])
+        self.assertIn("empty body", FUNCS["h_put"])
         # The validator lives in sd_web_state.h; its shape is pinned by example.
         self.assertIn("spec.size() == 6", SD_STATE)
         self.assertIn("zone.size() > 16", SD_STATE)
-        self.assertIn("> 100) return false", SD_STATE)
+        self.assertIn("> 100)\n      return false", SD_STATE)
         for c, ok in (
             (b"ff0000", True),
             (b"show", True),
@@ -355,14 +148,14 @@ class TestValidatorConstants(unittest.TestCase):
             (b"sparkle", False),
             (b"door:bars@0", False),
         ):
-            self.assertEqual(castle_emu_http.light_spec_ok(c), ok, c)
+            self.assertEqual(wire.light_spec_ok(c), ok, c)
         pat = r"content_len < (\d+) \|\| req->content_len > ([\w>-]+)"
         self.assertEqual(int(grab(pat, FUNCS["h_ota"], 1)), castle_emu_http.OTA_MIN)
         self.assertEqual(grab(pat, FUNCS["h_ota"], 2), "part->size")  # the slot
 
     def test_status_keys_are_the_firmwares(self) -> None:
         fmt = FUNCS["h_status"]
-        keys = set(re.findall(r'\\"(\w+)\\":', fmt))
+        keys = set(re.findall(r'"(\w+)":', fmt))
         emu = castle_emu.CastleEmu(port=0)
         self.addCleanup(emu.server_close)
         st = emu.status_json()
@@ -370,10 +163,183 @@ class TestValidatorConstants(unittest.TestCase):
         assert isinstance(pir, dict)
         self.assertEqual(set(st) | set(pir), keys)
 
+    def test_the_light_counters_are_spelled_in_both_status_replies(self) -> None:
+        """v5.59. The key-set test above already compares the two sides; this
+        names them, so a rename cannot pass by moving in both files."""
+        emu = castle_emu.CastleEmu(port=0)
+        self.addCleanup(emu.server_close)
+        for key in ("light_applied", "light_evicted"):
+            self.assertIn(f'"{key}":%u', FUNCS["h_status"])
+            self.assertIn(f'"{key}":0', emu.status_text())
+        st = emu.status_json()
+        self.assertEqual((st["light_applied"], st["light_evicted"]), (0, 0))
+        # The eviction is counted where the firmware counts it: in the
+        # mailbox, for EVERY light frame the one slot loses (v5.60, A6) —
+        # the frame a later LIGHT replaced, and the frame that arrived
+        # behind another kind of command and was dropped instead.
+        self.assertIn(
+            "ActionType::NONE) {\n    g_light_evicted.fetch_add(1);", SD_STATE
+        )
+        emu.queue("LIGHT", "ff0000")
+        emu.queue("LIGHT", "00ff00")
+        self.assertEqual(emu.status_json()["light_evicted"], 1)
+        emu.queue("STOP", "")
+        emu.queue("LIGHT", "0000ff")
+        self.assertEqual(emu.status_json()["light_evicted"], 2)
+        # ...and the STOP is still what the main loop will run: the frame is
+        # counted, never allowed to take the slot from another kind.
+        self.assertEqual(emu._pending, ("STOP", ""))
+
+    def test_status_is_read_as_one_snapshot(self) -> None:
+        """A7. h_status used to copy the strings under g_state_mu, drop the
+        lock, and only then load show_on / playing / position_ms / volume as
+        independent atomics — and the 200 ms mirror lands in between often
+        enough that a poll on the tick a track ended carried the track's
+        name beside playing:false. Everything moves together now."""
+        body = FUNCS["h_status"]
+        self.assertIn("status_snapshot()", body)
+        for atomic in (
+            "g_playing.load()",
+            "g_position_ms.load()",
+            "g_show_on.load()",
+            "g_volume.load()",
+            "g_light_applied.load()",
+            "g_pir_armed.load()",
+            "g_scene",
+            "g_track",
+        ):
+            self.assertNotIn(atomic, body, atomic)
+        # And the one writer takes the one lock once, with the audio clock
+        # already stored: the mirror tick's last act.
+        publish = SD_STATE[SD_STATE.index("inline void mirror_show_state(") :]
+        self.assertEqual(publish.count("std::scoped_lock lk(g_state_mu);"), 1)
+        for field in ("playing", "position_ms", "show_on", "volume", "track"):
+            self.assertIn(f"g_status.{field} =", publish)
+        # h_status's fixed part must still fit the 240-byte buffers it fills.
+        self.assertIn("std::array<char, 288> buf{}", body)
+
+    def test_the_first_status_served_confirms_a_web_ota(self) -> None:
+        """A2. CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE holds a freshly-OTA'd
+        image in PENDING_VERIFY, and the only confirmation was `api:
+        on_client_connected` — a Home Assistant this castle does not always
+        have. A web-OTA'd image was therefore never confirmed and rolled
+        back on the next power cycle, silently undoing a working update."""
+        self.assertIn("g_status_served.store(true);", FUNCS["h_status"])
+        boot = (ROOT / "firmware" / "castle_sd_common.yaml").read_text()
+        self.assertIn("castle_web::g_status_served.load()", boot)
+        self.assertIn("castle_sd::mark_firmware_healthy();", boot)
+        # The log line that says it happened, and the one-shot that keeps it
+        # from happening twice, both stay in flash_mode.h.
+        flash = (ROOT / "firmware" / "flash_mode.h").read_text()
+        self.assertIn("image confirmed — rollback cancelled", flash)
+
     def test_pending_mailbox_is_one_slot(self) -> None:
         """sd_web_state.h: set_pending overwrites; take_pending empties."""
         self.assertIn("g_pending = {type, std::move(arg)};", SD_STATE)
-        self.assertIn('g_pending = {NONE, ""};', SD_STATE)
+        self.assertIn('g_pending = {ActionType::NONE, ""};', SD_STATE)
+
+
+class TestEventRing(unittest.TestCase):
+    """/api/events (v5.59): the ring the main loop fills. Its SHAPE is the
+    contract a page codes against, so the two castles are held to the same
+    size, the same kind words and the same JSON template."""
+
+    def test_the_ring_is_the_same_size_on_both_sides(self) -> None:
+        self.assertEqual(
+            int(grab(r"kEventRing = (\d+);", SD_STATE)), castle_emu_events.RING
+        )
+        # The C keeps the NUL; the emulator counts the bytes beside it.
+        self.assertEqual(
+            int(grab(r"kEventArgMax = (\d+);", SD_STATE)),
+            castle_emu_events.ARG_MAX + 1,
+        )
+        # No heap: a fixed std::array, not a vector that grows per event.
+        self.assertIn("std::array<Event, kEventRing> g_events{}", SD_STATE)
+
+    def test_the_kind_words_are_the_firmwares(self) -> None:
+        # v5.62 (L1): the table moved to castle_rtc.h, because the copy of
+        # the ring that survives a panic is written from there and read by
+        # castle_health.h, which cannot see sd_web_state.h.
+        fw = set(re.findall(r'case Kind::\w+: return "(\w+)";', SD_RTC))
+        emu = set(castle_emu_events.ACTION_KIND.values()) | set(
+            castle_emu_events.OTHER_KINDS
+        )
+        self.assertEqual(emu, fw)
+        # And sd_web_state.h still spells the enum it shares, rather than
+        # declaring a second one that could drift from it.
+        self.assertIn("using EventKind = castle_rtc::Kind;", SD_STATE)
+
+    def test_the_rate_limit_on_dropped_light_frames_matches(self) -> None:
+        us = int(grab(r"g_light_evict_event_us < (\d+)\)", SD_STATE))
+        self.assertEqual(us // 1000, castle_emu_events.EVICT_GAP_MS)
+
+    def test_the_json_template_is_the_firmwares(self) -> None:
+        self.assertIn(R'{"t":%lld,"e":"', SD_EVENTS)
+        self.assertIn(R'","a":"', SD_EVENTS)
+        ring = castle_emu_events.Events()
+        ring.record("play", 'a"b.mp3', 7)
+        self.assertEqual(ring.json(), R'[{"t":7,"e":"play","a":"a\"b.mp3"}]')
+        self.assertEqual(json.loads(ring.json())[0]["a"], 'a"b.mp3')
+
+    def test_a_truncated_arg_says_so_on_both_sides(self) -> None:
+        """A12: `safe_name` allows 99 characters and the ring keeps 47, so a
+        long track name used to come back as a different song's name with
+        nothing to mark the cut. The marker rides beside the arg and only
+        when it happened."""
+        self.assertIn("e.trunc = n < arg.size();", SD_STATE)
+        self.assertIn(R'","trunc":true}', SD_EVENTS)
+        ring = castle_emu_events.Events()
+        ring.record("play", "a" * 80, 7)
+        ring.record("volume", "45", 8)
+        self.assertTrue(json.loads(ring.json())[0]["trunc"])
+        self.assertNotIn("trunc", json.loads(ring.json())[1])
+
+    def test_the_handler_never_writes_the_card_or_blocks_the_loop(self) -> None:
+        """A per-event SD write on the main loop stalls audio and pixels —
+        the very glitch the ring exists to explain."""
+        body = FUNCS["h_events"]
+        for forbidden in ("fopen", "log_boot_to_sd", "/sd/"):
+            self.assertNotIn(forbidden, body)
+        self.assertIn("copy_events", body)  # a copy, then format outside the lock
+
+
+class TestStreamServer(unittest.TestCase):
+    """sd_web_stream.h is the second server — every note of audio in the
+    show — and it is outside sd_web.h's reg() table, so this is where its
+    port is held to every caller that spells it (grade report 2026-09-06
+    J3): change it in one place and every scene goes silent with a green
+    suite otherwise."""
+
+    def test_every_loopback_url_names_the_stream_port(self) -> None:
+        port = stream_port()
+        for name in (
+            "tools/gen_esphome_audio.py",
+            "firmware/castle_sd_common.yaml",
+            "firmware/sd_audio.h",
+        ):
+            text = (ROOT / name).read_text()
+            spelled = {
+                int(p) for p in re.findall(r"http://127\.0\.0\.1:(\d+)/sd/", text)
+            }
+            self.assertEqual(spelled, {port}, name)
+
+    def test_the_stream_server_serves_the_card_and_nothing_else(self) -> None:
+        self.assertEqual(re.findall(r'u\.uri = "([^"]+)";', SD_STREAM), ["/sd/*"])
+        self.assertIn("castle_stream::start(h_sd_get);", SD_WEB)
+
+    def test_health_keys_are_the_firmwares(self) -> None:
+        """h_health is the one reply whose shape the emulator types by hand;
+        h_status already had this check."""
+        keys = set(re.findall(r'"(\w+)":', FUNCS["h_health"]))
+        emu = castle_emu.CastleEmu(port=0)
+        self.addCleanup(emu.server_close)
+        emu.start()
+        self.addCleanup(emu.shutdown)
+        c = http.client.HTTPConnection("127.0.0.1", emu.port, timeout=5)
+        c.request("GET", "/api/health")
+        body = json.loads(c.getresponse().read())
+        c.close()
+        self.assertEqual(set(body), keys)
 
 
 class TestWireBehaviour(unittest.TestCase):

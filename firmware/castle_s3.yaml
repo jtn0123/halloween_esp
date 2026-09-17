@@ -1,0 +1,114 @@
+# The castle on the ESP32-S3-WROOM-1 carrier board (castle-carrier v5).
+#
+#   make build-s3      compile it
+#   make upload-s3     flash it over USB (native USB — no adapter, no BOOT dance)
+#   make logs-s3       tail its logs
+#
+# This is a SECOND build, not a replacement. The S2 Feather in
+# castle_sd.yaml is the castle in the yard and stays that way until a v5
+# carrier exists to plug in; the two share everything that is show
+# (castle.yaml + castle_sd_common.yaml) and differ only in the four things
+# that are chip or board:
+#
+#   1. the platform — variant, not a Feather board definition        (§13.1)
+#   2. the console — the S3 has a USB Serial/JTAG peripheral         (§13.1)
+#   3. no on-board NeoPixel, and no GPIO33 to hang one on            (§13.3)
+#   4. RMT blocks are 48 words here, not 64                          (§13.4)
+#
+# and gains one thing the Feather never had: an ammeter on the 5 V rail
+# (§13.7). Section numbers are docs/V5-SPEC.md, which is the port's written
+# recipe and lives with the board, not in this repo.
+#
+# NOT ONE PIN NUMBER CHANGES. Every GPIO castle.yaml and castle_sd_common.yaml
+# name exists on a WROOM-1 and is legal there (V5-SPEC §2.1) — that is why
+# the carrier forbids an octal-PSRAM module (GPIO35/36/37 are the card's SPI)
+# and why I2C went to GPIO1/2 instead of moving the SD bus.
+#
+# NOTHING HERE HAS EVER BEEN ON HARDWARE. It compiles; the board is on order.
+# firmware/pending/README.md carries the bring-up list.
+
+substitutions:
+  name: castle-s3
+  friendly: Castle S3
+
+packages:
+  base: !include castle.yaml
+  # The card, the loopback stream, the web server and its bridge — every
+  # line of the show that does not care which chip is running it.
+  sd: !include castle_sd_common.yaml
+  # ...and the one line of it that does: `!extend`s that re-spend each
+  # strip's RMT block in this chip's 48-word units. Generated, so the zone
+  # list stays in scenes.yaml alone. Must come after `base`, which is where
+  # the strips it extends are declared.
+  rmt_s3: !include generated/lights_s3.yaml
+
+# ── 1. The platform ──────────────────────────────────────────────────
+# `variant:` alone is ESPHome's own recommended spelling, and `board:` is
+# kept only for backwards compatibility. A bare WROOM-1 soldered to a custom
+# carrier HAS no board definition worth naming, so the Feather's is removed
+# outright rather than swapped for a devkit's — `!remove` deletes the key the
+# base package set, which is the only way to unset it (a `board:` and a
+# `variant:` that disagree is a hard error). With the ESP-IDF toolchain the
+# board string is informational anyway.
+#
+# The whole framework block otherwise carries over unchanged, INCLUDING the
+# dram0 diet. Several of those lines were bought with an ESP32-S2's static
+# RAM and could be given back here (V5-SPEC §13.5 lists which, one by one),
+# but not in the same change that moves the chip: get it booting first, then
+# lift one line at a time and measure each.
+esp32:
+  board: !remove
+  variant: esp32s3
+  # ESP32-S3-WROOM-1-N8R2: 8 MB of flash against the Feather's 4 MB, which
+  # is what makes the dual-OTA slots stop being the thing every decision is
+  # measured against (§13.6). It does NOT bring the all-in-flash build back
+  # — the show streams off the card here exactly as it does on the porch.
+  flash_size: 8MB
+
+# ── 2. The console ───────────────────────────────────────────────────
+# castle.yaml's long comment about CONFIG_ESP_CONSOLE_USB_CDC faulting the
+# chip inside sinf() is an ESP32-S2 fact and does not apply here: on the S3
+# the console is a hardware USB Serial/JTAG peripheral (GPIO19/20), not
+# TinyUSB, and it is what ESPHome would default to for this variant anyway.
+# Named explicitly so the line is load-bearing and self-documenting — and so
+# the day it is changed, it is changed on purpose. UART0 (GPIO43/44) is
+# still wired, to J10, for anyone with an adapter.
+logger:
+  level: INFO
+  hardware_uart: USB_SERIAL_JTAG
+
+# ── 3. No status pixel ───────────────────────────────────────────────
+# There is nothing to delete: castle_sd.yaml holds the on-board NeoPixel and
+# its GPIO21 rail, and this build simply does not include that file. A
+# WROOM-1 has no such LED and does not bring GPIO33 out at all (§13.3). If a
+# boot indicator is ever wanted, the carrier's SPARE zone (GPIO8 → U1
+# channel 4 → J4 / J12 pin 4) is a real 5 V pixel output with a terminal and
+# a test point already on it.
+
+# ── 4. The ammeter, which the Feather never had ──────────────────────
+# The carrier measures its own 5 V rail: an INA219 across a 10 mΩ shunt at
+# 0x41 (a Qwiic breakout would be 0x40). This is bring-up step 9's
+# instrument and the answer to V5-SPEC open question 1 — how much the show
+# actually draws — so it exists before the board does, and reads zero on a
+# bench with no shunt rather than being written in a hurry on flash day.
+i2c:
+  sda: GPIO1
+  scl: GPIO2
+  # The carrier's 4.7 k pull-ups give ~226 ns of rise, inside Fast-mode's
+  # 300 ns budget (V5-SPEC §6.4).
+  frequency: 400kHz
+  scan: true
+
+sensor:
+  - platform: ina219
+    address: 0x41
+    shunt_resistance: 0.01 ohm
+    max_voltage: 16.0V      # BRNG = 0
+    max_current: 8A         # PGA = /2, ±80 mV across 10 mΩ
+    update_interval: 10s
+    current:
+      name: "Castle 5V current"
+    bus_voltage:
+      name: "Castle 5V rail"
+    power:
+      name: "Castle 5V power"

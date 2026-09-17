@@ -14,5 +14,5 @@
 //! [`http_resp`](crate::http_resp) writes replies. This module is the seam
 //! they are reached through, so `httpd::Request` still means what it did.
 
-pub use crate::http_parse::{parse_multipart, query_pairs, scrub, Conn, Request, MAX_BODY};
-pub use crate::http_resp::{deliver, etag_matches, reason, respond, respond_json, Reply, CSP};
+pub use crate::http_parse::{Conn, MAX_BODY, Request, parse_multipart, query_pairs, scrub};
+pub use crate::http_resp::{CSP, Reply, deliver, etag_matches, reason, respond, respond_json};

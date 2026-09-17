@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import helpers  # noqa: F401  (clears CASTLE_* so the env here is ours)
 import hosts
-from studio_case import HostEnv
+from helpers import HostEnv
 
 TABLE = """
 # comments and non-device tables are ignored

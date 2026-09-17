@@ -10,7 +10,7 @@
 //! sines and exponentials with nothing left to vary.
 
 use crate::filters::Modes;
-use crate::synth::{interp, music_box, nt, piano, pipe, STOPS};
+use crate::synth::{STOPS, interp, music_box, nt, piano, pipe};
 use std::f64::consts::PI;
 
 const SR_F: f64 = 44100.0;

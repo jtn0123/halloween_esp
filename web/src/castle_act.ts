@@ -21,7 +21,7 @@ function toastHost(): HTMLDivElement {
     host = document.createElement("div");
     host.id = "toasts";              // styled in previewer/panels.css
     // A live region: a screen reader hears "scene failed — …" the way a
-    // sighted operator sees it (grade report C1). Polite for the host;
+    // sighted operator sees it (grade report 2026-08-21 C1). Polite for the host;
     // each error toast is its own role="alert" so it interrupts.
     host.setAttribute("role", "status");
     host.setAttribute("aria-live", "polite");

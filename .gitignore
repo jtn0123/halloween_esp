@@ -5,10 +5,12 @@
 # as untracked and were one `git add .` away from committing an absolute path
 # to somebody's home directory.
 .venv
+.venv-desktop
 firmware/.esphome/
 firmware/secrets.yaml
 audio/*.wav
 audio/*.mp3
+audio/.rendered.json
 # Render products too: the SD build's card_bitrate copies and the speaker
 # test's tones (`make audio` writes both; sd_sync pushes them).
 audio/card/
@@ -42,3 +44,5 @@ core/target/
 
 # Other sessions' worktrees live under .claude — never repo content
 .claude/worktrees/
+# tools/sd_sync.py logs saves the castle's card log here
+/castle.log

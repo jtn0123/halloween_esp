@@ -3,6 +3,7 @@
 //!     castle --host 10.27.27.7:80 status
 //!     castle --host … scene seance | play 10_ballad.mp3 | stop | volume 60
 //!     castle --host … show start|stop · blackout · files [subdir] · bootlog
+//!     castle --host … logs                the card's boot log, tail included
 //!     castle --host … put local.mp3 [name] · rm name
 //!
 //! Host resolution is tools/hosts.py's, ported: --host (an address or a
@@ -14,7 +15,7 @@
 //! the castle refuses or the card's answer disagrees, 1 for transport.
 //! tests/test_bridge_rust.py round-trips every verb against castle_emu.
 
-use castle_core::bridge::{encode_query, list_entries, probe, request, upload, UploadFault};
+use castle_core::bridge::{UploadFault, encode_query, list_entries, probe, request, upload};
 use castle_core::hosts;
 
 fn fail(msg: &str) -> ! {
@@ -138,8 +139,8 @@ fn do_ota(host: &str, args: &[String]) -> ! {
                 let v = castle_core::bridge::json_str(&body, "version").unwrap_or_default();
                 println!("up — v{v}");
                 println!(
-                    "now CONFIRM it (connect once with tools/device.py or HA) — \
-                     an unconfirmed image rolls back on its next reboot"
+                    "CONFIRMED by that very poll — since v5.60 the first \
+                     /api/status a boot answers cancels the rollback"
                 );
                 std::process::exit(0)
             }
@@ -155,6 +156,18 @@ fn do_ota(host: &str, args: &[String]) -> ! {
             3.0_f64.min(wait_s / 3.0),
         ));
     }
+}
+
+/// `rm scenes/x.mp3` and `rm site/x` go through the subdirectory's own DELETE
+/// route — v5.47 registers one wherever PUT already was (grade report
+/// 2026-09-06 J4); the root route refuses a '/' in the name.
+fn delete_route(name: &str) -> String {
+    for sub in ["scenes", "site"] {
+        if let Some(rest) = name.strip_prefix(&format!("{sub}/")) {
+            return format!("/api/{sub}/{}", encode_query(rest));
+        }
+    }
+    format!("/api/files/{}", encode_query(name))
 }
 
 fn main() {
@@ -217,12 +230,20 @@ fn main() {
         ("show", Some(w)) if w == "start" || w == "stop" => ("POST", format!("/api/show/{w}"), 5.0),
         ("blackout", None) => ("POST", "/api/blackout".to_string(), 5.0),
         ("bootlog", None) => ("GET", "/api/bootlog".to_string(), 5.0),
+        // L9 (v5.62): the card's own log, which the castle has been writing
+        // one line per boot into since v5.44 and which nothing ever read —
+        // it now carries the previous life's event ring under each boot
+        // line, so it is the only record that outlives a panic. A constant
+        // path, like every other target in this table. `sd_sync logs` is
+        // the richer verb (it saves both rotations to a file); this is the
+        // one-liner from a terminal that already speaks the other verbs.
+        ("logs", None) => ("GET", "/sd/logs/castle.log".to_string(), 10.0),
         ("files", None) => ("GET", "/api/files".to_string(), 5.0),
         ("files", Some(d)) => ("GET", format!("/api/files?d={}", encode_query(d)), 5.0),
-        ("rm", Some(n)) => ("DELETE", format!("/api/files/{}", encode_query(n)), 10.0),
+        ("rm", Some(n)) => ("DELETE", delete_route(n), 10.0),
         _ => fail(
             "usage: castle [--host H:P] status|health|stop|scene ID|play FILE|\
-             volume N|show start|show stop|blackout|files [DIR]|bootlog|\
+             volume N|show start|show stop|blackout|files [DIR]|bootlog|logs|\
              put [--to site|scenes] LOCAL [NAME]|rm NAME|purge|ota BIN|hosts [ARG]",
         ),
     };
@@ -234,5 +255,25 @@ fn main() {
                 std::process::exit(2);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rm_reaches_the_subdirectories_by_their_own_routes() {
+        assert_eq!(delete_route("a b.mp3"), "/api/files/a%20b.mp3");
+        assert_eq!(
+            delete_route("scenes/09 song.mp3"),
+            "/api/scenes/09%20song.mp3"
+        );
+        assert_eq!(
+            delete_route("site/index.html.gz"),
+            "/api/site/index.html.gz"
+        );
+        // Anything else with a slash stays on the root route, which refuses it.
+        assert_eq!(delete_route("x/y"), "/api/files/x%2Fy");
     }
 }

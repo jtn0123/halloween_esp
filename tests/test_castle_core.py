@@ -15,14 +15,14 @@ the comparison demand exact bits instead of tolerances.
 Skipped, not failed, where cargo or a host C++ compiler is missing —
 except in CI, where losing either would silently retire the gate.
 
-Two classes, because they need different things (grade report D2). The
+Two classes, because they need different things (grade report 2026-08-31 D2). The
 bit-exact comparison needs cargo AND a host C++ compiler. The toolchain
 gates — build, test, fmt, clippy — need only cargo, and used to ride the
 same skipIf: on a machine without clang++ the entire Rust gate vanished
 without a word. They live in TestCastleCoreToolchain now, and they run the
 Makefile's rust targets rather than re-spelling the cargo invocation, so
 "the Rust gate" means one thing whether you type `make rust-lint`, run
-this suite, or read the CI job (grade report I1).
+this suite, or read the CI job (grade report 2026-08-31 I1).
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ COMPILER = shutil.which("clang++") or shutil.which("g++")
 IN_CI = bool(os.environ.get("CI"))
 # ci.yml's `python` job sets this because the dedicated `rust` job runs the
 # same three targets, on its own cargo cache and under its own name in the
-# checks list (grade report I3). It ROUTES the gates, it does not remove
+# checks list (grade report 2026-08-31 I3). It ROUTES the gates, it does not remove
 # them: the variable exists only in a workflow that also contains the rust
 # job, so deleting that job deletes the variable and the python job starts
 # paying for them again. Nothing local should ever set it.
@@ -343,8 +343,17 @@ class TestCastleCoreParity(unittest.TestCase):
         if NODE is None and not IN_CI:
             self.skipTest("no node")
         assert NODE is not None
+        # --no-default-features drops the `native` half (grade report
+        # 2026-09-01 A1): the server, ffmpeg and flock never compile for a
+        # target that cannot run them. WITH the default features this build
+        # fails, which is the point — the wasm face is the arithmetic only.
         built = cargo(
-            "build", "--release", "--quiet", "--target", "wasm32-unknown-unknown"
+            "build",
+            "--release",
+            "--quiet",
+            "--no-default-features",
+            "--target",
+            "wasm32-unknown-unknown",
         )
         self.assertEqual(built.returncode, 0, f"wasm build failed:\n{built.stderr}")
         wasm = (
@@ -352,7 +361,11 @@ class TestCastleCoreParity(unittest.TestCase):
         )
         size = wasm.stat().st_size
         # ~1.4x when base64-inlined; the page budget is 4 MB and ~3.3 used.
-        self.assertLess(size, 200_000, f"castle_core.wasm is {size:,} bytes")
+        # ~8 KB actual, so this bound is ~2.5x — a ratchet that can actually
+        # fire. The old 200 KB could not: it was 25x the artifact, and the
+        # feature split (A1) means an accidental `use crate::httpd` here now
+        # shows up as a size jump rather than as nothing at all.
+        self.assertLess(size, 20_000, f"castle_core.wasm is {size:,} bytes")
         script = Path(self.tmp) / "wasm_check.mjs"
         script.write_text(WASM_CHECK)
         r = subprocess.run(

@@ -79,10 +79,12 @@ different halves of the system.
 ## The software lever held in reserve
 
 The ESP32-S2's whole RMT peripheral is 4 channels × 64 symbols = **256, no
-DMA**. `tools/gen_rig.py` now spends that budget explicitly, per zone, and
+DMA**. `tools/gen_rig.py` spends that budget explicitly, per zone, and
 refuses a total the hardware cannot back (`RMT_TOTAL_SYMBOLS`, and the
-`RMT: 192 of 256 symbols spent, 1 block(s) spare` line it writes into
-`firmware/generated/lights.yaml`).
+`RMT: 256 of 256 symbols spent … 0 block(s) spare` line it writes into
+`firmware/generated/lights.yaml`). Since 2026-09-06 the status pixel's block
+is part of that total (`STATUS_PIXEL_BLOCKS`), so the arithmetic below is
+enforced rather than described.
 
 Giving the door a **second block** halves how often its refill ISR must run —
 the deadline goes from ~40 µs to ~80 µs:
@@ -95,9 +97,13 @@ the deadline goes from ~40 µs to ~80 µs:
 
 The only free block belongs to the SD build's **status pixel** (the onboard
 NeoPixel, `castle_sd.yaml`), so this is a straight trade: **flicker margin on
-the ring, or the onboard status LED**. It is not the leading fix — test 1 above
-proved a lone channel still corrupts, and more buffer does not fix a wire — but
-it is one edit, and worth trying if the hardware tests come back clean.
+the ring, or the onboard status LED**. The generator will not let you take
+both — `make generate` stops with "the status pixel holds 64 more" — so the
+edit is two edits: drop `status_pixel` (and `neopixel_power`) from
+`castle_sd.yaml`, and set `STATUS_PIXEL_BLOCKS = 0` in `tools/gen_rig.py`.
+It is not the leading fix — test 1 above proved a lone channel still
+corrupts, and more buffer does not fix a wire — but it is worth trying if the
+hardware tests come back clean.
 
 ## Reproducing it in ten seconds
 

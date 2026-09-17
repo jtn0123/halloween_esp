@@ -23,127 +23,36 @@ Fidelity choices worth knowing when a test surprises you:
 
 from __future__ import annotations
 
-import json
-import re
 import time
-import zlib
-from collections.abc import Iterator
-from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import castle_emu_wire as wire
+from castle_emu_flash import BOOTLOG, CSP, FALLBACK_PAGE, REMOTE_PAGE, TYPES
+from castle_emu_reply import JSON_MIME, NO_SD, QUERY_TOO_LONG
+from castle_emu_upload import Uploads
 
-if TYPE_CHECKING:
-    from castle_emu import CastleEmu
-
-#: httpd_config_t recv_wait_timeout: how long httpd_req_recv waits for the
-#: next body byte before giving up on the upload.
-RECV_WAIT_S = 5.0
 #: h_ota's plausibility window: under 64 KB is no firmware, over the OTA
-#: partition (1.75 MB on the S2 layout) cannot fit.
+#: partition cannot fit. The board compares against its own partition
+#: (part->size, sd_web_ota.h), so the emulator carries one per build's
+#: flash: the S2 Feather's 4 MB layout and the S3 carrier's 8 MB one
+#: (grade report 2026-09-06 J5). CastleEmu(ota_slot=...) picks.
 OTA_MIN = 65536
-OTA_SLOT = 0x1C0000
-CHUNK = 8192
-#: The one content type the API answers with — sd_web.h reply_json().
-JSON_MIME = "application/json"
-#: sd_web.h's 503 for every route that needs the card, spelled once.
-NO_SD = "no SD card"
-
-#: sd_web_site.h content_type(): suffix → MIME.
-_TYPES = {
-    ".html": "text/html; charset=utf-8",
-    ".js": "application/javascript",
-    ".css": "text/css",
-    ".svg": "image/svg+xml",
-    ".png": "image/png",
-    ".json": JSON_MIME,
-    ".mp3": "audio/mpeg",
-    ".wav": "audio/wav",
-}
-
-#: firmware/sd_web_remote.h kRemotePage, byte for byte — the phone remote
-#: is embedded in flash, so the emulator lifts it out of the C raw string
-#: rather than keeping a placeholder nobody could test against (JB2-6).
-_REMOTE_H = Path(__file__).resolve().parent.parent / "firmware" / "sd_web_remote.h"
+OTA_SLOTS = {"s2": 0x1C0000, "s3": 0x3C0000}
+OTA_SLOT = OTA_SLOTS["s2"]
 
 
-def _remote_page() -> str:
-    m = re.search(
-        r'kRemotePage\[\] = R"HTML\((.*?)\)HTML";', _REMOTE_H.read_text(), re.DOTALL
-    )
-    if not m:
-        raise RuntimeError(f"no kRemotePage raw string in {_REMOTE_H}")
-    return m.group(1)
-
-
-REMOTE_PAGE = _remote_page()
-#: sd_web_site.h set_csp(), byte for byte (E4) — sent on every served page.
-CSP = (
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; "
-    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
-    "media-src 'self' data: blob:; connect-src 'self'"
-)
-FALLBACK_PAGE = (
-    "<!doctype html><meta charset=utf-8><title>Castle</title>"
-    "<h1>Castle</h1><p>emulated fallback page</p>"
-)
-
-
-_ZONE_CHARS = set(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
-
-
-def light_spec_ok(c: bytes) -> bool:
-    """sd_web_state.h light_spec_ok, byte for byte: "RRGGBB"|show|off with an
-    optional "<zone>:" prefix that drives one strip (the desk's channel test)."""
-    zone, sep, spec = c.partition(b":")
-    if not sep:
-        zone, spec = b"", c
-    elif not zone or len(zone) > 16 or any(b not in _ZONE_CHARS for b in zone):
-        return False
-    spec, at, pct = spec.partition(b"@")
-    if at and (not pct.isdigit() or len(pct) > 3 or not 1 <= int(pct) <= 100):
-        return False
-    hex6 = len(spec) == 6 and all(chr(b) in "0123456789abcdefABCDEF" for b in spec)
-    return hex6 or spec in (b"white", b"bars", b"chase", b"ends", b"show", b"off")
-
-
-class Handler(BaseHTTPRequestHandler):
-    server: CastleEmu  # narrowed for handlers
-    timeout = RECV_WAIT_S
+class Handler(Uploads):
+    """Every route the castle serves. The reply layer is castle_emu_reply's
+    and the two card-writing routes are castle_emu_upload's; what is left
+    here is reading, control and the flasher."""
 
     # -- plumbing ----------------------------------------------------------
-
-    def log_message(self, fmt: str, *args: object) -> None:
-        pass  # tests and background use; the port banner is enough
 
     def handle(self) -> None:
         if self.server.serial is None:
             return super().handle()
         with self.server.serial:
             super().handle()
-
-    def _json(self, body: dict[str, object] | list[object]) -> None:
-        self._raw(200, json.dumps(body).encode(), JSON_MIME)
-
-    def _raw(
-        self, code: int, raw: bytes, ctype: str, extra: dict[str, str] | None = None
-    ) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(raw)))
-        for k, v in (extra or {}).items():
-            self.send_header(k, v)
-        self.end_headers()
-        self.wfile.write(raw)
-
-    def _err(self, code: int, msg: str) -> None:
-        """reply_err(): a status line and a one-line text/plain body."""
-        self._raw(code, msg.encode(), "text/plain")
-
-    def _idf(self, code: int) -> None:
-        """esp_http_server's own verdicts, before any handler runs."""
-        self._raw(code, wire.IDF_ERRORS[code].encode(), "text/html")
 
     def _wedge(self) -> None:
         """Pre-v5.22: the single HTTP task is busy streaming the song."""
@@ -157,9 +66,13 @@ class Handler(BaseHTTPRequestHandler):
             time.sleep(0.25)
 
     def _dispatch(self) -> None:
-        # self.path is the request target decoded as latin-1, so this is
-        # the exact byte string the board's parser would see.
-        raw = self.path.encode("latin-1")
+        # The target off the REQUEST LINE, not self.path: http.server
+        # collapses a leading "//" to "/" before it hands the path over,
+        # and esp_http_server does not — so "GET //" served the desk here
+        # and 404'd on the board. Everything after this is the exact byte
+        # string the board's parser would see.
+        words = self.requestline.split()
+        raw = (words[1] if len(words) > 1 else self.path).encode("latin-1")
         self._wedge()
         if len(raw) > wire.MAX_URI:
             return self._idf(414)
@@ -168,32 +81,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._idf(err)
         try:
             getattr(self, handler)(raw)
+        except (BrokenPipeError, ConnectionResetError):
+            # The client hung up before the reply was written - castle_link's
+            # 2 s read budget for a POST runs out under a loaded test run and
+            # it closes the socket. That is the client's verdict, not an
+            # emulator bug, and there is nobody left to send a 500 to: the
+            # 500 below would EPIPE on the same dead socket and socketserver
+            # would print both tracebacks into the test log (seen 2026-09-06).
+            self.close_connection = True
         except Exception as e:  # the fuzz asserts this never happens
             self._err(500, f"emulator bug: {type(e).__name__}: {e}")
 
     do_GET = do_POST = do_PUT = do_DELETE = _dispatch
     do_HEAD = do_PATCH = do_OPTIONS = _dispatch
-
-    def _content_len(self) -> int | None:
-        """req->content_len, or None when http_parser would have 400'd the
-        header (not a non-negative integer)."""
-        raw = self.headers.get("Content-Length")
-        if raw is None:
-            return 0
-        try:
-            n = int(raw)
-        except ValueError:
-            return None
-        return n if n >= 0 else None
-
-    def _body_chunks(self, remaining: int) -> Iterator[bytes]:
-        """httpd_req_recv in CHUNK-sized reads; stops short on a stall."""
-        while remaining > 0:
-            got = self.rfile.read(min(remaining, CHUNK))
-            if not got:
-                return
-            remaining -= len(got)
-            yield got
 
     # -- GET ---------------------------------------------------------------
 
@@ -204,20 +104,49 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def h_health(self, _raw: bytes) -> None:
+        # sd_read_errors (A8, v5.61): transfers off the card that failed and
+        # were torn down instead of being framed as a short success. Always
+        # 0 here — the emulated card is a host directory, and a read of one
+        # does not NAK a sector — but the KEY is part of the reply's shape,
+        # and a desk that shows the number must find it on both castles.
+        # L7 (v5.62): heap_min_kb is the LOW-WATER mark of internal heap —
+        # the number that explains a crash, where /api/status's heap_free_kb
+        # is only what is free now, after the allocation that failed was
+        # given back. Fixed here, like heap_free_kb, and equal to what the
+        # C harness's shim reports so the two replies stay byte-identical.
+        # L4: sd_last_error is "<path>@<offset>" of the last torn transfer,
+        # "" on a healthy castle — which a host directory always is.
         self._json(
-            {"boots": 3, "crashes": 0, "last_reset": "power-on", "was_crash": False}
+            {
+                "boots": 3,
+                "crashes": 0,
+                "last_reset": "power-on",
+                "was_crash": False,
+                "sd_read_errors": 0,
+                "heap_min_kb": 64,
+                "sd_last_error": "",
+            }
         )
+
+    def h_events(self, _raw: bytes) -> None:
+        """The main loop's own record (castle_emu_events.py), oldest first."""
+        self._raw(200, self.server.events.json().encode(), JSON_MIME)
 
     def h_list(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         # B2: ?d=<subdir> lists inside the card, validated like /sd/ paths.
         sub = wire.query_param(raw, "d")
         base = self.server.sd_dir
         if sub:
             if not wire.safe_subpath(sub):
                 return self._err(400, "bad path")
-            base = base / wire.fs_name(sub)
+            name = wire.fat_path(sub)
+            if name is None:
+                return self._err(404, "no such directory")
+            base = base / name
             if not base.is_dir():
                 return self._err(404, "no such directory")
         items = []
@@ -246,7 +175,7 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def h_bootlog(self, _raw: bytes) -> None:
-        self._raw(200, b"boot log: 2 lines, 0 dropped\n[I][emu] up\n", "text/plain")
+        self._raw(200, BOOTLOG, "text/plain")
 
     def h_remote(self, _raw: bytes) -> None:
         self._raw(
@@ -278,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
         self._raw(
             200,
             f.read_bytes(),
-            ctype or _TYPES.get(f.suffix, "application/octet-stream"),
+            ctype or TYPES.get(f.suffix, "application/octet-stream"),
             extra or None,
         )
         return True
@@ -289,21 +218,30 @@ class Handler(BaseHTTPRequestHandler):
         rel = self._subpath(raw, b"/sd/")
         if not wire.safe_subpath(rel):
             return self._err(400, "bad path")
-        if not self._send_file(self.server.sd_dir / wire.fs_name(rel)):
+        name = wire.fat_path(rel)
+        if name is None or not self._send_file(self.server.sd_dir / name):
             return self._err(404, "no such file")
 
     def h_site(self, raw: bytes) -> None:
+        # set_csp() runs FIRST in the firmware, so the refusals below carry
+        # the header too — httpd holds a header once set, whatever the
+        # handler decides afterwards.
         rel = self._subpath(raw, b"/site/")
         if not wire.safe_subpath(rel):
-            return self._err(400, "bad path")
-        f = self.server.sd_dir / "site" / wire.fs_name(rel)
-        if not self.server.sd_mounted or not self._send_file(f, csp=True):
-            return self._err(404, "not on card")
+            return self._err(400, "bad path", {"Content-Security-Policy": CSP})
+        name = wire.fat_path(rel)
+        f = self.server.sd_dir / "site" / (name or "")
+        if (
+            not self.server.sd_mounted
+            or name is None
+            or not self._send_file(f, csp=True)
+        ):
+            return self._err(404, "not on card", {"Content-Security-Policy": CSP})
 
     def h_root(self, _raw: bytes) -> None:
         site = self.server.sd_dir / "site"
         if self.server.sd_mounted and (
-            self._send_file(site / "index.html.gz", "gzip", _TYPES[".html"], csp=True)
+            self._send_file(site / "index.html.gz", "gzip", TYPES[".html"], csp=True)
             or self._send_file(site / "index.html", csp=True)
         ):
             return
@@ -317,6 +255,8 @@ class Handler(BaseHTTPRequestHandler):
     # -- POST: show control, all queued ------------------------------------
 
     def h_play(self, raw: bytes) -> None:
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         f = wire.query_param(raw, "f")
         if not wire.safe_name(f):
             return self._err(400, "need ?f=<file>")
@@ -324,11 +264,14 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"queued": True})
 
     def h_scene(self, raw: bytes) -> None:
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         s = wire.query_param(raw, "s")
         if not s:
             return self._err(400, "need ?s=<scene>")
-        ids = [i.encode() for i in self.server.scenes]
-        if ids and s not in ids:
+        if not self.server.scenes:
+            return self._err(503, "scene list not ready")
+        if wire.fs_name(s) not in self.server.scenes:
             return self._err(404, "unknown scene")
         self.server.queue("SCENE", wire.fs_name(s))
         self._json({"queued": True})
@@ -350,6 +293,8 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"queued": True})
 
     def h_volume(self, raw: bytes) -> None:
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         v = wire.query_param(raw, "v")
         digits = bool(v) and len(v) <= 3 and v.isdigit()
         pct = int(v) if digits else -1
@@ -359,8 +304,10 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"queued": True})
 
     def h_light(self, raw: bytes) -> None:
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         c = wire.query_param(raw, "c")
-        if not light_spec_ok(c):
+        if not wire.light_spec_ok(c):
             return self._err(
                 400, "need ?c=[zone:]RRGGBB|white|bars|chase|ends|show|off[@pct]"
             )
@@ -368,89 +315,35 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"queued": True})
 
     def h_pir(self, raw: bytes) -> None:
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
         a, c, s = (wire.query_param(raw, k) for k in ("armed", "cooldown", "scene"))
         if not (a or c or s):
             return self._err(400, "need armed=, cooldown= or scene=")
+        ok, a = wire.pir_armed_ok(a)
+        if not ok:
+            return self._err(400, "bad armed")
+        if not wire.pir_cooldown_ok(c):
+            return self._err(400, "bad cooldown")
+        # A4/C5/C7: the fields ride packed with '|' and the YAML unpacks
+        # them with find/rfind while this splits, so a '|' in a value is
+        # refused here; and the scene faces the list /api/scene checks.
+        if any(b"|" in x for x in (a, c, s)):
+            return self._err(400, "bad separator")
+        if s and not self.server.scenes:
+            return self._err(503, "scene list not ready")
+        if s and wire.fs_name(s) not in self.server.scenes:
+            return self._err(404, "unknown scene")
         self.server.queue("PIRCFG", "|".join(wire.fs_name(x) for x in (a, c, s)))
         self._json({"queued": True})
 
     # -- PUT/DELETE: the card ----------------------------------------------
 
-    def h_put(self, raw: bytes) -> None:
-        if not self.server.sd_mounted:
-            return self._err(503, NO_SD)
-        sub, prefix = "", b"/api/files/"
-        if raw.startswith(b"/api/site/"):
-            sub, prefix = "site", b"/api/site/"
-        if raw.startswith(b"/api/scenes/"):
-            sub, prefix = "scenes", b"/api/scenes/"
-        if sub == "site":
-            m = self._content_len()
-            # E3: a desk page has a known plausible size; the firmware
-            # refuses before reading a byte.
-            if m is not None and m > 8 * 1024 * 1024:
-                return self._err(413, "site file too large")
-        name = wire.name_from_uri(raw, prefix)
-        if not wire.safe_name(name):
-            return self._err(400, "bad filename")
-        n = self._content_len()
-        if n is None:
-            return self._idf(400)
-        # B3: write_body's free-space precondition (64 KB slack), when the
-        # emulated card declares a size (sd_free_kb None = plenty of room).
-        free_kb = self.server.sd_free_kb
-        if free_kb is not None and n // 1024 + 64 > free_kb:
-            return self._err(507, "not enough room on the card")
-        dest = self.server.sd_dir / sub if sub else self.server.sd_dir
-        dest.mkdir(parents=True, exist_ok=True)
-        target = dest / wire.fs_name(name)
-        # write_body: into the sidecar, then unlink + rename (FAT's rename
-        # will not overwrite). A short upload costs the sidecar only; the
-        # previous copy of `target` is untouched.
-        part = target.with_name(target.name + ".part")
-        try:
-            f = open(part, "wb")
-        except OSError:
-            return self._err(500, "cannot create file")
-        written = 0
-        crc = 0
-        with f:
-            try:
-                for chunk in self._body_chunks(n):
-                    f.write(chunk)
-                    written += len(chunk)
-                    crc = zlib.crc32(chunk, crc)  # B5: sd_sync compares
-            except OSError:  # TimeoutError is one of these
-                pass
-        if written != n:
-            part.unlink(missing_ok=True)  # the sidecar only
-            return self._err(500, "short write")
-        try:
-            target.unlink(missing_ok=True)
-            part.rename(target)
-        except OSError:
-            part.unlink(missing_ok=True)
-            return self._err(500, "rename failed")
-        card = f"/sd/{sub}/{target.name}" if sub else f"/sd/{target.name}"
-        self._json({"path": card, "bytes": written, "crc32": "%08x" % crc})
-
-    def h_delete(self, raw: bytes) -> None:
-        if not self.server.sd_mounted:
-            return self._err(503, NO_SD)
-        name = wire.name_from_uri(raw, b"/api/files/")
-        if not wire.safe_name(name):
-            return self._err(400, "bad filename")
-        try:
-            (self.server.sd_dir / wire.fs_name(name)).unlink()
-        except OSError:
-            return self._err(404, "no such file")
-        self._json({"deleted": True})
-
     def h_ota(self, _raw: bytes) -> None:
         n = self._content_len()
         if n is None:
             return self._idf(400)
-        if n < OTA_MIN or n > OTA_SLOT:
+        if n < OTA_MIN or n > self.server.ota_slot:
             return self._err(400, "implausible image size")
         got, first = 0, True
         try:

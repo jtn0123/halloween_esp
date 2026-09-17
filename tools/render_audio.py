@@ -9,8 +9,10 @@ reverb happens here, where CPU is free.
     tools/render_audio.py --wav      # keep the intermediate WAVs too
     tools/render_audio.py --only storm
 
-Output is mono at the bitrate set in scenes.yaml, sized to fit the flash left
-over after the ESPHome image.
+Output is mono at the bitrate set in scenes.yaml. It used to be sized to fit
+the flash left over after the ESPHome image; since 2026-09-01 the scenes live
+on the microSD card instead (PROJECT_NOTES §12.15), so the bitrate is a
+fidelity-versus-decode-load choice and nothing else.
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ import analyze
 import build_paths as bp
 import core_bins
 import manifest as mf
+import render_stamp
 import synth
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -151,7 +154,7 @@ def render_scene_py(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]
             # clone or CI has the scene but not its song. That is a fact about
             # the machine, and the rest of the scene (synth score, cue times,
             # length) still renders, which keeps every downstream step honest:
-            # the mp3 exists, the flash build embeds it, the show is the right
+            # the mp3 exists, `make publish` pushes it, the show is the right
             # shape. An audio_file nobody ever imported is a typo, and still
             # stops the render — tracks/tracks.json is what tells them apart.
             if not known_track(track):
@@ -238,8 +241,9 @@ def render_scene_py(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]
 
 
 def card_bitrate(cfg: dict) -> int:
-    """What the SD build streams. Absent means "same as flash" — the card
-    copies are then redundant and never written."""
+    """A SECOND, higher-bitrate encode for the card, when scenes.yaml asks for
+    one. Absent means "the same bitrate as everything else" — the card copies
+    would then be byte-identical, so they are redundant and never written."""
     return int(cfg.get("card_bitrate", cfg["bitrate"]))
 
 
@@ -329,6 +333,9 @@ def render_chirp(cfg: dict) -> None:
 #: Scenes rendered WITHOUT their imported song, because it is not on this
 #: machine. Named in the summary — a quiet scene must never be a surprise.
 NOT_HERE: list[str] = []
+#: The last render of each scene, so a render may skip the unchanged ones
+#: (render_stamp). Inert until main() loads it; --force leaves it so.
+STAMPS = render_stamp.Stamps()
 
 
 def known_track(track: str) -> bool:
@@ -343,17 +350,31 @@ def render_one(scene: dict, i: int, cfg: dict, keep_wav: bool) -> tuple[int, dic
     """Render scene `i` to NN_<id>.mp3 and report (bytes, markers).
 
     The WAV is the encoder's input and nothing else's, so it goes again
-    unless --wav asked to keep it.
+    unless --wav asked to keep it. A scene whose inputs are those of its
+    last render is skipped, and its last markers returned (render_stamp).
     """
     stem = f"{i:02d}_{scene['id']}"
     wav, mp3 = OUT / f"{stem}.wav", OUT / f"{stem}.mp3"
+    card = card_dir() / f"{stem}.mp3" if card_bitrate(cfg) != cfg["bitrate"] else None
+    outputs = [p for p in (mp3, card, wav if keep_wav else None) if p]
+    hit = STAMPS.reuse(stem, scene, cfg, outputs)
+    if hit is not None:
+        if hit.get("not_here"):
+            NOT_HERE.append(scene["id"])
+        size = mp3.stat().st_size
+        print(
+            f"{scene['id']:<12} {'':>8} {size / 1024:>8.0f}K   {mp3.name}  (unchanged)"
+        )
+        return size, hit.get("markers") or {}
+    was_here = len(NOT_HERE)
     markers = render_scene(scene, cfg, wav)
+    STAMPS.record(stem, scene, cfg, markers, scene["id"] in NOT_HERE[was_here:])
     encode_mp3(wav, mp3, cfg["bitrate"])
     # The same WAV, encoded again for the card. Synthesis is the expensive
     # half and it is already paid for here; a second LAME pass is cents.
-    if card_bitrate(cfg) != cfg["bitrate"]:
-        card_dir().mkdir(parents=True, exist_ok=True)
-        encode_mp3(wav, card_dir() / f"{stem}.mp3", card_bitrate(cfg))
+    if card:
+        card.parent.mkdir(parents=True, exist_ok=True)
+        encode_mp3(wav, card, card_bitrate(cfg))
     if not keep_wav:
         wav.unlink()
     size = mp3.stat().st_size
@@ -366,6 +387,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="render just this scene id")
     ap.add_argument("--wav", action="store_true", help="keep intermediate WAVs")
+    ap.add_argument("--force", action="store_true", help="re-render unchanged scenes")
     args = ap.parse_args()
 
     doc = yaml.safe_load(SCENES.read_text())
@@ -385,6 +407,7 @@ def main() -> int:
     all_markers: dict[str, dict[str, list]] = {}
     produced = {"00_chirp.mp3"}
     NOT_HERE.clear()
+    STAMPS.load(OUT, enabled=not args.force)
     print(f"{'scene':<12} {'length':>8} {'mp3':>9}   file")
     print("-" * 52)
     for i, scene in enumerate(doc["scenes"], start=1):
@@ -398,6 +421,7 @@ def main() -> int:
 
     print("-" * 52)
     print(f"{'total':<12} {'':>8} {total / 1024:>8.0f}K")
+    STAMPS.save()
     if NOT_HERE:
         print(
             f"note: {len(NOT_HERE)} scene(s) rendered WITHOUT their imported "
@@ -412,28 +436,48 @@ def main() -> int:
                 if stale.name not in produced:
                     stale.unlink()
                     print(f"swept stale {stale.relative_to(OUT.parent)}")
+        # A scene whose song is not on this machine cannot recompute the
+        # markers the song gives it (its onsets and beats), and the tracked
+        # markers.json is the last analysis that could. Writing without them
+        # is what CI did: gen_esphome then emitted no pulse cues for the two
+        # real songs, and the weekly compile measured a show 13.6 KB of dram0
+        # and 71 KB of flash smaller than the porch's — the 92% alarm judging
+        # a smaller show (2026-09-06, the maps of run 34049090300). Keep the
+        # previous entry's song-derived keys under this render's fresh ones.
+        try:
+            prev = json.loads((OUT / "markers.json").read_text())
+        except (OSError, ValueError):
+            prev = {}
+        for sid in NOT_HERE:
+            if sid in prev:
+                all_markers[sid] = {**prev[sid], **all_markers.get(sid, {})}
         (OUT / "markers.json").write_text(json.dumps(all_markers, indent=0))
         n = sum(len(m) for v in all_markers.values() for m in v.values())
         print(
             f"beat markers: {n} across {len(all_markers)} scenes -> audio/markers.json"
         )
-    # 3.87 MB single-app partition minus ~0.97 MB of firmware (measured,
-    # PROJECT_NOTES §12.2).
-    budget = 2.9 * 1024 * 1024
-    pct = total / budget * 100
-    verdict = "fits" if total < budget else "OVER BUDGET"
+    # These two lines said "N% of the ~2.9 MB single-app partition — fits"
+    # until 2026-09-01, when the all-in-flash build they measured was retired
+    # (PROJECT_NOTES §12.15). Nothing here goes into the image any more, so
+    # there is no ceiling left to report a percentage of. The sizes are still
+    # worth printing — one is what the desk page has to carry, the other is
+    # what `make publish` uploads over porch WiFi — but as facts, not verdicts.
+    #
+    # WHICH IS WHICH matters and used to be got wrong: when scenes.yaml asks
+    # for a card_bitrate, audio/ is the desk's copy and audio/card/ is the
+    # castle's. With one bitrate there is one render and it is both.
+    second = card_bitrate(cfg) != cfg["bitrate"]
     print(
-        f"\nflash build  {cfg['bitrate']:>3} kbps  {total / 1024:>6.0f}K  "
-        f"{pct:.0f}% of the ~2.9 MB single-app partition — {verdict}"
+        f"\ndesk  {cfg['bitrate']:>3} kbps  {total / 1024:>6.0f}K  "
+        + ("inlined into the cue desk page" if second else "-> the desk AND /sd/scenes")
     )
-    # The card is 31 GB. Printed for symmetry, not as a limit: the only
-    # ceiling the SD build has is decode load, and §12.13 measured 96 kbps
-    # clean on this chip.
-    if card_bitrate(cfg) != cfg["bitrate"]:
+    # The card is 31 GB, so no budget line: the only ceiling the show has is
+    # decode load, and §12.13 measured 96 kbps clean on this chip.
+    if second:
         ctotal = sum(f.stat().st_size for f in card_dir().glob("[0-9][0-9]_*.mp3"))
         print(
-            f"card  (SD)  {card_bitrate(cfg):>3} kbps  {ctotal / 1024:>6.0f}K  "
-            f"streamed off the card — no budget"
+            f"card  {card_bitrate(cfg):>3} kbps  {ctotal / 1024:>6.0f}K  "
+            f"-> /sd/scenes (make publish) — streamed, no budget"
         )
     return 0
 

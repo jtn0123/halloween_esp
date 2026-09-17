@@ -15,11 +15,10 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from studio_tracks import SRC_DIR
+from track_lib import SRC_DIR, TRACKS
 
 ROOT = Path(__file__).resolve().parent.parent
 # Same override as import_track/manifest: the sandbox env names the library.
-TRACKS = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks"))
 
 
 def convert(src: Path, out: Path, o: dict[str, Any]) -> None:

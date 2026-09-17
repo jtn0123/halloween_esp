@@ -40,14 +40,12 @@ class TestGenEsphomeMain(unittest.TestCase):
 
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp())
-        # EVERY module-level output path must be redirected here. MEDIA_OUT was
-        # forgotten when it was added, and these tests then wrote their two
-        # fixture scenes into the real firmware/generated/media_files.yaml —
-        # which broke the next firmware build with "cannot find 01_a.mp3".
         # EVERY module-level output path, checked against the module rather
-        # than listed by hand — the list went stale twice (MEDIA_OUT when it
-        # was added, then RIG_OUT and LIGHTS_OUT), and both times these tests
-        # wrote their two fixture scenes into the real firmware/generated/.
+        # than listed by hand — the list went stale twice (the media manifest
+        # when it was added, then RIG_OUT and LIGHTS_OUT), and both times
+        # these tests wrote their two fixture scenes into the real
+        # firmware/generated/, which broke the next firmware build with
+        # "cannot find 01_a.mp3".
         # test_every_output_path_is_redirected below is what keeps it honest.
         self._saved = {name: getattr(ge, name) for name in OUTPUT_PATHS}
         # The generator narrates ("wrote …", "note: …"); keep -q output clean.
@@ -93,6 +91,12 @@ class TestGenEsphomeMain(unittest.TestCase):
             ["scene_a", "scene_b", "scene_stop", "run_scene", "show_playlist"],
         )
 
+    def test_fallback_scene_ids_are_generated_from_the_show(self) -> None:
+        self.assertEqual(ge.main(), 0)
+        text = ge.FALLBACK_SCENES_OUT.read_text()
+        self.assertIn("'a'", text)
+        self.assertIn("'b'", text)
+
     def test_blackout_script_clears_every_zone(self) -> None:
         """One call has to be enough to make the whole castle go dark."""
         ge.main()
@@ -134,6 +138,27 @@ class TestGenEsphomeMain(unittest.TestCase):
         for sid in ("scene_a", "scene_b"):
             self.assertIn(f"id({sid})->stop();", lam)
         self.assertLess(lam.index("->stop();"), lam.index('"halt"'))
+
+    def test_run_scene_hands_the_strips_back_to_show_except_on_halt(self) -> None:
+        """A colour or "off" from the desk takes the strips off the Show
+        effect; until 2026-09-14 nothing gave them back before a reboot, so
+        every scene ran dark after a channel test. run_scene relights any
+        zone that is off or on another effect — and "halt" (the /api/play
+        path, which must leave the lights alone) is excluded."""
+        ge.main()
+        doc = yaml.safe_load(ge.OUT.read_text())
+        lam = next(s for s in doc["script"] if s["id"] == "run_scene")["then"][0][
+            "lambda"
+        ]
+        guard = lam[lam.index('if (scene != "halt")') : lam.index('if (scene == "a")')]
+        self.assertIn('id(lights_override)->execute("show")', guard)
+        self.assertIn('z->get_effect_name() != "Show"', guard)
+        self.assertIn("!z->remote_values.is_on()", guard)
+        for z in ZONES:
+            self.assertIn(f"id(zone_{z['id']})", guard)
+        # After the stops, before any scene starts: the relight is never
+        # overtaken by a scene's first frame.
+        self.assertLess(lam.rindex("->stop();"), lam.index('if (scene != "halt")'))
 
     def test_max_volume_caps_every_scene_and_reaches_rig_h(self) -> None:
         """hardware.audio.max_volume is the porch's measured ceiling: a scene

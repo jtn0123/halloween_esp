@@ -62,24 +62,37 @@ export const channelsOf = (raw: string): 1 | 2 => (+raw === 2 ? 2 : 1);
 export const mmss = (s: number): string =>
   `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
-/* One real ceiling left, and the readout shows the arithmetic:
+/* No ceiling left at all, and the readout says so rather than inventing one.
 
-     ~2.9 MB  flash left for ALL scenes after the firmware. This is what the
-              flash build (firmware/castle_flash.yaml) has to fit the show in.
+   It used to show the arithmetic of ~2.9 MB of flash shared by every scene,
+   because the all-in-flash build had to fit the show inside one app
+   partition. That build was retired on 2026-09-01 (PROJECT_NOTES §12.15) —
+   the show's real songs did not fit at any listenable bitrate — so there is
+   no flash figure to count down from any more.
 
-   The SD build has no per-track cap anymore. This line spent one evening
-   claiming "streamed from SD: no limit" when streaming did not exist, and the
-   next claiming "under 4 min" after the loopback stream removed the PSRAM
-   ceiling — wrong in both directions, each verified against the device. The
-   truth today: /api/play and the scene scripts hand the media pipeline a
-   http://127.0.0.1/sd/... URL (firmware/sd_web_site.h) and it streams; length
-   is bounded by the card. */
+   This line spent one evening claiming "streamed from SD: no limit" when
+   streaming did not exist, and the next claiming "under 4 min" after the
+   loopback stream removed the PSRAM ceiling — wrong in both directions, each
+   verified against the device. The truth today: /api/play and the scene
+   scripts hand the media pipeline a http://127.0.0.1/sd/... URL
+   (firmware/sd_web_site.h) and it streams; length is bounded by the card.
+
+   The 2.9 MB figure survives as the counterfactual half of the readout below,
+   and nowhere else. */
 const FLASH_FREE = 2.9 * 1024 * 1024;
 
 /**
  * The capacity line, as HTML.
  *
- * @param usedBytes what the scenes already in the show cost in flash.
+ * The card half is the live answer. The flash half is a counterfactual and
+ * says so — the same one the budget panel keeps (budget.ts): how long this
+ * import could have been back when the show had to live in the app
+ * partition. It is worth a few characters because it is the only place the
+ * desk shows WHY the castle reads off a card, and because a number that
+ * shrinks as the show grows still tells you something about the bitrate you
+ * just picked.
+ *
+ * @param usedBytes what the scenes already in the show weigh.
  */
 export function capacityHtml(bitrate: string, channels: string,
                              usedBytes: number): string {
@@ -88,12 +101,13 @@ export function capacityHtml(bitrate: string, channels: string,
   const bps = kbps * 1000 / 8;          // the bitrate already covers channels
   const left = Math.max(0, (FLASH_FREE - usedBytes) / bps);
   return `<b>${kbps} kbps ${ch === 2 ? "stereo" : "mono"}</b> = ${(bps / 1024).toFixed(1)} KB/s &nbsp;·&nbsp; `
-    + `<span title="firmware/castle_flash.yaml — every scene shares this">`
-    + `flash build, alongside the current show: <b>${mmss(left)}</b></span> &nbsp;·&nbsp; `
+    + `<span title="the castle that embedded its audio, retired 2026-09-01 `
+    + `(PROJECT_NOTES §12.15) — every scene shared one 2.9 MB partition">`
+    + `if it were in flash, alongside the current show: <b>${mmss(left)}</b></span> &nbsp;·&nbsp; `
     + `<span title="firmware/castle_sd.yaml — tracks stream off the card through `
     + `the device's own web server, so length is bounded by the 32 GB card, `
     + `not by memory">`
-    + `SD build: <span class="ok">any length (streams)</span></span>`;
+    + `on the card: <span class="ok">any length (streams)</span></span>`;
 }
 
 /**

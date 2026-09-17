@@ -20,20 +20,24 @@ hardware:
   rgb_order: GRB
   audio:
     sample_rate: 44100
-    # TWO bitrates, because the two builds have nothing in common here.
+    # TWO bitrates, for two different destinations.
     #
-    # `bitrate` is what castle_flash.yaml EMBEDS. That build carries every
-    # scene inside the image, so it is bounded by the 2.9 MB the single-app
-    # partition leaves after firmware — 32 kbps is 46% of it, 96 kbps would
-    # be 138% and the build would simply not fit. It stays low so the
-    # no-card fallback keeps working.
+    # `card_bitrate` is what the CASTLE plays: audio/card/*.mp3, which
+    # sd_sync pushes to /sd/scenes and the device streams off a 31 GB card.
+    # 96 kbps is what the show was tuned at, and PROJECT_NOTES §12.13
+    # measured it decoding on this exact chip with zero underruns, zero
+    # decode errors and zero blocking warnings. This is the one that matters.
     #
-    # `card_bitrate` is what castle_sd.yaml STREAMS off a 31 GB card, where
-    # that budget does not exist and never did. 32 kbps was only ever a
-    # flash compromise: measured, it brickwalls the show at ~6 kHz, which is
-    # telephone quality and audibly so. 96 kbps is what the show was tuned
-    # at, and PROJECT_NOTES §12.13 measured it decoding on this exact chip
-    # with zero underruns, zero decode errors and zero blocking warnings.
+    # `bitrate` is the smaller render, audio/*.mp3. It existed because
+    # castle_flash.yaml embedded every scene in a 2.9 MB partition — 32 kbps
+    # is 46% of it, 96 kbps would have been 138% and the build would not fit.
+    # That build was retired on 2026-09-01 (PROJECT_NOTES §12.15) and nothing
+    # embeds these any more; what still reads them is the cue desk page,
+    # which inlines every scene as a data URI and has a 4 MB budget of its
+    # own (tools/previewer_budget.py). So the number stays low for a
+    # different reason than it was chosen for. Measured, 32 kbps brickwalls
+    # the show at ~6 kHz — telephone quality, and audibly so — which is
+    # tolerable in a browser preview and was never tolerable on the porch.
     bitrate: 32
     card_bitrate: 96
     # Mono on purpose, and it is full level: both amps have SD pinned LEFT
@@ -89,18 +93,18 @@ palette:
   green:  [0.14, 1.00, 0.42]
   flame:  [1.00, 0.42, 0.09]
 
-# ── THE CEILING (grade report A2/G2, decided 2026-08-23) ────────────────
+# ── THE CEILING (grade report 2026-08-23 A2/G2) ─────────────────────────
 # Scenes are COMPILE-TIME objects: each one becomes a generated ESPHome
 # script and costs ~9 KB of the S2's static RAM (dram0), which sits at
 # ~88% of 172,032 bytes after the tenth scene. Budget: **at most 12 scenes**
 # on this board. The weekly CI firmware compile alarms at 92% dram0; if the
 # show needs more scenes than that, the next step is the card-loaded cue
-# format sketched in the grade report (one interpreter, N scenes, flat RAM)
-# — not a thirteenth script. Each song scene also adds ~1.2 MB to the
-# committed inlined page (tests/test_gen_previewer.py budgets it).
+# format sketched in grade report 2026-08-23 A2 (one interpreter, N scenes,
+# flat RAM) — not a thirteenth script. Each song scene also adds ~1.2 MB to
+# the committed inlined page (tests/test_gen_previewer.py budgets it).
 #
-# THAT CEILING IS NOW THE RULE THIS FILE ANSWERS TO (grade report A8,
-# 2026-08-31). The repo's 500-line cap no longer applies here: this file is
+# THAT CEILING IS NOW THE RULE THIS FILE ANSWERS TO (grade report 2026-08-31
+# A8). The repo's 500-line cap no longer applies here: this file is
 # data, and a line count was about to block *content* — one more scene and
 # `make check` would have failed for a reason that has nothing to do with
 # what the board can hold. So scenes/scenes.yaml is exempt from the cap in

@@ -1,12 +1,18 @@
-"""Native-API leg of the castle bridge, for builds that serve no HTTP.
+"""Native-API leg of the castle bridge, for a castle that is not answering HTTP.
 
-castle_link speaks HTTP first because the SD build answers it. The
-all-in-flash build exposes only ESPHome's native API (port 6053) — so when
-port 80 is closed, castle_link hands the same four desk verbs to this
-module instead: status, scene, stop, volume. Each maps onto entities the
-flash firmware already has (the scene__* buttons, the media player, the
+castle_link speaks HTTP first because the castle build answers it. When port
+80 is closed it hands the same four desk verbs to this module instead, over
+ESPHome's native API on 6053: status, scene, stop, volume. Each maps onto
+entities every build already has (the scene__* buttons, the media player, the
 current_scene/current_track text sensors), so the firmware needs nothing
 added — and the OTA slot budget stays untouched.
+
+It was written for the all-in-flash build, which exposed 6053 and nothing
+else. That build is gone (2026-09-01 — docs/notes/03-build.md §12.15) and
+this leg is now a fallback rather than a second protocol: it is what still
+reaches a board whose web server has not come up, or has fallen over, while
+the native API is fine. Nothing routine depends on it, which is why the
+library it needs stays optional below.
 
 One daemon thread owns an asyncio loop and a persistent connection that
 reconnects by itself; the callers here are the studio's synchronous HTTP
@@ -24,10 +30,10 @@ from typing import Any
 try:
     import aioesphomeapi
 except ModuleNotFoundError:  # pragma: no cover — exercised by CI, not here
-    # OPTIONAL. This leg only matters for the all-in-flash build, which serves
-    # no HTTP; the SD build on the porch, the emulator and every test reach the
-    # castle over port 80. A studio without the library still serves the desk
-    # and relays everything — it just cannot talk to a flash-only castle, and
+    # OPTIONAL. This leg only matters for a castle that is not answering on
+    # port 80; the porch build, the emulator and every test are reached over
+    # HTTP. A studio without the library still serves the desk and relays
+    # everything — it just has no fallback when port 80 goes quiet, and
     # `connected()` says so rather than the import taking the server down
     # (CI installs numpy/scipy/pyyaml and nothing else, and hit exactly that).
     aioesphomeapi = None  # type: ignore[assignment]

@@ -30,7 +30,7 @@ export const val = (id: string): string => input(id)?.value.trim() ?? "";
  * its own innerHTML reaches back into that subtree by class. Those used to
  * be raw `root.querySelector(...)!` — the non-null assertion re-creating
  * exactly the TypeError `req` exists to prevent, only now with the selector
- * nowhere in the message (grade report C4/C5). `sel` when absence is an
+ * nowhere in the message (grade report 2026-08-31 C4/C5). `sel` when absence is an
  * ordinary state, `reqIn` when the panel cannot work without it.
  *
  * `root` is a ParentNode, so an element subtree, a DocumentFragment or the

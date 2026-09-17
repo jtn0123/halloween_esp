@@ -5,8 +5,8 @@
 //
 // Embedded in flash, not on the card, on purpose: this is the page you need
 // most exactly when things are going wrong, so it must survive a missing or
-// unreadable SD. Reached at /remote — the QR on the eInk panel lands on the
-// full desk, and the desk links here; or bookmark it directly.
+// unreadable SD. Reached at /remote — the desk links here; or bookmark it
+// directly.
 //
 // Every control is one POST to an API the desk already uses. No state lives
 // here beyond the show button's label, refreshed from /api/status.
@@ -21,12 +21,12 @@ namespace castle_web {
 // looping until told to stop. The script itself is generated into
 // scenes.yaml; these just flip it.
 inline esp_err_t h_show_start(httpd_req_t *req) {
-  set_pending(SHOW, "1");
+  set_pending(ActionType::SHOW, "1");
   return reply_json(req, "{\"queued\":true}");
 }
 
 inline esp_err_t h_show_stop(httpd_req_t *req) {
-  set_pending(SHOW, "0");
+  set_pending(ActionType::SHOW, "0");
   return reply_json(req, "{\"queued\":true}");
 }
 
@@ -35,7 +35,7 @@ inline esp_err_t h_show_stop(httpd_req_t *req) {
 // browser bookmark, because the night you need this is the night you are
 // not going to type curl flags.
 inline esp_err_t h_blackout(httpd_req_t *req) {
-  set_pending(BLACKOUT, "");
+  set_pending(ActionType::BLACKOUT, "");
   return reply_json(req, "{\"queued\":true}");
 }
 

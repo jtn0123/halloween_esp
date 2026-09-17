@@ -292,57 +292,5 @@ class TestDensityFitting(unittest.TestCase):
         self.assertEqual(it.fit_to_density(same, 0.9), (0.9, 1.0))
 
 
-class TestStudioMedia(unittest.TestCase):
-    """Probe and waveform, without standing up a server."""
-
-    tmp: Path
-    wav: Path
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        sys.path.insert(0, str(ROOT / "tools"))
-        cls.tmp = Path(tempfile.mkdtemp())
-        cls.wav = cls.tmp / "w.wav"
-        make_click_track(cls.wav, seconds=5.0)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        shutil.rmtree(cls.tmp, ignore_errors=True)
-
-    def test_waveform_shape(self) -> None:
-        import studio_media as sm
-
-        d = sm.waveform(self.wav, buckets=200)
-        self.assertAlmostEqual(d["duration"], 5.0, delta=0.1)
-        self.assertEqual(len(d["peaks"]), 200)
-        self.assertLessEqual(max(d["peaks"]), 1.0)
-        self.assertAlmostEqual(
-            max(d["peaks"]),
-            1.0,
-            delta=1e-6,
-            msg="peaks should be normalised to the loudest",
-        )
-
-    def test_waveform_includes_onsets(self) -> None:
-        import studio_media as sm
-
-        d = sm.waveform(self.wav)
-        self.assertIn("onset_low", d["onsets"])
-        for t, v, *rest in d["onsets"]["onset_low"]:
-            self.assertGreaterEqual(t, 0.0)
-            self.assertLessEqual(v, 1.0)
-            # The optional third element is the hit's pan, -1..1. The test
-            # fixture is mono, so any pan present must read centre.
-            for pan in rest:
-                self.assertEqual(pan, 0.0)
-
-    def test_probe_rejects_non_links_without_touching_the_network(self) -> None:
-        import studio_media as sm
-
-        r = sm.probe("not a url")
-        self.assertFalse(r["ok"])
-        self.assertIn("link", r["error"])
-
-
 if __name__ == "__main__":
     unittest.main(verbosity=2)

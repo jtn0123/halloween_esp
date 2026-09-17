@@ -25,7 +25,7 @@ use castle_core::filters::Modes;
 use castle_core::jsonio::{self, Json};
 use castle_core::master;
 use castle_core::onsets::sens3;
-use castle_core::scene::{render_scene_full, Ev, RenderErr, Track};
+use castle_core::scene::{Ev, RenderErr, Track, render_scene_full};
 use std::io::Read;
 
 fn die(msg: &str, code: i32) -> ! {

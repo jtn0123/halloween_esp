@@ -218,4 +218,167 @@ mod tests {
         );
         assert_eq!(basenames("word /tmp/у/f.mp3"), "word f.mp3");
     }
+
+    /// Each of these is a failure someone will actually hit — a private
+    /// link, one pasted from a members-only stream, a typo'd URL — and each
+    /// has to come back as a sentence rather than as
+    /// `ERROR: [youtube] abc: Private video. Sign in…`.
+    #[test]
+    fn every_known_failure_becomes_a_sentence() {
+        let cases: [(&str, &str); 9] = [
+            (
+                "ERROR: [youtube] abc: Private video. Sign in if you've been granted access",
+                "That video is private.",
+            ),
+            (
+                "ERROR: [youtube] abc: Video unavailable",
+                "That video is unavailable.",
+            ),
+            (
+                "ERROR: [youtube] abc: Sign in to confirm you're not a bot",
+                "That video needs a signed-in account.",
+            ),
+            (
+                "ERROR: [youtube] abc: Join this channel: members-only content",
+                "That video is members-only.",
+            ),
+            (
+                "ERROR: 'not a link' is not a valid URL",
+                "That does not look like a link.",
+            ),
+            (
+                "ERROR: Unsupported URL: https://example.invalid/thing",
+                "Nothing here knows how to read that link.",
+            ),
+            (
+                "ERROR: unable to download: HTTP Error 404: Not Found",
+                "That link is a dead end (404).",
+            ),
+            (
+                "no audio file was produced",
+                "The download produced no audio.",
+            ),
+            (
+                "ERROR: Requested format is not available",
+                "No audio-only format was offered for that video.",
+            ),
+        ];
+        for (raw, friendly) in cases {
+            let log = ["[youtube] abc".to_string(), raw.to_string()];
+            assert_eq!(explain(&log), friendly, "not translated: {raw}");
+        }
+    }
+
+    /// yt-dlp's wording drifts between releases and its capitalisation
+    /// drifts with it; matching on case would quietly stop translating.
+    #[test]
+    fn the_match_ignores_case() {
+        assert_eq!(
+            explain(&["error: PRIVATE VIDEO".to_string()]),
+            "That video is private."
+        );
+    }
+
+    /// A run can print several ERRORs and survive the first few. The last
+    /// one is the one that killed it, and the `ERROR:` prefix is shell
+    /// bookkeeping the operator does not need.
+    #[test]
+    fn an_unknown_failure_falls_back_to_the_last_error_line() {
+        let log = [
+            "[youtube] fine".to_string(),
+            "ERROR: first thing went wrong".to_string(),
+            "still going".to_string(),
+            "ERROR: the thing that actually killed it".to_string(),
+        ];
+        assert_eq!(explain(&log), "the thing that actually killed it");
+    }
+
+    /// "ERROR" can appear mid-sentence with no prefix to strip; cutting on
+    /// a colon that is not there would leave an empty message.
+    #[test]
+    fn the_fallback_keeps_the_whole_line_when_there_is_no_prefix() {
+        assert_eq!(
+            explain(&["something ERROR happened".to_string()]),
+            "something ERROR happened"
+        );
+    }
+
+    /// Progress output is not a failure. A log of nothing but downloads
+    /// has no verdict in it, and inventing one would mark a healthy job
+    /// broken.
+    #[test]
+    fn a_log_with_no_error_explains_nothing() {
+        assert_eq!(explain(&["[download] 100% of 2MiB".to_string()]), "");
+    }
+
+    /// Judge B, grade report 2026-08-31 JB1-10: ffmpeg and demucs failures
+    /// reached the operator as "import failed (exit 1)" or as a raw
+    /// traceback. The last line of a traceback names the program that
+    /// actually failed, which is the only part worth showing.
+    #[test]
+    fn a_traceback_names_the_program_that_failed() {
+        let log = [
+            "Traceback (most recent call last):".to_string(),
+            "  File \"tools/import_track.py\", line 450, in _import".to_string(),
+            "    x = ana.load_audio(out)".to_string(),
+            "subprocess.CalledProcessError: Command '['ffmpeg', '-v', 'quiet', \
+             '-i', '/private/tmp/x/jb_drop.mp3']' returned non-zero exit status 1."
+                .to_string(),
+        ];
+        assert_eq!(explain(&log), "ffmpeg failed (exit 1)");
+    }
+
+    /// import_track's own SystemExit sentences are already written for a
+    /// person; they must come through whole instead of being replaced by a
+    /// generic exit code.
+    #[test]
+    fn the_last_meaningful_line_is_the_fallback() {
+        let log = [
+            "fetching x".to_string(),
+            "[download] 100% of 1MiB".to_string(),
+            "clip.wav doesn't look like playable audio — ffmpeg could not \
+             convert it (exit 1)"
+                .to_string(),
+        ];
+        assert_eq!(explain(&log), log[2]);
+    }
+
+    /// /private/tmp/…/_upload/x.wav tells an operator nothing that x.wav
+    /// does not, and the prefix is the part that makes the line too long
+    /// for the box it lands in.
+    #[test]
+    fn paths_come_back_as_basenames() {
+        assert_eq!(
+            explain(&["no such file: /private/tmp/abc/_upload/jb.wav".to_string()]),
+            "no such file: jb.wav"
+        );
+        assert_eq!(
+            basenames("see https://youtu.be/abc/def then /a/b/c.wav"),
+            "see https://youtu.be/abc/def then c.wav"
+        );
+    }
+
+    /// A missing tool is the one failure the operator can fix in one
+    /// command, so the message says which command.
+    #[test]
+    fn missing_demucs_and_ffmpeg_are_sentences() {
+        assert!(
+            explain(&["ModuleNotFoundError: No module named 'demucs'".to_string()])
+                .contains("Demucs is not installed")
+        );
+        let missing_ffmpeg =
+            "FileNotFoundError: [Errno 2] No such file or directory: 'ffmpeg'".to_string();
+        assert!(explain(&[missing_ffmpeg]).contains("ffmpeg is not installed"));
+    }
+
+    /// The synchronous paths have no job to read a log off — they hand
+    /// over the child's whole output in one string, blank lines and all.
+    #[test]
+    fn reason_takes_the_sync_paths_whole_output() {
+        let text = "x\n\nTraceback (most recent call last):\n\
+             subprocess.CalledProcessError: Command '['ffmpeg']' \
+             returned non-zero exit status 1.\n";
+        assert_eq!(reason(text), "ffmpeg failed (exit 1)");
+        assert_eq!(reason(""), "");
+    }
 }

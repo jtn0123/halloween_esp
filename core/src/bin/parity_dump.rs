@@ -12,7 +12,7 @@
 //! rig.h) and core a string of 0/1. The parity test builds it from
 //! tools/rig_layout.py, the same source the firmware tables come from.
 
-use castle_core::{apply_overlay, fbm, flash_gate, hash3, hashi, render, vnoise, Fixture};
+use castle_core::{Fixture, apply_overlay, fbm, flash_gate, hash3, hashi, render, vnoise};
 
 struct Lcg(u32);
 
@@ -98,9 +98,25 @@ fn main() {
         let gate = flash_gate(mode as i32, p as i32, zi as i32, epoch as i32, fx);
         println!(
             "{{\"kind\":\"px\",\"eff\":{},\"pal\":{},\"hue\":{:?},\"soft\":{},\"t\":{:?},\"zi\":{},\"p\":{},\"ov\":{},\"mode\":{},\"epoch\":{},\"seed\":{:?},\"base\":[{:?},{:?},{:?},{:?}],\"ovl\":[{:?},{:?},{:?},{:?}],\"gate\":{:?}}}",
-            eff, pal, hue as f64, if soft { 1 } else { 0 }, t as f64, zi, p, ov, mode,
-            epoch, seed_f as f64, base.r as f64, base.g as f64, base.b as f64,
-            base.w as f64, ovl.r as f64, ovl.g as f64, ovl.b as f64, ovl.w as f64,
+            eff,
+            pal,
+            hue as f64,
+            if soft { 1 } else { 0 },
+            t as f64,
+            zi,
+            p,
+            ov,
+            mode,
+            epoch,
+            seed_f as f64,
+            base.r as f64,
+            base.g as f64,
+            base.b as f64,
+            base.w as f64,
+            ovl.r as f64,
+            ovl.g as f64,
+            ovl.b as f64,
+            ovl.w as f64,
             gate as f64,
         );
     }

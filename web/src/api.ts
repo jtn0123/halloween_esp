@@ -224,7 +224,7 @@ export const api = {
   },
 
   /* The five calls below moved here from device.ts / device_panel.ts
-     (grade report A4): one shared timeout convention, one place the wire
+     (grade report 2026-08-23 A4): one shared timeout convention, one place the wire
      shapes are cast, no bespoke error path per call site. */
 
   /** The probe that decides simulator-vs-device. The raw Response — the

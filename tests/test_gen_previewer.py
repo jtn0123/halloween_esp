@@ -296,7 +296,7 @@ class TestInjection(unittest.TestCase):
 
 class TestLeanRewrite(unittest.TestCase):
     """lean() serves two masters: the studio's /studio/scene-audio/<id> and
-    the device's /site/<sid>.mp3 (grade report A5/G1)."""
+    the device's /site/<sid>.mp3 (grade report 2026-08-23 A5/G1)."""
 
     HTML = '{"vigil": "data:audio/mpeg;base64,AAAA", "storm": "data:audio/mpeg;base64,BB=="}'
 

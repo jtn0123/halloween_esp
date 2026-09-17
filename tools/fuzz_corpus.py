@@ -62,10 +62,14 @@ ATOMS = [
     "%0d",
 ]
 
-#: Decoded bytes the fuzz keeps OFF the card: the firmware's unescaped JSON
-#: listing breaks on them (a reported firmware bug; see
-#: tests/test_firmware_contract.py). Names holding them are only DELETEd.
-POISON = b'"\\' + bytes(range(0x20))
+#: Decoded bytes that would break the firmware's unescaped JSON listing if
+#: a name holding one ever reached it: a quote, a backslash, a control byte,
+#: DEL — and the whole high half, which json_escape passes through raw and
+#: which therefore makes the body invalid UTF-8 (grade report 2026-09-06 J1).
+#: safe_name refuses every one of them at the door since v5.46, so this set
+#: is no longer a list of names to avoid sending — it is the oracle's claim
+#: about what the door must refuse.
+POISON = b'"\\' + bytes(range(0x20)) + bytes(range(0x7F, 0x100))
 
 #: The only 5xx bodies the firmware is allowed to produce; anything else
 #: with a 5xx code is a finding.
@@ -110,15 +114,10 @@ BODY_SIZES = [0, 1, 8191, 8192, 8193, 65536]
 
 def poisoned_text(n: bytes) -> bool:
     """Would this name, snprintf'd raw into the firmware's JSON, break it?
-    Quotes, backslashes, control bytes — and bytes that are not UTF-8,
-    which no JSON parser will take either."""
-    if any(b in POISON for b in n):
-        return True
-    try:
-        n.decode("utf-8")
-    except UnicodeDecodeError:
-        return True
-    return False
+    Quotes, backslashes, control bytes, DEL — and anything over ASCII,
+    which either is not UTF-8 at all or stops being UTF-8 the moment the C
+    truncates it at a length or a NUL. No JSON parser takes either."""
+    return any(b in POISON for b in n)
 
 
 def name(rng: random.Random) -> str:

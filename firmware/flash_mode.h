@@ -5,12 +5,17 @@
 // moment the castle is on a porch and you are not in the same building — and
 // it has already blocked work twice.
 //
-// Neither usual escape hatch is available here. There is no USB serial
-// console (the ESP32-S2 has no USB Serial/JTAG peripheral, so the application
-// never enumerates a port), and OTA is off because the embedded audio makes
-// the binary too large for two app slots.
+// OTA is the normal way in (PUT /api/ota, `make ota`) and has been since the
+// all-in-flash build was retired: the SD build fits its slot with room to
+// spare. This is the LAST resort, for when the network is gone and the
+// application is the only thing still answering. On the ESP32-S2 Feather it
+// is also the only other way: that chip has no USB Serial/JTAG peripheral, so
+// the application never enumerates a port. The ESP32-S3 carrier has the
+// peripheral and a console on it (castle_s3.yaml); this button is still
+// nearer than the porch.
 //
-// But the ROM bootloader checks a bit in an always-on RTC register during
+// The ROM bootloader, S2 and S3 alike, checks a bit in an always-on RTC
+// register during
 // early boot. That register survives a software reset, so setting it and
 // restarting brings the chip up in download mode with its USB bootloader
 // enumerated, ready for esptool over the wire.
@@ -47,6 +52,17 @@ inline void reboot_to_download_mode() {
 /// connecting proves everything the NEXT update depends on: the chip booted,
 /// WiFi associated, and the API answers. Confirming at boot instead would
 /// happily bless a brick.
+///
+/// v5.60 adds a SECOND trigger, for the same reason and on the same terms:
+/// the first /api/status the web server answers (castle_sd_common.yaml's
+/// 200 ms interval watches castle_web::g_status_served). The native API
+/// client is a Home Assistant that this castle does not always have —
+/// nothing on the porch requires one — and a firmware delivered by
+/// PUT /api/ota to a castle with no HA was therefore never confirmed and
+/// rolled back on the next power cycle, silently undoing an update that
+/// worked. A served /api/status proves the identical chain: the chip
+/// booted, WiFi associated, and the very server the next OTA arrives
+/// through is answering. Still not at boot, still not on a timer.
 ///
 /// Only the first call does work; after that the partition is no longer
 /// pending and this is a cheap no-op.

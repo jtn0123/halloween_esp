@@ -6,10 +6,11 @@ import { join } from "node:path";
 /**
  * End-to-end tests for the cue desk.
  *
- * These drive the real page against the real tools/studio.py, because the bugs
- * worth catching here are the ones neither half sees alone: a button that
- * posts the wrong shape, a row that never redraws, a Play control that plays
- * nothing. The node tests cover the arithmetic; these cover the wiring.
+ * These drive the real page against the real studio server — castle-core's
+ * built `studio` binary — because the bugs worth catching here are the ones
+ * neither half sees alone: a button that posts the wrong shape, a row that
+ * never redraws, a Play control that plays nothing. The node tests cover the
+ * arithmetic; these cover the wiring.
  *
  * Two rules the suite is built around:
  *
@@ -70,19 +71,25 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 
   webServer: {
-    // CASTLE_PY names the interpreter (a worktree sharing the main
-    // checkout's venv, CI's runner python); the project venv otherwise.
-    // CASTLE_STUDIO_CMD swaps the SERVER wholesale — the Rust studio
-    // (core/target/release/studio) runs this same suite as its parity
-    // gate; the port and --localhost are appended either way.
+    // The server is the built Rust studio — the one production runs.
+    // `make e2e` rebuilds it first when cargo is present, so it is fresh.
+    // CASTLE_STUDIO_CMD is the escape hatch: it swaps the SERVER wholesale,
+    // for bisecting against an older build or driving the suite from
+    // somewhere the binary is not on this path. The port and --localhost
+    // are appended either way, and the fall-back below is "??", so an EMPTY
+    // value is not "absent" — it is a server command of "" and the suite
+    // fails to start rather than testing nothing.
     command: `${process.env.CASTLE_STUDIO_CMD
-      ?? `${process.env.CASTLE_PY ?? "../.venv/bin/python"} ../tools/studio.py`} ${PORT} --localhost`,
+      ?? "../core/target/release/studio"} ${PORT} --localhost`,
     url: `http://127.0.0.1:${PORT}/studio/tracks`,
     // A studio the user is already running is pointed at their real tracks,
     // which is exactly what this suite must not touch.
     reuseExistingServer: false,
     // CASTLE_HOST="" = explicitly castle-less: the stubs in the specs are the
-    // only castle, whether or not the real one is awake on the LAN.
+    // only castle, whether or not the real one is awake on the LAN. This map
+    // is merged over the environment, so CASTLE_PY still reaches the studio
+    // and names the interpreter its children run under — which a worktree
+    // sharing another checkout's venv, and CI's runner, both need.
     env: { CASTLE_TRACKS: TRACKS, CASTLE_SCENES: SCENES_FILE, CASTLE_HOST: "" },
     stdout: "pipe",
     stderr: "pipe",

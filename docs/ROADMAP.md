@@ -38,8 +38,8 @@ for firmware, version bump → OTA → /api/status confirm.
 
 ## Phase 4 — Device & show night (firmware, one OTA per feature)
 - [x] #24 eInk status screen: scene, uptime, SD free, QR to web remote
-      (shipped v5.11 2026-08-12; needs one eyeball check — if the text is
-      upside down, flip ROT180 in firmware/castle_eink.h)
+      (shipped v5.11 2026-08-12; REMOVED v5.44 2026-09-04 with the wing —
+      the web page shows all of it, and the carrier needs D6/D10)
 - [x] #19 Playlist/show mode (2026-08-13, v5.15): show: block, generated
       self-looping script, dark gaps between scenes, /api/show/start|stop,
       device-panel button. Verified advancing live.
@@ -75,4 +75,4 @@ and buttons. Jewels are ordered too (#30 unblocks on soldering).
   NeoPixel chain through a spare 74AHCT125 gate (few-meter run wants the
   shifter + twisted pair). Firmware: map presses to show start / stop /
   blackout APIs that already exist; drive button colours from the same
-  mirrored show state the eInk reads.
+  mirrored show state the web page reads.

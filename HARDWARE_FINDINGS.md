@@ -217,9 +217,12 @@ forced by the silkscreen order plus the CircuitPython board definition, but it
 is not a published table. **Check with a continuity meter before soldering.**
 
 Also: the eInk and SRAM chip selects share the card's SPI bus and we use
-neither. Both are driven HIGH at boot in `castle_sd.yaml` — a floating chip
-select is a device that may answer mid-transaction, which is the difference
-between "the card works" and "the card works most of the time".
+neither. Until v5.44 (2026-09-04) both were driven HIGH at boot in
+`castle_sd.yaml` — a floating chip select is a device that may answer
+mid-transaction, which is the difference between "the card works" and "the
+card works most of the time". v5.44 removed the panel and those two pins
+with it; the carrier board has no wing, so there is nothing left to hold
+high (`docs/WIRING.md`).
 
 ### Free GPIOs on this board
 

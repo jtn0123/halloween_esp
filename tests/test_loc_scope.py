@@ -30,8 +30,11 @@ import check_loc
 # EXEMPT_PATHS dict; a new entry here means a new generator exists.
 DOCUMENTED_GENERATED = {
     "firmware/generated/scenes.yaml",
+    "firmware/generated/fallback_scenes.h",
     "audio/markers.json",
     "web/package-lock.json",
+    "tests/golden/read_routes.json",
+    "tests/golden/scene_errors.json",
 }
 
 # The second exemption, and the only kind of file that may take it: data the

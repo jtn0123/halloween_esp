@@ -136,23 +136,57 @@ class TestRmtBudget(unittest.TestCase):
         )
 
     def test_a_long_strip_can_be_given_a_second_block(self) -> None:
-        zones = self.zones(door=128)
+        """A zone's appetite reaches the emitted strip verbatim. Shown on a
+        two-zone rig: on the real three the status pixel already holds the
+        fourth block, which is the trade the next test is about."""
+        zones = [z for z in self.zones(door=128) if z["id"] != "towerR"]
         lights = yaml.safe_load(gen_rig.emit_lights(LAYOUTS, zones, PER))["light"]
         got = {s["id"]: s["rmt_symbols"] for s in lights}
         self.assertEqual(got["zone_door"], 128)
         self.assertEqual(got["zone_towerL"], 64)
 
-    def test_the_leftover_blocks_are_stated(self) -> None:
-        """The SD build's status pixel needs one of them, so the number is
-        not decoration — it is the reason that pixel can exist."""
-        self.assertIn(
-            "192 of 256 symbols spent, 1 block(s) spare",
-            gen_rig.emit_lights(LAYOUTS, ZONES, PER),
+    def test_the_leftover_blocks_are_stated_with_the_pixel_counted(self) -> None:
+        """The banner is the only place this budget is ever read, so it has
+        to name every consumer. The status pixel is the fourth and the one
+        this generator does not write (castle_sd.yaml does, by hand), which
+        is why three 64-symbol strips leave nothing rather than one spare
+        block. Until 2026-09-06 the banner offered that block to a fourth
+        strip and the pixel lost it silently — grade report 2026-09-06 J2."""
+        text = gen_rig.emit_lights(LAYOUTS, ZONES, PER)
+        self.assertIn("256 of 256 symbols spent", text)
+        self.assertIn("status pixel (1 block, castle_sd.yaml)", text)
+        self.assertIn("0 block(s) spare", text)
+
+    def test_the_reservation_is_what_the_last_block_goes_to(self) -> None:
+        """check_rmt_budget's arithmetic, both ways round: the strips leave
+        one block, and the reservation takes exactly it."""
+        self.assertEqual(gen_rig.check_rmt_budget(ZONES, LAYOUTS), gen_rig.RMT_BLOCK)
+        self.assertEqual(
+            gen_rig.check_rmt_budget(
+                ZONES, LAYOUTS, reserved_blocks=gen_rig.STATUS_PIXEL_BLOCKS
+            ),
+            0,
         )
-        self.assertIn(
-            "256 of 256 symbols spent, 0 block(s) spare",
-            gen_rig.emit_lights(LAYOUTS, self.zones(door=128), PER),
-        )
+
+    def test_the_ring_flicker_fix_is_refused_while_the_pixel_exists(self) -> None:
+        """docs/ISSUE-ring-flicker.md prescribes `rmt_symbols: 128` on the
+        door to double its refill deadline, and calls it a straight trade
+        against the onboard status LED. The generator used to take that edit
+        without a word and ask the peripheral for 320 of its 256 symbols —
+        a strip that gets no channel and stays dark, which is the exact
+        failure this budget exists to prevent. Now it stops the build and
+        says whose block is in the way."""
+        with self.assertRaises(SystemExit) as e:
+            gen_rig.emit_lights(LAYOUTS, self.zones(door=128), PER)
+        msg = str(e.exception)
+        self.assertIn("status pixel", msg)
+        self.assertIn("castle_sd.yaml", msg)
+        self.assertIn("ESP32-S2 has 256", msg)
+
+    def test_giving_up_the_pixel_is_what_buys_the_second_block(self) -> None:
+        """The trade is real, not a wall: with nothing reserved the same rig
+        fits exactly, which is what dropping `status_pixel` would buy."""
+        self.assertEqual(gen_rig.check_rmt_budget(self.zones(door=128), LAYOUTS), 0)
 
     def test_overspending_the_peripheral_stops_the_build(self) -> None:
         with self.assertRaises(SystemExit) as e:

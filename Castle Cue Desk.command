@@ -24,7 +24,9 @@ fi
 
 # The project venv when it exists, else the python3 on PATH — the same rule
 # the Makefile and the commit hook use, so a checkout sharing another
-# clone's venv via CASTLE_PY still opens.
+# clone's venv via CASTLE_PY still opens. The server itself is Rust
+# (tools/studio_launch.sh); this python builds the page and is what the
+# server spawns for every rebuild afterwards.
 PY=${CASTLE_PY:-$(command -v .venv/bin/python || command -v python3)}
 if [ -z "$PY" ] || ! "$PY" -c "import numpy, yaml" 2>/dev/null; then
   echo "No usable python found (.venv missing?). Run 'make setup' once, then try again."
@@ -41,7 +43,7 @@ echo "Building the previewer..."
 }
 
 echo "Starting the cue desk on $URL"
-"$PY" tools/studio.py "$PORT" &
+tools/studio_launch.sh "$PORT" &
 SERVER_PID=$!
 
 # Wait for it to answer before opening the browser, so the page never loads

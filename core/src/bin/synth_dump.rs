@@ -259,11 +259,7 @@ fn main() {
                     .filter_map(|e| {
                         let f: Vec<&str> = e.split(':').collect();
                         let opt = |s: &&str| -> Option<f64> {
-                            if **s == *"-" {
-                                None
-                            } else {
-                                s.parse().ok()
-                            }
+                            if **s == *"-" { None } else { s.parse().ok() }
                         };
                         Some(scene::Ev {
                             synth: (*f.first()?).to_string(),

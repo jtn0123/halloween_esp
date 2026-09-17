@@ -33,9 +33,10 @@ exception for guests:
   own machine. A LAN guest poking at `--lan` must not get a free proxy into
   addresses only this machine can reach (the router's admin page, the castle).
   This is the one adversarial defence, and it is defence in depth only.
-- **`scrub()` in `tools/studio_http.py`** — control characters in anything a
+- **`scrub()` in `core/src/http_parse.rs`** — control characters in anything a
   request supplies are escaped before logging, so a crafted URL cannot forge a
-  log line.
+  log line. (It was `tools/studio_http.py` until that server retired;
+  docs/RETIREMENT.md.)
 - **`MAX_BODY`** — request bodies are bounded, and an oversized one drops the
   connection so its unread bytes are not parsed as the next request.
 - **Track ids** — letters, digits and underscore, every spelling, after an

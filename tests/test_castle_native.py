@@ -1,4 +1,4 @@
-"""castle_native against a mocked aioesphomeapi: the flash build's leg.
+"""castle_native against a mocked aioesphomeapi: the bridge's port-6053 leg.
 
 No device, no network: `aioesphomeapi.APIClient` is replaced by a fake
 whose connect/device_info/entities/state-stream are scripted per test. What

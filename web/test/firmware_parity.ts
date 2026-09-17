@@ -44,7 +44,7 @@ import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  EFFECTS, applyOverlay, flashGate, defaultParams, hashi, hash3, vnoise, fbm,
+  EFFECT_NAMES, EFFECTS, applyOverlay, flashGate, defaultParams, hashi, hash3, vnoise, fbm,
 } from "../src/effects.js";
 import type { EffectFn } from "../src/effects.js";
 import { fixture, layoutOf } from "../src/rig.js";
@@ -53,8 +53,19 @@ import type { Rgbw } from "../src/types.js";
 const ROOT = new URL("../..", import.meta.url).pathname;
 const SEED = Number(process.env.PARITY_SEED ?? 7);
 const CASES = Number(process.env.PARITY_CASES ?? 3000);
-const NAMES = ["off", "candle", "ember", "furnace", "spirit", "eyes", "seance",
-               "wisp", "mansion", "chill", "throb", "strobe", "blood"];
+/** The desk's own id-ordered list, not a copy typed here — the copy was the
+ *  one place a fourteenth effect could go unjudged (grade report 2026-09-06
+ *  D4). Every implemented effect must be in it, and the dump's meta row
+ *  must agree on the count, before a row is read. */
+const NAMES: readonly string[] = EFFECT_NAMES;
+{
+  const implemented = Object.keys(EFFECTS).sort().join(",");
+  const listed = [...NAMES].sort().join(",");
+  if (implemented !== listed) {
+    console.error(`FAIL — EFFECTS implements [${implemented}] but EFFECT_NAMES lists [${listed}]`);
+    process.exit(1);
+  }
+}
 /** Highest angular frequency (rad/s of t) each effect feeds a sine. */
 const OMEGA: Record<string, number> = { spirit: 1.15, seance: 0.80, chill: 0.50,
   throb: 7.4, strobe: 44, mansion: 0.38, eyes: 3.1, off: 0 };
@@ -98,6 +109,11 @@ if (build.status !== 0) {
 const run = spawnSync(bin, [String(SEED), String(CASES)], { encoding: "utf8", maxBuffer: 1 << 28 });
 if (run.status !== 0) { console.error(run.stderr); process.exit(1); }
 const rows = run.stdout.trim().split("\n").map((l) => JSON.parse(l) as Row);
+const meta = rows.find((r) => r.kind === "meta") as { effects?: number } | undefined;
+if (meta?.effects !== NAMES.length) {
+  console.error(`FAIL — firmware has ${meta?.effects} effects, the desk table ${NAMES.length}`);
+  process.exit(1);
+}
 
 /* ── which fixture each firmware zone index holds: scenes.yaml is what the
       generator baked rig.h from, so read the same block it read. ── */
@@ -290,6 +306,7 @@ console.log(`  hashi/hash3 bit-identical on ${nd.exact}/${nd.n} probes; vnoise m
 console.log("  effect      n    max|d|    mean|d|   class");
 for (const name of NAMES) {
   const s = perEff[name]!;
+  ok(s.n > 0, `${name}: the dump never rendered it — nothing was judged`);
   if (!s.n) continue;
   console.log(`  ${name.padEnd(9)} ${String(s.n).padStart(4)}  ${f(s.max)}  ${f(s.sum / s.n)}  `
     + (NOISE[name] ? "noise (frame-exact)" : name === "eyes" ? "noise+branch" : "smooth"));

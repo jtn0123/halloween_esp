@@ -7,6 +7,9 @@
 //! Rust studio's tracks.json is byte-identical to the Python studio's.
 //! Floats never take Python's 1e16+ exponent form here — nothing the studio
 //! serializes (durations, sizes, seconds) is anywhere near that range.
+//!
+//! This file is the TYPE and the writer; the reader is `jsonio_parse`,
+//! re-exported below so `jsonio::parse` still means what it always did.
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Json {
@@ -209,188 +212,10 @@ fn push_u(out: &mut String, cp: u32) {
     let _ = write!(out, "\\u{cp:04x}");
 }
 
-pub fn parse(s: &str) -> Result<Json, String> {
-    let b = s.as_bytes();
-    let mut i = 0usize;
-    let v = parse_val(b, &mut i)?;
-    skip_ws(b, &mut i);
-    if i != b.len() {
-        return Err(format!("trailing data at byte {i}"));
-    }
-    Ok(v)
-}
-
-fn skip_ws(b: &[u8], i: &mut usize) {
-    while *i < b.len() && matches!(b[*i], b' ' | b'\t' | b'\n' | b'\r') {
-        *i += 1;
-    }
-}
-
-fn parse_val(b: &[u8], i: &mut usize) -> Result<Json, String> {
-    skip_ws(b, i);
-    match b.get(*i) {
-        None => Err("unexpected end".to_string()),
-        Some(b'{') => {
-            *i += 1;
-            let mut o = Vec::new();
-            skip_ws(b, i);
-            if b.get(*i) == Some(&b'}') {
-                *i += 1;
-                return Ok(Json::Obj(o));
-            }
-            loop {
-                skip_ws(b, i);
-                let Json::Str(k) = parse_val(b, i)? else {
-                    return Err("object key is not a string".to_string());
-                };
-                skip_ws(b, i);
-                if b.get(*i) != Some(&b':') {
-                    return Err("missing ':'".to_string());
-                }
-                *i += 1;
-                o.push((k, parse_val(b, i)?));
-                skip_ws(b, i);
-                match b.get(*i) {
-                    Some(b',') => *i += 1,
-                    Some(b'}') => {
-                        *i += 1;
-                        return Ok(Json::Obj(o));
-                    }
-                    _ => return Err("missing ',' or '}'".to_string()),
-                }
-            }
-        }
-        Some(b'[') => {
-            *i += 1;
-            let mut a = Vec::new();
-            skip_ws(b, i);
-            if b.get(*i) == Some(&b']') {
-                *i += 1;
-                return Ok(Json::Arr(a));
-            }
-            loop {
-                a.push(parse_val(b, i)?);
-                skip_ws(b, i);
-                match b.get(*i) {
-                    Some(b',') => *i += 1,
-                    Some(b']') => {
-                        *i += 1;
-                        return Ok(Json::Arr(a));
-                    }
-                    _ => return Err("missing ',' or ']'".to_string()),
-                }
-            }
-        }
-        Some(b'"') => parse_str(b, i),
-        Some(b't') if b[*i..].starts_with(b"true") => {
-            *i += 4;
-            Ok(Json::Bool(true))
-        }
-        Some(b'f') if b[*i..].starts_with(b"false") => {
-            *i += 5;
-            Ok(Json::Bool(false))
-        }
-        Some(b'n') if b[*i..].starts_with(b"null") => {
-            *i += 4;
-            Ok(Json::Null)
-        }
-        Some(b'N') if b[*i..].starts_with(b"NaN") => {
-            *i += 3;
-            Ok(Json::Num(f64::NAN))
-        }
-        Some(b'I') if b[*i..].starts_with(b"Infinity") => {
-            *i += 8;
-            Ok(Json::Num(f64::INFINITY))
-        }
-        Some(b'-') if b[*i..].starts_with(b"-Infinity") => {
-            *i += 9;
-            Ok(Json::Num(f64::NEG_INFINITY))
-        }
-        Some(_) => {
-            let start = *i;
-            while *i < b.len() && matches!(b[*i], b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9') {
-                *i += 1;
-            }
-            let tok = std::str::from_utf8(&b[start..*i]).unwrap_or("");
-            if tok.is_empty() {
-                return Err(format!("unexpected byte at {start}"));
-            }
-            if tok.contains(['.', 'e', 'E']) {
-                tok.parse().map(Json::Num).map_err(|e| e.to_string())
-            } else {
-                match tok.parse::<i64>() {
-                    Ok(v) => Ok(Json::Int(v)),
-                    Err(_) => tok.parse().map(Json::Num).map_err(|e| e.to_string()),
-                }
-            }
-        }
-    }
-}
-
-fn parse_str(b: &[u8], i: &mut usize) -> Result<Json, String> {
-    *i += 1; // opening quote
-    let mut out = String::new();
-    loop {
-        match b.get(*i) {
-            None => return Err("unterminated string".to_string()),
-            Some(b'"') => {
-                *i += 1;
-                return Ok(Json::Str(out));
-            }
-            Some(b'\\') => {
-                *i += 1;
-                match b.get(*i) {
-                    Some(b'"') => out.push('"'),
-                    Some(b'\\') => out.push('\\'),
-                    Some(b'/') => out.push('/'),
-                    Some(b'b') => out.push('\u{8}'),
-                    Some(b'f') => out.push('\u{c}'),
-                    Some(b'n') => out.push('\n'),
-                    Some(b'r') => out.push('\r'),
-                    Some(b't') => out.push('\t'),
-                    Some(b'u') => {
-                        let hi = hex4(b, *i + 1)?;
-                        *i += 4;
-                        let cp = if (0xD800..0xDC00).contains(&hi)
-                            && b.get(*i + 1) == Some(&b'\\')
-                            && b.get(*i + 2) == Some(&b'u')
-                        {
-                            let lo = hex4(b, *i + 3)?;
-                            if (0xDC00..0xE000).contains(&lo) {
-                                *i += 6;
-                                0x10000 + ((hi - 0xD800) << 10) + (lo - 0xDC00)
-                            } else {
-                                hi
-                            }
-                        } else {
-                            hi
-                        };
-                        out.push(char::from_u32(cp).unwrap_or('\u{fffd}'));
-                    }
-                    _ => return Err("bad escape".to_string()),
-                }
-                *i += 1;
-            }
-            Some(_) => {
-                // Copy one UTF-8 scalar, however many bytes it takes.
-                let start = *i;
-                *i += 1;
-                while *i < b.len() && (b[*i] & 0xC0) == 0x80 {
-                    *i += 1;
-                }
-                out.push_str(&String::from_utf8_lossy(&b[start..*i]));
-            }
-        }
-    }
-}
-
-fn hex4(b: &[u8], at: usize) -> Result<u32, String> {
-    if at + 4 > b.len() {
-        return Err("short \\u escape".to_string());
-    }
-    let s = std::str::from_utf8(&b[at..at + 4]).map_err(|e| e.to_string())?;
-    u32::from_str_radix(s, 16).map_err(|e| e.to_string())
-}
+/// The reader half lives next door (`jsonio_parse`), split out when the
+/// nesting guard took this file past the 500-line rule. It is re-exported
+/// here so every caller keeps saying `jsonio::parse`.
+pub use crate::jsonio_parse::{MAX_DEPTH, parse};
 
 #[cfg(test)]
 mod tests {
@@ -419,16 +244,6 @@ mod tests {
             dumps_pretty(&v),
             "{\n  \"a\": [],\n  \"b\": {\n    \"z\": 24.0\n  }\n}"
         );
-    }
-
-    #[test]
-    fn parse_round_trips_and_reads_surrogates() {
-        let v = parse("{\"t\": \"\\ud83c\\udf83\", \"n\": 288000, \"f\": 1.5}").unwrap();
-        assert_eq!(v.get("t").unwrap().as_str(), Some("🎃"));
-        assert_eq!(v.get("n"), Some(&Json::Int(288000)));
-        assert_eq!(v.get("f"), Some(&Json::Num(1.5)));
-        let text = dumps(&v);
-        assert_eq!(parse(&text).unwrap(), v);
     }
 
     #[test]

@@ -1,6 +1,12 @@
 # Halloween Castle — ESPHome device config
 #
-# Board:   Adafruit ESP32-S2 Feather (240 MHz, 4 MB flash, 2 MB PSRAM)
+# Board:   Adafruit ESP32-S2 Feather (240 MHz, 4 MB flash, 2 MB PSRAM).
+#          The `esp32:` block below is the Feather's; firmware/castle_s3.yaml
+#          removes it and says `variant: esp32s3` instead, for the carrier
+#          board (2026-09-05), and firmware/castle_feather_s3.yaml swaps it
+#          for the ESP32-S3 Feather's (2026-09-14). Everything else in this
+#          file is the SHOW and is true of all three — not one GPIO number
+#          differs between them.
 # Audio:   MAX98357A I2S class-D amp -> 4 ohm speaker
 # Light:   one strip per zone, three zones. What is in each is set in
 #          scenes/scenes.yaml and generated into generated/lights.yaml —
@@ -20,18 +26,22 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.43"
+  version: "5.62"
+  # Which checkout this build tree belongs to — see build_path.yaml. The
+  # Makefile passes the directory name (-s checkout <dir>); a bare
+  # `esphome compile` gets the main checkout's tree.
+  checkout: halloween_esp
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
   #
-  # These moved off D5/D6/D10 to clear the 2.13" eInk FeatherWing, which is
-  # what carries the microSD slot on this build. The wing hard-wires four
-  # header positions and only two of them are cuttable:
+  # These moved off D5/D6/D10 in 2026-08 to clear the 2.13" eInk FeatherWing
+  # that carried the microSD slot then (SD CS D5, SRAM CS D6, eInk CS D9,
+  # eInk D/C D10). The wing is gone since v5.44 — the carrier board has its
+  # own card socket, still on D5 — and the pins stayed where they were,
+  # because D6 and D10 now belong to the carrier (5 V sense, wired button)
+  # and nothing is gained by moving a soldered signal back.
   #
   #   D5  (GPIO5)  SD chip select     <- was NeoPixel data
-  #   D6  (GPIO6)  SRAM chip select   <- was PIR
-  #   D9  (GPIO9)  eInk chip select
-  #   D10 (GPIO10) eInk data/command  <- was I2S DOUT
   #
   # The GPIO5 clash was the dangerous one: NeoPixel data would have been
   # hammering the SD card's active-low chip select at 800 kHz.
@@ -42,7 +52,7 @@ substitutions:
   # One data pin per zone rather than one chain: an RGBW fixture and an RGB
   # one cannot share a line, and separate pins mean swapping one fixture
   # renumbers nothing else. docs/WIRING.md §1-2. A2 and A4 were the pins left
-  # free after the eInk wing; GPIO16 is safe for the same reason GPIO15 is —
+  # free beside the eInk wing; GPIO16 is safe for the same reason GPIO15 is —
   # this board fits no 32 kHz crystal.
   pin_towerL: "18"      # A0  -> 74AHCT125 1Y -> 470R -> tower L DIN
   pin_door: "16"        # A2  -> 74AHCT125 2Y -> 470R -> doorway DIN
@@ -73,12 +83,15 @@ esphome:
   # The studio's fallback bridge leg read the esphome framework version
   # instead and the desk displayed "castle v2026.7.4" — a lie with the
   # right font. HTTP /api/status always had it; now both legs agree.
+  # The firmware reads the version back as ESPHOME_PROJECT_VERSION, which
+  # this writes into esphome/core/defines.h. It used to ALSO go in as a
+  # -DCASTLE_VERSION build flag, and a build flag is global to the ESP-IDF
+  # build: every version bump recompiled 1267 of the 1376 objects (74 s)
+  # for a string two files read. defines.h reaches only ESPHome's own 99,
+  # which is the floor a bump can have (42 s, measured 2026-09-16).
   project:
     name: jtn.halloween-castle
     version: ${version}
-  platformio_options:
-    build_flags:
-      - '-DCASTLE_VERSION=\"${version}\"'
   includes:
     # Order matters: rig.h and castle_pixels.h both need Fixture. ESPHome
     # copies each of these into the build's src/ by basename, which is why
@@ -88,6 +101,9 @@ esphome:
     - castle_pixels.h
     - flash_mode.h
     - boot_log.h
+    # L1 (v5.62): the event ring's copy in RTC slow memory. BEFORE
+    # castle_health.h, which dumps the previous life's tail to the card.
+    - castle_rtc.h
     - castle_health.h
 
   on_boot:
@@ -142,7 +158,8 @@ esp32:
       # The bootloader starts a freshly-OTA'd image in PENDING_VERIFY. If it
       # reboots without confirming itself, the bootloader reverts to the
       # previous image. That is the whole safety net for flashing a device
-      # that is not in the room — see the api: on_client_connected below.
+      # that is not in the room — see the api: on_client_connected below and
+      # the /api/status confirmation in castle_sd_common.yaml.
       CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE: "y"
       # Keep the RMT refill ISR runnable while the flash cache is off
       # (WiFi/NVS writes). Without it, strips after the first lose the race
@@ -152,8 +169,9 @@ esp32:
       # IDF 5.5's frameworks overflowed the S2's static-RAM segment by
       # ~7 KB and v5.23 refused to link. Everything below buys it back:
       # mdns off (~3 KB, see the mdns: block), softAP off (~1.3 KB), the
-      # eInk framebuffer moved to PSRAM (4 KB, castle_eink.h), and the
-      # small cuts here. It links at 99.99% — dram0 has ~20 BYTES spare,
+      # eInk framebuffer moved to PSRAM (4 KB; the panel and its task went
+      # entirely in v5.44), and the small cuts here. It linked at 99.99% —
+      # dram0 had ~20 BYTES spare before the panel went,
       # so the next framework bump will hit the wall again. Next levers,
       # in order: WPA3-SAE off (ONLY after confirming the router accepts
       # WPA2), and hunting libmesh's ~3.5 KB of never-used mesh state.
@@ -167,6 +185,12 @@ esp32:
       # loopback fetch and the native API need more than the default ten
       # sockets — v5.26 hit ENFILE on accept and the song never played.
       # Each socket slot is ~50 bytes of static RAM; sixteen is plenty.
+      # v5.62 (L2) spends one more of these on SNTP's UDP socket — see the
+      # `time:` block below. The counted users are: two httpd listeners plus
+      # their accepted connections (lru_purge_enable caps those), the media
+      # player's loopback fetch, the native API listener and its client, and
+      # now SNTP. Sixteen still has room; if a future build runs out, the
+      # symptom is ENFILE on accept and a song that never plays (v5.26).
       CONFIG_LWIP_MAX_SOCKETS: "16"
       # WPS never had a button on this porch; its supplicant state was more
       # of the same static RAM.
@@ -178,8 +202,11 @@ esp32:
       # OWE is WPA3's OPEN-network encryption; this castle joins a PSK
       # network. WPA2/WPA3-PSK association is untouched.
       CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA: "n"
-  # Default dual-OTA layout: two 1.75 MB app slots. Audio at 48 kbps keeps the
-  # image inside one, which is what buys OTA back — see the ota: block below.
+  # Default dual-OTA layout: two 1.75 MB app slots. Keeping the scene audio
+  # OFF the image entirely — it streams off the card, see castle_sd.yaml — is
+  # what buys OTA back and keeps it bought however long the show grows. The
+  # custom single-app partition table this once needed went away with the
+  # all-in-flash build (2026-09-01, docs/notes/03-build.md §12.15).
 
 psram:
   mode: quad
@@ -222,7 +249,10 @@ api:
   # which also silently killed whatever was playing. WiFi keeps its own
   # reboot_timeout, so a genuinely lost network still recovers.
   reboot_timeout: 0s
-  # THE image-confirmation step, and the reason rollback is safe.
+  # ONE of the two image-confirmation steps, and the reason rollback is safe.
+  # The other is the first /api/status the web server answers (v5.60, see
+  # flash_mode.h): a castle with no Home Assistant on the network never gets
+  # the client connect below, and a web-OTA'd image used to roll itself back.
   #
   # An API client connecting proves the things a future OTA depends on: the
   # chip booted, WiFi associated, and the network stack answers. Confirming
@@ -233,6 +263,24 @@ api:
   # Marking valid at boot instead would confirm a brick.
   on_client_connected:
     - lambda: 'castle_sd::mark_firmware_healthy();'
+
+# L2 (v5.62): a wall clock, at last.
+#
+# Everything the castle wrote was in uptime — the event ring's t_ms, the boot
+# line, the dumped tail — and uptime cannot be lined up against the only
+# thing the operator remembers ("it went dark some time after nine"). SNTP
+# costs one UDP socket (see CONFIG_LWIP_MAX_SOCKETS above) and no flash worth
+# counting, and it is a DNS name, not mDNS: `mdns: disabled` above turns the
+# responder off and CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES off with it, but
+# ordinary DNS is untouched and pool.ntp.org resolves through it.
+#
+# The ring keeps recording uptime and always will: it is written from the
+# main loop's hot path, and a wall clock there reads 1970 for the first
+# minute of every boot. /api/status carries `epoch` so a page can convert,
+# and the boot line carries an ISO stamp when the clock has landed.
+time:
+  - platform: sntp
+    id: castle_time
 
 ota:
   - platform: esphome
@@ -248,11 +296,13 @@ wifi:
 # network means a USB cable and `esphome run`, not a walk to a rooftop.
 
 # NOTE: this file is the CORE, not a buildable target. It deliberately
-# defines no `sfx` audio dispatch and no media files — every variant composes
-# those (castle_flash.yaml embeds them, castle_sd.yaml streams them off the
-# card). Building this file directly fails with "sfx unknown", by design:
-# ESPHome's !extend appends to lists instead of replacing them, so a variant
-# cannot cleanly swap an implementation the core already provides.
+# defines no `sfx` audio dispatch and no media files — the variants compose
+# those (castle_sd.yaml streams them off the card; bench*.yaml inherit that).
+# Building this file directly fails with "sfx unknown", by design: ESPHome's
+# !extend appends to lists instead of replacing them, so a variant cannot
+# cleanly swap an implementation the core already provides. That mattered
+# most when there were two audio implementations to swap between; it is kept
+# now because it is still the seam bench*.yaml and the jewels build sit on.
 packages:
   # The generated scene scripts.
   scenes: !include generated/scenes.yaml

@@ -6,7 +6,8 @@ minutes away, and only if someone happens to run one. And the device has
 nothing that would catch a write past a zone's buffer, a NaN turning a pixel
 white, or a centre role surviving a blackout.
 
-Two host programs, both in tests/cxx/:
+Two host programs, both in tests/cxx/ (a third, web_check.cpp, does the same
+for the web layer — tests/test_firmware_web_cxx.py):
 
   render_check.cpp   the invariant harness — every effect/overlay/gate entry
                      point, every fixture in generated/rig.h plus the rest of
@@ -50,8 +51,8 @@ def build(src: Path, out: Path) -> subprocess.CompletedProcess[str]:
 
 
 #: Locally a missing compiler is a skip. In CI it is a failure: the runner
-#: image losing g++ would otherwise turn the only firmware-executing tests
-#: into a green tick that tests nothing.
+#: image losing g++ would otherwise turn every firmware-executing test — this
+#: one and the three web suites — into a green tick that tests nothing.
 IN_CI = bool(os.environ.get("CI"))
 
 

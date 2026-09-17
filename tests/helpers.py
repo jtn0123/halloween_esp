@@ -18,7 +18,7 @@ from pathlib import Path
 # export CASTLE_HOST / CASTLE_TRACKS in the very shell you then run `make
 # test` from, and six tests used to go red on that alone. The sandbox knobs
 # are cleared HERE, before any tools module reads them at import time
-# (studio_tracks.TRACKS is bound at import), and every case that needs one
+# (track_lib.TRACKS is bound at import), and every case that needs one
 # sets it explicitly. unittest discovery loads test_analysis.py — which
 # imports this — before any other module, so the whole run sees a clean env.
 SANDBOX_ENV = ("CASTLE_HOST", "CASTLE_TRACKS", "CASTLE_SCENES", "CASTLE_BUILD")
@@ -26,6 +26,7 @@ for _k in SANDBOX_ENV:
     os.environ.pop(_k, None)
 
 from typing import Any
+from unittest import mock
 
 import numpy as np
 
@@ -111,3 +112,25 @@ def window_peaks(x: np.ndarray, ms: float = 20.0) -> np.ndarray:
     return np.array(
         [np.max(np.abs(x[i * w : (i + 1) * w])) for i in range(len(x) // w)]
     )
+
+
+class HostEnv:
+    """`self.host_env("10.0.0.7")` — CASTLE_HOST for one test, put back after.
+
+    Every suite that touches the resolver was writing os.environ by hand and
+    restoring it in tearDown (or forgetting to). patch.dict restores even when
+    an assertion raises mid-test, and addCleanup runs in reverse order, so the
+    outer patch a setUp installs still wins.
+
+    It lived in tests/studio_case.py until that fixture went with the Python
+    studio (docs/RETIREMENT.md); nothing about it was ever about a server.
+    """
+
+    def host_env(self, value: str | None) -> None:
+        env = mock.patch.dict(
+            os.environ, {} if value is None else {"CASTLE_HOST": value}, clear=False
+        )
+        env.start()
+        if value is None:
+            os.environ.pop("CASTLE_HOST", None)
+        self.addCleanup(env.stop)  # type: ignore[attr-defined]

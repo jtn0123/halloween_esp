@@ -23,7 +23,6 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import import_fetch as imf
 import stems
-import studio_media as sm
 
 
 def done(code: int = 0, out: str = "", err: str = "") -> SimpleNamespace:
@@ -76,69 +75,6 @@ class TestFetchUrl(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 imf.fetch_url("-not-a-url", self.tmp)
         r.assert_not_called()
-
-
-class TestProbe(unittest.TestCase):
-    def test_missing_ytdlp_says_how_to_install(self) -> None:
-        with mock.patch.object(sm.shutil, "which", return_value=None):
-            out = sm.probe("https://example.test/a")
-        self.assertFalse(out["ok"])
-        self.assertIn("yt-dlp", out["error"])
-
-    def test_non_http_is_not_a_link(self) -> None:
-        with mock.patch.object(sm.shutil, "which", return_value="yt-dlp"):
-            out = sm.probe("ftp://example.test/a")
-        self.assertFalse(out["ok"])
-
-    def test_timeout_reports_the_budget(self) -> None:
-        with (
-            mock.patch.object(sm.shutil, "which", return_value="yt-dlp"),
-            mock.patch.object(
-                sm.subprocess,
-                "run",
-                side_effect=subprocess.TimeoutExpired("yt-dlp", 60),
-            ),
-        ):
-            out = sm.probe("https://example.test/a")
-        self.assertFalse(out["ok"])
-        self.assertIn("timed out", out["error"])
-
-    def test_failure_surfaces_ytdlps_last_line(self) -> None:
-        with (
-            mock.patch.object(sm.shutil, "which", return_value="yt-dlp"),
-            mock.patch.object(
-                sm.subprocess,
-                "run",
-                return_value=done(1, err="warn\nERROR: Private video"),
-            ),
-        ):
-            out = sm.probe("https://example.test/a")
-        self.assertFalse(out["ok"])
-        self.assertEqual(out["error"], "ERROR: Private video")
-
-    def test_unparseable_answer_is_a_sentence(self) -> None:
-        with (
-            mock.patch.object(sm.shutil, "which", return_value="yt-dlp"),
-            mock.patch.object(
-                sm.subprocess, "run", return_value=done(0, out="not json")
-            ),
-        ):
-            out = sm.probe("https://example.test/a")
-        self.assertFalse(out["ok"])
-        self.assertIn("parse", out["error"])
-
-    def test_ok_path_shapes_duration_text(self) -> None:
-        with (
-            mock.patch.object(sm.shutil, "which", return_value="yt-dlp"),
-            mock.patch.object(
-                sm.subprocess,
-                "run",
-                return_value=done(0, out='{"title":"T","duration":125}'),
-            ),
-        ):
-            out = sm.probe("https://example.test/a")
-        self.assertTrue(out["ok"])
-        self.assertEqual(out["duration_text"], "2:05")
 
 
 class TestStems(unittest.TestCase):

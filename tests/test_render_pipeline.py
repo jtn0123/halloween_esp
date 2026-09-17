@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import shutil
 import sys
 import tempfile
@@ -215,6 +216,7 @@ class TestStaleSweep(unittest.TestCase):
         self.assertEqual(
             names,
             [
+                ".rendered.json",
                 "00_chirp.mp3",
                 "01_one.mp3",
                 "02_two.mp3",
@@ -230,10 +232,111 @@ class TestStaleSweep(unittest.TestCase):
         )
         self.assertEqual((self.out / "02_two.mp3").read_bytes(), b"new")
 
+    def test_a_song_not_on_this_machine_keeps_its_markers(self) -> None:
+        """The song's onsets and beats cannot be recomputed without the song;
+        the tracked markers.json is the last analysis. A full render on a
+        machine without the song (CI, a fresh clone) used to write the file
+        without them, and the weekly compile then built a show with no
+        pulse cues for the two real songs — 13.6 KB of dram0 short of the
+        porch's image (2026-09-06). Previous song-derived keys survive under
+        this render's fresh synth ones; a scene whose song IS here is
+        rewritten whole."""
+        (self.out / "markers.json").write_text(
+            '{"one": {"wind": [0], "stale": [1]}, '
+            '"two": {"wind": [0], "onset_high": [5, 9], "beat": [2]}}'
+        )
+
+        def absent_song(scene: dict, cfg: dict, wav: Path) -> dict:
+            wav.write_bytes(b"RIFFstub")
+            if scene["id"] == "two":
+                ra.NOT_HERE.append("two")
+            return {"wind": [7]}
+
+        with mock.patch.object(ra, "render_scene", absent_song):
+            self.run_main()
+        got = json.loads((self.out / "markers.json").read_text())
+        self.assertEqual(got["two"], {"wind": [7], "onset_high": [5, 9], "beat": [2]})
+        self.assertEqual(got["one"], {"wind": [7]})  # here: fresh, nothing kept
+
     def test_a_partial_render_sweeps_nothing(self) -> None:
         self.run_main("--only", "one")
         self.assertTrue((self.out / "03_two.mp3").exists())
         self.assertTrue((self.out / "01_gone.mp3").exists())
+
+
+class TestUnchangedSkip(TestStaleSweep):
+    """A second `make audio` with nothing changed used to be the same
+    9 s render; the stamp beside the output (render_stamp) makes it a
+    stat() sweep. The gate is inputs, never output bytes."""
+
+    def calls(self, *argv: str) -> list[str]:
+        seen: list[str] = []
+
+        def spy(scene: dict, cfg: dict, wav: Path) -> dict:
+            seen.append(scene["id"])
+            wav.write_bytes(b"RIFFstub")
+            return {"wind": [3]}
+
+        with mock.patch.object(ra, "render_scene", spy):
+            self.run_main(*argv)
+        return seen
+
+    def test_second_render_skips_every_unchanged_scene(self) -> None:
+        self.assertEqual(self.calls(), ["one", "two"])
+        self.assertEqual(self.calls(), [])
+        # ...and still writes markers.json whole, from the stamps.
+        got = json.loads((self.out / "markers.json").read_text())
+        self.assertEqual(got, {"one": {"wind": [3]}, "two": {"wind": [3]}})
+
+    def test_an_edited_scene_renders_again_alone(self) -> None:
+        self.calls()
+        scenes = self.tmp / "scenes.yaml"
+        scenes.write_text(
+            self.SHOW.replace(
+                "duration_ms: 200\n  - id: two", "duration_ms: 300\n  - id: two"
+            )
+        )
+        self.assertEqual(self.calls(), ["one"])
+
+    def test_a_missing_output_renders_again(self) -> None:
+        self.calls()
+        (self.out / "02_two.mp3").unlink()
+        self.assertEqual(self.calls(), ["two"])
+
+    def test_force_and_a_changed_config_render_everything(self) -> None:
+        self.calls()
+        self.assertEqual(self.calls("--force"), ["one", "two"])
+        scenes = self.tmp / "scenes.yaml"
+        scenes.write_text(self.SHOW.replace("bitrate: 32", "bitrate: 48"))
+        self.assertEqual(self.calls(), ["one", "two"])
+
+    def test_a_song_that_turns_up_renders_its_scene(self) -> None:
+        """An absent song is an input state: the stamp must not call the
+        songless render fresh once the file is on this machine."""
+        song = self.tmp / "song.mp3"
+        with mock.patch.object(ra.render_stamp.bp, "track_source", lambda _rel: song):
+            scenes = self.tmp / "scenes.yaml"
+            scenes.write_text(
+                self.SHOW.replace(
+                    "id: two\n", "id: two\n    audio_file: tracks/song.mp3\n"
+                )
+            )
+            self.assertEqual(self.calls(), ["one", "two"])
+            self.assertEqual(self.calls(), [])
+            song.write_bytes(b"ID3")
+            self.assertEqual(self.calls(), ["two"])
+
+    def test_a_skipped_songless_scene_is_still_named(self) -> None:
+        def absent(scene: dict, cfg: dict, wav: Path) -> dict:
+            wav.write_bytes(b"RIFFstub")
+            if scene["id"] == "two":
+                ra.NOT_HERE.append("two")
+            return {}
+
+        with mock.patch.object(ra, "render_scene", absent):
+            self.run_main()
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(ra.NOT_HERE, ["two"])
 
 
 class TestWavWriting(unittest.TestCase):

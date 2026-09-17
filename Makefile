@@ -1,16 +1,35 @@
-# The project venv when it exists, else whatever python3 is on PATH (CI
-# installs into the runner's interpreter). `make setup` names .venv outright
-# below — this fallback must never point a fresh install at the system python.
-PY := $(shell [ -x .venv/bin/python ] && echo .venv/bin/python || echo python3)
+# The project venv is required for Python recipes. CI passes PY= on the
+# command line for those; `make rust` must still parse without a venv.
+ifeq ($(origin PY),command line)
+else ifneq ($(wildcard .venv/bin/python),)
+  PY := .venv/bin/python
+else
+  PY = $(error .venv is missing — run make setup)
+endif
 ESPHOME := .venv/bin/esphome
-YAML := firmware/castle_flash.yaml
+# Every build tree is keyed on this checkout's directory name
+# (firmware/build_path.yaml), so a worktree never shares objects with main.
+ESPHOME_RUN = $(ESPHOME) -s checkout $(notdir $(CURDIR))
+# The one castle build. It was firmware/castle_flash.yaml until 2026-09-01,
+# when the show's two real songs put 2.2 MB of audio in an image that has to
+# fit a 1.75 MB OTA slot; the SD build had been the one on the porch since
+# 2026-08-22 anyway. docs/notes/03-build.md §12.15 records the decision.
+YAML := firmware/castle_sd.yaml
+# The SECOND build, and deliberately not the default: the ESP32-S3-WROOM-1
+# carrier board (castle-carrier v5, docs/V5-SPEC.md §13). It shares every
+# line of the show with $(YAML) and differs only in the chip. The S2 is
+# what is in the yard; this one has never been on hardware.
+YAML_S3 := firmware/castle_s3.yaml
+# The THIRD: the same S3 chip on an Adafruit Feather (#5477), in the v3.3a
+# carrier the S2 was drawn for — castle_sd.yaml with the chip swapped.
+YAML_FS3 := firmware/castle_feather_s3.yaml
 # The documented target; pyproject/CI/mypy all say 3.13. Found on PATH rather
 # than at one Homebrew path, which is not where every machine keeps it.
 # Recursive (=), not :=, so the lookup — and the error — only happen when
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: publish ota pycheck test test-fast lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
@@ -20,15 +39,17 @@ help:
 	@echo "  make generate   render scenes.yaml -> firmware/generated/scenes.yaml"
 	@echo "  make preview    splice scenes + rendered audio into the previewer"
 	@echo "  make validate   check the ESPHome config (fast, no toolchain)"
-	@echo "  make build      compile firmware (implies audio + generate)"
+	@echo "  make build      compile firmware/castle_sd.yaml (implies audio + generate)"
 	@echo "  make upload     compile and flash over USB"
 	@echo "  make logs       tail device logs"
+	@echo "  make build-s3 / upload-s3 / logs-s3   the same for the ESP32-S3 carrier"
+	@echo "  make build-fs3 / upload-fs3 / logs-fs3   the same for an S3 Feather on v3.3a"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"
 	@echo "  make bench-audio  measure decode load on the bare board (no speakers)"
 	@echo "  make track SRC=<file|url> ID=<name>   import audio into tracks/"
 	@echo "  make studio     serve the cue desk with track management (localhost)"
-	@echo "  make publish    push scene tracks + the lean desk page to the castle"
+	@echo "  make publish    push scene tracks + the Castle Radio page to the castle"
 	@echo "  make ota        build the SD firmware and flash it over HTTP"
 	@echo "  make test       python unit tests (~1 min)"
 	@echo "  make test-fast  the same minus the slow + Rust suites (inner loop)"
@@ -46,10 +67,12 @@ help:
 	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
 	@echo "  make lock       relock requirements.lock from a clean throwaway venv"
 	@echo "  make clean      drop firmware/.esphome and rendered wavs"
-	@echo "  make sd-build / sd-upload   EXPERIMENTAL microSD variant (PROJECT_NOTES §12.9)"
+	@echo "  make sd-build / sd-upload   old names for build / upload (the S2)"
 	@echo "  make bench-audio-logs       tail the bench-audio build's logs"
 	@echo ""
 	@echo "scenes/scenes.yaml is the source of truth for audio, cues AND the previewer."
+	@echo "The castle is firmware/castle_sd.yaml and the show lives on the card:"
+	@echo "'make publish' before 'make ota', or the board boots to a chirp."
 
 setup:
 	$(PY_SETUP) -m venv .venv
@@ -60,9 +83,14 @@ setup:
 	@# installer, and silently curl|sh-ing one is not this repo's style). Say so
 	@# instead of letting `make audio` be the thing that discovers it: without
 	@# cargo, render_audio.py hard-stops rather than falling back to the
-	@# machine-dependent Python reference. (grade report H3)
+	@# machine-dependent Python reference. (grade report 2026-08-31 H3)
 	@command -v cargo > /dev/null \
 		|| echo "note: no cargo on PATH — castle-core (core/) cannot build, so 'make audio', the importer and the Rust gates will not run. Install rustup: https://rustup.rs"
+	@# ESPHome (2026.8+) compiles through ccache whenever one is on PATH, with
+	@# no configuration: a cold build tree — a fresh worktree's first build,
+	@# a wiped one — becomes a cache read instead of ~80 s of xtensa-gcc.
+	@command -v ccache > /dev/null \
+		|| echo "note: no ccache on PATH — 'brew install ccache' and every cold firmware build after the first is mostly cache hits"
 	@echo "ready. 'make build' next."
 
 audio:
@@ -79,57 +107,96 @@ track:
 	@test -n "$(SRC)" || (echo "usage: make track SRC=<file|url> [ID=<name>] [ARGS=...]"; exit 1)
 	@$(PY) tools/import_track.py "$(SRC)" $(if $(ID),--id $(ID),) $(ARGS)
 
+# The Rust studio is the studio (grade report 2026-09-01 G1, finished by
+# docs/RETIREMENT.md): the launcher builds it when cargo is here and refuses
+# with a printed reason when it cannot. The logic lives in the script, not
+# here, because .claude/launch.json needs the same decision and cannot
+# express it. ARGS passes the studio's own command line through:
+# ARGS="8766 --lan".
 studio: preview
-	@$(PY) tools/studio.py
+	@tools/studio_launch.sh $(ARGS)
 
-# The publish chain (grade report A1/I4): everything the castle needs after
+# The publish chain (grade report 2026-08-23 A1/I4): everything the castle needs after
 # a scene edit, in one word. Host resolves via tools/hosts.py (CASTLE_HOST,
 # else devices.toml). The studio's rebuild runs the same push automatically;
 # this is the terminal spelling. `make ota` builds first and sd_sync stops
 # audio before flashing (the standing OTA rule).
-publish: preview
+publish: audio
 	@$(PY) tools/sd_sync.py scenes
 	@$(PY) tools/sd_sync.py site
 
-ota: sd-build
+ota: build
 	@$(PY) tools/sd_sync.py ota
 
-# EXPERIMENTAL microSD variant — see PROJECT_NOTES §12.9 before relying on it.
-sd-build: audio generate
-	$(ESPHOME) compile firmware/castle_sd.yaml
+# Kept as aliases, not as a second build. They named the microSD variant back
+# when there were two castles to choose between; there is one now, so they
+# point at it. Muscle memory, `make ota`'s old dependency and every note that
+# says `make sd-build` all keep working, and nothing has to be remembered
+# twice. (2026-09-01)
+sd-build: build
 
-sd-upload: audio generate
-	$(ESPHOME) run firmware/castle_sd.yaml
+sd-upload: upload
 
 bench: audio generate
-	$(ESPHOME) run firmware/bench.yaml
+	$(ESPHOME_RUN) run firmware/bench.yaml
 
 bench-logs:
-	$(ESPHOME) logs firmware/bench.yaml
+	$(ESPHOME_RUN) logs firmware/bench.yaml
 
-validate: generate
-	@$(ESPHOME) config $(YAML) > /dev/null && echo "config OK"
+validate: generate validate-s3
+	@$(ESPHOME_RUN) config $(YAML) > /dev/null && echo "config OK"
+	@$(ESPHOME_RUN) config $(YAML_FS3) > /dev/null && echo "config OK (feather s3)"
+
+# The carrier build is validated by the same target, not by a habit anyone
+# has to remember: it is the build with no hardware to catch its mistakes.
+validate-s3: generate
+	@$(ESPHOME_RUN) config $(YAML_S3) > /dev/null && echo "config OK (s3)"
+	@$(ESPHOME_RUN) config firmware/castle_s3_qemu.yaml > /dev/null && echo "config OK (s3 qemu)"
 
 build: audio generate
-	$(ESPHOME) compile $(YAML)
+	$(ESPHOME_RUN) compile $(YAML)
 
 upload: audio generate
-	$(ESPHOME) run $(YAML)
+	$(ESPHOME_RUN) run $(YAML)
 
 logs:
-	$(ESPHOME) logs $(YAML)
+	$(ESPHOME_RUN) logs $(YAML)
+
+# The ESP32-S3 carrier board. Same three verbs, same generated show — the
+# only difference is which YAML names the chip. `upload-s3` goes over the
+# module's own USB Serial/JTAG: no adapter, and no BOOT-button dance.
+build-s3: audio generate
+	$(ESPHOME_RUN) compile $(YAML_S3)
+
+upload-s3: audio generate
+	$(ESPHOME_RUN) run $(YAML_S3)
+
+logs-s3:
+	$(ESPHOME_RUN) logs $(YAML_S3)
+
+# An ESP32-S3 Feather in the v3.3a carrier. Its USB-C is the S3's own USB
+# Serial/JTAG, so uploads and logs share the cable — except the FIRST flash
+# of a factory Feather, which wants BOOT held while RESET is tapped.
+build-fs3: audio generate
+	$(ESPHOME_RUN) compile $(YAML_FS3)
+
+upload-fs3: audio generate
+	$(ESPHOME_RUN) run $(YAML_FS3)
+
+logs-fs3:
+	$(ESPHOME_RUN) logs $(YAML_FS3)
 
 clean:
 	rm -rf firmware/.esphome audio/*.wav
 
 bench-audio: audio generate
-	$(ESPHOME) run firmware/bench_audio.yaml
+	$(ESPHOME_RUN) run firmware/bench_audio.yaml
 
 bench-audio-logs:
-	$(ESPHOME) logs firmware/bench_audio.yaml
+	$(ESPHOME_RUN) logs firmware/bench_audio.yaml
 
 # pyproject.toml says >=3.13; the bare-python3 fallback above could silently
-# hand an older interpreter to everything below (grade report F5).
+# hand an older interpreter to everything below (grade report 2026-08-23 F5).
 pycheck:
 	@$(PY) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else \
 		(print(f"python {sys.version.split()[0]} is too old — this repo needs 3.13+ (make setup)") or 1))'
@@ -139,11 +206,19 @@ test: pycheck
 
 # The inner loop: everything except the suites that exist to wait — the
 # castle chaos/relay/protocol fuzz and the generator fuzz spend their time
-# in deliberate timeouts and random documents, and the Rust suites (`_rust`,
-# `castle_core`) spend theirs in cargo, two release builds and clippy deep.
-# The Rust work is one word away (`make rust-test` / `make rust-lint`), not
-# gone. `make test` before handing work back; this while you are still typing.
-SLOW_SUITES := chaos|relay|fuzz|_rust|castle_core
+# in deliberate timeouts and random documents, and the suites that drive the
+# studio binary (`_rust`, `_rs`, `castle_core`) spend theirs in cargo, two
+# release builds and clippy deep. The Rust work is one word away
+# (`make rust-test` / `make rust-lint`), not gone. `make test` before handing
+# work back; this while you are still typing.
+SLOW_SUITES := chaos|relay|fuzz|_rust|_rs|castle_core|studio
+# Castle Radio: the Python suite next to the sources plus the browser
+# sources run under node:test (needs node 22, no npm install).
+test-radio:
+	@$(PY) -m unittest discover -s demo/castle-radio -t demo/castle-radio -p 'test_*.py' -q \
+		&& node --test demo/castle-radio/test_castle_radio.test.mjs demo/castle-radio/test_castle_fuzz.test.mjs \
+		demo/castle-radio/test_castle_honesty.test.mjs demo/castle-radio/test_desktop_tools.test.mjs demo/castle-radio/test_companion.test.mjs demo/castle-radio/test_device_helper.test.mjs
+
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \
 		| sed 's/\.py$$//; s/^/tests./')
@@ -152,16 +227,16 @@ test-fast:
 # the number is for deciding what to test next. `coverage-gate` is the same
 # run with the floor CI enforces (COVERAGE_MIN); raise it as coverage lands.
 # Measured 83% on 2026-08-23 — the floor is the measurement minus one, and
-# it moves UP whenever a fresh `make coverage` beats it (grade report D1).
+# it moves UP whenever a fresh `make coverage` beats it (grade report 2026-08-23 D1).
 #
 # SCOPE: this number describes `tools/` ONLY. The Rust half (core/, the
 # production renderer and importer) is outside `--source=tools` entirely, so
 # 82% is 82% of a shrinking fraction of the shipped code. `make rust-coverage`
-# reports the other half, non-gating (grade report D7).
+# reports the other half, non-gating (grade report 2026-08-31 D7).
 COVERAGE_MIN := 82
 # Both tools live in requirements-dev.txt; a venv from before they were added
 # dies with "No module named …", which reads as breakage instead of what it
-# is — a stale venv. Say so. (grade report I2, 2026-08-24)
+# is — a stale venv. Say so. (grade report 2026-08-24 I2)
 NEED_DEV_TOOL = @$(PY) -c "import $(1)" 2>/dev/null \
 	|| { echo "$(1) missing — .venv predates a dev dependency; run 'make setup'"; exit 1; }
 coverage:
@@ -175,7 +250,7 @@ coverage-gate: coverage
 
 # Known advisories against what the venv actually has. Non-gating. The
 # exception list lives in .pip-audit-ignore — one id per line WITH its reason
-# and a review date (grade report E1) — so the "why" survives longer than
+# and a review date (grade report 2026-08-23 E1) — so the "why" survives longer than
 # anyone's memory. Re-run after `make lock`.
 AUDIT_IGNORES := $(shell awk '/^[A-Z]/{print "--ignore-vuln " $$1}' .pip-audit-ignore)
 audit:
@@ -195,13 +270,13 @@ lock:
 	@$(PY) tools/lock_deps.py
 
 # castle-core, the Rust half — 9k lines that had no spelling here at all
-# (grade report I1). These three ARE the Rust gate: tests/test_castle_core.py
+# (grade report 2026-08-31 I1). These three ARE the Rust gate: tests/test_castle_core.py
 # shells out to them, so the definition lives in one place and `make rust-lint`
 # is exactly what the suite and the CI job check.
 #
 # `cd core` rather than --manifest-path, and it is load-bearing: rustup finds
 # rust-toolchain.toml by WORKING DIRECTORY, not by manifest. Run from the repo
-# root, the pin (core/rust-toolchain.toml, grade report F3) is silently
+# root, the pin (core/rust-toolchain.toml, grade report 2026-08-31 F3) is silently
 # ignored and the gate floats on whatever rustc is default.
 #
 # Optional-toolchain guard, same shape as the pre-commit hook's node_modules
@@ -215,7 +290,7 @@ rust:
 rust-test:
 	$(HAVE_CARGO) cd core && cargo test --release --quiet
 
-# The Rust side of the coverage question (grade report D7). Non-gating, the
+# The Rust side of the coverage question (grade report 2026-08-31 D7). Non-gating, the
 # same shape as `make audit`: cargo-llvm-cov is a separate install, so say
 # what is missing instead of failing a clone that never asked for it. No
 # ratchet here on purpose — this number exists to be looked at while the port
@@ -239,7 +314,10 @@ lint: rust-lint
 
 check: audio test lint
 	@$(PY) tools/check_image.py castle-sd
+	@$(PY) tools/check_image.py castle-s3
+	@$(PY) tools/check_image.py castle-feather-s3
 	@$(PY) tools/check_loc.py
+	@$(PY) tools/check_citations.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"
 	@cd web && npm run --silent test
 	@echo "note: the browser e2e suite did NOT run — 'make e2e' (or 'make check-all') covers the UI"
@@ -254,7 +332,11 @@ check: audio test lint
 e2e: preview
 	@cd web && node -e "require('@playwright/test')" 2>/dev/null \
 		|| { echo "e2e needs its deps first: cd web && npm ci"; exit 1; }
+	@if command -v cargo >/dev/null 2>&1; then \
+		(cd core && cargo build --release --quiet --bin studio) \
+			|| { echo "e2e: the Rust studio failed to build — fix it rather than testing a stale binary"; exit 1; }; \
+	fi
 	@cd web && npx playwright install chromium
 	@cd web && npx playwright test
 
-check-all: check e2e
+check-all: check validate e2e

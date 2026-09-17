@@ -1,11 +1,19 @@
 """The emulator's failure modes, driven through castle_link.
 
---serial is the real castle's single httpd task: one long PUT parks every
-other request, status poll included. --wedge is the pre-v5.22 firmware
-defect (every request stalls while a track plays). --no-sd is a pulled
-card. Each is what the desk sees on a bad night; these pin the documented
-verdicts — 504 "may have landed" for a mutation, None for status — and,
-as important, the full recovery afterwards.
+--serial is the real castle's single httpd task: one long PUT used to park
+every other request, status poll included. --wedge is the pre-v5.22
+firmware defect (every request stalls while a track plays). --no-sd is a
+pulled card. Each is what the desk sees on a bad night; these pin the
+documented verdicts — 504 "may have landed" for a mutation, None for
+status — and, as important, the full recovery afterwards.
+
+A9 (v5.61) changed what --serial means for ONE route. The bytes of an
+upload are no longer the control task's work: h_put hands the request to a
+worker (firmware/sd_web_upload.h, tools/castle_emu_upload.py) and returns,
+so a publish no longer takes /api/status and /api/stop down with it. The
+rest of the serial castle is exactly as it was — that is the point of
+keeping the mode — and the test below is now the other way round: the
+status poll must ANSWER while 20 KB trickles in.
 """
 
 from __future__ import annotations
@@ -93,17 +101,24 @@ class ModeCase(unittest.TestCase):
 
 
 class TestSerial(ModeCase):
-    def test_a_long_put_parks_everything_then_everything_recovers(self) -> None:
+    def test_a_long_put_no_longer_parks_the_control_plane(self) -> None:
+        """A9. Before v5.61 this was the documented disaster: `make publish`
+        pushing a 2 MB track held the castle's one httpd task for the whole
+        transfer, so the desk's status poll timed out, a stop came back 504
+        "may have landed", and the one command you want during a botched
+        publish was the one that could not get through. The upload is the
+        worker's work now; the control plane never stopped answering."""
         emu = self.start(serial=True)
         t = self.slow_put(emu, "big.mp3", 20000, 1.6)
-        # While the card is busy: status is None, a mutation is 504.
-        self.assertIsNone(cl.status())
-        code, out, _ = cl.forward("POST", "/api/stop")
-        self.assertEqual(code, 504)
-        self.assertIn("may have landed", out.decode())
-        self.assertEqual(cl.forward("GET", "/api/files")[0], 502)
+        # While the card is busy: the desk's poll answers, and so does the
+        # panic button.
+        st = cl.status()
+        assert st is not None
+        self.assertEqual(st["version"], emu.version)
+        self.assertEqual(cl.forward("POST", "/api/stop")[0], 200)
+        self.assertEqual(cl.forward("GET", "/api/files")[0], 200)
         t.join(timeout=10)
-        # The upload completed untouched by the interruptions...
+        # ...and the upload landed whole, undisturbed by any of it.
         self.assertTrue(
             wait_for(
                 lambda: (
@@ -112,14 +127,21 @@ class TestSerial(ModeCase):
                 )
             )
         )
-        # ...and "may have landed" was literal: the parked stop ran later.
         self.assertTrue(wait_for(lambda: ("STOP", "") in emu.applied))
         cl._cache.clear()
-        st = cl.status()
-        assert st is not None
-        self.assertEqual(st["version"], emu.version)
         self.assertEqual(cl.forward("POST", "/api/volume?v=33")[0], 200)
         self.assertTrue(wait_for(lambda: emu.state.volume == 33))
+
+    def test_serial_mode_still_parks_everything_else(self) -> None:
+        """The mode is not gone: only the upload left the control task. A
+        request that IS the control task's work still holds it, which is
+        what makes the castle single-task rather than threaded — the wedge
+        test next door drives the same seam from the other end."""
+        emu = self.start(serial=True, wedge=True)
+        self.assertEqual(cl.forward("POST", "/api/play?f=tone.mp3")[0], 200)
+        self.assertTrue(wait_for(lambda: emu.state.track == "tone.mp3"))
+        cl._cache.clear()
+        self.assertIsNone(cl.status())
 
     def test_serial_mode_is_otherwise_the_same_castle(self) -> None:
         self.start(serial=True)

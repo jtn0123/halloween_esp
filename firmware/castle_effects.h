@@ -28,6 +28,12 @@ enum Effect : int {
   EFF_THROB = 10,
   EFF_STROBE = 11,
   EFF_BLOOD = 12,
+  // Not an effect: one past the last id. The host parity harness draws its
+  // random effect from this instead of a typed "13", so a fourteenth effect
+  // is exercised the day it lands rather than silently never (grade report
+  // 2026-09-06 D4). tests/test_pulse_dynamics_parity.py holds it equal to
+  // the vocabulary's length.
+  EFF_COUNT = 13,
 };
 
 struct Rgbw {

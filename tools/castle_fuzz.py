@@ -53,6 +53,8 @@ import fuzz_corpus as corpus
 from fuzz_corpus import DOCUMENTED_5XX, poisoned_text
 from fuzz_http import SlowRead, Violation, raw_request
 
+EMPTY_BODY = b"empty body"
+
 
 class Fuzzer:
     """One fuzz session against one castle. `card` is the emulator's
@@ -148,10 +150,18 @@ class Fuzzer:
         raw = name.encode("utf-8").decode("latin-1")  # as the wire sees it
         decoded = wire.name_from_uri(b"/api/files/" + name.encode(), b"/api/files/")
         safe = wire.safe_name(decoded)
-        poisoned = poisoned_text(wire.c_str(decoded))
+        # The door is the whole rule now: a name that would break the JSON
+        # it is printed into must never be accepted (grade report
+        # 2026-09-06 J1 — a lone 0x80 got through and, on a filesystem that
+        # would store it, made /api/files un-parseable for every client).
+        # This used to be dodged by PUTting something else; the dodge was
+        # why the high half was only ever exercised on Linux.
+        if poisoned_text(wire.c_str(decoded)) and safe:
+            raise Violation(
+                f"seed={self.seed} JSON-breaking name accepted by safe_name: "
+                f"{decoded!r}"
+            )
         verb = rng.choice(["PUT", "DELETE", "PLAY", "SD"])
-        if verb == "PUT" and poisoned:
-            verb = "DELETE"
         if verb == "PUT":
             payload = bytes(
                 rng.getrandbits(8) for _ in range(rng.choice([0, 1, 7, 300]))
@@ -165,9 +175,15 @@ class Fuzzer:
             if safe and code not in (200, 404):
                 raise Violation(f"seed={self.seed} DELETE {name!r} → {code} {body!r}")
         elif verb == "PLAY":
+            if wire.query_truncated(b"/api/play?f=" + name.encode()):
+                want = 414
+                code, _, _ = self.req("POST", "/api/play?f=" + raw)
+                if code != want:
+                    raise Violation(
+                        f"seed={self.seed} play {name!r}: {code} want {want}"
+                    )
+                return
             f = wire.query_param(b"/api/play?f=" + name.encode(), "f")
-            if poisoned_text(wire.c_str(f)):
-                return  # would poison the status JSON's "track" (same bug)
             code, _, _ = self.req("POST", "/api/play?f=" + raw)
             want = 200 if wire.safe_name(f) else 400
             if code != want:
@@ -175,18 +191,18 @@ class Fuzzer:
         else:
             code, _, _ = self.req("GET", "/sd/" + raw)
             rel = wire.url_decode(name.encode()).split(b"?")[0]
-            wants = (400,) if not wire.safe_subpath(rel) else (200, 404)
+            wants = (400,) if not rel or not wire.safe_subpath(rel) else (200, 404)
             if code not in wants:
                 raise Violation(f"seed={self.seed} sd {name!r}: {code} want {wants}")
 
     def expect_name_verdict(
         self, code: int, body: bytes, safe: bool, decoded: bytes, payload: bytes
     ) -> None:
+        if not payload:
+            self._want(code, body, (400, EMPTY_BODY), f"empty PUT {decoded!r}")
+            return
         if not safe:
-            if (code, body) != (400, b"bad filename"):
-                raise Violation(
-                    f"seed={self.seed} unsafe {decoded!r} → {code} {body!r}"
-                )
+            self._want(code, body, (400, b"bad filename"), f"unsafe {decoded!r}")
             return
         if code == 500:
             return  # "cannot create file": NUL-empty or un-storable name
@@ -199,6 +215,12 @@ class Fuzzer:
             if f.exists() and f.resolve().parent != self.card.resolve():
                 raise Violation(f"seed={self.seed} {decoded!r} escaped the card")
 
+    def _want(
+        self, code: int, body: bytes, expected: tuple[int, bytes], label: str
+    ) -> None:
+        if (code, body) != expected:
+            raise Violation(f"seed={self.seed} {label} → {code} {body!r}")
+
     def fuzz_query(self, rng: random.Random) -> None:
         route, key, good = rng.choice(corpus.QUERY_ROUTES)
         q = corpus.query(rng, key, good)
@@ -207,22 +229,39 @@ class Fuzzer:
         code, body, _ = self.req("POST", raw)
         if len(raw) > wire.MAX_URI:
             return
-        val = wire.query_param(target.encode(), key)
-        want: tuple[int, ...]
-        if route == "/api/volume":
-            digits = bool(val) and len(val) <= 3 and val.isdigit()
-            want = (200,) if digits and int(val) <= 100 else (400,)
-        elif route == "/api/scene":
-            want = (400,) if not val else (200, 404)
-        elif route == "/api/light":
-            hex6 = len(val) == 6 and all(
-                chr(b) in "0123456789abcdefABCDEF" for b in val
-            )
-            want = (200,) if hex6 or val in (b"show", b"off") else (400,)
-        elif route == "/api/pir":
-            want = (200,) if val else (400,)
+        if wire.query_truncated(target.encode()):
+            want: tuple[int, ...] = (414,)
+            val = b""
         else:
-            want = (200,) if wire.safe_name(val) else (400,)
+            val = wire.query_param(target.encode(), key)
+            if route == "/api/volume":
+                digits = bool(val) and len(val) <= 3 and val.isdigit()
+                want = (200,) if digits and int(val) <= 100 else (400,)
+            elif route == "/api/scene":
+                want = (400,) if not val else (200, 404)
+            elif route == "/api/light":
+                hex6 = len(val) == 6 and all(
+                    chr(b) in "0123456789abcdefABCDEF" for b in val
+                )
+                want = (200,) if hex6 or val in (b"show", b"off") else (400,)
+            elif route == "/api/pir":
+                a, c, s = (
+                    wire.query_param(target.encode(), k)
+                    for k in ("armed", "cooldown", "scene")
+                )
+                ok, _ = wire.pir_armed_ok(a)
+                # v5.60: a '|' in any field is 400 (the three ride to the
+                # main loop packed "a|c|s"), and a scene faces the same list
+                # /api/scene does — 404, or 503 before it is seeded.
+                fine = bool(
+                    (a or c or s)
+                    and ok
+                    and wire.pir_cooldown_ok(c)
+                    and not any(b"|" in x for x in (a, c, s))
+                )
+                want = ((200, 404, 503) if s else (200,)) if fine else (400,)
+            else:
+                want = (200,) if wire.safe_name(val) else (400,)
         if code not in want:
             raise Violation(
                 f"seed={self.seed} POST {target!r} → {code} {body!r}, "
@@ -236,12 +275,6 @@ class Fuzzer:
         verb = rng.choice(corpus.VERBS)
         raw = path.encode("utf-8").decode("latin-1")
         handler, err = wire.route(verb, path.encode("utf-8"))
-        if handler == "h_put":
-            decoded = wire.name_from_uri(
-                path.encode(), b"/api/" + path.split("/")[2].encode() + b"/"
-            )
-            if poisoned_text(wire.c_str(decoded)):
-                return  # a 0-byte file with a JSON-breaking name (see POISON)
         code, body, _ = self.req(verb, raw)
         if handler is None and code != err:
             raise Violation(
@@ -260,43 +293,60 @@ class Fuzzer:
         name = f"fz_{rng.randrange(1 << 30):x}.bin"
         mode = rng.random()
         if mode < 0.4:
-            code, body, _ = self.req("PUT", f"/api/files/{name}", body=payload)
+            self._fuzz_honest_put(name, payload)
+        elif mode < 0.6:
+            self._fuzz_short_put(name, payload, size)
+        elif mode < 0.8:
+            self._fuzz_trunc_cl_put(name, payload, size)
+        else:
+            self._fuzz_bad_cl_put(name, payload, rng)
+
+    def _fuzz_honest_put(self, name: str, payload: bytes) -> None:
+        code, body, _ = self.req("PUT", f"/api/files/{name}", body=payload)
+        if not payload:
+            self._want(code, body, (400, EMPTY_BODY), "empty PUT")
+        else:
             self.expect_name_verdict(code, body, True, name.encode(), payload)
-            self.req("DELETE", f"/api/files/{name}")
-        elif mode < 0.6:  # declared MORE than sent: short write, nothing left behind
-            code, body, _ = self.req(
-                "PUT", f"/api/files/{name}", body=payload, declared=size + 10
-            )
-            if (code, body) != (500, b"short write"):
-                raise Violation(f"seed={self.seed} short body → {code} {body!r}")
-            if self.card is not None and (self.card / name).exists():
-                raise Violation(f"seed={self.seed} short write left {name}")
-        elif mode < 0.8:  # declared LESS than sent: the extra is not the file's
-            declared = max(0, size - 5)
-            code, body, _ = self.req_unread(
-                "PUT", f"/api/files/{name}", body=payload, declared=declared
-            )
+        self.req("DELETE", f"/api/files/{name}")
+
+    def _fuzz_short_put(self, name: str, payload: bytes, size: int) -> None:
+        code, body, _ = self.req(
+            "PUT", f"/api/files/{name}", body=payload, declared=size + 10
+        )
+        self._want(code, body, (500, b"short write"), "short body")
+        if self.card is not None and (self.card / name).exists():
+            raise Violation(f"seed={self.seed} short write left {name}")
+
+    def _fuzz_trunc_cl_put(self, name: str, payload: bytes, size: int) -> None:
+        declared = max(0, size - 5)
+        code, body, _ = self.req_unread(
+            "PUT", f"/api/files/{name}", body=payload, declared=declared
+        )
+        if declared == 0:
             if code:
-                self.expect_name_verdict(
-                    code, body, True, name.encode(), payload[:declared]
-                )
-            elif (
-                self.threads == 1
-                and self.card is not None
-                and (self.card / name).exists()
-                and (self.card / name).read_bytes() != payload[:declared]
-            ):
-                raise Violation(f"seed={self.seed} extra bytes reached the file")
-            self.req("DELETE", f"/api/files/{name}")
-        else:  # a garbage Content-Length is the parser's 400
-            code, _, _ = self.req_unread(
-                "PUT",
-                f"/api/files/{name}",
-                body=payload[:8],
-                headers={"Content-Length": rng.choice(["x", "-4", ""])},
+                self._want(code, body, (400, EMPTY_BODY), "CL 0")
+        elif code:
+            self.expect_name_verdict(
+                code, body, True, name.encode(), payload[:declared]
             )
-            if code not in (0, 400):
-                raise Violation(f"seed={self.seed} bad Content-Length → {code}")
+        elif (
+            self.threads == 1
+            and self.card is not None
+            and (self.card / name).exists()
+            and (self.card / name).read_bytes() != payload[:declared]
+        ):
+            raise Violation(f"seed={self.seed} extra bytes reached the file")
+        self.req("DELETE", f"/api/files/{name}")
+
+    def _fuzz_bad_cl_put(self, name: str, payload: bytes, rng: random.Random) -> None:
+        code, _, _ = self.req_unread(
+            "PUT",
+            f"/api/files/{name}",
+            body=payload[:8],
+            headers={"Content-Length": rng.choice(["x", "-4", ""])},
+        )
+        if code not in (0, 400):
+            raise Violation(f"seed={self.seed} bad Content-Length → {code}")
 
     # -- the storm -----------------------------------------------------------
 

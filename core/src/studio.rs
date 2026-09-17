@@ -7,11 +7,13 @@
 //! (gen_previewer.lean), the scene-id listing, and the one-release
 //! /api→/studio alias table. Routes live in studio_routes.rs.
 
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
-pub const AUDIO_ROUTE: &str = "/studio/scene-audio/";
+/// The page rewrite lives in studio_lean.rs; the names stay here, where
+/// every caller already looks for them.
+pub use crate::studio_lean::{AUDIO_ROUTE, lean};
+
 pub const API: &str = "/api/";
 
 fn env_path(name: &str) -> Option<PathBuf> {
@@ -124,63 +126,15 @@ impl App {
     }
 }
 
-/// gen_previewer.lean — every inlined scene audio swapped for its URL:
-/// `"(\w+)": ?"data:audio/mpeg;base64,…"` becomes `"<id>": "<route><id>"`.
-pub fn lean(html: &str) -> String {
-    const NEEDLE: &str = "data:audio/mpeg;base64,";
-    let b = html.as_bytes();
-    let mut out = String::with_capacity(html.len() / 4);
-    let mut copied = 0usize;
-    let mut from = 0usize;
-    while let Some(rel) = html[from..].find(NEEDLE) {
-        let pos = from + rel;
-        from = pos + NEEDLE.len();
-        if pos == 0 || b[pos - 1] != b'"' {
-            continue;
-        }
-        // Walk back over `": ?"` to the key, which must be "\w+".
-        let mut k = pos - 1;
-        if k > 0 && b[k - 1] == b' ' {
-            k -= 1;
-        }
-        if k == 0 || b[k - 1] != b':' {
-            continue;
-        }
-        k -= 1;
-        if k == 0 || b[k - 1] != b'"' {
-            continue;
-        }
-        k -= 1;
-        let mut id_start = k;
-        while id_start > 0 && (b[id_start - 1].is_ascii_alphanumeric() || b[id_start - 1] == b'_') {
-            id_start -= 1;
-        }
-        if id_start == k || id_start == 0 || b[id_start - 1] != b'"' {
-            continue;
-        }
-        let id = &html[id_start..k];
-        // Forward over the base64 body to the closing quote.
-        let mut end = pos + NEEDLE.len();
-        while end < b.len()
-            && (b[end].is_ascii_alphanumeric() || matches!(b[end], b'+' | b'/' | b'='))
-        {
-            end += 1;
-        }
-        if end >= b.len() || b[end] != b'"' {
-            continue;
-        }
-        out.push_str(&html[copied..id_start - 1]);
-        out.push('"');
-        out.push_str(id);
-        out.push_str("\": \"");
-        out.push_str(AUDIO_ROUTE);
-        out.push_str(id);
-        out.push('"');
-        copied = end + 1;
-        from = end + 1;
-    }
-    out.push_str(&html[copied..]);
-    out
+/// A line the operator needs to see. The panel going empty is survivable;
+/// going empty SILENTLY is what leaves someone staring at a half-edited
+/// scenes.yaml wondering where the show went. Recorded as well as printed
+/// under `cargo test`, so "not silent either" is an assertion and not a
+/// hope.
+fn warn(line: &str) {
+    eprintln!("{line}");
+    #[cfg(test)]
+    crate::testkit::note("warn", line);
 }
 
 /// studio_scenes.scene_ids — the ids under the top-level `scenes:` key.
@@ -189,7 +143,7 @@ pub fn lean(html: &str) -> String {
 /// the parity test holds this against the Python on the real file.
 pub fn scene_ids(scenes: &Path) -> Vec<String> {
     let Ok(text) = std::fs::read_to_string(scenes) else {
-        eprintln!("WARNING: could not parse {}", scenes.display());
+        warn(&format!("WARNING: could not parse {}", scenes.display()));
         return Vec::new();
     };
     let mut section = String::new();
@@ -247,45 +201,15 @@ pub fn scene_audio(audio_dir: &Path, sid: &str) -> Option<PathBuf> {
     hits.into_iter().next()
 }
 
-/// The studio's own route families — /api/<x> for any of these is the old
-/// spelling, rewritten for one release. studio_http.STUDIO_ROUTES.
-pub const STUDIO_ROUTES: [&str; 14] = [
-    "tracks", "import", "job", "refresh", "track", "waveform", "stems", "stem", "compare", "probe",
-    "server", "scene", "rebuild", "card",
-];
-
-fn deprecated_seen() -> &'static Mutex<HashSet<String>> {
-    static SEEN: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
-    SEEN.get_or_init(|| Mutex::new(HashSet::new()))
-}
-
-/// studio_http.studio_path — the request's path (no query), an old /api/
-/// spelling of a studio route rewritten to its /studio/ home, logged once.
-pub fn studio_path(target: &str) -> String {
-    let path = target.split('?').next().unwrap_or("");
-    let Some(rest) = path.strip_prefix(API) else {
-        return path.to_string();
-    };
-    let head = rest.split('/').next().unwrap_or("");
-    let fire = head == "scene"
-        && crate::httpd::query_pairs(target)
-            .iter()
-            .any(|(k, _)| k == "s");
-    if !STUDIO_ROUTES.contains(&head) || fire {
-        return path.to_string();
-    }
-    let mut seen = deprecated_seen().lock().unwrap_or_else(|e| e.into_inner());
-    if seen.insert(head.to_string()) {
-        eprintln!(
-            "  DEPRECATED: /api/{head} is now /studio/{head} (docs/API.md) — \
-             the alias goes away next release"
-        );
-    }
-    format!("/studio/{rest}")
-}
-
-/// The repo root: the ancestor holding tools/studio.py, found from the
-/// exe's own location (core/target/release/studio) or the working dir.
+/// The repo root: the ancestor holding tools/render_audio.py, found from
+/// the exe's own location (core/target/release/studio) or the working dir.
+///
+/// The marker used to be `tools/studio.py`, which was the obvious file to
+/// look for while it was the other server; it was deleted in
+/// docs/RETIREMENT.md's phase 3 and the root would have silently become
+/// `.`. `render_audio.py` is the better anchor anyway: it is the first
+/// child a rebuild spawns, so a root without it is a root this binary
+/// cannot work from.
 pub fn repo_root() -> PathBuf {
     let mut starts: Vec<PathBuf> = Vec::new();
     if let Ok(exe) = std::env::current_exe() {
@@ -296,7 +220,7 @@ pub fn repo_root() -> PathBuf {
     }
     for s in &starts {
         for a in s.ancestors() {
-            if a.join("tools").join("studio.py").exists() {
+            if a.join("tools").join("render_audio.py").exists() {
                 return a.to_path_buf();
             }
         }
@@ -328,5 +252,172 @@ pub fn pending() -> Action {
         1 => Action::Stop,
         2 => Action::Restart,
         _ => Action::None,
+    }
+}
+
+/// studio.lan_ip — best guess at this machine's address on the LAN, for
+/// the `--lan` banner. A UDP socket sends nothing: connect() only asks the
+/// routing table which interface would carry a packet to that address, and
+/// the answer is that interface's own address. No route (no network at
+/// all) is the loopback, exactly as the Python's OSError branch.
+pub fn lan_ip() -> String {
+    let home = "127.0.0.1".to_string();
+    let Ok(s) = std::net::UdpSocket::bind("0.0.0.0:0") else {
+        return home;
+    };
+    if s.connect("10.255.255.255:1").is_err() {
+        return home;
+    }
+    s.local_addr().map_or(home, |a| a.ip().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::jsonio::Json;
+    use crate::studio_import::safe_id;
+    use crate::testkit;
+
+    fn repo() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("core/ has a parent")
+            .to_path_buf()
+    }
+
+    /// Read off the real show, as the Python's twin does: the scanner has
+    /// to survive whatever scenes.yaml actually looks like today, comments
+    /// and all, and a duplicate id would mean the block finder is reading
+    /// the wrong section.
+    #[test]
+    fn scene_ids_reads_the_shows_own_file() {
+        let ids = scene_ids(&repo().join("scenes").join("scenes.yaml"));
+        assert!(ids.contains(&"vigil".to_string()), "{ids:?}");
+        let mut uniq = ids.clone();
+        uniq.sort();
+        uniq.dedup();
+        assert_eq!(uniq.len(), ids.len(), "duplicate scene ids: {ids:?}");
+    }
+
+    /// A half-edited scenes.yaml must not take the whole panel down — and
+    /// the panel must say WHY it is empty, naming the file it could not
+    /// read, or the operator is left guessing at an empty scene list.
+    #[test]
+    fn scene_ids_survives_an_unreadable_file_and_says_why() {
+        let gone = repo().join("no").join("such.yaml");
+        assert_eq!(scene_ids(&gone), Vec::<String>::new());
+        let said = testkit::matching("warn", "could not parse");
+        assert!(
+            said.iter().any(|l| l.contains("such.yaml")),
+            "nothing said which file: {said:?}"
+        );
+    }
+
+    /// The banner prints this to the phone/iPad operator, so it has to be
+    /// an address and not a hostname or an empty string. What it IS
+    /// depends on the machine's network; that it is four numbers does not.
+    #[test]
+    fn lan_ip_is_a_dotted_quad() {
+        let ip = lan_ip();
+        let parts: Vec<&str> = ip.split('.').collect();
+        assert_eq!(parts.len(), 4, "{ip}");
+        for p in parts {
+            let n: u32 = p.parse().unwrap_or_else(|_| panic!("{ip}"));
+            assert!(n <= 255, "{ip}");
+        }
+    }
+
+    /// A corrupt import still has to appear in the list so it can be
+    /// removed: the row carries an `error` beside the base fields instead
+    /// of a duration, and nothing raises. Reached through `studio` here
+    /// the way the Python's TestPureHelpers reached it, though the code
+    /// itself lives in studio_tracks.rs.
+    #[test]
+    fn a_track_that_will_not_decode_is_reported_instead_of_raising() {
+        let d = testkit::tmpdir("broken");
+        let bad = d.join("_t_studio_broken.mp3");
+        std::fs::write(&bad, b"not an mp3 at all").expect("wrote the fixture");
+        let info = crate::studio_tracks::track_info(&bad, &Json::obj(), &d);
+        assert_eq!(info.get("id"), Some(&Json::Str("_t_studio_broken".into())));
+        assert!(info.get("error").is_some(), "no error on a corrupt file");
+        assert!(info.get("dur").is_none(), "a duration it could not measure");
+    }
+
+    /// The write-side id guard (studio.safe_id): the browser's id lands in
+    /// `--id`/`--refresh` and then in a filesystem path, so traversal, a
+    /// separator, a dot, blank space and shell metacharacters all have to
+    /// die HERE rather than in the importer's error output. It lives in
+    /// studio_import.rs with the routes that call it; the case is the
+    /// Python's TestIdGuards, which reached it through `studio`.
+    #[test]
+    fn an_id_the_importer_would_mint_passes_and_everything_else_dies() {
+        for ok in ["chant", "organ_loop", "a1_b2_c3"] {
+            assert_eq!(safe_id(ok).as_deref(), Some(ok));
+        }
+        for no in [
+            "../../audio/01_vigil",
+            "a/b",
+            "a\\b",
+            "a.b",
+            "",
+            "  ",
+            "x;rm -rf",
+            "a b",
+        ] {
+            assert_eq!(safe_id(no), None, "{no}");
+        }
+        // Surrounding space is trimmed rather than refused — the Python
+        // strips before it checks, and a pasted id often carries one.
+        assert_eq!(safe_id(" chant ").as_deref(), Some("chant"));
+    }
+
+    /// served() hands out the page and the audio directory from the SAME
+    /// build. They used to be decided separately, so a sandboxed studio
+    /// could serve the repo's page with the sandbox's audio and every
+    /// scene link 404 — the lean rewrite names files by scene id, and the
+    /// id only resolves inside the build that rendered it.
+    #[test]
+    fn the_page_and_its_audio_always_come_from_one_build() {
+        let d =
+            std::env::temp_dir().join(format!("castle-served-{:?}", std::thread::current().id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).expect("temp dir");
+        let root = repo();
+
+        // Unsandboxed: the repo's page and the repo's audio, whatever is
+        // built beside the scenes file.
+        let app = App::new(root.clone());
+        assert!(!app.sandboxed());
+        assert_eq!(
+            app.served(),
+            (
+                root.join("previewer").join("castle-cue-desk.html"),
+                root.join("audio")
+            )
+        );
+
+        // Sandboxed but not built yet: the repo's pair, both halves — not
+        // the repo's page with a sandbox audio directory that is empty.
+        let mut sb = App::new(root.clone());
+        sb.scenes = d.join("scenes.yaml");
+        // build_root() without CASTLE_BUILD: beside the scenes file, so
+        // this test never writes a process-wide env var other tests read.
+        let build = d.join("_build");
+        assert!(sb.sandboxed());
+        assert_eq!(sb.build_root(), build);
+        assert_eq!(
+            sb.served(),
+            (
+                root.join("previewer").join("castle-cue-desk.html"),
+                root.join("audio")
+            )
+        );
+
+        // Built: the sandbox's page AND the sandbox's audio, together.
+        let page = build.join("previewer").join("castle-cue-desk.html");
+        std::fs::create_dir_all(page.parent().expect("parent")).expect("mkdir");
+        std::fs::write(&page, "<html></html>").expect("write");
+        assert_eq!(sb.served(), (page, build.join("audio")));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

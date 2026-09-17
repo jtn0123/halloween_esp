@@ -8,7 +8,7 @@
 //! %1.0 is fmod, and an array**2 is x*x (np.square) where **1.6 is libm
 //! pow — tests/test_synth_rust.py holds whole buffers and markers exact.
 
-use crate::filters::{butter_bp, butter_lp, sosfilt, Modes};
+use crate::filters::{Modes, butter_bp, butter_lp, sosfilt};
 use crate::pieces::place;
 use crate::rng::Pcg64;
 use crate::synth::interp;

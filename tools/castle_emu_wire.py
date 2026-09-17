@@ -8,8 +8,8 @@ the httpd's buffer limits. tests/test_firmware_contract.py parses the C at
 test time and holds this file to it.
 
 Everything works on BYTES. The firmware sees raw octets: safe_name's
-"size() < 100" counts UTF-8 bytes, not characters, and url_decode can mint
-a NUL ("%zz" → strtol → 0) that later truncates the C string. A str port
+"size() < 100" counts UTF-8 bytes, not characters, and a bad %XX makes
+url_decode fail empty rather than minting a NUL. A str port
 would silently disagree with the board on exactly the inputs a fuzz throws.
 """
 
@@ -20,9 +20,13 @@ import json
 #: esp_http_server's request-line ceiling (HTTPD_MAX_URI_LEN). Longer → 414.
 MAX_URI = 512
 #: query_param()'s stack buffers in sd_web.h: the whole query string, and
-#: one value. A query at or over the buffer length is TRUNC → "".
+#: one value. A query at or over the buffer length is TRUNC → 414. The value
+#: buffer was 120 until v5.60: safe_name admits a 99-character name, spaces
+#: URL-encode to three bytes each, and the truncation came back as an empty
+#: parameter — a 400 "need ?f=<file>" for a file /api/files had just listed
+#: (A10). 3*99 + 2 now, past anything the query ceiling can deliver.
 QUERY_BUF = 200
-VALUE_BUF = 120
+VALUE_BUF = 301
 #: safe_name's / safe_subpath's length ceilings.
 NAME_MAX = 100
 SUBPATH_MAX = 140
@@ -32,11 +36,14 @@ SUBPATH_MAX = 140
 ROUTES: tuple[tuple[str, str, str], ...] = (
     ("/api/status", "GET", "h_status"),
     ("/api/health", "GET", "h_health"),
+    ("/api/events", "GET", "h_events"),
     ("/api/files", "GET", "h_list"),
     ("/api/files/*", "PUT", "h_put"),
     ("/api/site/*", "PUT", "h_put"),
     ("/api/scenes/*", "PUT", "h_put"),
     ("/api/files/*", "DELETE", "h_delete"),
+    ("/api/site/*", "DELETE", "h_delete"),
+    ("/api/scenes/*", "DELETE", "h_delete"),
     ("/api/play", "POST", "h_play"),
     ("/api/scene", "POST", "h_scene"),
     ("/api/stop", "POST", "h_stop"),
@@ -55,14 +62,21 @@ ROUTES: tuple[tuple[str, str, str], ...] = (
     ("/", "GET", "h_root"),
 )
 
-#: esp_http_server's own error pages (httpd_txrx.c), for verdicts the
-#: firmware never sees: an unparseable header, no route, wrong method, an
-#: oversized request line, a body that stopped arriving. text/html there.
+#: esp_http_server's own error pages, for verdicts the firmware never sees:
+#: an unparseable header, no route, wrong method, an oversized request line,
+#: a body that stopped arriving. text/html there (HTTPD_TYPE_TEXT is
+#: "text/html", not "text/plain" — the reply_err pages are the plain ones).
+#:
+#: Copied from httpd_resp_send_err's table in ESP-IDF 5.5.5
+#: (components/esp_http_server/src/httpd_txrx.c), which is the framework
+#: esphome pulls for this board. The wording here was IDF 4.x's until
+#: tests/test_firmware_web_cxx.py ran the real headers beside this file and
+#: found the two tables had drifted apart a major version ago.
 IDF_ERRORS = {
-    400: "Server unable to understand request due to invalid syntax",
-    404: "This URI does not exist",
-    405: "Request method for this URI is not handled by server",
-    408: "Server closed this connection due to timeout",
+    400: "Bad request syntax",
+    404: "Nothing matches the given URI",
+    405: "Specified method is invalid for this resource",
+    408: "Server closed this connection",
     414: "URI is too long",
 }
 
@@ -96,14 +110,15 @@ def route(method: str, raw_target: bytes) -> tuple[str | None, int]:
 
 def url_decode(raw: bytes) -> bytes:
     """sd_web.h url_decode: %XX and '+'. A '%' followed by two non-hex
-    bytes is strtol → 0 — a NUL lands in the name, exactly as on the
-    board (where the C string then ends there)."""
+    bytes is a failure (empty result), not strtol's NUL."""
     out = bytearray()
     i, n = 0, len(raw)
     while i < n:
         c = raw[i]
         if c == 0x25 and i + 2 < n and raw[i + 1] and raw[i + 2]:  # '%'
-            out.append(_strtol16(raw[i + 1 : i + 3]) & 0xFF)
+            if _hexval(raw[i + 1]) < 0 or _hexval(raw[i + 2]) < 0:
+                return b""
+            out.append((_hexval(raw[i + 1]) * 16 + _hexval(raw[i + 2])) & 0xFF)
             i += 3
         elif c == 0x2B:  # '+'
             out.append(0x20)
@@ -112,18 +127,6 @@ def url_decode(raw: bytes) -> bytes:
             out.append(c)
             i += 1
     return bytes(out)
-
-
-def _strtol16(two: bytes) -> int:
-    """strtol(hex, nullptr, 16) on a 2-byte buffer: leading hex digits
-    only, 0 when there are none."""
-    val = 0
-    for b in two:
-        d = _hexval(b)
-        if d < 0:
-            break
-        val = val * 16 + d
-    return val
 
 
 def _hexval(b: int) -> int:
@@ -135,17 +138,53 @@ def safe_name(n: bytes) -> bool:
     """One path component, nothing hidden, nothing that breaks the JSON it
     is later printed into — sd_web.h safe_name on the raw bytes. Control
     bytes (NUL included — the C length counts it), DEL, '"' and '\\' are
-    refused because h_list/h_status snprintf names into JSON unescaped."""
-    if not n or len(n) >= NAME_MAX or n[0:1] == b"." or b"/" in n or b".." in n:
+    refused because h_list/h_status snprintf names into JSON unescaped —
+    and since v5.46 so is every byte >= 0x80, which json_escape passes
+    through raw and which therefore made the body invalid UTF-8."""
+    if not n or len(n) >= NAME_MAX or n[0:1] == b"." or b"/" in n:
         return False
-    return not any(c < 0x20 or c == 0x7F or c in (0x22, 0x5C) for c in n)
+    return not any(c < 0x20 or c >= 0x80 or c == 0x7F or c in (0x22, 0x5C) for c in n)
+
+
+_ZONE_CHARS = set(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+
+
+def light_spec_ok(c: bytes) -> bool:
+    """sd_web_state.h light_spec_ok, byte for byte: "RRGGBB"|show|off with an
+    optional "<zone>:" prefix that drives one strip (the desk's channel test).
+
+    Here rather than beside the handler that calls it because it is a byte
+    rule like the ones above it — a decision about a value, taken before any
+    card or mailbox is touched — and this file is where the firmware's byte
+    rules are ported."""
+    zone, sep, spec = c.partition(b":")
+    if not sep:
+        zone, spec = b"", c
+    elif not zone or len(zone) > 16 or any(b not in _ZONE_CHARS for b in zone):
+        return False
+    spec, at, pct = spec.partition(b"@")
+    if at and (not pct.isdigit() or len(pct) > 3 or not 1 <= int(pct) <= 100):
+        return False
+    hex6 = len(spec) == 6 and all(chr(b) in "0123456789abcdefABCDEF" for b in spec)
+    return hex6 or spec in (b"white", b"bars", b"chase", b"ends", b"show", b"off")
 
 
 def safe_subpath(p: bytes) -> bool:
-    """sd_web_site.h safe_subpath: subdirectories allowed, no escapes."""
-    if not p or len(p) > SUBPATH_MAX or p[0:1] in (b"/", b"."):
+    """sd_web_util.h safe_subpath: subdirectories allowed; `.` / `..` /
+    leading-dot names refused as whole path segments."""
+    if not p or len(p) > SUBPATH_MAX or p[0:1] == b"/":
         return False
-    return b".." not in p
+    return all(seg and not seg.startswith(b".") for seg in p.split(b"/"))
+
+
+def route_dir(raw_target: bytes) -> tuple[str, bytes]:
+    """sd_web.h route_dir: the card subdirectory a /api/files|site|scenes/*
+    route addresses and the prefix to cut, shared by h_put and h_delete."""
+    if raw_target.startswith(b"/api/site/"):
+        return "site", b"/api/site/"
+    if raw_target.startswith(b"/api/scenes/"):
+        return "scenes", b"/api/scenes/"
+    return "", b"/api/files/"
 
 
 def name_from_uri(raw_target: bytes, prefix: bytes) -> bytes:
@@ -167,11 +206,59 @@ def fs_name(n: bytes) -> str:
     return c_str(n).decode("utf-8", "surrogateescape")
 
 
+def fat_path(n: bytes) -> str | None:
+    """`n` as a card-relative path, or None when FatFs would not find it.
+
+    ESP-IDF builds FatFs with FF_FS_RPATH = 0 (its ffconf.h), so "." is not
+    a directory reference — it is looked up as an ordinary file name and
+    never found — and a trailing separator demands that what precedes it be
+    a directory before failing on the empty segment after it. Python's
+    pathlib deletes both silently, so "GET /sd/a/" served the file `a` here
+    and answered FR_NO_PATH on the board (found by the C harness's storm,
+    tests/test_firmware_web_storm.py)."""
+    name = fs_name(n)
+    if not name or name.endswith("/"):
+        return None
+    if any(seg in (".", "..") for seg in name.split("/")):
+        return None
+    return name
+
+
+def query_truncated(raw_target: bytes) -> bool:
+    """httpd_req_get_url_query_str TRUNC when the query plus NUL exceeds 200."""
+    if b"?" not in raw_target:
+        return False
+    qry = raw_target.split(b"?", 1)[1]
+    return bool(qry) and len(qry) + 1 > QUERY_BUF
+
+
+def pir_armed_ok(a: bytes) -> tuple[bool, bytes]:
+    """sd_web_util.h pir_armed_ok: empty, or 1/true/on / 0/false/off → 1/0."""
+    if not a:
+        return True, a
+    low = a.lower()
+    if low in (b"1", b"true", b"on"):
+        return True, b"1"
+    if low in (b"0", b"false", b"off"):
+        return True, b"0"
+    return False, a
+
+
+def pir_cooldown_ok(c: bytes) -> bool:
+    return (not c) or c in (b"30", b"60", b"120")
+
+
 def query_param(raw_target: bytes, key: str) -> bytes:
-    """sd_web.h query_param: httpd_req_get_url_query_str into a 200-byte
-    buffer, httpd_query_key_value into a 120-byte one (either truncation
+    """sd_web_util.h query_param: httpd_req_get_url_query_str into a 200-byte
+    buffer, httpd_query_key_value into a 301-byte one (either truncation
     → ""), then url_decode. Keys compare case-insensitively; a pair without
-    '=' derails the scan (the '=' found belongs to the NEXT pair)."""
+    '=' derails the scan (the '=' found belongs to the NEXT pair).
+
+    The value leg is unreachable behind the 200-byte query ceiling and is
+    kept only so the two buffers stay spelled the way the C spells them —
+    the firmware answers its own 414 there, with the same message the query
+    ceiling gives, so no input exists on which the two sides differ.
+    """
     if b"?" not in raw_target:
         return b""
     qry = raw_target.split(b"?", 1)[1]

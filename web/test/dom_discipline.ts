@@ -2,7 +2,8 @@
 // through document.getElementById or document.querySelector — req and reqIn
 // name what was missing instead of throwing TypeError on null. The
 // convention was written down and then lost ground (58 raw sites at one
-// audit, 74 at the next), so now it is a check: grade report C1/C4.
+// audit, 74 at the next), so now it is a check: grade report 2026-08-24 C1,
+// widened to querySelector by grade report 2026-08-31 C4.
 //
 // The scan walks src/ recursively — a rule that stopped at the top level
 // would be a rule that a subdirectory silently repeals.

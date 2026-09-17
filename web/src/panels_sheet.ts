@@ -2,7 +2,7 @@
  * The cue sheet's pure half — the sound catalogue, the channel strip
  * vocabulary, and the row/tick/YAML builders that turn a Cue into markup
  * or text. Split from panels.ts at the data/DOM seam (the 500-line cap,
- * grade report C2): nothing here touches the page, so panels.ts keeps the
+ * grade report 2026-08-24 C2): nothing here touches the page, so panels.ts keeps the
  * DOM and this stays trivially testable.
  */
 

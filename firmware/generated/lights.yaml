@@ -214,7 +214,7 @@ light:
             if (it.size() > 0) it[0] = Color(255, 0, 0, 0);
             if (it.size() > 1) it[it.size() - 1] = Color(0, 0, 255, 0);
     # door: ring12 — 12 px, GRB, GPIO16
-# RMT: 192 of 256 symbols spent, 1 block(s) spare (the SD build's status pixel needs one).
+# RMT: 256 of 256 symbols spent — 3 strip(s) and the SD build's status pixel (1 block, castle_sd.yaml) — 0 block(s) spare.
 
 script:
   - id: lights_override

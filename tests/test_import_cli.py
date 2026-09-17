@@ -74,6 +74,15 @@ class TestImportFromFile(CliCase):
         self.assertIn("imported", out)
         self.assertIn("demo.mp3", out)
 
+    def test_source_can_arrive_in_the_environment(self) -> None:
+        """The radio demo hands a pasted link over as CASTLE_IMPORT_SOURCE
+        rather than an argument, so a link is never parsed as an option."""
+        with mock.patch.dict("os.environ", {"CASTLE_IMPORT_SOURCE": str(self.src)}):
+            code, out = self.run_cli("--id", "envdemo")
+        self.assertEqual(code, 0)
+        self.assertTrue((it.TRACKS / "envdemo.mp3").exists())
+        self.assertIn("envdemo.mp3", out)
+
     def test_a_source_in_tracks_under_its_own_id_survives(self) -> None:
         """`import_track.py tracks/foo.wav --id foo` converts foo.wav to
         foo.mp3 and then the one-file-per-id sweep deleted foo.wav — the
@@ -144,7 +153,8 @@ class TestImportFromFile(CliCase):
         """Every import competes for the same budget, so the cost belongs in
         front of you at the moment you make the choice."""
         _code, out = self.run_cli(str(self.src), "--id", "demo")
-        self.assertIn("budget", out)
+        self.assertIn("SD card", out)
+        self.assertNotIn("flash audio budget", out)
 
     def test_missing_file_fails_loudly(self) -> None:
         with self.assertRaises(SystemExit):

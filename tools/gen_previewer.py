@@ -271,7 +271,7 @@ def lean(html: str, route: str = AUDIO_ROUTE, suffix: str = "") -> str:
 
     The studio serves `/studio/scene-audio/<id>` (the default); the device
     build gets `/site/<id>.mp3` — sd_sync pushes the files beside the page
-    (grade report A5/G1), served by the firmware's existing /site/* handler.
+    (grade report 2026-08-23 A5/G1), served by the firmware's existing /site/* handler.
     """
     return _DATA_URI.sub(lambda m: f'"{m[1]}": "{route}{m[1]}{suffix}"', html)
 

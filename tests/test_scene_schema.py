@@ -3,7 +3,7 @@
 The studio splices a block into scenes.yaml and gen_esphome emits from it;
 both run this first. The interesting cases are the ones that used to get
 THROUGH — they parsed, so they were written, and the failure came back later
-from a subprocess log (grade report B4).
+from a subprocess log (grade report 2026-08-21 B4).
 """
 
 from __future__ import annotations

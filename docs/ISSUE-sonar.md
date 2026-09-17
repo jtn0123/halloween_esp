@@ -46,6 +46,12 @@ cp -R ~/…/halloween_esp/web/src src && cp -R ~/…/halloween_esp/web/test test
 npx eslint src test
 ```
 
+The Castle Radio demo's classic scripts are checked the same way with
+`sourceType: "script"` (copy `demo/castle-radio/*.js`, minus the bundled
+`visuals.js`); the `curly` core rule with `--fix` clears every
+`no-unenclosed-multiline-block` at once, and a `/* global … */` comment is
+what the implicit-global rule accepts for variables another script declares.
+
 Line numbers match the originals. What the output means:
 
 - **Bug rules** (`no-unenclosed-multiline-block`, `no-identical-expressions`,
@@ -98,7 +104,8 @@ Found and fixed while the gate was unreadable, most of them real:
 - **Five backtracking regexes** (`S5852`) across the studio, the generators
   and two test harnesses.
 - **Log injection** — the request line reached the console verbatim, so a CR
-  in a URL forged a second log entry (`studio_http.scrub`).
+  in a URL forged a second log entry (`studio_http.scrub`, now
+  `core/src/http_parse.rs`'s `scrub`).
 - **Hardcoded credentials** — the two `wifi_password:` literals above.
 - **Bugs** — a sort with no comparator, `.map` handed a callback with an
   index, untyped recorder arrays that made real comparisons read as

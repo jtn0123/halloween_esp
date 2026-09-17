@@ -172,6 +172,26 @@ def analyse_layers(files: dict[str, Path], sensitivity: float = 1.1) -> dict:
 
 
 def _run_demucs(src: Path, out: Path, device: str) -> subprocess.CompletedProcess:
+    if os.environ.get("CASTLE_PROGRESS_STREAM") == "1":
+        from progress_process import run_progress
+
+        return run_progress(
+            [
+                sys.executable,
+                "-m",
+                "demucs.separate",
+                "--two-stems",
+                "vocals",
+                "-n",
+                "htdemucs",
+                "-d",
+                device,
+                "-o",
+                str(out),
+                str(src),
+            ],
+            SEPARATE_TIMEOUT,
+        )
     return subprocess.run(
         [
             sys.executable,

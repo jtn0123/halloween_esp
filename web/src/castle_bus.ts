@@ -27,7 +27,8 @@ type Fn = () => void;
  * One bus's state. The module below exports the app's single instance, but
  * the signals are a VALUE, not four module-level `let`s: a test can build a
  * fresh bus, drive it, and assert what the desk would have seen, instead of
- * inheriting whatever an earlier test left behind (grade report C-also-noted).
+ * inheriting whatever an earlier test left behind (grade report 2026-08-31,
+ * the also-noted line under section C).
  */
 export interface CastleBus {
   setLive(now: boolean): void;

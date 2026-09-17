@@ -60,12 +60,16 @@ test("scenes carry their size and their own colour", async ({ page }) => {
   expect(new Set(tints).size).toBeGreaterThan(1);
 });
 
-test("the budget card measures the show against both builds", async ({ page }) => {
-  // What used to be a parenthesised percentage next to the scene count. The
-  // flash ceiling is the app partition (firmware/partitions_single_app.csv);
-  // the card is the experimental `make sd-build` variant.
-  await expect(page.locator("#budHead"))
-    .toHaveText(/[\d.]+ [KMG]B of 3\.88 MB · \d+%/);
+test("the budget card opens on the card and keeps the flash counterfactual",
+  async ({ page }) => {
+  // What used to be a parenthesised percentage next to the scene count. It
+  // opens on the CARD since 2026-09-01 (PROJECT_NOTES §12.15): the card is
+  // the castle, and the flash view is the retired build's arithmetic kept as
+  // the reason the card exists. It used to be the other way round.
+  await expect(page.locator("#budHead")).toContainText("of 32.00 GB");
+  await expect(page.locator("#budRows")).toContainText("/sd/scenes");
+  await expect(page.locator("#budNote")).toContainText("make publish");
+  await expect(page.locator("#budNote")).not.toContainText("Experimental");
   await expect(page.locator("#budPick")).toBeHidden();
 
   // Every band is the scene behind it, and so is every legend row — on the
@@ -74,10 +78,12 @@ test("the budget card measures the show against both builds", async ({ page }) =
   await expect(page.locator("#budPick")).toBeVisible();
   await expect(page.locator(".budget__pickhd b")).toHaveText(/[\d.]+ [KMG]B · /);
 
-  await page.locator('#budTabs button[data-bud="sd"]').click();
-  await expect(page.locator("#budHead")).toContainText("of 32.00 GB");
-  await expect(page.locator("#budRows")).toContainText("/sd/scenes");
-  await expect(page.locator("#budNote")).toContainText("Experimental");
+  await page.locator('#budTabs button[data-bud="flash"]').click();
+  await expect(page.locator("#budHead"))
+    .toContainText(/of 3\.88 MB · \d+%/);
+  // And it says outright that it is not a build any more, so nobody reads
+  // the "over budget" it now shows as something to go and fix.
+  await expect(page.locator("#budNote")).toContainText("Not a build any more");
   // The selection does not survive the switch — the keys mean different things.
   await expect(page.locator("#budPick")).toBeHidden();
 });

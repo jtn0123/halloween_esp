@@ -2,7 +2,7 @@
 # ESPHome config validation of every buildable variant.
 #
 # Four parallel jobs on a PR: python, rust, web, esphome. The `rust` job is
-# newer than the rest (grade report I3) — castle-core landed with no job of
+# newer than the rest (grade report 2026-08-31 I3) — castle-core landed with no job of
 # its own, so a clippy finding or a failed cargo build reported itself as
 # "coverage-gated unit tests failed" three jobs away from the truth.
 #
@@ -22,18 +22,36 @@ on:
   # The weekly firmware job below — PRs never pay the ~10 min toolchain fetch.
   schedule:
     - cron: "0 9 * * 1"
+  # ...and by hand, so a firmware change can be compiled the day it lands
+  # instead of the following Monday: `gh workflow run ci.yml`. Only the
+  # firmware job answers a dispatch (grade report 2026-09-06 D1).
+  workflow_dispatch:
+
+# Every `run:` step is `bash -eo pipefail`. GitHub's default for a plain
+# step is `bash -e` with NO pipefail, so `esphome compile … | tee` reported
+# tee's exit status — always 0 — and the weekly compile could not fail
+# (grade report 2026-09-06 D1). Composite actions already ran with pipefail
+# (.github/actions/media-tools); now the workflow's own steps do too.
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
 
 # A push that supersedes a commit should supersede its CI too. Three runs for
 # this branch were alive at once on 2026-08-18, the oldest for 38 minutes on a
 # commit two pushes stale, all of them queueing behind the same apt mirror.
 # Main is exempt: every commit that lands there deserves its own answer.
+# A hand dispatch gets its own group: GitHub keeps ONE pending run per
+# group and cancels the older, so a dispatched firmware compile queued
+# behind a push to main was cancelled by the next push (run 34048857272,
+# 2026-09-06) — and a dispatch queued the other way round would cancel the
+# push's checks.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || github.head_ref || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # castle-core on its own: fmt, clippy, the unit tests and the wasm face,
-  # nothing else in the way (grade report I3/D1). It is fast, it is cached,
+  # nothing else in the way (grade report 2026-08-31 I3/D1). It is fast, it is cached,
   # and when it is red the checks list says "rust".
   rust:
     if: github.event_name != 'schedule'
@@ -48,25 +66,28 @@ jobs:
       # so it cannot read the pin — hence the literal. rustup does read it
       # once cargo runs (the make targets cd into core/), so a mismatch here
       # shows up as this step installing a toolchain nothing then uses.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:
           toolchain: "1.88.0"
           components: clippy, rustfmt
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
       # The same words a developer types. `make rust-lint` is rustfmt --check
       # then clippy -D warnings; tests/test_castle_core.py asserts on these
-      # exact targets, so the gate has one definition (grade report I1).
+      # exact targets, so the gate has one definition (grade report 2026-08-31 I1).
       - name: fmt + clippy
         run: make rust-lint
       - name: unit tests
         run: make rust-test
       # The desk's wasm face. Built here rather than discovered mid-Python-
       # suite; test_castle_core.py still loads and checks it in node.
+      # --no-default-features is the wasm build now: the crate's `native`
+      # half (server, ffmpeg, flock) is gated off for a target that cannot
+      # run it, and building WITH the defaults here would fail (A1).
       - name: wasm face builds
-        run: cargo build --release --target wasm32-unknown-unknown
+        run: cargo build --locked --release --no-default-features --target wasm32-unknown-unknown
         working-directory: core
 
   python:
@@ -107,14 +128,14 @@ jobs:
       # The parity suites (test_*_rust) shell out to core/target/release/*,
       # and the wasm check needs the wasm32 std — neither existed on this
       # runner before, which is how the whole Rust port merged unvalidated
-      # (grade report D1). Built in an explicit step so a compile error reads
+      # (grade report 2026-08-31 D1). Built in an explicit step so a compile error reads
       # as one, and so tools/core_bins.py finds it fresh and skips its own
       # build in every child process it spawns (B6).
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:
           toolchain: "1.88.0"
           targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
       - name: build castle-core
@@ -125,7 +146,7 @@ jobs:
       # yt-dlp: two tests assert the import toolchain is present and that
       # probe/import guards reject junk BEFORE shelling out to it.
       # The lock IS what was tested locally (frozen from the 3.13 venv by `make lock`).
-      - run: pip install -r requirements.lock
+      - run: pip install --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
       # …but the lock is ALL any job installs, so nothing here ever asked the
       # resolver whether requirements.txt is still satisfiable. Dependabot
       # walked straight through that gap: PR #13's own log shows the job
@@ -139,7 +160,7 @@ jobs:
       # unsatisfiable while each pin still looks fine on its own.
       - name: resolve the requirement files
         run: |
-          pip install --dry-run --quiet --report /dev/null \
+          pip install --dry-run --quiet --report /dev/null --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt \
             -r requirements.txt -r requirements-dev.txt
       # esbuild: the sandbox guard runs all three generators end to end, and
       # gen_previewer.py bundles web/src through it. Without node_modules that
@@ -149,10 +170,15 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         working-directory: web
       - name: lint
         run: ruff check tools tests
+      # `make lint` and the pre-commit hook run this; CI did not, so a web
+      # edit or a Dependabot PR could land formatting drift that reddened the
+      # next person's `make check` (grade report 2026-09-06 D3).
+      - name: ruff format
+        run: ruff format --check tools tests
       - name: type check
         run: mypy tools tests
       # The unit suite runs under coverage.py so the number is a ratchet,
@@ -160,8 +186,16 @@ jobs:
       # tools/ as of 2026-08-23); raise it there as coverage lands.
       - name: unit tests (coverage-gated)
         run: make coverage-gate PY=python
+      # The control room's own suite (bridge, jobs, device page, browser
+      # sources under node:test) lived only in `make test-radio` until 2026-09-15.
+      - name: castle radio tests
+        run: make test-radio PY=python
       - name: LOC cap
         run: python tools/check_loc.py
+      # Every grade-report citation names its audit. IDs renumber, so a bare
+      # one points at six reports and none of them.
+      - name: citation dates
+        run: python tools/check_citations.py
       # Advisories against the locked venv. Informational only — see the
       # `audit` target's comment in the Makefile for what is ignored and why.
       - name: pip-audit (non-gating)
@@ -172,15 +206,10 @@ jobs:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # The 148-test browser suite is also the parity gate for the Rust studio:
-    # both servers answer the same 20+19 routes, so the same specs passing
-    # against both IS the proof (grade report D5). It had been run against the
-    # Rust half exactly once, by hand. fail-fast off — when one server breaks,
-    # the other axis's result is the most useful thing on the page.
-    strategy:
-      fail-fast: false
-      matrix:
-        studio: [python, rust]
+    # One axis since docs/RETIREMENT.md. This job ran the 148-test browser
+    # suite twice, once per server, because the same specs passing against
+    # both WAS the parity proof (grade report 2026-08-31 D5). There is one
+    # server now, so the second run proved nothing and cost the same.
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -191,22 +220,23 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      # The e2e suite drives the REAL studio server, whose launch command is
-      # .venv/bin/python — so the venv and its media tools must exist here.
+      # The studio spawns Python children for every render, import and
+      # generator run — so the venv and its media tools must exist here even
+      # though the server itself is a Rust binary.
       - uses: ./.github/actions/media-tools
       - name: studio server venv
         run: |
           python3 -m venv .venv
-          .venv/bin/pip install --quiet numpy scipy pyyaml
+          .venv/bin/pip install --quiet --only-binary=":all:" -c requirements.lock numpy scipy pyyaml
       # render_audio.py renders THROUGH castle-core (scene_render), and with
       # no binary and no cargo it hard-stops rather than falling back to the
       # machine-dependent Python reference — tools/core_bins.py, by design.
       # Built once here, explicitly: the mtime check then keeps every render
-      # child from re-running cargo's freshness pass (grade report B6).
-      - uses: dtolnay/rust-toolchain@stable
+      # child from re-running cargo's freshness pass (grade report 2026-08-31 B6).
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:
           toolchain: "1.88.0"
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
       - name: build castle-core
@@ -217,7 +247,7 @@ jobs:
       # it (tracks/ is theirs, not the repo's) and says so.
       - name: render scene audio
         run: .venv/bin/python tools/render_audio.py
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         working-directory: web
       # The previewer page is generated, not tracked (2 MB a revision was
       # the whole repo's growth); the e2e global-setup refuses to run
@@ -226,30 +256,25 @@ jobs:
         run: .venv/bin/python tools/gen_previewer.py
       # The page-weight budget can only be measured where the page exists,
       # which is here and not in the `python` job — where it had only ever
-      # produced a FileNotFoundError (grade report D1).
-      - if: matrix.studio == 'python'
-        name: previewer page budget
+      # produced a FileNotFoundError (grade report 2026-08-31 D1).
+
+      - name: previewer page budget
         run: .venv/bin/python -m unittest -q tests.test_previewer_budget.TestPageWeight
-      # Server-independent — once per push, not once per matrix axis.
-      - if: matrix.studio == 'python'
-        run: npx tsc --noEmit
+      - run: npx --no-install tsc --noEmit
         working-directory: web
       - name: engine unit tests
-        if: matrix.studio == 'python'
         run: npm test
         working-directory: web
       - name: browser tests
-        # Named for both axes rather than defaulted, because playwright.config
-        # falls back with `??`: an empty CASTLE_STUDIO_CMD is not absent, it is
-        # a server command of "". The paths are relative to web/, the config's
-        # own directory, and the port and --localhost are appended there.
+        # Named rather than defaulted, because playwright.config falls back
+        # with `??`: an empty CASTLE_STUDIO_CMD is not absent, it is a server
+        # command of "". The path is relative to web/, the config's own
+        # directory, and the port and --localhost are appended there.
         env:
-          CASTLE_STUDIO_CMD: ${{ matrix.studio == 'rust'
-            && '../core/target/release/studio'
-            || '../.venv/bin/python ../tools/studio.py' }}
+          CASTLE_STUDIO_CMD: ../core/target/release/studio
         run: |
-          npx playwright install --with-deps chromium
-          npx playwright test
+          npx --no-install playwright install --with-deps chromium
+          npx --no-install playwright test
         working-directory: web
 
   esphome:
@@ -272,12 +297,12 @@ jobs:
         run: |
           PIN=$(grep -E '^esphome==' requirements.txt)
           echo "installing $PIN"
-          pip install "$PIN" pyyaml numpy scipy
+          pip install --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -c requirements.lock "$PIN" pyyaml numpy scipy
       # Same reason as the web job: the renderer is the Rust binary now.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:
           toolchain: "1.88.0"
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
       - name: build castle-core
@@ -299,7 +324,7 @@ jobs:
       # away turned every validation failure into a bare "exit code 2".
       - name: validate every buildable variant
         run: |
-          for y in castle_flash castle_sd castle_sd_jewels bench; do
+          for y in castle_sd castle_s3 castle_s3_qemu castle_feather_s3 castle_sd_jewels bench bench_audio; do
             esphome config "firmware/$y.yaml" > "/tmp/$y.out" 2>&1 \
               || { echo "== $y FAILED"; cat "/tmp/$y.out"; exit 1; }
             echo "$y OK"
@@ -307,13 +332,16 @@ jobs:
 
   # `esphome config` cannot see the failure mode that is now closest: the
   # S2's dram0 sits at ~88% and each song scene costs ~9 KB (grade report
-  # D5/G2). Once a week, actually compile the SD build and fail while the
+  # 2026-08-23 D5/G2). Once a week, actually compile the SD build and fail while the
   # ceiling is still a warning — and say whether a newer esphome exists,
   # because the pin is what holds eight stale advisories in place (F1).
   firmware-weekly:
-    if: github.event_name == 'schedule'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Two chips, two ESP-IDF toolchains to fetch, three images: the S2 porch
+    # build, the S3 carrier build (2026-09-05) and the S3 Feather on v3.3a
+    # (2026-09-14), which shares the S3 toolchain but not its build tree.
+    timeout-minutes: 85
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -323,7 +351,15 @@ jobs:
       # From the LOCK, wheels only: exact resolved versions (the same set
       # every other gate tested against) and no sdist setup.py execution —
       # the two things Sonar rightly flagged on the unpinned spelling.
-      - run: pip install --only-binary=":all:" -r requirements.lock
+      # Three exceptions, named, and the list is complete: of the 113 pins,
+      # crcmod 1.7 (esphome → smpclient → smp), esptool 5.3.1 and paho-mqtt
+      # 1.6.1 are sdist-only on PyPI (asked of PyPI's JSON, every pin,
+      # 2026-09-06), so wheels-only refused the whole install and this job
+      # died here on every run it ever had — the 2026-08-31 schedule and
+      # the first two hand dispatches. pip's format control lets those
+      # three back to source while :all: holds for the other 110. The
+      # python job installs the same lock without the flag and passes.
+      - run: pip install --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
       # Same four lines as the esphome job, for the same reason: render_audio
       # spawns castle-core's scene_render, so this job builds the crate too —
       # it was just doing it on the runner image's rustup, off the pin, with
@@ -332,10 +368,10 @@ jobs:
       # repo root and ours lives in core/; rustup reads the real pin once
       # cargo runs (make rust cds into core/), so a mismatch here shows up as
       # this step installing a toolchain nothing then uses.
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:
           toolchain: "1.88.0"
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
       - name: build castle-core
@@ -344,19 +380,104 @@ jobs:
         run: |
           python tools/render_audio.py
           python tools/gen_esphome.py
+      # The show this job compiles must be the show in the repo. It was not:
+      # the runner has no tracks/, render_audio wrote audio/markers.json
+      # without the two songs' onsets, gen_esphome emitted no pulse cues
+      # for them, and the image measured here was 13.6 KB of dram0 and
+      # 71 KB of flash smaller than the porch's (2026-09-06, the maps of run
+      # 34049090300) — the 92% alarm was judging a smaller show. The tracked
+      # generated files and markers are what the Mac produced; a diff here
+      # means either the generators have drifted from what is committed or
+      # this machine lacks an input, and both are a red run, not a smaller
+      # number.
+      - name: the generated show is the committed show
+        run: git diff --exit-code --stat -- firmware/generated audio/markers.json
       - name: fake secrets
         env:
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           printf 'wifi_ssid: "ci"\nwifi_password: "%s"\n' "$RUN" \
             > firmware/secrets.yaml
+      # firmware/build_path.yaml points every build tree at the USB drive
+      # the developer's Mac has mounted; on the runner that is
+      # "Permission denied: /Volumes", which is where the third hand
+      # dispatch (run 34046501575, 2026-09-06) died — the first time the job
+      # had got as far as the compile. Point it under the checkout instead:
+      # ESPHome's own default layout, and where check_image.py looks second.
+      # (${name} is ESPHome's substitution, not the shell's — single quotes.)
+      - name: build under the checkout, not the USB drive
+        run: |
+          printf 'esphome:\n  build_path: %s/firmware/.esphome/build/${name}\n' \
+            "$GITHUB_WORKSPACE" > firmware/build_path.yaml
+          cat firmware/build_path.yaml
       - name: compile the SD build
         run: esphome compile firmware/castle_sd.yaml | tee /tmp/build.out
       - name: dram0 ceiling
         run: |
-          PCT=$(grep -Eo 'RAM: *\[[^]]*\] *[0-9.]+%' /tmp/build.out | grep -Eo '[0-9.]+%' | tr -d '%')
+          PCT=$(grep -Eo 'RAM: *\[[^]]*\] *[0-9.]+%' /tmp/build.out | grep -Eo '[0-9.]+%' | tr -d '%' || true)
+          [ -n "$PCT" ] || { echo "no RAM line in the compile output — the compile did not finish"; exit 1; }
           echo "dram0 at ${PCT}%"
-          python3 -c "import sys; p=float('${PCT}' or 101); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm — about one scene of headroom left (grade report G2); split or cap before adding more') or 1)"
+          python3 -c "import sys; p=float('${PCT}'); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm — about one scene of headroom left (grade report 2026-08-23 G2); split or cap before adding more') or 1)"
+      # The OTA-slot guard, run where an image exists (grade report
+      # 2026-09-06 D3): --require makes a missing image a failure here,
+      # because the compile just ran.
+      - name: S2 OTA slot
+        run: python tools/check_image.py castle-sd --require
+      # The carrier build has no porch and no operator to notice it rotting:
+      # `esphome config` is the only gate it passes through on a PR, and a
+      # config-valid YAML can still fail to LINK (the S3's own frameworks, the
+      # includes, the I2C component). Compiled here for the same reason the S2
+      # is — while a break is still a warning rather than a flash day.
+      # No dram0 alarm on this one: the S3's data segment is not the S2's
+      # 99.99%-full cliff, and a threshold invented before the board exists
+      # would be a number nobody measured. Report the figures instead.
+      - name: compile the S3 carrier build
+        run: esphome compile firmware/castle_s3.yaml | tee /tmp/build_s3.out
+      - name: S3 RAM and flash
+        run: |
+          grep -E '^(RAM|Flash):' /tmp/build_s3.out \
+            || { echo "no RAM/Flash summary in the S3 compile output — the compile did not finish"; exit 1; }
+      - name: S3 OTA slot
+        run: python tools/check_image.py castle-s3 --require
+      # The S3 Feather on the v3.3a carrier: the porch's build on the other
+      # chip, compiled here for the same reason as the carrier build — no
+      # board has run it yet. Same report, same guard.
+      - name: compile the S3 Feather build
+        run: esphome compile firmware/castle_feather_s3.yaml | tee /tmp/build_fs3.out
+      - name: S3 Feather RAM and flash
+        run: |
+          grep -E '^(RAM|Flash):' /tmp/build_fs3.out \
+            || { echo "no RAM/Flash summary in the S3 Feather compile output — the compile did not finish"; exit 1; }
+      - name: S3 Feather OTA slot
+        run: python tools/check_image.py castle-feather-s3 --require
+      # The images, the linker maps and the exact configuration, kept for
+      # two weeks: a build from a clean machine to flash from, and the one
+      # way to explain why the runner's S2 image is 8 points of dram0 and
+      # 76 KB of flash SMALLER than the Mac's with the same ESP-IDF 5.5.5,
+      # toolchain and sdkconfig (measured 2026-09-06 — a clean rebuild on
+      # the Mac reproduced the Mac's numbers, so it is not a stale tree).
+      - name: keep the images and maps
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            firmware/.esphome/build/castle-sd/build/castle-sd.bin
+            firmware/.esphome/build/castle-sd/build/firmware.factory.bin
+            firmware/.esphome/build/castle-sd/build/castle-sd.map
+            firmware/.esphome/build/castle-sd/sdkconfig*
+            firmware/.esphome/build/castle-sd/partitions.csv
+            firmware/.esphome/build/castle-s3/build/castle-s3.bin
+            firmware/.esphome/build/castle-s3/build/firmware.factory.bin
+            firmware/.esphome/build/castle-s3/build/castle-s3.map
+            firmware/.esphome/build/castle-s3/sdkconfig*
+            firmware/.esphome/build/castle-s3/partitions.csv
+            firmware/.esphome/build/castle-feather-s3/build/castle-feather-s3.bin
+            firmware/.esphome/build/castle-feather-s3/build/firmware.factory.bin
+            firmware/.esphome/build/castle-feather-s3/build/castle-feather-s3.map
+            firmware/.esphome/build/castle-feather-s3/sdkconfig*
+            firmware/.esphome/build/castle-feather-s3/partitions.csv
       - name: newer esphome available?
         run: |
           pip index versions esphome 2>/dev/null | head -2 || true

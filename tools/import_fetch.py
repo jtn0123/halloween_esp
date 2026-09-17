@@ -8,6 +8,7 @@ a link and a scratch directory, and hands back a file.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -53,27 +54,48 @@ def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
         raise SystemExit(f"not a link this can fetch: {url!r} — http(s) only")
     print(f"fetching {url}")
     try:
-        r = subprocess.run(
-            # `--` closes the option list: whatever the URL turns out to look
-            # like, yt-dlp reads it as the thing to download.
-            [
-                _ytdlp(),
-                "-x",
-                "--audio-format",
-                "mp3",
-                "--audio-quality",
-                "0",
-                "--no-playlist",
-                "-o",
-                str(dest / "%(title)s.%(ext)s"),
-                "--",
-                url,
-            ],
-            capture_output=True,
-            text=True,
-            check=False,  # handled below
-            timeout=900,  # a hung download must not wedge the studio's lock
-        )
+        if os.environ.get("CASTLE_PROGRESS_STREAM") == "1":
+            from progress_process import run_progress
+
+            r = run_progress(
+                [
+                    _ytdlp(),
+                    "--newline",
+                    "-x",
+                    "--audio-format",
+                    "mp3",
+                    "--audio-quality",
+                    "0",
+                    "--no-playlist",
+                    "-o",
+                    str(dest / "%(title)s.%(ext)s"),
+                    "--",
+                    url,
+                ],
+                900,
+            )
+        else:
+            r = subprocess.run(
+                # `--` closes the option list: whatever the URL turns out to look
+                # like, yt-dlp reads it as the thing to download.
+                [
+                    _ytdlp(),
+                    "-x",
+                    "--audio-format",
+                    "mp3",
+                    "--audio-quality",
+                    "0",
+                    "--no-playlist",
+                    "-o",
+                    str(dest / "%(title)s.%(ext)s"),
+                    "--",
+                    url,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,  # handled below
+                timeout=900,  # a hung download must not wedge the studio's lock
+            )
     except subprocess.TimeoutExpired:
         raise SystemExit(
             "gave up after 15 minutes — the download stalled. "

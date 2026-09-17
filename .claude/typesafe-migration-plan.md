@@ -306,6 +306,15 @@ through Halloween; retiring it (and the desk swap) is the off-season
 flip. Deliberately not ported: the aioesphomeapi native leg (flash
 build; the esphome-native-api crate swap owns it) and gzip.
 
+B5 FLIP (grade report 2026-09-01 G1): `make studio` and
+`.claude/launch.json` start the Rust bin through `tools/studio_launch.sh`.
+Done early because the e2e matrix ran both axes on every push, so the flip
+was gated, not hoped. B5 CLOSED 2026-09-06: `studio*.py` is deleted,
+`tools/studio_launch.sh` has no fallback arm left, and the parity the
+`tests/test_studio*_rust.py` suites provided moved to `tests/golden/`, the
+black-box `tests/test_studio_*_rs.py` suites and the crate's own
+`#[test]`s — docs/RETIREMENT.md is the plan and the record.
+
 B3 SWAP + B5 loose end (2026-08-27, eighth Track-B run, 4 passes):
 render_audio calls the crate — B3's stop condition, met and verified on
 the real show. Pass 1 closed B5's flag: hosts.resolve accepts host:port
@@ -352,8 +361,7 @@ tracks.json at original import. The cargo dance moved to its one home,
 tools/core_bins.py (render_audio uses it too); sens3 (the JSON
 band-sensitivity coercion) moved into onsets.rs, shared by both bins.
 All 148 e2e pass. analyze.py's remaining production consumers:
-stems.py (per-stem onsets) and the Python studio's live analysis
-(studio_media/studio_tracks) — the stems leg is the natural next pass;
+stems.py (per-stem onsets) — the stems leg is the natural next pass;
 the studio leg retires with the B5 flip.
 
 | Loop | Iteration unit | Gate per pass | Stops when |

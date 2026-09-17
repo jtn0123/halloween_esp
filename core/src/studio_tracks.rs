@@ -8,7 +8,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::jsonio::{obj_update, Json};
+use crate::jsonio::{Json, obj_update};
 use crate::{manifest, media, onsets};
 
 pub const AUDIO_EXT: [&str; 4] = ["mp3", "wav", "flac", "opus"];

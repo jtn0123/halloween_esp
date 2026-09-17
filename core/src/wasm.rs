@@ -17,34 +17,34 @@ unsafe impl Sync for Scratch {}
 static OUT: Scratch = Scratch(UnsafeCell::new([0.0; 4]));
 
 /// Where `wasm_render` leaves its four channels.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn out_ptr() -> *const f32 {
     OUT.0.get() as *const f32
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wasm_render(eff: i32, t: f32, seed: f32, hue: f32, soft: i32, pal: i32) {
     let c = render(eff, t, seed, hue, soft != 0, pal);
     // SAFETY: single-threaded module, single scratch owner (see Scratch).
     unsafe { *OUT.0.get() = [c.r, c.g, c.b, c.w] };
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wasm_hashi(i: i32) -> f32 {
     hashi(i)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wasm_hash3(a: i32, b: i32, c: i32) -> f32 {
     hash3(a, b, c)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wasm_vnoise(x: f32) -> f32 {
     vnoise(x)
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn wasm_fbm(x: f32) -> f32 {
     fbm(x)
 }

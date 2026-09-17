@@ -1,5 +1,5 @@
 /**
- * The frame loop idles when nothing moves (grade report G3): after Stop the
+ * The frame loop idles when nothing moves (grade report 2026-08-21 G3): after Stop the
  * stage, meters and chrome stop repainting — and a slider wakes them for a
  * frame or two, not forever. window.__castleDraws is main.ts's paint count.
  */

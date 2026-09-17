@@ -2,7 +2,7 @@
 
 The rest of `docs/` describes the system; this page is the night-to-night
 view: what to run, in what order, and what to check when it doesn't take.
-(Grade report H1 — the missing last-mile documentation is how the Ballad
+(Grade report 2026-08-23 H1 — the missing last-mile documentation is how the Ballad
 of the Witches' Road sat rendered on the Mac while the castle answered
 `unknown scene` all evening.)
 
@@ -17,7 +17,8 @@ of the Witches' Road sat rendered on the Mac while the castle answered
    it says what was pushed and what it could not do.
 3. **Firmware, if the log says so.** A brand-new scene is a *compile-time*
    object: the running board does not know it until you
-   `make ota` (builds `castle_sd.yaml`, stops audio, flashes over HTTP).
+   `make ota` (builds `castle_sd.yaml` — the only castle build since
+   2026-09-01, PROJECT_NOTES §12.15 — stops audio, flashes over HTTP).
    The desk shows the same fact two ways: the scene's tile is dimmed, and
    the 🏰 panel's health row says "N scene(s) newer than the firmware".
 4. **Verify** — the panel shows the new version; press the scene; the chip's
@@ -34,10 +35,10 @@ makes a scene the same bytes on every machine.
 
 Running the desk from a worktree, or from anywhere the project `.venv` is not
 one directory up? Export `CASTLE_PY=/path/to/.venv/bin/python`. The studio
-runs the generators and the importer as child processes, and the Rust studio
-bin has no `sys.executable` to fall back on — without `CASTLE_PY` it finds a
-bare `python3`, and every rebuild dies on `import yaml` instead of on
-anything to do with the show. (CLAUDE.md, "Sandboxing", lists it beside
+runs the generators and the importer as child processes, and the studio bin
+— what `make studio` starts — has no `sys.executable` to fall back on:
+without `CASTLE_PY` it finds a bare `python3`, and every rebuild dies on
+`import yaml` instead of on anything to do with the show. (CLAUDE.md, "Sandboxing", lists it beside
 `CASTLE_TRACKS` / `CASTLE_SCENES` / `CASTLE_HOST`.)
 
 ## When a scene will not play
@@ -53,9 +54,20 @@ Work down this list — it is ordered by how often each one was the answer:
 - **Nothing answers at all** → `tools/sd_sync.py status`. No reply: check
   power, then the router's DHCP table for the board's MAC
   (`84:f7:03:d7:99:3c`). The desk chip says which host it is probing.
-- **Audio starts then breaks up** → look at heap in the 🏰 panel; under
-  ~20 KB playing is the documented failure floor. Also
-  `docs/ISSUE-scene-start-audio.md` for the open scene-start issue.
+- **Audio starts then breaks up** → the Castle Radio page, "Recent castle
+  events": the row above the log carries `heap now … · lowest …`. The
+  *lowest* number is the one that matters — `heap_min_kb` in `/api/health`,
+  the low-water mark since boot; the free figure recovers the moment the
+  allocation that failed is handed back, which is why "look at heap" used to
+  come back clean an hour after the fault. Under ~20 KB while playing is the
+  documented failure floor. The same row shows card read errors and the last
+  path one happened on. Also `docs/ISSUE-scene-start-audio.md`.
+- **It fell over and you want to know what it was doing** →
+  `tools/sd_sync.py logs` (or `castle logs`). Since v5.62 each boot line in
+  `/sd/logs/castle.log` is followed by the last 64 things the *previous*
+  life did, read out of RTC memory, which a panic does not clear — plus the
+  reset reason, the card errors that life saw and which OTA slot it ran
+  from. Live, the same ring is "Recent castle events" on the page.
 
 ## Show night
 
@@ -66,14 +78,21 @@ Work down this list — it is ordered by how often each one was the answer:
 - Motion: the PIR row in the panel — armed, which scene, cooldown.
 - **Stop audio before any OTA.** `make ota` does this itself; if you flash
   another way, press ■ first.
+- **The card is not optional.** Since the all-in-flash build was retired
+  (§12.15) there is no embedded copy of the show to fall back on: a castle
+  with an empty slot, or a card that was never published to, plays a
+  one-second chirp per scene and nothing else. A fresh board is `make ota`
+  **and** `make publish`, in either order, before it can do anything.
 
 ## After changing firmware
 
 - Bump `version:` in `firmware/castle.yaml` (the panel is how you PROVE the
   OTA took — an upload that "succeeded" with the old version on screen did
   not).
-- `make ota`, then confirm the image (connect once with `tools/device.py`
-  or HA) — an unconfirmed image rolls back on its next reboot.
+- `make ota`. Since v5.60 the image confirms itself on the first
+  `/api/status` it answers — the poll `make ota` already does — so there is
+  no manual step. (A connect from `tools/device.py` or HA still confirms it
+  too; an image that answers neither rolls back on its next reboot.)
 - First big upload after a firmware change: watch it. v5.42 feeds the
   watchdog every 32 KB instead of every 8 KB during uploads (4× faster
   pushes); it behaved on the emulator but the real watchdog only exists on

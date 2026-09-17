@@ -32,7 +32,7 @@ class TestBudgetComplaint(unittest.TestCase):
 
     It was a warning through two audits, and both times it was crossed the
     constant moved (3 -> 4 MB) instead of the page. `enforce_budget` is the
-    version that can actually stop a build (grade report G2) — and since
+    version that can actually stop a build (grade report 2026-08-31 G2) — and since
     `fit_budget` un-inlines first, reaching it means the markup and the
     bundle alone are over, which no scene can be blamed for.
     """
@@ -80,7 +80,7 @@ class TestBudgetComplaint(unittest.TestCase):
 
 
 class TestFitBudget(unittest.TestCase):
-    """The page stops growing with the show (grade report G2).
+    """The page stops growing with the show (grade report 2026-08-31 G2).
 
     Before `fit_budget`, one more song scene meant one more megabyte and a
     raised constant. Now the overflow scenes swap their data URI for the
@@ -250,7 +250,7 @@ class TestPageWeight(unittest.TestCase):
         # The page is generated and gitignored, so it is simply absent in
         # any checkout that has not run `make preview` — CI's unit job
         # included, which errored here on every run rather than measuring
-        # anything (grade report D1). The job that DOES build the page
+        # anything (grade report 2026-08-31 D1). The job that DOES build the page
         # (workflows/ci.yml, `web`) runs this test by name right after.
         page = ROOT / "previewer" / "castle-cue-desk.html"
         if not page.exists():

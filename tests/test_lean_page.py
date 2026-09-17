@@ -5,9 +5,12 @@ by /studio/scene-audio/<id> links.
 rendered scene) — that is what the committed page, the artifact and a copy
 on the card need. The studio rewrites it at serve time because a phone on
 the LAN should not download 1.9 MB of base64 for scenes it may never play.
-What is asserted: the rewrite itself, that the route answers with the file
-the page was built from (Range honoured), and that the two never disagree
-about WHICH audio directory that is.
+What is asserted here is the REWRITE itself — `gen_previewer.lean` and
+`scene_audio`, which are Python and stay Python. The serving half (the
+route, the Range, the ETag, and the studio's agreement with itself about
+which audio directory it is serving from) moved to
+`tests/test_studio_reads_rs.py` and `core/src/studio.rs` when the Python
+studio retired (docs/RETIREMENT.md).
 """
 
 from __future__ import annotations
@@ -20,7 +23,6 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -28,8 +30,6 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import gen_previewer as gp
-import studio
-from studio_case import ServerCase
 
 MP3 = b"\xff\xfb\x90\x00" + bytes(range(256)) * 4  # 1028 fake mp3 bytes
 
@@ -102,88 +102,6 @@ class TestLeanRewrite(unittest.TestCase):
         body3, etag3 = gp.lean_page(page)
         self.assertIn(b"/studio/scene-audio/b", body3)
         self.assertNotEqual(etag1, etag3)
-
-
-class TestServedLean(ServerCase):
-    """The route pair over HTTP, against a build of its own."""
-
-    build: Path
-    _served: "mock._patch[Any]"
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        super().setUpClass()
-        cls.build = Path(tempfile.mkdtemp(prefix="castle-lean-srv-"))
-        audio = cls.build / "audio"
-        audio.mkdir()
-        (audio / "01_vigil.mp3").write_bytes(MP3)
-        page = cls.build / "castle-cue-desk.html"
-        b64 = base64.b64encode(MP3).decode()
-        page.write_text(
-            page_with(
-                {
-                    "vigil": f"data:audio/mpeg;base64,{b64}",
-                    "ghost": f"data:audio/mpeg;base64,{b64}",
-                }
-            )
-        )
-        cls._served = mock.patch.object(studio, "served", return_value=(page, audio))
-        cls._served.start()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls._served.stop()
-        shutil.rmtree(cls.build, ignore_errors=True)
-        super().tearDownClass()
-
-    def test_root_serves_the_lean_page(self) -> None:
-        code, body = self.req("GET", "/")
-        self.assertEqual(code, 200)
-        self.assertNotIn(b"data:audio/mpeg", body)
-        self.assertIn(b'"vigil": "/studio/scene-audio/vigil"', body)
-        self.assertIn(b'"ghost": "/studio/scene-audio/ghost"', body)
-
-    def test_scene_audio_streams_the_file_with_ranges(self) -> None:
-        code, body = self.req("GET", "/studio/scene-audio/vigil")
-        self.assertEqual(code, 200)
-        self.assertEqual(body, MP3)
-        code, body = self.req(
-            "GET", "/studio/scene-audio/vigil", headers={"Range": "bytes=4-7"}
-        )
-        self.assertEqual(code, 206)
-        self.assertEqual(body, MP3[4:8])
-
-    def test_missing_and_hostile_ids_are_404(self) -> None:
-        # In the page but not rendered: 404, like any other missing file.
-        self.assertEqual(self.req("GET", "/studio/scene-audio/ghost")[0], 404)
-        self.assertEqual(self.req("GET", "/studio/scene-audio/01_vigil.mp3")[0], 404)
-        self.assertEqual(self.req("GET", "/studio/scene-audio/..%2F01_vigil")[0], 404)
-        self.assertEqual(self.req("GET", "/studio/scene-audio/")[0], 404)
-
-
-class TestServedPair(unittest.TestCase):
-    """served() hands out the page and the audio dir from the SAME build."""
-
-    def test_repo_build_by_default(self) -> None:
-        with mock.patch.object(studio.bp, "sandboxed", return_value=False):
-            page, audio = studio.served()
-        self.assertEqual(page, studio.HTML)
-        self.assertEqual(audio, studio.ROOT / "audio")
-
-    def test_sandbox_build_once_it_exists(self) -> None:
-        tmp = Path(tempfile.mkdtemp(prefix="castle-lean-sb-"))
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        sb_page = tmp / "previewer" / "castle-cue-desk.html"
-        with (
-            mock.patch.object(studio.bp, "sandboxed", return_value=True),
-            mock.patch.object(studio.bp, "PREVIEW_HTML", sb_page),
-            mock.patch.object(studio.bp, "AUDIO", tmp / "audio"),
-        ):
-            # Not built yet: the repo's page AND the repo's audio.
-            self.assertEqual(studio.served(), (studio.HTML, studio.ROOT / "audio"))
-            sb_page.parent.mkdir(parents=True)
-            sb_page.write_text("<html></html>")
-            self.assertEqual(studio.served(), (sb_page, tmp / "audio"))
 
 
 if __name__ == "__main__":

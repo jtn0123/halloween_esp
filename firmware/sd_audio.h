@@ -19,10 +19,11 @@
 // lights for the second the SPI read took, and at the end was never polled
 // by anything. ~130 lines of dead code in the file nearest the RAM wall.
 //
-// WHAT THE CARD BUYS: it holds as many tracks as you like. Flash only ever
-// holds one show's worth (~2.9 MB total), and every track competes with
-// every other. The built-in scenes deliberately stay in flash: they are the
-// show, they are small, and they must work when there is no card in the slot.
+// WHAT THE CARD BUYS: it holds as many tracks as you like — and since the
+// all-in-flash build was retired (2026-09-01) it holds the show. Flash keeps
+// exactly one sound, the chirp, which is what a scene plays when the card is
+// missing: a signal that the card is missing, not a show. docs/RUNBOOK.md
+// says it plainly — the card is not optional.
 
 #pragma once
 
@@ -46,16 +47,44 @@ static const char *const TAG = "castle_sd";
 
 inline sdmmc_card_t *g_card = nullptr;
 inline bool g_mounted = false;
-/// Raised by the web OTA while it burns flash. Background chores (the eInk
-/// panel) must sit still: flash writes suspend the cache, and any ready task
-/// above the main loop's priority eats the breathing ticks h_ota inserts so
-/// the watchdog stays fed. sd_web_ota.h clears it on every way out of the
-/// handler — failure, and success once the restart is queued.
+/// Raised by the web OTA while it burns flash. Its reader today is the status
+/// pixel (amber while this is set); until v5.44 the eInk panel's task read it
+/// too and sat still, because flash writes suspend the cache and any ready
+/// task above the main loop's priority eats the breathing ticks h_ota inserts
+/// so the watchdog stays fed. Anything that runs beside the main loop again
+/// must honour it. sd_web_ota.h clears it on every way out of the handler —
+/// failure, and success once the restart is queued.
 inline volatile bool g_quiesce = false;
 
 /// Mount the card. Safe to call when no card is present — it logs and returns
 /// false, and the rest of the device carries on with the flash scenes.
-inline bool mount(int cs, int sck, int mosi, int miso, int max_files = 4) {
+///
+/// A3 (v5.61): `max_files` is the number of files FATFS will hold OPEN AT
+/// ONCE on this volume, and 4 was not a budget, it was the ESP-IDF example's
+/// number. Count what this castle can legitimately have open on one tick:
+///
+///   1  the stream server reading the track the decoder is pulling
+///      (sd_web_stream.h — for the whole length of a song)
+///   2  the control server serving the desk page off /sd/site/ to a browser
+///   3  the upload worker writing <name>.part (A9 put it on its own task,
+///      so it now overlaps 1 and 2 instead of queueing behind them)
+///   4  castle_health::log_boot_to_sd appending /sd/logs/castle.log
+///
+/// — four, with nothing spare. The fifth open is the one that fails, and
+/// FATFS reports it as ENFILE from fopen: h_sd_get answers "no such file"
+/// for a track that is right there, and the song stops mid-show. Doubling to
+/// 8 buys headroom for the case none of the four is written for: a second
+/// browser (the phone remote beside the desk) while a publish uploads and a
+/// scene plays.
+///
+/// THE RAM COST, because it is paid at mount and never given back: ESP-IDF
+/// allocates one FIL per slot up front, and a FIL is FF_MAX_SS (512 bytes,
+/// CONFIG_FATFS_SECTOR_512 in castle_sd_common.yaml) of sector buffer plus
+/// ~72 bytes of bookkeeping, alongside a VFS fd entry. 8 slots is ~4.7 KB of
+/// internal RAM against ~2.3 KB for 4 — about 2.4 KB more, on a board that
+/// reports 170-190 KB free (/api/status heap_free_kb). Worth it: the failure
+/// it removes is a silent one that only shows up when the castle is busiest.
+inline bool mount(int cs, int sck, int mosi, int miso, int max_files = 8) {
   if (g_mounted) return true;
 
   sdmmc_host_t host = SDSPI_HOST_DEFAULT();
@@ -89,7 +118,7 @@ inline bool mount(int cs, int sck, int mosi, int miso, int max_files = 4) {
 
   err = esp_vfs_fat_sdspi_mount("/sd", &host, &slot, &mcfg, &g_card);
   if (err != ESP_OK) {
-    ESP_LOGW(TAG, "no SD card mounted (%s) — flash scenes still work",
+    ESP_LOGW(TAG, "no SD card mounted (%s) — scenes will play the chirp, not the show",
              esp_err_to_name(err));
     return false;
   }
