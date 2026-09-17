@@ -31,8 +31,10 @@ from firmware_web_harness import COMPILER, CXX_DIR, FIRMWARE, IN_CI, WebPairCase
 
 
 class TestEventsOverTheWire(WebPairCase):
-    """Nothing here may queue an action first: the emulator's tick would
-    then have written a line the C harness (which has no main loop) cannot."""
+    """The ring of a castle nobody has commanded. Nothing here may queue an
+    action: this Pair is never ticked, so the emulator's own 200 ms thread
+    would write a line the C castle was never asked to. Driving a command
+    through BOTH main loops is tests/test_firmware_tick_cxx.py (C6)."""
 
     def test_the_light_counters_are_in_both_status_replies(self) -> None:
         """v5.59: what the main loop ran, and what the one slot dropped."""

@@ -232,7 +232,7 @@ class TestTheRefusalsAreRecorded(unittest.TestCase):
         ring.note_reply_error(500, 1500)  # inside the gap: silent
         ring.note_reply_error(500, 3200)
         self.assertEqual(
-            [(kind, arg) for _t, kind, arg in ring.snapshot()],
+            [(kind, arg) for _t, kind, arg, _trunc in ring.snapshot()],
             [("http_err", "404"), ("http_err", "500")],
         )
         self.assertEqual(json.loads(ring.json())[0]["e"], "http_err")

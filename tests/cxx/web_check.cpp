@@ -24,6 +24,16 @@
 //   response  "<status> <bodylen> <nhdr>\n", <nhdr> lines of "name: value",
 //             then <bodylen> raw body bytes. Content-Type is the first
 //             header; the rest follow in the order the handler set them.
+//   tick      "TICK <now_us> <playing> <sounding>\n" — ONE main-loop tick
+//             (C6). `playing` is the media pipeline's word and `sounding`
+//             the speaker's, the two inputs castle_sd_common.yaml's 200 ms
+//             interval reads off ESPHome before it calls into the firmware.
+//             Answered with "<ACTION> <arglen>\n" + <arglen> arg bytes,
+//             naming what the tick drained from the mailbox ("NONE" most
+//             of the time). Until this existed nothing downstream of
+//             set_pending was ever run in C: the mirror, the event ring
+//             and the audio clock were emulator-only, which is the
+//             structural reason C3, C4 and C7 were invisible to the pair.
 //
 // The URI is length-prefixed rather than whitespace-delimited because the
 // fuzz sends names that decode to spaces and newlines, and a protocol that
@@ -38,6 +48,14 @@
 #include "sd_web.h"
 
 namespace {
+
+// The show state the main loop publishes. On the device these are ESPHome
+// template entities the generated scene scripts write (current_scene,
+// current_track, pir_scene); here they are three strings that TICK moves
+// exactly the way castle_sd_common.yaml's lambda moves them, because
+// /api/status prints them and a pair test has to be able to get the castle
+// into a state rather than being handed one at startup. (C6)
+std::string g_scene, g_track, g_pir_scene;
 
 /// The device's globals, seeded the way the main loop would have by the
 /// time a request arrives. Every one of them is something /api/status
@@ -67,9 +85,10 @@ void seed_from_env() {
   // LAST, and for the same reason the device calls it last: since v5.60
   // this is the one publish point, copying every atomic above into the
   // snapshot /api/status answers from (sd_web_state.h).
-  castle_web::mirror_show_state(castle_shim::env("CASTLE_SCENE"),
-                                castle_shim::env("CASTLE_TRACK"),
-                                castle_shim::env("CASTLE_PIR_SCENE"));
+  g_scene = castle_shim::env("CASTLE_SCENE");
+  g_track = castle_shim::env("CASTLE_TRACK");
+  g_pir_scene = castle_shim::env("CASTLE_PIR_SCENE");
+  castle_web::mirror_show_state(g_scene, g_track, g_pir_scene);
 
   // /api/health's counters. The device reads them out of NVS at boot; here
   // they are given, so the reply is deterministic and every branch of
@@ -126,10 +145,112 @@ void write_response(const castle_shim::Response &r) {
   fflush(stdout);
 }
 
+const char *action_name(castle_web::ActionType t) {
+  switch (t) {
+    case castle_web::ActionType::NONE: return "NONE";
+    case castle_web::ActionType::PLAY: return "PLAY";
+    case castle_web::ActionType::SCENE: return "SCENE";
+    case castle_web::ActionType::STOP: return "STOP";
+    case castle_web::ActionType::VOLUME: return "VOLUME";
+    case castle_web::ActionType::LIGHT: return "LIGHT";
+    case castle_web::ActionType::PIRCFG: return "PIRCFG";
+    case castle_web::ActionType::RESTART: return "RESTART";
+    case castle_web::ActionType::SHOW: return "SHOW";
+    case castle_web::ActionType::BLACKOUT: return "BLACKOUT";
+  }
+  return "NONE";
+}
+
+/// ONE 200 ms interval tick, in castle_sd_common.yaml's own order: mirror
+/// the audio clock, publish the snapshot, rate-limit the dropped-frame
+/// line, drain the mailbox, record what was drained, run it. (C6)
+///
+/// The half that is NOT the firmware — run_scene, the media player calls,
+/// the pixel scripts — is modelled by the few string moves below, and only
+/// those: every line the device shares with this program (mirror_audio,
+/// mirror_show_state, note_light_evictions, take_pending, record_action,
+/// restart_audio_clock) is the real firmware header being run. Note the
+/// order: the snapshot is published BEFORE the mailbox is drained, so a
+/// command applied on this tick is only visible to /api/status on the next
+/// one — the same 200 ms of lag the porch has.
+castle_web::Action tick(long long now_us, bool playing, bool sounding) {
+  if (castle_web::mirror_audio(playing, sounding, now_us, g_track) && g_scene == "stop" &&
+      !g_track.empty())
+    g_track.clear();
+  castle_web::mirror_show_state(g_scene, g_track, g_pir_scene);
+  castle_web::note_light_evictions(now_us);
+  const castle_web::Action act = castle_web::take_pending();
+  if (act.type == castle_web::ActionType::NONE) return act;
+  castle_web::record_action(act.type, act.arg, now_us);
+  switch (act.type) {
+    case castle_web::ActionType::PLAY:
+      // A raw file has no scene: the YAML publishes "stop" so a live light
+      // frame does not stop the file (v5.52).
+      g_track = act.arg;
+      g_scene = "stop";
+      castle_web::restart_audio_clock(now_us);
+      break;
+    case castle_web::ActionType::SCENE:
+      // run_scene publishes current_scene; a scene script does NOT publish
+      // current_track (only scene_stop clears it), so the track name a
+      // previous /api/play left survives a scene on the device.
+      if (act.arg == "stop") {
+        g_scene = "stop";
+        g_track.clear();
+      } else if (act.arg != "halt") {
+        g_scene = act.arg;
+      }
+      if (act.arg != "halt" && act.arg != "stop") castle_web::restart_audio_clock(now_us);
+      break;
+    case castle_web::ActionType::STOP:
+    case castle_web::ActionType::BLACKOUT:
+      g_scene = "stop";
+      g_track.clear();
+      break;
+    case castle_web::ActionType::SHOW:
+      castle_web::g_show_on.store(act.arg == "1");
+      if (act.arg != "1") {   // quiet means the scene it was mid-way through
+        g_scene = "stop";
+        g_track.clear();
+      }
+      break;
+    case castle_web::ActionType::VOLUME:
+      castle_web::g_volume.store(atoi(act.arg.c_str()));
+      break;
+    case castle_web::ActionType::PIRCFG: {
+      const size_t p1 = act.arg.find('|');
+      const size_t p2 = act.arg.rfind('|');
+      const std::string a = act.arg.substr(0, p1);
+      const std::string c = act.arg.substr(p1 + 1, p2 - p1 - 1);
+      const std::string sc = act.arg.substr(p2 + 1);
+      if (!a.empty()) castle_web::g_pir_armed.store(a == "1" || a == "true" || a == "on");
+      if (!c.empty()) castle_web::g_pir_cooldown.store(atoi(c.c_str()));
+      if (!sc.empty()) g_pir_scene = sc;
+      break;
+    }
+    default:   // LIGHT is a counter, RESTART reboots the board
+      break;
+  }
+  return act;
+}
+
 int serve() {
   std::string line;
   while (read_line(line)) {
     if (line == "QUIT") break;
+    if (line.compare(0, 5, "TICK ") == 0) {
+      long long now_us = 0;
+      int playing = 0, sounding = 0;
+      if (sscanf(line.c_str() + 5, "%lld %d %d", &now_us, &playing, &sounding) != 3) {
+        fprintf(stderr, "web_check: bad tick line %s\n", line.c_str());
+        return 2;
+      }
+      const castle_web::Action act = tick(now_us, playing != 0, sounding != 0);
+      printf("%s %zu\n", action_name(act.type), act.arg.size());
+      fwrite(act.arg.data(), 1, act.arg.size(), stdout);
+      fflush(stdout);
+      continue;
+    }
     char method[16] = {0};
     unsigned long urilen = 0, declared = 0, actual = 0, port = 0;
     if (sscanf(line.c_str(), "%15s %lu %lu %lu %lu", method, &urilen, &declared,

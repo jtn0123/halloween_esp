@@ -6,6 +6,11 @@ over a socket. This module is what both test suites use to stand them side
 by side — build the binary, seed one card directory, speak raw HTTP at the
 emulator, and hand back two replies that can simply be compared.
 
+Both castles now have a MAIN LOOP as well as a server (C6): `Pair.tick()`
+runs one 200 ms interval body in the C, and the emulator's own ticker
+thread is its own, so a test can drive a command through queue → apply →
+status on both instead of only asking a quiescent castle questions.
+
 Raw sockets rather than http.client on purpose. Half of what is worth
 testing is malformed on purpose: a request target holding bytes no URL
 library will pass through, and a Content-Length that deliberately exceeds
@@ -166,6 +171,31 @@ class CastleC:
             headers[name] = value
         return Reply(status, self.proc.stdout.read(blen), headers)
 
+    def tick(
+        self, now_us: int, playing: bool = False, sounding: bool = False
+    ) -> tuple[str, bytes]:
+        """One main-loop tick, at `now_us` on the castle's own clock (C6).
+
+        `playing` is the media pipeline's state and `sounding` the
+        speaker's — the two inputs castle_sd_common.yaml's 200 ms interval
+        reads off ESPHome. The caller drives them because the harness has
+        no audio: a scenario says "the file is not on the card, so the
+        pipeline never comes up" by ticking with both false.
+
+        Returns (action, arg) — what the tick drained from the mailbox,
+        ("NONE", b"") most of the time.
+        """
+        assert self.proc.stdin and self.proc.stdout
+        self.proc.stdin.write(
+            f"TICK {now_us} {int(playing)} {int(sounding)}\n".encode()
+        )
+        self.proc.stdin.flush()
+        line = self.proc.stdout.readline()
+        if not line:
+            raise AssertionError(f"web_check died on TICK (exit {self.proc.poll()})")
+        action, n = line.split()
+        return action.decode(), self.proc.stdout.read(int(n))
+
     def rules(self, names: list[bytes]) -> list[tuple[bool, bytes, bytes]]:
         """safe_name / url_decode / json_escape, run in C. Only a binary
         started with --rules answers this."""
@@ -301,6 +331,24 @@ class Pair:
             self.c.http(method, target, body, declared, port),
             emu_http(self.emu.port, method, target, body, declared),
         )
+
+    #: The interval castle_sd_common.yaml runs the main loop on, in
+    #: microseconds — the step a C tick advances by, and (as APPLY_DELAY_S)
+    #: the one the emulator's own ticker thread sleeps.
+    TICK_US = 200_000
+
+    def tick(
+        self, now_us: int, playing: bool = False, sounding: bool = False
+    ) -> tuple[str, bytes]:
+        """Tick the C castle (C6).
+
+        The emulator has no tick to call: its 200 ms thread IS its main
+        loop, and it runs on wall-clock time. So a test that holds the two
+        to one timeline ticks this side by TICK_US a step and sleeps the
+        same span on the other — `now_us` is the C castle's clock, and the
+        test's sleeps are the emulator's.
+        """
+        return self.c.tick(now_us, playing, sounding)
 
     def cards(self) -> tuple[set[str], set[str]]:
         """What each card holds, relative — a PUT or DELETE has to leave

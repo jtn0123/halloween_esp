@@ -281,6 +281,19 @@ class TestEventRing(unittest.TestCase):
         self.assertEqual(ring.json(), R'[{"t":7,"e":"play","a":"a\"b.mp3"}]')
         self.assertEqual(json.loads(ring.json())[0]["a"], 'a"b.mp3')
 
+    def test_a_truncated_arg_says_so_on_both_sides(self) -> None:
+        """A12: `safe_name` allows 99 characters and the ring keeps 47, so a
+        long track name used to come back as a different song's name with
+        nothing to mark the cut. The marker rides beside the arg and only
+        when it happened."""
+        self.assertIn("e.trunc = n < arg.size();", SD_STATE)
+        self.assertIn(R'","trunc":true}', SD_EVENTS)
+        ring = castle_emu_events.Events()
+        ring.record("play", "a" * 80, 7)
+        ring.record("volume", "45", 8)
+        self.assertTrue(json.loads(ring.json())[0]["trunc"])
+        self.assertNotIn("trunc", json.loads(ring.json())[1])
+
     def test_the_handler_never_writes_the_card_or_blocks_the_loop(self) -> None:
         """A per-event SD write on the main loop stalls audio and pixels —
         the very glitch the ring exists to explain."""

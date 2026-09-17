@@ -36,10 +36,14 @@ class TestSoundTrueClock(unittest.TestCase):
         return self.emu.status_json()
 
     def play(self, started: float) -> None:
+        """A PLAY that landed at `started`: the clock is ARMED from the
+        command (_arm_clock / restart_audio_clock), which is what a stop
+        before the speaker has to find in order to keep its grace."""
         with self.emu.state.lock:
             self.emu.state.track = "wicked_winds.mp3"
             self.emu.state.track_started = started
             self.emu.state.track_ends = started + 30
+            self.emu.state.starting_until = started + castle_emu_clock.SOUND_WAIT_S
 
     def test_the_clock_is_zero_until_the_speaker_runs(self) -> None:
         self.play(time.monotonic() - castle_emu_clock.SPEAKER_START_S / 2)

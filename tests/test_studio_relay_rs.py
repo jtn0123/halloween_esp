@@ -67,6 +67,7 @@ TRAVERSAL = [
 KNOWN_ROUTES = [
     "/api/blackout",
     "/api/bootlog",
+    "/api/events",
     "/api/files",
     "/api/files/",
     "/api/health",
