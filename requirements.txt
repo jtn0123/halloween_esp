@@ -12,4 +12,4 @@ esphome==2026.9.0
 # esphome pins aioesphomeapi EXACTLY (2026.9.0 wants ==46.3.0), so this line
 # can only ever track the range esphome's own pin sits in — it moved to 46
 # with esphome 2026.9.0, and the next major waits for esphome the same way.
-aioesphomeapi~=46.3
+aioesphomeapi~=46.4
