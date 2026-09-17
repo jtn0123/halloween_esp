@@ -7,6 +7,9 @@ else
   PY = $(error .venv is missing — run make setup)
 endif
 ESPHOME := .venv/bin/esphome
+# Every build tree is keyed on this checkout's directory name
+# (firmware/build_path.yaml), so a worktree never shares objects with main.
+ESPHOME_RUN = $(ESPHOME) -s checkout $(notdir $(CURDIR))
 # The one castle build. It was firmware/castle_flash.yaml until 2026-09-01,
 # when the show's two real songs put 2.2 MB of audio in an image that has to
 # fit a 1.75 MB OTA slot; the SD build had been the one on the porch since
@@ -83,6 +86,11 @@ setup:
 	@# machine-dependent Python reference. (grade report 2026-08-31 H3)
 	@command -v cargo > /dev/null \
 		|| echo "note: no cargo on PATH — castle-core (core/) cannot build, so 'make audio', the importer and the Rust gates will not run. Install rustup: https://rustup.rs"
+	@# ESPHome (2026.8+) compiles through ccache whenever one is on PATH, with
+	@# no configuration: a cold build tree — a fresh worktree's first build,
+	@# a wiped one — becomes a cache read instead of ~80 s of xtensa-gcc.
+	@command -v ccache > /dev/null \
+		|| echo "note: no ccache on PATH — 'brew install ccache' and every cold firmware build after the first is mostly cache hits"
 	@echo "ready. 'make build' next."
 
 audio:
@@ -130,62 +138,62 @@ sd-build: build
 sd-upload: upload
 
 bench: audio generate
-	$(ESPHOME) run firmware/bench.yaml
+	$(ESPHOME_RUN) run firmware/bench.yaml
 
 bench-logs:
-	$(ESPHOME) logs firmware/bench.yaml
+	$(ESPHOME_RUN) logs firmware/bench.yaml
 
 validate: generate validate-s3
-	@$(ESPHOME) config $(YAML) > /dev/null && echo "config OK"
-	@$(ESPHOME) config $(YAML_FS3) > /dev/null && echo "config OK (feather s3)"
+	@$(ESPHOME_RUN) config $(YAML) > /dev/null && echo "config OK"
+	@$(ESPHOME_RUN) config $(YAML_FS3) > /dev/null && echo "config OK (feather s3)"
 
 # The carrier build is validated by the same target, not by a habit anyone
 # has to remember: it is the build with no hardware to catch its mistakes.
 validate-s3: generate
-	@$(ESPHOME) config $(YAML_S3) > /dev/null && echo "config OK (s3)"
-	@$(ESPHOME) config firmware/castle_s3_qemu.yaml > /dev/null && echo "config OK (s3 qemu)"
+	@$(ESPHOME_RUN) config $(YAML_S3) > /dev/null && echo "config OK (s3)"
+	@$(ESPHOME_RUN) config firmware/castle_s3_qemu.yaml > /dev/null && echo "config OK (s3 qemu)"
 
 build: audio generate
-	$(ESPHOME) compile $(YAML)
+	$(ESPHOME_RUN) compile $(YAML)
 
 upload: audio generate
-	$(ESPHOME) run $(YAML)
+	$(ESPHOME_RUN) run $(YAML)
 
 logs:
-	$(ESPHOME) logs $(YAML)
+	$(ESPHOME_RUN) logs $(YAML)
 
 # The ESP32-S3 carrier board. Same three verbs, same generated show — the
 # only difference is which YAML names the chip. `upload-s3` goes over the
 # module's own USB Serial/JTAG: no adapter, and no BOOT-button dance.
 build-s3: audio generate
-	$(ESPHOME) compile $(YAML_S3)
+	$(ESPHOME_RUN) compile $(YAML_S3)
 
 upload-s3: audio generate
-	$(ESPHOME) run $(YAML_S3)
+	$(ESPHOME_RUN) run $(YAML_S3)
 
 logs-s3:
-	$(ESPHOME) logs $(YAML_S3)
+	$(ESPHOME_RUN) logs $(YAML_S3)
 
 # An ESP32-S3 Feather in the v3.3a carrier. Its USB-C is the S3's own USB
 # Serial/JTAG, so uploads and logs share the cable — except the FIRST flash
 # of a factory Feather, which wants BOOT held while RESET is tapped.
 build-fs3: audio generate
-	$(ESPHOME) compile $(YAML_FS3)
+	$(ESPHOME_RUN) compile $(YAML_FS3)
 
 upload-fs3: audio generate
-	$(ESPHOME) run $(YAML_FS3)
+	$(ESPHOME_RUN) run $(YAML_FS3)
 
 logs-fs3:
-	$(ESPHOME) logs $(YAML_FS3)
+	$(ESPHOME_RUN) logs $(YAML_FS3)
 
 clean:
 	rm -rf firmware/.esphome audio/*.wav
 
 bench-audio: audio generate
-	$(ESPHOME) run firmware/bench_audio.yaml
+	$(ESPHOME_RUN) run firmware/bench_audio.yaml
 
 bench-audio-logs:
-	$(ESPHOME) logs firmware/bench_audio.yaml
+	$(ESPHOME_RUN) logs firmware/bench_audio.yaml
 
 # pyproject.toml says >=3.13; the bare-python3 fallback above could silently
 # hand an older interpreter to everything below (grade report 2026-08-23 F5).

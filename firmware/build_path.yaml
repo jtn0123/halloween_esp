@@ -11,5 +11,11 @@
 # IF THE DRIVE IS NOT MOUNTED, builds fail with a path error. To go back to
 # building locally, comment out the build_path line below — ESPHome then
 # defaults to firmware/.esphome/build.
+#
+# ${checkout} is the checkout's directory name (castle.yaml defaults it to
+# the main one; the Makefile passes `-s checkout <dir>`). Every worktree
+# used to share ONE tree per device, so two checkouts building the same
+# device — an agent's branch and yours — each undid the other's objects,
+# and a "no change" rebuild was a full one (157 s, 2026-09-16).
 esphome:
-  build_path: /Volumes/512Flash/esphome-builds/halloween_esp/${name}
+  build_path: /Volumes/512Flash/esphome-builds/${checkout}/${name}
