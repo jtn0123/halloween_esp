@@ -107,7 +107,7 @@ esphome:
             if (castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso})) {
               castle_sd::list_root();
               // One line per boot on the card: the season-long paper trail.
-              castle_health::log_boot_to_sd(CASTLE_VERSION);
+              castle_health::log_boot_to_sd(ESPHOME_PROJECT_VERSION);
             }
             // Started whether or not the card mounted: the server is also how
             // you find out the card is missing without walking to the castle.

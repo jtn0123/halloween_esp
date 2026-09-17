@@ -40,8 +40,10 @@ def find_image(name: str) -> Path | None:
     `firmware.bin` — that one is the factory/OTA wrapper. Checking both means
     this keeps working if that ever changes.
     """
+    # build_path.yaml keys the tree on the checkout's directory name, so a
+    # worktree's image is looked for under the worktree's name, not main's.
     for base in (
-        Path("/Volumes/512Flash/esphome-builds/halloween_esp"),
+        Path("/Volumes/512Flash/esphome-builds") / ROOT.name,
         ROOT / "firmware" / ".esphome" / "build",
     ):
         build = base / name / "build"

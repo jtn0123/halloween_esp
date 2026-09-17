@@ -33,6 +33,7 @@ import analyze
 import build_paths as bp
 import core_bins
 import manifest as mf
+import render_stamp
 import synth
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -332,6 +333,9 @@ def render_chirp(cfg: dict) -> None:
 #: Scenes rendered WITHOUT their imported song, because it is not on this
 #: machine. Named in the summary — a quiet scene must never be a surprise.
 NOT_HERE: list[str] = []
+#: The last render of each scene, so a render may skip the unchanged ones
+#: (render_stamp). Inert until main() loads it; --force leaves it so.
+STAMPS = render_stamp.Stamps()
 
 
 def known_track(track: str) -> bool:
@@ -346,17 +350,31 @@ def render_one(scene: dict, i: int, cfg: dict, keep_wav: bool) -> tuple[int, dic
     """Render scene `i` to NN_<id>.mp3 and report (bytes, markers).
 
     The WAV is the encoder's input and nothing else's, so it goes again
-    unless --wav asked to keep it.
+    unless --wav asked to keep it. A scene whose inputs are those of its
+    last render is skipped, and its last markers returned (render_stamp).
     """
     stem = f"{i:02d}_{scene['id']}"
     wav, mp3 = OUT / f"{stem}.wav", OUT / f"{stem}.mp3"
+    card = card_dir() / f"{stem}.mp3" if card_bitrate(cfg) != cfg["bitrate"] else None
+    outputs = [p for p in (mp3, card, wav if keep_wav else None) if p]
+    hit = STAMPS.reuse(stem, scene, cfg, outputs)
+    if hit is not None:
+        if hit.get("not_here"):
+            NOT_HERE.append(scene["id"])
+        size = mp3.stat().st_size
+        print(
+            f"{scene['id']:<12} {'':>8} {size / 1024:>8.0f}K   {mp3.name}  (unchanged)"
+        )
+        return size, hit.get("markers") or {}
+    was_here = len(NOT_HERE)
     markers = render_scene(scene, cfg, wav)
+    STAMPS.record(stem, scene, cfg, markers, scene["id"] in NOT_HERE[was_here:])
     encode_mp3(wav, mp3, cfg["bitrate"])
     # The same WAV, encoded again for the card. Synthesis is the expensive
     # half and it is already paid for here; a second LAME pass is cents.
-    if card_bitrate(cfg) != cfg["bitrate"]:
-        card_dir().mkdir(parents=True, exist_ok=True)
-        encode_mp3(wav, card_dir() / f"{stem}.mp3", card_bitrate(cfg))
+    if card:
+        card.parent.mkdir(parents=True, exist_ok=True)
+        encode_mp3(wav, card, card_bitrate(cfg))
     if not keep_wav:
         wav.unlink()
     size = mp3.stat().st_size
@@ -369,6 +387,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="render just this scene id")
     ap.add_argument("--wav", action="store_true", help="keep intermediate WAVs")
+    ap.add_argument("--force", action="store_true", help="re-render unchanged scenes")
     args = ap.parse_args()
 
     doc = yaml.safe_load(SCENES.read_text())
@@ -388,6 +407,7 @@ def main() -> int:
     all_markers: dict[str, dict[str, list]] = {}
     produced = {"00_chirp.mp3"}
     NOT_HERE.clear()
+    STAMPS.load(OUT, enabled=not args.force)
     print(f"{'scene':<12} {'length':>8} {'mp3':>9}   file")
     print("-" * 52)
     for i, scene in enumerate(doc["scenes"], start=1):
@@ -401,6 +421,7 @@ def main() -> int:
 
     print("-" * 52)
     print(f"{'total':<12} {'':>8} {total / 1024:>8.0f}K")
+    STAMPS.save()
     if NOT_HERE:
         print(
             f"note: {len(NOT_HERE)} scene(s) rendered WITHOUT their imported "
