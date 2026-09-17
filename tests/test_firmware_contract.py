@@ -42,6 +42,7 @@ from firmware_source import (
     FUNCS,
     HARDWARE_ONLY,
     SD_EVENTS,
+    SD_RTC,
     SD_STATE,
     SD_STREAM,
     SD_WEB,
@@ -215,7 +216,7 @@ class TestValidatorConstants(unittest.TestCase):
         for field in ("playing", "position_ms", "show_on", "volume", "track"):
             self.assertIn(f"g_status.{field} =", publish)
         # h_status's fixed part must still fit the 240-byte buffers it fills.
-        self.assertIn("std::array<char, 240> buf{}", body)
+        self.assertIn("std::array<char, 288> buf{}", body)
 
     def test_the_first_status_served_confirms_a_web_ota(self) -> None:
         """A2. CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE holds a freshly-OTA'd
@@ -256,13 +257,17 @@ class TestEventRing(unittest.TestCase):
         self.assertIn("std::array<Event, kEventRing> g_events{}", SD_STATE)
 
     def test_the_kind_words_are_the_firmwares(self) -> None:
-        fw = set(re.findall(r'case EventKind::\w+: return "(\w+)";', SD_STATE))
-        emu = set(castle_emu_events.ACTION_KIND.values()) | {
-            "light_evicted",
-            "sound",
-            "silent",
-        }
+        # v5.62 (L1): the table moved to castle_rtc.h, because the copy of
+        # the ring that survives a panic is written from there and read by
+        # castle_health.h, which cannot see sd_web_state.h.
+        fw = set(re.findall(r'case Kind::\w+: return "(\w+)";', SD_RTC))
+        emu = set(castle_emu_events.ACTION_KIND.values()) | set(
+            castle_emu_events.OTHER_KINDS
+        )
         self.assertEqual(emu, fw)
+        # And sd_web_state.h still spells the enum it shares, rather than
+        # declaring a second one that could drift from it.
+        self.assertIn("using EventKind = castle_rtc::Kind;", SD_STATE)
 
     def test_the_rate_limit_on_dropped_light_frames_matches(self) -> None:
         us = int(grab(r"g_light_evict_event_us < (\d+)\)", SD_STATE))

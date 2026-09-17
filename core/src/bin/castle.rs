@@ -3,6 +3,7 @@
 //!     castle --host 10.27.27.7:80 status
 //!     castle --host … scene seance | play 10_ballad.mp3 | stop | volume 60
 //!     castle --host … show start|stop · blackout · files [subdir] · bootlog
+//!     castle --host … logs                the card's boot log, tail included
 //!     castle --host … put local.mp3 [name] · rm name
 //!
 //! Host resolution is tools/hosts.py's, ported: --host (an address or a
@@ -229,12 +230,20 @@ fn main() {
         ("show", Some(w)) if w == "start" || w == "stop" => ("POST", format!("/api/show/{w}"), 5.0),
         ("blackout", None) => ("POST", "/api/blackout".to_string(), 5.0),
         ("bootlog", None) => ("GET", "/api/bootlog".to_string(), 5.0),
+        // L9 (v5.62): the card's own log, which the castle has been writing
+        // one line per boot into since v5.44 and which nothing ever read —
+        // it now carries the previous life's event ring under each boot
+        // line, so it is the only record that outlives a panic. A constant
+        // path, like every other target in this table. `sd_sync logs` is
+        // the richer verb (it saves both rotations to a file); this is the
+        // one-liner from a terminal that already speaks the other verbs.
+        ("logs", None) => ("GET", "/sd/logs/castle.log".to_string(), 10.0),
         ("files", None) => ("GET", "/api/files".to_string(), 5.0),
         ("files", Some(d)) => ("GET", format!("/api/files?d={}", encode_query(d)), 5.0),
         ("rm", Some(n)) => ("DELETE", delete_route(n), 10.0),
         _ => fail(
             "usage: castle [--host H:P] status|health|stop|scene ID|play FILE|\
-             volume N|show start|show stop|blackout|files [DIR]|bootlog|\
+             volume N|show start|show stop|blackout|files [DIR]|bootlog|logs|\
              put [--to site|scenes] LOCAL [NAME]|rm NAME|purge|ota BIN|hosts [ARG]",
         ),
     };

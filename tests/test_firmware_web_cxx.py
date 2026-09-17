@@ -255,13 +255,11 @@ class TestJsonReplies(WebPairCase):
 
     def test_health_is_the_same_json(self) -> None:
         r = self.same("GET", b"/api/health")
-        # sd_read_errors is this boot's torn card transfers (A8, v5.61);
-        # a castle that has served nothing yet reports 0 on both sides.
-        counters = {"boots": 3, "crashes": 0, "sd_read_errors": 0}
-        self.assertEqual(
-            json.loads(r.body),
-            counters | {"last_reset": "power-on", "was_crash": False},
-        )
+        # sd_read_errors is this boot's torn card transfers (A8) and, since
+        # v5.62, sd_last_error is where; heap_min_kb is the low-water mark.
+        counters = {"boots": 3, "crashes": 0, "sd_read_errors": 0, "heap_min_kb": 64}
+        rest = {"last_reset": "power-on", "was_crash": False, "sd_last_error": ""}
+        self.assertEqual(json.loads(r.body), counters | rest)
 
     def test_the_boot_log_is_the_same_text(self) -> None:
         r = self.same("GET", b"/api/bootlog")

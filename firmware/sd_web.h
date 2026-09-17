@@ -23,6 +23,7 @@
 #include <esp_http_server.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
+#include <ctime>
 #include <algorithm>
 #include <array>
 #include <string_view>
@@ -67,7 +68,7 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // Numbers through snprintf, strings through json_escape into a
   // std::string: a fixed buffer truncated silently when the boot manifest
   // listed more than a few missing files, and every client's parse died.
-  std::array<char, 240> buf{};
+  std::array<char, 288> buf{};
   snprintf(buf.data(), buf.size(),
            R"({"version":"%s","compiled":"%s %s","uptime_s":%lld,)"
            R"("sd_mounted":%s,"psram_free_kb":%u,"heap_free_kb":%u,)"
@@ -98,13 +99,25 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // ran, `light_evicted` what the one-slot mailbox dropped — a page
   // streaming colour faster than the 200 ms drain can see it, instead of
   // wondering why its frames look coarse. /api/events carries the rest.
+  // L2 (v5.62): `epoch` is unix seconds, or 0 until SNTP has answered. The
+  // ring's t_ms is uptime and always will be (it is written from an ISR-ish
+  // hot path and a wall clock there would be a lie half the night); this is
+  // the base a page needs to turn one into the other, and the only honest
+  // way to ask "what time did the porch go dark".
+  // L6: `rssi` in dBm, 0 when not associated — a castle at the end of the
+  // garden answering slowly and a castle with a failing supply read the
+  // same from the desk without it.
+  // ::time, not time: main.cpp has `using namespace esphome;` and ESPHome
+  // has a `time` COMPONENT namespace, which makes the bare name ambiguous.
+  const time_t wall = ::time(nullptr);
   snprintf(buf.data(), buf.size(),
            R"(","show_on":%s,"playing":%s,"position_ms":%lld,)"
-           R"("light_applied":%u,"light_evicted":%u,)"
+           R"("light_applied":%u,"light_evicted":%u,"epoch":%lld,"rssi":%d,)"
            R"("pir":{"armed":%s,"cooldown_s":%d,"scene":")",
            st.show_on ? "true" : "false",
            st.playing ? "true" : "false", st.position_ms,
            st.light_applied, st.light_evicted,
+           (long long) (wall > 1577836800 ? wall : 0), st.rssi,
            st.pir_armed ? "true" : "false", st.pir_cooldown);
   out += buf.data();
   out += json_escape(st.pir_scene);
@@ -120,21 +133,39 @@ inline esp_err_t h_status(httpd_req_t *req) {
 
 // ── /api/health — the season-long counters ──────────────────────────────
 inline esp_err_t h_health(httpd_req_t *req) {
-  std::array<char, 200> buf{};
+  std::array<char, 240> buf{};
   // A8 (v5.61): sd_read_errors — transfers off the card that FAILED and
   // were torn down rather than framed as a short success (sd_web_site.h).
   // This boot only, deliberately: the question it answers is "is the card
   // going bad right now", and the two NVS counters beside it already carry
   // the season. Zero is the normal reading; anything else is the one number
   // that explains a track that stops at 12% every time it plays.
+  //
+  // v5.62 (L4) adds `sd_last_error`: "<path>@<offset>" of the last transfer
+  // that tore, "" when there has been none. A count alone could not tell
+  // one bad file from a dying card, which is the only question worth
+  // asking once the count is non-zero.
+  //
+  // v5.62 (L7) adds `heap_min_kb`: the LOW-WATER mark of internal heap,
+  // which is the number that explains a crash. `heap_free_kb` in
+  // /api/status is what is free NOW — after the allocation that failed has
+  // been given back — so a castle that came within a hundred bytes of the
+  // wall at 21:40 reads perfectly healthy at 23:00. docs/RUNBOOK.md points
+  // the operator at heap for "audio starts then breaks up"; this is the
+  // heap it should have meant.
   snprintf(buf.data(), buf.size(),
            R"({"boots":%u,"crashes":%u,"last_reset":"%s",)"
-           R"("was_crash":%s,"sd_read_errors":%u})",
+           R"("was_crash":%s,"sd_read_errors":%u,"heap_min_kb":%u,)"
+           R"("sd_last_error":")",
            (unsigned) castle_health::g_boots, (unsigned) castle_health::g_crashes,
            castle_health::reason_str(),
            castle_health::was_crash() ? "true" : "false",
-           castle_health::g_sd_read_errors.load());
-  return reply_json(req, buf.data());
+           castle_health::g_sd_read_errors.load(),
+           (unsigned) (heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024));
+  std::string out = buf.data();
+  out += json_escape(castle_health::sd_last_error());
+  out += R"("})";
+  return reply_json(req, out);
 }
 
 // ── /api/files — list the card root ─────────────────────────────────────

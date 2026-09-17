@@ -109,6 +109,13 @@ class Handler(Uploads):
         # 0 here — the emulated card is a host directory, and a read of one
         # does not NAK a sector — but the KEY is part of the reply's shape,
         # and a desk that shows the number must find it on both castles.
+        # L7 (v5.62): heap_min_kb is the LOW-WATER mark of internal heap —
+        # the number that explains a crash, where /api/status's heap_free_kb
+        # is only what is free now, after the allocation that failed was
+        # given back. Fixed here, like heap_free_kb, and equal to what the
+        # C harness's shim reports so the two replies stay byte-identical.
+        # L4: sd_last_error is "<path>@<offset>" of the last torn transfer,
+        # "" on a healthy castle — which a host directory always is.
         self._json(
             {
                 "boots": 3,
@@ -116,6 +123,8 @@ class Handler(Uploads):
                 "last_reset": "power-on",
                 "was_crash": False,
                 "sd_read_errors": 0,
+                "heap_min_kb": 64,
+                "sd_last_error": "",
             }
         )
 

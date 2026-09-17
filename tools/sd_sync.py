@@ -15,6 +15,8 @@
     tools/sd_sync.py [ip|name] rm <name>     delete one file (scenes/x, site/x too)
     tools/sd_sync.py [ip|name] play <name>   stream a file on the castle
     tools/sd_sync.py [ip|name] bootlog       the device's early-boot log ring
+    tools/sd_sync.py [ip|name] logs [file]    fetch /sd/logs/castle.log(.1) and
+                                             print the tail (default castle.log)
 
 The device resolves via tools/hosts.py: explicit arg, then CASTLE_HOST, then
 devices.toml. Tracks upload AS-IS: playback streams off the card now (see
@@ -272,6 +274,39 @@ def delete_route(name: str) -> str:
     return f"/api/files/{urllib.parse.quote(name)}"
 
 
+#: L9 (v5.62): the card's own log, oldest rotation first. The castle has
+#: written one line per boot since v5.44 and, since v5.62, the tail of the
+#: previous life's event ring underneath it — and nothing ever fetched it,
+#: so the one record that survives a crash was only readable by pulling the
+#: card. It has been HTTP-readable the whole time (sd_web_site.h).
+LOG_FILES = ("logs/castle.log.1", "logs/castle.log")
+#: Lines printed after the save. The whole file goes to disk; this is the
+#: part you read standing in the hall with a laptop.
+TAIL_LINES = 40
+
+
+def cmd_logs(ip: str, args: list[str]) -> int:
+    out = Path(args[0]) if args else ROOT / "castle.log"
+    text = ""
+    for name in LOG_FILES:
+        # A constant path, not one built from anything the castle said: the
+        # rule for every URL in this file.
+        try:
+            text += api(ip, "GET", f"/sd/{name}").decode("utf-8", "replace")
+        except OSError as e:
+            # castle.log.1 only exists after the first rotation (~200 KB),
+            # so its absence is the normal case and not a failure.
+            print(f"  {name}: {e}")
+    if not text.strip():
+        print("no log on the card — has this castle booted with it in the slot?")
+        return 1
+    out.write_text(text)
+    lines = text.splitlines()
+    print(f"saved {len(lines)} lines to {out}\n")
+    print("\n".join(lines[-TAIL_LINES:]))
+    return 0
+
+
 def cmd_purge(ip: str) -> int:
     victims = [f["name"] for f in listing(ip) if not f["dir"]]
     if not victims:
@@ -314,6 +349,8 @@ def main() -> int:
         api(ip, "POST", f"/api/play?f={urllib.parse.quote(args[0])}")
         print(f"queued {args[0]} — it streams off the card")
         return 0
+    if cmd == "logs":
+        return cmd_logs(ip, args)
     if cmd == "bootlog":
         print(api(ip, "GET", "/api/bootlog").decode())
         return 0

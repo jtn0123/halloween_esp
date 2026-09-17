@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {idle, lightsSent, linkContext, playingAt, poll, pollAt, settle, showContext, toolsContext} from './test_support.mjs';
+import {EVENTS, eventLog, idle, lightsSent, linkContext, playingAt, poll, pollAt, settle, showContext, toolsContext} from './test_support.mjs';
 
 const said = (calls, pattern) => calls.toasts.filter(t => pattern.test(t));
 
@@ -297,4 +297,44 @@ test('B8: a castle track this library cannot name blanks the length and the bar'
   assert.equal(ctx.$('duration').textContent, '—', 'nothing here knows how long that runs');
   assert.equal(ctx.$('seek').value, 0, 'and the bar is not pinned at 100%');
   assert.match(ctx.$('elapsed').textContent, /^8:2\d$/, 'the castle clock runs on, unclamped');
+});
+
+/* ------------------------------------------------------------- B72/B73 */
+
+/* L7/L9 (v5.62). The runbook has told the operator to "look at heap in the
+   panel" since the panel was the eInk wing; the Castle Radio page never had
+   one, and /api/status's heap_free_kb would not have answered the question
+   anyway — it is what is free NOW, after the allocation that failed was
+   handed back. This is the row that carries the low-water mark. */
+test('B72: the bench shows heap, the card and the season beside the events', async () => {
+  const health = {boots: 41, crashes: 2, last_reset: 'PANIC', was_crash: true,
+    sd_read_errors: 3, heap_min_kb: 9, sd_last_error: 'scenes/03_storm.mp3@81920'};
+  const state = {heap_free_kb: 84, sd_free_kb: 12 * 1024, sd_mounted: true, rssi: -71};
+  const {row} = await eventLog(async () => EVENTS, {health, state});
+  assert.match(row, /41 boots · 2 crashes/);
+  assert.match(row, /last reset PANIC/);
+  assert.match(row, /heap now 84 KB · lowest 9 KB/, 'the low-water mark, not the free mark');
+  assert.match(row, /SD 12 MB free/);
+  assert.match(row, /3 card read errors · last scenes\/03_storm\.mp3@81920/);
+  assert.match(row, /signal -71 dBm/);
+  /* A firmware with no /api/health, or a page with no bridge to ask it
+     through, must leave the row empty and still print the events. */
+  const old = await eventLog(async () => EVENTS);
+  assert.equal(old.row, '');
+  assert.match(old.log, /play  radio_a\.mp3/);
+});
+
+/* L2 (v5.62). The ring only ever stamps uptime, and uptime cannot be lined
+   up against the one thing the operator remembers. `epoch` is the base. */
+test('B73: event times read as clock times once the castle has a clock', async () => {
+  const state = {epoch: 1789700000, uptime_s: 3600};
+  const {log} = await eventLog(async () => EVENTS, {state});
+  const times = log.split('\n').map(line => line.slice(0, 8));
+  assert.ok(times.every(t => /^\d\d:\d\d:\d\d$/.test(t)), `wall clock, got ${times}`);
+  /* Ten seconds of ring is ten seconds of clock, whatever the timezone. */
+  const [first, last] = [times[0], times[2]].map(t => t.split(':').map(Number));
+  assert.equal((last[2] - first[2] + 60) % 60, 10);
+  /* Before SNTP answers, epoch is 0 and the relative stamps come back. */
+  const blind = await eventLog(async () => EVENTS, {state: {epoch: 0, uptime_s: 3600}});
+  assert.match(blind.log, /\+00:00\.0  stop/);
 });

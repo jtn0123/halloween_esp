@@ -107,8 +107,17 @@ esphome:
         - lambda: |-
             if (castle_sd::mount(${sd_cs}, ${sd_sck}, ${sd_mosi}, ${sd_miso})) {
               castle_sd::list_root();
-              // One line per boot on the card: the season-long paper trail.
+              // One line per boot on the card: the season-long paper trail,
+              // and since v5.62 (L1) the tail of the PREVIOUS life's event
+              // ring underneath it, read out of RTC slow memory. This is the
+              // safe window — the card is up, the show has not started — and
+              // it stays the only card write outside an upload.
               castle_health::log_boot_to_sd(ESPHOME_PROJECT_VERSION);
+            } else {
+              // No card, so nothing to dump to: the ring still has to start
+              // this life fresh, or the next reset re-dumps a life that is
+              // now two boots old.
+              castle_health::finish_boot();
             }
             // The web layer 404s unknown scene ids instead of queueing lies —
             // this is where it learns which ids are real. Element-wise copy:
@@ -128,6 +137,14 @@ esphome:
             // Started whether or not the card mounted: the server is also how
             // you find out the card is missing without walking to the castle.
             castle_web::start();
+            // L5 (v5.62): the boot window is over. The capture callback is
+            // installed permanently (castle.yaml, priority 800) and used to
+            // roll for the whole life of the boot, so the mount, the listing
+            // and the manifest check — the ONLY lines nothing else can ever
+            // show you — were pushed out by show chatter long before anyone
+            // pressed "Dump boot log". Everything after this point is
+            // reachable over the API and in /api/events; these lines are not.
+            castle_log::freeze();
         # #29: prove every scene file exists BEFORE a cue plays silence.
         - script.execute: manifest_check
         # #26: a visible sweep of every colour channel at plug-in, so a dead
@@ -212,7 +229,11 @@ interval:
             // The speaker's own state is the sound: the pipeline says
             // PLAYING half a second before the amplifier gets a sample.
             const bool sounding = id(castle_speaker)->is_running();
-            if (castle_web::mirror_audio(playing, sounding, esp_timer_get_time()) &&
+            // L10 (v5.62): the track goes in with it, so the ring's `sound`
+            // line names what the amplifier got and its `silent` line says
+            // how many milliseconds of it actually played.
+            if (castle_web::mirror_audio(playing, sounding, esp_timer_get_time(),
+                                         id(current_track).state) &&
                 id(current_scene).state == "stop" &&
                 !id(current_track).state.empty())
               id(current_track).publish_state("");
@@ -225,6 +246,16 @@ interval:
           // per command this tick actually runs. RAM only — a card write
           // here would stall the very audio and pixels it describes.
           castle_web::note_light_evictions(esp_timer_get_time());
+          // L6 (v5.62): the radio, in the ring and in /api/status. Watched
+          // from here rather than from a `wifi: on_connect:` trigger because
+          // the wifi block lives in castle.yaml, which is the CORE every
+          // build shares — this file is where the web layer exists. One bool
+          // compare per tick buys "the castle stopped answering at 21:14",
+          // which is a different fault from "the castle crashed".
+          if (wifi::global_wifi_component != nullptr)
+            castle_web::mirror_wifi(wifi::global_wifi_component->is_connected(),
+                                    (int) wifi::global_wifi_component->wifi_rssi(),
+                                    esp_timer_get_time());
           // A2: the OTHER image confirmation, beside api: on_client_connected
           // (castle.yaml). A castle with no Home Assistant on the network
           // never gets that client, so a web-OTA'd image stayed in

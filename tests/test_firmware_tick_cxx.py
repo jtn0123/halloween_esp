@@ -57,8 +57,18 @@ def num(state: dict[str, object], key: str) -> int:
 
 def kinds(reply: Reply) -> list[tuple[str, str]]:
     """/api/events as (kind, arg) pairs — the `t` stamp is the two
-    castles' own uptimes and could never match."""
-    return [(e["e"], e["a"]) for e in json.loads(reply.body)]
+    castles' own uptimes and could never match. Nor can `silent`'s arg
+    (v5.62, L10: the milliseconds that were audible): the C castle runs on
+    the test's virtual clock and the emulator on the wall's, so that arg is
+    checked for being a whole number and read back as `<ms>`."""
+    out = []
+    for e in json.loads(reply.body):
+        arg = e["a"]
+        if e["e"] == "silent":
+            assert arg.isdigit(), f"silent carries elapsed ms, got {arg!r}"
+            arg = "<ms>"
+        out.append((e["e"], arg))
+    return out
 
 
 class TickCase(WebPairCase):
@@ -167,7 +177,7 @@ class TestTheClockIsArmedWithoutTheCard(TickCase):
             self.assertEqual(state["position_ms"], 0, side)
         for reply in self.pair.both("GET", b"/api/events"):
             # No `sound`: the amplifier was never handed a sample.
-            self.assertEqual(kinds(reply), [("scene", "storm"), ("silent", "")])
+            self.assertEqual(kinds(reply), [("scene", "storm"), ("silent", "<ms>")])
 
 
 class TestAFileTheCardDoesNotHave(TickCase):
@@ -191,7 +201,7 @@ class TestAFileTheCardDoesNotHave(TickCase):
             self.tick()
         time.sleep(1.7)
         for reply in self.pair.both("GET", b"/api/events"):
-            self.assertEqual(kinds(reply), [("play", "ghost.mp3"), ("silent", "")])
+            self.assertEqual(kinds(reply), [("play", "ghost.mp3"), ("silent", "<ms>")])
 
 
 class TestAFileTheCardDoesHave(TickCase):
@@ -229,7 +239,11 @@ class TestAFileTheCardDoesHave(TickCase):
         for reply in self.pair.both("GET", b"/api/events"):
             self.assertEqual(
                 kinds(reply),
-                [("play", "wicked_winds.mp3"), ("sound", ""), ("silent", "")],
+                [
+                    ("play", "wicked_winds.mp3"),
+                    ("sound", "wicked_winds.mp3"),
+                    ("silent", "<ms>"),
+                ],
             )
 
 

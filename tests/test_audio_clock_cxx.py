@@ -21,6 +21,11 @@ FLAGS = [
     "-Wall",
     "-Wextra",
     "-Werror",
+    # The shim path goes FIRST, as it does in tests/firmware_web_harness.py:
+    # sd_web_state.h reaches castle_rtc.h, which asks for <esp_attr.h> (the
+    # RTC_NOINIT section that makes the ring outlive a panic, v5.62 L1).
+    "-I",
+    str(ROOT / "tests" / "cxx" / "shim"),
     "-I",
     str(ROOT / "firmware"),
 ]

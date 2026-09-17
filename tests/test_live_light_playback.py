@@ -28,6 +28,11 @@ FLAGS = [
     "-Wall",
     "-Wextra",
     "-Werror",
+    # The shim path goes FIRST, as it does in tests/firmware_web_harness.py:
+    # sd_web_state.h reaches castle_rtc.h, which asks for <esp_attr.h> (the
+    # RTC_NOINIT section that makes the ring outlive a panic, v5.62 L1).
+    "-I",
+    str(ROOT / "tests" / "cxx" / "shim"),
     "-I",
     str(ROOT / "firmware"),
 ]
@@ -128,9 +133,13 @@ class LiveLightPlaybackTests(unittest.TestCase):
         self.assertIn('"playing":%s,"position_ms":%lld', web)
         state = (ROOT / "firmware" / "sd_web_state.h").read_text()
         self.assertIn(
-            "inline bool mirror_audio(bool playing, bool sounding, long long now_us)",
+            "inline bool mirror_audio(bool playing, bool sounding, long long now_us,",
             state,
         )
+        # L10 (v5.62): the track rides in with it, so the ring's `sound` line
+        # names what the amplifier got. The default keeps every other caller
+        # (the two C harnesses) compiling unchanged.
+        self.assertIn("std::string_view track = {}) {", state)
 
 
 class StoppedShowGoesDarkTests(unittest.TestCase):

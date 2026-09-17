@@ -50,6 +50,12 @@ class TestBridgeVerbs(unittest.TestCase):
         assert built.returncode == 0, built.stderr
         cls.card = Path(tempfile.mkdtemp(prefix="bridge-sd-"))
         (cls.card / "tone.mp3").write_bytes(b"\xff\xfb" + b"\0" * 3000)
+        # L9 (v5.62): the card's own boot log, which the `logs` verb reads.
+        (cls.card / "logs").mkdir(exist_ok=True)
+        (cls.card / "logs" / "castle.log").write_text(
+            "2026-09-16T21:14:02 boot #7 v5.62 reason=PANIC crashes=1 "
+            "sd_errors_prev=0 part=ota_1 ota=valid\n"
+        )
         cls.emu = castle_emu.CastleEmu(
             port=0, sd_dir=cls.card, scenes=["vigil", "storm"]
         )
@@ -128,6 +134,13 @@ class TestBridgeVerbs(unittest.TestCase):
     def test_bootlog_answers_text(self) -> None:
         code, body = self.castle("bootlog")
         self.assertEqual(code, 0, body)
+
+    def test_logs_reads_the_cards_own_boot_log(self) -> None:
+        """L9. The line the castle writes at boot — with the previous
+        life's reset reason on it — was only readable by pulling the card."""
+        code, body = self.castle("logs")
+        self.assertEqual(code, 0, body)
+        self.assertIn("reason=PANIC", body)
 
     def test_put_lands_the_bytes_and_the_castle_proves_it(self) -> None:
         """The upload verbs carry sd_sync.upload's whole contract: the byte

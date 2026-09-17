@@ -137,7 +137,8 @@ inline Sent send_sd_file(httpd_req_t *req, const char *path,
   const bool torn = ferror(f) != 0;
   fclose(f);
   if (torn) {
-    castle_health::note_sd_read_error();
+    // L4 (v5.62): WHERE it died, not just that it did.
+    castle_health::note_sd_read_error(path, (unsigned long) out);
     ESP_LOGE("castle_web", "read error on %s after %u bytes — tearing the reply down",
              path, (unsigned) out);
     if (out == 0) {

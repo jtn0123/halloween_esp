@@ -304,14 +304,17 @@ class CastleEmu(ThreadingHTTPServer):
             sounding = bool(st.track) and (
                 st.track_started + SPEAKER_START_S <= now < st.track_ends
             )
+            track = st.track
         t_ms = self.uptime_ms()
         self.events.note_light_evictions(t_ms)
+        # L10 (v5.62): the track rides along, so `sound` names what the
+        # amplifier got and `silent` says how much of it played.
         # The song ended. Only a RAW file loses its name here:
         # castle_sd_common.yaml clears current_track on the tick mirror_audio
         # reports the END and only when current_scene is "stop", so an
         # authored scene keeps naming its track until scene_stop — and a
         # track whose sound never came keeps its name for the whole grace.
-        if self.events.note_audio(sounding, playing, t_ms):
+        if self.events.note_audio(sounding, playing, t_ms, track):
             with st.lock:
                 if st.scene == "stop":
                     st.track = ""
@@ -410,6 +413,16 @@ class CastleEmu(ThreadingHTTPServer):
                 # one-slot mailbox dropped before it could (sd_web_state.h).
                 "light_applied": self.events.light_applied,
                 "light_evicted": self.events.light_evicted,
+                # L2 (v5.62): unix seconds, or 0 before SNTP answers. The
+                # ring stamps uptime and always will; this is the base a
+                # page turns one into the other with. An emulator always
+                # has a clock, so it is never the 0 case — the KEY is the
+                # contract, and a desk that converts must find it on both.
+                "epoch": int(time.time()),
+                # L6: the radio, in dBm. A fixed plausible reading here for
+                # the same reason psram_free_kb is fixed: the number means
+                # nothing off the board, the key means everything.
+                "rssi": -55,
                 "pir": {
                     "armed": st.pir["armed"],
                     "cooldown_s": st.pir["cooldown_s"],
@@ -438,7 +451,7 @@ class CastleEmu(ThreadingHTTPServer):
             '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
             '"volume":%d,"scene":"%s","track":"%s","scenes":"%s",'
             '"show_on":%s,"playing":%s,"position_ms":%d,'
-            '"light_applied":%d,"light_evicted":%d,'
+            '"light_applied":%d,"light_evicted":%d,"epoch":%d,"rssi":%d,'
             '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
             % (
                 t("version"),
@@ -459,6 +472,8 @@ class CastleEmu(ThreadingHTTPServer):
                 i("position_ms"),
                 i("light_applied"),
                 i("light_evicted"),
+                i("epoch"),
+                i("rssi"),
                 b[bool(pir["armed"])],
                 int(pir["cooldown_s"]),
                 wire.json_escape(str(pir["scene"])),

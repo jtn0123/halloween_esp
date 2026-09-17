@@ -20,6 +20,8 @@
 #include <string_view>
 #include <vector>
 
+#include "castle_rtc.h"
+
 namespace castle_web {
 
 // ── pending action, handed from httpd task to the main loop ─────────────
@@ -95,28 +97,14 @@ inline Action take_pending() {
 // audio pipeline and the pixel refill, which is the very class of glitch
 // the ring exists to explain; the log on the card stays a boot-time affair
 // (castle_health::log_boot_to_sd).
-enum class EventKind : uint8_t {
-  PLAY = 0, SCENE, STOP, VOLUME, SHOW, BLACKOUT, RESTART,
-  LIGHT_EVICTED,   // light frames dropped from the one slot, arg = how many
-  SOUND,           // the speaker started: the armed audio clock began running
-  SILENT,          // playback ended on its own
-};
+// v5.62 (L1): the kind words and their numbering live in castle_rtc.h now,
+// because the copy that survives a panic is written from there and read by
+// castle_health.h — which is in castle.yaml's includes list and cannot see
+// this header. One enum, two rings: the 48-byte-arg ring below, and the
+// 10-character one in RTC slow memory that outlives the crash.
+using EventKind = castle_rtc::Kind;
 
-inline const char *event_kind_str(EventKind k) {
-  switch (k) {
-    case EventKind::PLAY: return "play";
-    case EventKind::SCENE: return "scene";
-    case EventKind::STOP: return "stop";
-    case EventKind::VOLUME: return "volume";
-    case EventKind::SHOW: return "show";
-    case EventKind::BLACKOUT: return "blackout";
-    case EventKind::RESTART: return "restart";
-    case EventKind::LIGHT_EVICTED: return "light_evicted";
-    case EventKind::SOUND: return "sound";
-    case EventKind::SILENT: return "silent";
-  }
-  return "";
-}
+inline const char *event_kind_str(EventKind k) { return castle_rtc::kind_str(k); }
 
 inline constexpr size_t kEventRing = 64;
 //: Longest arg kept, NUL included. A scene id and a volume fit whole; a
@@ -140,15 +128,24 @@ inline std::array<Event, kEventRing> g_events{};
 inline size_t g_events_written = 0;
 
 inline void record_event(EventKind kind, std::string_view arg, long long now_us) {
-  std::scoped_lock lk(g_events_mu);
-  Event &e = g_events[g_events_written % kEventRing];
-  e.t_ms = now_us / 1000;
-  e.kind = kind;
-  const size_t n = std::min(arg.size(), kEventArgMax - 1);
-  if (n > 0) memcpy(e.arg, arg.data(), n);
-  e.arg[n] = '\0';
-  e.trunc = n < arg.size();
-  g_events_written++;
+  {
+    std::scoped_lock lk(g_events_mu);
+    Event &e = g_events[g_events_written % kEventRing];
+    e.t_ms = now_us / 1000;
+    e.kind = kind;
+    const size_t n = std::min(arg.size(), kEventArgMax - 1);
+    if (n > 0) memcpy(e.arg, arg.data(), n);
+    e.arg[n] = '\0';
+    e.trunc = n < arg.size();
+    g_events_written++;
+  }
+  // L1 (v5.62): the same line, compactly, in RTC slow memory — the only
+  // copy that is still there after a panic or a watchdog reset. Outside the
+  // lock above because castle_rtc has its own and the two are never nested.
+  char small[castle_rtc::kArg]{};
+  const size_t m = std::min(arg.size(), castle_rtc::kArg - 1);
+  if (m > 0) memcpy(small, arg.data(), m);
+  castle_rtc::record(kind, small, now_us);
 }
 
 /// Oldest first into `out` (which must hold kEventRing entries); returns how
@@ -177,6 +174,33 @@ inline void note_light_evictions(long long now_us) {
                now_us);
   g_light_evicted_seen = total;
   g_light_evict_event_us = now_us;
+}
+
+// ── L6 (v5.62): the network, in the ring ────────────────────────────────
+// castle.yaml's `wifi:` block is the CORE — shared by every build, none of
+// which is guaranteed the web layer — so the transition is watched from the
+// mirror tick that already runs beside the ring rather than from an
+// on_connect trigger the core would have to know about. One bool compare
+// per 200 ms, and the ring finally says when the castle fell off the air:
+// "it stopped answering at 21:14" is a different fault from "it crashed".
+inline std::atomic g_rssi{0};           // dBm, 0 = not associated
+inline bool g_wifi_seen = false;        // main loop only
+inline bool g_wifi_known = false;       // main loop only: no line for boot
+
+inline void mirror_wifi(bool connected, int rssi, long long now_us) {
+  g_rssi.store(connected ? rssi : 0);
+  if (g_wifi_known && connected == g_wifi_seen) return;
+  // The first tick is the state at boot, not a transition — but an UP is
+  // still worth a line, because it is the moment the API became reachable.
+  if (!g_wifi_known && !connected) {
+    g_wifi_known = true;
+    g_wifi_seen = false;
+    return;
+  }
+  g_wifi_known = true;
+  g_wifi_seen = connected;
+  record_event(connected ? EventKind::WIFI_UP : EventKind::WIFI_DOWN,
+               connected ? std::to_string(rssi) : "", now_us);
 }
 
 /// Main loop, on the tick an action is executed: the ring line for it, and
@@ -229,6 +253,10 @@ struct Status {
   unsigned light_evicted{0};
   bool pir_armed{true};
   int pir_cooldown{60};
+  // L6 (v5.62): the radio, which nothing reported at all. A castle that
+  // answers slowly at the end of the garden and a castle with a failing
+  // power supply look identical from the desk without this number.
+  int rssi{0};   // dBm, 0 = not associated / not known yet
 };
 inline Status g_status{};   // guarded by g_state_mu
 
@@ -306,10 +334,17 @@ inline bool g_clock_armed = false;         // main loop only: sound not yet hear
 inline constexpr long long kSoundWaitUs = 1500000;
 
 /// One call per mirror tick: `playing` is the pipeline's state, `sounding`
-/// the speaker's. Returns true on the tick playback ENDED on its own
-/// (playing -> idle), so the caller can clear a raw track the way scene_stop
-/// clears an authored one.
-inline bool mirror_audio(bool playing, bool sounding, long long now_us) {
+/// the speaker's, `track` what the loop believes is on the speaker. Returns
+/// true on the tick playback ENDED on its own (playing -> idle), so the
+/// caller can clear a raw track the way scene_stop clears an authored one.
+///
+/// L10 (v5.62): the two lines this writes used to carry an empty arg, so a
+/// ring read the next morning said the speaker started and stopped without
+/// ever saying WHAT — useless for the one question worth asking of it ("did
+/// the track that killed it always kill it"). SOUND now carries the track
+/// name and SILENT the milliseconds that actually played.
+inline bool mirror_audio(bool playing, bool sounding, long long now_us,
+                         std::string_view track = {}) {
   if (playing && !g_audio_was_playing) {
     g_audio_started_us = now_us;
     g_clock_armed = true;
@@ -317,7 +352,7 @@ inline bool mirror_audio(bool playing, bool sounding, long long now_us) {
   if (g_clock_armed && playing && sounding) {
     g_audio_started_us = now_us;
     g_clock_armed = false;
-    record_event(EventKind::SOUND, "", now_us);   // the amplifier has it
+    record_event(EventKind::SOUND, track, now_us);   // the amplifier has it
   }
   // Armed but the pipeline is not up yet: hold "starting" for the grace
   // rather than reporting an end the sound never had.
@@ -328,7 +363,12 @@ inline bool mirror_audio(bool playing, bool sounding, long long now_us) {
     return false;
   }
   const bool ended = !playing && g_audio_was_playing;
-  if (ended) record_event(EventKind::SILENT, "", now_us);
+  if (ended) {
+    // How much sound there was. An armed clock never started, so the honest
+    // answer for a track that died before the amplifier heard it is 0.
+    const long long played = g_clock_armed ? 0 : (now_us - g_audio_started_us) / 1000;
+    record_event(EventKind::SILENT, std::to_string(played), now_us);
+  }
   if (!playing) g_clock_armed = false;
   g_audio_was_playing = playing;
   g_playing.store(playing);
@@ -367,6 +407,7 @@ inline void mirror_show_state(std::string_view scene, std::string_view track,
   g_status.light_evicted = g_light_evicted.load();
   g_status.pir_armed = g_pir_armed.load();
   g_status.pir_cooldown = g_pir_cooldown.load();
+  g_status.rssi = g_rssi.load();
 }
 
 // /api/light?c= — "RRGGBB" | "white" | "bars" | "chase" | "ends" | "show" |

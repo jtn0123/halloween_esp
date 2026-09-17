@@ -174,7 +174,7 @@ const char *action_name(castle_web::ActionType t) {
 /// command applied on this tick is only visible to /api/status on the next
 /// one — the same 200 ms of lag the porch has.
 castle_web::Action tick(long long now_us, bool playing, bool sounding) {
-  if (castle_web::mirror_audio(playing, sounding, now_us) && g_scene == "stop" &&
+  if (castle_web::mirror_audio(playing, sounding, now_us, g_track) && g_scene == "stop" &&
       !g_track.empty())
     g_track.clear();
   castle_web::mirror_show_state(g_scene, g_track, g_pir_scene);

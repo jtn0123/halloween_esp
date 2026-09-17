@@ -43,3 +43,5 @@ core/target/
 
 # Other sessions' worktrees live under .claude — never repo content
 .claude/worktrees/
+# tools/sd_sync.py logs saves the castle's card log here
+/castle.log

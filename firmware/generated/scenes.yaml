@@ -1706,6 +1706,8 @@ script:
       scene: string
     then:
       - lambda: |-
+          castle_web::record_event(castle_web::EventKind::SCENE_START,
+                                   scene, esp_timer_get_time());
           // Stop every scene script first. Without this a looping
           // scene's pending delay re-fires AFTER the new scene starts
           // and takes the stage back — two loops fighting forever.

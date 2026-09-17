@@ -257,6 +257,12 @@ class Handler(SimpleHTTPRequestHandler):
         """
         self.guard(lambda: self.reply(device_bridge.call("/api/events")), 502)
 
+    def get_device_health(self, _parsed):
+        """L7/L9 (v5.62): the season counters, the heap low-water mark and
+        the card's last read error, for the row above the events panel.
+        Same shape as get_device_events: a constant castle path."""
+        self.guard(lambda: self.reply(device_bridge.call("/api/health")), 502)
+
     def get_library(self, _parsed):
         with LOCK:
             self.reply(catalog())
@@ -278,6 +284,7 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/device/sync-status": get_sync_status,
         "/radio/device/library": get_device_library,
         "/radio/device/events": get_device_events,
+        "/radio/device/health": get_device_health,
         "/radio/device": get_device,
         "/radio/library": get_library,
         "/radio/jobs": get_jobs,
