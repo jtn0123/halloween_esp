@@ -255,9 +255,12 @@ class TestJsonReplies(WebPairCase):
 
     def test_health_is_the_same_json(self) -> None:
         r = self.same("GET", b"/api/health")
+        # sd_read_errors is this boot's torn card transfers (A8, v5.61);
+        # a castle that has served nothing yet reports 0 on both sides.
+        counters = {"boots": 3, "crashes": 0, "sd_read_errors": 0}
         self.assertEqual(
             json.loads(r.body),
-            {"boots": 3, "crashes": 0, "last_reset": "power-on", "was_crash": False},
+            counters | {"last_reset": "power-on", "was_crash": False},
         )
 
     def test_the_boot_log_is_the_same_text(self) -> None:

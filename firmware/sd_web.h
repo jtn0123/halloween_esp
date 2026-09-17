@@ -22,13 +22,9 @@
 
 #include <esp_http_server.h>
 #include <esp_heap_caps.h>
-#include <esp_rom_crc.h>
 #include <esp_timer.h>
-#include <freertos/FreeRTOS.h>
-#include <freertos/task.h>
 #include <algorithm>
 #include <array>
-#include <memory>
 #include <string_view>
 #include <vector>
 
@@ -38,11 +34,9 @@
 #include <atomic>
 #include <mutex>
 #include <string>
-#include <cerrno>
 #include <cstdio>
 #include <dirent.h>
 #include <sys/stat.h>
-#include <unistd.h>
 
 #include "esphome/core/log.h"
 #include "boot_log.h"
@@ -127,12 +121,19 @@ inline esp_err_t h_status(httpd_req_t *req) {
 // ── /api/health — the season-long counters ──────────────────────────────
 inline esp_err_t h_health(httpd_req_t *req) {
   std::array<char, 200> buf{};
+  // A8 (v5.61): sd_read_errors — transfers off the card that FAILED and
+  // were torn down rather than framed as a short success (sd_web_site.h).
+  // This boot only, deliberately: the question it answers is "is the card
+  // going bad right now", and the two NVS counters beside it already carry
+  // the season. Zero is the normal reading; anything else is the one number
+  // that explains a track that stops at 12% every time it plays.
   snprintf(buf.data(), buf.size(),
            R"({"boots":%u,"crashes":%u,"last_reset":"%s",)"
-           R"("was_crash":%s})",
+           R"("was_crash":%s,"sd_read_errors":%u})",
            (unsigned) castle_health::g_boots, (unsigned) castle_health::g_crashes,
            castle_health::reason_str(),
-           castle_health::was_crash() ? "true" : "false");
+           castle_health::was_crash() ? "true" : "false",
+           castle_health::g_sd_read_errors.load());
   return reply_json(req, buf.data());
 }
 
@@ -189,118 +190,6 @@ inline esp_err_t h_list(httpd_req_t *req) {
   }
   out += "]";
   return reply_json(req, out);
-}
-
-// ── uploads: PUT /api/files/<name>, /api/site/<name>, /api/scenes/<name> ─
-/// Into `<path>.part` first; the real name changes hands only once every
-/// byte is on the card. A WiFi drop at 80% of a re-send used to take the
-/// PREVIOUS good copy down with it (the old code opened the real name for
-/// writing and unlinked it on failure). The studio side was fixed for this
-/// class in 3ccdd8b; this is the device side.
-inline esp_err_t write_body(httpd_req_t *req, const char *path) {
-  // B3/E3: refuse what cannot fit, before the first byte. Re-read the
-  // free-space cache so a just-finished upload is not 507'd. A
-  // Content-Length that lies high is an IDF close; we can refuse a low one.
-  unsigned sd_total = 0;
-  unsigned sd_free = 0;
-  sd_space_kb(sd_total, sd_free, true);
-  if (sd_total > 0 && req->content_len / 1024 + 64 > sd_free)
-    return reply_err(req, "507 Insufficient Storage", "not enough room on the card");
-  const std::string part = std::string(path) + ".part";
-  FILE *f = fopen(part.c_str(), "wb");
-  if (f == nullptr) return reply_err(req, "500 Internal Server Error", "cannot create file");
-  static constexpr size_t CHUNK = 8192;
-  // nothrow: exceptions are off, and a full heap must answer 500, not abort.
-  const auto buf = std::unique_ptr<std::array<char, CHUNK>>(new (std::nothrow) std::array<char, CHUNK>);
-  if (buf == nullptr) {
-    fclose(f);
-    return reply_err(req, "500 Internal Server Error", "no memory");
-  }
-  size_t remaining = req->content_len;
-  size_t written = 0;
-  unsigned chunks = 0;
-  uint32_t crc = 0;
-  bool ok = true;
-  while (remaining > 0) {
-    const int got = httpd_req_recv(req, buf->data(), remaining < CHUNK ? remaining : CHUNK);
-    if (got <= 0 || fwrite(buf->data(), 1, got, f) != (size_t) got) { ok = false; break; }
-    // B5: a cheap running checksum, returned to the sender — "bytes
-    // matched" catches truncation but not a bad SD sector, which is a live
-    // hypothesis in docs/ISSUE-scene-start-audio.md. sd_sync compares.
-    crc = esp_rom_crc32_le(crc, (const uint8_t *) buf->data(), got);
-    remaining -= got;
-    written += got;
-    if ((++chunks & 3u) == 0) vTaskDelay(1);  // feed the watchdog every 32 KB
-  }
-  fclose(f);
-  if (!ok) {
-    unlink(part.c_str());  // the sidecar only; whatever `path` held still plays
-    ESP_LOGE(TAG, "upload of %s failed at %u bytes", path, (unsigned) written);
-    return reply_err(req, "500 Internal Server Error", "short write");
-  }
-  // FAT's rename refuses to overwrite, so the old copy goes first. The
-  // window between the two calls is a missing file, never a torn one.
-  unlink(path);
-  if (rename(part.c_str(), path) != 0) {
-    ESP_LOGE(TAG, "rename %s -> %s failed (errno %d)", part.c_str(), path, errno);
-    unlink(part.c_str());
-    return reply_err(req, "500 Internal Server Error", "rename failed");
-  }
-  ESP_LOGI(TAG, "uploaded %s (%u KB)", path, (unsigned) (written / 1024));
-  sd_space_kb(sd_total, sd_free, true);   // the card just shrank; /api/status reads this
-  std::array<char, 220> body{};
-  snprintf(body.data(), body.size(), R"({"path":"%s","bytes":%u,"crc32":"%08lx"})",
-           path, (unsigned) written, (unsigned long) crc);
-  return reply_json(req, body.data());
-}
-
-/// Which card directory a /api/files, /api/site or /api/scenes route addresses, and the
-/// prefix to cut off the URI: the one switch h_put and h_delete share, so a
-/// file that can be put somewhere can be deleted from the same place (until
-/// v5.47 DELETE knew only the root, and a renamed scene stranded its old
-/// 2 MB track on the card — grade report 2026-09-06 J4).
-inline void route_dir(const httpd_req_t *req, const char *&dir, const char *&prefix) {
-  dir = ""; prefix = "/api/files/";
-  if (strncmp(req->uri, "/api/site/", 10) == 0) { dir = "site/"; prefix = "/api/site/"; }
-  if (strncmp(req->uri, "/api/scenes/", 12) == 0) { dir = "scenes/"; prefix = "/api/scenes/"; }
-}
-
-/// PUT into /sd, /sd/site or /sd/scenes depending on the route. The scenes
-/// directory is where the show's own tracks live (see audio_sd.yaml).
-inline esp_err_t h_put(httpd_req_t *req) {
-  if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
-  if (req->content_len == 0)
-    return reply_err(req, "400 Bad Request", "empty body");
-  const char *dir = nullptr; const char *prefix = nullptr;
-  route_dir(req, dir, prefix);
-  // E3: a desk page has a known plausible size (3.3 MB today); a mistake
-  // must not eat the card. The free-space check in write_body bounds the
-  // rest.
-  if (strcmp(dir, "site/") == 0 && req->content_len > 8u * 1024 * 1024)
-    return reply_err(req, "413 Payload Too Large", "site file too large");
-  std::string name = name_from_uri(req, prefix);
-  if (!safe_name(name)) return reply_err(req, "400 Bad Request", "bad filename");
-  if (dir[0] != '\0') {
-    std::string d = std::string("/sd/") + dir;
-    d.pop_back();   // mkdir without the trailing slash
-    mkdir(d.c_str(), 0775);
-  }
-  const std::string path = std::string("/sd/") + dir + name;
-  return write_body(req, path.c_str());
-}
-
-inline esp_err_t h_delete(httpd_req_t *req) {
-  if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
-  const char *dir = nullptr; const char *prefix = nullptr;
-  route_dir(req, dir, prefix);
-  std::string name = name_from_uri(req, prefix);
-  if (!safe_name(name)) return reply_err(req, "400 Bad Request", "bad filename");
-  const std::string path = std::string("/sd/") + dir + name;
-  if (unlink(path.c_str()) != 0) return reply_err(req, "404 Not Found", "no such file");
-  ESP_LOGI(TAG, "deleted %s", path.c_str());
-  unsigned t = 0, f = 0;
-  sd_space_kb(t, f, true);   // the only other way free space moves
-  return reply_json(req, R"({"deleted":true})");
 }
 
 // ── show control: play/scene/stop/volume/light/pir — all queued ─────────
@@ -391,6 +280,7 @@ inline esp_err_t h_pir(httpd_req_t *req) {
 
 #include "sd_web_events.h"
 #include "sd_web_ota.h"
+#include "sd_web_upload.h"
 #include "sd_web_site.h"
 #include "sd_web_remote.h"
 
@@ -466,6 +356,9 @@ inline void start() {
   // Playback must never queue behind the control plane — the decoder pulls
   // its audio through this second server. See sd_web_stream.h.
   castle_stream::start(h_sd_get);
+  // A9: the task uploads are handed to, so a publish cannot hold this
+  // server's one task for the length of a 2 MB track (sd_web_upload.h).
+  upload_start();
   reg("/site/*", HTTP_GET, h_site);
   reg("/", HTTP_GET, h_root);
   ESP_LOGI(TAG, "web server up on port %d", cfg.server_port);

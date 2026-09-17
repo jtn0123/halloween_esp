@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <map>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -90,9 +91,28 @@ inline bool fat_missing(const std::string &p) {
   return false;
 }
 
+/// A CARD THAT STOPS ANSWERING, on demand (A8, v5.61).
+///
+/// CASTLE_SD_FAIL_AFTER=<bytes> makes every read of a file under /sd fail
+/// once that many bytes have come out of it — fread returns short and
+/// ferror() is true afterwards, which is exactly what ESP-IDF's FATFS does
+/// when the SPI card NAKs a sector mid-transfer. It is the one failure in
+/// this file that is not a platform difference but a fault: there is no
+/// other way to reach the torn-transfer path from a host test, and the path
+/// exists because the alternative was framing a dying card as a short song.
+inline std::map<FILE *, size_t> &read_budget() {
+  static std::map<FILE *, size_t> m;
+  return m;
+}
+
+inline std::map<FILE *, bool> &read_failed() {
+  static std::map<FILE *, bool> m;
+  return m;
+}
+
 }  // namespace castle_shim
 
-// ── the six redirected calls ────────────────────────────────────────────
+// ── the redirected calls ────────────────────────────────────────────────
 // Defined before the macros in castle_shim.h rename their unqualified uses.
 
 inline FILE *castle_shim_fopen(const char *path, const char *mode) {
@@ -109,7 +129,43 @@ inline FILE *castle_shim_fopen(const char *path, const char *mode) {
     errno = EISDIR;
     return nullptr;
   }
-  return ::fopen(p.c_str(), mode);
+  FILE *f = ::fopen(p.c_str(), mode);
+  // SET, not non-zero: "CASTLE_SD_FAIL_AFTER=0" is the card that refuses
+  // the very first sector, which is the leg where nothing has gone out yet
+  // and a real 500 is still possible.
+  if (f != nullptr && mode != nullptr && mode[0] == 'r' &&
+      std::string(path).compare(0, 3, "/sd") == 0 &&
+      !castle_shim::env("CASTLE_SD_FAIL_AFTER").empty())
+    castle_shim::read_budget()[f] = castle_shim::env_ul("CASTLE_SD_FAIL_AFTER", 0);
+  return f;
+}
+
+/// fread, with the injected fault above. Short + ferror, never a silent
+/// zero: a zero alone is end-of-file, which is the confusion A8 was.
+inline size_t castle_shim_fread(void *dst, size_t size, size_t n, FILE *f) {
+  auto it = castle_shim::read_budget().find(f);
+  if (it == castle_shim::read_budget().end()) return ::fread(dst, size, n, f);
+  if (it->second == 0) {
+    castle_shim::read_failed()[f] = true;
+    return 0;
+  }
+  const size_t want = size * n;
+  const size_t allow = want < it->second ? want : it->second;
+  const size_t got = ::fread(dst, 1, allow, f);
+  it->second -= got;
+  return size == 0 ? 0 : got / size;
+}
+
+inline int castle_shim_ferror(FILE *f) {
+  const auto it = castle_shim::read_failed().find(f);
+  if (it != castle_shim::read_failed().end() && it->second) return 1;
+  return ::ferror(f);
+}
+
+inline int castle_shim_fclose(FILE *f) {
+  castle_shim::read_budget().erase(f);
+  castle_shim::read_failed().erase(f);
+  return ::fclose(f);
 }
 
 inline DIR *castle_shim_opendir(const char *path) {
@@ -132,7 +188,20 @@ inline int castle_shim_unlink(const char *path) {
   return ::unlink(castle_shim::map_path(path).c_str());
 }
 
+/// rename, with one injected fault (A11, v5.61).
+///
+/// CASTLE_RENAME_PART_FAILS=1 makes the rename of a `<name>.part` sidecar
+/// into place fail, the way a full FAT root directory or a card that has
+/// gone read-only makes it fail. That single call is the moment the upload
+/// either replaces the previous copy or must leave it alone, and a host
+/// filesystem will never refuse it on its own.
 inline int castle_shim_rename(const char *from, const char *to) {
+  const std::string src(from == nullptr ? "" : from);
+  if (src.size() >= 5 && src.compare(src.size() - 5, 5, ".part") == 0 &&
+      castle_shim::env_ul("CASTLE_RENAME_PART_FAILS", 0) != 0) {
+    errno = ENOSPC;
+    return -1;
+  }
   return ::rename(castle_shim::map_path(from).c_str(),
                   castle_shim::map_path(to).c_str());
 }

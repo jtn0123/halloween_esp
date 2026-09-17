@@ -45,6 +45,11 @@ namespace {
 /// is about the handler rather than about boot timing.
 void seed_from_env() {
   castle_sd::g_mounted = castle_shim::env("CASTLE_MOUNTED", "1") != "0";
+  // A1 (v5.61): the flag sd_web_ota.h raises while it burns flash. On the
+  // device it is up for the length of an upload; here it is simply given,
+  // so the gate the stream server now honours can be driven without an OTA
+  // in flight.
+  castle_sd::g_quiesce = castle_shim::env("CASTLE_QUIESCE", "0") != "0";
 
   // The ids this "build" was compiled with — /api/scene 404s anything else.
   std::vector<std::string> ids;
@@ -108,8 +113,14 @@ bool read_line(std::string &out) {
 }
 
 void write_response(const castle_shim::Response &r) {
-  printf("%d %zu %zu\n", r.status, r.body.size(), r.hdrs.size() + 1);
+  // The abort rides as a header of its own: the handler returning ESP_FAIL
+  // under a half-sent body is httpd closing the socket on the device, and
+  // there is no status line left to say so (A8). No handler sets it in the
+  // ordinary course, so the pair comparison never sees it.
+  printf("%d %zu %zu\n", r.status, r.body.size(),
+         r.hdrs.size() + (r.aborted ? 2 : 1));
   printf("Content-Type: %s\n", r.type.c_str());
+  if (r.aborted) printf("X-Castle-Aborted: 1\n");
   for (const auto &h : r.hdrs) printf("%s: %s\n", h.name.c_str(), h.value.c_str());
   fwrite(r.body.data(), 1, r.body.size(), stdout);
   fflush(stdout);
@@ -177,11 +188,23 @@ int main(int argc, char **argv) {
   const bool rules_mode = argc > 1 && strcmp(argv[1], "--rules") == 0;
   seed_from_env();
   if (rules_mode) return rules();
+  // The upload worker's job, run in line after each request (A9): the
+  // device has a task for this, the harness has this one thread. The
+  // firmware side is identical either way — h_put queues and returns.
+  castle_shim::drain_async = []() { castle_web::upload_pump(); };
   castle_web::start();
   if (castle_shim::server_on(80) == nullptr ||
       castle_shim::server_on(8080) == nullptr) {
     fprintf(stderr, "web_check: castle_web::start() left a server unstarted\n");
     return 2;
   }
-  return serve();
+  const int rc = serve();
+  // Every async request must have been completed, or the device's server
+  // would have run out of sockets and stopped accepting connections.
+  if (castle_shim::async_open() != 0) {
+    fprintf(stderr, "web_check: %d async request(s) never completed\n",
+            castle_shim::async_open());
+    return 2;
+  }
+  return rc;
 }

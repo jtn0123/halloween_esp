@@ -10,8 +10,9 @@ nothing.
 
 Split out when the names suite left (grade report 2026-09-06 J1 grew it
 past the 500-line rule) — on the seam the firmware already has: sd_web.h is
-the routes and the handlers, sd_web_util.h is the byte rules underneath
-them, sd_web_events.h the two read-only rings. Nothing here is a test; nothing here is hand-copied from the C.
+the routes and the handlers, sd_web_upload.h the card's write plane
+(v5.61), sd_web_util.h is the byte rules underneath them, sd_web_events.h
+the two read-only rings. Nothing here is a test; nothing here is hand-copied from the C.
 """
 
 from __future__ import annotations
@@ -26,18 +27,29 @@ sys.path.insert(0, str(ROOT / "tools"))
 FW = ROOT / "firmware"
 SD_WEB = (FW / "sd_web.h").read_text()
 SD_OTA = (FW / "sd_web_ota.h").read_text()
+SD_UPLOAD = (FW / "sd_web_upload.h").read_text()
 SD_SITE = (FW / "sd_web_site.h").read_text()
 SD_REMOTE = (FW / "sd_web_remote.h").read_text()
 SD_EVENTS = (FW / "sd_web_events.h").read_text()
 SD_STATE = (FW / "sd_web_state.h").read_text()
 SD_UTIL = (FW / "sd_web_util.h").read_text()
 SD_STREAM = (FW / "sd_web_stream.h").read_text()
-EMU_HTTP = (ROOT / "tools" / "castle_emu_http.py").read_text()
+#: The emulator's handlers, read as ONE text. They live in two files since
+#: v5.61 — castle_emu_upload.py took the card's write plane, the way
+#: firmware/sd_web_upload.h did on the other side — and every check below
+#: is about what a handler answers, not which file it sits in.
+EMU_HTTP = "\n".join(
+    (ROOT / "tools" / name).read_text()
+    for name in ("castle_emu_http.py", "castle_emu_upload.py", "castle_emu_reply.py")
+)
 
 #: reply_err strings the emulator has no way to produce: flash, heap and
 #: FAT failures of the real board. Everything else must be mirrored.
 HARDWARE_ONLY = {
     "no memory",
+    # A8 (v5.61): a read off the card that failed part way. The emulator
+    # serves a host directory, where fread does not NAK a sector.
+    "card read failed",
     "no OTA slot",
     "ota begin failed",
     "ota end failed",
@@ -59,8 +71,11 @@ def c_functions(*sources: str) -> dict[str, str]:
 
 #: Helpers a handler delegates a reply_err to. reply_errs() is per-function,
 #: so a 414 that moved into a shared guard (query_ok) would otherwise look
-#: like a verdict the firmware stopped giving.
-ERR_HELPERS = ("write_body", "send_sd_file", "query_ok")
+#: like a verdict the firmware stopped giving. Followed TRANSITIVELY since
+#: v5.61: h_put's answers now come through upload_offload, which reaches
+#: write_body, and a handler's verdicts must not go quiet because a call
+#: grew a step (A9 put the upload worker in between).
+ERR_HELPERS = ("write_body", "send_sd_file", "query_ok", "upload_offload")
 
 
 def reply_errs(body: str) -> set[tuple[int, str]]:
@@ -77,19 +92,37 @@ EMU_CONSTS: dict[str, str] = dict(
 )
 
 
+#: The emulator's own delegation, the mirror of ERR_HELPERS: a method a
+#: handler hands the rest of the work to. castle_emu_upload's _write_upload
+#: is the upload worker's half of h_put (A9, v5.61).
+EMU_ERR_HELPERS = ("_write_upload",)
+
+
+def emu_method(name: str) -> str:
+    """One method's source, out of the emulator's handler files."""
+    m = re.search(
+        rf"    def {name}\(\s*self.*?(?=\n    def |\n@|\Z)", EMU_HTTP, re.DOTALL
+    )
+    assert m, f"emulator has no {name}"
+    return m.group(0)
+
+
 def emu_errs(handler: str) -> set[tuple[int, str]]:
-    """Every self._err(code, msg) inside one emulator handler method, with a
-    named constant resolved to the string it holds."""
-    m = re.search(rf"    def {handler}\(self.*?(?=\n    def |\Z)", EMU_HTTP, re.DOTALL)
-    assert m, f"emulator has no {handler}"
+    """Every self._err(code, msg) a handler can answer with — its own, and
+    the ones in the helpers it delegates to — with a named constant
+    resolved to the string it holds."""
+    body = emu_method(handler)
+    for helper in EMU_ERR_HELPERS:
+        if f"self.{helper}(" in body:
+            body += emu_method(helper)
     out: set[tuple[int, str]] = set()
     # The message is the second argument; a third (headers the handler had
     # already set, as h_site's CSP) may follow it, so the match stops at
     # the string rather than at the closing paren.
-    for code, msg in re.findall(r'self\._err\(\s*(\d{3}),\s*"([^"]*)"', m.group(0)):
+    for code, msg in re.findall(r'self\._err\(\s*(\d{3}),\s*"([^"]*)"', body):
         out.add((int(code), msg))
     for code, name in re.findall(
-        r"self\._err\(\s*(\d{3}),\s*([A-Z][A-Z0-9_]*)\s*[,)]", m.group(0)
+        r"self\._err\(\s*(\d{3}),\s*([A-Z][A-Z0-9_]*)\s*[,)]", body
     ):
         assert name in EMU_CONSTS, f"{handler}: unknown constant {name}"
         out.add((int(code), EMU_CONSTS[name]))
@@ -103,7 +136,7 @@ def firmware_routes() -> list[tuple[str, str, str]]:
     ]
 
 
-FUNCS = c_functions(SD_WEB, SD_OTA, SD_SITE, SD_REMOTE, SD_EVENTS, SD_UTIL)
+FUNCS = c_functions(SD_WEB, SD_OTA, SD_UPLOAD, SD_SITE, SD_REMOTE, SD_EVENTS, SD_UTIL)
 
 
 def grab(pattern: str, text: str, group: int = 1) -> str:
