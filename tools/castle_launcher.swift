@@ -1,5 +1,15 @@
 import AppKit
 
+// A failed launch never invokes terminationHandler, so ownership stays here.
+func runLoggedProcess(_ process: Process, output: FileHandle) throws {
+    do {
+        try process.run()
+    } catch {
+        try? output.close()
+        throw error
+    }
+}
+
 // A fixed action only: URLs can never supply commands, paths, or device hosts.
 final class CastleLauncher: NSObject, NSApplicationDelegate {
     private var task: Process?
@@ -74,7 +84,7 @@ final class CastleLauncher: NSObject, NSApplicationDelegate {
                     }
                 }
             }
-            try process.run()
+            try runLoggedProcess(process, output: output)
             task = process
         } catch {
             fail(error.localizedDescription)
@@ -104,7 +114,14 @@ final class CastleLauncher: NSObject, NSApplicationDelegate {
     }
 }
 
-let app = NSApplication.shared
-let launcher = CastleLauncher()
-app.delegate = launcher
-app.run()
+#if !CASTLE_LAUNCHER_TEST
+@main
+struct CastleToolsMain {
+    static func main() {
+        let app = NSApplication.shared
+        let launcher = CastleLauncher()
+        app.delegate = launcher
+        app.run()
+    }
+}
+#endif

@@ -53,6 +53,7 @@ def register(root: Path = ROOT, applications: Path | None = None) -> Path:
             [
                 "xcrun",
                 "swiftc",
+                "-parse-as-library",
                 str(root / "tools" / "castle_launcher.swift"),
                 "-o",
                 str(binary),
