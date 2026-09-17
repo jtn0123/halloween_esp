@@ -72,6 +72,18 @@ media_player:
 # §13.5 keeps the whole block on the S3.
 esp32:
   framework:
+    # ESPHome 2026.9 stopped building the IDF components it has no use for,
+    # and the card is one of them ("ESPHome doesn't use filesystem storage").
+    # sd_audio.h does: FAT over SDSPI. So is the IDF's own HTTP server, which
+    # sd_web.h registers its routes on and no ESPHome component here asks for.
+    # Without these the build stops at esp_vfs_fat.h, then esp_http_server.h.
+    # wear_levelling comes back by itself as fatfs's REQUIRES.
+    advanced:
+      include_builtin_idf_components:
+        - fatfs
+        - sdmmc
+        - esp_driver_sdspi
+        - esp_http_server
     sdkconfig_options:
       CONFIG_VFS_SUPPORT_DIR: "y"
       CONFIG_FATFS_SECTOR_4096: "n"
