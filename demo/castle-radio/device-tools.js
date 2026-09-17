@@ -85,7 +85,7 @@
   // without both numbers there is nothing to convert with.
   function bootWallMs() {
     const epoch = Number(status?.epoch), up = Number(status?.uptime_s);
-    if (!(epoch > 0) || !Number.isFinite(up)) {return null;}
+    if (!Number.isFinite(epoch) || epoch <= 0 || !Number.isFinite(up)) {return null;}
     return (epoch - up) * 1000;
   }
   // +mm:ss.s against the NEWEST entry, so the last thing the castle did reads
@@ -118,12 +118,16 @@
   function renderHealth(h) {
     if (!h || typeof h !== 'object') {$('bench-health-row').textContent = ''; return;}
     const kb = v => (Number.isFinite(Number(v)) ? `${v} KB` : '—');
-    const sd = status?.sd_mounted === false ? 'SD unavailable'
-      : `SD ${Number.isFinite(Number(status?.sd_free_kb)) ? `${Math.round(Number(status.sd_free_kb) / 1024)} MB free` : 'ready'}`;
+    let sd = 'SD ready';
+    if (status?.sd_mounted === false) {sd = 'SD unavailable';}
+    else if (Number.isFinite(Number(status?.sd_free_kb))) {sd = `SD ${Math.round(Number(status.sd_free_kb) / 1024)} MB free`;}
     const parts = [`${h.boots ?? '—'} boots · ${h.crashes ?? '—'} crashes`,
       `last reset ${h.last_reset || '—'}`,
       `heap now ${kb(status?.heap_free_kb)} · lowest ${kb(h.heap_min_kb)}`, sd];
-    if (h.sd_read_errors) {parts.push(`${h.sd_read_errors} card read errors${h.sd_last_error ? ` · last ${h.sd_last_error}` : ''}`);}
+    if (h.sd_read_errors) {
+      const last = h.sd_last_error ? ` · last ${h.sd_last_error}` : '';
+      parts.push(`${h.sd_read_errors} card read errors${last}`);
+    }
     if (Number.isFinite(Number(status?.rssi)) && Number(status?.rssi)) {parts.push(`signal ${status.rssi} dBm`);}
     $('bench-health-row').textContent = parts.join(' · ');
   }

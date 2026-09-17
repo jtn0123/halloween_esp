@@ -53,7 +53,7 @@ def emit_show_playlist(doc: Mapping[str, Any]) -> list[str]:
     out = ["  # ── The evening playlist (#19) ───────────────────"]
     out.append("  - id: show_playlist")
     out.append("    mode: restart")
-    out.append("    then:")
+    out.append(THEN)
     for sid in order:
         if sid not in by_id:
             raise SystemExit(f"show.order names unknown scene {sid!r}")
@@ -81,7 +81,7 @@ def emit_manifest_check(doc: Mapping[str, Any]) -> list[str]:
     # when the cue fires. Generated because the file list IS the scene list.
     sd += [
         "  - id: manifest_check",
-        "    then:",
+        THEN,
         "      - lambda: |-",
         "          if (!castle_sd::g_mounted) return;",
         "          std::string missing;",
