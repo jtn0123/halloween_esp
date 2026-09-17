@@ -59,9 +59,11 @@ int main() {
   CHECK(castle_web::g_events_written == before);
   CHECK(castle_web::g_light_applied.load() == 2);
 
-  // The mailbox's own rule: a LIGHT replacing a pending LIGHT drops a
-  // frame and counts it; a LIGHT that finds a STOP waiting does not touch
-  // the slot at all, and is not an eviction of anything.
+  // The mailbox's own rule: a LIGHT replacing a pending LIGHT drops the
+  // frame underneath and counts it; a LIGHT that finds a STOP waiting
+  // leaves the slot alone and is dropped ITSELF — also a frame that never
+  // ran, and since v5.60 also counted (A6), so a page can reconcile
+  // applied + evicted against what it sent.
   castle_web::set_pending(ActionType::LIGHT, "111111");
   castle_web::set_pending(ActionType::LIGHT, "222222");
   castle_web::set_pending(ActionType::LIGHT, "333333");
@@ -69,7 +71,7 @@ int main() {
   CHECK(castle_web::take_pending().arg == "333333");
   castle_web::set_pending(ActionType::STOP, "");
   castle_web::set_pending(ActionType::LIGHT, "444444");
-  CHECK(castle_web::g_light_evicted.load() == 2);
+  CHECK(castle_web::g_light_evicted.load() == 3);
   CHECK(castle_web::take_pending().type == ActionType::STOP);
 
   // The dropped frames are ONE line a second at most, carrying how many
@@ -78,15 +80,15 @@ int main() {
   const size_t lines = castle_web::g_events_written;
   castle_web::note_light_evictions(5000 * MS);
   CHECK(castle_web::g_events_written == lines + 1);
-  castle_web::g_light_evicted.fetch_add(3);
+  castle_web::g_light_evicted.fetch_add(4);
   castle_web::note_light_evictions(5200 * MS);   // inside the second: silent
   CHECK(castle_web::g_events_written == lines + 1);
   castle_web::note_light_evictions(6200 * MS);   // a second later: the backlog
   CHECK(castle_web::g_events_written == lines + 2);
   castle_web::note_light_evictions(9000 * MS);   // nothing new to report
   CHECK(castle_web::g_events_written == lines + 2);
-  CHECK(json().find(R"({"t":5000,"e":"light_evicted","a":"2"})") != std::string::npos);
-  CHECK(json().find(R"({"t":6200,"e":"light_evicted","a":"3"})") != std::string::npos);
+  CHECK(json().find(R"({"t":5000,"e":"light_evicted","a":"3"})") != std::string::npos);
+  CHECK(json().find(R"({"t":6200,"e":"light_evicted","a":"4"})") != std::string::npos);
 
   // The audio clock's two transitions: the speaker started (sound), and
   // playback ended on its own (silent). Both carry an empty arg.

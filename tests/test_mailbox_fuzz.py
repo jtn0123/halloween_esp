@@ -10,8 +10,8 @@ counters, and the mailbox rule as tools/castle_emu.py states it — and
 demands the same answer at every take and the same JSON at every dump.
 
 What that pins that the named cases cannot: every interleaving of the
-eviction rules (LIGHT never evicts a non-LIGHT, LIGHT over LIGHT counts,
-RESTART is a latch drained first), the one-a-second limit on light_evicted
+eviction rules (LIGHT never evicts a non-LIGHT but is counted when it is
+itself dropped, LIGHT over LIGHT counts, RESTART is a latch drained first), the one-a-second limit on light_evicted
 lines with an arbitrary tick spacing, the 47-byte arg cut, and the
 wraparound at 64 under any mix of kinds.
 
@@ -88,14 +88,13 @@ class Model:
         if action == "RESTART":
             self.restart = True
             return
-        if (
-            action == "LIGHT"
-            and self.pending is not None
-            and self.pending[0] != "LIGHT"
-        ):
-            return
+        # v5.60 (A6): every LIGHT that never reaches the main loop counts —
+        # the one underneath when LIGHT replaces LIGHT, and this one when it
+        # arrives behind a command of another kind and is dropped.
         if action == "LIGHT" and self.pending is not None:
             self.events.light_evicted += 1
+            if self.pending[0] != "LIGHT":
+                return
         self.pending = (action, arg)
 
     def take(self, now_us: int) -> tuple[str, str]:

@@ -224,21 +224,20 @@ class CastleEmu(ThreadingHTTPServer):
         """set_pending(): the newest command replaces whatever waited, with
         the two exceptions firmware/sd_web_state.h makes. RESTART has a latch
         of its own, so a flashed image always reboots; and a LIGHT (streamed
-        at ~4 Hz by a synced import) never evicts a command of another kind."""
+        at ~4 Hz by a synced import) never evicts a command of another kind —
+        it is dropped instead, and counted as the eviction it is."""
         with self.state.lock:
             if action == "RESTART":
                 self._restart_pending = True
                 return
-            if (
-                action == "LIGHT"
-                and self._pending is not None
-                and self._pending[0] != "LIGHT"
-            ):
-                return
-            # LIGHT over LIGHT: the frame underneath never runs, and is
-            # counted — /api/status carries the total, /api/events a line.
+            # Either way a frame is lost: LIGHT over LIGHT drops the one
+            # underneath, LIGHT behind another kind drops ITSELF. Both count
+            # (v5.60, A6) — until then only the first did, and a page could
+            # never make applied + evicted add up to what it had sent.
             if action == "LIGHT" and self._pending is not None:
                 self.events.light_evicted += 1
+                if self._pending[0] != "LIGHT":
+                    return
             self._pending = (action, arg)
 
     def _ticker(self) -> None:

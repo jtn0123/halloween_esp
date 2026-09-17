@@ -78,8 +78,10 @@ Work down this list — it is ordered by how often each one was the answer:
 - Bump `version:` in `firmware/castle.yaml` (the panel is how you PROVE the
   OTA took — an upload that "succeeded" with the old version on screen did
   not).
-- `make ota`, then confirm the image (connect once with `tools/device.py`
-  or HA) — an unconfirmed image rolls back on its next reboot.
+- `make ota`. Since v5.60 the image confirms itself on the first
+  `/api/status` it answers — the poll `make ota` already does — so there is
+  no manual step. (A connect from `tools/device.py` or HA still confirms it
+  too; an image that answers neither rolls back on its next reboot.)
 - First big upload after a firmware change: watch it. v5.42 feeds the
   watchdog every 32 KB instead of every 8 KB during uploads (4× faster
   pushes); it behaved on the emulator but the real watchdog only exists on

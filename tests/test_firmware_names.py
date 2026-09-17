@@ -225,8 +225,17 @@ class TestNameRules(unittest.TestCase):
         self.assertEqual(wire.query_param(b"/api/scene?s=vigil&x", "s"), b"vigil")
         self.assertEqual(wire.query_param(b"/api/scene?s=", "s"), b"")
         self.assertEqual(wire.query_param(b"/api/scene?", "s"), b"")
-        self.assertEqual(wire.query_param(b"/api/scene?s=" + b"v" * 120, "s"), b"")
+        # v5.60 (A10): the value buffer is 301, past anything the 200-byte
+        # query ceiling can deliver, so a value is never truncated on its
+        # own any more. It was 120, and an 80-character name with 27 spaces
+        # — 134 bytes URL-encoded — came back empty, which /api/play read as
+        # "no ?f=" and refused a file /api/files had just listed.
+        long_name = ("a" * 53 + " " * 27).replace(" ", "%20").encode()
+        self.assertEqual(len(long_name), 134)
         self.assertEqual(
-            wire.query_param(b"/api/scene?s=" + b"v" * 119, "s"), b"v" * 119
+            wire.query_param(b"/api/play?f=" + long_name, "f"), b"a" * 53 + b" " * 27
+        )
+        self.assertEqual(
+            wire.query_param(b"/api/scene?s=" + b"v" * 187, "s"), b"v" * 187
         )
         self.assertEqual(wire.query_param(b"/api/scene?s=v&" + b"x" * 197, "s"), b"")

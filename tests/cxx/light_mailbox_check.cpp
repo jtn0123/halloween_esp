@@ -26,11 +26,14 @@ int main() {
   CHECK(take_pending().type == ActionType::NONE);
 
   // A light frame that lands in the same tick as a stop does NOT evict it:
-  // "stop" on a synced import used to vanish into the frame stream.
+  // "stop" on a synced import used to vanish into the frame stream. The
+  // frame itself is dropped, and since v5.60 counted as the eviction it is.
+  const unsigned evicted_before = castle_web::g_light_evicted.load();
   set_pending(ActionType::STOP, "");
   set_pending(ActionType::LIGHT, "ff0000");
   CHECK(take_pending().type == ActionType::STOP);
   CHECK(take_pending().type == ActionType::NONE);
+  CHECK(castle_web::g_light_evicted.load() == evicted_before + 1);
 
   // Volume and PIR survive the same way — the slider used to snap back.
   set_pending(ActionType::VOLUME, "35");

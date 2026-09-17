@@ -38,6 +38,7 @@ import castle_emu_wire as wire
 from firmware_source import (
     EMU_CONSTS,
     EMU_HTTP,
+    ERR_HELPERS,
     FUNCS,
     HARDWARE_ONLY,
     SD_EVENTS,
@@ -73,7 +74,7 @@ class TestErrorStrings(unittest.TestCase):
     def errs_for(self, handler: str) -> set[tuple[int, str]]:
         body = FUNCS[handler]
         found = reply_errs(body)
-        for helper in ("write_body", "send_sd_file"):
+        for helper in ERR_HELPERS:
             if f"{helper}(" in body:
                 found |= reply_errs(FUNCS[helper])
         return found
@@ -163,14 +164,64 @@ class TestValidatorConstants(unittest.TestCase):
         st = emu.status_json()
         self.assertEqual((st["light_applied"], st["light_evicted"]), (0, 0))
         # The eviction is counted where the firmware counts it: in the
-        # mailbox, when a LIGHT replaces a LIGHT and nowhere else.
-        self.assertIn("ActionType::LIGHT)\n    g_light_evicted.fetch_add(1)", SD_STATE)
+        # mailbox, for EVERY light frame the one slot loses (v5.60, A6) —
+        # the frame a later LIGHT replaced, and the frame that arrived
+        # behind another kind of command and was dropped instead.
+        self.assertIn(
+            "ActionType::NONE) {\n    g_light_evicted.fetch_add(1);", SD_STATE
+        )
         emu.queue("LIGHT", "ff0000")
         emu.queue("LIGHT", "00ff00")
         self.assertEqual(emu.status_json()["light_evicted"], 1)
         emu.queue("STOP", "")
         emu.queue("LIGHT", "0000ff")
-        self.assertEqual(emu.status_json()["light_evicted"], 1)
+        self.assertEqual(emu.status_json()["light_evicted"], 2)
+        # ...and the STOP is still what the main loop will run: the frame is
+        # counted, never allowed to take the slot from another kind.
+        self.assertEqual(emu._pending, ("STOP", ""))
+
+    def test_status_is_read_as_one_snapshot(self) -> None:
+        """A7. h_status used to copy the strings under g_state_mu, drop the
+        lock, and only then load show_on / playing / position_ms / volume as
+        independent atomics — and the 200 ms mirror lands in between often
+        enough that a poll on the tick a track ended carried the track's
+        name beside playing:false. Everything moves together now."""
+        body = FUNCS["h_status"]
+        self.assertIn("status_snapshot()", body)
+        for atomic in (
+            "g_playing.load()",
+            "g_position_ms.load()",
+            "g_show_on.load()",
+            "g_volume.load()",
+            "g_light_applied.load()",
+            "g_pir_armed.load()",
+            "g_scene",
+            "g_track",
+        ):
+            self.assertNotIn(atomic, body, atomic)
+        # And the one writer takes the one lock once, with the audio clock
+        # already stored: the mirror tick's last act.
+        publish = SD_STATE[SD_STATE.index("inline void mirror_show_state(") :]
+        self.assertEqual(publish.count("std::scoped_lock lk(g_state_mu);"), 1)
+        for field in ("playing", "position_ms", "show_on", "volume", "track"):
+            self.assertIn(f"g_status.{field} =", publish)
+        # h_status's fixed part must still fit the 240-byte buffers it fills.
+        self.assertIn("std::array<char, 240> buf{}", body)
+
+    def test_the_first_status_served_confirms_a_web_ota(self) -> None:
+        """A2. CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE holds a freshly-OTA'd
+        image in PENDING_VERIFY, and the only confirmation was `api:
+        on_client_connected` — a Home Assistant this castle does not always
+        have. A web-OTA'd image was therefore never confirmed and rolled
+        back on the next power cycle, silently undoing a working update."""
+        self.assertIn("g_status_served.store(true);", FUNCS["h_status"])
+        boot = (ROOT / "firmware" / "castle_sd_common.yaml").read_text()
+        self.assertIn("castle_web::g_status_served.load()", boot)
+        self.assertIn("castle_sd::mark_firmware_healthy();", boot)
+        # The log line that says it happened, and the one-shot that keeps it
+        # from happening twice, both stay in flash_mode.h.
+        flash = (ROOT / "firmware" / "flash_mode.h").read_text()
+        self.assertIn("image confirmed — rollback cancelled", flash)
 
     def test_pending_mailbox_is_one_slot(self) -> None:
         """sd_web_state.h: set_pending overwrites; take_pending empties."""

@@ -441,10 +441,29 @@ class TestValidators(WebPairCase):
             with self.subTest(q=q):
                 self.same("POST", b"/api/pir" + q)
 
+    def test_pir_refuses_a_pipe_and_an_unknown_scene(self) -> None:
+        """A4/C5/C7. The three fields ride to the main loop packed "a|c|s",
+        and the YAML unpacks them with find/rfind while the emulator splits
+        — so a '|' inside a value is two different settings on the two
+        castles. And the scene used to go straight through to pir_scene's
+        select, where an unknown option is a log line nobody reads; it now
+        faces the same list /api/scene checks."""
+        for q, want in (
+            (b"?scene=vi%7Cgil", 400),
+            (b"?armed=1&scene=a%7Cb", 400),
+            (b"?scene=%7C", 400),
+            (b"?cooldown=30&scene=nope", 404),
+            (b"?scene=storm", 200),
+            (b"?armed=1&cooldown=60", 200),
+        ):
+            with self.subTest(q=q):
+                self.assertEqual(self.same("POST", b"/api/pir" + q).status, want, q)
+
     def test_the_query_buffers_truncate_the_same_way(self) -> None:
         """query_param reads the whole query into 200 bytes and one value
-        into 120; either overflowing is "" and therefore a refusal."""
-        for n in (117, 118, 119, 120, 197, 198, 199, 300):
+        into 301 (v5.60, A10): the query ceiling is the only one a request
+        can reach, and reaching it is a 414 on both sides."""
+        for n in (117, 118, 119, 120, 134, 186, 187, 188, 197, 198, 199, 300):
             with self.subTest(n=n):
                 self.same("POST", b"/api/play?f=" + b"a" * n)
 

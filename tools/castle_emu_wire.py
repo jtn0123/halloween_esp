@@ -20,9 +20,13 @@ import json
 #: esp_http_server's request-line ceiling (HTTPD_MAX_URI_LEN). Longer → 414.
 MAX_URI = 512
 #: query_param()'s stack buffers in sd_web.h: the whole query string, and
-#: one value. A query at or over the buffer length is TRUNC → 414.
+#: one value. A query at or over the buffer length is TRUNC → 414. The value
+#: buffer was 120 until v5.60: safe_name admits a 99-character name, spaces
+#: URL-encode to three bytes each, and the truncation came back as an empty
+#: parameter — a 400 "need ?f=<file>" for a file /api/files had just listed
+#: (A10). 3*99 + 2 now, past anything the query ceiling can deliver.
 QUERY_BUF = 200
-VALUE_BUF = 120
+VALUE_BUF = 301
 #: safe_name's / safe_subpath's length ceilings.
 NAME_MAX = 100
 SUBPATH_MAX = 140
@@ -245,10 +249,16 @@ def pir_cooldown_ok(c: bytes) -> bool:
 
 
 def query_param(raw_target: bytes, key: str) -> bytes:
-    """sd_web.h query_param: httpd_req_get_url_query_str into a 200-byte
-    buffer, httpd_query_key_value into a 120-byte one (either truncation
+    """sd_web_util.h query_param: httpd_req_get_url_query_str into a 200-byte
+    buffer, httpd_query_key_value into a 301-byte one (either truncation
     → ""), then url_decode. Keys compare case-insensitively; a pair without
-    '=' derails the scan (the '=' found belongs to the NEXT pair)."""
+    '=' derails the scan (the '=' found belongs to the NEXT pair).
+
+    The value leg is unreachable behind the 200-byte query ceiling and is
+    kept only so the two buffers stay spelled the way the C spells them —
+    the firmware answers its own 414 there, with the same message the query
+    ceiling gives, so no input exists on which the two sides differ.
+    """
     if b"?" not in raw_target:
         return b""
     qry = raw_target.split(b"?", 1)[1]

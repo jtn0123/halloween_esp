@@ -134,6 +134,20 @@ class TestNameStorm(unittest.TestCase):
             c, e = self.pair.both("PATCH", target)
             self.assertEqual((c.status, c.body), (e.status, e.body))
 
+    def test_a_long_spaced_name_reaches_the_handler_on_both(self) -> None:
+        """A10: an 80-character name with 27 spaces is 134 bytes once it is
+        URL-encoded, and query_param's value buffer held 120. The board
+        answered ESP_ERR_HTTPD_RESULT_TRUNC, query_param swallowed it as an
+        empty parameter, and /api/play said 400 "need ?f=<file>" for a file
+        /api/files had just listed. Both castles must now queue it."""
+        name = ("a " * 27) + "a" * 26
+        self.assertEqual((len(name), name.count(" ")), (80, 27))
+        encoded = name.replace(" ", "%20").encode()
+        self.assertEqual(len(encoded), 134)
+        c, e = self.pair.both("POST", b"/api/play?f=" + encoded)
+        self.assertEqual((c.status, c.body), (e.status, e.body))
+        self.assertEqual((c.status, c.body), (200, b'{"queued":true}'))
+
     def test_an_overlong_target_is_414_on_both(self) -> None:
         """HTTPD_MAX_URI_LEN, from both sides. Below it the name is merely
         too long for safe_name (400); above it no handler runs at all."""

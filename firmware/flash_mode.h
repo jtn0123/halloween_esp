@@ -53,6 +53,17 @@ inline void reboot_to_download_mode() {
 /// WiFi associated, and the API answers. Confirming at boot instead would
 /// happily bless a brick.
 ///
+/// v5.60 adds a SECOND trigger, for the same reason and on the same terms:
+/// the first /api/status the web server answers (castle_sd_common.yaml's
+/// 200 ms interval watches castle_web::g_status_served). The native API
+/// client is a Home Assistant that this castle does not always have —
+/// nothing on the porch requires one — and a firmware delivered by
+/// PUT /api/ota to a castle with no HA was therefore never confirmed and
+/// rolled back on the next power cycle, silently undoing an update that
+/// worked. A served /api/status proves the identical chain: the chip
+/// booted, WiFi associated, and the very server the next OTA arrives
+/// through is answering. Still not at boot, still not on a timer.
+///
 /// Only the first call does work; after that the partition is no longer
 /// pending and this is a cheap no-op.
 inline void mark_firmware_healthy() {

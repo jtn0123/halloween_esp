@@ -250,11 +250,16 @@ class Fuzzer:
                     for k in ("armed", "cooldown", "scene")
                 )
                 ok, _ = wire.pir_armed_ok(a)
-                want = (
-                    (200,)
-                    if (a or c or s) and ok and wire.pir_cooldown_ok(c)
-                    else (400,)
+                # v5.60: a '|' in any field is 400 (the three ride to the
+                # main loop packed "a|c|s"), and a scene faces the same list
+                # /api/scene does — 404, or 503 before it is seeded.
+                fine = bool(
+                    (a or c or s)
+                    and ok
+                    and wire.pir_cooldown_ok(c)
+                    and not any(b"|" in x for x in (a, c, s))
                 )
+                want = ((200, 404, 503) if s else (200,)) if fine else (400,)
             else:
                 want = (200,) if wire.safe_name(val) else (400,)
         if code not in want:

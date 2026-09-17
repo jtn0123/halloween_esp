@@ -26,7 +26,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.59"
+  version: "5.60"
 
   # ── Pin map (GPIO numbers; this board has no aliases in ESPHome) ──
   #
@@ -148,7 +148,8 @@ esp32:
       # The bootloader starts a freshly-OTA'd image in PENDING_VERIFY. If it
       # reboots without confirming itself, the bootloader reverts to the
       # previous image. That is the whole safety net for flashing a device
-      # that is not in the room — see the api: on_client_connected below.
+      # that is not in the room — see the api: on_client_connected below and
+      # the /api/status confirmation in castle_sd_common.yaml.
       CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE: "y"
       # Keep the RMT refill ISR runnable while the flash cache is off
       # (WiFi/NVS writes). Without it, strips after the first lose the race
@@ -232,7 +233,10 @@ api:
   # which also silently killed whatever was playing. WiFi keeps its own
   # reboot_timeout, so a genuinely lost network still recovers.
   reboot_timeout: 0s
-  # THE image-confirmation step, and the reason rollback is safe.
+  # ONE of the two image-confirmation steps, and the reason rollback is safe.
+  # The other is the first /api/status the web server answers (v5.60, see
+  # flash_mode.h): a castle with no Home Assistant on the network never gets
+  # the client connect below, and a web-OTA'd image used to roll itself back.
   #
   # An API client connecting proves the things a future OTA depends on: the
   # chip booted, WiFi associated, and the network stack answers. Confirming
