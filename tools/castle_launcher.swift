@@ -6,14 +6,14 @@ final class CastleLauncher: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var logURL: URL?
 
-    func applicationWillFinishLaunching(_ notification: Notification) {
+    func applicationWillFinishLaunching(_: Notification) {
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(openURL(_:reply:)),
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL))
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    func applicationDidFinishLaunching(_: Notification) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "♜"
         item.button?.toolTip = "Castle Tools"
@@ -33,7 +33,7 @@ final class CastleLauncher: NSObject, NSApplicationDelegate {
         startTools()
     }
 
-    @objc func openURL(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
+    @objc func openURL(_ event: NSAppleEventDescriptor, reply _: NSAppleEventDescriptor) {
         guard event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue
                 == "castle-tools://start" else { return }
         startTools()
@@ -97,7 +97,7 @@ final class CastleLauncher: NSObject, NSApplicationDelegate {
 
     @objc func quitTools() { NSApp.terminate(nil) }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    func applicationWillTerminate(_: Notification) {
         // The shell's TERM trap stops only the server it started. A pre-existing
         // helper is reused and is never adopted or stopped by this app.
         if task?.isRunning == true { task?.terminate() }
