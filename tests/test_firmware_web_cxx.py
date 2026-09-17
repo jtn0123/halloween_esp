@@ -19,8 +19,8 @@ Three deliberate exceptions, none of them about the firmware's logic:
     heap and card numbers, which are the machine's rather than the code's.
   * /api/files entry ORDER — the device answers in FAT order and the
     emulator sorts, so the entries are compared as a set.
-  * a directory's `size` — FATFS reports 0, a host filesystem reports the
-    block size. The dir FLAG is compared; the number is not.
+  * (a directory's `size` was a third one until v5.62 reported 0 for one
+    on the board too — C10; the number is compared like every other now.)
 
 This file is the READING half — routing, the pages served off the card and
 out of flash, the JSON replies and the validators. Everything that changes
@@ -307,16 +307,16 @@ class TestJsonReplies(WebPairCase):
 
 
 def entries(r: Reply) -> set[tuple[str, bool, int]]:
-    """A listing as a comparable set: name, dir flag, and the size for
-    FILES only — a directory's st_size is FATFS's 0 on the board and the
-    host filesystem's block size here."""
+    """A listing as a comparable set: name, dir flag and size. A directory
+    reports 0 on all three castles since v5.62 (C10) — the host filesystem
+    used to answer this one with its own block bookkeeping, which is a
+    third behaviour and made the field untestable."""
     out = set()
     for item in json.loads(r.body):
         if "name" not in item:
             out.add((f"skipped:{item['skipped']}", False, 0))
             continue
-        is_dir = bool(item["dir"])
-        out.add((item["name"], is_dir, -1 if is_dir else int(item["size"])))
+        out.add((item["name"], bool(item["dir"]), int(item["size"])))
     return out
 
 

@@ -21,9 +21,11 @@ const STATUS_TTL_S: f64 = 1.5;
 const DOWN_TTL_S: f64 = 3.0;
 
 /// Every route the firmware actually serves — castle_link.KNOWN_API.
-pub const KNOWN_API: [&str; 15] = [
+pub const KNOWN_API: [&str; 16] = [
     "/api/status",
     "/api/health",
+    // v5.59's event ring (C2): served by the castle, refused here.
+    "/api/events",
     "/api/files",
     "/api/play",
     "/api/stop",

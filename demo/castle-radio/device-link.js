@@ -130,7 +130,10 @@
     if (!online) {return 'Castle offline';}
     if (reconnecting()) {return 'Castle · reconnecting…';}
     if (state.settling) {return 'Castle · starting…';}
-    if (playing) {return `Castle · ${name} · ${fmt(remoteTime())}`;}
+    // B11: the clock BEFORE the title. The chip is one ellipsised nowrap
+    // line, ~200 px of 9 px text on a phone, so something has to go — and
+    // it used to be the clock: "Castle · The Ballad of the Witc…".
+    if (playing) {return `Castle · ${fmt(remoteTime())} · ${name}`;}
     return `Castle ${firmware()} · idle`;
   }
   function paintChip(online, playing, name) {

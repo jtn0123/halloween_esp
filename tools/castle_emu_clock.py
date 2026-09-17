@@ -26,15 +26,36 @@ SPEAKER_START_S = 0.5
 SOUND_WAIT_S = 1.5
 
 
-def silence_until(track: str, started: float, now: float) -> float:
+def heard(started: float, ends: float, now: float) -> bool:
+    """Has the speaker's own task run for this track yet?
+
+    mirror_audio() clears g_clock_armed on the first tick the speaker is
+    running, and the grace below belongs to an ARMED clock only: a track
+    that was audible and then ended reports the end at once, however short
+    it was. Here the speaker runs from SPEAKER_START_S into a track that
+    lasts at least that long.
+    """
+    return ends > started + SPEAKER_START_S and now >= started + SPEAKER_START_S
+
+
+def silence_until(
+    started: float, ends: float, starting_until: float, now: float
+) -> float:
     """When a stop lands, how long "starting" outlives the sound.
 
-    mirror_audio(): the clock is still armed if the speaker was never heard
-    from, and holds playing:true / position_ms:0 for the rest of the grace.
-    Stop a track that was audible and the end is immediate — 0.0 here.
+    mirror_audio(): a stop does not clear an ARMED clock — g_clock_armed is
+    still up because the speaker was never heard from, so the board holds
+    playing:true / position_ms:0 for the rest of kSoundWaitUs rather than
+    reporting an end the sound never had. Stop a track that was audible and
+    the end is immediate — 0.0 here.
+
+    The arming belongs to the CLOCK, not to the track name (C3): a scene
+    whose audio is not on the card is armed with nothing named, and used to
+    lose its grace here because this asked whether a track was set.
     """
-    armed = bool(track) and now < started + SPEAKER_START_S
-    return started + SOUND_WAIT_S if armed else 0.0
+    if heard(started, ends, now) or now >= starting_until:
+        return 0.0
+    return starting_until
 
 
 def audio_state(
@@ -44,8 +65,12 @@ def audio_state(
 
     A named track is sound only while it lasts: an authored scene goes on
     naming its track after the audio ends, and the board reports that
-    silence honestly.
+    silence honestly. Before the sound, an armed clock reports "starting"
+    (playing:true at position 0) for the grace — including the case the
+    sound never comes at all, which is what a command for audio the card
+    does not have looks like on the device (C3/C4).
     """
     sounding = bool(track) and now < ends
     position = max(0, int((now - started - SPEAKER_START_S) * 1000)) if sounding else 0
-    return sounding or now < starting_until, position
+    armed = not heard(started, ends, now)
+    return sounding or (armed and now < starting_until), position
