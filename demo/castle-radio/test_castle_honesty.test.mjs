@@ -140,6 +140,19 @@ test('B10: a firmware field that is not a string is not printed as one', async (
   }
 });
 
+/* --------------------------------------------------------------------- B11 */
+
+test('B11: the chip puts the clock where an ellipsis cannot reach it', async () => {
+  const {ctx} = linkContext({payload: playingAt(201)});
+  await settle();
+  const chip = ctx.$('castle-chip').textContent;
+  assert.match(chip, /^Castle · \d+:\d\d/, chip);
+  // One nowrap line with text-overflow:ellipsis, ~200 px of 9 px text on a
+  // phone: whatever is last is what the porch never gets to read, and a
+  // song title is longer than a clock.
+  assert.ok(chip.indexOf(':') < chip.length - 3, chip);
+});
+
 /* --------------------------------------------------------------------- B12 */
 
 test('B12: an answer with no motion block leaves the motion switch alone', async () => {

@@ -196,6 +196,10 @@ def _read_budget(method: str, path: str) -> float:
 KNOWN_API = (
     "/api/status",
     "/api/health",
+    # v5.59's event ring: what the main loop DID between two status polls.
+    # It was served by the castle for two releases before any relay would
+    # pass it (C2) — tests/test_route_contract.py now fails on that drift.
+    "/api/events",
     "/api/files",
     "/api/play",
     "/api/stop",

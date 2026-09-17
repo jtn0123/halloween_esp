@@ -127,6 +127,11 @@ struct Event {
   long long t_ms{0};             // uptime when the main loop ran it
   EventKind kind{EventKind::STOP};
   char arg[kEventArgMax]{};
+  //: A12: the arg did not fit and what is above is a PREFIX. /api/events is
+  //: sold as the record of what the castle actually did, and a 99-character
+  //: track name came back cut to 47 with nothing to say so — a reader
+  //: comparing it against /api/files saw two different songs.
+  bool trunc{false};
 };
 
 inline std::mutex g_events_mu;
@@ -142,6 +147,7 @@ inline void record_event(EventKind kind, std::string_view arg, long long now_us)
   const size_t n = std::min(arg.size(), kEventArgMax - 1);
   if (n > 0) memcpy(e.arg, arg.data(), n);
   e.arg[n] = '\0';
+  e.trunc = n < arg.size();
   g_events_written++;
 }
 

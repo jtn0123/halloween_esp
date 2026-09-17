@@ -29,6 +29,8 @@ namespace castle_web {
 
 /// The ring as JSON, oldest first:
 ///   [{"t":<uptime_ms>,"e":"play|scene|...","a":"<arg or empty>"}, ...]
+/// with `"trunc":true` beside an `a` that did not fit kEventArgMax (A12) —
+/// present only when it happened, so the ordinary line is unchanged.
 inline std::string events_json(const Event *evs, size_t n) {
   std::string out = "[";
   for (size_t i = 0; i < n; i++) {
@@ -39,7 +41,7 @@ inline std::string events_json(const Event *evs, size_t n) {
     out += event_kind_str(evs[i].kind);
     out += R"(","a":")";
     out += json_escape(evs[i].arg);
-    out += R"("})";
+    out += evs[i].trunc ? R"(","trunc":true})" : R"("})";
   }
   out += "]";
   return out;

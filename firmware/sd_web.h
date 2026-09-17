@@ -168,8 +168,14 @@ inline esp_err_t h_list(httpd_req_t *req) {
     long size = -1;
     bool is_dir = false;
     if (stat(full.c_str(), &st) == 0) {
-      size = (long) st.st_size;
       is_dir = S_ISDIR(st.st_mode);
+      // C10: a DIRECTORY has no size worth reporting. FATFS gives one
+      // number here, the host filesystem the C harness runs on gives
+      // another (96, 64, 160 — its own block bookkeeping) and the emulator
+      // gives 0, so the field was a third behaviour per castle and the pair
+      // harness could not test it at all. Nobody reads it: `dir` is what
+      // every client branches on. Zero on all three, and testable.
+      size = is_dir ? 0 : (long) st.st_size;
     }
     std::array<char, 48> tail{};
     snprintf(tail.data(), tail.size(), R"(","size":%ld,"dir":%s})", size,

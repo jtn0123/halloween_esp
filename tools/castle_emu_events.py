@@ -44,7 +44,9 @@ class Events:
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
-        self.ring: list[tuple[int, str, str]] = []
+        #: (uptime_ms, kind, arg, truncated) — the last of those is A12's
+        #: marker for an arg that did not fit ARG_MAX.
+        self.ring: list[tuple[int, str, str, bool]] = []
         #: LIGHT commands the tick actually ran, and frames the slot dropped.
         self.light_applied = 0
         self.light_evicted = 0
@@ -56,9 +58,15 @@ class Events:
     # -- recording (the main loop's side) ----------------------------------
 
     def record(self, kind: str, arg: str, t_ms: int) -> None:
+        raw = arg.encode()
         with self.lock:
             self.ring.append(
-                (t_ms, kind, arg.encode()[:ARG_MAX].decode("utf-8", "ignore"))
+                (
+                    t_ms,
+                    kind,
+                    raw[:ARG_MAX].decode("utf-8", "ignore"),
+                    len(raw) > ARG_MAX,
+                )
             )
             del self.ring[:-RING]
 
@@ -85,19 +93,29 @@ class Events:
             self._evict_event_ms = t_ms
         self.record("light_evicted", str(dropped), t_ms)
 
-    def note_audio(self, sounding: bool, playing: bool, t_ms: int) -> None:
+    def note_audio(self, sounding: bool, playing: bool, t_ms: int) -> bool:
         """mirror_audio's two transitions: the speaker started (the armed
-        clock began running) and playback ended on its own."""
+        clock began running) and playback ended on its own.
+
+        Returns mirror_audio's own return value — true on the tick playback
+        ENDED — so the caller can clear a raw track's name the way
+        castle_sd_common.yaml does. That is a transition, not a deadline:
+        an armed clock whose sound never came holds the name for the whole
+        grace, and the emulator used to drop it on the first tick past the
+        track's end instead (C4).
+        """
         was_sounding, was_playing = self._sounding, self._playing
         self._sounding, self._playing = sounding, playing
         if sounding and not was_sounding:
             self.record("sound", "", t_ms)
-        if was_playing and not playing:
+        ended = was_playing and not playing
+        if ended:
             self.record("silent", "", t_ms)
+        return ended
 
     # -- reading (the handler's side) --------------------------------------
 
-    def snapshot(self) -> list[tuple[int, str, str]]:
+    def snapshot(self) -> list[tuple[int, str, str, bool]]:
         with self.lock:
             return list(self.ring)
 
@@ -106,8 +124,9 @@ class Events:
         return (
             "["
             + ",".join(
-                '{"t":%d,"e":"%s","a":"%s"}' % (t, kind, wire.json_escape(arg))
-                for t, kind, arg in self.snapshot()
+                '{"t":%d,"e":"%s","a":"%s"%s}'
+                % (t, kind, wire.json_escape(arg), ',"trunc":true' if trunc else "")
+                for t, kind, arg, trunc in self.snapshot()
             )
             + "]"
         )

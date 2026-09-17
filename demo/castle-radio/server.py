@@ -243,6 +243,20 @@ class Handler(SimpleHTTPRequestHandler):
                 502,
             )
 
+    def get_device_events(self, _parsed):
+        """C1: the castle's event ring, for the "Recent castle events" panel.
+
+        device-tools.js has always had the button and castle-direct.js has
+        always answered it on the castle-served build; the desktop control
+        room had no route, so `do_GET` fell through to an HTML 404, the
+        page's `response.json()` threw, and the catch-all told the user the
+        running firmware lacked a feature it has had since 5.59.
+
+        A constant path, like every other castle call here: nothing the
+        browser sent reaches the castle's URL.
+        """
+        self.guard(lambda: self.reply(device_bridge.call("/api/events")), 502)
+
     def get_library(self, _parsed):
         with LOCK:
             self.reply(catalog())
@@ -263,6 +277,7 @@ class Handler(SimpleHTTPRequestHandler):
     GET_ROUTES: ClassVar[dict] = {
         "/radio/device/sync-status": get_sync_status,
         "/radio/device/library": get_device_library,
+        "/radio/device/events": get_device_events,
         "/radio/device": get_device,
         "/radio/library": get_library,
         "/radio/jobs": get_jobs,
