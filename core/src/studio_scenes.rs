@@ -75,7 +75,10 @@ pub fn splice(app: &App, req: &Json) -> (Json, u16) {
     let sid = sid_owned.trim();
     let replaced;
     {
-        let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = app
+            .oplock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let before = std::fs::read_to_string(&app.scenes).unwrap_or_default();
         let span = find_block(&before, sid);
         replaced = span.is_some();
@@ -115,7 +118,10 @@ pub fn splice(app: &App, req: &Json) -> (Json, u16) {
 /// studio_scenes.remove — take one scene out and re-render.
 pub fn remove(app: &App, sid: &str) -> (Json, u16) {
     {
-        let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = app
+            .oplock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let before = std::fs::read_to_string(&app.scenes).unwrap_or_default();
         let Some((s, e)) = find_block(&before, sid) else {
             return (
@@ -183,7 +189,10 @@ pub fn rebuild(app: &App) -> (bool, String) {
     // (grade report 2026-09-17 pm G2). Hence the scope: locked for the three
     // steps, free for the wire.
     {
-        let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = app
+            .oplock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         for tool in ["render_audio.py", "gen_esphome.py", "gen_previewer.py"] {
             let mut cmd = Command::new(py(&app.root));
             cmd.arg(app.root.join("tools").join(tool));

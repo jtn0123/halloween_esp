@@ -20,7 +20,7 @@
 //! signal context.
 
 use std::sync::atomic::{AtomicI32, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use crate::studio_proc::kill_group;
 
@@ -51,14 +51,14 @@ pub fn register(pid: i32) {
     if pid > 1 {
         leaders()
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(PoisonError::into_inner)
             .push(pid);
     }
 }
 
 /// The child has been waited for: its group is gone (or ours to forget).
 pub fn forget(pid: i32) {
-    let mut live = leaders().lock().unwrap_or_else(|e| e.into_inner());
+    let mut live = leaders().lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(i) = live.iter().position(|&p| p == pid) {
         live.swap_remove(i);
     }
@@ -68,7 +68,7 @@ pub fn forget(pid: i32) {
 /// the shutdown thread, never from a signal handler.
 pub fn kill_all() {
     let doomed: Vec<i32> =
-        std::mem::take(&mut *leaders().lock().unwrap_or_else(|e| e.into_inner()));
+        std::mem::take(&mut *leaders().lock().unwrap_or_else(PoisonError::into_inner));
     for pid in doomed {
         kill_group(pid);
     }
@@ -77,7 +77,10 @@ pub fn kill_all() {
 /// How many groups are live — for the tests, and for a status line if the
 /// desk ever wants one.
 pub fn live_count() -> usize {
-    leaders().lock().unwrap_or_else(|e| e.into_inner()).len()
+    leaders()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .len()
 }
 
 static PENDING: AtomicI32 = AtomicI32::new(0);

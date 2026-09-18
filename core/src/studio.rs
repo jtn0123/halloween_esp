@@ -7,8 +7,9 @@
 //! (gen_previewer.lean), the scene-id listing, and the one-release
 //! /api→/studio alias table. Routes live in studio_routes.rs.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 /// The page rewrite lives in studio_lean.rs; the names stay here, where
 /// every caller already looks for them.
@@ -107,7 +108,7 @@ impl App {
         let size = md.len();
         let key = (page.to_string_lossy().into_owned(), mtime, size);
         let etag = format!("\"{mtime}-{size}-lean\"");
-        let mut slot = self.lean.lock().unwrap_or_else(|e| e.into_inner());
+        let mut slot = self.lean.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(hit) = slot.as_ref() {
             if hit.key == key {
                 let body = Arc::clone(&hit.body);
@@ -186,7 +187,7 @@ pub fn scene_audio(audio_dir: &Path, sid: &str) -> Option<PathBuf> {
         .flatten()
         .map(|e| e.path())
         .filter(|p| {
-            p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+            p.file_name().and_then(OsStr::to_str).is_some_and(|n| {
                 let nb = n.as_bytes();
                 n.len() == sid.len() + 7
                     && nb[0].is_ascii_digit()

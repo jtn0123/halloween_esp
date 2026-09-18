@@ -150,7 +150,10 @@ mod tests {
         app.scenes = d.join("scenes.yaml");
         std::fs::write(&app.scenes, SHOW).expect("seed");
         let app = std::sync::Arc::new(app);
-        let held = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        let held = app
+            .oplock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let pushing = std::sync::Arc::clone(&app);
         let (tx, rx) = std::sync::mpsc::channel();
         let h = std::thread::spawn(move || {

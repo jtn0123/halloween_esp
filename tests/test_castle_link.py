@@ -252,7 +252,9 @@ class TestSlowCard(HostEnv, unittest.TestCase):
         cl._cache.clear()
 
     def test_a_put_that_acks_after_the_post_budget_still_succeeds(self) -> None:
-        SlowCastle.put_delay = cl.TIMEOUT_S + 0.5
+        self.enterContext(
+            mock.patch.object(SlowCastle, "put_delay", cl.TIMEOUT_S + 0.5)
+        )
         with mock.patch.dict(os.environ, {"CASTLE_HOST": self.host}):
             code, out, _ = cl.forward("PUT", "/api/files/big.mp3", b"x" * 1000)
         self.assertEqual(code, 200)
@@ -264,7 +266,7 @@ class TestSlowCard(HostEnv, unittest.TestCase):
         other, other_host = start_fake_castle()
         self.addCleanup(other.shutdown)
         self.addCleanup(other.server_close)
-        SlowCastle.put_delay = 1.5
+        self.enterContext(mock.patch.object(SlowCastle, "put_delay", 1.5))
         with (
             mock.patch.dict(os.environ, {"CASTLE_HOST": f"{self.host},{other_host}"}),
             mock.patch.dict(cl.READ_BUDGET_S, {"PUT": 0.3}),

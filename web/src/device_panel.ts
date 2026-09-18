@@ -93,19 +93,12 @@ export class DevicePanel {
     const focused = document.activeElement;
     if (focused instanceof HTMLElement && this.body.contains(focused)
         && /^(INPUT|SELECT|TEXTAREA)$/.test(focused.tagName)) return;
-    let st: DeviceStatus;
-    let files: SdFile[] = [];
-    try {
-      st = await api.castleGet<DeviceStatus>("/api/status");
-      // The studio answers a castle-less probe 200 {"studio":true}: an
-      // empty object that rendered as "vundefined · NaN MB · no SD card"
-      // — a plausible, invented control panel (J2-1). Treat it as down.
-      if (st.studio || !st.version) throw new Error("no castle");
-      if (st.sd_mounted) files = await api.castleGet<SdFile[]>("/api/files");
-    } catch {
+    const answer = await this.poll();
+    if (!answer) {
       this.renderDown();
       return;
     }
+    const { st, files } = answer;
     const tracks = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
     const onCard = new Set(tracks.map((f) => f.name));
 
@@ -158,6 +151,23 @@ export class DevicePanel {
     this.wireShow(st);
     this.wireCard(tracks);
     this.wireSensorAndLog();
+  }
+
+  /** One poll's worth of truth, or null when the castle is not answering.
+   *  Its own method so render() is a rebuild and nothing else. */
+  private async poll(): Promise<{ st: DeviceStatus; files: SdFile[] } | null> {
+    try {
+      const st = await api.castleGet<DeviceStatus>("/api/status");
+      // The studio answers a castle-less probe 200 {"studio":true}: an
+      // empty object that rendered as "vundefined · NaN MB · no SD card"
+      // — a plausible, invented control panel (J2-1). Treat it as down.
+      if (st.studio || !st.version) throw new Error("no castle");
+      const files = st.sd_mounted
+        ? await api.castleGet<SdFile[]>("/api/files") : [];
+      return { st, files };
+    } catch {
+      return null;
+    }
   }
 
   /** The castle went quiet mid-poll: say so, and keep the way out. */

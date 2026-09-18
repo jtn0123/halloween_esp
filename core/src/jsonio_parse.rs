@@ -54,58 +54,8 @@ fn parse_val(b: &[u8], i: &mut usize, depth: usize) -> Result<Json, String> {
     }
     match b.get(*i) {
         None => Err("unexpected end".to_string()),
-        Some(b'{') => {
-            *i += 1;
-            let mut o = Vec::new();
-            skip_ws(b, i);
-            if b.get(*i) == Some(&b'}') {
-                *i += 1;
-                return Ok(Json::Obj(o));
-            }
-            loop {
-                skip_ws(b, i);
-                // The key is a string and cannot recurse: same depth.
-                let Json::Str(k) = parse_val(b, i, depth)? else {
-                    return Err("object key is not a string".to_string());
-                };
-                skip_ws(b, i);
-                if b.get(*i) != Some(&b':') {
-                    return Err("missing ':'".to_string());
-                }
-                *i += 1;
-                o.push((k, parse_val(b, i, depth + 1)?));
-                skip_ws(b, i);
-                match b.get(*i) {
-                    Some(b',') => *i += 1,
-                    Some(b'}') => {
-                        *i += 1;
-                        return Ok(Json::Obj(o));
-                    }
-                    _ => return Err("missing ',' or '}'".to_string()),
-                }
-            }
-        }
-        Some(b'[') => {
-            *i += 1;
-            let mut a = Vec::new();
-            skip_ws(b, i);
-            if b.get(*i) == Some(&b']') {
-                *i += 1;
-                return Ok(Json::Arr(a));
-            }
-            loop {
-                a.push(parse_val(b, i, depth + 1)?);
-                skip_ws(b, i);
-                match b.get(*i) {
-                    Some(b',') => *i += 1,
-                    Some(b']') => {
-                        *i += 1;
-                        return Ok(Json::Arr(a));
-                    }
-                    _ => return Err("missing ',' or ']'".to_string()),
-                }
-            }
-        }
+        Some(b'{') => parse_obj(b, i, depth),
+        Some(b'[') => parse_arr(b, i, depth),
         Some(b'"') => parse_str(b, i),
         Some(b't') if b[*i..].starts_with(b"true") => {
             *i += 4;
@@ -131,23 +81,83 @@ fn parse_val(b: &[u8], i: &mut usize, depth: usize) -> Result<Json, String> {
             *i += 9;
             Ok(Json::Num(f64::NEG_INFINITY))
         }
-        Some(_) => {
-            let start = *i;
-            while *i < b.len() && matches!(b[*i], b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9') {
+        Some(_) => parse_num(b, i),
+    }
+}
+
+/// An object, `*i` on its `{`. The value recurses a level deeper; the key
+/// is a string and cannot recurse, so it stays at this depth.
+fn parse_obj(b: &[u8], i: &mut usize, depth: usize) -> Result<Json, String> {
+    *i += 1;
+    let mut o = Vec::new();
+    skip_ws(b, i);
+    if b.get(*i) == Some(&b'}') {
+        *i += 1;
+        return Ok(Json::Obj(o));
+    }
+    loop {
+        skip_ws(b, i);
+        let Json::Str(k) = parse_val(b, i, depth)? else {
+            return Err("object key is not a string".to_string());
+        };
+        skip_ws(b, i);
+        if b.get(*i) != Some(&b':') {
+            return Err("missing ':'".to_string());
+        }
+        *i += 1;
+        o.push((k, parse_val(b, i, depth + 1)?));
+        skip_ws(b, i);
+        match b.get(*i) {
+            Some(b',') => *i += 1,
+            Some(b'}') => {
                 *i += 1;
+                return Ok(Json::Obj(o));
             }
-            let tok = std::str::from_utf8(&b[start..*i]).unwrap_or("");
-            if tok.is_empty() {
-                return Err(format!("unexpected byte at {start}"));
+            _ => return Err("missing ',' or '}'".to_string()),
+        }
+    }
+}
+
+/// An array, `*i` on its `[`.
+fn parse_arr(b: &[u8], i: &mut usize, depth: usize) -> Result<Json, String> {
+    *i += 1;
+    let mut a = Vec::new();
+    skip_ws(b, i);
+    if b.get(*i) == Some(&b']') {
+        *i += 1;
+        return Ok(Json::Arr(a));
+    }
+    loop {
+        a.push(parse_val(b, i, depth + 1)?);
+        skip_ws(b, i);
+        match b.get(*i) {
+            Some(b',') => *i += 1,
+            Some(b']') => {
+                *i += 1;
+                return Ok(Json::Arr(a));
             }
-            if tok.contains(['.', 'e', 'E']) {
-                tok.parse().map(Json::Num).map_err(|e| e.to_string())
-            } else {
-                match tok.parse::<i64>() {
-                    Ok(v) => Ok(Json::Int(v)),
-                    Err(_) => tok.parse().map(Json::Num).map_err(|e| e.to_string()),
-                }
-            }
+            _ => return Err("missing ',' or ']'".to_string()),
+        }
+    }
+}
+
+/// The number tail: whatever is left once the literals are ruled out.
+/// `Int` when it fits an i64, `Num` otherwise — json.loads' own split.
+fn parse_num(b: &[u8], i: &mut usize) -> Result<Json, String> {
+    let start = *i;
+    while *i < b.len() && matches!(b[*i], b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9') {
+        *i += 1;
+    }
+    let tok = std::str::from_utf8(&b[start..*i]).unwrap_or("");
+    if tok.is_empty() {
+        return Err(format!("unexpected byte at {start}"));
+    }
+    if tok.contains(['.', 'e', 'E']) {
+        tok.parse().map(Json::Num).map_err(|e| e.to_string())
+    } else {
+        match tok.parse::<i64>() {
+            Ok(v) => Ok(Json::Int(v)),
+            Err(_) => tok.parse().map(Json::Num).map_err(|e| e.to_string()),
         }
     }
 }

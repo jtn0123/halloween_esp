@@ -203,7 +203,7 @@ class TestNetguardRustParity(unittest.TestCase):
         is a resolution the corpus never tests — and the first sign that a
         case was edited out from under it."""
         seen = {_host(url) for url, _ip in CASES}
-        self.assertTrue(set(DNS) <= seen, f"unused table names: {set(DNS) - seen}")
+        self.assertLessEqual(set(DNS), seen, f"unused table names: {set(DNS) - seen}")
 
 
 def _host(url: str) -> str:

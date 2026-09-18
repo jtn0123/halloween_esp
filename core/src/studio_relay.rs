@@ -7,7 +7,7 @@
 //! desk's transport, and the plan's esphome-native-api crate swap owns
 //! that story later.
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::Instant;
 
 use crate::bridge::{self, CallFault};
@@ -100,7 +100,7 @@ pub fn castle_hosts(app: &App) -> Vec<String> {
     let mut hosts = candidates(app);
     let up = caches()
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(PoisonError::into_inner)
         .up
         .clone();
     if let Some(h) = up {
@@ -122,7 +122,7 @@ pub fn castle_host(app: &App) -> Option<String> {
 pub fn status(app: &App) -> Option<Json> {
     let now = Instant::now();
     {
-        let c = caches().lock().unwrap_or_else(|e| e.into_inner());
+        let c = caches().lock().unwrap_or_else(PoisonError::into_inner);
         if let Some((t, v)) = &c.status {
             if now.duration_since(*t).as_secs_f64() < STATUS_TTL_S {
                 return Some(v.clone());
@@ -156,7 +156,7 @@ pub fn status(app: &App) -> Option<Json> {
             }
         }
     }
-    let mut c = caches().lock().unwrap_or_else(|e| e.into_inner());
+    let mut c = caches().lock().unwrap_or_else(PoisonError::into_inner);
     match found {
         None => {
             c.down = Some(now);
@@ -218,7 +218,7 @@ pub fn forward(app: &App, method: &str, target: &str, body: &[u8]) -> (u16, Vec<
                 return (504, jsonio::dumps(&out).into_bytes(), json);
             }
             Ok(r) => {
-                let mut c = caches().lock().unwrap_or_else(|e| e.into_inner());
+                let mut c = caches().lock().unwrap_or_else(PoisonError::into_inner);
                 c.down = None;
                 if (200..300).contains(&r.code) {
                     c.up = Some(h.clone());

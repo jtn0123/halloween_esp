@@ -257,7 +257,7 @@ test("a light sequence walks the channels and can be superseded", async ({ page 
   await page.locator("[data-zl='door:0000ff']").click();
   const after = calls.length;
   await page.waitForTimeout(2000);
-  expect(calls.filter((c) => c.includes("c=00ff00@")).length).toBe(0);
+  expect(calls.filter((c) => c.includes("c=00ff00@"))).toHaveLength(0);
   expect(calls.length).toBeLessThanOrEqual(after + 1);
 });
 

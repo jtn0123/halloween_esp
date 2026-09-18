@@ -83,7 +83,10 @@ test("the SD budget measures the card when a castle reports it", async ({ page }
   await expect(page.locator(".budget__pickmeta")).not.toContainText("assumed");
   // Castle gone: back to the stated assumption, and it says so.
   castle.up = false;
-  await page.locator("#devStop").click({ force: true }).catch(() => undefined);
+  // Stop provokes the re-poll that finds it gone — the chip's own is 15 s
+  // away (POLL_MS), well past the assertion below. The button is still there
+  // and enabled for exactly that reason, so no forcing is needed.
+  await page.locator("#devStop").click();
   await expect(page.locator("#budHead")).toContainText("of 32.00 GB");
   await expect(page.locator(".budget__pickmeta")).toContainText("assumed");
 });

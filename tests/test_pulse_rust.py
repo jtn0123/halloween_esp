@@ -42,6 +42,19 @@ def fmt(v: float) -> str:
     return repr(float(v))
 
 
+def as_float(s: str) -> float | None:
+    """The one number a dump line means, or None when it is not one number.
+
+    The arbiter for lines that differ as text: two spellings of the same
+    float are equal, a different shape (a list, an empty answer) is not —
+    and the caller gets to say so with the seed attached.
+    """
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
 class TestPulseRustParity(unittest.TestCase):
     def test_seeded_corpus_matches_digit_for_digit(self) -> None:
@@ -126,12 +139,11 @@ class TestPulseRustParity(unittest.TestCase):
         self.assertEqual(len(got), len(want))
         for i, (a, b) in enumerate(zip(want, got)):
             if a != b:  # digit-for-digit, with float-parse as the arbiter
-                try:
-                    self.assertEqual(float(a), float(b), f"line {i}: {lines[i]!r}")
-                except ValueError:
-                    self.fail(
-                        f"seed {SEED} line {i}: {lines[i]!r} — py {a!r} vs rust {b!r}"
-                    )
+                why = f"seed {SEED} line {i}: {lines[i]!r} — py {a!r} vs rust {b!r}"
+                fa, fb = as_float(a), as_float(b)
+                self.assertIsNotNone(fa, why)
+                self.assertIsNotNone(fb, why)
+                self.assertEqual(fa, fb, why)
 
     def test_pulse_cues_expansion_matches(self) -> None:
         """pulse_expand.pulse_cues vs core's pulse_cues on random streams.

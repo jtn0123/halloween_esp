@@ -12,7 +12,7 @@
 //! knows what JSON the desk gets back.
 
 use std::path::Path;
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, PoisonError};
 
 use crate::scene::round3;
 use crate::{atmos, media, onsets};
@@ -181,7 +181,7 @@ impl Busy {
 impl Drop for Busy {
     fn drop(&mut self) {
         let (lock, cv) = decoded_cache();
-        let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut st = lock.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(at) = st.busy.iter().position(|k| *k == self.0) {
             st.busy.remove(at);
         }
@@ -216,7 +216,7 @@ where
         buckets,
     );
     let (lock, cv) = decoded_cache();
-    let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let mut st = lock.lock().unwrap_or_else(PoisonError::into_inner);
     let marker = loop {
         if let Some(at) = st.cache.iter().position(|(k, _)| *k == key) {
             let hit = st.cache.remove(at);
@@ -227,12 +227,12 @@ where
         if !st.busy.contains(&key) {
             break Busy::claim(&mut st, key.clone());
         }
-        st = cv.wait(st).unwrap_or_else(|e| e.into_inner());
+        st = cv.wait(st).unwrap_or_else(PoisonError::into_inner);
     };
     drop(st);
     // The decode itself runs outside the lock — it is most of a second.
     let built = build(path, buckets).map(Arc::new);
-    let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+    let mut st = lock.lock().unwrap_or_else(PoisonError::into_inner);
     if let Some(dec) = &built {
         st.cache.push((key, Arc::clone(dec)));
         evict(&mut st.cache, KEEP_SAMPLES);
@@ -253,7 +253,7 @@ mod tests {
 
     fn busy_holds(key: &DecKey) -> bool {
         let (lock, _) = decoded_cache();
-        let st = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let st = lock.lock().unwrap_or_else(PoisonError::into_inner);
         st.busy.contains(key)
     }
 
@@ -262,7 +262,7 @@ mod tests {
     fn entries_for(path: &Path) -> usize {
         let want = path.to_string_lossy().into_owned();
         let (lock, _) = decoded_cache();
-        let st = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let st = lock.lock().unwrap_or_else(PoisonError::into_inner);
         st.cache.iter().filter(|((p, _, _), _)| *p == want).count()
     }
 
@@ -433,7 +433,7 @@ mod tests {
         let k = key.clone();
         let doomed = std::thread::spawn(move || {
             let (lock, _) = decoded_cache();
-            let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+            let mut st = lock.lock().unwrap_or_else(PoisonError::into_inner);
             let _marker = Busy::claim(&mut st, k);
             drop(st);
             claimed_tx.send(()).expect("the waiter is listening");
@@ -448,13 +448,13 @@ mod tests {
         // The next caller's wait, with a deadline where the server has
         // none: before the guard this loop never ended.
         let (lock, cv) = decoded_cache();
-        let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+        let mut st = lock.lock().unwrap_or_else(PoisonError::into_inner);
         let deadline = Instant::now() + Duration::from_secs(5);
         while st.busy.contains(&key) {
             assert!(Instant::now() < deadline, "the marker outlived the panic");
             let (next, _) = cv
                 .wait_timeout(st, Duration::from_millis(50))
-                .unwrap_or_else(|e| e.into_inner());
+                .unwrap_or_else(PoisonError::into_inner);
             st = next;
         }
     }
@@ -468,7 +468,7 @@ mod tests {
         let key: DecKey = ("/nowhere/_t_failed.wav".to_string(), 9, PEAKS);
         {
             let (lock, _) = decoded_cache();
-            let mut st = lock.lock().unwrap_or_else(|e| e.into_inner());
+            let mut st = lock.lock().unwrap_or_else(PoisonError::into_inner);
             let _marker = Busy::claim(&mut st, key.clone());
             drop(st);
             assert!(busy_holds(&key));

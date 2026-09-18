@@ -92,12 +92,71 @@ pub fn pixels_for(cfg: &PulseCfg, vel: f64) -> String {
     .to_string()
 }
 
+/// Which zones one hit lands on. None means "all zones"; an alternating
+/// stream takes them in turn, except that a decisively panned hit goes to
+/// ITS tower (#7).
+fn strike_zones(cfg: &PulseCfg, i: usize, pan: Option<f64>) -> Option<Vec<String>> {
+    let zones = &cfg.zones;
+    if zones.is_empty() {
+        return None; // all zones
+    }
+    if !cfg.alternate {
+        return Some(zones.clone());
+    }
+    let both = zones.iter().any(|z| z == "towerL") && zones.iter().any(|z| z == "towerR");
+    match pan {
+        Some(p) if p.abs() >= PAN_DECISIVE && both => {
+            Some(vec![if p < 0.0 { "towerL" } else { "towerR" }.to_string()])
+        }
+        _ => Some(vec![zones[i % zones.len()].clone()]),
+    }
+}
+
+/// A loud or accented hit lights the boost zones as well as its own.
+fn boost_zones(cfg: &PulseCfg, vels: &[f64], i: usize, tg: &mut Vec<String>) {
+    if cfg.boost_targets.is_empty() {
+        return;
+    }
+    if vels[i] < cfg.boost_at.unwrap_or(2.0) && !is_accent(vels, i) {
+        return;
+    }
+    for z in &cfg.boost_targets {
+        if !tg.contains(z) {
+            tg.push(z.clone());
+        }
+    }
+}
+
+/// The strike's colour before the hot blend, and the hot end to blend
+/// towards (None = no blend): the chorus takeover family (#2) first, then
+/// drift, cycle, base.
+fn strike_base(
+    cfg: &PulseCfg,
+    gates: &[(i64, String)],
+    i: usize,
+    t: i64,
+) -> (Vec<f64>, Option<Vec<f64>>) {
+    if cfg.takeover && gate_note(gates, t) == Some("chorus") {
+        return (
+            TAKEOVER_COLORS[i % TAKEOVER_COLORS.len()].to_vec(),
+            Some(TAKEOVER_HOT.to_vec()),
+        );
+    }
+    let hot = cfg.color_hot.clone();
+    if !cfg.colors.is_empty() && cfg.drift {
+        (drift_base(&cfg.colors, i, t), hot)
+    } else if !cfg.colors.is_empty() {
+        (cfg.colors[i % cfg.colors.len()].clone(), hot)
+    } else {
+        (cfg.color.clone().unwrap_or_else(|| WHITE.to_vec()), hot)
+    }
+}
+
 /// The body of pulse_cues for streams the caller already resolved:
 /// (cfg, that synth's beats), plus the scene's section gates.
 pub fn pulse_cues(streams: &[(PulseCfg, Vec<Hit>)], gates: &[(i64, String)]) -> Vec<Cue> {
     let mut out = Vec::new();
     for (cfg, beats) in streams {
-        let zones = &cfg.zones;
         let factor = tempo_factor(
             &beats
                 .iter()
@@ -112,49 +171,17 @@ pub fn pulse_cues(streams: &[(PulseCfg, Vec<Hit>)], gates: &[(i64, String)]) -> 
             let Some(mul) = gate_mul(&cfg.synth, gates, t) else {
                 continue; // gated out by its section (#9)
             };
-            let mut targets: Option<Vec<String>> = if !zones.is_empty() && cfg.alternate {
-                // A decisively panned hit goes to ITS tower (#7).
-                let both =
-                    zones.iter().any(|z| z == "towerL") && zones.iter().any(|z| z == "towerR");
-                match pan {
-                    Some(p) if p.abs() >= PAN_DECISIVE && both => {
-                        Some(vec![if p < 0.0 { "towerL" } else { "towerR" }.to_string()])
-                    }
-                    _ => Some(vec![zones[i % zones.len()].clone()]),
-                }
-            } else if zones.is_empty() {
-                None // all zones
-            } else {
-                Some(zones.clone())
-            };
+            let mut targets = strike_zones(cfg, i, pan);
             if let Some(tg) = &mut targets {
-                if !cfg.boost_targets.is_empty()
-                    && (vel >= cfg.boost_at.unwrap_or(2.0) || is_accent(&vels, i))
-                {
-                    for z in &cfg.boost_targets {
-                        if !tg.contains(z) {
-                            tg.push(z.clone());
-                        }
-                    }
-                }
+                boost_zones(cfg, &vels, i, tg);
             }
-            let mut hot = cfg.color_hot.as_deref();
-            let base: Vec<f64> = if cfg.takeover && gate_note(gates, t) == Some("chorus") {
-                hot = Some(&TAKEOVER_HOT);
-                TAKEOVER_COLORS[i % TAKEOVER_COLORS.len()].to_vec()
-            } else if !cfg.colors.is_empty() && cfg.drift {
-                drift_base(&cfg.colors, i, t)
-            } else if !cfg.colors.is_empty() {
-                cfg.colors[i % cfg.colors.len()].clone()
-            } else {
-                cfg.color.clone().unwrap_or_else(|| WHITE.to_vec())
-            };
+            let (base, hot) = strike_base(cfg, gates, i, t);
             out.push(Cue {
                 t,
                 targets,
                 ms,
                 intensity: round3(cfg.intensity.unwrap_or(0.3) * vel * mul),
-                color: blend_color(&base, hot, vel),
+                color: blend_color(&base, hot.as_deref(), vel),
                 decay,
                 attack: cfg.attack_ms,
                 pixels: pixels_for(cfg, vel),

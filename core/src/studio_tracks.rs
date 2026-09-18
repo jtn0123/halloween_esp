@@ -6,6 +6,7 @@
 //! analysis half (duration, per-band onset counts) rides the crate's own
 //! bit-exact media/onsets port, so the numbers agree by construction.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use crate::jsonio::{Json, obj_update};
@@ -44,10 +45,10 @@ pub fn track_files(tracks: &Path) -> Vec<PathBuf> {
             .map(|e| e.path())
             .filter(|p| {
                 p.is_file()
-                    && p.extension().and_then(|e| e.to_str()) == Some(ext)
+                    && p.extension().and_then(OsStr::to_str) == Some(ext)
                     && !p
                         .file_name()
-                        .and_then(|n| n.to_str())
+                        .and_then(OsStr::to_str)
                         .unwrap_or("")
                         .starts_with('.')
             })
@@ -61,7 +62,7 @@ pub fn track_files(tracks: &Path) -> Vec<PathBuf> {
 
 fn stem_of(p: &Path) -> String {
     p.file_stem()
-        .and_then(|s| s.to_str())
+        .and_then(OsStr::to_str)
         .unwrap_or("")
         .to_string()
 }
@@ -87,7 +88,7 @@ pub fn source_copies(tracks: &Path, tid: &str) -> Vec<PathBuf> {
         .map(|e| e.path())
         .filter(|p| {
             p.file_name()
-                .and_then(|n| n.to_str())
+                .and_then(OsStr::to_str)
                 .is_some_and(|n| n.starts_with(&format!("{tid}.")))
         })
         .collect();
@@ -129,7 +130,7 @@ pub fn track_info(p: &Path, meta: &Json, tracks: &Path) -> Json {
             "ext".into(),
             Json::Str(
                 p.extension()
-                    .and_then(|e| e.to_str())
+                    .and_then(OsStr::to_str)
                     .unwrap_or("")
                     .to_string(),
             ),

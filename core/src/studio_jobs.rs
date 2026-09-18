@@ -4,9 +4,9 @@
 //! (`studio_reason`) instead of raw shell when one of them dies.
 
 use std::io::{BufRead, BufReader};
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use crate::jsonio::{Json, py_float};
 use crate::studio::App;
@@ -94,10 +94,10 @@ fn new_id() -> String {
 }
 
 pub fn get(job_id: &str) -> Option<Json> {
-    let reg = jobs().lock().unwrap_or_else(|e| e.into_inner());
+    let reg = jobs().lock().unwrap_or_else(PoisonError::into_inner);
     let job = reg.iter().find(|(k, _)| k == job_id)?.1.clone();
     drop(reg);
-    let j = job.lock().unwrap_or_else(|e| e.into_inner());
+    let j = job.lock().unwrap_or_else(PoisonError::into_inner);
     Some(j.as_json())
 }
 
@@ -105,9 +105,13 @@ pub fn get(job_id: &str) -> Option<Json> {
 /// lock, and reports as yt-dlp prints.
 pub fn start(app: &Arc<App>, argv: Vec<String>) -> Json {
     let job = Arc::new(Mutex::new(Job::new(new_id())));
-    let id = job.lock().unwrap_or_else(|e| e.into_inner()).id.clone();
+    let id = job
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .id
+        .clone();
     {
-        let mut reg = jobs().lock().unwrap_or_else(|e| e.into_inner());
+        let mut reg = jobs().lock().unwrap_or_else(PoisonError::into_inner);
         reg.push((id, Arc::clone(&job)));
         if reg.len() > 40 {
             let mut removed = 0;
@@ -115,7 +119,11 @@ pub fn start(app: &Arc<App>, argv: Vec<String>) -> Json {
                 if removed >= 20 {
                     return true;
                 }
-                let ph = j.lock().unwrap_or_else(|e| e.into_inner()).phase.clone();
+                let ph = j
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .phase
+                    .clone();
                 if ph == "done" || ph == "failed" {
                     removed += 1;
                     false
@@ -125,18 +133,18 @@ pub fn start(app: &Arc<App>, argv: Vec<String>) -> Json {
             });
         }
     }
-    let snapshot = job.lock().unwrap_or_else(|e| e.into_inner()).as_json();
+    let snapshot = job.lock().unwrap_or_else(PoisonError::into_inner).as_json();
     let app = Arc::clone(app);
     let worker = Arc::clone(&job);
     std::thread::spawn(move || {
-        let _gate = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        let _gate = app.oplock.lock().unwrap_or_else(PoisonError::into_inner);
         run_child(&worker, &argv);
     });
     snapshot
 }
 
 fn set<F: FnOnce(&mut Job)>(job: &Arc<Mutex<Job>>, f: F) {
-    let mut j = job.lock().unwrap_or_else(|e| e.into_inner());
+    let mut j = job.lock().unwrap_or_else(PoisonError::into_inner);
     f(&mut j);
 }
 
@@ -198,7 +206,7 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
     if let Ok(t) = watchdog.join() {
         timed_out = t;
     }
-    let ok = status.as_ref().map(|s| s.success()).unwrap_or(false);
+    let ok = status.as_ref().is_ok_and(ExitStatus::success);
     set(job, |j| {
         if ok {
             j.phase = "done".to_string();
@@ -227,14 +235,18 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+    use std::sync::MutexGuard;
     use std::time::{Duration, Instant};
 
     /// The registry is process-global, one per server, and cargo runs the
     /// tests in threads of one process — so the tests that put jobs in it
-    /// queue behind this instead of counting each other's work.
-    fn registry_gate() -> &'static Mutex<()> {
+    /// queue behind this instead of counting each other's work. Hands back
+    /// the held guard: every caller wants the lock, never the mutex.
+    fn registry_gate() -> MutexGuard<'static, ()> {
         static G: OnceLock<Mutex<()>> = OnceLock::new();
         G.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     fn app() -> Arc<App> {
@@ -286,7 +298,7 @@ mod tests {
     /// forty-minute download.
     #[test]
     fn start_returns_at_once_with_an_id_the_page_can_poll() {
-        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = registry_gate();
         let app = app();
         let t0 = Instant::now();
         let id = start_id(&app, &["sleep", "1"]);
@@ -317,9 +329,9 @@ mod tests {
     /// ungated case here to test.
     #[test]
     fn a_job_waits_while_the_studios_oplock_is_held() {
-        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = registry_gate();
         let app = app();
-        let held = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        let held = app.oplock.lock().unwrap_or_else(PoisonError::into_inner);
         let id = start_id(&app, &["true"]);
         std::thread::sleep(Duration::from_millis(150));
         assert_eq!(text(&id, "phase"), "queued");
@@ -332,7 +344,7 @@ mod tests {
     /// both take longer than either would alone.
     #[test]
     fn a_running_job_holds_the_oplock_until_its_child_exits() {
-        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = registry_gate();
         let app = app();
         let id = start_id(&app, &["sleep", "0.3"]);
         std::thread::sleep(Duration::from_millis(100));
@@ -355,7 +367,7 @@ mod tests {
     /// the page reads both, and a stale percentage reads as a stall.
     #[test]
     fn a_successful_child_ends_done_at_a_hundred_with_no_error() {
-        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = registry_gate();
         let id = start_id(&app(), &["true"]);
         assert_eq!(wait_done(&id), "done");
         let j = get(&id).unwrap();
@@ -367,7 +379,7 @@ mod tests {
     /// an empty error box tells the person nothing at all.
     #[test]
     fn a_failing_child_ends_failed_naming_the_exit_code() {
-        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = registry_gate();
         let id = start_id(&app(), &["false"]);
         assert_eq!(wait_done(&id), "failed");
         let err = text(&id, "error");
@@ -378,7 +390,7 @@ mod tests {
     /// sentence — and the raw line stays in the log for whoever wants it.
     #[test]
     fn a_failing_childs_output_is_translated_before_the_desk_sees_it() {
-        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = registry_gate();
         let id = start_id(
             &app(),
             &[
@@ -400,7 +412,7 @@ mod tests {
     /// thread down silently.
     #[test]
     fn a_missing_binary_fails_the_job_instead_of_killing_its_thread() {
-        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = registry_gate();
         let id = start_id(&app(), &["/nonexistent/definitely-not-here"]);
         assert_eq!(wait_done(&id), "failed");
         assert!(!text(&id, "error").is_empty(), "failure carried no reason");
@@ -410,7 +422,7 @@ mod tests {
     /// log the browser polls.
     #[test]
     fn progress_from_a_real_child_reaches_the_jobs_log() {
-        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = registry_gate();
         let line = "[download]  41.8% of 2.39MiB at 1.0MiB/s ETA 00:03";
         let id = start_id(&app(), &["sh", "-c", &format!("echo '{line}'")]);
         assert_eq!(wait_done(&id), "done");
@@ -421,7 +433,7 @@ mod tests {
     /// the useful forty out of the tail the desk is shown.
     #[test]
     fn blank_output_lines_are_not_logged() {
-        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
+        let _g = registry_gate();
         let id = start_id(&app(), &["sh", "-c", "echo; echo kept; echo"]);
         assert_eq!(wait_done(&id), "done");
         assert_eq!(log_of(&id), vec!["kept".to_string()]);
@@ -432,17 +444,20 @@ mod tests {
     /// which is the one somebody is watching.
     #[test]
     fn finished_jobs_are_pruned_but_the_newest_survives() {
-        let _g = registry_gate().lock().unwrap_or_else(|e| e.into_inner());
-        jobs().lock().unwrap_or_else(|e| e.into_inner()).clear();
+        let _g = registry_gate();
+        jobs()
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
         let app = app();
         for _ in 0..40 {
             let id = start_id(&app, &["true"]);
             wait_done(&id);
         }
-        let before = jobs().lock().unwrap_or_else(|e| e.into_inner()).len();
+        let before = jobs().lock().unwrap_or_else(PoisonError::into_inner).len();
         assert_eq!(before, 40);
         let newest = start_id(&app, &["true"]);
-        let after = jobs().lock().unwrap_or_else(|e| e.into_inner()).len();
+        let after = jobs().lock().unwrap_or_else(PoisonError::into_inner).len();
         assert!(after < 41, "finished jobs were never pruned ({after})");
         assert!(
             get(&newest).is_some(),

@@ -8,8 +8,9 @@
 //! shared by every sensitivity — is `studio_wave`. This module is the
 //! answer: what the knob changes, and what the desk gets back.
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use crate::jsonio::{self, Json, obj_update};
 use crate::onsets;
@@ -67,7 +68,7 @@ pub fn waveform(path: &Path, sens: [f64; 3]) -> Option<Arc<Json>> {
         PEAKS,
     );
     {
-        let mut c = wave_cache().lock().unwrap_or_else(|e| e.into_inner());
+        let mut c = wave_cache().lock().unwrap_or_else(PoisonError::into_inner);
         if let Some(at) = c.iter().position(|(k, _)| *k == key) {
             let hit = c.remove(at);
             let out = Arc::clone(&hit.1);
@@ -77,9 +78,9 @@ pub fn waveform(path: &Path, sens: [f64; 3]) -> Option<Arc<Json>> {
         }
     }
     let dec = decoded(path, PEAKS)?;
-    let id = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    let id = path.file_stem().and_then(OsStr::to_str).unwrap_or("");
     let out = Arc::new(waveform_of(id, &dec, sens));
-    let mut c = wave_cache().lock().unwrap_or_else(|e| e.into_inner());
+    let mut c = wave_cache().lock().unwrap_or_else(PoisonError::into_inner);
     c.push((key, Arc::clone(&out)));
     while c.len() > KEEP_WAVES {
         c.remove(0);
@@ -225,7 +226,7 @@ pub(crate) fn compares() -> &'static Compares {
 /// map is filled by POST /studio/compare (the encode pass); until then
 /// every token is unknown, which is also what a restarted Python answers.
 pub fn compare_file(token: &str, codec: &str) -> Option<PathBuf> {
-    let c = compares().lock().unwrap_or_else(|e| e.into_inner());
+    let c = compares().lock().unwrap_or_else(PoisonError::into_inner);
     let root = c.iter().find(|(t, _)| t == token)?.1.clone();
     let p = root.join(format!("{codec}.{codec}"));
     p.exists().then_some(p)
@@ -282,7 +283,7 @@ mod tests {
 
     fn wave_entries(path: &Path) -> usize {
         let want = path.to_string_lossy().into_owned();
-        let c = wave_cache().lock().unwrap_or_else(|e| e.into_inner());
+        let c = wave_cache().lock().unwrap_or_else(PoisonError::into_inner);
         c.iter().filter(|((p, ..), _)| *p == want).count()
     }
 
@@ -293,7 +294,7 @@ mod tests {
         static TURN: OnceLock<Mutex<()>> = OnceLock::new();
         TURN.get_or_init(|| Mutex::new(()))
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// The audition nudges sensitivity a dozen times per track, and each

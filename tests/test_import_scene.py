@@ -120,7 +120,8 @@ class TestSceneBlock(unittest.TestCase):
 
     def test_effects_are_known_to_the_firmware(self) -> None:
         """A scene referencing an effect the firmware lacks fails to build."""
-        sys.path.insert(0, str(ROOT / "tools"))
+        # tools/ is already on the path (module top); the import stays local
+        # because the effect table is the only thing this one case wants.
         import gen_esphome as ge
 
         sc = self.parse(it.scene_block("t", 10.0, self.marks))
