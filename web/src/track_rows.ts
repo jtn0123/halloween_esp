@@ -130,7 +130,7 @@ function rowActions(ctx: RowCtx, broken: boolean, canReimport: boolean): string 
 }
 
 export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
-  const mono = (t.opts || {}).channels !== 2;
+  const mono = t.opts?.channels !== 2;
   // Re-import needs a source to rebuild from. A dropped file's original is
   // kept in tracks/_src/ now; one whose file has since gone gets no button
   // and honest advice instead of a red absolute path (JB1-3).
