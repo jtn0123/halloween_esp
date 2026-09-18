@@ -10,7 +10,8 @@
    names the seed and the step, so it replays. */
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {idle, lightsSent, linkContext, playingAt, settle, settlingOn, showContext, toolsContext} from './test_support.mjs';
+import vm from 'node:vm';
+import {idle, lightsSent, linkContext, playingAt, read, settle, settlingOn, showContext, toolsContext} from './test_support.mjs';
 
 const SEED = Number(process.env.CASTLE_LINK_FUZZ_SEED || 1);
 const RUNS = Number(process.env.CASTLE_LINK_FUZZ_RUNS || 60);
@@ -219,4 +220,22 @@ test('fuzz: the events viewer renders any answer without throwing or printing Na
     const honest = Array.isArray(rows) ? rows.filter(r => r && typeof r === 'object') : [];
     if (honest.length) {assert.doesNotMatch(log, /not supported/, `seed ${seed}: an answer with ${honest.length} rows was called unsupported`);}
   }
+});
+
+/* imports.js strips tags out of a failing server's body by hand, because the
+   regex it replaced was quadratic on a run of unclosed `<`. The regex is still
+   the definition of the answer: every drawn string must come out the same. */
+test('fuzz: stripTags answers exactly as the regex it replaced', () => {
+  const line = read('imports.js').split('\n').find(l => l.startsWith('const stripTags='));
+  assert.ok(line, 'stripTags is still one line of imports.js');
+  const stripTags = vm.runInNewContext(`${line}\nstripTags`);
+  const alphabet = ['<', '>', '<', '>', 'a', ' ', '\n', 'b/'];
+  for (let run = 0; run < RUNS * 20; run++) {
+    const rand = prng(SEED + run);
+    const text = Array.from({length: Math.floor(rand() * 24)}, () => alphabet[Math.floor(rand() * alphabet.length)]).join('');
+    assert.equal(stripTags(text), text.replace(/<[^>]*>/g, ' '), `seed ${SEED + run}: ${JSON.stringify(text)}`);
+  }
+  const started = process.hrtime.bigint();
+  assert.equal(stripTags('<'.repeat(200000)).length, 200000);
+  assert.ok(Number(process.hrtime.bigint() - started) < 1e9, 'a wall of unclosed tags is one pass, not one per tag');
 });
