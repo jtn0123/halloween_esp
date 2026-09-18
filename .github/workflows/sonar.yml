@@ -9,7 +9,8 @@ name: sonar
 # It gates nothing in ci.yml and repeats two of its suites on purpose: a
 # coverage upload that fails must not redden the job that says whether the
 # code works. What is measured: tools/ and demo/castle-radio (coverage.py) and
-# core/ (cargo llvm-cov). What is not: web/src and the radio's browser sources,
+# core/ (cargo llvm-cov, over cargo test AND the binaries the python suites
+# spawn). What is not: web/src and the radio's browser sources,
 # whose suites run esbuild bundles and vm-evaluated text that no reporter maps
 # back to a file — sonar-project.properties keeps them out of the denominator
 # rather than reporting them as 0%.
@@ -54,8 +55,17 @@ jobs:
       - uses: taiki-e/install-action@76c2e6406e52637deed7160d77bded76bd83e06e # v2.87.14
         with:
           tool: cargo-llvm-cov
-      - name: build castle-core
-        run: make rust
+      # castle-core is tested from two sides: `cargo test`, and the Python
+      # suites that spawn the real binaries (every studio route, the parity
+      # dumps). Measuring only the first called the server 0% covered. So the
+      # release binaries are built INSTRUMENTED — show-env is cargo-llvm-cov's
+      # door for exactly this — and everything that runs them below, cargo or
+      # python, leaves a profile behind for the one report at the end.
+      - name: build castle-core, instrumented
+        run: |
+          source <(cd core && cargo llvm-cov show-env --export-prefix)
+          (cd core && cargo llvm-cov clean --workspace)
+          make rust
       - uses: ./.github/actions/media-tools
       - run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
       - uses: actions/setup-node@v7
@@ -69,13 +79,19 @@ jobs:
       # second does not overwrite the first, then one report for both.
       - name: python coverage
         run: |
+          source <(cd core && cargo llvm-cov show-env --export-prefix)
           COVERAGE_FILE=.coverage.tools make coverage PY=python
           COVERAGE_FILE=.coverage.radio make coverage-radio PY=python
           python -m coverage combine .coverage.tools .coverage.radio
           python -m coverage xml -o coverage.xml
+      # `--failure-mode all`: a studio the suite stops with a signal can leave
+      # a truncated profile, and one bad file must not cost the whole report.
       - name: rust coverage
         working-directory: core
-        run: cargo llvm-cov --lcov --output-path lcov.info
+        run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          cargo test --release
+          cargo llvm-cov report --release --failure-mode all --lcov --output-path lcov.info
       - uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

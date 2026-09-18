@@ -130,7 +130,9 @@ class TestImageCheck(unittest.TestCase):
 
     def _find_image(self, img: Path) -> None:
         """Point the guard's finder at a scratch binary for one test."""
-        self.enterContext(mock.patch.object(check_image, "find_image", lambda _n: img))
+        self.enterContext(
+            mock.patch.object(check_image, "find_image", return_value=img)
+        )
 
     def test_slot_size_matches_esphome_default(self) -> None:
         """Two 1.75 MB app slots is ESPHome's default layout on 4 MB flash."""
