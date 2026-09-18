@@ -68,7 +68,14 @@ PLATFORM_MARKERS = {
 #: install therefore never has it, and a plain regeneration would drop the
 #: pin that says which version the show was imported with. Kept at whatever
 #: the existing lock says; add a line here only for another such tool.
-CARRY_OVER = ("yt-dlp",)
+#:
+#: dbus-fast is here for the mirror image of the pyobjc reason above: it is
+#: bleak's LINUX half, so the macOS venv this file freezes never holds it and
+#: the lock never named it. CI installed it anyway, unpinned, every run —
+#: invisible until `--require-hashes` refused a requirement with no digest
+#: (2026-09-18). Its line carries `sys_platform == "linux"` in the lock and is
+#: carried with it; bump it by hand when bleak asks for a newer one.
+CARRY_OVER = ("yt-dlp", "dbus-fast")
 
 _PIN = re.compile(r"^([A-Za-z0-9._-]+)==")
 
