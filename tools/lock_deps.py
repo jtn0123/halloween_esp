@@ -77,6 +77,9 @@ PLATFORM_MARKERS = {
 #: carried with it; bump it by hand when bleak asks for a newer one.
 CARRY_OVER = ("yt-dlp", "dbus-fast")
 
+#: How pip spells one digest of a pinned file; read and written in this form.
+HASH_FLAG = "--hash=sha256:"
+
 _PIN = re.compile(r"^([A-Za-z0-9._-]+)==")
 
 #: How a package's digests are found. Injected everywhere so a test can hand
@@ -128,8 +131,8 @@ def hashes(entry: str) -> list[str]:
     out = []
     for line in entry.splitlines()[1:]:
         body = line.strip().removesuffix("\\").strip()
-        if body.startswith("--hash=sha256:"):
-            out.append(body.removeprefix("--hash=sha256:"))
+        if body.startswith(HASH_FLAG):
+            out.append(body.removeprefix(HASH_FLAG))
     return out
 
 
@@ -250,6 +253,25 @@ def with_hashes(
     return out
 
 
+def _report(
+    name: str,
+    lines: list[str],
+    entries: list[str],
+    carried: list[str],
+    previous: dict[str, str],
+) -> None:
+    """What was written, and any CARRY_OVER name that nothing pins."""
+    marked = sum(1 for ln in lines if " ; " in ln)
+    hashes = sum(e.count(HASH_FLAG) for e in entries)
+    print(f"{name}: {len(lines)} pins, {marked} platform-marked, {hashes} hashes")
+    if carried:
+        print(f"carried over from the previous lock: {', '.join(carried)}")
+    pinned = {norm(package(ln)) for ln in lines}
+    for tool in CARRY_OVER:
+        if norm(tool) not in previous and norm(tool) not in pinned:
+            print(f"note: {tool} is in CARRY_OVER but nothing pins it")
+
+
 def main(argv: list[str] | None = None, fetch: Fetcher = pypi_hashes) -> int:
     """`fetch` is a parameter for the same reason `with_hashes` takes one:
     the CLI path — read the lock, re-hash it, write it back — is the half
@@ -291,19 +313,7 @@ def main(argv: list[str] | None = None, fetch: Fetcher = pypi_hashes) -> int:
         return 1
     args.out.write_text("\n".join(entries) + "\n")
     if not args.quiet:
-        marked = sum(1 for ln in lines if " ; " in ln)
-        hashes = sum(e.count("--hash=sha256:") for e in entries)
-        print(
-            f"{args.out.name}: {len(lines)} pins, {marked} platform-marked, "
-            f"{hashes} hashes"
-        )
-        if carried:
-            print(f"carried over from the previous lock: {', '.join(carried)}")
-        for name in CARRY_OVER:
-            if norm(name) not in previous and norm(name) not in {
-                norm(package(ln)) for ln in lines
-            }:
-                print(f"note: {name} is in CARRY_OVER but nothing pins it")
+        _report(args.out.name, lines, entries, carried, previous)
     return 0
 
 

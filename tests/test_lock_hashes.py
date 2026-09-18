@@ -84,14 +84,16 @@ class TestWithHashes(unittest.TestCase):
         """Not an entry without hashes: `--require-hashes` is all-or-nothing,
         so one silently unhashed line turns the checking off at the next CI
         run instead of failing here, where somebody is looking."""
+        fetch = fake_fetch({"ghost==9.9": []})
         with self.assertRaises(ld.LockError) as raised:
-            ld.with_hashes(["ghost==9.9"], fake_fetch({"ghost==9.9": []}))
+            ld.with_hashes(["ghost==9.9"], fetch)
         self.assertIn("ghost==9.9", str(raised.exception))
 
     def test_a_line_that_is_not_a_pin_is_a_hard_error_too(self) -> None:
+        fetch = fake_fetch()
         for bad in ("numpy>=2", "# comment", ""):
             with self.assertRaises(ld.LockError):
-                ld.with_hashes([bad], fake_fetch())
+                ld.with_hashes([bad], fetch)
 
 
 class TestPypiHashes(unittest.TestCase):
