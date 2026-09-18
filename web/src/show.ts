@@ -19,12 +19,12 @@ import {
 import { DEFAULT_RIG, zoneLayout, zoneRgbw, type Layout } from "./rig.js";
 import {
   isAudio, isLed,
-  type Cue, type EffectName, type Rgbw, type Scene, type StrikeColor, type ZoneId,
+  type Cue, type EffectName, type Rgbw, type Scene, type ZoneId,
 } from "./types.js";
 
 export const ZONE_IDS: readonly ZoneId[] = ["towerL", "towerR", "door"];
 
-const WHITE: StrikeColor = [1, 1, 1, 1];
+const WHITE: Rgbw = [1, 1, 1, 1];
 const DEFAULT_DECAY = 0.90;
 
 type PerZone<T> = Record<ZoneId, T>;
@@ -48,7 +48,7 @@ export interface Frame {
   zones: ZoneRender;
   /** Strongest strike anywhere, and its colour — drives the sky/stone wash. */
   flash: number;
-  flashColor: StrikeColor;
+  flashColor: Rgbw;
 }
 
 export interface ShowState {
@@ -61,7 +61,7 @@ export interface ShowState {
   fired: Set<number>;
   eff: PerZone<EffectName>;
   flash: PerZone<number>;
-  flashCol: PerZone<StrikeColor>;
+  flashCol: PerZone<Rgbw>;
   flashDecay: PerZone<number>;
   /** #10 attack: a pending rise. While > 0 the flash climbs by flashRise per
    *  frame instead of decaying; at the peak it flips back to decay. 0 = the
@@ -112,7 +112,7 @@ export function createState(scene: Scene, now: number): ShowState {
     fired: new Set<number>(),
     eff: perZone<EffectName>(() => "off"),
     flash: perZone(() => 0),
-    flashCol: perZone<StrikeColor>(() => WHITE),
+    flashCol: perZone<Rgbw>(() => WHITE),
     flashDecay: perZone(() => DEFAULT_DECAY),
     flashTarget: perZone(() => 0),
     flashRise: perZone(() => 0),
@@ -153,7 +153,7 @@ function applyZoneDetail(st: ShowState, sc: Scene): void {
  */
 export function rebuildLightsAt(st: ShowState, sc: Scene, ms: number): void {
   st.flash = perZone(() => 0);
-  st.flashCol = perZone<StrikeColor>(() => WHITE);
+  st.flashCol = perZone<Rgbw>(() => WHITE);
   st.flashDecay = perZone(() => DEFAULT_DECAY);
   st.flashTarget = perZone(() => 0);
   st.flashRise = perZone(() => 0);
@@ -187,7 +187,7 @@ export function rebuildLightsAt(st: ShowState, sc: Scene, ms: number): void {
 
 /** Which zones a strike lands on. No target at all means every zone. */
 function strikeTargets(c: Extract<Cue, { op: "strike" }>): readonly ZoneId[] {
-  if (c.targets && c.targets.length) return c.targets;
+  if (c.targets?.length) return c.targets;
   if (c.zone) return [c.zone];
   return ZONE_IDS;
 }
@@ -211,31 +211,38 @@ export function fireCues(
       st.eff[c.zone] = c.eff;
       if (c.level !== undefined) st.level[c.zone] = c.level;
     } else {
-      // Beat pulses carry a small `intensity`; full lightning omits it and
-      // lands at 1.0. Each strike brings its own colour and decay, which is
-      // what lets a heartbeat be a fast red snap and a bell toll a slow
-      // violet bloom in the same vocabulary.
-      const amt = (st.soft ? 0.42 : 1) * (c.intensity ?? 1);
-      for (const id of strikeTargets(c)) {
-        const peak = Math.min(1, st.flash[id] + amt);
-        if (c.attack && c.attack > 0) {
-          // #10: swell to the peak over attack ms rather than popping.
-          // The rise is per 16 ms frame, same arithmetic as the firmware.
-          st.flashTarget[id] = peak;
-          st.flashRise[id] = peak * 16 / c.attack;
-        } else {
-          st.flash[id] = peak;
-          st.flashTarget[id] = 0;    // a slam cancels any pending swell
-        }
-        st.flashCol[id] = c.color ?? WHITE;
-        st.flashDecay[id] = c.decay ?? DEFAULT_DECAY;
-        // Where the strike lands on the jewel: whole face, a fresh random
-        // scatter, just the centre, or just the ring. The epoch bump is what
-        // makes each scattered strike pick different pixels.
-        st.flashMode[id] = flashModeIndex(c.pixels ?? "all");
-        st.flashEpoch[id] = (st.flashEpoch[id] + 1) % 1000;
-      }
+      applyStrike(st, c);
     }
+  }
+}
+
+/** Land one strike on every zone it targets.
+ *
+ * Beat pulses carry a small `intensity`; full lightning omits it and lands at
+ * 1.0. Each strike brings its own colour and decay, which is what lets a
+ * heartbeat be a fast red snap and a bell toll a slow violet bloom in the same
+ * vocabulary.
+ */
+function applyStrike(st: ShowState, c: Extract<Cue, { op: "strike" }>): void {
+  const amt = (st.soft ? 0.42 : 1) * (c.intensity ?? 1);
+  for (const id of strikeTargets(c)) {
+    const peak = Math.min(1, st.flash[id] + amt);
+    if (c.attack && c.attack > 0) {
+      // #10: swell to the peak over attack ms rather than popping.
+      // The rise is per 16 ms frame, same arithmetic as the firmware.
+      st.flashTarget[id] = peak;
+      st.flashRise[id] = peak * 16 / c.attack;
+    } else {
+      st.flash[id] = peak;
+      st.flashTarget[id] = 0;    // a slam cancels any pending swell
+    }
+    st.flashCol[id] = c.color ?? WHITE;
+    st.flashDecay[id] = c.decay ?? DEFAULT_DECAY;
+    // Where the strike lands on the jewel: whole face, a fresh random
+    // scatter, just the centre, or just the ring. The epoch bump is what
+    // makes each scattered strike pick different pixels.
+    st.flashMode[id] = flashModeIndex(c.pixels ?? "all");
+    st.flashEpoch[id] = (st.flashEpoch[id] + 1) % 1000;
   }
 }
 
@@ -309,9 +316,9 @@ export function renderZones(st: ShowState, ts: number, P: EffectParams): ZoneRen
 }
 
 /** The strongest strike anywhere, with its colour — for the sky/stone wash. */
-export function dominantFlash(st: ShowState): { flash: number; color: StrikeColor } {
+export function dominantFlash(st: ShowState): { flash: number; color: Rgbw } {
   let flash = 0;
-  let color: StrikeColor = WHITE;
+  let color: Rgbw = WHITE;
   for (const id of ZONE_IDS) {
     if (st.flash[id] > flash) {
       flash = st.flash[id];

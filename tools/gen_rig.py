@@ -62,8 +62,9 @@ def emit_rig_header(
         # A zero-length array is ill-formed in C++, and an empty zone is a
         # real configuration (nothing wired to that channel yet), so unwired
         # zones get one dead element that `n = 0` stops anything reading.
-        body = ", ".join(vals) if vals else ("0.0f" if kind != "core" else "false")
         ctype = "bool" if kind == "core" else "float"
+        dead = "false" if kind == "core" else "0.0f"
+        body = ", ".join(vals) if vals else dead
         out.append(f"inline constexpr {ctype} {zid}_{kind}[] = {{{body}}};")
 
     for z in zones:
@@ -110,12 +111,14 @@ def emit_rig_header(
 # so they are safe to leave running while you go and look.
 #: How every strip effect starts. Four of them, so it is written once.
 EFFECT = "      - addressable_lambda:"
+#: And the line that opens each one's body, for the same reason.
+LAMBDA_BODY = "          lambda: |-"
 
 TEST_EFFECTS = [
     EFFECT,
     '          name: "Test Bars"',
     "          update_interval: 500ms",
-    "          lambda: |-",
+    LAMBDA_BODY,
     "            // Red, green, blue repeating. Wrong first colour means",
     "            // channel_colors is wrong; a gap means a dead pixel;",
     "            // count the triplets to see how many pixels arrive.",
@@ -127,7 +130,7 @@ TEST_EFFECTS = [
     EFFECT,
     '          name: "Test Chase"',
     "          update_interval: 100ms",
-    "          lambda: |-",
+    LAMBDA_BODY,
     "            // One white dot walking the chain, ~4 px/s. Where it stops",
     "            // is where the data stops: a cut wire, a cold joint, or the",
     "            // pixel that died. It wraps, so watch one full lap.",
@@ -138,7 +141,7 @@ TEST_EFFECTS = [
     EFFECT,
     '          name: "Test Ends"',
     "          update_interval: 500ms",
-    "          lambda: |-",
+    LAMBDA_BODY,
     "            // First pixel red, last blue, the rest dim. Which end lights",
     "            // red is the end the data goes in — the answer when a jewel",
     "            // is mounted upside down and the centre pixel looks wrong.",
@@ -340,7 +343,7 @@ def emit_lights(
             EFFECT,
             '          name: "Show"',
             "          update_interval: 16ms",
-            "          lambda: |-",
+            LAMBDA_BODY,
             "            using namespace castle;",
             f"            const Fixture &fx = RIG[{zi}];",
             "            static uint8_t buf[RIG_MAX_PIXELS * 4];",

@@ -52,8 +52,12 @@ EXEMPT: dict[str, str] = {
 #: less a citation for having been reflowed.
 CITATION = re.compile(r"grade\s+report\b[^\S\n]*", re.IGNORECASE)
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
-#: Comment leaders, stripped so a wrapped citation reads as one string.
-LEADER = re.compile(r"^\s*(?:@?#+|//+|/\*+|\*+|;+|--+|>+)\s?")
+#: Comment leaders, stripped so a wrapped citation reads as one string. One
+#: character class rather than an alternative per language (`#`, `//`, `/*`,
+#: `*`, `;`, `--`, `>` and Make's `@#`): no real leader mixes two of these,
+#: and stripping one punctuation run either way cannot change a verdict —
+#: "grade report" and the date that must follow it contain none of them.
+LEADER = re.compile(r"^\s*@?[#/*;>-]+\s?")
 
 FIX = (
     'rewrite as "grade report YYYY-MM-DD A1", naming the audit that raised '

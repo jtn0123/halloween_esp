@@ -23,7 +23,7 @@ export interface SdFile {
  *  everything else is a song somebody imported. */
 function kind(name: string): readonly [string, string] {
   if (/^\d\d_/.test(name)) return ["scene", "A rendered scene track"];
-  if (/^test_/.test(name)) return ["tone", "A speaker-test tone"];
+  if (name.startsWith("test_")) return ["tone", "A speaker-test tone"];
   return ["song", "An imported track"];
 }
 
@@ -54,13 +54,14 @@ function sceneTracks(st: DeviceStatus): string {
   if (!st.sd_mounted) return "";
   const n = sceneIds().length;
   const missing = (st.missing ?? "").trim();
+  const plural = n === 1 ? "" : "s";
   return missing
     ? `<div class="dp__note dp__note--warn" title="The scene will fall back to ` +
       `the chirp. Push them with tools/sd_sync.py &lt;ip&gt; scenes">` +
       `⚠ scenes/ is missing ${esc(missing)}</div>`
     : `<div class="dp__note dp__note--tight" title="The rendered show tracks the ` +
       `scene engine streams; pushed by tools/sd_sync.py &lt;ip&gt; scenes">` +
-      `scenes/ — all ${n} show track${n === 1 ? "" : "s"} present</div>`;
+      `scenes/ — all ${n} show track${plural} present</div>`;
 }
 
 export interface DeviceStatus {
@@ -103,9 +104,11 @@ const sceneIds = (): string[] => {
 };
 
 const fmtUptime = (s: number): string =>
-  s < 3600 ? `${(s / 60) | 0}m` : `${(s / 3600) | 0}h ${((s % 3600) / 60) | 0}m`;
+  s < 3600
+    ? `${Math.trunc(s / 60)}m`
+    : `${Math.trunc(s / 3600)}h ${Math.trunc((s % 3600) / 60)}m`;
 
-const kb = (bytes: number): string => `${(bytes / 1024) | 0} KB`;
+const kb = (bytes: number): string => `${Math.trunc(bytes / 1024)} KB`;
 
 /** The health line: three numbers, each with the sentence that says what it
  *  means when it falls. Heap is here because a scene start is where it goes

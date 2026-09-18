@@ -39,9 +39,16 @@ const H = 146;
 /** Room under each cell for the fixture name and the zone's mean. */
 const FOOT = 30;
 
+/** A 0–1 channel as a byte. */
+const byte = (v: number): number => Math.trunc(v * 255);
+
+/** A 0–1 channel as a byte with a floor under it, so an unlit pixel is still
+ *  visibly a socket rather than a hole in the panel. */
+const socket = (v: number): number => Math.trunc(Math.min(255, 30 + v * 225));
+
 export class PixelInsets {
-  private canvas: HTMLCanvasElement;
-  private ctx: CanvasRenderingContext2D;
+  private readonly canvas: HTMLCanvasElement;
+  private readonly ctx: CanvasRenderingContext2D;
   private rig: RigState;
 
   constructor(anchor: HTMLElement, rig: RigState = loadRig()) {
@@ -140,15 +147,14 @@ export class PixelInsets {
     if (lum > 0.02) {
       const halo = g.createRadialGradient(x, y, rad * 0.3, x, y, rad * 2.2);
       halo.addColorStop(0,
-        `rgba(${r * 255 | 0},${g0 * 255 | 0},${b * 255 | 0},${0.55 * lum})`);
+        `rgba(${byte(r)},${byte(g0)},${byte(b)},${0.55 * lum})`);
       halo.addColorStop(1, "rgba(0,0,0,0)");
       g.fillStyle = halo;
       g.beginPath();
       g.arc(x, y, rad * 2.2, 0, 6.2832);
       g.fill();
     }
-    g.fillStyle = `rgb(${Math.min(255, 30 + r * 225) | 0},`
-      + `${Math.min(255, 30 + g0 * 225) | 0},${Math.min(255, 30 + b * 225) | 0})`;
+    g.fillStyle = `rgb(${socket(r)},${socket(g0)},${socket(b)})`;
     g.beginPath();
     g.arc(x, y, rad, 0, 6.2832);
     g.fill();

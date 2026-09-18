@@ -208,9 +208,14 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     const hushed = soundRoute === "mac";
     if (!els) return;
     els.vol.disabled = hushed || !lastOk;
-    els.vol.title = !lastOk ? "Castle not answering"
-      : hushed ? "Castle speaker is off while sound plays on the Mac (♪ switch)"
-      : "Castle speaker volume";
+    if (!lastOk) {
+      els.vol.title = "Castle not answering";
+    } else if (hushed) {
+      els.vol.title =
+        "Castle speaker is off while sound plays on the Mac (♪ switch)";
+    } else {
+      els.vol.title = "Castle speaker volume";
+    }
     els.mute.disabled = hushed || !lastOk;
     els.stop.disabled = !lastOk;
     els.mirror.disabled = !lastOk;

@@ -22,6 +22,7 @@
 
 import { BAND_BY_NAME, type BandName } from "./bands.js";
 import { BAND_STYLE } from "./band_style.js";
+import type { BandStyle } from "./band_style.js";
 // Facade re-exports: the style/section modules split out over time, and
 // every consumer (style lab, tests, generators) still reads the whole
 // vocabulary through this module.
@@ -34,6 +35,7 @@ export { BAND_STYLE_CLASSIC, setStyleVariant, styleVariant, setStyleTweak,
 export type { StyleVariant, StyleTweak, Flavors } from "./track_style.js";
 import { driftBase, getFlavors, styleFor, styleVariant,
          TAKEOVER_COLORS, TAKEOVER_HOT } from "./track_style.js";
+import type { Flavors } from "./track_style.js";
 import { gateMul, gateNote, sectionCues, sectionGates, sustainedSwells }
   from "./track_sections.js";
 import type { Cue, Rgbw, StrikeCue, ZoneId } from "./types.js";
@@ -47,8 +49,11 @@ export const blendColor = (base: Rgbw, hot: Rgbw | undefined, vel: number): Rgbw
           base[2] + (hot[2] - base[2]) * vel, base[3] + (hot[3] - base[3]) * vel];
 
 /** Velocity mask thresholds — shared with pixels_for in the generators. */
-export const pixelsForVel = (vel: number): "center" | "scatter" | "all" =>
-  vel < 0.40 ? "center" : vel < 0.72 ? "scatter" : "all";
+export const pixelsForVel = (vel: number): "center" | "scatter" | "all" => {
+  if (vel < 0.40) return "center";
+  if (vel < 0.72) return "scatter";
+  return "all";
+};
 
 /* ── Per-stream dynamics (#3 tempo, #8 accents, #7 pan) ─────────────────
  * Twins of tempo_factor / tempo_decay / is_accent / PAN_DECISIVE in
@@ -85,6 +90,45 @@ export function isAccent(vels: readonly number[], i: number): boolean {
 export const PAN_DECISIVE = 0.10;
 
 /**
+ * Where one hit lands.
+ *
+ * A decisively panned hit goes to ITS tower (#7); the rest keep the band's
+ * round-robin movement, and a band that does not alternate lights them all.
+ */
+function hitZones(s: BandStyle, zones: readonly ZoneId[], pinned: boolean,
+                  pan: number | undefined, i: number): ZoneId[] {
+  if (!s.alternate || pinned) return [...zones];
+  if (pan !== undefined && Math.abs(pan) >= PAN_DECISIVE
+      && zones.includes("towerL") && zones.includes("towerR")) {
+    return [pan < 0 ? "towerL" : "towerR"];
+  }
+  return [zones[i % zones.length]!];
+}
+
+/** Spillover (#8): a hit over the band's boost level, or one louder than its
+ *  own neighbourhood, also lights the band's boost fixtures. */
+function withBoost(s: BandStyle, targets: ZoneId[], vel: number,
+                   vels: readonly number[], i: number): ZoneId[] {
+  if (!s.boostTargets) return targets;
+  const loud = (s.boostAt !== undefined && vel >= s.boostAt) || isAccent(vels, i);
+  if (!loud) return targets;
+  return targets.concat(s.boostTargets.filter(z => !targets.includes(z)));
+}
+
+/** The colour pair for one hit: the takeover palette through a chorus (#2),
+ *  a drifted base when drift is on (#1), else the band's own. */
+function hitColors(s: BandStyle, flav: Flavors,
+                   gates: ReadonlyArray<readonly [number, string]>,
+                   tMs: number, i: number): { base: Rgbw; hot: Rgbw | undefined } {
+  if (flav.takeover && gateNote(gates, tMs) === "chorus") {
+    return { base: TAKEOVER_COLORS[i % TAKEOVER_COLORS.length]!, hot: TAKEOVER_HOT };
+  }
+  const base = flav.drift ? driftBase(s.colors, i, tMs)
+                          : s.colors[i % s.colors.length]!;
+  return { base, hot: s.colorHot };
+}
+
+/**
  * Expand one band's onsets into strike cues, exactly as the Python pulse
  * expansion would. `zoneOverride` is the user pinning this band to one zone
  * in the band editor — movement then defers to their choice.
@@ -114,30 +158,9 @@ export function bandStrikes(
     const tMs = Math.round((sec - startSec) * 1000);
     const mul = gateMul(band, gates, tMs);
     if (mul === null) return;                 // gated out by its section (#9)
-    let targets: ZoneId[];
-    if (s.alternate && !pinned) {
-      // A decisively panned hit goes to ITS tower (#7); the rest keep the
-      // round-robin movement.
-      targets = pan !== undefined && Math.abs(pan) >= PAN_DECISIVE
-             && zones.includes("towerL") && zones.includes("towerR")
-        ? [pan < 0 ? "towerL" : "towerR"]
-        : [zones[i % zones.length]!];
-    } else {
-      targets = [...zones];
-    }
-    if (s.boostTargets
-        && ((s.boostAt !== undefined && vel >= s.boostAt) || isAccent(vels, i))) {
-      targets = targets.concat(s.boostTargets.filter(z => !targets.includes(z)));
-    }
+    const targets = withBoost(s, hitZones(s, zones, pinned, pan, i), vel, vels, i);
     const pixels = s.pixelsByVel ? pixelsForVel(vel) : s.pixels;
-    let base = s.colors[i % s.colors.length]!;
-    let hot: Rgbw | undefined = s.colorHot;
-    if (flav.takeover && gateNote(gates, tMs) === "chorus") {
-      base = TAKEOVER_COLORS[i % TAKEOVER_COLORS.length]!;
-      hot = TAKEOVER_HOT;
-    } else if (flav.drift) {
-      base = driftBase(s.colors, i, tMs);
-    }
+    const { base, hot } = hitColors(s, flav, gates, tMs, i);
     out.push({
       t: tMs,
       bus: "LED", op: "strike", ms,

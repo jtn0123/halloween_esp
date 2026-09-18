@@ -44,6 +44,13 @@ OTA_MIN = 65536
 OTA_SLOTS = {"feather": 0x1C0000, "carrier": 0x3C0000}
 OTA_SLOT = OTA_SLOTS["feather"]
 
+#: The firmware's own word for a path safe_subpath refuses (sd_web.h) — three
+#: routes give it, and they have to give it identically.
+BAD_PATH = "bad path"
+#: And what /api/files?d= says about a subdirectory that is not one. Both
+#: reasons (no such name, not a directory) get this, as the C does.
+NO_SUCH_DIR = "no such directory"
+
 
 class Handler(Uploads):
     """Every route the castle serves. The reply layer is castle_emu_reply's
@@ -136,6 +143,35 @@ class Handler(Uploads):
         """The main loop's own record (castle_emu_events.py), oldest first."""
         self._raw(200, self.server.events.json().encode(), JSON_MIME)
 
+    def _list_dir(self, sub: bytes) -> Path | None:
+        """Where ?d=<subdir> points, or None once the refusal has been sent.
+
+        B2: the subdirectory faces exactly the rules a /sd/ path faces, in
+        the firmware's order — safe_subpath, then fat_path, then is_dir.
+        """
+        if not wire.safe_subpath(sub):
+            self._err(400, BAD_PATH)
+            return None
+        name = wire.fat_path(sub)
+        base = self.server.sd_dir / name if name is not None else None
+        if base is None or not base.is_dir():
+            self._err(404, NO_SUCH_DIR)
+            return None
+        return base
+
+    def _list_row(self, p: Path) -> str:
+        """One /api/files element, built like the firmware's template: the
+        name through json_escape, the rest raw."""
+        try:  # stat() failing is size -1 on the board
+            size = p.stat().st_size if p.is_file() else 0
+        except OSError:
+            size = -1
+        return '{"name":"%s","size":%d,"dir":%s}' % (
+            wire.json_escape(p.name),
+            size,
+            "true" if p.is_dir() else "false",
+        )
+
     def h_list(self, raw: bytes) -> None:
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
@@ -145,14 +181,10 @@ class Handler(Uploads):
         sub = wire.query_param(raw, "d")
         base = self.server.sd_dir
         if sub:
-            if not wire.safe_subpath(sub):
-                return self._err(400, "bad path")
-            name = wire.fat_path(sub)
-            if name is None:
-                return self._err(404, "no such directory")
-            base = base / name
-            if not base.is_dir():
-                return self._err(404, "no such directory")
+            found = self._list_dir(sub)
+            if found is None:
+                return None
+            base = found
         items = []
         skipped = 0
         for p in sorted(base.iterdir()):
@@ -161,15 +193,7 @@ class Handler(Uploads):
             if not wire.safe_name(p.name.encode("utf-8", "surrogateescape")):
                 skipped += 1  # the Mac's doing, not the desk's: counted
                 continue
-            try:  # stat() failing is size -1 on the board
-                size = p.stat().st_size if p.is_file() else 0
-            except OSError:
-                size = -1
-            # The firmware's template: name through json_escape, the rest raw.
-            items.append(
-                '{"name":"%s","size":%d,"dir":%s}'
-                % (wire.json_escape(p.name), size, "true" if p.is_dir() else "false")
-            )
+            items.append(self._list_row(p))
         if skipped:
             items.append('{"skipped":%d}' % skipped)
         self._raw(
@@ -221,7 +245,7 @@ class Handler(Uploads):
             return self._err(503, NO_SD)
         rel = self._subpath(raw, b"/sd/")
         if not wire.safe_subpath(rel):
-            return self._err(400, "bad path")
+            return self._err(400, BAD_PATH)
         name = wire.fat_path(rel)
         if name is None or not self._send_file(self.server.sd_dir / name):
             return self._err(404, "no such file")
@@ -232,7 +256,7 @@ class Handler(Uploads):
         # handler decides afterwards.
         rel = self._subpath(raw, b"/site/")
         if not wire.safe_subpath(rel):
-            return self._err(400, "bad path", {"Content-Security-Policy": CSP})
+            return self._err(400, BAD_PATH, {"Content-Security-Policy": CSP})
         name = wire.fat_path(rel)
         f = self.server.sd_dir / "site" / (name or "")
         if (

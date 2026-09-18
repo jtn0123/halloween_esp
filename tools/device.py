@@ -42,6 +42,27 @@ def _key_for(entities, name: str):
     return None
 
 
+def _send(cli: APIClient, entities, cmd: str, args: list[str]) -> int:
+    """Do what `cmd` asks of the device. 0 means "done, now read the logs";
+    anything else is the exit code and nothing was sent."""
+    if cmd == "press":
+        ent = _key_for(entities, " ".join(args))
+        if ent is None:
+            print(f"no entity named {' '.join(args)!r}", file=sys.stderr)
+            return 2
+        cli.button_command(ent.key)
+    elif cmd == "set":
+        ent = _key_for(entities, args[0])
+        if ent is None:
+            print(f"no entity named {args[0]!r}", file=sys.stderr)
+            return 2
+        cli.text_command(ent.key, " ".join(args[1:]))
+    elif cmd != "watch":
+        print(f"unknown command {cmd!r}", file=sys.stderr)
+        return 2
+    return 0
+
+
 async def run(host: str, cmd: str, args: list[str]) -> int:
     cli = await connect(host)
     try:
@@ -73,21 +94,9 @@ async def run(host: str, cmd: str, args: list[str]) -> int:
         cli.subscribe_logs(on_log, log_level=LogLevel.LOG_LEVEL_VERY_VERBOSE)
         await asyncio.sleep(0.4)
 
-        if cmd == "press":
-            ent = _key_for(entities, " ".join(args))
-            if ent is None:
-                print(f"no entity named {' '.join(args)!r}", file=sys.stderr)
-                return 2
-            cli.button_command(ent.key)
-        elif cmd == "set":
-            ent = _key_for(entities, args[0])
-            if ent is None:
-                print(f"no entity named {args[0]!r}", file=sys.stderr)
-                return 2
-            cli.text_command(ent.key, " ".join(args[1:]))
-        elif cmd != "watch":
-            print(f"unknown command {cmd!r}", file=sys.stderr)
-            return 2
+        code = _send(cli, entities, cmd, args)
+        if code:
+            return code
 
         try:
             await asyncio.wait_for(done, timeout=seconds)

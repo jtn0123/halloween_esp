@@ -276,16 +276,28 @@ def pir_cooldown_ok(c: bytes) -> bool:
     return (not c) or c in (b"30", b"60", b"120")
 
 
+def _param_value(qry: bytes, eq: int) -> bytes:
+    """The value of the pair whose '=' sits at `eq`, through
+    httpd_query_key_value's 301-byte buffer and then url_decode.
+
+    That buffer's truncation leg is unreachable behind the 200-byte query
+    ceiling and is kept only so the two buffers stay spelled the way the C
+    spells them — the firmware answers its own 414 there, with the same
+    message the query ceiling gives, so no input exists on which the two
+    sides differ.
+    """
+    end = qry.find(b"&", eq + 1)
+    val = qry[eq + 1 :] if end < 0 else qry[eq + 1 : end]
+    if len(val) + 1 > VALUE_BUF:
+        return b""
+    return url_decode(val)
+
+
 def query_param(raw_target: bytes, key: str) -> bytes:
     """sd_web_util.h query_param: httpd_req_get_url_query_str into a 200-byte
     buffer, httpd_query_key_value into a 301-byte one (either truncation
     → ""), then url_decode. Keys compare case-insensitively; a pair without
     '=' derails the scan (the '=' found belongs to the NEXT pair).
-
-    The value leg is unreachable behind the 200-byte query ceiling and is
-    kept only so the two buffers stay spelled the way the C spells them —
-    the firmware answers its own 414 there, with the same message the query
-    ceiling gives, so no input exists on which the two sides differ.
     """
     if b"?" not in raw_target:
         return b""
@@ -299,11 +311,7 @@ def query_param(raw_target: bytes, key: str) -> bytes:
         if eq < 0:
             break
         if eq - pos == len(k) and qry[pos:eq].lower() == k:
-            end = qry.find(b"&", eq + 1)
-            val = qry[eq + 1 :] if end < 0 else qry[eq + 1 : end]
-            if len(val) + 1 > VALUE_BUF:
-                return b""
-            return url_decode(val)
+            return _param_value(qry, eq)
         amp = qry.find(b"&", eq + 1)
         if amp < 0:
             break

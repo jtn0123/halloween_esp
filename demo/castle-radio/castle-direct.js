@@ -186,6 +186,42 @@
     if (sounding(state)) {return now() - state.position_ms / 1000;}
     return first ? now() : started;
   }
+  // Whether frame `i` is already past due against baseline `base`.
+  const framePast = (frames, i, base) => i < frames.length && base + frames[i][0] <= now();
+  // Coming back from a throttled tab: read the castle's clock again before
+  // deciding which frames are still ahead of it. Null once superseded.
+  async function rebase(filename, started, token) {
+    if (!show.realign) {return started;}
+    show.realign = false;
+    return align(filename, started, token);
+  }
+  // The frame walk: sleep until each frame is due, post it no faster than the
+  // castle drains, and re-read the clock every twentieth. Returns the baseline
+  // it ended on, or null once a newer show has taken the token — which is the
+  // caller's cue to stop without waiting out the song.
+  async function playFrames(filename, frames, token, started) {
+    for (let index = 0; started !== null && index < frames.length; index++) {
+      const [at, spec] = frames[index];
+      await sleep(Math.max(0, (started + at - now()) * 1000));
+      if (token !== show.token) {return null;}
+      started = await rebase(filename, started, token);
+      if (started === null) {return null;}
+      // A frame the next one has already overtaken would only be overwritten
+      // inside the same 200 ms drain: skip it rather than burst. It was
+      // never posted, so it is coalesced, not sent — counting it as sent
+      // made "N landed of M sent" unreconcilable with what the castle drew.
+      if (framePast(frames, index + 1, started)) { show.frames_coalesced++; continue; }
+      await sleep(Math.max(0, (lastLight + FRAME_MS / 1000 - now()) * 1000));
+      if (token !== show.token) {return null;}
+      lastLight = now();
+      await castle(`/api/light?c=${encodeURIComponent(spec)}`, 'POST');
+      // A count of what was POSTed, not the position reached: an assignment
+      // of index + 1 reported every coalesced frame as sent as well.
+      show.frames_sent++;
+      if (index && index % 20 === 0) {started = await align(filename, started, token);}
+    }
+    return started;
+  }
   async function runShow(filename, frames, duration) {
     const token = ++show.token;
     Object.assign(show, {active: true, track: filename, frames_sent: 0, frames_coalesced: 0, frames_total: frames.length,
@@ -194,28 +230,7 @@
     try {
       let started = await align(filename, now() + 0.24 + SPEAKER_START_S, token, true);
       if (show.castle_cues > 0) {return;}
-      const due = i => i < frames.length && started + frames[i][0] <= now();
-      for (let index = 0; started !== null && index < frames.length; index++) {
-        const [at, spec] = frames[index];
-        await sleep(Math.max(0, (started + at - now()) * 1000));
-        if (token !== show.token) {return;}
-        // Coming back from a throttled tab: read the castle's clock again
-        // before deciding which frames are still ahead of it.
-        if (show.realign) { show.realign = false; started = await align(filename, started, token); if (started === null) {return;} }
-        // A frame the next one has already overtaken would only be overwritten
-        // inside the same 200 ms drain: skip it rather than burst. It was
-        // never posted, so it is coalesced, not sent — counting it as sent
-        // made "N landed of M sent" unreconcilable with what the castle drew.
-        if (due(index + 1)) { show.frames_coalesced++; continue; }
-        await sleep(Math.max(0, (lastLight + FRAME_MS / 1000 - now()) * 1000));
-        if (token !== show.token) {return;}
-        lastLight = now();
-        await castle(`/api/light?c=${encodeURIComponent(spec)}`, 'POST');
-        // A count of what was POSTed, not the position reached: an assignment
-        // of index + 1 reported every coalesced frame as sent as well.
-        show.frames_sent++;
-        if (index && index % 20 === 0) {started = await align(filename, started, token);}
-      }
+      started = await playFrames(filename, frames, token, started);
       if (started !== null) {await sleep(Math.max(0, (started + (duration || 0) - now()) * 1000));}
     } catch (error) { show.error = error.message; }
     finally {
@@ -277,12 +292,28 @@
     return {path: `/api/pir?armed=${body.armed ? 1 : 0}&cooldown=${cooldown}`};
   }
   const BUILDERS = {scene: scenePath, file: filePath, light: lightPath, tone: tonePath, volume: volumePath, pir: pirPath};
+  // Which castle URL an action means: a fixed path for the PLAIN ones, else
+  // the builder's, which is the only thing allowed to interpolate a token.
+  async function buildPath(action, body) {
+    if (action in PLAIN) {return {path: PLAIN[action]};}
+    if (action in BUILDERS) {return BUILDERS[action](body);}
+    throw new Error('This control is not supported by the running firmware.');
+  }
+  // What the castle should be doing once the command lands, so the next poll
+  // is checked rather than believed. forget() is "no expectation at all".
+  function expectAfter(action, built, imported) {
+    if (action === 'scene') {expect(built.scene, null); return;}
+    if (action === 'file') {
+      expect('stop', built.filename);
+      if (imported) {runShow(built.filename, imported.frames || [], imported.duration);}
+      return;
+    }
+    if (action === 'stop' || action === 'blackout' || action === 'show/stop') {expect('stop', '');}
+    else {forget();}
+  }
   async function command(body) {
     const action = String(body.action || '');
-    let built;
-    if (action in PLAIN) {built = {path: PLAIN[action]};}
-    else if (action in BUILDERS) {built = await BUILDERS[action](body);}
-    else {throw new Error('This control is not supported by the running firmware.');}
+    const built = await buildPath(action, body);
     if (action in PLAIN || action === 'scene') {await stopShow();}
     const imported = action === 'file' && body.key ? library.find(row => row.key === body.key) : null;
     // A song the page is NOT about to stream for: a show still running for the
@@ -294,10 +325,7 @@
       await sleep(300);
     }
     const result = await castle(built.path, 'POST');
-    if (action === 'scene') {expect(built.scene, null);}
-    else if (action === 'file') { expect('stop', built.filename); if (imported) {runShow(built.filename, imported.frames || [], imported.duration);} }
-    else if (action === 'stop' || action === 'blackout' || action === 'show/stop') {expect('stop', '');}
-    else {forget();}
+    expectAfter(action, built, imported);
     return result;
   }
 

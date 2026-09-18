@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
@@ -149,7 +150,11 @@ CUE_OPS = ("set", "strike")
 ID_RE = re.compile(r"^\w+$", re.ASCII)  # \w, but not the Unicode half
 
 
-def _vocab() -> dict[str, set[str]]:
+#: The id sets a scene is checked against, keyed by what they name.
+Vocab = dict[str, set[str]]
+
+
+def _vocab() -> Vocab:
     return {
         "effect": set(ev.EFFECT_IDS),
         "overlay": set(ev.OVERLAY_IDS),
@@ -190,7 +195,7 @@ def _zone(where: str, z: Any, zones: set[str] | None, errs: list[str]) -> None:
         errs.append(f"{where}: no zone {z!r} (have {', '.join(sorted(zones))})")
 
 
-def _effect(where: str, e: Any, vocab: dict[str, set[str]], errs: list[str]) -> None:
+def _effect(where: str, e: Any, vocab: Vocab, errs: list[str]) -> None:
     # `isinstance` first: `{"door": {"a": 1}}` is a hand-editable mistake,
     # and `dict not in set` is a TypeError, not a verdict.
     if not isinstance(e, str) or e not in vocab["effect"]:
@@ -200,13 +205,59 @@ def _effect(where: str, e: Any, vocab: dict[str, set[str]], errs: list[str]) -> 
         )
 
 
-def _in(
-    where: str, v: Any, kind: str, vocab: dict[str, set[str]], errs: list[str]
-) -> None:
+def _in(where: str, v: Any, kind: str, vocab: Vocab, errs: list[str]) -> None:
     if not isinstance(v, str) or v not in vocab[kind]:
         errs.append(
             f"{where}: unknown {kind} {v!r} (one of {', '.join(sorted(vocab[kind]))})"
         )
+
+
+def _set_cue(
+    w: str, c: dict[str, Any], zones: set[str] | None, vocab: Vocab, errs: list[str]
+) -> None:
+    """A `set` cue: one zone, one effect, and an optional level."""
+    if "zone" not in c:
+        errs.append(f"{w}: a set cue needs a zone")
+    else:
+        _zone(f"{w}.zone", c["zone"], zones, errs)
+    if "effect" not in c:
+        errs.append(f"{w}: a set cue needs an effect")
+    else:
+        _effect(f"{w}.effect", c["effect"], vocab, errs)
+    if "level" in c:
+        _unit(f"{w}.level", c["level"], errs)
+
+
+def _targets(w: str, targets: Any, zones: set[str] | None, errs: list[str]) -> None:
+    """A strike's `targets:` — a list, and every name in it a known zone."""
+    if not isinstance(targets, list):
+        errs.append(f"{w}.targets: must be a list of zones")
+        return
+    for z in targets:
+        _zone(f"{w}.targets", z, zones, errs)
+
+
+def _strike_cue(
+    w: str, c: dict[str, Any], zones: set[str] | None, vocab: Vocab, errs: list[str]
+) -> None:
+    """A `strike` cue: where it lands, how hard, how long, what colour."""
+    if "zone" in c:
+        _zone(f"{w}.zone", c["zone"], zones, errs)
+    if "targets" in c:
+        _targets(w, c["targets"], zones, errs)
+    if "pixels" in c:
+        _in(f"{w}.pixels", c["pixels"], "pixels", vocab, errs)
+    if "intensity" in c:
+        _unit(f"{w}.intensity", c["intensity"], errs, 0, 4)
+    if "decay" in c:
+        _unit(f"{w}.decay", c["decay"], errs)
+    errs.extend(
+        f"{w}.{k}: must be a number of ms >= 0, got {c[k]!r}"
+        for k in ("ms", "attack")
+        if k in c and (not _num(c[k]) or c[k] < 0)
+    )
+    if "color" in c:
+        _color(f"{w}.color", c["color"], errs)
 
 
 def _check_cue(
@@ -214,7 +265,7 @@ def _check_cue(
     c: Any,
     length: int | None,
     zones: set[str] | None,
-    vocab: dict[str, set[str]],
+    vocab: Vocab,
     errs: list[str],
 ) -> None:
     w = f"cues[{i}]"
@@ -231,39 +282,9 @@ def _check_cue(
         errs.append(f"{w}: op must be one of {', '.join(CUE_OPS)}, got {op!r}")
         return
     if op == "set":
-        if "zone" not in c:
-            errs.append(f"{w}: a set cue needs a zone")
-        else:
-            _zone(f"{w}.zone", c["zone"], zones, errs)
-        if "effect" not in c:
-            errs.append(f"{w}: a set cue needs an effect")
-        else:
-            _effect(f"{w}.effect", c["effect"], vocab, errs)
-        if "level" in c:
-            _unit(f"{w}.level", c["level"], errs)
-        return
-    # strike
-    if "zone" in c:
-        _zone(f"{w}.zone", c["zone"], zones, errs)
-    if "targets" in c:
-        if not isinstance(c["targets"], list):
-            errs.append(f"{w}.targets: must be a list of zones")
-        else:
-            for z in c["targets"]:
-                _zone(f"{w}.targets", z, zones, errs)
-    if "pixels" in c:
-        _in(f"{w}.pixels", c["pixels"], "pixels", vocab, errs)
-    if "intensity" in c:
-        _unit(f"{w}.intensity", c["intensity"], errs, 0, 4)
-    if "decay" in c:
-        _unit(f"{w}.decay", c["decay"], errs)
-    errs.extend(
-        f"{w}.{k}: must be a number of ms >= 0, got {c[k]!r}"
-        for k in ("ms", "attack")
-        if k in c and (not _num(c[k]) or c[k] < 0)
-    )
-    if "color" in c:
-        _color(f"{w}.color", c["color"], errs)
+        _set_cue(w, c, zones, vocab, errs)
+    else:
+        _strike_cue(w, c, zones, vocab, errs)
 
 
 def _pulse_zones(
@@ -298,9 +319,7 @@ def _pulse_colors(w: str, p: dict[str, Any], errs: list[str]) -> None:
         _color(f"{w}.colors", c, errs)
 
 
-def _pulse_shape(
-    w: str, p: dict[str, Any], vocab: dict[str, set[str]], errs: list[str]
-) -> None:
+def _pulse_shape(w: str, p: dict[str, Any], vocab: Vocab, errs: list[str]) -> None:
     """How hard it hits and how it falls."""
     if "pixels" in p:
         _in(f"{w}.pixels", p["pixels"], "pixels", vocab, errs)
@@ -316,7 +335,7 @@ def _pulse_shape(
 
 
 def _check_pulse(
-    i: int, p: Any, zones: set[str] | None, vocab: dict[str, set[str]], errs: list[str]
+    i: int, p: Any, zones: set[str] | None, vocab: Vocab, errs: list[str]
 ) -> None:
     w = f"pulse[{i}]"
     if not isinstance(p, dict):
@@ -374,7 +393,7 @@ def _mapping(name: str, value: Any, complaint: str, errs: list[str]) -> bool:
 def _scene_zones(
     scene: dict[str, Any],
     zs: set[str] | None,
-    vocab: dict[str, set[str]],
+    vocab: Vocab,
     errs: list[str],
 ) -> None:
     """base, levels and zones: three maps keyed by zone, each with its own
@@ -401,7 +420,7 @@ def _scene_zones(
             _zone_texture(z, d, vocab, errs)
 
 
-def _zone_texture(z: str, d: Any, vocab: dict[str, set[str]], errs: list[str]) -> None:
+def _zone_texture(z: str, d: Any, vocab: Vocab, errs: list[str]) -> None:
     """One zone's entry under `zones:` — centre effect, overlay, palette, phase."""
     if not _mapping(f"zones.{z}", d, "must be a mapping", errs):
         return
@@ -412,6 +431,21 @@ def _zone_texture(z: str, d: Any, vocab: dict[str, set[str]], errs: list[str]) -
             _in(f"zones.{z}.{k}", d[k], k, vocab, errs)
     if "phase" in d and not _num(d["phase"]):
         errs.append(f"zones.{z}.phase: must be a number")
+
+
+def _check_each(
+    scene: dict[str, Any], key: str, check: Callable[[int, Any], None], errs: list[str]
+) -> None:
+    """One of the scene's cue lists, item by item. Absent is fine; present
+    and not a list is one message rather than a traceback."""
+    items = scene.get(key)
+    if items is None:
+        return
+    if not isinstance(items, list):
+        errs.append(f"{key}: must be a list")
+        return
+    for i, item in enumerate(items):
+        check(i, item)
 
 
 def validate(scene: Any, zones: list[str] | None = None) -> list[str]:
@@ -427,18 +461,8 @@ def validate(scene: Any, zones: list[str] | None = None) -> list[str]:
     zs = set(zones) if zones is not None else None
     length = _scene_head(scene, errs)
     _scene_zones(scene, zs, vocab, errs)
-    cues = scene.get("cues")
-    if cues is not None:
-        if isinstance(cues, list):
-            for i, c in enumerate(cues):
-                _check_cue(i, c, length, zs, vocab, errs)
-        else:
-            errs.append("cues: must be a list")
-    pulse = scene.get("pulse")
-    if pulse is not None:
-        if isinstance(pulse, list):
-            for i, pl in enumerate(pulse):
-                _check_pulse(i, pl, zs, vocab, errs)
-        else:
-            errs.append("pulse: must be a list")
+    _check_each(
+        scene, "cues", lambda i, c: _check_cue(i, c, length, zs, vocab, errs), errs
+    )
+    _check_each(scene, "pulse", lambda i, p: _check_pulse(i, p, zs, vocab, errs), errs)
     return errs

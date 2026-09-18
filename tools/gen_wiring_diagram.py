@@ -114,20 +114,33 @@ A(
 )
 
 
+def _pad_class(name: str) -> str:
+    """How one header pad is painted: the net it carries if the carrier wires
+    it, else claimed-by-something-not-drawn, else free for the next idea."""
+    n = USE.get(name)
+    if n:
+        return f"pad--{n}"
+    return "pad--claim" if name in CLAIM else "pad--free"
+
+
+def _pad_note(name: str, gpio: str) -> str:
+    """The small second line under a pin name: its GPIO number, what claims
+    it, or both — whichever this pad actually has, joined once."""
+    parts = [f"GPIO{gpio}" if gpio else "", CLAIM.get(name, "")]
+    return " · ".join(p for p in parts if p)
+
+
 def header(items: list[tuple[int, str, str]], col: int, inward: str) -> None:
     dx, anch = (14, "start") if inward == "right" else (-14, "end")
     for pos, name, gpio in items:
         y = py(pos)
         n = USE.get(name)
-        cls = f"pad--{n}" if n else ("pad--claim" if name in CLAIM else "pad--free")
-        A(f'<circle class="pad {cls}" cx="{col}" cy="{y}" r="5"/>')
+        A(f'<circle class="pad {_pad_class(name)}" cx="{col}" cy="{y}" r="5"/>')
         A(
             f'<text class="hpin{" hpin--on" if n else ""}" x="{col + dx}" y="{y - 2}" '
             f'text-anchor="{anch}">{esc(name)}</text>'
         )
-        note = f"GPIO{gpio}" if gpio else ""
-        if name in CLAIM:
-            note = (note + " · " if note else "") + CLAIM[name]
+        note = _pad_note(name, gpio)
         if note:
             A(
                 f'<text class="hgpio" x="{col + dx}" y="{y + 11}" text-anchor="{anch}">{esc(note)}</text>'

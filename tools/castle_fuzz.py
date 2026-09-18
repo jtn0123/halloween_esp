@@ -56,6 +56,52 @@ from fuzz_http import SlowRead, Violation, raw_request
 EMPTY_BODY = b"empty body"
 
 
+# -- the oracle's per-route verdicts ----------------------------------------
+# What each query route may answer for a given value, read off
+# castle_emu_wire's port of the firmware rule and nothing else.
+
+
+def _volume_want(val: bytes) -> tuple[int, ...]:
+    digits = bool(val) and len(val) <= 3 and val.isdigit()
+    return (200,) if digits and int(val) <= 100 else (400,)
+
+
+def _light_want(val: bytes) -> tuple[int, ...]:
+    hex6 = len(val) == 6 and all(chr(b) in "0123456789abcdefABCDEF" for b in val)
+    return (200,) if hex6 or val in (b"show", b"off") else (400,)
+
+
+def _pir_want(target: bytes) -> tuple[int, ...]:
+    a, c, s = (wire.query_param(target, k) for k in ("armed", "cooldown", "scene"))
+    ok, _ = wire.pir_armed_ok(a)
+    # v5.60: a '|' in any field is 400 (the three ride to the main loop
+    # packed "a|c|s"), and a scene faces the same list /api/scene does —
+    # 404, or 503 before it is seeded.
+    fine = bool(
+        (a or c or s)
+        and ok
+        and wire.pir_cooldown_ok(c)
+        and not any(b"|" in x for x in (a, c, s))
+    )
+    if not fine:
+        return (400,)
+    return (200, 404, 503) if s else (200,)
+
+
+def _query_want(route: str, val: bytes, target: bytes) -> tuple[int, ...]:
+    """Every code `route` is allowed to answer for the value the wire reads
+    out of `target`. The default is the plain safe_name door."""
+    if route == "/api/volume":
+        return _volume_want(val)
+    if route == "/api/light":
+        return _light_want(val)
+    if route == "/api/pir":
+        return _pir_want(target)
+    if route == "/api/scene":
+        return (400,) if not val else (200, 404)
+    return (200,) if wire.safe_name(val) else (400,)
+
+
 class Fuzzer:
     """One fuzz session against one castle. `card` is the emulator's
     directory when in-process (enables the containment checks)."""
@@ -163,37 +209,47 @@ class Fuzzer:
             )
         verb = rng.choice(["PUT", "DELETE", "PLAY", "SD"])
         if verb == "PUT":
-            payload = bytes(
-                rng.getrandbits(8) for _ in range(rng.choice([0, 1, 7, 300]))
-            )
-            code, body, _ = self.req("PUT", "/api/files/" + raw, body=payload)
-            self.expect_name_verdict(code, body, safe, decoded, payload)
+            self._file_put(rng, raw, decoded, safe)
         elif verb == "DELETE":
-            code, body, _ = self.req("DELETE", "/api/files/" + raw)
-            if not safe and code != 400:
-                raise Violation(f"seed={self.seed} DELETE {name!r} unsafe but {code}")
-            if safe and code not in (200, 404):
-                raise Violation(f"seed={self.seed} DELETE {name!r} → {code} {body!r}")
+            self._file_delete(name, raw, safe)
         elif verb == "PLAY":
-            if wire.query_truncated(b"/api/play?f=" + name.encode()):
-                want = 414
-                code, _, _ = self.req("POST", "/api/play?f=" + raw)
-                if code != want:
-                    raise Violation(
-                        f"seed={self.seed} play {name!r}: {code} want {want}"
-                    )
-                return
-            f = wire.query_param(b"/api/play?f=" + name.encode(), "f")
-            code, _, _ = self.req("POST", "/api/play?f=" + raw)
-            want = 200 if wire.safe_name(f) else 400
-            if code != want:
-                raise Violation(f"seed={self.seed} play {name!r}: {code} want {want}")
+            self._file_play(name, raw)
         else:
-            code, _, _ = self.req("GET", "/sd/" + raw)
-            rel = wire.url_decode(name.encode()).split(b"?")[0]
-            wants = (400,) if not rel or not wire.safe_subpath(rel) else (200, 404)
-            if code not in wants:
-                raise Violation(f"seed={self.seed} sd {name!r}: {code} want {wants}")
+            self._file_sd_get(name, raw)
+
+    def _file_put(
+        self, rng: random.Random, raw: str, decoded: bytes, safe: bool
+    ) -> None:
+        payload = bytes(rng.getrandbits(8) for _ in range(rng.choice([0, 1, 7, 300])))
+        code, body, _ = self.req("PUT", "/api/files/" + raw, body=payload)
+        self.expect_name_verdict(code, body, safe, decoded, payload)
+
+    def _file_delete(self, name: str, raw: str, safe: bool) -> None:
+        code, body, _ = self.req("DELETE", "/api/files/" + raw)
+        if not safe and code != 400:
+            raise Violation(f"seed={self.seed} DELETE {name!r} unsafe but {code}")
+        if safe and code not in (200, 404):
+            raise Violation(f"seed={self.seed} DELETE {name!r} → {code} {body!r}")
+
+    def _file_play(self, name: str, raw: str) -> None:
+        target = b"/api/play?f=" + name.encode()
+        if wire.query_truncated(target):
+            code, _, _ = self.req("POST", "/api/play?f=" + raw)
+            if code != 414:
+                raise Violation(f"seed={self.seed} play {name!r}: {code} want 414")
+            return
+        f = wire.query_param(target, "f")
+        code, _, _ = self.req("POST", "/api/play?f=" + raw)
+        want = 200 if wire.safe_name(f) else 400
+        if code != want:
+            raise Violation(f"seed={self.seed} play {name!r}: {code} want {want}")
+
+    def _file_sd_get(self, name: str, raw: str) -> None:
+        code, _, _ = self.req("GET", "/sd/" + raw)
+        rel = wire.url_decode(name.encode()).split(b"?")[0]
+        wants = (400,) if not rel or not wire.safe_subpath(rel) else (200, 404)
+        if code not in wants:
+            raise Violation(f"seed={self.seed} sd {name!r}: {code} want {wants}")
 
     def expect_name_verdict(
         self, code: int, body: bytes, safe: bool, decoded: bytes, payload: bytes
@@ -234,34 +290,7 @@ class Fuzzer:
             val = b""
         else:
             val = wire.query_param(target.encode(), key)
-            if route == "/api/volume":
-                digits = bool(val) and len(val) <= 3 and val.isdigit()
-                want = (200,) if digits and int(val) <= 100 else (400,)
-            elif route == "/api/scene":
-                want = (400,) if not val else (200, 404)
-            elif route == "/api/light":
-                hex6 = len(val) == 6 and all(
-                    chr(b) in "0123456789abcdefABCDEF" for b in val
-                )
-                want = (200,) if hex6 or val in (b"show", b"off") else (400,)
-            elif route == "/api/pir":
-                a, c, s = (
-                    wire.query_param(target.encode(), k)
-                    for k in ("armed", "cooldown", "scene")
-                )
-                ok, _ = wire.pir_armed_ok(a)
-                # v5.60: a '|' in any field is 400 (the three ride to the
-                # main loop packed "a|c|s"), and a scene faces the same list
-                # /api/scene does — 404, or 503 before it is seeded.
-                fine = bool(
-                    (a or c or s)
-                    and ok
-                    and wire.pir_cooldown_ok(c)
-                    and not any(b"|" in x for x in (a, c, s))
-                )
-                want = ((200, 404, 503) if s else (200,)) if fine else (400,)
-            else:
-                want = (200,) if wire.safe_name(val) else (400,)
+            want = _query_want(route, val, target.encode())
         if code not in want:
             raise Violation(
                 f"seed={self.seed} POST {target!r} → {code} {body!r}, "
@@ -352,14 +381,18 @@ class Fuzzer:
 
     def run(self, iterations: int, threads: int = 4) -> None:
         self.threads = threads
-        errors: list[BaseException] = []
+        errors: list[Exception] = []
 
         def worker(tseed: int, n: int) -> None:
             rng = random.Random(tseed)
             try:
                 for _ in range(n):
                     self.step(rng)
-            except BaseException as e:
+            except Exception as e:
+                # Carried out, not re-raised here: a traceback on a worker's
+                # own stack is read by nobody, and run() raises it below on
+                # the thread that started the storm. Violation is an
+                # AssertionError, so Exception is the whole surface.
                 errors.append(e)
 
         per = max(1, iterations // threads)

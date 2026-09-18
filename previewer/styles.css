@@ -185,7 +185,6 @@
     color: var(--ink); font-size: 12.5px; font-family: var(--f-data);
   }
   .trk-add input:focus { outline: none; border-color: var(--accent); }
-  .trk-opts { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
   .trk-opts label {
     font-family: var(--f-data); font-size: 10px; letter-spacing: .09em;
     text-transform: uppercase; color: var(--muted);
@@ -447,7 +446,12 @@
   }
   .trk-opts-wrap > summary:hover { color: var(--ink-2); }
   .trk-opts-hint { text-transform: none; letter-spacing: 0; margin-left: 8px; }
-  .trk-opts { display: grid; gap: 10px; padding: 10px 0 2px; }
+  /* One rule, not two: the grid layout arrived later and the flex one above
+     the label rules was already dead except for these two declarations. */
+  .trk-opts {
+    display: grid; gap: 10px; padding: 10px 0 2px;
+    flex-wrap: wrap; margin-bottom: 10px;
+  }
   .trk-opts fieldset {
     border: 1px solid var(--line); border-radius: 4px; padding: 9px 12px 11px;
     display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin: 0;

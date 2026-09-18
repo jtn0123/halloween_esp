@@ -23,6 +23,24 @@ def net(name: str, body: str) -> None:
     A(f'<g class="net" data-net="{name}">{body}</g>')
 
 
+def _hops(px: float, x: float, y: float, hops: Sequence[float]) -> list[str]:
+    """The hop-over arcs on one horizontal run from `px` to `x`.
+
+    A crossing within 8 units of either end is skipped — an arc that close to
+    a corner reads as a kink rather than a hop. The hops are walked in the
+    direction of travel (hence `reverse`) because the path is drawn as it
+    goes, and `b` is that direction, so the semicircle always bulges up.
+    """
+    b = -1 if px > x else 1
+    d: list[str] = []
+    for hx in sorted(
+        [h for h in hops if min(px, x) + 8 < h < max(px, x) - 8], reverse=px > x
+    ):
+        d.append(f"L{hx - 7 * b} {y}")
+        d.append(f"A7 7 0 0 {1 if b > 0 else 0} {hx + 7 * b} {y}")
+    return d
+
+
 def wire(
     pts: Sequence[tuple[float, float]],
     cls: str,
@@ -36,13 +54,7 @@ def wire(
             continue
         px, py = pts[i - 1]
         if abs(py - y) < 0.5 and hops:
-            for hx in sorted(
-                [h for h in hops if min(px, x) + 8 < h < max(px, x) - 8],
-                reverse=px > x,
-            ):
-                b = -1 if px > x else 1
-                d.append(f"L{hx - 7 * b} {y}")
-                d.append(f"A7 7 0 0 {1 if b > 0 else 0} {hx + 7 * b} {y}")
+            d.extend(_hops(px, x, y, hops))
         d.append(f"L{x} {y}")
     return (
         f'<path class="w w--{cls}" d="{" ".join(d)}" fill="none" stroke-width="{width}" '

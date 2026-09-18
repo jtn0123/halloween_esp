@@ -146,12 +146,13 @@ export function initWaveform(deps: WaveformDeps): WaveformApi {
     // After an import has consumed START/LENGTH they are blank, and "set
     // from it" would be a lie (JB2-5c): say what puts them back.
     const stamped = !!st.trackId && trimOwner() === st.trackId;
+    const tail = stamped
+      ? "(START/LENGTH above are set from it)."
+      : "— START/LENGTH above are blank now; nudge a handle to set them from it again.";
     hint.textContent = partial
       ? "This selection is for listening and for placing the lights. The castle "
         + "plays the whole file — to keep only this part, press Re-import on the "
-        + "track's row " + (stamped
-          ? "(START/LENGTH above are set from it)."
-          : "— START/LENGTH above are blank now; nudge a handle to set them from it again.")
+        + "track's row " + tail
       : "";
   }
 

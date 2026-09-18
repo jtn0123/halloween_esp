@@ -175,7 +175,7 @@ export class WaveView {
   /** Hush/verse/chorus washes behind the wave, plus a solid strip up top. */
   private drawSections(): void {
     const segs = this.sections, d = this.data;
-    if (!segs || !segs.length || !d) return;
+    if (!segs?.length || !d) return;
     const g2 = this.g2, h = this.h - LANES - 2;
     // Hush stays unpainted — quiet reading as "nothing here" is correct.
     // Index 3 is real silence: a grey hatch-wash so a held pause is visibly

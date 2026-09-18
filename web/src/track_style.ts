@@ -94,10 +94,13 @@ export function styleFor(band: BandName, forExport = false): BandStyle {
 export function styleAsTs(): string {
   const num = (v: number): string => String(Math.round(v * 1000) / 1000);
   const col = (c: Rgbw): string => `[${c.map(num).join(", ")}]`;
+  /** A zone list as TypeScript source: the quotes are what makes it pastable. */
+  const quoted = (zs: readonly string[]): string =>
+    zs.map(z => `"${z}"`).join(", ");
   const lines = (Object.keys(BAND_STYLE) as BandName[]).map(b => {
     const s = styleFor(b, true);
     return `  ${b}: {\n`
-      + `    zones: [${s.zones.map(z => `"${z}"`).join(", ")}], `
+      + `    zones: [${quoted(s.zones)}], `
       + `alternate: ${s.alternate}, intensity: ${num(s.intensity)}, `
       + `decay: ${num(s.decay)}, ms: ${s.ms},\n`
       + `    colors: [${s.colors.map(col).join(", ")}],\n`
@@ -106,7 +109,7 @@ export function styleAsTs(): string {
       + (s.pixels ? `    pixels: "${s.pixels}",\n` : "")
       + (s.boostAt !== undefined
          ? `    boostAt: ${num(s.boostAt)}, boostTargets: `
-           + `[${(s.boostTargets ?? []).map(z => `"${z}"`).join(", ")}],\n` : "")
+           + `[${quoted(s.boostTargets ?? [])}],\n` : "")
       + `  },`;
   });
   return `export const BAND_STYLE = {\n${lines.join("\n")}\n};`;

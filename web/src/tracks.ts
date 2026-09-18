@@ -202,8 +202,8 @@ export function initTracks(deps: TracksDeps): TracksApi {
     })).join("") + (T.loaded ? cardRowsHtml(cardCtx()) : "");
     renderSyncButton(byId<HTMLButtonElement>("trkSync"), cardCtx());
     const n = T.tracks.length;
-    T.count.textContent = !T.loaded ? "loading library…"
-      : n === 0 ? "empty" : `${n} imported`;
+    if (!T.loaded) T.count.textContent = "loading library…";
+    else T.count.textContent = n === 0 ? "empty" : `${n} imported`;
     deps.onList?.(T.tracks);
   }
 

@@ -21,15 +21,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # Same override as import_track/manifest: the sandbox env names the library.
 
 
-def convert(src: Path, out: Path, o: dict[str, Any]) -> None:
-    """One ffmpeg pass: trim, filter, downmix, resample, encode."""
-    cmd = ["ffmpeg", "-v", "quiet", "-y"]
-    if o["start"]:
-        cmd += ["-ss", str(o["start"])]
-    cmd += ["-i", str(src)]
-    if o["take"]:
-        cmd += ["-t", str(o["take"])]
-
+def _filters(o: dict[str, Any]) -> list[str]:
+    """The -af chain: what the import options asked for, then the ceiling."""
     af = []
     if o["normalize"]:
         # EBU R128 to -16 LUFS. Scene `volume` still sets relative level; this
@@ -53,13 +46,16 @@ def convert(src: Path, out: Path, o: dict[str, Any]) -> None:
     #     normaliser, and its TP target is a goal rather than a guarantee — a
     #     real YouTube import still came back at +0.18 dBFS with it enabled.
     #
-    # 0.89 matches TARGET_PEAK in render_audio.py, so an imported track and a
+    # 0.89 matches TARGET_PEAK in render_score.py, so an imported track and a
     # synthesised scene arrive at the mixer with the same headroom.
     af.append("alimiter=limit=0.89:level=disabled")
+    return af
 
-    cmd += ["-af", ",".join(af)]
 
-    fmt = o.get("format", "mp3")
+def _codec(fmt: str, o: dict[str, Any]) -> list[str]:
+    """Downmix, sample rate and codec for one container. WAV and FLAC have no
+    bitrate to set — passing one makes ffmpeg complain rather than quietly
+    ignore it."""
     rate = o["sample_rate"]
     if fmt == "opus" and rate not in (8000, 12000, 16000, 24000, 48000):
         # Opus only encodes at those rates; anything else fails outright
@@ -67,30 +63,19 @@ def convert(src: Path, out: Path, o: dict[str, Any]) -> None:
         # spot from 44.1k, and the device resamples on playback anyway.
         print(f"  note: opus cannot encode at {rate} Hz — using 48000")
         rate = 48000
-    cmd += ["-ac", str(o["channels"]), "-ar", str(rate)]
-
-    # Codec per container. WAV and FLAC have no bitrate to set — passing one
-    # makes ffmpeg complain rather than quietly ignore it.
+    args = ["-ac", str(o["channels"]), "-ar", str(rate)]
     if fmt == "wav":
-        cmd += ["-c:a", "pcm_s16le"]
-    elif fmt == "flac":
-        cmd += ["-c:a", "flac"]
-    elif fmt == "opus":
-        cmd += ["-c:a", "libopus", "-b:a", f"{o['bitrate']}k"]
-    else:
-        cmd += ["-b:a", f"{o['bitrate']}k"]
+        return [*args, "-c:a", "pcm_s16le"]
+    if fmt == "flac":
+        return [*args, "-c:a", "flac"]
+    if fmt == "opus":
+        return [*args, "-c:a", "libopus", "-b:a", f"{o['bitrate']}k"]
+    return [*args, "-b:a", f"{o['bitrate']}k"]
 
-    # Encode BESIDE the destination, then rename: ffmpeg opens its output
-    # before it knows the input is garbage, so a failed import used to leave
-    # a 0-byte track that the desk then offered to send to the castle — and
-    # a failed re-import truncated the good copy it was meant to replace.
-    part = out.with_name(out.name + ".part")
-    # ffmpeg picks the muxer from the extension, and ".part" is not one.
-    cmd += [
-        "-f",
-        {"wav": "wav", "flac": "flac", "opus": "opus"}.get(fmt, "mp3"),
-        str(part),
-    ]
+
+def _encode(cmd: list[str], src: Path, out: Path, part: Path) -> None:
+    """Run the pass, then move the part file over the destination — the last
+    step, so a failure leaves whatever was already there untouched."""
     try:
         r = subprocess.run(
             cmd, capture_output=True, text=True, check=False, timeout=300
@@ -110,6 +95,32 @@ def convert(src: Path, out: Path, o: dict[str, Any]) -> None:
             f"({tail[-1] if tail else f'exit {r.returncode}'})"
         )
     os.replace(part, out)
+
+
+def convert(src: Path, out: Path, o: dict[str, Any]) -> None:
+    """One ffmpeg pass: trim, filter, downmix, resample, encode."""
+    cmd = ["ffmpeg", "-v", "quiet", "-y"]
+    if o["start"]:
+        cmd += ["-ss", str(o["start"])]
+    cmd += ["-i", str(src)]
+    if o["take"]:
+        cmd += ["-t", str(o["take"])]
+    cmd += ["-af", ",".join(_filters(o))]
+    fmt = o.get("format", "mp3")
+    cmd += _codec(fmt, o)
+
+    # Encode BESIDE the destination, then rename: ffmpeg opens its output
+    # before it knows the input is garbage, so a failed import used to leave
+    # a 0-byte track that the desk then offered to send to the castle — and
+    # a failed re-import truncated the good copy it was meant to replace.
+    part = out.with_name(out.name + ".part")
+    # ffmpeg picks the muxer from the extension, and ".part" is not one.
+    cmd += [
+        "-f",
+        {"wav": "wav", "flac": "flac", "opus": "opus"}.get(fmt, "mp3"),
+        str(part),
+    ]
+    _encode(cmd, src, out, part)
 
 
 def probe_duration(src: Path) -> float | None:

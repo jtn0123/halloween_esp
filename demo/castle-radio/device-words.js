@@ -46,9 +46,32 @@
     return [`link ${ms(h.rtt_ms)}`, `worst ${ms(h.worst_ms)}`, `missed ${missed}`,
       `up ${h.uptime || '—'}`, `firmware ${h.version || '—'}`].join(' · ');
   }
-  const chipStatus = (online, playing) => (online ? (playing ? 'playing' : 'online') : 'offline');
-  const targetStatus = (online, playing) => (online ? (playing ? 'playing' : 'ready') : 'offline');
+  // Written out rather than nested, in the order the eye reads them: a chip
+  // that says nothing is offline, and the idle word is the only difference
+  // between the two (the chip is "online", the target is "ready").
+  const chipStatus = (online, playing) => {
+    if (!online) {return 'offline';}
+    return playing ? 'playing' : 'online';
+  };
+  const targetStatus = (online, playing) => {
+    if (!online) {return 'offline';}
+    return playing ? 'playing' : 'ready';
+  };
   const clockLabel = caps => (caps.position ? 'castle clock' : 'estimated clock');
+  // The device panel's "ready" line. A castle still loading its scene table
+  // has no count to give yet, so it says what it is doing instead of "0".
+  const readyText = (online, s) => {
+    if (!online) {return 'Connection needed';}
+    if (booting(s)) {return 'Castle is starting up';}
+    return `${sceneCount(s)} installed shows`;
+  };
+  // The small transport button: [glyph, the label a screen reader hears].
+  // One function for both so the two can never disagree about what is
+  // happening — they were a pair of nested ternaries that had to be read twice.
+  const toggleWords = (playing, starting) => {
+    if (starting) {return ['…', 'Starting on castle'];}
+    return playing ? ['■', 'Stop castle'] : ['▶', 'Play on castle'];
+  };
   const playLabel = (busy, playing, starting) => {
     if (busy) {return 'Sending\u2026';}
     if (starting) {return '\u2026 Starting on castle';}
@@ -64,5 +87,6 @@
     return 'Following castle \u00b7 estimated timing \u00b7 seeking unavailable';
   };
   window.castleWords = {textOf, versionOf, uptimeOf, sceneCount, booting, friendly, upFor, framesText, healthLine,
-    chipStatus, targetStatus, clockLabel, playLabel, queueDescription, splitStateText};
+    chipStatus, targetStatus, clockLabel, readyText, toggleWords, playLabel, queueDescription,
+    splitStateText};
 })();

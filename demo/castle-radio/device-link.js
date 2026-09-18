@@ -5,8 +5,8 @@
   const target = $('output-target');
   const chip = $('castle-chip');
   const words = window.castleWords;
-  const {booting, chipStatus, clockLabel, framesText, friendly, playLabel, queueDescription, sceneCount,
-    splitStateText, targetStatus, textOf, upFor, uptimeOf, versionOf} = words;
+  const {booting, chipStatus, clockLabel, framesText, friendly, playLabel, queueDescription, readyText,
+    splitStateText, targetStatus, textOf, toggleWords, upFor, uptimeOf, versionOf} = words;
   let data = null, state = null, lightShow = null, clock = null, caps = {}, received = 0, error = '';
   let busy = false, inflight = null, timer = null, epoch = 0, polled = -Infinity, lastError = '';
   let wasPlaying = false, userStopped = true, volumeTouched = 0, pirTouched = 0, advancedFor = '';
@@ -153,9 +153,7 @@
     $('live-connection').textContent = online ? 'Connected' : 'Unavailable';
     $('live-health').textContent = healthText(online);
     $('live-destination').textContent = onCastle() ? 'Porch castle' : 'This computer';
-    $('live-ready').textContent = online
-      ? (booting(state) ? 'Castle is starting up' : `${sceneCount(state)} installed shows`)
-      : 'Connection needed';
+    $('live-ready').textContent = readyText(online, state);
   }
   function currentDetail(online, playing, name) {
     if (busy) {return 'Sending command to castle…';}
@@ -175,8 +173,9 @@
     const label = playLabel(busy, playing, starting);
     $('preview-toggle').textContent = label;
     $('hero-play').textContent = label;
-    $('toggle').textContent = starting ? '…' : (playing ? '■' : '▶');
-    $('toggle').setAttribute('aria-label', starting ? 'Starting on castle' : (playing ? 'Stop castle' : 'Play on castle'));
+    const [glyph, hint] = toggleWords(playing, starting);
+    $('toggle').textContent = glyph;
+    $('toggle').setAttribute('aria-label', hint);
     $('queue-description').textContent = queueDescription(caps, shuffle);
     $('current-detail').textContent = currentDetail(online, playing, name);
     // Nothing to press while the command is in the air: the transport waits
@@ -256,6 +255,22 @@
     if (want) {window.castleDirect?.holdScreen?.('queue');}
     else {window.castleDirect?.releaseScreen?.('queue');}
   }
+  // The castle is playing: the clock is live, and the watch runs. A song
+  // installed as a looping scene never ends on the castle either, so the
+  // castle's clock is also what says the song itself is over.
+  function followPlaying() {
+    wasPlaying = true; lastLiveAt = performance.now(); stopped = false; blacked = false;
+    watchStart(clock.position_s + (performance.now() - received) / 1000);
+    const scene = remoteScene();
+    if (!(scene?.loop && tracks[current].kind === 'song' && caps.position && !state.settling && (queue.length || repeat))) {return;}
+    const elapsed = clock.position_s + (performance.now() - received) / 1000;
+    // The key counts whole loop cycles, not the live clock: a key built
+    // from position_s changed on every poll and advanced the queue once a
+    // second, and "past the threshold this cycle" still fires when a
+    // hidden tab polls every 4 s and lands well after the 0.5 s window.
+    const cycle = Math.floor((elapsed + 0.5) / (scene.dur / 1000));
+    if (cycle >= 1 && advancedFor !== `${state.scene}@${cycle}`) { advancedFor = `${state.scene}@${cycle}`; advance(); }
+  }
   function follow() {
     const playing = isPlaying(state);
     const known = remoteTrack();
@@ -266,23 +281,7 @@
       window.castlePlayer.play().catch(e => toast(`Could not restart the song · ${e.message}`));
       return;
     }
-    if (playing) {
-      wasPlaying = true; lastLiveAt = performance.now(); stopped = false; blacked = false;
-      watchStart(clock.position_s + (performance.now() - received) / 1000);
-      // A song installed as a looping scene never ends on the castle; the
-      // castle's clock says when the song itself is over, and the queue moves.
-      const scene = remoteScene();
-      if (scene?.loop && tracks[current].kind === 'song' && caps.position && !state.settling && (queue.length || repeat)) {
-        const elapsed = clock.position_s + (performance.now() - received) / 1000;
-        // The key counts whole loop cycles, not the live clock: a key built
-        // from position_s changed on every poll and advanced the queue once a
-        // second, and "past the threshold this cycle" still fires when a
-        // hidden tab polls every 4 s and lands well after the 0.5 s window.
-        const cycle = Math.floor((elapsed + 0.5) / (scene.dur / 1000));
-        if (cycle >= 1 && advancedFor !== `${state.scene}@${cycle}`) { advancedFor = `${state.scene}@${cycle}`; advance(); }
-      }
-      return;
-    }
+    if (playing) { followPlaying(); return; }
     if (!wasPlaying || state.settling) { stopped = true; return; }
     // Two polls of silence was 2 s in a visible tab and 8 s in a hidden one
     // (20 s for a looping scene, which re-fires its audio every 30 s). The

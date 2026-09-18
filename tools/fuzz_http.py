@@ -49,29 +49,11 @@ def raw_request(
     hdrs.update(headers or {})  # the caller's lies win
     head = f"{method} {target} HTTP/1.1\r\n".encode("latin-1")
     head += "".join(f"{k}: {v}\r\n" for k, v in hdrs.items()).encode() + b"\r\n"
-    s = _connect(host, port, timeout)
-    data = b""
-    try:
-        try:
-            s.sendall(head + body[: int(len(body) * send_fraction)])
-            if not hang:
-                s.shutdown(socket.SHUT_WR)
-        except OSError:
-            pass  # the server may reply-and-close before the body is in
-        timed_out = False
-        while True:
-            try:
-                chunk = s.recv(65536)
-            except TimeoutError:
-                timed_out = True
-                break
-            except (ConnectionResetError, BrokenPipeError):
-                break
-            if not chunk:
-                break
-            data += chunk
-    finally:
-        s.close()
+    data, timed_out = _exchange(
+        _connect(host, port, timeout),
+        head + body[: int(len(body) * send_fraction)],
+        hang,
+    )
     if not data:
         # RST: the server closed with unread request bytes in its buffer
         # (a reply sent before the body was consumed). Code 0 = "reset";
@@ -95,6 +77,33 @@ def raw_request(
     if timed_out and (not sep or short):
         raise SlowRead(f"{method} {target!r}: read timed out after {len(data)} bytes")
     return code, payload, hdr
+
+
+def _exchange(s: socket.socket, out: bytes, hang: bool) -> tuple[bytes, bool]:
+    """Send `out`, then read until the server is done with us. Returns what
+    came back and whether OUR read timer fired mid-answer — the caller's
+    clock running out is not the server's verdict."""
+    data = b""
+    try:
+        try:
+            s.sendall(out)
+            if not hang:
+                s.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass  # the server may reply-and-close before the body is in
+        while True:
+            try:
+                chunk = s.recv(65536)
+            except TimeoutError:
+                return data, True
+            except (ConnectionResetError, BrokenPipeError):
+                break
+            if not chunk:
+                break
+            data += chunk
+    finally:
+        s.close()
+    return data, False
 
 
 def _connect(host: str, port: int, timeout: float) -> socket.socket:

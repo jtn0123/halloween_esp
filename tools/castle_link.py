@@ -225,6 +225,31 @@ def known_api(path: str) -> bool:
     return p in KNOWN_API or p.startswith(KNOWN_PREFIX)
 
 
+#: The two bodies forward() invents rather than relays, built once.
+_UNKNOWN_ROUTE = json.dumps(
+    {"error": "unknown castle route", "known": sorted(KNOWN_API + KNOWN_PREFIX)}
+).encode()
+_STALLED = json.dumps(
+    {
+        "error": "castle took the request but did not answer in time — it may "
+        "have landed; check before sending again"
+    }
+).encode()
+
+
+def _answered(host: str, method: str, code: int) -> None:
+    """What a real answer teaches the cache. An answer of ANY kind proves the
+    castle is up: a probe that failed while it was rebooting must not keep
+    reporting it dead for 3 s after a click it plainly served (J2-4). And the
+    desk re-polls ~1 s after a click, so a status cached BEFORE a non-GET
+    would hand it the old world (J1-5)."""
+    _cache.pop("down", None)
+    if 200 <= code < 300:
+        _cache["up"] = (time.monotonic(), {"host": host})
+        if method != "GET":
+            _cache.pop("status", None)
+
+
 def forward(
     method: str, path_and_query: str, body: bytes = b""
 ) -> tuple[int, bytes, str]:
@@ -238,16 +263,7 @@ def forward(
     fallback address of the same castle is the pass-1 J1-8 finding).
     """
     if not known_api(path_and_query):
-        return (
-            404,
-            json.dumps(
-                {
-                    "error": "unknown castle route",
-                    "known": sorted(KNOWN_API + KNOWN_PREFIX),
-                }
-            ).encode(),
-            JSON_MIME,
-        )
+        return 404, _UNKNOWN_ROUTE, JSON_MIME
     hosts = castle_hosts()
     if not hosts:
         return 502, b'{"error": "no castle configured"}', JSON_MIME
@@ -262,28 +278,9 @@ def forward(
         except Stalled:
             if method == "GET":
                 continue  # nothing changed anywhere; the next host may do
-            return (
-                504,
-                json.dumps(
-                    {
-                        "error": "castle took the request but "
-                        "did not answer in time — it may have landed; check "
-                        "before sending again"
-                    }
-                ).encode(),
-                JSON_MIME,
-            )
-        # The castle ANSWERED — its verdict stands, error or not — and an
-        # answer of ANY kind proves it is up: a probe that failed while it
-        # was rebooting must not keep reporting it dead for 3 s after a
-        # click it plainly served (J2-4).
-        _cache.pop("down", None)
-        if 200 <= code < 300:
-            _cache["up"] = (time.monotonic(), {"host": host})
-            if method != "GET":
-                # The desk re-polls ~1 s after a click; a status cached
-                # BEFORE the click would hand it the old world (J1-5).
-                _cache.pop("status", None)
+            return 504, _STALLED, JSON_MIME
+        # The castle ANSWERED — its verdict stands, error or not.
+        _answered(host, method, code)
         return code, out, ctype
     if _forward_native(hosts[0], method, path_and_query):
         _cache.pop("status", None)

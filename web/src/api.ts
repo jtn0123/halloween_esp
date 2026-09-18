@@ -46,7 +46,7 @@ export function why(r: { reason?: string; error?: string; log?: string }): strin
   if (r.reason) return r.reason;
   if (r.error) return r.error;
   const lines = (r.log || "").split("\n").map(l => l.trim()).filter(Boolean);
-  return lines[lines.length - 1] ?? "no reason given";
+  return lines.at(-1) ?? "no reason given";
 }
 
 export interface WaveformResponse {
@@ -158,8 +158,9 @@ export const api = {
    *  under the panel) that deserves its own sentence, not a red error. */
   waveform: async (id: string, query = ""):
       Promise<{ status: number; body: WaveformResponse | null }> => {
+    const qs = query ? `?${query}` : "";
     const res = await fetch(
-      `/studio/waveform/${encodeURIComponent(id)}${query ? `?${query}` : ""}`,
+      `/studio/waveform/${encodeURIComponent(id)}${qs}`,
       { signal: AbortSignal.timeout(ENCODE) });
     return {
       status: res.status,

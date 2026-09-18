@@ -179,9 +179,13 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
 .stems-seg button { border-radius: 0; }
 .stems-seg button:first-child { border-radius: 6px 0 0 6px; }
 .stems-seg button:last-child { border-radius: 0 6px 6px 0; }
+/* The panel colour on the accent, the way .btn--go does it: --accent is the
+   candle amber, and white text on amber is 2.1:1 — unreadable, and it was
+   only ever written as #fff because this rule predates the panel styles
+   joining the theme tokens (the #7a5cff fallback was the hardcoded purple). */
 .stems-seg button[aria-pressed="true"] {
-  background: var(--accent, #7a5cff);
-  color: #fff;
+  background: var(--accent, #ff9d3c);
+  color: var(--panel, #131725);
 }
 .stems-note { margin: 6px 0; font-size: 12px; color: var(--ink-2, #a9a4bd); }
 .stems-note.err { color: var(--alarm); }
@@ -374,8 +378,7 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
 .dp__badge--scene { color: var(--spirit); border-color: var(--spirit); }
 .dp__badge--tone { color: var(--cool); border-color: var(--cool); }
 .dp__file-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dp__foot { border-top: 1px solid var(--line-2); }
-.dp__foot { padding: .4rem .8rem; }
+.dp__foot { border-top: 1px solid var(--line-2); padding: .4rem .8rem; }
 .dp__cool { width: 3.5rem; }
 /* The scene select took the whole row when the panel got wider. */
 #dpPirScene { max-width: 9rem; }

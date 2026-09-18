@@ -32,16 +32,19 @@ ROOT = Path(__file__).resolve().parent.parent
 LOCK = ROOT / "requirements.lock"
 SOURCES = ("requirements.txt", "requirements-dev.txt")
 
+#: The marker every one of those pins carries, named once so a fifth pyobjc
+#: wheel cannot arrive with a subtly different spelling of it.
+DARWIN_ONLY = 'sys_platform == "darwin"'
 #: Pins that only exist — and only CAN exist — on macOS. They arrive as
 #: transitive deps of bleak (esphome's BLE half) and pip freeze prints them
 #: bare, so a Linux `pip install -r requirements.lock` would fail on a wheel
 #: that has no Linux build. The marker is the whole reason this file exists
 #: rather than a one-line freeze.
 PLATFORM_MARKERS = {
-    "pyobjc-core": 'sys_platform == "darwin"',
-    "pyobjc-framework-cocoa": 'sys_platform == "darwin"',
-    "pyobjc-framework-corebluetooth": 'sys_platform == "darwin"',
-    "pyobjc-framework-libdispatch": 'sys_platform == "darwin"',
+    "pyobjc-core": DARWIN_ONLY,
+    "pyobjc-framework-cocoa": DARWIN_ONLY,
+    "pyobjc-framework-corebluetooth": DARWIN_ONLY,
+    "pyobjc-framework-libdispatch": DARWIN_ONLY,
 }
 
 #: Pinned here but named in no requirements file, because nothing IMPORTS

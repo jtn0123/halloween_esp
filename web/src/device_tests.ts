@@ -24,7 +24,10 @@ const STRIPS = ZONE_ORDER;
 
 /** Brightness for the strip test and the colour picker; survives a
  *  re-render, not a reload. 100 % on a tower is a lot of LED in a dark room. */
-export let testPct = 100;
+let pct = 100;
+/** …and read through a function: an exported `let` lets any importer reassign
+ *  the bench's brightness from outside, which is how it drifts. */
+export const testPct = (): number => pct;
 const PCTS = [25, 50, 75, 100] as const;
 
 /** The colour buttons on every strip row: the spec to send, the label, and
@@ -104,7 +107,7 @@ export function lightsMarkup(): string {
     row("", "all", "Every strip at once: the quick 'is anything alive' pass") +
     `</div>` +
     `<div class="dp__row dp__row--tight">` +
-    `<small class="dp__muted">brightness</small>${pcts("pct", PCTS, testPct)}` +
+    `<small class="dp__muted">brightness</small>${pcts("pct", PCTS, pct)}` +
     `</div>` +
     `<div class="dp__row dp__row--tight"><small class="dp__muted">patterns</small>` +
     `<span class="dp__pills">` +
@@ -155,7 +158,7 @@ async function runSequence(id: string): Promise<void> {
     : [10, 30, 55, 80, 100].map((p) => [`white@${p}`, 900] as const);
   for (const [spec, hold] of steps) {
     if (seqToken !== mine) return;
-    const arg = spec.includes("@") ? spec : `${spec}@${testPct}`;
+    const arg = spec.includes("@") ? spec : `${spec}@${pct}`;
     if (!await castleAct(`/api/light?c=${arg}`, `test ${arg}`, { quiet: true })) return;
     await beat(hold);
   }
@@ -174,13 +177,13 @@ export function wireTests(body: HTMLElement): void {
     b.addEventListener("click", () => {
       seqToken++;                                  // a click supersedes a run
       const spec = b.dataset.zl!.replace(/^:/, "");   // ":bars" = all strips
-      const arg = spec.endsWith("off") ? spec : `${spec}@${testPct}`;
+      const arg = spec.endsWith("off") ? spec : `${spec}@${pct}`;
       void castleAct(`/api/light?c=${arg}`, `strip ${arg}`);
     }));
   body.querySelectorAll<HTMLButtonElement>("[data-seq]").forEach((b) =>
     b.addEventListener("click", () => void runSequence(b.dataset.seq!)));
   body.querySelectorAll<HTMLButtonElement>("[data-pct]").forEach((b) =>
-    b.addEventListener("click", () => { testPct = Number(b.dataset.pct); press("pct", b); }));
+    b.addEventListener("click", () => { pct = Number(b.dataset.pct); press("pct", b); }));
 
   body.querySelectorAll<HTMLButtonElement>("[data-tpct]").forEach((b) =>
     b.addEventListener("click", () => { tonePct = Number(b.dataset.tpct); press("tpct", b); }));

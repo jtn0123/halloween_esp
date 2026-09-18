@@ -110,6 +110,35 @@ export function capacityHtml(bitrate: string, channels: string,
     + `on the card: <span class="ok">any length (streams)</span></span>`;
 }
 
+/** How much is taken, and from where — the offset is left out when the take
+ *  starts at the top, because "from 0:00" is noise in a one-line summary. */
+function trimBit(o: ImportOpts): string {
+  const from = o.start && o.start !== "0:00" ? ` from ${o.start}` : "";
+  return `${o.take}s${from}`;
+}
+
+/**
+ * The fade bit, or "" when neither end ramps.
+ *
+ * Fades change what you hear at the seam of a loop, so they belong in a
+ * summary whose job is to say what the import will do.
+ */
+function fadeBit(o: ImportOpts): string {
+  const fi = +o.fade_in, fo = +o.fade_out;
+  const head = fi > 0 ? `${fi}s in` : "";
+  const tail = fo > 0 ? `${fo}s out` : "";
+  if (!head && !tail) return "";
+  const sep = head && tail ? "/" : "";
+  return `fade ${head}${sep}${tail}`;
+}
+
+/** The container, with the bitrate when the container has one. */
+function formatBit(o: ImportOpts): string {
+  const fmt = (o.format || "mp3").toLowerCase();
+  const name = fmt.toUpperCase();
+  return LOSSLESS.includes(fmt) ? name : `${name} ${clampKbps(o.bitrate)}k`;
+}
+
 /**
  * The one-line summary on the collapsed Options panel.
  *
@@ -118,22 +147,12 @@ export function capacityHtml(bitrate: string, channels: string,
  */
 export function optsHint(o: ImportOpts): string {
   const bits: string[] = [];
-  if (o.take) {
-    bits.push(`${o.take}s${o.start && o.start !== "0:00" ? ` from ${o.start}` : ""}`);
-  }
-  const fmt = (o.format || "mp3").toLowerCase();
-  bits.push(LOSSLESS.includes(fmt)
-    ? fmt.toUpperCase()
-    : `${fmt.toUpperCase()} ${clampKbps(o.bitrate)}k`);
+  if (o.take) bits.push(trimBit(o));
+  bits.push(formatBit(o));
   if (channelsOf(o.channels) === 2) bits.push("stereo");
   if (o.normalize) bits.push("loudness matched");
-  // Fades change what you hear at the seam of a loop, so they belong in a
-  // summary whose job is to say what the import will do.
-  const fi = +o.fade_in, fo = +o.fade_out;
-  if (fi > 0 || fo > 0) {
-    bits.push(`fade ${fi > 0 ? `${fi}s in` : ""}${fi > 0 && fo > 0 ? "/" : ""}`
-            + `${fo > 0 ? `${fo}s out` : ""}`);
-  }
+  const fade = fadeBit(o);
+  if (fade) bits.push(fade);
   return bits.length ? `— ${bits.join(", ")}` : "";
 }
 
@@ -240,7 +259,7 @@ export function fillOptsFrom(t: TrackInfo): void {
   // trkRate is exempt: its default option's value IS "".
   for (const [id, dflt] of [["trkCh", "2"], ["trkFormat", "mp3"]] as const) {
     const sel = byId<HTMLSelectElement>(id);
-    if (sel && sel.value === "") set(id, dflt);
+    if (sel?.value === "") set(id, dflt);
   }
 }
 

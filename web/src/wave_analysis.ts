@@ -52,7 +52,10 @@ export function toWave(id: string, body: unknown): WaveData | string {
   // genuinely cannot survive being wrong. The rest degrades quietly.
   const b = body as Partial<WaveData> | null;
   const peaks = b?.peaks, dur = b?.duration;
-  if (!Array.isArray(peaks) || typeof dur !== "number" || !(dur > 0))
+  // NaN is spelled out rather than left to a negated comparison: a duration
+  // that came back as NaN must be refused, and `dur <= 0` alone lets it past.
+  if (!Array.isArray(peaks) || typeof dur !== "number"
+      || Number.isNaN(dur) || dur <= 0)
     return `Analysis for “${id}” came back without usable peaks.`;
   return { id, duration: dur, peaks, onsets: b?.onsets ?? {},
            ...(b?.env ? { env: b.env } : {}) };

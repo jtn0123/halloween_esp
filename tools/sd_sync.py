@@ -46,6 +46,7 @@ from published import Published
 
 ROOT = Path(__file__).resolve().parent.parent
 SCENES_API = "/api/scenes"  # where the card's scenes/ directory is PUT
+FILES_API = "/api/files"  # and the card ROOT, which the listing reads too
 
 
 def api(
@@ -57,7 +58,7 @@ def api(
 
 
 def listing(ip: str) -> list[dict]:
-    return list(json.loads(api(ip, "GET", "/api/files")))
+    return list(json.loads(api(ip, "GET", FILES_API)))
 
 
 def upload(ip: str, route: str, name: str, data: bytes, timeout: float = 600) -> None:
@@ -146,7 +147,7 @@ def cmd_push(ip: str, args: list[str]) -> int:
         if not src.exists():
             print(f"  missing: {src}")
             return 1
-        upload(ip, "/api/files", src.name, src.read_bytes())
+        upload(ip, FILES_API, src.name, src.read_bytes())
     print("\ncard now holds:")
     return cmd_ls(ip)
 
@@ -275,7 +276,7 @@ def cmd_cues(ip: str) -> int:
         if have.get(src.name) == len(data) and _card_bytes_match(ip, src.name, data):
             print(f"  {src.name} unchanged, skipped")
             continue
-        upload(ip, "/api/files", src.name, data)
+        upload(ip, FILES_API, src.name, data)
         sent += 1
     print(f"  {len(files)} cue files, {sent} sent")
     return 0
@@ -288,7 +289,7 @@ def cmd_tones(ip: str) -> int:
     if not files:
         raise SystemExit("no audio/test/test_*.mp3 — run `make audio` first")
     for src in files:
-        upload(ip, "/api/files", src.name, src.read_bytes())
+        upload(ip, FILES_API, src.name, src.read_bytes())
     print(f"  {len(files)} test tones in /sd/ — the desk's speaker test is live")
     return 0
 

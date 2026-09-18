@@ -34,12 +34,12 @@ const HELPERS = new Set(["desk_harness.ts"]);
 
 /** The `test/<name>.ts` inputs an esbuild invocation compiles. */
 function bundled(script) {
-  return [...script.matchAll(/test\/([A-Za-z0-9_]+)\.ts/g)].map((m) => m[1]);
+  return [...script.matchAll(/test\/(\w+)\.ts/g)].map((m) => m[1]);
 }
 
 /** The `dist/<name>.mjs` bundles a script then executes with node. */
 function executed(script) {
-  return [...script.matchAll(/node dist\/([A-Za-z0-9_]+)\.mjs/g)].map((m) => m[1]);
+  return [...script.matchAll(/node dist\/(\w+)\.mjs/g)].map((m) => m[1]);
 }
 
 function dupes(names) {

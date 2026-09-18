@@ -154,7 +154,10 @@ export function createStyleLab(onStyle: () => void): StyleLab {
     const tweaks: SavedLab["tweaks"] = {};
     for (const k of knobRefs) {
       const v = +k.input.value;
-      if (v !== 1) (tweaks[k.band] ??= { intensity: 1, decay: 1 })[k.key] = v;
+      if (v === 1) continue;           // a knob at rest saves nothing
+      const band = tweaks[k.band] ?? { intensity: 1, decay: 1 };
+      band[k.key] = v;
+      tweaks[k.band] = band;
     }
     const flavors: Flavors = {
       drift: !!flavBoxes[0]?.checked,

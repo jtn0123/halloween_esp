@@ -33,8 +33,10 @@ import analyze
 import build_paths as bp
 import core_bins
 import manifest as mf
+import render_score
 import render_stamp
 import synth
+from render_score import TARGET_PEAK as TARGET_PEAK
 
 ROOT = Path(__file__).resolve().parent.parent
 # Both redirectable (build_paths.py): a sandboxed studio renders beside its
@@ -49,9 +51,6 @@ def card_dir() -> Path:
     (tests, a sandboxed studio) carries the card copies with it — a fixed
     path here once let a test's stale-sweep delete the real render."""
     return OUT / "card"
-
-
-TARGET_PEAK = 0.89  # leaves headroom for the MP3 encoder's overshoot
 
 
 def write_wav(path: Path, x: np.ndarray, sr: int) -> None:
@@ -188,55 +187,8 @@ def render_scene_py(scene: dict, cfg: dict) -> tuple[np.ndarray, dict[str, list]
                 if h[0] < dur - 0.1
             )
 
-    for ev in scene.get("score") or []:
-        name = ev["synth"]
-        fn = synth.SYNTHS.get(name)
-        if fn is None:
-            raise SystemExit(f"scene {scene['id']}: unknown synth {name!r}")
-        res = fn(rng, dur=ev["dur"]) if "dur" in ev else fn(rng)
-        sig, raw_marks = res if isinstance(res, tuple) else (res, [])
-        # A synth may report bare times or (time, velocity) pairs.
-        marks: list[tuple[float, float]] = [
-            m if isinstance(m, tuple) else (m, 1.0) for m in raw_marks
-        ]
-        if "take" in ev:  # trim a long piece to fit
-            sig = sig[: int(ev["take"] * sr)]
-            fade = min(len(sig), int(0.4 * sr))
-            if fade:
-                sig[-fade:] *= np.linspace(1.0, 0.0, fade)
-            marks = [(m, v) for m, v in marks if m < ev["take"]]
-        synth._place(buf, sig * float(ev.get("gain", 1.0)), ev["t"])
-        markers.setdefault(name, []).extend(
-            [int((ev["t"] + m) * 1000), round(v, 3)]
-            for m, v in marks
-            if ev["t"] + m < dur - 0.1
-        )
-
-    # Imported tracks arrive already produced — adding the stone hall on top
-    # of someone else's reverb just makes mud. Scenes can override either way.
-    wet = float(scene.get("reverb", 0.0 if track else 0.42))
-    buf = synth.apply_reverb(buf, wet=wet, rng=rng)
-
-    if scene.get("loop"):
-        # Crossfade the tail into the head so the loop point is inaudible.
-        xf = min(int(0.6 * sr), len(buf) // 4)
-        if xf > 0:
-            head = buf[:xf].copy()
-            ramp = np.linspace(0.0, 1.0, xf)
-            buf[-xf:] = buf[-xf:] * (1.0 - ramp) + head * ramp
-    else:
-        fade = min(int(0.25 * sr), len(buf))
-        buf[-fade:] *= np.linspace(1.0, 0.0, fade)
-
-    buf = synth.limit(buf)
-
-    # Normalise every scene to the same peak. Files should use the full 16-bit
-    # range — quiet material stored quietly just sits closer to the DAC noise
-    # floor for no benefit. Relative loudness between scenes is a playback
-    # concern, set per scene by `volume` in scenes.yaml.
-    peak = float(np.max(np.abs(buf)))
-    if peak > 1e-6:
-        buf *= TARGET_PEAK / peak
+    render_score.mix_score(scene, buf, rng, sr, dur, markers)
+    buf = render_score.shape_tail(scene, buf, rng, sr, bool(track))
     return buf, {k: sorted(v) for k, v in markers.items()}
 
 
@@ -383,6 +335,73 @@ def render_one(scene: dict, i: int, cfg: dict, keep_wav: bool) -> tuple[int, dic
     return size, markers
 
 
+def _sweep_stale(produced: set[str]) -> None:
+    """Delete the numbered scene files this render did not write.
+
+    A full render owns the numbered files: a scene deleted from the show
+    renumbers the rest, and 11_foo.mp3 beside 10_foo.mp3 in the same
+    directory would otherwise stay forever (judge B, JB2-5d).
+    """
+    for d in (OUT, card_dir()):
+        for stale in sorted(d.glob("[0-9][0-9]_*.mp3")):
+            if stale.name not in produced:
+                stale.unlink()
+                print(f"swept stale {stale.relative_to(OUT.parent)}")
+
+
+def _write_markers(all_markers: dict[str, dict[str, list]]) -> None:
+    """audio/markers.json, this render's markers over the last one's.
+
+    A scene whose song is not on this machine cannot recompute the
+    markers the song gives it (its onsets and beats), and the tracked
+    markers.json is the last analysis that could. Writing without them
+    is what CI did: gen_esphome then emitted no pulse cues for the two
+    real songs, and the weekly compile measured a show 13.6 KB of dram0
+    and 71 KB of flash smaller than the porch's — the 92% alarm judging
+    a smaller show (2026-09-06, the maps of run 34049090300). Keep the
+    previous entry's song-derived keys under this render's fresh ones.
+    """
+    try:
+        prev = json.loads((OUT / "markers.json").read_text())
+    except (OSError, ValueError):
+        prev = {}
+    for sid in NOT_HERE:
+        if sid in prev:
+            all_markers[sid] = {**prev[sid], **all_markers.get(sid, {})}
+    (OUT / "markers.json").write_text(json.dumps(all_markers, indent=0))
+    n = sum(len(m) for v in all_markers.values() for m in v.values())
+    print(f"beat markers: {n} across {len(all_markers)} scenes -> audio/markers.json")
+
+
+def _report_sizes(cfg: dict, total: int) -> None:
+    """What the show weighs, as two facts rather than a verdict.
+
+    These two lines said "N% of the ~2.9 MB single-app partition — fits"
+    until 2026-09-01, when the all-in-flash build they measured was retired
+    (PROJECT_NOTES §12.15). Nothing here goes into the image any more, so
+    there is no ceiling left to report a percentage of. The sizes are still
+    worth printing — one is what the desk page has to carry, the other is
+    what `make publish` uploads over porch WiFi — but as facts, not verdicts.
+
+    WHICH IS WHICH matters and used to be got wrong: when scenes.yaml asks
+    for a card_bitrate, audio/ is the desk's copy and audio/card/ is the
+    castle's. With one bitrate there is one render and it is both.
+    """
+    second = card_bitrate(cfg) != cfg["bitrate"]
+    print(
+        f"\ndesk  {cfg['bitrate']:>3} kbps  {total / 1024:>6.0f}K  "
+        + ("inlined into the cue desk page" if second else "-> the desk AND /sd/scenes")
+    )
+    # The card is 31 GB, so no budget line: the only ceiling the show has is
+    # decode load, and §12.13 measured 96 kbps clean on this chip.
+    if second:
+        ctotal = sum(f.stat().st_size for f in card_dir().glob("[0-9][0-9]_*.mp3"))
+        print(
+            f"card  {card_bitrate(cfg):>3} kbps  {ctotal / 1024:>6.0f}K  "
+            f"-> /sd/scenes (make publish) — streamed, no budget"
+        )
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--only", help="render just this scene id")
@@ -428,57 +447,9 @@ def main() -> int:
             f"song — it is not on this machine: {', '.join(NOT_HERE)}"
         )
     if not args.only:  # partial renders must not clobber other scenes' markers
-        # A full render owns the numbered files: a scene deleted from the
-        # show renumbers the rest, and 11_foo.mp3 beside 10_foo.mp3 in the
-        # same directory would otherwise stay forever (judge B, JB2-5d).
-        for d in (OUT, card_dir()):
-            for stale in sorted(d.glob("[0-9][0-9]_*.mp3")):
-                if stale.name not in produced:
-                    stale.unlink()
-                    print(f"swept stale {stale.relative_to(OUT.parent)}")
-        # A scene whose song is not on this machine cannot recompute the
-        # markers the song gives it (its onsets and beats), and the tracked
-        # markers.json is the last analysis that could. Writing without them
-        # is what CI did: gen_esphome then emitted no pulse cues for the two
-        # real songs, and the weekly compile measured a show 13.6 KB of dram0
-        # and 71 KB of flash smaller than the porch's — the 92% alarm judging
-        # a smaller show (2026-09-06, the maps of run 34049090300). Keep the
-        # previous entry's song-derived keys under this render's fresh ones.
-        try:
-            prev = json.loads((OUT / "markers.json").read_text())
-        except (OSError, ValueError):
-            prev = {}
-        for sid in NOT_HERE:
-            if sid in prev:
-                all_markers[sid] = {**prev[sid], **all_markers.get(sid, {})}
-        (OUT / "markers.json").write_text(json.dumps(all_markers, indent=0))
-        n = sum(len(m) for v in all_markers.values() for m in v.values())
-        print(
-            f"beat markers: {n} across {len(all_markers)} scenes -> audio/markers.json"
-        )
-    # These two lines said "N% of the ~2.9 MB single-app partition — fits"
-    # until 2026-09-01, when the all-in-flash build they measured was retired
-    # (PROJECT_NOTES §12.15). Nothing here goes into the image any more, so
-    # there is no ceiling left to report a percentage of. The sizes are still
-    # worth printing — one is what the desk page has to carry, the other is
-    # what `make publish` uploads over porch WiFi — but as facts, not verdicts.
-    #
-    # WHICH IS WHICH matters and used to be got wrong: when scenes.yaml asks
-    # for a card_bitrate, audio/ is the desk's copy and audio/card/ is the
-    # castle's. With one bitrate there is one render and it is both.
-    second = card_bitrate(cfg) != cfg["bitrate"]
-    print(
-        f"\ndesk  {cfg['bitrate']:>3} kbps  {total / 1024:>6.0f}K  "
-        + ("inlined into the cue desk page" if second else "-> the desk AND /sd/scenes")
-    )
-    # The card is 31 GB, so no budget line: the only ceiling the show has is
-    # decode load, and §12.13 measured 96 kbps clean on this chip.
-    if second:
-        ctotal = sum(f.stat().st_size for f in card_dir().glob("[0-9][0-9]_*.mp3"))
-        print(
-            f"card  {card_bitrate(cfg):>3} kbps  {ctotal / 1024:>6.0f}K  "
-            f"-> /sd/scenes (make publish) — streamed, no budget"
-        )
+        _sweep_stale(produced)
+        _write_markers(all_markers)
+    _report_sizes(cfg, total)
     return 0
 
 

@@ -38,82 +38,124 @@ interface RowCtx {
   busy?: string | null;
 }
 
-export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
+/**
+ * The mono warning.
+ *
+ * Mono is not just a fact — it costs the show its left/right tower ping-pong
+ * (pan routing needs two channels). Say so where the user is looking, with
+ * the fix spelled out. Clicking the badge stages the fix (round 2: a user
+ * pressed Re-import bare and watched 14 s change nothing). In-show mono
+ * shouts louder: that is the track the audience will actually hear.
+ */
+function monoBadge(inShow: boolean, canReimport: boolean): string {
+  const shout = inShow
+    ? " THIS TRACK IS IN THE SHOW — the audience hears it mono." : "";
+  const advice = canReimport
+    ? `Click here to set stereo, then press Re-import.`
+    : `Its original file is gone, so it cannot be re-imported — drop `
+      + `the file again with CHANNELS set to stereo.`;
+  return `<span class="trk__mono" style="color:${inShow
+      ? "var(--alarm)" : "var(--warn)"};cursor:pointer;`
+    + `text-decoration:underline dotted" title="Mono import: the towers `
+    + `cannot answer left/right without stereo.${shout} `
+    + advice + `">`
+    + `mono ⚠${inShow ? " in the show" : ""}</span>`;
+}
+
+/** The codec line. Bitrate is a property of the lossy encoders only; printing
+ *  "?kbps" next to a WAV says the import went wrong when it went fine. */
+function formatLine(t: TrackInfo, channels: string): string {
   const o = t.opts || {};
   const ext = (t.ext || o.format || "mp3").toLowerCase();
-  // Bitrate is a property of the lossy encoders only; printing "?kbps"
-  // next to a WAV says the import went wrong when it went fine.
   const lossless = ext === "wav" || ext === "flac";
-  // Mono is not just a fact — it costs the show its left/right tower
-  // ping-pong (pan routing needs two channels). Say so where the user is
-  // looking, with the fix spelled out. Clicking the badge stages the fix
-  // (round 2: a user pressed Re-import bare and watched 14 s change
-  // nothing). In-show mono shouts louder: that is the track the audience
-  // will actually hear.
-  const mono = o.channels !== 2;
-  const monoInShow = mono && ctx.inShow;
-  // Re-import needs a source to rebuild from. A dropped file's original is
-  // kept in tracks/_src/ now; one whose file has since gone gets no button
-  // and honest advice instead of a red absolute path (JB1-3).
-  const canReimport = !!t.source && !t.source_missing;
-  const monoBadge = mono
-    ? `<span class="trk__mono" style="color:${monoInShow
-        ? "var(--alarm)" : "var(--warn)"};cursor:pointer;`
-      + `text-decoration:underline dotted" title="Mono import: the towers `
-      + `cannot answer left/right without stereo.${monoInShow
-        ? " THIS TRACK IS IN THE SHOW — the audience hears it mono." : ""} `
-      + (canReimport ? `Click here to set stereo, then press Re-import.`
-         : `Its original file is gone, so it cannot be re-imported — drop `
-           + `the file again with CHANNELS set to stereo.`) + `">`
-      + `mono ⚠${monoInShow ? " in the show" : ""}</span>`
-    : "stereo";
-  const fmt = [ext.toUpperCase(),
-               lossless ? null : `${o.bitrate || "?"}kbps`,
-               monoBadge,
-               `${(o.sample_rate || 44100) / 1000}k`,
-               o.normalize ? "normalised" : null].filter(Boolean).join(" · ");
-  // Rate per zone, not raw counts — see bandSummary for why the counts are
-  // the wrong number to put in front of someone.
-  const onsets = bandSummary(t.onsets || {}, t.dur);
-  // The remembered source. A link if it came from one, so you can go back
-  // to where it came from without digging through history.
-  const isUrl = /^https?:\/\//.test(t.source || "");
-  const src = !t.source ? ""
-    : isUrl
-      ? `<a href="${esc(t.source)}" target="_blank" rel="noreferrer noopener">${esc(t.title || t.source).slice(0, 64)}</a>`
-      : esc(t.source.replace(/^file:/, "").split("/").pop());
-  const cls = ["trk", ctx.selected ? "sel" : "",
-               ctx.sounding ? "playing" : ""].filter(Boolean).join(" ");
-  // A track whose import failed has no bytes worth anything: no castle
-  // button (it would PUT nothing over the card's good copy), and a badge
-  // that says what happened instead of "stale" (pass 1, J1-2).
-  const broken = !sendable(t);
+  return [ext.toUpperCase(),
+          lossless ? null : `${o.bitrate || "?"}kbps`,
+          channels,
+          `${(o.sample_rate || 44100) / 1000}k`,
+          o.normalize ? "normalised" : null].filter(Boolean).join(" · ");
+}
+
+/** The remembered source: a link if it came from one, so you can go back to
+ *  where it came from without digging through history. */
+function sourceHtml(t: TrackInfo): string {
+  if (!t.source) return "";
+  if (/^https?:\/\//.test(t.source)) {
+    const label = esc(t.title || t.source).slice(0, 64);
+    return `<a href="${esc(t.source)}" target="_blank" rel="noreferrer noopener">${label}</a>`;
+  }
+  return esc(t.source.replace(/^file:/, "").split("/").pop());
+}
+
+/** The badges beside the name: what the show and the card make of this track.
+ *  A track whose import failed gets one that says what happened rather than
+ *  "stale" (pass 1, J1-2). */
+function rowBadges(t: TrackInfo, ctx: RowCtx, broken: boolean): string {
+  const out: string[] = [];
+  if (ctx.inShow) {
+    out.push(`<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>`);
+  }
+  if (ctx.onCastle === "current") {
+    out.push(`<span class="trk__badge" title="The castle's SD card holds this exact file — byte count verified">on castle ✓</span>`);
+  }
+  if (ctx.onCastle === "stale") {
+    out.push(`<span class="trk__badge" style="color:var(--warn)" title="The card's copy is DIFFERENT bytes — this track changed since it was sent. Press Update castle.">stale on castle ⚠</span>`);
+  }
+  if (broken) {
+    out.push(`<span class="trk__badge trk__broken" style="color:var(--alarm)" title="${esc(t.error || "The file is empty")} — re-import it (or delete it). It cannot be sent to the castle.">import failed ⚠</span>`);
+  }
+  return out.join("\n      ");
+}
+
+/** The button column. `busy` disables everything on the row and renames the
+ *  button that is working, so a Delete cannot race its own scene render. */
+function rowActions(ctx: RowCtx, broken: boolean, canReimport: boolean): string {
   const busy = ctx.busy ?? null;
   const op = (act: string, label: string, title: string, cls = ""): string =>
     `<button data-act="${act}" class="${cls}" title="${esc(title)}"`
     + `${busy ? " disabled" : ""}>${busy === act ? "Working…" : label}</button>`;
+  const sceneTitle = ctx.inShow
+    ? "Rewrite this scene from the track as it is now. The scene plays the WHOLE file — a trim in the clip editor reaches the castle through Re-import."
+    : "Add this track to the show as a new scene (the whole file; trim with Re-import first if you want only a part)";
+  const delTitle = ctx.inShow
+    ? "Remove the file — and, if you choose, its scene from the show"
+    : "Remove the file from the library";
+  const reimport = canReimport ? op("refresh", "Re-import",
+    "Rebuild from the remembered source using the options above — START/LENGTH from the clip editor when it is open on this track") : "";
+  return `<button data-act="play" class="${ctx.sounding ? "on" : ""}"
+              title="Listen to the whole file — audio only, no lights. To see the light show, click the row and press Audition in the editor.">${ctx.sounding ? "Stop" : "Play"}</button>
+      ${op("scene", ctx.inShow ? "Update scene" : "Make scene", sceneTitle)}
+      ${reimport}
+      ${sendButton(ctx.onCastle, broken, busy)}
+      ${op("del", "Delete", delTitle, "danger")}`;
+}
+
+export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
+  const mono = (t.opts || {}).channels !== 2;
+  // Re-import needs a source to rebuild from. A dropped file's original is
+  // kept in tracks/_src/ now; one whose file has since gone gets no button
+  // and honest advice instead of a red absolute path (JB1-3).
+  const canReimport = !!t.source && !t.source_missing;
+  const fmt = formatLine(t, mono ? monoBadge(ctx.inShow, canReimport) : "stereo");
+  // Rate per zone, not raw counts — see bandSummary for why the counts are
+  // the wrong number to put in front of someone.
+  const onsets = bandSummary(t.onsets || {}, t.dur);
+  const src = sourceHtml(t);
+  const cls = ["trk", ctx.selected ? "sel" : "",
+               ctx.sounding ? "playing" : ""].filter(Boolean).join(" ");
+  // A track whose import failed has no bytes worth anything: no castle
+  // button — it would PUT nothing over the card's good copy.
+  const broken = !sendable(t);
   return `
   <div class="${cls}" data-id="${esc(t.id)}" title="Click to open the clip editor">
     <div class="trk__nm">${esc(t.id)}
-      ${ctx.inShow ? `<span class="trk__badge" title="This track already has a scene in scenes.yaml">in the show</span>` : ""}
-      ${ctx.onCastle === "current" ? `<span class="trk__badge" title="The castle's SD card holds this exact file — byte count verified">on castle ✓</span>` : ""}
-      ${ctx.onCastle === "stale" ? `<span class="trk__badge" style="color:var(--warn)" title="The card's copy is DIFFERENT bytes — this track changed since it was sent. Press Update castle.">stale on castle ⚠</span>` : ""}
-      ${broken ? `<span class="trk__badge trk__broken" style="color:var(--alarm)" title="${esc(t.error || "The file is empty")} — re-import it (or delete it). It cannot be sent to the castle.">import failed ⚠</span>` : ""}
+      ${rowBadges(t, ctx, broken)}
       <small>${t.dur ?? "?"}s · ${t.kb} KB · ${fmt}</small>
       <small title="${esc(BAND_HELP)}">${esc(onsets)}</small>
       ${src ? `<small class="trk__src">from ${src}</small>` : ""}
       ${t.notes ? `<small>${esc(t.notes)}</small>` : ""}
     </div>
     <div class="trk__act">
-      <button data-act="play" class="${ctx.sounding ? "on" : ""}"
-              title="Listen to the whole file — audio only, no lights. To see the light show, click the row and press Audition in the editor.">${ctx.sounding ? "Stop" : "Play"}</button>
-      ${op("scene", ctx.inShow ? "Update scene" : "Make scene",
-           ctx.inShow ? "Rewrite this scene from the track as it is now. The scene plays the WHOLE file — a trim in the clip editor reaches the castle through Re-import."
-                      : "Add this track to the show as a new scene (the whole file; trim with Re-import first if you want only a part)")}
-      ${canReimport ? op("refresh", "Re-import",
-        "Rebuild from the remembered source using the options above — START/LENGTH from the clip editor when it is open on this track") : ""}
-      ${sendButton(ctx.onCastle, broken, busy)}
-      ${op("del", "Delete", ctx.inShow ? "Remove the file — and, if you choose, its scene from the show" : "Remove the file from the library", "danger")}
+      ${rowActions(ctx, broken, canReimport)}
     </div>
   </div>`;
 }
