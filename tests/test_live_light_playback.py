@@ -21,6 +21,11 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = (ROOT / "firmware" / "castle_sd_common.yaml").read_text()
+#: The 200 ms bridge is two files since v5.70: the tick that mirrors state
+#: out lives in castle_sd_common.yaml, and the mailbox's if/else chain is
+#: the `web_action` script it runs inline (castle_web_actions.yaml). The
+#: branches below are read out of the second; the mirror out of the first.
+ACTIONS = (ROOT / "firmware" / "castle_web_actions.yaml").read_text()
 COMPILER = shutil.which("clang++") or shutil.which("g++")
 FLAGS = [
     "-std=c++17",
@@ -67,7 +72,7 @@ light_show = sys.modules["light_show"]
 
 
 def branch(start, end):
-    return SOURCE.split(start, 1)[1].split(end, 1)[0]
+    return ACTIONS.split(start, 1)[1].split(end, 1)[0]
 
 
 def run_cxx(source: Path) -> str:
@@ -123,7 +128,9 @@ class LiveLightPlaybackTests(unittest.TestCase):
         self.assertIn("castle_web::restart_audio_clock(", scene)
 
     def test_mirror_tick_clears_a_raw_track_when_audio_ends(self):
-        mirror = branch("interval: 200ms", "castle_web::take_pending()")
+        mirror = SOURCE.split("interval: 200ms", 1)[1].split(
+            "- script.execute: web_action", 1
+        )[0]
         self.assertIn("castle_web::mirror_audio(playing", mirror)
         self.assertIn("MEDIA_PLAYER_STATE_ANNOUNCING", mirror)
         self.assertIn('id(current_track).publish_state("")', mirror)

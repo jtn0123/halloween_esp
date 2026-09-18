@@ -1,12 +1,18 @@
 # Halloween Castle — ESPHome device config
 #
-# Board:   Adafruit ESP32-S2 Feather (240 MHz, 4 MB flash, 2 MB PSRAM).
-#          The `esp32:` block below is the Feather's; firmware/castle_s3.yaml
-#          removes it and says `variant: esp32s3` instead, for the carrier
-#          board (2026-09-05), and firmware/castle_feather_s3.yaml swaps it
-#          for the ESP32-S3 Feather's (2026-09-14). Everything else in this
-#          file is the SHOW and is true of all three — not one GPIO number
-#          differs between them.
+# Board:   Adafruit ESP32-S3 Feather #5477 (240 MHz, 4 MB flash, 2 MB PSRAM),
+#          in the castle-carrier v3.3a. The `esp32:` block below is that
+#          Feather's; firmware/castle_s3.yaml removes the board string and
+#          keeps the variant, for the bare-WROOM carrier (2026-09-05).
+#          Everything else in this file is the SHOW and is true of both —
+#          not one GPIO number differs between them.
+#
+#          HISTORY: from 2026-08-22 to 2026-09-17 this block described an
+#          Adafruit ESP32-S2 Feather, which was the castle in the yard. The
+#          S2 was retired on 2026-09-17 (docs/notes/03-build.md §12.20) once
+#          v5.64 had run on the S3 Feather over Wi-Fi. The pin map below is
+#          unchanged by that move: the v3.3a carrier was drawn for either
+#          chip and every pad it uses carries the same GPIO on both.
 # Audio:   MAX98357A I2S class-D amp -> 4 ohm speaker
 # Light:   one strip per zone, three zones. What is in each is set in
 #          scenes/scenes.yaml and generated into generated/lights.yaml —
@@ -17,8 +23,7 @@
 #   make generate    # rebuild firmware/generated/scenes.yaml
 #   make audio       # rebuild audio/*.mp3
 #
-# I2S and RMT are separate peripherals on the ESP32-S2, so audio and pixels
-# do not contend.
+# I2S and RMT are separate peripherals, so audio and pixels do not contend.
 
 substitutions:
   name: castle
@@ -26,7 +31,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.63"
+  version: "5.70"
   # Which checkout this build tree belongs to — see build_path.yaml. The
   # Makefile passes the directory name (-s checkout <dir>); a bare
   # `esphome compile` gets the main checkout's tree.
@@ -132,28 +137,39 @@ esphome:
         # Every strip at once — see lights_override in generated/lights.yaml.
         # There is no single light id any more.
         - script.execute: {id: lights_override, arg: "show"}
-        - script.execute: scene_vigil
+        # The opening scene USED to be `scene_vigil` here — a compiled script
+        # that needed nothing but RAM, so it could run before anything was
+        # mounted. Since v5.67 a scene is card data (show.man + <id>.cue), and
+        # this priority runs BEFORE the card comes up at -200. So the boot
+        # scene is started there instead, once there is a manifest to read
+        # (castle_sd_common.yaml, right after the web server starts).
 
 esp32:
-  board: adafruit_feather_esp32s2
+  # `adafruit_feather_esp32s3` is the 2 MB PSRAM Feather (#5477); `_nopsram`
+  # is #5323, which has 8 MB of flash and NO PSRAM and would leave the
+  # `psram:` block below finding nothing. The board implies the variant; both
+  # are written out so the two cannot quietly disagree, and so
+  # castle_s3.yaml's `board: !remove` has a key to remove.
+  board: adafruit_feather_esp32s3
+  variant: esp32s3
+  # 4 MB, so the dual-OTA layout gives two 1.75 MB app slots — the budget
+  # tools/check_image.py measures and the tightest resource this board has.
+  flash_size: 4MB
   framework:
     # The speaker media player requires esp-idf, not arduino.
     type: esp-idf
-    # NO USB CONSOLE OPTIONS HERE — deliberately. See below.
+    # NO USB CONSOLE sdkconfig OPTIONS HERE — deliberately. The console is
+    # chosen by the `logger:` block below, and on this chip that is the S3's
+    # hardware USB Serial/JTAG peripheral, which needs no sdkconfig help.
     #
-    # This board has no USB-to-UART bridge chip; the socket is the chip's own
-    # USB peripheral. The tempting fix is CONFIG_ESP_CONSOLE_USB_CDC, and it
-    # makes things worse: on the ESP32-S2 that console is the TinyUSB CDC
-    # stack, which ESPHome never initialises. The app then runs with its log
-    # pointed at a device that never comes up, and the board enumerates
-    # NOTHING over USB at all — no app port, and no way back in except
-    # holding BOOT while tapping RESET.
-    #
-    # The app has never presented a USB serial port on this board. Every port
-    # we saw was the ROM bootloader's. So `esphome logs --device` cannot work
-    # here: logs come over WiFi via the API, which is how ESPHome is normally
-    # used anyway. For serial you would need a USB-UART adapter on the TX/RX
-    # pins.
+    # HISTORY, and the reason this paragraph is long: the S2 Feather that ran
+    # the porch until 2026-09-17 had no USB-to-UART bridge either, and there
+    # the tempting fix — CONFIG_ESP_CONSOLE_USB_CDC — made things worse. On
+    # the S2 that console is the TinyUSB CDC stack, which ESPHome never
+    # initialises; the app then ran with its log pointed at a device that
+    # never came up and the board enumerated NOTHING over USB at all. The S3
+    # has a real peripheral for this and the whole class of problem is gone —
+    # `esphome logs --device` works on the cable the board is flashed over.
     sdkconfig_options:
       # The bootloader starts a freshly-OTA'd image in PENDING_VERIFY. If it
       # reboots without confirming itself, the bootloader reverts to the
@@ -165,18 +181,33 @@ esp32:
       # (WiFi/NVS writes). Without it, strips after the first lose the race
       # and frames truncate at the 4-pixel double-buffer boundary.
       CONFIG_RMT_ISR_IRAM_SAFE: "y"
-      # ── The dram0 diet ────────────────────────────────────────────────
-      # IDF 5.5's frameworks overflowed the S2's static-RAM segment by
-      # ~7 KB and v5.23 refused to link. Everything below buys it back:
-      # mdns off (~3 KB, see the mdns: block), softAP off (~1.3 KB), the
-      # eInk framebuffer moved to PSRAM (4 KB; the panel and its task went
-      # entirely in v5.44), and the small cuts here. It linked at 99.99% —
-      # dram0 had ~20 BYTES spare before the panel went,
-      # so the next framework bump will hit the wall again. Next levers,
-      # in order: WPA3-SAE off (ONLY after confirming the router accepts
-      # WPA2), and hunting libmesh's ~3.5 KB of never-used mesh state.
-      # (WiFi static RX buffers were tried and reverted: they live in
-      # heap, so cutting them slowed uploads and freed nothing static.)
+      # ── The dram0 diet — INHERITED, not re-measured ───────────────────
+      # Every option from here to the end of this block was bought with an
+      # ESP32-S2's static RAM. IDF 5.5's frameworks overflowed that chip's
+      # dram0 segment by ~7 KB and v5.23 refused to link; mdns off (~3 KB,
+      # see the mdns: block), softAP off (~1.3 KB), the eInk framebuffer
+      # moved to PSRAM (4 KB; the panel went entirely in v5.44) and the
+      # small cuts here bought it back, and it linked at 99.99% — about
+      # **20 bytes** spare.
+      #
+      # The S3 Feather that replaced it (2026-09-17) has 341,760 bytes of
+      # dram0 and v5.67 measured 35.1% of it on hardware (flash 67.9% of the
+      # OTA slot), so none of this is load-bearing any more. It is kept
+      # anyway, and deliberately: the retirement pass changed the build's
+      # SHAPE and was not allowed to change its BEHAVIOUR, so every line
+      # below is still exactly what ran on the board.
+      #
+      # mDNS was the one worth having back and it IS back — v5.66, measured
+      # at +2,080 B of dram0. Nothing else here is now waiting to be given
+      # back: read the four that are left and each is off on this chip's own
+      # merits, not the S2's — softAP with no `ap:` fallback in the wifi
+      # block, WPS with no button on the porch, lwIP's mDNS QUERIES (which is
+      # resolving somebody else's .local, not answering for ours) and WPA3-OWE
+      # on a PSK network. The one inherited number that is a CEILING rather
+      # than a cut is CONFIG_LWIP_MAX_SOCKETS, and its own comment says what
+      # running out looks like. So the next measured thing is not in this
+      # block at all: it is the 12-scene manifest ceiling (four constants,
+      # docs/notes/03-build.md §12.21) and the bare-Feather decode numbers.
       #
       # No `ap:` fallback any more (see the wifi block) — strip the softAP
       # half of the stack with it: station-only is the whole use of this radio.
@@ -195,15 +226,19 @@ esp32:
       # WPS never had a button on this porch; its supplicant state was more
       # of the same static RAM.
       CONFIG_ESP_WIFI_ENABLE_WPS: "n"
-      # .local resolution through lwIP's DNS — the S2 can't do mDNS at all
-      # (HARDWARE_FINDINGS), so this was table space for queries that can
-      # never be asked.
+      # .local resolution through lwIP's DNS. The S2 could not do mDNS at all
+      # (HARDWARE_FINDINGS), so this was table space for queries that could
+      # never be asked. It stays off on the S3 even though the responder came
+      # back in v5.66: this option is lwIP resolving somebody ELSE'S .local
+      # name, which nothing on this castle asks for, where `mdns:` below is
+      # the castle answering for its own.
       CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES: "n"
       # OWE is WPA3's OPEN-network encryption; this castle joins a PSK
       # network. WPA2/WPA3-PSK association is untouched.
       CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA: "n"
   # Default dual-OTA layout: two 1.75 MB app slots. Keeping the scene audio
-  # OFF the image entirely — it streams off the card, see castle_sd.yaml — is
+  # OFF the image entirely — it streams off the card, see
+  # castle_sd_common.yaml — is
   # what buys OTA back and keeps it bought however long the show grows. The
   # custom single-app partition table this once needed went away with the
   # all-in-flash build (2026-09-01, docs/notes/03-build.md §12.15).
@@ -214,32 +249,36 @@ psram:
 
 logger:
   level: INFO
-  # NOT the default, and this line is load-bearing.
+  # The S3's own USB Serial/JTAG peripheral, on the Feather's USB-C
+  # (GPIO19/20). Named explicitly rather than left to ESPHome's default for
+  # this variant, so the line is load-bearing and self-documenting and so the
+  # day it changes, it changes on purpose. UART0 is still wired on the TX/RX
+  # header pins for anyone with an adapter.
   #
-  # Left alone, ESPHome resolves the console for a native-USB S2 to
-  # CONFIG_ESP_CONSOLE_USB_CDC — the exact option HARDWARE_FINDINGS §3 records
-  # as chip-killing. The old comment here assumed "we never asked for it" meant
-  # "it is off". It was on, set by ESPHome in
-  # sdkconfig.<name>.esphomeinternal, and it crashed the board:
+  # HISTORY, kept because it is the reason this key exists at all: on the S2
+  # Feather ESPHome resolved a native-USB board's console to
+  # CONFIG_ESP_CONSOLE_USB_CDC, the exact option HARDWARE_FINDINGS §3 records
+  # as chip-killing. It was on, set in sdkconfig.<name>.esphomeinternal, and
+  # it crashed the board:
   #
   #     Fault - LoadProhibited: esp_usb_console_interrupt (usb_console.c:188)
   #       <- _xt_lowint1 <- sinf <- castle::hashf <- castle::render <- App::loop
   #
   # The USB console's interrupt fired while the LED render loop was inside
   # sinf() and faulted, which killed the light loop — a board with dark pixels
-  # and no network, indistinguishable from a brick.
-  #
-  # UART0 rather than `baud_rate: 0` because it costs nothing and leaves a real
-  # serial path on the TX/RX header pins for anyone with a USB-UART adapter.
-  # This board has no other way to get a boot log.
-  hardware_uart: UART0
+  # and no network, indistinguishable from a brick. That console was TinyUSB
+  # CDC; this one is hardware, and the porch board's whole "no serial console
+  # at all" era ends with it.
+  hardware_uart: USB_SERIAL_JTAG
 
-# mDNS has NEVER worked on the ESP32-S2 (HARDWARE_FINDINGS; devices.toml
-# holds the address instead), yet the responder still shipped in every image
-# — ~3 KB of the very static RAM the linker just ran out of, spent
-# advertising a name nothing can resolve.
+# Back ON since v5.66 (2026-09-17) — the first line of the S2's dram0 diet
+# given back. mDNS never worked on the ESP32-S2 (HARDWARE_FINDINGS), so there
+# the responder was ~3 KB of static RAM spent advertising a name nothing could
+# resolve. The S3 answers: `castle-feather-s3.local`. What it cost on this
+# board is in firmware/pending/README.md's v5.66 row. devices.toml still holds
+# an address as well — a lease is a fact, a name is a courtesy.
 mdns:
-  disabled: true
+  disabled: false
 
 api:
   # No API client is NORMAL for this device — its real interface is its own
@@ -270,9 +309,10 @@ api:
 # line, the dumped tail — and uptime cannot be lined up against the only
 # thing the operator remembers ("it went dark some time after nine"). SNTP
 # costs one UDP socket (see CONFIG_LWIP_MAX_SOCKETS above) and no flash worth
-# counting, and it is a DNS name, not mDNS: `mdns: disabled` above turns the
-# responder off and CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES off with it, but
-# ordinary DNS is untouched and pool.ntp.org resolves through it.
+# counting, and it is a DNS name and not mDNS — which matters less now that
+# the responder is back on (above), but is still the reason this worked at all
+# through the whole `mdns: disabled` era: ordinary DNS was never touched and
+# pool.ntp.org resolved through it.
 #
 # The ring keeps recording uptime and always will: it is written from the
 # main loop's hot path, and a wall clock there reads 1970 for the first
@@ -297,12 +337,15 @@ wifi:
 
 # NOTE: this file is the CORE, not a buildable target. It deliberately
 # defines no `sfx` audio dispatch and no media files — the variants compose
-# those (castle_sd.yaml streams them off the card; bench*.yaml inherit that).
+# those (castle_sd_common.yaml streams them off the card; bench*.yaml
+# inherit that through castle_feather_s3.yaml).
 # Building this file directly fails with "sfx unknown", by design: ESPHome's
 # !extend appends to lists instead of replacing them, so a variant cannot
 # cleanly swap an implementation the core already provides. That mattered
 # most when there were two audio implementations to swap between; it is kept
-# now because it is still the seam bench*.yaml and the jewels build sit on.
+# now because it is still the seam bench*.yaml sits on. (The jewels build sat
+# on it too, until castle_sd_jewels.yaml went with the S2 on 2026-09-17: it
+# had become a byte-equivalent copy of the show build.)
 packages:
   # The generated scene scripts.
   scenes: !include generated/scenes.yaml

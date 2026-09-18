@@ -27,7 +27,7 @@ from test_generator_parity import (
     MARKERS,
     PULSE_SCENE,
     ZIDS,
-    esphome_strikes,
+    device_strikes,
     previewer_strikes,
 )
 
@@ -164,7 +164,7 @@ class TestPulseDynamicsParity(unittest.TestCase):
 
     def test_plain_streams_are_untouched(self) -> None:
         """A stream without the new fields renders exactly as before."""
-        a = esphome_strikes(PULSE_SCENE, MARKERS)
+        a = device_strikes(PULSE_SCENE, MARKERS)
         b = previewer_strikes(PULSE_SCENE, MARKERS)
         self.assertEqual(a, b)
         self.assertEqual(len(a), 14)

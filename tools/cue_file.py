@@ -168,6 +168,19 @@ def decode(blob: bytes) -> dict[str, Any]:
     return {"duration_ms": duration, "zones": base, "records": records}
 
 
+def loads(path: Any) -> bool:
+    """Whether castle_cues.h load() would ACCEPT the file at `path` — which
+    is not the same question as `loaded_count(path) > 0`, because a valid file
+    with no records is a legal base-look-only show. The firmware distinguishes
+    the two (a refused file is /api/status `missing`, an empty one is not), so
+    the emulator has to as well."""
+    try:
+        doc = decode(Path(path).read_bytes())
+    except (OSError, ValueError, struct.error):
+        return False
+    return len(doc["zones"]) == 3 and len(doc["records"]) <= MAX_RECORDS
+
+
 def loaded_count(path: Any) -> int:
     """How many cues castle_cues.h load() would hold for the file at `path`
     — 0 when it would refuse it (no file, wrong version, wrong length). The

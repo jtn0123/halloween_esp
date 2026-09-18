@@ -99,6 +99,35 @@ class TestCardWrites(WebPairCase):
                     self.same("DELETE", prefix + enc)
         self.assertEqual(*self.pair.cards())
 
+    def test_the_suffixes_the_upload_makes_itself_cannot_be_uploaded(self) -> None:
+        """J5 (grade report 2026-09-17): a PUT of `X` writes `X.part` and, on
+        success, unlinks `X.old`. So `song.mp3.part` and `song.mp3.old` are
+        names this route will destroy on somebody else's behalf — the first
+        while an upload of `song.mp3` is in flight, the second the next time
+        one finishes. Refused at the door on every route, and the REAL files
+        of those names are still there afterwards, which is the whole claim.
+        """
+        for card in (self.pair.card_c, self.pair.card_e):
+            (card / "song.mp3.part").write_bytes(b"somebody else's bytes")
+            (card / "song.mp3.old").write_bytes(b"the previous release")
+        for enc in (b"song.mp3.part", b"song.mp3.old", b"x.part", b"x.old"):
+            for prefix in (b"/api/files/", b"/api/site/", b"/api/scenes/"):
+                with self.subTest(name=enc, prefix=prefix):
+                    r = self.same("PUT", prefix + enc, b"clobber")
+                    self.assertEqual((r.status, r.body), (400, b"reserved suffix"))
+        for card in (self.pair.card_c, self.pair.card_e):
+            self.assertEqual(
+                (card / "song.mp3.part").read_bytes(), b"somebody else's bytes"
+            )
+            self.assertEqual(
+                (card / "song.mp3.old").read_bytes(), b"the previous release"
+            )
+        # DELETE is NOT refused: a file of either name that is already on the
+        # card is exactly what an operator needs to be able to remove.
+        r = self.same("DELETE", b"/api/files/song.mp3.old")
+        self.assertEqual(json.loads(r.body), {"deleted": True})
+        self.assertEqual(*self.pair.cards())
+
     def test_delete_reaches_all_three_directories(self) -> None:
         for prefix, sub in (
             (b"/api/files/", ""),
@@ -190,12 +219,12 @@ class TestOta(WebPairCase):
     the build's own OTA slot, so the same image is a 400 on one board and a
     flash on the other (grade report 2026-09-06 J5)."""
 
-    def test_the_s2_slot_refuses_what_the_s3_slot_takes(self) -> None:
+    def test_the_feather_slot_refuses_what_the_carrier_slot_takes(self) -> None:
         image = b"\xe9" + b"\x00" * (2 * 1024 * 1024 - 1)
         r = self.same("PUT", b"/api/ota", image)
         self.assertEqual((r.status, r.body), (400, b"implausible image size"))
         tmp = Path(self.tmp)
-        wide = Pair(tmp, "s3slot", CASTLE_OTA_SLOT="0x3C0000")
+        wide = Pair(tmp, "carrierslot", CASTLE_OTA_SLOT="0x3C0000")
         try:
             c, e = wide.both("PUT", b"/api/ota", image)
             self.assertEqual((c.status, c.body), (e.status, e.body))

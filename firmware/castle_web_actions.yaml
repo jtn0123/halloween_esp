@@ -1,0 +1,151 @@
+# The web mailbox's DISPATCH: one script, the other half of the 200 ms bridge
+# in castle_sd_common.yaml.
+#
+# HTTP handlers cannot touch a script or the media player — they run on the
+# IDF server's own task, and neither is thread-safe off ESPHome's main loop.
+# So a request is only RECORDED (sd_web_state.h's one-slot mailbox) and the
+# main loop picks it up. That loop is castle_sd_common.yaml's 200 ms interval:
+# it mirrors live state OUT to the server, and then runs this.
+#
+# A script rather than a second `interval:`, and that is the whole point of
+# the seam: two intervals would be two clocks with no defined order between
+# them, and the ORDER is the contract — the tick mirrors state and only then
+# takes the mailbox (tests/test_firmware_tick_cxx.py). `script.execute` on a
+# script with no `delay:` in it runs INLINE, right where these braces used to
+# be, so the compiled behaviour is the one lambda it was until v5.70.
+#
+# Mode is the default `single`, which costs nothing here for the same reason:
+# nothing in this script yields, so it cannot be running when the next tick
+# asks for it.
+#
+# A package of its own because castle_sd_common.yaml had no lines left to
+# give it (the 500-line rule, tools/check_loc.py), and included from that
+# file, so every target with a card has it.
+
+script:
+  - id: web_action
+    then:
+      - lambda: |-
+          auto act = castle_web::take_pending();
+          if (act.type == castle_web::ActionType::NONE) return;
+          castle_web::record_action(act.type, act.arg, esp_timer_get_time());
+          // v5.63: whatever was asked for, the card show that was running is
+          // over — a scene, a stop, a blackout and the next song all replace
+          // it. The two that do not are a volume change and a PIR setting,
+          // and a LIGHT frame: a colour test paints over the show through
+          // lights_override, and "show" hands the strips back to it.
+          if (act.type != castle_web::ActionType::VOLUME &&
+              act.type != castle_web::ActionType::PIRCFG &&
+              act.type != castle_web::ActionType::LIGHT)
+            id(cues_end)->execute();
+          if (act.type == castle_web::ActionType::PLAY) {
+            // A looping scene would re-fire its own track over this file
+            // within 30 s: run_scene("halt") stops every scene script and
+            // starts nothing (lights keep their texture, see gen_esphome).
+            id(run_scene)->execute("halt");
+            // STREAMED off the card through our own server over loopback —
+            // no PSRAM cap, start is near-instant. See sd_web_site.h — and
+            // url_encode, or the '+' in a name the desk queued becomes a
+            // space by the time that server reads it back (grade report
+            // 2026-09-17 J1).
+            auto call = id(castle_media)->make_call();
+            call.set_media_url("http://127.0.0.1:8080/sd/" +
+                               castle_web::url_encode(act.arg));
+            call.set_announcement(true);
+            call.perform();
+            id(current_track).publish_state(act.arg);
+            // A raw file has no scene. Until v5.52 current_scene kept the
+            // halted scene's name, so the first live light frame (LIGHT
+            // below) ran scene_stop and its media_player.stop took the
+            // file with it: an imported song went silent one frame in.
+            id(current_scene).publish_state("stop");
+            castle_web::restart_audio_clock(esp_timer_get_time());
+            id(cues_begin)->execute(act.arg);
+          } else if (act.type == castle_web::ActionType::STOP) {
+            // scene_stop zeroes the zone arrays, but a page light show
+            // drives the strips through lights_override (LIGHT below) and
+            // that keeps painting its last colour over them. Stop means
+            // dark, so the override goes with the scene — the same one
+            // line BLACKOUT has always had.
+            id(scene_stop)->execute();
+            id(lights_override)->execute("off");
+          } else if (act.type == castle_web::ActionType::VOLUME) {
+            // 0 is the desk's hush (sound routed to the Mac): remembered so
+            // scene scripts keep quiet too — see speaker_hush in castle.yaml.
+            int pct = atoi(act.arg.c_str());
+            // Never past the measured ceiling (rig.h, from scenes.yaml).
+            if (pct > castle::kMaxVolumePct) pct = castle::kMaxVolumePct;
+            id(speaker_hush) = pct == 0;
+            auto call = id(castle_media)->make_call();
+            call.set_volume(pct / 100.0f);
+            call.perform();
+          } else if (act.type == castle_web::ActionType::LIGHT) {
+            // Manual override for every strip (or one, "<zone>:"): a colour,
+            // a bench pattern, "off", or "show" to hand the pixels back. One
+            // script rather than a list of ids here, because the zone list
+            // lives in scenes.yaml and is generated into lights_override.
+            //
+            // Anything but "show" stops an authored scene first. Raw imported
+            // audio reports current_scene="stop" and must survive live colour
+            // frames streamed by the radio bridge.
+            // A looping scene
+            // re-runs its audio every 30 s (Vigil), and the SD read + SPI
+            // burst that goes with it starves the RMT refill ISR: two or
+            // three pixels on the longest strip flick to a wrong colour and
+            // back, which reads as a hardware fault while you are staring at
+            // a test pattern (reported 2026-08-21, the 12 px ring). The
+            // hand-back is the COMMAND "show", not a substring of it: a
+            // zone named "show" or "shower" is a colour test, and used to
+            // leave the scene script firing underneath it.
+            if (!castle_web::light_spec_is_show(act.arg) &&
+                id(current_scene).state != "stop")
+              id(scene_stop)->execute();
+            id(lights_override)->execute(act.arg);
+          } else if (act.type == castle_web::ActionType::SCENE) {
+            id(run_scene)->execute(act.arg);
+            if (act.arg != "halt" && act.arg != "stop")
+              castle_web::restart_audio_clock(esp_timer_get_time());
+          } else if (act.type == castle_web::ActionType::PIRCFG) {
+            // "armed|cooldown|scene", empty fields untouched.
+            const size_t p1 = act.arg.find('|');
+            const size_t p2 = act.arg.rfind('|');
+            const std::string a = act.arg.substr(0, p1);
+            const std::string c = act.arg.substr(p1 + 1, p2 - p1 - 1);
+            const std::string s = act.arg.substr(p2 + 1);
+            if (!a.empty()) {
+              if (a == "1" || a == "true" || a == "on") id(pir_armed).turn_on();
+              else if (a == "0" || a == "false" || a == "off") id(pir_armed).turn_off();
+            }
+            if (!c.empty()) {
+              auto call = id(pir_cooldown).make_call();
+              call.set_value(atof(c.c_str()));
+              call.perform();
+            }
+            if (!s.empty()) {
+              // set_value, not set_option: pir_scene is a `text` (J1). The
+              // id was checked against the card's list by h_pir before it
+              // was ever queued, so there is nothing left to refuse here —
+              // which is the point: the list is the card's, not the build's.
+              auto call = id(pir_scene).make_call();
+              call.set_value(s);
+              call.perform();
+            }
+          } else if (act.type == castle_web::ActionType::SHOW) {
+            // The evening playlist (#19). Stopping also stops whatever
+            // scene it was mid-way through — "stop the show" means quiet.
+            if (act.arg == "1") {
+              id(show_playlist)->execute();
+            } else {
+              id(show_playlist)->stop();
+              id(scene_stop)->execute();
+              id(lights_override)->execute("off");  // and the manual colour
+            }
+          } else if (act.type == castle_web::ActionType::BLACKOUT) {
+            // #25: the panic switch. Show, scene, audio, pixels — off.
+            id(show_playlist)->stop();
+            id(scene_stop)->execute();
+            id(lights_override)->execute("off");
+          } else if (act.type == castle_web::ActionType::RESTART) {
+            // Queued by the web OTA so its HTTP reply gets out first.
+            esphome::App.safe_reboot();
+          }

@@ -7,10 +7,12 @@
 # append lists rather than subtract from them — so the thing one build has
 # and the other cannot must live in the file only one build includes.
 #
-# What is here: the card mount, the loopback stream, the web server and its
-# main-loop bridge, the SD diagnostics. What is NOT: `name`/`friendly` (the
-# build's identity), the platform, and the status pixel. Nothing here names
-# a chip.
+# What is here: the card mount, the loopback stream, the web server and the
+# mirror half of its main-loop bridge, the SD diagnostics.
+# (The dispatch half — the mailbox's if/else chain — is
+# castle_web_actions.yaml, a package this one includes.) What is NOT:
+# `name`/`friendly` (the build's identity), the platform, and the status
+# pixel. Nothing here names a chip.
 #
 # HOW IT WORKS: ESPHome has no SD component and its audio pipeline cannot read
 # a filesystem — but it can read a URL. sd_audio.h mounts the card over SPI
@@ -43,6 +45,13 @@ packages:
   audio_sd: !include generated/audio_sd.yaml
   # v5.63: a card song's own light show — cues_begin / cues_end, called below.
   cues: !include castle_cues.yaml
+  # v5.67: the show itself, read from the card — `scene_run` (the one generic
+  # scene runner `run_scene` dispatches to) and the boot manifest check.
+  scenes: !include castle_scenes.yaml
+  # v5.70: the other half of the 200 ms bridge below — `web_action`, the
+  # script that runs whatever the web server recorded. Split out for the
+  # 500-line rule; the tick still calls it inline, in the same order.
+  web_actions: !include castle_web_actions.yaml
 
 # The build embeds ONE file: a chirp that plays when a scene starts with
 # no card in the slot, so a missing card is audible instead of silent. Every
@@ -100,6 +109,7 @@ esphome:
     - sd_audio.h
     - sd_web_util.h
     - sd_space.h
+    - sd_web_ring.h
     - sd_web_state.h
     - sd_web_events.h
     - sd_web_stream.h
@@ -133,21 +143,15 @@ esphome:
               // now two boots old.
               castle_health::finish_boot();
             }
-            // The web layer 404s unknown scene ids instead of queueing lies —
-            // this is where it learns which ids are real. Element-wise copy:
-            // get_options() returns FixedVector<const char*> on current
-            // ESPHome (std::vector<std::string> before) — emplace takes both.
-            //
-            // BEFORE start(), since v5.60 (A5): the httpd task begins taking
-            // requests the instant start() returns, and it used to race this
-            // assignment — the first /api/scene of a boot could read a vector
-            // mid-move, and the first /api/status could print half a list.
-            {
-              std::vector<std::string> scene_ids;
-              for (const auto &opt : id(pir_scene).traits.get_options())
-                scene_ids.emplace_back(opt);
-              castle_web::set_scene_ids(std::move(scene_ids));
-            }
+        # Which scene ids are real — read off the card's own manifest, so
+        # the web layer 404s a name nothing can play instead of queueing a
+        # lie. Eleven lines of this lambda until v5.69; a script now
+        # (castle_scenes.yaml seed_scene_ids, which carries the whole why),
+        # because a publish re-runs it from the 200 ms interval below. No
+        # delay in it, so this executes inline — where the braces used to be,
+        # which is BEFORE castle_web::start() and still matters (v5.60, A5).
+        - script.execute: seed_scene_ids
+        - lambda: |-
             // Started whether or not the card mounted: the server is also how
             // you find out the card is missing without walking to the castle.
             castle_web::start();
@@ -161,12 +165,22 @@ esphome:
             castle_log::freeze();
         # #29: prove every scene file exists BEFORE a cue plays silence.
         - script.execute: manifest_check
+        # The opening scene, moved down here from castle.yaml's -100 in v5.67:
+        # it reads the card now, so it cannot run before the card is mounted.
+        # WHICH scene is the show's first — the manifest's first id, or the
+        # first this image was built with when there is no manifest — rather
+        # than a name compiled into the core, because the whole point of the
+        # change is that the card decides what the show is.
+        - script.execute:
+            id: run_scene
+            scene: !lambda 'return castle_web::first_scene_id();'
         # #26: a visible sweep of every colour channel at plug-in, so a dead
         # channel is a porch-step diagnosis, not a mid-show mystery.
         - script.execute: boot_selftest
 
 # Play a card file by name from the "Play SD file" button — the same
-# loopback stream the PLAY action in the interval below uses (sd_web_site.h),
+# loopback stream the PLAY action uses (castle_web_actions.yaml,
+# sd_web_site.h),
 # just reachable without a browser: set the `SD file` text, press the button.
 script:
   # #26: boot self-test — every zone flashes R, G, B, W in turn, riding the
@@ -207,11 +221,16 @@ script:
     then:
       - lambda: |-
           // STREAMED off the card through our own server over loopback —
-          // identical to what the web PLAY action does (interval below).
+          // identical to what the web PLAY action does (the web_action
+          // script, castle_web_actions.yaml).
           // The PSRAM load-then-decode path this once took is gone
           // (sd_audio.h); there is no second way to play a card file.
+          // url_encode, because the server at the other end DECODES the
+          // path: a raw "a+b.mp3" asked for "a b.mp3" and 404'd for the
+          // life of the card (grade report 2026-09-17 J1).
           auto call = id(castle_media)->make_call();
-          call.set_media_url("http://127.0.0.1:8080/sd/" + path);
+          call.set_media_url("http://127.0.0.1:8080/sd/" +
+                             castle_web::url_encode(path));
           call.set_announcement(true);
           call.perform();
           id(current_track).publish_state(path);
@@ -219,12 +238,25 @@ script:
 
 # The bridge between the web server's httpd task and ESPHome's main loop.
 # HTTP handlers only *record* play/scene/stop requests (scripts and the media
-# player are not thread-safe off the loop); this picks them up and runs them.
+# player are not thread-safe off the loop); this mirrors live state out to
+# them and then picks up whatever they left (`web_action`, in
+# castle_web_actions.yaml — one script, run inline from the end of this
+# lambda's tick).
 # 200 ms of latency on a button press is imperceptible next to an MP3 spin-up.
 interval:
   - interval: 200ms
     then:
       - lambda: |-
+          // J1 (grade report 2026-09-17 pm): a publish landed a new
+          // /sd/scenes/show.man, so the id list is stale. The upload worker
+          // runs on its own task and must not open the card's manifest or
+          // touch g_scene_ids' vector — it rings a bell (an atomic) and this
+          // loop does the reading. exchange(), so the bell is cleared by
+          // whichever tick gets it and the re-seed happens once per publish.
+          if (castle_web::g_scenes_dirty.exchange(false)) {
+            ESP_LOGI("castle", "show.man was republished — re-reading the ids");
+            id(seed_scene_ids)->execute();
+          }
           // Mirror live state OUT to the web server (its handlers must never
           // read ESPHome objects), then execute anything it queued.
           castle_web::g_volume.store((int) (id(castle_media)->volume * 100.0f + 0.5f));
@@ -260,9 +292,14 @@ interval:
               }
             }
           }
+          // pir_scene is a `text` since v5.69, not a `select` — J1: a
+          // select's options are compiled in, and the one entity that names
+          // which scene motion fires could not learn a published scene
+          // without an OTA. `/api/pir` validates the id against the card's
+          // own list instead (sd_web.h h_pir).
           castle_web::mirror_show_state(id(current_scene).state,
                                         id(current_track).state,
-                                        id(pir_scene).current_option().str());
+                                        id(pir_scene).state);
           // The event ring (sd_web_state.h): light frames the one-slot
           // mailbox dropped, at most one line a second, and then one line
           // per command this tick actually runs. RAM only — a card write
@@ -287,121 +324,12 @@ interval:
           // the NEXT update is answering. Cheap no-op after the first call.
           if (castle_web::g_status_served.load())
             castle_sd::mark_firmware_healthy();
-          auto act = castle_web::take_pending();
-          if (act.type == castle_web::ActionType::NONE) return;
-          castle_web::record_action(act.type, act.arg, esp_timer_get_time());
-          // v5.63: whatever was asked for, the card show that was running is
-          // over — a scene, a stop, a blackout and the next song all replace
-          // it. The two that do not are a volume change and a PIR setting,
-          // and a LIGHT frame: a colour test paints over the show through
-          // lights_override, and "show" hands the strips back to it.
-          if (act.type != castle_web::ActionType::VOLUME &&
-              act.type != castle_web::ActionType::PIRCFG &&
-              act.type != castle_web::ActionType::LIGHT)
-            id(cues_end)->execute();
-          if (act.type == castle_web::ActionType::PLAY) {
-            // A looping scene would re-fire its own track over this file
-            // within 30 s: run_scene("halt") stops every scene script and
-            // starts nothing (lights keep their texture, see gen_esphome).
-            id(run_scene)->execute("halt");
-            // STREAMED off the card through our own server over loopback —
-            // no PSRAM cap, start is near-instant. See sd_web_site.h.
-            auto call = id(castle_media)->make_call();
-            call.set_media_url("http://127.0.0.1:8080/sd/" + act.arg);
-            call.set_announcement(true);
-            call.perform();
-            id(current_track).publish_state(act.arg);
-            // A raw file has no scene. Until v5.52 current_scene kept the
-            // halted scene's name, so the first live light frame (LIGHT
-            // below) ran scene_stop and its media_player.stop took the
-            // file with it: an imported song went silent one frame in.
-            id(current_scene).publish_state("stop");
-            castle_web::restart_audio_clock(esp_timer_get_time());
-            id(cues_begin)->execute(act.arg);
-          } else if (act.type == castle_web::ActionType::STOP) {
-            // scene_stop zeroes the zone arrays, but a page light show
-            // drives the strips through lights_override (LIGHT below) and
-            // that keeps painting its last colour over them. Stop means
-            // dark, so the override goes with the scene — the same one
-            // line BLACKOUT has always had.
-            id(scene_stop)->execute();
-            id(lights_override)->execute("off");
-          } else if (act.type == castle_web::ActionType::VOLUME) {
-            // 0 is the desk's hush (sound routed to the Mac): remembered so
-            // scene scripts keep quiet too — see speaker_hush in castle.yaml.
-            int pct = atoi(act.arg.c_str());
-            // Never past the measured ceiling (rig.h, from scenes.yaml).
-            if (pct > castle::kMaxVolumePct) pct = castle::kMaxVolumePct;
-            id(speaker_hush) = pct == 0;
-            auto call = id(castle_media)->make_call();
-            call.set_volume(pct / 100.0f);
-            call.perform();
-          } else if (act.type == castle_web::ActionType::LIGHT) {
-            // Manual override for every strip (or one, "<zone>:"): a colour,
-            // a bench pattern, "off", or "show" to hand the pixels back. One
-            // script rather than a list of ids here, because the zone list
-            // lives in scenes.yaml and is generated into lights_override.
-            //
-            // Anything but "show" stops an authored scene first. Raw imported
-            // audio reports current_scene="stop" and must survive live colour
-            // frames streamed by the radio bridge.
-            // A looping scene
-            // re-runs its audio every 30 s (Vigil), and the SD read + SPI
-            // burst that goes with it starves the RMT refill ISR: two or
-            // three pixels on the longest strip flick to a wrong colour and
-            // back, which reads as a hardware fault while you are staring at
-            // a test pattern (reported 2026-08-21, the 12 px ring). The
-            // hand-back is the COMMAND "show", not a substring of it: a
-            // zone named "show" or "shower" is a colour test, and used to
-            // leave the scene script firing underneath it.
-            if (!castle_web::light_spec_is_show(act.arg) &&
-                id(current_scene).state != "stop")
-              id(scene_stop)->execute();
-            id(lights_override)->execute(act.arg);
-          } else if (act.type == castle_web::ActionType::SCENE) {
-            id(run_scene)->execute(act.arg);
-            if (act.arg != "halt" && act.arg != "stop")
-              castle_web::restart_audio_clock(esp_timer_get_time());
-          } else if (act.type == castle_web::ActionType::PIRCFG) {
-            // "armed|cooldown|scene", empty fields untouched.
-            const size_t p1 = act.arg.find('|');
-            const size_t p2 = act.arg.rfind('|');
-            const std::string a = act.arg.substr(0, p1);
-            const std::string c = act.arg.substr(p1 + 1, p2 - p1 - 1);
-            const std::string s = act.arg.substr(p2 + 1);
-            if (!a.empty()) {
-              if (a == "1" || a == "true" || a == "on") id(pir_armed).turn_on();
-              else if (a == "0" || a == "false" || a == "off") id(pir_armed).turn_off();
-            }
-            if (!c.empty()) {
-              auto call = id(pir_cooldown).make_call();
-              call.set_value(atof(c.c_str()));
-              call.perform();
-            }
-            if (!s.empty()) {
-              auto call = id(pir_scene).make_call();
-              call.set_option(s);
-              call.perform();
-            }
-          } else if (act.type == castle_web::ActionType::SHOW) {
-            // The evening playlist (#19). Stopping also stops whatever
-            // scene it was mid-way through — "stop the show" means quiet.
-            if (act.arg == "1") {
-              id(show_playlist)->execute();
-            } else {
-              id(show_playlist)->stop();
-              id(scene_stop)->execute();
-              id(lights_override)->execute("off");  // and the manual colour
-            }
-          } else if (act.type == castle_web::ActionType::BLACKOUT) {
-            // #25: the panic switch. Show, scene, audio, pixels — off.
-            id(show_playlist)->stop();
-            id(scene_stop)->execute();
-            id(lights_override)->execute("off");
-          } else if (act.type == castle_web::ActionType::RESTART) {
-            // Queued by the web OTA so its HTTP reply gets out first.
-            esphome::App.safe_reboot();
-          }
+      # And then the mailbox: whatever the web server recorded since the
+      # last tick, executed on the loop. One script in a package of its
+      # own (castle_web_actions.yaml) since v5.70, with no delay in it, so
+      # it runs INLINE — here, after the mirror, which is the order the
+      # contract cares about.
+      - script.execute: web_action
 
 # A card check you can see in Home Assistant without reading logs.
 binary_sensor:

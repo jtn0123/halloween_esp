@@ -39,6 +39,18 @@ inline esp_err_t h_ota(httpd_req_t *req) {
   // stopped, because the eInk panel (gone in v5.44) picked that moment to
   // refresh. The flag also turns the status pixel amber.
   castle_sd::g_quiesce = true;
+  // J3 (grade report 2026-09-17 pm): and stop the show that is running, in
+  // the same breath. The flag above refuses the NEXT scene start (the gate
+  // is in castle_scenes.yaml's scene_run and manifest_check), but a scene
+  // already on the strips keeps its 16 ms cue clock and, if it loops, re-
+  // fires its own audio thirty seconds into the upload. "halt" is the one
+  // dispatch that stops every scene script and starts nothing — the same
+  // call /api/play makes for the same reason. Queued rather than executed:
+  // scripts and the media player belong to the main loop, and this is the
+  // httpd task. It lands within 200 ms, which is nothing beside a flash.
+  // `make ota` and `sd_sync ota` still stop the audio from outside; this is
+  // what protects an OTA nobody arranged for.
+  set_pending(ActionType::SCENE, "halt");
 
   esp_ota_handle_t ota;
   // SEQUENTIAL_WRITES, not the image size: passing a size makes ota_begin
@@ -102,9 +114,12 @@ inline esp_err_t h_ota(httpd_req_t *req) {
   esp_err_t r = reply_json(req, R"({"flashed":true,"rebooting":true})");
   vTaskDelay(pdMS_TO_TICKS(250));
   set_pending(ActionType::RESTART, "");
-  // Flash is written; the pixel may leave amber. The restart is one
-  // pending slot away, and a slot can be overwritten by the next request —
-  // a castle that then failed to reboot must not stay frozen as well.
+  // Flash is written, so the pixel may leave amber. This used to argue that
+  // the reboot was one overwritable mailbox slot away and a castle that
+  // failed to reboot must not stay frozen — which stopped being true when
+  // RESTART got a latch of its own (sd_web_state.h set_pending): nothing
+  // can talk a flashed image out of rebooting now. The flag is dropped
+  // here because the flash writing it described is finished.
   castle_sd::g_quiesce = false;
   return r;
 }

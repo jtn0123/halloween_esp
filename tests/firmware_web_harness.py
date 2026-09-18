@@ -196,18 +196,23 @@ class CastleC:
         action, n = line.split()
         return action.decode(), self.proc.stdout.read(int(n))
 
-    def rules(self, names: list[bytes]) -> list[tuple[bool, bytes, bytes]]:
-        """safe_name / url_decode / json_escape, run in C. Only a binary
-        started with --rules answers this."""
+    def rules(self, names: list[bytes]) -> list[tuple[bool, bytes, bytes, bytes]]:
+        """safe_name / url_decode / json_escape / url_encode, run in C. Only
+        a binary started with --rules answers this. The fourth answer is
+        url_encode OF THE DECODED name — the loopback URL the media player
+        would be handed for it (grade report 2026-09-17 J1)."""
         assert self.proc.stdin and self.proc.stdout
         out = []
         for n in names:
             self.proc.stdin.write(f"{len(n)}\n".encode() + n)
             self.proc.stdin.flush()
-            safe, dlen, elen = (int(x) for x in self.proc.stdout.readline().split())
+            safe, dlen, elen, nlen = (
+                int(x) for x in self.proc.stdout.readline().split()
+            )
             dec = self.proc.stdout.read(dlen)
             esc = self.proc.stdout.read(elen)
-            out.append((bool(safe), dec, esc))
+            enc = self.proc.stdout.read(nlen)
+            out.append((bool(safe), dec, esc, enc))
         return out
 
 
@@ -312,6 +317,10 @@ class Pair:
         )
         if "CASTLE_SD_FREE_KB" in env:
             self.emu.sd_free_kb = int(env["CASTLE_SD_FREE_KB"])
+        # castle_sd::g_quiesce — the flag sd_web_ota.h raises while it burns
+        # flash, spelled to both castles from one place (J3, grade report
+        # 2026-09-17 pm). The C reads CASTLE_QUIESCE in seed_from_env.
+        self.emu.quiesce = env.get("CASTLE_QUIESCE", "0") != "0"
         self.emu.start()
 
     def close(self) -> None:

@@ -8,11 +8,12 @@
 // OTA is the normal way in (PUT /api/ota, `make ota`) and has been since the
 // all-in-flash build was retired: the SD build fits its slot with room to
 // spare. This is the LAST resort, for when the network is gone and the
-// application is the only thing still answering. On the ESP32-S2 Feather it
-// is also the only other way: that chip has no USB Serial/JTAG peripheral, so
-// the application never enumerates a port. The ESP32-S3 carrier has the
-// peripheral and a console on it (castle_s3.yaml); this button is still
-// nearer than the porch.
+// application is the only thing still answering. It was the only other way
+// on the ESP32-S2 Feather that ran the porch until 2026-09-17: that chip has
+// no USB Serial/JTAG peripheral, so the application never enumerated a port.
+// Every S3 build has the peripheral and a console on it (castle.yaml), so
+// there IS a cable answer now — but the button is still nearer than the
+// porch.
 //
 // The ROM bootloader, S2 and S3 alike, checks a bit in an always-on RTC
 // register during

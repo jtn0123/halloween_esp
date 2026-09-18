@@ -1,8 +1,10 @@
 # Wiring the castle: three pixel zones and two speakers
 
 Everything here is for the board this project already runs on — an **Adafruit
-ESP32-S2 Feather** on the castle carrier board, which carries the microSD
-socket. The pins were chosen while a 2.13" eInk FeatherWing held the card
+ESP32-S3 Feather #5477** on the castle-carrier v3.3a board, which carries the
+microSD socket. Every pin below is the one an ESP32-S2 Feather used until
+2026-09-17 (docs/notes/03-build.md §12.20): the carrier is the same, the
+footprint is the same, and the port renamed nothing. The pins were chosen while a 2.13" eInk FeatherWing held the card
 slot (gone since v5.44) and stayed put, so the choices below are not
 arbitrary; see [Pin budget](#pin-budget).
 
@@ -115,7 +117,7 @@ The costs are small and you have room for all of them:
 |---|---|
 | 2 more GPIOs | Yes — A2 and A4 are unused |
 | 2 more level-shifter channels | Yes — the 74AHCT125 is a **quad** buffer; you're using 1 of 4 |
-| 3 of the ESP32-S2's RMT channels | Yes — the S2 has 256 RMT symbols in 64-symbol blocks, so 4 strips fit |
+| 3 more RMT channels | Yes, but only just — the S3 has 192 symbols in four blocks of 48, and three strips plus the on-board status pixel is exactly 192. A fourth strip needs the pixel's block (`tools/gen_rig.py` refuses to overspend rather than letting a strip go silently dark) |
 
 If all three of your fixtures happen to be the same type, one chain still
 works and the app will generate that config too. Three is the one that lets

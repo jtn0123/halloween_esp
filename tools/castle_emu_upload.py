@@ -69,6 +69,12 @@ class Uploads(Replies):
         name = wire.name_from_uri(raw, prefix)
         if not wire.safe_name(name):
             return self._err(400, "bad filename")
+        # J5 (grade report 2026-09-17): the two suffixes this route makes
+        # itself, refused as names. Uploading `X` writes `X.part` and unlinks
+        # `X.old` on success, so a PUT of either destroys a real card file
+        # nobody asked it to touch. firmware/sd_web_upload.h h_put, verbatim.
+        if name.endswith((b".part", b".old")):
+            return self._err(400, "reserved suffix")
         # B3: write_body's free-space precondition (64 KB slack), when the
         # emulated card declares a size (sd_free_kb None = plenty of room).
         free_kb = self.server.sd_free_kb

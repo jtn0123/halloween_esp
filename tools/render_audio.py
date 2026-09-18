@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render each scene in scenes.yaml to a single pre-mixed audio file.
 
-The MAX98357A plays one stream, and mixing on a single-core ESP32-S2 is not
+The MAX98357A plays one stream, and mixing on the castle's ESP32 is not
 worth fighting. So every scene becomes one file: all the layering, ducking and
 reverb happens here, where CPU is free.
 
@@ -311,7 +311,7 @@ def render_test_tones(cfg: dict) -> None:
 def render_chirp(cfg: dict) -> None:
     """audio/00_chirp.mp3 — the firmware's no-SD-card fallback beep.
 
-    castle_sd.yaml embeds it (a card can be absent; silence would read as
+    The show build embeds it (a card can be absent; silence would read as
     a dead speaker), but until now it only existed as a hand-made file on
     one machine — gitignored, so a fresh clone or CI could not validate
     the SD build at all. Synthesised here like everything else in audio/:

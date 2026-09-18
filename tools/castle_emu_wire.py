@@ -109,13 +109,19 @@ def route(method: str, raw_target: bytes) -> tuple[str | None, int]:
 
 
 def url_decode(raw: bytes) -> bytes:
-    """sd_web.h url_decode: %XX and '+'. A '%' followed by two non-hex
-    bytes is a failure (empty result), not strtol's NUL."""
+    """sd_web.h url_decode: %XX and '+'. A '%' that is not followed by two
+    hex bytes is a failure (empty result), not strtol's NUL — a TRAILING
+    stub ("x%4", "x%") included, since the firmware stopped letting that one
+    through as literal text (grade report 2026-09-17 J1). The NUL legs are
+    the C reading a `const char *`: a name whose escape runs into one has
+    ended there as far as the board is concerned."""
     out = bytearray()
     i, n = 0, len(raw)
     while i < n:
         c = raw[i]
-        if c == 0x25 and i + 2 < n and raw[i + 1] and raw[i + 2]:  # '%'
+        if c == 0x25:  # '%'
+            if i + 2 >= n or not raw[i + 1] or not raw[i + 2]:
+                return b""
             if _hexval(raw[i + 1]) < 0 or _hexval(raw[i + 2]) < 0:
                 return b""
             out.append((_hexval(raw[i + 1]) * 16 + _hexval(raw[i + 2])) & 0xFF)
@@ -126,6 +132,28 @@ def url_decode(raw: bytes) -> bytes:
         else:
             out.append(c)
             i += 1
+    return bytes(out)
+
+
+#: RFC 3986's unreserved set, plus the '/' url_encode leaves alone because
+#: what it encodes is a card path rather than one name.
+UNRESERVED = frozenset(
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~/"
+)
+
+
+def url_encode(raw: bytes) -> bytes:
+    """sd_web_util.h url_encode: the loopback URL the media player is handed
+    for a card file. The emulator has no loopback hop of its own — no media
+    player, no second server — so nothing here calls it; it is ported so the
+    C has an oracle, because the bug it fixes was exactly a rule that lived
+    in one language only (grade report 2026-09-17 J1)."""
+    out = bytearray()
+    for c in raw:
+        if c in UNRESERVED:
+            out.append(c)
+        else:
+            out += b"%%%02X" % c
     return bytes(out)
 
 

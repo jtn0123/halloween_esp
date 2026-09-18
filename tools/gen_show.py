@@ -3,9 +3,16 @@
 
 What is here is every generated script that is about the show as a WHOLE
 rather than one scene: the blackout, the dispatch-by-name `run_scene` every
-caller with only a string goes through, the evening playlist (#19) and the
-boot manifest check. Its own module for the 500-line cap; the seam is
-honest — nothing here reads a cue.
+caller with only a string goes through, and the evening playlist (#19). Its
+own module for the 500-line cap; the seam is honest — nothing here reads a cue.
+
+v5.67 took two things out of it. The per-scene scripts are gone from the
+generator entirely (a scene is a cue file on the card now — tools/
+gen_scene_cards.py), so `run_scene` names no scene and this file no longer
+has to be regenerated when one is added. And the boot manifest check went
+with them: its list of files to stat() WAS the scene list, so it is read from
+the card's manifest instead, by a hand-written script in
+firmware/castle_scenes.yaml.
 """
 
 from __future__ import annotations
@@ -24,10 +31,12 @@ MODE_RESTART = "    mode: restart"
 THEN = "    then:"
 SCRIPT_HEAD = (MODE_RESTART, THEN)
 
-#: A scene script holds its first cue this long waiting for the speaker task
-#: (gen_esphome.py re-exports it for the cue emitter). It lives here because
-#: the playlist has to bill the same wait: `run_scene` spends up to this long
-#: before its own `duration_ms` timeline starts.
+#: The scene runner holds its first cue this long waiting for the speaker task
+#: (firmware/castle_scenes.yaml's `wait_until … timeout:`, and castle_cues.h's
+#: kSoundWaitUs). It lives here because the playlist has to bill the same
+#: wait: a scene does not start its `duration_ms` timeline until the speaker
+#: runs. Three copies of one number, held together by
+#: tests/test_firmware_contract.py.
 SOUND_WAIT_MS = 1500
 
 
@@ -35,7 +44,8 @@ def emit_show_playlist(doc: Mapping[str, Any]) -> list[str]:
     """#19: the whole evening as one generated script.
 
     Each scene plays for its full length — SOUND_WAIT_MS of speaker wait
-    plus the authored `duration_ms`, because `run_scene` does not start its
+    plus the running scene's `duration_ms`, read off the card at run time
+    (J1) because `run_scene` does not start its
     timeline until the speaker runs — then the castle goes quiet for the
     gap (scene_stop — a dark porch between songs reads as anticipation, not
     breakage), then the next starts. The script re-executes itself at the
@@ -61,8 +71,23 @@ def emit_show_playlist(doc: Mapping[str, Any]) -> list[str]:
         # The wait is bounded (a dead speaker times out), so the playlist
         # can be at most SOUND_WAIT_MS long per scene, never short: stopping
         # early clipped the authored tail of every scene.
-        hold = SOUND_WAIT_MS + int(by_id[sid]["duration_ms"])
-        out.append(f"      - delay: {hold}ms")
+        #
+        # J1 (grade report 2026-09-17 pm): read at RUN time, not compiled.
+        # `run_scene` dispatches to `scene_run`, whose first action is a
+        # lambda — so castle_scenes::begin() has already taken this scene's
+        # row off the card by the time this delay is evaluated, and the hold
+        # is the length the CARD says. Compiled, a republished duration_ms
+        # was cut short or left a gap until the next OTA, which is the one
+        # thing "a scene edit is a publish" must not mean. A scene the card
+        # cannot name has length 0 and holds only the speaker wait, then
+        # scene_stop — the same as before, one gap earlier.
+        # No duration in the emitted line, on purpose: an edit to
+        # `duration_ms` alone must leave this file byte-identical, or "a
+        # scene edit is a publish" would still be regenerating firmware.
+        out.append(
+            f"      - delay: !lambda 'return {SOUND_WAIT_MS} + "
+            f"castle_scenes::length_ms();'   # {sid}"
+        )
         out.append("      - script.execute: scene_stop")
         out.append(f"      - delay: {gap}ms")
     out.append("      - script.execute: show_playlist")
@@ -70,55 +95,21 @@ def emit_show_playlist(doc: Mapping[str, Any]) -> list[str]:
     return out
 
 
-def emit_manifest_check(doc: Mapping[str, Any]) -> list[str]:
-    """#29: stat() every scene audio file once after mount; missing
-    names land in /api/status instead of being discovered as silence
-    when the cue fires. Generated: the file list IS the scene list."""
-    sd: list[str] = []
-    # #29: the boot manifest check. Every audio file the show will ask for,
-    # stat()ed once after mount; whatever is missing lands in /api/status
-    # (and the remote's status line) instead of being discovered as silence
-    # when the cue fires. Generated because the file list IS the scene list.
-    sd += [
-        "  - id: manifest_check",
-        THEN,
-        "      - lambda: |-",
-        "          if (!castle_sd::g_mounted) return;",
-        "          std::string missing;",
-        "          struct stat st;",
-    ]
-    for i, scene in enumerate(doc["scenes"], start=1):
-        fname = f"{i:02d}_{scene['id']}.mp3"
-        sd.append(
-            f'          if (stat("/sd/scenes/{fname}", &st) != 0)'
-            f' missing += missing.empty() ? "{fname}" : ",{fname}";'
-        )
-    sd += [
-        "          castle_web::set_missing(missing);",
-        "          if (!missing.empty())",
-        ('            ESP_LOGW("castle", "MISSING scene audio: %s", missing.c_str());'),
-        (
-            '          else ESP_LOGI("castle", "manifest: all %d scene files'
-            f' present", {len(doc["scenes"])});'
-        ),
-        "",
-    ]
-    return sd
-
-
 def emit_dispatch(
     doc: Mapping[str, Any],
     zones: Sequence[Mapping[str, Any]],
-    script_ids: Sequence[str],
 ) -> list[str]:
     """The three scripts that are about the show as a whole rather than one
     scene: `scene_stop`, `run_scene` (dispatch by name) and the evening
     playlist below it.
 
     Split out of gen_esphome.py in v5.62, which had grown to the 490-line
-    pre-commit threshold, along the seam this module already had: that file
-    answers "what does one scene DO, cue by cue", this one answers "what can
-    the castle be told to do". Nothing here reads a cue.
+    pre-commit threshold. What is left of the seam after v5.67 is this file
+    and the playlist: "what does one scene DO, cue by cue" is not generated
+    at all any more — it is a cue file on the card, walked by the one generic
+    `scene_run` (firmware/castle_scenes.yaml). These three still are, because
+    the zone count, the playlist order and its gap are facts about the show
+    that live in scenes.yaml.
     """
     out: list[str] = []
     # A single stop script, so "blackout" is one call from anywhere.
@@ -141,13 +132,19 @@ def emit_dispatch(
         for i in range(len(zones))
     )
     out.append(f"      - lambda: '{stop}'")
-    # And it stops the scene SCRIPTS, not only their output. Until v5.35 it
-    # did not: a looping scene's pending delay survived the stop, re-fired
-    # within 30 s, and Vigil walked back on — volume, lights and its wind
-    # track — under whatever the operator was doing (every "quiet board"
-    # test in docs/ISSUE-ring-flicker.md had it playing underneath).
+    # And it stops the scene RUNNER, not only its output. Until v5.35 it did
+    # not: a looping scene's pending delay survived the stop, re-fired within
+    # 30 s, and Vigil walked back on — volume, lights and its wind track —
+    # under whatever the operator was doing (every "quiet board" test in
+    # docs/ISSUE-ring-flicker.md had it playing underneath).
+    #
+    # v5.67: one `stop()` where there used to be one per scene script AND one
+    # per `cont_<id>_N` continuation — 85 of them — plus the line that gives
+    # the running scene's cues back to the PSRAM they came from.
     out.append(LAMBDA)
-    out.extend(f"          id({sid})->stop();" for sid in script_ids)
+    out.append("          id(scene_run)->stop();")
+    out.append("          castle_scenes::stop();")
+    out.append("          castle_web::g_cues.store(0);")
     out.append("      - media_player.stop:")
     out.append("      - text_sensor.template.publish:")
     out.append("          id: current_scene")
@@ -159,7 +156,12 @@ def emit_dispatch(
 
     # Scene dispatch by NAME, for every caller that only has a string: the
     # web server's /api/scene, the PIR's configurable scene select, tools.
-    # Generated so a new scene is automatically reachable everywhere.
+    #
+    # It used to be an if/else chain over the twelve compiled scene scripts,
+    # regenerated whenever the show changed. It no longer names a scene at
+    # all: the name goes to `scene_run`, which asks the CARD what it means
+    # (firmware/castle_scenes.h). A scene added by a publish is reachable
+    # here without a rebuild — which is the whole of v5.67.
     out.append("  # ── Dispatch by name ─────────────────────────────")
     out.append("  - id: run_scene")
     out.append(MODE_RESTART)
@@ -176,14 +178,10 @@ def emit_dispatch(
     # is worth as much as knowing it was told to play.
     out.append("          castle_web::record_event(castle_web::EventKind::SCENE_START,")
     out.append("                                   scene, esp_timer_get_time());")
-    out.append("          // Stop every scene script first. Without this a looping")
-    out.append("          // scene's pending delay re-fires AFTER the new scene starts")
+    out.append("          // Stop the runner first. Without this a looping")
+    out.append("          // scene's pending re-run fires AFTER the new scene starts")
     out.append("          // and takes the stage back — two loops fighting forever.")
-    out.append("          // Continuations too (cont_*): a scene is several short")
-    out.append(
-        "          // scripts, see CHUNK — the one mid-delay may be any of them."
-    )
-    out.extend(f"          id({sid})->stop();" for sid in script_ids)
+    out.append("          id(scene_run)->stop();")
     # A scene is meant to be seen: a colour, a bench pattern or "off" from the
     # desk takes the strips off the Show effect and nothing handed them back
     # before the next boot (2026-09-14: every scene ran dark on the S3 bring-up
@@ -193,22 +191,18 @@ def emit_dispatch(
     out.append("            if (!z->remote_values.is_on() ||")
     out.append('                z->get_effect_name() != "Show") {')
     out.append('              id(lights_override)->execute("show"); break; } }')
-    for j, scene in enumerate(doc["scenes"]):
-        kw = "if" if j == 0 else "else if"
-        out.append(
-            f'          {kw} (scene == "{scene["id"]}") '
-            f"id(scene_{scene['id']})->execute();"
-        )
-    out.append('          else if (scene == "stop") id(scene_stop)->execute();')
-    # "halt": the stops above and nothing else — lights keep their texture,
+    out.append('          if (scene == "stop") { id(scene_stop)->execute(); return; }')
+    # "halt": the stop above and nothing else — lights keep their texture,
     # audio is untouched. /api/play runs it first so a looping scene's 30 s
     # re-fire cannot take the speakers back from the file the operator chose
-    # (a song, the panel's speaker test). A branch here rather than its own
-    # script: a script is a static object, and the S2's dram0 is on a diet.
-    out.append('          else if (scene == "halt") {}')
-    out.append(
-        '          else ESP_LOGW("castle", "unknown scene \'%s\'", scene.c_str());'
-    )
+    # (a song, the panel's speaker test). The cues go with it, because the
+    # file about to play may bring its own.
+    out.append('          if (scene == "halt") { castle_scenes::stop(); return; }')
+    # Anything else is a name the CARD has to recognise. scene_run logs the
+    # ones it does not and wears the built-in look, so an unknown id is a
+    # castle that still glows rather than a silent no-op — /api/scene has
+    # already 404'd the ones the manifest does not list.
+    out.append("          id(scene_run)->execute(scene);")
     out.append("")
     out.extend(emit_show_playlist(doc))
     return out

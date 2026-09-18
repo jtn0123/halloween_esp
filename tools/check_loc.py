@@ -29,8 +29,8 @@ Three kinds of file are exempt, each listed below with its reason:
     source they came from; the generator is what should stay small.
   - the show's own data, `scenes/scenes.yaml`. A line count is the wrong
     budget for content — the number that actually constrains the show is how
-    many scenes the board can hold — so the file trades the cap for that
-    budget, enforced here (SCENE_LIMIT) in the same breath.
+    many scenes the card's manifest holds — so the file trades the cap for
+    that budget, enforced here (SCENE_LIMIT) in the same breath.
   - audit output, `.claude/grade-report*.md`. Findings written ABOUT the
     repo, by the machine, and long in proportion to what was found.
 
@@ -108,10 +108,20 @@ def is_audit_output(rel: str) -> bool:
 
 
 # ── The scene budget: what scenes.yaml is held to instead of the cap ──
-# Scenes are compile-time objects — each becomes a generated ESPHome script
-# costing ~9 KB of the S2's static RAM, which is at ~88% after the tenth.
-# Past twelve the answer is the card-loaded cue format, not a thirteenth
-# script (scenes/scenes.yaml's own header states the same ceiling).
+# The show's ceiling. Until v5.67 this number was a RAM measurement: every
+# scene became a generated ESPHome script costing ~9 KB of the S2's static
+# RAM, and the S2 was at ~88% after the tenth. That cost is gone — a scene is
+# two card files now (scenes/<id>.cue and a 96-byte row in show.man) read into
+# PSRAM by one runner, and the S3 Feather's dram0 sits at 42% with no
+# per-scene term in it at all.
+#
+# It stays 12 because it is still a real bound, just a different one: it is
+# the manifest format's `MAX_SCENES` (tools/scene_manifest.py) and the
+# firmware's `kMaxScenes` (firmware/castle_scenes.h), which size a fixed
+# record count so the reader never allocates. Raising it means raising those
+# two together, re-checking the desk's refusal (core/src/studio_check.rs) and
+# the fallback header, and picking a number somebody has measured — so it is
+# follow-up work (docs/notes/03-build.md §12.21), not a constant to nudge.
 SCENE_LIMIT = 12
 SCENES_FILE = ROOT / "scenes" / "scenes.yaml"
 
@@ -249,12 +259,13 @@ def scene_budget(path: Path = SCENES_FILE) -> tuple[int, str | None]:
         return n, None
     return n, (
         f"SCENE budget FAILED — {path.name} holds {n} scenes, "
-        f"{n - SCENE_LIMIT} over the {SCENE_LIMIT} this board can hold "
-        f"(~9 KB of dram0 each).\n\n"
-        "  A thirteenth generated script is not the next step: move the cue "
-        "timelines to the card-loaded format (one interpreter, N scenes, flat "
-        "RAM) described in scenes/scenes.yaml's header. Raising SCENE_LIMIT "
-        "without measuring dram0 on a real compile just moves the crash."
+        f"{n - SCENE_LIMIT} over the {SCENE_LIMIT} the card manifest holds "
+        f"(scene_manifest.MAX_SCENES, castle_scenes::kMaxScenes).\n\n"
+        "  Since v5.67 this is not a RAM wall — the timelines are card files "
+        "read into PSRAM, and there is no per-scene static cost left. It is "
+        "the manifest's fixed record count. Lifting it means lifting "
+        "MAX_SCENES, kMaxScenes and SCENE_LIMIT in core/src/vocab.rs in one "
+        "change, with a number that was measured rather than hoped for."
     )
 
 
@@ -286,7 +297,7 @@ def _pass_report(
         f"{'' if len(AUDIT_EXEMPT) == 1 else 's'} "
         f"(--exempt lists them with reasons)"
     )
-    print(f"  scenes: {n_scenes} of the {SCENE_LIMIT} this board can hold")
+    print(f"  scenes: {n_scenes} of the {SCENE_LIMIT} the card manifest holds")
     # The early warning: a file within 50 lines of the cap will cross it
     # mid-feature, forcing a split under pressure instead of on a chosen
     # seam. Naming it now is what makes the cap serve design.

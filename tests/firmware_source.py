@@ -32,12 +32,21 @@ SD_SITE = (FW / "sd_web_site.h").read_text()
 SD_REMOTE = (FW / "sd_web_remote.h").read_text()
 SD_EVENTS = (FW / "sd_web_events.h").read_text()
 SD_STATE = (FW / "sd_web_state.h").read_text()
+#: v5.67: the event ring, the light-frame counters and the radio transition
+#: came out of sd_web_state.h on the 500-line cap — a history is not a
+#: mailbox. Read as ONE text with its parent, because every check below is
+#: about what the firmware SAYS, not which header says it.
+SD_RING = (FW / "sd_web_ring.h").read_text()
+SD_STATE += "\n" + SD_RING
 #: v5.62 (L1): the event ring's kind table and the copy of it that
 #: survives a panic live here, under both sd_web_state.h and
 #: castle_health.h — the two headers that need it cannot see each other.
 SD_RTC = (FW / "castle_rtc.h").read_text()
 HEALTH = (FW / "castle_health.h").read_text()
 SD_UTIL = (FW / "sd_web_util.h").read_text()
+#: v5.67: the scene runner. What a scene IS lives on the card now, and the
+#: emulator has to read the same manifest with the same limits.
+SD_SCENES = (FW / "castle_scenes.h").read_text()
 SD_STREAM = (FW / "sd_web_stream.h").read_text()
 #: The emulator's handlers, read as ONE text. They live in two files since
 #: v5.61 — castle_emu_upload.py took the card's write plane, the way

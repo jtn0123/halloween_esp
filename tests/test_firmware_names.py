@@ -2,12 +2,13 @@
 
 firmware/sd_web_util.h is what every handler in sd_web.h calls before it
 trusts anything off the wire: url_decode, safe_name, safe_subpath,
-name_from_uri, query_param. tools/castle_emu_wire.py is the emulator's port
-of exactly those five, and the port is only worth anything if it cannot
-drift — so these tests read the RULE out of the C (the length ceiling, the
-lead byte, the find() calls, the per-byte bounds and literals) and hold the
-Python to it over a corpus, rather than restating the rule in Python where
-the two could quietly disagree.
+name_from_uri, query_param — and since v5.64 url_encode, the way back out
+for a name that becomes a loopback URL. tools/castle_emu_wire.py is the
+emulator's port of exactly those six, and the port is only worth anything if
+it cannot drift — so these tests read the RULE out of the C (the length
+ceiling, the lead byte, the find() calls, the per-byte bounds and literals)
+and hold the Python to it over a corpus, rather than restating the rule in
+Python where the two could quietly disagree.
 
 Split from tests/test_firmware_contract.py (the routes, the reply_err
 strings and the live-wire verdicts stayed there) on the seam the firmware
@@ -34,7 +35,7 @@ from firmware_source import FUNCS, grab
 
 
 class TestNameRules(unittest.TestCase):
-    """safe_name / safe_subpath / url_decode / query_param, re-derived."""
+    """safe_name / safe_subpath / url_decode / url_encode / query_param."""
 
     def ref_safe_name(self) -> Callable[..., Any]:
         body = FUNCS["safe_name"]
@@ -186,14 +187,39 @@ class TestNameRules(unittest.TestCase):
         self.assertIn("url_decode(val.data())", body)  # values ARE decoded
 
     def test_url_decode_plus_and_bad_hex(self) -> None:
-        """'+' is a space; a non-hex %XX fails the whole decode (empty)."""
+        """'+' is a space; a malformed %XX fails the whole decode (empty).
+
+        The trailing stub is the same failure since v5.64: "x%4" used to come
+        out as the literal text "x%4", which is the one input the comment
+        over the C had always described the other way (grade report
+        2026-09-17 J1)."""
         self.assertIn("'+'", FUNCS["url_decode"])
         self.assertIn("strtol", FUNCS["url_decode"])
         self.assertIn("isxdigit", FUNCS["url_decode"])
+        self.assertIn("i + 2 >= in.size()) return {}", FUNCS["url_decode"])
         self.assertEqual(wire.url_decode(b"a+b%20c"), b"a b c")
         self.assertEqual(wire.url_decode(b"a%zzb"), b"")
-        self.assertEqual(wire.url_decode(b"a%4"), b"a%4")  # needs two chars
+        self.assertEqual(wire.url_decode(b"a%4"), b"")
+        self.assertEqual(wire.url_decode(b"a%"), b"")
         self.assertEqual(wire.url_decode(b"%4g"), b"")
+
+    def test_url_encode_is_the_decoders_inverse_for_every_legal_name(self) -> None:
+        """grade report 2026-09-17 J1: the loopback URL a card track is
+        played from is built by url_encode and read back by url_decode, so
+        the one property that matters is that the pair is lossless over
+        everything safe_name admits. '/' stays a separator (play_sd's
+        parameter may name a subdirectory) and nothing else survives raw."""
+        self.assertEqual(wire.url_encode(b"a+b.mp3"), b"a%2Bb.mp3")
+        self.assertEqual(wire.url_encode(b"100%.mp3"), b"100%25.mp3")
+        self.assertEqual(wire.url_encode(b"a b.mp3"), b"a%20b.mp3")
+        self.assertEqual(
+            wire.url_encode(b"scenes/01_vigil.mp3"), b"scenes/01_vigil.mp3"
+        )
+        self.assertEqual(wire.url_encode(b"a~b-c_d.MP3"), b"a~b-c_d.MP3")
+        for n in [*self.corpus(9), b"x%4.mp3", b"a#b?c.mp3", b"100%.mp3"]:
+            if not wire.safe_name(n):
+                continue
+            self.assertEqual(wire.url_decode(wire.url_encode(n)), n, repr(n))
 
     def test_dotdot_as_a_substring_is_a_legal_name(self) -> None:
         self.assertTrue(wire.safe_name(b"track..mix.mp3"))

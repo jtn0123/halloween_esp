@@ -19,7 +19,8 @@
 # cannot, and where the boot stops even with these two in place.
 #
 # On (2): the real carrier logs over the S3's USB Serial/JTAG peripheral
-# (castle_s3.yaml §2) and that is right for hardware — it is the port the
+# (castle.yaml's `logger:`, which every S3 build inherits since the S2 went on
+# 2026-09-17) and that is right for hardware — it is the port the
 # board is plugged into. Espressif's QEMU emulates the UARTs and does not
 # emulate USB Serial/JTAG at all (`-device help` lists no such device), so a
 # USJ console under QEMU is a console into a void: the ROM's own UART0 chatter

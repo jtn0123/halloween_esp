@@ -34,12 +34,15 @@ inline std::string url_decode(const char *s) {
   size_t i = 0;
   while (i < in.size()) {
     const char c = in[i];
-    if (c == '%' && i + 2 < in.size()) {
+    if (c == '%') {
+      // A TRAILING stub ("x%4", "x%") used to fall through to the line
+      // below and come out as literal text — the one input where this
+      // function and the comment above it disagreed (grade report
+      // 2026-09-17 J1). Two hex digits or nothing, everywhere.
+      if (i + 2 >= in.size()) return {};
       const auto a = static_cast<unsigned char>(in[i + 1]);
-      if (const auto b = static_cast<unsigned char>(in[i + 2]);
-          !isxdigit(a) || !isxdigit(b)) {
-        return {};
-      }
+      const auto b = static_cast<unsigned char>(in[i + 2]);
+      if (!isxdigit(a) || !isxdigit(b)) return {};
       const std::array<char, 3> hex{{in[i + 1], in[i + 2], '\0'}};
       out.push_back(static_cast<char>(strtol(hex.data(), nullptr, 16)));
       i += 3;
@@ -47,6 +50,40 @@ inline std::string url_decode(const char *s) {
     }
     out.push_back(c == '+' ? ' ' : c);
     i++;
+  }
+  return out;
+}
+
+/// The other direction, for the one place a card name goes back OUT as a
+/// URL: the loopback stream the media player fetches a track from
+/// (castle_sd_common.yaml's set_media_url lambdas, generated audio_sd.yaml).
+///
+/// grade report 2026-09-17 J1: those lambdas pasted the name into the path
+/// raw, and h_sd_get then decoded what they had written. So `a+b.mp3` — a
+/// name safe_name admits, that PUT /api/files accepts as %2B and that
+/// /api/files lists — arrived at the stream server as `a b.mp3` and was a
+/// 404 forever; `100%.mp3` decoded to nothing at all and was a 400. The
+/// file was on the card the whole time. Encode here and the round trip is
+/// exact for every name safe_name lets through.
+///
+/// RFC 3986's unreserved set survives; everything else becomes %XX. '/' is
+/// deliberately left alone, because what this encodes is a card PATH:
+/// play_sd's parameter may name a subdirectory ("scenes/01_vigil.mp3"), and
+/// safe_subpath at the other end is what judges the segments.
+inline std::string url_encode(const std::string &s) {
+  std::string out;
+  out.reserve(s.size() + 8);
+  constexpr char kHex[] = "0123456789ABCDEF";
+  for (unsigned char c : s) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' ||
+        c == '~' || c == '/') {
+      out.push_back(static_cast<char>(c));
+    } else {
+      out.push_back('%');
+      out.push_back(kHex[c >> 4]);
+      out.push_back(kHex[c & 0x0f]);
+    }
   }
   return out;
 }

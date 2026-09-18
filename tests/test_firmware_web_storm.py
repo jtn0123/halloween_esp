@@ -12,11 +12,11 @@ That last part matters as much as the replies: a name that decodes to a NUL
 truncates the C string the handler hands to fopen, and a name the two sides
 disagree about lands as a FILE, silently, on one card and not the other.
 
-The rules half runs safe_name, url_decode and json_escape in C — the harness
-binary's `--rules` mode — against castle_emu_wire's port of the same three,
-byte for byte. Those three decide what may reach the card at all, and a fuzz
-that only compares HTTP answers can be fooled by two handlers making the same
-wrong call for different reasons.
+The rules half runs safe_name, url_decode, json_escape and url_encode in C
+— the harness binary's `--rules` mode — against castle_emu_wire's port of the
+same four, byte for byte. They decide what may reach the card at all and how
+a name goes back out as a URL, and a fuzz that only compares HTTP answers can
+be fooled by two handlers making the same wrong call for different reasons.
 
 Knobs, read at run time: CASTLE_STORM_SEED (default 1234) and
 CASTLE_STORM_CASES (default 2000). Fixed by default so a red run reproduces.
@@ -148,6 +148,41 @@ class TestNameStorm(unittest.TestCase):
         self.assertEqual((c.status, c.body), (e.status, e.body))
         self.assertEqual((c.status, c.body), (200, b'{"queued":true}'))
 
+    #: Names safe_name admits, that the desk can PUT (it encodes them), that
+    #: /api/files lists — and that could not be PLAYED before v5.64, because
+    #: the loopback URL was built raw and the stream server decodes what it
+    #: is given (grade report 2026-09-17 J1). A name with '?' in it is NOT
+    #: here: h_sd_get decodes and only then cuts at the first '?', exactly as
+    #: name_from_uri does for PUT, so such a file cannot be addressed on
+    #: either route and never gets onto the card through us in the first place.
+    AWKWARD = ("a+b.mp3", "100%.mp3", "a b.mp3", "x%4.mp3", "a#b.mp3", "a=b&c.mp3")
+    #: The three of those the SERVER itself used to get wrong: '+' came back
+    #: a space (404 for a file that is right there), and both '%' stubs made
+    #: url_decode fail empty (400). The other three reached the right file
+    #: raw and were fragile one layer up — '#' is a fragment and a raw space
+    #: is not a legal URL character, both in the IDF client's hands.
+    RAW_MISSES = ("a+b.mp3", "100%.mp3", "x%4.mp3")
+
+    def test_an_encoded_name_reaches_the_file_the_raw_one_missed(self) -> None:
+        """The stream server, asked for each of those names the way the
+        media player now asks: url_encode'd. Every one must come back 200
+        with the file's own bytes, where the raw spelling the two
+        set_media_url lambdas used to build found the wrong file or none."""
+        for i, name in enumerate(self.AWKWARD):
+            raw = name.encode()
+            self.assertTrue(wire.safe_name(raw), name)
+            body = b"\xff\xfb" + bytes([i]) * 64
+            (self.pair.card_c / name).write_bytes(body)
+            encoded = wire.url_encode(raw)
+            got = self.pair.c.http("GET", b"/sd/" + encoded, port=8080)
+            self.assertEqual(got.status, 200, f"{name} as {encoded!r}")
+            self.assertEqual(got.body, body, name)
+            if name in self.RAW_MISSES:
+                self.assertNotEqual(
+                    self.pair.c.http("GET", b"/sd/" + raw, port=8080).status, 200, name
+                )
+            (self.pair.card_c / name).unlink()
+
     def test_an_overlong_target_is_414_on_both(self) -> None:
         """HTTPD_MAX_URI_LEN, from both sides. Below it the name is merely
         too long for safe_name (400); above it no handler runs at all."""
@@ -165,9 +200,10 @@ class TestNameStorm(unittest.TestCase):
 
 @unittest.skipIf(COMPILER is None and not IN_CI, "no host C++ compiler")
 class TestByteRules(unittest.TestCase):
-    """safe_name, url_decode and json_escape, run in C against their port.
+    """safe_name, url_decode, json_escape and url_encode, in C against their
+    port.
 
-    sd_web_util.h's three functions are where a name stops being a string
+    sd_web_util.h's four functions are where a name stops being a string
     and becomes a decision: what may be written to the card, what may be
     played, and what may go out inside the unescaped JSON of /api/files.
     tests/test_firmware_names.py holds castle_emu_wire to them by reading
@@ -234,11 +270,11 @@ class TestByteRules(unittest.TestCase):
         ]
         return out
 
-    def test_the_three_byte_rules_agree_name_for_name(self) -> None:
+    def test_the_four_byte_rules_agree_name_for_name(self) -> None:
         names = self.names()
         answers = self.rules.rules(names)
         self.assertEqual(len(answers), len(names))
-        for name, (safe, dec, esc) in zip(names, answers, strict=True):
+        for name, (safe, dec, esc, enc) in zip(names, answers, strict=True):
             want_dec = wire.url_decode(name)
             want_esc = wire.json_escape(name.decode("utf-8", "surrogateescape")).encode(
                 "utf-8", "surrogateescape"
@@ -246,13 +282,47 @@ class TestByteRules(unittest.TestCase):
             self.assertEqual(dec, want_dec, f"url_decode({name!r})")
             self.assertEqual(safe, wire.safe_name(want_dec), f"safe_name({name!r})")
             self.assertEqual(esc, want_esc, f"json_escape({name!r})")
+            self.assertEqual(enc, wire.url_encode(want_dec), f"url_encode({name!r})")
+
+    def test_encoding_a_name_and_decoding_it_again_gives_the_name_back(self) -> None:
+        """The property the loopback URL needed and never had (grade report
+        2026-09-17 J1): whatever the card is holding, url_encode it and the
+        server's own url_decode must hand back exactly that. It did not for
+        `a+b.mp3` (a space came back) or `100%.mp3` (nothing came back), and
+        those two files could be listed, queued and never played."""
+        names = [
+            *self.names(),
+            b"a+b.mp3",
+            b"100%25.mp3",
+            b"a%20b.mp3",
+            b"x%254.mp3",
+            b"%23hash%3Fquery.mp3",
+            b"scenes%2F01_vigil.mp3",
+        ]
+        answers = self.rules.rules(names)
+        # The encoded form goes back THROUGH the C: this is the firmware's
+        # own encoder against the firmware's own decoder, not a Python one.
+        back = self.rules.rules([enc for (_s, _d, _e, enc) in answers])
+        urlsafe = set(wire.UNRESERVED) | {0x25}  # unreserved, '/' and '%'
+        round_tripped = 0
+        for name, (safe, dec, _esc, enc), (_s2, dec2, _e2, _n2) in zip(
+            names, answers, back, strict=True
+        ):
+            if not safe:
+                continue  # never reaches a media URL: /api/play refuses it
+            self.assertEqual(dec2, dec, f"{name!r} encoded to {enc!r}")
+            self.assertLessEqual(set(enc), urlsafe, f"{enc!r} is not URL-safe")
+            round_tripped += 1
+        self.assertGreater(round_tripped, 20, "the corpus admitted almost nothing")
 
     def test_the_poison_set_is_really_refused(self) -> None:
         """fuzz_corpus.POISON is the oracle's claim about what safe_name
         must not let through (grade report 2026-09-06 J1). Here the claim
         is put to the C rather than to a second Python copy of it."""
         names = [b"ok%%%02x.mp3" % b for b in fuzz_corpus.POISON]
-        for name, (safe, dec, _esc) in zip(names, self.rules.rules(names), strict=True):
+        for name, (safe, dec, _esc, _enc) in zip(
+            names, self.rules.rules(names), strict=True
+        ):
             self.assertTrue(fuzz_corpus.poisoned_text(dec), name)
             self.assertFalse(safe, f"safe_name let {name!r} through")
 
@@ -262,7 +332,9 @@ class TestByteRules(unittest.TestCase):
         there, and on the device a raw NUL cannot be in a request target in
         the first place — %00 is the only way one gets into a name."""
         names = [b"a%%%02x.mp3" % b for b in range(256)]
-        for name, (safe, dec, esc) in zip(names, self.rules.rules(names), strict=True):
+        for name, (safe, dec, esc, _enc) in zip(
+            names, self.rules.rules(names), strict=True
+        ):
             self.assertEqual(dec, wire.url_decode(name), name)
             self.assertEqual(safe, wire.safe_name(dec), name)
             self.assertEqual(

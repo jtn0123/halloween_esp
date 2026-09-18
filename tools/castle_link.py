@@ -18,7 +18,10 @@ no amplifiers required.
 Who the castle is, in order:
   1. the CASTLE_HOST environment variable
   2. the first [entry] with a host= in devices.toml
-(mDNS is not an option on the ESP32-S2 — see HARDWARE_FINDINGS.md.)
+(mDNS is ON in the build since v5.66, and `castle-feather-s3.local` resolves
+on the S3 — but it is a devices.toml `fallbacks` entry, not the primary: the
+router lease answers in one connect(), with no multicast query to lose. See
+the header of devices.toml.)
 """
 
 from __future__ import annotations

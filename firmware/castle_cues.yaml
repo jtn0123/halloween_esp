@@ -39,7 +39,10 @@ script:
   - id: cues_end
     then:
       - lambda: |-
-          castle_cues::unload();
+          // castle_scenes::stop() unloads too, and clears the running scene
+          // with it: one door for "the show that was loaded is over",
+          // whether it was a scene's or a raw song's.
+          castle_scenes::stop();
           castle_web::g_cues.store(0);
 
 interval:
@@ -50,10 +53,16 @@ interval:
     then:
       - lambda: |-
           if (!castle_cues::active()) return;
-          // The PIR, a button and the evening playlist start scenes without
-          // going through the web mailbox below. A scene names itself in
-          // current_scene the moment it starts; a raw file's is "stop".
-          if (id(current_scene).state != "stop") {
+          // A SCENE owns its cues since v5.67 (castle_scenes.h): scene_run
+          // loaded them and scene_stop gives them back, so this clock ticks
+          // them exactly as it ticks a raw song's.
+          //
+          // A raw song's show, on the other hand, is over the moment a scene
+          // starts — and the PIR, a button and the evening playlist start
+          // scenes without going through the web mailbox below, so there is
+          // nowhere else to notice. A scene names itself in current_scene the
+          // moment it starts; a raw file's is "stop".
+          if (!castle_scenes::armed() && id(current_scene).state != "stop") {
             id(cues_end)->execute();
             return;
           }

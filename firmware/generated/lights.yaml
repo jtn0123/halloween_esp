@@ -14,7 +14,7 @@ light:
     num_leds: ${px_towerL}
     chipset: WS2812
     channel_colors: ${channels_towerL}
-    rmt_symbols: 64
+    rmt_symbols: 48
     use_psram: false
     default_transition_length: 0s
     effects:
@@ -83,7 +83,7 @@ light:
     num_leds: ${px_towerR}
     chipset: WS2812
     channel_colors: ${channels_towerR}
-    rmt_symbols: 64
+    rmt_symbols: 48
     use_psram: false
     default_transition_length: 0s
     effects:
@@ -152,7 +152,7 @@ light:
     num_leds: ${px_door}
     chipset: WS2812
     channel_colors: ${channels_door}
-    rmt_symbols: 64
+    rmt_symbols: 48
     use_psram: false
     default_transition_length: 0s
     effects:
@@ -214,7 +214,8 @@ light:
             if (it.size() > 0) it[0] = Color(255, 0, 0, 0);
             if (it.size() > 1) it[it.size() - 1] = Color(0, 0, 255, 0);
     # door: ring12 — 12 px, GRB, GPIO16
-# RMT: 256 of 256 symbols spent — 3 strip(s) and the SD build's status pixel (1 block, castle_sd.yaml) — 0 block(s) spare.
+# RMT, the Feather build (castle_feather_s3.yaml): 192 of 192 symbols spent — 3 strip(s) of 48 and the status pixel (1 block) — 0 block(s) spare.
+# RMT, the carrier build (castle_s3.yaml), which has no status pixel: 144 of 192 — 1 block(s) spare.
 
 script:
   - id: lights_override

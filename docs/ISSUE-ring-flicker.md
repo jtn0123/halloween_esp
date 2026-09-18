@@ -3,7 +3,9 @@
 **Status:** open, narrowed to the door's signal path. Not a show-stopper: the
 ring lights and animates correctly, it just corrupts a frame now and then.
 **Opened:** 2026-08-21 · **Firmware at the time:** v5.33 · **Rig:** 2× Jewel 7
-(RGBW, towers) + Ring 12 (RGB, door), 74AHCT125 level shifter, ESP32-S2 Feather.
+(RGBW, towers) + Ring 12 (RGB, door), 74AHCT125 level shifter, ESP32-S2 Feather
+(an ESP32-S3 Feather #5477 since 2026-09-17 — same carrier, same pins, and the
+flicker has not been re-observed or re-ruled-out on it).
 
 Read this before spending an evening on the same theories. Everything below
 that says "ruled out" has evidence next to it, and the evidence is repeatable.
@@ -27,7 +29,7 @@ Each line was tested, not reasoned about.
 | Suspect | Evidence it is not this |
 |---|---|
 | A blocked component loop (long `light` operations) | 90 s of live logs streamed over the native API while `bars` ran: **silent**. The "took a long time for an operation" warnings only ever appear during boot (eInk refresh + WiFi connect). |
-| The RMT refill ISR dying in a flash-cache blackout | `CONFIG_RMT_ISR_IRAM_SAFE=y` is already set by ESPHome (see `sdkconfig.castle-sd`), along with `RMT_TX_ISR_HANDLER_IN_IRAM` and `RMT_ENCODER_FUNC_IN_IRAM`. The ISR runs from IRAM and survives cache disables. |
+| The RMT refill ISR dying in a flash-cache blackout | `CONFIG_RMT_ISR_IRAM_SAFE=y` is already set by ESPHome (see `sdkconfig.castle-feather-s3`), along with `RMT_TX_ISR_HANDLER_IN_IRAM` and `RMT_ENCODER_FUNC_IN_IRAM`. The ISR runs from IRAM and survives cache disables. |
 | GPIO16 being the S2's `XTAL_32K_N` pin | `CONFIG_RTC_CLK_SRC_INT_RC=y` — the RTC runs off the internal RC oscillator, so GPIO15/16 are plain GPIOs. Nothing else is driving the pad. |
 | ESPHome's `esp32_rmt_led_strip` misusing the peripheral | Read the driver: it calls `rmt_tx_wait_all_done()` before every frame, waits the 50 µs WS2812 latch, uses a queue depth of 1, and its encoder callback is `IRAM_ATTR`. One buffer per strip. Nothing overlaps. |
 | The scene's 30 s audio re-trigger starving the ISR | **Not actually ruled out — re-test.** v5.33 made every manual override run `scene_stop` first, but until v5.35 `scene_stop` never stopped the scene *scripts*: Vigil's pending 30 s delay survived it and re-fired, audio and all, under every "quiet board" test (found 2026-08-22, with the castle reporting `scene: vigil` minutes after a stop). The 30 s cadence may not have been a coincidence. Test 1 below still stands on its own: a lone channel corrupted with the towers off. |
@@ -78,29 +80,32 @@ different halves of the system.
 
 ## The software lever held in reserve
 
-The ESP32-S2's whole RMT peripheral is 4 channels × 64 symbols = **256, no
-DMA**. `tools/gen_rig.py` spends that budget explicitly, per zone, and
+The ESP32-S3's whole RMT TX side is 4 channels × 48 symbols = **192, no DMA**
+as ESPHome drives it. (The S2 this was first written against had 4 × 64 = 256;
+the board changed on 2026-09-17, docs/notes/03-build.md §12.20, and the budget
+got *tighter*.) `tools/gen_rig.py` spends that budget explicitly, per zone, and
 refuses a total the hardware cannot back (`RMT_TOTAL_SYMBOLS`, and the
-`RMT: 256 of 256 symbols spent … 0 block(s) spare` line it writes into
+`RMT … 192 of 192 symbols spent … 0 block(s) spare` line it writes into
 `firmware/generated/lights.yaml`). Since 2026-09-06 the status pixel's block
 is part of that total (`STATUS_PIXEL_BLOCKS`), so the arithmetic below is
 enforced rather than described.
 
 Giving the door a **second block** halves how often its refill ISR must run —
-the deadline goes from ~40 µs to ~80 µs:
+the deadline goes from ~30 µs to ~60 µs:
 
 ```yaml
 # scenes/scenes.yaml, the door's zone entry
 - {id: door, channel: 3, name: "Doorway, centre", pin: 16,
-   fixture: ring12, rgbw: false, rmt_symbols: 128}
+   fixture: ring12, rgbw: false, rmt_symbols: 96}
 ```
 
-The only free block belongs to the SD build's **status pixel** (the onboard
-NeoPixel, `castle_sd.yaml`), so this is a straight trade: **flicker margin on
-the ring, or the onboard status LED**. The generator will not let you take
-both — `make generate` stops with "the status pixel holds 64 more" — so the
-edit is two edits: drop `status_pixel` (and `neopixel_power`) from
-`castle_sd.yaml`, and set `STATUS_PIXEL_BLOCKS = 0` in `tools/gen_rig.py`.
+The only free block belongs to the Feather's **status pixel** (the onboard
+NeoPixel, `castle_feather_s3.yaml`), so this is a straight trade: **flicker
+margin on the ring, or the onboard status LED**. The generator will not let
+you take both — `make generate` stops with "the status pixel holds 48 more" —
+so the edit is two edits: drop `status_pixel` (and `neopixel_power`) from
+`castle_feather_s3.yaml`, and set `STATUS_PIXEL_BLOCKS = 0` in
+`tools/gen_rig.py`.
 It is not the leading fix — test 1 above proved a lone channel still
 corrupts, and more buffer does not fix a wire — but it is worth trying if the
 hardware tests come back clean.
@@ -124,7 +129,8 @@ in). `@25`…`@100` sets brightness.
 
 They are separate bugs found on the way, all on the porch build and verified:
 
-- **v5.31** — `castle_sd.yaml` still carried bench.yaml's `pin_towerL: "33"`,
+- **v5.31** — `castle_sd.yaml` (the S2 build of the day, deleted 2026-09-17)
+  still carried bench.yaml's `pin_towerL: "33"`,
   so the porch build drove the Feather's onboard NeoPixel as tower L and the
   real left jewel got no data at all. That was the "left tower shows garbage
   and strobes white" report.

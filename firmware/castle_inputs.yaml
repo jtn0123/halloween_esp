@@ -39,7 +39,14 @@ binary_sensor:
         - lambda: |-
             static uint32_t last_ms = 0;
             const int64_t now_us = esp_timer_get_time();
-            const std::string want = id(pir_scene).current_option().str();
+            // A `text`, not a `select`, since v5.69 (J1, grade report
+            // 2026-09-17 pm): the ids come off the card, so the entity that
+            // names which scene motion fires cannot carry a compiled list.
+            // /api/pir refused anything the card does not list before this
+            // value was ever stored (sd_web.h h_pir); a name the card has
+            // since lost is a scene_run that wears the fallback look and
+            // says so, which is the same outcome a stale option had.
+            const std::string want = id(pir_scene).state;
             if (!id(pir_armed).state) {
               castle_web::record_event(castle_web::EventKind::PIR_OFF, "", now_us);
               return;

@@ -51,6 +51,7 @@
 #include "esphome/core/log.h"
 #include "sd_audio.h"
 #include "sd_space.h"
+#include "sd_web_state.h"   // g_scenes_dirty, the publish bell (J1)
 #include "sd_web_util.h"
 
 // reply_err/reply_json/TAG come from sd_web.h, which includes this header
@@ -135,6 +136,20 @@ inline esp_err_t write_body(httpd_req_t *req, const char *path) {
   }
   if (had_old) unlink(keep.c_str());   // the new copy is in place: let it go
   ESP_LOGI(TAG, "uploaded %s (%u KB)", path, (unsigned) (written / 1024));
+  // J1 (grade report 2026-09-17 pm): the show's manifest just changed, so the
+  // scene id list /api/scene and /api/pir validate against is stale. It is
+  // re-read on the main loop, not here — this is the upload TASK, and the
+  // manifest is card I/O whose result the httpd task reads (sd_web_state.h
+  // g_scenes_dirty, drained by castle_sd_common.yaml's 200 ms interval into
+  // `seed_scene_ids`). One name, not the whole directory: a .cue or an mp3
+  // changes what a scene DOES, and only show.man changes which scenes exist.
+  static constexpr char kManifest[] = "/scenes/show.man";
+  const size_t plen = strlen(path);
+  if (plen >= sizeof(kManifest) - 1 &&
+      strcmp(path + plen - (sizeof(kManifest) - 1), kManifest) == 0) {
+    ESP_LOGI(TAG, "show.man republished — the scene list will be re-read");
+    g_scenes_dirty.store(true);
+  }
   sd_space_kb(sd_total, sd_free, true);   // the card just shrank; /api/status reads this
   std::array<char, 220> body{};
   snprintf(body.data(), body.size(), R"({"path":"%s","bytes":%u,"crc32":"%08lx"})",
@@ -245,6 +260,18 @@ inline esp_err_t h_put(httpd_req_t *req) {
     return reply_err(req, "413 Payload Too Large", "site file too large");
   std::string name = name_from_uri(req, prefix);
   if (!safe_name(name)) return reply_err(req, "400 Bad Request", "bad filename");
+  // J5 (grade report 2026-09-17): the two names this route CANNOT be trusted
+  // with, because it makes them itself. Uploading `X` writes `X.part` and, on
+  // success, unlinks `X.old` — so a PUT of `song.mp3.part` destroys the
+  // in-flight copy of `song.mp3`, and a PUT of `song.mp3.old` is a file the
+  // next upload of `song.mp3` deletes without being asked to. Neither is a
+  // name anything in this repo publishes, which is exactly why the refusal is
+  // cheap; the alternative is a data-loss bug nobody would think to look for.
+  // Mirrored in tools/castle_emu_upload.py.
+  if (name.size() >= 5 && name.compare(name.size() - 5, 5, ".part") == 0)
+    return reply_err(req, "400 Bad Request", "reserved suffix");
+  if (name.size() >= 4 && name.compare(name.size() - 4, 4, ".old") == 0)
+    return reply_err(req, "400 Bad Request", "reserved suffix");
   if (dir[0] != '\0') {
     std::string d = std::string("/sd/") + dir;
     d.pop_back();   // mkdir without the trailing slash

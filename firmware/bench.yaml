@@ -1,26 +1,31 @@
-# Bench dry-run — the bare ESP32-S2 Feather, ZERO extra parts.
+# Bench dry-run — a bare Feather, ZERO extra parts.
 #
 #   .venv/bin/esphome run firmware/bench.yaml
 #
-# What this proves before the jewels and amp arrive:
-#   - the open risk from PROJECT_NOTES §12.4: MP3 decode + WiFi + RMT all at
-#     once on a single core. The audio pipeline runs in full; the I2S pins
-#     just have nothing listening. Watch `esphome logs` for buffer underruns.
-#     One caveat since the flash build was retired (2026-09-01): the scene
-#     tracks live on the card now, so with an empty slot each scene decodes
-#     the one-second chirp instead of its song and the decode risk is NOT
-#     what this run measures. Put the show card in the wing for that, or use
-#     bench_audio.yaml, which exists to measure exactly it.
+# The board is an ESP32-S3 Feather #5477 since 2026-09-17 (it was an S2 from
+# the start of the project until then), and this file follows the show build
+# whatever that is, so the retirement cost it nothing but this paragraph.
+#
+# What this proves with nothing soldered to the board:
+#   - that it comes up, joins WiFi and serves the desk: the ONBOARD NeoPixel
+#     (GPIO33) is the show build's status pixel, so it is the one thing on a
+#     bare Feather you can actually watch. This is what a FACTORY Feather is
+#     good for before it goes into the carrier (pending/README.md's bring-up
+#     list step 2), and USB-only power is safe precisely because nothing is
+#     attached.
 #   - the whole scene engine: cue timing, effect switching, PIR debounce
 #     (GPIO6 is pulled down, so it stays quiet unwired).
-#   - that the board comes up, joins WiFi and serves the desk: the ONBOARD
-#     NeoPixel (GPIO33) is the show build's status pixel, so it is the one
-#     thing on a bare Feather you can actually watch.
+#   - the audio pipeline runs in full; the I2S pins just have nothing
+#     listening. Watch `esphome logs` for buffer underruns — but NOT as a
+#     decode measurement: since the flash build was retired (2026-09-01) the
+#     scene tracks live on the card, so with an empty slot each scene decodes
+#     the one-second chirp instead of its song. bench_audio.yaml exists to
+#     measure decode properly, with the card in.
 #
-# It used to be tower L's strip instead — you could see the candle flicker on
-# the board itself — but that trick died with the flash build (see the
-# substitutions below). All three zones now clock out into unconnected pins
-# harmlessly, and the cue timings are read from the log, not from a pixel.
+# The status pixel used to be tower L's strip instead — you could see the
+# candle flicker on the board itself — but that trick died with the flash
+# build (see the substitutions below). All three zones now clock out into
+# unconnected pins harmlessly, and the cue timings are read from the log.
 
 substitutions:
   name: castle-bench
@@ -35,16 +40,17 @@ substitutions:
 
 packages:
   # The show build, not the core: the bench needs an `sfx` dispatch script,
-  # and castle.yaml deliberately defines none. It used to base on
-  # castle_flash.yaml, which carried the whole show in the image; since that
-  # build was retired (2026-09-01, docs/notes/03-build.md §12.15) the show
-  # build is castle_sd.yaml. With no card in the slot every scene plays the
-  # embedded chirp instead of its track, which is exactly what this dry run
-  # wants: the pipeline runs, the cues run, and nothing needs soldering.
-  base: !include castle_sd.yaml
+  # and castle.yaml deliberately defines none. It has been three different
+  # files — castle_flash.yaml until 2026-09-01, castle_sd.yaml until
+  # 2026-09-17, and now the S3 Feather build that replaced it — and this line
+  # is the only thing here that had to change each time. With no card in the
+  # slot every scene plays the embedded chirp instead of its track, which is
+  # exactly what this dry run wants: the pipeline runs, the cues run, and
+  # nothing needs soldering.
+  base: !include castle_feather_s3.yaml
 
 # NO `switch:` for the onboard pixel's power rail here any more. Both bench
 # files carried their own copy while they based on castle_flash.yaml, which
-# had none; castle_sd.yaml declares neopixel_power itself (it drives the
+# had none; the show build declares neopixel_power itself (it drives the
 # status pixel), and a second declaration is a hard "ID redefined" error
 # rather than a merge. (2026-09-01)

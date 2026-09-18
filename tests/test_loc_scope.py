@@ -186,8 +186,9 @@ class TestExemptions(unittest.TestCase):
 class TestSceneBudget(unittest.TestCase):
     """What scenes.yaml is held to now that it is not held to the cap.
 
-    The board fits ~12 scenes (~9 KB of dram0 each). Dropping the line cap on
-    the show file only stays honest if the budget that actually binds it is
+    The card's manifest fits 12 scenes — a fixed record count since v5.67,
+    where it used to be ~9 KB of the S2's dram0 a scene. Dropping the line cap
+    on the show file only stays honest if the budget that actually binds it is
     checked in the same place, and fails.
     """
 
@@ -228,7 +229,11 @@ class TestSceneBudget(unittest.TestCase):
         assert complaint is not None
         self.assertIn("FAILED", complaint)
         self.assertIn("13", complaint)
-        self.assertIn("card-loaded", complaint)
+        # The complaint used to point at the card-loaded cue format as the
+        # way past a RAM wall. The timelines ARE card files now (v5.67), so
+        # that advice no longer exists — what it must name instead is the
+        # three constants a deliberate lift has to move together.
+        self.assertIn("MAX_SCENES", complaint)
 
     def test_the_real_show_is_within_its_budget(self) -> None:
         n, complaint = check_loc.scene_budget()

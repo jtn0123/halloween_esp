@@ -29,20 +29,20 @@ are left alone; purge means "clear the music", not "wipe the card".
 
 from __future__ import annotations
 
-import contextlib
 import gzip
 import importlib.util
 import json
 import re
 import sys
-import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
 from pathlib import Path
 
 import build_paths as bp
+import sd_ota
 from hosts import maybe_host
+from published import Published
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -109,6 +109,33 @@ def _scene_bytes_match(ip: str, name: str, data: bytes) -> bool:
     return _card_bytes_match(ip, name, data, "scenes/")
 
 
+def _scene_unchanged(
+    ip: str, name: str, data: bytes, have: dict[str, int], rec: Published
+) -> bool:
+    """Is /sd/scenes/<name> already exactly these bytes?
+
+    Cheapest evidence first: a size that disagrees settles it, then the
+    record of what we last PUT to THIS host (tools/published.py), and only
+    then the byte compare that costs a whole file over Wi-Fi. Whatever the
+    slow path learns is recorded, so the next publish is cheap."""
+    if have.get(name) != len(data):
+        return False
+    key = f"scenes/{name}"
+    if rec.matches(key, data):
+        return True
+    if _scene_bytes_match(ip, name, data):
+        rec.record(key, data)
+        return True
+    rec.forget(key)
+    return False
+
+
+def cmd_ota(ip: str, args: list[str]) -> int:
+    """The flash itself is tools/sd_ota.py; it gets this module's `api` and
+    ROOT, so one mock (and one CASTLE redirect) still covers both files."""
+    return sd_ota.flash(ip, args, api, ROOT)
+
+
 def cmd_push(ip: str, args: list[str]) -> int:
     files = [Path(a) for a in args] if args else sorted(ROOT.glob("tracks/*.mp3"))
     if not files:
@@ -124,7 +151,21 @@ def cmd_push(ip: str, args: list[str]) -> int:
 
 
 def cmd_scenes(ip: str) -> int:
-    """The show's own audio, to where the streaming sfx expects it."""
+    """The whole show into /sd/scenes/: audio, cue files and the manifest.
+
+    Since v5.67 a scene is card data — `<id>.cue` for its timeline and one row
+    in `show.man` for the numbers a generated script used to carry — so this
+    is the command that makes a scene edit a PUBLISH rather than a flash
+    (tools/gen_scene_cards.py writes all three under audio/card/scenes/).
+
+    ORDER MATTERS, and it is audio, then cues, then the manifest, because the
+    manifest is what the castle reads to know a scene exists at all: a reboot
+    landing halfway through this push finds a manifest naming only scenes
+    whose files are already there, never one promising a cue file that has not
+    arrived. A stale cue file is swept only after the new manifest has landed,
+    for the mirror-image reason. The old firmware is safe either way — v5.66
+    runs compiled scripts and simply ignores the three new file kinds.
+    """
     # audio/card/ holds the card_bitrate copies when scenes.yaml asks for a
     # different one; audio/ itself is the smaller render — 32 kbps, sized for
     # the all-in-flash build that used to embed it (retired 2026-09-01,
@@ -139,20 +180,74 @@ def cmd_scenes(ip: str) -> int:
         raise SystemExit("no audio/NN_*.mp3 — run `make audio` first")
     print(f"  source: {bp.rel(files[0].parent)}/")
     have = card_dir(ip, "scenes")
+    rec = Published(ip)
     sent = 0
     for src in files:
         data = src.read_bytes()
-        # Same name, same size: almost certainly the same render — a full
-        # ten-scene push is minutes over porch WiFi, and publish (the studio
-        # runs this after every scene save) must not pay that every time.
-        if have.get(src.name) == len(data) and _scene_bytes_match(ip, src.name, data):
+        # Same name, same size, same hash as we last sent this host: the same
+        # render — a full ten-scene push is minutes over porch WiFi, and
+        # publish (the studio runs this after every scene save) must not pay
+        # that every time, nor pull 8 MB back to prove it need not.
+        if _scene_unchanged(ip, src.name, data, have, rec):
             print(f"  {src.name} unchanged, skipped")
             continue
         upload(ip, "/api/scenes", src.name, data)
+        rec.record(f"scenes/{src.name}", data)
         sent += 1
     print(
         f"  {len(files)} scene tracks in /sd/scenes/ ({sent} sent, "
         f"{len(files) - sent} already there)"
+    )
+    return _push_show(ip, have, rec)
+
+
+def _push_show(ip: str, have: dict[str, int], rec: Published) -> int:
+    """The show itself: every `<id>.cue`, then `show.man`, then the sweep.
+
+    Stale cue files are DELETED rather than left: a renamed scene's old file
+    is invisible to the runner (nothing names it) but it is in /api/files, on
+    the card, and in the way of the next person reading the directory.
+    gen_scene_cards.write already sweeps the publish directory the same way.
+
+    The sweep goes AFTER the manifest, not before (grade report 2026-09-17 pm
+    D4): while the OLD show.man is still on the card it still names `gone`,
+    and a reboot or a PIR trip in that window would arm a scene whose cue
+    file we had already deleted — audio and no lights. Deleting a file the
+    new manifest does not name can strand nothing.
+    """
+    src_dir = bp.AUDIO / "card" / "scenes"
+    cues = sorted(src_dir.glob("*.cue"))
+    manifest = src_dir / "show.man"
+    if not cues or not manifest.exists():
+        print("  no show.man or .cue files — run `make generate` first")
+        return 1
+    sent = 0
+    for src in cues:
+        data = src.read_bytes()
+        if _scene_unchanged(ip, src.name, data, have, rec):
+            print(f"  {src.name} unchanged, skipped")
+            continue
+        upload(ip, "/api/scenes", src.name, data)
+        rec.record(f"scenes/{src.name}", data)
+        sent += 1
+    # Unconditionally, and before any delete: it is 16 + 96·n bytes, and it is
+    # the file that decides what the castle believes about every one of the
+    # others — so it is the file that makes a stale cue unreachable.
+    upload(ip, "/api/scenes", manifest.name, manifest.read_bytes())
+    keep = {src.name for src in cues}
+    for name in sorted(have):
+        if name.endswith(".cue") and name not in keep:
+            print(f"  {name}: no scene of that name any more — deleting")
+            api(ip, "DELETE", f"/api/scenes/{urllib.parse.quote(name)}")
+            rec.forget(f"scenes/{name}")
+    rec.save()
+    # No reboot line any more: since v5.69 the castle re-reads show.man
+    # itself when this PUT lands (J1, grade report 2026-09-17 pm —
+    # castle_web::g_scenes_dirty into `seed_scene_ids`), so a scene published
+    # here is startable on the castle that is already running.
+    print(
+        f"  {len(cues)} cue files ({sent} sent) + show.man — the castle "
+        "re-reads the ids on its own"
     )
     return 0
 
@@ -255,69 +350,6 @@ def cmd_site(ip: str) -> int:
         f"({len(packed) // 1024} KB gzipped, {len(plain) // 1024} KB plain)"
     )
     return 0
-
-
-def cmd_ota(ip: str, args: list[str]) -> int:
-    if not args:
-        # The compiled image lives wherever the build put it; find the newest.
-        cands = sorted(
-            ROOT.glob("firmware/.esphome/build/**/firmware.bin"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True,
-        )
-        if not cands:
-            raise SystemExit("no firmware.bin found — pass a path or build first")
-        args = [str(cands[0])]
-    bin_path = Path(args[0])
-    data = bin_path.read_bytes()
-    if data[:1] != b"\xe9":
-        raise SystemExit(f"{bin_path} does not look like an app image (no 0xE9 magic)")
-    # Stop audio before an OTA — the standing rule (CLAUDE.md): a decode
-    # mid-flash competes for the same starved heap.
-    with contextlib.suppress(OSError):
-        api(ip, "POST", "/api/stop", timeout=5)
-    print(
-        f"  flashing {bin_path.name} ({len(data) // 1024} KB) over HTTP ...",
-        end="",
-        flush=True,
-    )
-    try:
-        resp = json.loads(api(ip, "PUT", "/api/ota", data, timeout=180))
-        print(" ok" if resp.get("flashed") else f" UNEXPECTED: {resp}")
-    except urllib.error.HTTPError as err:
-        # An ANSWER is not a lost reply: the castle is still up and said no.
-        # "ota end failed" is an image for another chip (the S2's build sent
-        # to a Feather S3) — which used to read as "rebooting", then "up".
-        reason = err.read().decode(errors="replace").strip()
-        raise SystemExit(
-            f" REFUSED ({err.code}: {reason}) — still running the old image. "
-            "Is this build for the chip at that address?"
-        ) from err
-    except OSError:
-        # The device reboots moments after the last byte lands; losing the
-        # response race is normal, not failure. The status poll below is the
-        # real verdict.
-        print(" (no reply — device likely rebooting)")
-    print("  waiting for the device to come back ...", end="", flush=True)
-    import time
-
-    for _ in range(30):
-        time.sleep(3)
-        try:
-            st = json.loads(api(ip, "GET", "/api/status", timeout=3))
-            print(f" up — v{st.get('version')} compiled {st.get('compiled')}")
-            print(
-                "  CONFIRMED by that very poll — since v5.60 the first"
-                " /api/status a boot answers cancels the rollback"
-            )
-            return 0
-        except OSError:
-            print(".", end="", flush=True)
-    print(
-        " no answer after 90 s — if it stays down, the bootloader will"
-        " roll back to the previous image on the next power cycle"
-    )
-    return 1
 
 
 def cmd_ls(ip: str) -> int:

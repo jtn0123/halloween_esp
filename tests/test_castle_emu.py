@@ -119,7 +119,7 @@ class TestValidationParity(EmuCase):
             self.assertEqual(self.http("POST", f"/api/volume?v={ok}")[0], 200)
 
     def test_volume_is_clamped_to_the_ceiling(self) -> None:
-        """v5.36: castle_sd.yaml never asks the amps past kMaxVolumePct (static
+        """v5.36: the firmware never asks the amps past kMaxVolumePct (static
         above 80 on the porch); the emulator must land on the same number."""
         self.assertEqual(self.http("POST", "/api/volume?v=100")[0], 200)
         time.sleep(castle_emu.APPLY_DELAY_S * 2)

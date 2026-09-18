@@ -8,21 +8,27 @@
 #   make bench-audio        flash it
 #   make bench-audio-logs   watch the numbers
 #
-# WHY THIS EXISTS: every claim about what an ESP32-S2 can decode is currently
-# folk wisdom. Espressif publish numbers for the ESP32 and S3 and nothing for
-# the S2; both well-known ESP32 audio libraries simply decline to support it.
-# Rather than pick a codec on vibes, measure this board.
+# WHY THIS EXISTS: it was written because every claim about what an ESP32-S2
+# could decode was folk wisdom — Espressif published numbers for the ESP32 and
+# the S3 and none for the S2, and both well-known ESP32 audio libraries
+# declined to support it. PROJECT_NOTES §12.13 is the answer it got: 96 kbps
+# MP3 off the card, zero underruns. The S2 was retired on 2026-09-17 and this
+# file kept its job: the numbers for THIS chip and this show have not been
+# measured either, and a measured board beats an inherited assumption.
 #
 # WHAT IT MEASURES: the pipeline runs in full — MP3 decode, resample, I2S out —
-# with WiFi up and the LED RMT driver running, which is the actual contention
-# that matters on a single core. The I2S pins just have nothing listening, so
-# no amp or speaker is needed.
+# with WiFi up and the LED RMT driver running. On the S2 that was single-core
+# contention and the whole risk; on the S3 there is a second core, so the
+# number to watch is not the same number, which is the reason to re-run it
+# rather than to assume. The I2S pins just have nothing listening, so no amp
+# or speaker is needed.
 #
 #   loop_time   the number that matters. ESPHome's main loop shares the core
 #               with decoding. If this climbs under audio, the decoder is
 #               starving everything else, and light cues will jitter.
-#   free RAM    internal SRAM. The S2 cannot DMA from PSRAM, so I2S buffers
-#               live here and this is the tighter of the two pools.
+#   free RAM    internal SRAM. I2S cannot DMA from PSRAM, so its buffers live
+#               here. On the S2 this was the tighter of the two pools by far;
+#               on the S3 flash is the tight resource and this one has room.
 #   PSRAM       headroom for a whole-file SD load (see PROJECT_NOTES §12.9).
 #
 # HOW TO READ IT: idle for 30 s, then each scene plays in turn with a banner
@@ -46,17 +52,17 @@ substitutions:
 
 packages:
   # The show build, not the core — see the note in bench.yaml.
-  base: !include castle_sd.yaml
+  base: !include castle_feather_s3.yaml
 
 # NO `switch:` for the onboard pixel's power rail here any more. Both bench
 # files carried their own copy while they based on castle_flash.yaml, which
-# had none; castle_sd.yaml declares neopixel_power itself (it drives the
+# had none; the show build declares neopixel_power itself (it drives the
 # status pixel), and a second declaration is a hard "ID redefined" error
 # rather than a merge. (2026-09-01)
 
 logger:
   level: DEBUG          # the audio pipeline reports underruns at DEBUG
-  # USB console routing lives in castle.yaml — it is needed by every variant,
+  # Console routing lives in castle.yaml — it is needed by every variant,
   # not just this one.
 
 debug:
@@ -93,6 +99,11 @@ interval:
                      ? "yes" : "no");
 
 script:
+  # v5.67: `scene_<id>` scripts no longer exist — a scene is a cue file on
+  # the card and `run_scene` is the one door. With no card in the slot each
+  # of these wears the built-in fallback look and plays the embedded chirp,
+  # which is still exactly the dry run this file wants: the pipeline runs and
+  # nothing needs soldering. Put a published card in and it is the real show.
   - id: run_benchmark
     mode: restart
     then:
@@ -100,16 +111,16 @@ script:
       - script.execute: scene_stop
       - delay: 30s
       - logger.log: "=== BENCH: vigil — 30 s loop, wind bed, light cue load ==="
-      - script.execute: scene_vigil
+      - script.execute: {id: run_scene, scene: vigil}
       - delay: 35s
       - logger.log: "=== BENCH: crypt — 78 beat cues, the heaviest cue load ==="
-      - script.execute: scene_crypt
+      - script.execute: {id: run_scene, scene: crypt}
       - delay: 30s
       - logger.log: "=== BENCH: descent — 27 s showpiece, densest audio ==="
-      - script.execute: scene_descent
+      - script.execute: {id: run_scene, scene: descent}
       - delay: 30s
       - logger.log: "=== BENCH: storm — short, loudest transient ==="
-      - script.execute: scene_storm
+      - script.execute: {id: run_scene, scene: storm}
       - delay: 10s
       - logger.log: "=== BENCH: done. Compare loop_max idle vs playing. ==="
       - script.execute: scene_stop

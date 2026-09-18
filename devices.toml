@@ -3,17 +3,27 @@
 #   2. the CASTLE_HOST environment variable
 #   3. the first entry in this file
 #
-# mDNS does not work on the ESP32-S2 (see HARDWARE_FINDINGS), so give the
-# device a DHCP reservation in the router and record the address here once.
+# WHY AN ADDRESS LIVES IN A FILE AT ALL — and still does now that the name
+# works. mDNS is ON since v5.66 (`mdns: disabled: false` in
+# firmware/castle.yaml, +2,080 B of flash), and the S3 Feather answered to
+# `castle-feather-s3.local` from this network on 2026-09-17. It was off before
+# that because the ESP32-S2 it replaced never resolved at all (see
+# HARDWARE_FINDINGS) and the retirement pass deliberately changed no runtime
+# behaviour. So the name is real, and the router lease is STILL the primary:
+# a reserved address is one connect() against an mDNS query's multicast
+# round-trip and retries, and it keeps working when the responder is asleep,
+# busy serving the card, or when a Mac's mDNSResponder is having a day. The
+# name is the fallback — it survives the lease moving, which is the failure
+# the address cannot.
 
-[castle-sd]
-# 2026-08-22: the NEW board (MAC 84:f7:03:d7:99:3c, rewired, speakers on)
-# — the router's lease for it today. The old board kept .187 and is being
-# retired; it is deliberately not a fallback. Make the DHCP reservation for
-# this MAC and point this at it when you get a minute.
-host = "10.27.27.247"
-# Tried in order when `host` stops answering (castle_link.castle_hosts) —
-# the safety net until that reservation exists. .238 and .142 were the
-# leases the previous board had; harmless to keep until the new one moves.
-fallbacks = ["10.27.27.238", "10.27.27.142"]
-# The SD-equipped castle on the porch stack: carrier board + 32 GB card.
+[castle-feather-s3]
+# 2026-09-17: the Adafruit ESP32-S3 Feather #5477 in castle-carrier v3.3a —
+# THE castle. v5.64 went on over Wi-Fi from this tree the same day and the
+# panel answered here.
+host = "10.27.27.81"
+# The name the board answers to since v5.66 turned mDNS back on — tried when
+# the lease above moves. A NAME is the only thing that belongs in this list:
+# it used to hold the leases of two earlier boards (.238, .142, .187), which
+# by then answered as nothing or as someone else's device. A fallback is only
+# a safety net while it is known to be the same castle.
+fallbacks = ["castle-feather-s3.local"]

@@ -21,9 +21,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import cue_file
 import gen_esphome as ge
+import scene_manifest
 import yaml
-from test_gen_esphome import OUTPUT_PATHS, ZONES, scene
+from test_gen_esphome import OUTPUT_PATHS, ZONES, EsphomeLoader, scene
 
 
 class TestGenEsphomeMain(unittest.TestCase):
@@ -57,7 +59,10 @@ class TestGenEsphomeMain(unittest.TestCase):
         for name in OUTPUT_PATHS:
             if name in ("SRC", "MARKERS"):
                 continue
-            setattr(ge, name, self.tmp / "generated" / Path(getattr(ge, name)).name)
+            # CARD_SCENES is a DIRECTORY (the publish tree), not a file; both
+            # keep their own basename so a wrong redirect is legible.
+            leaf = "card" if name == "CARD_SCENES" else "generated"
+            setattr(ge, name, self.tmp / leaf / Path(getattr(ge, name)).name)
         ge.SRC.write_text(yaml.safe_dump(self.DOC))
 
     def tearDown(self) -> None:
@@ -72,23 +77,33 @@ class TestGenEsphomeMain(unittest.TestCase):
         firmware/generated/ during a test run, which is how the last two got
         noticed — by breaking the following build.
         """
-        real = ROOT / "firmware" / "generated"
+        # Two real trees now: the firmware's generated sources, and the card
+        # publish directory the show itself is written into since v5.67.
+        real = (ROOT / "firmware" / "generated", ROOT / "audio" / "card")
         for name in dir(ge):
             value = getattr(ge, name)
             if not isinstance(value, Path) or name.startswith("_"):
                 continue
-            if value.is_relative_to(real):
+            if any(value.is_relative_to(r) for r in real):
                 self.fail(
                     f"ge.{name} still points at the real tree — add it to OUTPUT_PATHS"
                 )
 
-    def test_writes_a_parseable_file_with_every_scene_and_a_stop_script(self) -> None:
+    def test_writes_a_parseable_file_and_the_whole_show_onto_the_card(self) -> None:
+        """Was `..._with_every_scene_and_a_stop_script`: the generated file
+        held a `scene_<id>` script per scene. It holds three fixed scripts now
+        and the scenes are card files, so both halves are asserted here — the
+        file the build compiles, and the directory `sd_sync scenes` pushes."""
         self.assertEqual(ge.main(), 0)
         self.assertIn("wrote ", self.out.getvalue())
-        doc = yaml.safe_load(ge.OUT.read_text())
+        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
         self.assertEqual(
             [s["id"] for s in doc["script"]],
-            ["scene_a", "scene_b", "scene_stop", "run_scene", "show_playlist"],
+            ["scene_stop", "run_scene", "show_playlist"],
+        )
+        self.assertEqual(
+            sorted(p.name for p in ge.CARD_SCENES.iterdir()),
+            ["a.cue", "b.cue", "show.man"],
         )
 
     def test_fallback_scene_ids_are_generated_from_the_show(self) -> None:
@@ -100,7 +115,7 @@ class TestGenEsphomeMain(unittest.TestCase):
     def test_blackout_script_clears_every_zone(self) -> None:
         """One call has to be enough to make the whole castle go dark."""
         ge.main()
-        doc = yaml.safe_load(ge.OUT.read_text())
+        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
         lam = next(s for s in doc["script"] if s["id"] == "scene_stop")["then"][0][
             "lambda"
         ]
@@ -115,7 +130,7 @@ class TestGenEsphomeMain(unittest.TestCase):
         chase's white head) — so a stop that left those standing kept vigil's
         centre embers lit and the door sparkling through the playlist gap."""
         ge.main()
-        doc = yaml.safe_load(ge.OUT.read_text())
+        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
         lam = next(s for s in doc["script"] if s["id"] == "scene_stop")["then"][0][
             "lambda"
         ]
@@ -124,19 +139,22 @@ class TestGenEsphomeMain(unittest.TestCase):
             self.assertIn(f"id(zone_overlay)[{i}] = 0;", lam)
             self.assertIn(f"id(zone_flash_target)[{i}] = 0.0f;", lam)
 
-    def test_run_scene_halt_stops_the_scripts_and_starts_nothing(self) -> None:
-        """/api/play runs run_scene("halt"): every scene script stopped (the
-        looping one must not come back over the file), then no scene — and
-        no blackout, the lights keep their texture. Not its own script: the
-        S2's static RAM is on a diet and a script is a static object."""
+    def test_run_scene_halt_stops_the_runner_and_starts_nothing(self) -> None:
+        """/api/play runs run_scene("halt"): the scene runner stopped (a
+        looping scene must not come back over the file), its cues given back,
+        then no scene — and no blackout, the lights keep their texture.
+
+        The stop used to name every generated scene script; there is one
+        runner now, and `castle_scenes::stop()` is the line that also releases
+        the cue blob, which matters here of all places: the file about to play
+        may bring a `.cue` of its own."""
         ge.main()
-        doc = yaml.safe_load(ge.OUT.read_text())
+        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
         lam = next(s for s in doc["script"] if s["id"] == "run_scene")["then"][0][
             "lambda"
         ]
-        self.assertIn('else if (scene == "halt") {}', lam)
-        for sid in ("scene_a", "scene_b"):
-            self.assertIn(f"id({sid})->stop();", lam)
+        self.assertIn('if (scene == "halt") { castle_scenes::stop(); return; }', lam)
+        self.assertIn("id(scene_run)->stop();", lam)
         self.assertLess(lam.index("->stop();"), lam.index('"halt"'))
 
     def test_run_scene_hands_the_strips_back_to_show_except_on_halt(self) -> None:
@@ -146,11 +164,13 @@ class TestGenEsphomeMain(unittest.TestCase):
         zone that is off or on another effect — and "halt" (the /api/play
         path, which must leave the lights alone) is excluded."""
         ge.main()
-        doc = yaml.safe_load(ge.OUT.read_text())
+        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
         lam = next(s for s in doc["script"] if s["id"] == "run_scene")["then"][0][
             "lambda"
         ]
-        guard = lam[lam.index('if (scene != "halt")') : lam.index('if (scene == "a")')]
+        guard = lam[
+            lam.index('if (scene != "halt")') : lam.index('if (scene == "stop")')
+        ]
         self.assertIn('id(lights_override)->execute("show")', guard)
         self.assertIn('z->get_effect_name() != "Show"', guard)
         self.assertIn("!z->remote_values.is_on()", guard)
@@ -170,27 +190,33 @@ class TestGenEsphomeMain(unittest.TestCase):
         doc["scenes"] = [scene(id="a", volume=1.0), scene(id="b", volume=0.5)]
         ge.SRC.write_text(yaml.safe_dump(doc))
         self.assertEqual(ge.main(), 0)
-        out = ge.OUT.read_text()
-        self.assertIn("0.0f : 0.8f", out)  # 1.0 capped
-        self.assertIn("0.0f : 0.5f", out)  # under the cap, untouched
-        self.assertNotIn("0.0f : 1.0f", out)
+        # The cap used to be printed into each scene script's volume lambda
+        # (`id(speaker_hush) ? 0.0f : 0.8f`). It is a whole percent in the
+        # card manifest now, read by the one generic runner.
+        entries = {
+            e["id"]: e
+            for e in scene_manifest.decode((ge.CARD_SCENES / "show.man").read_bytes())
+        }
+        self.assertEqual(entries["a"]["volume_pct"], 80)  # 1.0 capped
+        self.assertEqual(entries["b"]["volume_pct"], 50)  # under the cap, untouched
         self.assertIn(
             "inline constexpr int kMaxVolumePct = 80;", ge.RIG_OUT.read_text()
         )
 
-    def test_blackout_stops_the_scene_scripts_themselves(self) -> None:
-        """Clearing the output is not enough: a looping scene mid-delay
-        re-fires after the stop and walks back on, audio and all. The stop
-        has to halt every scene script (continuations included)."""
+    def test_blackout_stops_the_runner_and_releases_its_cues(self) -> None:
+        """Clearing the output is not enough: a looping scene waiting on its
+        length re-fires after the stop and walks back on, audio and all. The
+        stop has to halt the runner — which used to mean naming every scene
+        script and every `cont_<id>_N` continuation, 85 of them, and now means
+        one script — and hand the cue blob back, or /api/status would report
+        cues for a castle that is dark."""
         ge.main()
-        doc = yaml.safe_load(ge.OUT.read_text())
+        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
         stop = next(s for s in doc["script"] if s["id"] == "scene_stop")
-        lams = [a["lambda"] for a in stop["then"] if "lambda" in a]
-        for sid in ("scene_a", "scene_b"):
-            self.assertTrue(
-                any(f"id({sid})->stop();" in lam for lam in lams),
-                f"scene_stop leaves {sid} armed",
-            )
+        lams = "\n".join(a["lambda"] for a in stop["then"] if "lambda" in a)
+        self.assertIn("id(scene_run)->stop();", lams)
+        self.assertIn("castle_scenes::stop();", lams)
+        self.assertIn("castle_web::g_cues.store(0);", lams)
 
     def test_pixel_map_is_written_into_the_header_comment(self) -> None:
         ge.main()
@@ -202,16 +228,23 @@ class TestGenEsphomeMain(unittest.TestCase):
         self.assertRegex(text, r"door\s+7 px \(chain equivalent 14-20\)")
 
     def test_missing_markers_file_still_generates(self) -> None:
-        """`make generate` must work before `make audio` has ever run."""
+        """`make generate` must work before `make audio` has ever run: the
+        pulse streams simply expand to nothing. Scene b's `pulse:` block is
+        the one that would otherwise need markers."""
         ge.main()
-        doc = yaml.safe_load(ge.OUT.read_text())
-        self.assertEqual(len(doc["script"]), 5)
+        self.assertEqual(len(yaml.load(ge.OUT.read_text(), EsphomeLoader)["script"]), 3)
+        b = cue_file.decode((ge.CARD_SCENES / "b.cue").read_bytes())
+        self.assertEqual(b["records"], [])
+        self.assertIn("no audio/markers.json", self.out.getvalue())
 
     def test_markers_file_is_used_when_present(self) -> None:
+        """Was asserted as a `delay: 250ms` in the emitted script — the delta
+        from the scene's start to the beat. It is the absolute millisecond in
+        a cue record now."""
         ge.MARKERS.write_text('{"b": {"h": [[250, 1.0]]}}')
         ge.main()
-        then = yaml.safe_load(ge.OUT.read_text())["script"][1]["then"]
-        self.assertIn({"delay": "250ms"}, then)
+        b = cue_file.decode((ge.CARD_SCENES / "b.cue").read_bytes())
+        self.assertEqual([r["t"] for r in b["records"]], [250])
 
     def test_a_scene_the_schema_rejects_stops_the_build_with_every_reason(self) -> None:
         """scene_schema runs before a byte is emitted — the same checks the
@@ -237,10 +270,6 @@ class TestGenEsphomeMain(unittest.TestCase):
         self.assertIn("unknown effect 'glow'", msg)
         self.assertIn("past the scene's duration_ms", msg)
         self.assertFalse(ge.OUT.exists(), "a rejected show was still written")
-
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
 
 
 if __name__ == "__main__":

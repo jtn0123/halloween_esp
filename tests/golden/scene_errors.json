@@ -218,7 +218,7 @@
   },
   "scene_ceiling": {
     "body": {
-      "error": "the show is full — 12 scenes is the 12 this board can hold (~9 KB of dram0 each), so 'one_too_many' cannot be added. Remove a scene first, or move the cue timelines to the card-loaded format described in scenes/scenes.yaml's header — a thirteenth generated script is not the next step.",
+      "error": "the show is full — 12 scenes is the 12 the card's manifest holds (show.man is a fixed record count), so 'one_too_many' cannot be added. Remove a scene first, or lift the ceiling deliberately: scene_manifest.MAX_SCENES, castle_scenes::kMaxScenes and SCENE_LIMIT in one change, with a number somebody measured — see docs/notes/03-build.md §12.21.",
       "errors": [
         "scene ceiling: 12/12 scenes"
       ]

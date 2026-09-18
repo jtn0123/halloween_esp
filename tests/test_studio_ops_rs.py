@@ -64,15 +64,16 @@ class Publish(StudioCase):
             {
                 "ok": True,
                 "pushed": True,
-                "needs_firmware": ["storm"],
-                "note": "1 scene(s) missing from the running firmware — "
-                "make sd-build, stop audio, then OTA",
+                "needs_reboot": ["storm"],
+                "note": "1 scene(s) the castle has not read yet — "
+                "reboot it to re-read show.man",
             },
         )
         masked = self.masked(log).replace(self.HOST_ENV, "<CASTLE>")
         self.assertIn("source: <BUILD>/audio/", masked)
         self.assertIn("uploading 01_vigil.mp3", masked)
         self.assertIn("1 scene tracks in /sd/scenes/", masked)
+        self.assertIn("2 cue files (2 sent) + show.man", masked)
         self.assertIn("http://<CASTLE>/ now serves Castle Radio", masked)
         # The scene track to /sd/scenes and the Castle Radio page pair to
         # /sd/site (2026-09-15) — those three files and nothing else: the
@@ -82,7 +83,13 @@ class Publish(StudioCase):
         self.assertEqual(
             sorted(str(f.relative_to(sd)) for f in sd.rglob("*") if f.is_file()),
             [
+                # The show itself is card data since v5.67 — one .cue per
+                # scene and the manifest that names them — so a publish
+                # lands five files, not three.
                 "scenes/01_vigil.mp3",
+                "scenes/show.man",
+                "scenes/storm.cue",
+                "scenes/vigil.cue",
                 "site/index.html",
                 "site/index.html.gz",
             ],

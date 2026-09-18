@@ -12,7 +12,8 @@
 // — TRUE STREAMING: no PSRAM cap on track length, near-instant start, and
 // the decoder pulls bytes from the card at exactly the rate it needs them.
 // Loopback never touches the radio; the SPI read is the only real I/O.
-// (castle_sd.yaml's PLAY action and its play_sd script are the two callers.)
+// (castle_sd_common.yaml's PLAY action and its play_sd script are the two
+// callers; they lived in castle_sd.yaml until the S2 build went, 2026-09-17.)
 //
 // The earlier design — read the whole file into PSRAM and hand the decoder
 // an AudioFile{ptr,len} — is gone. It capped a track at ~1.5 MB, froze the

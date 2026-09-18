@@ -26,6 +26,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import gen_scene_cards
 import helpers  # noqa: F401  (hermetic env)
 import sd_sync
 
@@ -117,6 +118,29 @@ class SdCase(unittest.TestCase):
 
     def puts(self) -> list[tuple[str, int]]:
         return [(p, n) for m, p, n in self.card.calls if m == "PUT"]
+
+    def seed_show(self, *ids: str) -> None:
+        """The card half of the show, as `make generate` leaves it: one
+        `<id>.cue` per scene and the manifest that names them. `cmd_scenes`
+        pushes these beside the audio since v5.67, so a test that calls it
+        without them is testing the refusal, not the push."""
+        gen_scene_cards.write(
+            {
+                "zones": [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}],
+                "scenes": [
+                    {
+                        "id": i,
+                        "duration_ms": 1000,
+                        "volume": 0.5,
+                        "base": {"towerL": "candle"},
+                        "cues": [],
+                    }
+                    for i in ids
+                ],
+            },
+            self.tmp / "audio" / "card" / "scenes",
+            {},
+        )
 
 
 class TestListingAndPurge(SdCase):
@@ -245,9 +269,21 @@ class TestSiteScenesOta(SdCase):
         (self.tmp / "audio" / "02_storm.mp3").write_bytes(b"y" * 200)
         self.card.subdirs["scenes"] = {"01_vigil.mp3": 100}  # already there
         self.card.blobs["scenes/01_vigil.mp3"] = b"x" * 100
+        self.seed_show("vigil", "storm")
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
         sent = [p for p, _n in self.puts()]
-        self.assertEqual(sent, ["/api/scenes/02_storm.mp3"])
+        # The show goes with the audio: the changed track, both cue files,
+        # then show.man LAST — the manifest is what the castle reads to know
+        # a scene exists, so it must never promise a file still in flight.
+        self.assertEqual(
+            sent,
+            [
+                "/api/scenes/02_storm.mp3",
+                "/api/scenes/storm.cue",
+                "/api/scenes/vigil.cue",
+                "/api/scenes/show.man",
+            ],
+        )
         self.assertIn("01_vigil.mp3 unchanged, skipped", self.out.getvalue())
 
     def test_scenes_same_size_different_bytes_are_reuploaded(self) -> None:
@@ -255,19 +291,73 @@ class TestSiteScenesOta(SdCase):
         (self.tmp / "audio" / "01_vigil.mp3").write_bytes(b"x" * 100)
         self.card.subdirs["scenes"] = {"01_vigil.mp3": 100}
         self.card.blobs["scenes/01_vigil.mp3"] = b"y" * 100
+        self.seed_show("vigil")
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
-        self.assertEqual([p for p, _n in self.puts()], ["/api/scenes/01_vigil.mp3"])
+        self.assertEqual(
+            [p for p, _n in self.puts()],
+            [
+                "/api/scenes/01_vigil.mp3",
+                "/api/scenes/vigil.cue",
+                "/api/scenes/show.man",
+            ],
+        )
 
     def test_scenes_uploads_the_numbered_tracks_but_not_00(self) -> None:
         audio = self.tmp / "audio"
         audio.mkdir()
         for n in ("00_silence.mp3", "01_vigil.mp3", "02_storm.mp3", "stray.mp3"):
             (audio / n).write_bytes(b"x" * 8)
+        self.seed_show("vigil", "storm")
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "1.2.3.4"), 0)
         self.assertEqual(
             [p for p, _ in self.puts()],
-            ["/api/scenes/01_vigil.mp3", "/api/scenes/02_storm.mp3"],
+            [
+                "/api/scenes/01_vigil.mp3",
+                "/api/scenes/02_storm.mp3",
+                "/api/scenes/storm.cue",
+                "/api/scenes/vigil.cue",
+                "/api/scenes/show.man",
+            ],
         )
+
+    def test_a_renamed_scene_does_not_leave_its_cue_file_on_the_card(self) -> None:
+        """The runner cannot see a cue file nothing names, but the card can:
+        it is listed, it takes space, and the next reader has to work out
+        which of two files the show means. gen_scene_cards sweeps the publish
+        directory the same way.
+
+        And it sweeps AFTER show.man (grade report 2026-09-17 pm D4): the old
+        manifest still names `gone` until the new one lands, so a delete
+        before it leaves a window where a reboot or a PIR trip arms a scene
+        whose cue file is gone — audio, no lights. One ordered call log is the
+        only way to see that, so the positions are asserted, not membership."""
+        audio = self.tmp / "audio"
+        audio.mkdir()
+        (audio / "01_vigil.mp3").write_bytes(b"x" * 8)
+        self.card.subdirs["scenes"] = {"01_vigil.mp3": 8, "gone.cue": 40}
+        self.card.blobs["scenes/01_vigil.mp3"] = b"x" * 8
+        self.seed_show("vigil")
+        self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
+        self.assertIn(
+            ("DELETE", "/api/scenes/gone.cue", 0),
+            self.card.calls,
+        )
+        wire = [(m, p) for m, p, _n in self.card.calls]
+        self.assertLess(
+            wire.index(("PUT", "/api/scenes/show.man")),
+            wire.index(("DELETE", "/api/scenes/gone.cue")),
+        )
+        self.assertIn("no scene of that name any more", self.out.getvalue())
+
+    def test_scenes_without_a_generated_show_says_so_and_fails(self) -> None:
+        """Audio on the card and no show to run it is a half-published
+        castle. `make publish` runs `generate` first for this reason; asked
+        to push anyway, sd_sync names the step that was skipped."""
+        audio = self.tmp / "audio"
+        audio.mkdir()
+        (audio / "01_vigil.mp3").write_bytes(b"x" * 8)
+        self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "1.2.3.4"), 1)
+        self.assertIn("run `make generate` first", self.out.getvalue())
 
     def test_scenes_without_rendered_audio_refuses(self) -> None:
         with self.assertRaises(SystemExit) as cm:
@@ -283,8 +373,10 @@ class TestSiteScenesOta(SdCase):
         self.assertEqual(self.puts(), [])
 
     def test_ota_the_castle_refused_is_a_failure_not_a_reboot(self) -> None:
-        """An S2 image sent to a Feather S3 answered 500 "ota end failed", and
-        the tool printed "rebooting", then "up" — on the image it never left."""
+        """An image for the wrong chip or flash layout answers 500 "ota end
+        failed" — it happened with an S2 build sent to a Feather S3, while both
+        builds existed — and the tool printed "rebooting", then "up", on the
+        image it had never left."""
         image = self.tmp / "firmware.bin"
         image.write_bytes(b"\xe9" + b"\0" * 64)
 
@@ -303,9 +395,14 @@ class TestSiteScenesOta(SdCase):
         self.assertIn("REFUSED (500: ota end failed)", str(cm.exception))
 
     def test_ota_with_no_build_anywhere_says_so(self) -> None:
+        """And points at `make ota`, which does not rely on this glob at all:
+        build_path.yaml has put every build tree on an external volume since
+        2026-09-16, so the fallback below can only ever find a local tree."""
         with self.assertRaises(SystemExit) as cm:
             self.run_quiet(sd_sync.cmd_ota, "1.2.3.4", [])
-        self.assertIn("firmware.bin", str(cm.exception))
+        msg = str(cm.exception)
+        self.assertIn("firmware/.esphome/build", msg)
+        self.assertIn("make ota", msg)
 
     def test_ota_finds_the_newest_build_and_confirms_it_came_back(self) -> None:
         old = self.tmp / "firmware/.esphome/build/a/.pioenvs/a/firmware.bin"

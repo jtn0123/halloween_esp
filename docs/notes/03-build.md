@@ -329,3 +329,143 @@ status pixel and ESPHome refuses two strips on one pin.
 **Not lost:** OTA. The default dual-slot layout is the one this build has
 always used, and with the audio off the image it has room to spare —
 `tools/check_image.py` still measures against the 1.75 MB slot.
+
+## 12.20 The S2 is retired; the S3 Feather is the build (2026-09-17)
+
+**Decision.** The Adafruit **ESP32-S3 Feather #5477** (4 MB flash, 2 MB PSRAM)
+in castle-carrier **v3.3a** is the castle. `firmware/castle_feather_s3.yaml`
+is what `make build`, `upload`, `logs`, `ota` and `validate` mean, and
+`firmware/castle.yaml` — the shared core — now describes the S3 rather than
+carrying S2 board lines that every build overrode. `firmware/castle_sd.yaml`,
+the S2 build, is **deleted**, as `castle_flash.yaml` was in §12.15: the board
+it named is out of the yard, and a target nobody can flash rots green.
+
+**What earned it.** v5.64 was OTA'd over Wi-Fi to the S3 Feather at
+10.27.27.81 on 2026-09-17 and the show ran: card mounted, three strips lit,
+`a+b.mp3` and `100%.mp3` both played. The numbers that matter are the reason
+this is not a lateral move — **RAM 41.9%** (143,035 of 341,760 bytes) where
+the S2 lived at ~20 bytes of dram0 headroom (§12.2 and the sdkconfig notes),
+and flash at **71.8%** of the 1,835,008-byte OTA slot. The cliff the whole
+firmware discipline was shaped around is 198 KB away.
+
+**What did NOT change, deliberately.** Every `sdkconfig` line of the dram0
+diet, `mdns: disabled`, softAP-off, WPS-off and the socket counts are exactly
+the v5.64 image's. This pass is a retarget, not a relaxation: the running
+image must stay functionally identical to what is on the board, and each diet
+line gets given back and **measured one at a time** on hardware afterwards.
+`firmware/pending/README.md` lists them in the order they come back, mDNS
+first — it never worked on the S2, which is the only reason `devices.toml`
+holds a hard-coded address.
+
+**RMT is now one budget.** The S3 has four TX channels of 48 symbols —
+**192**, not the S2's 4 × 64 = 256 — so `tools/gen_rig.py` spends 48 per
+strip and reserves one block for the Feather's GPIO33 status pixel: three
+strips plus the pixel is 192 of 192, exactly full. That made
+`firmware/generated/lights_s3.yaml` (the 48-symbol override) and the
+generator's `emit_rmt_override` pointless, and both are gone; the generated
+banner now states both builds' totals instead of one build's.
+
+**Also deleted.** `firmware/castle_sd_jewels.yaml` — byte-equivalent to the
+build it claimed to differ from, under a false "DO NOT flash" header (grade
+report 2026-09-17 J4). `firmware/hello.yaml` — an S2 USB-console bring-up
+tool whose entire purpose was routing the console through
+`CONFIG_ESP_CONSOLE_USB_CDC`, which the S3's USB Serial/JTAG makes both
+solved and wrong.
+
+**What stays.** `castle_s3.yaml`, the ESP32-S3-WROOM-1 carrier (v5) build,
+which has never been on hardware and is still compiled weekly by CI — it
+reaches the same core through `board: !remove`. `castle_s3_qemu.yaml`,
+`bench.yaml` and `bench_audio.yaml` stay too: the QEMU target is a hand-run
+bring-up tool (docs/QEMU.md), and the benches have a live job, since the
+bare-Feather first flash happens outside the carrier and this chip's decode
+numbers have never been measured. `tuning.yaml` stays as the desk-free
+knob-twiddling config it always was.
+
+**The scene ceiling did not move.** `SCENE_LIMIT = 12` and `PULSE_CAP` are
+unchanged. Their number came from the S2's 172,032-byte dram0 at ~9 KB a
+scene; the S3 has the RAM for more, but "has the RAM" is a guess until a
+thirteenth scene is compiled and measured, so only the prose changed.
+
+## 12.21 The show moved to the card; the scene scripts are gone (v5.67, 2026-09-17)
+
+**Decision.** A scene is card data. `tools/gen_scene_cards.py` writes
+`audio/card/scenes/<id>.cue` — the same `CCUE` file v5.63 already built for
+raw imported songs (`tools/cue_file.py` ↔ `firmware/castle_cues.h`) — plus
+one `show.man` manifest (`CSMF`, `tools/scene_manifest.py`) carrying the
+per-scene literals a generated script used to hard-code: id, audio token,
+volume, length, loop flag. `sd_sync scenes` pushes all three beside the audio.
+The device side is ONE generic runner, `firmware/castle_scenes.h` +
+`castle_scenes.yaml`. **A scene edit is a publish, not a flash.**
+
+**What earned it.** The twelve generated scripts were **744 LambdaActions,
+573 DelayActions and 85 ScriptExecuteActions** on the v5.66 link map — about
+**23 KB of static internal RAM** and 744 compiled lambdas inside an OTA slot
+of 1,835,008 bytes that v5.66 had already spent **1,311,643** (71.5%) of. RAM
+is no longer the cliff the S2 made it (§12.20: 41.9%), but **flash is**, and
+a scene's timeline in PSRAM costs 33 bytes of statics. v5.63 built the
+mechanism for one case and left twelve behind; this finishes it.
+
+**What it cost, measured.** Same ten scenes, same `sdkconfig`, one
+`make build` against v5.66's: **RAM 145,115 → 120,043 bytes** (42.5% → 35.1%
+of 341,760) and **flash 1,311,643 → 1,246,339** (71.5% → 67.9% of the
+1,835,008-byte OTA slot) — 25,072 bytes of static internal RAM and 65,304
+bytes of the slot back. The link map went from 744 / 573 / 85 mentions of
+LambdaAction / DelayAction / ScriptExecuteAction to 28 / 30 / 28, which is
+the whole show's timeline no longer being C++ objects.
+
+**What did not move.** `SCENE_LIMIT = 12`. Its old justification — ~9 KB of
+dram0 a scene — is gone with the scripts, and the manifest's own ceiling
+(`MAX_SCENES` / `kMaxScenes`) is the same 12 by choice, not by measurement.
+Lifting it is follow-up work: it touches `tools/check_loc.py`,
+`core/src/vocab.rs`, the desk's refusal, the manifest format's bound and the
+fallback header, and the honest new limit is a number somebody measures.
+
+**The order is safe both ways.** v5.66 ignores `.cue` files and `show.man`
+entirely, so publishing the card files BEFORE flashing breaks nothing; v5.67
+with no manifest (or none it believes) applies the compiled-in fallback look
+from `firmware/generated/fallback_scenes.h`, logs why, records
+`scene_missing` in the event ring and reports it in `/api/status`'s `missing`.
+
+**Also in this pass** (grade report 2026-09-17): **J7** —
+`castle_cues::load()` read up to 512 KB in one `fread` on the main loop and
+trusted a u8 `level` of 254 as 2.54; it reads in chunks with a watchdog feed
+now and clamps to 1.0 (255 still means "keep"). **J3** — the 64-entry event
+ring was a 4 KB `std::array` in static internal RAM; it is one PSRAM
+allocation with a 16-entry internal fallback (`firmware/sd_web_ring.h`).
+**J5** — `PUT /api/files/x.part` destroyed the in-flight copy of `x`, and
+`x.old` was a file the next upload deleted unasked; both suffixes are refused.
+
+## 12.22 Two steps, not one: the 200 ms v5.67 added to a scene start (v5.68, 2026-09-17)
+
+**Symptom, measured on the board.** v5.67 worked — scenes from `show.man`,
+cues loading, PSRAM freed on stop, RAM 35.1% / flash 67.9% confirmed — but
+scene start got slower. Request→audible median over six runs: **storm 855 ms,
+approach 851 ms**, against v5.66's ~650. The castle's own event ring agreed:
+**scene_start→sound 400 ms on v5.66, 604 ms now**.
+
+**Cause.** `scene_run`'s first lambda called `castle_scenes::begin()`, which
+did the manifest read AND the cue-file load, and only a later action called
+`sfx`. The audio pipeline needs ~400 ms to spin up whatever else is happening,
+so every millisecond of card work in front of the play call is silence the
+operator hears — and a cue file is up to 512 KB of SPI read in 32 KB chunks
+with a scheduler yield between them (J7), which is the slowest thing the start
+does.
+
+**Fix.** Split the start in two. `begin()` reads ONE manifest row — the audio
+token, the volume, the length, the loop flag — and nothing else; `sfx` is
+called; then `load_cues()` opens the cue file and the base look is applied,
+beside the pipeline's spin-up instead of before it. Nothing is lost: the
+timeline does not start until the speaker is heard, and the ≤1500 ms give-up
+window is armed from the REQUEST instant `begin()` recorded, not from whenever
+the load finished. A looping scene's re-run reuses the row it already holds —
+the card cannot have changed while the show runs — so a loop costs no card I/O
+at all. `tests/cxx/scenes_check.cpp`'s `start:` op is scene_run's order, and
+the test that the audio is asked for before the cue file is opened is the gate.
+
+**And `missing` heals.** Same pass, same hardware session: deleting a scene's
+`.cue`, starting it (`cues:0`, `missing:"storm.cue"` — correct) and then
+republishing the file left `missing` saying `storm.cue` until a reboot. A start
+where both the manifest row and the cue file load is the one moment the castle
+has first-hand evidence about those two names, so it withdraws them
+(`castle_web::heal_missing`, mirrored in the emulator, pinned by a pair test
+that drives both castles over the same half-published card).

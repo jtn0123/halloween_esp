@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Castle wiring schematic, drawn to the real Feather header layout.
 
-Pin order and GPIO numbers are from Adafruit's own pinout PDF for the
-Feather ESP32-S2 (Adafruit-Feather-ESP32-S2-PCB). Both headers are drawn in
+Pin order and GPIO numbers are from Adafruit's own pinout PDFs for the
+Feather ESP32-S2 (Adafruit-Feather-ESP32-S2-PCB) and, since the board in the
+yard became an ESP32-S3 Feather #5477 on 2026-09-17, checked against that
+variant's — every pad the carrier uses carries the same GPIO on both, which
+is why the drawing did not have to change. Both headers are drawn in
 full and in physical order so a pin can be COUNTED on the board rather than
 looked up: 16 positions on the left, 12 on the right, the right one starting
 four positions down from the USB end, both ending flush at the far end.
@@ -97,7 +100,7 @@ CLAIM = {
     "D13": "red LED",
 }
 
-A(box(FX, FY, FW, FH, "ESP32-S2 Feather", "on the carrier, microSD on SPI"))
+A(box(FX, FY, FW, FH, "ESP32-S3 Feather", "on the carrier, microSD on SPI"))
 A(
     f'<rect class="usbc" x="{FX + FW / 2 - 26}" y="{FY - 13}" width="52" height="16" rx="5"/>'
     f'<text class="pinsub" x="{FX + FW / 2}" y="{FY - 19}" text-anchor="middle">USB-C</text>'
