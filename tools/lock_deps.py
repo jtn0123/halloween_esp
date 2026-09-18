@@ -17,15 +17,33 @@ the resolver's answer is the lock.
 
 Run it as `make lock`. It costs a real install (a minute or two) on purpose:
 the lock is meant to be what a clean machine gets.
+
+A version is not a lock, though. `name==version` says which release to take
+and nothing about the bytes that arrive, so every CI install trusted the
+index for the contents of 113 packages (SonarCloud's githubactions:S8544
+says so, and it is right). Each pin therefore carries `--hash=sha256:…` for
+EVERY distribution file of that version — every wheel, for every platform,
+plus the sdist — because the lock is installed on Linux CI and used on this
+Mac, and three packages have no wheel at all. The digests come from PyPI's
+JSON API, stdlib only, through an injectable fetcher so the tests never go
+near the network. CI installs with `--require-hashes`.
+
+Re-hashing does NOT need the throwaway venv: `--hashes-only` re-reads the
+pins already in the lock and refreshes their digests, which is what to run
+when a hash line is missing but no version should move.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
 import tempfile
+import urllib.error
+import urllib.request
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -50,9 +68,28 @@ PLATFORM_MARKERS = {
 #: install therefore never has it, and a plain regeneration would drop the
 #: pin that says which version the show was imported with. Kept at whatever
 #: the existing lock says; add a line here only for another such tool.
-CARRY_OVER = ("yt-dlp",)
+#:
+#: dbus-fast is here for the mirror image of the pyobjc reason above: it is
+#: bleak's LINUX half, so the macOS venv this file freezes never holds it and
+#: the lock never named it. CI installed it anyway, unpinned, every run —
+#: invisible until `--require-hashes` refused a requirement with no digest
+#: (2026-09-18). Its line carries `sys_platform == "linux"` in the lock and is
+#: carried with it; bump it by hand when bleak asks for a newer one.
+CARRY_OVER = ("yt-dlp", "dbus-fast")
+
+#: How pip spells one digest of a pinned file; read and written in this form.
+HASH_FLAG = "--hash=sha256:"
 
 _PIN = re.compile(r"^([A-Za-z0-9._-]+)==")
+
+#: How a package's digests are found. Injected everywhere so a test can hand
+#: in a dict instead of an index, and so nothing under `make test` opens a
+#: socket. Takes (name, version) and returns the sha256 of every file.
+Fetcher = Callable[[str, str], Sequence[str]]
+
+
+class LockError(RuntimeError):
+    """A pin the lock cannot be written for — a hard stop, never a warning."""
 
 
 def package(line: str) -> str:
@@ -71,15 +108,48 @@ def norm(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
+def pin_line(entry: str) -> str:
+    """A lock entry's head — `name==version[ ; marker]`, hashes stripped.
+
+    An entry is several lines now, and everything that reasons about the pin
+    itself (sorting, markers, carry-over, the version) wants the first one
+    without its trailing continuation backslash.
+    """
+    head = entry.splitlines()[0] if entry else ""
+    return head.strip().removesuffix("\\").strip()
+
+
+def version(entry: str) -> str:
+    """The version a lock entry pins, or "" when it pins nothing."""
+    head = pin_line(entry).split(" ; ", 1)[0]
+    return head.split("==", 1)[1].strip() if "==" in head else ""
+
+
+def hashes(entry: str) -> list[str]:
+    """The sha256 digests a lock entry carries, bare — no prefix, no
+    continuation backslash."""
+    out = []
+    for line in entry.splitlines()[1:]:
+        body = line.strip().removesuffix("\\").strip()
+        if body.startswith(HASH_FLAG):
+            out.append(body.removeprefix(HASH_FLAG))
+    return out
+
+
 def read_lock(path: Path) -> dict[str, str]:
-    """The current lock as {normalised name: whole line}."""
+    """The current lock as {normalised name: whole entry, hashes and all}."""
     if not path.exists():
         return {}
-    out = {}
+    out: dict[str, str] = {}
+    key = ""
     for raw in path.read_text().splitlines():
-        name = package(raw)
+        line = raw.strip()
+        name = package(line)
         if name:
-            out[norm(name)] = raw.strip()
+            key = norm(name)
+            out[key] = line
+        elif key and line.startswith("--hash="):
+            out[key] += "\n" + raw.rstrip()
     return out
 
 
@@ -124,37 +194,126 @@ def compose(frozen: list[str], previous: dict[str, str]) -> tuple[list[str], lis
             continue
         kept = previous.get(key)
         if kept:
-            lines.append(kept)
+            # The head only: the digests are re-fetched for every pin below,
+            # so carrying the old hash lines here would just duplicate them.
+            lines.append(pin_line(kept))
             carried.append(name)
     lines.sort(key=package)
     return lines, carried
 
 
-def main(argv: list[str] | None = None) -> int:
+def pypi_hashes(name: str, ver: str, timeout: float = 30.0) -> Sequence[str]:
+    """Every sha256 PyPI publishes for one release, sorted.
+
+    All of them, deliberately: the lock is installed on Linux CI and used on
+    macOS, so restricting the digests to this machine's wheel would make the
+    file uninstallable everywhere else. pip is happy with a superset — it
+    checks the file it actually downloaded against the list.
+    """
+    url = f"https://pypi.org/pypi/{name}/{ver}/json"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            data = json.load(resp)
+    except urllib.error.HTTPError as exc:
+        raise LockError(f"{name}=={ver}: PyPI answered {exc.code} for {url}") from exc
+    except OSError as exc:  # DNS, TLS, timeout — all the same to the caller
+        raise LockError(f"{name}=={ver}: cannot reach PyPI ({exc})") from exc
+    digests = {
+        u["digests"]["sha256"]
+        for u in data.get("urls", [])
+        if u.get("digests", {}).get("sha256")
+    }
+    return sorted(digests)
+
+
+def with_hashes(
+    lines: Iterable[str], fetch: Fetcher, say: Callable[[str], None] = lambda _m: None
+) -> list[str]:
+    """Each pin line, plus a `--hash=sha256:…` continuation per released file.
+
+    The conventional pip shape — the pin, a trailing backslash, and the
+    digests indented under it — so `pip install --require-hashes` reads it
+    and a human can still see which version moved in a diff. A pin PyPI has
+    no files for is a LockError and not an entry without hashes: a silently
+    unhashed line would turn the whole install off (`--require-hashes` is
+    all-or-nothing) at the next CI run rather than here.
+    """
+    out = []
+    for line in lines:
+        pin = pin_line(line)
+        name, ver = package(pin), version(pin)
+        if not name or not ver:
+            raise LockError(f"not a pin: {line!r}")
+        digests = list(fetch(name, ver))
+        if not digests:
+            raise LockError(f"{name}=={ver}: PyPI publishes no files for this version")
+        say(f"  {name}=={ver}: {len(digests)} file(s)")
+        body = [f"    --hash=sha256:{d}" for d in sorted(set(digests))]
+        out.append(" \\\n".join([pin, *body]))
+    return out
+
+
+def _report(
+    name: str,
+    lines: list[str],
+    entries: list[str],
+    carried: list[str],
+    previous: dict[str, str],
+) -> None:
+    """What was written, and any CARRY_OVER name that nothing pins."""
+    marked = sum(1 for ln in lines if " ; " in ln)
+    hashes = sum(e.count(HASH_FLAG) for e in entries)
+    print(f"{name}: {len(lines)} pins, {marked} platform-marked, {hashes} hashes")
+    if carried:
+        print(f"carried over from the previous lock: {', '.join(carried)}")
+    pinned = {norm(package(ln)) for ln in lines}
+    for tool in CARRY_OVER:
+        if norm(tool) not in previous and norm(tool) not in pinned:
+            print(f"note: {tool} is in CARRY_OVER but nothing pins it")
+
+
+def main(argv: list[str] | None = None, fetch: Fetcher = pypi_hashes) -> int:
+    """`fetch` is a parameter for the same reason `with_hashes` takes one:
+    the CLI path — read the lock, re-hash it, write it back — is the half
+    worth a test, and a test must not reach the index to get one."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", type=Path, default=LOCK, help="lock file to write")
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument(
+        "--hashes-only",
+        action="store_true",
+        help="refresh the digests of the pins already in the lock, "
+        "without resolving anything — no throwaway venv, no version moves",
+    )
     args = ap.parse_args(argv)
 
-    sources = [ROOT / s for s in SOURCES]
-    missing = [s for s in sources if not s.exists()]
-    if missing:
-        print(f"lock: missing {', '.join(s.name for s in missing)}", file=sys.stderr)
-        return 1
-
+    say = (lambda _m: None) if args.quiet else print
     previous = read_lock(args.out)
-    lines, carried = compose(freeze_clean(sources, args.quiet), previous)
-    args.out.write_text("\n".join(lines) + "\n")
+    if args.hashes_only:
+        if not previous:
+            print(f"lock: {args.out} has no pins to re-hash", file=sys.stderr)
+            return 1
+        lines = sorted((pin_line(e) for e in previous.values()), key=package)
+        carried: list[str] = []
+    else:
+        sources = [ROOT / s for s in SOURCES]
+        missing = [s for s in sources if not s.exists()]
+        if missing:
+            print(
+                f"lock: missing {', '.join(s.name for s in missing)}", file=sys.stderr
+            )
+            return 1
+        lines, carried = compose(freeze_clean(sources, args.quiet), previous)
+
+    say(f"lock: fetching digests for {len(lines)} pins from PyPI …")
+    try:
+        entries = with_hashes(lines, fetch, say)
+    except LockError as exc:
+        print(f"lock: {exc}", file=sys.stderr)
+        return 1
+    args.out.write_text("\n".join(entries) + "\n")
     if not args.quiet:
-        marked = sum(1 for ln in lines if " ; " in ln)
-        print(f"{args.out.name}: {len(lines)} pins, {marked} platform-marked")
-        if carried:
-            print(f"carried over from the previous lock: {', '.join(carried)}")
-        for name in CARRY_OVER:
-            if norm(name) not in previous and norm(name) not in {
-                norm(package(ln)) for ln in lines
-            }:
-                print(f"note: {name} is in CARRY_OVER but nothing pins it")
+        _report(args.out.name, lines, entries, carried, previous)
     return 0
 
 

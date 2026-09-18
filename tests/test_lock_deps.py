@@ -1,7 +1,9 @@
-"""tools/lock_deps.py, and the question the lock exists to answer.
+"""tools/lock_deps.py: WHICH VERSIONS the lock holds, and why those.
 
 Two halves, one file, because they are the same subject from both ends
-(grade report 2026-09-01 D4 and F1):
+(grade report 2026-09-01 D4 and F1). The third question — which BYTES,
+the `--hash=sha256:` lines under every pin — is test_lock_hashes.py, and
+it imports the fixture lock and the fake fetcher from here.
 
 TestCompose exercises the pure functions `make lock` is built out of —
 `package`, `norm`, `read_lock`, `compose` — over fixture text. No venv is
@@ -52,14 +54,33 @@ FROZEN = [
     "PyYAML==6.0.3",
 ]
 
-#: The lock as it stood before: markers already applied, and the carry-over
-#: pin present with a comment-free line of its own.
+#: The lock as it stood before: markers already applied, hashes under each
+#: pin as pip wants them, and the carry-over pin present with a line of its
+#: own. `aaa…`-style digests, because what is under test is the SHAPE.
 PREVIOUS_TEXT = """\
-aioesphomeapi==45.10.2
-numpy==2.5.0
-pyobjc-core==11.1 ; sys_platform == "darwin"
-yt-dlp==2026.8.20
+aioesphomeapi==45.10.2 \\
+    --hash=sha256:aa1 \\
+    --hash=sha256:aa2
+numpy==2.5.0 \\
+    --hash=sha256:bb1
+pyobjc-core==11.1 ; sys_platform == "darwin" \\
+    --hash=sha256:cc1
+yt-dlp==2026.8.20 \\
+    --hash=sha256:dd1
 """
+
+
+def fake_fetch(digests: dict[str, list[str]] | None = None) -> ld.Fetcher:
+    """A fetcher that answers from a dict — the whole reason `with_hashes`
+    takes one. Unknown packages get two plausible digests, so a test only
+    has to name the releases it actually cares about."""
+
+    def fetch(name: str, ver: str) -> list[str]:
+        return (digests or {}).get(
+            f"{name}=={ver}", [f"{name}-{ver}-w", f"{name}-{ver}-s"]
+        )
+
+    return fetch
 
 
 class TestPackageAndNorm(unittest.TestCase):
@@ -87,16 +108,28 @@ class TestReadLock(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="lock-deps-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
 
-    def test_reads_whole_lines_keyed_by_normalised_name(self) -> None:
+    def test_reads_whole_entries_keyed_by_normalised_name(self) -> None:
+        """An entry is the pin AND its hash lines — a reader that stopped at
+        the first line would carry a yt-dlp pin over with no digests, and
+        `--require-hashes` is all-or-nothing."""
         p = self.tmp / "requirements.lock"
         p.write_text(PREVIOUS_TEXT)
         got = ld.read_lock(p)
-        self.assertEqual(got["numpy"], "numpy==2.5.0")
-        self.assertEqual(got["yt-dlp"], "yt-dlp==2026.8.20")
-        # the marker is part of the line, and the key is normalised
+        self.assertEqual(got["numpy"], "numpy==2.5.0 \\\n    --hash=sha256:bb1")
+        self.assertEqual(got["aioesphomeapi"].count("--hash="), 2)
+        # the marker is part of the head, and the key is normalised
         self.assertEqual(
-            got["pyobjc-core"], 'pyobjc-core==11.1 ; sys_platform == "darwin"'
+            ld.pin_line(got["pyobjc-core"]),
+            'pyobjc-core==11.1 ; sys_platform == "darwin"',
         )
+        self.assertEqual(ld.version(got["pyobjc-core"]), "11.1")
+        self.assertEqual(ld.version(got["yt-dlp"]), "2026.8.20")
+
+    def test_pin_line_and_version_cope_with_an_unhashed_pin(self) -> None:
+        """The pre-hash format, and what a hand-written line looks like."""
+        self.assertEqual(ld.pin_line("numpy==2.5.0"), "numpy==2.5.0")
+        self.assertEqual(ld.version("numpy==2.5.0"), "2.5.0")
+        self.assertEqual(ld.version("# a comment"), "")
 
     def test_a_missing_lock_is_an_empty_dict_not_an_error(self) -> None:
         """First run on a fresh tree, and the reason compose() must cope
@@ -106,11 +139,11 @@ class TestReadLock(unittest.TestCase):
 
 class TestCompose(unittest.TestCase):
     def setUp(self) -> None:
-        self.previous = {
-            ld.norm(ld.package(ln)): ln
-            for ln in PREVIOUS_TEXT.splitlines()
-            if ld.package(ln)
-        }
+        tmp = Path(tempfile.mkdtemp(prefix="lock-deps-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
+        prev = tmp / "requirements.lock"
+        prev.write_text(PREVIOUS_TEXT)
+        self.previous = ld.read_lock(prev)
 
     def test_platform_markers_are_reapplied_to_every_pyobjc_pin(self) -> None:
         lines, _ = ld.compose(FROZEN, self.previous)
@@ -172,21 +205,26 @@ class TestCompose(unittest.TestCase):
 
     def test_the_real_lock_round_trips_through_compose_unchanged(self) -> None:
         """The fixture proves the rules; this proves they describe the file
-        actually in the tree. Strip the markers off requirements.lock to
-        make it look like a freeze, recompose, and the file must come back
-        byte for byte — anything else means the next `make lock` would
-        rewrite lines nobody changed."""
+        actually in the tree. Strip the markers and the hashes off
+        requirements.lock to make it look like a freeze, recompose, re-hash
+        from the file's own digests, and it must come back byte for byte —
+        anything else means the next `make lock` would rewrite lines nobody
+        changed."""
         lock = ld.read_lock(ROOT / "requirements.lock")
         self.assertTrue(lock, "requirements.lock is missing or has no pins")
         frozen = [
-            ln.split(" ; ")[0]
+            ld.pin_line(ln).split(" ; ")[0]
             for ln in lock.values()
             if ld.norm(ld.package(ln)) not in {ld.norm(n) for n in ld.CARRY_OVER}
         ]
+        known = {
+            f"{ld.package(e)}=={ld.version(e)}": ld.hashes(e) for e in lock.values()
+        }
         lines, carried = ld.compose(frozen, lock)
         self.assertEqual(carried, list(ld.CARRY_OVER))
+        entries = ld.with_hashes(lines, fake_fetch(known))
         self.assertEqual(
-            "\n".join(lines) + "\n", (ROOT / "requirements.lock").read_text()
+            "\n".join(entries) + "\n", (ROOT / "requirements.lock").read_text()
         )
 
 
@@ -200,7 +238,7 @@ class TestLockSatisfiesRequirements(unittest.TestCase):
 
     def setUp(self) -> None:
         self.lock = {
-            ld.norm(ld.package(ln)): ln.split(" ; ")[0].split("==", 1)[1]
+            ld.norm(ld.package(ln)): ld.version(ln)
             for ln in ld.read_lock(ROOT / "requirements.lock").values()
         }
 

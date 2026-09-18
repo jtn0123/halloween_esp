@@ -146,7 +146,7 @@ jobs:
       # yt-dlp: two tests assert the import toolchain is present and that
       # probe/import guards reject junk BEFORE shelling out to it.
       # The lock IS what was tested locally (frozen from the 3.13 venv by `make lock`).
-      - run: pip install --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
+      - run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
       # …but the lock is ALL any job installs, so nothing here ever asked the
       # resolver whether requirements.txt is still satisfiable. Dependabot
       # walked straight through that gap: PR #13's own log shows the job
@@ -365,7 +365,7 @@ jobs:
       # the first two hand dispatches. pip's format control lets those
       # three back to source while :all: holds for the other 110. The
       # python job installs the same lock without the flag and passes.
-      - run: pip install --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
+      - run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
       # Same four lines as the esphome job, for the same reason: render_audio
       # spawns castle-core's scene_render, so this job builds the crate too —
       # it was just doing it on the runner image's rustup, off the pin, with
