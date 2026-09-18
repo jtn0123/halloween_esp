@@ -33,6 +33,9 @@ web/blob-report/
 
 # Local analysis artifacts
 .coverage
+.coverage.*
+coverage.xml
+core/lcov.info
 dogfood-output/
 # The scene editor's backup and scratch files.
 scenes/*.bak

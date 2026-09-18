@@ -1,0 +1,81 @@
+name: sonar
+
+# SonarQube Cloud, CI-based. Automatic analysis (what this project ran until
+# 2026-09-18) cannot import coverage at all — it never executes anything — so
+# the dashboard's coverage column was empty by construction. This workflow runs
+# the suites that HAVE a coverage tool under it, hands the reports to the
+# scanner, and is its own file because ci.yml sits at the 500-line rule.
+#
+# It gates nothing in ci.yml and repeats two of its suites on purpose: a
+# coverage upload that fails must not redden the job that says whether the
+# code works. What is measured: tools/ and demo/castle-radio (coverage.py) and
+# core/ (cargo llvm-cov). What is not: web/src and the radio's browser sources,
+# whose suites run esbuild bundles and vm-evaluated text that no reporter maps
+# back to a file — sonar-project.properties keeps them out of the denominator
+# rather than reporting them as 0%.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: sonar-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    # A fork's pull request carries no secrets; the scan would only fail.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 30
+    env:
+      CI_RUST_GATES_ELSEWHERE: "1"
+      # Same pin, same reason as ci.yml's python job: the parity suites.
+      NPY_DISABLE_CPU_FEATURES: "X86_V3 X86_V4 AVX512_ICL AVX512_SPR"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # blame, and the new-code period, need history
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
+        with:
+          toolchain: "1.88.0"
+          components: clippy, llvm-tools-preview
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: core
+      - uses: taiki-e/install-action@76c2e6406e52637deed7160d77bded76bd83e06e # v2.87.14
+        with:
+          tool: cargo-llvm-cov
+      - name: build castle-core
+        run: make rust
+      - uses: ./.github/actions/media-tools
+      - run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: web
+      # The Makefile's two coverage runs, each to its own data file so the
+      # second does not overwrite the first, then one report for both.
+      - name: python coverage
+        run: |
+          COVERAGE_FILE=.coverage.tools make coverage PY=python
+          COVERAGE_FILE=.coverage.radio make coverage-radio PY=python
+          python -m coverage combine .coverage.tools .coverage.radio
+          python -m coverage xml -o coverage.xml
+      - name: rust coverage
+        working-directory: core
+        run: cargo llvm-cov --lcov --output-path lcov.info
+      - uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
