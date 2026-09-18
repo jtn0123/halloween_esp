@@ -10,6 +10,7 @@ use std::path::Path;
 use crate::jsonio::{self, Json, dumps};
 use crate::studio::App;
 use crate::studio_media::compares;
+use crate::studio_proc::{Timed, run_input};
 
 /// shutil.which, for the one binary probe cares about.
 fn which(name: &str) -> bool {
@@ -283,21 +284,24 @@ pub fn compare(app: &App, req: &Json) -> (Json, u16) {
     )
 }
 
+/// The comparison shim: four ffmpeg encodes behind one python child, fed its
+/// request on stdin.
+///
+/// Under the watchdog like every other child, and for the same reason twice
+/// over: the route holds the studio's oplock while this runs, so an ffmpeg
+/// that never returns used to wedge every later encode and import for the
+/// life of the server (grade report 2026-09-17 B3). 300 s is generous for
+/// four encodes of a few seconds of audio and far short of the 900 s the
+/// importer gets.
 fn shim(py: &str, root: &Path, payload: &str) -> Option<Json> {
-    use std::io::Write;
     let mut cmd = std::process::Command::new(py);
-    cmd.arg(root.join("tools").join("compare_encodes.py"))
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null());
-    let mut child = cmd.spawn().ok()?;
-    child.stdin.as_mut()?.write_all(payload.as_bytes()).ok()?;
-    drop(child.stdin.take());
-    let out = child.wait_with_output().ok()?;
+    cmd.arg(root.join("tools").join("compare_encodes.py"));
+    let Timed::Done(_ok, out, _err) = run_input(cmd, payload, 300) else {
+        return None;
+    };
     // The answer is the last non-empty stdout line, whatever a child
     // tool may have narrated above it.
-    let text = String::from_utf8_lossy(&out.stdout);
-    let line = text.lines().rev().find(|l| !l.trim().is_empty())?;
+    let line = out.lines().rev().find(|l| !l.trim().is_empty())?;
     jsonio::parse(line.trim()).ok()
 }
 

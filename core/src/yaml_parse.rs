@@ -4,8 +4,8 @@
 //! (`{a: b}`, `[1, 2]`, which may run over several lines) are in
 //! [`crate::yaml_flow`]. Split three ways at the repo's 500-line cap.
 
-use crate::yaml::{Yaml, YamlError, plain_key, scalar};
-use crate::yaml_flow::parse_flow;
+use crate::yaml::{MAX_DEPTH, Yaml, YamlError, plain_key, scalar};
+use crate::yaml_flow::{flow_end, parse_flow};
 use crate::yaml_lines::{Line, key_colon, split_lines};
 
 // --------------------------------------------------------------------------
@@ -33,9 +33,9 @@ pub fn parse(text: &str) -> Result<Yaml, YamlError> {
     let bare = !(l.text == "-" || l.text.starts_with("- ")) && key_colon(&l.text).is_none();
     let v = if bare {
         let first = l.text.clone();
-        p.scalar_value(first)?
+        p.scalar_value(first, 0)?
     } else {
-        p.node(indent)?
+        p.node(indent, 1)?
     };
     p.skip_blank();
     if let Some(l) = p.lines.get(p.at) {
@@ -54,16 +54,31 @@ impl Parser {
         }
     }
 
-    fn node(&mut self, indent: usize) -> Result<Yaml, YamlError> {
+    fn node(&mut self, indent: usize, depth: usize) -> Result<Yaml, YamlError> {
         let l = &self.lines[self.at];
         if l.text == "-" || l.text.starts_with("- ") {
-            self.seq(indent)
+            self.seq(indent, depth)
         } else {
-            self.map(indent)
+            self.map(indent, depth)
         }
     }
 
-    fn seq(&mut self, indent: usize) -> Result<Yaml, YamlError> {
+    /// The level this collection sits at, against the ceiling neither half
+    /// of the parser may recurse past (grade report 2026-09-17 B1). Block
+    /// nesting is as reachable as flow nesting and cheaper to write: every
+    /// two bytes of `- - - - …` on ONE line opens another sequence, and
+    /// deeper indentation opens another mapping.
+    fn too_deep(&self, depth: usize) -> Option<YamlError> {
+        (depth > MAX_DEPTH).then(|| YamlError {
+            line: self.lines.get(self.at).map_or(0, |l| l.no),
+            msg: format!("nested deeper than {MAX_DEPTH} levels"),
+        })
+    }
+
+    fn seq(&mut self, indent: usize, depth: usize) -> Result<Yaml, YamlError> {
+        if let Some(e) = self.too_deep(depth) {
+            return Err(e);
+        }
         let mut out = Vec::new();
         loop {
             self.skip_blank();
@@ -90,7 +105,7 @@ impl Parser {
                 match self.lines.get(self.at) {
                     Some(n) if n.indent > indent => {
                         let ni = n.indent;
-                        out.push(self.node(ni)?);
+                        out.push(self.node(ni, depth + 1)?);
                     }
                     _ => out.push(Yaml::Null),
                 }
@@ -98,19 +113,22 @@ impl Parser {
                 // `- - 1`: a nested sequence opened on its parent's line.
                 self.lines[self.at].indent = col;
                 self.lines[self.at].text = after;
-                out.push(self.seq(col)?);
+                out.push(self.seq(col, depth + 1)?);
             } else if key_colon(&after).is_some() {
                 self.lines[self.at].indent = col;
                 self.lines[self.at].text = after;
-                out.push(self.map(col)?);
+                out.push(self.map(col, depth + 1)?);
             } else {
-                out.push(self.scalar_value(after)?);
+                out.push(self.scalar_value(after, depth)?);
             }
         }
         Ok(Yaml::List(out))
     }
 
-    fn map(&mut self, indent: usize) -> Result<Yaml, YamlError> {
+    fn map(&mut self, indent: usize, depth: usize) -> Result<Yaml, YamlError> {
+        if let Some(e) = self.too_deep(depth) {
+            return Err(e);
+        }
         let mut out: Vec<(String, Yaml)> = Vec::new();
         loop {
             self.skip_blank();
@@ -144,21 +162,21 @@ impl Parser {
                 match self.lines.get(self.at) {
                     Some(n) if n.indent > indent => {
                         let ni = n.indent;
-                        self.node(ni)?
+                        self.node(ni, depth + 1)?
                     }
                     // A block sequence may sit at its own key's
                     // indentation — which is how PyYAML dumps one.
                     Some(n)
                         if n.indent == indent && (n.text == "-" || n.text.starts_with("- ")) =>
                     {
-                        self.seq(indent)?
+                        self.seq(indent, depth + 1)?
                     }
                     _ => Yaml::Null,
                 }
             } else if rest.starts_with('>') || rest.starts_with('|') {
                 Yaml::Str(self.block_scalar(indent, &rest))
             } else {
-                self.scalar_value(rest)?
+                self.scalar_value(rest, depth)?
             };
             match out.iter_mut().find(|(k, _)| *k == key) {
                 Some(slot) => slot.1 = val, // last one wins, in the first one's place
@@ -214,8 +232,10 @@ impl Parser {
     }
 
     /// A value that begins on this line: a flow collection (which may run
-    /// on) or a single scalar.
-    fn scalar_value(&mut self, first: String) -> Result<Yaml, YamlError> {
+    /// on) or a single scalar. `depth` is what the block half has already
+    /// spent, so the flow half carries the count on rather than starting
+    /// a fresh allowance at the bracket.
+    fn scalar_value(&mut self, first: String, depth: usize) -> Result<Yaml, YamlError> {
         let no = self.lines[self.at].no;
         if !(first.starts_with('{') || first.starts_with('[')) {
             let q = first.chars().next().filter(|c| *c == '"' || *c == '\'');
@@ -240,7 +260,7 @@ impl Parser {
                     });
                 }
                 self.at += 1;
-                return parse_flow(&buf[..end]).map_err(|msg| YamlError { line: no, msg });
+                return parse_flow(&buf[..end], depth).map_err(|msg| YamlError { line: no, msg });
             }
             self.at += 1;
             match self.lines.get(self.at) {
@@ -257,42 +277,6 @@ impl Parser {
             }
         }
     }
-}
-
-/// The index just past the flow collection that starts at byte 0, or None
-/// when it has not closed yet.
-fn flow_end(s: &str) -> Option<usize> {
-    let b = s.as_bytes();
-    let mut depth = 0usize;
-    let mut quote: Option<u8> = None;
-    let mut i = 0;
-    while i < b.len() {
-        let c = b[i];
-        match quote {
-            Some(q) => {
-                if q == b'"' && c == b'\\' {
-                    i += 2;
-                    continue;
-                }
-                if c == q {
-                    quote = None;
-                }
-            }
-            None => match c {
-                b'"' | b'\'' => quote = Some(c),
-                b'{' | b'[' => depth += 1,
-                b'}' | b']' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Some(i + 1);
-                    }
-                }
-                _ => {}
-            },
-        }
-        i += 1;
-    }
-    None
 }
 
 #[cfg(test)]
@@ -438,5 +422,43 @@ mod tests {
             "line 1: unterminated quoted string"
         );
         assert_eq!(err("a: [1] extra\n").line, 1);
+    }
+
+    /// grade report 2026-09-17 B1: `node`/`seq`/`map` recursed once per
+    /// level with nothing counting, and a blown stack ABORTS the studio
+    /// rather than failing one request. Two bytes of `- ` per level is the
+    /// cheapest way in — no indentation needed, all on one line — and the
+    /// flow half shares the count, so a deep block cannot hand a deep flow
+    /// value a fresh allowance.
+    #[test]
+    fn nesting_is_bounded_rather_than_fatal() {
+        let dashes = |n: usize| format!("{}1\n", "- ".repeat(n));
+        assert!(parse(&dashes(MAX_DEPTH)).is_ok());
+        for text in [
+            dashes(MAX_DEPTH + 1),
+            dashes(100_000), // the cheap shape: 200 KB, no indentation
+            format!("a: {}1{}\n", "[".repeat(100_000), "]".repeat(100_000)),
+            // The indentation-driven shape, which costs 2 bytes more each
+            // level rather than 2 flat, but arrives at the same cliff.
+            (0..=MAX_DEPTH)
+                .map(|i| format!("{}k:\n", " ".repeat(i * 2)))
+                .collect(),
+        ] {
+            let err = parse(&text).expect_err("refused");
+            assert!(
+                err.msg.contains("nested deeper than 200 levels"),
+                "want a depth refusal, got {err}"
+            );
+        }
+        // A flow value one level below the ceiling still parses; the same
+        // value one level deeper is refused by the flow half's copy of the
+        // count, not by a second allowance.
+        assert!(parse(&format!("{}[1]\n", "- ".repeat(MAX_DEPTH - 1))).is_ok());
+        assert_eq!(
+            parse(&format!("{}[1]\n", "- ".repeat(MAX_DEPTH)))
+                .expect_err("refused")
+                .msg,
+            "nested deeper than 200 levels"
+        );
     }
 }

@@ -9,6 +9,13 @@ nesting level, and 100 KB of `[` overflowed the stack; `catch_unwind` in
 flight died with it). The Python twin answered 500 and kept serving, which is
 what "the twins differ under fault" meant.
 
+Both of the studio's readers are here, because the same defect arrived twice
+through two parsers. `core/src/yaml_flow.rs` and `core/src/yaml_parse.rs`
+recursed with nothing counting either, and the same route reaches them one
+layer in: the JSON body is fine, the SCENE BLOCK inside it is the nested
+thing (grade report 2026-09-17 B1). Their unit tests are
+`nesting_is_bounded_rather_than_fatal` in each file; these are the requests.
+
 So the assertion is not only the status code. It is that the process is still
 alive afterwards and still answering, because a unit test over the parser
 cannot tell the difference between a refusal and a crash the harness never
@@ -48,6 +55,15 @@ BIN = ROOT / "core" / "target" / "release" / "studio"
 #: like the ~20 KB actually needed, and that is the point — MAX_BODY is
 #: 512 MB, so nothing upstream of the parser was ever going to stop it.
 FLOOD = b"[" * 100_000
+
+#: How deep the 2026-09-17 reproduction went. Well past the ~5,000 that was
+#: already answered with a 400, and about 40 KB of body.
+DEEP = 20_000
+
+
+def yaml_body(block: str) -> bytes:
+    """A splice request whose JSON is unremarkable and whose SCENE is not."""
+    return json.dumps({"id": "zz", "yaml": block}).encode()
 
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
@@ -114,6 +130,38 @@ class DepthRefusalIsAnAnswer(unittest.TestCase):
         status, data = self.post(body.encode())
         self.assertEqual(status, 400)  # a refusal from the validator, not the parser
         self.assertNotIn("not valid JSON", json.loads(data)["error"])
+
+    def test_a_deep_scene_block_is_refused_and_the_studio_keeps_serving(self) -> None:
+        """grade report 2026-09-17 B1, both spellings: a flow value nested
+        20,000 deep, and the same depth written as block sequences, which
+        costs two bytes a level and no indentation at all. Each used to be
+        `has overflowed its stack / fatal runtime error` and a dead server."""
+        blocks = {
+            "flow": "  - id: zz\n    a: " + "[" * DEEP + "]" * DEEP,
+            "block": "  - id: zz\n    a:\n" + "      " + "- " * DEEP + "1",
+        }
+        for name, block in blocks.items():
+            with self.subTest(shape=name):
+                status, data = self.post(yaml_body(block))
+                self.assertEqual(status, 400)
+                out = json.loads(data)
+                self.assertIn("not valid YAML", out["error"])
+                self.assertIn("nested deeper than 200 levels", out["error"])
+                assert self.proc is not None
+                self.assertIsNone(self.proc.poll(), "the studio died on the request")
+        self.assertEqual(gc.fetch(self.port, "/api/status")[0], 200)
+
+    def test_a_scene_nested_the_way_the_desk_writes_one_is_not_refused(self) -> None:
+        """The wall has to be far above the show: the deepest thing the desk
+        sends is a cue's pulse inside a cue list inside a scene."""
+        block = (
+            "  - id: zz\n"
+            "    cues:\n"
+            "      - {t: 0, pulse: {zones: [door], colors: [[1, 0, 0]]}}\n"
+        )
+        status, data = self.post(yaml_body(block))
+        self.assertEqual(status, 400)  # the validator's refusal, not the parser's
+        self.assertNotIn("not valid YAML", json.loads(data)["error"])
 
 
 if __name__ == "__main__":

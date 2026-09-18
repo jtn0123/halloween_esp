@@ -11,8 +11,9 @@
 //!
 //! DNS is the input tests/test_netguard.py mocks and a binary cannot, so
 //! it is supplied: the table stands in for getaddrinfo (a name that is not
-//! in it does not resolve, exactly like the Python's fake), while an IP
-//! literal still answers as itself. No socket is opened.
+//! in it does not resolve, exactly like the Python's fake — and an empty
+//! answer is a REFUSAL, not a pass), while an IP literal still answers as
+//! itself. No socket is opened.
 
 use std::io::Read;
 use std::net::IpAddr;

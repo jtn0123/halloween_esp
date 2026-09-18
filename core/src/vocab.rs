@@ -28,8 +28,12 @@ pub const PALETTES: [&str; 4] = ["haunt", "ember", "moonlight", "toxic"];
 /// Strike masks — which pixels a strike lights.
 pub const FLASH_MODES: [&str; 4] = ["all", "scatter", "center", "ring"];
 
-/// The board holds this many scenes (~9 KB of dram0 each). The other copy
-/// is `tools/check_loc.py`'s `SCENE_LIMIT`, which fails `make check` above
-/// it; `tests/test_loc_scope.py` holds the two equal. Raising it is a
-/// hardware claim, not a preference — see scenes/scenes.yaml's header.
+/// The card's scene manifest holds this many scenes — `show.man` is a fixed
+/// record count so the firmware never allocates to read it
+/// (`tools/scene_manifest.py` `MAX_SCENES`, `castle_scenes::kMaxScenes`). It
+/// was a dram0 measurement until v5.67, when the timelines moved to the card
+/// and the per-scene RAM cost went away; the number stayed. The other copy is
+/// `tools/check_loc.py`'s `SCENE_LIMIT`, which fails `make check` above it;
+/// `tests/test_loc_scope.py` holds the two equal. Raising it means raising all
+/// four together — see scenes/scenes.yaml's header.
 pub const SCENE_LIMIT: usize = 12;

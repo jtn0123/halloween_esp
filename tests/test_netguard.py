@@ -37,7 +37,14 @@ def fake_dns(table: dict[str, list[str]]) -> "mock._patch[Any]":
 class TestClassification(unittest.TestCase):
     def test_public_and_private_ranges(self) -> None:
         ip = ipaddress.ip_address
-        for s in ("8.8.8.8", "142.250.72.14", "2607:f8b0::1"):
+        for s in (
+            "8.8.8.8",
+            "142.250.72.14",
+            "2607:f8b0::1",
+            "64:ff9b::808:808",  # NAT64 wrapping 8.8.8.8
+            "2001:1::1",  # a global carve-out inside 2001::/23
+            "2001:20::1",
+        ):
             self.assertTrue(ng.is_public(ip(s)), s)
         for s in (
             "127.0.0.1",
@@ -52,6 +59,16 @@ class TestClassification(unittest.TestCase):
             "fd00::1",
             "::ffff:192.168.0.1",
             "100.64.0.1",
+            # One row per v6 range castle-core's 2000::/3 shortcut called
+            # public (grade report 2026-09-17 pm E1).
+            "2002::1",
+            "2001:db8::1",
+            "2001::1",
+            "3fff::1",
+            "100::1",
+            "64:ff9b::7f00:1",  # NAT64 wrapping 127.0.0.1
+            "64:ff9b:1::808:808",  # local-use NAT64, never public
+            "ff02::1",
         ):
             self.assertFalse(ng.is_public(ip(s)), s)
 
@@ -112,9 +129,18 @@ class TestRefuseReason(unittest.TestCase):
                 "10.0.0.5", ng.refuse_reason("http://two.faced/", self.LAN) or ""
             )
 
-    def test_unresolvable_is_left_to_ytdlp(self) -> None:
+    def test_unresolvable_fails_closed_for_a_lan_visitor(self) -> None:
+        """An empty answer and an answer that arrives on the retry are the
+        same bytes, so the guard refuses rather than hand out a retry loop
+        (grade report 2026-09-17 pm E1)."""
         with fake_dns({}):
-            self.assertIsNone(ng.refuse_reason("https://nope.test/v", self.LAN))
+            reason = ng.refuse_reason("https://nope.test/v", self.LAN)
+            self.assertIsNotNone(reason)
+            self.assertIn("does not resolve", reason or "")
+
+    def test_unresolvable_is_still_fine_for_the_studios_own_machine(self) -> None:
+        with fake_dns({}):
+            self.assertIsNone(ng.refuse_reason("https://nope.test/v", "127.0.0.1"))
 
     def test_hostless_and_broken_urls_are_refused(self) -> None:
         self.assertIsNotNone(ng.refuse_reason("http:///x", self.LAN))

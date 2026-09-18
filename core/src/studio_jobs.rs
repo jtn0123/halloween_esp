@@ -10,12 +10,12 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::jsonio::{Json, py_float};
 use crate::studio::App;
+use crate::studio_proc::{kill_group, own_group};
 use crate::studio_progress::{Job, interpret};
 use crate::studio_reason::explain;
 
 unsafe extern "C" {
     fn dup2(oldfd: i32, newfd: i32) -> i32;
-    fn kill(pid: i32, sig: i32) -> i32;
 }
 
 /// The child's stderr joins its stdout at the fd level (Python's
@@ -27,12 +27,6 @@ fn merge_stderr(cmd: &mut Command) {
             dup2(1, 2);
             Ok(())
         });
-    }
-}
-
-fn kill9(pid: i32) {
-    unsafe {
-        kill(pid, 9);
     }
 }
 
@@ -154,6 +148,10 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     merge_stderr(&mut cmd);
+    // yt-dlp spawns ffmpeg; the group is what the watchdog below has to be
+    // able to kill, or the read loop waits for the grandchild and the
+    // oplock stays held with it (grade report 2026-09-17 B2).
+    own_group(&mut cmd);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -165,6 +163,7 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
         }
     };
     let pid = child.id() as i32;
+    crate::studio_reap::register(pid);
     // Wall-clock kill: a child that stops producing output blocks the
     // read below forever, and the job would sit at "fetching" for the
     // life of the server.
@@ -178,7 +177,7 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
             }
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        kill9(pid);
+        kill_group(pid);
         true
     });
     if let Some(out) = child.stdout.take() {
@@ -194,6 +193,7 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
         }
     }
     let status = child.wait();
+    crate::studio_reap::forget(pid);
     done.store(true, Ordering::Relaxed);
     if let Ok(t) = watchdog.join() {
         timed_out = t;

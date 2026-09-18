@@ -174,15 +174,25 @@ pub fn rebuild(app: &App) -> (bool, String) {
     } else {
         String::new()
     };
-    let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
-    for tool in ["render_audio.py", "gen_esphome.py", "gen_previewer.py"] {
-        let mut cmd = Command::new(py(&app.root));
-        cmd.arg(app.root.join("tools").join(tool));
-        let (ok, out) = run(cmd, 900);
-        log.push_str(&out);
-        if !ok {
-            log.push_str(&format!("\n{tool} failed — the later steps were not run\n"));
-            return (false, tail4000(&log));
+    // The GENERATORS need the gate — they write audio/, firmware/generated/
+    // and the previewer page, and two of them at once would interleave in the
+    // same files. The publish that follows does not: it is two `sd_sync.py`
+    // runs (900 s each over porch Wi-Fi) that only READ the tree the
+    // generators just wrote and talk to the castle, so holding the oplock
+    // across it queued every encode and import behind a network push
+    // (grade report 2026-09-17 pm G2). Hence the scope: locked for the three
+    // steps, free for the wire.
+    {
+        let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        for tool in ["render_audio.py", "gen_esphome.py", "gen_previewer.py"] {
+            let mut cmd = Command::new(py(&app.root));
+            cmd.arg(app.root.join("tools").join(tool));
+            let (ok, out) = run(cmd, 900);
+            log.push_str(&out);
+            if !ok {
+                log.push_str(&format!("\n{tool} failed — the later steps were not run\n"));
+                return (false, tail4000(&log));
+            }
         }
     }
     let (body, _code) = crate::studio_publish::publish_body(app);
@@ -249,6 +259,64 @@ mod tests {
         );
         // A longer id is not matched by a shorter one's header.
         assert_eq!(find_block("scenes:\n  - id: vigilante\n", "vigil"), None);
+    }
+
+    /// The generators take turns; the network push does not wait for them.
+    ///
+    /// `rebuild` used to hold the oplock across `publish_body` too — two
+    /// `sd_sync` runs with a 900 s ceiling each — so every encode and import
+    /// queued behind a porch-Wi-Fi upload (grade report 2026-09-17 pm G2).
+    /// The fake interpreter below makes each step slow enough to observe the
+    /// gate from another thread. Skipped when CASTLE_PY names the
+    /// interpreter, because then the tree's `.venv` is not what runs.
+    #[test]
+    fn the_gate_is_held_for_the_generators_and_not_for_the_push() {
+        if std::env::var_os("CASTLE_PY").is_some_and(|v| !v.is_empty())
+            || std::env::var_os("CASTLE_HOST").is_some_and(|v| !v.is_empty())
+        {
+            return;
+        }
+        use std::os::unix::fs::PermissionsExt;
+        let d = tmpdir("gate");
+        let bin = d.join(".venv").join("bin");
+        std::fs::create_dir_all(&bin).expect("fake venv");
+        std::fs::write(bin.join("python"), "#!/bin/sh\nsleep 0.4\n").expect("fake py");
+        std::fs::set_permissions(bin.join("python"), std::fs::Permissions::from_mode(0o755))
+            .expect("chmod");
+        let mut app = App::new(d.clone());
+        app.scenes = d.join("scenes.yaml");
+        std::fs::write(&app.scenes, SHOW).expect("seed");
+        let app = std::sync::Arc::new(app);
+        let running = std::sync::Arc::clone(&app);
+        let h = std::thread::spawn(move || rebuild(&running));
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        assert!(
+            app.oplock.try_lock().is_err(),
+            "the generator steps ran unserialised"
+        );
+        let (ok, _log) = h.join().expect("rebuild finished");
+        assert!(ok, "three fake generators all succeeded");
+        assert!(
+            app.oplock.try_lock().is_ok(),
+            "the gate outlived the rebuild"
+        );
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// And the early exit releases it: a failing generator returns from the
+    /// middle of the locked block, which only the scope makes safe.
+    #[test]
+    fn a_failing_generator_does_not_keep_the_gate() {
+        let d = tmpdir("gatefail");
+        let mut app = App::new(d.clone());
+        app.scenes = d.join("scenes.yaml");
+        std::fs::write(&app.scenes, SHOW).expect("seed");
+        // No tools/ under this root: the first step cannot run at all.
+        let (ok, log) = rebuild(&app);
+        assert!(!ok, "a rebuild with no generators to run is a failure");
+        assert!(log.contains("render_audio.py failed"), "named it: {log}");
+        assert!(app.oplock.try_lock().is_ok(), "the gate was kept");
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
