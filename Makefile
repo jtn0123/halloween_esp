@@ -37,7 +37,7 @@ YAML_S3 := firmware/castle_s3.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
@@ -79,6 +79,7 @@ help:
 	@echo "  make coverage-radio demo/castle-radio under its own floor ($(COVERAGE_RADIO_MIN)%)"
 	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
 	@echo "  make lock       relock requirements.lock from a clean throwaway venv"
+	@echo "  make lock-hashes  refresh the lock's sha256 lines, same pins, no resolve"
 	@echo "  make clean      drop firmware/.esphome and rendered wavs"
 	@echo "  make sd-build / sd-upload   older names for build / upload"
 	@echo "  make bench-audio-logs       tail the bench-audio build's logs"
@@ -318,8 +319,17 @@ audit:
 # freezes that, and puts the markers (and the subprocess-only pins) back.
 # Takes a minute or two: it is a real install, on purpose. Re-run `make audit`
 # after.
+#
+# Both targets end by asking PyPI for the sha256 of every file of every pinned
+# version, because a version says nothing about the bytes that arrive and CI
+# installs with --require-hashes. `lock-hashes` is only that half: same pins,
+# refreshed digests, no resolve and no venv — what to run when a hash is
+# missing but nothing should move.
 lock:
 	@$(PY) tools/lock_deps.py
+
+lock-hashes:
+	@$(PY) tools/lock_deps.py --hashes-only
 
 # castle-core, the Rust half — 9k lines that had no spelling here at all
 # (grade report 2026-08-31 I1). These three ARE the Rust gate: tests/test_castle_core.py

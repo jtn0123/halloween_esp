@@ -56,6 +56,13 @@ exception for guests:
 
 ## Dependency advisories
 
+`requirements.lock` pins a version AND the bytes: every pin carries a
+`--hash=sha256:` line for each file PyPI published for that version (all
+wheels, every platform, plus the sdist), and every CI install reads it with
+`--require-hashes`, so a replaced artifact on the index fails the job instead
+of entering the build. `make lock` writes the digests; `make lock-hashes`
+refreshes them without moving a version.
+
 `make audit` runs pip-audit against `requirements.lock`. Advisories in
 ESPHome's build toolchain (platformio → starlette, which never sees network
 input here) are ignored by id, with the list and reasoning in the `Makefile`'s

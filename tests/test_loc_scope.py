@@ -33,6 +33,7 @@ DOCUMENTED_GENERATED = {
     "firmware/generated/fallback_scenes.h",
     "audio/markers.json",
     "web/package-lock.json",
+    "requirements.lock",
     "tests/golden/read_routes.json",
     "tests/golden/scene_errors.json",
 }

@@ -57,7 +57,7 @@ jobs:
       - name: build castle-core
         run: make rust
       - uses: ./.github/actions/media-tools
-      - run: pip install --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
+      - run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
