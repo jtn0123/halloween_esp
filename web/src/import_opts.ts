@@ -104,7 +104,7 @@ export function capacityHtml(bitrate: string, channels: string,
     + `<span title="the castle that embedded its audio, retired 2026-09-01 `
     + `(PROJECT_NOTES §12.15) — every scene shared one 2.9 MB partition">`
     + `if it were in flash, alongside the current show: <b>${mmss(left)}</b></span> &nbsp;·&nbsp; `
-    + `<span title="firmware/castle_sd.yaml — tracks stream off the card through `
+    + `<span title="firmware/castle_feather_s3.yaml — tracks stream off the card through `
     + `the device's own web server, so length is bounded by the 32 GB card, `
     + `not by memory">`
     + `on the card: <span class="ok">any length (streams)</span></span>`;

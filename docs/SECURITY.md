@@ -46,6 +46,13 @@ exception for guests:
   dot-segments in card filenames, mirroring the firmware's own checks.
 - **No `shell=True`** anywhere in `tools/` or `tests/`; subprocesses get argv
   lists.
+- **The Castle Radio server's routes are un-simple** — `demo/castle-radio`
+  (port 8871, started by the Mac launcher) answers no `OPTIONS`, requires
+  `Content-Type: application/json` on its JSON routes and an `X-Castle: 1`
+  marker on the raw upload and the bodiless restore, and queues at most eight
+  jobs. Any page in the operator's browser can reach loopback; this makes the
+  browser ask first, and the silence is the refusal. Not authentication —
+  the accepted position above is unchanged (grade report 2026-09-17 E2).
 
 ## Dependency advisories
 

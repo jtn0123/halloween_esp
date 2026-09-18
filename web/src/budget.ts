@@ -9,7 +9,7 @@
  *
  * Two views, and only one of them is a build:
  *
- *   Card (`make build` + `make publish`, firmware/castle_sd.yaml) — THE
+ *   Card (`make build` + `make publish`, firmware/castle_feather_s3.yaml) — THE
  *     castle. tools/sd_sync.py puts the imported library in the card root,
  *     the rendered scenes in /sd/scenes and this page in /sd/site, and the
  *     device streams off the card. This is the view that answers "will it
@@ -248,7 +248,7 @@ export function initBudget(scenes: readonly Scene[]): BudgetApi {
       + `<span>${it.label}</span><b>${size(it.bytes)}</b></button>`).join("");
 
     noteEl.textContent = build === "sd"
-      ? "This is the castle (`make build`, firmware/castle_sd.yaml). `make publish` is what puts the show here, and there is no embedded copy to fall back on: an empty slot plays one chirp per scene."
+      ? "This is the castle (`make build`, firmware/castle_feather_s3.yaml). `make publish` is what puts the show here, and there is no embedded copy to fall back on: an empty slot plays one chirp per scene."
       : "Not a build any more — the arithmetic of the all-in-flash castle, retired 2026-09-01 (PROJECT_NOTES §12.15). Click a band for the scene behind it, and note what the two songs do to it.";
   }
 

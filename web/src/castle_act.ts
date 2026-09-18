@@ -31,7 +31,8 @@ function toastHost(): HTMLDivElement {
 }
 
 /** One small transient message near the chip. The device queues actions, so
- *  "queued" IS the honest success state — see the interval in castle_sd.yaml. */
+ *  "queued" IS the honest success state — see the interval in
+ *  castle_sd_common.yaml. */
 export function toast(msg: string, isError = false): void {
   const host = toastHost();
   for (const live of Array.from(host.children)) {

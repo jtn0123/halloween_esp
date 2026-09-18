@@ -173,14 +173,14 @@ jobs:
       - run: npm ci --ignore-scripts
         working-directory: web
       - name: lint
-        run: ruff check tools tests
+        run: ruff check tools tests demo/castle-radio
       # `make lint` and the pre-commit hook run this; CI did not, so a web
       # edit or a Dependabot PR could land formatting drift that reddened the
       # next person's `make check` (grade report 2026-09-06 D3).
       - name: ruff format
-        run: ruff format --check tools tests
+        run: ruff format --check tools tests demo/castle-radio
       - name: type check
-        run: mypy tools tests
+        run: mypy tools tests demo/castle-radio
       # The unit suite runs under coverage.py so the number is a ratchet,
       # not a report: the floor is the Makefile's COVERAGE_MIN (82% of
       # tools/ as of 2026-08-23); raise it there as coverage lands.
@@ -190,6 +190,10 @@ jobs:
       # sources under node:test) lived only in `make test-radio` until 2026-09-15.
       - name: castle radio tests
         run: make test-radio PY=python
+      # Its Python half again, under its own coverage floor: the tools/ number
+      # never measured this directory (grade report 2026-09-17 D2).
+      - name: castle radio coverage
+        run: make coverage-radio PY=python
       - name: LOC cap
         run: python tools/check_loc.py
       # Every grade-report citation names its audit. IDs renumber, so a bare
@@ -324,23 +328,25 @@ jobs:
       # away turned every validation failure into a bare "exit code 2".
       - name: validate every buildable variant
         run: |
-          for y in castle_sd castle_s3 castle_s3_qemu castle_feather_s3 castle_sd_jewels bench bench_audio; do
+          for y in castle_feather_s3 castle_s3 castle_s3_qemu bench bench_audio; do
             esphome config "firmware/$y.yaml" > "/tmp/$y.out" 2>&1 \
               || { echo "== $y FAILED"; cat "/tmp/$y.out"; exit 1; }
             echo "$y OK"
           done
 
-  # `esphome config` cannot see the failure mode that is now closest: the
-  # S2's dram0 sits at ~88% and each song scene costs ~9 KB (grade report
-  # 2026-08-23 D5/G2). Once a week, actually compile the SD build and fail while the
-  # ceiling is still a warning — and say whether a newer esphome exists,
-  # because the pin is what holds eight stale advisories in place (F1).
+  # `esphome config` cannot see the failure modes that are closest: how full
+  # the OTA slot is and how full dram0 is. Flash is the tight resource on the
+  # 4 MB Feather in the yard (71.8% of 1,835,008 B at v5.64) and the scene
+  # ceiling is still argued in dram0 (~9 KB a song scene, grade report
+  # 2026-08-23 D5/G2). Once a week, actually compile and fail while both are
+  # still warnings — and say whether a newer esphome exists, because the pin
+  # is what holds eight stale advisories in place (F1).
   firmware-weekly:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    # Two chips, two ESP-IDF toolchains to fetch, three images: the S2 porch
-    # build, the S3 carrier build (2026-09-05) and the S3 Feather on v3.3a
-    # (2026-09-14), which shares the S3 toolchain but not its build tree.
+    # One chip and one ESP-IDF toolchain since the S2 was retired (2026-09-17),
+    # but still two images and two build trees: the production S3 Feather build
+    # and the WROOM carrier build, which differ in board and flash layout.
     timeout-minutes: 85
     steps:
       - uses: actions/checkout@v7
@@ -410,52 +416,54 @@ jobs:
           printf 'esphome:\n  build_path: %s/firmware/.esphome/build/${name}\n' \
             "$GITHUB_WORKSPACE" > firmware/build_path.yaml
           cat firmware/build_path.yaml
-      - name: compile the SD build
-        run: esphome compile firmware/castle_sd.yaml | tee /tmp/build.out
+      # THE production image: the ESP32-S3 Feather #5477 in carrier v3.3a,
+      # which is the castle in the yard (2026-09-17). It compiles first so a
+      # break here is the first thing in the log.
+      - name: compile the production build
+        run: esphome compile firmware/castle_feather_s3.yaml | tee /tmp/build.out
+      # The dram0 alarm moved here with the production build. The number it
+      # guards is the SCENE CEILING's argument, not a linker cliff any more:
+      # the S2 it was written for linked at 99.99% of 172,032 bytes, while this
+      # board measured 41.9% of 341,760 with the same ten scenes. It stays at
+      # 92% because nothing has re-derived it against the new segment, and an
+      # alarm that fires early is the right kind of wrong.
       - name: dram0 ceiling
         run: |
           PCT=$(grep -Eo 'RAM: *\[[^]]*\] *[0-9.]+%' /tmp/build.out | grep -Eo '[0-9.]+%' | tr -d '%' || true)
           [ -n "$PCT" ] || { echo "no RAM line in the compile output — the compile did not finish"; exit 1; }
           echo "dram0 at ${PCT}%"
-          python3 -c "import sys; p=float('${PCT}'); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm — about one scene of headroom left (grade report 2026-08-23 G2); split or cap before adding more') or 1)"
+          python3 -c "import sys; p=float('${PCT}'); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm (grade report 2026-08-23 G2); re-measure the scene ceiling before adding more') or 1)"
       # The OTA-slot guard, run where an image exists (grade report
       # 2026-09-06 D3): --require makes a missing image a failure here,
-      # because the compile just ran.
-      - name: S2 OTA slot
-        run: python tools/check_image.py castle-sd --require
-      # The carrier build has no porch and no operator to notice it rotting:
+      # because the compile just ran. THIS is the flash alarm, and on this
+      # board flash is the tight resource — check_image warns from 90% of the
+      # 1,835,008-byte slot and fails at 97%, which is the gate. 71.8% at
+      # v5.64, so the warning has real room to fire in before the failure.
+      - name: production OTA slot
+        run: python tools/check_image.py castle-feather-s3 --require
+      # The carrier build has no board and no operator to notice it rotting:
       # `esphome config` is the only gate it passes through on a PR, and a
-      # config-valid YAML can still fail to LINK (the S3's own frameworks, the
-      # includes, the I2C component). Compiled here for the same reason the S2
-      # is — while a break is still a warning rather than a flash day.
-      # No dram0 alarm on this one: the S3's data segment is not the S2's
-      # 99.99%-full cliff, and a threshold invented before the board exists
-      # would be a number nobody measured. Report the figures instead.
-      - name: compile the S3 carrier build
+      # config-valid YAML can still fail to LINK (its own frameworks, the
+      # includes, the I2C component). Compiled here while a break is still a
+      # warning rather than a flash day. No dram0 alarm on this one: a
+      # threshold invented before the board exists would be a number nobody
+      # measured. Report the figures instead.
+      - name: compile the WROOM carrier build
         run: esphome compile firmware/castle_s3.yaml | tee /tmp/build_s3.out
-      - name: S3 RAM and flash
+      - name: carrier RAM and flash
         run: |
           grep -E '^(RAM|Flash):' /tmp/build_s3.out \
-            || { echo "no RAM/Flash summary in the S3 compile output — the compile did not finish"; exit 1; }
-      - name: S3 OTA slot
+            || { echo "no RAM/Flash summary in the carrier compile output — the compile did not finish"; exit 1; }
+      - name: carrier OTA slot
         run: python tools/check_image.py castle-s3 --require
-      # The S3 Feather on the v3.3a carrier: the porch's build on the other
-      # chip, compiled here for the same reason as the carrier build — no
-      # board has run it yet. Same report, same guard.
-      - name: compile the S3 Feather build
-        run: esphome compile firmware/castle_feather_s3.yaml | tee /tmp/build_fs3.out
-      - name: S3 Feather RAM and flash
-        run: |
-          grep -E '^(RAM|Flash):' /tmp/build_fs3.out \
-            || { echo "no RAM/Flash summary in the S3 Feather compile output — the compile did not finish"; exit 1; }
-      - name: S3 Feather OTA slot
-        run: python tools/check_image.py castle-feather-s3 --require
       # The images, the linker maps and the exact configuration, kept for
       # two weeks: a build from a clean machine to flash from, and the one
-      # way to explain why the runner's S2 image is 8 points of dram0 and
-      # 76 KB of flash SMALLER than the Mac's with the same ESP-IDF 5.5.5,
-      # toolchain and sdkconfig (measured 2026-09-06 — a clean rebuild on
-      # the Mac reproduced the Mac's numbers, so it is not a stale tree).
+      # way to explain a runner/Mac discrepancy. The S2's was 8 points of
+      # dram0 and 76 KB of flash SMALLER on the runner with the same ESP-IDF
+      # 5.5.5, toolchain and sdkconfig (measured 2026-09-06 — a clean rebuild
+      # on the Mac reproduced the Mac's numbers, so it was not a stale tree).
+      # `firmware.ota.bin` is the one to flash: it is what /api/ota takes and
+      # what tools/check_image.py --path names.
       - name: keep the images and maps
         uses: actions/upload-artifact@v7
         with:
@@ -463,21 +471,16 @@ jobs:
           retention-days: 14
           if-no-files-found: error
           path: |
-            firmware/.esphome/build/castle-sd/build/castle-sd.bin
-            firmware/.esphome/build/castle-sd/build/firmware.factory.bin
-            firmware/.esphome/build/castle-sd/build/castle-sd.map
-            firmware/.esphome/build/castle-sd/sdkconfig*
-            firmware/.esphome/build/castle-sd/partitions.csv
-            firmware/.esphome/build/castle-s3/build/castle-s3.bin
-            firmware/.esphome/build/castle-s3/build/firmware.factory.bin
-            firmware/.esphome/build/castle-s3/build/castle-s3.map
-            firmware/.esphome/build/castle-s3/sdkconfig*
-            firmware/.esphome/build/castle-s3/partitions.csv
-            firmware/.esphome/build/castle-feather-s3/build/castle-feather-s3.bin
+            firmware/.esphome/build/castle-feather-s3/build/firmware.ota.bin
             firmware/.esphome/build/castle-feather-s3/build/firmware.factory.bin
             firmware/.esphome/build/castle-feather-s3/build/castle-feather-s3.map
             firmware/.esphome/build/castle-feather-s3/sdkconfig*
             firmware/.esphome/build/castle-feather-s3/partitions.csv
+            firmware/.esphome/build/castle-s3/build/firmware.ota.bin
+            firmware/.esphome/build/castle-s3/build/firmware.factory.bin
+            firmware/.esphome/build/castle-s3/build/castle-s3.map
+            firmware/.esphome/build/castle-s3/sdkconfig*
+            firmware/.esphome/build/castle-s3/partitions.csv
       - name: newer esphome available?
         run: |
           pip index versions esphome 2>/dev/null | head -2 || true

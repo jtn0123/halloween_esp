@@ -7,8 +7,11 @@ and spooky audio, driven by an ESP32. Short term: prototype with hardware on han
 Long term: addressable RGB + real speakers, network-controlled.
 
 **Chosen stack:** ESPHome (config-driven, native Home Assistant).
-**Chosen board:** Adafruit **ESP32-S2** Feather — 240 MHz, 4 MB flash, 2 MB PSRAM.
-Currently attached at `/dev/cu.usbmodem1101`.
+**Chosen board:** Adafruit **ESP32-S3 Feather #5477** — 240 MHz, 4 MB flash,
+2 MB PSRAM — on castle-carrier v3.3a, at 10.27.27.81. It replaced an
+**ESP32-S2** Feather of the same footprint on 2026-09-17
+(`docs/notes/03-build.md` §12.20); the research records below were written
+against the S2 and are left as written, because not one GPIO moved.
 
 ---
 
