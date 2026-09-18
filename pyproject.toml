@@ -103,3 +103,8 @@ no_implicit_reexport = true
 strict_equality = true
 extra_checks = true
 
+
+# Report paths relative to the repo, so coverage.xml built on a CI runner
+# names files the Sonar scanner can find (.github/workflows/sonar.yml).
+[tool.coverage.run]
+relative_files = true
