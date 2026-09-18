@@ -45,6 +45,7 @@ from hosts import maybe_host
 from published import Published
 
 ROOT = Path(__file__).resolve().parent.parent
+SCENES_API = "/api/scenes"  # where the card's scenes/ directory is PUT
 
 
 def api(
@@ -191,7 +192,7 @@ def cmd_scenes(ip: str) -> int:
         if _scene_unchanged(ip, src.name, data, have, rec):
             print(f"  {src.name} unchanged, skipped")
             continue
-        upload(ip, "/api/scenes", src.name, data)
+        upload(ip, SCENES_API, src.name, data)
         rec.record(f"scenes/{src.name}", data)
         sent += 1
     print(
@@ -227,18 +228,18 @@ def _push_show(ip: str, have: dict[str, int], rec: Published) -> int:
         if _scene_unchanged(ip, src.name, data, have, rec):
             print(f"  {src.name} unchanged, skipped")
             continue
-        upload(ip, "/api/scenes", src.name, data)
+        upload(ip, SCENES_API, src.name, data)
         rec.record(f"scenes/{src.name}", data)
         sent += 1
     # Unconditionally, and before any delete: it is 16 + 96·n bytes, and it is
     # the file that decides what the castle believes about every one of the
     # others — so it is the file that makes a stale cue unreachable.
-    upload(ip, "/api/scenes", manifest.name, manifest.read_bytes())
+    upload(ip, SCENES_API, manifest.name, manifest.read_bytes())
     keep = {src.name for src in cues}
     for name in sorted(have):
         if name.endswith(".cue") and name not in keep:
             print(f"  {name}: no scene of that name any more — deleting")
-            api(ip, "DELETE", f"/api/scenes/{urllib.parse.quote(name)}")
+            api(ip, "DELETE", f"{SCENES_API}/{urllib.parse.quote(name)}")
             rec.forget(f"scenes/{name}")
     rec.save()
     # No reboot line any more: since v5.69 the castle re-reads show.man

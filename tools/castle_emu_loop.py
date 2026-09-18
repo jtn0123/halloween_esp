@@ -162,7 +162,7 @@ def end_finished_scene(emu: CastleEmu, now: float) -> None:
     """
     st = emu.state
     with st.lock:
-        if st.scene_ends == 0.0 or st.scene_loops or now < st.scene_ends:
+        if st.scene_ends <= 0.0 or st.scene_loops or now < st.scene_ends:
             return
         st.scene, st.cues, st.scene_ends = "stop", 0, 0.0
 
@@ -188,15 +188,7 @@ def apply(emu: CastleEmu, action: str, arg: str) -> None:
         if action == "VOLUME":
             st.volume = min(int(arg), MAX_VOLUME_PCT)
         elif action == "PLAY":
-            f = emu.sd_dir / arg
-            st.track = arg
-            # A raw file has no scene (v5.52: the firmware publishes
-            # "stop" so a live light frame does not stop the file).
-            st.scene = "stop"
-            arm_clock(st, f if f.is_file() else None)
-            # v5.63: cues_begin. A name with a slash has no cue file.
-            cue = emu.sd_dir / (arg.rsplit(".", 1)[0] + ".cue")
-            st.cues = 0 if "/" in arg or ".." in arg else loaded_count(cue)
+            _apply_play(emu, st, arg)
         elif action == "SCENE":
             _apply_scene(emu, st, arg)
         elif action == "STOP":
@@ -217,17 +209,35 @@ def apply(emu: CastleEmu, action: str, arg: str) -> None:
         elif action == "LIGHT":
             st.light = arg
         elif action == "PIRCFG":
-            armed, cool, scene = [*arg.split("|"), "", "", ""][:3]
-            if armed:
-                st.pir["armed"] = armed == "1"
-            if cool:
-                st.pir["cooldown_s"] = int(cool)
-            if scene:
-                st.pir["scene"] = scene
+            _apply_pircfg(st, arg)
         elif action == "RESTART":
             st.boot = time.monotonic()
             st.scene, st.track, st.show_on = "", "", False
             st.starting_until = 0.0
+
+
+def _apply_play(emu: CastleEmu, st: _State, arg: str) -> None:
+    """The PLAY branch, on state the caller locks: a raw file off the card."""
+    f = emu.sd_dir / arg
+    st.track = arg
+    # A raw file has no scene (v5.52: the firmware publishes
+    # "stop" so a live light frame does not stop the file).
+    st.scene = "stop"
+    arm_clock(st, f if f.is_file() else None)
+    # v5.63: cues_begin. A name with a slash has no cue file.
+    cue = emu.sd_dir / (arg.rsplit(".", 1)[0] + ".cue")
+    st.cues = 0 if "/" in arg or ".." in arg else loaded_count(cue)
+
+
+def _apply_pircfg(st: _State, arg: str) -> None:
+    """The PIRCFG branch: `armed|cooldown|scene`, an empty field untouched."""
+    armed, cool, scene = [*arg.split("|"), "", "", ""][:3]
+    if armed:
+        st.pir["armed"] = armed == "1"
+    if cool:
+        st.pir["cooldown_s"] = int(cool)
+    if scene:
+        st.pir["scene"] = scene
 
 
 def _apply_scene(emu: CastleEmu, st: _State, arg: str) -> None:

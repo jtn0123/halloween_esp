@@ -10,7 +10,7 @@ const waveformCache=new Map();
 const waveColor=layer=>getComputedStyle(document.documentElement).getPropertyValue(`--wave-${layer}`).trim()||'#c9a7ff';
 const layerNames={combined:'Full song',vocals:'Voice',backing:'Background'};
 const params=V.defaultParams();
-fetch('/scenes.json',{signal:AbortSignal.timeout(REQUEST_MS.act)}).then(r=>r.ok?r.json():Promise.reject(Error(`scenes.json: ${r.status}`))).then(s=>{sceneData=s;lightKey='';}).catch(()=>toast('Built-in light scenes could not load. Reload to retry.'));
+fetch('/scenes.json',{signal:AbortSignal.timeout(REQUEST_MS.act)}).then(r=>r.ok?r.json():Promise.reject(new Error(`scenes.json: ${r.status}`))).then(s=>{sceneData=s;lightKey='';}).catch(()=>toast('Built-in light scenes could not load. Reload to retry.'));
 
 function mountPreview(name=location.hash.slice(1)||'play'){
   const host=name==='play'?$('listen-preview-host'):$('import-preview-host');
