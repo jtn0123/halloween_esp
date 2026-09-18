@@ -77,9 +77,13 @@ jobs:
         working-directory: web
       # The Makefile's two coverage runs, each to its own data file so the
       # second does not overwrite the first, then one report for both.
+      # Only WHERE a running binary writes its profile is handed to python —
+      # not the compiler wrapper: the suite builds the wasm face, and an
+      # instrumented wasm32 build has no profiler runtime to link against.
       - name: python coverage
         run: |
-          source <(cd core && cargo llvm-cov show-env --export-prefix)
+          eval "$(cd core && cargo llvm-cov show-env --export-prefix | grep LLVM_PROFILE_FILE)"
+          test -n "$LLVM_PROFILE_FILE"
           COVERAGE_FILE=.coverage.tools make coverage PY=python
           COVERAGE_FILE=.coverage.radio make coverage-radio PY=python
           python -m coverage combine .coverage.tools .coverage.radio
