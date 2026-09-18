@@ -19,15 +19,18 @@ sys.path.insert(0, str(Path(__file__).parent))
 import codec_compare as cc
 
 
-def main() -> int:
+def main() -> None:
+    """Answer on stdout and exit 0 whatever happened — the caller reads the
+    verdict out of the JSON (`ok`), not out of the exit status, because a
+    refusal ffmpeg explained is an answer and not a crash."""
     req = json.loads(sys.stdin.read())
     if not isinstance(req, dict):
         print(json.dumps({"ok": False, "error": "bad request"}))
-        return 0
+        return
     opts = req.get("opts")
     if not isinstance(opts, dict):
         print(json.dumps({"ok": False, "error": "bad request"}))
-        return 0
+        return
     try:
         # The encoders narrate to stdout ("note: opus cannot encode at
         # 44100 Hz…"); stdout is this shim's answer channel, so the
@@ -38,10 +41,9 @@ def main() -> int:
             )
     except SystemExit as e:  # ffmpeg said no
         print(json.dumps({"ok": False, "error": str(e)}))
-        return 0
+        return
     print(json.dumps({"ok": True, "reference": cc.REFERENCE, "codecs": rows}))
-    return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

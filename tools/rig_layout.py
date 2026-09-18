@@ -89,53 +89,62 @@ def layout_of(fixture_id: str, count: int | None = None) -> Layout:
     return build(n, kind, cols, rows)
 
 
-def build(n: int, kind: str, cols: int = 0, rows: int = 0) -> Layout:
-    """Geometry from a raw shape, for fixtures the catalogue does not name —
-    the legacy `pixels_per_zone` build being the one that matters."""
+#: (pos, walk, fall, hub centre index) — one fixture shape's geometry.
+_Shape = tuple[list[tuple[float, float]], list[float], list[float], int | None]
+
+
+def _grid(n: int, cols: int, rows: int) -> _Shape:
+    grid_rows = rows or math.ceil(n / cols)
     pos: list[tuple[float, float]] = []
     walk: list[float] = []
     fall: list[float] = []
-    center: int | None = None
+    for i in range(n):
+        cx, cy = i % cols, i // cols
+        pos.append(((cx + 0.5) / cols, (cy + 0.5) / grid_rows))
+        # Serpentine by column, so a chase sweeps rather than snapping
+        # back to the left edge at the end of every row.
+        up = cx % 2 == 1
+        walk.append((cx + (grid_rows - 1 - cy if up else cy) / grid_rows) / cols)
+        fall.append(0.0 if grid_rows == 1 else cy / (grid_rows - 1))
+    return pos, walk, fall, None
 
-    if n == 0:
-        pass
-    elif kind == "hub":
-        center = 0
-        pos.append((0.5, 0.5))
-        walk.append(0.0)
-        fall.append(0.0)
+
+def _strip(n: int, kind: str) -> _Shape:
+    """line and scatter: spread across the middle, the edges held in."""
+    spread = 0.88 if kind == "line" else 0.76
+    edge = 0.06 if kind == "line" else 0.12
+    pos: list[tuple[float, float]] = []
+    walk: list[float] = []
+    fall: list[float] = []
+    for i in range(n):
+        pos.append((0.5 if n == 1 else edge + (i / (n - 1)) * spread, 0.5))
+        walk.append(i / n)
+        fall.append(0.0 if n == 1 else i / (n - 1))
+    return pos, walk, fall, None
+
+
+def _shape(n: int, kind: str, cols: int, rows: int) -> _Shape:
+    """Where each pixel of a NON-empty fixture sits. An empty zone has no
+    geometry at all, which is the caller's `if n` rather than a fifth shape."""
+    if kind == "hub":
         rp, rw, rf = _ring(n - 1)
-        pos += rp
-        walk += rw
-        fall += rf
-    elif kind == "ring":
+        return [(0.5, 0.5), *rp], [0.0, *rw], [0.0, *rf], 0
+    if kind == "ring":
         pos, walk, fall = _ring(n)
-    elif kind == "grid":
-        grid_rows = rows or math.ceil(n / cols)
-        for i in range(n):
-            cx, cy = i % cols, i // cols
-            pos.append(((cx + 0.5) / cols, (cy + 0.5) / grid_rows))
-            # Serpentine by column, so a chase sweeps rather than snapping
-            # back to the left edge at the end of every row.
-            up = cx % 2 == 1
-            walk.append((cx + (grid_rows - 1 - cy if up else cy) / grid_rows) / cols)
-            fall.append(0.0 if grid_rows == 1 else cy / (grid_rows - 1))
-    else:  # line, scatter
-        spread = 0.88 if kind == "line" else 0.76
-        edge = 0.06 if kind == "line" else 0.12
-        for i in range(n):
-            pos.append((0.5 if n == 1 else edge + (i / (n - 1)) * spread, 0.5))
-            walk.append(i / n)
-            fall.append(0.0 if n == 1 else i / (n - 1))
+        return pos, walk, fall, None
+    if kind == "grid":
+        return _grid(n, cols, rows)
+    return _strip(n, kind)
 
-    # Rounded before counting, so floating-point noise in the ring's sine does
-    # not report sixteen heights where the eye sees nine.
-    fall_steps = len({f"{v:.3f}" for v in fall})
 
+def _core(n: int, center: int | None, pos: list[tuple[float, float]]) -> list[bool]:
+    """Which pixels are the fixture's core: its hub if it has one, else the
+    innermost seventh."""
     core = [False] * n
     if center is not None:
         core[center] = True
-    elif n > 0:
+        return core
+    if n > 0:
         # Rounded before sorting so that a ring's notionally-equal distances
         # really are equal and the index breaks the tie. Unrounded, the last
         # bits of the two languages' hypot disagreed and they picked different
@@ -146,6 +155,22 @@ def build(n: int, kind: str, cols: int = 0, rows: int = 0) -> Layout:
         )
         for i in order[: max(1, round(n / 7))]:
             core[i] = True
+    return core
+
+
+def build(n: int, kind: str, cols: int = 0, rows: int = 0) -> Layout:
+    """Geometry from a raw shape, for fixtures the catalogue does not name —
+    the legacy `pixels_per_zone` build being the one that matters."""
+    pos: list[tuple[float, float]] = []
+    walk: list[float] = []
+    fall: list[float] = []
+    center: int | None = None
+    if n:
+        pos, walk, fall, center = _shape(n, kind, cols, rows)
+
+    # Rounded before counting, so floating-point noise in the ring's sine does
+    # not report sixteen heights where the eye sees nine.
+    fall_steps = len({f"{v:.3f}" for v in fall})
 
     return Layout(
         n=n,
@@ -153,7 +178,7 @@ def build(n: int, kind: str, cols: int = 0, rows: int = 0) -> Layout:
         walk=tuple(walk),
         fall=tuple(fall),
         fall_steps=fall_steps,
-        core=tuple(core),
+        core=tuple(_core(n, center, pos)),
         pos=tuple(pos),
     )
 

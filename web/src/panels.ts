@@ -50,6 +50,26 @@ const kb = (n: number): string =>
 
 const must = <T extends HTMLElement = HTMLElement>(id: string): T => req<T>(id, "panels");
 
+/**
+ * A slider's readout when its number means a word: the first band the value
+ * falls under, or `rest` when it is past them all.
+ *
+ * The bands and their wording are the point — a "0.62" tells you nothing
+ * about an organ registration, and "chorus" tells you everything.
+ */
+const banded = (v: number, bands: ReadonlyArray<readonly [number, string]>,
+                rest: string): string => {
+  for (const [ceil, name] of bands) if (v < ceil) return name;
+  return rest;
+};
+
+/** Hue trim: the ends are named and the middle says it is the middle. */
+const hueLabel = (v: number): string => {
+  if (v < 34) return "violet";
+  if (v > 66) return "green";
+  return "balanced";
+};
+
 interface Meter {
   sw: HTMLElement;
   val: HTMLElement;
@@ -215,9 +235,8 @@ export class Panels {
     // count of 2238 is itself the reason the panel is collapsed.
     const n = scene.cues.length;
     const led = scene.cues.filter(isLed).length;
-    this.sheetCount.textContent = n === 0
-      ? "— none"
-      : `— ${n} cue${n === 1 ? "" : "s"}, ${led} light`;
+    const cues = n === 1 ? "cue" : "cues";
+    this.sheetCount.textContent = n === 0 ? "— none" : `— ${n} ${cues}, ${led} light`;
   }
 
   /** The headings and the source panel, which all change together whenever
@@ -249,8 +268,8 @@ export class Panels {
     for (const z of CHANNELS) {
       const fx = fixture(rig.zones[z.id].fixture);
       const n = zonePixels(rig, z.id);
-      const kind = n === 0 ? "not wired"
-        : `${n}px ${zoneRgbw(rig, z.id) ? "RGBW" : "RGB"}`;
+      const mode = zoneRgbw(rig, z.id) ? "RGBW" : "RGB";
+      const kind = n === 0 ? "not wired" : `${n}px ${mode}`;
       this.meters[z.id].sub.textContent =
         `ch ${z.ch} · GPIO${ZONE_PIN[z.id]} · ${fx.name} · ${kind}`;
     }
@@ -340,14 +359,14 @@ export class Panels {
   bindSliders(h: SliderHandlers): void {
     this.bind("depth",  v => h.depth(v / 100),  v => v + " %");
     this.bind("speed",  v => h.speed(v / 100),  v => (v / 100).toFixed(2) + "×");
-    this.bind("hue",    v => h.hue(v / 100),    v => v < 34 ? "violet" : v > 66 ? "green" : "balanced");
+    this.bind("hue",    v => h.hue(v / 100),    hueLabel);
     this.bind("bright", v => h.bright(v / 100), v => v + " %");
     this.bind("vol",    v => h.vol(v / 100),    v => v + " %");
     this.bind("lat",    v => h.lat(v),          v => v + " ms");
     this.bind("stops",  v => h.stops(v / 100),
-      v => v < 12 ? "16′ only" : v < 40 ? "dark" : v < 72 ? "chorus" : "full organ");
+      v => banded(v, [[12, "16′ only"], [40, "dark"], [72, "chorus"]], "full organ"));
     this.bind("hall",   v => h.hall(v / 100),
-      v => v < 12 ? "dry" : v < 45 ? "chapel" : v < 78 ? "nave" : "cathedral");
+      v => banded(v, [[12, "dry"], [45, "chapel"], [78, "nave"]], "cathedral"));
     // 0.14 is the tremolo's full-scale depth; past it the wobble stops being
     // a tremulant and starts being a fault.
     this.bind("trem",   v => h.trem((v / 100) * 0.14), v => v < 5 ? "off" : v + " %");

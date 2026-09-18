@@ -33,7 +33,7 @@ const store = {
 
 const rateOf = (key: string): number | null => {
   const raw = store.get(`castleEta:${key}`);
-  const n = raw === null ? NaN : Number(raw);
+  const n = raw === null ? Number.NaN : Number(raw);
   return Number.isFinite(n) && n > 0 ? n : null;
 };
 

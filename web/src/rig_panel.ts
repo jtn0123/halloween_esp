@@ -46,9 +46,11 @@ export function createRigPanel(rig: RigState, hooks: RigHooks): RigPanel {
   // above into a function that could in principle be called before it.
   const host: HTMLElement = found;
 
-  const opts = (cur: string): string => FIXTURES.map((f) =>
-    `<option value="${f.id}" title="${f.full}"${f.id === cur ? " selected" : ""}>`
-    + `${f.name}${f.count ? ` · ${f.count}px` : ""}</option>`).join("");
+  const opts = (cur: string): string => FIXTURES.map((f) => {
+    const px = f.count ? ` · ${f.count}px` : "";
+    return `<option value="${f.id}" title="${f.full}"${f.id === cur ? " selected" : ""}>`
+      + `${f.name}${px}</option>`;
+  }).join("");
 
   const commit = (): void => {
     saveRig(rig);
@@ -65,11 +67,12 @@ export function createRigPanel(rig: RigState, hooks: RigHooks): RigPanel {
     // A fixture that only ever shipped RGB gets a fixed label, not a control
     // you can set wrongly. The rest genuinely need answering, because the
     // packet width depends on it and only you can see which one you bought.
+    const checked = rgbw ? " checked" : "";
     const kind = fx.rgbOnly
       ? `<span class="rig__fixed" title="${fx.name} was only ever made RGB">RGB</span>`
       : `<label class="rig__rgbw" title="Tick if yours is the RGBW variant — `
         + `it changes the packet from 24 to 32 bits per pixel">`
-        + `<input type="checkbox" class="rigW" data-z="${z}"${rgbw ? " checked" : ""}>`
+        + `<input type="checkbox" class="rigW" data-z="${z}"${checked}>`
         + `<span>RGBW</span></label>`;
 
     const count = fx.maxCount

@@ -52,7 +52,7 @@ export const PALETTES: ReadonlyArray<readonly [Pole, Pole]> = [
 
 export const paletteIndex = (name: string): number => {
   const i = (PALETTE_NAMES as readonly string[]).indexOf(name);
-  return i < 0 ? 0 : i;
+  return Math.max(0, i);
 };
 
 /* ── Noise primitives ──────────────────────────────────────────────────
@@ -263,7 +263,7 @@ export const OVERLAY_NAMES = ["none", "sparkle", "chase", "meteor"] as const;
 
 export const overlayIndex = (name: string): number => {
   const i = (OVERLAY_NAMES as readonly string[]).indexOf(name);
-  return i < 0 ? 0 : i;
+  return Math.max(0, i);
 };
 
 /** Shortest way between two points on a loop measured in turns (0..0.5). */
@@ -271,6 +271,56 @@ const loopDist = (a: number, b: number): number => {
   const d = Math.abs(a - b) % 1;
   return Math.min(d, 1 - d);
 };
+
+/** sparkle: rare single-pixel glints. */
+function ovSparkle(c: Rgbw, t: number, p: number, zi: number): Rgbw {
+  const cell = Math.floor(t * 7);
+  const g = hash3(cell, p, zi);
+  if (g > 0.93) {
+    const k = (g - 0.93) / 0.07;
+    return [Math.min(1, c[0] + 0.30 * k), Math.min(1, c[1] + 0.30 * k),
+            Math.min(1, c[2] + 0.30 * k), Math.min(1, c[3] + 0.90 * k)];
+  }
+  return c;
+}
+
+/** chase: a point of light travelling the fixture. */
+function ovChase(c: Rgbw, t: number, p: number, zi: number, L: Layout): Rgbw {
+  if (p === L.center) return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3] * 0.55];
+  const head = (t * 0.45 + zi * 0.37) % 1;
+  // Width is set in PIXELS, not in turns, so the lit head stays one pixel
+  // wide whether it is going round six of them or sixteen.
+  const span = L.center === null ? L.n : L.n - 1;
+  const boost = Math.max(0, 1 - loopDist(L.walk[p] ?? 0, head) * span * 0.9);
+  const k = 0.45 + 0.55 * boost;
+  return [c[0] * k, c[1] * k, c[2] * k,
+          Math.min(1, c[3] * k + 0.50 * boost * boost)];
+}
+
+/** meteor: a drip forms at the top, then falls. */
+function ovMeteor(c: Rgbw, t: number, p: number, zi: number, L: Layout): Rgbw {
+  const ph = (t / 2.6 + zi * 0.41) % 1;
+  // One level of fall, used both as the head's height and as what counts
+  // as "the top" for the forming flash.
+  const rung = 1 / Math.max(1, L.fallSteps - 1);
+  if (ph < 0.12) {
+    // On a fixture with a middle the drip forms there, as it always has on
+    // the Jewels. On one without, it forms along the top edge instead —
+    // there is no centre pixel to flash, and picking an arbitrary one puts
+    // the drip's source somewhere different every time the rig changes.
+    const forms = L.center !== null ? p === L.center : (L.fall[p] ?? 0) < rung;
+    if (!forms) return c;
+    const k = (0.12 - ph) / 0.12;
+    return [c[0], c[1], c[2], Math.min(1, c[3] + 0.80 * k)];
+  }
+  if (p === L.center) return c;
+  const front = (ph - 0.12) / 0.88;
+  const fade = 1 - front * 0.5;
+  const d = Math.abs((L.fall[p] ?? 0) - front);
+  const boost = Math.max(0, 1 - d / (rung * 1.5)) * fade;
+  return [Math.min(1, c[0] + 0.20 * boost), c[1], Math.min(1, c[2] + 0.25 * boost),
+          Math.min(1, c[3] + 0.60 * boost)];
+}
 
 /**
  * Composite an overlay onto one pixel.
@@ -284,50 +334,9 @@ const loopDist = (a: number, b: number): number => {
 export function applyOverlay(
   ov: number, c: Rgbw, t: number, p: number, zi: number, L: Layout,
 ): Rgbw {
-  if (ov === 1) {           // sparkle: rare single-pixel glints
-    const cell = Math.floor(t * 7);
-    const g = hash3(cell, p, zi);
-    if (g > 0.93) {
-      const k = (g - 0.93) / 0.07;
-      return [Math.min(1, c[0] + 0.30 * k), Math.min(1, c[1] + 0.30 * k),
-              Math.min(1, c[2] + 0.30 * k), Math.min(1, c[3] + 0.90 * k)];
-    }
-    return c;
-  }
-  if (ov === 2) {           // chase: a point of light travelling the fixture
-    if (p === L.center) return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3] * 0.55];
-    const head = (t * 0.45 + zi * 0.37) % 1;
-    // Width is set in PIXELS, not in turns, so the lit head stays one pixel
-    // wide whether it is going round six of them or sixteen.
-    const span = L.center === null ? L.n : L.n - 1;
-    const boost = Math.max(0, 1 - loopDist(L.walk[p] ?? 0, head) * span * 0.9);
-    const k = 0.45 + 0.55 * boost;
-    return [c[0] * k, c[1] * k, c[2] * k,
-            Math.min(1, c[3] * k + 0.50 * boost * boost)];
-  }
-  if (ov === 3) {           // meteor: a drip forms at the top, then falls
-    const ph = (t / 2.6 + zi * 0.41) % 1;
-    // One level of fall, used both as the head's height and as what counts
-    // as "the top" for the forming flash.
-    const rung = 1 / Math.max(1, L.fallSteps - 1);
-    if (ph < 0.12) {
-      // On a fixture with a middle the drip forms there, as it always has on
-      // the Jewels. On one without, it forms along the top edge instead —
-      // there is no centre pixel to flash, and picking an arbitrary one puts
-      // the drip's source somewhere different every time the rig changes.
-      const forms = L.center !== null ? p === L.center : (L.fall[p] ?? 0) < rung;
-      if (!forms) return c;
-      const k = (0.12 - ph) / 0.12;
-      return [c[0], c[1], c[2], Math.min(1, c[3] + 0.80 * k)];
-    }
-    if (p === L.center) return c;
-    const front = (ph - 0.12) / 0.88;
-    const fade = 1 - front * 0.5;
-    const d = Math.abs((L.fall[p] ?? 0) - front);
-    const boost = Math.max(0, 1 - d / (rung * 1.5)) * fade;
-    return [Math.min(1, c[0] + 0.20 * boost), c[1], Math.min(1, c[2] + 0.25 * boost),
-            Math.min(1, c[3] + 0.60 * boost)];
-  }
+  if (ov === 1) return ovSparkle(c, t, p, zi);
+  if (ov === 2) return ovChase(c, t, p, zi, L);
+  if (ov === 3) return ovMeteor(c, t, p, zi, L);
   return c;
 }
 
@@ -339,7 +348,7 @@ export function applyOverlay(
 export const FLASH_MODES = ["all", "scatter", "center", "ring"] as const;
 export const flashModeIndex = (name: string): number => {
   const i = (FLASH_MODES as readonly string[]).indexOf(name);
-  return i < 0 ? 0 : i;
+  return Math.max(0, i);
 };
 
 export function flashGate(

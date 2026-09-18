@@ -76,7 +76,10 @@ function envAt(env: ReadonlyArray<readonly [number, number]>, sec: number): numb
 
 /** Where `v` wants the castle, given where it is — hysteresis, direct jump. */
 function desiredTier(v: number, cur: number, up: readonly number[]): number {
-  if (cur < 0) return v >= up[1]! ? 2 : v >= up[0]! ? 1 : 0;
+  if (cur < 0) {                            // nothing to be sticky about yet
+    if (v >= up[1]!) return 2;
+    return v >= up[0]! ? 1 : 0;
+  }
   let next = cur;
   if (v >= up[1]!) next = 2;
   else if (v >= up[0]!) next = Math.max(next, 1);
@@ -93,7 +96,7 @@ export function sections(
   env: ReadonlyArray<readonly [number, number]> | undefined,
   startSec: number, endSec: number,
 ): Array<[number, number]> {
-  if (!env || !env.length) return [[0, 1]];      // no envelope: hold the middle
+  if (!env?.length) return [[0, 1]];             // no envelope: hold the middle
   const STEP = 0.25;
 
   // Smooth over ±0.5 s so one hit cannot promote a whole section.
@@ -172,7 +175,7 @@ function overlaySilence(
   for (let k = 0; k < n; k++) {
     const rel = k * STEP;
     const tier = inRun[k] ? SILENCE_TIER : tierAt(rel);
-    if (!merged.length || merged[merged.length - 1]![1] !== tier)
+    if (!merged.length || merged.at(-1)![1] !== tier)
       merged.push([rel, tier]);
   }
   return merged;
@@ -232,7 +235,7 @@ export function sectionGates(cues: readonly Cue[]): Array<[number, string]> {
     const note = c.detail;
     if (c.op !== "set" || note === undefined
         || !["hush", "verse", "chorus", "silence"].includes(note)) continue;
-    if (!out.length || out[out.length - 1]![0] !== c.t) out.push([c.t, note]);
+    if (!out.length || out.at(-1)![0] !== c.t) out.push([c.t, note]);
   }
   return out;
 }
@@ -283,7 +286,7 @@ export function sustainedSwells(
   env: ReadonlyArray<readonly [number, number]> | undefined,
   startSec: number, endSec: number,
 ): StrikeCue[] {
-  if (!env || !env.length) return [];
+  if (!env?.length) return [];
   const STEP = 0.25, LEVEL = 0.6, MIN_SEC = 3.0;
   const n = Math.max(1, Math.floor((endSec - startSec) / STEP) + 1);
   const out: StrikeCue[] = [];

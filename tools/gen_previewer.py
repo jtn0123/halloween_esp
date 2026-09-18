@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import base64
 import json
-import math
 import re
 
 # `as` marks the explicit seam: the build tests swap gen_previewer.subprocess
@@ -42,7 +41,9 @@ import build_paths as bp
 # one module (previewer_budget.py). Imported as a module, not by name, so a
 # test that moves the ceiling moves it in one place.
 import previewer_budget as pgb
-import pulse_dynamics as pd
+
+# What a cue MEANS to the desk — the other half of this file's old job.
+import previewer_cues as pc
 import scene_schema
 import yaml
 from effect_vocab import KNOWN_EFFECTS as KNOWN_EFFECTS  # one vocabulary, re-exported
@@ -79,144 +80,12 @@ def scene_yaml_slice(text: str, sid: str) -> str:
     return m.group(0).rstrip() if m else f"# (slice for {sid} not found)"
 
 
-def _blend_color(base: list[float], hot: list[float] | None, vel: float) -> list[float]:
-    """color -> color_hot by velocity — same maths as gen_esphome.blend_color
-    and track_lights.ts."""
-    if not hot:
-        return base
-    return [pd.round3(b + (h - b) * vel) for b, h in zip(base, hot)]
-
-
 def to_previewer(
     scene: dict[str, Any], idx: int, raw: str, markers: dict[str, Any]
 ) -> dict[str, Any]:
     sid = scene["id"]
-    cues = [
-        {
-            "t": int(ev["t"] * 1000),
-            "bus": "AUD",
-            "op": "play_loop"
-            if scene.get("loop") and ev["synth"] == "wind"
-            else "play",
-            "snd": ev["synth"],
-        }
-        for ev in scene.get("score") or []
-    ]
-    for cue in scene.get("cues") or []:
-        if cue["op"] == "set":
-            if cue["effect"] not in KNOWN_EFFECTS:
-                sys.exit(f"scene {sid}: unknown effect {cue['effect']!r}")
-            c = {
-                "t": cue["t"],
-                "bus": "LED",
-                "op": "set",
-                "zone": cue["zone"],
-                "eff": cue["effect"],
-                "detail": cue.get("note", ""),
-            }
-            if "level" in cue:
-                c["level"] = float(cue["level"])
-            cues.append(c)
-        elif cue["op"] == "strike":
-            c = {
-                "t": cue["t"],
-                "bus": "LED",
-                "op": "strike",
-                "ms": cue.get("ms", 80),
-                "detail": cue.get("note", ""),
-            }
-            # Carry every field gen_esphome.py honours on a hand-written
-            # strike. It has always read targets/intensity/color/decay; this
-            # side used to copy only zone, so a cue aimed at one zone flashed
-            # the whole chain in the browser, in default white, at full
-            # intensity. Latent — today's scenes only set those inside
-            # `pulse:` — but a divergence between preview and device is the
-            # one bug this project cannot afford, latent or not.
-            if cue.get("targets"):
-                c["targets"] = cue["targets"]
-            if cue.get("zone"):
-                c["zone"] = cue["zone"]
-            if "intensity" in cue:
-                c["intensity"] = float(cue["intensity"])
-            if "color" in cue:
-                c["color"] = cue["color"]
-            if "decay" in cue:
-                c["decay"] = float(cue["decay"])
-            if "pixels" in cue:
-                c["pixels"] = cue["pixels"]
-            if "attack" in cue:
-                c["attack"] = int(cue["attack"])
-            cues.append(c)
-        else:
-            sys.exit(f"scene {sid}: unknown cue op {cue['op']!r}")
-    # Pulse streams: one per synth, colour/decay per stream, velocity per
-    # marker. Same merge as tools/gen_esphome.py (which documents the
-    # per-hit dynamics: color_hot, pixels_by_vel, boost_at/boost_targets,
-    # ms) and web/src/track_lights.ts — keep all three in lockstep.
-    scene_marks = markers.get(sid, {})
-    gates = pd.section_gates(scene)
-    pulses: list[dict[str, Any]] = []
-    for pcfg in scene.get("pulse") or []:
-        beats = scene_marks.get(pcfg["synth"], [])
-        zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
-        factor = pd.tempo_factor([b[0] / 1000.0 for b in beats])
-        decay = pd.tempo_decay(pcfg.get("decay", 0.90), factor)
-        ms = math.floor(int(pcfg.get("ms", 120)) * factor + 0.5)
-        vels = [b[1] for b in beats]
-        for i, beat in enumerate(beats):
-            t, vel = beat[0], beat[1]
-            pan = beat[2] if len(beat) > 2 else None
-            mul = pd.gate_mul(pcfg["synth"], gates, t)
-            if mul is None:
-                continue  # gated out by its section (#9)
-            cyc = pcfg.get("colors")
-            hot = pcfg.get("color_hot")
-            if pcfg.get("takeover") and pd.gate_note(gates, t) == "chorus":
-                base = pd.TAKEOVER_COLORS[i % len(pd.TAKEOVER_COLORS)]
-                hot = pd.TAKEOVER_HOT
-            elif cyc and pcfg.get("drift"):
-                base = pd.drift_base(cyc, i, t)
-            else:
-                base = cyc[i % len(cyc)] if cyc else pcfg.get("color", [1, 1, 1, 1])
-            c = {
-                "t": t,
-                "bus": "LED",
-                "op": "strike",
-                "ms": ms,
-                "intensity": pd.round3(pcfg.get("intensity", 0.3) * vel * mul),
-                "color": _blend_color(base, hot, vel),
-                "decay": decay,
-                "detail": pcfg["synth"],
-            }
-            if pcfg.get("attack_ms"):
-                c["attack"] = int(pcfg["attack_ms"])
-            if pcfg.get("pixels_by_vel"):
-                c["pixels"] = (
-                    "center" if vel < 0.40 else "scatter" if vel < 0.72 else "all"
-                )
-            elif pcfg.get("pixels"):
-                c["pixels"] = pcfg["pixels"]
-            if zones and pcfg.get("alternate"):
-                if (
-                    pan is not None
-                    and abs(pan) >= pd.PAN_DECISIVE
-                    and "towerL" in zones
-                    and "towerR" in zones
-                ):
-                    c["targets"] = ["towerL" if pan < 0 else "towerR"]
-                else:
-                    c["targets"] = [zones[i % len(zones)]]
-            elif zones:
-                c["targets"] = list(zones)
-            if (
-                c.get("targets")
-                and pcfg.get("boost_targets")
-                and (vel >= pcfg.get("boost_at", 2) or pd.is_accent(vels, i))
-            ):
-                c["targets"] = c["targets"] + [
-                    z for z in pcfg["boost_targets"] if z not in c["targets"]
-                ]
-            pulses.append(c)
+    cues = pc.score_cues(scene)
+    cues.extend(pc.hand_cues(scene, sid))
     # EVERY hit, since v5.67. The desk used to thin these to PULSE_CAP — the
     # 200 strongest — because that was all the device could hold: each cue was
     # a compiled ESPHome action with static RAM behind it. A scene is a cue
@@ -225,7 +94,7 @@ def to_previewer(
     # the side that was lying. pd.thin_pulses is still the authority on WHICH
     # hits are strongest and is still held byte-equal against core/src/pulse.rs
     # (tests/test_pulse_rust.py); nothing in the show calls it any more.
-    cues.extend(pulses)
+    cues.extend(pc.pulse_cues(scene, markers))
     cues.sort(key=lambda c: c["t"])
 
     for eff in scene["base"].values():
@@ -296,7 +165,9 @@ def lean_page(page: Path) -> tuple[bytes, str]:
 def scene_audio(audio_dir: Path, sid: str) -> Path | None:
     """The rendered file for scene `sid` in `audio_dir` (NN_<sid>.mp3), or
     None. The id is matched as a whole name: no separators, no traversal."""
-    if not re.fullmatch(r"[A-Za-z0-9_]+", sid):
+    # \w with re.ASCII, so the class is exactly [A-Za-z0-9_] and not the
+    # Unicode half a bare \w would let through a path guard.
+    if not re.fullmatch(r"\w+", sid, re.ASCII):
         return None
     return next(iter(sorted(audio_dir.glob(f"[0-9][0-9]_{sid}.mp3"))), None)
 

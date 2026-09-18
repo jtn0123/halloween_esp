@@ -22,9 +22,6 @@ export type EffectName =
 /** Linear RGBW, 0..1 per channel. The W is a real warm-white LED, not a mix. */
 export type Rgbw = readonly [r: number, g: number, b: number, w: number];
 
-/** A strike's colour multiplier, same shape as Rgbw. */
-export type StrikeColor = Rgbw;
-
 interface CueBase {
   /** Milliseconds from the start of the scene. */
   t: number;
@@ -59,7 +56,8 @@ export interface StrikeCue extends CueBase {
   zone?: ZoneId;
   /** 1.0 for lightning; beat pulses come through much smaller. */
   intensity?: number;
-  color?: StrikeColor;
+  /** The strike's colour multiplier, per channel. */
+  color?: Rgbw;
   /** Which pixels the flash hits: "all" (default) | "scatter" | "center" |
    *  "ring". Scatter picks a fresh random subset per strike. */
   pixels?: string;

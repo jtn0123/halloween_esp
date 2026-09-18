@@ -39,8 +39,8 @@ import { panelMarkup, type DeviceStatus, type SdFile } from "./device_panel_view
 import { testPct, wireTests } from "./device_tests.js";
 
 export class DevicePanel {
-  private root: HTMLDivElement;
-  private body: HTMLDivElement;
+  private readonly root: HTMLDivElement;
+  private readonly body: HTMLDivElement;
   private open = false;
   /** What had focus when the panel opened — focus goes back there (C4). */
   private opener: HTMLElement | null = null;
@@ -103,11 +103,7 @@ export class DevicePanel {
       if (st.studio || !st.version) throw new Error("no castle");
       if (st.sd_mounted) files = await api.castleGet<SdFile[]>("/api/files");
     } catch {
-      this.body.innerHTML =
-        `<div class="dp__hd"><span class="dp__grow">castle stopped answering</span>` +
-        `<button id="dpClose" class="dp__x" title="Close this panel" aria-label="Close">✕</button></div>`;
-      reqIn<HTMLButtonElement>(this.body, "#dpClose")
-        .addEventListener("click", () => this.toggle());
+      this.renderDown();
       return;
     }
     const tracks = files.filter((f) => !f.dir && /\.(mp3|wav)$/i.test(f.name));
@@ -154,13 +150,30 @@ export class DevicePanel {
     this.body.scrollTop = keepScroll.body;
     if (keepFocus) sel(`#${keepFocus}`, this.body)?.focus();
 
-    // Every control below goes through castleAct (device.ts): toast with
-    // the castle's reason on failure, and a chip re-poll on success — the
-    // panel used to fire-and-forget, so a 404 delete still "succeeded" and
-    // the chip said "idle" while the castle played (pass 1, J1-6/J1-7).
-    // The playlist toggle re-renders after the queued action lands (the
-    // 200 ms bridge plus a beat), so the button reflects the device's own
-    // idea of the show, not the click's.
+    // Every control goes through castleAct (device.ts): toast with the
+    // castle's reason on failure, and a chip re-poll on success — the panel
+    // used to fire-and-forget, so a 404 delete still "succeeded" and the chip
+    // said "idle" while the castle played (pass 1, J1-6/J1-7). The wiring is
+    // three methods rather than one tail so render() stays readable.
+    this.wireShow(st);
+    this.wireCard(tracks);
+    this.wireSensorAndLog();
+  }
+
+  /** The castle went quiet mid-poll: say so, and keep the way out. */
+  private renderDown(): void {
+    this.body.innerHTML =
+      `<div class="dp__hd"><span class="dp__grow">castle stopped answering</span>` +
+      `<button id="dpClose" class="dp__x" title="Close this panel" aria-label="Close">✕</button></div>`;
+    reqIn<HTMLButtonElement>(this.body, "#dpClose")
+      .addEventListener("click", () => this.toggle());
+  }
+
+  /** The show's own controls: the playlist toggle and the light override.
+   *  The toggle re-renders after the queued action lands (the 200 ms bridge
+   *  plus a beat), so the button reflects the device's own idea of the show,
+   *  not the click's. */
+  private wireShow(st: DeviceStatus): void {
     reqIn<HTMLButtonElement>(this.body, "#dpPlaylist")
       .addEventListener("click", () => {
         void castleAct(`/api/show/${st.show_on ? "stop" : "start"}`,
@@ -176,7 +189,7 @@ export class DevicePanel {
         const hex = (e.target as HTMLInputElement).value.slice(1);
         // quiet: the picker fires continuously while the hand drags; the
         // fixed wording lets toast() fold a whole drag's failures into one.
-        void castleAct(`/api/light?c=${hex}@${testPct}`, "lights colour", { quiet: true });
+        void castleAct(`/api/light?c=${hex}@${testPct()}`, "lights colour", { quiet: true });
       });
     reqIn<HTMLButtonElement>(this.body, "#dpShow")
       .addEventListener("click", () =>
@@ -185,7 +198,10 @@ export class DevicePanel {
       .addEventListener("click", () =>
         void castleAct("/api/light?c=off", "lights off"));
     wireTests(this.body);
+  }
 
+  /** The card's own buttons: play a track, or take it off the card. */
+  private wireCard(tracks: SdFile[]): void {
     this.body.querySelectorAll<HTMLButtonElement>("[data-play]").forEach((b) =>
       b.addEventListener("click", () => {
         const f = tracks[Number(b.dataset.play)];
@@ -205,9 +221,12 @@ export class DevicePanel {
                        `deleted ${f.name} from the card`, { method: "DELETE" })
           .then((ok) => { if (ok) { cardChanged(); void this.render(); } });
       }));
+  }
 
-    // PIR settings: each control posts just its own field; the device's
-    // main loop applies them to the persisted entities.
+  /** The motion sensor, the drop zone and the boot log — the panel's tail.
+   *  PIR settings post just their own field; the device's main loop applies
+   *  them to the persisted entities. */
+  private wireSensorAndLog(): void {
     reqIn<HTMLInputElement>(this.body, "#dpPirArm")
       .addEventListener("change", (e) => {
         const on = (e.target as HTMLInputElement).checked;
@@ -238,7 +257,8 @@ export class DevicePanel {
       e.preventDefault();
       drop.classList.remove("dp__drop--over");
       for (const f of Array.from(e.dataTransfer?.files ?? [])) {
-        drop.textContent = `uploading ${f.name} (${(f.size / 1024) | 0} KB)…`;
+        const kb = Math.trunc(f.size / 1024);
+        drop.textContent = `uploading ${f.name} (${kb} KB)…`;
         const r = await api.castlePut(f.name, f);
         drop.textContent = r.ok ? `✓ ${f.name}` : `✗ ${f.name} failed`;
       }

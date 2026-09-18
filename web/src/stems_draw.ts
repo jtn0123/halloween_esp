@@ -28,11 +28,24 @@ export function missedTimes(chan: StemChannel, other: StemChannel | undefined,
   return out;
 }
 
+/** The canvas one row paints on, with the geometry and colour that go with
+ *  it. One argument rather than four, because every strip needs the same
+ *  four and the drawing functions were growing a parameter list nobody
+ *  could read. */
+export interface Strip {
+  g: CanvasRenderingContext2D;
+  /** Track length in seconds — what maps an onset time to an x. */
+  dur: number;
+  w: number;
+  h: number;
+  ink: string;
+}
+
 /** One channel's strip; returns the caption for the row. */
-export function drawSingle(g: CanvasRenderingContext2D, d: StemChannel,
-                           mono: StemChannel | undefined, dur: number,
-                           channel: string, w: number, h: number,
-                           ink: string): string {
+export function drawSingle(strip: Strip, d: StemChannel,
+                           mono: StemChannel | undefined,
+                           channel: string): string {
+  const { g, dur, w, h, ink } = strip;
   const peakH = h - 14;
   g.fillStyle = ink;
   g.globalAlpha = 0.85;
@@ -70,9 +83,9 @@ export function drawSingle(g: CanvasRenderingContext2D, d: StemChannel,
  *  are scaled by each channel's TRUE level rather than its own normalised
  *  peaks — a channel that is genuinely quieter must look quieter, or the
  *  view answers the wrong question. */
-export function drawStacked(g: CanvasRenderingContext2D, L: StemChannel,
-                            R: StemChannel, dur: number, w: number, h: number,
-                            ink: string): string {
+export function drawStacked(strip: Strip, L: StemChannel,
+                            R: StemChannel): string {
+  const { g, dur, w, h, ink } = strip;
   const mid = h / 2;
   const half = mid - 10;             // room for the tick lanes at each edge
   const top = Math.max(L.level, R.level) || 1;

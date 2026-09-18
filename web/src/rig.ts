@@ -88,7 +88,7 @@ export const FIXTURES: readonly Fixture[] = [
 ];
 
 export const fixture = (id: string): Fixture =>
-  FIXTURES.find((f) => f.id === id) ?? FIXTURES[FIXTURES.length - 1]!;
+  FIXTURES.find((f) => f.id === id) ?? FIXTURES.at(-1)!;
 
 /**
  * Where every pixel of a fixture sits, and how it moves.
@@ -137,6 +137,70 @@ const ring = (n: number, out: Pt[], w: number[], f: number[]): void => {
   }
 };
 
+/** A hub: the centre pixel, then the ring around it. */
+const hub = (n: number, out: Pt[], w: number[], f: number[]): void => {
+  out.push([0.5, 0.5]);
+  w.push(0);
+  f.push(0);
+  ring(n - 1, out, w, f);
+};
+
+const grid = (fx: Fixture, n: number, out: Pt[], w: number[], f: number[]): void => {
+  const cols = fx.cols ?? 8;
+  const rows = fx.rows ?? Math.ceil(n / cols);
+  for (let i = 0; i < n; i++) {
+    const cx = i % cols;
+    const cy = Math.floor(i / cols);
+    out.push([(cx + 0.5) / cols, (cy + 0.5) / rows]);
+    // Serpentine by column so a chase sweeps across the matrix instead of
+    // jumping back to the left edge every row.
+    const up = cx % 2 === 1;
+    w.push((cx + (up ? rows - 1 - cy : cy) / rows) / cols);
+    f.push(rows === 1 ? 0 : cy / (rows - 1));
+  }
+};
+
+/** A straight run, which is a stick and a handful of scatter singles both:
+ *  `edge` is the inset and `span` what is left for the pixels, and that pair
+ *  is the only thing that differs between them. */
+const straight = (
+  n: number, out: Pt[], w: number[], f: number[], edge: number, span: number,
+): void => {
+  for (let i = 0; i < n; i++) {
+    out.push([n === 1 ? 0.5 : edge + (i / (n - 1)) * span, 0.5]);
+    w.push(i / n);
+    f.push(n === 1 ? 0 : i / (n - 1));
+  }
+};
+
+/** The pixels a "centre" strike lands on: the middle pixel where there is
+ *  one, otherwise the innermost seventh. */
+const coreOf = (pos: readonly Pt[], center: number | null, n: number): boolean[] => {
+  const core = new Array<boolean>(n).fill(false);
+  if (center !== null) {
+    core[center] = true;
+    return core;
+  }
+  if (n === 0) return core;
+  const byMiddle = pos
+    // Rounded before sorting, and that is load-bearing. Every pixel on a
+    // ring is the same distance from the middle in principle, but not to
+    // the last bit of a double — and the survivors of an unrounded sort
+    // came out different in JavaScript and in Python, which the geometry
+    // parity test caught. Rounding turns near-ties into real ties so the
+    // index tie-break below actually decides them.
+    .map((xy, i) => ({
+      i,
+      d: Math.round(Math.hypot((xy[0] ?? 0) - 0.5, (xy[1] ?? 0) - 0.5) * 1e6) / 1e6,
+    }))
+    .sort((a, b) => a.d - b.d || a.i - b.i);
+  for (let j = 0; j < Math.max(1, Math.round(n / 7)); j++) {
+    const hit = byMiddle[j];
+    if (hit) core[hit.i] = true;
+  }
+  return core;
+};
+
 const layouts = new Map<string, Layout>();
 
 /** The geometry of a fixture, computed once and kept. */
@@ -156,66 +220,24 @@ export function layoutOf(fx: Fixture, count?: number): Layout {
     // every consumer can stay branch-free.
   } else if (fx.layout === "hub") {
     center = 0;
-    pos.push([0.5, 0.5]);
-    walk.push(0);
-    fall.push(0);
-    ring(n - 1, pos, walk, fall);
+    hub(n, pos, walk, fall);
   } else if (fx.layout === "ring") {
     ring(n, pos, walk, fall);
   } else if (fx.layout === "grid") {
-    const cols = fx.cols ?? 8;
-    const rows = fx.rows ?? Math.ceil(n / cols);
-    for (let i = 0; i < n; i++) {
-      const cx = i % cols;
-      const cy = Math.floor(i / cols);
-      pos.push([(cx + 0.5) / cols, (cy + 0.5) / rows]);
-      // Serpentine by column so a chase sweeps across the matrix instead of
-      // jumping back to the left edge every row.
-      const up = cx % 2 === 1;
-      walk.push((cx + (up ? rows - 1 - cy : cy) / rows) / cols);
-      fall.push(rows === 1 ? 0 : cy / (rows - 1));
-    }
+    grid(fx, n, pos, walk, fall);
   } else if (fx.layout === "line") {
-    for (let i = 0; i < n; i++) {
-      pos.push([n === 1 ? 0.5 : 0.06 + (i / (n - 1)) * 0.88, 0.5]);
-      walk.push(i / n);
-      fall.push(n === 1 ? 0 : i / (n - 1));
-    }
+    straight(n, pos, walk, fall, 0.06, 0.88);
   } else {
     // Scatter: singles you place by hand. Drawn in a row because the desk
     // cannot know where you glued them, spaced wider than a stick to say so.
-    for (let i = 0; i < n; i++) {
-      pos.push([n === 1 ? 0.5 : 0.12 + (i / (n - 1)) * 0.76, 0.5]);
-      walk.push(i / n);
-      fall.push(n === 1 ? 0 : i / (n - 1));
-    }
+    straight(n, pos, walk, fall, 0.12, 0.76);
   }
 
   // Distinct heights, rounded so floating-point noise in the ring's sine does
   // not report sixteen levels where the eye sees nine.
   const fallSteps = new Set(fall.map((v) => v.toFixed(3))).size;
 
-  const core = new Array<boolean>(n).fill(false);
-  if (center !== null) {
-    core[center] = true;
-  } else if (n > 0) {
-    const byMiddle = pos
-      // Rounded before sorting, and that is load-bearing. Every pixel on a
-      // ring is the same distance from the middle in principle, but not to
-      // the last bit of a double — and the survivors of an unrounded sort
-      // came out different in JavaScript and in Python, which the geometry
-      // parity test caught. Rounding turns near-ties into real ties so the
-      // index tie-break below actually decides them.
-      .map((xy, i) => ({
-        i,
-        d: Math.round(Math.hypot((xy[0] ?? 0) - 0.5, (xy[1] ?? 0) - 0.5) * 1e6) / 1e6,
-      }))
-      .sort((a, b) => a.d - b.d || a.i - b.i);
-    for (let j = 0; j < Math.max(1, Math.round(n / 7)); j++) {
-      const hit = byMiddle[j];
-      if (hit) core[hit.i] = true;
-    }
-  }
+  const core = coreOf(pos, center, n);
 
   const out: Layout = { n, center, walk, fall, fallSteps, core, pos };
   layouts.set(key, out);

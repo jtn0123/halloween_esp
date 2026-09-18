@@ -14,12 +14,12 @@
  * them owns the look.
  */
 
-import { BANDS, type BandName } from "./bands.js";
+import { BANDS, type BandInfo, type BandName } from "./bands.js";
 import type { BandEditor } from "./band_editor.js";
 import type { WaveClip, WaveData } from "./waveform_view.js";
 import { TIERS, ZONES_BLOCK, getFlavors, sectionCues, styleFor,
          sustainedSwells, trackCues } from "./track_lights.js";
-import type { EffectName, Scene, ZoneId } from "./types.js";
+import type { EffectName, Scene, SetCue, StrikeCue, ZoneId } from "./types.js";
 import type { Onset } from "./onsets.js";
 
 /** Matches the `base:`/`levels:` that sceneYaml writes — the quiet tier. */
@@ -76,6 +76,94 @@ export function sceneFromTrack(data: WaveData, clip: WaveClip | null,
 const num = (v: number): string => String(Math.round(v * 1000) / 1000);
 const rgbw = (c: readonly number[]): string => `[${c.map(num).join(", ")}]`;
 
+/** The sensitivity line, written only when the band editor's knobs differ
+ *  from the defaults. A scene carrying the default spelled out reads as a
+ *  decision that was made, and this file is meant to be read. */
+function sensitivityLines(bands?: BandEditor): string[] {
+  if (!bands?.customised()) return [];
+  const sens = bands.settings().sensitivity;
+  const per = BANDS.map(b => `${b.label}: ${sens[b.name].toFixed(2)}`).join(", ");
+  return [`    sensitivity: {${per}}`];
+}
+
+/** Everything above the `pulse:` streams — the scene's own identity, and the
+ *  standing look it starts from. */
+function headerLines(id: string, dur: number | undefined, ext: string,
+                     bands?: BandEditor): string[] {
+  const name = id.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  return [
+    `  - id: ${id}`,
+    `    name: ${name}`,
+    `    kind: custom`, `    volume: ${VOLUME}`,
+    `    duration_ms: ${Math.round((dur ?? Number.NaN) * 1000)}`, `    loop: true`,
+    `    blurb: >`,
+    `      Imported track. Light cues are onset-detected from the audio`,
+    `      itself, so they follow whatever the track actually does.`,
+    `    audio_file: tracks/${id}.${ext}`,
+    ...sensitivityLines(bands),
+    `    base: {towerL: ${BASE.towerL}, towerR: ${BASE.towerR}, door: ${BASE.door}}`,
+    `    levels: {towerL: ${LEVELS.towerL}, towerR: ${LEVELS.towerR}, door: ${LEVELS.door}}`,
+    `    zones:`,
+    `      towerL: {center: ${ZONES_BLOCK.towerL.center}, palette: ${ZONES_BLOCK.towerL.palette}}`,
+    `      towerR: {center: ${ZONES_BLOCK.towerR.center}, palette: ${ZONES_BLOCK.towerR.palette}, phase: ${ZONES_BLOCK.towerR.phase}}`,
+    `      door: {overlay: ${ZONES_BLOCK.door.overlay}, palette: ${ZONES_BLOCK.door.palette}}`,
+    `    pulse:`,
+  ];
+}
+
+/** One band's `pulse:` stream: every per-hit decision the generators will
+ *  expand, and the onset count that earned it. */
+function pulseLine(b: BandInfo, n: number, bands?: BandEditor): string {
+  // Effective style: the knobs panel's live tweaks apply, the A/B variant
+  // never does — see the style-lab note in track_lights.ts.
+  const s = styleFor(b.name, true);
+  const pinned = bands !== undefined && bands.zones()[b.name] !== b.zone;
+  const zones: readonly ZoneId[] = pinned ? [bands.zones()[b.name]!] : s.zones;
+  const opts = [
+    `synth: ${b.name}`, `zones: [${zones.join(", ")}]`,
+    ...(s.alternate && !pinned ? ["alternate: true"] : []),
+    `intensity: ${num(s.intensity)}`, `decay: ${num(s.decay)}`, `ms: ${s.ms}`,
+    ...(s.attackMs ? [`attack_ms: ${s.attackMs}`] : []),
+    // Flavour toggles ship when they are ON — what you audition is what
+    // the generators expand.
+    ...(getFlavors().drift ? ["drift: true"] : []),
+    ...(getFlavors().takeover ? ["takeover: true"] : []),
+    `colors: [${s.colors.map(rgbw).join(", ")}]`,
+    `color_hot: ${rgbw(s.colorHot)}`,
+    ...(s.pixelsByVel ? ["pixels_by_vel: true"] : []),
+    ...(s.pixels ? [`pixels: ${s.pixels}`] : []),
+    ...(s.boostAt !== undefined
+      ? [`boost_at: ${num(s.boostAt)}`,
+         `boost_targets: [${(s.boostTargets ?? []).join(", ")}]`]
+      : []),
+  ];
+  return `      - {${opts.join(", ")}}   # ${n} onsets in ${b.lo}-${b.hi}Hz`;
+}
+
+/** One section boundary, as the `set` cue the generators already understand. */
+const setLine = (c: SetCue): string =>
+  `      - {t: ${c.t}, op: set, zone: ${c.zone}, effect: ${c.eff}, `
+  + `level: ${num(c.level ?? 1)}, note: ${c.detail}}`;
+
+/** One swell, as an explicit strike. */
+const swellLine = (c: StrikeCue): string =>
+  `      - {t: ${c.t}, op: strike, targets: [${(c.targets ?? []).join(", ")}], `
+  + `ms: ${c.ms}, intensity: ${num(c.intensity ?? 1)}, `
+  + `color: ${rgbw(c.color ?? [1, 1, 1, 1])}, decay: ${num(c.decay ?? 0.9)}, `
+  + `attack: ${c.attack}, note: ${c.detail}}`;
+
+/** The `cues:` tail — the sections, and the swells that ride along with them
+ *  as explicit strikes (#4): attack does the shaping, so the generators
+ *  expand them with code they already have. */
+function cueLines(env: ReadonlyArray<readonly [number, number]> | undefined,
+                  dur: number | undefined): string[] {
+  const sects = env?.length && dur ? sectionCues(env, 0, dur) : [];
+  const swells = getFlavors().swells && env?.length && dur
+    ? sustainedSwells(env, 0, dur) : [];
+  if (!sects.length && !swells.length) return [`    cues: []`];
+  return [`    cues:`, ...sects.map(setLine), ...swells.map(swellLine)];
+}
+
 /**
  * The same scene, as the YAML that goes into scenes.yaml.
  *
@@ -93,77 +181,12 @@ export function sceneYaml(id: string, dur: number | undefined,
                           counts: Record<string, number>, ext = "mp3",
                           bands?: BandEditor,
                           env?: ReadonlyArray<readonly [number, number]>): string {
-  const L = [
-    `  - id: ${id}`,
-    `    name: ${id.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())}`,
-    `    kind: custom`, `    volume: ${VOLUME}`,
-    `    duration_ms: ${Math.round((dur ?? NaN) * 1000)}`, `    loop: true`,
-    `    blurb: >`,
-    `      Imported track. Light cues are onset-detected from the audio`,
-    `      itself, so they follow whatever the track actually does.`,
-    `    audio_file: tracks/${id}.${ext}`,
-    // Only written when it differs from the defaults. A scene carrying the
-    // default spelled out reads as a decision that was made, and this file
-    // is meant to be read.
-    ...(bands?.customised()
-      ? [`    sensitivity: {${BANDS.map(b =>
-           `${b.label}: ${bands.settings().sensitivity[b.name].toFixed(2)}`).join(", ")}}`]
-      : []),
-    `    base: {towerL: ${BASE.towerL}, towerR: ${BASE.towerR}, door: ${BASE.door}}`,
-    `    levels: {towerL: ${LEVELS.towerL}, towerR: ${LEVELS.towerR}, door: ${LEVELS.door}}`,
-    `    zones:`,
-    `      towerL: {center: ${ZONES_BLOCK.towerL.center}, palette: ${ZONES_BLOCK.towerL.palette}}`,
-    `      towerR: {center: ${ZONES_BLOCK.towerR.center}, palette: ${ZONES_BLOCK.towerR.palette}, phase: ${ZONES_BLOCK.towerR.phase}}`,
-    `      door: {overlay: ${ZONES_BLOCK.door.overlay}, palette: ${ZONES_BLOCK.door.palette}}`,
-    `    pulse:`,
-  ];
+  const L = headerLines(id, dur, ext, bands);
   for (const b of BANDS) {
     const n = counts[b.name];
-    if (!n) continue;
-    // Effective style: the knobs panel's live tweaks apply, the A/B variant
-    // never does — see the style-lab note in track_lights.ts.
-    const s = styleFor(b.name, true);
-    const pinned = bands !== undefined && bands.zones()[b.name] !== b.zone;
-    const zones: readonly ZoneId[] = pinned ? [bands.zones()[b.name]!] : s.zones;
-    const opts = [
-      `synth: ${b.name}`, `zones: [${zones.join(", ")}]`,
-      ...(s.alternate && !pinned ? ["alternate: true"] : []),
-      `intensity: ${num(s.intensity)}`, `decay: ${num(s.decay)}`, `ms: ${s.ms}`,
-      ...(s.attackMs ? [`attack_ms: ${s.attackMs}`] : []),
-      // Flavour toggles ship when they are ON — what you audition is what
-      // the generators expand.
-      ...(getFlavors().drift ? ["drift: true"] : []),
-      ...(getFlavors().takeover ? ["takeover: true"] : []),
-      `colors: [${s.colors.map(rgbw).join(", ")}]`,
-      `color_hot: ${rgbw(s.colorHot)}`,
-      ...(s.pixelsByVel ? ["pixels_by_vel: true"] : []),
-      ...(s.pixels ? [`pixels: ${s.pixels}`] : []),
-      ...(s.boostAt !== undefined
-        ? [`boost_at: ${num(s.boostAt)}`,
-           `boost_targets: [${(s.boostTargets ?? []).join(", ")}]`]
-        : []),
-    ];
-    L.push(`      - {${opts.join(", ")}}   # ${n} onsets in ${b.lo}-${b.hi}Hz`);
+    if (!n) continue;                       // a band with no hits gets no stream
+    L.push(pulseLine(b, n, bands));
   }
-  const sects = env?.length && dur ? sectionCues(env, 0, dur) : [];
-  // #4 swells ride along as explicit strikes — attack does the shaping, so
-  // the generators expand them with code they already have.
-  const swells = getFlavors().swells && env?.length && dur
-    ? sustainedSwells(env, 0, dur) : [];
-  if (!sects.length && !swells.length) {
-    L.push(`    cues: []`);
-  } else {
-    L.push(`    cues:`);
-    for (const c of sects) {
-      L.push(`      - {t: ${c.t}, op: set, zone: ${c.zone}, effect: ${c.eff}, `
-           + `level: ${num(c.level ?? 1)}, note: ${c.detail}}`);
-    }
-    for (const c of swells) {
-      L.push(`      - {t: ${c.t}, op: strike, targets: [${(c.targets ?? []).join(", ")}], `
-           + `ms: ${c.ms}, intensity: ${num(c.intensity ?? 1)}, `
-           + `color: ${rgbw(c.color ?? [1, 1, 1, 1])}, decay: ${num(c.decay ?? 0.9)}, `
-           + `attack: ${c.attack}, note: ${c.detail}}`);
-    }
-  }
+  L.push(...cueLines(env, dur));
   return L.join("\n");
 }

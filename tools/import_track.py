@@ -207,7 +207,9 @@ def _options(args: argparse.Namespace, prev: mf.Entry | None) -> dict[str, Any]:
         "sensitivity": base.get("sensitivity", 1.1),
         "format": base.get("format", "mp3"),
     }
-    for k in list(o):
+    # Iterating the dict itself is safe: the loop only ever overwrites keys
+    # that are already in it, so it never resizes mid-walk.
+    for k in o:
         v = getattr(args, k, None)
         # `is not`, not `not in (None, False)`: 0.0 == False, and an explicit
         # --fade-in 0 is how a remembered fade gets cleared on a refresh.

@@ -49,7 +49,97 @@ def pixels_for(cfg: dict, vel: float) -> str:
     """
     if not cfg.get("pixels_by_vel"):
         return str(cfg.get("pixels", "all"))
-    return "center" if vel < 0.40 else ("scatter" if vel < 0.72 else "all")
+    if vel < 0.40:
+        return "center"
+    return "scatter" if vel < 0.72 else "all"
+
+
+def _alternate_target(zones: list, i: int, pan: float | None) -> list:
+    """One zone for an alternating stream: a decisively panned hit goes to ITS
+    tower (#7); everything else keeps the round-robin movement."""
+    if (
+        pan is not None
+        and abs(pan) >= PAN_DECISIVE
+        and "towerL" in zones
+        and "towerR" in zones
+    ):
+        return ["towerL" if pan < 0 else "towerR"]
+    return [zones[i % len(zones)]]
+
+
+def _targets_for(
+    cfg: dict[str, Any],
+    zones: list | None,
+    i: int,
+    pan: float | None,
+    vel: float,
+    vels: list,
+) -> list | None:
+    """Which zones one hit lands on. None means every zone."""
+    targets: list | None
+    if zones and cfg.get("alternate"):
+        targets = _alternate_target(zones, i, pan)
+    else:
+        targets = list(zones) if zones else None  # None -> all zones
+    if (
+        targets
+        and cfg.get("boost_targets")
+        and (vel >= cfg.get("boost_at", 2) or is_accent(vels, i))
+    ):
+        targets = targets + [z for z in cfg["boost_targets"] if z not in targets]
+    return targets
+
+
+def _base_color(
+    cfg: Mapping[str, Any], gates: list, i: int, t: int
+) -> tuple[list, list | None]:
+    """The hit's (base, hot) colours, before velocity blends between them."""
+    cyc = cfg.get("colors")
+    hot = cfg.get("color_hot")
+    if cfg.get("takeover") and gate_note(gates, t) == "chorus":
+        # #2: in a chorus the castle agrees on one warm family.
+        return TAKEOVER_COLORS[i % len(TAKEOVER_COLORS)], TAKEOVER_HOT
+    if cyc and cfg.get("drift"):
+        return drift_base(cyc, i, t), hot  # #1: hues walk over time
+    return (cyc[i % len(cyc)] if cyc else cfg.get("color", WHITE)), hot
+
+
+def _stream_cues(cfg: dict[str, Any], beats: list, gates: list) -> list[dict[str, Any]]:
+    """One `pulse:` stream: a strike per marker the section gates let through,
+    at the stream's own tempo-adjusted length and decay."""
+    zones = cfg.get("zones") or ([cfg["zone"]] if cfg.get("zone") else None)
+    # Times arrive in ms here; the tempo maths speaks seconds everywhere.
+    factor = tempo_factor([b[0] / 1000.0 for b in beats])
+    decay = tempo_decay(cfg.get("decay", DEFAULT_DECAY), factor)
+    ms = math.floor(int(cfg.get("ms", 120)) * factor + 0.5)
+    vels = [b[1] for b in beats]
+    out = []
+    for i, beat in enumerate(beats):
+        t, vel = beat[0], beat[1]
+        pan = beat[2] if len(beat) > 2 else None
+        mul = gate_mul(cfg["synth"], gates, t)
+        if mul is None:
+            continue  # gated out by its section (#9)
+        targets = _targets_for(cfg, zones, i, pan, vel, vels)
+        base, hot = _base_color(cfg, gates, i, t)
+        out.append(
+            {
+                "t": t,
+                "op": "strike",
+                "targets": targets,
+                "ms": ms,
+                "intensity": round3(cfg.get("intensity", 0.3) * vel * mul),
+                "color": blend_color(base, hot, vel),
+                "decay": decay,
+                # #10: rise time to peak; 0 keeps the instant slam.
+                "attack": int(cfg.get("attack_ms", 0)),
+                # WHERE on the jewel the pulse lands: a bass thump can
+                # hit the door's centre while highs scatter the rings.
+                "pixels": pixels_for(cfg, vel),
+                "note": cfg["synth"],
+            }
+        )
+    return out
 
 
 def pulse_cues(
@@ -95,66 +185,5 @@ def pulse_cues(
                 f"note: scene {scene['id']}: no markers for synth "
                 f"{cfg['synth']!r} — pulse stream skipped"
             )
-        zones = cfg.get("zones") or ([cfg["zone"]] if cfg.get("zone") else None)
-        # Times arrive in ms here; the tempo maths speaks seconds everywhere.
-        factor = tempo_factor([b[0] / 1000.0 for b in beats])
-        decay = tempo_decay(cfg.get("decay", DEFAULT_DECAY), factor)
-        ms = math.floor(int(cfg.get("ms", 120)) * factor + 0.5)
-        vels = [b[1] for b in beats]
-        for i, beat in enumerate(beats):
-            t, vel = beat[0], beat[1]
-            pan = beat[2] if len(beat) > 2 else None
-            mul = gate_mul(cfg["synth"], gates, t)
-            if mul is None:
-                continue  # gated out by its section (#9)
-            targets: list[str] | None
-            if zones and cfg.get("alternate"):
-                # A decisively panned hit goes to ITS tower (#7); everything
-                # else keeps the round-robin movement.
-                if (
-                    pan is not None
-                    and abs(pan) >= PAN_DECISIVE
-                    and "towerL" in zones
-                    and "towerR" in zones
-                ):
-                    targets = ["towerL" if pan < 0 else "towerR"]
-                else:
-                    targets = [zones[i % len(zones)]]
-            else:
-                targets = list(zones) if zones else None  # None -> all zones
-            if (
-                targets
-                and cfg.get("boost_targets")
-                and (vel >= cfg.get("boost_at", 2) or is_accent(vels, i))
-            ):
-                targets = targets + [
-                    z for z in cfg["boost_targets"] if z not in targets
-                ]
-            cyc = cfg.get("colors")
-            hot = cfg.get("color_hot")
-            if cfg.get("takeover") and gate_note(gates, t) == "chorus":
-                # #2: in a chorus the castle agrees on one warm family.
-                base = TAKEOVER_COLORS[i % len(TAKEOVER_COLORS)]
-                hot = TAKEOVER_HOT
-            elif cyc and cfg.get("drift"):
-                base = drift_base(cyc, i, t)  # #1: hues walk over time
-            else:
-                base = cyc[i % len(cyc)] if cyc else cfg.get("color", WHITE)
-            out.append(
-                {
-                    "t": t,
-                    "op": "strike",
-                    "targets": targets,
-                    "ms": ms,
-                    "intensity": round3(cfg.get("intensity", 0.3) * vel * mul),
-                    "color": blend_color(base, hot, vel),
-                    "decay": decay,
-                    # #10: rise time to peak; 0 keeps the instant slam.
-                    "attack": int(cfg.get("attack_ms", 0)),
-                    # WHERE on the jewel the pulse lands: a bass thump can
-                    # hit the door's centre while highs scatter the rings.
-                    "pixels": pixels_for(cfg, vel),
-                    "note": cfg["synth"],
-                }
-            )
+        out.extend(_stream_cues(cfg, beats, gates))
     return out

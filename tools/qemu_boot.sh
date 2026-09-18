@@ -39,7 +39,7 @@ NAME="castle-s3-qemu"
 SECONDS_TO_RUN=60
 DO_BUILD=1
 DO_GDB=0
-while [ $# -gt 0 ]; do
+while [[ $# -gt 0 ]]; do
   case "$1" in
     --seconds) SECONDS_TO_RUN="$2"; shift 2 ;;
     --no-build) DO_BUILD=0; shift ;;
@@ -51,7 +51,7 @@ done
 
 # ── The emulator ─────────────────────────────────────────────────────────
 QEMU="${QEMU_XTENSA:-$(command -v qemu-system-xtensa || true)}"
-if [ -z "$QEMU" ]; then
+if [[ -z "$QEMU" ]]; then
   echo "no qemu-system-xtensa found. Set QEMU_XTENSA to Espressif's build" >&2
   echo "(https://github.com/espressif/qemu/releases)." >&2
   exit 1
@@ -66,8 +66,8 @@ fi
 # ESPHOME/CASTLE_PY let a worktree borrow the main checkout's venv, the same
 # escape hatch CLAUDE.md documents for the studio's children.
 ESPHOME="${ESPHOME:-$REPO/.venv/bin/esphome}"
-[ -x "$ESPHOME" ] || ESPHOME="esphome"
-if [ "$DO_BUILD" = 1 ]; then
+[[ -x "$ESPHOME" ]] || ESPHOME="esphome"
+if [[ "$DO_BUILD" == 1 ]]; then
   echo "==> compiling $YAML"
   "$ESPHOME" compile "$YAML"
 fi
@@ -76,10 +76,10 @@ fi
 # hard-coding the drive, so a commented-out build_path still works.
 BUILD="$("$ESPHOME" config "$YAML" 2>/dev/null \
   | sed -n 's/^  build_path: //p' | head -1)"
-[ -n "$BUILD" ] || BUILD="$REPO/firmware/.esphome/build/$NAME"
+[[ -n "$BUILD" ]] || BUILD="$REPO/firmware/.esphome/build/$NAME"
 FACTORY="$BUILD/build/firmware.factory.bin"
 ELF="$BUILD/build/firmware.elf"
-if [ ! -f "$FACTORY" ]; then
+if [[ ! -f "$FACTORY" ]]; then
   echo "no image at $FACTORY — run without --no-build" >&2
   exit 1
 fi
@@ -92,7 +92,7 @@ OUT="${TMPDIR:-/tmp}/castle-s3-qemu"
 mkdir -p "$OUT"
 FLASH="$OUT/flash8m.bin"
 PY="${CASTLE_PY:-$REPO/.venv/bin/python}"
-[ -x "$PY" ] || PY="python3"
+[[ -x "$PY" ]] || PY="python3"
 "$PY" - "$FACTORY" "$FLASH" <<'EOF'
 import sys
 src, dst = sys.argv[1], sys.argv[2]
@@ -122,7 +122,7 @@ QEMU_ARGS=(
   -monitor none
   -display none
 )
-[ "$DO_GDB" = 1 ] && QEMU_ARGS+=(-gdb tcp::3333)
+[[ "$DO_GDB" == 1 ]] && QEMU_ARGS+=(-gdb tcp::3333)
 
 echo "==> booting for ${SECONDS_TO_RUN}s (console -> $LOG)"
 "$QEMU" "${QEMU_ARGS[@]}" &
@@ -131,9 +131,9 @@ QEMU_PID=$!
 trap "kill $QEMU_PID 2>/dev/null || true" EXIT
 sleep "$SECONDS_TO_RUN"
 
-if [ "$DO_GDB" = 1 ]; then
+if [[ "$DO_GDB" == 1 ]]; then
   GDB="${XTENSA_GDB:-$HOME/.platformio/packages/tool-xtensa-esp-elf-gdb/bin/xtensa-esp32s3-elf-gdb}"
-  if [ -x "$GDB" ]; then
+  if [[ -x "$GDB" ]]; then
     echo "==> where each core is now"
     "$GDB" -batch \
       -ex 'set pagination off' -ex 'set confirm off' \

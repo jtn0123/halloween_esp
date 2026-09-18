@@ -22,8 +22,8 @@ export class RenderedAudio {
   /** Every scene's source, held as a STRING until first audition (G5): ten
    *  live <audio> elements from startup meant ten decoded buffers for the
    *  whole session, growing per scene. `els` holds only what has played. */
-  private uris = new Map<string, string>();
-  private els = new Map<string, HTMLAudioElement>();
+  private readonly uris = new Map<string, string>();
+  private readonly els = new Map<string, HTMLAudioElement>();
   private fadeTimer: ReturnType<typeof setInterval> | null = null;
   /** The pending start: play() waits out `latency` before the element runs.
    *  Stop/pause/another play inside that window must cancel it, or the file

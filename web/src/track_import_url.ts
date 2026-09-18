@@ -12,7 +12,7 @@
  * + beat detection) has no server-side progress, so a learned ETA covers it.
  */
 
-import { api, why } from "./api.js";
+import { api, why, type JobResponse } from "./api.js";
 import { startEta, type EtaHandle } from "./eta.js";
 import type { ImportOpts } from "./import_opts.js";
 import type { TrackStatus } from "./track_status.js";
@@ -25,6 +25,41 @@ const PHASE_TEXT: Record<string, string> = {
   converting: "converting with ffmpeg",
   analysing: "detecting beats",
 };
+
+/** The status line while yt-dlp is downloading: its own percent and its own
+ *  words about the file, verbatim — the server has already parsed them. */
+function fetchLine(job: JobResponse): string {
+  const pct = job.percent > 0 ? ` ${Math.round(job.percent)}%` : "";
+  const detail = job.detail ? ` · ${job.detail}` : "";
+  return `Importing — ${PHASE_TEXT[job.phase] ?? job.phase}${pct}${detail}`;
+}
+
+/** The tail's ETA lives in a box so the poll loop can start it and the
+ *  caller's `finally` can still stop it when a poll throws. */
+interface TailBox { eta: EtaHandle | null }
+
+/**
+ * Poll the job to its end, feeding the status line as it goes.
+ *
+ * 1200 polls at 800 ms is ~16 min — past the server's own 15-minute kill, so
+ * the UI never gives up on a job the server still believes in.
+ */
+async function pollJob(started: JobResponse, progress: (msg: string) => void,
+                       tail: TailBox): Promise<JobResponse> {
+  let job = started;
+  for (let i = 0; i < 1200 && !job.done; i++) {
+    await new Promise(r => setTimeout(r, 800));
+    job = await api.job(job.id);
+    if (job.phase === "fetching" || job.phase === "queued") {
+      progress(fetchLine(job));
+    } else if (!job.done) {
+      tail.eta ??= startEta("import-tail",
+        "Importing — converting and detecting beats", null);
+      progress(tail.eta.line());
+    }
+  }
+  return job;
+}
 
 export interface UrlImportDeps {
   say(msg: string, err?: boolean): void;
@@ -49,29 +84,16 @@ export function wireUrlImport({ say, status, opts, drawTracks, imported }: UrlIm
     const progress = status.slot("import:url");
     progress("Importing…");
     /** Times the post-download tail, which reports no progress of its own. */
-    let tail: EtaHandle | null = null;
+    const tail: TailBox = { eta: null };
     try {
-      let job = await api.importAsync(Object.assign({ url }, opts()));
-      if (!job.id) {                       // refused at the door (bad url/id)
-        return say(`Import failed — ${(job as { error?: string }).error
+      const started = await api.importAsync({ url, ...opts() });
+      if (!started.id) {                   // refused at the door (bad url/id)
+        return say(`Import failed — ${(started as { error?: string }).error
                      ?? "the studio refused the request"}`, true);
       }
-      // ~16 min at 800 ms/poll — past the server's own 15-minute kill.
-      for (let i = 0; i < 1200 && !job.done; i++) {
-        await new Promise(r => setTimeout(r, 800));
-        job = await api.job(job.id);
-        if (job.phase === "fetching" || job.phase === "queued") {
-          const pct = job.percent > 0 ? ` ${Math.round(job.percent)}%` : "";
-          progress(`Importing — ${PHASE_TEXT[job.phase] ?? job.phase}${pct}`
-            + `${job.detail ? ` · ${job.detail}` : ""}`);
-        } else if (!job.done) {
-          tail ??= startEta("import-tail",
-            "Importing — converting and detecting beats", null);
-          progress(tail.line());
-        }
-      }
+      const job = await pollJob(started, progress, tail);
       if (job.phase === "done") {
-        tail?.stop(true);
+        tail.eta?.stop(true);
         if (job.tracks) drawTracks(job.tracks);
         imported?.();
         say("Imported. Press Play to hear it, or “Make scene” to wire it into the show.");
@@ -82,7 +104,7 @@ export function wireUrlImport({ say, status, opts, drawTracks, imported }: UrlIm
       }
     } catch (err) { say(`Import failed — ${String(err)}`, true); }
     finally {
-      tail?.stop();
+      tail.eta?.stop();
       status.clear("import:url");
       btn.disabled = false;
     }

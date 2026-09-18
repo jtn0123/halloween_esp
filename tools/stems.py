@@ -49,6 +49,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # into the real library.
 TRACKS = Path(os.environ.get("CASTLE_TRACKS") or (ROOT / "tracks"))
 STEMS = TRACKS / "stems"
+#: The per-track cache file: peaks and onsets for all nine layer/channel
+#: pairs, plus the source's size and mtime so `fresh` can tell whether a
+#: re-import has invalidated it. Named because three paths point at it.
+ANALYSIS_JSON = "analysis.json"
 AUDIO_EXT = ("mp3", "wav", "flac", "opus")
 
 LAYERS = ("vocals", "backing", "combined")
@@ -87,7 +91,7 @@ def fresh(tid: str) -> bool:
     from the old file would validate a split of audio that no longer exists.
     """
     src = track_file(tid)
-    meta_p = STEMS / tid / "analysis.json"
+    meta_p = STEMS / tid / ANALYSIS_JSON
     if src is None or not meta_p.exists():
         return False
     try:
@@ -110,7 +114,7 @@ def analysis(tid: str) -> dict:
     tid = Path(tid).name
     if track_file(tid) is None:
         return {"ok": False, "error": "no such track"}
-    p = STEMS / tid / "analysis.json"
+    p = STEMS / tid / ANALYSIS_JSON
     if not p.exists():
         return {"ok": False, "error": "not split yet"}
     try:
@@ -290,9 +294,9 @@ def separate(tid: str, force: bool = False) -> int:
     st = src.stat()
     data.update(id=tid, src_bytes=st.st_size, src_mtime=int(st.st_mtime))
     # Atomic, like every other write that another process may be reading.
-    tmp_json = dest / "analysis.json.tmp"
+    tmp_json = dest / f"{ANALYSIS_JSON}.tmp"
     tmp_json.write_text(json.dumps(data))
-    os.replace(tmp_json, dest / "analysis.json")
+    os.replace(tmp_json, dest / ANALYSIS_JSON)
     print(f"stems ready — tracks/stems/{tid}/", flush=True)
     return 0
 

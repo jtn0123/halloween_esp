@@ -108,8 +108,9 @@ EMU_CONSTS: dict[str, str] = dict(
 
 #: The emulator's own delegation, the mirror of ERR_HELPERS: a method a
 #: handler hands the rest of the work to. castle_emu_upload's _write_upload
-#: is the upload worker's half of h_put (A9, v5.61).
-EMU_ERR_HELPERS = ("_write_upload",)
+#: is the upload worker's half of h_put (A9, v5.61); _list_dir is h_list's
+#: ?d=<subdir> validation, which answers both of that route's refusals.
+EMU_ERR_HELPERS = ("_write_upload", "_list_dir")
 
 
 def emu_method(name: str) -> str:

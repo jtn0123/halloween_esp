@@ -190,8 +190,9 @@ export function createStemsView(deps: StemsDeps): StemsApi {
     const ink = LAYERS.find(l => l.key === layer)!.ink;
 
     const L = chans.left, R = chans.right, one = chans[channel];
-    if (channel === "stack" && L && R) r.cap.textContent = drawStacked(g, L, R, dur, w, h, ink);
-    else if (one) r.cap.textContent = drawSingle(g, one, chans.both, dur, channel, w, h, ink);
+    const strip = { g, dur, w, h, ink };
+    if (channel === "stack" && L && R) r.cap.textContent = drawStacked(strip, L, R);
+    else if (one) r.cap.textContent = drawSingle(strip, one, chans.both, channel);
 
     if (playing === layer) {
       g.fillStyle = "#fff";
@@ -297,6 +298,15 @@ export function createStemsView(deps: StemsDeps): StemsApi {
     say(msg);
   }
 
+  /** Demucs came back failed: stop the clock, and say why if this is still
+   *  the track on screen. */
+  function failed(eta: EtaHandle, error: string | null, showing: boolean): void {
+    eta.stop();
+    if (!showing) return;
+    empty("Split failed — " + (error || "see the studio log."));
+    note.classList.add("err");
+  }
+
   /** Follow `id`'s split to the end, whichever track the panel is showing
    *  meanwhile; only the UI updates are gated on it being the current one. */
   async function poll(id: string, jobId: string, eta: EtaHandle): Promise<void> {
@@ -312,11 +322,7 @@ export function createStemsView(deps: StemsDeps): StemsApi {
       }
       inflight.release(id);
       if (job.phase === "failed") {
-        eta.stop();
-        if (showing()) {
-          empty("Split failed — " + (job.error || "see the studio log."));
-          note.classList.add("err");
-        }
+        failed(eta, job.error, showing());
         return;
       }
       eta.stop(true);                  // a finished split teaches the next ETA

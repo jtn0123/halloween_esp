@@ -32,48 +32,60 @@ ROOT = Path(__file__).resolve().parent.parent
 PULSE_DUMP = ROOT / "core" / "target" / "release" / "pulse_dump"
 
 
-def _pc_line(
-    cfg: dict[str, Any], gates: list[tuple[int, str]], beats: list[Any]
-) -> str | None:
-    """One stream as castle-core's `pc` protocol, or None when the case
-    uses a shape the compact protocol cannot carry (non-integer times)."""
-    parts = [f"synth={cfg['synth']}"]
+#: Flags that go out as `<name>=1` when the case sets them, and the cfg key
+#: each one reads. A table, because the pc line's FIELD ORDER is part of the
+#: protocol and a table is the only way to read it off at a glance.
+_PC_FLAGS = (
+    ("alternate", "alternate"),
+    ("takeover", "takeover"),
+    ("drift", "drift"),
+    ("pbv", "pixels_by_vel"),
+)
+#: The integer fields, in the order they are spelled.
+_PC_INTS = (("ms", "ms"), ("attack", "attack_ms"))
+
+
+def _pc_fields(cfg: dict[str, Any]) -> list[str]:
+    """Everything between the stream's synth and its colours."""
+    out: list[str] = []
     zones = cfg.get("zones") or ([cfg["zone"]] if cfg.get("zone") else None)
     if zones:
-        parts.append("zones=" + "+".join(zones))
-    for flag, key in (
-        ("alternate", "alternate"),
-        ("takeover", "takeover"),
-        ("drift", "drift"),
-        ("pbv", "pixels_by_vel"),
-    ):
-        if cfg.get(key):
-            parts.append(f"{flag}=1")
+        out.append("zones=" + "+".join(zones))
+    out.extend(f"{flag}=1" for flag, key in _PC_FLAGS if cfg.get(key))
     if cfg.get("boost_targets"):
-        parts.append("boost_targets=" + "+".join(cfg["boost_targets"]))
-    parts.extend(
+        out.append("boost_targets=" + "+".join(cfg["boost_targets"]))
+    out.extend(
         f"{key}={float(cfg[key])!r}"
         for key in ("boost_at", "intensity", "decay")
         if key in cfg
     )
-    if "ms" in cfg:
-        parts.append(f"ms={int(cfg['ms'])}")
-    if "attack_ms" in cfg:
-        parts.append(f"attack={int(cfg['attack_ms'])}")
+    out.extend(f"{flag}={int(cfg[key])}" for flag, key in _PC_INTS if key in cfg)
     if "pixels" in cfg:
-        parts.append(f"pixels={cfg['pixels']}")
+        out.append(f"pixels={cfg['pixels']}")
+    return out
+
+
+def _pc_colors(cfg: dict[str, Any]) -> list[str]:
+    """The stream's colour fields: the two named ones, then the cycle."""
+    out: list[str] = []
     if cfg.get("color"):
-        parts.append("color=" + ",".join(repr(float(v)) for v in cfg["color"]))
+        out.append("color=" + ",".join(repr(float(v)) for v in cfg["color"]))
     if cfg.get("color_hot"):
-        parts.append("hot=" + ",".join(repr(float(v)) for v in cfg["color_hot"]))
+        out.append("hot=" + ",".join(repr(float(v)) for v in cfg["color_hot"]))
     if cfg.get("colors"):
-        parts.append(
+        out.append(
             "colors="
             + "|".join(",".join(repr(float(v)) for v in c) for c in cfg["colors"])
         )
+    return out
+
+
+def _pc_beats(beats: list[Any]) -> str | None:
+    """The markers as `t:vel[:pan],…`, or None when a time is not a whole
+    millisecond — the compact protocol carries integers only."""
     if any(float(b[0]) != int(b[0]) for b in beats):
         return None
-    beat_arg = (
+    return (
         ",".join(
             ":".join(
                 [str(int(b[0])), repr(float(b[1]))]
@@ -83,6 +95,17 @@ def _pc_line(
         )
         or "-"
     )
+
+
+def _pc_line(
+    cfg: dict[str, Any], gates: list[tuple[int, str]], beats: list[Any]
+) -> str | None:
+    """One stream as castle-core's `pc` protocol, or None when the case
+    uses a shape the compact protocol cannot carry (non-integer times)."""
+    beat_arg = _pc_beats(beats)
+    if beat_arg is None:
+        return None
+    parts = [f"synth={cfg['synth']}", *_pc_fields(cfg), *_pc_colors(cfg)]
     g_arg = ",".join(f"{t}:{n}" for t, n in gates) or "-"
     return f"pc {g_arg} {';'.join(parts)} {beat_arg}"
 

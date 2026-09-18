@@ -48,17 +48,24 @@ export function createZoneDesigner(getState: () => ShowState): ZoneDesigner {
       `<th title="Composited over the base effect">overlay</th>` +
       `<th title="Poles for the crossfade effects">palette</th>` +
       `<th title="Seconds added to this zone's clock">phase</th></tr>` +
-      ZONES.map((z) =>
-        `<tr><td>${z}</td>` +
+      ZONES.map((z) => {
+        // Hoisted out of the row's template: the screen-reader labels are
+        // themselves templates, and a template inside a template reads as
+        // punctuation soup.
+        const lblC = `${z} centre-pixel effect`;
+        const lblO = `${z} overlay`;
+        const lblP = `${z} palette`;
+        return `<tr><td>${z}</td>` +
         `<td>${sel(["ring", ...EFFECT_CHOICES], st.centerEff[z] ?? "ring", "zdC", z,
-                   `${z} centre-pixel effect`)}</td>` +
+                   lblC)}</td>` +
         `<td>${sel(OVERLAY_NAMES, OVERLAY_NAMES[st.overlay[z]] ?? "none", "zdO", z,
-                   `${z} overlay`)}</td>` +
+                   lblO)}</td>` +
         `<td>${sel(PALETTE_NAMES, PALETTE_NAMES[st.palette[z]] ?? "haunt", "zdP", z,
-                   `${z} palette`)}</td>` +
+                   lblP)}</td>` +
         `<td><input class="zdF" data-z="${z}" type="number" min="0" max="5" step="0.1"` +
         ` value="${st.phase[z]}" aria-label="${z} phase seconds"` +
-        ` style="width:3.5rem"></td></tr>`).join("") +
+        ` style="width:3.5rem"></td></tr>`;
+      }).join("") +
       `</table>` +
       `<div><button id="zdYaml" type="button" title="Copies this scene's zone settings ` +
       `as the zones: block for scenes/scenes.yaml">Copy these zone settings</button>` +
