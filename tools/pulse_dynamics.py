@@ -156,14 +156,23 @@ TAKEOVER_COLORS = [
 ]
 TAKEOVER_HOT = [1.0, 0.75, 0.1, 0.12]
 
-#: ESPHome keeps ~20 bytes of STATIC RAM per generated action, and the S2's
-#: DRAM segment is full (firmware/castle.yaml, the dram0 diet). A 4-minute
-#: track carries 1,200+ pulse hits = 2,400 actions = 32 KB — v5.25 did not
-#: boot. Each scene keeps its strongest PULSE_CAP pulse hits, in time order;
-#: hand-written cues are never thinned. BOTH generators apply it (device and
-#: preview), so the desk shows exactly what the porch will do. Raising this
-#: costs device RAM; the lasting fix is a cue table in flash (see
-#: firmware/pending/README.md).
+#: NOT ON THE DEVICE PATH SINCE v5.67 — a default, and the ranking below is
+#: what still matters.
+#:
+#: ESPHome keeps ~20 bytes of STATIC RAM per generated action. A 4-minute
+#: track carries 1,200+ pulse hits = 2,400 actions = 32 KB, and v5.25 did not
+#: boot. So each scene kept its strongest PULSE_CAP hits and both generators
+#: applied it, so the desk showed what the porch would do. A scene is a cue
+#: file on the card now (tools/gen_scene_cards.py): 20 bytes of PSRAM a record,
+#: no compiled actions, and the card has 31 GB — so every hit is kept, on the
+#: device AND in the desk (tools/gen_previewer.py, which stopped thinning in
+#: the same change so the two still agree; docs/PARITY.md).
+#:
+#: `thin_pulses` stays because WHICH hits are the strongest is still a
+#: question the importer's preview and `core/src/pulse.rs` ask, and the two
+#: implementations are held equal by tests/test_pulse_rust.py. Lifting the
+#: number was never the point; the cap belonged to a representation that is
+#: gone.
 PULSE_CAP = 200
 
 

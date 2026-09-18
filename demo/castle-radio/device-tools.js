@@ -133,7 +133,9 @@
   }
   $('bench-events-load').onclick = async () => {
     $('bench-events-log').textContent = 'Asking the castle…';
-    try { renderHealth(await (await fetch('/radio/device/health')).json()); }
+    /* Bounded like every other call: a health read that never settles must
+       not hold the bench's log behind it (grade report 2026-09-17 pm C6). */
+    try { renderHealth(await (await fetch('/radio/device/health', {signal: AbortSignal.timeout(6000)})).json()); }
     catch { $('bench-health-row').textContent = ''; }
     try { renderEvents(await window.castleLink.events()); }
     catch { $('bench-events-log').textContent = 'Recent castle events are not supported by this firmware.'; }

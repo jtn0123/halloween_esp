@@ -45,6 +45,7 @@
 
 #include <castle_shim.h>
 
+#include "castle_scenes.h"
 #include "sd_web.h"
 
 namespace {
@@ -197,10 +198,41 @@ castle_web::Action tick(long long now_us, bool playing, bool sounding) {
       if (act.arg == "stop") {
         g_scene = "stop";
         g_track.clear();
-      } else if (act.arg != "halt") {
-        g_scene = act.arg;
+        break;
       }
-      if (act.arg != "halt" && act.arg != "stop") castle_web::restart_audio_clock(now_us);
+      if (act.arg == "halt") break;
+      // J3 (grade report 2026-09-17 pm): scene_run's first lambda returns at
+      // once while flash is burning, so nothing is published and no card file
+      // is opened. "stop" and "halt" are handled above it, by `run_scene`
+      // itself, and still work — stopping the show is what an OTA wants.
+      if (castle_sd::g_quiesce) break;
+      g_scene = act.arg;
+      castle_web::restart_audio_clock(now_us);
+      // v5.67: what a scene IS comes off the card — castle_scenes::begin
+      // reads /sd/scenes/show.man at every start (castle_scenes.yaml). The
+      // runner itself is the half this program models rather than runs, but
+      // its WEB-VISIBLE consequences are the real headers' own, so they are
+      // made here with them: `cues`, a SCENE_MISSING line in the event ring,
+      // and a name added to (v5.67) or withdrawn from (v5.68) /api/status's
+      // `missing`. Without this the emulator was the only castle that said
+      // any of it, and the pair check is the thing that would have to notice.
+      //
+      // In scene_run's own ORDER, which is the v5.68 change: the manifest
+      // row, then the audio, then the cue file.
+      {
+        if (!castle_scenes::begin(act.arg.c_str(), now_us)) {
+          castle_web::record_event(castle_web::EventKind::SCENE_MISSING, act.arg, now_us);
+          castle_web::note_missing(act.arg);
+        } else if (!castle_scenes::load_cues()) {
+          castle_web::record_event(castle_web::EventKind::SCENE_MISSING, act.arg + ".cue",
+                                   now_us);
+          castle_web::note_missing(act.arg + ".cue");
+        } else {
+          castle_web::heal_missing(act.arg);
+          castle_web::heal_missing(act.arg + ".cue");
+        }
+        castle_web::g_cues.store(castle_cues::count());
+      }
       break;
     case castle_web::ActionType::STOP:
     case castle_web::ActionType::BLACKOUT:
@@ -273,9 +305,9 @@ int serve() {
   return 0;
 }
 
-/// safe_name / url_decode / json_escape, one name per line in, three
-/// answers per line out. The name is fed raw: url_decode's output is what
-/// safe_name judges, exactly as name_from_uri arranges on the device.
+/// safe_name / url_decode / json_escape / url_encode, one name per line in,
+/// four answers per line out. The name is fed raw: url_decode's output is
+/// what safe_name judges, exactly as name_from_uri arranges on the device.
 int rules() {
   std::string line, name;
   while (read_line(line)) {
@@ -290,9 +322,16 @@ int rules() {
     // json_escape gets the raw bytes because on the device it is handed a
     // filename read off the FAT, not a decoded URL (h_list, h_status).
     const std::string esc = castle_web::json_escape(name);
-    printf("%d %zu %zu\n", castle_web::safe_name(dec) ? 1 : 0, dec.size(), esc.size());
+    // url_encode gets the DECODED name for the same reason: on the device it
+    // is handed a card filename on its way back out as a loopback URL, and
+    // the property worth checking is that url_decode(url_encode(n)) == n
+    // (grade report 2026-09-17 J1).
+    const std::string enc = castle_web::url_encode(dec);
+    printf("%d %zu %zu %zu\n", castle_web::safe_name(dec) ? 1 : 0, dec.size(),
+           esc.size(), enc.size());
     fwrite(dec.data(), 1, dec.size(), stdout);
     fwrite(esc.data(), 1, esc.size(), stdout);
+    fwrite(enc.data(), 1, enc.size(), stdout);
     fflush(stdout);
   }
   return 0;

@@ -44,6 +44,9 @@ OTHER_KINDS = (
     "wifi_up",
     "wifi_down",
     "http_err",
+    # v5.67: the card-loaded show's own failure — no manifest entry for the
+    # scene that was asked for, or no cue file beside it.
+    "scene_missing",
 )
 
 #: ActionType → the "e" field of /api/events. LIGHT and PIRCFG are not show

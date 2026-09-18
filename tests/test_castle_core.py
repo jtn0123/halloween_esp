@@ -8,9 +8,10 @@ corpus tests/cxx/parity_dump.cpp generates.
 
 The C++ here is built with -ffp-contract=off, unlike test_firmware_cxx's
 default build: clang on arm64 otherwise fuses a*b+c into fma, which the
-ESP32-S2 (softfloat, one rounding per operation, no fma) never does — so
-the un-fused build is the more device-faithful proxy, and it is what lets
-the comparison demand exact bits instead of tolerances.
+castle's xtensa toolchain (one rounding per operation, no fma — it was
+softfloat on the retired ESP32-S2 and is a single-precision FPU on the S3)
+never does — so the un-fused build is the more device-faithful proxy, and it
+is what lets the comparison demand exact bits instead of tolerances.
 
 Skipped, not failed, where cargo or a host C++ compiler is missing —
 except in CI, where losing either would silently retire the gate.

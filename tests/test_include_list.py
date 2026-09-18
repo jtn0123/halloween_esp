@@ -9,8 +9,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FW = ROOT / "firmware"
-# The S3 target is castle.yaml + castle_sd_common.yaml as packages: one
-# include list, spelled across the files that make up the board.
+# Every target is castle.yaml + castle_sd_common.yaml as packages: one include
+# list, spelled across the two files that are the show. Neither of the two
+# buildable roots (castle_feather_s3.yaml, castle_s3.yaml) adds a header of its
+# own, which is why this list is the whole contract.
 TARGETS = ("castle.yaml", "castle_sd_common.yaml")
 
 

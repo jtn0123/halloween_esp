@@ -116,6 +116,8 @@ pub mod studio_progress;
 #[cfg(feature = "native")]
 pub mod studio_publish;
 #[cfg(feature = "native")]
+pub mod studio_reap;
+#[cfg(feature = "native")]
 pub mod studio_reason;
 #[cfg(feature = "native")]
 pub mod studio_relay;

@@ -267,7 +267,7 @@ class TestHostDiscoveryParity(unittest.TestCase):
     TOML = textwrap.dedent(
         """\
         # full-line comment
-        [castle-sd]
+        [castle-feather-s3]
         host = "10.9.9.1"  # trailing comment
         fallbacks = ["10.9.9.2", "10.9.9.3"]
 
@@ -314,7 +314,7 @@ class TestHostDiscoveryParity(unittest.TestCase):
 
     def test_every_resolution_combo_matches_hosts_py(self) -> None:
         combos: list[tuple[str | None, str | None]] = [
-            ("castle-sd", None),  # a name expands to host + fallbacks
+            ("castle-feather-s3", None),  # a name expands to host + fallbacks
             ("10.1.2.3", None),  # a raw address passes through
             ("mystery", "ignored"),  # unknown arg passes through, env loses
             (None, "spare, 10.1.2.3:81"),  # env comma list, names looked up

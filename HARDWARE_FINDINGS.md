@@ -5,8 +5,13 @@ PROJECT_NOTES so it stays useful to other ESP32-S2 projects. Everything here
 was observed on real hardware or read out of installed source, not inferred
 from documentation or forum wisdom. Where something is inference, it says so.
 
-Applies to the **ESP32-S2-MINI-1** module — the castle Feather and the garage
-device are the same chip.
+Applies to the **ESP32-S2-MINI-1** module. It was the castle's own chip until
+2026-09-17, when an **ESP32-S3 Feather #5477** took the porch and
+`castle_sd.yaml` was deleted (`docs/notes/03-build.md` §12.20); `garage.yaml`
+is still an S2, so none of this is stale, but nothing here has been re-measured
+on the S3 and the numbers must not be read as the current board's. Where a
+section is about wiring rather than the die, it still describes the castle,
+because the port renamed not one GPIO.
 
 ---
 
@@ -218,7 +223,8 @@ is not a published table. **Check with a continuity meter before soldering.**
 
 Also: the eInk and SRAM chip selects share the card's SPI bus and we use
 neither. Until v5.44 (2026-09-04) both were driven HIGH at boot in
-`castle_sd.yaml` — a floating chip select is a device that may answer
+`castle_sd.yaml` (the castle build of the day, itself deleted 2026-09-17) — a
+floating chip select is a device that may answer
 mid-transaction, which is the difference between "the card works" and "the
 card works most of the time". v5.44 removed the panel and those two pins
 with it; the carrier board has no wing, so there is nothing left to hold

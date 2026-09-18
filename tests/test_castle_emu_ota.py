@@ -1,10 +1,12 @@
 """h_ota's ceiling is the build's app partition, not one number.
 
-sd_web_ota.h compares the upload against `part->size`; the S2 Feather's
-4 MB layout gives 1.75 MB slots and the S3 carrier's 8 MB gives 3.75 MB. The
-emulator used to carry the S2's number alone, so an S3 image over 1.75 MB
-was refused as "implausible" by the rehearsal and would have been accepted
-by the board (grade report 2026-09-06 J5).
+sd_web_ota.h compares the upload against `part->size`; the Feather's 4 MB
+layout gives 1.75 MB slots and the WROOM carrier's 8 MB gives 3.75 MB. The
+emulator used to carry the smaller number alone, so a carrier image over
+1.75 MB was refused as "implausible" by the rehearsal and would have been
+accepted by the board (grade report 2026-09-06 J5). The keys were "s2"/"s3"
+until the S2 was retired (2026-09-17) — both builds are the same chip now and
+what differs is the flash, so they are named after the boards.
 """
 
 from __future__ import annotations
@@ -39,23 +41,27 @@ def put_ota(port: int, image: bytes, send_body: bool) -> int:
 
 
 class TestOtaSlot(unittest.TestCase):
-    def test_the_s3_slot_takes_what_the_s2_refuses(self) -> None:
-        image = b"\xe9" + b"\0" * (2 * 1024 * 1024)  # 2 MB: over the S2, under the S3
-        for chip, want in (("s2", 400), ("s3", 200)):
-            emu = castle_emu.CastleEmu(port=0, ota_slot=castle_emu_http.OTA_SLOTS[chip])
+    def test_the_carrier_slot_takes_what_the_feather_refuses(self) -> None:
+        # 2 MB: over the Feather's slot, under the carrier's.
+        image = b"\xe9" + b"\0" * (2 * 1024 * 1024)
+        for board, want in (("feather", 400), ("carrier", 200)):
+            emu = castle_emu.CastleEmu(
+                port=0, ota_slot=castle_emu_http.OTA_SLOTS[board]
+            )
             emu.start()
             try:
-                self.assertEqual(put_ota(emu.port, image, want == 200), want, chip)
+                self.assertEqual(put_ota(emu.port, image, want == 200), want, board)
             finally:
                 emu.shutdown()
                 emu.server_close()
 
-    def test_the_default_is_the_porch_board(self) -> None:
+    def test_the_default_is_the_castle_in_the_yard(self) -> None:
         emu = castle_emu.CastleEmu(port=0)
         self.addCleanup(emu.server_close)
-        self.assertEqual(emu.ota_slot, castle_emu_http.OTA_SLOTS["s2"])
-        self.assertEqual(castle_emu_http.OTA_SLOTS["s2"], 0x1C0000)
-        self.assertEqual(castle_emu_http.OTA_SLOTS["s3"], 0x3C0000)
+        self.assertEqual(emu.ota_slot, castle_emu_http.OTA_SLOTS["feather"])
+        self.assertEqual(castle_emu_http.OTA_SLOTS["feather"], 0x1C0000)
+        self.assertEqual(castle_emu_http.OTA_SLOTS["carrier"], 0x3C0000)
+        self.assertEqual(sorted(castle_emu_http.OTA_SLOTS), ["carrier", "feather"])
 
 
 if __name__ == "__main__":

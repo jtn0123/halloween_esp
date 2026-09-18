@@ -1,22 +1,26 @@
 #pragma once
 // A song's light show, loaded from the card instead of compiled into the image.
 //
-// Every scene in scenes.yaml becomes an ESPHome script, and a script lives
-// in internal RAM: about 9 KB a scene on a chip that once had 20 bytes to
-// spare. That is why the show stops at twelve scenes and why a long song
-// keeps 200 of its hits (PULSE_CAP) — and neither limit was ever about the
-// show. The card has 31 GB free and the PSRAM 2 MB; only the place the cues
-// were KEPT was scarce.
+// Every scene in scenes.yaml used to become an ESPHome script, and a script
+// lives in internal RAM and in flash: twelve of them came to ~23 KB of
+// statics and 744 compiled lambdas. That is why a long song kept only 200 of
+// its hits (PULSE_CAP) — and the limit was never about the show. The card has
+// 31 GB free and the PSRAM 2 MB; only the place the cues were KEPT was scarce.
 //
 // So a track played off the card (`/api/play`) may have a cue file beside
 // it, `/sd/<track>.cue` — in the card root with the song, because that is
 // where PUT /api/files already writes and DELETE already reaches, so the
 // format needed no route of its own. tools/render_cues.py writes it in the
-// layout tools/cue_file.py documents. load() reads it into PSRAM in one go — no
-// card I/O while the song runs, which is the traffic that starves the RMT
-// refill (docs/ISSUE-ring-flicker.md) — and tick() walks it on the speaker's
-// clock, writing the very zone globals a generated script's lambdas write.
-// Same numbers, same render loop; no script, no ceiling.
+// layout tools/cue_file.py documents. load() reads it into PSRAM in
+// kReadChunk pieces — no card I/O while the song runs, which is the traffic
+// that starves the RMT refill (docs/ISSUE-ring-flicker.md) — and tick()
+// walks it on the speaker's clock, writing the very zone globals a generated
+// script's lambdas wrote. Same numbers, same render loop; no script.
+//
+// Since v5.67 the built-in SCENES come through here too: castle_scenes.h
+// reads /sd/scenes/show.man for what a scene IS and hands load_at() the
+// scene's own /sd/scenes/<id>.cue. One format, one reader, two kinds of
+// caller — which is why the path and the track name are separate doors below.
 //
 // RAM: the statics below are 33 bytes. Everything else is PSRAM, freed the
 // moment the song stops.
@@ -26,7 +30,10 @@
 // says about it is castle_web::g_cues, which that loop stores count() into.
 
 #include <esp_heap_caps.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -39,8 +46,21 @@ inline constexpr uint8_t kZones = 3;
 inline constexpr uint8_t kOpSet = 1;
 inline constexpr uint8_t kOpStrike = 2;
 inline constexpr uint8_t kLevelKeep = 255;
+/// A level is whole percent and 255 means "leave it alone", so every other
+/// value is at most 100. tools/cue_file.py clamps on the way in; this is the
+/// device refusing to be told otherwise (grade report 2026-09-17 J7): an
+/// unclamped 254 became a level of 2.54, which the render loop multiplies
+/// straight into the pixels.
+inline uint8_t clamp_pct(uint8_t v) { return v > 100 ? 100 : v; }
 /// 512 KB of PSRAM: an hour of a busy song. cue_file.MAX_RECORDS agrees.
 inline constexpr uint32_t kMaxRecords = 32768;
+/// How much of the body one fread takes before the loop task gets a tick
+/// back (grade report 2026-09-17 J7). It used to be the whole thing — up to
+/// 512 KB off SPI, in one call, on the main loop, at the exact moment a song
+/// starts, which is the moment docs/ISSUE-scene-start-audio.md is about. A
+/// scene's file is a few KB and pays one yield; only a pathological import
+/// pays sixteen.
+inline constexpr size_t kReadChunk = 32768;
 /// A script holds its first cue this long for the speaker and then runs
 /// anyway (gen_show.SOUND_WAIT_MS). So does this.
 inline constexpr long long kSoundWaitUs = 1500000;
@@ -110,13 +130,18 @@ inline std::string path_for(const std::string &track, const char *dir) {
   return std::string(dir) + "/" + track.substr(0, dot) + ".cue";
 }
 
-/// Read `track`'s cue file into PSRAM. False (and nothing loaded) when there
-/// is no file, it is not a version this build reads, its length disagrees
-/// with its header, or the PSRAM is not there: the song then plays exactly
-/// as it did before this file existed.
-inline bool load(const std::string &track, long long now_us, const char *dir = "/sd") {
+/// Read the cue file AT `path` into PSRAM. False (and nothing loaded) when
+/// there is no file, it is not a version this build reads, its length
+/// disagrees with its header, or the PSRAM is not there: the song then plays
+/// exactly as it did before this file existed.
+///
+/// Takes a path rather than a track name because there are two kinds of cue
+/// file now and only one of them can be derived from a track: a raw song's
+/// sits in the card root beside it (load() below), and a SCENE's sits in
+/// /sd/scenes/ under the scene's own id (castle_scenes::cue_path). One
+/// reader, because it is one format.
+inline bool load_at(const std::string &path, long long now_us) {
   unload();
-  const std::string path = path_for(track, dir);
   if (path.empty()) return false;
   FILE *f = fopen(path.c_str(), "rb");
   if (f == nullptr) return false;
@@ -128,10 +153,20 @@ inline bool load(const std::string &track, long long now_us, const char *dir = "
   uint8_t *blob = nullptr;
   if (ok) {
     blob = static_cast<uint8_t *>(heap_caps_malloc(body, MALLOC_CAP_SPIRAM));
+    ok = blob != nullptr;
+    // J7: kReadChunk at a time, with a tick back to the scheduler between
+    // pieces. The bytes are identical; what changes is that the loop task
+    // is not gone for the length of a half-megabyte SPI transfer.
+    for (size_t at = 0; ok && at < body;) {
+      const size_t want = std::min(kReadChunk, body - at);
+      ok = fread(blob + at, 1, want, f) == want;
+      at += want;
+      vTaskDelay(1);
+    }
     // One byte past the body must NOT be there: a longer file is a different
     // format wearing this header.
     uint8_t extra;
-    ok = blob != nullptr && fread(blob, 1, body, f) == body && fread(&extra, 1, 1, f) == 0;
+    ok = ok && fread(&extra, 1, 1, f) == 0;
   }
   fclose(f);
   if (!ok) {
@@ -144,17 +179,30 @@ inline bool load(const std::string &track, long long now_us, const char *dir = "
   return true;
 }
 
-/// The scene's base state — the first lambda of a generated script.
-inline void apply_base(const Pixels &px) {
-  if (!active()) return;
+/// Read the cue file beside the card track `track` — /api/play's door.
+inline bool load(const std::string &track, long long now_us, const char *dir = "/sd") {
+  const std::string path = path_for(track, dir);
+  if (path.empty()) {
+    unload();
+    return false;
+  }
+  return load_at(path, now_us);
+}
+
+/// A base look from kZones packed Zone records — the first lambda of what
+/// used to be a generated script. Takes the bytes rather than reading g_blob
+/// so the compiled-in fallback look can share it: generated/fallback_scenes.h
+/// carries the first scene's zone records verbatim, and a castle with no card
+/// wears them through this very function (castle_scenes.yaml).
+inline void apply_zones(const Pixels &px, const uint8_t *zones) {
   Zone z;
   for (int i = 0; i < kZones; i++) {
-    memcpy(&z, g_blob + sizeof(Zone) * i, sizeof(z));
+    memcpy(&z, zones + sizeof(Zone) * i, sizeof(z));
     px.effect[i] = z.effect;
     px.flash[i] = 0.0f;
     px.flash_target[i] = 0.0f;
     px.flash_decay[i] = 0.9f;
-    px.level[i] = z.level / 100.0f;
+    px.level[i] = clamp_pct(z.level) / 100.0f;
     px.center[i] = z.center;
     px.overlay[i] = z.overlay;
     px.palette[i] = z.palette;
@@ -164,13 +212,19 @@ inline void apply_base(const Pixels &px) {
   }
 }
 
-/// One record, written the way gen_esphome.py's cue lambdas write it.
+/// The loaded show's base state.
+inline void apply_base(const Pixels &px) {
+  if (!active()) return;
+  apply_zones(px, g_blob);
+}
+
+/// One record, written the way the generated cue lambdas wrote it.
 inline void apply(const Pixels &px, const Record &r) {
   for (int i = 0; i < kZones; i++) {
     if (!(r.mask >> i & 1)) continue;
     if ((r.op & 15) == kOpSet) {
       px.effect[i] = r.set.effect;
-      if (r.set.level != kLevelKeep) px.level[i] = r.set.level / 100.0f;
+      if (r.set.level != kLevelKeep) px.level[i] = clamp_pct(r.set.level) / 100.0f;
       continue;
     }
     const float amt = r.strike.intensity / 1000.0f;

@@ -112,7 +112,7 @@ class GoldenReplay(unittest.TestCase):
     def test_the_ceiling_refusal_still_says_why(self) -> None:
         """The one golden worth asserting ABOUT rather than only diffing:
         the thirteenth scene is refused with the sentence that explains the
-        board's dram0 ceiling and names the way forward (grade report
+        manifest's fixed record count and names the way forward (grade report
         2026-08-31 A8). A future validator that answers "invalid scene" here
         would still match nothing — but if this file is ever regenerated in
         haste, this test says what the sentence has to contain."""
@@ -121,7 +121,10 @@ class GoldenReplay(unittest.TestCase):
         msg = str(rec["body"]["error"])
         self.assertIn("the show is full", msg)
         self.assertIn(str(SCENE_LIMIT), msg)
-        self.assertIn("card-loaded format", msg)
+        # v5.67: the sentence names the constants a lift must move, where it
+        # used to name the card-loaded format as the way past a RAM wall —
+        # the timelines ARE card files now, so that advice no longer exists.
+        self.assertIn("scene_manifest.MAX_SCENES", msg)
         self.assertEqual(rec, self.scenes["scene_ceiling"])
 
 

@@ -1,6 +1,7 @@
 # The audio stack — I2S bus, the MAX98357A speaker, the media player — split
 # out of castle.yaml (the 500-line cap) on the seam the builds share:
-# castle_sd.yaml `!extend`s castle_media to add its own `files:` (one chirp).
+# castle_sd_common.yaml `!extend`s castle_media to add its own `files:` (one
+# chirp) — it was castle_sd.yaml's job until the S2 build went (2026-09-17).
 # The seam was cut when castle_flash.yaml extended it with the whole show
 # instead; that build is gone (2026-09-01) and the seam stayed, because the
 # core still must not name any audio of its own. Pins come from castle.yaml's

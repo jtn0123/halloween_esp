@@ -104,8 +104,10 @@ def emit_rig_header(
 # alive"; these answer the questions that come next — how many pixels
 # arrive, in what order, with which colour first, and where a chain dies.
 # Deliberately NO static buffers (the Show effect's `buf` is the only one
-# the S2's dram0 can afford) and no scene state: they draw from `it` and
-# millis() alone, so they are safe to leave running while you go and look.
+# worth the static RAM — a rule the S2's 20 bytes of dram0 headroom made
+# absolute and the S3 keeps out of habit, since these draw nothing from a
+# buffer anyway) and no scene state: they draw from `it` and millis() alone,
+# so they are safe to leave running while you go and look.
 #: How every strip effect starts. Four of them, so it is written once.
 EFFECT = "      - addressable_lambda:"
 
@@ -149,24 +151,32 @@ TEST_EFFECTS = [
 
 # The RMT peripheral is a budget, and the budget is per CHIP.
 #
-# On the ESP32-S2: 4 channels, 64 symbols of memory each, 256 in total, no
-# DMA. A channel that asks for more takes the next channel's block, which is
-# how the 192-symbol default once left strips 2 and 3 dead (bench-diagnosed
-# 2026-08-19). A bigger block is not a luxury either: the refill ISR must top
-# the block up every half-block — 32 symbols is 40 us of WS2812 bits — and a
-# late refill is a garbled pixel. The SD build's status pixel takes the
-# fourth block (castle_sd.yaml), which is why the S2's four zones' worth of
-# budget is really three — see STATUS_PIXEL_BLOCKS.
+# On the ESP32-S3: SOC_RMT_MEM_WORDS_PER_CHANNEL is 48, and of the eight
+# channels per group four are TX-capable — 192 symbols of TX memory in total,
+# no DMA in the path this driver uses (soc_caps.h; docs/V5-SPEC.md §13.4). A
+# channel that asks for more than a block takes the next channel's, which is
+# how ESPHome's old 192-symbol-per-strip default left strips 2 and 3 dead
+# (bench-diagnosed 2026-08-19 on the S2, whose blocks were 64). A bigger
+# block is not a luxury either: the refill ISR must top the block up every
+# half-block — 24 symbols is 30 us of WS2812 bits — and a late refill is a
+# garbled pixel.
 #
-# On the ESP32-S3 the same peripheral is shaped differently and the numbers
-# are NOT interchangeable: SOC_RMT_MEM_WORDS_PER_CHANNEL is 48, and of the
-# eight channels per group four are TX-capable — 192 symbols of TX memory
-# (soc_caps.h; docs/V5-SPEC.md §13.4). Asking an S3 for 64 is not "a bit
-# generous", it is not a whole block, and it fails the same quiet way the
-# S2's 192 default did. The carrier build has no status pixel, so three
-# zones spend 144 of 192 and leave one whole TX channel.
+# HISTORY, and the reason `Chip` exists at all: until 2026-09-17 the porch
+# board was an ESP32-S2, whose RMT is 4 channels of 64 symbols — 256, and NOT
+# interchangeable with the numbers above. Asking an S3 for 64 is not "a bit
+# generous", it is not a whole block, and it fails the same quiet way. The
+# generator wrote the S2's strips and then a second, generated package of
+# `!extend`s that re-spent each block in S3 units; both are gone with the S2,
+# and the only difference left between this repo's two builds is the
+# RESERVATION below, not the block size.
 class Chip:
-    """One chip's RMT arithmetic: the block size and how many there are."""
+    """One chip's RMT arithmetic: the block size and how many there are.
+
+    One instance is left (S3). The class stays because the numbers it holds
+    are the kind that get inherited by assumption: a future chip gets an
+    entry and every arithmetic below follows it, rather than 48 and 192
+    being sprinkled through the emitters.
+    """
 
     def __init__(self, name: str, block: int, channels: int) -> None:
         self.name = name
@@ -178,48 +188,49 @@ class Chip:
         return f"Chip({self.name!r}, block={self.block}, total={self.total})"
 
 
-#: The porch board. Its numbers are the module-level defaults below, because
-#: everything that does not say otherwise is still building for the Feather.
-S2 = Chip("ESP32-S2", 64, 4)
-#: The carrier board (ESP32-S3-WROOM-1), docs/V5-SPEC.md §13.4.
+#: The only chip this repo builds for: the Feather #5477 in the yard and the
+#: WROOM-1 carrier board, which have the same RMT (docs/V5-SPEC.md §13.4).
 S3 = Chip("ESP32-S3", 48, 4)
 #: Keyed by the ESPHome `variant:` spelling, so a target names its chip the
 #: same way its YAML does.
-CHIPS = {"esp32s2": S2, "esp32s3": S3}
+CHIPS = {"esp32s3": S3}
 
-#: The S2's numbers, kept as module constants: they are what a caller with no
-#: opinion gets, and what the S2 half of the test suite reads.
-RMT_TOTAL_SYMBOLS = S2.total
-RMT_BLOCK = S2.block
-#: The fourth consumer, and the one this file does not write: castle_sd.yaml
-#: declares a `status_pixel` on GPIO33 with `rmt_symbols: 64` by hand,
-#: because it is the Feather's own LED rather than part of the rig. The
-#: budget below has to be TOLD about it — until 2026-09-06 it was not, and
-#: the generator would hand out a block that was already gone while printing
-#: a banner that said so (grade report 2026-09-06 J2). The S3 carrier has no
-#: such LED and reserves nothing.
+#: The one budget, as module constants: what a caller with no opinion gets.
+RMT_TOTAL_SYMBOLS = S3.total
+RMT_BLOCK = S3.block
+#: The fourth consumer, and the one this file does not write:
+#: castle_feather_s3.yaml declares a `status_pixel` on GPIO33 with
+#: `rmt_symbols: 48` by hand, because it is the Feather's own LED rather than
+#: part of the rig. The budget below has to be TOLD about it — until
+#: 2026-09-06 it was not, and the generator would hand out a block that was
+#: already gone while printing a banner that said so (grade report 2026-09-06
+#: J2). The WROOM-1 carrier has no such LED and reserves nothing, which is
+#: why the banner emit_lights writes states BOTH builds' totals
+#: (grade report 2026-09-17 J6) — one generated file is read by two builds
+#: that spend different amounts of the same peripheral.
 STATUS_PIXEL_BLOCKS = 1
 
 
 def rmt_blocks(z: Mapping[str, Any]) -> int:
-    """How many whole channel blocks a zone asks for — the chip-free quantity.
+    """How many whole channel blocks a zone asks for.
 
-    A zone states its appetite in the S2's symbols (`rmt_symbols: 128` is two
-    blocks) because that is the spelling scenes.yaml has always used and the
-    number the S2 build literally emits. Blocks are what the request MEANS,
-    though: the hardware has no finer granularity on either chip, and 128 on
-    an S3 is not two of anything.
+    A zone states its appetite in symbols (`rmt_symbols: 96` is two blocks),
+    which is the spelling scenes.yaml has always used and the number the
+    build literally emits. Blocks are what the request MEANS, though: the
+    hardware has no finer granularity. No zone declares this today — they all
+    take the default of one block — so the multiple-of-48 rule exists to
+    catch a hand-edit, in particular an S2-era 64 pasted back in.
     """
-    n = int(z.get("rmt_symbols", S2.block))
-    if n % S2.block or n < S2.block:
+    n = int(z.get("rmt_symbols", S3.block))
+    if n % S3.block or n < S3.block:
         raise SystemExit(
             f"zone {z['id']}: rmt_symbols must be a multiple of "
-            f"{S2.block} (the S2 allocates whole blocks), got {n}"
+            f"{S3.block} (the {S3.name} allocates whole blocks), got {n}"
         )
-    return n // S2.block
+    return n // S3.block
 
 
-def rmt_symbols(z: Mapping[str, Any], chip: Chip = S2) -> int:
+def rmt_symbols(z: Mapping[str, Any], chip: Chip = S3) -> int:
     """A zone's RMT memory on `chip`. Whole blocks only — the hardware has no
     other granularity — and the longest strip is the one worth spending on."""
     return rmt_blocks(z) * chip.block
@@ -228,16 +239,16 @@ def rmt_symbols(z: Mapping[str, Any], chip: Chip = S2) -> int:
 def check_rmt_budget(
     zones: Sequence[Mapping[str, Any]],
     layouts: dict[str, Layout],
-    chip: Chip = S2,
+    chip: Chip = S3,
     reserved_blocks: int = 0,
 ) -> int:
     """Spend no more than the peripheral has; return what is genuinely free.
 
     `reserved_blocks` is what the BUILD spends outside the strips written
-    here — on the S2 the status pixel's one block, on the S3 nothing. A
-    reservation that is not counted is worse than no budget at all: the
-    caller reads "0 block(s) spare" and the peripheral has already been
-    oversubscribed by a strip that will simply stay dark.
+    here — on the Feather the status pixel's one block, on the WROOM carrier
+    nothing. A reservation that is not counted is worse than no budget at
+    all: the caller reads "0 block(s) spare" and the peripheral has already
+    been oversubscribed by a strip that will simply stay dark.
     """
     live = [z for z in zones if layouts[z["id"]].n > 0]
     strips = sum(rmt_symbols(z, chip) for z in live)
@@ -245,7 +256,7 @@ def check_rmt_budget(
     if strips + reserved > chip.total:
         held = (
             f" and the status pixel holds {reserved} more "
-            f"(castle_sd.yaml `status_pixel`)"
+            f"(castle_feather_s3.yaml `status_pixel`)"
             if reserved
             else ""
         )
@@ -315,9 +326,9 @@ def emit_lights(
             f"    num_leds: ${{px_{zid}}}",
             "    chipset: WS2812",
             f"    channel_colors: ${{channels_{zid}}}",
-            # Explicit, and budgeted: see RMT_TOTAL_SYMBOLS above for why
-            # ESPHome's S2 default of 192 leaves two strips dark, and why a
-            # long strip may be worth a second block.
+            # Explicit, and budgeted: see RMT_TOTAL_SYMBOLS above for why a
+            # per-strip default bigger than one block leaves the strips after
+            # the first dark, and why a long strip may be worth a second.
             f"    rmt_symbols: {rmt_symbols(z)}",
             # Internal RAM, deliberately: the strip buffer is under 50 bytes,
             # and the RMT refill ISR must be able to read it during flash-cache
@@ -358,15 +369,31 @@ def emit_lights(
 
     # One override for all the strips at once. The web remote and the boot
     # sequence want to talk to "the pixels", and with a strip per zone that is
-    # no longer a single `id()`. Generated rather than hand-written in
-    # castle_sd.yaml so the zone list stays in exactly one place.
-    spare = check_rmt_budget(zones, layouts, reserved_blocks=STATUS_PIXEL_BLOCKS)
+    # no longer a single `id()`. Generated rather than hand-written in the
+    # show build so the zone list stays in exactly one place.
+    #
+    # The banner says what BOTH builds that read this file spend, because they
+    # do not spend the same amount: the Feather's own status pixel holds a
+    # fourth block and the WROOM-1 carrier has no such LED (grade report
+    # 2026-09-17 J6). One number here would have been false for one of them,
+    # which is the failure mode that made the reservation visible in the first
+    # place (grade report 2026-09-06 J2).
+    feather_spare = check_rmt_budget(
+        zones, layouts, reserved_blocks=STATUS_PIXEL_BLOCKS
+    )
+    carrier_spare = check_rmt_budget(zones, layouts)
     live = [z["id"] for z in zones if layouts[z["id"]].n > 0]
     out.append(
-        f"# RMT: {RMT_TOTAL_SYMBOLS - spare} of {RMT_TOTAL_SYMBOLS} symbols "
-        f"spent — {len(live)} strip(s) and the SD build's status pixel "
-        f"({STATUS_PIXEL_BLOCKS} block, castle_sd.yaml) — "
-        f"{spare // RMT_BLOCK} block(s) spare."
+        f"# RMT, the Feather build (castle_feather_s3.yaml): "
+        f"{RMT_TOTAL_SYMBOLS - feather_spare} of {RMT_TOTAL_SYMBOLS} symbols "
+        f"spent — {len(live)} strip(s) of {RMT_BLOCK} and the status pixel "
+        f"({STATUS_PIXEL_BLOCKS} block) — {feather_spare // RMT_BLOCK} "
+        f"block(s) spare."
+    )
+    out.append(
+        f"# RMT, the carrier build (castle_s3.yaml), which has no status "
+        f"pixel: {RMT_TOTAL_SYMBOLS - carrier_spare} of "
+        f"{RMT_TOTAL_SYMBOLS} — {carrier_spare // RMT_BLOCK} block(s) spare."
     )
     zone_rgbw = {z["id"]: bool(z.get("rgbw", True)) for z in zones}
     out += [
@@ -428,53 +455,4 @@ def emit_lights(
         "            call.perform();",
         "          }",
     ]
-    return "\n".join(out) + "\n"
-
-
-def emit_rmt_override(
-    layouts: dict[str, Layout], zones: Sequence[Mapping[str, Any]], chip: Chip
-) -> str:
-    """The one line per strip that a different chip's RMT needs.
-
-    `emit_lights` writes the strips once, for the S2, and every build reads
-    that file — so the S3 carrier build cannot get its own copy without two
-    descriptions of the same three fixtures drifting apart. What it gets
-    instead is this: an ESPHome package of `!extend`s that reach into the
-    strips already declared and change the single number that is a property
-    of the CHIP rather than of the rig.
-
-    `!extend` is resolved after every package is merged (esphome/config.py
-    resolve_extend_remove), so a package may amend a list item another
-    package declared. Nothing else here is chip-dependent: the pin, the
-    count, the colour order and `use_psram: false` are all as true on the S3
-    as on the S2.
-    """
-    spare = check_rmt_budget(zones, layouts, chip)
-    live = [z for z in zones if layouts[z["id"]].n > 0]
-    out = [
-        "# GENERATED BY tools/gen_esphome.py — DO NOT EDIT",
-        "#",
-        "# Source of truth: scenes/scenes.yaml (the `zones:` block)",
-        "# Regenerate with:  make generate",
-        "#",
-        f"# The {chip.name}'s RMT allocates {chip.block}-word channel blocks,",
-        f"# not the {S2.name}'s {S2.block} (docs/V5-SPEC.md §13.4). Every strip",
-        "# in generated/lights.yaml is written for the porch board; these",
-        "# `!extend`s re-spend the same block counts in this chip's units.",
-        "#",
-        (
-            f"# RMT: {chip.total - spare} of {chip.total} symbols spent, "
-            f"{spare // chip.block} block(s) spare."
-        ),
-        "light:",
-    ]
-    for z in live:
-        zid = z["id"]
-        out += [
-            f"  - id: !extend zone_{zid}",
-            (
-                f"    rmt_symbols: {rmt_symbols(z, chip)}"
-                f"    # {rmt_blocks(z)} block(s) of {chip.block}"
-            ),
-        ]
     return "\n".join(out) + "\n"

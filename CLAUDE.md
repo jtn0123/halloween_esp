@@ -1,10 +1,14 @@
 # Halloween Castle — project notes for Claude
 
-A store-bought decorative castle lit by an ESP32-S2 Feather running ESPHome:
+A store-bought decorative castle lit by an **Adafruit ESP32-S3 Feather
+#5477** (4 MB flash, 2 MB PSRAM) in the castle-carrier v3.3a, running ESPHome:
 2× Jewel7 RGBW (towers) + Ring12 RGB (door), a MAX98357A amp, a PIR, and a
-browser "cue desk" for tuning scenes. The global `~/.claude/CLAUDE.md`
-describes a different repo — its ESP32-S3, espflash and Arduino-toolchain
-parts do not apply here. Its Rust half is a different matter: this repo has
+browser "cue desk" for tuning scenes. It was an ESP32-S2 Feather until
+2026-09-17; that board is retired and its build deleted (see the history
+paragraph under "Hardware and firmware facts that bite"). The global
+`~/.claude/CLAUDE.md` describes a different repo — its espflash and
+Arduino-toolchain parts do not apply here, and neither do its S3 board and
+flash-size specifics: this is a 4 MB Feather, flashed with ESPHome. Its Rust half is a different matter: this repo has
 a Rust crate of its own at `core/`, and it is the production DSP path. This
 file is the one that governs.
 
@@ -14,7 +18,14 @@ file is the one that governs.
   score, length and level. Everything else is generated from it.
 - `tools/render_audio.py` → `audio/NN_<id>.mp3` (gitignored; the desk's
   inlined copy) and `audio/card/` (the 96 kbps files `sd_sync scenes` pushes).
-- `tools/gen_esphome.py` → `firmware/generated/` (light cue scripts, rig.h).
+- `tools/gen_esphome.py` → `firmware/generated/` (`sfx`, `rig.h`, lights) and
+  — since v5.67 — `audio/card/scenes/`, which is THE SHOW: `show.man` (the
+  scene manifest, `tools/scene_manifest.py`: id, audio token, volume, length,
+  loop flag) and one `<id>.cue` per scene in the same format a raw song's cue
+  file uses. `tools/gen_scene_cards.py` is the emitter. There are no generated
+  per-scene ESPHome scripts any more — one runner reads those files
+  (`firmware/castle_scenes.h` + `castle_scenes.yaml`), so **a scene edit is a
+  publish, not a firmware flash**: `make publish` is the whole deploy.
 - `tools/render_cues.py` → `audio/card/cues/<track>.cue` (`make cues`): a
   song's light show as a FILE the firmware loads from the card when the
   track is played (`firmware/castle_cues.h`, v5.63) — any track in `tracks/`,
@@ -43,7 +54,7 @@ file is the one that governs.
   `tools/core_bins.py` is the only door: subprocess, built on demand with
   cargo, a hard stop rather than a silent Python fall-back. The
   cross-language gates are `tests/test_*_rust.py` and
-  `tests/studio_rust_case.py`; the copies they hold are listed in
+  `tests/studio_rs_case.py`; the copies they hold are listed in
   `docs/PARITY.md`.
 - `tools/studio_launch.sh` — what `make studio` and `.claude/launch.json`
   start: it builds `core/target/release/studio` when cargo is present and
@@ -56,29 +67,30 @@ file is the one that governs.
   Python server (`tools/studio.py` and its `studio_*.py`) until 2026-09-06;
   `docs/RETIREMENT.md` is the plan that removed it and the tag
   `python-studio-final` is the last tree that carries it.
-- `firmware/` — ESPHome YAML + C++ headers. Three buildable targets, one
-  show: `castle_sd.yaml` is the ESP32-S2 Feather in the yard (THE build:
-  `make build` / `upload` / `ota`), `castle_s3.yaml` (2026-09-05) is
-  the ESP32-S3 carrier board — `make build-s3` / `upload-s3` / `logs-s3` /
-  `validate-s3` — and `castle_feather_s3.yaml` (2026-09-14) is an ESP32-S3
-  Feather (#5477) in the v3.3a carrier the S2 was drawn for (`make
-  build-fs3` / `upload-fs3` / `logs-fs3`). Both S3 builds are compiled by
-  the weekly CI job; neither has been on hardware. The
-  show itself — the card, the loopback stream, the web API (`sd_web.h`)
-  the desk talks to — is `castle_sd_common.yaml`, which all three include;
-  `castle.yaml` is the shared core, not a buildable target. What is left in
-  `castle_sd.yaml` is the Feather's own NeoPixel, which the S3 carrier has
-  no hardware for (ESPHome packages APPEND lists, so a build cannot subtract
-  a light its base declared). The S3 Feather has the same pixel, so its
-  build includes `castle_sd.yaml` whole and writes the S3 board, the USB
-  Serial/JTAG console and 48-symbol RMT blocks over it. There was a third, all-in-flash build until
-  2026-09-01 (`castle_flash.yaml`, every scene embedded in the image); the
-  show outgrew a 1.75 MB OTA slot and it was deleted rather than nursed —
-  docs/notes/03-build.md §12.15. `castle_sd_jewels.yaml` and `bench*.yaml`
-  are variants OF the SD build; `castle_s3_qemu.yaml` is the S3 with UART0
-  and Wi-Fi off, for `tools/qemu_boot.sh` (docs/QEMU.md: a hand-run
-  bring-up tool, deliberately not a CI gate). `firmware/pending/README.md`
-  lists patches written but not yet flashed.
+- `firmware/` — ESPHome YAML + C++ headers. **Two** buildable targets, one
+  show: `castle_feather_s3.yaml` is the ESP32-S3 Feather #5477 in carrier
+  v3.3a, THE build and the castle in the yard (`make build` / `upload` /
+  `logs` / `ota`; `build-fs3` etc. are aliases for muscle memory), and
+  `castle_s3.yaml` (2026-09-05) is the bare-ESP32-S3-WROOM-1 carrier v5 —
+  `make build-s3` / `upload-s3` / `logs-s3` / `validate-s3`. Both are
+  compiled by the weekly CI job; the carrier has never been on hardware and
+  its board does not exist yet. The show itself — the card, the loopback
+  stream, the web API (`sd_web.h`) the desk talks to — is
+  `castle_sd_common.yaml`, which both include; `castle.yaml` is the shared
+  core (and, since the S2 went, the file that describes the CHIP), not a
+  buildable target. What is left in `castle_feather_s3.yaml` is the Feather's
+  own NeoPixel and the playback codecs — the WROOM has no such LED, and
+  ESPHome packages APPEND lists, so a build cannot subtract a light its base
+  declared. Two builds have been deleted rather than nursed:
+  `castle_flash.yaml` on 2026-09-01 (every scene embedded; the show outgrew a
+  1.75 MB OTA slot — docs/notes/03-build.md §12.15) and `castle_sd.yaml`, the
+  ESP32-S2 Feather, on 2026-09-17 (§12.20), taking `castle_sd_jewels.yaml`,
+  `hello.yaml` and `generated/lights_s3.yaml` with it. `bench*.yaml` are
+  bare-board variants OF the production build; `castle_s3_qemu.yaml` is the
+  carrier with UART0 and Wi-Fi off, for `tools/qemu_boot.sh` (docs/QEMU.md: a
+  hand-run bring-up tool, deliberately not a CI gate).
+  `firmware/pending/README.md` is the version table: what changed, and which
+  board it has run on.
 - `tracks/` — the user's imported audio (gitignored except `tracks.json`, the
   provenance manifest) — never a test fixture directory.
 - `previewer/castle-cue-desk.html` is generated and **gitignored**
@@ -103,18 +115,28 @@ file is the one that governs.
 ## Make targets (see `make help`)
 
 `setup` (python3.13 venv) · `audio` · `generate` · `preview` · `validate` ·
-`build` / `upload` / `logs` (the S2) · `build-s3` / `upload-s3` / `logs-s3`
-/ `validate-s3` (the carrier) · `build-fs3` / `upload-fs3` / `logs-fs3`
-(the S3 Feather) · `studio` · `track SRC=… ID=…` · `test` · `lint`
-· `check` (= CI) · `e2e` · `check-all` · `coverage` / `audit` (non-gating)
+`build` / `upload` / `logs` (the S3 Feather in the yard; `build-fs3` /
+`upload-fs3` / `logs-fs3` are aliases) · `build-s3` / `upload-s3` / `logs-s3`
+/ `validate-s3` (the WROOM carrier) · `studio` · `track SRC=… ID=…`
+· `test` · `test-radio` · `lint`
+· `check` · `e2e` · `check-all` · `coverage` / `audit` (non-gating)
 · `lock` · `rust` / `rust-test` / `rust-lint` / `rust-coverage` (castle-core;
 `rust-coverage` is a non-gating `cargo llvm-cov` summary; `lint` depends on
 `rust-lint`, and `tests/test_castle_core.py` shells out to those three, so the
 gate has one definition) · `bench*` (bare-board dry runs) · `sd-build` /
 `sd-upload` (old names for `build` / `upload`) · `publish` (scene tracks + lean page → the castle) · `ota`
-(build, stop audio, flash). `studio` runs `tools/studio_launch.sh`, which builds the
+(build, stop audio, flash the image that build just wrote —
+`tools/check_image.py --path` names it, so no glob can hand the castle a
+stale binary). `studio` runs `tools/studio_launch.sh`, which builds the
 binary before it execs it. The studio's rebuild publishes on its own when a
 castle answers; `docs/RUNBOOK.md` is the operator's end-to-end view.
+
+Castle Radio (`demo/castle-radio/`) is a SECOND Python server, on port 8871 —
+the music player and its Mac-tools bridge, started by the launcher the
+installer registers (`demo/castle-radio/README.md`). It has its own gates,
+`make test-radio` (Python + `node --test`) and `make coverage-radio` (its own
+floor, `COVERAGE_RADIO_MIN`), and it is in `make lint`'s scope; 8871 joins the
+"may be in use by the user's own sessions" list below.
 
 Run Python through `.venv/bin/python` (the Makefile falls back to `python3`
 only when `.venv` is absent). `make e2e` is `cd web && npx playwright test`;
@@ -128,22 +150,33 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   (`EXEMPT_PATHS`, each with its generator named); `scenes/scenes.yaml` is
   exempt as *data* (`DATA_EXEMPT`) and pays for it with the budget that
   actually binds it — **at most 12 scenes**, counted and failed by the same
-  check (`SCENE_LIMIT`). The desk refuses the thirteenth too, at splice time
+  check (`SCENE_LIMIT`), which since v5.67 is the card manifest's fixed record
+  count rather than a RAM measurement. The desk refuses the thirteenth too, at splice time
   and before the file is touched (`core/src/studio_check.rs`, whose count
   and refusal are the studio's own since the phase-2 port) — the ceiling
   should not be
   discovered by a red pre-commit hook after the show is already edited.
   Nothing hand-written is exempt.
 - **Every grade-report citation names its audit**: `grade report 2026-08-31
-  B1`, never a bare `B1` — item IDs are renumbered by each audit, and six
-  reports now exist (`.claude/grade-report*.md`, plus older ones only in git
-  history). `tools/check_citations.py` runs in `make check`, the hook and CI,
+  B1`, never a bare `B1` — item IDs are renumbered by each audit, and eight
+  reports now exist (`/bin/ls .claude/grade-report*.md` — seven dated plus the
+  live `grade-report.md`, and older ones only in git history). `tools/check_citations.py` runs in `make check`, the hook and CI,
   and refuses an undated one. Date it by `git blame`, then confirm the ITEM
   matches the topic; if nothing matches, describe the problem in words rather
   than guess an ID.
 - ruff + mypy clean (`pyproject.toml`); tsc `--noEmit` clean for `web/`.
 - `make check` green before handing work back. Never skip or disable a test
-  to get there — fix it or list it as follow-up work.
+  to get there — fix it or list it as follow-up work. `check` is exactly CI's
+  blocking Python/TypeScript steps: `audio`, `test`, `test-radio` (added
+  2026-09-17, grade report 2026-09-17 pm D2), `lint` (ruff format + ruff +
+  mypy + `rust-lint`), the two `check_image.py` runs, `check_loc.py`,
+  `check_citations.py`, `tsc --noEmit` and `web`'s node suites. It is NOT all
+  of CI: the coverage floors (`coverage-gate`, `coverage-radio`) re-run those
+  two suites under coverage.py and stay out of the inner loop, the esphome
+  validate/compile steps are `make validate` / `check-all`, the browser suite
+  is `make e2e`, and the wasm-face build and `make audit` are CI-only (audit
+  non-gating). Run the coverage floors yourself when you touched `tools/` or
+  `demo/castle-radio`.
 - The e2e suite (`cd web && npx playwright test --list` for the count) needs
   a built page (`make preview`) and `cd web && npx playwright install chromium`.
 
@@ -186,18 +219,43 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   `tests/test_firmware_web_cxx.py` + `_card` + `_storm` RUN the drift check:
   `tests/cxx/web_check.cpp` compiles the real headers against a fake ESP-IDF
   (`tests/cxx/shim/`) and every request goes to both castles.
-- Ports 8765/8766/8093 may be in use by the user's own sessions; tests bind
+- Ports 8765/8766/8093/8871 may be in use by the user's own sessions; tests bind
   port 0, e2e uses `CASTLE_E2E_PORT`.
 
 ## Hardware and firmware facts that bite
 
-- ESP32-S2: no USB serial console, mDNS unreliable, single core. IDF 5.5
-  pushed the S2 build to the **static-RAM cliff** (~20 bytes of headroom at
-  one point; see the sdkconfig notes in `firmware/castle.yaml`). Firmware
-  changes must be RAM-neutral: stack-only, PSRAM for buffers, no new statics.
-- RMT on the S2: 4 channels x 64 symbols, 256 in total, no DMA — a budget
-  `tools/gen_rig.py` spends per zone and refuses to overspend. ESPHome's
-  default of 192 for one strip kills strips 2 and 3.
+- **Flash is the tight resource**, not RAM. The Feather has 4 MB, so the
+  dual-OTA layout gives two 1,835,008-byte app slots: v5.69 measured **67.9%
+  of flash and 35.2% of RAM** (120,267 of 341,760) on the board. Prefer PSRAM
+  for buffers and stack over statics anyway — it costs nothing and the habit
+  is cheap — but the thing to watch before a feature lands is the image size,
+  and `tools/check_image.py` is the gate (warns at 90% of the slot, fails at
+  97%). Over budget, the fallback is physical access, which is what OTA
+  existed to avoid.
+- RMT: 4 TX channels × 48 symbols, **192 in total**, no DMA — a budget
+  `tools/gen_rig.py` spends per zone and refuses to overspend. Three strips
+  plus the Feather's status pixel is all four blocks, 192 of 192, nothing
+  spare; the WROOM carrier has no status pixel and keeps one block. A strip
+  that asks for something that is not a whole block gets no channel and stays
+  dark without a word, which is why 64 — the S2's block size, and the number
+  every note used to say — is now a hard build failure.
+- **ESP32-S2 HISTORY** (retired 2026-09-17, docs/notes/03-build.md §12.20).
+  The porch ran an S2 Feather from 2026-08-22, and a lot of this repo's
+  caution was bought there: no USB serial console at all (its TinyUSB CDC
+  console faulted the chip inside `sinf()`), mDNS that never worked, one core,
+  and a **static-RAM cliff** — IDF 5.5 left ~20 bytes of dram0 headroom, so
+  every change had to be RAM-neutral and a whole `sdkconfig` diet was bought
+  to make v5.23 link at all. Its RMT was 4 × 64 = 256. None of those limits
+  binds now, but the diet is still IN the build, deliberately: the retirement
+  changed the build's shape and not its behaviour. Each line comes back one at
+  a time, measured on hardware. mDNS was the first and is DONE: v5.66 turned
+  it on for +2,080 B of flash and `castle-feather-s3.local` resolved on the
+  board on 2026-09-17 (`devices.toml` still leads with the router lease
+  because a reservation beats a multicast query — the name is its fallback).
+  Still on the diet, in no fixed order: softAP + captive portal, WPS,
+  `LWIP_MAX_SOCKETS` back above 16, LWIP's own mDNS queries (the board asking,
+  not answering), and WPA3 OWE. One at a time, each with a measured flash/RAM
+  delta.
 - The door ring corrupts a frame now and then: `docs/ISSUE-ring-flicker.md`
   has what is already ruled out (with evidence) and the next tests.
 - The desk's effects (`web/src/effects.ts`) and `firmware/castle_effects.h`
@@ -206,14 +264,18 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   copy, every check, what to do when one fails — is `docs/PARITY.md`.
 - Stop audio before an OTA (`make ota` and `sd_sync ota` do it themselves).
   The ring is RGB, not RGBW (`rgbw: false`).
-- Scene ceiling: **12 scenes max** on the S2 (~9 KB dram0 each; see the
-  header comment in `scenes/scenes.yaml` and the weekly CI compile's 92%
-  alarm). The S3 carrier has the RAM but keeps the same ceiling until it is
-  measured on the board. Past that, cue timelines are card-loaded (v5.63:
-  `make cues`, `firmware/castle_cues.h`) — a song played as a raw card file
-  with a `.cue` beside it gets the full show from PSRAM — not a thirteenth
-  generated script. The twelve slots are for what the PIR, the buttons and
-  the evening playlist must start by name.
+- Scene ceiling: **12 scenes max**, still — but for a different reason since
+  v5.67. It was ~9 KB of the S2's dram0 a scene, because each scene was a
+  generated script; scenes are card files now (`scenes/show.man` +
+  `scenes/<id>.cue`, read into PSRAM by `firmware/castle_scenes.h`) and there
+  is no per-scene static cost left. What holds the number is `show.man`'s
+  fixed record count: `MAX_SCENES` (`tools/scene_manifest.py`), `kMaxScenes`
+  (`firmware/castle_scenes.h`), `SCENE_LIMIT` (`tools/check_loc.py`,
+  `core/src/vocab.rs`). Lifting it is deliberate work on all four with a
+  measured number — docs/notes/03-build.md §12.21 lists it as follow-up. The
+  twelve slots are for what the PIR, the buttons and the evening playlist must
+  start by name; any other song on the card still gets its full show from a
+  `.cue` beside it (v5.63, `make cues`) with no slot at all.
 - v5.42 feeds the upload watchdog every 32 KB (was 8 KB). Verified on the
   emulator only — watch the first big push on real hardware; if an upload
   reboots the board, revert the cadence in `sd_web.h write_body`.

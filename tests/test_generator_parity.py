@@ -1,13 +1,23 @@
 """Do the previewer and the firmware agree about what the show looks like?
 
 The project's central claim is that the browser cue desk predicts the device.
-Two separate generators read scenes/scenes.yaml — tools/gen_esphome.py for the
-ESPHome scripts and tools/gen_previewer.py for the browser — and each has its
-own copy of the pulse-merging logic. Nothing forces them to stay in step.
+Two separate generators read scenes/scenes.yaml — tools/gen_scene_cards.py for
+the card the castle plays and tools/gen_previewer.py for the browser — and each
+has its own copy of the pulse-merging logic. Nothing forces them to stay in
+step.
 
 A divergence here is the worst bug this project can have, because it is
 invisible: both sides run, neither errors, and the preview quietly stops being
 a preview. These tests are the thing that would notice.
+
+Until v5.67 the device side of the comparison was the emitted ESPHome script,
+and two of its facts were about the shape of that script rather than the show:
+the deltas that `delay:` forced cue times into, and PULSE_CAP, which thinned a
+dense track to 200 hits on BOTH sides so that the desk still matched a device
+that could not afford the rest. The device side is a cue file on the card now.
+Neither side thins, and the times are absolute on both, so the comparison is
+direct — and it runs all the way through the real encoder, because a u8 colour
+channel is the one place a number can still change between the two.
 """
 
 from __future__ import annotations
@@ -26,9 +36,10 @@ from typing import Any, ClassVar
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+import cue_file
 import gen_esphome as ge
 import gen_previewer as gp
-import pulse_dynamics as pd
+import gen_scene_cards as gc
 import yaml
 
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
@@ -85,10 +96,13 @@ MARKERS = {
 }
 
 
-def esphome_strikes(
+def device_strikes(
     scene: dict[str, Any], markers: dict[str, Any]
 ) -> list[tuple[Any, ...]]:
-    """Pulse strikes as gen_esphome will write them into the ESPHome script."""
+    """Pulse strikes as the card path will carry them — every hit, at full
+    precision, before cue_file quantises them. `pd.thin_pulses` used to wrap
+    this: the script could afford 200 actions, so the desk had to drop the
+    same ones. Neither does (docs/PARITY.md, v5.67)."""
     return sorted(
         (
             c["t"],
@@ -97,7 +111,7 @@ def esphome_strikes(
             tuple(float(v) for v in c["color"]),
             c["decay"],
         )
-        for c in pd.thin_pulses(ge.pulse_cues(scene, markers))
+        for c in ge.pulse_cues(scene, markers)
     )
 
 
@@ -129,7 +143,7 @@ class TestPulseParity(unittest.TestCase):
         where a one-sided edit shows up. Comparing the whole set at once also
         catches a stream being dropped or emitted twice.
         """
-        a = esphome_strikes(PULSE_SCENE, MARKERS)
+        a = device_strikes(PULSE_SCENE, MARKERS)
         b = previewer_strikes(PULSE_SCENE, MARKERS)
         self.assertEqual(len(a), 14)
         self.assertEqual(a, b)
@@ -144,7 +158,7 @@ class TestPulseParity(unittest.TestCase):
         s = dict(PULSE_SCENE, pulse=[{"synth": "toll"}])
         self.assertIsNone(ge.pulse_cues(s, MARKERS)[0]["targets"])
         self.assertNotIn("targets", gp.to_previewer(s, 1, "", MARKERS)["cues"][0])
-        self.assertEqual(esphome_strikes(s, MARKERS), previewer_strikes(s, MARKERS))
+        self.assertEqual(device_strikes(s, MARKERS), previewer_strikes(s, MARKERS))
 
     def test_round_robin_lands_on_the_same_zone_at_the_same_time(self) -> None:
         """If the two sides indexed differently, the towers would swap.
@@ -153,7 +167,7 @@ class TestPulseParity(unittest.TestCase):
         compare the browser to the wall.
         """
         s = dict(PULSE_SCENE, pulse=[PULSE_SCENE["pulse"][3]])  # type: ignore[index]  # heterogeneous scene dict
-        pairs = [(t, z) for t, z, *_ in esphome_strikes(s, MARKERS)]
+        pairs = [(t, z) for t, z, *_ in device_strikes(s, MARKERS)]
         self.assertEqual(
             pairs,
             [
@@ -168,7 +182,7 @@ class TestPulseParity(unittest.TestCase):
     def test_velocity_scaling_is_rounded_identically(self) -> None:
         """Both round to 3 places; a float-vs-rounded mismatch would drift apart."""
         s = dict(PULSE_SCENE, pulse=[{"synth": "whispers", "intensity": 0.34}])
-        got = [c[2] for c in esphome_strikes(s, MARKERS)]
+        got = [c[2] for c in device_strikes(s, MARKERS)]
         self.assertEqual(got, [0.274, 0.338, 0.17, 0.34])
         self.assertEqual(got, [c[2] for c in previewer_strikes(s, MARKERS)])
 
@@ -176,7 +190,7 @@ class TestPulseParity(unittest.TestCase):
         """The defaults are written out separately in each file as literals."""
         s = dict(PULSE_SCENE, pulse=[{"synth": "toll"}])
         self.assertEqual(
-            esphome_strikes(s, MARKERS)[0][2:], previewer_strikes(s, MARKERS)[0][2:]
+            device_strikes(s, MARKERS)[0][2:], previewer_strikes(s, MARKERS)[0][2:]
         )
         self.assertEqual(ge.WHITE, [1.0, 1.0, 1.0, 1.0])
         self.assertEqual(ge.DEFAULT_DECAY, 0.90)
@@ -184,7 +198,7 @@ class TestPulseParity(unittest.TestCase):
     def test_a_missing_synth_produces_nothing_on_either_side(self) -> None:
         s = dict(PULSE_SCENE, pulse=[{"synth": "absent", "zone": "door"}])
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(esphome_strikes(s, MARKERS), [])
+            self.assertEqual(device_strikes(s, MARKERS), [])
         self.assertEqual(previewer_strikes(s, MARKERS), [])
 
     def test_the_real_scenes_file_agrees_scene_for_scene(self) -> None:
@@ -204,7 +218,7 @@ class TestPulseParity(unittest.TestCase):
                 with contextlib.redirect_stdout(io.StringIO()):
                     a = [
                         (c["t"], tuple(c["targets"] or zids), c["intensity"])
-                        for c in pd.thin_pulses(ge.pulse_cues(scene, markers))
+                        for c in ge.pulse_cues(scene, markers)
                     ]
                 b = [
                     (c["t"], tuple(c.get("targets") or zids), c["intensity"])
@@ -215,39 +229,34 @@ class TestPulseParity(unittest.TestCase):
 
 
 class TestTimelineParity(unittest.TestCase):
-    """Same cues is not enough — they have to happen at the same moment."""
+    """Same cues is not enough — they have to happen at the same moment.
 
-    def emitted_times(
-        self, scene: dict[str, Any], markers: dict[str, Any]
-    ) -> list[int]:
-        """Replay the ESPHome script's delays to recover absolute cue times."""
-        scripts = yaml.safe_load(
-            "script:\n" + "\n".join(ge.emit_scene(scene, ZONES, 1, markers))
-        )["script"]
-        # The head script, then its cont_<id>_N continuations in order — the
-        # walk the device makes (gen_esphome CHUNK), so a cue that lands in
-        # a continuation still counts.
-        then = [st for script in scripts for st in script["then"]]
-        start = next(
-            i
-            for i, st in enumerate(then)
-            if isinstance(st.get("script.execute"), dict)
-            and st["script.execute"].get("id") == "sfx"
-        )
-        times, t = [], 0
-        for st in then[start + 1 :]:
-            if "delay" in st:
-                t += int(str(st["delay"]).removesuffix("ms"))
-            elif "lambda" in st:
-                times.append(t)
-        return times
+    And this is the class that runs the whole device encoder, so it is the
+    permanent card-vs-desk gate: a record is read off the card by
+    firmware/castle_cues.h with these exact bytes in it.
+    """
 
-    def test_delays_replay_to_the_previewers_absolute_times(self) -> None:
-        """The delta encoding is the only place the two formats really differ.
+    def record_times(self, scene: dict[str, Any], markers: dict[str, Any]) -> list[int]:
+        """Cue times as the device will read them — out of the encoded file.
 
-        The previewer keeps absolute milliseconds; ESPHome only has `delay:`.
-        Summing the emitted deltas back has to reproduce exactly the timeline
-        the browser plays, mixed cues and pulses included.
+        Was `emitted_times`, which summed the emitted `delay:` chain back into
+        absolute milliseconds because ESPHome had no other way to express a
+        timeline. The file carries the author's own millisecond in a u32, so
+        what is left to check is that the encoder neither reorders nor loses
+        one, and that a value over 65 s did not wrap (the u32 is the reason
+        the field is not a u16; The Ballad is 54 s and Citizens is longer).
+        """
+        cues = gc.scene_cues(scene, markers)
+        doc = cue_file.decode(cue_file.encode(scene, cues, ZIDS))
+        return [r["t"] for r in doc["records"]]
+
+    def test_the_file_carries_the_previewers_absolute_times(self) -> None:
+        """Was `test_delays_replay_to_the_previewers_absolute_times`.
+
+        Mixed authored cues and pulses, because the merge order is the thing
+        that used to go wrong: the previewer sorts by time and the device side
+        has to arrive at the same sequence, or a `set` lands after the strike
+        it was meant to precede.
         """
         s = dict(
             PULSE_SCENE,
@@ -257,13 +266,13 @@ class TestTimelineParity(unittest.TestCase):
             ],
         )
         with contextlib.redirect_stdout(io.StringIO()):
-            emitted = self.emitted_times(s, MARKERS)
+            got = self.record_times(s, MARKERS)
         preview = [
             c["t"]
             for c in gp.to_previewer(s, 1, "", MARKERS)["cues"]
             if c["bus"] == "LED"
         ]
-        self.assertEqual(emitted, sorted(preview))
+        self.assertEqual(got, sorted(preview))
 
     def test_simultaneous_cues_do_not_collapse_into_one(self) -> None:
         """Two zones struck on the same beat must stay two events on both sides."""
@@ -274,8 +283,43 @@ class TestTimelineParity(unittest.TestCase):
                 {"synth": "heartbeat", "zones": ["towerL"]},
             ],
         )
-        self.assertEqual(len(self.emitted_times(s, MARKERS)), 8)
+        self.assertEqual(len(self.record_times(s, MARKERS)), 8)
         self.assertEqual(len(previewer_strikes(s, MARKERS)), 8)
+
+    def test_a_late_cue_survives_the_encoding_that_a_u16_would_have_wrapped(
+        self,
+    ) -> None:
+        """Citizens runs past 90 s. A truncated time is a cue that fires in the
+        first seconds of the scene instead of near its end — visible, and
+        impossible to attribute to an encoder without a test that says so."""
+        s = dict(
+            PULSE_SCENE,
+            duration_ms=200_000,
+            pulse=[],
+            cues=[{"t": 199_999, "op": "strike"}],
+        )
+        self.assertEqual(self.record_times(s, MARKERS), [199_999])
+
+    def test_the_encoded_numbers_survive_to_the_desks_precision(self) -> None:
+        """The one place a number CAN change between the two sides now.
+
+        A record stores intensity as intensity*1000 in a u16 and each colour
+        channel as a percent in a u8, so the desk's 0.274 arrives as 0.274 and
+        its 0.66 as 0.66 — but a channel authored to three places would not.
+        Assert the quantum, so that the day someone needs finer colour they
+        find this rather than a slightly-wrong porch.
+        """
+        s = dict(PULSE_SCENE, pulse=[PULSE_SCENE["pulse"][0]])  # type: ignore[index]  # heterogeneous scene dict
+        cues = gc.scene_cues(s, MARKERS)
+        doc = cue_file.decode(cue_file.encode(s, cues, ZIDS))
+        want = previewer_strikes(s, MARKERS)
+        self.assertEqual(len(doc["records"]), len(want))
+        for rec, (t, _z, amt, col, dec) in zip(doc["records"], want, strict=True):
+            self.assertEqual(rec["t"], t)
+            self.assertAlmostEqual(rec["intensity"], amt, delta=1e-3)
+            self.assertAlmostEqual(rec["decay"], dec, delta=1e-4)
+            for a, b in zip(rec["color"], col, strict=True):
+                self.assertAlmostEqual(a, b, delta=1e-2)
 
 
 class TestGenPreviewerMain(unittest.TestCase):

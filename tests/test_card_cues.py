@@ -3,9 +3,11 @@ writes, what `sd_sync cues` pushes, and what the castle then says about it.
 
 tests/test_cue_file_cxx.py holds the FILE equal between Python and the
 firmware header. These hold the three decisions around it: every pulse is
-kept (PULSE_CAP is a script's limit, not a file's), a cue file only goes to
-the card beside a song of the same name, and /api/status reports `cues`
-for exactly as long as that song is the thing playing.
+kept (PULSE_CAP was a SCRIPT's limit, and since v5.67 no timeline is a script
+at all — it is the default the desk's preview and the importer still sort by),
+a cue file only goes to the card beside a song of the same name, and
+/api/status reports `cues` for exactly as long as that song is the thing
+playing.
 """
 
 from __future__ import annotations
@@ -46,7 +48,10 @@ DOC = {
 
 
 class TestRender(unittest.TestCase):
-    def test_a_file_keeps_every_pulse_a_script_would_thin(self) -> None:
+    def test_a_file_keeps_every_pulse_a_script_would_have_thinned(self) -> None:
+        # PULSE_CAP is the yardstick, not a limit this path obeys: three
+        # times as many hits as the old scene scripts could hold, all of
+        # them in the file.
         hits = [[round(0.5 + i * 0.3, 3), 0.6] for i in range(PULSE_CAP * 3)]
         wave = {"duration": 200.0, "onsets": {"onset_low": hits}, "env": []}
         with (

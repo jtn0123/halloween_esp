@@ -253,8 +253,17 @@ class TestEventRing(unittest.TestCase):
             int(grab(r"kEventArgMax = (\d+);", SD_STATE)),
             castle_emu_events.ARG_MAX + 1,
         )
-        # No heap: a fixed std::array, not a vector that grows per event.
-        self.assertIn("std::array<Event, kEventRing> g_events{}", SD_STATE)
+        # No per-event heap: ONE allocation, in PSRAM, with a smaller static
+        # ring behind it for a board that has none (J3, grade report
+        # 2026-09-17 — it used to be a static std::array of 4 KB of internal
+        # RAM). What must not appear is a container that grows per event,
+        # because /api/events is served from the httpd task while the main
+        # loop is appending.
+        self.assertIn(
+            "heap_caps_calloc(kEventRing, sizeof(Event), MALLOC_CAP_SPIRAM)", SD_STATE
+        )
+        self.assertIn("std::array<Event, kEventRingSmall> g_events_small{}", SD_STATE)
+        self.assertNotIn("std::vector<Event>", SD_STATE)
 
     def test_the_kind_words_are_the_firmwares(self) -> None:
         # v5.62 (L1): the table moved to castle_rtc.h, because the copy of
@@ -315,6 +324,7 @@ class TestStreamServer(unittest.TestCase):
         for name in (
             "tools/gen_esphome_audio.py",
             "firmware/castle_sd_common.yaml",
+            "firmware/castle_web_actions.yaml",
             "firmware/sd_audio.h",
         ):
             text = (ROOT / name).read_text()

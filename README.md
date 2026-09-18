@@ -1,7 +1,7 @@
 # Halloween Castle
 
 A store-bought decorative castle with three lit apertures — two tower windows and
-a doorway — driven by an ESP32-S2 Feather running ESPHome. Addressable RGBW pixels,
+a doorway — driven by an ESP32-S3 Feather running ESPHome. Addressable RGBW pixels,
 pre-rendered spooky audio, and a cue engine that keeps the two in step.
 
 See [PROJECT_NOTES.md](PROJECT_NOTES.md) for the design record and the hardware
@@ -40,8 +40,9 @@ sentence, never a quiet fall-back to arithmetic that differs per machine.
 
 ### Why the audio is pre-rendered
 
-The MAX98357A plays one stream, and mixing on a single-core ESP32-S2 is not worth
-fighting. So each scene is rendered offline into a single mixed file — where
+The MAX98357A plays one stream, and mixing on the board itself is not worth
+fighting (it was never an option at all on the single-core ESP32-S2 this show
+was written for). So each scene is rendered offline into a single mixed file — where
 convolution reverb, ducking and crossfades are free — and the firmware's only job
 is to play it. This raises the quality ceiling rather than lowering it.
 
@@ -51,13 +52,13 @@ is to play it. This raises the quality ceiling rather than lowering it.
 
 | | |
 |---|---|
-| MCU | Adafruit ESP32-S2 Feather — 240 MHz, 4 MB flash, 2 MB PSRAM |
+| MCU | Adafruit ESP32-S3 Feather [#5477](https://www.adafruit.com/product/5477) — 240 MHz, 4 MB flash, 2 MB PSRAM, on castle-carrier v3.3a. An ESP32-S2 Feather ran the porch until 2026-09-17 ([docs/notes/03-build.md](docs/notes/03-build.md) §12.20) |
 | Audio | MAX98357A I2S class-D amp ([adafruit 3006](https://www.adafruit.com/product/3006)) → 4 Ω speaker |
 | Light | 2 × NeoPixel Jewel 7 RGBW (towers) + NeoPixel Ring 12 RGB (door) — three zones, 26 pixels; see [docs/WIRING.md](docs/WIRING.md) |
 | Sensor | AM312 PIR on the walkway |
 
-I2S and RMT are separate peripherals on the ESP32-S2, so audio and pixels never
-contend for hardware.
+I2S and RMT are separate peripherals, so audio and pixels never contend for
+hardware.
 
 ### Wiring
 
@@ -99,9 +100,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # once
 make setup      # venv + esphome + render deps + the commit hook
 make audio      # render the scene audio (builds core/ on first use)
 make validate   # check the config without a toolchain
-make build      # compile firmware/castle_sd.yaml — the castle in the yard
-make build-s3   # compile firmware/castle_s3.yaml — the ESP32-S3 carrier board
-make build-fs3  # compile firmware/castle_feather_s3.yaml — an S3 Feather on v3.3a
+make build      # compile firmware/castle_feather_s3.yaml — the castle in the yard
+make build-s3   # compile firmware/castle_s3.yaml — the ESP32-S3-WROOM-1 carrier
+make build-fs3  # an alias for build; the castle IS the S3 Feather
 make upload     # flash over USB
 make publish    # push the rendered show to the castle's microSD card
 ```
@@ -109,14 +110,15 @@ make publish    # push the rendered show to the castle's microSD card
 Copy `firmware/secrets.yaml.example` to `firmware/secrets.yaml` and set real
 WiFi credentials before flashing. `make help` lists every target.
 
-There are three targets because there are three boards. `castle_sd.yaml` is
-the ESP32-S2 Feather that runs the porch; `castle_s3.yaml` (2026-09-05) is the
+There are two targets because there are two boards. `castle_feather_s3.yaml`
+is the ESP32-S3 Feather (#5477, the 2 MB PSRAM one) in the castle-carrier
+v3.3a the S2 was drawn for — it is the castle in the yard, and has run the
+show since 2026-09-17. `castle_s3.yaml` (2026-09-05) is the
 ESP32-S3-WROOM-1 carrier board (castle-carrier v5), written from that
-project's spec; `castle_feather_s3.yaml` (2026-09-14) is an ESP32-S3 Feather
-(#5477, the 2 MB PSRAM one) in the v3.3a carrier the S2 was drawn for.
-Neither S3 build has been on hardware yet. All three share every line of the
-show and not one GPIO number differs between them — see
-`firmware/pending/README.md` for the bring-up lists.
+project's spec with no board in hand; it has never been on hardware and is
+compiled weekly by CI so it cannot rot. Both share every line of the show and
+not one GPIO number differs between them — see `firmware/pending/README.md`
+for what has run on what, and the bring-up list.
 
 The scene audio lives on the card, not in the image — `make publish` is what
 puts it there, and a board flashed without it chirps instead of playing. That

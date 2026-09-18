@@ -38,7 +38,9 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import cargo_gate
+import gen_scene_cards
 import manifest as mf
+import yaml
 from helpers import make_click_track
 
 CARGO = cargo_gate.CARGO
@@ -250,6 +252,16 @@ class StudioCase(unittest.TestCase):
         (cls.build / "previewer" / "castle-cue-desk.html").write_text(PAGE)
         (cls.build / "audio").mkdir()
         (cls.build / "audio" / "01_vigil.mp3").write_bytes(bytes(range(256)) * 12)
+        # The show as card data (v5.67): `sd_sync scenes` pushes show.man and
+        # one .cue per scene beside the audio, so a publish test needs them
+        # here the way a real build would have left them. gen_esphome writes
+        # these in `make generate`; the studio's rebuild runs that first, and
+        # this seeds the same three files without paying for a render.
+        gen_scene_cards.write(
+            yaml.safe_load(scenes_fixture()),
+            cls.build / "audio" / "card" / "scenes",
+            {},
+        )
         cls.tracks = cls.tmp / "tracks"
         seed_library(cls.tracks)
         cls.scenes = cls.tmp / "scenes.yaml"

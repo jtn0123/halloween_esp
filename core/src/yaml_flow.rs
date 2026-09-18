@@ -3,16 +3,19 @@
 //! at the repo's 500-line cap; the block parser calls in here whenever a
 //! value opens with `{` or `[`, feeding it more lines until it closes.
 
-use crate::yaml::{Yaml, plain_key, scalar};
+use crate::yaml::{MAX_DEPTH, Yaml, plain_key, scalar};
 
 struct Flow<'a> {
     s: &'a str,
     i: usize,
 }
 
-pub(crate) fn parse_flow(text: &str) -> Result<Yaml, String> {
+/// Parse one flow collection. `depth` is how many levels the block parser
+/// already spent getting here, so `a: [[[…]]]` is measured from the top of
+/// the document rather than from this bracket (grade report 2026-09-17 B1).
+pub(crate) fn parse_flow(text: &str, depth: usize) -> Result<Yaml, String> {
     let mut f = Flow { s: text, i: 0 };
-    let v = f.value()?;
+    let v = f.value(depth)?;
     f.ws();
     if f.i < f.s.len() {
         return Err("trailing text after a flow collection".into());
@@ -31,16 +34,21 @@ impl Flow<'_> {
         self.s.as_bytes().get(self.i).copied()
     }
 
-    fn value(&mut self) -> Result<Yaml, String> {
+    fn value(&mut self, depth: usize) -> Result<Yaml, String> {
         self.ws();
+        // Only a collection costs a level: a scalar leaf inside the deepest
+        // allowed sequence is not itself another level of nesting.
+        if depth >= MAX_DEPTH && matches!(self.peek(), Some(b'{' | b'[')) {
+            return Err(format!("nested deeper than {MAX_DEPTH} levels"));
+        }
         match self.peek() {
-            Some(b'{') => self.mapping(),
-            Some(b'[') => self.sequence(),
+            Some(b'{') => self.mapping(depth + 1),
+            Some(b'[') => self.sequence(depth + 1),
             _ => Ok(scalar(self.token()?)),
         }
     }
 
-    fn sequence(&mut self) -> Result<Yaml, String> {
+    fn sequence(&mut self, depth: usize) -> Result<Yaml, String> {
         self.i += 1;
         let mut out = Vec::new();
         loop {
@@ -53,7 +61,7 @@ impl Flow<'_> {
                 None => return Err("unterminated flow sequence".into()),
                 _ => {}
             }
-            out.push(self.value()?);
+            out.push(self.value(depth)?);
             self.ws();
             match self.peek() {
                 Some(b',') => self.i += 1,
@@ -63,7 +71,7 @@ impl Flow<'_> {
         }
     }
 
-    fn mapping(&mut self) -> Result<Yaml, String> {
+    fn mapping(&mut self, depth: usize) -> Result<Yaml, String> {
         self.i += 1;
         let mut out: Vec<(String, Yaml)> = Vec::new();
         loop {
@@ -80,7 +88,7 @@ impl Flow<'_> {
             self.ws();
             let val = if self.peek() == Some(b':') {
                 self.i += 1;
-                self.value()?
+                self.value(depth)?
             } else {
                 Yaml::Null
             };
@@ -135,6 +143,45 @@ impl Flow<'_> {
     }
 }
 
+/// The index just past the flow collection that starts at byte 0, or None
+/// when it has not closed yet — how the block half knows whether to feed
+/// another line in before calling [`parse_flow`]. It lives here rather than
+/// next door because it is the same brackets-and-quotes scan, spelled
+/// iteratively: nothing about it can run out of stack.
+pub(crate) fn flow_end(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut depth = 0usize;
+    let mut quote: Option<u8> = None;
+    let mut i = 0;
+    while i < b.len() {
+        let c = b[i];
+        match quote {
+            Some(q) => {
+                if q == b'"' && c == b'\\' {
+                    i += 2;
+                    continue;
+                }
+                if c == q {
+                    quote = None;
+                }
+            }
+            None => match c {
+                b'"' | b'\'' => quote = Some(c),
+                b'{' | b'[' => depth += 1,
+                b'}' | b']' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(i + 1);
+                    }
+                }
+                _ => {}
+            },
+        }
+        i += 1;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -148,17 +195,53 @@ mod tests {
         )
     }
 
+    /// A flow collection at the top of a document: nothing above it has
+    /// spent a level yet.
+    fn flow(text: &str) -> Result<Yaml, String> {
+        parse_flow(text, 0)
+    }
+
+    /// grade report 2026-09-17 B1: `value` recursed once per bracket with
+    /// nothing counting, so `a: [[[…]]]` twenty thousand deep — 40 KB of a
+    /// POST body — overflowed the stack and ABORTED the studio, every other
+    /// connection in flight with it. A refusal is a Result the route turns
+    /// into a 400. Mirrors the JSON reader's boundary test.
+    #[test]
+    fn nesting_is_bounded_rather_than_fatal() {
+        let deep = |n: usize| format!("{}{}", "[".repeat(n), "]".repeat(n));
+        assert!(flow(&deep(MAX_DEPTH)).is_ok());
+        for text in [
+            deep(MAX_DEPTH + 1),
+            "[".repeat(100_000), // the shape that actually arrived
+            "{a: ".repeat(MAX_DEPTH + 1),
+        ] {
+            let err = flow(&text).expect_err("refused");
+            assert!(
+                err.contains("nested deeper than 200 levels"),
+                "want a depth refusal, got {err}"
+            );
+        }
+        // The count carries on from the block parser's, so a flow value is
+        // not a fresh 200 levels hanging off an already-deep document.
+        assert!(flow_at(MAX_DEPTH - 1, "[1]").is_ok());
+        assert!(flow_at(MAX_DEPTH, "[1]").is_err());
+    }
+
+    fn flow_at(depth: usize, text: &str) -> Result<Yaml, String> {
+        parse_flow(text, depth)
+    }
+
     #[test]
     fn the_spellings_a_scene_is_written_in() {
         assert_eq!(
-            parse_flow("{towerL: candle, door: ember}"),
+            flow("{towerL: candle, door: ember}"),
             Ok(m(&[
                 ("towerL", Yaml::Str("candle".into())),
                 ("door", Yaml::Str("ember".into())),
             ]))
         );
         assert_eq!(
-            parse_flow("[0.66, 0.2, 1.0, 0.1]"),
+            flow("[0.66, 0.2, 1.0, 0.1]"),
             Ok(Yaml::List(vec![
                 Yaml::Float(0.66),
                 Yaml::Float(0.2),
@@ -166,11 +249,11 @@ mod tests {
                 Yaml::Float(0.1),
             ]))
         );
-        assert_eq!(parse_flow("[]"), Ok(Yaml::List(vec![])));
-        assert_eq!(parse_flow("{}"), Ok(Yaml::obj_empty()));
+        assert_eq!(flow("[]"), Ok(Yaml::List(vec![])));
+        assert_eq!(flow("{}"), Ok(Yaml::obj_empty()));
         // Nested, and a quoted value carrying the separators.
         assert_eq!(
-            parse_flow("{colors: [[1, 0], [0, 1]], note: \"roll, left: on\"}"),
+            flow("{colors: [[1, 0], [0, 1]], note: \"roll, left: on\"}"),
             Ok(m(&[
                 (
                     "colors",
@@ -184,18 +267,15 @@ mod tests {
         );
         // A key with no value is null, exactly as PyYAML reads `{a}`, and
         // a plain scalar may hold spaces: PyYAML reads `[1 2]` as ['1 2'].
-        assert_eq!(parse_flow("{a}"), Ok(m(&[("a", Yaml::Null)])));
-        assert_eq!(
-            parse_flow("[1 2]"),
-            Ok(Yaml::List(vec![Yaml::Str("1 2".into())]))
-        );
+        assert_eq!(flow("{a}"), Ok(m(&[("a", Yaml::Null)])));
+        assert_eq!(flow("[1 2]"), Ok(Yaml::List(vec![Yaml::Str("1 2".into())])));
     }
 
     #[test]
     fn an_unfinished_flow_is_a_complaint_not_a_guess() {
-        assert!(parse_flow("[1, 2").is_err());
-        assert!(parse_flow("{a: 1").is_err());
-        assert!(parse_flow("{a: \"x}").is_err());
-        assert!(parse_flow("[1] extra").is_err());
+        assert!(flow("[1, 2").is_err());
+        assert!(flow("{a: 1").is_err());
+        assert!(flow("{a: \"x}").is_err());
+        assert!(flow("[1] extra").is_err());
     }
 }

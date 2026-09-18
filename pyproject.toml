@@ -40,7 +40,13 @@ select = [
 
 [tool.mypy]
 python_version = "3.13"
-files = ["tools", "tests"]
+# demo/castle-radio joined the gate on 2026-09-17 (grade report 2026-09-17 D2).
+# It is checked in the SAME invocation as tools/ on purpose: its modules import
+# each other — and `stems`, `import_track`, `import_scene`,
+# `castle_tools_status` from tools/ — as top-level names, exactly the way
+# tests/ does, so one run resolves them all and `make lint` keeps one
+# definition.
+files = ["tools", "tests", "demo/castle-radio"]
 # Default mypy skips the bodies of unannotated functions, which is most of
 # tools/. These three are the cheap half of strictness: check every body,
 # refuse an Any leaking out through a typed return, and drop ignores that

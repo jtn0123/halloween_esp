@@ -88,10 +88,14 @@ class TestTheRingSurvivesTheCrash(unittest.TestCase):
 class TestTheClock(unittest.TestCase):
     """L2. Uptime cannot be lined up against "some time after nine"."""
 
-    def test_sntp_is_configured_and_mdns_is_still_off(self) -> None:
+    def test_sntp_is_configured_and_resolves_through_ordinary_dns(self) -> None:
         self.assertIn("platform: sntp", CASTLE)
-        # The responder stays off — SNTP is a DNS name, not an mDNS one.
-        self.assertIn("mdns:\n  disabled: true", CASTLE)
+        # pool.ntp.org is a DNS name, not an mDNS one, and that was the whole
+        # reason the clock worked at all through the `mdns: disabled` era. The
+        # responder came back on in v5.66 (the S3 answers to its own .local),
+        # so "the responder is off" is no longer a fact to pin — but lwIP's
+        # .local QUERY support still is off, and it is the half that would
+        # have mattered here if anything ever resolved a name that way.
         self.assertIn('CONFIG_LWIP_DNS_SUPPORT_MDNS_QUERIES: "n"', CASTLE)
         # One more UDP socket against a budget that is counted, not guessed.
         self.assertIn('CONFIG_LWIP_MAX_SOCKETS: "16"', CASTLE)

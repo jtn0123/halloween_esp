@@ -1,13 +1,21 @@
 """Fuzz the generators with random scenes.yaml-shaped documents.
 
-gen_esphome.py and gen_previewer.py each read the same scene and must not
-crash, must write YAML that loads, and must describe the SAME show: same cue
-times, same zones, every index inside the zone_* arrays, every delay
-non-negative and summing back to the scene's length. The hand-written tests
-pin the shapes the real scenes.yaml uses; this throws every combination the
-format allows — odd rigs, empty zones, out-of-order cues, strikes with every
-optional field, pulse streams with random markers — with a fixed seed, so a
-red run is reproducible and the seed is in the failure message.
+The card path (gen_scene_cards.py -> cue_file.py + scene_manifest.py) and
+gen_previewer.py each read the same scene and must not crash, must produce
+something that loads back, and must describe the SAME show: same cue times,
+same zones, every zone index inside the arrays the firmware will write into,
+every scene present in the manifest with its own length. The hand-written
+tests pin the shapes the real scenes.yaml uses; this throws every combination
+the format allows — odd rigs, empty zones, out-of-order cues, strikes with
+every optional field, pulse streams with random markers — with a fixed seed,
+so a red run is reproducible and the seed is in the failure message.
+
+Until v5.67 the device half of this was `ge.emit_scene`, and the fuzz was
+largely about its delta arithmetic: no `delay:` may be negative, and they must
+sum back to duration_ms. Both facts are gone with the deltas. What replaced
+them is the ENCODER, which is a stricter target for a fuzzer than a text
+emitter ever was: a field that does not fit a u8 or a u16 is a refusal rather
+than a wrong number, and decode() has to give back exactly what was put in.
 """
 
 from __future__ import annotations
@@ -16,7 +24,6 @@ import contextlib
 import io
 import json
 import random
-import re
 import shutil
 import sys
 import tempfile
@@ -27,10 +34,13 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+import cue_file
 import gen_esphome as ge
 import gen_previewer as gp
 import gen_rig
+import gen_scene_cards as gc
 import rig_layout as rl
+import scene_manifest
 import yaml
 
 SEED = 20260820
@@ -44,8 +54,8 @@ OUTPUT_PATHS = (
     "AUDIO_SD",
     "RIG_OUT",
     "LIGHTS_OUT",
-    "LIGHTS_S3_OUT",
     "FALLBACK_SCENES_OUT",
+    "CARD_SCENES",
 )
 
 
@@ -164,20 +174,30 @@ def rand_scene(r: random.Random, i: int) -> tuple[dict[str, Any], dict[str, Any]
     return scene, markers
 
 
-def replay_times(lines: list[str]) -> list[int]:
-    """Walk the emitted script the way ESPHome would; when does each cue land?"""
-    times, t, started = [], 0, False
-    for ln in lines:
-        s = ln.strip()
-        if s == "id: sfx":
-            started = True
-        elif started and s.startswith("- delay:"):
-            dt = int(s.split()[-1].removesuffix("ms"))
-            assert dt > 0, f"non-positive delay {dt}"
-            t += dt
-        elif started and s.startswith("- lambda:"):
-            times.append(t)
-    return times
+def zone_writes(rec: dict[str, Any], nz: int) -> list[tuple[str, int]]:
+    """(global, index) for every zone array slot castle_cues::apply will write
+    for this record — the successor of scanning `id(zone_x)[i]` out of an
+    emitted lambda. An index past the end of one of these arrays is memory
+    corruption on the device, which is why it is checked at all.
+    """
+    out = []
+    for i in range(nz):
+        if not rec["mask"] >> i & 1:
+            continue
+        if rec["op"] == "set":
+            out.append(("effect", i))
+            if rec["level"] is not None:
+                out.append(("level", i))
+            continue
+        out += [
+            ("flash", i),
+            ("flash_target", i),
+            ("flash_decay", i),
+            ("flash_mode", i),
+            ("flash_epoch", i),
+        ]
+        out += [("flash_col", i * 4 + k) for k in range(4)]
+    return out  # fmt: skip
 
 
 class TestGeneratorFuzz(unittest.TestCase):
@@ -218,29 +238,23 @@ class TestGeneratorFuzz(unittest.TestCase):
         self, doc: dict[str, Any], markers: dict[str, Any], zones: list[dict[str, Any]]
     ) -> None:
         nz = len(zones)
+        zids = [z["id"] for z in zones]
         for idx, scene in enumerate(doc["scenes"], start=1):
-            lines = ge.emit_scene(scene, zones, idx, markers)
-            script = yaml.safe_load("script:\n" + "\n".join(lines))["script"][0]
-            self.assertEqual(script["id"], f"scene_{scene['id']}")
-            text = "\n".join(lines)
-            # Every zone_* index the lambdas touch is inside the arrays.
-            for m in re.finditer(r"id\(zone_(\w+)\)\[(\d+)\]", text):
-                name, i = m.group(1), int(m.group(2))
-                self.assertLess(i, nz * 4 if name == "flash_col" else nz, m.group(0))
-            # Replaying the deltas lands on the source times, in order, and
-            # the script runs for exactly duration_ms.
+            # The card path, all the way through the encoder and back.
+            cues = gc.scene_cues(scene, markers)
+            card = cue_file.decode(cue_file.encode(scene, cues, zids))
+            self.assertEqual(len(card["zones"]), nz)
+            # Every zone array slot the firmware will write is inside it.
+            for rec in card["records"]:
+                for name, i in zone_writes(rec, nz):
+                    self.assertLess(i, nz * 4 if name == "flash_col" else nz,
+                                    f"{name}[{i}]")  # fmt: skip
+            # The records land on the source times, in order, and the file
+            # carries the length the runner will wait for.
             pulse = ge.pulse_cues(scene, markers)
             want = sorted(c["t"] for c in (scene.get("cues") or []) + pulse)
-            self.assertEqual(replay_times(lines), want)
-            total = sum(
-                int(ln.strip().split()[-1].removesuffix("ms"))
-                for ln in lines
-                if ln.strip().startswith("- delay:")
-            )
-            self.assertEqual(total, scene["duration_ms"])
-            self.assertEqual(
-                "script.execute: scene_" + scene["id"] in text, bool(scene.get("loop"))
-            )
+            self.assertEqual([r["t"] for r in card["records"]], want)
+            self.assertEqual(card["duration_ms"], scene["duration_ms"])
             # The previewer describes the same strikes at the same times.
             prev = gp.to_previewer(scene, idx, "", markers)
             self.assertEqual(
@@ -256,22 +270,29 @@ class TestGeneratorFuzz(unittest.TestCase):
         ge.SRC.write_text(yaml.safe_dump(doc))
         ge.MARKERS.write_text(json.dumps(markers))
         self.assertEqual(ge.main(), 0)
-        out = yaml.safe_load(ge.OUT.read_text())
-        ids = [s["id"] for s in out["script"]]
-        # Long scenes continue in cont_<id>_N scripts (gen_esphome.CHUNK);
-        # the heads keep the document's order, the fixed scripts follow.
-        heads = [i for i in ids if not i.startswith("cont_")]
+        out = yaml.load(ge.OUT.read_text(), Loader=EsphomeLoader)
+        # Three scripts, whatever the document holds: the show's shape is on
+        # the card. (Their action counts are tests/test_gen_chunks.py's.)
         self.assertEqual(
-            heads[: len(doc["scenes"])], [f"scene_{s['id']}" for s in doc["scenes"]]
+            [s["id"] for s in out["script"]],
+            ["scene_stop", "run_scene", "show_playlist"],
         )
-        self.assertEqual(
-            heads[len(doc["scenes"]) :], ["scene_stop", "run_scene", "show_playlist"]
-        )
-        for sc in out["script"]:  # and no chain is ever deep again
-            self.assertLessEqual(len(sc["then"]), ge.CHUNK, sc["id"])
-        self.assertEqual(
-            out["select"][0]["options"][:-1], [s["id"] for s in doc["scenes"]]
-        )
+        # And the card carries the whole show: a manifest row per scene, in
+        # the document's order, with its own length and level, plus its cues.
+        entries = scene_manifest.decode((ge.CARD_SCENES / "show.man").read_bytes())
+        self.assertEqual([e["id"] for e in entries], [s["id"] for s in doc["scenes"]])
+        for e, s in zip(entries, doc["scenes"], strict=True):
+            self.assertEqual(e["duration_ms"], s["duration_ms"])
+            self.assertEqual(e["loop"], bool(s.get("loop")))
+            self.assertTrue((ge.CARD_SCENES / f"{s['id']}.cue").exists())
+        # The PIR's scene is a `text`, not a `select`, since v5.69 (J1, grade
+        # report 2026-09-17 pm): the legal ids are the CARD's, checked by
+        # /api/pir, so no compiled option list can go stale. What the generator
+        # still decides is the DEFAULT, and it has to be a scene this document
+        # actually has.
+        self.assertNotIn("select", out)
+        pir = next(t for t in out["text"] if t["id"] == "pir_scene")
+        self.assertIn(pir["initial_value"], [s["id"] for s in doc["scenes"]])
         for path in (ge.AUDIO_SD, ge.LIGHTS_OUT):
             yaml.load(path.read_text(), Loader=EsphomeLoader)
         # The rig outputs agree with the layouts the cues were emitted against.
@@ -285,7 +306,11 @@ class TestGeneratorFuzz(unittest.TestCase):
             [s["id"] for s in lights["light"]], [f"zone_{z}" for z in live]
         )
         for s in lights["light"]:
-            self.assertEqual(s["rmt_symbols"], 64)
+            # One block per strip, and a block is 48 words on the ESP32-S3 —
+            # the S2's 64 went with the S2 on 2026-09-17. Pinned as a literal
+            # rather than gen_rig.RMT_BLOCK on purpose: a generator that
+            # silently changed the number would agree with itself.
+            self.assertEqual(s["rmt_symbols"], 48)
             self.assertIs(s["use_psram"], False)
         header = ge.RIG_OUT.read_text()
         biggest = max(layouts[z["id"]].n for z in zones)

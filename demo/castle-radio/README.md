@@ -143,6 +143,25 @@ place — push the `.gz` (as `sd_sync site` does) or delete the stale gzip.
 Tests: `python -m unittest test_device_site` in this directory, and
 `tests/test_sd_sync.py` for the push.
 
+## What the server requires of a request
+
+The server binds loopback, but loopback is not a wall a browser respects: any
+page open in the same browser can post to `127.0.0.1:8871`. So every
+state-changing route is shaped so a browser has to ask permission first, and
+this server answers no `OPTIONS` at all. JSON routes (`/radio/device/command`,
+`/radio/device/sync`, `/radio/retry`, `/radio/reprocess`, link imports) require
+`Content-Type: application/json` — `; charset=…` is fine — and answer 415
+otherwise; `application/json` is not a content type a cross-origin form can
+send without a preflight. The raw upload (`/radio/import` with audio bytes) and
+the bodiless `/radio/restore/<key>` require `X-Castle: 1` and answer 403
+without it: any custom header forces the same preflight, and `X-Filename` could
+not do the job because the route falls back to a default name. The page's own
+scripts and the companion bridge send both (`companion.js` allow-lists the
+header). Preparation queues at most eight unfinished jobs; the ninth is refused
+with 429 rather than parked on disk. This is not authentication and is not
+meant as any: it only means a foreign origin cannot reach these routes with a
+"simple" request (grade report 2026-09-17 E2).
+
 ## Isolation and limitations
 
 All imported audio, sources, analysis, generated recipes, and catalog data go in

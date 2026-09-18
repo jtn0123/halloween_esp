@@ -33,12 +33,16 @@ from castle_emu_upload import Uploads
 
 #: h_ota's plausibility window: under 64 KB is no firmware, over the OTA
 #: partition cannot fit. The board compares against its own partition
-#: (part->size, sd_web_ota.h), so the emulator carries one per build's
-#: flash: the S2 Feather's 4 MB layout and the S3 carrier's 8 MB one
-#: (grade report 2026-09-06 J5). CastleEmu(ota_slot=...) picks.
+#: (part->size, sd_web_ota.h), so the emulator carries one per TARGET —
+#: keyed by the build, not by the chip, because both builds are ESP32-S3 and
+#: what differs is the flash: the Feather's 4 MB layout gives 1.75 MB slots
+#: and the WROOM carrier's 8 MB gives 3.75 MB (grade report 2026-09-06 J5).
+#: The keys were "s2"/"s3" until 2026-09-17, when the S2's retirement made
+#: that spelling a lie about which difference is being expressed.
+#: CastleEmu(ota_slot=...) picks; the default is the castle in the yard.
 OTA_MIN = 65536
-OTA_SLOTS = {"s2": 0x1C0000, "s3": 0x3C0000}
-OTA_SLOT = OTA_SLOTS["s2"]
+OTA_SLOTS = {"feather": 0x1C0000, "carrier": 0x3C0000}
+OTA_SLOT = OTA_SLOTS["feather"]
 
 
 class Handler(Uploads):
@@ -345,16 +349,29 @@ class Handler(Uploads):
             return self._idf(400)
         if n < OTA_MIN or n > self.server.ota_slot:
             return self._err(400, "implausible image size")
+        # Nothing else may touch the card or burn CPU while flash is being
+        # written, and J3 (grade report 2026-09-17 pm) made that a gate rather
+        # than a convention: the flag refuses the next scene start, and "halt"
+        # stops the one already on the strips — a looping scene would
+        # otherwise re-fire its own audio thirty seconds into the upload.
+        # Both before the first byte, exactly as sd_web_ota.h orders them.
+        self.server.quiesce = True
+        self.server.queue("SCENE", "halt")
         got, first = 0, True
         try:
             for chunk in self._body_chunks(n):
                 if first and chunk[0] != 0xE9:  # app image magic
+                    self.server.quiesce = False
                     return self._err(500, "ota write failed")
                 first = False
                 got += len(chunk)
         except OSError:  # TimeoutError is one of these
             pass
         if got != n:
+            self.server.quiesce = False
             return self._err(500, "ota write failed")
         self._json({"flashed": True, "rebooting": True})
         self.server.queue("RESTART", "")
+        # Flash is written, so the flag comes down — the reboot is in a latch
+        # of its own and cannot be talked out of it (sd_web_state.h).
+        self.server.quiesce = False

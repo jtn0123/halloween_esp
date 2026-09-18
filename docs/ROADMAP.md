@@ -56,8 +56,11 @@ for firmware, version bump → OTA → /api/status confirm.
 ## Phase 5 — Hardware-gated
 - [ ] #20 Physical trigger (sensor TBD — see below). Firmware side: GPIO +
       debounce + HTTP trigger endpoint can be built before the sensor arrives.
-- [ ] #30 Jewels dry-run mode. Do NOT flash castle_sd_jewels.yaml until the
-      jewels are physically soldered to A0.
+- [x] #30 Jewels dry-run mode — **moot, closed 2026-09-17**. The jewels are
+      soldered and running the show, and `castle_sd_jewels.yaml` turned out to
+      be byte-equivalent to the build it warned you off (grade report
+      2026-09-17 J4); it was deleted with the S2 build
+      (docs/notes/03-build.md §12.20).
 
 ## #20 trigger hardware — DECIDED 2026-08-13: both, plus a button panel
 User is ordering both motion (HLK-LD2410 mmWave preferred outdoors over PIR)

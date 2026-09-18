@@ -155,7 +155,7 @@ def to_previewer(
     # ms) and web/src/track_lights.ts — keep all three in lockstep.
     scene_marks = markers.get(sid, {})
     gates = pd.section_gates(scene)
-    pulses: list[dict[str, Any]] = []  # capped with pd.thin_pulses below
+    pulses: list[dict[str, Any]] = []
     for pcfg in scene.get("pulse") or []:
         beats = scene_marks.get(pcfg["synth"], [])
         zones = pcfg.get("zones") or ([pcfg["zone"]] if pcfg.get("zone") else None)
@@ -217,9 +217,15 @@ def to_previewer(
                     z for z in pcfg["boost_targets"] if z not in c["targets"]
                 ]
             pulses.append(c)
-    # Same cap as gen_esphome (PULSE_CAP): the desk must show the hits the
-    # device will actually play, not the 1,200 its RAM cannot hold.
-    cues.extend(pd.thin_pulses(pulses))
+    # EVERY hit, since v5.67. The desk used to thin these to PULSE_CAP — the
+    # 200 strongest — because that was all the device could hold: each cue was
+    # a compiled ESPHome action with static RAM behind it. A scene is a cue
+    # file on the card now (tools/gen_scene_cards.py), the castle plays all
+    # 1,200 of a dense track's hits, and a desk that still showed 200 would be
+    # the side that was lying. pd.thin_pulses is still the authority on WHICH
+    # hits are strongest and is still held byte-equal against core/src/pulse.rs
+    # (tests/test_pulse_rust.py); nothing in the show calls it any more.
+    cues.extend(pulses)
     cues.sort(key=lambda c: c["t"])
 
     for eff in scene["base"].values():

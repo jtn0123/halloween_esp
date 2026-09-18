@@ -1,0 +1,249 @@
+# The generic scene runner (v5.67): the YAML half of castle_scenes.h.
+#
+# One script for the whole show, in place of twelve generated ones. It is
+# nearly the shape a generated scene script had — publish current_scene, set
+# the volume unless the desk has hushed the porch, `sfx` the track, set the
+# base look, hold up to 1500 ms for the speaker, walk the timed cues, then run
+# the scene's length out and re-execute itself when it loops — with every
+# per-scene literal read from the card instead of compiled in:
+#
+#   the id, audio token, volume, length and loop flag   /sd/scenes/show.man
+#   the base look and every cue                         /sd/scenes/<id>.cue
+#
+# The cues are walked by castle_cues.yaml's 16 ms interval, which is the
+# clock a raw card song already used. What changed there is ownership: a
+# loaded show used to be unloaded the moment `current_scene` stopped being
+# "stop", because only a raw track could own one. A scene owns its own now.
+#
+# ORDER, and it is the only thing v5.68 changed here. v5.67 read the manifest
+# AND the cue file before it asked for audio, and start went from ~650 ms
+# request-to-audible to ~855 ms on the board (scene_start→sound in the event
+# ring: 400 ms, then 604). The pipeline needs ~400 ms to spin up whatever we
+# do, so the card work must run BESIDE that wait. Hence: one manifest row,
+# volume, `sfx` — then the cue file and the base look, while the speaker comes
+# up. Nothing is lost, because the timeline does not start until the speaker
+# is heard and the give-up window is measured from the request instant.
+#
+# A package of its own for the same two reasons castle_cues.yaml is: it is
+# one responsibility, and castle_sd_common.yaml has no lines to give it.
+# Included by castle_sd_common.yaml, so every target with a card has it.
+
+esphome:
+  includes:
+    - castle_scenes.h
+
+script:
+  # #29, generic: prove the card holds every file the show will ask for, once
+  # after mount, so a missing track lands in /api/status instead of being
+  # discovered as silence when the cue fires. This was a generated stat() per
+  # scene; the file list IS the card's own manifest now, so it is read rather
+  # than compiled — which is the whole point of v5.67.
+  - id: manifest_check
+    then:
+      - lambda: |-
+          if (!castle_sd::g_mounted) return;
+          // J3 (grade report 2026-09-17 pm): nothing reads the card while
+          // an OTA is burning flash. This walk is up to twelve stat()s and
+          // a 16-byte header read on the watched main loop, and sd_audio.h
+          // states the rule for every other reader — it was written before
+          // v5.67 gave the show its own card I/O.
+          if (castle_sd::g_quiesce) return;
+          const std::string missing = castle_scenes::missing_csv();
+          castle_web::set_missing(missing);
+          if (missing == "show.man")
+            ESP_LOGW("castle", "no /sd/scenes/show.man — this card has no show on "
+                               "it; every scene will wear the built-in look");
+          else if (!missing.empty())
+            ESP_LOGW("castle", "MISSING scene files: %s", missing.c_str());
+          else
+            ESP_LOGI("castle", "manifest: every scene's audio and cues are present");
+
+  # J1 (grade report 2026-09-17 pm): which ids are real, read off the card.
+  #
+  # This WAS eleven lines inside castle_sd_common.yaml's boot lambda, run
+  # once and never again — so a scene published to a running castle was 404
+  # on /api/scene until somebody rebooted it, and `sd_sync scenes` printed
+  # "reboot to re-read it" because that was the truth. It is a script now,
+  # and the upload plane rings for it (castle_web::g_scenes_dirty, raised by
+  # sd_web_upload.h when a PUT lands show.man and drained by the 200 ms
+  # interval) — so `make publish` IS the deploy, which is what CLAUDE.md
+  # has been claiming since v5.67.
+  #
+  # ON THE MAIN LOOP, always: it opens the card, and the httpd task must
+  # never (docs/ISSUE-ring-flicker.md). The boot block calls it BEFORE
+  # castle_web::start() for the older reason — the httpd task takes requests
+  # the instant start() returns and used to race the assignment (v5.60, A5).
+  - id: seed_scene_ids
+    mode: restart
+    then:
+      - lambda: |-
+          std::string csv = castle_scenes::ids_csv();
+          const bool from_card = !csv.empty();
+          if (!from_card) csv = kFallbackSceneIdsCsv;
+          std::vector<std::string> scene_ids;
+          for (size_t at = 0; at <= csv.size();) {
+            const size_t end = std::min(csv.find(',', at), csv.size());
+            if (end > at) scene_ids.emplace_back(csv, at, end - at);
+            at = end + 1;
+          }
+          ESP_LOGI("castle", "%u scenes, from %s", (unsigned) scene_ids.size(),
+                   from_card ? "/sd/scenes/show.man" : "this build");
+          // "stop" is a name /api/scene and the PIR may be given, and it
+          // travelled in this list when it came from pir_scene's options.
+          scene_ids.emplace_back("stop");
+          castle_web::set_scene_ids(std::move(scene_ids));
+
+  # Start scene `scene`, whatever the caller is: /api/scene, the PIR, a
+  # button, the evening playlist. `run_scene` (generated) is still the door —
+  # it records the event, stops what was running and hands the name here.
+  - id: scene_run
+    mode: restart
+    parameters:
+      scene: string
+    then:
+      # STEP ONE: only what the play call needs. One 96-byte manifest row, the
+      # volume, the name — everything here is silence the operator hears.
+      - lambda: |-
+          // J3 (grade report 2026-09-17 pm): not while flash is burning.
+          // `make ota` stops the audio from outside, but the PIR, a button
+          // and the evening playlist can all start a scene 20 s into an
+          // upload — and a start is a manifest read plus a cue-file read on
+          // the watched main loop, with the flash cache suspended under it.
+          // That is the v5.61 watchdog class, re-opened by v5.67's card I/O.
+          // Nothing is published and nothing is logged beyond this line: the
+          // castle is about to reboot into a new image anyway.
+          if (castle_sd::g_quiesce) {
+            ESP_LOGW("castle_scenes", "'%s' refused: an OTA is in flight",
+                     scene.c_str());
+            return;
+          }
+          // Card I/O, deliberately, and only in this script: a scene start
+          // already reads the card for its audio, and nothing may touch it
+          // once the show is running (docs/ISSUE-ring-flicker.md).
+          const bool known = castle_scenes::begin(scene.c_str(), esp_timer_get_time());
+          if (!known) {
+            // A Halloween decoration with a dead or empty card must still
+            // glow. ONE look, not twelve: the first scene's base state,
+            // compiled in as 24 bytes of zone records by gen_esphome.py.
+            const castle_cues::Pixels px{id(zone_effect), id(zone_flash),
+                id(zone_flash_col), id(zone_flash_decay), id(zone_flash_target),
+                id(zone_flash_rise), id(zone_level), id(zone_center), id(zone_overlay),
+                id(zone_palette), id(zone_phase), id(zone_flash_mode),
+                id(zone_flash_epoch)};
+            castle_web::g_cues.store(0);
+            castle_web::record_event(castle_web::EventKind::SCENE_MISSING, scene,
+                                     esp_timer_get_time());
+            castle_web::note_missing(scene);
+            ESP_LOGW("castle_scenes",
+                     "no '%s' in /sd/scenes/show.man — showing the built-in look",
+                     scene.c_str());
+            id(current_scene).publish_state(scene);
+            id(lights_override)->execute("show");
+            castle_cues::apply_zones(px, kFallbackZones);
+            return;
+          }
+          id(current_scene).publish_state(castle_scenes::running());
+          // The scene's own level, unless the desk has hushed the porch
+          // (amp at 0) — what the generated volume lambda did.
+          auto call = id(castle_media)->make_call();
+          call.set_volume(id(speaker_hush) ? 0.0f : castle_scenes::volume());
+          call.perform();
+      - if:
+          condition:
+            lambda: 'return castle_scenes::armed();'
+          then:
+            # THE PLAY CALL, as early as it can be made. Audio goes through the
+            # generated `sfx` dispatch (audio_sd.yaml): that is where "no card
+            # in the slot" becomes an audible chirp.
+            - script.execute:
+                id: sfx
+                track: !lambda 'return castle_scenes::audio();'
+            # STEP TWO: the cue file and the base look, now, while the
+            # pipeline spins up. A frame or two later than v5.67 put them and
+            # still hundreds of milliseconds before the first sound.
+            - lambda: |-
+                const castle_cues::Pixels px{id(zone_effect), id(zone_flash),
+                    id(zone_flash_col), id(zone_flash_decay), id(zone_flash_target),
+                    id(zone_flash_rise), id(zone_level), id(zone_center), id(zone_overlay),
+                    id(zone_palette), id(zone_phase), id(zone_flash_mode),
+                    id(zone_flash_epoch)};
+                const bool cues = castle_scenes::load_cues();
+                castle_web::g_cues.store(castle_cues::count());
+                if (cues) {
+                  // Both halves of this scene answered for themselves, which
+                  // is the one moment the castle KNOWS neither is missing —
+                  // so a name a failed start left behind is withdrawn here
+                  // (v5.68: a republished cue file used to need a reboot).
+                  castle_web::heal_missing(scene);
+                  castle_web::heal_missing(scene + ".cue");
+                  castle_cues::apply_base(px);
+                } else {
+                  // The scene is real and its audio will play; its cue file is
+                  // not readable, so the timeline is the fallback look and
+                  // nothing after it. A different fault from a scene the
+                  // manifest does not name, and /api/status names the FILE.
+                  castle_web::record_event(castle_web::EventKind::SCENE_MISSING,
+                                           scene + ".cue", esp_timer_get_time());
+                  castle_web::note_missing(scene + ".cue");
+                  ESP_LOGW("castle_scenes", "no cues for '%s' — audio only",
+                           scene.c_str());
+                  castle_cues::apply_zones(px, kFallbackZones);
+                }
+                ESP_LOGI("castle_scenes", "scene %s: %u cues, %u ms, vol %d%%%s",
+                         scene.c_str(), (unsigned) castle_cues::count(),
+                         (unsigned) castle_scenes::length_ms(),
+                         (int) (castle_scenes::volume() * 100.0f + 0.5f),
+                         castle_scenes::loops() ? ", loops" : "");
+            # Cues start when the SOUND does (~0.5 s after play, measured
+            # 2026-09-15), and give up after SOUND_WAIT_MS on a dead speaker.
+            - wait_until:
+                condition:
+                  lambda: 'return id(castle_speaker)->is_running();'
+                timeout: 1500ms
+            # From here the timeline is measured — exactly where a generated
+            # script's first `delay:` was.
+            - lambda: 'castle_scenes::start_clock(esp_timer_get_time());'
+            # And this one action is the 573 DelayActions the twelve scripts
+            # used to be: the cues fire from the 16 ms interval, and the
+            # script only has to know when the scene is over.
+            - wait_until:
+                condition:
+                  lambda: 'return castle_scenes::finished(esp_timer_get_time());'
+            - if:
+                condition:
+                  lambda: 'return castle_scenes::loops();'
+                then:
+                  # `mode: restart` above, so this is a re-run and not a
+                  # second copy — the same self-execute the generated
+                  # looping scenes ended with. The id is re-read from the
+                  # running state rather than from `scene`, because the
+                  # fallback path may have rewritten neither and a typo
+                  # must not loop forever.
+                  - script.execute:
+                      id: scene_run
+                      scene: !lambda 'return castle_scenes::running();'
+                else:
+                  # J2 (grade report 2026-09-17 pm): and a scene that does
+                  # NOT loop is over — which v5.67 forgot to say. `g_armed`
+                  # stayed true, so the PSRAM cue blob (1,258 records for the
+                  # citizens) stayed allocated, /api/status kept reporting
+                  # `cues` and naming the scene, the zones held the last look
+                  # all night, and the desk and the radio went on suppressing
+                  # their own light frames on the strength of that number.
+                  # Pre-v5.67 a script's end held no PSRAM at all.
+                  #
+                  # `cues_end` is the one door for "the show that was loaded
+                  # is over" (castle_cues.yaml): it routes through
+                  # castle_scenes::stop(), which frees the blob and clears
+                  # the running scene, and zeroes castle_web::g_cues.
+                  - script.execute: cues_end
+                  # And the name, the way scene_stop publishes it. NOT
+                  # scene_stop itself: that stops `scene_run` — the script
+                  # this action is running inside — and stops the media
+                  # player, which would cut the tail of a track that is
+                  # still sounding. "stop" is also what arms the v5.63
+                  # auto-dark in castle_sd_common.yaml: when the audio does
+                  # end, that tick takes the zones to black.
+                  - text_sensor.template.publish:
+                      id: current_scene
+                      state: 'stop'

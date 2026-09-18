@@ -5,7 +5,14 @@
 //! card, and studio_scenes knows when to ask. `tools/sd_sync.py` does the
 //! pushing (its repo-glob conveniences stay Python by design); what is
 //! here is the decision to push, the log, and the one thing a push cannot
-//! fix — scenes the RUNNING firmware was not built with.
+//! fix by itself — scenes the RUNNING castle has not read yet.
+//!
+//! That last part shrank in v5.67. A scene used to be compiled in, so a
+//! scene the firmware lacked needed a build and an OTA; now it is card data
+//! (show.man plus `<id>.cue`, tools/gen_scene_cards.py) and the castle seeds
+//! its id list from the manifest ONCE at boot — because nothing may touch
+//! the card while a song is playing (docs/ISSUE-ring-flicker.md). So the
+//! remaining gap is a reboot, not a flash.
 
 use crate::jsonio::Json;
 use crate::studio::{App, scene_ids};
@@ -55,12 +62,12 @@ pub fn publish_body(app: &App) -> (Json, u16) {
             );
         }
     }
-    let stale = needs_firmware(app, &st);
+    let stale = needs_reboot(app, &st);
     let note = if stale.is_empty() {
         String::new()
     } else {
         format!(
-            "{} scene(s) missing from the running firmware — make sd-build, stop audio, then OTA",
+            "{} scene(s) the castle has not read yet — reboot it to re-read show.man",
             stale.len()
         )
     };
@@ -70,7 +77,7 @@ pub fn publish_body(app: &App) -> (Json, u16) {
             ("pushed".into(), Json::Bool(true)),
             ("log".into(), Json::Str(tail4000(&log))),
             (
-                "needs_firmware".into(),
+                "needs_reboot".into(),
                 Json::Arr(stale.into_iter().map(Json::Str).collect()),
             ),
             ("note".into(), Json::Str(note)),
@@ -79,10 +86,12 @@ pub fn publish_body(app: &App) -> (Json, u16) {
     )
 }
 
-/// studio_publish.needs_firmware — scene ids in scenes.yaml that the
-/// castle's firmware does not know; empty too when the firmware predates
-/// the `scenes` field, because guessing would be worse than silence.
-fn needs_firmware(app: &App, st: &Json) -> Vec<String> {
+/// Scene ids in scenes.yaml that the castle does not know — read from the
+/// `scenes` field, which since v5.67 is what the CARD's manifest said at
+/// boot. The push we just made is on the card; the castle learns it at its
+/// next start, so these are the ids a reboot would add. Empty too when the
+/// firmware predates the field, because guessing would be worse than silence.
+fn needs_reboot(app: &App, st: &Json) -> Vec<String> {
     let fw: Vec<String> = st
         .get("scenes")
         .and_then(Json::as_str)
@@ -107,24 +116,56 @@ mod tests {
     const SHOW: &str = "scenes:\n  - id: vigil\n    len: 30\n  - id: storm\n    len: 40\n";
 
     #[test]
-    fn only_scenes_the_running_firmware_lacks_are_named() {
+    fn only_scenes_the_running_castle_has_not_read_are_named() {
         let d = tmpdir("fw");
         let mut app = App::new(d.clone());
         app.scenes = d.join("scenes.yaml");
         std::fs::write(&app.scenes, SHOW).expect("seed");
         let st = |v: &str| Json::Obj(vec![("scenes".into(), Json::Str(v.into()))]);
-        assert_eq!(
-            needs_firmware(&app, &st("vigil,storm")),
-            Vec::<String>::new()
-        );
-        assert_eq!(
-            needs_firmware(&app, &st("vigil")),
-            vec!["storm".to_string()]
-        );
+        assert_eq!(needs_reboot(&app, &st("vigil,storm")), Vec::<String>::new());
+        assert_eq!(needs_reboot(&app, &st("vigil")), vec!["storm".to_string()]);
         // A firmware that predates the field says nothing rather than
         // guessing that every scene is missing.
-        assert_eq!(needs_firmware(&app, &st("")), Vec::<String>::new());
-        assert_eq!(needs_firmware(&app, &Json::obj()), Vec::<String>::new());
+        assert_eq!(needs_reboot(&app, &st("")), Vec::<String>::new());
+        assert_eq!(needs_reboot(&app, &Json::obj()), Vec::<String>::new());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The push takes no gate of its own — which is what lets
+    /// `studio_scenes::rebuild` drop the oplock before calling it (grade
+    /// report 2026-09-17 pm G2). Everything here is either the network or a
+    /// READ of the tree the generators have already finished writing; the one
+    /// local file the push touches is `sd_sync`'s own per-host publish record
+    /// under the build root. If a lock ever creeps back in, this deadlocks
+    /// rather than merely slowing down, so it is pinned with a deadline.
+    #[test]
+    fn a_publish_does_not_want_the_oplock() {
+        // A configured castle would be a real push from a unit test; the
+        // temp root has no devices.toml, so unset means "nothing to talk to".
+        if std::env::var_os("CASTLE_HOST").is_some_and(|v| !v.is_empty()) {
+            return;
+        }
+        let d = tmpdir("nolock");
+        let mut app = App::new(d.clone());
+        app.scenes = d.join("scenes.yaml");
+        std::fs::write(&app.scenes, SHOW).expect("seed");
+        let app = std::sync::Arc::new(app);
+        let held = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        let pushing = std::sync::Arc::clone(&app);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let h = std::thread::spawn(move || {
+            let (_body, code) = publish_body(&pushing);
+            let _ = tx.send(code);
+        });
+        let code = rx
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("the push ran while the gate was held");
+        drop(held);
+        h.join().expect("push thread");
+        // No castle is configured for a temp root, so the push has nothing to
+        // talk to: 502 without a byte on the wire. The point is that it got
+        // that far at all.
+        assert_eq!(code, 502);
         let _ = std::fs::remove_dir_all(&d);
     }
 

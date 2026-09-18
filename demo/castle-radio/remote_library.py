@@ -13,7 +13,9 @@ from device_bridge import FILES_PATH, STATUS_PATH
 
 _POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 _LOCK = threading.Lock()
-_JOBS = {}
+#: Transfer jobs by song key: phase, byte counts and percent, as the page
+#: polls them.
+_JOBS: dict[str, dict[str, object]] = {}
 AUDIO_SUFFIXES = ("mp3", "opus", "wav")
 
 
@@ -57,7 +59,8 @@ def inventory(root, library, rows):
     installed = set(state.get("scenes", "").split(","))
     audio = _listed_files(files)
     scene_audio = set(_listed_files(scenes))
-    result = {}
+    # Per song: what the castle holds, and the audio name when it holds it.
+    result: dict[str, dict[str, object]] = {}
     for path in (root / "media").glob("*.mp3"):
         scene = path.stem.split("_", 1)[1]
         ready = scene in installed and path.name in scene_audio

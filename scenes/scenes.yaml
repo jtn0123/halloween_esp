@@ -2,15 +2,17 @@
 #
 # THIS FILE IS THE SOURCE OF TRUTH. Three things are generated from it:
 #   tools/render_audio.py  -> audio/NN_<id>.mp3   (one pre-rendered mix per scene)
-#   tools/gen_esphome.py   -> firmware/generated/ (light cue scripts)
+#   tools/gen_esphome.py   -> firmware/generated/ (sfx, rig.h, lights) AND
+#                             audio/card/scenes/  (show.man + one <id>.cue per
+#                             scene — the show itself, pushed by `make publish`)
 #   tools/gen_previewer.py -> previewer/          (scene data + audio spliced in)
 #
 # Why pre-rendered audio: the MAX98357A plays one stream, and mixing/ducking on
-# a single-core ESP32-S2 is not worth fighting. Rendering offline means real
+# the castle's ESP32 is not worth fighting. Rendering offline means real
 # mixing, reverb and crossfades, and the firmware just plays a file.
 
 hardware:
-  board: adafruit_feather_esp32s2
+  board: adafruit_feather_esp32s3
   # The FALLBACK pixel count, used by any zone that does not declare its own
   # `fixture:` below. Every zone currently inherits it — three NeoPixel
   # Jewels, 7 RGBW pixels each.
@@ -41,7 +43,7 @@ hardware:
     bitrate: 32
     card_bitrate: 96
     # Mono on purpose, and it is full level: both amps have SD pinned LEFT
-    # (WIRING §5) and the S2 puts a mono stream in the left I2S slot, so
+    # (WIRING §5) and a mono stream goes in the left I2S slot, so
     # nothing is halved. Stereo doubled the bytes and changed nothing
     # audible (HARDWARE_FINDINGS §8, 2026-08-22).
     channels: 1
@@ -94,14 +96,28 @@ palette:
   flame:  [1.00, 0.42, 0.09]
 
 # ── THE CEILING (grade report 2026-08-23 A2/G2) ─────────────────────────
-# Scenes are COMPILE-TIME objects: each one becomes a generated ESPHome
-# script and costs ~9 KB of the S2's static RAM (dram0), which sits at
-# ~88% of 172,032 bytes after the tenth scene. Budget: **at most 12 scenes**
-# on this board. The weekly CI firmware compile alarms at 92% dram0; if the
-# show needs more scenes than that, the next step is the card-loaded cue
-# format sketched in grade report 2026-08-23 A2 (one interpreter, N scenes,
-# flat RAM) — not a thirteenth script. Each song scene also adds ~1.2 MB to
-# the committed inlined page (tests/test_gen_previewer.py budgets it).
+# Scenes used to be COMPILE-TIME objects: each became a generated ESPHome
+# script costing ~9 KB of static RAM (dram0), which on the ESP32-S2 that ran
+# the porch until 2026-09-17 was ~88% of 172,032 bytes after the tenth — and
+# that is where the number twelve came from.
+#
+# It is not where it comes from any more. Since v5.67 a scene is CARD DATA:
+# its whole timeline is `scenes/<id>.cue` and its numbers are one 96-byte row
+# in `scenes/show.man`, read into PSRAM by one generic runner
+# (firmware/castle_scenes.h). There is no per-scene static RAM cost left, and
+# **editing this file is a publish, not a firmware flash** — `make publish`
+# is the whole deploy for a scene change. That was the step this comment used
+# to point forward to (the card-loaded cue format of grade report
+# 2026-08-23 A2); it is taken.
+#
+# Budget: still **at most 12 scenes**, and now for an honest small reason —
+# `show.man` is a fixed record count so the firmware never allocates to read
+# it (`MAX_SCENES` in tools/scene_manifest.py, `kMaxScenes` in
+# firmware/castle_scenes.h, `SCENE_LIMIT` in tools/check_loc.py and
+# core/src/vocab.rs). Lifting it means lifting all four in one change with a
+# number somebody measured; docs/notes/03-build.md §12.21 lists it as
+# follow-up work. Each song scene also adds ~1.2 MB to the inlined desk page
+# (tests/test_gen_previewer.py budgets it), which is the other real cost.
 #
 # THAT CEILING IS NOW THE RULE THIS FILE ANSWERS TO (grade report 2026-08-31
 # A8). The repo's 500-line cap no longer applies here: this file is

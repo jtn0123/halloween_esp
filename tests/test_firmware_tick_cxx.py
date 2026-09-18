@@ -23,11 +23,14 @@ import sys
 import time
 import unittest
 from pathlib import Path
+from typing import Any, ClassVar
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(ROOT / "tools"))
 
+import cue_file
+import scene_manifest
 from firmware_web_harness import Reply, WebPairCase
 
 #: Fields of /api/status that are the HOST's, not the castle's: the boot
@@ -176,8 +179,15 @@ class TestTheClockIsArmedWithoutTheCard(TickCase):
             self.assertFalse(state["playing"], f"{side}: the grace has lapsed")
             self.assertEqual(state["position_ms"], 0, side)
         for reply in self.pair.both("GET", b"/api/events"):
-            # No `sound`: the amplifier was never handed a sample.
-            self.assertEqual(kinds(reply), [("scene", "storm"), ("silent", "<ms>")])
+            # No `sound`: the amplifier was never handed a sample. And since
+            # v5.67 the ring says WHY there was nothing to play — a scene's
+            # audio, length and volume come from the card's manifest, and this
+            # card has none, so `scene_missing` is the honest second line
+            # (it is also what /api/status's `missing` reports).
+            self.assertEqual(
+                kinds(reply),
+                [("scene", "storm"), ("scene_missing", "storm"), ("silent", "<ms>")],
+            )
 
 
 class TestAFileTheCardDoesNotHave(TickCase):
@@ -270,6 +280,116 @@ class TestALongTrackNameSaysItWasCut(TickCase):
         time.sleep(0.4)
         for reply in self.pair.both("GET", b"/api/events"):
             self.assertNotIn("trunc", json.loads(reply.body)[-1])
+
+
+class TestTheMissingListHeals(TickCase):
+    """v5.68, found on the board: `missing` never shrank.
+
+    Delete a scene's cue file, start it → `cues:0` and `missing:"storm.cue"`,
+    which is right. Publish the file again and start it → `cues:8`, and
+    `missing` STILL said `storm.cue` until the castle was rebooted. So the
+    operator who had just fixed the card read a complaint from a castle that
+    was by then playing the full show, and the only cure was a power cycle.
+
+    A successful start is the one moment either castle has first-hand evidence
+    that neither the scene nor its cue file is missing, so that is where the
+    name is withdrawn (castle_web::heal_missing).
+    """
+
+    #: The scene both cards will carry, with a cue file of eight strikes —
+    #: enough that `cues` is unmistakably non-zero.
+    SCENE: ClassVar[dict[str, Any]] = {
+        "id": "storm", "duration_ms": 8000, "volume": 0.9, "loops": False,
+        "base": {"towerL": "candle"},
+    }  # fmt: skip
+    CUES: ClassVar[list[dict[str, Any]]] = [
+        {"t": 500 * i, "op": "strike", "intensity": 0.5} for i in range(8)
+    ]
+
+    def publish(self, cue: bool) -> None:
+        """Write the show onto BOTH cards: the manifest always, the cue file
+        only when `cue` — the half-published card the operator had."""
+        zones = ["towerL", "towerR", "door"]
+        for card in (self.pair.card_c, self.pair.card_e):
+            scenes = card / "scenes"
+            scenes.mkdir(parents=True, exist_ok=True)
+            (scenes / "show.man").write_bytes(scene_manifest.encode([self.SCENE]))
+            (scenes / "02_storm.mp3").write_bytes(b"\xff\xfb" + b"\x00" * 2046)
+            blob = scenes / "storm.cue"
+            if cue:
+                blob.write_bytes(cue_file.encode(self.SCENE, self.CUES, zones))
+            elif blob.exists():
+                blob.unlink()
+
+    def start_storm(self) -> list[dict[str, object]]:
+        self.pair.both("POST", b"/api/scene?s=storm")
+        self.assertEqual(self.tick(), ("SCENE", b"storm"))
+        self.tick()  # the snapshot the command lands in
+        time.sleep(0.6)  # the emulator's own 200 ms loop, twice over
+        return [self.status(side) for side in ("c", "e")]
+
+    def test_a_republished_cue_file_clears_its_own_name(self) -> None:
+        self.publish(cue=False)
+        for side, state in zip(("c", "e"), self.start_storm(), strict=True):
+            self.assertEqual(state["cues"], 0, side)
+            self.assertEqual(state["missing"], "storm.cue", side)
+        # The operator publishes the file and presses the scene again. No
+        # reboot, no OTA — v5.67's own claim about a scene edit.
+        self.publish(cue=True)
+        for side, state in zip(("c", "e"), self.start_storm(), strict=True):
+            self.assertEqual(state["cues"], len(self.CUES), side)
+            self.assertEqual(state["missing"], "", side)
+        # And the ring kept the history: the complaint happened, once, and
+        # was not repeated by the start that succeeded.
+        for reply in self.pair.both("GET", b"/api/events"):
+            said = [a for e, a in kinds(reply) if e == "scene_missing"]
+            self.assertEqual(said, ["storm.cue"], kinds(reply))
+
+
+class TestAnOtaRefusesAScene(TickCase):
+    """J3 (grade report 2026-09-17 pm): a scene start is refused while flash
+    is being written, identically on both castles.
+
+    `make ota` stops the audio from outside, but nothing stopped the PIR, a
+    button or the evening playlist from starting a scene twenty seconds into
+    an upload — and since v5.67 a start is a manifest read plus a cue-file
+    read on the watched main loop, with the flash cache suspended underneath
+    it. That is the v5.61 watchdog class, re-opened by the card show.
+
+    The refusal is in the RUNNER, not the route: /api/scene still answers
+    {"queued":true}, because by the time the tick reaches the mailbox the
+    upload may well be over. What must not happen is the card read.
+    """
+
+    #: castle_sd::g_quiesce, up for both castles for the whole of this class —
+    #: the flag sd_web_ota.h raises around esp_ota_begin.
+    env: ClassVar[dict[str, str]] = {"CASTLE_QUIESCE": "1"}
+
+    def test_the_scene_is_queued_accepted_and_then_not_started(self) -> None:
+        c, e = self.pair.both("POST", b"/api/scene?s=storm")
+        self.assertEqual((c.status, e.status), (200, 200))
+        self.assertEqual(self.tick(), ("SCENE", b"storm"))
+        self.tick()
+        time.sleep(0.6)  # the emulator's own 200 ms loop, twice over
+        for side in ("c", "e"):
+            state = self.status(side)
+            self.assertEqual(state["scene"], "", side)
+            self.assertEqual(state["cues"], 0, side)
+            # And no card read happened, which is the whole point: a start
+            # that HAD read the manifest would have found none on this card
+            # and named the scene in `missing`.
+            self.assertEqual(state["missing"], "", side)
+        # And STOPPING still works, which is what an OTA actually wants: the
+        # gate is inside `scene_run`, and every path that ends the show —
+        # /api/stop here, and "stop"/"halt" through `run_scene` — sits above
+        # it. A castle that could not be quietened mid-upload would be worse
+        # than one that could be started.
+        self.pair.both("POST", b"/api/stop")
+        self.assertEqual(self.tick(), ("STOP", b""))
+        self.tick()
+        time.sleep(0.6)
+        for side in ("c", "e"):
+            self.assertEqual(self.status(side)["scene"], "stop", side)
 
 
 if __name__ == "__main__":

@@ -124,7 +124,9 @@ A second operator, a port off the home LAN, or the S2 being replaced by a
 board that changes the toolchain story — any of those would have reopened
 the question of what the reference implementation is. None of them
 happened; what ended the plan early was the opposite pressure, an owner
-who did not want a second implementation to maintain.
+who did not want a second implementation to maintain. (The S2 *was* replaced,
+on 2026-09-17, by an ESP32-S3 Feather — but by then the plan was closed, and
+an ESPHome target swap changes no part of the toolchain story.)
 
 ## Where the plan was wrong
 

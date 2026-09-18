@@ -11,7 +11,7 @@ function boot({href = 'http://127.0.0.1:8871/companion.html?castle=http%3A%2F%2F
   const calls = [];
   let onmessage;
   const ctx = {
-    URL, Headers, TextEncoder, ArrayBuffer, Error, Object, String, console,
+    URL, Headers, TextEncoder, ArrayBuffer, Error, Object, String, console, AbortSignal,
     location: new URL(href), document: {getElementById: id => nodes[id]},
     window: {opener, addEventListener(type, fn) { if (type === 'message') {onmessage = fn;} }},
     fetch: async (path, init) => {

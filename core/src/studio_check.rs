@@ -63,8 +63,9 @@ fn need(msg: &str) -> (Json, u16) {
 /// read (grade report 2026-08-21 B4); each problem is one line the desk can
 /// show next to the field.
 ///
-/// And it must FIT. The board holds `SCENE_LIMIT` scenes (~9 KB of dram0
-/// each); a thirteenth is a scene that cannot be compiled. `make check`
+/// And it must FIT. The card's manifest holds `SCENE_LIMIT` scenes in a
+/// fixed record count (v5.67; before that it was ~9 KB of the S2's dram0 a
+/// scene); a thirteenth is a scene nothing can publish. `make check`
 /// already refuses it, but the desk is where it gets written — and
 /// discovering the ceiling as a red pre-commit hook, after the splice, is
 /// discovering it with the show already edited. So the ceiling is answered
@@ -113,11 +114,11 @@ pub(crate) fn check(app: &App, req: &Json) -> Option<(Json, u16)> {
         let limit = vocab::SCENE_LIMIT;
         return Some(refusal(
             format!(
-                "the show is full \u{2014} {n} scenes is the {limit} this board can hold \
-                 (~9 KB of dram0 each), so {} cannot be added. Remove a scene first, or \
-                 move the cue timelines to the card-loaded format described in \
-                 scenes/scenes.yaml's header \u{2014} a thirteenth generated script is not \
-                 the next step.",
+                "the show is full \u{2014} {n} scenes is the {limit} the card's manifest \
+                 holds (show.man is a fixed record count), so {} cannot be added. Remove a \
+                 scene first, or lift the ceiling deliberately: scene_manifest.MAX_SCENES, \
+                 castle_scenes::kMaxScenes and SCENE_LIMIT in one change, with a number \
+                 somebody measured \u{2014} see docs/notes/03-build.md \u{00A7}12.21.",
                 repr_str(sid)
             ),
             vec![format!("scene ceiling: {n}/{limit} scenes")],
@@ -192,7 +193,7 @@ mod tests {
     }
 
     /// The thirteenth scene is refused before anything is written, with the
-    /// sentence that explains the board's dram0 ceiling and names the way
+    /// sentence that explains the manifest's ceiling and names the way
     /// forward (grade report 2026-08-31 A8).
     #[test]
     fn the_thirteenth_scene_is_refused_with_the_reason() {
@@ -217,7 +218,9 @@ mod tests {
             msg.starts_with("the show is full \u{2014} 12 scenes is the 12"),
             "{msg}"
         );
-        assert!(msg.contains("card-loaded format"), "{msg}");
+        // The reason names the three constants a lift has to move together,
+        // not the RAM measurement it stopped being in v5.67.
+        assert!(msg.contains("scene_manifest.MAX_SCENES"), "{msg}");
         assert_eq!(
             body.get("errors"),
             Some(&Json::Arr(vec![Json::Str(

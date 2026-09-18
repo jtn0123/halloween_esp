@@ -125,7 +125,7 @@ mod tests {
 
     const TOML: &str = r#"
 # a comment
-[castle-sd]
+[castle-feather-s3]
 host = "10.0.0.7"   # trailing comment
 fallbacks = ["10.0.0.8", "10.0.0.9"]
 [spare]
@@ -138,7 +138,7 @@ nickname = "no host key, skipped"
     fn the_subset_parser_reads_the_inventory_shape() {
         let d = parse_devices(TOML);
         assert_eq!(d.len(), 2);
-        assert_eq!(d[0].name, "castle-sd");
+        assert_eq!(d[0].name, "castle-feather-s3");
         assert_eq!(d[0].host, "10.0.0.7");
         assert_eq!(d[0].fallbacks, vec!["10.0.0.8", "10.0.0.9"]);
         assert_eq!(d[1].host, "10.0.0.20");
@@ -147,7 +147,10 @@ nickname = "no host key, skipped"
     #[test]
     fn precedence_is_arg_then_env_then_table() {
         let all = ["10.0.0.7", "10.0.0.8", "10.0.0.9", "10.0.0.20"];
-        assert_eq!(candidates(Some("castle-sd"), None, TOML), all[..3].to_vec());
+        assert_eq!(
+            candidates(Some("castle-feather-s3"), None, TOML),
+            all[..3].to_vec()
+        );
         assert_eq!(
             candidates(Some("1.2.3.4"), Some("ignored"), TOML),
             ["1.2.3.4"]

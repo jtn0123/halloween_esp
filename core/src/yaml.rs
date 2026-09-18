@@ -19,7 +19,9 @@
 //! - an int too large for `i64` becomes a float, where Python has bigints;
 //! - mapping keys are strings; a non-string key is read as its own text;
 //! - `#` starts a comment everywhere, including inside a block scalar,
-//!   whose text nothing validates.
+//!   whose text nothing validates;
+//! - nesting past [`MAX_DEPTH`] levels is refused rather than followed,
+//!   because following it aborts the process.
 //!
 //! Anchors, aliases, tags, multiple documents and flow keys without a
 //! space after the colon are not in the subset and are read as text or
@@ -31,6 +33,24 @@
 use std::fmt;
 
 pub use crate::yaml_parse::parse;
+
+/// How deep a document may nest before either parser gives up on it.
+///
+/// Both halves recurse once per level — [`crate::yaml_parse`] through
+/// `node`/`seq`/`map`, [`crate::yaml_flow`] through `value` — and a blown
+/// stack is not an error a server can answer: it aborts the process, and
+/// every other connection in flight dies with it. `POST /studio/scene` with
+/// `a: [[[…]]]` twenty thousand deep (about 40 KB of body) did exactly that
+/// — grade report 2026-09-17 B1, the same class the JSON reader closed on
+/// 2026-09-06. A block sequence is cheaper still: `- - - - …` on ONE line
+/// opens a level every two bytes.
+///
+/// The number is [`crate::jsonio_parse::MAX_DEPTH`]'s, deliberately: the two
+/// readers guard the same request against the same failure, and a scene
+/// block is a handful of levels either way. PyYAML gives up near 1000 with
+/// a far larger frame, so a document this parser accepts is one
+/// `yaml.safe_load` accepts too.
+pub const MAX_DEPTH: usize = crate::jsonio_parse::MAX_DEPTH;
 
 /// One YAML value. `Int` and `Float` are separate because the validator's
 /// messages repr the value back and Python's `0` is not `0.0`.

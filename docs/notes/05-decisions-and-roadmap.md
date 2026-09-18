@@ -54,6 +54,7 @@ Part of the design record; the index is [`PROJECT_NOTES.md`](../../PROJECT_NOTES
 | 2026-09-05 | The pixel is the seam: `castle_sd_common.yaml` split out of `castle_sd.yaml` | ESPHome packages APPEND lists — a build can extend an item another package declared, but it cannot subtract one. So the S3 build cannot include `castle_sd.yaml` and delete its status pixel; the only spelling that exists is not including the file that declares one. The card, the loopback stream, the web server and its main-loop bridge moved into a file both builds read; what stayed behind in `castle_sd.yaml` is the Feather's own LED and the GPIO21 rail that powers it. The S2's compiled config is unchanged by the split apart from the pixel's `light.turn_on` becoming its own `on_boot` entry at -190, which is where it always meant to be — before the mount, not inside it |
 | 2026-09-05 | The RMT budget became chip-aware rather than the S3 getting its own generated strips | Two descriptions of the same three fixtures is how a pin drifts. `tools/gen_rig.py` now carries a `Chip` — block size and channel count — and a zone's request is read as BLOCKS, which is the quantity the hardware actually has; `generated/lights_s3.yaml` is a handful of `!extend`s that re-spend those blocks in 48-word units over the strips `generated/lights.yaml` already declared. The S2's generated files did not change by a byte |
 | 2026-09-06 | The Python studio is gone, early, at the owner's call | [`docs/RETIREMENT.md`](../RETIREMENT.md) staged the removal for after Halloween, with the season as the soak test. The owner ended the soak instead — "remove fallback, I don't want to maintain old code" — so phases 2, 3 and 4 ran together. The scene validator is native (`core/src/scene_schema.rs` over the crate's own YAML subset), the seven `studio_*.py` server modules and their launcher arms are deleted, `CASTLE_STUDIO` is gone, the e2e matrix is one axis, and every test that drove the Python server was ported rather than dropped — to Rust `#[test]`s where it had no HTTP face, to black-box `tests/test_studio_*_rs.py` suites where it did. The tag `python-studio-final` marks the last tree that carries the server; there is no deprecated folder, because history is the archive |
+| 2026-09-17 | The ESP32-S2 is retired; the S3 Feather IS the build | `castle_feather_s3.yaml` — an Adafruit ESP32-S3 Feather #5477 in castle-carrier v3.3a — took the porch when v5.64 was OTA'd to it over Wi-Fi and the show ran (§12.20). So the shape inverts: `castle.yaml` describes the S3, `castle_feather_s3.yaml` carries only what is the Feather's own (the GPIO33 status pixel behind its GPIO21 rail), and `castle_sd.yaml` is DELETED, as `castle_flash.yaml` was — a target whose board is out of the yard rots green, and this one had a byte-identical twin (`castle_sd_jewels.yaml`, also deleted) under a false "DO NOT flash" header. The 2026-09-05 rows above are history now in two places: the seam the pixel cut is still there but the file that stayed behind is the S3 Feather's, and the chip-aware RMT budget has ONE chip, so `generated/lights_s3.yaml` and the generator's override are gone and 48-symbol blocks are simply what the generator emits. What did NOT change is the image's behaviour: the whole dram0 diet, mdns-off and the socket counts are exactly v5.64's, to be given back and measured one at a time on the board — at 41.9% RAM there is room, but room is not a measurement |
 
 ---
 
@@ -80,16 +81,17 @@ Software, all committed and CI-green at `ec357df` (2026-09-06):
 - **One studio server, the Rust one** (`make studio`, `make e2e`). The
   Python server retired 2026-09-06 — [`docs/RETIREMENT.md`](../RETIREMENT.md);
   the tag `python-studio-final` is its last tree.
-- **Two firmware targets, one show**: `castle_sd.yaml` (the S2 on the
-  porch, compiled at 88 % dram0 against a 92 % alarm) and `castle_s3.yaml`
-  (the carrier, no hardware yet), both reading `castle_sd_common.yaml`. The
+- **Two firmware targets, one show**: `castle_feather_s3.yaml` (the S3
+  Feather on the porch since 2026-09-17, 41.9 % RAM against a 92 % alarm and
+  71.8 % of its OTA slot) and `castle_s3.yaml` (the WROOM carrier, no
+  hardware yet), both reading `castle.yaml` and `castle_sd_common.yaml`. The
   version string in `firmware/castle.yaml` is what an OTA must show on the
   web page. `make publish` and `make ota` rehearsed end to end against the
   emulator, so flash day is the board and nothing else.
-- **The gates**: 907 Python tests, 154 Rust `#[test]`s, 148 browser, 13 cross-language
+- **The gates**: 1129 Python tests, 154 Rust `#[test]`s, 148 browser, 13 cross-language
   parity suites, 39 golden fixtures, the 500-line and dated-citation
   guards. The grade report 2026-09-06 (`.claude/grade-report.md`) is B+.
-- **The show**: 10 of the 12 scene slots this board can hold.
+- **The show**: 10 of the 12 scene slots the card's manifest holds.
 
 Waiting on hardware — the castle is off the network:
 

@@ -58,6 +58,11 @@ enum class Kind : uint8_t {
   WIFI_UP,
   WIFI_DOWN,
   HTTP_ERR,
+  // v5.67: the card could not say what a scene is, or had no cues for it,
+  // and the castle fell back to its compiled-in look. The one failure the
+  // card-loaded show has that the compiled one could not: added at the END
+  // so a reboot into this firmware still reads the previous life's ring.
+  SCENE_MISSING,
 };
 
 inline const char *kind_str(Kind k) {
@@ -80,6 +85,7 @@ inline const char *kind_str(Kind k) {
     case Kind::WIFI_UP: return "wifi_up";
     case Kind::WIFI_DOWN: return "wifi_down";
     case Kind::HTTP_ERR: return "http_err";
+    case Kind::SCENE_MISSING: return "scene_missing";
   }
   return "";
 }

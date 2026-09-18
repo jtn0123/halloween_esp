@@ -36,6 +36,10 @@ fn main() {
         eprintln!("studio: {why}");
         std::process::exit(1);
     }
+    // Ctrl-C on `make studio` reaches this process only: every child is in
+    // its own process group, so the studio is what passes the signal on
+    // (grade report 2026-09-17 pm B1).
+    castle_core::studio_reap::install_shutdown_handlers();
     let _ = std::fs::create_dir(&app.tracks);
     let listener = match bind_retry(host, port) {
         Ok(l) => l,

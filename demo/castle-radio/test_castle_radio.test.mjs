@@ -183,7 +183,7 @@ function benchContext() {
   const device = element('device');
   device.querySelector = () => grid;
   const ctx = {
-    console, toast() {},
+    console, toast() {}, AbortSignal,
     $: id => (id === 'device' ? device : $(id)),
     document: {createElement: () => bench, addEventListener() {}},
     fetch() { throw new Error('the bench must not open its own request'); },

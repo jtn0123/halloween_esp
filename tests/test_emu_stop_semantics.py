@@ -1,6 +1,6 @@
 """STOP vs SHOW "0" on the emulator, held to the firmware's own split.
 
-castle_sd_common.yaml: ActionType::STOP runs `scene_stop` and nothing else —
+castle_web_actions.yaml: ActionType::STOP runs `scene_stop` and nothing else —
 the evening playlist keeps its place and starts the next scene after the gap.
 Only SHOW "0" (/api/show/stop) and BLACKOUT call `show_playlist->stop()`.
 The emulator used to end the playlist on a plain stop, so every tool verified
@@ -86,7 +86,7 @@ class TestStopLeavesThePlaylistRunning(unittest.TestCase):
         self.assertEqual(self.status()["scene"], "stop")
 
     def test_a_stop_hands_the_strips_back_from_a_light_show(self) -> None:
-        """castle_sd_common.yaml's STOP branch runs lights_override("off")
+        """castle_web_actions.yaml's STOP branch runs lights_override("off")
         beside scene_stop: zeroing the zone arrays leaves the manual colour
         painting over them, so a page light show survived the stop."""
         self.post("/api/light?c=FF0000")
@@ -108,12 +108,14 @@ class TestStopLeavesThePlaylistRunning(unittest.TestCase):
 class TestTheFirmwareSaysSo(unittest.TestCase):
     """The YAML, parsed — the emulator's stop is only as good as this."""
 
+    # The chain moved out of castle_sd_common.yaml's 200 ms interval and into
+    # the `web_action` script that interval runs inline (v5.70).
     COMMON = (
-        Path(__file__).resolve().parent.parent / "firmware" / "castle_sd_common.yaml"
+        Path(__file__).resolve().parent.parent / "firmware" / "castle_web_actions.yaml"
     ).read_text()
 
     def branch(self, action: str) -> str:
-        """One arm of the mailbox's if/else chain in the 200 ms interval."""
+        """One arm of the mailbox's if/else chain in the web_action script."""
         head = f"ActionType::{action}) {{"
         self.assertIn(head, self.COMMON)
         return self.COMMON.split(head, 1)[1].split("} else if", 1)[0]

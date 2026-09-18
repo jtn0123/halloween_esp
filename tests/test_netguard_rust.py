@@ -7,8 +7,10 @@ means a LAN visitor reaching an address only this machine can see.
 
 So both implementations answer the SAME corpus here — the one
 tests/test_netguard.py drives, widened with the shapes a URL parser gets
-wrong (credentials, brackets, ports, case, v4-mapped v6) — and the
-sentences must match, not just the verdicts: the desk shows the string.
+wrong (credentials, brackets, ports, case, v4-mapped v6, NAT64, the
+non-global IPv6 ranges inside 2000::/3, a name that resolves to nothing)
+— and the sentences must match, not just the verdicts: the desk shows
+the string.
 
 DNS is mocked on both sides, from one table: the Python through
 socket.getaddrinfo as its own tests do, the Rust through the table
@@ -53,6 +55,16 @@ DNS: dict[str, list[str]] = {
     "bench.example": ["198.18.0.1"],
     "testnet.example": ["203.0.113.9"],
     "zeroes.example": ["0.0.0.0"],
+    # One name per v6 range the 2000::/3 shortcut used to call public, so
+    # the differential gate would have caught the drift E1 found (grade
+    # report 2026-09-17 pm E1). `nat64.example` is the inverse: a NAT64
+    # wrapper around a public v4, which BOTH sides must allow.
+    "sixtofour.example": ["2002::1"],
+    "docnet.example": ["2001:db8::1"],
+    "protocol.example": ["2001::1"],
+    "discard.example": ["100::1"],
+    "nat64loop.example": ["64:ff9b::7f00:1"],
+    "nat64.example": ["64:ff9b::808:808"],
 }
 
 LAN = "192.168.1.20"
@@ -92,6 +104,22 @@ CASES: list[tuple[str, str]] = [
     ("http://zeroes.example/", LAN),
     ("http://mapped.example/", LAN),
     ("http://[::ffff:192.168.0.1]/", LAN),
+    # One row per v6 range the 2000::/3 shortcut mis-classified, as a name
+    # and as a literal.
+    ("http://sixtofour.example/", LAN),
+    ("http://[2002::1]/", LAN),
+    ("http://docnet.example/", LAN),
+    ("http://[2001:db8::1]/", LAN),
+    ("http://protocol.example/", LAN),
+    ("http://[2001::1]/", LAN),
+    ("http://[3fff::1]/", LAN),
+    ("http://discard.example/", LAN),
+    ("http://[100::1]/", LAN),
+    # NAT64 is judged by the v4 it carries: loopback refused...
+    ("http://nat64loop.example/", LAN),
+    ("http://[64:ff9b::7f00:1]/", LAN),
+    # ...and the local-use prefix is never public, whatever it wraps.
+    ("http://[64:ff9b:1::808:808]/", LAN),
     # Split horizon: the private answer is the one that decides, whichever
     # order it arrives in.
     ("http://two.faced/", LAN),
@@ -101,13 +129,22 @@ CASES: list[tuple[str, str]] = [
     ("https://8.8.8.8/x", LAN),
     ("https://sixer.example/v", LAN),
     ("https://[2607:f8b0::1]/v", LAN),
+    # ...including a NAT64 wrapper around a public v4, and the global
+    # carve-outs inside 2001::/23.
+    ("https://nat64.example/v", LAN),
+    ("https://[64:ff9b::808:808]/v", LAN),
+    ("https://[2001:1::1]/v", LAN),
+    ("https://[2001:20::1]/v", LAN),
     ("https://user:pw@www.youtube.com/watch?v=abc", LAN),
     # Credentials hiding a private target behind a public-looking name.
     ("http://www.youtube.com@10.0.0.5/x", LAN),
     ("http://user:pw@192.168.1.1/", LAN),
-    # Unresolvable is left to yt-dlp to complain about.
+    # A name that resolves to nothing fails CLOSED for a LAN visitor —
+    # and is still waved through for the studio's own machine, which never
+    # reaches the resolver at all.
     ("https://nope.test/v", LAN),
     ("https://nope.test:8080/v", LAN),
+    ("https://nope.test/v", "127.0.0.1"),
     # Hostless and broken.
     ("http:///x", LAN),
     ("http://[::1", LAN),

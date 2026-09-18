@@ -5,7 +5,10 @@
   const state = document.getElementById('companion-state');
   const reconnect = document.getElementById('companion-reconnect');
   const allowedHeaders = new Set([
-    'content-type', 'x-filename', 'x-split', 'x-audio-format', 'x-audio-quality',
+    // x-castle is the marker the import server requires on its raw-bodied and
+    // bodiless POSTs (grade report 2026-09-17 E2); this relay is same-origin
+    // with that server, so it is the one place allowed to set it.
+    'content-type', 'x-castle', 'x-filename', 'x-split', 'x-audio-format', 'x-audio-quality',
   ]);
   const rules = [
     ['GET', /^\/radio\/tools$/],
@@ -55,7 +58,7 @@
       if (!localService()) { throw new Error('Open this helper from Castle Studio on this Mac.'); }
       const expected = requestedCastle();
       if (!expected) { throw new Error('The castle address is missing or invalid.'); }
-      const response = await fetch('/radio/tools', {cache: 'no-store'});
+      const response = await fetch('/radio/tools', {cache: 'no-store', signal: AbortSignal.timeout(6000)});
       if (!response.ok) { throw new Error('Castle Radio tools did not answer.'); }
       const status = await response.json();
       if (status.service !== 'castle-radio' || status.protocol !== 1 || status.castle_origin !== expected) {
@@ -96,7 +99,7 @@
     }
     const init = {method, headers, cache: 'no-store'};
     if (!['GET', 'HEAD'].includes(method) && message.body != null) { init.body = message.body; }
-    return {id: message.id, url: url.pathname + url.search, init};
+    return {id: message.id, url: url.pathname + url.search, init, slow: !['GET', 'HEAD'].includes(method)};
   }
 
   async function relay(event) {
@@ -104,7 +107,12 @@
     let request;
     try {
       request = checkedRequest(event.data);
-      const response = await fetch(request.url, request.init);
+      /* The relay is bounded too: a request that never settles would leave
+         the page's bridge call pending until its own 120 s timer, with this
+         window reporting nothing (grade report 2026-09-17 pm C6). An upload
+         gets the long budget; a read gets the short one. */
+      const response = await fetch(request.url,
+        {...request.init, signal: AbortSignal.timeout(request.slow ? 15 * 60 * 1000 : 30000)});
       const body = await response.arrayBuffer();
       tellOpener({
         type: 'castle-tools-response', id: request.id, status: response.status,

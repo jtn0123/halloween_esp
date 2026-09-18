@@ -92,7 +92,7 @@ export function createRigPanel(rig: RigState, hooks: RigHooks): RigPanel {
     const eyebrow = byId("rigEyebrow");
     if (!eyebrow) return;
     eyebrow.textContent = `three zones · ${pixels} px`;
-    eyebrow.title = "ESP32-S2 Feather · MAX98357A I²S amp · "
+    eyebrow.title = "ESP32-S3 Feather · MAX98357A I²S amp · "
       + ZONE_ORDER.map((z) =>
         `${SPOT[z]}: ${fixture(rig.zones[z].fixture).name}`).join(" · ");
   }

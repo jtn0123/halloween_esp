@@ -43,10 +43,11 @@ def main() -> None:
     )
     ap.add_argument("--no-sd", action="store_true", help="pretend the card is missing")
     ap.add_argument(
-        "--chip",
+        "--board",
         choices=sorted(OTA_SLOTS),
-        default="s2",
-        help="whose OTA slot /api/ota measures against (default: the S2 Feather)",
+        default="feather",
+        help="whose OTA slot /api/ota measures against: the 4 MB Feather in "
+        "the yard or the 8 MB WROOM carrier (default: feather)",
     )
     ap.add_argument(
         "--serial",
@@ -74,7 +75,7 @@ def main() -> None:
         sd_mounted=not args.no_sd,
         serial=args.serial,
         scenes=scenes,
-        ota_slot=OTA_SLOTS[args.chip],
+        ota_slot=OTA_SLOTS[args.board],
     )
     if args.dir is None:
         seed(emu.sd_dir)

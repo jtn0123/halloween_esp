@@ -6,11 +6,14 @@ indexes, and the substitutions castle.yaml feeds those strips. A pin or a
 pixel count that drifts between them is a dark window or a cue aimed at a
 pixel the strip does not have, and nothing on the device reports either.
 
-Also pins the two S2 facts bench-diagnosed on 2026-08-19: `rmt_symbols: 64`
-per strip (the S2's RMT has 256 symbols total; ESPHome's 192 default lets
-the first strip take three blocks and starves the rest) and `use_psram:
-false` (the RMT refill ISR must read the buffer during flash-cache
-blackouts). Both are the kind of line that gets "tidied" away.
+Also pins the two facts bench-diagnosed on 2026-08-19: one whole RMT channel
+block per strip (ESPHome's per-strip default lets the first strip take three
+blocks and starves the rest) and `use_psram: false` (the RMT refill ISR must
+read the buffer during flash-cache blackouts). Both are the kind of line that
+gets "tidied" away. The block was 64 while the porch ran an ESP32-S2 and is 48
+since the S3 Feather replaced it on 2026-09-17; the number is read from
+gen_rig rather than typed here, because typing it is how an S2 constant
+survives into an S3 image.
 """
 
 from __future__ import annotations
@@ -81,9 +84,9 @@ class TestEmittedStrips(unittest.TestCase):
     def test_one_strip_per_wired_zone(self) -> None:
         self.assertEqual([s["id"] for s in strips()], [f"zone_{z['id']}" for z in LIVE])
 
-    def test_s2_rmt_budget_and_internal_ram_on_every_strip(self) -> None:
+    def test_rmt_budget_and_internal_ram_on_every_strip(self) -> None:
         for s in strips():
-            self.assertEqual(s["rmt_symbols"], 64, s["id"])
+            self.assertEqual(s["rmt_symbols"], gen_rig.S3.block, s["id"])
             self.assertIs(s["use_psram"], False, s["id"])
             self.assertEqual(s["platform"], "esp32_rmt_led_strip")
             self.assertEqual(s["chipset"], "WS2812")
@@ -120,9 +123,10 @@ class TestEmittedStrips(unittest.TestCase):
 
 
 class TestRmtBudget(unittest.TestCase):
-    """The S2 has 256 RMT symbols and no DMA. Overspend and a strip goes dark
-    (it happened, 2026-08-19); underspend a long strip and its refill ISR
-    runs to a 40 us deadline, which is a garbled pixel now and then."""
+    """The ESP32-S3 has 192 RMT symbols of TX memory in four channel blocks and
+    no DMA. Overspend and a strip goes dark (it happened on the S2's 256,
+    2026-08-19); underspend a long strip and its refill ISR runs to a 30 us
+    deadline, which is a garbled pixel now and then."""
 
     def zones(self, **symbols: int) -> list[dict[str, Any]]:
         return [
@@ -139,23 +143,28 @@ class TestRmtBudget(unittest.TestCase):
         """A zone's appetite reaches the emitted strip verbatim. Shown on a
         two-zone rig: on the real three the status pixel already holds the
         fourth block, which is the trade the next test is about."""
-        zones = [z for z in self.zones(door=128) if z["id"] != "towerR"]
+        zones = [z for z in self.zones(door=96) if z["id"] != "towerR"]
         lights = yaml.safe_load(gen_rig.emit_lights(LAYOUTS, zones, PER))["light"]
         got = {s["id"]: s["rmt_symbols"] for s in lights}
-        self.assertEqual(got["zone_door"], 128)
-        self.assertEqual(got["zone_towerL"], 64)
+        self.assertEqual(got["zone_door"], 96)
+        self.assertEqual(got["zone_towerL"], 48)
 
-    def test_the_leftover_blocks_are_stated_with_the_pixel_counted(self) -> None:
-        """The banner is the only place this budget is ever read, so it has
-        to name every consumer. The status pixel is the fourth and the one
-        this generator does not write (castle_sd.yaml does, by hand), which
-        is why three 64-symbol strips leave nothing rather than one spare
-        block. Until 2026-09-06 the banner offered that block to a fourth
-        strip and the pixel lost it silently — grade report 2026-09-06 J2."""
+    def test_the_leftover_blocks_are_stated_for_both_builds(self) -> None:
+        """The banner is the only place this budget is ever read, so it has to
+        name every consumer — and since one generated file is read by two
+        builds that spend different amounts of it, one number would have been
+        false for one of them (grade report 2026-09-17 J6). The status pixel is
+        the fourth consumer and the one this generator does not write
+        (castle_feather_s3.yaml does, by hand), which is why three strips leave
+        nothing on the Feather and one whole block on the carrier. Until
+        2026-09-06 the banner offered that block to a fourth strip and the
+        pixel lost it silently — grade report 2026-09-06 J2."""
         text = gen_rig.emit_lights(LAYOUTS, ZONES, PER)
-        self.assertIn("256 of 256 symbols spent", text)
-        self.assertIn("status pixel (1 block, castle_sd.yaml)", text)
+        self.assertIn("castle_feather_s3.yaml): 192 of 192 symbols spent", text)
+        self.assertIn("status pixel (1 block)", text)
         self.assertIn("0 block(s) spare", text)
+        self.assertIn("castle_s3.yaml), which has no status pixel: 144 of 192", text)
+        self.assertIn("1 block(s) spare", text)
 
     def test_the_reservation_is_what_the_last_block_goes_to(self) -> None:
         """check_rmt_budget's arithmetic, both ways round: the strips leave
@@ -169,35 +178,38 @@ class TestRmtBudget(unittest.TestCase):
         )
 
     def test_the_ring_flicker_fix_is_refused_while_the_pixel_exists(self) -> None:
-        """docs/ISSUE-ring-flicker.md prescribes `rmt_symbols: 128` on the
-        door to double its refill deadline, and calls it a straight trade
-        against the onboard status LED. The generator used to take that edit
-        without a word and ask the peripheral for 320 of its 256 symbols —
-        a strip that gets no channel and stays dark, which is the exact
-        failure this budget exists to prevent. Now it stops the build and
-        says whose block is in the way."""
+        """docs/ISSUE-ring-flicker.md prescribes a second block on the door to
+        double its refill deadline, and calls it a straight trade against the
+        onboard status LED. The generator used to take that edit without a word
+        and ask the peripheral for more than it has — a strip that gets no
+        channel and stays dark, which is the exact failure this budget exists
+        to prevent. Now it stops the build and says whose block is in the
+        way."""
         with self.assertRaises(SystemExit) as e:
-            gen_rig.emit_lights(LAYOUTS, self.zones(door=128), PER)
+            gen_rig.emit_lights(LAYOUTS, self.zones(door=96), PER)
         msg = str(e.exception)
         self.assertIn("status pixel", msg)
-        self.assertIn("castle_sd.yaml", msg)
-        self.assertIn("ESP32-S2 has 256", msg)
+        self.assertIn("castle_feather_s3.yaml", msg)
+        self.assertIn("ESP32-S3 has 192", msg)
 
     def test_giving_up_the_pixel_is_what_buys_the_second_block(self) -> None:
         """The trade is real, not a wall: with nothing reserved the same rig
         fits exactly, which is what dropping `status_pixel` would buy."""
-        self.assertEqual(gen_rig.check_rmt_budget(self.zones(door=128), LAYOUTS), 0)
+        self.assertEqual(gen_rig.check_rmt_budget(self.zones(door=96), LAYOUTS), 0)
 
     def test_overspending_the_peripheral_stops_the_build(self) -> None:
         with self.assertRaises(SystemExit) as e:
-            gen_rig.emit_lights(LAYOUTS, self.zones(door=128, towerL=128), PER)
-        self.assertIn("ESP32-S2 has 256", str(e.exception))
+            gen_rig.emit_lights(LAYOUTS, self.zones(door=96, towerL=96), PER)
+        self.assertIn("ESP32-S3 has 192", str(e.exception))
 
     def test_a_half_block_is_refused(self) -> None:
-        for bad in (96, 32, 0):
+        """64 is in this list on purpose: it was THE spelling every zone used
+        while the porch ran an S2, so a revert or a stale note is a real way
+        for it to come back, and on this chip it is not a whole block."""
+        for bad in (64, 24, 0):
             with self.assertRaises(SystemExit) as e:
                 gen_rig.emit_lights(LAYOUTS, self.zones(door=bad), PER)
-            self.assertIn("multiple of 64", str(e.exception))
+            self.assertIn("multiple of 48", str(e.exception))
 
 
 class TestGeneratedFilesAreFresh(unittest.TestCase):

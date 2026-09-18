@@ -1,5 +1,5 @@
 /* One audio element owns full-song and stem playback, seeking, and both visuals. */
-/* global $, audio, blacked, CastleVisuals, current, fmt, history, imported, lastLibrary, load, queue, refresh, renderImports, renderQueue, renderTracks, request, stopped, toast, toggle, tracks, updatePlayer */
+/* global $, REQUEST_MS, audio, blacked, CastleVisuals, current, fmt, history, imported, lastLibrary, load, queue, refresh, renderImports, renderQueue, renderTracks, request, stopped, toast, toggle, tracks, updatePlayer */
 const V = CastleVisuals;
 const heroStage = new V.Stage($('hero-canvas'));
 const detailStage = new V.Stage($('preview-canvas'));
@@ -10,7 +10,7 @@ const waveformCache=new Map();
 const waveColor=layer=>getComputedStyle(document.documentElement).getPropertyValue(`--wave-${layer}`).trim()||'#c9a7ff';
 const layerNames={combined:'Full song',vocals:'Voice',backing:'Background'};
 const params=V.defaultParams();
-fetch('/scenes.json').then(r=>r.json()).then(s=>{sceneData=s;lightKey='';}).catch(()=>toast('Built-in light scenes could not load. Reload to retry.'));
+fetch('/scenes.json',{signal:AbortSignal.timeout(REQUEST_MS.act)}).then(r=>r.ok?r.json():Promise.reject(Error(`scenes.json: ${r.status}`))).then(s=>{sceneData=s;lightKey='';}).catch(()=>toast('Built-in light scenes could not load. Reload to retry.'));
 
 function mountPreview(name=location.hash.slice(1)||'play'){
   const host=name==='play'?$('listen-preview-host'):$('import-preview-host');
@@ -94,7 +94,7 @@ async function loadWaveforms(){
   const token=++waveformEpoch,t=tracks[current],key=t.key||t.file;
   waveformData=null;$('wave-status').textContent='Loading analyzed waveform…';$('waveforms').innerHTML='';
   try{
-    if(!waveformCache.has(key)){waveformCache.set(key,request(`/radio/waveform/${encodeURIComponent(key)}`));}
+    if(!waveformCache.has(key)){waveformCache.set(key,request(`/radio/waveform/${encodeURIComponent(key)}`,undefined,REQUEST_MS.analysis));}
     const data=await waveformCache.get(key);if(token!==waveformEpoch){return;}
     waveformData=data;drawWaveforms();
     $('wave-status').textContent=t.split?'Voice, background, and full-song waveforms · click or drag to seek':'Full-song waveform · click or drag to seek';
@@ -232,7 +232,7 @@ async function deleteSong(id){
   }catch(e){toast(`Could not remove song: ${e.message}`);}
 }
 $('tracks').addEventListener('click',e=>{const b=e.target.closest('[data-delete-song]');if(b){deleteSong(Number(b.dataset.deleteSong));}});
-$('undo-delete').onclick=async()=>{if(!lastRemoved){return;}const t=lastRemoved;try{if(t.key){await request(`/radio/restore/${t.key}`,{method:'POST'});}t.deleted=false;if(!queue.includes(t.id)){queue.push(t.id);}rememberHidden();lastLibrary='';await refresh();renderTracks();renderQueue();$('undo-bar').hidden=true;lastRemoved=null;}catch(e){toast(`Could not restore song: ${e.message}`);}};
+$('undo-delete').onclick=async()=>{if(!lastRemoved){return;}const t=lastRemoved;try{if(t.key){await request(`/radio/restore/${t.key}`,{method:'POST',headers:{'X-Castle':'1'}});}t.deleted=false;if(!queue.includes(t.id)){queue.push(t.id);}rememberHidden();lastLibrary='';await refresh();renderTracks();renderQueue();$('undo-bar').hidden=true;lastRemoved=null;}catch(e){toast(`Could not restore song: ${e.message}`);}};
 $('dismiss-undo').onclick=()=>{$('undo-bar').hidden=true;};
 try{const hidden=JSON.parse(localStorage.getItem('castle-radio-hidden')||'[]');for(const t of tracks){if(!t.key&&hidden.includes(t.file)){t.deleted=true;}}}catch{}
 queue=queue.filter(i=>!tracks[i].deleted);history=history.filter(i=>!tracks[i].deleted);

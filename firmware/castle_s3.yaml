@@ -4,28 +4,35 @@
 #   make upload-s3     flash it over USB (native USB — no adapter, no BOOT dance)
 #   make logs-s3       tail its logs
 #
-# This is a SECOND build, not a replacement. The S2 Feather in
-# castle_sd.yaml is the castle in the yard and stays that way until a v5
-# carrier exists to plug in; the two share everything that is show
-# (castle.yaml + castle_sd_common.yaml) and differ only in the four things
-# that are chip or board:
+# This is the SECOND build, not the castle. The castle is an ESP32-S3 Feather
+# (castle_feather_s3.yaml) and has been since 2026-09-17; this one waits for a
+# v5 carrier to plug in. The two share everything that is show
+# (castle.yaml + castle_sd_common.yaml) — and since the S2's retirement they
+# share the chip too, so what is left here is only what is BOARD:
 #
-#   1. the platform — variant, not a Feather board definition        (§13.1)
-#   2. the console — the S3 has a USB Serial/JTAG peripheral         (§13.1)
-#   3. no on-board NeoPixel, and no GPIO33 to hang one on            (§13.3)
-#   4. RMT blocks are 48 words here, not 64                          (§13.4)
+#   1. the platform — variant alone, no Feather board definition     (§13.1)
+#      and 8 MB of flash against the Feather's 4                     (§13.6)
+#   2. no on-board NeoPixel, and no GPIO33 to hang one on            (§13.3)
+#   3. an ammeter on the 5 V rail, which no Feather ever had          (§13.7)
 #
-# and gains one thing the Feather never had: an ammeter on the 5 V rail
-# (§13.7). Section numbers are docs/V5-SPEC.md, which is the port's written
-# recipe and lives with the board, not in this repo.
+# Section numbers are docs/V5-SPEC.md, which is the port's written recipe and
+# lives with the board, not in this repo.
+#
+# Two differences this file used to carry are gone, because castle.yaml now
+# describes an S3: the USB Serial/JTAG console (§13.1) and the 48-word RMT
+# blocks (§13.4) are the base's, and generated/lights_s3.yaml — the package of
+# `!extend`s that re-spent every strip's block in S3 units — was deleted when
+# it had nothing left to say (2026-09-17).
 #
 # NOT ONE PIN NUMBER CHANGES. Every GPIO castle.yaml and castle_sd_common.yaml
 # name exists on a WROOM-1 and is legal there (V5-SPEC §2.1) — that is why
 # the carrier forbids an octal-PSRAM module (GPIO35/36/37 are the card's SPI)
 # and why I2C went to GPIO1/2 instead of moving the SD bus.
 #
-# NOTHING HERE HAS EVER BEEN ON HARDWARE. It compiles; the board is on order.
-# firmware/pending/README.md carries the bring-up list.
+# NOTHING HERE HAS EVER BEEN ON HARDWARE. It compiles, weekly, in CI; the
+# board does not exist yet. firmware/pending/README.md carries the bring-up
+# list. That sentence WAS true of the S3 Feather build as well until
+# 2026-09-17; it is now true of this file alone.
 
 substitutions:
   name: castle-s3
@@ -36,11 +43,6 @@ packages:
   # The card, the loopback stream, the web server and its bridge — every
   # line of the show that does not care which chip is running it.
   sd: !include castle_sd_common.yaml
-  # ...and the one line of it that does: `!extend`s that re-spend each
-  # strip's RMT block in this chip's 48-word units. Generated, so the zone
-  # list stays in scenes.yaml alone. Must come after `base`, which is where
-  # the strips it extends are declared.
-  rmt_s3: !include generated/lights_s3.yaml
 
 # ── 1. The platform ──────────────────────────────────────────────────
 # `variant:` alone is ESPHome's own recommended spelling, and `board:` is
@@ -52,10 +54,10 @@ packages:
 # board string is informational anyway.
 #
 # The whole framework block otherwise carries over unchanged, INCLUDING the
-# dram0 diet. Several of those lines were bought with an ESP32-S2's static
-# RAM and could be given back here (V5-SPEC §13.5 lists which, one by one),
-# but not in the same change that moves the chip: get it booting first, then
-# lift one line at a time and measure each.
+# dram0 diet. Those lines were bought with an ESP32-S2's static RAM and every
+# one of them is now a line to give back and measure (V5-SPEC §13.5 lists
+# which); that measuring happens on the Feather, which is the board that
+# exists, and this build inherits the answer.
 esp32:
   board: !remove
   variant: esp32s3
@@ -65,27 +67,27 @@ esp32:
   # — the show streams off the card here exactly as it does on the porch.
   flash_size: 8MB
 
-# ── 2. The console ───────────────────────────────────────────────────
-# castle.yaml's long comment about CONFIG_ESP_CONSOLE_USB_CDC faulting the
-# chip inside sinf() is an ESP32-S2 fact and does not apply here: on the S3
-# the console is a hardware USB Serial/JTAG peripheral (GPIO19/20), not
-# TinyUSB, and it is what ESPHome would default to for this variant anyway.
-# Named explicitly so the line is load-bearing and self-documenting — and so
-# the day it is changed, it is changed on purpose. UART0 (GPIO43/44) is
-# still wired, to J10, for anyone with an adapter.
+# ── The console: the same as the base's, said out loud ───────────────
+# Redundant since 2026-09-17 — castle.yaml names USB_SERIAL_JTAG now, because
+# the Feather has the peripheral too. Kept anyway: UART0 on this board is
+# GPIO43/44 brought out to J10, so if the base ever goes back to a UART the
+# carrier's console must not silently follow it to a header pin nobody has an
+# adapter on. Repeating a value is cheap; discovering a console moved is not.
 logger:
   level: INFO
   hardware_uart: USB_SERIAL_JTAG
 
-# ── 3. No status pixel ───────────────────────────────────────────────
-# There is nothing to delete: castle_sd.yaml holds the on-board NeoPixel and
-# its GPIO21 rail, and this build simply does not include that file. A
-# WROOM-1 has no such LED and does not bring GPIO33 out at all (§13.3). If a
-# boot indicator is ever wanted, the carrier's SPARE zone (GPIO8 → U1
-# channel 4 → J4 / J12 pin 4) is a real 5 V pixel output with a terminal and
-# a test point already on it.
+# ── 2. No status pixel ───────────────────────────────────────────────
+# There is nothing to delete: castle_feather_s3.yaml holds the on-board
+# NeoPixel and its GPIO21 rail, and this build simply does not include that
+# file. A WROOM-1 has no such LED and does not bring GPIO33 out at all
+# (§13.3) — so on this board the RMT budget is three strips and one whole TX
+# channel spare, where the Feather spends all four (tools/gen_rig.py's
+# banner states both). If a boot indicator is ever wanted, the carrier's
+# SPARE zone (GPIO8 → U1 channel 4 → J4 / J12 pin 4) is a real 5 V pixel
+# output with a terminal and a test point already on it.
 
-# ── 4. The ammeter, which the Feather never had ──────────────────────
+# ── 3. The ammeter, which no Feather ever had ────────────────────────
 # The carrier measures its own 5 V rail: an INA219 across a 10 mΩ shunt at
 # 0x41 (a Qwiic breakout would be 0x40). This is bring-up step 9's
 # instrument and the answer to V5-SPEC open question 1 — how much the show

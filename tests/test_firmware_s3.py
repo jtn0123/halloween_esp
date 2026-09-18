@@ -1,12 +1,16 @@
-"""The ESP32-S3 carrier build against the board's own written spec.
+"""The ESP32-S3 WROOM carrier build against the board's own written spec.
 
 `firmware/castle_s3.yaml` is the one build with no hardware behind it. The
-S2 in the yard is checked by a porch: a pin that moved shows up as a dark
+Feather in the yard is checked by a porch: a pin that moved shows up as a dark
 window that evening. This one is checked by nothing at all until the
 castle-carrier v5 board arrives, so its contract is written down here
-instead — the pin table copied out of that board's spec, the four platform
-statements the port turns on, and the RMT arithmetic that fails quietly on
-the wrong chip.
+instead — the pin table copied out of that board's spec, the platform
+statements it turns on, and the RMT arithmetic that fails quietly when a strip
+asks for something that is not a whole channel block.
+
+Since the ESP32-S2's retirement (2026-09-17) both builds are the same CHIP, so
+what this file pins is board difference, not chip difference: no Feather board
+definition, 8 MB of flash instead of 4, no status pixel, and an ammeter.
 
 The spec is `docs/V5-SPEC.md` in the castle-carrier v5 KiCad project, which
 is a different repository on a different volume. It is NOT importable from
@@ -82,7 +86,7 @@ STRAP_PINS = {0, 3, 45, 46}
 USB_PINS = {19, 20}
 #: In-package SPI flash and PSRAM — not on a WROOM-1's pin list at all
 #: (V5-SPEC §2.3). GPIO33/34 are not brought out either, which is what
-#: deletes the S2 Feather's status pixel (§13.3).
+#: deletes the Feather's status pixel (§13.3).
 FLASH_PSRAM_PINS = set(range(26, 33))
 NOT_BROUGHT_OUT = FLASH_PSRAM_PINS | {33, 34}
 
@@ -127,10 +131,10 @@ def load(rel: str) -> dict[str, Any]:
 def include_tree(rel: str) -> dict[str, dict[str, Any]]:
     """Every file a build reads, by relative path, following `packages:`.
 
-    Which files a target includes IS the deletion, for this port: the S3
-    build has no status pixel because it does not include the file that
-    declares one. ESPHome packages append lists and cannot subtract from
-    them, so "not included" is the only spelling that exists.
+    Which files a target includes IS the deletion: this build has no status
+    pixel because it does not include the file that declares one. ESPHome
+    packages append lists and cannot subtract from them, so "not included" is
+    the only spelling that exists.
     """
     out: dict[str, dict[str, Any]] = {}
     pending = [rel]
@@ -150,7 +154,11 @@ def include_tree(rel: str) -> dict[str, dict[str, Any]]:
 
 S3 = load("castle_s3.yaml")
 S3_TREE = include_tree("castle_s3.yaml")
-SD_TREE = include_tree("castle_sd.yaml")
+#: The production build, for the side-by-side assertions: it is where the
+#: status pixel and the playback codecs live, and it is the tree this one is
+#: allowed to differ from only in board.
+PROD = "castle_feather_s3.yaml"
+PROD_TREE = include_tree(PROD)
 
 
 #: Substitution names that NAME A PIN — the same rule check_firmware_pins.py
@@ -216,12 +224,14 @@ class TestPinTable(unittest.TestCase):
         self.assertEqual(ina["max_current"], "8A")
         self.assertEqual(ina["max_voltage"], "16.0V")
 
-    def test_the_pins_that_survive_the_port_are_the_same_numbers(self) -> None:
-        """§2.1's headline: the port renames nothing. The S2 build and the
-        S3 build must agree on every one of these, or one of them is wrong."""
-        sd = subs(SD_TREE)
+    def test_the_pins_are_the_production_builds_pins(self) -> None:
+        """§2.1's headline: the port renames nothing. This build and the
+        castle in the yard must agree on every one of these, or one of them is
+        wrong. They do it by construction — both read castle.yaml and neither
+        overrides a pin — and this is what says so out loud."""
+        prod = subs(PROD_TREE)
         for sub in SUB_NET:
-            self.assertEqual(sd[sub], S3_SUBS[sub], sub)
+            self.assertEqual(prod[sub], S3_SUBS[sub], sub)
 
 
 class TestForbiddenPins(unittest.TestCase):
@@ -263,8 +273,8 @@ class TestForbiddenPins(unittest.TestCase):
 
     def test_nothing_names_a_pin_the_module_does_not_bring_out(self) -> None:
         """GPIO26-32 are the in-package flash and PSRAM (§2.3); 33 and 34
-        are simply not on a WROOM-1's pin list. The S2's status pixel was on
-        GPIO33, which is exactly why §13.3 deletes it."""
+        are simply not on a WROOM-1's pin list. The Feather's status pixel is
+        on GPIO33, which is exactly why §13.3 deletes it here."""
         for gpio, what in self.driven().items():
             self.assertNotIn(
                 gpio, NOT_BROUGHT_OUT, f"{what} names GPIO{gpio}, absent on a WROOM-1"
@@ -287,8 +297,9 @@ class TestForbiddenPins(unittest.TestCase):
 
 
 class TestPlatformBlock(unittest.TestCase):
-    """The four statements that decide which chip this firmware is for
-    (§13.1, and the same list gen/check_firmware_pins.py PLATFORM checks)."""
+    """The statements that decide which BOARD this firmware is for (§13.1, and
+    the same list gen/check_firmware_pins.py PLATFORM checks). The chip is no
+    longer among them: castle.yaml names an S3 since 2026-09-17."""
 
     def test_the_variant_replaces_the_feathers_board(self) -> None:
         self.assertEqual(S3["esp32"]["variant"], "esp32s3")
@@ -302,11 +313,15 @@ class TestPlatformBlock(unittest.TestCase):
         self.assertEqual(S3["esp32"]["flash_size"], "8MB")
 
     def test_the_console_is_the_s3s_hardware_peripheral(self) -> None:
-        """UART0 was an S2 fact: that board had no other console and the USB
-        CDC one faulted the chip inside sinf(). The S3 has USB Serial/JTAG
-        in hardware, on GPIO19/20 (§13.1)."""
+        """USB Serial/JTAG in hardware, on GPIO19/20 (§13.1) — and since
+        2026-09-17 that is the BASE's console too, because the Feather has the
+        same peripheral. This file keeps saying it because UART0 on the carrier
+        is GPIO43/44 out to J10: if the base ever went back to a UART, this
+        board's console must not silently follow it to a header pin."""
         self.assertEqual(S3["logger"]["hardware_uart"], "USB_SERIAL_JTAG")
-        self.assertEqual(load("castle.yaml")["logger"]["hardware_uart"], "UART0")
+        self.assertEqual(
+            load("castle.yaml")["logger"]["hardware_uart"], "USB_SERIAL_JTAG"
+        )
 
     def test_psram_names_its_mode(self) -> None:
         """Required on the S3, and quad is the N8R2's — octal is the R8's,
@@ -315,9 +330,19 @@ class TestPlatformBlock(unittest.TestCase):
         self.assertEqual(psram["mode"], "quad")
 
     def test_the_dram0_diet_is_not_unwound_here(self) -> None:
-        """§13.5 is explicit: get it booting on the new chip with the diet
-        exactly as it is, then lift one line at a time and measure each."""
+        """§13.5 is explicit: get it booting with the diet exactly as it is,
+        then lift one line at a time and measure each. The measuring happens on
+        the Feather, which is the board that exists; this build inherits
+        whatever that answers, and must not fork its own copy."""
         self.assertNotIn("framework", S3["esp32"])
+
+    def test_the_playback_codecs_are_not_this_builds_to_pay_for(self) -> None:
+        """The `audio: codecs:` list lives in the production build, not in
+        castle.yaml, so a target with no board to flash does not carry flash
+        cost for decoders nobody has asked it to prove."""
+        for rel, doc in S3_TREE.items():
+            self.assertNotIn("audio", doc, rel)
+        self.assertIn("mp3", load(PROD)["audio"]["codecs"])
 
 
 class TestNoOnboardPixel(unittest.TestCase):
@@ -337,83 +362,101 @@ class TestNoOnboardPixel(unittest.TestCase):
             for sw in doc.get("switch") or []:
                 self.assertNotEqual(sw.get("id"), "neopixel_power")
 
-    def test_the_s2_build_still_has_it(self) -> None:
-        """The Feather in the yard is untouched by the port — this is the
-        control on every assertion above."""
-        self.assertIn("status_pixel", self.lights(SD_TREE))
+    def test_the_production_build_does_have_it(self) -> None:
+        """The control on every assertion above: the assertNotIns would pass
+        just as happily if nobody declared a status pixel anywhere."""
+        self.assertIn("status_pixel", self.lights(PROD_TREE))
         pixel = next(
-            item
-            for item in load("castle_sd.yaml")["light"]
-            if item["id"] == "status_pixel"
+            item for item in load(PROD)["light"] if item["id"] == "status_pixel"
         )
         self.assertEqual(pixel["pin"], "GPIO33")
-        self.assertEqual(pixel["rmt_symbols"], 64)
+        self.assertEqual(pixel["rmt_symbols"], gen_rig.S3.block)
 
     def test_both_builds_read_the_same_show(self) -> None:
         """The seam is the pixel and nothing else: everything about the show
         is in files both builds include, so neither can drift."""
         shared = {"castle.yaml", "castle_sd_common.yaml"}
         self.assertLessEqual(shared, set(S3_TREE))
-        self.assertLessEqual(shared, set(SD_TREE))
+        self.assertLessEqual(shared, set(PROD_TREE))
 
 
 class TestRmtBudget(unittest.TestCase):
-    """§13.4 — the S3 allocates 48-word channel blocks, not the S2's 64, and
-    a strip that asks for 64 gets no channel and stays dark without a word."""
+    """§13.4 — 48-word channel blocks, four of them, and a strip that asks for
+    something that is not a whole block gets no channel and stays dark without
+    a word. ONE generated file states this now: until 2026-09-17 the strips
+    were written in the S2's 64-word units and a second generated package of
+    `!extend`s re-spent every one of them here, which is the thing that went
+    with the S2. What is left is a difference in RESERVATION — this board has
+    no status pixel and the Feather does — and it has to survive in a banner
+    both builds read."""
 
     DOC = DOC
     ZONES = ZONES
     LAYOUTS = LAYOUTS
     LIVE = LIVE
 
-    def override(self) -> list[dict[str, Any]]:
-        text = gen_rig.emit_rmt_override(self.LAYOUTS, self.ZONES, gen_rig.S3)
-        lights = yaml.load(text, Loader=Loader)["light"]
+    def strips(self) -> list[dict[str, Any]]:
+        lights = yaml.load(self.text(), Loader=Loader)["light"]
         assert isinstance(lights, list)
         return lights
+
+    def text(self) -> str:
+        return gen_rig.emit_lights(self.LAYOUTS, self.ZONES, 7)
 
     def test_the_chip_table_is_the_soc_caps_numbers(self) -> None:
         """SOC_RMT_MEM_WORDS_PER_CHANNEL 48, four TX-capable channels."""
         self.assertEqual((gen_rig.S3.block, gen_rig.S3.total), (48, 192))
-        self.assertEqual((gen_rig.S2.block, gen_rig.S2.total), (64, 256))
         self.assertIs(gen_rig.CHIPS["esp32s3"], gen_rig.S3)
 
-    def test_every_strip_is_re_spent_in_whole_s3_blocks(self) -> None:
-        for item in self.override():
+    def test_the_s3_is_the_only_chip_the_generator_knows(self) -> None:
+        """The S2's entry was deleted with its build, and that is the point:
+        a second chip in this table is how 64 got emitted into an S3 image."""
+        self.assertEqual(list(gen_rig.CHIPS), ["esp32s3"])
+        self.assertEqual(gen_rig.RMT_BLOCK, gen_rig.S3.block)
+        self.assertEqual(gen_rig.RMT_TOTAL_SYMBOLS, gen_rig.S3.total)
+
+    def test_every_strip_is_a_whole_s3_block(self) -> None:
+        for item in self.strips():
             self.assertEqual(item["rmt_symbols"] % gen_rig.S3.block, 0)
             self.assertEqual(item["rmt_symbols"], 48)
 
-    def test_the_override_reaches_the_strips_by_name(self) -> None:
-        got = [item["id"].value for item in self.override()]
-        self.assertEqual(got, [f"zone_{z['id']}" for z in self.LIVE])
-        for item in self.override():
-            self.assertEqual(item["id"].name, "extend")
+    def test_no_chip_override_package_survives(self) -> None:
+        """generated/lights_s3.yaml is gone and must not come back: a second
+        description of the same three fixtures is exactly what drifts."""
+        self.assertFalse((FW / "generated" / "lights_s3.yaml").exists())
+        for doc in S3_TREE.values():
+            for pkg in (doc.get("packages") or {}).values():
+                value = pkg.value if isinstance(pkg, Tag) else pkg
+                self.assertNotIn("lights_s3", str(value))
 
-    def test_three_zones_leave_one_whole_tx_channel(self) -> None:
+    def test_three_zones_leave_one_whole_tx_channel_on_this_board(self) -> None:
         spare = gen_rig.check_rmt_budget(self.ZONES, self.LAYOUTS, gen_rig.S3)
         self.assertEqual(spare, gen_rig.S3.block)
-        self.assertIn("144 of 192 symbols spent", self.text())
+        self.assertIn("no status pixel: 144 of 192 — 1 block(s) spare", self.text())
 
     def test_the_spare_block_can_be_spent_and_is_not_an_error(self) -> None:
         """§7.4: four channel blocks fit exactly, whether that is four zones
         or three with one long strip taking a second. Spending the last one
         is a decision, not a fault — only asking for a fifth is."""
-        zones = [{**z, "rmt_symbols": 128} for z in self.LIVE[:1]] + self.LIVE[1:]
+        zones = [{**z, "rmt_symbols": 96} for z in self.LIVE[:1]] + self.LIVE[1:]
         self.assertEqual(gen_rig.check_rmt_budget(zones, self.LAYOUTS, gen_rig.S3), 0)
 
     def test_the_carrier_reserves_nothing_for_a_pixel_it_does_not_have(self) -> None:
-        """§13.3: there is no LED on a WROOM-1. The S2's status-pixel
-        reservation (grade report 2026-09-06 J2) must not follow the port
-        across — so the 128 the S2 now refuses is still spendable here, and
-        nothing in this build's banner mentions a pixel."""
+        """§13.3: there is no LED on a WROOM-1. The Feather's status-pixel
+        reservation (grade report 2026-09-06 J2) must not be charged to this
+        board — so the second block the Feather cannot spare is spendable
+        here, and the banner says so in a line of its own rather than leaving
+        one number to be false for one of the two builds (grade report
+        2026-09-17 J6)."""
         self.assertEqual(
             gen_rig.check_rmt_budget(self.ZONES, self.LAYOUTS, gen_rig.S3),
             gen_rig.check_rmt_budget(
                 self.ZONES, self.LAYOUTS, gen_rig.S3, reserved_blocks=0
             ),
         )
-        self.assertNotIn("status pixel", self.text())
-        self.assertNotIn("status pixel", gen_rig.emit_rmt_override.__doc__ or "")
+        self.assertIn("castle_s3.yaml", self.text())
+        self.assertIn("castle_feather_s3.yaml", self.text())
+        self.assertIn("192 of 192 symbols spent", self.text())
 
     def test_overspending_stops_the_build_naming_this_chip(self) -> None:
         zones = [{**z, "rmt_symbols": 192} for z in self.LIVE]
@@ -421,24 +464,21 @@ class TestRmtBudget(unittest.TestCase):
             gen_rig.check_rmt_budget(zones, self.LAYOUTS, gen_rig.S3)
         self.assertIn("ESP32-S3 has 192", str(e.exception))
 
-    def text(self) -> str:
-        return gen_rig.emit_rmt_override(self.LAYOUTS, self.ZONES, gen_rig.S3)
+    def test_an_s2_era_block_size_is_refused(self) -> None:
+        """64 is not a whole block on this chip. It used to be THE spelling in
+        scenes.yaml, so a hand-edit or a revert is a real way for it to come
+        back, and it must be a build failure rather than a dark strip."""
+        with self.assertRaises(SystemExit) as e:
+            gen_rig.rmt_blocks({"id": "door", "rmt_symbols": 64})
+        self.assertIn("multiple of 48", str(e.exception))
 
-    def test_the_generated_override_is_fresh(self) -> None:
-        got = (FW / "generated" / "lights_s3.yaml").read_text()
+    def test_the_generated_strips_are_fresh(self) -> None:
+        got = (FW / "generated" / "lights.yaml").read_text()
         self.assertEqual(
             got,
             self.text(),
-            "firmware/generated/lights_s3.yaml is stale — run `make generate`",
+            "firmware/generated/lights.yaml is stale — run `make generate`",
         )
-
-    def test_the_s2s_strips_are_untouched_by_the_new_chip(self) -> None:
-        """The porch board's generated file must not move a byte for a port
-        it is not part of — the control on the whole chip-aware change."""
-        for item in yaml.safe_load(gen_rig.emit_lights(self.LAYOUTS, self.ZONES, 7))[
-            "light"
-        ]:
-            self.assertEqual(item["rmt_symbols"], 64, item["id"])
 
 
 if __name__ == "__main__":

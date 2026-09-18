@@ -7,9 +7,12 @@
 set -e
 cd "$(git rev-parse --show-toplevel)"
 PY=$(command -v .venv/bin/python || command -v python3)
-"$PY" -m ruff format --check --quiet tools tests || { echo "pre-commit: formatting drift — run: $PY -m ruff format tools tests" >&2; exit 1; }
-"$PY" -m ruff check tools tests
-"$PY" -m mypy tools tests
+# The Makefile's PY_SCOPE, spelled once here too: demo/castle-radio joined the
+# Python gate on 2026-09-17 (grade report 2026-09-17 D2).
+SCOPE="tools tests demo/castle-radio"
+"$PY" -m ruff format --check --quiet $SCOPE || { echo "pre-commit: formatting drift — run: $PY -m ruff format $SCOPE" >&2; exit 1; }
+"$PY" -m ruff check $SCOPE
+"$PY" -m mypy $SCOPE
 # --hook fails at 490, not the 500 cap: a file is only ever added to at
 # commit time, so this is the gate that should stop before the cliff. Ten
 # lines of room means the split is chosen, not forced mid-change (grade

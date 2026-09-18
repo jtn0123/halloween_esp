@@ -246,7 +246,10 @@ inline esp_err_t h_scene(httpd_req_t *req) {
   std::string s = query_param(req, "s");
   if (s.empty()) return reply_err(req, "400 Bad Request", "need ?s=<scene>");
   // {"queued":true} for a scene that does not exist is a lie the desk then
-  // toasts as success. The id list is seeded at boot from pir_scene's options.
+  // toasts as success. The id list is the CARD's own manifest, re-read on
+  // every publish of /sd/scenes/show.man (v5.69, J1) — it came from
+  // pir_scene's compiled select options until v5.67 and was read once at
+  // boot until v5.69, which is why a just-published scene used to 404 here.
   const int known = scene_id_state(s);
   if (known == 0)
     return reply_err(req, "503 Service Unavailable", "scene list not ready");
@@ -303,9 +306,11 @@ inline esp_err_t h_pir(httpd_req_t *req) {
   if (a.find('|') != std::string::npos || c.find('|') != std::string::npos ||
       s.find('|') != std::string::npos)
     return reply_err(req, "400 Bad Request", "bad separator");
-  // And the scene is checked against the SAME list /api/scene checks: this
+  // And the scene is checked against the SAME list /api/scene checks. This
   // route used to pass any string straight through to pir_scene's select,
-  // where an unknown option is a log line nobody reads.
+  // where an unknown option is a log line nobody reads — and since v5.69
+  // pir_scene is a `text` with no options at all, so THIS is the only thing
+  // standing between motion and a scene name nothing can play (J1).
   if (!s.empty()) {
     const int known = scene_id_state(s);
     if (known == 0)

@@ -388,12 +388,14 @@ fn post(app: &Arc<App>, req: &Request) -> Reply {
         );
     }
     if path == "/studio/publish" {
-        // The last mile: sd_sync scenes + lean site + what still needs
-        // an OTA; rebuild() runs it too when a castle answers.
-        let (out, code) = {
-            let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
-            crate::studio_publish::publish_body(app)
-        };
+        // The last mile: sd_sync scenes (audio + cue files + show.man) +
+        // lean site, and what still needs a reboot; rebuild() runs it too
+        // when a castle answers. No oplock: the push only reads the build
+        // tree and talks to the castle, and holding the gate across a
+        // network round-trip queued every import and scene write behind it
+        // (grade report 2026-09-17 pm G2; `a_publish_does_not_want_the_oplock`
+        // in studio_publish.rs pins it).
+        let (out, code) = crate::studio_publish::publish_body(app);
         return Reply::Json(out, code);
     }
     if path.starts_with(API) {
