@@ -182,8 +182,8 @@ class PlaybackClockTests(unittest.TestCase):
 
 class SharedStatusTests(unittest.TestCase):
     def setUp(self):
-        device_bridge._status_cache.update(at=0.0, state=None)
-        device_bridge._expected.update(scene=None, track=None, until=0.0)
+        device_bridge._status_cache.update({"at": 0.0, "state": None})
+        device_bridge._expected.update({"scene": None, "track": None, "until": 0.0})
 
     @patch("device_bridge.urllib.request.urlopen")
     def test_status_polls_share_one_castle_request(self, urlopen):
@@ -362,7 +362,7 @@ class SoundTrueStartTests(unittest.TestCase):
     track change."""
 
     def setUp(self):
-        device_bridge._expected.update(scene=None, track=None, until=0.0)
+        device_bridge._expected.update({"scene": None, "track": None, "until": 0.0})
 
     @patch("device_bridge.time.monotonic", return_value=90.0)
     @patch("device_bridge.call")

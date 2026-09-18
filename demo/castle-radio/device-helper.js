@@ -34,6 +34,14 @@
       const id = ++sequence;
       const timer = setTimeout(() => { pending.delete(id); reject(new Error('Mac tools did not answer. Check the connection window.')); }, 120000);
       pending.set(id, {resolve, reject, timer});
+      /* The bridge replaces window.fetch, so a caller's AbortSignal.timeout is
+         only honoured if this side listens for it (grade report 2026-09-17 pm C6). */
+      options.signal?.addEventListener('abort', () => {
+        const job = pending.get(id);
+        if (!job) { return; }
+        clearTimeout(job.timer); pending.delete(id);
+        job.reject(new Error('Mac tools did not answer in time.'));
+      }, {once: true});
       popup.postMessage({type:'castle-tools-request', id, path, method:options.method || 'GET', headers:options.headers || {}, body:options.body}, ORIGIN);
     });
   }

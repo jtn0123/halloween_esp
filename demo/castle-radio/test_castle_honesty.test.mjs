@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {EVENTS, eventLog, idle, lightsSent, linkContext, playingAt, poll, pollAt, settle, showContext, toolsContext} from './test_support.mjs';
+import {EVENTS, eventLog, hung, idle, importsContext, lightsSent, linkContext, notFound, playingAt, poll, pollAt, settle, showContext, toolsContext} from './test_support.mjs';
 
 const said = (calls, pattern) => calls.toasts.filter(t => pattern.test(t));
 
@@ -337,4 +337,62 @@ test('B73: event times read as clock times once the castle has a clock', async (
   /* Before SNTP answers, epoch is 0 and the relative stamps come back. */
   const blind = await eventLog(async () => EVENTS, {state: {epoch: 0, uptime_s: 3600}});
   assert.match(blind.log, /\+00:00\.0  stop/);
+});
+
+/* ---------------------------------------------- grade report 2026-09-17 pm C6 */
+
+test('C6: a request that never answers ends, and the 2 s poll runs again', async () => {
+  const {ctx, asked, timeouts, busy, fireAll} = importsContext(hung);
+  await settle();
+  // The load-time refresh is in flight and holding the poll gate.
+  assert.equal(busy(), true);
+  assert.deepEqual(asked, ['/radio/jobs', '/radio/library']);
+  assert.deepEqual(timeouts.map(t => t.ms), [6000, 6000], 'a poll is given seconds, not for ever');
+
+  fireAll();
+  await settle();
+  assert.equal(busy(), false, 'the gate is open again, so setInterval(refresh) still works');
+  assert.match(ctx.$('service-status').textContent, /Import service unavailable/);
+
+  const next = ctx.refresh();
+  await settle();
+  assert.equal(asked.length, 4, 'the next tick actually polls');
+  fireAll();
+  await next;
+  assert.equal(busy(), false);
+});
+
+test('C6: a hung upload is given its own budget, not the poll budget', async () => {
+  const {ctx, timeouts} = importsContext(hung);
+  await settle();
+  timeouts.length = 0;
+  ctx.request('/radio/import', {method: 'POST', body: 'x'}, 15 * 60 * 1000).catch(() => {});
+  ctx.request('/radio/retry', {method: 'POST'}).catch(() => {});
+  assert.deepEqual(timeouts.map(t => t.ms), [15 * 60 * 1000, 15000]);
+});
+
+test('C6: a 404 that is not JSON reads as the page it is, not as a parse error', async () => {
+  const {ctx} = importsContext(notFound);
+  await settle();
+  await assert.rejects(() => ctx.request('/radio/waveform/radio_a'), error => {
+    assert.match(error.message, /404: .*Not Found/, 'the response text is the report');
+    assert.doesNotMatch(error.message, /JSON|Unexpected token/, 'r.ok is read before the body');
+    return true;
+  });
+});
+
+test('C6: a JSON failure still speaks in the service’s own words', async () => {
+  const {ctx} = importsContext(() => ({ok: false, status: 429,
+    text: async () => JSON.stringify({error: 'Too many songs are being prepared.'})}));
+  await settle();
+  await assert.rejects(() => ctx.request('/radio/import', {method: 'POST'}),
+    /Too many songs are being prepared\./);
+});
+
+test('C6: the timeout message names the budget it gave up after', async () => {
+  const {ctx, timeouts} = importsContext(hung);
+  await settle();
+  const call = ctx.request('/radio/jobs');
+  timeouts.at(-1).fire();
+  await assert.rejects(() => call, /did not answer within 6s/);
 });

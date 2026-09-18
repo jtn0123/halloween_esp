@@ -31,7 +31,9 @@ sys.path.insert(0, str(ROOT / "tools"))
 from import_scene import fit_to_density, scene_block  # noqa: E402
 from import_track import crate_analysis  # noqa: E402
 
-JOBS = {}
+#: Preparation jobs by id, as the page reads them: a record of mixed
+#: strings, flags and progress numbers, which is what /radio/jobs serves.
+JOBS: dict[str, dict[str, object]] = {}
 LOCK = threading.RLock()
 POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 CATALOG = DATA / "catalog.json"
@@ -56,7 +58,7 @@ def source_metadata(key, manifest=None):
         (
             name
             for name, rates in QUALITY_BITRATES.items()
-            if rates.get(audio.get("format")) == audio.get("bitrate")
+            if rates.get(str(audio.get("format"))) == audio.get("bitrate")
         ),
         "standard",
     )
@@ -122,7 +124,8 @@ def run_tool(job, script, args, timeout, extra_env=None):
 
 def zone_cues(marks, zone):
     """Reuse density tuning and the actual detected timing/velocity data."""
-    result = []
+    # One cue is [at, zone, intensity, decay] — the browser renderer's shape.
+    result: list[list[float | str]] = []
     for hits in marks.values():
         decay, scale = fit_to_density(hits, 0.92)
         result.extend(

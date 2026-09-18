@@ -16,7 +16,7 @@ import urllib.parse
 # One stale mirror answer used to end the light show for the rest of the song.
 REALIGN_POLLS = 3
 _SHOW_LOCK = threading.Lock()
-_show_control = {"stop": None}
+_show_control: dict[str, threading.Event | None] = {"stop": None}
 _show_status = {"active": False, "track": None, "frames_sent": 0, "error": None}
 _ZONE_LIGHT = {
     "left": ("towerL", "a832ff"),
@@ -43,7 +43,8 @@ def _status(**kwargs):
 
 def imported_light_frames(cues, frame_s=0.25):
     """Reduce dense analysis hits to one firmware-safe update per mailbox tick."""
-    strongest = {}
+    # bucket start -> the loudest hit in it, as (zone, intensity).
+    strongest: dict[float, tuple[str, float]] = {}
     for cue in cues or ():
         if (
             not isinstance(cue, (list, tuple))

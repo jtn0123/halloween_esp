@@ -1,5 +1,5 @@
 /* Inventory is read from the SD card; syncing audio is not firmware deployment. */
-/* global $, renderImports, renderTracks, request, safe, toast, tracks */
+/* global $, REQUEST_MS, renderImports, renderTracks, request, safe, toast, tracks */
 (() => {
   let inventory = null, polling = false, signature = '', selected = null, activeJob = null, inventoryError = '';
   let inflight = null;
@@ -90,7 +90,7 @@
     try {
       while (activeJob && !activeJob.done) {
         await new Promise(resolve=>setTimeout(resolve,400));
-        activeJob = await request(`/radio/device/sync-status?key=${encodeURIComponent(syncKey)}`);
+        activeJob = await request(`/radio/device/sync-status?key=${encodeURIComponent(syncKey)}`,undefined,REQUEST_MS.poll);
         paintDialog(); renderTracks(); renderImports();
       }
       if (!activeJob?.error) {await refreshInventory();}
@@ -109,14 +109,14 @@
     if(document.hidden && !force && !panel.open){return;}
     polling=true;
     try {
-      inflight=request('/radio/device/library');inventory=await inflight;inventoryError='';
+      inflight=request('/radio/device/library',undefined,REQUEST_MS.inventory);inventory=await inflight;inventoryError='';
       const next=JSON.stringify(inventory);
       if(next!==signature){signature=next;renderTracks();renderImports();$('remote-audio-list').innerHTML=inventory.other_audio.map(file=>`<li><span><b>${safe(file.name)}</b><small>${formatBytes(file.bytes)}</small></span><button data-delete-remote="${safe(file.name)}" aria-label="Delete ${safe(file.name)} from castle">Delete</button></li>`).join('')||'<li>No additional audio files</li>';}
       paintDialog();
     } catch(error){inventoryError=error.message;if(!inventory){$('remote-audio-list').textContent='Castle inventory unavailable · retrying';}if(panel.open){$('sync-progress').textContent=error.message;}}
     finally{polling=false;inflight=null;}
   }
-  $('remote-audio-list').onclick=async e=>{const button=e.target.closest('[data-delete-remote]');if(!button){return;}const name=button.dataset.deleteRemote;if(!confirm(`Delete ${name} from the castle SD card?`)){return;}button.disabled=true;try{await request(`/radio/device/audio/${encodeURIComponent(name)}`,{method:'DELETE'});signature='';await refreshInventory();toast(`${name} deleted from castle`);}catch(error){toast(`Could not delete: ${error.message}`);button.disabled=false;}};
+  $('remote-audio-list').onclick=async e=>{const button=e.target.closest('[data-delete-remote]');if(!button){return;}const name=button.dataset.deleteRemote;if(!confirm(`Delete ${name} from the castle SD card?`)){return;}button.disabled=true;try{await request(`/radio/device/audio/${encodeURIComponent(name)}`,{method:'DELETE'},REQUEST_MS.act);signature='';await refreshInventory();toast(`${name} deleted from castle`);}catch(error){toast(`Could not delete: ${error.message}`);button.disabled=false;}};
   refreshInventory(true);setInterval(()=>refreshInventory(),5000);
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){refreshInventory(true);}});
 })();

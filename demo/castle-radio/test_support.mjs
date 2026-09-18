@@ -222,7 +222,7 @@ export async function landedShow(before, after) {
    /api/events gives back, and `push` is one update from the shared poll. */
 export function toolsContext(answer, link = {}, health = null) {
   const {$} = page();
-  const ctx = {console, JSON, Number, String, Array, Math, Object, Promise, Date, $, toast() {}};
+  const ctx = {console, JSON, Number, String, Array, Math, Object, Promise, Date, AbortSignal, $, toast() {}};
   /* v5.62: the bench asks /radio/device/health for itself. No answer given
      means no fetch at all in the context, which is the old firmware case —
      the row must stay empty rather than throw the event log away. */
@@ -273,4 +273,54 @@ export async function healthRun(ctx) {
   ctx.fetch = quick; ctx.fail = true;
   await ctx.window.castleLink.refresh(); await settle();
   return [...readings, ctx.window.castleLink.health()];
+}
+
+/* ── imports.js: every call bounded (grade report 2026-09-17 pm C6) ───────── */
+
+/* A reply that never comes, and cannot be waited out: it settles only when the
+   request's own AbortSignal fires, which is exactly what the budget is for. */
+export const hung = (url, init) => new Promise((resolve, reject) => {
+  init.signal.addEventListener('abort', () => reject(init.signal.reason), {once: true});
+});
+
+/* A 404 whose body is not JSON — a static server's error page. `json()` throws
+   the way JSON.parse would, so a test can tell whether r.ok was read first. */
+export const notFound = () => ({
+  ok: false, status: 404,
+  text: async () => '<!doctype html><title>404</title><h1>Not Found</h1>',
+  json: async () => { throw new SyntaxError('Unexpected token < in JSON at position 0'); },
+});
+
+/* imports.js in a context whose only door to the server is `reply(url, init)`.
+   AbortSignal.timeout is a fake with no clock: every budget asked for is
+   recorded in `timeouts` and fired by hand, so a 15-minute upload budget
+   costs a test nothing. */
+export function importsContext(reply) {
+  const {$} = page();
+  const asked = [];
+  const timeouts = [];
+  const ctx = {
+    console, JSON, Math, Number, String, Set, Map, Date, Promise, Error, SyntaxError,
+    encodeURIComponent, XMLHttpRequest: function XMLHttpRequest() {},
+    $, tracks: [{id: 0, key: 'radio_a', title: 'A', file: 'radio_a.mp3'}],
+    queue: [], history: [], current: 0, window: {},
+    art: () => '', load() {}, start() {}, stop() {}, deleteSong() {}, openPreview() {},
+    renderQueue() {}, renderTracks() {}, toast() {},
+    setInterval: () => 0, setTimeout: fn => setImmediate(fn), clearTimeout() {},
+    document: {createElement: () => element('dialog'), body: {append() {}}, querySelectorAll: () => []},
+    AbortSignal: {timeout(ms) {
+      const controller = new AbortController();
+      const reason = Object.assign(new Error('The operation timed out.'), {name: 'TimeoutError'});
+      timeouts.push({ms, fire: () => controller.abort(reason)});
+      return controller.signal;
+    }},
+    fetch(url, init) { asked.push(url); return reply(url, init); },
+  };
+  ctx.globalThis = ctx;
+  vm.createContext(ctx);
+  vm.runInContext(read('imports.js'), ctx, {filename: 'imports.js'});
+  // pollBusy is a script-level `let`, so it is read the way another script
+  // in the same page would read it rather than off the global object.
+  return {ctx, asked, timeouts, busy: () => vm.runInContext('pollBusy', ctx),
+    fireAll: () => { for (const t of timeouts.splice(0)) {t.fire();} }};
 }

@@ -2,40 +2,22 @@
 
 import json
 import mimetypes
-import os
 import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import ClassVar
 from urllib.parse import parse_qs, unquote, urlsplit
-from uuid import uuid4
 
 import desktop_tools
 import device_bridge
+import import_routes
 import library_ops
 import remote_library
-from radio_jobs import (
-    CATALOG,
-    DATA,
-    HERE,
-    JOBS,
-    LIBRARY,
-    LOCK,
-    POOL,
-    catalog,
-    cookie_audio_format,
-    cookie_audio_quality,
-    playback_format,
-    playback_quality,
-    prepare,
-    reprocess_job,
-    update,
-)
+import request_guard
+from radio_jobs import CATALOG, DATA, HERE, JOBS, LIBRARY, LOCK, catalog
 
 OPUS_SUFFIX = ".opus"
 MEDIA_SUFFIXES = (".mp3", OPUS_SUFFIX, ".wav", ".json")
-UPLOAD_SUFFIXES = (".mp3", ".wav", ".flac", OPUS_SUFFIX, ".m4a", ".ogg", ".aac")
-UPLOAD_LIMIT = 100 * 1024 * 1024
 AUDIO_PREFIX = "/radio/audio/"
 MEDIA_PREFIX = "/media/"
 WAVEFORM_PREFIX = "/radio/waveform/"
@@ -66,27 +48,6 @@ STATIC_ROUTES = frozenset(
 )
 REQUEST_ERRORS = (ValueError, OSError)
 POST_ERRORS = (ValueError, TypeError, OSError)
-
-
-def upload_suffix(head, declared):
-    """The suffix an upload is stored under, read from its first bytes. The
-    browser's filename only says which of the known suffixes to assume when
-    the bytes are not recognisable; the header's text never names a file."""
-    if head.startswith(b"ID3") or head[:2] in (b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
-        return ".mp3"
-    if head[:4] == b"RIFF" and head[8:12] == b"WAVE":
-        return ".wav"
-    if head[:4] == b"fLaC":
-        return ".flac"
-    if head[:4] == b"OggS":
-        return OPUS_SUFFIX if b"OpusHead" in head[:128] else ".ogg"
-    if head[4:8] == b"ftyp":
-        return ".m4a"
-    if head[:2] in (b"\xff\xf1", b"\xff\xf9"):
-        return ".aac"
-    if declared not in UPLOAD_SUFFIXES:
-        raise ValueError("Choose an MP3, WAV, FLAC, Opus, M4A, OGG, or AAC file.")
-    return UPLOAD_SUFFIXES[UPLOAD_SUFFIXES.index(declared)]
 
 
 def library_file(wanted):
@@ -151,21 +112,6 @@ def imported_show(body):
     return {"cues": row.get("cues", []), "duration": row.get("duration", 0)}
 
 
-def new_job(tid, source, title, split, audio_format, audio_quality, source_name):
-    return {
-        "id": tid,
-        "source": source,
-        "title": title,
-        "split": split,
-        "audio_format": audio_format,
-        "audio_quality": audio_quality,
-        "source_name": source_name,
-        "phase": "Queued",
-        "done": False,
-        "error": None,
-    }
-
-
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(HERE), **kwargs)
@@ -187,9 +133,13 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def guard(self, action, status, errors=REQUEST_ERRORS):
-        """Run a route; a refused or failed request becomes a JSON error."""
+        """Run a route; a refused or failed request becomes a JSON error. A
+        request_guard.Refused names its own status — the route never ran, so
+        `status` (what a failing route means) would be the wrong word."""
         try:
             action()
+        except request_guard.Refused as exc:
+            self.reply({"error": str(exc)}, exc.status)
         except errors as exc:
             self.reply({"error": str(exc)}, status)
 
@@ -345,37 +295,16 @@ class Handler(SimpleHTTPRequestHandler):
     # ---- POST ------------------------------------------------------------
 
     def json_body(self, message, limit=4096):
+        request_guard.json_type(self.headers.get("Content-Type"))
         length = int(self.headers.get("Content-Length", 0))
         if not 0 < length <= limit:
             raise ValueError(message)
         return json.loads(self.rfile.read(length))
 
-    def upload_length(self):
-        """The declared body size, or None after refusing an oversize one."""
-        length = int(self.headers.get("Content-Length", 0))
-        if length <= 0 or length > UPLOAD_LIMIT:
-            self.reply({"error": "Choose a file smaller than 100 MB."}, 413)
-            return None
-        return length
-
-    def playback_choices(self, audio_format, audio_quality):
-        cookie = self.headers.get("Cookie")
-        return (
-            playback_format(audio_format or cookie_audio_format(cookie)),
-            playback_quality(audio_quality or cookie_audio_quality(cookie)),
-        )
-
-    def queue(self, job):
-        POOL.submit(
-            prepare,
-            job,
-            job["source"],
-            job["title"],
-            job["split"],
-            job.get("audio_format", "mp3"),
-            job.get("audio_quality", "standard"),
-        )
-        self.reply(job, 202)
+    def marked(self):
+        """The bodiless and raw-bodied routes carry no content type to
+        require, so they name themselves with a header instead."""
+        request_guard.marker(self.headers.get(request_guard.MARKER_HEADER))
 
     def post_sync(self):
         body = self.json_body("Invalid sync request")
@@ -392,81 +321,18 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         def answer():
+            self.marked()
             with LOCK:
                 self.reply(library_ops.restore(DATA, CATALOG, key))
 
         self.guard(answer, 400)
 
-    def post_retry(self):
-        payload = self.json_body("Invalid retry request")
-        with LOCK:
-            job = JOBS.get(payload.get("id"))
-            if not job or not job["done"]:
-                raise ValueError("That job is not available to retry.")
-            update(job, done=False, phase="Queued", error=None, result=None)
-        self.queue(job)
-
-    def post_reprocess(self):
-        payload = self.json_body("Invalid reprocess request")
-        job = reprocess_job(
-            str(payload.get("key") or ""),
-            payload.get("audio_format") or "mp3",
-            payload.get("audio_quality") or "standard",
-            payload.get("split"),
-        )
-        with LOCK:
-            if job["id"] in JOBS and not JOBS[job["id"]]["done"]:
-                raise ValueError("That song is already being processed.")
-            JOBS[job["id"]] = job
-        self.queue(job)
-
-    def link_job(self, tid, length):
-        payload = json.loads(self.rfile.read(length))
-        source = payload.get("url", "").strip()
-        parsed = urlsplit(source)
-        if parsed.scheme not in ("https", "http") or not parsed.hostname:
-            raise ValueError("Paste a complete http or https link.")
-        audio_format, audio_quality = self.playback_choices(
-            payload.get("audio_format"), payload.get("audio_quality")
-        )
-        title = str(payload.get("title", "")).strip()[:200]
-        split = payload.get("split", True) is True
-        return new_job(tid, source, title, split, audio_format, audio_quality, None)
-
-    def upload_job(self, tid, length):
-        name = Path(unquote(self.headers.get("X-Filename", "song.mp3"))).name
-        body = self.rfile.read(length)
-        ext = upload_suffix(body[:128], Path(name).suffix.lower())
-        # basename: the name written is one component, never a path.
-        source = str(DATA / os.path.basename(tid + ext))
-        with open(source, "wb") as upload:
-            upload.write(body)
-        audio_format, audio_quality = self.playback_choices(
-            self.headers.get("X-Audio-Format"), self.headers.get("X-Audio-Quality")
-        )
-        title = Path(name).stem[:200]
-        split = self.headers.get("X-Split", "true") == "true"
-        return new_job(tid, source, title, split, audio_format, audio_quality, name)
-
-    def post_import(self):
-        length = self.upload_length()
-        if length is None:
-            return
-        tid = "radio_" + uuid4().hex[:12]
-        if self.headers.get("Content-Type", "").startswith("application/json"):
-            job = self.link_job(tid, length)
-        else:
-            job = self.upload_job(tid, length)
-        with LOCK:
-            JOBS[tid] = job
-        self.queue(job)
-
     POST_ROUTES: ClassVar[dict] = {
         "/radio/device/sync": post_sync,
         "/radio/device/command": post_command,
-        "/radio/import": post_import,
-        "/radio/retry": post_retry,
-        "/radio/reprocess": post_reprocess,
+        "/radio/import": import_routes.post_import,
+        "/radio/retry": import_routes.post_retry,
+        "/radio/reprocess": import_routes.post_reprocess,
     }
 
     def do_POST(self):

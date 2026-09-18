@@ -7,6 +7,7 @@ import signal
 import subprocess
 import threading
 import time
+from typing import IO, cast
 
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 
@@ -80,6 +81,9 @@ def run(args, timeout, stage, report, extra_env=None):
         env=env,
         start_new_session=True,
     )
+    # stdout=PIPE always opens one; the stubs cannot know that (the same
+    # cast tools/progress_process.py makes for the same reason).
+    output = cast(IO[str], process.stdout)
     timed_out = threading.Event()
 
     def expire():
@@ -97,7 +101,7 @@ def run(args, timeout, stage, report, extra_env=None):
     started = time.time()
     report(started_at=started, percent=None, detail="Starting the audio tools")
     try:
-        for line in process.stdout:
+        for line in output:
             tail.append(line)
             tail = tail[-100:]
             values, analyzed = interpret(line.strip(), stage, analyzed)
@@ -111,7 +115,7 @@ def run(args, timeout, stage, report, extra_env=None):
         return "".join(tail)
     finally:
         timer.cancel()
-        process.stdout.close()
+        output.close()
         if process.poll() is None:
             expire()
             process.wait()

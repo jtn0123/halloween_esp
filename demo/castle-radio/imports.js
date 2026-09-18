@@ -7,7 +7,23 @@ const imported = new Map();
 
 let  lastJobs='', lastLibrary='', pollBusy=false;
 const escapeHTML = value => String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-async function request(url,options){const r=await fetch(url,options);const value=await r.json();if(!r.ok){throw Error(value.error||'The import service could not complete the request.');}return value;}
+/* Every call is bounded. A fetch that never settles used to leave pollBusy
+   true for good, and with it the 2 s refresh (grade report 2026-09-17 pm C6);
+   the budget is per call, so a poll gives up long before an upload does.
+   `r.ok` is read BEFORE the body, and a failure that is not JSON — a 404 from
+   a static server is HTML — reads as its own text rather than as a parse error. */
+const REQUEST_MS={poll:6000,act:15000,inventory:10000,analysis:120000,upload:15*60*1000};
+async function request(url,options,budget){
+const ms=budget||(options&&options.method&&options.method!=='GET'?REQUEST_MS.act:REQUEST_MS.poll);
+let r;
+try{r=await fetch(url,{...options,signal:AbortSignal.timeout(ms)});}catch(error){throw error&&(error.name==='TimeoutError'||error.name==='AbortError')?Error(`The import service did not answer within ${Math.round(ms/1000)}s.`):error;}
+if(!r.ok){throw Error(await failureText(r));}
+return r.json();}
+async function failureText(r){
+let text='';try{text=await r.text();}catch{text='';}
+try{const value=JSON.parse(text);if(value&&value.error){return String(value.error);}}catch{/* not JSON: its own text is the report */}
+const flat=text.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim();
+return flat?`${r.status}: ${flat.slice(0,160)}`:`The import service could not complete the request (${r.status}).`;}
 const importBytes=value=>value>=1024*1024?`${(value/1024/1024).toFixed(1)} MB`:`${Math.round((value||0)/1024)} KB`;
 const reprocessDialog=document.createElement('dialog');
 reprocessDialog.className='reprocess-dialog';
@@ -39,6 +55,9 @@ $('reprocess-form').onsubmit=async e=>{if(e.submitter?.value!=='save'||!reproces
 refresh();setInterval(refresh,2000);
 
 function uploadAudio(file,split){
-if(window.castleDesktop?.connected){return file.arrayBuffer().then(body=>request('/radio/import',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Filename':encodeURIComponent(file.name),'X-Split':String(split),'X-Audio-Format':window.radioAudioFormat,'X-Audio-Quality':window.radioAudioQuality},body}));}
-return new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST','/radio/import');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('X-Filename',encodeURIComponent(file.name));xhr.setRequestHeader('X-Split',String(split));xhr.setRequestHeader('X-Audio-Format',window.radioAudioFormat);xhr.setRequestHeader('X-Audio-Quality',window.radioAudioQuality);const progress=$('upload-progress');progress.hidden=false;progress.value=0;xhr.upload.onprogress=e=>{if(e.lengthComputable){progress.value=e.loaded/e.total*100;$('import-message').textContent=`Uploading audio · ${Math.round(progress.value)}%`;}};xhr.onload=()=>{progress.hidden=true;try{const result=JSON.parse(xhr.responseText);if(xhr.status>=400){reject(Error(result.error||'Upload failed'));}else {resolve(result);}}catch{reject(Error('The import server returned an unreadable response.'));}};xhr.onerror=()=>{progress.hidden=true;reject(Error('Upload interrupted. Try again.'));};xhr.send(file);});}
+/* X-Castle marks every raw-bodied or bodiless POST as ours: a custom header
+   forces a preflight, which the import server never answers, so no other
+   origin's page can reach these routes (grade report 2026-09-17 E2). */
+if(window.castleDesktop?.connected){return file.arrayBuffer().then(body=>request('/radio/import',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Castle':'1','X-Filename':encodeURIComponent(file.name),'X-Split':String(split),'X-Audio-Format':window.radioAudioFormat,'X-Audio-Quality':window.radioAudioQuality},body},REQUEST_MS.upload));}
+return new Promise((resolve,reject)=>{const xhr=new XMLHttpRequest();xhr.open('POST','/radio/import');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('X-Castle','1');xhr.setRequestHeader('X-Filename',encodeURIComponent(file.name));xhr.setRequestHeader('X-Split',String(split));xhr.setRequestHeader('X-Audio-Format',window.radioAudioFormat);xhr.setRequestHeader('X-Audio-Quality',window.radioAudioQuality);const progress=$('upload-progress');progress.hidden=false;progress.value=0;xhr.upload.onprogress=e=>{if(e.lengthComputable){progress.value=e.loaded/e.total*100;$('import-message').textContent=`Uploading audio · ${Math.round(progress.value)}%`;}};xhr.onload=()=>{progress.hidden=true;try{const result=JSON.parse(xhr.responseText);if(xhr.status>=400){reject(Error(result.error||'Upload failed'));}else {resolve(result);}}catch{reject(Error('The import server returned an unreadable response.'));}};xhr.onerror=()=>{progress.hidden=true;reject(Error('Upload interrupted. Try again.'));};xhr.send(file);});}
 setInterval(()=>{document.querySelectorAll('[data-started]').forEach(e=>{const start=Number(e.dataset.started);e.textContent=start?`· ${Math.max(0,Math.floor((Number(e.dataset.finished)||Date.now()/1000)-start))}s elapsed`:'';});},1000);

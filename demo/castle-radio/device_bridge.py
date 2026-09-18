@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from typing import Any, TypedDict
 
 # The imported light-show runner lives next door; every name it owns stays
 # importable from here so callers (and the tests that patch `call`) keep one
@@ -48,8 +49,26 @@ _clock = {
     "origin": "observed",
 }
 _STATUS_LOCK = threading.Lock()
-_status_cache = {"at": 0.0, "state": None}
-_expected = {"scene": None, "track": None, "until": 0.0}
+
+
+class _StatusCache(TypedDict):
+    """One shared answer to /api/status: when it was read, and what it said.
+    The state is the castle's own JSON — its shape belongs to the firmware."""
+
+    at: float
+    state: dict[str, Any] | None
+
+
+class _Expected(TypedDict):
+    """What a command asked for, until the castle reports it (see `settle`)."""
+
+    scene: str | None
+    track: str | None
+    until: float
+
+
+_status_cache: _StatusCache = {"at": 0.0, "state": None}
+_expected: _Expected = {"scene": None, "track": None, "until": 0.0}
 _LIGHT_SPEC = re.compile(
     r"(?:(?:towerL|towerR|door):)?(?:[0-9a-fA-F]{6}|white|off|show|bars|chase|ends)(?:@(?:[1-9]|[1-9]\d|100))?"
 )
@@ -124,7 +143,7 @@ def call(path, method="GET", data=None, timeout=8, fresh=False):
         result = json.loads(response.read())
     if path == STATUS_PATH and method == "GET":
         with _STATUS_LOCK:
-            _status_cache.update(at=time.monotonic(), state=dict(result))
+            _status_cache.update({"at": time.monotonic(), "state": dict(result)})
         return dict(result)
     return result
 
@@ -132,7 +151,9 @@ def call(path, method="GET", data=None, timeout=8, fresh=False):
 def expect(scene=None, track=None):
     """Remember what a command asked for until the castle reports it."""
     with _STATUS_LOCK:
-        _expected.update(scene=scene, track=track, until=time.monotonic() + SETTLE_S)
+        _expected.update(
+            {"scene": scene, "track": track, "until": time.monotonic() + SETTLE_S}
+        )
         _status_cache["state"] = None
 
 
