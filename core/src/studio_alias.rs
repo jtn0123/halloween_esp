@@ -7,7 +7,7 @@
 //! file, and nothing else has to be picked apart to remove them.
 
 use std::collections::HashSet;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use crate::studio::API;
 
@@ -38,7 +38,9 @@ pub fn studio_path(target: &str) -> String {
     if !STUDIO_ROUTES.contains(&head) || fire {
         return path.to_string();
     }
-    let mut seen = deprecated_seen().lock().unwrap_or_else(|e| e.into_inner());
+    let mut seen = deprecated_seen()
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
     if seen.insert(head.to_string()) {
         eprintln!(
             "  DEPRECATED: /api/{head} is now /studio/{head} (docs/API.md) — \

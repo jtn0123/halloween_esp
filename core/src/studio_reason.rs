@@ -132,37 +132,12 @@ pub fn basenames(s: &str) -> String {
     let mut out = String::new();
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'/' {
-            let prev_ok = i == 0 || {
-                let p = b[i - 1];
-                !(p == b':' || p == b'/' || p.is_ascii_alphanumeric() || p == b'_')
-            };
-            if prev_ok {
-                // Consume one-or-more `[^/\s'"]+/` segments possessively.
-                let mut j = i + 1;
-                let mut last_slash = None;
-                let mut seg_len = 0;
-                while j < b.len() {
-                    let c = b[j];
-                    if c == b'/' {
-                        if seg_len == 0 {
-                            break;
-                        }
-                        last_slash = Some(j);
-                        seg_len = 0;
-                        j += 1;
-                    } else if c.is_ascii_whitespace() || c == b'\'' || c == b'"' {
-                        break;
-                    } else {
-                        seg_len += 1;
-                        j += 1;
-                    }
-                }
-                if let Some(end) = last_slash {
-                    i = end + 1;
-                    continue;
-                }
-            }
+        if b[i] == b'/'
+            && starts_a_path(b, i)
+            && let Some(end) = path_prefix_end(b, i)
+        {
+            i = end + 1;
+            continue;
         }
         // Copy one UTF-8 scalar.
         let start = i;
@@ -173,6 +148,42 @@ pub fn basenames(s: &str) -> String {
         out.push_str(&s[start..i]);
     }
     out
+}
+
+/// Whether the '/' at `i` can open a path: the byte before it must not be
+/// one the regex's lookbehind excludes, which is what keeps URLs whole.
+fn starts_a_path(b: &[u8], i: usize) -> bool {
+    if i == 0 {
+        return true;
+    }
+    let p = b[i - 1];
+    !(p == b':' || p == b'/' || p.is_ascii_alphanumeric() || p == b'_')
+}
+
+/// The last '/' of the `[^/\s'"]+/` run starting at `i`, consumed
+/// possessively like the Python regex — None when there is no run, so the
+/// '/' is just a character.
+fn path_prefix_end(b: &[u8], i: usize) -> Option<usize> {
+    let mut j = i + 1;
+    let mut last_slash = None;
+    let mut seg_len = 0;
+    while j < b.len() {
+        let c = b[j];
+        if c == b'/' {
+            if seg_len == 0 {
+                break;
+            }
+            last_slash = Some(j);
+            seg_len = 0;
+            j += 1;
+        } else if c.is_ascii_whitespace() || c == b'\'' || c == b'"' {
+            break;
+        } else {
+            seg_len += 1;
+            j += 1;
+        }
+    }
+    last_slash
 }
 
 /// studio_jobs.reason — the one-line verdict for a tool's whole output.

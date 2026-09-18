@@ -215,7 +215,9 @@ pub fn compare(app: &App, req: &Json) -> (Json, u16) {
         .unwrap_or(0);
     let token = format!(
         "{}-{}",
-        p.file_stem().and_then(|s| s.to_str()).unwrap_or(""),
+        p.file_stem()
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or(""),
         secs
     );
     let dest = std::env::temp_dir().join(format!("castle-cmp-{token}"));
@@ -244,7 +246,9 @@ pub fn compare(app: &App, req: &Json) -> (Json, u16) {
         return (v, 500);
     }
     {
-        let mut c = compares().lock().unwrap_or_else(|e| e.into_inner());
+        let mut c = compares()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         c.push((token.clone(), dest));
         while c.len() > 3 {
             let (_, old) = c.remove(0);

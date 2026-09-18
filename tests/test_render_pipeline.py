@@ -314,7 +314,7 @@ class TestUnchangedSkip(TestStaleSweep):
         """An absent song is an input state: the stamp must not call the
         songless render fresh once the file is on this machine."""
         song = self.tmp / "song.mp3"
-        with mock.patch.object(ra.render_stamp.bp, "track_source", lambda _rel: song):
+        with mock.patch.object(ra.render_stamp.bp, "track_source", return_value=song):
             scenes = self.tmp / "scenes.yaml"
             scenes.write_text(
                 self.SHOW.replace(

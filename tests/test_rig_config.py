@@ -185,8 +185,9 @@ class TestRmtBudget(unittest.TestCase):
         channel and stays dark, which is the exact failure this budget exists
         to prevent. Now it stops the build and says whose block is in the
         way."""
+        zones = self.zones(door=96)
         with self.assertRaises(SystemExit) as e:
-            gen_rig.emit_lights(LAYOUTS, self.zones(door=96), PER)
+            gen_rig.emit_lights(LAYOUTS, zones, PER)
         msg = str(e.exception)
         self.assertIn("status pixel", msg)
         self.assertIn("castle_feather_s3.yaml", msg)
@@ -198,8 +199,9 @@ class TestRmtBudget(unittest.TestCase):
         self.assertEqual(gen_rig.check_rmt_budget(self.zones(door=96), LAYOUTS), 0)
 
     def test_overspending_the_peripheral_stops_the_build(self) -> None:
+        zones = self.zones(door=96, towerL=96)
         with self.assertRaises(SystemExit) as e:
-            gen_rig.emit_lights(LAYOUTS, self.zones(door=96, towerL=96), PER)
+            gen_rig.emit_lights(LAYOUTS, zones, PER)
         self.assertIn("ESP32-S3 has 192", str(e.exception))
 
     def test_a_half_block_is_refused(self) -> None:
@@ -207,8 +209,9 @@ class TestRmtBudget(unittest.TestCase):
         while the porch ran an S2, so a revert or a stale note is a real way
         for it to come back, and on this chip it is not a whole block."""
         for bad in (64, 24, 0):
+            zones = self.zones(door=bad)
             with self.assertRaises(SystemExit) as e:
-                gen_rig.emit_lights(LAYOUTS, self.zones(door=bad), PER)
+                gen_rig.emit_lights(LAYOUTS, zones, PER)
             self.assertIn("multiple of 48", str(e.exception))
 
 

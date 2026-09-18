@@ -130,7 +130,10 @@ class NativeCase(unittest.TestCase):
 
     def setUp(self) -> None:
         global SCRIPT  # noqa: PLW0603 — the fake's script is per test
-        SCRIPT = Script()
+        # The fake client is constructed by castle_native, so it can only reach
+        # its script through the module global; `self.script` is the same object
+        # under a name the cases can arrange without writing a global.
+        SCRIPT = self.script = Script()
         self.patches: list = [
             mock.patch.object(cn, "aioesphomeapi", FAKE_API),
             mock.patch.object(cn, "_links", {}),
@@ -141,7 +144,7 @@ class NativeCase(unittest.TestCase):
             self.addCleanup(p.stop)
         self.addCleanup(cn.close_all)  # before the patches unwind (LIFO)
 
-    def link(self) -> cn._Link:
+    def _link(self) -> cn._Link:
         ln = cn._get(self.HOST)
         self.assertTrue(wait_for(lambda: ln.connected), "never connected")
         return ln
@@ -149,7 +152,7 @@ class NativeCase(unittest.TestCase):
 
 class TestConnection(NativeCase):
     def test_connects_and_reports_the_desk_shape(self) -> None:
-        self.link()
+        self._link()
         st = cn.status(self.HOST)
         assert st is not None
         self.assertEqual(
@@ -165,37 +168,37 @@ class TestConnection(NativeCase):
         )
 
     def test_connect_failure_is_offline_and_keeps_retrying(self) -> None:
-        SCRIPT.connect_ok = False
+        self.script.connect_ok = False
         cn._get(self.HOST)
-        self.assertTrue(wait_for(lambda: SCRIPT.connects >= 3))
+        self.assertTrue(wait_for(lambda: self.script.connects >= 3))
         self.assertFalse(cn.connected(self.HOST))
         self.assertIsNone(cn.status(self.HOST))
         self.assertFalse(cn.scene(self.HOST, "vigil"))
         self.assertFalse(cn.stop(self.HOST))
         self.assertFalse(cn.volume(self.HOST, 50))
-        SCRIPT.connect_ok = True  # the castle boots
+        self.script.connect_ok = True  # the castle boots
         self.assertTrue(wait_for(lambda: cn.connected(self.HOST)))
 
     def test_drop_then_reconnect(self) -> None:
-        ln = self.link()
-        first = SCRIPT.clients[-1]
+        ln = self._link()
+        first = self.script.clients[-1]
         first.drop(ln.loop)
         self.assertTrue(wait_for(lambda: not ln.connected))
         self.assertIsNone(cn.status(self.HOST))
         self.assertFalse(cn.stop(self.HOST))  # dropped = not vacuously ok
         self.assertTrue(
-            wait_for(lambda: ln.connected and SCRIPT.clients[-1] is not first)
+            wait_for(lambda: ln.connected and self.script.clients[-1] is not first)
         )
         self.assertTrue(cn.stop(self.HOST))
 
     def test_missing_optional_entities_leave_fields_out(self) -> None:
-        SCRIPT.entities = [
+        self.script.entities = [
             e
-            for e in SCRIPT.entities
+            for e in self.script.entities
             if e.object_id not in ("sd_card_present", "castle_audio")
         ]
-        SCRIPT.states = [s for s in SCRIPT.states if s.key not in (3, 7)]
-        self.link()
+        self.script.states = [s for s in self.script.states if s.key not in (3, 7)]
+        self._link()
         st = cn.status(self.HOST)
         assert st is not None
         self.assertNotIn("sd_mounted", st)
@@ -204,58 +207,60 @@ class TestConnection(NativeCase):
 
     def test_version_falls_back_to_esphome_version(self) -> None:
         with mock.patch.object(FakeInfo, "project_version", ""):
-            self.link()
+            self._link()
             self.assertEqual(cn.status(self.HOST)["version"], "2026.8.0")  # type: ignore[index]
 
 
 class TestSubmission(NativeCase):
     def test_scene_presses_the_right_button(self) -> None:
-        self.link()
+        self._link()
         self.assertTrue(cn.scene(self.HOST, "storm"))
-        self.assertEqual(SCRIPT.calls, [("button", 2)])
+        self.assertEqual(self.script.calls, [("button", 2)])
         self.assertFalse(cn.scene(self.HOST, "nope"))  # no such button
-        self.assertEqual(len(SCRIPT.calls), 1)
+        self.assertEqual(len(self.script.calls), 1)
 
     def test_stop_halts_audio_then_blacks_out(self) -> None:
-        self.link()
+        self._link()
         self.assertTrue(cn.stop(self.HOST))
         self.assertEqual(
-            SCRIPT.calls, [("media", 3, {"command": "STOP"}), ("button", 4)]
+            self.script.calls, [("media", 3, {"command": "STOP"}), ("button", 4)]
         )
 
     def test_stop_with_nothing_to_press_is_false(self) -> None:
         """The pass-1 finding: empty key dicts made Stop vacuously True."""
-        SCRIPT.entities = [FakeEntity("scene__vigil", 1)]
-        self.link()
+        self.script.entities = [FakeEntity("scene__vigil", 1)]
+        self._link()
         self.assertFalse(cn.stop(self.HOST))
-        self.assertEqual(SCRIPT.calls, [])
+        self.assertEqual(self.script.calls, [])
 
     def test_stop_with_only_a_blackout_button_still_presses_it(self) -> None:
-        SCRIPT.entities = [FakeEntity("blackout", 4)]
-        self.link()
+        self.script.entities = [FakeEntity("blackout", 4)]
+        self._link()
         self.assertTrue(cn.stop(self.HOST))
-        self.assertEqual(SCRIPT.calls, [("button", 4)])
+        self.assertEqual(self.script.calls, [("button", 4)])
 
     def test_a_failing_command_is_false_not_a_traceback(self) -> None:
-        self.link()
-        SCRIPT.fail_calls = True
+        self._link()
+        self.script.fail_calls = True
         self.assertFalse(cn.scene(self.HOST, "vigil"))
         self.assertFalse(cn.stop(self.HOST))
         self.assertFalse(cn.volume(self.HOST, 10))
         self.assertTrue(cn.connected(self.HOST))  # the link itself is fine
 
     def test_volume_range_and_scaling(self) -> None:
-        self.link()
+        self._link()
         self.assertTrue(cn.volume(self.HOST, 0))
         self.assertTrue(cn.volume(self.HOST, 100))
         self.assertFalse(cn.volume(self.HOST, 101))
         self.assertFalse(cn.volume(self.HOST, -1))
-        self.assertEqual([c[2]["volume"] for c in SCRIPT.calls], [0.0, 1.0])
+        self.assertEqual([c[2]["volume"] for c in self.script.calls], [0.0, 1.0])
 
     def test_a_slow_command_is_cut_off_by_the_call_timeout(self) -> None:
-        self.link()
+        self._link()
+        # A button press that never returns: the timeout, not the fake, is what
+        # has to cut it off. side_effect keeps the sleep on the loop thread.
         slow = mock.patch.object(
-            FakeClient, "button_command", lambda self, key: time.sleep(1.0)
+            FakeClient, "button_command", side_effect=lambda _key: time.sleep(1.0)
         )
         with slow, mock.patch.object(cn, "CALL_TIMEOUT_S", 0.2):
             t0 = time.monotonic()
@@ -266,7 +271,7 @@ class TestSubmission(NativeCase):
 class TestThreads(NativeCase):
     def test_one_thread_per_host_however_many_callers(self) -> None:
         before = [t for t in threading.enumerate() if t.name == "castle-native"]
-        self.link()
+        self._link()
         results: list[bool] = []
 
         def hammer() -> None:
@@ -281,12 +286,12 @@ class TestThreads(NativeCase):
         for t in ts:
             t.join()
         self.assertEqual(results, [True] * 40)
-        self.assertEqual(len(SCRIPT.calls), 40)
+        self.assertEqual(len(self.script.calls), 40)
         after = [t for t in threading.enumerate() if t.name == "castle-native"]
         self.assertEqual(len(after) - len(before), 1)
 
     def test_close_all_ends_the_threads(self) -> None:
-        self.link()
+        self._link()
         cn.close_all()
         self.assertFalse(
             any(

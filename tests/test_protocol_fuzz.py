@@ -56,16 +56,16 @@ class FuzzCase(unittest.TestCase):
     ) -> tuple[int, bytes, dict[str, str]]:
         return raw_request("127.0.0.1", self.emu.port, method, target, **kw)
 
-    def fuzzer(self) -> Fuzzer:
+    def _fuzzer(self) -> Fuzzer:
         return Fuzzer("127.0.0.1", self.emu.port, SEED, self.card)
 
 
 class TestStorm(FuzzCase):
     def test_single_threaded_storm_holds_every_invariant(self) -> None:
-        self.fuzzer().run(600, threads=1)
+        self._fuzzer().run(600, threads=1)
 
     def test_concurrent_storm_holds_every_invariant(self) -> None:
-        self.fuzzer().run(900, threads=6)
+        self._fuzzer().run(900, threads=6)
 
     def test_nothing_landed_outside_the_card(self) -> None:
         """The jail holds the card and nothing else, whatever the names were."""

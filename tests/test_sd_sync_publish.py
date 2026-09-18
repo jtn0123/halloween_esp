@@ -54,7 +54,7 @@ class TestPublishedRecord(SdCase):
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
         self.assertEqual(self.scene_gets(), [])
         # show.man still goes every time; nothing else does.
-        self.assertEqual([p for p, _n in self.puts()], ["/api/scenes/show.man"])
+        self.assertEqual([p for p, _n in self._puts()], ["/api/scenes/show.man"])
 
     def test_a_changed_render_is_re_sent_even_at_the_same_size(self) -> None:
         self.seed_card()
@@ -62,7 +62,7 @@ class TestPublishedRecord(SdCase):
         (self.tmp / "audio" / "01_vigil.mp3").write_bytes(b"z" * 100)
         self.card.calls.clear()
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
-        self.assertIn("/api/scenes/01_vigil.mp3", [p for p, _n in self.puts()])
+        self.assertIn("/api/scenes/01_vigil.mp3", [p for p, _n in self._puts()])
 
     def test_a_record_from_another_host_is_not_evidence_about_this_one(self) -> None:
         """Two castles do not share a card, so the hash is filed per host and

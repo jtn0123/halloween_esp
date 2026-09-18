@@ -10,10 +10,10 @@
 //! parallel threads against one process-wide cache.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 fn log() -> &'static Mutex<Vec<(&'static str, String)>> {
-    static L: OnceLock<Mutex<Vec<(&'static str, String)>>> = OnceLock::new();
+    static L: OnceLock<Mutex<Vec<(&str, String)>>> = OnceLock::new();
     L.get_or_init(|| Mutex::new(Vec::new()))
 }
 
@@ -22,7 +22,7 @@ fn log() -> &'static Mutex<Vec<(&'static str, String)>> {
 pub fn note(what: &'static str, key: &str) {
     log()
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(PoisonError::into_inner)
         .push((what, key.to_string()));
 }
 
@@ -31,7 +31,7 @@ pub fn note(what: &'static str, key: &str) {
 pub fn count(what: &'static str, key: &str) -> usize {
     log()
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(PoisonError::into_inner)
         .iter()
         .filter(|(w, k)| *w == what && k == key)
         .count()
@@ -42,7 +42,7 @@ pub fn count(what: &'static str, key: &str) -> usize {
 pub fn matching(what: &'static str, needle: &str) -> Vec<String> {
     log()
         .lock()
-        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(PoisonError::into_inner)
         .iter()
         .filter(|(w, k)| *w == what && k.contains(needle))
         .map(|(_, k)| k.clone())

@@ -12,16 +12,16 @@
 
 use crate::httpd::{Reply, Request};
 use crate::jsonio::{self, Json};
-use crate::studio::{API, App, scene_audio, scene_ids};
+use crate::studio::{API, App};
 use crate::studio_alias::studio_path;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use crate::studio_import as si;
 use crate::studio_relay as rl;
 use crate::studio_scenes as ssc;
-use crate::{manifest, studio_media as sm, studio_tracks as st};
+use crate::{manifest, studio_tracks as st};
 
-fn jerr(msg: &str, code: u16) -> Reply {
+pub(crate) fn jerr(msg: &str, code: u16) -> Reply {
     Reply::Json(
         Json::Obj(vec![("error".into(), Json::Str(msg.into()))]),
         code,
@@ -31,7 +31,7 @@ fn jerr(msg: &str, code: u16) -> Reply {
 /// The relay itself (allowlist, host walk, TTL caches) lives in
 /// studio_relay — castle_link's own seam; this shim keeps the route
 /// bodies reading like the Python's.
-fn relay(app: &App, method: &str, target: &str, body: &[u8]) -> Reply {
+pub(crate) fn relay(app: &App, method: &str, target: &str, body: &[u8]) -> Reply {
     rl::relay_reply(app, method, target, body)
 }
 
@@ -62,7 +62,7 @@ pub(crate) fn bad_request(msg: &str) -> Reply {
 }
 
 /// Path(...).name — the traversal-stripping last segment.
-fn last_segment(s: &str) -> String {
+pub(crate) fn last_segment(s: &str) -> String {
     s.trim_end_matches('/')
         .rsplit('/')
         .next()
@@ -72,152 +72,12 @@ fn last_segment(s: &str) -> String {
 
 pub fn handle(app: &Arc<App>, req: &Request) -> Reply {
     match req.method.as_str() {
-        "GET" => get(app, req),
+        "GET" => crate::studio_routes_get::get(app, req),
         "DELETE" => delete(app, req),
         "POST" => post(app, req),
         "PUT" => put(app, req),
         _ => jerr("not found", 404),
     }
-}
-
-fn get(app: &App, req: &Request) -> Reply {
-    let path = studio_path(&req.target);
-    if path == "/" || path == "/index.html" {
-        let (page, _) = app.served();
-        if !page.exists() {
-            return jerr("previewer not built", 404);
-        }
-        return match app.lean_page(&page) {
-            Ok((body, etag)) => Reply::Page {
-                body,
-                ctype: "text/html; charset=utf-8",
-                etag,
-            },
-            Err(e) => Reply::Json(
-                Json::Obj(vec![
-                    ("ok".into(), Json::Bool(false)),
-                    ("error".into(), Json::Str(format!("OSError: {e}"))),
-                ]),
-                500,
-            ),
-        };
-    }
-    if let Some(rest) = path.strip_prefix("/studio/scene-audio/") {
-        let name = last_segment(rest);
-        let (_, audio) = app.served();
-        return match scene_audio(&audio, &name) {
-            None => jerr("no such scene audio", 404),
-            Some(p) => Reply::FileRange {
-                path: p,
-                ctype: "audio/mpeg".into(),
-            },
-        };
-    }
-    if path == "/remote" {
-        return relay(app, "GET", &req.target, b"");
-    }
-    if let Some(rest) = path.strip_prefix("/studio/job/") {
-        return si::job_get(app, &last_segment(rest));
-    }
-    if path == "/api/status" {
-        return rl::status_reply(app);
-    }
-    if path == "/studio/tracks" {
-        let _ = std::fs::create_dir(&app.tracks);
-        return Reply::Json(
-            Json::Obj(vec![
-                ("tracks".into(), Json::Arr(st::track_infos(&app.tracks))),
-                (
-                    "scenes".into(),
-                    Json::Arr(scene_ids(&app.scenes).into_iter().map(Json::Str).collect()),
-                ),
-            ]),
-            200,
-        );
-    }
-    if let Some(rest) = path.strip_prefix("/studio/waveform/") {
-        let sens = sm::parse_sensitivity(&req.query());
-        let name = last_segment(rest);
-        let Some(p) = st::track_path(&app.tracks, &name) else {
-            return jerr("no such track", 404);
-        };
-        return match sm::waveform(&p, sens) {
-            Some(obj) => Reply::JsonShared(obj, 200),
-            None => Reply::Json(
-                Json::Obj(vec![
-                    ("ok".into(), Json::Bool(false)),
-                    (
-                        "error".into(),
-                        Json::Str(format!("could not decode {}", p.display())),
-                    ),
-                ]),
-                500,
-            ),
-        };
-    }
-    if let Some(rest) = path.strip_prefix("/studio/stems/") {
-        let (obj, code) = sm::stems_analysis(&app.tracks, &last_segment(rest));
-        return Reply::Json(obj, code);
-    }
-    if path.starts_with("/studio/stem/") {
-        let parts: Vec<&str> = path.split('/').collect();
-        let hit = (parts.len() >= 5)
-            .then(|| sm::stem_file(&app.tracks, parts[parts.len() - 2], parts[parts.len() - 1]))
-            .flatten();
-        return match hit {
-            None => jerr("no such stem", 404),
-            Some(p) => Reply::FileRange {
-                path: p,
-                ctype: "audio/mpeg".into(),
-            },
-        };
-    }
-    if path.starts_with("/studio/compare/") {
-        let parts: Vec<&str> = path.split('/').collect();
-        let hit = (parts.len() >= 5)
-            .then(|| sm::compare_file(parts[parts.len() - 2], parts[parts.len() - 1]))
-            .flatten();
-        return match hit {
-            None => jerr("no such comparison", 404),
-            Some(p) => {
-                let ctype = st::mime(p.extension().and_then(|e| e.to_str()).unwrap_or(""));
-                Reply::FileRange {
-                    path: p,
-                    ctype: ctype.into(),
-                }
-            }
-        };
-    }
-    if let Some(rest) = path.strip_prefix("/studio/track/") {
-        let name = last_segment(rest);
-        // rpartition("."): a known audio extension is stripped, anything
-        // else is part of the id it will fail to be.
-        let tid = match name.rfind('.') {
-            Some(at) if at > 0 && st::AUDIO_EXT.contains(&&name[at + 1..]) => &name[..at],
-            _ => name.as_str(),
-        };
-        return match st::track_path(&app.tracks, tid) {
-            None => jerr("not found", 404),
-            Some(p) => {
-                let ctype = st::mime(p.extension().and_then(|e| e.to_str()).unwrap_or(""));
-                Reply::FileRange {
-                    path: p,
-                    ctype: ctype.into(),
-                }
-            }
-        };
-    }
-    if let Some(rest) = path.strip_prefix("/studio/card/") {
-        let name = last_segment(rest);
-        if name.is_empty() {
-            return jerr("no file name", 400);
-        }
-        return relay(app, "GET", &format!("/sd/{name}"), b"");
-    }
-    if path.starts_with(API) {
-        return relay(app, "GET", &req.target, b"");
-    }
-    jerr("not found", 404)
 }
 
 fn delete(app: &App, req: &Request) -> Reply {
@@ -288,104 +148,104 @@ fn delete(app: &App, req: &Request) -> Reply {
     jerr("not found", 404)
 }
 
+/// A POST group: Some(reply) when one of its paths matched.
+type Post = fn(&Arc<App>, &Request, &str) -> Option<Reply>;
+
 fn post(app: &Arc<App>, req: &Request) -> Reply {
+    let groups: [Post; 4] = [imports, probes, server, show];
     let path = studio_path(&req.target);
-    if path == "/studio/import" {
-        return si::do_import(app, req);
+    for group in groups {
+        if let Some(r) = group(app, req, &path) {
+            return r;
+        }
     }
-    if path == "/studio/import/async" {
-        return si::import_async(app, req);
+    if path.starts_with(API) {
+        return relay(app, "POST", &req.target, &req.body);
     }
-    if path == "/studio/stems" {
-        return si::stems_post(app, req);
+    jerr("not found", 404)
+}
+
+/// Everything that brings audio into the library.
+fn imports(app: &Arc<App>, req: &Request, path: &str) -> Option<Reply> {
+    match path {
+        "/studio/import" => Some(si::do_import(app, req)),
+        "/studio/import/async" => Some(si::import_async(app, req)),
+        "/studio/stems" => Some(si::stems_post(app, req)),
+        "/studio/refresh" => Some(si::refresh(app, req)),
+        _ => None,
     }
-    if path == "/studio/refresh" {
-        return si::refresh(app, req);
-    }
+}
+
+/// The two that ask ffmpeg about something before it is a track.
+fn probes(app: &Arc<App>, req: &Request, path: &str) -> Option<Reply> {
     if path == "/studio/compare" {
         let body = match json_body(&req.body) {
             Ok(v) => v,
-            Err(e) => return bad_request(&e),
+            Err(e) => return Some(bad_request(&e)),
         };
         // ffmpeg four times over; serialise with every other encode job.
         let (out, code) = {
-            let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+            let _g = app.oplock.lock().unwrap_or_else(PoisonError::into_inner);
             crate::studio_probe::compare(app, &body)
         };
-        return Reply::Json(out, code);
+        return Some(Reply::Json(out, code));
     }
     if path == "/studio/probe" {
         let body = match json_body(&req.body) {
             Ok(v) => v,
-            Err(e) => return bad_request(&e),
+            Err(e) => return Some(bad_request(&e)),
         };
         let url = body.str_or("url", "").trim().to_string();
         if let Some(why) = crate::netguard::refuse_reason(&url, &req.client_ip) {
-            return jerr(&why, 400);
+            return Some(jerr(&why, 400));
         }
         // A bad or unreadable link is the caller's problem: 400, not 200.
         let (out, ok) = crate::studio_probe::probe(&url);
-        return Reply::Json(out, if ok { 200 } else { 400 });
+        return Some(Reply::Json(out, if ok { 200 } else { 400 }));
     }
-    if path == "/studio/server/stop" {
-        // Answer first, then shut down — the page must see "stopped",
-        // not a dead socket.
-        crate::studio::schedule(crate::studio::Action::Stop);
-        return Reply::Json(
-            Json::Obj(vec![
-                ("ok".into(), Json::Bool(true)),
-                ("stopping".into(), Json::Bool(true)),
-            ]),
-            200,
-        );
-    }
-    if path == "/studio/server/restart" {
-        crate::studio::schedule(crate::studio::Action::Restart);
-        return Reply::Json(
-            Json::Obj(vec![
-                ("ok".into(), Json::Bool(true)),
-                ("restarting".into(), Json::Bool(true)),
-            ]),
-            200,
-        );
-    }
+    None
+}
+
+/// Stop and restart: answer first, then act — the page must see the
+/// verdict, not a dead socket.
+fn server(_app: &Arc<App>, _req: &Request, path: &str) -> Option<Reply> {
+    let (action, key) = match path {
+        "/studio/server/stop" => (crate::studio::Action::Stop, "stopping"),
+        "/studio/server/restart" => (crate::studio::Action::Restart, "restarting"),
+        _ => return None,
+    };
+    crate::studio::schedule(action);
+    Some(Reply::Json(
+        Json::Obj(vec![
+            ("ok".into(), Json::Bool(true)),
+            (key.into(), Json::Bool(true)),
+        ]),
+        200,
+    ))
+}
+
+/// The show: a scene edit, the rebuild it needs, the push to the castle.
+fn show(app: &Arc<App>, req: &Request, path: &str) -> Option<Reply> {
     if path == "/studio/scene" {
         // The studio's scenes.yaml editor (JSON body); /api/scene?s=<id>
         // is the castle's fire-a-scene and stayed on the relay above.
         let body = match json_body(&req.body) {
             Ok(v) => v,
-            Err(e) => return bad_request(&e),
+            Err(e) => return Some(bad_request(&e)),
         };
         let (mut out, code) = ssc::splice(app, &body);
-        if let Json::Obj(o) = &mut out {
-            let not_ok = !matches!(
-                o.iter().find(|(k, _)| k == "ok"),
-                Some((_, Json::Bool(true)))
-            );
-            let log = o
-                .iter()
-                .find(|(k, _)| k == "log")
-                .and_then(|(_, v)| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if not_ok && !log.is_empty() {
-                o.push((
-                    "reason".into(),
-                    Json::Str(crate::studio_reason::reason(&log)),
-                ));
-            }
-        }
-        return Reply::Json(out, code);
+        add_reason(&mut out);
+        return Some(Reply::Json(out, code));
     }
     if path == "/studio/rebuild" {
         let (ok, log) = ssc::rebuild(app);
-        return Reply::Json(
+        return Some(Reply::Json(
             Json::Obj(vec![
                 ("ok".into(), Json::Bool(ok)),
                 ("log".into(), Json::Str(log)),
             ]),
             if ok { 200 } else { 500 },
-        );
+        ));
     }
     if path == "/studio/publish" {
         // The last mile: sd_sync scenes (audio + cue files + show.man) +
@@ -396,12 +256,33 @@ fn post(app: &Arc<App>, req: &Request) -> Reply {
         // (grade report 2026-09-17 pm G2; `a_publish_does_not_want_the_oplock`
         // in studio_publish.rs pins it).
         let (out, code) = crate::studio_publish::publish_body(app);
-        return Reply::Json(out, code);
+        return Some(Reply::Json(out, code));
     }
-    if path.starts_with(API) {
-        return relay(app, "POST", &req.target, &req.body);
+    None
+}
+
+/// A failed scene splice carries its log; the desk shows the one-line
+/// verdict beside it.
+fn add_reason(out: &mut Json) {
+    let Json::Obj(o) = out else {
+        return;
+    };
+    let not_ok = !matches!(
+        o.iter().find(|(k, _)| k == "ok"),
+        Some((_, Json::Bool(true)))
+    );
+    let log = o
+        .iter()
+        .find(|(k, _)| k == "log")
+        .and_then(|(_, v)| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if not_ok && !log.is_empty() {
+        o.push((
+            "reason".into(),
+            Json::Str(crate::studio_reason::reason(&log)),
+        ));
     }
-    jerr("not found", 404)
 }
 
 fn put(app: &App, req: &Request) -> Reply {

@@ -16,6 +16,7 @@ import types
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -199,12 +200,14 @@ class TestToPreviewer(unittest.TestCase):
             gp.to_previewer(s, 1, "", {})
 
     def test_unknown_base_effect_is_rejected(self) -> None:
+        s = scene(base={"door": "nope"})
         with self.assertRaises(SystemExit):
-            gp.to_previewer(scene(base={"door": "nope"}), 1, "", {})
+            gp.to_previewer(s, 1, "", {})
 
     def test_unknown_cue_op_is_rejected(self) -> None:
+        s = scene(cues=[{"t": 0, "op": "fade"}])
         with self.assertRaises(SystemExit):
-            gp.to_previewer(scene(cues=[{"t": 0, "op": "fade"}]), 1, "", {})
+            gp.to_previewer(s, 1, "", {})
 
     def test_yaml_slice_is_attached(self) -> None:
         raw = "scenes:\n  - id: probe\n    name: Probe\n"
@@ -222,7 +225,6 @@ class TestInjection(unittest.TestCase):
             gp.MOBILE,
             gp.WEB,
             gp.BUNDLE,
-            gp.subprocess,
         )
         gp.STYLES = self.tmp / "styles.css"
         gp.STYLES.write_text("body { color: red }\n\n")
@@ -235,13 +237,15 @@ class TestInjection(unittest.TestCase):
         gp.BUNDLE = gp.WEB / "dist" / "bundle.js"
         gp.BUNDLE.parent.mkdir(parents=True)
         self.js = "console.log(1);"
-        gp.subprocess = self.fake_subprocess(0)  # type: ignore[assignment]  # test double
+        self.install_subprocess(0)
 
     def tearDown(self) -> None:
-        (gp.STYLES, gp.PANELS, gp.MOBILE, gp.WEB, gp.BUNDLE, gp.subprocess) = (
-            self._saved
-        )
+        (gp.STYLES, gp.PANELS, gp.MOBILE, gp.WEB, gp.BUNDLE) = self._saved
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def install_subprocess(self, rc: int) -> None:
+        """The esbuild stand-in for the rest of this test, put back afterwards."""
+        self.enterContext(mock.patch.object(gp, "subprocess", self.fake_subprocess(rc)))
 
     def fake_subprocess(self, rc: int) -> types.SimpleNamespace:
         """Stand in for esbuild: the bundler is not what these tests are about."""
@@ -281,7 +285,7 @@ class TestInjection(unittest.TestCase):
         self.assertIn("npm install", str(cm.exception))
 
     def test_failed_build_is_not_silently_inlined(self) -> None:
-        gp.subprocess = self.fake_subprocess(1)  # type: ignore[assignment]  # test double
+        self.install_subprocess(1)
         with self.assertRaises(SystemExit) as cm:
             gp.inject_bundle("/* @BUNDLE */")
         self.assertIn("esbuild failed", str(cm.exception))

@@ -116,7 +116,7 @@ class SdCase(unittest.TestCase):
         with contextlib.redirect_stdout(self.out):
             return fn(*a)
 
-    def puts(self) -> list[tuple[str, int]]:
+    def _puts(self) -> list[tuple[str, int]]:
         return [(p, n) for m, p, n in self.card.calls if m == "PUT"]
 
     def seed_show(self, *ids: str) -> None:
@@ -174,7 +174,7 @@ class TestPush(SdCase):
         a = self.tmp / "a.mp3"
         a.write_bytes(b"\xff\xfb" * 600)
         self.assertEqual(self.run_quiet(sd_sync.cmd_push, "1.2.3.4", [str(a)]), 0)
-        self.assertEqual(self.puts(), [("/api/files/a.mp3", 1200)])
+        self.assertEqual(self._puts(), [("/api/files/a.mp3", 1200)])
         self.assertEqual(self.card.files["a.mp3"], 1200)
         self.assertEqual(self.card.calls[-1][:2], ("GET", "/api/files"))
         self.assertIn("card now holds", self.out.getvalue())
@@ -187,12 +187,12 @@ class TestPush(SdCase):
         (lib / "c.wav").write_bytes(b"c" * 30)  # not an mp3: not pushed
         self.assertEqual(self.run_quiet(sd_sync.cmd_push, "1.2.3.4", []), 0)
         self.assertEqual(
-            self.puts(), [("/api/files/a.mp3", 20), ("/api/files/b.mp3", 10)]
+            self._puts(), [("/api/files/a.mp3", 20), ("/api/files/b.mp3", 10)]
         )
 
     def test_an_empty_library_is_not_a_push(self) -> None:
         self.assertEqual(self.run_quiet(sd_sync.cmd_push, "1.2.3.4", []), 1)
-        self.assertEqual(self.puts(), [])
+        self.assertEqual(self._puts(), [])
 
     def test_a_missing_file_stops_before_anything_is_sent(self) -> None:
         a = self.tmp / "a.mp3"
@@ -201,7 +201,7 @@ class TestPush(SdCase):
             sd_sync.cmd_push, "1.2.3.4", [str(self.tmp / "nope.mp3"), str(a)]
         )
         self.assertEqual(rc, 1)
-        self.assertEqual(self.puts(), [])
+        self.assertEqual(self._puts(), [])
 
     def test_a_crc_mismatch_is_a_failure(self) -> None:
         """v5.42 answers with a CRC of what hit the card (B5) — a byte count
@@ -237,9 +237,9 @@ class TestSiteScenesOta(SdCase):
         page = b"<html>" + b"radio " * 4000 + b"</html>"
         with mock.patch.object(sd_sync, "build_site", return_value=page):
             self.assertEqual(self.run_quiet(sd_sync.cmd_site, "1.2.3.4"), 0)
-        names = [p for p, _ in self.puts()]
+        names = [p for p, _ in self._puts()]
         self.assertEqual(names, ["/api/site/index.html.gz", "/api/site/index.html"])
-        gz_len, plain_len = (n for _, n in self.puts())
+        gz_len, plain_len = (n for _, n in self._puts())
         self.assertLess(gz_len, plain_len // 4)
         self.assertEqual(plain_len, len(page))
         self.assertIn("serves Castle Radio", self.out.getvalue())
@@ -271,7 +271,7 @@ class TestSiteScenesOta(SdCase):
         self.card.blobs["scenes/01_vigil.mp3"] = b"x" * 100
         self.seed_show("vigil", "storm")
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
-        sent = [p for p, _n in self.puts()]
+        sent = [p for p, _n in self._puts()]
         # The show goes with the audio: the changed track, both cue files,
         # then show.man LAST — the manifest is what the castle reads to know
         # a scene exists, so it must never promise a file still in flight.
@@ -294,7 +294,7 @@ class TestSiteScenesOta(SdCase):
         self.seed_show("vigil")
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
         self.assertEqual(
-            [p for p, _n in self.puts()],
+            [p for p, _n in self._puts()],
             [
                 "/api/scenes/01_vigil.mp3",
                 "/api/scenes/vigil.cue",
@@ -310,7 +310,7 @@ class TestSiteScenesOta(SdCase):
         self.seed_show("vigil", "storm")
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "1.2.3.4"), 0)
         self.assertEqual(
-            [p for p, _ in self.puts()],
+            [p for p, _ in self._puts()],
             [
                 "/api/scenes/01_vigil.mp3",
                 "/api/scenes/02_storm.mp3",
@@ -370,7 +370,7 @@ class TestSiteScenesOta(SdCase):
         with self.assertRaises(SystemExit) as cm:
             self.run_quiet(sd_sync.cmd_ota, "1.2.3.4", [str(junk)])
         self.assertIn("0xE9", str(cm.exception))
-        self.assertEqual(self.puts(), [])
+        self.assertEqual(self._puts(), [])
 
     def test_ota_the_castle_refused_is_a_failure_not_a_reboot(self) -> None:
         """An image for the wrong chip or flash layout answers 500 "ota end

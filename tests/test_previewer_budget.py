@@ -16,6 +16,7 @@ import types
 import unittest
 from pathlib import Path
 from typing import ClassVar
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -42,26 +43,24 @@ class TestBudgetComplaint(unittest.TestCase):
         "ballad": "d" * 2_000_000,
     }
 
-    def setUp(self) -> None:
-        self._budget = pgb.PAGE_BUDGET_KB
-
-    def tearDown(self) -> None:
-        pgb.PAGE_BUDGET_KB = self._budget
+    def _budget(self, kb: int) -> None:
+        """The ceiling for one test — patch.object puts it back even on a raise."""
+        self.enterContext(mock.patch.object(pgb, "PAGE_BUDGET_KB", kb))
 
     def test_a_page_within_budget_has_no_complaint(self) -> None:
-        pgb.PAGE_BUDGET_KB = 4 * 1024
+        self._budget(4 * 1024)
         self.assertIsNone(pgb.enforce_budget(b"x" * 1024, self.AUDIO, gp.HTML))
 
     def test_the_budget_is_the_edge_not_a_range(self) -> None:
         """Exactly at the ceiling passes; one KB past it does not."""
-        pgb.PAGE_BUDGET_KB = 1
+        self._budget(1)
         self.assertIsNone(pgb.enforce_budget(b"x" * 2047, self.AUDIO, gp.HTML))
         self.assertIsNotNone(pgb.enforce_budget(b"x" * 2048, self.AUDIO, gp.HTML))
 
     def test_an_over_budget_page_names_the_size_the_ceiling_and_the_scenes(
         self,
     ) -> None:
-        pgb.PAGE_BUDGET_KB = 1024
+        self._budget(1024)
         got = pgb.enforce_budget(b"x" * 3_000_000, self.AUDIO, gp.HTML)
         assert got is not None
         self.assertIn("FAILED", got)
@@ -73,7 +72,7 @@ class TestBudgetComplaint(unittest.TestCase):
 
     def test_the_complaint_says_the_last_good_page_was_kept(self) -> None:
         """The operator's first question is whether the tree still has a page."""
-        pgb.PAGE_BUDGET_KB = 0
+        self._budget(0)
         got = pgb.enforce_budget(b"x" * 4096, self.AUDIO, gp.HTML)
         assert got is not None
         self.assertIn("Nothing was written", got)
@@ -152,8 +151,6 @@ class TestBuildFitsTheBudget(unittest.TestCase):
             gp.MOBILE,
             gp.WEB,
             gp.BUNDLE,
-            gp.subprocess,
-            pgb.PAGE_BUDGET_KB,
         )
         gp.SRC = self.tmp / "scenes.yaml"
         gp.SRC.write_text(yaml.safe_dump({"scenes": [scene()]}))
@@ -179,7 +176,7 @@ class TestBuildFitsTheBudget(unittest.TestCase):
             gp.BUNDLE.write_text("console.log(1);")
             return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        gp.subprocess = types.SimpleNamespace(run=run)  # type: ignore[assignment]  # test double
+        self._fake_subprocess(run)
 
     def tearDown(self) -> None:
         (
@@ -193,19 +190,27 @@ class TestBuildFitsTheBudget(unittest.TestCase):
             gp.MOBILE,
             gp.WEB,
             gp.BUNDLE,
-            gp.subprocess,
-            pgb.PAGE_BUDGET_KB,
         ) = self._saved
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    def _budget(self, kb: int) -> None:
+        """The ceiling for one test — restored even when an assertion raises."""
+        self.enterContext(mock.patch.object(pgb, "PAGE_BUDGET_KB", kb))
+
+    def _fake_subprocess(self, run: object) -> None:
+        """The bundler stand-in; the last one installed is the one main() sees."""
+        self.enterContext(
+            mock.patch.object(gp, "subprocess", types.SimpleNamespace(run=run))
+        )
+
     def test_a_page_within_budget_is_written_and_the_build_succeeds(self) -> None:
-        pgb.PAGE_BUDGET_KB = 4 * 1024
+        self._budget(4 * 1024)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(gp.main(), 0)
         self.assertIn("data:audio/mpeg;base64,", gp.HTML.read_text())
 
     def test_over_budget_links_the_audio_instead_of_inlining_it(self) -> None:
-        pgb.PAGE_BUDGET_KB = 1  # the 40 KB mp3 alone blows a 1 KB ceiling
+        self._budget(1)  # the 40 KB mp3 alone blows a 1 KB ceiling
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.assertEqual(gp.main(), 0)
@@ -218,13 +223,13 @@ class TestBuildFitsTheBudget(unittest.TestCase):
 
     def test_a_page_over_budget_with_nothing_inlined_still_fails(self) -> None:
         """Past un-inlining the weight is markup and bundle; stop the build."""
-        pgb.PAGE_BUDGET_KB = 1  # 1 KB, and the bundle alone is 2 KB
+        self._budget(1)  # 1 KB, and the bundle alone is 2 KB
 
         def fat(*_a: object, **_k: object) -> types.SimpleNamespace:
             gp.BUNDLE.write_text("// " + "b" * 2048)
             return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
-        gp.subprocess = types.SimpleNamespace(run=fat)  # type: ignore[assignment]  # test double
+        self._fake_subprocess(fat)
         err = io.StringIO()
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
             self.assertEqual(gp.main(), 1)

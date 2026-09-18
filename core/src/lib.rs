@@ -124,6 +124,8 @@ pub mod studio_relay;
 #[cfg(feature = "native")]
 pub mod studio_routes;
 #[cfg(feature = "native")]
+pub mod studio_routes_get;
+#[cfg(feature = "native")]
 pub mod studio_scenes;
 #[cfg(feature = "native")]
 pub mod studio_tracks;

@@ -258,8 +258,7 @@ class TestNoReplay(ChaosCase):
             mock.patch.object(cl, "_call", side_effect=cl.Stalled("stalled")),
             mock.patch.object(cl.castle_native, "stop") as stop,
         ):
-            os.environ["CASTLE_HOST"] = "castle.lan"
-            cl._cache.clear()
+            self.hosts("castle.lan")  # port-less: the native leg is eligible
             code, _, _ = cl.forward("POST", "/api/stop")
         self.assertEqual(code, 504)
         stop.assert_not_called()

@@ -20,6 +20,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, ClassVar
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
@@ -123,6 +124,16 @@ class TestLocCli(unittest.TestCase):
 
 
 class TestImageCheck(unittest.TestCase):
+    def _argv(self, *args: str) -> None:
+        """The command line for one test — put back even when a check raises."""
+        self.enterContext(mock.patch.object(sys, "argv", list(args)))
+
+    def _find_image(self, img: Path) -> None:
+        """Point the guard's finder at a scratch binary for one test."""
+        self.enterContext(
+            mock.patch.object(check_image, "find_image", return_value=img)
+        )
+
     def test_slot_size_matches_esphome_default(self) -> None:
         """Two 1.75 MB app slots is ESPHome's default layout on 4 MB flash."""
         # The slot is the app0 row of the table beside the image — the
@@ -151,14 +162,10 @@ class TestImageCheck(unittest.TestCase):
 
     def test_missing_image_is_not_a_failure(self) -> None:
         """Checking before a build has run should say so, not fail CI."""
-        argv = sys.argv
-        try:
-            sys.argv = ["check_image.py", "_no_such_device_"]
-            with contextlib.redirect_stdout(io.StringIO()) as out:
-                self.assertEqual(check_image.main(), 0)
-            self.assertIn("no built image", out.getvalue())
-        finally:
-            sys.argv = argv
+        self._argv("check_image.py", "_no_such_device_")
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(check_image.main(), 0)
+        self.assertIn("no built image", out.getvalue())
 
     def test_finds_either_binary_name(self) -> None:
         """ESPHome names the app binary after the device, not firmware.bin.
@@ -167,15 +174,12 @@ class TestImageCheck(unittest.TestCase):
         try:
             build = tmp / "mydev" / "build"
             build.mkdir(parents=True)
-            real = check_image.ROOT
-            check_image.ROOT = tmp.parent  # so the fallback base resolves
-            try:
-                (build / "mydev.bin").write_bytes(b"x" * 100)
-                found = check_image.find_image("mydev")
-                # The device-named binary is what ESPHome actually produces.
-                self.assertTrue(found is None or found.name.endswith(".bin"))
-            finally:
-                check_image.ROOT = real
+            # so the fallback base resolves
+            self.enterContext(mock.patch.object(check_image, "ROOT", tmp.parent))
+            (build / "mydev.bin").write_bytes(b"x" * 100)
+            found = check_image.find_image("mydev")
+            # The device-named binary is what ESPHome actually produces.
+            self.assertTrue(found is None or found.name.endswith(".bin"))
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -189,19 +193,13 @@ class TestImageCheck(unittest.TestCase):
                 "app0, app, ota_0, , 0x1C0000,\n"
             )
             (build / "big.bin").write_bytes(b"x" * (FEATHER_SLOT + 1))
-            orig = check_image.find_image
-            check_image.find_image = lambda _n: build / "big.bin"  # type: ignore[assignment]  # test double
-            argv = sys.argv
-            try:
-                sys.argv = ["check_image.py", "big"]
-                with contextlib.redirect_stdout(io.StringIO()) as out:
-                    self.assertEqual(
-                        check_image.main(), 1, "an oversized image must fail the check"
-                    )
-                self.assertIn("FAIL — over 97% of the slot", out.getvalue())
-            finally:
-                sys.argv = argv
-                check_image.find_image = orig
+            self._find_image(build / "big.bin")
+            self._argv("check_image.py", "big")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(
+                    check_image.main(), 1, "an oversized image must fail the check"
+                )
+            self.assertIn("FAIL — over 97% of the slot", out.getvalue())
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -214,17 +212,11 @@ class TestImageCheck(unittest.TestCase):
                 "app0, app, ota_0, , 0x1C0000,\n"
             )
             (build / "small.bin").write_bytes(b"x" * int(FEATHER_SLOT * 0.5))
-            orig = check_image.find_image
-            check_image.find_image = lambda _n: build / "small.bin"  # type: ignore[assignment]  # test double
-            argv = sys.argv
-            try:
-                sys.argv = ["check_image.py", "small"]
-                with contextlib.redirect_stdout(io.StringIO()) as out:
-                    self.assertEqual(check_image.main(), 0)
-                self.assertIn("50.0%", out.getvalue())
-            finally:
-                sys.argv = argv
-                check_image.find_image = orig
+            self._find_image(build / "small.bin")
+            self._argv("check_image.py", "small")
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(check_image.main(), 0)
+            self.assertIn("50.0%", out.getvalue())
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 

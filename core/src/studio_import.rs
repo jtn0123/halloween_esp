@@ -157,7 +157,10 @@ pub fn do_import(app: &Arc<App>, req: &Request) -> Reply {
     }
     args.extend(sj::opt_args(&opts, &sj::OPT_KEYS));
     let (ok, out) = {
-        let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = app
+            .oplock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         run(cmd(&args), 900)
     };
     let _ = std::fs::remove_dir_all(app.tracks.join("_upload"));
@@ -220,7 +223,10 @@ pub fn refresh(app: &Arc<App>, req: &Request) -> Reply {
         &sj::OPT_KEYS[1..sj::OPT_KEYS.len() - 1],
     ));
     let (ok, out) = {
-        let _g = app.oplock.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = app
+            .oplock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         run(cmd(&args), 900)
     };
     let tracks = Json::Arr(st::track_infos(&app.tracks));
