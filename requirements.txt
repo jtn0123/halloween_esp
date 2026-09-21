@@ -14,4 +14,4 @@ esphome==2026.9.0
 # floor, not a range: `~=46.3` made Dependabot offer ~=46.4 the day it shipped
 # (PR #38), which pip can never resolve against esphome's pin. requirements.lock
 # records the version that actually installs.
-aioesphomeapi>=46.3
+aioesphomeapi>=46.4.1
