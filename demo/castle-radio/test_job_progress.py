@@ -24,6 +24,37 @@ class ProgressTests(unittest.TestCase):
         values, _ = interpret("[ExtractAudio] Destination: song.mp3", "import", 0)
         self.assertIsNone(values["percent"])
 
+    def test_the_downloader_names_the_song_before_the_manifest_does(self):
+        values, _ = interpret(
+            "[download] Destination: /tmp/x/Monster Mash [HD].webm", "import", 0
+        )
+        self.assertEqual(values, {"found_title": "Monster Mash [HD]"})
+        streamed, _ = interpret(
+            'CASTLE_PROGRESS {"line": "[ExtractAudio] Destination: /t/Day-O.mp3"}',
+            "import",
+            0,
+        )
+        self.assertEqual(streamed["found_title"], "Day-O")
+        self.assertEqual(streamed["phase"], "Converting audio")
+        self.assertNotIn("found_title", interpret("Destination: x.mp3", "split", 0)[0])
+
+    def test_a_cancelled_run_kills_the_child_and_says_so(self):
+        import threading
+
+        from job_progress import Cancelled
+
+        stop = threading.Event()
+        threading.Timer(0.3, stop.set).start()
+        with self.assertRaises(Cancelled):
+            run(
+                [sys.executable, "-c", "import time; time.sleep(30)"],
+                20,
+                "import",
+                lambda **_: None,
+                None,
+                stop,
+            )
+
     def test_nine_channel_analyses(self):
         count = 0
         for layer in ("vocals", "backing", "combined"):

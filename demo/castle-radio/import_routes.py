@@ -25,13 +25,15 @@ from radio_jobs import (
     DATA,
     JOBS,
     LOCK,
-    POOL,
+    cancel,
+    catalog,
     cookie_audio_format,
     cookie_audio_quality,
     playback_format,
     playback_quality,
-    prepare,
+    rename,
     reprocess_job,
+    submit,
     update,
 )
 
@@ -78,16 +80,22 @@ def playback_choices(handler, audio_format, audio_quality):
 
 
 def queue(handler, job):
-    POOL.submit(
-        prepare,
-        job,
-        job["source"],
-        job["title"],
-        job["split"],
-        job.get("audio_format", "mp3"),
-        job.get("audio_quality", "standard"),
-    )
+    submit(job)
     handler.reply(job, 202)
+
+
+def not_a_repeat(source):
+    """A link that is already waiting, or already a song here, is refused by
+    name: pasting a list twice should not prepare everything twice."""
+    with LOCK:
+        if any(j["source"] == source and not j["done"] for j in JOBS.values()):
+            raise ValueError("That link is already in the queue.")
+    for row in catalog():
+        if row.get("source_url") == source:
+            raise ValueError(
+                f"That link is already in your library as “{row['title']}”. "
+                "Use Change audio to prepare it again."
+            )
 
 
 def link_job(handler, tid, length):
@@ -96,6 +104,7 @@ def link_job(handler, tid, length):
     parsed = urlsplit(source)
     if parsed.scheme not in ("https", "http") or not parsed.hostname:
         raise ValueError("Paste a complete http or https link.")
+    not_a_repeat(source)
     audio_format, audio_quality = playback_choices(
         handler, payload.get("audio_format"), payload.get("audio_quality")
     )
@@ -150,6 +159,7 @@ def post_retry(handler):
         if not job or not job["done"]:
             raise ValueError("That job is not available to retry.")
         update(job, done=False, phase="Queued", error=None, result=None)
+        job.update(cancelled=False, finished_at=0, percent=None, detail="")
     queue(handler, job)
 
 
@@ -167,3 +177,13 @@ def post_reprocess(handler):
             raise ValueError("That song is already being processed.")
         JOBS[job["id"]] = job
     queue(handler, job)
+
+
+def post_cancel(handler):
+    payload = handler.json_body("Invalid cancel request")
+    handler.reply(cancel(str(payload.get("id") or "")))
+
+
+def post_rename(handler):
+    payload = handler.json_body("Invalid rename request")
+    handler.reply(rename(str(payload.get("key") or ""), payload.get("title")))
