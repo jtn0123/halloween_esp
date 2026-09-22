@@ -1,0 +1,203 @@
+<!doctype html>
+<!-- The light-show lab. show_lab.py fills the three placeholders and writes
+     the result into the ignored comparison directory. No device: both sides
+     are the Radio's own renderer stepping the card's cue semantics at 16 ms,
+     on one clock. Silent unless "Play the song" is ticked — then the song is
+     fetched from the lab's own audio/ link, plays in THIS browser only, and
+     its playhead becomes the clock both sides follow. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Castle light-show lab</title>
+<style>
+:root{color-scheme:dark;--ink:#e9e4f5;--dim:#9a8fb0;--line:#2a2138;--bg:#0b0812;--panel:#130e1e;--hot:#ff8a1a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif}
+main{max-width:1180px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 2px}
+h2{font-size:15px;margin:0}
+p{margin:6px 0}
+.dim{color:var(--dim);font-size:13px}
+.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:12px 0}
+label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim)}
+select,button{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0}
+button{cursor:pointer}
+button.primary{background:var(--hot);border-color:var(--hot);color:#1a0d00;font-weight:600}
+.sides{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:720px){.sides{grid-template-columns:1fr}}
+.side{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;min-width:0}
+.side header{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:6px}
+canvas{display:block;width:100%;height:auto;border-radius:8px}
+.stage{aspect-ratio:800/520;background:#05070e}
+.pixels{margin-top:8px}
+#timeline{height:74px;margin-top:12px;cursor:pointer;background:var(--panel);border:1px solid var(--line)}
+#seek{width:100%;margin:8px 0 0}
+#note{min-height:3em}
+label.check{flex-direction:row;align-items:center;gap:6px;font-size:14px;color:var(--ink);padding:7px 0}
+#volume{width:110px}
+.row{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<main>
+  <h1>Castle light-show lab</h1>
+  <p class="dim">Software simulation. Nothing here talks to the castle, and it is silent unless you tick <b>Play the song</b> — that plays through this browser only. Left is the show as prepared today; right is a candidate. Both run on one song clock.</p>
+  <div class="controls">
+    <label>Song<select id="song"></select></label>
+    <label>Compare with<select id="candidate"></select></label>
+    <label>Speed<select id="speed"><option value="1">1×</option><option value="0.5">½×</option><option value="0.25">¼×</option></select></label>
+    <label class="check"><input id="sound" type="checkbox">Play the song</label>
+    <label>Volume<input id="volume" type="range" min="0" max="1" step="0.05" value="0.8"></label>
+    <button id="play" class="primary" type="button">Play silently</button>
+    <button id="next-section" type="button">Next section ▸</button>
+    <button id="next-drop" type="button">Next drop ⚡</button>
+  </div>
+  <p id="sound-note" class="dim" role="status"></p>
+  <p id="note"></p>
+  <div class="sides">
+    <section class="side"><header><h2>Current prepared show</h2><span class="dim" id="info-0"></span></header>
+      <canvas class="stage" id="stage-0" aria-label="Current show on the castle"></canvas>
+      <canvas class="pixels" id="pixels-0" width="720" height="150" aria-label="Current show, every real pixel: left tower, door, right tower"></canvas></section>
+    <section class="side"><header><h2 id="title-1">Candidate</h2><span class="dim" id="info-1"></span></header>
+      <canvas class="stage" id="stage-1" aria-label="Candidate show on the castle"></canvas>
+      <canvas class="pixels" id="pixels-1" width="720" height="150" aria-label="Candidate show, every real pixel: left tower, door, right tower"></canvas></section>
+  </div>
+  <canvas id="timeline" width="1148" height="74" aria-label="Candidate sections and beats; click to seek"></canvas>
+  <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Song time">
+  <div class="row"><span id="clock" class="dim">0:00</span><span id="section" class="dim"></span></div>
+</main>
+<script>/*{{visuals.js}}*/</script>
+<script>/*{{cue-playback.js}}*/</script>
+<script>
+'use strict';
+const SONGS=/*{{songs}}*/null;
+const V=CastleVisuals,TICK=16,$=id=>document.getElementById(id);
+const LABELS={clarity:'1 · Pulse clarity',option2:'2 · Alternating towers',option3:'3 · Tower → door response',
+  option4:'4 · Full-castle accents',beat:'5 · Beat lock',motion:'6 · Sweeps',show:'7 · Full show',duet:'8 · Singer’s door'};
+const OLD={clarity:'Shorter tails; competing nearby hits filtered.',option2:'Amber / violet tower alternation on detected onsets; door keeps vocal hits.',
+  option3:'Alternating towers; green door answers every third accent.',option4:'Alternation plus amber full-castle accents every fourth accent.'};
+const RANK=['#2b3a67','#6a3d9a','#b5451b'];
+const order=['towerL','door','towerR'],names={towerL:'left tower',door:'door',towerR:'right tower'};
+const params=V.defaultParams();
+const stages=[0,1].map(i=>new V.Stage($('stage-'+i)));
+const audio=new Audio();audio.preload='auto';
+let sides=[],clock=0,playing=false,last=0,duration=1,audible=false;
+
+function fmt(ms){const s=Math.floor(ms/1000);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+function makeSide(scene){const state=V.createState(scene,0);return {scene,state,at:-1};}
+function seekSide(side,t){
+  const from=Math.max(0,Math.floor((t-3000)/TICK)*TICK);
+  V.rebuildLightsAt(side.state,side.scene,from);side.at=from;advance(side,t);
+}
+function advance(side,t){
+  if(t<side.at||t-side.at>4000){return seekSide(side,t);}
+  while(side.at+TICK<=t){side.at+=TICK;CastleCuePlayback.fire(side.state,side.at);V.decayFlashes(side.state);}
+}
+function lab(){return sides[1].scene.lab||null;}
+function sectionAt(t){const l=lab();return l?l.sections.find(s=>t>=s.t&&t<s.end):null;}
+
+function load(){
+  const song=SONGS[+$('song').value],pick=song.candidates.find(c=>c.id===$('candidate').value)||song.candidates[0];
+  sides=[makeSide(song.baseline),makeSide(pick.show)];duration=song.baseline.dur;
+  $('title-1').textContent=LABELS[pick.id]||pick.id;
+  [0,1].forEach(i=>{const s=sides[i].scene;$('info-'+i).textContent=s.cues.filter(c=>c.op==='strike').length+' hits · '+
+    new Set(s.cues.filter(c=>c.op==='set').map(c=>c.t)).size+' look changes';});
+  const l=lab();
+  $('note').textContent=l?l.note+' Detected tempo '+l.bpm+' BPM.':(OLD[pick.id]||'');
+  $('next-drop').disabled=!(l&&l.sections.some(s=>s.drop));$('next-section').disabled=!l;
+  clock=Math.min(clock,duration);sides.forEach(s=>seekSide(s,clock));draw();
+}
+function fill(select,rows){select.replaceChildren(...rows.map(([value,text])=>Object.assign(document.createElement('option'),{value,textContent:text})));}
+function candidatesFor(){
+  const ids=SONGS[+$('song').value].candidates.map(c=>c.id),known=Object.keys(LABELS);
+  ids.sort((a,b)=>(known.indexOf(a)+1||99)-(known.indexOf(b)+1||99));
+  const keep=$('candidate').value;fill($('candidate'),ids.map(id=>[id,LABELS[id]||id]));
+  $('candidate').value=ids.includes(keep)?keep:(ids.includes('show')?'show':ids[0]);
+}
+
+function drawPixels(canvas,out){
+  const g=canvas.getContext('2d'),w=canvas.width,h=canvas.height,cell=w/3;
+  g.fillStyle='#0d0a14';g.fillRect(0,0,w,h);
+  order.forEach((zone,i)=>{
+    const layout=V.zoneLayout(V.DEFAULT_RIG,zone),size=Math.min(cell,h-26)*.8,x0=i*cell+(cell-size)/2,y0=(h-26-size)/2+4;
+    layout.pos.forEach((p,k)=>{
+      const [r,gr,b]=out[zone].pix[k],x=x0+p[0]*size,y=y0+p[1]*size,peak=Math.max(r,gr,b);
+      if(peak>.02){const halo=g.createRadialGradient(x,y,2,x,y,26);halo.addColorStop(0,`rgba(${r*255|0},${gr*255|0},${b*255|0},${.6*peak})`);
+        halo.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=halo;g.beginPath();g.arc(x,y,26,0,7);g.fill();}
+      g.fillStyle=`rgb(${Math.min(255,24+r*231)|0},${Math.min(255,24+gr*231)|0},${Math.min(255,24+b*231)|0})`;
+      g.beginPath();g.arc(x,y,9,0,7);g.fill();
+    });
+    g.fillStyle='#9a8fb0';g.font='13px system-ui';g.textAlign='center';g.fillText(names[zone],i*cell+cell/2,h-8);
+  });
+}
+function drawTimeline(){
+  const c=$('timeline'),g=c.getContext('2d'),w=c.width,h=c.height,l=lab();
+  g.fillStyle='#130e1e';g.fillRect(0,0,w,h);
+  if(l){
+    for(const s of l.sections){
+      const x=s.t/duration*w,x2=s.end/duration*w;
+      g.fillStyle=RANK[s.rank];g.fillRect(x+1,4,x2-x-2,44);
+      g.save();g.beginPath();g.rect(x+2,4,x2-x-4,44);g.clip();g.fillStyle='#fff';g.font='11px system-ui';g.textAlign='left';
+      g.fillText(s.look,x+4,20);g.fillStyle='#d8cfee';g.fillText(s.pattern+(s.drop?' ⚡':''),x+4,36);g.restore();
+    }
+    g.fillStyle='#6d6480';for(const b of l.beats){g.fillRect(b/duration*w,54,1,8);}
+  }else{g.fillStyle='#6d6480';g.font='12px system-ui';g.textAlign='left';g.fillText('This candidate has no sections or beat grid — it follows detected onsets only.',10,30);}
+  g.fillStyle='#ff8a1a';g.fillRect(clock/duration*w-1,0,2,h);
+}
+function draw(){
+  sides.forEach((side,i)=>{
+    const out=V.renderZones(side.state,clock/1000,params);
+    stages[i].draw(out,clock/1000,0,[1,1,1,0]);drawPixels($('pixels-'+i),out);
+  });
+  drawTimeline();$('seek').value=String(Math.round(clock/duration*1000));
+  const s=sectionAt(clock);$('clock').textContent=fmt(clock)+' / '+fmt(duration);
+  $('section').textContent=s?`${s.look} · ${s.pattern}${s.drop?' · drop at the end ⚡':''}`:'';
+}
+function frame(now){
+  requestAnimationFrame(frame);
+  if(!playing){last=now;return;}
+  // With sound on, the song's own playhead is the clock, as it is in the Radio.
+  clock=audible?audio.currentTime*1000:clock+Math.min(100,now-last)*(+$('speed').value);last=now;
+  if(clock>=duration||(audible&&audio.ended)){clock=Math.min(clock,duration);setPlaying(false);}
+  sides.forEach(s=>advance(s,clock));draw();
+}
+function setPlaying(on){
+  playing=on;$('play').textContent=on?'Pause':audible?'Play with sound':'Play silently';
+  if(!audible||!on){audio.pause();return;}
+  audio.currentTime=clock/1000;audio.playbackRate=+$('speed').value;
+  audio.play().catch(e=>{soundOff('The browser refused to play the song ('+e.name+'). Playing silently.');});
+}
+function seek(t){clock=Math.max(0,Math.min(duration,t));if(audible){audio.currentTime=clock/1000;}sides.forEach(s=>seekSide(s,clock));draw();}
+function soundOff(why){audible=false;audio.pause();$('sound').checked=false;$('sound-note').textContent=why;setPlaying(playing);}
+async function loadSound(){
+  const index=$('song').value,src=SONGS[+index].audio,was=playing;
+  audio.pause();audible=false;setPlaying(false);
+  if(!$('sound').checked){$('sound-note').textContent='';setPlaying(was);return;}
+  if(!src){return soundOff('This song has no audio file in the library. Playing silently.');}
+  $('sound-note').textContent='Loading the song…';
+  try{
+    // A blob, because python's http.server has no Range support and a plain src could not seek.
+    const reply=await fetch(src);if(!reply.ok){throw new Error('HTTP '+reply.status);}
+    const blob=await reply.blob();if(index!==$('song').value||!$('sound').checked){return;}
+    if(audio.src){URL.revokeObjectURL(audio.src);}
+    audio.src=URL.createObjectURL(blob);audible=true;
+    $('sound-note').textContent='Sound on: the song plays in this browser only; ½× and ¼× slow it with the lights.';
+    setPlaying(was);
+  }catch(e){soundOff('Could not load the song ('+e.message+') — open this page from http://127.0.0.1:8894, not from disk. Playing silently.');}
+}
+
+fill($('song'),SONGS.map((s,i)=>[String(i),s.baseline.name]));candidatesFor();
+$('song').onchange=()=>{setPlaying(false);clock=0;candidatesFor();load();loadSound();};
+$('sound').onchange=loadSound;$('volume').oninput=e=>{audio.volume=+e.target.value;};audio.volume=+$('volume').value;
+$('speed').onchange=e=>{audio.playbackRate=+e.target.value;};
+$('candidate').onchange=load;
+$('play').onclick=()=>{if(!playing&&clock>=duration){seek(0);}setPlaying(!playing);};
+$('seek').oninput=e=>seek(+e.target.value/1000*duration);
+$('timeline').onclick=e=>{const r=e.target.getBoundingClientRect();seek((e.clientX-r.left)/r.width*duration);};
+$('next-section').onclick=()=>{const l=lab(),n=l&&l.sections.find(s=>s.t>clock+50);if(n){seek(n.t);}};
+$('next-drop').onclick=()=>{const l=lab(),n=l&&l.sections.find(s=>s.drop&&s.end-3000>clock+50);if(n){seek(n.end-3000);setPlaying(true);}};
+load();requestAnimationFrame(frame);
+</script>
+</body>
+</html>

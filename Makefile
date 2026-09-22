@@ -37,7 +37,7 @@ YAML_S3 := firmware/castle_s3.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: show-lab cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
@@ -62,6 +62,8 @@ help:
 	@echo "  make ota        build the firmware and flash that image over HTTP"
 	@echo "  make test       python unit tests (~1 min)"
 	@echo "  make test-fast  the same minus the slow + Rust suites (inner loop)"
+	@echo "  make show-lab   opt-in light-show lab: rebuild the beat-locked candidates and serve"
+	@echo "                  the before/after page on 127.0.0.1:8894 (SHOW_LAB_PORT=…); software only"
 	@echo "  make test-radio demo/castle-radio: its python suite + its node --test suites"
 	@echo "  make rust       build castle-core (release: the binaries the tools spawn)"
 	@echo "  make rust-test  cargo test the crate"
@@ -128,6 +130,16 @@ track:
 # here, because .claude/launch.json needs the same decision and cannot
 # express it. ARGS passes the studio's own command line through:
 # ARGS="8766 --lan".
+# Opt-in and offline: candidates are written only under the ignored
+# .radio-data/comparison/, never beside a prepared show, and nothing here
+# talks to the castle. Adopting a candidate is a separate, deliberate change.
+SHOW_LAB_PORT ?= 8894
+show-lab:
+	@$(PY) demo/castle-radio/show_lab.py
+	@echo "open http://127.0.0.1:$(SHOW_LAB_PORT)/show-lab.html   (Ctrl-C stops the server)"
+	@$(PY) -m http.server $(SHOW_LAB_PORT) --bind 127.0.0.1 \
+		--directory demo/castle-radio/.radio-data/comparison
+
 studio: preview
 	@tools/studio_launch.sh $(ARGS)
 

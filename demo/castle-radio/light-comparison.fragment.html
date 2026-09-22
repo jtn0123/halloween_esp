@@ -1,0 +1,104 @@
+<div id="pulse-clarity-comparison">
+  <div class="viz-controls">
+    <label class="form-label">Song
+      <select class="form-select" data-song><option value="0">Monster Mash</option><option value="1">Day-o</option></select>
+    </label>
+    <label class="form-label">Passage
+      <select class="form-select" data-passage><option value="0">Dense</option><option value="1">Quieter</option></select>
+    </label>
+    <button type="button" class="btn btn-primary" data-play>Play silently</button>
+  </div>
+  <div class="light-pair">
+    <section><h3>Current prepared show</h3><canvas width="360" height="255" aria-label="Current show: left tower, right tower and door lights">Current simulated fixture pixels.</canvas></section>
+    <section><h3>Option 1 · clearer pulses</h3><canvas width="360" height="255" aria-label="Experimental option 1: same fixtures and song time">Experimental simulated fixture pixels.</canvas></section>
+  </div>
+  <label class="form-label">Song time <output class="tabular-nums" data-time></output>
+    <input class="form-range" data-seek type="range" min="0" max="624" step="1" value="0" aria-label="Shared light simulation timeline">
+  </label>
+  <div class="text-small text-muted" role="status" aria-live="polite" data-status>Paused · normal mode · same brightness · software simulation</div>
+</div>
+<style>
+#pulse-clarity-comparison .light-pair {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+#pulse-clarity-comparison canvas {display:block;width:100%;height:auto}
+#pulse-clarity-comparison section {min-width:0}
+#pulse-clarity-comparison h3 {margin-bottom:4px}
+@media(max-width:520px){#pulse-clarity-comparison .light-pair{grid-template-columns:1fr}}
+</style>
+<script type="application/json" id="pulse-clarity-data">__COMPARISON_DATA__</script>
+<script>
+(()=>{
+  const root=document.getElementById('pulse-clarity-comparison');
+  const data=JSON.parse(document.getElementById('pulse-clarity-data').textContent);
+  const song=root.querySelector('[data-song]'), passage=root.querySelector('[data-passage]');
+  const seek=root.querySelector('[data-seek]'), play=root.querySelector('[data-play]');
+  const time=root.querySelector('[data-time]'),status=root.querySelector('[data-status]');
+  const canvases=[...root.querySelectorAll('canvas')];
+  const colorProbe=document.createElement('span');colorProbe.hidden=true;colorProbe.style.color='var(--background)';root.append(colorProbe);
+  const decoded=data.map(s=>s.clips.map(c=>c.frames.map(f=>Uint8Array.from(atob(f),v=>v.charCodeAt(0)))));
+  let frame=0,playing=false,epoch=0,origin=0,lastSaved="";
+  const stamp=ms=>`${Math.floor(ms/60000)}:${(ms/1000%60).toFixed(2).padStart(5,'0')}`;
+  function save(){
+    lastSaved=JSON.stringify({song:+song.value,passage:+passage.value,frame});
+    window.openai?.setWidgetState?.({modelContent:{song:song.options[song.selectedIndex].text,passage:passage.options[passage.selectedIndex].text},privateContent:{song:+song.value,passage:+passage.value,frame}})?.catch(()=>{});
+  }
+  function draw(){
+    const clip=data[+song.value].clips[+passage.value];
+    const buffers=decoded[+song.value][+passage.value];
+    seek.max=buffers[0].length/78-1;frame=Math.min(frame,+seek.max);seek.value=frame;
+    time.textContent=`${stamp(Math.ceil(clip.start/32)*32+frame*32)} / ${stamp(clip.end)}`;
+    const foreground=getComputedStyle(root).color;
+    const background=getComputedStyle(colorProbe).color;
+    canvases.forEach((canvas,side)=>{
+      const ctx=canvas.getContext('2d');ctx.clearRect(0,0,360,255);
+      ctx.strokeStyle=foreground;ctx.globalAlpha=.3;ctx.lineWidth=1;
+      ctx.beginPath();
+      ctx.moveTo(38,231);ctx.lineTo(38,54);ctx.lineTo(58,54);ctx.lineTo(58,39);
+      ctx.lineTo(78,39);ctx.lineTo(78,54);ctx.lineTo(98,54);ctx.lineTo(98,39);
+      ctx.lineTo(118,39);ctx.lineTo(118,54);ctx.lineTo(138,54);ctx.lineTo(138,130);
+      ctx.lineTo(222,130);ctx.lineTo(222,54);ctx.lineTo(242,54);ctx.lineTo(242,39);
+      ctx.lineTo(262,39);ctx.lineTo(262,54);ctx.lineTo(282,54);ctx.lineTo(282,39);
+      ctx.lineTo(302,39);ctx.lineTo(302,54);ctx.lineTo(322,54);ctx.lineTo(322,231);ctx.closePath();ctx.stroke();
+      ctx.globalAlpha=1;
+      let index=frame*78;
+      const fixtures=[{x:88,y:100,n:7},{x:272,y:100,n:7},{x:180,y:190,n:12}];
+      for(const f of fixtures){
+        for(let p=0;p<f.n;p++){
+          const center=f.n===7&&p===0;
+          const angle=(p-(f.n===7?1:0))*Math.PI*2/(f.n===7?6:12)-Math.PI/2;
+          const radius=f.n===7?23:30;
+          const x=f.x+(center?0:Math.cos(angle)*radius),y=f.y+(center?0:Math.sin(angle)*radius);
+          const rgb=[...buffers[side].slice(index,index+3)];index+=3;
+          ctx.fillStyle=background;ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);ctx.fill();
+          ctx.fillStyle=`rgb(${rgb.join(',')})`;ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=12;
+          ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+          ctx.strokeStyle=foreground;ctx.globalAlpha=.2;ctx.stroke();ctx.globalAlpha=1;
+        }
+      }
+    });
+  }
+  function stop(){playing=false;play.textContent='Play silently';status.textContent='Paused · normal mode · same brightness · software simulation';}
+  function tick(now){
+    if(!playing){return;}
+    frame=Math.min(+seek.max,origin+Math.floor((now-epoch)/32));draw();
+    if(frame>=+seek.max){stop();save();return;}
+    requestAnimationFrame(tick);
+  }
+  play.onclick=()=>{
+    if(playing){stop();save();return;}
+    if(frame>=+seek.max){frame=0;}
+    playing=true;epoch=performance.now();origin=frame;play.textContent='Pause';
+    status.textContent='Playing silently · synchronized · software simulation';save();requestAnimationFrame(tick);
+  };
+  seek.oninput=()=>{stop();frame=+seek.value;draw();};seek.onchange=save;
+  for(const control of [song,passage]){control.onchange=()=>{stop();frame=0;draw();save();};}
+  function restore(state){
+    const saved=state?.privateContent;if(!saved||JSON.stringify(saved)===lastSaved){return;}
+    stop();song.value=saved.song===1?'1':'0';passage.value=saved.passage===1?'1':'0';
+    frame=Math.max(0,Number.isFinite(saved.frame)?Math.floor(saved.frame):0);draw();
+  }
+  window.addEventListener('openai:set_globals',event=>restore(event.detail?.globals?.widgetState));
+  new ResizeObserver(draw).observe(root);
+  new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['class','style','data-theme']});
+  restore(window.openai?.widgetState);draw();
+})();
+</script>
