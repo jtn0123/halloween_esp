@@ -34,8 +34,8 @@
     return job?.done && !job.error ? 'Transfer complete · byte count and CRC verified' : '';
   }
   function startLabel(item, job) {
-    if (job?.error) {return 'Retry audio sync';}
-    return item?.audio ? 'Audio is on castle' : 'Sync audio to castle';
+    if (job?.error) {return 'Retry show sync';}
+    return item?.status === 'ready' ? 'Show is on castle' : 'Sync audio + light show';
   }
   function paintDialog() {
     if (!selected) {return;}
@@ -43,13 +43,13 @@
     const job = activeJob?.key === key(selected) ? activeJob : inventory?.jobs[key(selected)];
     $('sync-title').textContent = selected.title;
     $('sync-explanation').textContent = selected.key
-      ? 'Sync copies the song audio to the castle’s SD card. When it plays there, this control room streams its generated lights to the castle, so keep this page open.'
+      ? 'Sync copies the audio and prepared light show to the castle’s SD card. The castle runs every cue locally, even after this page closes.'
       : 'Sync restores this installed scene’s audio to the castle’s SD card. The original light show is already in the firmware.';
     $('sync-progress').textContent = progressText(item, job);
     $('sync-busy').hidden = !pending(job);
     $('sync-busy').value = job?.percent || 0;
     $('sync-measure').textContent = measureText(job);
-    $('sync-start').disabled = !item?.can_sync || (!!item.audio && !job?.error) || pending(job);
+    $('sync-start').disabled = !item?.can_sync || (item.status === 'ready' && !job?.error) || pending(job);
     $('sync-start').textContent = startLabel(item, job);
   }
   function buttonLabel(t) {

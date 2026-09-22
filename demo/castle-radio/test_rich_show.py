@@ -96,3 +96,92 @@ class PreparedFilesTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "Separated analysis"):
                     rich_show.prepare(library, {"key": "radio_test", "split": True})
             self.assertFalse((library / "radio_test.cue").exists())
+
+    def test_sync_failure_in_cues_does_not_report_a_complete_show(self):
+        from unittest.mock import patch
+
+        import remote_library
+
+        remote_library._JOBS["rich_test"] = {"done": False}
+        try:
+            with patch.object(
+                remote_library,
+                "upload_with_progress",
+                side_effect=[None, None, OSError("cue failed")],
+            ) as upload:
+                remote_library.transfer(
+                    "rich_test",
+                    "/api/files",
+                    "song.mp3",
+                    b"audio",
+                    [("song.show.json", b"preview"), ("song.cue", b"cue")],
+                )
+            self.assertEqual(upload.call_count, 3)
+            self.assertEqual(remote_library.job("rich_test")["error"], "cue failed")
+            self.assertEqual(remote_library.job("rich_test")["phase"], "Sync failed")
+        finally:
+            remote_library._JOBS.pop("rich_test")
+
+
+class NativeSyncTests(unittest.TestCase):
+    def test_real_uploader_to_local_emulator_loads_prepared_cues(self):
+        import json
+        import tempfile
+        import time
+        import urllib.request
+        from unittest.mock import patch
+
+        import device_bridge
+        import remote_library
+        from castle_emu import CastleEmu
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            library = root / "tracks"
+            library.mkdir()
+            (root / "media").mkdir()
+            (library / "radio_test.mp3").write_bytes(b"audio fixture")
+            row = {"key": "radio_test"}
+            wave = {"duration": 2, "onsets": {"onset_low": [[0.5, 0.8], [0.7, 0.5]]}}
+            with patch.object(rich_show, "waveform", return_value=wave):
+                rich_show.prepare(library, row)
+            emu = CastleEmu(port=0, scenes=["vigil"])
+            (emu.sd_dir / "scenes").mkdir()
+            emu.start()
+            try:
+                host = f"127.0.0.1:{emu.port}"
+                with patch.object(device_bridge, "HOST", host):
+                    remote_library.start(root, library, [row], row["key"])
+                    deadline = time.monotonic() + 5
+                    while (
+                        not remote_library.job(row["key"])["done"]
+                        and time.monotonic() < deadline
+                    ):
+                        time.sleep(0.02)
+                    job = remote_library.job(row["key"])
+                    self.assertTrue(job["done"])
+                    self.assertIsNone(job["error"])
+                    for suffix in (".mp3", ".cue", ".show.json"):
+                        name = row["key"] + suffix
+                        self.assertEqual(
+                            (emu.sd_dir / name).read_bytes(),
+                            (library / name).read_bytes(),
+                        )
+                    item = remote_library.inventory(root, library, [row])["tracks"][
+                        row["key"]
+                    ]
+                    self.assertEqual(item["status"], "ready")
+                    req = urllib.request.Request(
+                        f"http://{host}/api/play?f=radio_test.mp3", method="POST"
+                    )
+                    with urllib.request.urlopen(req) as response:
+                        response.read()
+                    time.sleep(0.3)
+                    with urllib.request.urlopen(
+                        f"http://{host}/api/status"
+                    ) as response:
+                        state = json.load(response)
+                    self.assertEqual(state["cues"], 2)
+            finally:
+                emu.shutdown()
+                remote_library._JOBS.pop(row["key"], None)

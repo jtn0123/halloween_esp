@@ -5,6 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 import device_bridge
+import rich_show
 from castle_tools_status import status
 
 
@@ -23,6 +24,7 @@ def catalog(rows, library):
             {
                 **row,
                 "frames": device_bridge.imported_light_frames(row.get("cues", [])),
+                "prepared_show": rich_show.metadata(library, row),
                 "filename": path.name,
                 "bytes": path.stat().st_size if path.is_file() else 0,
             }
