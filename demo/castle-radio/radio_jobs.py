@@ -36,6 +36,9 @@ from import_track import crate_analysis  # noqa: E402
 JOBS: dict[str, dict[str, object]] = {}
 LOCK = threading.RLock()
 POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+#: Per unfinished job, outside the record the page reads: the pool's future
+#: (a job still waiting is cancelled there) and the Event that stops a child.
+HANDLES: dict[str, tuple[concurrent.futures.Future, threading.Event]] = {}
 CATALOG = DATA / "catalog.json"
 FILE_PREFIX = "file:"
 QUALITY_BITRATES = {
@@ -112,14 +115,83 @@ def update(job, **values):
         job.update(values)
 
 
+def report(job, found_title=None, **values):
+    """A progress record from a tool. The name the downloader found fills an
+    empty title and never replaces one somebody typed."""
+    if found_title and not job.get("title"):
+        values["title"] = found_title
+    if values:
+        update(job, **values)
+
+
 def run_tool(job, script, args, timeout, extra_env=None):
+    handle = HANDLES.get(job["id"])
     return job_progress.run(
         [sys.executable, "-u", str(ROOT / "tools" / script), *args],
         timeout,
         "split" if script == "stems.py" else "import",
-        lambda **values: update(job, **values),
+        lambda **values: report(job, **values),
         extra_env,
+        handle[1] if handle else None,
     )
+
+
+def submit(job):
+    stop = threading.Event()
+    with LOCK:
+        job["queued_at"] = time.time()
+        future = POOL.submit(
+            prepare,
+            job,
+            job["source"],
+            job["title"],
+            job["split"],
+            job.get("audio_format", "mp3"),
+            job.get("audio_quality", "standard"),
+        )
+        HANDLES[job["id"]] = (future, stop)
+
+
+def cancel(tid):
+    """Stop a job that is waiting or running. A waiting one never starts; a
+    running one has its tools killed and ends as Cancelled, not as a failure."""
+    with LOCK:
+        job, handle = JOBS.get(tid), HANDLES.get(tid)
+        if not job or job["done"] or not handle:
+            raise ValueError("That job is not waiting or running.")
+        job["cancelled"] = True
+        handle[1].set()
+        if handle[0].cancel():
+            finish_cancelled(job)
+    return job
+
+
+def finish_cancelled(job):
+    HANDLES.pop(job["id"], None)
+    update(
+        job,
+        phase="Cancelled",
+        done=True,
+        error=None,
+        percent=None,
+        detail="Cancelled before it finished. Retry to prepare it again.",
+    )
+
+
+def rename(key, title):
+    title = " ".join(str(title or "").split())[:200]
+    if not title:
+        raise ValueError("Type a name for this song.")
+    with LOCK:
+        rows = json.loads(CATALOG.read_text()) if CATALOG.exists() else []
+        row = next((r for r in rows if r["key"] == key), None)
+        if row is None:
+            raise ValueError("This song is no longer in the library")
+        row["title"] = title
+        temp = CATALOG.with_suffix(".tmp")
+        temp.write_text(json.dumps(rows))
+        temp.replace(CATALOG)
+    return {"key": key, "title": title}
 
 
 def zone_cues(marks, zone):
@@ -209,6 +281,8 @@ def reprocess_job(key, audio_format, audio_quality, split=None):
 def prepare(job, source, title, split, audio_format, audio_quality="standard"):
     tid = job["id"]
     try:
+        if job.get("cancelled"):
+            raise job_progress.Cancelled("Cancelled")
         update(job, phase="Importing and analyzing", error=None)
         bitrate, sample_rate = playback_options(audio_format, audio_quality)
         # The source (a link someone pasted, or the upload's path) travels in
@@ -259,6 +333,8 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
                 cues += zone_cues(layers["backing"]["left"]["onsets"], "left")
                 cues += zone_cues(layers["backing"]["right"]["onsets"], "right")
                 has_split = True
+            except job_progress.Cancelled:
+                raise  # a ValueError too, but not a split that failed
             except (ValueError, subprocess.TimeoutExpired) as exc:
                 split_error = str(exc)
         update(
@@ -299,7 +375,12 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
             done=True,
             percent=100,
             detail="Audio and lights are ready in this demo",
+            title=record["title"],
             result=record,
         )
+    except job_progress.Cancelled:
+        finish_cancelled(job)
     except Exception as exc:
         update(job, phase="Import failed", done=True, error=str(exc))
+    finally:
+        HANDLES.pop(tid, None)

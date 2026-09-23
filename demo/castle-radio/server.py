@@ -333,6 +333,8 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/import": import_routes.post_import,
         "/radio/retry": import_routes.post_retry,
         "/radio/reprocess": import_routes.post_reprocess,
+        "/radio/cancel": import_routes.post_cancel,
+        "/radio/rename": import_routes.post_rename,
     }
 
     def do_POST(self):
