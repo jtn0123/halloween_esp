@@ -385,8 +385,17 @@ def _ornaments(
         else:
             hit = strike(at, ["door"], colour, 0.45 + 0.45 * strength, 320, "scatter")
         placer.ornament(hit)
-    if not style.ornaments:
-        return
+    if style.ornaments:
+        _fills(layers, placer, look_at, duration)
+
+
+def _fills(
+    layers: Mapping[str, Any],
+    placer: Placer,
+    look_at: Callable[[int], Look],
+    duration: int,
+) -> None:
+    """The backing's left and right fills, each on its own tower."""
     for side, zone in (("left", "towerL"), ("right", "towerR")):
         fills = layers["backing"].get(side, {}).get("onsets", {})
         for at, strength in spaced(_merged(fills), 140):
