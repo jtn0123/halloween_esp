@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import job_progress
+import rich_show
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
@@ -360,6 +361,7 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
             style="Voice + background" if has_split else "Auto rhythm",
             **details,
         )
+        rich_show.prepare(LIBRARY, record)
         # Keep the existing generated scene recipe alongside the demo's split-aware preview cues.
         (DATA / f"{tid}.yaml").write_text(scene_block(tid, duration, marks))
         with LOCK:

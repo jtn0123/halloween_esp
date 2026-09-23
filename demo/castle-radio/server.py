@@ -34,6 +34,7 @@ STATIC_ROUTES = frozenset(
         "/imports.js",
         "/preview.js",
         "/visuals.js",
+        "/cue-playback.js",
         "/scenes.json",
         "/rig-options.js",
         "/device-link.js",

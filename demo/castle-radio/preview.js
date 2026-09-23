@@ -1,5 +1,5 @@
 /* One audio element owns full-song and stem playback, seeking, and both visuals. */
-/* global $, REQUEST_MS, audio, blacked, CastleVisuals, current, fmt, history, imported, lastLibrary, load, queue, refresh, renderImports, renderQueue, renderTracks, request, stopped, toast, toggle, tracks, updatePlayer */
+/* global $, REQUEST_MS, audio, blacked, CastleVisuals, CastleCuePlayback, current, fmt, history, imported, lastLibrary, load, queue, refresh, renderImports, renderQueue, renderTracks, request, stopped, toast, toggle, tracks, updatePlayer */
 const V = CastleVisuals;
 const heroStage = new V.Stage($('hero-canvas'));
 const detailStage = new V.Stage($('preview-canvas'));
@@ -7,6 +7,31 @@ let waveformData=null, waveformEpoch=0, switchEpoch=0, switching=false, pendingT
 let sceneData=[], lightState=null, lightScene=null, lightKey='', lightTick=-16;
 let lastRemoved=null, lastFrame=0;
 const waveformCache=new Map();
+const preparedCache=new Map();
+let simulation=null, preparedError='', preparedRequested='';
+const showControls=document.createElement('div');
+showControls.className='preview-transport';
+showControls.innerHTML='<label>Light preview <select id="show-preview-mode"><option value="prepared">Prepared castle show</option><option value="experiment">Routing / style experiment</option></select></label><button id="simulate-lights">Simulate lights silently</button><output id="prepared-show-status" role="status"></output>';
+$('split-preview').querySelector('.preview-heading').after(showControls);
+const preparedMode=()=>$('show-preview-mode').value==='prepared';
+function preparedScene(t){return preparedCache.get(t.prepared_show?.crc32);}
+async function loadPreparedShow(){
+  const t=tracks[current], info=t.prepared_show;
+  preparedRequested=info?.crc32||'';preparedError='';
+  if(!info||preparedCache.has(info.crc32)){return;}
+  try{
+    const scene=await request(info.url,undefined,REQUEST_MS.analysis);
+    if(scene.cue_crc32!==info.crc32){throw new Error("Preview does not match the prepared cue file");}
+    preparedCache.set(info.crc32,scene);lightKey='';
+  }catch(e){if(tracks[current].prepared_show?.crc32===info.crc32){preparedError=`Prepared show unavailable: ${e.message}. Reopen this song to retry.`;}}
+}
+$('show-preview-mode').onchange=()=>{lightKey='';};
+$('simulate-lights').onclick=()=>{
+  if(window.castlePlayer?.active()){toast('Choose This computer for silent simulation.');return;}
+  if(simulation){pendingTime=localTime();simulation=null;audio.currentTime=pendingTime;}
+  else{audio.pause();blacked=false;stopped=false;simulation={at:performance.now(),offset:localTime()};}
+  $('simulate-lights').textContent=simulation?'Pause silent simulation':'Simulate lights silently';
+};
 const waveColor=layer=>getComputedStyle(document.documentElement).getPropertyValue(`--wave-${layer}`).trim()||'#c9a7ff';
 const layerNames={combined:'Full song',vocals:'Voice',backing:'Background'};
 const params=V.defaultParams();
@@ -85,8 +110,8 @@ async function changeLayer(layer){
   }
 }
 document.querySelectorAll('[data-layer]').forEach(b=>b.onclick=()=>changeLayer(b.dataset.layer));
-$('preview-toggle').onclick=toggle;$('split-stop').onclick=()=>{switchEpoch++;switching=false;pendingTime=0;stop();};
-function seekTo(seconds){if(window.castlePlayer?.active()){return;}if(!Number.isFinite(audio.duration)){return;}audio.currentTime=Math.max(0,Math.min(seconds,audio.duration));pendingTime=audio.currentTime;drawPlayheads();}
+$('preview-toggle').onclick=toggle;$('split-stop').onclick=()=>{simulation=null;switchEpoch++;switching=false;pendingTime=0;stop();};
+function seekTo(seconds){if(window.castlePlayer?.active()){return;}if(simulation){simulation={at:performance.now(),offset:Math.max(0,Math.min(seconds,tracks[current].duration))};lightKey='';return;}if(!Number.isFinite(audio.duration)){return;}audio.currentTime=Math.max(0,Math.min(seconds,audio.duration));pendingTime=audio.currentTime;drawPlayheads();}
 $('preview-seek').oninput=()=>seekTo(Number($('preview-seek').value)/1000*(audio.duration||0));
 $('seek').addEventListener('input',()=>{pendingTime=audio.currentTime;drawPlayheads();});
 
@@ -123,7 +148,7 @@ function drawWaveforms(){
   drawPlayheads();
 }
 // While a layer switch is in flight the audio element's clock is meaningless; the saved position stands in.
-function localTime(){return switching?pendingTime:audio.currentTime;}
+function localTime(){if(simulation){return Math.min(tracks[current].duration||Infinity,simulation.offset+(performance.now()-simulation.at)/1000);}return switching?pendingTime:audio.currentTime;}
 function drawPlayheads(){
   const duration=audio.duration||tracks[current].duration||0;
   const time=window.castlePlayer?.active()?window.castlePlayer.time():localTime();
@@ -133,18 +158,25 @@ function drawPlayheads(){
 }
 new ResizeObserver(()=>drawWaveforms()).observe($('preview-canvas'));
 window.addEventListener('radio-track',()=>{
-  switchEpoch++;switching=false;pendingTime=0;lightKey='';
+  switchEpoch++;switching=false;pendingTime=0;lightKey='';simulation=null;preparedRequested='';
+  $('simulate-lights').textContent='Simulate lights silently';
   // load() sets the new audio URL after this event; refresh on the next microtask.
-  queueMicrotask(()=>{syncLayer();loadWaveforms();});
+  queueMicrotask(()=>{syncLayer();loadWaveforms();loadPreparedShow();});
 });
 for(const event of ['play','pause','ended','loadedmetadata']){audio.addEventListener(event,()=>{syncLayer();drawPlayheads();});}
 audio.addEventListener('timeupdate',drawPlayheads);
-$('stop').addEventListener('click',()=>{switchEpoch++;switching=false;pendingTime=0;});
-$('blackout').addEventListener('click',()=>{switchEpoch++;switching=false;pendingTime=0;});
+audio.addEventListener('play',()=>{simulation=null;$('simulate-lights').textContent='Simulate lights silently';});
+$('stop').addEventListener('click',()=>{simulation=null;switchEpoch++;switching=false;pendingTime=0;});
+$('blackout').addEventListener('click',()=>{simulation=null;switchEpoch++;switching=false;pendingTime=0;});
 
 const paletteColors={violet:[.66,.15,1,.05],green:[.25,1,.5,.05]};
 const styleBases={'Haunted ballroom':'seance','Electric storm':'chill'};
 function makeScene(t){
+  if(preparedMode()&&t.key){
+    if(preparedScene(t)){return preparedScene(t);}
+    return {id:t.key,name:t.title,dur:t.duration*1000,loop:false,volume:0,blurb:'',file:'',bytes:0,yaml:'',
+      base:{towerL:'off',towerR:'off',door:'off'},cues:[]};
+  }
   if(!t.cues){const original=sceneData.find(s=>s.file===t.file);if(original){return original;}}
   const baseColor=paletteColors[$('palette').value]||[1,.5,.08,.03];
   const base=styleBases[$('style').value]||'candle';
@@ -154,7 +186,7 @@ function makeScene(t){
     cues:(t.cues||[]).map(c=>({t:c[0]*1000,bus:'LED',op:'strike',zone:({left:'towerL',right:'towerR',door:'door'})[c[1]],intensity:c[2]*intensity,color:baseColor,decay:c[3],ms:300}))};
 }
 function lightKeyFor(t,soft){
-  return [t.id,t.cues?.length,sceneData.length,$('style').value,$('palette').value,$('intensity').value,soft,window.radioRig?.revision||0].join('|');
+  return [$('show-preview-mode').value,t.prepared_show?.crc32,t.id,t.cues?.length,sceneData.length,$('style').value,$('palette').value,$('intensity').value,soft,window.radioRig?.revision||0].join('|');
 }
 // Rebuild the cue state when the song or preview settings change (or the clock
 // jumps backwards), then step the 16 ms cue timeline up to the current clock.
@@ -163,7 +195,7 @@ function rebuildLightState(t,key,soft,clock){
     lightKey=key;lightScene=makeScene(t);lightState=V.createState(lightScene,0);
     V.rebuildLightsAt(lightState,lightScene,0);lightState.soft=soft;lightTick=-16;
   }
-  while(lightTick+16<=clock){lightTick+=16;V.fireCues(lightState,lightTick,()=>{});V.decayFlashes(lightState);}
+  while(lightTick+16<=clock){lightTick+=16;if(lightScene.cue_crc32){CastleCuePlayback.fire(lightState,lightTick);}else{V.fireCues(lightState,lightTick,()=>{});}V.decayFlashes(lightState);}
 }
 function applyRigLayouts(){
   if(!window.radioRig){return;}
@@ -201,14 +233,18 @@ function lightStateText(remote,seconds){
 function drawCastle(now){
   requestAnimationFrame(drawCastle);if(now-lastFrame<32){return;}lastFrame=now;
   const t=tracks[current],soft=$('soften').checked;
+  if(t.prepared_show&&preparedRequested!==t.prepared_show.crc32){loadPreparedShow();}
   const remote=window.castlePlayer?.active();
-  const isPaused=remote?!window.castlePlayer.playing():audio.paused;
+  if(simulation&&(stopped||blacked||remote)){simulation=null;}
+  $('simulate-lights').textContent=simulation?'Pause silent simulation':'Simulate lights silently';
+  const isPaused=remote?!window.castlePlayer.playing():audio.paused&&!simulation;
   const clock=(remote?window.castlePlayer.time():localTime())*1000;
   rebuildLightState(t,lightKeyFor(t,soft),soft,clock);
   Object.assign(params,{bright:Number($('brightness').value)/100,soft});
   applyRigLayouts();
   const out=V.renderZones(lightState,clock/1000,params);
-  if(window.radioRig&&t.key){window.radioRig.apply(out,clock/1000);}
+  if(window.radioRig&&t.key&&!preparedMode()){window.radioRig.apply(out,clock/1000);}
+  else if(t.key&&$('route-preview-status')){$('route-preview-status').textContent='Prepared show uses saved voice/backing routing. Routing / style experiment is preview-only.';}
   else if($('route-preview-status')){$('route-preview-status').textContent='Built-in song: original authored light cues. Audio assignments apply to imported songs.';}
   let flash=V.dominantFlash(lightState);
   const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -217,6 +253,8 @@ function drawCastle(now){
   if(isPaused||blacked||reduced||t.key){flash={flash:0,color:[1,1,1,0]};}
   drawStages(out,clock/1000,flash);
   $('light-state').textContent=lightStateText(remote,clock/1000);
+  $('prepared-show-status').textContent=preparedError||(preparedMode()?(preparedScene(t)?`${t.prepared_show.records} cues · exact exported timeline`:(t.prepared_show?'Loading prepared show…':t.key?'No prepared show loaded · reprocess this song':'Authored scene')):'Experiment only · not exported');
+  if(simulation){drawPlayheads();if(clock>=t.duration*1000){simulation=null;audio.currentTime=0;$('simulate-lights').textContent='Simulate lights silently';}}
 }
 
 function rememberHidden(){try{localStorage.setItem('castle-radio-hidden',JSON.stringify(tracks.filter(t=>!t.key&&t.deleted).map(t=>t.file)));}catch{}}
@@ -236,4 +274,4 @@ $('undo-delete').onclick=async()=>{if(!lastRemoved){return;}const t=lastRemoved;
 $('dismiss-undo').onclick=()=>{$('undo-bar').hidden=true;};
 try{const hidden=JSON.parse(localStorage.getItem('castle-radio-hidden')||'[]');for(const t of tracks){if(!t.key&&hidden.includes(t.file)){t.deleted=true;}}}catch{}
 queue=queue.filter(i=>!tracks[i].deleted);history=history.filter(i=>!tracks[i].deleted);
-mountPreview();syncLayer();loadWaveforms();requestAnimationFrame(drawCastle);
+mountPreview();syncLayer();loadWaveforms();loadPreparedShow();requestAnimationFrame(drawCastle);
