@@ -28,6 +28,7 @@ HERE = Path(__file__).resolve().parent
 LIBRARY = HERE / ".radio-data" / "tracks"
 OUTPUT = HERE / ".radio-data" / "comparison"
 PAGE = "show-lab.html"
+SHOW = ".show.json"
 AUDIO_SUFFIXES = (".mp3", ".opus", ".wav")
 NOTES = {
     "beat": "Towers trade the beat left-right, the whole castle lands on every "
@@ -51,8 +52,8 @@ def candidates(library: Path, output: Path) -> list[dict[str, Any]]:
         raise ValueError("An experiment cannot be written beside its baseline")
     output.mkdir(parents=True, exist_ok=True)
     report = []
-    for show in sorted(library.glob("*.show.json")):
-        key = show.name.removesuffix(".show.json")
+    for show in sorted(library.glob("*" + SHOW)):
+        key = show.name.removesuffix(SHOW)
         analysis = library / "stems" / key / "analysis.json"
         if not analysis.is_file():
             continue
@@ -70,7 +71,7 @@ def candidates(library: Path, output: Path) -> list[dict[str, Any]]:
                 "sections": planned["sections"],
             }  # fmt: skip
             (output / f"{key}.{style_id}.cue").write_bytes(blob)
-            (output / f"{key}.{style_id}.show.json").write_text(json.dumps(decoded))
+            (output / f"{key}.{style_id}{SHOW}").write_text(json.dumps(decoded))
             report.append(
                 {"song": source["name"], "style": style_id, "bpm": planned["bpm"],
                  "cues": len(decoded["cues"]), "crc32": decoded["cue_crc32"]}
@@ -99,9 +100,9 @@ def link_audio(library: Path, output: Path, key: str) -> str | None:
 
 def page(library: Path, output: Path) -> Path:
     songs = []
-    for show in sorted(library.glob("*.show.json")):
-        key = show.name.removesuffix(".show.json")
-        others = sorted(output.glob(f"{key}.*.show.json"))
+    for show in sorted(library.glob("*" + SHOW)):
+        key = show.name.removesuffix(SHOW)
+        others = sorted(output.glob(f"{key}.*{SHOW}"))
         if not others:
             continue
         songs.append(
@@ -110,7 +111,7 @@ def page(library: Path, output: Path) -> Path:
                 "audio": link_audio(library, output, key),
                 "candidates": [
                     {
-                        "id": p.name.removesuffix(".show.json").removeprefix(key + "."),
+                        "id": p.name.removesuffix(SHOW).removeprefix(key + "."),
                         "show": json.loads(p.read_text()),
                     }
                     for p in others
@@ -127,13 +128,12 @@ def page(library: Path, output: Path) -> Path:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--library", type=Path, default=LIBRARY)
-    parser.add_argument("--output", type=Path, default=OUTPUT)
-    args = parser.parse_args()
-    for row in candidates(args.library, args.output):
+    """Always the Radio's own library and comparison directory: the lab takes
+    no paths, so nothing on a command line can point its writes elsewhere."""
+    argparse.ArgumentParser(description=__doc__.splitlines()[0]).parse_args()
+    for row in candidates(LIBRARY, OUTPUT):
         print(json.dumps(row))
-    target = page(args.library, args.output)
+    target = page(LIBRARY, OUTPUT)
     print(f"{target} ({target.stat().st_size // 1024} KB)")
     return 0
 

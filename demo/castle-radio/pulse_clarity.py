@@ -90,9 +90,23 @@ def experiment(source, destination):
     }
 
 
-if __name__ == "__main__":
+HERE = Path(__file__).resolve().parent
+LIBRARY = HERE / ".radio-data" / "tracks"
+COMPARISON = HERE / ".radio-data" / "comparison"
+
+
+def main(argv=None):
+    """Run the experiment on one prepared song, named by its key. The cue file
+    is found among the library's own files and the candidate always lands in
+    the comparison directory, so no argument can steer a read or a write."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("source", type=Path)
-    parser.add_argument("destination", type=Path)
-    args = parser.parse_args()
-    print(json.dumps(experiment(args.source, args.destination), indent=2))
+    parser.add_argument("key", help="a prepared song's key, e.g. radio_a1f0fc4d6545")
+    wanted = parser.parse_args(argv).key
+    source = next((p for p in LIBRARY.glob("*.cue") if p.stem == wanted), None)
+    if source is None:
+        parser.error(f"no prepared cue file for {wanted!r} in {LIBRARY}")
+    print(json.dumps(experiment(source, COMPARISON), indent=2))
+
+
+if __name__ == "__main__":
+    main()

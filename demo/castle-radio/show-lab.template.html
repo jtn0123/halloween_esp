@@ -18,7 +18,7 @@ main{max-width:1180px;margin:0 auto;padding:16px}
 h1{font-size:20px;margin:0 0 2px}
 h2{font-size:15px;margin:0}
 p{margin:6px 0}
-.dim{color:var(--dim);font-size:13px}
+.dim{color:var(--dim);font-size:13px}#sound-note{display:block;margin:1em 0}#sound-note:empty{margin:0}
 .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:12px 0}
 label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim)}
 select,button{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0}
@@ -53,7 +53,7 @@ label.check{flex-direction:row;align-items:center;gap:6px;font-size:14px;color:v
     <button id="next-section" type="button">Next section ▸</button>
     <button id="next-drop" type="button">Next drop ⚡</button>
   </div>
-  <p id="sound-note" class="dim" role="status"></p>
+  <output id="sound-note" class="dim"></output>
   <p id="note"></p>
   <div class="sides">
     <section class="side"><header><h2>Current prepared show</h2><span class="dim" id="info-0"></span></header>
@@ -105,7 +105,7 @@ function load(){
     new Set(s.cues.filter(c=>c.op==='set').map(c=>c.t)).size+' look changes';});
   const l=lab();
   $('note').textContent=l?l.note+' Detected tempo '+l.bpm+' BPM.':(OLD[pick.id]||'');
-  $('next-drop').disabled=!(l&&l.sections.some(s=>s.drop));$('next-section').disabled=!l;
+  $('next-drop').disabled=l?.sections.some(s=>s.drop)!==true;$('next-section').disabled=l===null;
   clock=Math.min(clock,duration);sides.forEach(s=>seekSide(s,clock));draw();
 }
 function fill(select,rows){select.replaceChildren(...rows.map(([value,text])=>Object.assign(document.createElement('option'),{value,textContent:text})));}
@@ -113,7 +113,7 @@ function candidatesFor(){
   const ids=SONGS[+$('song').value].candidates.map(c=>c.id),known=Object.keys(LABELS);
   ids.sort((a,b)=>(known.indexOf(a)+1||99)-(known.indexOf(b)+1||99));
   const keep=$('candidate').value;fill($('candidate'),ids.map(id=>[id,LABELS[id]||id]));
-  $('candidate').value=ids.includes(keep)?keep:(ids.includes('show')?'show':ids[0]);
+  const fallback=ids.includes('show')?'show':ids[0];$('candidate').value=ids.includes(keep)?keep:fallback;
 }
 
 function drawPixels(canvas,out){
@@ -123,9 +123,9 @@ function drawPixels(canvas,out){
     const layout=V.zoneLayout(V.DEFAULT_RIG,zone),size=Math.min(cell,h-26)*.8,x0=i*cell+(cell-size)/2,y0=(h-26-size)/2+4;
     layout.pos.forEach((p,k)=>{
       const [r,gr,b]=out[zone].pix[k],x=x0+p[0]*size,y=y0+p[1]*size,peak=Math.max(r,gr,b);
-      if(peak>.02){const halo=g.createRadialGradient(x,y,2,x,y,26);halo.addColorStop(0,`rgba(${r*255|0},${gr*255|0},${b*255|0},${.6*peak})`);
+      if(peak>.02){const halo=g.createRadialGradient(x,y,2,x,y,26);halo.addColorStop(0,`rgba(${Math.trunc(r*255)},${Math.trunc(gr*255)},${Math.trunc(b*255)},${.6*peak})`);
         halo.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=halo;g.beginPath();g.arc(x,y,26,0,7);g.fill();}
-      g.fillStyle=`rgb(${Math.min(255,24+r*231)|0},${Math.min(255,24+gr*231)|0},${Math.min(255,24+b*231)|0})`;
+      g.fillStyle=`rgb(${Math.trunc(Math.min(255,24+r*231))},${Math.trunc(Math.min(255,24+gr*231))},${Math.trunc(Math.min(255,24+b*231))})`;
       g.beginPath();g.arc(x,y,9,0,7);g.fill();
     });
     g.fillStyle='#9a8fb0';g.font='13px system-ui';g.textAlign='center';g.fillText(names[zone],i*cell+cell/2,h-8);
@@ -152,7 +152,8 @@ function draw(){
   });
   drawTimeline();$('seek').value=String(Math.round(clock/duration*1000));
   const s=sectionAt(clock);$('clock').textContent=fmt(clock)+' / '+fmt(duration);
-  $('section').textContent=s?`${s.look} · ${s.pattern}${s.drop?' · drop at the end ⚡':''}`:'';
+  const drop=s?.drop?' · drop at the end ⚡':'';
+  $('section').textContent=s?`${s.look} · ${s.pattern}${drop}`:'';
 }
 function frame(now){
   requestAnimationFrame(frame);
@@ -163,7 +164,7 @@ function frame(now){
   sides.forEach(s=>advance(s,clock));draw();
 }
 function setPlaying(on){
-  playing=on;$('play').textContent=on?'Pause':audible?'Play with sound':'Play silently';
+  playing=on;const idle=audible?'Play with sound':'Play silently';$('play').textContent=on?'Pause':idle;
   if(!audible||!on){audio.pause();return;}
   audio.currentTime=clock/1000;audio.playbackRate=+$('speed').value;
   audio.play().catch(e=>{soundOff('The browser refused to play the song ('+e.name+'). Playing silently.');});

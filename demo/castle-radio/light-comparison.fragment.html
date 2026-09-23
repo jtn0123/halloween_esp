@@ -15,7 +15,7 @@
   <label class="form-label">Song time <output class="tabular-nums" data-time></output>
     <input class="form-range" data-seek type="range" min="0" max="624" step="1" value="0" aria-label="Shared light simulation timeline">
   </label>
-  <div class="text-small text-muted" role="status" aria-live="polite" data-status>Paused · normal mode · same brightness · software simulation</div>
+  <output class="text-small text-muted" style="display:block" aria-live="polite" data-status>Paused · normal mode · same brightness · software simulation</output>
 </div>
 <style>
 #pulse-clarity-comparison .light-pair {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
@@ -34,12 +34,43 @@
   const time=root.querySelector('[data-time]'),status=root.querySelector('[data-status]');
   const canvases=[...root.querySelectorAll('canvas')];
   const colorProbe=document.createElement('span');colorProbe.hidden=true;colorProbe.style.color='var(--background)';root.append(colorProbe);
-  const decoded=data.map(s=>s.clips.map(c=>c.frames.map(f=>Uint8Array.from(atob(f),v=>v.charCodeAt(0)))));
+  const decoded=data.map(s=>s.clips.map(c=>c.frames.map(f=>Uint8Array.from(atob(f),v=>v.codePointAt(0)))));
   let frame=0,playing=false,epoch=0,origin=0,lastSaved="";
   const stamp=ms=>`${Math.floor(ms/60000)}:${(ms/1000%60).toFixed(2).padStart(5,'0')}`;
   function save(){
     lastSaved=JSON.stringify({song:+song.value,passage:+passage.value,frame});
     window.openai?.setWidgetState?.({modelContent:{song:song.options[song.selectedIndex].text,passage:passage.options[passage.selectedIndex].text},privateContent:{song:+song.value,passage:+passage.value,frame}})?.catch(()=>{});
+  }
+  // The castle's silhouette: two crenellated towers and the gatehouse between.
+  function drawOutline(ctx,foreground){
+    ctx.strokeStyle=foreground;ctx.globalAlpha=.3;ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(38,231);ctx.lineTo(38,54);ctx.lineTo(58,54);ctx.lineTo(58,39);
+    ctx.lineTo(78,39);ctx.lineTo(78,54);ctx.lineTo(98,54);ctx.lineTo(98,39);
+    ctx.lineTo(118,39);ctx.lineTo(118,54);ctx.lineTo(138,54);ctx.lineTo(138,130);
+    ctx.lineTo(222,130);ctx.lineTo(222,54);ctx.lineTo(242,54);ctx.lineTo(242,39);
+    ctx.lineTo(262,39);ctx.lineTo(262,54);ctx.lineTo(282,54);ctx.lineTo(282,39);
+    ctx.lineTo(302,39);ctx.lineTo(302,54);ctx.lineTo(322,54);ctx.lineTo(322,231);ctx.closePath();ctx.stroke();
+    ctx.globalAlpha=1;
+  }
+  // Jewel7 = a centre pixel and a ring of six; the door's Ring12 is a ring of twelve.
+  function pixelAt(f,p){
+    const jewel=f.n===7;
+    if(jewel&&p===0){return [f.x,f.y];}
+    const angle=(p-(jewel?1:0))*Math.PI*2/(jewel?6:12)-Math.PI/2,radius=jewel?23:30;
+    return [f.x+Math.cos(angle)*radius,f.y+Math.sin(angle)*radius];
+  }
+  function drawFixtures(ctx,buffer,start,foreground,background){
+    let index=start;
+    for(const f of [{x:88,y:100,n:7},{x:272,y:100,n:7},{x:180,y:190,n:12}]){
+      for(let p=0;p<f.n;p++){
+        const [x,y]=pixelAt(f,p),rgb=buffer.subarray(index,index+3);index+=3;
+        ctx.fillStyle=background;ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);ctx.fill();
+        ctx.fillStyle=`rgb(${rgb.join(',')})`;ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=12;
+        ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+        ctx.strokeStyle=foreground;ctx.globalAlpha=.2;ctx.stroke();ctx.globalAlpha=1;
+      }
+    }
   }
   function draw(){
     const clip=data[+song.value].clips[+passage.value];
@@ -50,30 +81,8 @@
     const background=getComputedStyle(colorProbe).color;
     canvases.forEach((canvas,side)=>{
       const ctx=canvas.getContext('2d');ctx.clearRect(0,0,360,255);
-      ctx.strokeStyle=foreground;ctx.globalAlpha=.3;ctx.lineWidth=1;
-      ctx.beginPath();
-      ctx.moveTo(38,231);ctx.lineTo(38,54);ctx.lineTo(58,54);ctx.lineTo(58,39);
-      ctx.lineTo(78,39);ctx.lineTo(78,54);ctx.lineTo(98,54);ctx.lineTo(98,39);
-      ctx.lineTo(118,39);ctx.lineTo(118,54);ctx.lineTo(138,54);ctx.lineTo(138,130);
-      ctx.lineTo(222,130);ctx.lineTo(222,54);ctx.lineTo(242,54);ctx.lineTo(242,39);
-      ctx.lineTo(262,39);ctx.lineTo(262,54);ctx.lineTo(282,54);ctx.lineTo(282,39);
-      ctx.lineTo(302,39);ctx.lineTo(302,54);ctx.lineTo(322,54);ctx.lineTo(322,231);ctx.closePath();ctx.stroke();
-      ctx.globalAlpha=1;
-      let index=frame*78;
-      const fixtures=[{x:88,y:100,n:7},{x:272,y:100,n:7},{x:180,y:190,n:12}];
-      for(const f of fixtures){
-        for(let p=0;p<f.n;p++){
-          const center=f.n===7&&p===0;
-          const angle=(p-(f.n===7?1:0))*Math.PI*2/(f.n===7?6:12)-Math.PI/2;
-          const radius=f.n===7?23:30;
-          const x=f.x+(center?0:Math.cos(angle)*radius),y=f.y+(center?0:Math.sin(angle)*radius);
-          const rgb=[...buffers[side].slice(index,index+3)];index+=3;
-          ctx.fillStyle=background;ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);ctx.fill();
-          ctx.fillStyle=`rgb(${rgb.join(',')})`;ctx.shadowColor=ctx.fillStyle;ctx.shadowBlur=12;
-          ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
-          ctx.strokeStyle=foreground;ctx.globalAlpha=.2;ctx.stroke();ctx.globalAlpha=1;
-        }
-      }
+      drawOutline(ctx,foreground);
+      drawFixtures(ctx,buffers[side],frame*78,foreground,background);
     });
   }
   function stop(){playing=false;play.textContent='Play silently';status.textContent='Paused · normal mode · same brightness · software simulation';}

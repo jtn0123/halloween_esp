@@ -325,17 +325,22 @@ def plan(grid: Grid, style: Style) -> list[tuple[Phrase, Look, Pattern]]:
     return out
 
 
-def choreograph(
-    source: Mapping[str, Any], layers: Mapping[str, Any], style: Style
-) -> dict[str, Any]:
-    """A candidate show in the prepared-preview shape, ready for
-    pulse_clarity.encode_preview. `source` supplies identity and duration."""
-    duration = int(source["dur"])
-    grid = analyse(layers, duration)
-    planned = plan(grid, style)
-    placer = Placer()
-    sung = (layers.get("vocals") or {}).get("both", {}).get("onsets", {})
-    voice = [h for h in spaced(_merged(sung), 180) if h[0] < duration - 100]
+def _lifts(phrase: Phrase, following: Phrase | None) -> bool:
+    """The next phrase climbs a rank, or is clearly louder."""
+    return following is not None and (
+        following.rank > phrase.rank or following.energy - phrase.energy > 0.08
+    )
+
+
+def _phrase_cues(
+    planned: list[tuple[Phrase, Look, Pattern]],
+    style: Style,
+    placer: Placer,
+    voice: list[tuple[int, float]],
+    duration: int,
+) -> list[dict[str, Any]]:
+    """Each phrase's look and pattern, cut for a drop into the next phrase or
+    for the finale, placed in order. Returns the sections the page draws."""
     sections = []
     slam = -1000
     for index, (phrase, look, pattern) in enumerate(planned):
@@ -345,10 +350,7 @@ def choreograph(
         if style.solo_door:
             cues = without_door(cues, voice)
         following = planned[index + 1] if index + 1 < len(planned) else None
-        lifts = following is not None and (
-            following[0].rank > phrase.rank
-            or following[0].energy - phrase.energy > 0.08
-        )
+        lifts = _lifts(phrase, following[0] if following else None)
         if style.drops and lifts and following is not None and len(phrase.beats) >= 8:
             cut = _beats(phrase)[-2][0]
             cues = [c for c in cues if c["t"] < cut] + drop(phrase, following[1])
@@ -363,6 +365,50 @@ def choreograph(
              "pattern": pattern.__name__, "rank": phrase.rank,
              "drop": bool(style.drops and lifts)}
         )  # fmt: skip
+    return sections
+
+
+def _ornaments(
+    layers: Mapping[str, Any],
+    style: Style,
+    placer: Placer,
+    voice: list[tuple[int, float]],
+    look_at: Callable[[int], Look],
+    duration: int,
+) -> None:
+    """The singer on the door, then (in ornamented styles) the backing's
+    left/right fills on the towers, each only where the beat left room."""
+    for at, strength in voice:
+        colour = look_at(at).voice
+        if style.solo_door:  # nothing competes, so the whole ring can sing
+            hit = strike(at, ["door"], colour, 0.6 + 0.4 * strength, 420)
+        else:
+            hit = strike(at, ["door"], colour, 0.45 + 0.45 * strength, 320, "scatter")
+        placer.ornament(hit)
+    if not style.ornaments:
+        return
+    for side, zone in (("left", "towerL"), ("right", "towerR")):
+        fills = layers["backing"].get(side, {}).get("onsets", {})
+        for at, strength in spaced(_merged(fills), 140):
+            if strength >= 0.45 and at < duration - 100:
+                colour = look_at(at).b if zone == "towerL" else look_at(at).a
+                placer.ornament(
+                    strike(at, [zone], colour, 0.2 + 0.3 * strength, 180, "scatter")
+                )
+
+
+def choreograph(
+    source: Mapping[str, Any], layers: Mapping[str, Any], style: Style
+) -> dict[str, Any]:
+    """A candidate show in the prepared-preview shape, ready for
+    pulse_clarity.encode_preview. `source` supplies identity and duration."""
+    duration = int(source["dur"])
+    grid = analyse(layers, duration)
+    planned = plan(grid, style)
+    placer = Placer()
+    sung = (layers.get("vocals") or {}).get("both", {}).get("onsets", {})
+    voice = [h for h in spaced(_merged(sung), 180) if h[0] < duration - 100]
+    sections = _phrase_cues(planned, style, placer, voice, duration)
     placer.settle()
     looks = {id(p): look for p, look, _ in planned}
 
@@ -372,23 +418,7 @@ def choreograph(
                 return looks[id(phrase)]
         return LOOKS[0]
 
-    for at, strength in voice:
-        colour = look_at(at).voice
-        if style.solo_door:  # nothing competes, so the whole ring can sing
-            hit = strike(at, ["door"], colour, 0.6 + 0.4 * strength, 420)
-        else:
-            hit = strike(at, ["door"], colour, 0.45 + 0.45 * strength, 320, "scatter")
-        placer.ornament(hit)
-    if style.ornaments:
-        for side, zone in (("left", "towerL"), ("right", "towerR")):
-            fills = layers["backing"].get(side, {}).get("onsets", {})
-            for at, strength in spaced(_merged(fills), 140):
-                if strength >= 0.45 and at < duration - 100:
-                    colour = look_at(at).b if zone == "towerL" else look_at(at).a
-                    hit = strike(
-                        at, [zone], colour, 0.2 + 0.3 * strength, 180, "scatter"
-                    )
-                    placer.ornament(hit)
+    _ornaments(layers, style, placer, voice, look_at, duration)
     first = planned[0][1] if planned else LOOKS[0]
     zones = {z: dict(source.get("zones", {}).get(z, {})) for z in ZONES}
     for tower in ZONES[:2]:

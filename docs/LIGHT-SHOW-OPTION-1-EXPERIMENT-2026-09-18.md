@@ -95,9 +95,7 @@ scrubbing and song/passage selection work without any device connection.
 Example candidate generation:
 
 ```sh
-.venv/bin/python demo/castle-radio/pulse_clarity.py \
-  demo/castle-radio/.radio-data/tracks/radio_a1f0fc4d6545.cue \
-  demo/castle-radio/.radio-data/comparison
+.venv/bin/python demo/castle-radio/pulse_clarity.py radio_a1f0fc4d6545
 node demo/castle-radio/compare_lights.mjs \
   demo/castle-radio/.radio-data/tracks/radio_a1f0fc4d6545.show.json \
   demo/castle-radio/.radio-data/comparison/radio_a1f0fc4d6545.clarity.show.json \
