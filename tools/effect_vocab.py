@@ -34,7 +34,21 @@ EFFECT_IDS: dict[str, int] = {
 # firmware/castle_effects.h and the *_NAMES arrays in web/src/effects.ts.
 OVERLAY_IDS: dict[str, int] = {"none": 0, "sparkle": 1, "chase": 2, "meteor": 3}
 PALETTE_IDS: dict[str, int] = {"haunt": 0, "ember": 1, "moonlight": 2, "toxic": 3}
-FLASH_MODE_IDS: dict[str, int] = {"all": 0, "scatter": 1, "center": 2, "ring": 3}
+# 4-7 split the fixture by where each pixel is drawn, and 8-15 (arc0..arc7)
+# light one patch of its loop, centred k/8 of the way round clockwise from
+# 12 o'clock (castle_effects.h arc_gate). Both need cue format v2 (firmware
+# v5.71) — tools/cue_file.py writes a v2 file for them.
+FLASH_MODE_IDS: dict[str, int] = {
+    "all": 0,
+    "scatter": 1,
+    "center": 2,
+    "ring": 3,
+    "left": 4,
+    "right": 5,
+    "top": 6,
+    "bottom": 7,
+    **{f"arc{k}": 8 + k for k in range(8)},
+}
 
 #: The base-effect names as a set, for the "is this a known effect" check.
 KNOWN_EFFECTS: frozenset[str] = frozenset(EFFECT_IDS)

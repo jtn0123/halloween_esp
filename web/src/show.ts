@@ -18,6 +18,10 @@ import {
 } from "./effects.js";
 import { DEFAULT_RIG, zoneLayout, zoneRgbw, type Layout } from "./rig.js";
 import {
+  frameDecay, noteStrike, overlayHead, setMotion, stepOrnament, zoneExtra,
+  type LookCue, type ZoneExtra,
+} from "./show_layers.js";
+import {
   isAudio, isLed,
   type Cue, type EffectName, type Rgbw, type Scene, type ZoneId,
 } from "./types.js";
@@ -101,6 +105,9 @@ export interface ShowState {
   flashMode: PerZone<number>;
   /** Bumped per strike so `scatter` picks a fresh subset each time. */
   flashEpoch: PerZone<number>;
+  /** Cue format v2: the ornament layer, the overlay clock and the soften
+   *  bookkeeping (show_layers.ts; firmware castle_layers.h ZoneExtra). */
+  x: PerZone<ZoneExtra>;
 }
 
 export function createState(scene: Scene, now: number): ShowState {
@@ -127,6 +134,7 @@ export function createState(scene: Scene, now: number): ShowState {
     phase: perZone(() => 0),
     flashMode: perZone(() => 0),
     flashEpoch: perZone(() => 0),
+    x: perZone(zoneExtra),
   };
 }
 
@@ -160,6 +168,7 @@ export function rebuildLightsAt(st: ShowState, sc: Scene, ms: number): void {
   st.level = { towerL: 1, towerR: 1, door: 1, ...sc.levels };
   st.eff = { ...perZone<EffectName>(() => "off"), ...sc.base };
   applyZoneDetail(st, sc);
+  st.x = perZone(zoneExtra);
   st.fired.clear();
 
   sc.cues.forEach((c, i) => {
@@ -182,7 +191,32 @@ export function rebuildLightsAt(st: ShowState, sc: Scene, ms: number): void {
       st.eff[c.zone] = c.eff;
       if (c.level !== undefined) st.level[c.zone] = c.level;
     }
+    // A card file's look (cue format v2) is standing state too. It is not
+    // in the Cue union — scenes.yaml has no such op — so it is recognised
+    // by shape, as cue-playback.js recognises it.
+    const look = c as unknown as LookCue;
+    if (look.op === "look") applyLook(st, look);
   });
+}
+
+/**
+ * One look record on every zone it names (all of them when it names none):
+ * the overlay, palette and centre role it carries, and its motion — card
+ * semantics, castle_cues.h apply() for op 3. The record's own time is taken
+ * as the render clock, which is the Radio's (it renders at elapsed/1000);
+ * the firmware converts the song clock to millis() for the same purpose.
+ */
+export function applyLook(st: ShowState, c: LookCue): void {
+  const zones = c.targets?.length ? c.targets : ZONE_IDS;
+  for (const id of zones) {
+    const zi = ZONE_IDS.indexOf(id);
+    if (zi < 0) continue;
+    if (c.overlay !== undefined) st.overlay[id] = overlayIndex(c.overlay);
+    if (c.palette !== undefined) st.palette[id] = paletteIndex(c.palette);
+    if (c.center !== undefined) st.centerEff[id] = c.center === "none" ? null : c.center;
+    setMotion(st.x[id], st.overlay[id], st.phase[id], zi, c.t / 1000,
+              c.rate ?? -1, c.head ?? -1);
+  }
 }
 
 /** Which zones a strike lands on. No target at all means every zone. */
@@ -210,6 +244,8 @@ export function fireCues(
     } else if (c.op === "set") {
       st.eff[c.zone] = c.eff;
       if (c.level !== undefined) st.level[c.zone] = c.level;
+    } else if ((c as unknown as LookCue).op === "look") {
+      applyLook(st, c as unknown as LookCue);   // by shape, as rebuildLightsAt
     } else {
       applyStrike(st, c);
     }
@@ -224,8 +260,17 @@ export function fireCues(
  * vocabulary.
  */
 function applyStrike(st: ShowState, c: Extract<Cue, { op: "strike" }>): void {
-  const amt = (st.soft ? 0.42 : 1) * (c.intensity ?? 1);
   for (const id of strikeTargets(c)) {
+    // Rate-aware soften: only a strike in a train (< SOFTEN_WINDOW_MS after
+    // this zone's last one) is damped; an isolated strike lands as if the
+    // switch were off.
+    const train = noteStrike(st.x[id], c.t);
+    const amt = (st.soft && train ? 0.42 : 1) * (c.intensity ?? 1);
+    if (c.layer === 1) {
+      ornamentStrike(st.x[id], c, amt, train);
+      continue;
+    }
+    st.x[id].train0 = train;
     const peak = Math.min(1, st.flash[id] + amt);
     if (c.attack && c.attack > 0) {
       // #10: swell to the peak over attack ms rather than popping.
@@ -246,10 +291,31 @@ function applyStrike(st: ShowState, c: Extract<Cue, { op: "strike" }>): void {
   }
 }
 
-/** Per-zone strike rise-then-decay. Soft mode slows the fall, as the
- *  firmware does; the rise is not softened — soft already shrank the peak. */
+/** The same landing on layer 1, the ornament (cue format v2). */
+function ornamentStrike(
+  x: ZoneExtra, c: Extract<Cue, { op: "strike" }>, amt: number, train: boolean,
+): void {
+  const peak = Math.min(1, x.ornFlash + amt);
+  if (c.attack && c.attack > 0) {
+    x.ornTarget = peak;
+    x.ornRise = peak * 16 / c.attack;
+  } else {
+    x.ornFlash = peak;
+    x.ornTarget = 0;
+  }
+  x.ornCol = c.color ?? WHITE;
+  x.ornDecay = c.decay ?? DEFAULT_DECAY;
+  x.ornMode = flashModeIndex(c.pixels ?? "all");
+  x.ornEpoch = (x.ornEpoch + 1) % 1000;
+  x.train1 = train;
+}
+
+/** Per-zone strike rise-then-decay, both layers. Soft mode slows the fall
+ *  of a strike that landed in a train, as the firmware does; the rise is
+ *  not softened — soft already shrank the peak. */
 export function decayFlashes(st: ShowState): void {
   for (const id of ZONE_IDS) {
+    stepOrnament(st.x[id], st.soft);
     if (st.flashTarget[id] > 0) {
       st.flash[id] += st.flashRise[id];
       if (st.flash[id] >= st.flashTarget[id]) {
@@ -258,8 +324,7 @@ export function decayFlashes(st: ShowState): void {
       }
       continue;
     }
-    const d0 = st.flashDecay[id];
-    st.flash[id] *= st.soft ? 1 - (1 - d0) * 0.35 : d0;
+    st.flash[id] *= frameDecay(st.flashDecay[id], st.soft && st.x[id].train0);
     if (st.flash[id] < 0.004) st.flash[id] = 0;
   }
 }
@@ -275,8 +340,12 @@ export function renderZones(st: ShowState, ts: number, P: EffectParams): ZoneRen
     // across the whole fixture, and a fixture with no middle (a bare ring)
     // never matches, so the base effect covers all of it.
     const centerFn = st.centerEff[id] ? effect(st.centerEff[id]!) : ringFn;
-    const fBase = st.flash[id] * (st.soft ? 0.55 : 0.92);
+    const x = st.x[id];
+    const fBase = st.flash[id] * (st.soft && x.train0 ? 0.55 : 0.92);
+    const oBase = x.ornFlash * (st.soft && x.train1 ? 0.55 : 0.92);
+    const head = overlayHead(x, ts);
     const fc = st.flashCol[id];
+    const oc = x.ornCol;
     const lv = st.level[id];
     const tz = ts + st.phase[id];        // anti-phase breathing between zones
     const pal = st.palette[id];
@@ -290,16 +359,18 @@ export function renderZones(st: ShowState, ts: number, P: EffectParams): ZoneRen
     for (let p = 0; p < L.n; p++) {
       const fn = p === L.center ? centerFn : ringFn;
       let c = fn(tz, pixelSeed(zi, p), P);
-      c = applyOverlay(ov, c, tz, p, zi, L);
+      c = applyOverlay(ov, c, tz, p, zi, L, head);
       const f = fBase * flashGate(st.flashMode[id], p, zi, st.flashEpoch[id], L);
+      // Layer 1 ADDS to layer 0 (cue format v2); it is 0 in every v1 show.
+      const o = oBase * flashGate(x.ornMode, p, zi, x.ornEpoch, L);
       // An RGB fixture has no white die: the device drops the W byte on the
       // way out (is_rgbw: false), so the screen drops it here too.
-      const w = st.rgbw[id] ? c[3] * lv + f * fc[3] : 0;
+      const w = st.rgbw[id] ? c[3] * lv + f * fc[3] + o * oc[3] : 0;
       const lit: Rgbw = [c[0] * lv, c[1] * lv, c[2] * lv, w];
       const [sr, sg, sb] = toScreen(lit);
-      const r = Math.min(1, sr * P.bright + f * fc[0]);
-      const g = Math.min(1, sg * P.bright + f * fc[1]);
-      const b = Math.min(1, sb * P.bright + f * fc[2] * 0.96);
+      const r = Math.min(1, sr * P.bright + f * fc[0] + o * oc[0]);
+      const g = Math.min(1, sg * P.bright + f * fc[1] + o * oc[1]);
+      const b = Math.min(1, sb * P.bright + f * fc[2] * 0.96 + o * oc[2] * 0.96);
       pix.push([r, g, b]);
       // Divided by the fixture's own count, so a zone holding a 32-pixel
       // FeatherWing and one holding a 7-pixel Jewel still report comparable
@@ -323,6 +394,10 @@ export function dominantFlash(st: ShowState): { flash: number; color: Rgbw } {
     if (st.flash[id] > flash) {
       flash = st.flash[id];
       color = st.flashCol[id];
+    }
+    if (st.x[id].ornFlash > flash) {
+      flash = st.x[id].ornFlash;
+      color = st.x[id].ornCol;
     }
   }
   return { flash, color };

@@ -4,7 +4,9 @@
 //
 // Loads <dir>/<track>.cue the way /api/play does, holds the clock 320 ms for
 // a speaker that has not started, then ticks once a 16 ms render frame and
-// prints the zone globals after every tick that applied something.
+// prints the zone globals — and, since v5.71, each zone's v2 state
+// (castle_layers.h: the ornament, the train flags and the overlay clock) —
+// after every tick that applied something.
 // tests/test_cue_file_cxx.py writes the file with tools/cue_file.py, builds
 // the same trace from cue_file.decode, and the two must agree line for line
 // — the file format has one definition in Python and one in C, and this is
@@ -28,6 +30,13 @@ void dump(long long at_ms) {
                 level[z], center[z], overlay[z], palette[z], phase[z], flash_mode[z],
                 flash_epoch[z], flash_col[z * 4], flash_col[z * 4 + 1],
                 flash_col[z * 4 + 2], flash_col[z * 4 + 3]);
+  for (int z = 0; z < 3; z++) {
+    const castle::ZoneExtra &x = castle::g_zone_x[z];
+    std::printf(" / %.4f %.4f %.4f %.4f %d %d %.2f %.2f %.2f %.2f %d %d %.3f %.3f %.3f",
+                x.orn_flash, x.orn_target, x.orn_rise, x.orn_decay, x.orn_mode,
+                x.orn_epoch, x.orn_col[0], x.orn_col[1], x.orn_col[2], x.orn_col[3],
+                (int) x.train0, (int) x.train1, x.rate, x.head0, x.t0);
+  }
   std::printf("\n");
 }
 }  // namespace
@@ -50,10 +59,18 @@ int main(int argc, char **argv) {
   // A silent speaker holds the first cue...
   for (long long now = 0; now < 320 * MS; now += 16 * MS)
     if (castle_cues::tick(px, false, now) != 0) return 4;
-  // ...and the clock starts on the tick it is first heard.
+  // ...and the clock starts on the tick it is first heard. Since v5.72 that
+  // is the heard clock's word (castle_heard.h): the speaker reports each
+  // 10 ms DMA buffer as it plays, the first sample reaching the amplifier
+  // exactly at `start`, so song time is (now - start) on every tick and the
+  // trace is the one the file means.
   const long long start = 320 * MS;
-  for (long long now = start; castle_cues::g_next < castle_cues::g_count; now += 16 * MS)
+  castle_heard::on_played(1, start);
+  long long played = start;
+  for (long long now = start; castle_cues::g_next < castle_cues::g_count; now += 16 * MS) {
+    for (; played + 10 * MS <= now; played += 10 * MS) castle_heard::on_played(441, played + 10 * MS);
     if (castle_cues::tick(px, true, now) > 0) dump((now - start) / 1000);
+  }
   castle_cues::unload();
   if (castle_cues::active() || castle_cues::count() != 0) return 5;
   std::printf("cues OK\n");

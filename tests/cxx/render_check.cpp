@@ -5,7 +5,8 @@
 // every fixture in the generated rig plus synthetic ones the catalogue
 // allows, at time/parameter extremes the show can reach. Properties, not
 // golden values: the numeric parity with the browser lives in
-// parity_dump.cpp + web/test/firmware_parity.ts.
+// parity_dump.cpp + web/test/firmware_parity.ts, and what cue format v2
+// added (ornament layer, overlay clock, train soften) in layers_check.cpp.
 //
 //   render_check [seed]      exit 0 and "rendered ok" on success; every
 //                            failure is printed as one line starting "FAIL".
@@ -48,7 +49,7 @@ static bool unit4(const Rgbw &c) { return unit(c.r) && unit(c.g) && unit(c.b) &&
 // overlays, and these exercise n, center and fall_steps the generated
 // header does not.
 struct SynthFixture {
-  std::vector<float> walk, fall;
+  std::vector<float> walk, fall, x, y;
   std::vector<char> core_raw;  // std::vector<bool> has no contiguous data()
   Fixture fx;
 };
@@ -60,19 +61,25 @@ static SynthFixture make_fixture(int n, int center, int fall_steps, bool ring) {
       float a = -3.14159265f / 2 + ((float) i / n) * 6.2831853f;
       s.walk.push_back((float) i / n);
       s.fall.push_back((std::sin(a) + 1.0f) / 2.0f);
+      s.x.push_back(0.5f + 0.42f * std::cos(a));
+      s.y.push_back(0.5f + 0.42f * std::sin(a));
     } else {
       s.walk.push_back((float) i / n);
       s.fall.push_back(n == 1 ? 0.0f : (float) i / (n - 1));
+      s.x.push_back(n == 1 ? 0.5f : (float) i / (n - 1));
+      s.y.push_back(0.5f);
     }
     s.core_raw.push_back(i == (center >= 0 ? center : 0) ? 1 : 0);
   }
   if (n == 0) {  // the generator emits one dead element for an empty zone
     s.walk.push_back(0.0f);
     s.fall.push_back(0.0f);
+    s.x.push_back(0.5f);
+    s.y.push_back(0.5f);
     s.core_raw.push_back(0);
   }
   s.fx = Fixture{n, center, fall_steps, s.walk.data(), s.fall.data(),
-                 reinterpret_cast<const bool *>(s.core_raw.data())};
+                 reinterpret_cast<const bool *>(s.core_raw.data()), s.x.data(), s.y.data()};
   return s;
 }
 
@@ -123,19 +130,22 @@ static void check_render() {
 
 // ── 2. overlays and gates: in range, identity for unknown ids ────────────
 
-/// Every pixel and base colour for one (overlay, time, zone).
+/// Every pixel and base colour for one (overlay, time, zone), on the legacy
+/// clock (head -1) and at three tempo-locked heads (cue v2 look records).
 template <size_t N>
 static void check_overlay_pixels(const Fixture &fx, const char *name, int ov,
                                  float t, int zi, const Rgbw (&bases)[N]) {
+  static constexpr std::array<float, 4> HEADS = {-1.0f, 0.0f, 0.37f, 0.9999f};
   for (int p = 0; p < fx.n; p++)
-    for (const Rgbw &b : bases) {
-      const Rgbw c = apply_overlay(ov, b, t, p, zi, fx);
-      CHECK(unit4(c), "%s overlay=%d t=%g p=%d -> %g %g %g %g", name, ov, t, p,
-            c.r, c.g, c.b, c.w);
-      if (ov < 1 || ov > 3)
-        CHECK(c.r == b.r && c.g == b.g && c.b == b.b && c.w == b.w,
-              "%s overlay %d must be identity", name, ov);
-    }
+    for (const Rgbw &b : bases)
+      for (float head : HEADS) {
+        const Rgbw c = apply_overlay(ov, b, t, p, zi, fx, head);
+        CHECK(unit4(c), "%s overlay=%d t=%g head=%g p=%d -> %g %g %g %g", name, ov, t,
+              head, p, c.r, c.g, c.b, c.w);
+        if (ov < 1 || ov > 3)
+          CHECK(c.r == b.r && c.g == b.g && c.b == b.b && c.w == b.w,
+                "%s overlay %d must be identity", name, ov);
+      }
 }
 
 /// Every pixel for one (gate mode, epoch, zone).
@@ -144,9 +154,15 @@ static void check_gate_pixels(const Fixture &fx, const char *name, int mode,
   for (int p = 0; p < fx.n; p++) {
     const float g = flash_gate(mode, p, zi, epoch, fx);
     CHECK(unit(g), "%s gate mode=%d -> %g", name, mode, g);
-    if (mode < 1 || mode > 3) CHECK(g == 1.0f, "%s gate %d must be 1", name, mode);
+    if (mode < 1 || mode > 15) CHECK(g == 1.0f, "%s gate %d must be 1", name, mode);
     if (mode == 2 || mode == 3) CHECK(g == 1.0f || g == 0.1f, "%s gate core", name);
+    if (mode >= 4 && mode <= 7)
+      CHECK(g == 1.0f || g == 0.1f || g == 0.5f, "%s gate half %d -> %g", name, mode, g);
     if (mode == 1) CHECK(g == 1.0f || g == 0.15f, "%s gate scatter", name);
+    // Arcs: thousandths from 0.1 to 1, and exactly 0.3 on a hub's centre.
+    if (mode >= 8 && mode <= 15)
+      CHECK(p == fx.center ? g == 0.3f : g >= 0.1f && g == (float) lroundf(g * 1000) / 1000.0f,
+            "%s gate arc %d p=%d -> %g", name, mode, p, g);
   }
 }
 
@@ -182,7 +198,7 @@ static void check_gate_halves(const Fixture &fx, const char *name) {
 static void check_overlays(const Fixture &fx, const char *name) {
   for (int ov = -1; ov <= 5; ov++)
     check_overlay_id(fx, name, ov);
-  for (int mode = -1; mode <= 5; mode++)
+  for (int mode = -1; mode <= 17; mode++)
     check_gate_mode(fx, name, mode);
   check_gate_halves(fx, name);
 }
@@ -197,9 +213,9 @@ struct Probe {
 
 static ZoneIo make_io(Probe &pr, float level, float hue, float trim, int eff,
                       int center, int ov, int pal, int mode, int epoch, bool soft,
-                      float decay = 0.90f, float phase = 0.0f) {
-  return ZoneIo{&pr.flash, &pr.target, &pr.rise, decay, pr.col,
-                level, phase, trim, hue, eff, center, ov, pal, mode, epoch, soft};
+                      float decay = 0.90f, float phase = 0.0f, ZoneExtra *x = nullptr) {
+  return ZoneIo{&pr.flash, &pr.target, &pr.rise, decay, pr.col, level, phase, trim,
+                hue, eff, center, ov, pal, mode, epoch, soft, x};
 }
 
 /// Does ANY overlay, at any moment, put light on an OFF base? The blackout
@@ -236,13 +252,27 @@ static void check_zone_writes(const Fixture &fx, int zi, const char *name, uint3
     const auto center = (int) ((next() >> 16) % 15) - 2;
     const auto ov = (int) ((next() >> 16) % 5);
     const int pal = PALS[(next() >> 16) % PALS.size()];
-    const auto mode = (int) ((next() >> 16) % 5);
+    const auto mode = (int) ((next() >> 16) % 17);
     const auto epoch = (int) ((next() >> 16) % 1000);
     const bool soft = ((next() >> 16) & 1) != 0;
     const float t = TIMES[(next() >> 16) % TIMES.size()];
     const float phase = (iter % 3 == 0) ? 0.0f : frand() * 5.0f;
+    // v2 state on two frames in three: an ornament, train flags and a
+    // tempo-locked head, all at random. The third frame has none (nullptr).
+    ZoneExtra xz;
+    xz.train0 = ((next() >> 16) & 1) != 0;
+    xz.train1 = ((next() >> 16) & 1) != 0;
+    xz.orn_flash = (iter % 4 == 0) ? 0.0f : frand() * 1.5f;
+    for (float &k : xz.orn_col) k = frand();
+    xz.orn_mode = (int) ((next() >> 16) % 17);
+    xz.orn_epoch = (int) ((next() >> 16) % 1000);
+    xz.rate = (iter % 2 == 0) ? 0.0f : frand() * 4.0f;
+    xz.head0 = frand();
+    xz.t0 = frand() * 30.0f;
+    ZoneExtra *xp = (iter % 3 == 2) ? nullptr : &xz;
+    const ZoneExtra &xv = xp != nullptr ? *xp : kNoExtra;
     ZoneIo io = make_io(pr, level, hue, trim, eff, center, ov, pal, mode, epoch, soft,
-                        0.9f, phase);
+                        0.9f, phase, xp);
     render_zone(out, zi, fx, t, io);
 
     for (int i = 0; i < guard; i++)
@@ -251,19 +281,23 @@ static void check_zone_writes(const Fixture &fx, int zi, const char *name, uint3
     // Each pixel's four floats are re-derived here from the same public
     // pieces the loop composes, so a clamp that goes missing in render_zone
     // shows up as a byte mismatch rather than as silent wraparound.
-    const float fbase = pr.flash * (soft ? 0.55f : 0.92f);
+    const float fbase = pr.flash * (soft && xv.train0 ? 0.55f : 0.92f);
+    const float obase = xv.orn_flash * (soft && xv.train1 ? 0.55f : 0.92f);
+    const float head = overlay_head(xv, t);
     const int ring_eff = eff;
     const int center_eff = center >= 0 ? center : ring_eff;
     for (int p = 0; p < n; p++) {
       const float sd = zi * 4.7f + p * 1.31f;
       Rgbw c = render(p == fx.center ? center_eff : ring_eff, t + phase, sd, hue, soft, pal);
-      c = apply_overlay(ov, c, t + phase, p, zi, fx);
+      c = apply_overlay(ov, c, t + phase, p, zi, fx, head);
       const float f = fbase * flash_gate(mode, p, zi, epoch, fx);
+      const float o = obase * flash_gate(xv.orn_mode, p, zi, xv.orn_epoch, fx);
+      const float *oc = xv.orn_col;
       const float want[4] = {
-          fminf(1.0f, c.r * level + f * pr.col[0]) * trim,
-          fminf(1.0f, c.g * level + f * pr.col[1]) * trim,
-          fminf(1.0f, c.b * level + f * pr.col[2] * 0.96f) * trim,
-          fminf(1.0f, c.w * level + f * pr.col[3]) * trim};
+          fminf(1.0f, c.r * level + f * pr.col[0] + o * oc[0]) * trim,
+          fminf(1.0f, c.g * level + f * pr.col[1] + o * oc[1]) * trim,
+          fminf(1.0f, c.b * level + f * pr.col[2] * 0.96f + o * oc[2] * 0.96f) * trim,
+          fminf(1.0f, c.w * level + f * pr.col[3] + o * oc[3]) * trim};
       for (int k = 0; k < 4; k++) {
         CHECK(unit(want[k]), "%s p=%d ch%d pre-cast %g not in 0..1", name, p, k, want[k]);
         CHECK(out[p * 4 + k] == (uint8_t) (want[k] * 255.0f),
@@ -271,7 +305,7 @@ static void check_zone_writes(const Fixture &fx, int zi, const char *name, uint3
               (uint8_t) (want[k] * 255.0f));
       }
     }
-    if (level == 0.0f && pr.flash == 0.0f) {
+    if (level == 0.0f && pr.flash == 0.0f && xv.orn_flash == 0.0f) {
       for (int i = 0; i < n * 4; i++) CHECK(out[i] == 0, "%s dark zone wrote %d", name, out[i]);
     }
     if (trim == 0.0f)
@@ -309,12 +343,19 @@ static void check_zone_writes(const Fixture &fx, int zi, const char *name, uint3
           "%s white strike p=%d: %d %d %d", name, p, out[p * 4], out[p * 4 + 1], out[p * 4 + 3]);
     CHECK(out[p * 4 + 2] == bl, "%s blue p=%d: %d vs %d", name, p, out[p * 4 + 2], bl);
   }
-  // Soft mode lowers the same strike's ceiling to 0.55.
+  // Soft mode lowers the same strike's ceiling to 0.55 — when the strike is
+  // part of a train (v5.71). An isolated strike keeps the full 0.92.
   Probe softw{1.0f, 0.0f, 0.0f, {1, 1, 1, 1}};
-  io = make_io(softw, 0.0f, 0.5f, 1.0f, EFF_OFF, -1, 0, 0, 0, 0, true);
+  ZoneExtra train;
+  train.train0 = true;
+  io = make_io(softw, 0.0f, 0.5f, 1.0f, EFF_OFF, -1, 0, 0, 0, 0, true, 0.9f, 0.0f, &train);
   render_zone(out, zi, fx, 0.0f, io);
   for (int p = 0; p < n; p++)
     CHECK(out[p * 4] == (uint8_t) (0.55f * 255.0f), "%s soft strike p=%d: %d", name, p, out[p * 4]);
+  io = make_io(softw, 0.0f, 0.5f, 1.0f, EFF_OFF, -1, 0, 0, 0, 0, true);
+  render_zone(out, zi, fx, 0.0f, io);
+  for (int p = 0; p < n; p++)
+    CHECK(out[p * 4] == hi, "%s isolated soft strike p=%d: %d", name, p, out[p * 4]);
 }
 
 // ── 4. step_flash(): the envelope the lambda ticks each frame ───────────
@@ -329,11 +370,18 @@ static void check_flash_envelope() {
   step_flash(io);
   CHECK(pr.flash == 0.0f, "below the floor snaps to 0");
 
-  // Soft: 0.90 -> 1 - 0.10*0.35 = 0.965 per frame.
+  // Soft, in a train: 0.90 -> 1 - 0.10*0.35 = 0.965 per frame. Soft but
+  // isolated (no train, or no v2 state at all): the hard 0.90.
   Probe ps{1.0f, 0.0f, 0.0f, {1, 1, 1, 1}};
-  ZoneIo so = make_io(ps, 1, 0.5f, 1, 1, -1, 0, 0, 0, 0, true, 0.90f);
+  ZoneExtra tr;
+  tr.train0 = true;
+  ZoneIo so = make_io(ps, 1, 0.5f, 1, 1, -1, 0, 0, 0, 0, true, 0.90f, 0.0f, &tr);
   step_flash(so);
   CHECK(std::fabs(ps.flash - 0.965f) < 1e-6f, "soft decay: %g", ps.flash);
+  Probe pi{1.0f, 0.0f, 0.0f, {1, 1, 1, 1}};
+  ZoneIo lone = make_io(pi, 1, 0.5f, 1, 1, -1, 0, 0, 0, 0, true, 0.90f);
+  step_flash(lone);
+  CHECK(std::fabs(pi.flash - 0.9f) < 1e-6f, "isolated soft decay: %g", pi.flash);
 
   // Attack: climbs by rise per frame, clamps at target, disarms.
   Probe pa{0.0f, 0.8f, 0.8f * 16.0f / 96.0f, {1, 1, 1, 1}};

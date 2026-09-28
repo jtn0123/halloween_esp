@@ -55,15 +55,20 @@ class ProgressTests(unittest.TestCase):
                 stop,
             )
 
-    def test_nine_channel_analyses(self):
+    def test_eighteen_channel_analyses(self):
         count = 0
-        for layer in ("vocals", "backing", "combined"):
+        seen = []
+        for layer in ("vocals", "backing", "combined", "drums", "bass", "other"):
             for channel in ("left", "right", "both"):
                 values, count = interpret(
-                    f"  {layer} {channel} low:4 mid:3", "split", count
+                    f"  {layer:<9} {channel:<5} low:4 mid:3", "split", count
                 )
-        self.assertEqual(count, 9)
+                seen.append(values["percent"])
+        self.assertEqual(count, 18)
+        # The two-stem layers alone are half the work, not all of it.
+        self.assertEqual(seen[8], 50)
         self.assertEqual(values["percent"], 100)
+        self.assertEqual(values["detail"], "18 of 18 layer/channel analyses finished")
 
 
 class StreamingTests(unittest.TestCase):

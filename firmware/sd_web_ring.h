@@ -47,6 +47,11 @@ inline std::atomic<unsigned> g_light_evicted{0};
 // 0 when the track has none. A page that streams its own light frames reads
 // this and keeps quiet: the castle is already running the song's lights.
 inline std::atomic<unsigned> g_cues{0};
+// v5.72: the heard clock's verdict on the stopwatch it replaced, for the
+// last card show loaded (castle_cues.h g_sync_*): how far ahead of the sound
+// v5.71's clock ran, and the most it wandered after. -1 until one is heard.
+inline std::atomic<long long> g_sync_lead_ms{-1};
+inline std::atomic<long long> g_sync_drift_ms{-1};
 // ── the event ring (v5.59) ──────────────────────────────────────────────
 // What the castle actually DID, 64 entries deep, in RAM and never growing.
 // The main loop appends one line per command it executed; /api/events hands

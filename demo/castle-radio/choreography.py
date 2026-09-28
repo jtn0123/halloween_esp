@@ -10,94 +10,26 @@ because the card reader REPLACES a zone's flash rather than adding to it.
 
 from __future__ import annotations
 
-import math
 from bisect import bisect_left
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from beat_grid import Grid, Phrase, analyse
-
-ZONES = ("towerL", "towerR", "door")
-ACROSS = ("towerL", "door", "towerR")  # as the castle stands, left to right
-TICK_MS = 16
-Cue = dict[str, Any]
-Colour = list[float]
-
-AMBER: Colour = [1.0, 0.35, 0.02, 0.0]
-ORANGE: Colour = [1.0, 0.16, 0.01, 0.0]
-RED: Colour = [1.0, 0.02, 0.02, 0.0]
-VIOLET: Colour = [0.55, 0.04, 1.0, 0.0]
-MAGENTA: Colour = [1.0, 0.05, 0.6, 0.0]
-GREEN: Colour = [0.05, 1.0, 0.2, 0.0]
-TOXIC: Colour = [0.6, 1.0, 0.05, 0.0]
-ICE: Colour = [0.2, 0.55, 1.0, 0.15]
-WHITE: Colour = [0.7, 0.7, 0.8, 1.0]
-
-
-@dataclass(frozen=True)
-class Look:
-    name: str
-    towers: str  # base effect
-    door: str
-    tower_level: float
-    door_level: float
-    a: Colour  # left / first colour
-    b: Colour  # right / answer colour
-    voice: Colour  # the door when it follows the singer
-
-
-LOOKS = (
-    Look("Graveyard", "chill", "ember", 0.30, 0.30, VIOLET, GREEN, AMBER),
-    Look("Furnace", "furnace", "blood", 0.22, 1.0, ORANGE, RED, AMBER),
-    Look("Séance", "seance", "spirit", 0.35, 0.30, MAGENTA, ICE, GREEN),
-    Look("Toxic", "wisp", "ember", 0.30, 0.25, TOXIC, VIOLET, TOXIC),
-    Look("Blood moon", "blood", "eyes", 1.0, 0.35, RED, WHITE, RED),
-    Look("Mansion", "mansion", "candle", 0.35, 0.35, AMBER, ICE, MAGENTA),
+from looks import (
+    ACROSS,
+    LOOKS,
+    TICK_MS,
+    WHITE,
+    ZONES,
+    Cue,
+    Look,
+    look_cues,
+    strike,
 )
 
 
-def decay_for(ms: float, floor: float = 0.12) -> float:
-    """The per-tick decay that brings a flash down to `floor` in `ms`."""
-    ticks = max(1.0, ms / TICK_MS)
-    return max(0.6, min(0.985, math.pow(floor, 1 / ticks)))
-
-
-def strike(
-    t: float,
-    targets: Sequence[str],
-    colour: Colour,
-    intensity: float,
-    fade_ms: float,
-    pixels: str = "all",
-    attack: int = 0,
-) -> Cue:
-    return {
-        "t": round(t), "bus": "LED", "op": "strike", "targets": list(targets),
-        "intensity": round(intensity, 3), "decay": round(decay_for(fade_ms), 4),
-        "attack": attack, "pixels": pixels, "color": colour, "ms": 120,
-    }  # fmt: skip
-
-
-def look_cues(t: int, look: Look, dim: float = 1.0) -> list[Cue]:
-    return [
-        {
-            "t": t,
-            "bus": "LED",
-            "op": "set",
-            "zone": z,
-            "eff": eff,
-            "level": round(lvl * dim, 2),
-        }
-        for z, eff, lvl in (
-            ("towerL", look.towers, look.tower_level),
-            ("towerR", look.towers, look.tower_level),
-            ("door", look.door, look.door_level),
-        )
-    ]
-
-
-def _beats(phrase: Phrase) -> list[tuple[int, int, int, int]]:
+def beat_table(phrase: Phrase) -> list[tuple[int, int, int, int]]:
     """(time, period, beat in bar 0..3, bar in phrase) for every beat."""
     out = []
     times = phrase.beats
@@ -112,7 +44,7 @@ def _beats(phrase: Phrase) -> list[tuple[int, int, int, int]]:
 def pingpong(phrase: Phrase, look: Look) -> list[Cue]:
     """Left, right, left, right on the beat; the whole castle on every 'one'."""
     cues = []
-    for t, period, beat, bar in _beats(phrase):
+    for t, period, beat, bar in beat_table(phrase):
         if beat == 0:
             cues.append(
                 strike(t, ZONES, look.a if bar % 2 == 0 else look.b, 1.0, period)
@@ -126,7 +58,7 @@ def pingpong(phrase: Phrase, look: Look) -> list[Cue]:
 def chase(phrase: Phrase, look: Look) -> list[Cue]:
     """A sweep across the castle inside every beat; it turns round each bar."""
     cues = []
-    for t, period, beat, bar in _beats(phrase):
+    for t, period, beat, bar in beat_table(phrase):
         order = ACROSS if bar % 2 == 0 else ACROSS[::-1]
         colour = look.a if (bar + beat) % 2 == 0 else look.b
         for step, zone in enumerate(order):
@@ -142,7 +74,7 @@ def chase(phrase: Phrase, look: Look) -> list[Cue]:
 def stomp(phrase: Phrase, look: Look) -> list[Cue]:
     """Everything on one and three; the towers answer on two and four."""
     cues = []
-    for t, period, beat, _bar in _beats(phrase):
+    for t, period, beat, _bar in beat_table(phrase):
         if beat % 2 == 0:
             cues.append(strike(t, ZONES, look.a, 1.0, period * 0.9))
         else:
@@ -156,7 +88,7 @@ def stomp(phrase: Phrase, look: Look) -> list[Cue]:
 def breathe(phrase: Phrase, look: Look) -> list[Cue]:
     """One slow swell a bar, passed from tower to tower."""
     cues = []
-    for t, period, beat, bar in _beats(phrase):
+    for t, period, beat, bar in beat_table(phrase):
         if beat == 0:
             zone, colour = (("towerL", look.a), ("towerR", look.b))[bar % 2]
             cues.append(strike(t, [zone], colour, 0.75, period * 3, "all", int(period)))
@@ -166,7 +98,7 @@ def breathe(phrase: Phrase, look: Look) -> list[Cue]:
 def heartbeat(phrase: Phrase, look: Look) -> list[Cue]:
     """Lub-dub on one and three, both towers together."""
     cues = []
-    for t, period, beat, _bar in _beats(phrase):
+    for t, period, beat, _bar in beat_table(phrase):
         if beat % 2 == 0:
             cues.append(strike(t, ZONES[:2], look.a, 0.95, period * 0.35, "center"))
             cues.append(
@@ -186,7 +118,7 @@ POOLS: tuple[tuple[Pattern, ...], ...] = (
 def drop(phrase: Phrase, following: Look) -> list[Cue]:
     """The last two beats before a lift: a sixteenth-note roll that climbs,
     half a beat of darkness, then the next phrase opens on a white slam."""
-    beats = _beats(phrase)[-2:]
+    beats = beat_table(phrase)[-2:]
     if len(beats) < 2:
         return []
     start, period = beats[0][0], beats[0][1]
@@ -265,7 +197,7 @@ def spaced(hits: Sequence[Sequence[float]], gap_ms: int) -> list[tuple[int, floa
     return sorted(kept)
 
 
-def _merged(onsets: Mapping[str, Sequence[Sequence[float]]]) -> list[Sequence[float]]:
+def merged(onsets: Mapping[str, Sequence[Sequence[float]]]) -> list[Sequence[float]]:
     return [h for hits in onsets.values() for h in hits]
 
 
@@ -352,7 +284,7 @@ def _phrase_cues(
         following = planned[index + 1] if index + 1 < len(planned) else None
         lifts = _lifts(phrase, following[0] if following else None)
         if style.drops and lifts and following is not None and len(phrase.beats) >= 8:
-            cut = _beats(phrase)[-2][0]
+            cut = beat_table(phrase)[-2][0]
             cues = [c for c in cues if c["t"] < cut] + drop(phrase, following[1])
             slam = phrase.end
             placer.reserved.append((cut, phrase.end))
@@ -398,7 +330,7 @@ def _fills(
     """The backing's left and right fills, each on its own tower."""
     for side, zone in (("left", "towerL"), ("right", "towerR")):
         fills = layers["backing"].get(side, {}).get("onsets", {})
-        for at, strength in spaced(_merged(fills), 140):
+        for at, strength in spaced(merged(fills), 140):
             if strength >= 0.45 and at < duration - 100:
                 colour = look_at(at).b if zone == "towerL" else look_at(at).a
                 placer.ornament(
@@ -416,7 +348,7 @@ def choreograph(
     planned = plan(grid, style)
     placer = Placer()
     sung = (layers.get("vocals") or {}).get("both", {}).get("onsets", {})
-    voice = [h for h in spaced(_merged(sung), 180) if h[0] < duration - 100]
+    voice = [h for h in spaced(merged(sung), 180) if h[0] < duration - 100]
     sections = _phrase_cues(planned, style, placer, voice, duration)
     placer.settle()
     looks = {id(p): look for p, look, _ in planned}

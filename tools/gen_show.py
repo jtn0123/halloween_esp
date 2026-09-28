@@ -131,7 +131,9 @@ def emit_dispatch(
         f" id(zone_flash_target)[{i}] = 0.0f;"
         for i in range(len(zones))
     )
-    out.append(f"      - lambda: '{stop}'")
+    # v5.71: and the cue-v2 zone state — an ornament strike in flight, a
+    # tempo-locked chase clock, the soften memory (castle_layers.h).
+    out.append(f"      - lambda: '{stop} castle::reset_zone_x();'")
     # And it stops the scene RUNNER, not only its output. Until v5.35 it did
     # not: a looping scene's pending delay survived the stop, re-fired within
     # 30 s, and Vigil walked back on — volume, lights and its wind track —

@@ -26,6 +26,8 @@ const reports=[];
 for(const [side,scene] of scenes.entries()){
   for(const soft of [false,true]){
     const state=V.createState(scene,0);V.rebuildLightsAt(state,scene,0);state.soft=soft;
+    // Each show on the castle it is written for: v5.70 softened every strike.
+    state.softAll=(scene.lab?.firmware??'v5.70')==='v5.70';
     const params=V.defaultParams();params.soft=soft;
     let recovered=0,samples=0,bright=0,frames=0;
     for(let t=0;t<=Math.ceil(scene.dur/16)*16;t+=16){

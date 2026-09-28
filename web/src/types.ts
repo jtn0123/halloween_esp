@@ -59,13 +59,19 @@ export interface StrikeCue extends CueBase {
   /** The strike's colour multiplier, per channel. */
   color?: Rgbw;
   /** Which pixels the flash hits: "all" (default) | "scatter" | "center" |
-   *  "ring". Scatter picks a fresh random subset per strike. */
+   *  "ring" | "left" | "right" | "top" | "bottom" | "arc0".."arc7" (the
+   *  halves and arcs need cue format v2; arc k is centred k/8 of the way
+   *  round the loop, clockwise from 12 o'clock). Scatter picks a fresh
+   *  random subset per strike. */
   pixels?: string;
   /** Per-frame multiplier at 16 ms. 0.82 snaps, 0.97 blooms. */
   decay?: number;
   /** Rise time to peak, ms. Absent/0 = the classic instant slam; ~90 lets a
    *  voice or pad swell in instead of popping. Decay starts at the peak. */
   attack?: number;
+  /** 1 = the ornament layer (cue format v2), which ADDS to layer 0 instead
+   *  of replacing its flash. Absent/0 = layer 0, every v1 strike. */
+  layer?: number;
 }
 
 export type Cue = AudioCue | SetCue | StrikeCue;

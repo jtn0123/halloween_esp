@@ -65,6 +65,12 @@ def status_json(emu: CastleEmu) -> dict[str, object]:
             "light_applied": emu.events.light_applied,
             "light_evicted": emu.events.light_evicted,
             "cues": st.cues,
+            # v5.72: the heard clock's measure of the stopwatch it
+            # replaced (castle_heard.h). It needs a speaker that plays
+            # samples, which an emulator has not got: -1, "not heard yet",
+            # is the honest reading here — and the key is the contract.
+            "sync_lead_ms": -1,
+            "sync_drift_ms": -1,
             # L2 (v5.62): unix seconds, or 0 before SNTP answers. The
             # ring stamps uptime and always will; this is the base a
             # page turns one into the other with. An emulator always
@@ -104,7 +110,8 @@ def status_text(emu: CastleEmu) -> str:
         '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
         '"volume":%d,"scene":"%s","track":"%s","scenes":"%s",'
         '"show_on":%s,"playing":%s,"position_ms":%d,'
-        '"light_applied":%d,"light_evicted":%d,"cues":%d,"epoch":%d,"rssi":%d,'
+        '"light_applied":%d,"light_evicted":%d,"cues":%d,'
+        '"sync_lead_ms":%d,"sync_drift_ms":%d,"epoch":%d,"rssi":%d,'
         '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
         % (
             t("version"),
@@ -126,6 +133,8 @@ def status_text(emu: CastleEmu) -> str:
             i("light_applied"),
             i("light_evicted"),
             i("cues"),
+            i("sync_lead_ms"),
+            i("sync_drift_ms"),
             i("epoch"),
             i("rssi"),
             b[bool(pir["armed"])],

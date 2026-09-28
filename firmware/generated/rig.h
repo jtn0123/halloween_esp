@@ -25,25 +25,31 @@ namespace rig_tables {
 inline constexpr float towerL_walk[] = {0.000000f, 0.000000f, 0.166667f, 0.333333f, 0.500000f, 0.666667f, 0.833333f};
 inline constexpr float towerL_fall[] = {0.000000f, 0.000000f, 0.250000f, 0.750000f, 1.000000f, 0.750000f, 0.250000f};
 inline constexpr bool towerL_core[] = {true, false, false, false, false, false, false};
+inline constexpr float towerL_x[] = {0.500000f, 0.500000f, 0.863731f, 0.863731f, 0.500000f, 0.136269f, 0.136269f};
+inline constexpr float towerL_y[] = {0.500000f, 0.080000f, 0.290000f, 0.710000f, 0.920000f, 0.710000f, 0.290000f};
 
 // towerR: jewel7, 7 pixels
 inline constexpr float towerR_walk[] = {0.000000f, 0.000000f, 0.166667f, 0.333333f, 0.500000f, 0.666667f, 0.833333f};
 inline constexpr float towerR_fall[] = {0.000000f, 0.000000f, 0.250000f, 0.750000f, 1.000000f, 0.750000f, 0.250000f};
 inline constexpr bool towerR_core[] = {true, false, false, false, false, false, false};
+inline constexpr float towerR_x[] = {0.500000f, 0.500000f, 0.863731f, 0.863731f, 0.500000f, 0.136269f, 0.136269f};
+inline constexpr float towerR_y[] = {0.500000f, 0.080000f, 0.290000f, 0.710000f, 0.920000f, 0.710000f, 0.290000f};
 
 // door: ring12, 12 pixels
 inline constexpr float door_walk[] = {0.000000f, 0.083333f, 0.166667f, 0.250000f, 0.333333f, 0.416667f, 0.500000f, 0.583333f, 0.666667f, 0.750000f, 0.833333f, 0.916667f};
 inline constexpr float door_fall[] = {0.000000f, 0.066987f, 0.250000f, 0.500000f, 0.750000f, 0.933013f, 1.000000f, 0.933013f, 0.750000f, 0.500000f, 0.250000f, 0.066987f};
 inline constexpr bool door_core[] = {true, true, false, false, false, false, false, false, false, false, false, false};
+inline constexpr float door_x[] = {0.500000f, 0.710000f, 0.863731f, 0.920000f, 0.863731f, 0.710000f, 0.500000f, 0.290000f, 0.136269f, 0.080000f, 0.136269f, 0.290000f};
+inline constexpr float door_y[] = {0.080000f, 0.136269f, 0.290000f, 0.500000f, 0.710000f, 0.863731f, 0.920000f, 0.863731f, 0.710000f, 0.500000f, 0.290000f, 0.136269f};
 
 }  // namespace rig_tables
 
 // Indexed by zone number, matching the order of `zones:` in
 // scenes.yaml and the zone_* globals in castle.yaml.
 inline constexpr Fixture RIG[3] = {
-    {7, 0, 4, rig_tables::towerL_walk, rig_tables::towerL_fall, rig_tables::towerL_core},  // towerL
-    {7, 0, 4, rig_tables::towerR_walk, rig_tables::towerR_fall, rig_tables::towerR_core},  // towerR
-    {12, -1, 7, rig_tables::door_walk, rig_tables::door_fall, rig_tables::door_core},  // door
+    {7, 0, 4, rig_tables::towerL_walk, rig_tables::towerL_fall, rig_tables::towerL_core, rig_tables::towerL_x, rig_tables::towerL_y},  // towerL
+    {7, 0, 4, rig_tables::towerR_walk, rig_tables::towerR_fall, rig_tables::towerR_core, rig_tables::towerR_x, rig_tables::towerR_y},  // towerR
+    {12, -1, 7, rig_tables::door_walk, rig_tables::door_fall, rig_tables::door_core, rig_tables::door_x, rig_tables::door_y},  // door
 };
 
 // The frame buffer one lambda needs, four bytes per pixel.

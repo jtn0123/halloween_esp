@@ -248,4 +248,9 @@ jewel rather than the whole window pulsing as one lamp.
 
 `Soften lightning` defaults **on**. Hard ~7 Hz white strobe sits in the
 photosensitive seizure band, which matters for anything pointed at a public
-walkway. Turning it off is a deliberate act.
+walkway. Turning it off is a deliberate act. Since firmware v5.71 it acts on
+flash TRAINS only: a strike is softened when it lands on a zone less than
+333 ms after that same zone's previous strike (faster than three a second);
+an isolated strike, or a steady beat on each fixture, lands at full strength.
+The soft strobe effect is unchanged. The rule is `castle_layers.h`
+`kSoftenWindowMs`, mirrored by the desk and the Radio (docs/PARITY.md).

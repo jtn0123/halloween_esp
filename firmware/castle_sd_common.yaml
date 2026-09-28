@@ -171,9 +171,27 @@ esphome:
         # first this image was built with when there is no manifest — rather
         # than a name compiled into the core, because the whole point of the
         # change is that the card decides what the show is.
-        - script.execute:
-            id: run_scene
-            scene: !lambda 'return castle_web::first_scene_id();'
+        #
+        # v5.72: NOT after a software restart. An OTA and /api/restart both
+        # end in esp_restart(), and the opening scene has audio — so every
+        # flash used to open with a song on the porch, at whatever hour the
+        # flash happened. Plugging the castle in (power-on), a crash, a
+        # brownout or the watchdog still start the show exactly as before:
+        # those are the boots where silence would be the surprise. The quiet
+        # boot says "stop", as any castle with nothing running does: an empty
+        # current_scene reads as a scene to the checks that compare with
+        # "stop" (castle_cues.yaml, castle_web_actions.yaml) — v5.72 left it
+        # empty (v5.73).
+        - if:
+            condition:
+              lambda: 'return castle_health::g_reason != ESP_RST_SW;'
+            then:
+              - script.execute:
+                  id: run_scene
+                  scene: !lambda 'return castle_web::first_scene_id();'
+            else:
+              - lambda: 'id(current_scene).publish_state("stop");'
+              - logger.log: "software restart: opening scene not started"
         # #26: a visible sweep of every colour channel at plug-in, so a dead
         # channel is a porch-step diagnosis, not a mid-show mystery.
         - script.execute: boot_selftest

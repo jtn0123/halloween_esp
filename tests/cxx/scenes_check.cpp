@@ -69,6 +69,8 @@ const char *arg_of(const char *op) {
   const char *c = std::strchr(op, ':');
   return c == nullptr ? "" : c + 1;
 }
+// The heard clock the `tick:` op feeds: played up to here (castle_heard.h).
+long long heard_to = 0;
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -139,7 +141,17 @@ int main(int argc, char **argv) {
       for (int z = 0; z < 3; z++) std::printf(" %d/%.2f", effect[z], level[z]);
       std::printf("\n");
     } else if (std::strncmp(op, "tick:", 5) == 0) {
-      const int n = castle_cues::tick(px, true, atoll(arg_of(op)));
+      // A speaker heard from the first tick after a load on (v5.72,
+      // castle_heard.h): its 10 ms DMA buffers reported as they play, so
+      // song time is (now - that first tick), as it was before the clock
+      // followed the samples.
+      const long long now = atoll(arg_of(op));
+      if (!castle_cues::g_running) {
+        heard_to = now;
+        castle_heard::on_played(1, now);
+      }
+      for (; heard_to + 10000 <= now; heard_to += 10000) castle_heard::on_played(441, heard_to + 10000);
+      const int n = castle_cues::tick(px, true, now);
       std::printf("tick %d\n", n);
     } else if (std::strncmp(op, "rm:", 3) == 0) {
       const std::string path = std::string(dir) + "/" + arg_of(op);

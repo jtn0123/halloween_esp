@@ -7,6 +7,23 @@
 # core still must not name any audio of its own. Pins come from castle.yaml's
 # substitutions.
 
+# v5.72: the heard clock (castle_heard.h). The speaker reports every DMA
+# buffer's real frames as they reach the amplifier; a card show walks its
+# cues on their sum instead of a stopwatch started beside the speaker. The
+# rate is the speaker's `sample_rate` below — change both or neither. A LIST,
+# like every on_boot here: packages append lists (castle_sd_common.yaml says
+# what a mapping did).
+esphome:
+  includes:
+    - castle_heard.h
+  on_boot:
+    - priority: 600
+      then:
+        - lambda: |-
+            castle_heard::g_rate.store(44100);
+            id(castle_speaker)->add_audio_output_callback(
+                [](uint32_t frames, int64_t at_us) { castle_heard::on_played(frames, at_us); });
+
 i2s_audio:
   - id: i2s_bus
     i2s_lrclk_pin: GPIO${pin_i2s_lrclk}
