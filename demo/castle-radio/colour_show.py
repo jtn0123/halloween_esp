@@ -71,14 +71,22 @@ def hue(c: Colour) -> float:
     return colorsys.rgb_to_hsv(c[0], c[1], c[2])[0] * 360
 
 
+# Each family's upper hue edge, in order round the wheel: red wraps to warm.
+FAMILY_EDGES = (
+    (45, "warm"),
+    (160, "green"),
+    (290, "blue"),
+    (345, "magenta"),
+    (360, "warm"),
+)
+
+
 def family(c: Colour) -> str:
     """The colour's family on the castle: white where the white LED leads."""
     if c[3] > 0.5:
         return "white"
-    h = hue(c)
-    if h < 45 or h >= 345:
-        return "warm"
-    return "green" if h < 160 else "blue" if h < 290 else "magenta"
+    h = hue(c)  # colorsys gives [0, 360), so the last edge always matches
+    return next(name for edge, name in FAMILY_EDGES if h < edge)
 
 
 def chorus(plans: Sequence[Planned]) -> int:

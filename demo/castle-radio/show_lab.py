@@ -42,6 +42,7 @@ from voice_pitch import Pitch, track
 HERE = Path(__file__).resolve().parent
 LIBRARY = HERE / ".radio-data" / "tracks"
 OUTPUT = HERE / ".radio-data" / "comparison"
+DOWNLOADS = Path.home() / "Downloads"
 PAGE = "show-lab.html"
 SHOW = ".show.json"
 BASELINE = ".baseline"  # the lab's own prepared show, for a song never prepared
@@ -346,20 +347,38 @@ def verdicts(path: Path) -> list[str]:
     ]
 
 
+def latest_verdicts(folder: Path) -> Path | None:
+    """The newest blind-test file the page downloaded into `folder`. A browser
+    names a second copy "castle-lab-verdicts (1).json", so any of them."""
+    found = sorted(
+        folder.glob("castle-lab-verdicts*.json"), key=lambda p: p.stat().st_mtime
+    )
+    return found[-1] if found else None
+
+
 def main() -> int:
-    """Always the Radio's own library and comparison directory: the lab takes
-    no output path, so nothing on a command line can point its writes
-    elsewhere. `--verdicts FILE` only reads a downloaded blind-test file, and
-    `--notes` only prints the flags the page sent the lab server."""
+    """Always the Radio's own library and comparison directory, and no path
+    from a command line at all: nothing typed can point the lab's reads or
+    writes elsewhere. `--verdicts` reads the newest blind-test file in
+    ~/Downloads, where the page's "Download my picks" puts it, and `--notes`
+    only prints the flags the page sent the lab server."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--verdicts", type=Path, help="summarise a blind-test file")
+    parser.add_argument(
+        "--verdicts",
+        action="store_true",
+        help="summarise the newest downloaded blind test",
+    )
     parser.add_argument("--notes", action="store_true", help="print the flags")
     args = parser.parse_args()
     if args.notes:
         print("\n".join(report(OUTPUT / NOTES_FILE)))
         return 0
     if args.verdicts:
-        print("\n".join(verdicts(args.verdicts)))
+        found = latest_verdicts(DOWNLOADS)
+        if found is None:
+            print(f"no castle-lab-verdicts*.json in {DOWNLOADS}")
+            return 1
+        print("\n".join([str(found), *verdicts(found)]))
         return 0
     for row in candidates(LIBRARY, OUTPUT):
         print(json.dumps(row))

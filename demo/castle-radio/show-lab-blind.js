@@ -7,18 +7,20 @@ const VERDICTS='castle.lab.verdicts',CLIP_MS=15000;
 function picks(){try{return JSON.parse(localStorage.getItem(VERDICTS)||'[]');}catch{return [];}}
 function showOf(song,id){return id==='current'?song.baseline:song.candidates.find(c=>c.id===id).show;}
 function nameOf(id){return id==='current'?'the current prepared show':(LABELS[id]||id);}
+// A fair pick of 0..n-1 from the browser's crypto source, not Math.random.
+function roll(n){return crypto.getRandomValues(new Uint32Array(1))[0]%n;}
 function pickTwo(ids){
-  const a=ids[Math.floor(Math.random()*ids.length)];let b=a;
-  while(b===a){b=ids[Math.floor(Math.random()*ids.length)];}
+  const a=ids[roll(ids.length)];let b=a;
+  while(b===a){b=ids[roll(ids.length)];}
   return [a,b];
 }
 function blindRound(){
-  const index=Math.floor(Math.random()*SONGS.length),song=SONGS[index];
+  const index=roll(SONGS.length),song=SONGS[index];
   const [a,b]=pickTwo(['current',...song.candidates.map(c=>c.id)]);
   // Clips start where a passage starts, so a transition is usually inside.
   const lab=song.candidates.map(c=>c.show.lab).find(Boolean);
   const starts=lab?lab.sections.map(s=>s.t).filter(t=>t+CLIP_MS<=song.baseline.dur):[0];
-  const start=starts[Math.floor(Math.random()*starts.length)]??0;
+  const start=starts[roll(starts.length)]??0;
   blind={song:song.baseline.id,index,a,b,start,end:Math.min(song.baseline.dur,start+CLIP_MS)};
   if($('song').value!==String(index)){$('song').value=String(index);candidatesFor();loadSound();}
   sides=[makeSide(showOf(song,a)),makeSide(showOf(song,b))];duration=song.baseline.dur;

@@ -245,7 +245,7 @@ for the next pass.
 - **Blind test**: two shows of a random song, names hidden, sides shuffled,
   a 15-second clip from a section start, looping until you pick A, B or
   same. The names are revealed after each pick. Picks stay in the browser
-  until *Download my picks*; `show_lab.py --verdicts FILE` ranks the shows.
+  until *Download my picks*; `show_lab.py --verdicts` ranks the shows from the newest one in ~/Downloads.
 
 ## Not done / follow-ups
 

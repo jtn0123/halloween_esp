@@ -42,7 +42,9 @@ function amps(out){
 function wedge(c){
   const hi=luma(c),lo=Math.min(c[0],c[1],c[2]),d=hi-lo;
   if(hi<0.1||d/hi<0.25){return -1;}
-  const h=hi===c[0]?((c[1]-c[2])/d+6)%6:hi===c[1]?(c[2]-c[0])/d+2:(c[0]-c[1])/d+4;
+  let h=(c[0]-c[1])/d+4; // blue leads
+  if(hi===c[0]){h=((c[1]-c[2])/d+6)%6;}
+  else if(hi===c[1]){h=(c[2]-c[0])/d+2;}
   return Math.floor(h*2)%12;
 }
 /** A lit die seen close up: its hue, only a little whitened at full drive, so
@@ -69,31 +71,44 @@ function hex(c){return '#'+c.map(v=>Math.round(clamp(v)*255).toString(16).padSta
  * so the page can do it in slices between frames; it yields its progress.
  */
 function* sweep(o){
-  const N=o.buckets,count=new Float32Array(N),held=new Float64Array(12),zones={},pix={};
-  for(const z of o.zones){zones[z]=new Float32Array(N*3);pix[z]=new Float32Array(N*o.sizes[z]*3);}
+  const acc=sums(o);
   let peak=0,total=0,samples=0;
   for(let t=0,k=0;t<=o.dur;t+=o.tick,k++){
     o.step(t);
     if(k%o.every){continue;}
-    const out=o.render(t),b=Math.min(N-1,Math.floor(t/o.dur*N)),a=amps(out);
-    count[b]++;peak=Math.max(peak,a);total+=a;samples++;
-    for(const z of o.zones){
-      const c=out[z].avg,w=wedge(c),n=o.sizes[z];
-      for(let j=0;j<3;j++){zones[z][b*3+j]+=c[j];}
-      out[z].pix.forEach((p,i)=>{for(let j=0;j<3;j++){pix[z][(b*n+i)*3+j]+=p[j];}});
-      if(w>=0){held[w]+=o.tick*o.every;}
-    }
+    const out=o.render(t),a=amps(out);
+    peak=Math.max(peak,a);total+=a;samples++;
+    add(acc,o,out,Math.min(o.buckets-1,Math.floor(t/o.dur*o.buckets)));
     if(k%(o.every*64)===0){yield t/o.dur;}
   }
+  average(acc,o);
+  return {buckets:o.buckets,zones:acc.zones,pix:acc.pix,sizes:o.sizes,peak,mean:total/Math.max(1,samples),
+    hues:acc.held.filter(ms=>ms>=HELD_MS).length};
+}
+// A sweep's running sums: per bucket, each zone's and each pixel's colour.
+function sums(o){
+  const acc={count:new Float32Array(o.buckets),held:new Float64Array(12),zones:{},pix:{}};
+  for(const z of o.zones){acc.zones[z]=new Float32Array(o.buckets*3);acc.pix[z]=new Float32Array(o.buckets*o.sizes[z]*3);}
+  return acc;
+}
+function add(acc,o,out,b){
+  acc.count[b]++;
+  for(const z of o.zones){
+    const c=out[z].avg,w=wedge(c),n=o.sizes[z];
+    for(let j=0;j<3;j++){acc.zones[z][b*3+j]+=c[j];}
+    out[z].pix.forEach((p,i)=>{for(let j=0;j<3;j++){acc.pix[z][(b*n+i)*3+j]+=p[j];}});
+    if(w>=0){acc.held[w]+=o.tick*o.every;}
+  }
+}
+function average(acc,o){
   for(const z of o.zones){
     const n=o.sizes[z];
-    for(let b=0;b<N;b++){
-      const k=count[b]||1;
-      for(let j=0;j<3;j++){zones[z][b*3+j]/=k;}
-      for(let i=0;i<n*3;i++){pix[z][b*n*3+i]/=k;}
+    for(let b=0;b<o.buckets;b++){
+      const k=acc.count[b]||1;
+      for(let j=0;j<3;j++){acc.zones[z][b*3+j]/=k;}
+      for(let i=0;i<n*3;i++){acc.pix[z][b*n*3+i]/=k;}
     }
   }
-  return {buckets:N,zones,pix,sizes:o.sizes,peak,mean:total/Math.max(1,samples),hues:held.filter(ms=>ms>=HELD_MS).length};
 }
 /** Drives a sweep to its end in one go — for tests and small songs. */
 function run(o){const it=sweep(o);let r=it.next();while(!r.done){r=it.next();}return r.value;}

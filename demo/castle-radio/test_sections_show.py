@@ -2,7 +2,9 @@
 on a synthetic song (lab_song). No library track, audio or device."""
 
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -307,6 +309,20 @@ class Lab(unittest.TestCase):
         self.assertIn("sections", lines[0])
         self.assertIn("picked   2", lines[0])
         self.assertEqual(len(lines), 3)
+
+    def test_the_newest_downloaded_blind_test_is_the_one_read(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            self.assertIsNone(show_lab.latest_verdicts(folder))
+            old, new = (
+                folder / "castle-lab-verdicts.json",
+                folder / "castle-lab-verdicts (1).json",
+            )
+            (folder / "other.json").write_text("[]")
+            for age, path in ((100, old), (50, new)):
+                path.write_text("[]")
+                os.utime(path, (time.time() - age, time.time() - age))
+            self.assertEqual(show_lab.latest_verdicts(folder), new)
 
 
 if __name__ == "__main__":

@@ -15,7 +15,8 @@ function board(zone){
   const layout=V.zoneLayout(V.DEFAULT_RIG,zone),pos=layout.pos;let reach=0,gap=1;
   pos.forEach((p,i)=>{reach=Math.max(reach,Math.hypot(p[0]-.5,p[1]-.5));
     pos.forEach((q,j)=>{if(j>i){gap=Math.min(gap,Math.hypot(p[0]-q[0],p[1]-q[1]));}});});
-  return (BOARD[zone]={layout,reach,gap,ring:layout.center===null});
+  BOARD[zone]={layout,reach,gap,ring:layout.center===null};
+  return BOARD[zone];
 }
 // Where a zone's board sits in the strip, in its 720-wide units.
 function place(i,zone){
@@ -96,7 +97,20 @@ function note(i){
 // The barcodes: under the timeline, one row per show, a lane per light (or
 // the picked pixel alone), every bucket its average colour. Drawn once into
 // a spare canvas and copied each frame.
-function barRows(h){return {row:(h-3)/2,lanes:LED.pick?1:(h-3)/2>=12?3:1};}
+function barRows(h){
+  const row=(h-3)/2;
+  return {row,lanes:!LED.pick&&row>=12?3:1};
+}
+// The lights a barcode row shows: the picked pixel's zone, all three, or one
+// lane (null) carrying whichever light is brightest in each bucket.
+function barZones(lanes){
+  if(LED.pick){return [LED.pick.zone];}
+  return lanes===3?order:[null];
+}
+function barColour(s,zone,k){
+  if(zone){return LabLeds.colourAt(s,zone,k,LED.pick?.n);}
+  return order.map(z=>LabLeds.colourAt(s,z,k)).reduce((m,q)=>LabLeds.luma(q)>LabLeds.luma(m)?q:m);
+}
 function drawBarcodes(g,w,y,h){
   if(blind||h<6||!LED.studies[0]||!LED.studies[1]){return;}
   const key=[w,h,LED.real,LED.pick?.zone,LED.pick?.n,LED.studies[0].peak,LED.studies[1].peak].join('|');
@@ -105,11 +119,11 @@ function drawBarcodes(g,w,y,h){
     bar.width=Math.round(w*dpr);bar.height=Math.round(h*dpr);const b=bar.getContext('2d');b.setTransform(dpr,0,0,dpr,0,0);
     const {row,lanes}=barRows(h),lane=(row-(lanes-1))/lanes;
     LED.studies.forEach((s,r)=>{
-      const zones=LED.pick?[LED.pick.zone]:lanes===3?order:[null];
-      zones.forEach((zone,l)=>{
+      if(!s){return;}
+      barZones(lanes).forEach((zone,l)=>{
         const top=r*(row+3)+l*(lane+1);
         for(let k=0;k<s.buckets;k++){
-          let c=zone?LabLeds.colourAt(s,zone,k,LED.pick?.n):order.map(z=>LabLeds.colourAt(s,z,k)).reduce((m,q)=>LabLeds.luma(q)>LabLeds.luma(m)?q:m);
+          let c=barColour(s,zone,k);
           if(LED.real){c=LabLeds.trueLevel(c);}
           b.fillStyle=`rgb(${LabLeds.legible(c).map(v=>Math.round(v*255)).join(',')})`;b.fillRect(k/s.buckets*w,top,w/s.buckets+.6,lane);
         }
@@ -124,9 +138,10 @@ function barcodeHint(y,t,h){
   if(blind||y<top||!LED.studies[0]||!LED.studies[1]){return '';}
   const r=Math.min(1,Math.floor((y-top)/(rows.row+3))),s=LED.studies[r],k=Math.min(s.buckets-1,Math.floor(t/duration*s.buckets));
   const lane=Math.max(0,Math.min(rows.lanes-1,Math.floor((y-top-r*(rows.row+3))/(rows.row/rows.lanes))));
-  const zone=LED.pick?LED.pick.zone:rows.lanes===3?order[lane]:null,who=r?($('title-1').textContent):'Current prepared show';
-  const c=zone?LabLeds.colourAt(s,zone,k,LED.pick?.n):order.map(z=>LabLeds.colourAt(s,z,k)).reduce((m,q)=>LabLeds.luma(q)>LabLeds.luma(m)?q:m);
-  const what=LED.pick?`${names[zone]} pixel ${LED.pick.n+1}`:zone?names[zone]:'brightest light';
+  const zone=barZones(rows.lanes)[rows.lanes===3?lane:0],who=r?$('title-1').textContent:'Current prepared show';
+  const c=barColour(s,zone,k);
+  let what=zone?names[zone]:'brightest light';
+  if(LED.pick){what=`${names[zone]} pixel ${LED.pick.n+1}`;}
   return `${who} · ${what} at ${fmt(t)}: ${LabLeds.hex(c)}, ${Math.round(LabLeds.luma(c)*100)}%`;
 }
 
