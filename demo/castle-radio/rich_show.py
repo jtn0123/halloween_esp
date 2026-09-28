@@ -19,6 +19,21 @@ from render_cues import desk_scene, markers_ms, waveform
 ZONES = ["towerL", "towerR", "door"]
 
 
+def _look_cue(r, targets, effects, overlays, palettes):
+    """A v2 look record as cue-playback.js reads it: absent keys keep."""
+    cue = {"t": r["t"], "bus": "LED", "op": "look", "targets": targets}
+    if r["overlay"] is not None:
+        cue["overlay"] = overlays[r["overlay"]]
+    if r["palette"] is not None:
+        cue["palette"] = palettes[r["palette"]]
+    if r["center"] is not None:
+        cue["center"] = "none" if r["center"] < 0 else effects[r["center"]]
+    for key in ("rate", "head"):
+        if r[key] is not None:
+            cue[key] = r[key]
+    return cue
+
+
 def preview_from_blob(key, blob):
     doc = cue_file.decode(blob)
     effects = {v: k for k, v in EFFECT_IDS.items()}
@@ -49,21 +64,24 @@ def preview_from_blob(key, blob):
                 if r["level"] is not None:
                     c["level"] = r["level"]
                 cues.append(c)
+        elif r["op"] == "look":
+            cues.append(_look_cue(r, targets, effects, overlays, palettes))
         else:
-            cues.append(
-                {
-                    "t": r["t"],
-                    "bus": "LED",
-                    "op": "strike",
-                    "targets": targets,
-                    "intensity": r["intensity"],
-                    "decay": r["decay"],
-                    "attack": r["attack"],
-                    "pixels": modes[r["mode"]],
-                    "color": r["color"],
-                    "ms": 120,
-                }
-            )
+            strike = {
+                "t": r["t"],
+                "bus": "LED",
+                "op": "strike",
+                "targets": targets,
+                "intensity": r["intensity"],
+                "decay": r["decay"],
+                "attack": r["attack"],
+                "pixels": modes[r["mode"]],
+                "color": r["color"],
+                "ms": 120,
+            }
+            if r["layer"]:
+                strike["layer"] = 1
+            cues.append(strike)
     return {
         "cue_crc32": f"{zlib.crc32(blob):08x}",
         "id": key,

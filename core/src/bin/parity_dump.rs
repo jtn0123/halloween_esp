@@ -6,10 +6,11 @@
 //!     parity_dump [seed] [cases] [rig-spec]
 //!
 //! Without the rig only the noise-primitive lines are emitted. With it,
-//! the px lines follow — base colour, overlaid colour and strike gate.
-//! The rig spec is one zone per comma: `n:center:fall_steps:walk:fall:core`
-//! with walk/fall semicolon-separated (the 6-decimal values generated into
-//! rig.h) and core a string of 0/1. The parity test builds it from
+//! the px lines follow — base colour, overlaid colour and strike gate —
+//! then the exhaustive gate table (every mask, pixel and zone).
+//! The rig spec is one zone per comma: `n:center:fall_steps:walk:fall:core:x:y`
+//! with walk/fall/x/y semicolon-separated (the 6-decimal values generated
+//! into rig.h) and core a string of 0/1. The parity test builds it from
 //! tools/rig_layout.py, the same source the firmware tables come from.
 
 use castle_core::{Fixture, apply_overlay, fbm, flash_gate, hash3, hashi, render, vnoise};
@@ -90,14 +91,18 @@ fn main() {
         }
         let p = (rng.next_u32() >> 16) % fx.n as u32;
         let ov = (rng.next_u32() >> 16) % 4;
-        let mode = (rng.next_u32() >> 16) % 4;
+        let mode = (rng.next_u32() >> 16) % 16;
         let epoch = (rng.next_u32() >> 16) % 1000;
+        // Half the corpus runs a look record's tempo-locked head, half the
+        // legacy clock — the same draws, in the same order, as the C++.
+        let locked = ((rng.next_u32() >> 16) & 1) != 0;
+        let head = if locked { rng.frand() } else { -1.0 };
         let seed_f = zi as f32 * 4.7 + p as f32 * 1.31;
         let base = render(eff, t, seed_f, hue, soft, pal);
-        let ovl = apply_overlay(ov as i32, base, t, p as i32, zi as i32, fx);
+        let ovl = apply_overlay(ov as i32, base, t, p as i32, zi as i32, fx, head);
         let gate = flash_gate(mode as i32, p as i32, zi as i32, epoch as i32, fx);
         println!(
-            "{{\"kind\":\"px\",\"eff\":{},\"pal\":{},\"hue\":{:?},\"soft\":{},\"t\":{:?},\"zi\":{},\"p\":{},\"ov\":{},\"mode\":{},\"epoch\":{},\"seed\":{:?},\"base\":[{:?},{:?},{:?},{:?}],\"ovl\":[{:?},{:?},{:?},{:?}],\"gate\":{:?}}}",
+            "{{\"kind\":\"px\",\"eff\":{},\"pal\":{},\"hue\":{:?},\"soft\":{},\"t\":{:?},\"zi\":{},\"p\":{},\"ov\":{},\"mode\":{},\"epoch\":{},\"head\":{:?},\"seed\":{:?},\"base\":[{:?},{:?},{:?},{:?}],\"ovl\":[{:?},{:?},{:?},{:?}],\"gate\":{:?}}}",
             eff,
             pal,
             hue as f64,
@@ -108,6 +113,7 @@ fn main() {
             ov,
             mode,
             epoch,
+            head as f64,
             seed_f as f64,
             base.r as f64,
             base.g as f64,
@@ -120,6 +126,19 @@ fn main() {
             gate as f64,
         );
     }
+    // The exhaustive gate table: every mask on every pixel at epoch 0, in
+    // the C++ dump's order (zone, mode, pixel).
+    for (zi, fx) in zones.iter().enumerate() {
+        for mode in 0..16 {
+            for p in 0..fx.n {
+                let gate = flash_gate(mode, p, zi as i32, 0, fx);
+                println!(
+                    "{{\"kind\":\"gate\",\"zi\":{zi},\"mode\":{mode},\"p\":{p},\"gate\":{:?}}}",
+                    gate as f64
+                );
+            }
+        }
+    }
 }
 
 /// `n:center:fall_steps:w;w;…:f;f;…:0101…` per zone, comma-separated.
@@ -127,7 +146,7 @@ fn parse_rig(spec: &str) -> Vec<Fixture> {
     spec.split(',')
         .map(|z| {
             let parts: Vec<&str> = z.split(':').collect();
-            assert!(parts.len() == 6, "bad rig spec: {z}");
+            assert!(parts.len() == 8, "bad rig spec: {z}");
             let floats = |s: &str| -> Vec<f32> {
                 if s.is_empty() {
                     Vec::new()
@@ -144,6 +163,8 @@ fn parse_rig(spec: &str) -> Vec<Fixture> {
                 walk: floats(parts[3]),
                 fall: floats(parts[4]),
                 core: parts[5].chars().map(|c| c == '1').collect(),
+                x: floats(parts[6]),
+                y: floats(parts[7]),
             }
         })
         .collect()

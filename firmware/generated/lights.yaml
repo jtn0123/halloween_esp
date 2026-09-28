@@ -35,7 +35,8 @@ light:
                 id(zone_effect)[0], id(zone_center)[0],
                 id(zone_overlay)[0], id(zone_palette)[0],
                 id(zone_flash_mode)[0], id(zone_flash_epoch)[0],
-                id(soften).state};
+                id(soften).state,
+                &g_zone_x[0]};
             step_flash(io);
             render_zone(buf, 0, fx, millis() / 1000.0f, io);
             for (int p = 0; p < fx.n; p++)
@@ -104,7 +105,8 @@ light:
                 id(zone_effect)[1], id(zone_center)[1],
                 id(zone_overlay)[1], id(zone_palette)[1],
                 id(zone_flash_mode)[1], id(zone_flash_epoch)[1],
-                id(soften).state};
+                id(soften).state,
+                &g_zone_x[1]};
             step_flash(io);
             render_zone(buf, 1, fx, millis() / 1000.0f, io);
             for (int p = 0; p < fx.n; p++)
@@ -173,7 +175,8 @@ light:
                 id(zone_effect)[2], id(zone_center)[2],
                 id(zone_overlay)[2], id(zone_palette)[2],
                 id(zone_flash_mode)[2], id(zone_flash_epoch)[2],
-                id(soften).state};
+                id(soften).state,
+                &g_zone_x[2]};
             step_flash(io);
             render_zone(buf, 2, fx, millis() / 1000.0f, io);
             for (int p = 0; p < fx.n; p++)

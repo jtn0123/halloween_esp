@@ -28,6 +28,35 @@ class RichShowTests(unittest.TestCase):
         self.assertTrue(all(0 < c["decay"] < 1 for c in strikes))
         self.assertEqual(preview, rich_show.preview_from_blob("radio_test", blob))
 
+    def test_a_v2_card_previews_its_looks_ornaments_and_halves(self):
+        scene = {"id": "v2", "duration_ms": 4000, "base": {"door": "ember"}}
+        cues = [
+            {"t": 0, "op": "look", "targets": ["towerL"], "overlay": "chase",
+             "rate": 0.5},
+            {"t": 10, "op": "look", "zones": ["door"], "palette": "toxic",
+             "center": "none", "head": 0.25},
+            {"t": 20, "op": "look", "zone": "towerR", "center": "eyes"},
+            {"t": 30, "op": "strike", "zone": "door", "layer": 1, "pixels": "top"},
+            {"t": 40, "op": "strike", "pixels": "left"},
+        ]  # fmt: skip
+        blob = cue_file.encode(scene, cues, rich_show.ZONES)
+        got = rich_show.preview_from_blob("v2", blob)["cues"]
+        self.assertEqual(
+            got[0],
+            {"t": 0, "bus": "LED", "op": "look", "targets": ["towerL"],
+             "overlay": "chase", "rate": 0.5},
+        )  # fmt: skip
+        self.assertEqual(
+            got[1],
+            {"t": 10, "bus": "LED", "op": "look", "targets": ["door"],
+             "palette": "toxic", "center": "none", "head": 0.25},
+        )  # fmt: skip
+        self.assertEqual(got[2]["center"], "eyes")
+        self.assertEqual((got[3]["layer"], got[3]["pixels"]), (1, "top"))
+        self.assertEqual(got[3]["targets"], ["door"])
+        self.assertNotIn("layer", got[4])
+        self.assertEqual(got[4]["pixels"], "left")
+
     def test_split_streams_stay_on_their_assigned_fixture(self):
         marks = {
             "onset_low": [[0.3, 0.4]],

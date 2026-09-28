@@ -86,3 +86,51 @@ test('card playback replaces competing strikes, including soft mode and attacks'
     assert.equal(state.flash.towerR,0);
   }
 });
+
+test('card v2: ornament adds, looks lock the head, only a train is softened',()=>{
+  const c=vm.createContext({console});
+  vm.runInContext(read('visuals.js'),c);
+  vm.runInContext(read('cue-playback.js'),c);
+  const V=c.CastleVisuals;
+  const white=[1,1,1,1];
+  const hit=(t,extra)=>({t,op:'strike',targets:['door'],intensity:.5,attack:0,decay:.9,
+    pixels:'all',color:white,...extra});
+  const scene={id:'v2',dur:4000,base:{},cues:[
+    hit(0),hit(100,{layer:1,intensity:.3,pixels:'left'}),hit(500),
+    {t:600,op:'look',targets:['towerL'],overlay:'chase',rate:2},
+    {t:900,op:'look',targets:['towerL'],rate:.5},
+  ]};
+  const state=V.createState(scene,0);state.soft=true;
+  c.CastleCuePlayback.fire(state,100);
+  assert.equal(state.flash.door,.5,'layer 0 stands');
+  assert.equal(state.x.door.ornFlash,.3,'layer 1 lands beside it');
+  assert.equal(state.x.door.ornMode,4);
+  assert.equal(state.x.door.train0,false,'the first strike is never a train');
+  assert.equal(state.x.door.train1,true,'100 ms later is');
+  c.CastleCuePlayback.fire(state,500);
+  assert.equal(state.x.door.train0,false,'400 ms after the last is not');
+  c.CastleCuePlayback.fire(state,600);
+  assert.equal(state.overlay.towerL,2);
+  const before=V.overlayHead(state.x.towerL,.9);
+  c.CastleCuePlayback.fire(state,900);
+  assert.ok(Math.abs(V.overlayHead(state.x.towerL,.9)-before)<1e-12,'no jump on a rate change');
+  assert.equal(state.x.towerL.rate,.5);
+  const lit=V.renderZones(state,1,V.defaultParams()).door.pix[0][0];
+  assert.ok(lit>.5*.92,'the ornament adds light on top of layer 0');
+});
+
+test('the lab renders today\'s castle: softAll softens every strike, isolated or not',()=>{
+  const c=vm.createContext({console});
+  vm.runInContext(read('visuals.js'),c);
+  vm.runInContext(read('cue-playback.js'),c);
+  const V=c.CastleVisuals;
+  const hit=(t,extra)=>({t,op:'strike',targets:['door'],intensity:.5,attack:0,decay:.9,
+    pixels:'all',color:[1,1,1,1],...extra});
+  const scene={id:'v1',dur:4000,base:{},cues:[hit(0),hit(1000,{layer:1})]};
+  for(const softAll of [false,true]){
+    const state=V.createState(scene,0);state.soft=true;state.softAll=softAll;
+    c.CastleCuePlayback.fire(state,1000);
+    assert.equal(state.x.door.train0,softAll,'a lone strike is a train only on v5.70');
+    assert.equal(state.x.door.train1,softAll);
+  }
+});

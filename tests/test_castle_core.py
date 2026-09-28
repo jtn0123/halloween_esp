@@ -90,6 +90,8 @@ def rig_spec() -> str:
                     ";".join(f"{v:.6f}" for v in lo.walk),
                     ";".join(f"{v:.6f}" for v in lo.fall),
                     "".join("1" if c else "0" for c in lo.core),
+                    ";".join(f"{x:.6f}" for x, _y in lo.pos),
+                    ";".join(f"{y:.6f}" for _x, y in lo.pos),
                 ]
             )
         )
@@ -299,7 +301,7 @@ class TestCastleCoreParity(unittest.TestCase):
                 self.assertEqual(
                     a[k], b[k], f"seed {SEED} px {i}: corpus drift at {k!r}"
                 )
-            for k in ("hue", "t", "seed"):
+            for k in ("hue", "t", "seed", "head"):
                 self.assertEqual(
                     f32_bits(a[k]),
                     f32_bits(b[k]),
@@ -318,6 +320,18 @@ class TestCastleCoreParity(unittest.TestCase):
                 f32_bits(a["gate"]),
                 f32_bits(b["gate"]),
                 f"seed {SEED} px {i} (mode {a['mode']}): gate differs",
+            )
+        # The exhaustive table: every mask (the arcs included) on every pixel.
+        cxx_gate = [r for r in rows if r["kind"] == "gate"]
+        rust_rows = (json.loads(ln) for ln in rust.stdout.splitlines())
+        rust_gate = [r for r in rust_rows if r["kind"] == "gate"]
+        self.assertEqual(len(cxx_gate), len(rust_gate))
+        self.assertEqual({r["mode"] for r in cxx_gate}, set(range(16)))
+        for a, b in zip(cxx_gate, rust_gate):
+            where = (a["zi"], a["mode"], a["p"])
+            self.assertEqual(where, (b["zi"], b["mode"], b["p"]), "gate table drift")
+            self.assertEqual(
+                f32_bits(a["gate"]), f32_bits(b["gate"]), f"gate {where} differs"
             )
 
     def test_wasm_face_builds_loads_and_computes(self) -> None:

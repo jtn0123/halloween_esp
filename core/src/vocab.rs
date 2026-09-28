@@ -25,8 +25,12 @@ pub const OVERLAYS: [&str; 4] = ["none", "sparkle", "chase", "meteor"];
 /// Palette poles the mansion effects crossfade between.
 pub const PALETTES: [&str; 4] = ["haunt", "ember", "moonlight", "toxic"];
 
-/// Strike masks — which pixels a strike lights.
-pub const FLASH_MODES: [&str; 4] = ["all", "scatter", "center", "ring"];
+/// Strike masks — which pixels a strike lights. 4-7 (the drawn halves)
+/// and 8-15 (the arcs round the loop) need cue format v2, firmware v5.71.
+pub const FLASH_MODES: [&str; 16] = [
+    "all", "scatter", "center", "ring", "left", "right", "top", "bottom", "arc0", "arc1", "arc2",
+    "arc3", "arc4", "arc5", "arc6", "arc7",
+];
 
 /// The card's scene manifest holds this many scenes — `show.man` is a fixed
 /// record count so the firmware never allocates to read it

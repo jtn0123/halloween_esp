@@ -10,6 +10,12 @@ import time
 from typing import IO, cast
 
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
+# tools/stems.py prints one line per layer/channel analysis: six layers
+# (vocals, backing, combined, drums, bass, other) x three channels.
+_ANALYSIS_LINE = re.compile(
+    r"\s*(vocals|backing|combined|drums|bass|other)\s+(left|right|both)\s"
+)
+ANALYSES = 18
 
 
 class Cancelled(ValueError):
@@ -75,14 +81,14 @@ def _progress(line, stage, analyzed):
         return {
             "phase": "Encoding separated audio",
             "percent": None,
-            "detail": "Saving voice and background previews",
+            "detail": "Saving voice, drum, bass and background previews",
         }, analyzed
-    if re.match(r"\s*(vocals|backing|combined)\s+(left|right|both)\s", clean):
+    if _ANALYSIS_LINE.match(clean):
         analyzed += 1
         return {
             "phase": "Analyzing separated audio",
-            "percent": min(100, analyzed / 9 * 100),
-            "detail": f"{analyzed} of 9 layer/channel analyses finished",
+            "percent": min(100, analyzed / ANALYSES * 100),
+            "detail": f"{analyzed} of {ANALYSES} layer/channel analyses finished",
         }, analyzed
     if "analysing" in clean.lower() or "analyzing" in clean.lower():
         return {

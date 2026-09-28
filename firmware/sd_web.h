@@ -68,7 +68,7 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // Numbers through snprintf, strings through json_escape into a
   // std::string: a fixed buffer truncated silently when the boot manifest
   // listed more than a few missing files, and every client's parse died.
-  std::array<char, 288> buf{};
+  std::array<char, 384> buf{};
   snprintf(buf.data(), buf.size(),
            R"({"version":"%s","compiled":"%s %s","uptime_s":%lld,)"
            R"("sd_mounted":%s,"psram_free_kb":%u,"heap_free_kb":%u,)"
@@ -102,6 +102,10 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // v5.63: `cues` is the size of the card show loaded for this track
   // (castle_cues.h), 0 when it has none — a page with frames of its own to
   // stream reads it and leaves the strips to the castle.
+  // v5.72: `sync_lead_ms` / `sync_drift_ms` are the heard clock's measure
+  // of the old one, for the last card show (castle_heard.h): how far ahead
+  // of its sound the lights would have run on v5.71, and how far that
+  // wandered in the song. -1 until a show has been heard.
   // L2 (v5.62): `epoch` is unix seconds, or 0 until SNTP has answered. The
   // ring's t_ms is uptime and always will be (it is written from an ISR-ish
   // hot path and a wall clock there would be a lie half the night); this is
@@ -115,11 +119,13 @@ inline esp_err_t h_status(httpd_req_t *req) {
   const time_t wall = ::time(nullptr);
   snprintf(buf.data(), buf.size(),
            R"(","show_on":%s,"playing":%s,"position_ms":%lld,)"
-           R"("light_applied":%u,"light_evicted":%u,"cues":%u,"epoch":%lld,"rssi":%d,)"
+           R"("light_applied":%u,"light_evicted":%u,"cues":%u,)"
+           R"("sync_lead_ms":%lld,"sync_drift_ms":%lld,"epoch":%lld,"rssi":%d,)"
            R"("pir":{"armed":%s,"cooldown_s":%d,"scene":")",
            st.show_on ? "true" : "false",
            st.playing ? "true" : "false", st.position_ms,
            st.light_applied, st.light_evicted, st.cues,
+           st.sync_lead_ms, st.sync_drift_ms,
            (long long) (wall > 1577836800 ? wall : 0), st.rssi,
            st.pir_armed ? "true" : "false", st.pir_cooldown);
   out += buf.data();

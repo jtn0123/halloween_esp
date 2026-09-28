@@ -71,3 +71,5 @@ interval:
               id(zone_level), id(zone_center), id(zone_overlay), id(zone_palette),
               id(zone_phase), id(zone_flash_mode), id(zone_flash_epoch)},
               id(castle_speaker)->is_running(), esp_timer_get_time());
+          castle_web::g_sync_lead_ms.store(castle_cues::g_sync_lead_ms);
+          castle_web::g_sync_drift_ms.store(castle_cues::g_sync_drift_ms);

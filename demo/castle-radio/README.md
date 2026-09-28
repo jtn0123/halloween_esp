@@ -239,7 +239,8 @@ production firmware or published to the physical device.
 
 Demo jobs opt into CASTLE_PROGRESS_STREAM in import_fetch.py and stems.py.
 Download and Demucs percentages come from the tools' live output. Encoding is
-indeterminate; stem analysis counts nine completed layer/channel combinations.
+indeterminate; stem analysis counts eighteen completed layer/channel combinations
+(six layers — vocals, backing, combined, drums, bass, other — by three channels).
 The upload itself has browser-reported progress. Percentages describe the current
 stage, not a guessed total-job percentage. Completed elapsed times stop counting.
 The non-demo importer/splitter paths keep their existing subprocess behavior.

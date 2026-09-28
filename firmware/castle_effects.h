@@ -186,8 +186,10 @@ inline Rgbw render(int eff, float t, float seed, float hue, bool soft, int pal =
 
 // ── Fixture geometry ────────────────────────────────────────────────────
 // What is actually in a window: how many pixels, which one is the middle,
-// and two normalised coordinates per pixel — where it sits around the loop a
-// chase travels, and how far down the path a meteor falls.
+// and normalised coordinates per pixel — where it sits around the loop a
+// chase travels, how far down the path a meteor falls, and (v5.71) where
+// the desk DRAWS it, x left to right and y top to bottom, which is what the
+// left/right/top/bottom strike masks split on.
 //
 // The tables are GENERATED into generated/rig.h from tools/rig_layout.py, so
 // there is no layout arithmetic on the device at all. That is deliberate:
@@ -201,6 +203,8 @@ struct Fixture {
   const float *walk;
   const float *fall;
   const bool *core;  // which pixels a "centre" strike lands on
+  const float *x;    // drawn position, 0 = left edge .. 1 = right edge
+  const float *y;    // drawn position, 0 = top .. 1 = bottom
 };
 
 // ── Overlays — a second voice on top of any base effect ─────────────────
@@ -216,7 +220,11 @@ inline float loop_dist(float a, float b) {
   return fminf(d, 1.0f - d);
 }
 
-inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi, const Fixture &fx) {
+// `head` is where a look record's tempo clock puts the chase head (and the
+// meteor's drip phase), in turns — castle_layers.h overlay_head. Negative is
+// the legacy clock below, which is what every v1 show runs, digit for digit.
+inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi, const Fixture &fx,
+                          float head_at = -1.0f) {
   if (ov == OV_SPARKLE) {
     int32_t cell = (int32_t) floorf(t * 7.0f);
     float g = hash3(cell, p, zi);
@@ -229,7 +237,7 @@ inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi, const Fixture 
   }
   if (ov == OV_CHASE) {
     if (p == fx.center) return Rgbw{c.r * 0.55f, c.g * 0.55f, c.b * 0.55f, c.w * 0.55f};
-    float head = fmodf(t * 0.45f + zi * 0.37f, 1.0f);
+    float head = head_at >= 0.0f ? head_at : fmodf(t * 0.45f + zi * 0.37f, 1.0f);
     // Width is set in PIXELS, not in turns, so the lit head stays one pixel
     // wide whether it is going round six of them or sixteen.
     float span = (float) (fx.center < 0 ? fx.n : fx.n - 1);
@@ -239,7 +247,7 @@ inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi, const Fixture 
                 fminf(1.0f, c.w * k + 0.50f * boost * boost)};
   }
   if (ov == OV_METEOR) {
-    float ph = fmodf(t / 2.6f + zi * 0.41f, 1.0f);
+    float ph = head_at >= 0.0f ? head_at : fmodf(t / 2.6f + zi * 0.41f, 1.0f);
     float rung = 1.0f / fmaxf(1.0f, (float) (fx.fall_steps - 1));
     if (ph < 0.12f) {
       // On a fixture with a middle the drip forms there, as it always has on
@@ -265,10 +273,58 @@ inline Rgbw apply_overlay(int ov, Rgbw c, float t, int p, int zi, const Fixture 
 // changes), 2 = core only, 3 = everything but the core. Mirrors flashGate in
 // effects.ts. "Core" is pixel 0 on a Jewel and whatever generated/rig.h
 // decided is the middle on a fixture that has no single centre.
+//
+// v5.71 (cue format v2): 4 = left half, 5 = right half, 6 = top half,
+// 7 = bottom half, by the pixel's drawn x/y (8-15, the arcs, are below). A
+// pixel ON the midline (a Jewel's centre, a ring's 12 and 6 o'clock) gets
+// half; the far side keeps the same 0.1 glow the role masks leave. The
+// ±0.001 band is what makes the 0.500000f rig.h prints and the desk's
+// 0.5 + 1e-17 the same pixel.
+inline float half_gate(float v, bool low) {
+  if (v < 0.499f) return low ? 1.0f : 0.1f;
+  if (v > 0.501f) return low ? 0.1f : 1.0f;
+  return 0.5f;
+}
+
+// v5.71 arcs, modes 8-15 (arc0..arc7): ONE patch of the loop, centred at
+// walk k/8 — on a ring pixel 0 is 12 o'clock and walk runs clockwise, so arc0
+// is the top, arc2 3 o'clock, arc4 the bottom, arc6 9 o'clock. Stepping k is
+// what spins a strike round the door ring and the Jewels. Full on within
+// 1/12 turn of the centre, falling linearly to the 0.1 glow at 1/4 turn and
+// 0.1 beyond. A hub's centre (Fixture::center) has no place on the loop and
+// takes 0.3 under any arc.
+//
+// Exact in every copy (effects.ts arcGate, core/src/overlay.rs arc_gate) by
+// construction, not by tolerance: walk is snapped to whole 1/3072 turns
+// (3072 = 8 arcs x 384 = 12 hours x 256; a walk of i/n, n <= 64, is never
+// within float error of a half step), the distance and the ramp are integer
+// arithmetic, and the gate is thousandths — one correctly-rounded division,
+// which float32 and a double rounded to float32 agree on.
+inline constexpr int kArcFirst = 8;
+inline constexpr int kArcs = 8;
+inline constexpr int kArcTurn = 3072;
+
+inline float arc_gate(int k, int p, const Fixture &fx) {
+  if (p == fx.center) return 0.3f;
+  const int q = (int) floorf(fx.walk[p] * (float) kArcTurn + 0.5f);
+  int d = (q - k * (kArcTurn / kArcs)) % kArcTurn;
+  if (d < 0) d += kArcTurn;
+  if (d > kArcTurn / 2) d = kArcTurn - d;
+  // 256 = 1/12 turn, 768 = 1/4: 0..512 steps down 0.900 in thousandths.
+  const int x = d < 256 ? 0 : d > 768 ? 512 : d - 256;
+  return (float) (1000 - 225 * x / 128) / 1000.0f;
+}
+
 inline float flash_gate(int mode, int p, int zi, int epoch, const Fixture &fx) {
   if (mode == 1) return hash3(p, zi, epoch) > 0.45f ? 1.0f : 0.15f;
   if (mode == 2) return fx.core[p] ? 1.0f : 0.1f;
   if (mode == 3) return fx.core[p] ? 0.1f : 1.0f;
+  if (mode == 4) return half_gate(fx.x[p], true);
+  if (mode == 5) return half_gate(fx.x[p], false);
+  if (mode == 6) return half_gate(fx.y[p], true);
+  if (mode == 7) return half_gate(fx.y[p], false);
+  if (mode >= kArcFirst && mode < kArcFirst + kArcs)
+    return arc_gate(mode - kArcFirst, p, fx);
   return 1.0f;
 }
 

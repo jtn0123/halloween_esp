@@ -5,12 +5,16 @@
 //
 // Each line is one pixel of one frame: the inputs the device would have
 // (effect, palette, hue, soft, time, zone, pixel, overlay, strike mask,
-// epoch) and the three values the render loop composes — the base effect
+// epoch, and — v5.71 — the look clock's overlay head, -1 for the legacy
+// clock half the time) and the three values the render loop composes — the base effect
 // colour, the colour after the overlay, and the strike gate. Inputs are
 // printed with enough digits to round-trip a float exactly, so the reader
 // can feed the identical float32 values into the double-precision port.
 //
-// A second kind of line probes the noise primitives directly (hashf,
+// A "gate" line is one strike mask on one pixel at epoch 0, for every mask,
+// pixel and zone — the exhaustive table beside the random corpus.
+//
+// Another kind of line probes the noise primitives directly (hashf,
 // vnoise, fbm) at the arguments the effects actually reach, so a mismatch
 // can be attributed to the layer it comes from. The reader is
 // web/test/firmware_parity.ts, which owns the tolerances and the verdict.
@@ -55,6 +59,15 @@ int main(int argc, char **argv) {
   for (int z = 0; z < nz; z++)
     std::printf("{\"kind\":\"zone\",\"zi\":%d,\"n\":%d,\"center\":%d,\"fall_steps\":%d}\n",
                 z, RIG[z].n, RIG[z].center, RIG[z].fall_steps);
+
+  // Every strike mask on every pixel of every zone, no draws: the arcs
+  // (modes 8-15) and halves are judged exhaustively — every position on the
+  // Jewels and the door ring — not just where the random corpus lands.
+  for (int z = 0; z < nz; z++)
+    for (int mode = 0; mode < 16; mode++)
+      for (int p = 0; p < RIG[z].n; p++)
+        std::printf("{\"kind\":\"gate\",\"zi\":%d,\"mode\":%d,\"p\":%d,\"gate\":%.9g}\n",
+                    z, mode, p, flash_gate(mode, p, z, 0, RIG[z]));
 
   // Noise primitives. hashi at the lattice cells vnoise reaches (t*speed +
   // seed*k, t up to a few hours, plus the negative side and the int32 rim),
@@ -101,17 +114,22 @@ int main(int argc, char **argv) {
     if (fx.n == 0) continue;
     const auto p = (int) ((next_u32() >> 16) % fx.n);
     const auto ov = (int) ((next_u32() >> 16) % 4);
-    const auto mode = (int) ((next_u32() >> 16) % 4);
+    const auto mode = (int) ((next_u32() >> 16) % 16);
     const auto epoch = (int) ((next_u32() >> 16) % 1000);
+    // Half the corpus runs a tempo-locked head (cue v2 look records), half
+    // the legacy clock — which must stay what it always was.
+    const bool locked = ((next_u32() >> 16) & 1) != 0;
+    const float head = locked ? frand() : -1.0f;
     const float seed = zi * 4.7f + p * 1.31f;
 
     const Rgbw base = render(eff, t, seed, hue, soft, pal);
-    const Rgbw ovl = apply_overlay(ov, base, t, p, zi, fx);
+    const Rgbw ovl = apply_overlay(ov, base, t, p, zi, fx, head);
     const float gate = flash_gate(mode, p, zi, epoch, fx);
 
     std::printf("{\"kind\":\"px\",\"eff\":%d,\"pal\":%d,\"hue\":%.9g,\"soft\":%d,\"t\":%.9g,"
-                "\"zi\":%d,\"p\":%d,\"ov\":%d,\"mode\":%d,\"epoch\":%d,\"seed\":%.9g,",
-                eff, pal, hue, soft ? 1 : 0, t, zi, p, ov, mode, epoch, seed);
+                "\"zi\":%d,\"p\":%d,\"ov\":%d,\"mode\":%d,\"epoch\":%d,\"head\":%.9g,"
+                "\"seed\":%.9g,",
+                eff, pal, hue, soft ? 1 : 0, t, zi, p, ov, mode, epoch, head, seed);
     print4("base", base);
     std::printf(",");
     print4("ovl", ovl);

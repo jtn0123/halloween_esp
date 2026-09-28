@@ -30,6 +30,7 @@ sys.path.insert(0, str(ROOT / "tests"))  # firmware_source
 
 import castle_emu
 import castle_emu_events
+import cue_file
 import scene_manifest
 from firmware_source import SD_RTC, SD_SCENES, SD_STATE, grab
 
@@ -84,6 +85,38 @@ class TestTheSceneManifest(unittest.TestCase):
     def test_scene_missing_is_a_kind_both_rings_know(self) -> None:
         self.assertIn("scene_missing", castle_emu_events.OTHER_KINDS)
         self.assertIn('return "scene_missing";', SD_RTC)
+
+
+class TestTheCueFileVersions(unittest.TestCase):
+    """v5.71: a cue file is version 1 or 2, and the encoder, the reader and
+    the emulator (which reads through cue_file) must agree on every number
+    that decides what a v2 record means — or a file the tools call valid is
+    one the castle refuses, or worse, draws differently."""
+
+    CUES = (ROOT / "firmware" / "castle_cues.h").read_text()
+
+    def test_the_newest_version_read_is_the_same_on_both_sides(self) -> None:
+        self.assertEqual(int(grab(r"kVersion = (\d+);", self.CUES)),
+                         cue_file.READ_VERSIONS[-1])  # fmt: skip
+        self.assertEqual(cue_file.READ_VERSIONS, (1, 2))
+        self.assertEqual(cue_file.VERSION, 1, "an unmarked show must stay v1")
+
+    def test_the_v2_record_constants_agree(self) -> None:
+        pairs = {
+            r"kOpLook = (\d+);": cue_file.OP_LOOK,
+            r"kLayerBit = (0x[0-9a-fA-F]+);": cue_file.LAYER_BIT,
+            r"kByteKeep = (\d+);": cue_file.BYTE_KEEP,
+            r"kCenterKeep = (-\d+);": cue_file.CENTER_KEEP,
+            r"kWordKeep = (\d+);": cue_file.WORD_KEEP,
+        }
+        for pattern, value in pairs.items():
+            self.assertEqual(int(grab(pattern, self.CUES), 0), value, pattern)
+
+    def test_the_train_window_is_one_number(self) -> None:
+        layers = (ROOT / "firmware" / "castle_layers.h").read_text()
+        desk = (ROOT / "web" / "src" / "show_layers.ts").read_text()
+        self.assertEqual(int(grab(r"kSoftenWindowMs = (\d+);", layers)),
+                         int(grab(r"SOFTEN_WINDOW_MS = (\d+);", desk)))  # fmt: skip
 
 
 if __name__ == "__main__":

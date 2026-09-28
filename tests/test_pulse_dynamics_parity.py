@@ -233,8 +233,14 @@ class TestVocabularyAgreement(unittest.TestCase):
         self.assertEqual(ov, ev.OVERLAY_IDS)
         pal = self.CXX.split("constexpr float PALETTES[", 1)[1].split("};", 1)[0]
         self.assertEqual(re.findall(r"//\s*(\w+)", pal), list(ev.PALETTE_IDS))
-        # Strike masks are ints 0..3 in C (no enum); the gate must know each.
-        modes = {int(m) for m in re.findall(r"mode == (\d)", self.CXX)} | {0}
+        # Strike masks are ints in C (no enum); the gate must know each: 1-7
+        # one by one, and the arcs as the range kArcFirst..+kArcs.
+        modes = {int(m) for m in re.findall(r"mode == (\d+)", self.CXX)} | {0}
+        first = re.search(r"kArcFirst = (\d+);", self.CXX)
+        count = re.search(r"kArcs = (\d+);", self.CXX)
+        assert first and count, "castle_effects.h lost its arc range"
+        self.assertIn("mode >= kArcFirst && mode < kArcFirst + kArcs", self.CXX)
+        modes |= set(range(int(first[1]), int(first[1]) + int(count[1])))
         self.assertEqual(modes, set(ev.FLASH_MODE_IDS.values()))
 
 

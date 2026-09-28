@@ -215,8 +215,36 @@ class TestValidatorConstants(unittest.TestCase):
         self.assertEqual(publish.count("std::scoped_lock lk(g_state_mu);"), 1)
         for field in ("playing", "position_ms", "show_on", "volume", "track"):
             self.assertIn(f"g_status.{field} =", publish)
-        # h_status's fixed part must still fit the 240-byte buffers it fills.
-        self.assertIn("std::array<char, 288> buf{}", body)
+        # Every snprintf in h_status must fit the buffer it fills with every
+        # number at its widest: a truncated reply is a parse error in every
+        # client (v5.72 added two 64-bit numbers and grew it to 384).
+        declared = re.search(r"std::array<char, (\d+)> buf\{\}", body)
+        assert declared is not None
+        size = int(declared.group(1))
+        # %s here is only ever true/false, the version or the build date.
+        widest = {"%lld": 20, "%u": 10, "%d": 11, "%s": 16}
+        formats = re.findall(
+            r"snprintf\(buf\.data\(\), buf\.size\(\),((?:\s*R\"\(.*?\)\")+)",
+            body,
+            re.DOTALL,
+        )
+        self.assertEqual(len(formats), 3)  # the header, the volume, the middle
+        for fmt in formats:
+            text = "".join(re.findall(r'R"\((.*?)\)"', fmt, re.DOTALL))
+            specs = re.findall(r"%lld|%u|%d|%s", text)
+            fixed = len(re.sub(r"%lld|%u|%d|%s", "", text))
+            need = fixed + sum(widest[k] for k in specs) + 1
+            self.assertLessEqual(need, size, text)
+
+    def test_the_heard_clock_is_in_both_status_replies(self) -> None:
+        """v5.72. The castle's own measure of the clock it replaced: -1 on
+        the emulator, which has no speaker to hear."""
+        emu = castle_emu.CastleEmu(port=0)
+        self.addCleanup(emu.server_close)
+        for key in ("sync_lead_ms", "sync_drift_ms"):
+            self.assertIn(f'"{key}":%lld', FUNCS["h_status"])
+            self.assertIn(f'"{key}":-1', emu.status_text())
+        self.assertIn("g_status.sync_lead_ms = g_sync_lead_ms.load();", SD_STATE)
 
     def test_the_first_status_served_confirms_a_web_ota(self) -> None:
         """A2. CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE holds a freshly-OTA'd
