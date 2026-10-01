@@ -123,7 +123,7 @@ Loader.add_multi_constructor("!", _tag)
 
 
 def load(rel: str) -> dict[str, Any]:
-    doc = yaml.load((FW / rel).read_text(), Loader=Loader)
+    doc = yaml.load((FW / rel).read_text(encoding="utf-8"), Loader=Loader)
     assert isinstance(doc, dict), rel
     return doc
 
@@ -189,7 +189,7 @@ S3_SUBS = subs(S3_TREE)
 
 # The show, for the RMT arithmetic below: the same three zones both
 # builds drive, read from the one file that declares them.
-DOC = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
+DOC = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8"))
 ZONES: list[dict[str, Any]] = DOC["zones"]
 LAYOUTS = rl.zone_layouts(ZONES, DOC["hardware"]["pixels_per_zone"])
 LIVE = [z for z in ZONES if LAYOUTS[z["id"]].n > 0]
@@ -473,7 +473,7 @@ class TestRmtBudget(unittest.TestCase):
         self.assertIn("multiple of 48", str(e.exception))
 
     def test_the_generated_strips_are_fresh(self) -> None:
-        got = (FW / "generated" / "lights.yaml").read_text()
+        got = (FW / "generated" / "lights.yaml").read_text(encoding="utf-8")
         self.assertEqual(
             got,
             self.text(),

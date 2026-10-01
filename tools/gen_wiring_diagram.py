@@ -441,8 +441,8 @@ page = (
     if len(sys.argv) > 1
     else pathlib.Path(__file__).resolve().parents[1] / "docs" / "castle-wiring.html"
 )
-html = page.read_text()
+html = page.read_text(encoding="utf-8")
 start = html.index(OPEN_MARK) + len(OPEN_MARK)
 end = html.index("</svg>", start)
-page.write_text(html[:start] + "\n" + svg + "\n" + html[end:])
+page.write_text(html[:start] + "\n" + svg + "\n" + html[end:], encoding="utf-8")
 print(f"castle-wiring.html: schematic replaced ({len(svg)} chars)")

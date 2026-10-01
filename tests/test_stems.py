@@ -86,7 +86,7 @@ class TestGuards(StemsCase):
         d = self.sandbox / "stems" / "song"
         d.mkdir(parents=True, exist_ok=True)
         (d / "vocals.mp3").write_bytes(b"x")
-        (d / "analysis.json").write_text("{}")
+        (d / "analysis.json").write_text("{}", encoding="utf-8")
         self.assertIsNotNone(stems.stem_file("song", "vocals"))
         # `combined` streams via /api/track; anything else is not a layer.
         self.assertIsNone(stems.stem_file("song", "combined"))
@@ -112,7 +112,8 @@ class TestFreshness(StemsCase):
         d.mkdir(parents=True, exist_ok=True)
         st = src.stat()
         (d / "analysis.json").write_text(
-            json.dumps({"src_bytes": st.st_size, "src_mtime": int(st.st_mtime)})
+            json.dumps({"src_bytes": st.st_size, "src_mtime": int(st.st_mtime)}),
+            encoding="utf-8",
         )
         self.assertTrue(stems.fresh("tune"))
         # A re-import rewrites the file; the old split must stop counting.
@@ -218,7 +219,7 @@ class TestSeparateOut(StemsCase):
         dest = scratch / "song"
         for name in ("vocals", "backing", "drums", "bass", "other"):
             self.assertTrue((dest / f"{name}.mp3").is_file(), name)
-        data = json.loads((dest / "analysis.json").read_text())
+        data = json.loads((dest / "analysis.json").read_text(encoding="utf-8"))
         self.assertEqual(tuple(data["layers"]), stems.LAYERS)
         for layer in data["layers"].values():
             self.assertEqual(set(layer), set(stems.CHANNELS))
@@ -251,7 +252,8 @@ class TestSeparateOut(StemsCase):
                     "src_bytes": st.st_size,
                     "src_mtime": int(st.st_mtime),
                 }
-            )
+            ),
+            encoding="utf-8",
         )
         self.assertTrue(stems.fresh("old"))
         got = stems.analysis("old")

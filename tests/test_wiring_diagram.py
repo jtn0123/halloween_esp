@@ -45,13 +45,13 @@ class TestWiringDiagram(unittest.TestCase):
 
     def test_exactly_one_svg_body_survives(self) -> None:
         _run(self.page)
-        html = self.page.read_text()
+        html = self.page.read_text(encoding="utf-8")
         self.assertEqual(html.count("</svg>"), 1)
         self.assertEqual(html.count('id="schem"'), 1)
 
     def test_no_text_starts_outside_the_viewbox(self) -> None:
         _run(self.page)
-        html = self.page.read_text()
+        html = self.page.read_text(encoding="utf-8")
         m = re.search(r'viewBox="0 0 (\d+) (\d+)"', html)
         assert m is not None, "schematic viewBox missing"
         w, h = int(m.group(1)), int(m.group(2))

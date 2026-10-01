@@ -202,9 +202,11 @@ class Lab(unittest.TestCase):
             library, output = Path(tmp) / "tracks", Path(tmp) / "out"
             (library / "stems" / "radio_test").mkdir(parents=True)
             baseline = dict(SOURCE, cues=[], base={}, levels={})
-            (library / "radio_test.show.json").write_text(json.dumps(baseline))
+            (library / "radio_test.show.json").write_text(
+                json.dumps(baseline), encoding="utf-8"
+            )
             (library / "stems" / "radio_test" / "analysis.json").write_text(
-                json.dumps({"layers": song()})
+                json.dumps({"layers": song()}), encoding="utf-8"
             )
             (library / "radio_test.mp3").write_bytes(b"not really a song")
             before = (library / "radio_test.show.json").read_bytes()
@@ -227,7 +229,7 @@ class Lab(unittest.TestCase):
             self.assertEqual(sorted(p.name for p in library.iterdir()),
                              ["radio_test.mp3", "radio_test.show.json", "stems"])  # fmt: skip
             self.assertEqual((library / "radio_test.show.json").read_bytes(), before)
-            html = page.read_text()
+            html = page.read_text(encoding="utf-8")
             self.assertNotIn("/*{{", html)
             # Sound is the listener's choice: off until ticked, never on load.
             self.assertIn('<input id="sound" type="checkbox">', html)

@@ -253,12 +253,12 @@ class TestValidatorConstants(unittest.TestCase):
         have. A web-OTA'd image was therefore never confirmed and rolled
         back on the next power cycle, silently undoing a working update."""
         self.assertIn("g_status_served.store(true);", FUNCS["h_status"])
-        boot = (ROOT / "firmware" / "castle_sd_common.yaml").read_text()
+        boot = (ROOT / "firmware" / "castle_sd_common.yaml").read_text(encoding="utf-8")
         self.assertIn("castle_web::g_status_served.load()", boot)
         self.assertIn("castle_sd::mark_firmware_healthy();", boot)
         # The log line that says it happened, and the one-shot that keeps it
         # from happening twice, both stay in flash_mode.h.
-        flash = (ROOT / "firmware" / "flash_mode.h").read_text()
+        flash = (ROOT / "firmware" / "flash_mode.h").read_text(encoding="utf-8")
         self.assertIn("image confirmed — rollback cancelled", flash)
 
     def test_pending_mailbox_is_one_slot(self) -> None:
@@ -355,7 +355,7 @@ class TestStreamServer(unittest.TestCase):
             "firmware/castle_web_actions.yaml",
             "firmware/sd_audio.h",
         ):
-            text = (ROOT / name).read_text()
+            text = (ROOT / name).read_text(encoding="utf-8")
             spelled = {
                 int(p) for p in re.findall(r"http://127\.0\.0\.1:(\d+)/sd/", text)
             }

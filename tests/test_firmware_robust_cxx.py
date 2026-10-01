@@ -186,7 +186,7 @@ class TestOpenFileBudget(unittest.TestCase):
     """
 
     def test_the_mount_reserves_more_than_the_castle_can_open(self) -> None:
-        src = (ROOT / "firmware" / "sd_audio.h").read_text()
+        src = (ROOT / "firmware" / "sd_audio.h").read_text(encoding="utf-8")
         default = int(grab(r"int max_files = (\d+)\)", src))
         self.assertGreaterEqual(default, 8, "A3: the open-file budget shrank")
         # The number is only half the finding: the RAM it costs is paid at

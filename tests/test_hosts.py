@@ -47,7 +47,7 @@ class HostCase(HostEnv, unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="castle-hosts-"))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.toml = self.tmp / "devices.toml"
-        self.toml.write_text(TABLE)
+        self.toml.write_text(TABLE, encoding="utf-8")
         p = mock.patch.object(hosts, "DEVICES", self.toml)
         p.start()
         self.addCleanup(p.stop)
@@ -146,7 +146,7 @@ class TestCandidates(TestResolve):
     def test_no_file_is_an_empty_list(self) -> None:
         self.toml.unlink()
         self.assertEqual(hosts.candidates(), [])
-        (self.toml).write_text("host = = =\n")
+        (self.toml).write_text("host = = =\n", encoding="utf-8")
         self.assertEqual(hosts.candidates(), [])
 
 

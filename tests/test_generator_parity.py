@@ -208,10 +208,10 @@ class TestPulseParity(unittest.TestCase):
         compares, so a future edit to either generator is caught against real
         data as well as against a fixture.
         """
-        raw = (ROOT / "scenes" / "scenes.yaml").read_text()
+        raw = (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
         doc = yaml.safe_load(raw)
         mf = ROOT / "audio" / "markers.json"
-        markers = json.loads(mf.read_text()) if mf.exists() else {}
+        markers = json.loads(mf.read_text(encoding="utf-8")) if mf.exists() else {}
         zids = [z["id"] for z in doc["zones"]]
         for i, scene in enumerate(doc["scenes"], start=1):
             with self.subTest(scene=scene["id"]):
@@ -368,21 +368,23 @@ class TestGenPreviewerMain(unittest.TestCase):
         }
         gp.ROOT = self.tmp
         gp.SRC = self.tmp / "scenes.yaml"
-        gp.SRC.write_text(yaml.safe_dump(self.DOC))
+        gp.SRC.write_text(yaml.safe_dump(self.DOC), encoding="utf-8")
         gp.MARKERS_FILE = self.tmp / "markers.json"
-        gp.MARKERS_FILE.write_text(json.dumps({"one": MARKERS["parity"]}))
+        gp.MARKERS_FILE.write_text(
+            json.dumps({"one": MARKERS["parity"]}), encoding="utf-8"
+        )
         gp.TEMPLATE = self.tmp / "template.html"
-        gp.TEMPLATE.write_text(self.TEMPLATE)
+        gp.TEMPLATE.write_text(self.TEMPLATE, encoding="utf-8")
         gp.HTML = self.tmp / "out.html"
         gp.AUDIO = self.tmp / "audio"
         gp.AUDIO.mkdir()
         gp.STYLES = self.tmp / "styles.css"
-        gp.STYLES.write_text("body{}")
+        gp.STYLES.write_text("body{}", encoding="utf-8")
         gp.WEB = self.tmp / "web"
         (gp.WEB / "node_modules").mkdir(parents=True)
         gp.BUNDLE = gp.WEB / "dist" / "bundle.js"
         gp.BUNDLE.parent.mkdir(parents=True)
-        gp.BUNDLE.write_text("/*js*/")
+        gp.BUNDLE.write_text("/*js*/", encoding="utf-8")
         gp.subprocess = types.SimpleNamespace(  # type: ignore[assignment]  # test double
             run=lambda *a, **k: types.SimpleNamespace(
                 returncode=0, stdout="", stderr=""
@@ -397,7 +399,7 @@ class TestGenPreviewerMain(unittest.TestCase):
     def run_main(self) -> str:
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(gp.main(), 0)
-        return gp.HTML.read_text()
+        return gp.HTML.read_text(encoding="utf-8")
 
     def gen(self, html: str) -> dict[str, Any]:
         body = html.split(gp.START, 1)[1].split(gp.END, 1)[0]
@@ -432,12 +434,12 @@ class TestGenPreviewerMain(unittest.TestCase):
         """
         doc = dict(self.DOC)
         doc["scenes"] = [{**self.DOC["scenes"][1], "blurb": "sÉance — \\ backslash"}]
-        gp.SRC.write_text(yaml.safe_dump(doc, allow_unicode=True))
+        gp.SRC.write_text(yaml.safe_dump(doc, allow_unicode=True), encoding="utf-8")
         data = self.gen(self.run_main())
         self.assertEqual(data["scenes"][0]["blurb"], "sÉance — \\ backslash")
 
     def test_missing_data_markers_exit_rather_than_write_a_dead_page(self) -> None:
-        gp.TEMPLATE.write_text("<html>no markers here</html>")
+        gp.TEMPLATE.write_text("<html>no markers here</html>", encoding="utf-8")
         with (
             self.assertRaises(SystemExit) as cm,
             contextlib.redirect_stdout(io.StringIO()),

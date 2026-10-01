@@ -61,10 +61,10 @@ class TestTheSceneManifest(unittest.TestCase):
         scenes.yaml, the studio refuses it at splice time, and the card
         reader refuses a manifest that claims one — three places that have to
         agree or the refusal happens somewhere useless."""
-        loc = (ROOT / "tools" / "check_loc.py").read_text()
+        loc = (ROOT / "tools" / "check_loc.py").read_text(encoding="utf-8")
         self.assertEqual(int(grab(r"SCENE_LIMIT = (\d+)", loc)),
                          scene_manifest.MAX_SCENES)  # fmt: skip
-        rs = (ROOT / "core" / "src" / "vocab.rs").read_text()
+        rs = (ROOT / "core" / "src" / "vocab.rs").read_text(encoding="utf-8")
         self.assertEqual(int(grab(r"SCENE_LIMIT: usize = (\d+)", rs)),
                          scene_manifest.MAX_SCENES)  # fmt: skip
 
@@ -93,7 +93,7 @@ class TestTheCueFileVersions(unittest.TestCase):
     that decides what a v2 record means — or a file the tools call valid is
     one the castle refuses, or worse, draws differently."""
 
-    CUES = (ROOT / "firmware" / "castle_cues.h").read_text()
+    CUES = (ROOT / "firmware" / "castle_cues.h").read_text(encoding="utf-8")
 
     def test_the_newest_version_read_is_the_same_on_both_sides(self) -> None:
         self.assertEqual(int(grab(r"kVersion = (\d+);", self.CUES)),
@@ -113,8 +113,8 @@ class TestTheCueFileVersions(unittest.TestCase):
             self.assertEqual(int(grab(pattern, self.CUES), 0), value, pattern)
 
     def test_the_train_window_is_one_number(self) -> None:
-        layers = (ROOT / "firmware" / "castle_layers.h").read_text()
-        desk = (ROOT / "web" / "src" / "show_layers.ts").read_text()
+        layers = (ROOT / "firmware" / "castle_layers.h").read_text(encoding="utf-8")
+        desk = (ROOT / "web" / "src" / "show_layers.ts").read_text(encoding="utf-8")
         self.assertEqual(int(grab(r"kSoftenWindowMs = (\d+);", layers)),
                          int(grab(r"SOFTEN_WINDOW_MS = (\d+);", desk)))  # fmt: skip
 

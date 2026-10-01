@@ -153,19 +153,19 @@ class TestBuildFitsTheBudget(unittest.TestCase):
             gp.BUNDLE,
         )
         gp.SRC = self.tmp / "scenes.yaml"
-        gp.SRC.write_text(yaml.safe_dump({"scenes": [scene()]}))
+        gp.SRC.write_text(yaml.safe_dump({"scenes": [scene()]}), encoding="utf-8")
         gp.MARKERS_FILE = self.tmp / "markers.json"
         gp.TEMPLATE = self.tmp / "template.html"
-        gp.TEMPLATE.write_text(self.TEMPLATE)
+        gp.TEMPLATE.write_text(self.TEMPLATE, encoding="utf-8")
         gp.HTML = self.tmp / "out" / "castle-cue-desk.html"
         gp.HTML.parent.mkdir()
-        gp.HTML.write_text("the last good build")
+        gp.HTML.write_text("the last good build", encoding="utf-8")
         gp.AUDIO = self.tmp / "audio"
         gp.AUDIO.mkdir()
         (gp.AUDIO / "01_probe.mp3").write_bytes(b"\xff\xfb" + b"m" * 40_000)
         for name in ("STYLES", "PANELS", "MOBILE"):
             p = self.tmp / f"{name.lower()}.css"
-            p.write_text("/* css */\n")
+            p.write_text("/* css */\n", encoding="utf-8")
             setattr(gp, name, p)
         gp.WEB = self.tmp / "web"
         (gp.WEB / "node_modules").mkdir(parents=True)
@@ -173,7 +173,7 @@ class TestBuildFitsTheBudget(unittest.TestCase):
         gp.BUNDLE.parent.mkdir(parents=True)
 
         def run(*_a: object, **_k: object) -> types.SimpleNamespace:
-            gp.BUNDLE.write_text("console.log(1);")
+            gp.BUNDLE.write_text("console.log(1);", encoding="utf-8")
             return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
         self._fake_subprocess(run)
@@ -207,14 +207,14 @@ class TestBuildFitsTheBudget(unittest.TestCase):
         self._budget(4 * 1024)
         with contextlib.redirect_stdout(io.StringIO()):
             self.assertEqual(gp.main(), 0)
-        self.assertIn("data:audio/mpeg;base64,", gp.HTML.read_text())
+        self.assertIn("data:audio/mpeg;base64,", gp.HTML.read_text(encoding="utf-8"))
 
     def test_over_budget_links_the_audio_instead_of_inlining_it(self) -> None:
         self._budget(1)  # the 40 KB mp3 alone blows a 1 KB ceiling
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
             self.assertEqual(gp.main(), 0)
-        page = gp.HTML.read_text()
+        page = gp.HTML.read_text(encoding="utf-8")
         self.assertNotIn("data:audio/mpeg;base64,", page)
         self.assertIn("/studio/scene-audio/probe", page)
         # And it SAYS so — a silently un-inlined scene is its own surprise.
@@ -226,7 +226,7 @@ class TestBuildFitsTheBudget(unittest.TestCase):
         self._budget(1)  # 1 KB, and the bundle alone is 2 KB
 
         def fat(*_a: object, **_k: object) -> types.SimpleNamespace:
-            gp.BUNDLE.write_text("// " + "b" * 2048)
+            gp.BUNDLE.write_text("// " + "b" * 2048, encoding="utf-8")
             return types.SimpleNamespace(returncode=0, stdout="", stderr="")
 
         self._fake_subprocess(fat)
@@ -234,7 +234,7 @@ class TestBuildFitsTheBudget(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
             self.assertEqual(gp.main(), 1)
         self.assertIn("page budget FAILED", err.getvalue())
-        self.assertEqual(gp.HTML.read_text(), "the last good build")
+        self.assertEqual(gp.HTML.read_text(encoding="utf-8"), "the last good build")
 
 
 class TestPageWeight(unittest.TestCase):

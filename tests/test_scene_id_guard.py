@@ -17,14 +17,14 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-WEB = (ROOT / "firmware" / "sd_web.h").read_text()
-STATE = (ROOT / "firmware" / "sd_web_state.h").read_text()
-BOOT = (ROOT / "firmware" / "castle_sd_common.yaml").read_text()
+WEB = (ROOT / "firmware" / "sd_web.h").read_text(encoding="utf-8")
+STATE = (ROOT / "firmware" / "sd_web_state.h").read_text(encoding="utf-8")
+BOOT = (ROOT / "firmware" / "castle_sd_common.yaml").read_text(encoding="utf-8")
 #: Where the seeding itself lives since v5.69 — one script, run from BOOT's
 #: on_boot block and again from its 200 ms interval when a publish rings the
 #: bell (J1). The two files are read separately because the ORDER that
 #: matters (A5) is BOOT's.
-SEED = (ROOT / "firmware" / "castle_scenes.yaml").read_text()
+SEED = (ROOT / "firmware" / "castle_scenes.yaml").read_text(encoding="utf-8")
 
 
 def handler(name: str) -> str:
@@ -76,7 +76,7 @@ class SceneIdGuardTests(unittest.TestCase):
         not what "a scene edit is a publish" can mean. The upload worker is a
         task of its own and may not read the manifest or touch the vector, so
         it rings a bell and the main loop does both."""
-        upload = (ROOT / "firmware" / "sd_web_upload.h").read_text()
+        upload = (ROOT / "firmware" / "sd_web_upload.h").read_text(encoding="utf-8")
         self.assertIn("g_scenes_dirty.store(true)", upload)
         self.assertIn('"/scenes/show.man"', upload)
         self.assertIn("inline std::atomic g_scenes_dirty{false};", STATE)

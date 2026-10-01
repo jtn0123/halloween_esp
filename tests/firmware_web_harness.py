@@ -50,7 +50,7 @@ def firmware_version() -> str:
     """The version string the device build compiles in (castle.yaml's
     project.version, ESPHOME_PROJECT_VERSION in the real build's defines.h),
     so the harness and the emulator answer /api/status the same."""
-    for line in (FIRMWARE / "castle.yaml").read_text().splitlines():
+    for line in (FIRMWARE / "castle.yaml").read_text(encoding="utf-8").splitlines():
         if line.strip().startswith("version:"):
             return line.split(":", 1)[1].strip().strip('"')
     raise AssertionError("no version: in firmware/castle.yaml")

@@ -156,7 +156,7 @@ class TestHashesOnlyCli(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="lock-deps-"))
         self.addCleanup(shutil.rmtree, self.tmp, True)
         self.out = self.tmp / "requirements.lock"
-        self.out.write_text(PREVIOUS_TEXT)
+        self.out.write_text(PREVIOUS_TEXT, encoding="utf-8")
 
     def run_main(self, *argv: str) -> tuple[int, str]:
         with contextlib.redirect_stdout(io.StringIO()) as out:
@@ -174,17 +174,17 @@ class TestHashesOnlyCli(unittest.TestCase):
 
     def test_the_markers_are_still_there_afterwards(self) -> None:
         self.run_main("--hashes-only")
-        text = self.out.read_text()
+        text = self.out.read_text(encoding="utf-8")
         self.assertIn('pyobjc-core==11.1 ; sys_platform == "darwin" \\', text)
 
     def test_running_it_twice_changes_nothing(self) -> None:
         self.run_main("--hashes-only")
-        once = self.out.read_text()
+        once = self.out.read_text(encoding="utf-8")
         self.run_main("--hashes-only", "--quiet")
-        self.assertEqual(self.out.read_text(), once)
+        self.assertEqual(self.out.read_text(encoding="utf-8"), once)
 
     def test_an_empty_lock_is_refused_rather_than_silently_emptied(self) -> None:
-        self.out.write_text("# nothing here\n")
+        self.out.write_text("# nothing here\n", encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()) as err:
             code = ld.main(["--out", str(self.out), "--hashes-only"], fake_fetch())
         self.assertEqual(code, 1)
@@ -193,7 +193,7 @@ class TestHashesOnlyCli(unittest.TestCase):
     def test_a_pin_with_no_files_fails_without_writing(self) -> None:
         """The lock on disk stays the last good one — the same rule the
         previewer build follows when it cannot fit the page."""
-        before = self.out.read_text()
+        before = self.out.read_text(encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()) as err:
             code = ld.main(
                 ["--out", str(self.out), "--hashes-only", "--quiet"],
@@ -201,7 +201,7 @@ class TestHashesOnlyCli(unittest.TestCase):
             )
         self.assertEqual(code, 1)
         self.assertIn("numpy==2.5.0", err.getvalue())
-        self.assertEqual(self.out.read_text(), before)
+        self.assertEqual(self.out.read_text(encoding="utf-8"), before)
 
 
 class TestRealLockIsHashed(unittest.TestCase):

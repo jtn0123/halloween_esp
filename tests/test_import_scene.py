@@ -78,7 +78,7 @@ class TestManifest(unittest.TestCase):
 
     def test_corrupt_file_is_survivable(self) -> None:
         mf.PATH.parent.mkdir(parents=True, exist_ok=True)
-        mf.PATH.write_text("{not json")
+        mf.PATH.write_text("{not json", encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(mf.load(), {})
         self.assertIn("WARNING: tracks.json was not valid JSON", out.getvalue())

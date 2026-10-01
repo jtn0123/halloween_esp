@@ -178,9 +178,9 @@ class TestVocabularyAgreement(unittest.TestCase):
     test_firmware_contract.py uses — so nothing here is hand-copied.
     """
 
-    TS = (ROOT / "web" / "src" / "effects.ts").read_text()
-    TYPES = (ROOT / "web" / "src" / "types.ts").read_text()
-    CXX = (ROOT / "firmware" / "castle_effects.h").read_text()
+    TS = (ROOT / "web" / "src" / "effects.ts").read_text(encoding="utf-8")
+    TYPES = (ROOT / "web" / "src" / "types.ts").read_text(encoding="utf-8")
+    CXX = (ROOT / "firmware" / "castle_effects.h").read_text(encoding="utf-8")
 
     @staticmethod
     def ts_array(text: str, name: str) -> list[str]:
@@ -212,7 +212,7 @@ class TestVocabularyAgreement(unittest.TestCase):
         validates scenes in Rust now, so the crate needs the vocabulary the
         generators and the firmware share). Names AND order — the index is
         the id the firmware's switch wants."""
-        rust = (ROOT / "core" / "src" / "vocab.rs").read_text()
+        rust = (ROOT / "core" / "src" / "vocab.rs").read_text(encoding="utf-8")
 
         def rust_array(name: str) -> list[str]:
             body = rust.split(f"pub const {name}: [&str; ", 1)[1].split("];", 1)[0]

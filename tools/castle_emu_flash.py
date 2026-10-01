@@ -45,7 +45,7 @@ def flash_page(header: str, symbol: str) -> str:
     placeholder here would be a page nobody could test, and the e2e suite
     drives whatever the C says. The fallback page followed it once the C
     harness started comparing `/`'s body byte for byte."""
-    src = (_FW / header).read_text()
+    src = (_FW / header).read_text(encoding="utf-8")
     m = re.search(rf'{symbol}\[\] = R"HTML\((.*?)\)HTML";', src, re.DOTALL)
     if not m:
         raise RuntimeError(f"no {symbol} raw string in {header}")
@@ -56,7 +56,7 @@ REMOTE_PAGE = flash_page("sd_web_remote.h", "kRemotePage")
 
 
 def _fallback_scene_ids() -> str:
-    text = (_FW / "generated" / "fallback_scenes.h").read_text()
+    text = (_FW / "generated" / "fallback_scenes.h").read_text(encoding="utf-8")
     m = re.search(r'kFallbackSceneIds\[\] = "(.*)";', text)
     if not m:
         raise RuntimeError("no kFallbackSceneIds in fallback_scenes.h")

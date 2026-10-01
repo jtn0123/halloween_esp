@@ -70,7 +70,9 @@ class Track(unittest.TestCase):
             self.assertEqual(ran.call_args.args[0][0], "ffmpeg")
             self.assertEqual(first, second)
             self.assertAlmostEqual(first.at(0, 500) or 0, 69.0, delta=0.1)
-            self.assertEqual(json.loads(cache.read_text())["hop_ms"], 10)
+            self.assertEqual(
+                json.loads(cache.read_text(encoding="utf-8"))["hop_ms"], 10
+            )
             os.utime(cache, (1, 1))  # a stem newer than its cache: read again
             with mock.patch("voice_pitch.subprocess.run", ran):
                 voice_pitch.track(vocals, cache)

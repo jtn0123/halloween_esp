@@ -63,9 +63,11 @@ class TestGeneratorsAgreeOnEveryHit(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.doc = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
+        cls.doc = yaml.safe_load(
+            (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
+        )
         mk = ROOT / "audio" / "markers.json"
-        cls.markers = json.loads(mk.read_text()) if mk.exists() else {}
+        cls.markers = json.loads(mk.read_text(encoding="utf-8")) if mk.exists() else {}
 
     def test_both_sides_keep_every_hit_and_the_same_ones(self) -> None:
         """Was `test_no_scene_exceeds_the_cap_and_both_sides_match`.

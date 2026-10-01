@@ -177,6 +177,8 @@ def tracked_files() -> list[Path]:
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     ).stdout
     # --cached and --others can name the same path; dedupe while keeping order.
@@ -200,7 +202,7 @@ def is_binary(p: Path) -> bool:
 
 
 def count_lines(p: Path) -> int:
-    with p.open("r", errors="replace") as fh:
+    with p.open("r", errors="replace", encoding="utf-8") as fh:
         return sum(1 for _ in fh)
 
 
@@ -247,7 +249,7 @@ def count_scenes(path: Path = SCENES_FILE) -> int:
     `scenes:`; the zone list above it uses the inline `- {id: …}` form).
     """
     try:
-        text = path.read_text(errors="replace")
+        text = path.read_text(errors="replace", encoding="utf-8")
     except OSError:
         return 0
     m = re.search(r"^scenes:[ \t]*$", text, re.MULTILINE)

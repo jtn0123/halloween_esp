@@ -397,7 +397,7 @@ def cmd_logs(ip: str, args: list[str]) -> int:
     if not text.strip():
         print("no log on the card — has this castle booted with it in the slot?")
         return 1
-    out.write_text(text)
+    out.write_text(text, encoding="utf-8")
     lines = text.splitlines()
     print(f"saved {len(lines)} lines to {out}\n")
     print("\n".join(lines[-TAIL_LINES:]))
