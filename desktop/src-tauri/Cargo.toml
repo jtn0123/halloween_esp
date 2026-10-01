@@ -1,0 +1,57 @@
+[package]
+name = "castle-tools"
+version = "0.1.0"
+description = "Castle Tools: the desktop home of the Halloween castle's player, importer and castle link"
+authors = ["jtn0123"]
+edition = "2021"
+publish = false
+
+# Its own workspace root, on purpose. Without this table cargo walks up from
+# desktop/src-tauri looking for one; today there is none above, but the empty
+# table means a future root Cargo.toml can never swallow this crate, and this
+# crate can never pull castle-core (core/, zero dependencies, empty lock) into
+# a shared lockfile.
+[workspace]
+
+# rlib only: the staticlib/cdylib pair in Tauri's template is for the mobile
+# targets, which this app does not have, and it doubled the debug build.
+[lib]
+name = "castle_tools_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-deep-link = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_System_JobObjects",
+  "Win32_System_Threading",
+] }
+
+# Line tables are enough for a backtrace; full debuginfo for ~450 crates was
+# most of a multi-gigabyte target dir.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
