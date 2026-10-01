@@ -13,15 +13,20 @@ refresh it and the poll is three field copies.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tests"))
+
+import cxx_compiler
+
 SRC = ROOT / "tests" / "cxx" / "sd_space_check.cpp"
-COMPILER = shutil.which("clang++") or shutil.which("g++")
+COMPILER = cxx_compiler.COMPILER  # g++ first on Windows; see the module
 FLAGS = [
     "-std=c++17",
     "-O1",
@@ -75,3 +80,18 @@ class TestStatusDoesNotTimeOutTheCache(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCompilerChoice(unittest.TestCase):
+    """tests/cxx_compiler.py: MinGW's g++ first on Windows, clang++ first
+    everywhere else, and None rather than a guess when there is neither."""
+
+    def test_the_order_follows_the_platform(self) -> None:
+        have = {"g++": "/bin/g++", "clang++": "/bin/clang++"}
+        with mock.patch.object(cxx_compiler.shutil, "which", have.get):
+            self.assertEqual(cxx_compiler.find(windows=True), "/bin/g++")
+            self.assertEqual(cxx_compiler.find(windows=False), "/bin/clang++")
+        with mock.patch.object(cxx_compiler.shutil, "which", {"clang++": "c"}.get):
+            self.assertEqual(cxx_compiler.find(windows=True), "c")
+        with mock.patch.object(cxx_compiler.shutil, "which", {}.get):
+            self.assertIsNone(cxx_compiler.find(windows=False))

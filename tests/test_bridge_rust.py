@@ -74,6 +74,7 @@ class TestBridgeVerbs(unittest.TestCase):
             [str(BIN), "--host", f"127.0.0.1:{self.emu.port}", *verb],
             capture_output=True,
             text=True,
+            encoding="utf-8",  # what the binary writes, on every OS
             check=False,
             timeout=15,
         )
@@ -217,6 +218,7 @@ class TestBridgeVerbs(unittest.TestCase):
             [str(BIN), "--host", f"127.0.0.1:{self.emu.port}", "ota", str(img)],
             capture_output=True,
             text=True,
+            encoding="utf-8",  # what the binary writes, on every OS
             check=False,
             timeout=30,
             env={**os.environ, "CASTLE_OTA_WAIT_S": "5"},
@@ -249,6 +251,7 @@ class TestBridgeVerbs(unittest.TestCase):
             [str(BIN), "--host", "127.0.0.1:1", "status"],
             capture_output=True,
             text=True,
+            encoding="utf-8",  # what the binary writes, on every OS
             check=False,
             timeout=15,
         )

@@ -96,7 +96,7 @@ class TestRecordAndEnv(unittest.TestCase):
     def test_record_keeps_roots_and_drops_empty_values(self) -> None:
         rec = de.install_record(self.dirs, ffmpeg="/x/ffmpeg", ytdlp="")
         self.assertEqual(rec["schema"], de.SCHEMA)
-        self.assertEqual(rec["data"], "/d")
+        self.assertEqual(rec["data"], str(Path("/d")))
         self.assertEqual(rec["ffmpeg"], "/x/ffmpeg")
         self.assertNotIn("ytdlp", rec)
 

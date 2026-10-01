@@ -32,6 +32,19 @@ def group_kwargs() -> dict[str, Any]:
     return {"start_new_session": True}
 
 
+def utf8_env(base: dict[str, str] | None = None) -> dict[str, str]:
+    """`base` (the current environment by default) with the child told to
+    speak UTF-8 on its pipes. A Python child on Windows otherwise writes a
+    piped stdout in the ANSI code page, and a reader decoding UTF-8 turns
+    every "—" or "é" into U+FFFD. Inert for children that are not Python;
+    already the case on macOS. The Rust studio's twin is
+    `studio_proc::utf8_child`."""
+    env = dict(os.environ if base is None else base)
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    return env
+
+
 def kill_tree(process: subprocess.Popen[Any]) -> None:
     """Kill `process` and every process it started; quiet if it is gone."""
     if sys.platform == "win32":

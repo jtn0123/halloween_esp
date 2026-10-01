@@ -91,6 +91,20 @@ pub fn tail4000(s: &str) -> String {
     }
 }
 
+/// Every child speaks UTF-8 on its pipes, whatever the machine's code page.
+///
+/// A Python child on Windows writes a piped stdout in the ANSI code page
+/// (cp1252 on an English install), so every "—" the tools print arrived
+/// here as a byte `from_utf8_lossy` could only call U+FFFD, and the desk
+/// showed the buyer replacement characters where the Mac showed dashes.
+/// `PYTHONUTF8` is Python's UTF-8 mode (stdio AND its default file
+/// encoding, so a tool that forgot `encoding=` reads the show the same
+/// way); `PYTHONIOENCODING` covers an interpreter that predates it. Inert
+/// for anything that is not Python, and already the answer on macOS.
+pub fn utf8_child(cmd: &mut Command) {
+    cmd.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
+}
+
 /// studio.run(): capture a child completely, under the 900 s ceiling that
 /// keeps one hung tool from wedging every later rebuild.
 pub fn run(cmd: Command, timeout_s: u64) -> (bool, String) {
@@ -127,6 +141,7 @@ fn run_piped(mut cmd: Command, input: Option<String>, timeout_s: u64) -> Timed {
             Stdio::null()
         });
     own_group(&mut cmd);
+    utf8_child(&mut cmd);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => return Timed::Done(false, String::new(), e.to_string()),
@@ -229,6 +244,16 @@ mod tests {
         let (ok, log) = run(c, 30);
         assert!(!ok, "exit 3 is a failure");
         assert_eq!(log, "outerr", "stdout then stderr, both kept");
+    }
+
+    /// The em dash a tool prints comes back an em dash: the child was told
+    /// to speak UTF-8, whatever the code page of the machine running it.
+    #[test]
+    fn a_child_speaks_utf8_whatever_the_code_page() {
+        let c = python_cmd("import sys; print(sys.stdout.encoding, '\\u2014')");
+        let (ok, log) = run(c, 30);
+        assert!(ok, "{log}");
+        assert_eq!(log.trim().to_lowercase(), "utf-8 \u{2014}");
     }
 
     #[test]

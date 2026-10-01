@@ -23,6 +23,7 @@
 #include <sys/types.h>
 #include <vector>
 
+#include <castle_shim_host.h>  // binary pipes, on Windows
 #include <esp_err.h>
 #include <esp_log.h>
 

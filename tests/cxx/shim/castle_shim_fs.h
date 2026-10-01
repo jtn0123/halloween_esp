@@ -31,6 +31,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <castle_shim_host.h>
+
 namespace castle_shim {
 
 /// An environment variable, or a default. The harness is configured this
@@ -129,7 +131,15 @@ inline FILE *castle_shim_fopen(const char *path, const char *mode) {
     errno = EISDIR;
     return nullptr;
   }
+#ifdef _WIN32
+  // FatFs has no text mode: "a" on the card appends exactly the bytes
+  // written. The Windows runtime's "a" would turn each "\n" into "\r\n".
+  std::string m(mode == nullptr ? "" : mode);
+  if (m.find('b') == std::string::npos) m += 'b';
+  FILE *f = ::fopen(p.c_str(), m.c_str());
+#else
   FILE *f = ::fopen(p.c_str(), mode);
+#endif
   // SET, not non-zero: "CASTLE_SD_FAIL_AFTER=0" is the card that refuses
   // the very first sector, which is the leg where nothing has gone out yet
   // and a real 500 is still possible.
@@ -207,5 +217,5 @@ inline int castle_shim_rename(const char *from, const char *to) {
 }
 
 inline int castle_shim_mkdir(const char *path, mode_t mode) {
-  return ::mkdir(castle_shim::map_path(path).c_str(), mode);
+  return castle_shim::make_dir(castle_shim::map_path(path).c_str(), mode);
 }

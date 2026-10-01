@@ -371,7 +371,7 @@ class CardPush(CardCase):
             code, body = self.put(name, b"x")
             self.assertEqual((code, body), (400, b"bad filename"), name)
         self.assertEqual(
-            sorted(str(p.relative_to(self.card)) for p in self.card.rglob("*")),
+            sorted(p.relative_to(self.card).as_posix() for p in self.card.rglob("*")),
             ["scenes", "scenes/vigil.mp3", "song.mp3"],
         )
 

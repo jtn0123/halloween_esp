@@ -350,7 +350,7 @@ class TestScenesSandbox(unittest.TestCase):
                 )
                 self.assertEqual(r.returncode, 0, f"{script}: {r.stdout}{r.stderr}")
             self.assertEqual(self._stamp(), before, "a repo artefact was rewritten")
-            built = {str(p.relative_to(sb)) for p in sb.rglob("*") if p.is_file()}
+            built = {p.relative_to(sb).as_posix() for p in sb.rglob("*") if p.is_file()}
             for rel in (
                 "_build/audio/01_sb_probe.mp3",
                 "_build/audio/markers.json",

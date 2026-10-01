@@ -107,12 +107,32 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
                 }
                 match pending() {
                     Action::None => {}
-                    Action::Stop => std::process::exit(0),
-                    Action::Restart => restart_self(),
+                    Action::Stop => {
+                        hand_over(conn.stream());
+                        std::process::exit(0)
+                    }
+                    Action::Restart => {
+                        hand_over(conn.stream());
+                        restart_self()
+                    }
                 }
             }
         }
     }
+}
+
+/// Let the reply that announced a stop or a restart actually arrive before
+/// the process goes. Windows resets every socket a dying process still
+/// holds, and a reset discards whatever the client had not read yet — the
+/// desk saw "connection reset" where "stopping" had been sent. So: no more
+/// to send (FIN after the reply), then wait — briefly — for the client to
+/// read it and hang up.
+fn hand_over(stream: &mut TcpStream) {
+    use std::io::Read;
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
+    let mut sink = [0u8; 512];
+    while matches!(stream.read(&mut sink), Ok(n) if n > 0) {}
 }
 
 /// A restarted image races its own predecessor: the dying connections'

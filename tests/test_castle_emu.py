@@ -327,8 +327,15 @@ class TestJsonEscaping(EmuCase):
     break the parse for every client."""
 
     def test_a_quoted_name_placed_on_the_card_does_not_break_the_list(self) -> None:
-        (self.card / 'say "boo".mp3').write_bytes(b"x")
-        (self.card / "back\\slash.mp3").write_bytes(b"y")
+        # Every byte safe_name refuses because it would break the JSON (or
+        # its UTF-8) that the host's filesystem can hold: NTFS has no room
+        # for '"' or '\\' in a name, so a Windows card directory meets only
+        # the other two — which are refused for the same reason.
+        odd = ["caf\u00e9.mp3", "rub\x7fout.mp3"]
+        if os.name != "nt":
+            odd += ['say "boo".mp3', "back\\slash.mp3"]
+        for i, name in enumerate(odd):
+            (self.card / name).write_bytes(bytes([i]))
         (self.card / "plain.mp3").write_bytes(b"z")
         try:
             code, out = self.http("GET", "/api/files")
@@ -336,13 +343,13 @@ class TestJsonEscaping(EmuCase):
             files = json.loads(out)  # the whole point: it parses
             names = [f["name"] for f in files if "name" in f]
             self.assertIn("plain.mp3", names)
-            self.assertNotIn('say "boo".mp3', names)
-            self.assertNotIn("back\\slash.mp3", names)
-            self.assertEqual([f for f in files if "skipped" in f], [{"skipped": 2}])
+            for name in odd:
+                self.assertNotIn(name, names)
+            want = [{"skipped": len(odd)}]
+            self.assertEqual([f for f in files if "skipped" in f], want)
         finally:
-            (self.card / 'say "boo".mp3').unlink()
-            (self.card / "back\\slash.mp3").unlink()
-            (self.card / "plain.mp3").unlink()
+            for name in [*odd, "plain.mp3"]:
+                (self.card / name).unlink()
         files = json.loads(self.http("GET", "/api/files")[1])
         self.assertFalse(any("skipped" in f for f in files))  # none → no trailer
 

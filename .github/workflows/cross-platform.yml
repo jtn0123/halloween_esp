@@ -111,5 +111,11 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci --ignore-scripts
         working-directory: web
-      - name: python suites (make test + make test-radio)
-        run: python tools/run_checks.py test test-radio
+      # Two steps rather than one `run_checks.py test test-radio`: the script
+      # stops at the first red suite, and on a port a red `test` hid every
+      # answer `test-radio` had. Either one failing still fails the job.
+      - name: python suites (make test)
+        run: python tools/run_checks.py test
+      - name: castle radio suites (make test-radio)
+        if: ${{ !cancelled() }}
+        run: python tools/run_checks.py test-radio

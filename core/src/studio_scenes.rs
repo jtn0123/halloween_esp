@@ -53,6 +53,16 @@ fn find_block(text: &str, sid: &str) -> Option<(usize, usize)> {
     }
 }
 
+/// The show as `find_block` reads it: `\n` line ends. A scenes.yaml saved
+/// with `\r\n` — by a Windows editor, or by a Python tool writing in text
+/// mode there — has no `  - id: x\n` header in it at all, so every edit
+/// used to miss the scene it was aimed at: a replace became a duplicate,
+/// a delete a silent no-op. The write below stores the `\n` form, so a
+/// file that arrives with `\r\n` is normalised by its first edit.
+fn lf(text: &str) -> String {
+    text.replace("\r\n", "\n")
+}
+
 /// studio_scenes._write: keep the pre-edit text, then replace atomically —
 /// a crash mid-write must never be able to truncate the show. The show is
 /// written with `\n` line ends whatever the request carried: a desk on
@@ -83,11 +93,12 @@ pub fn splice(app: &App, req: &Json) -> (Json, u16) {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let before = std::fs::read_to_string(&app.scenes).unwrap_or_default();
-        let span = find_block(&before, sid);
+        let show = lf(&before);
+        let span = find_block(&show, sid);
         replaced = span.is_some();
         let raw = match span {
-            Some((s, e)) => format!("{}{}\n\n{}", &before[..s], block, &before[e..]),
-            None => format!("{}\n\n{}\n", before.trim_end(), block),
+            Some((s, e)) => format!("{}{}\n\n{}", &show[..s], block, &show[e..]),
+            None => format!("{}\n\n{}\n", show.trim_end(), block),
         };
         if write_scenes(&app.scenes, &before, &raw).is_err() {
             return (
@@ -126,7 +137,8 @@ pub fn remove(app: &App, sid: &str) -> (Json, u16) {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let before = std::fs::read_to_string(&app.scenes).unwrap_or_default();
-        let Some((s, e)) = find_block(&before, sid) else {
+        let show = lf(&before);
+        let Some((s, e)) = find_block(&show, sid) else {
             return (
                 Json::Obj(vec![
                     ("ok".into(), Json::Bool(true)),
@@ -141,7 +153,7 @@ pub fn remove(app: &App, sid: &str) -> (Json, u16) {
                 200,
             );
         };
-        let raw = format!("{}{}", &before[..s], &before[e..]);
+        let raw = format!("{}{}", &show[..s], &show[e..]);
         if write_scenes(&app.scenes, &before, &raw).is_err() {
             return (
                 Json::Obj(vec![
@@ -265,6 +277,17 @@ mod tests {
         write_scenes(&f, SHOW, &SHOW.replace('\n', "\r\n")).expect("written");
         assert_eq!(std::fs::read_to_string(&f).expect("read"), SHOW);
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The FILE with Windows line ends, not the request: the block is still
+    /// found, so an edit replaces the scene instead of appending a twin.
+    #[test]
+    fn a_show_saved_with_windows_line_ends_still_has_its_blocks() {
+        let crlf = SHOW.replace('\n', "\r\n");
+        assert_eq!(find_block(&crlf, "storm"), None, "the bug this guards");
+        let show = lf(&crlf);
+        let (s, e) = find_block(&show, "storm").expect("storm is in there");
+        assert_eq!(&show[s..e], "  - id: storm\n    len: 40\n");
     }
 
     #[test]

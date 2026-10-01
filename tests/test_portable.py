@@ -11,6 +11,7 @@ the contract, and that is what these pin.
 from __future__ import annotations
 
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -197,6 +198,21 @@ class TestProcessGroups(unittest.TestCase):
             portable_proc.kill_tree(process)
         self.assertEqual(run.call_args[0][0], ["taskkill", "/T", "/F", "/PID", "4242"])
         process.kill.assert_called_once()
+
+
+class TestUtf8Env(unittest.TestCase):
+    def test_the_child_is_told_utf8_and_nothing_else_changes(self) -> None:
+        env = portable_proc.utf8_env({"PATH": "/bin", "PYTHONUTF8": "0"})
+        self.assertEqual(
+            env, {"PATH": "/bin", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+        )
+
+    def test_the_default_base_is_this_process_and_is_not_mutated(self) -> None:
+        with mock.patch.dict(os.environ, {"CASTLE_T_MARK": "kept"}):
+            env = portable_proc.utf8_env()
+            self.assertEqual(env["CASTLE_T_MARK"], "kept")
+            env["CASTLE_T_MARK"] = "changed"
+            self.assertEqual(os.environ["CASTLE_T_MARK"], "kept")
 
 
 class TestRunProgress(unittest.TestCase):

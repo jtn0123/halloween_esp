@@ -34,6 +34,7 @@ fn spawn_merged(argv: &[String]) -> std::io::Result<(Child, PipeReader)> {
     // to kill, or the read loop waits for the grandchild and the oplock
     // stays held with it (grade report 2026-09-17 B2).
     own_group(&mut cmd);
+    crate::studio_proc::utf8_child(&mut cmd);
     let child = cmd.spawn()?;
     adopt(&child);
     Ok((child, reader))

@@ -33,13 +33,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
+import cxx_compiler
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 CXX_DIR = ROOT / "tests" / "cxx"
 FIRMWARE = ROOT / "firmware"
 
-COMPILER = shutil.which("clang++") or shutil.which("g++")
+COMPILER = cxx_compiler.COMPILER  # g++ first on Windows; see the module
 #: Locally a missing compiler is a skip; in CI it is a failure. Same rule as
 #: tests/test_firmware_cxx.py, and for the same reason — a green tick that
 #: compiled nothing is worse than a red one.

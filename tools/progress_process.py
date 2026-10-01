@@ -16,7 +16,7 @@ import threading
 import time
 from typing import BinaryIO, cast
 
-from portable_proc import group_kwargs, kill_tree
+from portable_proc import group_kwargs, kill_tree, utf8_env
 
 #: One read's worth from a pipe; also how often the timeout is looked at.
 CHUNK = 8192
@@ -51,8 +51,13 @@ def _pump(stream: BinaryIO, name: str, chunks: queue.Queue[tuple[str, bytes]]) -
 
 
 def run_progress(args: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+    # Decoded as UTF-8 below, so the child is told to write UTF-8.
     process = subprocess.Popen(
-        args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **group_kwargs()
+        args,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=utf8_env(),
+        **group_kwargs(),
     )
     buffers = {"stdout": "", "stderr": ""}
     pending = {"stdout": "", "stderr": ""}
