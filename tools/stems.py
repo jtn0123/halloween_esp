@@ -35,7 +35,7 @@ channels (left / right / both). "both" is the mono downmix — exactly what the
 pipeline hears today — so the studio can put a channel's picture next to the
 pipeline's and show precisely what the downmix loses.
 
-    tools/stems.py <track-id> [--force] [--out DIR]
+    tools/stems.py <track-id> [--force] [--out DIR] [--fast-cpu]
 
 `--out DIR` writes to DIR/<id>/ instead of the library — a lab splitting
 into a scratch directory reads the track and never touches tracks/stems/.
@@ -200,7 +200,26 @@ def analyse_layers(files: dict[str, Path], sensitivity: float = 1.1) -> dict:
     return {"duration": round(dur, 3), "layers": layers}
 
 
-def _run_demucs(src: Path, out: Path, device: str) -> subprocess.CompletedProcess:
+#: Opt-in CPU shortcut (CASTLE_DEMUCS_FAST=1 or --fast-cpu): segment overlap
+#: 0.1 instead of demucs's 0.25, one worker per core. OFF by default because
+#: it was measured and the stems DO change: on a 30 s clip (Apple M-series,
+#: CPU, 2026-09-30) two default runs agreed at 24-25 dB SDR per stem — the
+#: random-shift noise floor — while the fast run sat at 21-22 dB for vocals
+#: and drums, 8.8 dB for `other` and 0.7 dB for bass, for roughly half the
+#: wall time (13 s against 27-40 s). The bass line is the "one" the beat grid
+#: leans on, so it stays a choice for a slow Windows CPU, not a default.
+FAST_ENV = "CASTLE_DEMUCS_FAST"
+FAST_OVERLAP = "0.1"
+
+
+def fast_cpu() -> bool:
+    """Whether the environment opted into the fast CPU split."""
+    return os.environ.get(FAST_ENV, "") == "1"
+
+
+def demucs_argv(src: Path, out: Path, device: str, fast: bool = False) -> list[str]:
+    """The demucs command line. `fast` only ever changes a CPU run: the GPU
+    is fast already, and its result should not move with a CPU knob."""
     # All four sources as float wavs with no clip guard: `backing` is summed
     # from three of them afterwards, and demucs's per-file `rescale` would
     # otherwise shrink a loud drum stem on its own before the sum saw it.
@@ -221,6 +240,15 @@ def _run_demucs(src: Path, out: Path, device: str) -> subprocess.CompletedProces
         str(out),
         str(src),
     ]
+    if fast and device == "cpu":
+        argv[-1:-1] = ["--overlap", FAST_OVERLAP, "-j", str(os.cpu_count() or 1)]
+    return argv
+
+
+def _run_demucs(
+    src: Path, out: Path, device: str, fast: bool = False
+) -> subprocess.CompletedProcess:
+    argv = demucs_argv(src, out, device, fast)
     if os.environ.get("CASTLE_PROGRESS_STREAM") == "1":
         from progress_process import run_progress
 
@@ -299,9 +327,13 @@ def _encode(wav: Path, mp3: Path) -> None:
         raise SystemExit(f"ffmpeg could not encode {mp3.name}")
 
 
-def separate(tid: str, force: bool = False, out: Path | None = None) -> int:
+def separate(
+    tid: str, force: bool = False, out: Path | None = None, fast: bool | None = None
+) -> int:
     """Split `tid` into DIR/<id>/, DIR being the library's stems directory
-    unless `out` names another — the track itself is only ever read."""
+    unless `out` names another — the track itself is only ever read. `fast`
+    (default: CASTLE_DEMUCS_FAST) takes the CPU shortcut FAST_ENV describes."""
+    fast = fast_cpu() if fast is None else fast
     src = track_file(tid)
     if src is None:
         raise SystemExit(f"no such track: {tid}")
@@ -324,10 +356,10 @@ def separate(tid: str, force: bool = False, out: Path | None = None) -> int:
         # must degrade to slow, not to broken.
         device = "mps" if platform.system() == "Darwin" else "cpu"
         try:
-            r = _run_demucs(src, tmp / "sep", device)
+            r = _run_demucs(src, tmp / "sep", device, fast)
             if r.returncode != 0 and device != "cpu":
                 print("  GPU path failed — retrying on CPU", flush=True)
-                r = _run_demucs(src, tmp / "sep", "cpu")
+                r = _run_demucs(src, tmp / "sep", "cpu", fast)
         except subprocess.TimeoutExpired:
             raise SystemExit(
                 f"demucs stalled — gave up after {SEPARATE_TIMEOUT // 60} minutes"
@@ -373,8 +405,15 @@ def main() -> int:
         type=Path,
         help="write DIR/<id>/ instead of the library's stems directory",
     )
+    ap.add_argument(
+        "--fast-cpu",
+        action="store_true",
+        default=None,
+        help=f"on CPU, overlap {FAST_OVERLAP} and one job per core: about twice "
+        f"as fast, measurably different stems (also {FAST_ENV}=1)",
+    )
     args = ap.parse_args()
-    return separate(args.id, force=args.force, out=args.out)
+    return separate(args.id, force=args.force, out=args.out, fast=args.fast_cpu)
 
 
 if __name__ == "__main__":
