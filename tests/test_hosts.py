@@ -209,10 +209,12 @@ class TestCastleKey(HostCase):
         self.assertEqual(hosts.castle_key("10.0.0.8"), "")  # porch's fallback
 
     def test_the_env_wins_and_empty_means_none(self) -> None:
-        os.environ["CASTLE_KEY"] = "fr0m-env"
-        self.assertEqual(hosts.key_headers("10.0.0.9"), {"X-Castle-Key": "fr0m-env"})
-        os.environ["CASTLE_KEY"] = ""
-        self.assertEqual(hosts.key_headers("10.0.0.9"), {})
+        with mock.patch.dict(os.environ, {"CASTLE_KEY": "fr0m-env"}):
+            self.assertEqual(
+                hosts.key_headers("10.0.0.9"), {"X-Castle-Key": "fr0m-env"}
+            )
+        with mock.patch.dict(os.environ, {"CASTLE_KEY": ""}):
+            self.assertEqual(hosts.key_headers("10.0.0.9"), {})
 
     def test_an_unknown_host_sends_none(self) -> None:
         self.assertEqual(hosts.key_headers("127.0.0.1:8093"), {})

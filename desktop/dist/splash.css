@@ -21,6 +21,9 @@ body {
 main { text-align: center; padding: 2rem; max-width: 34rem; }
 .rook { font-size: 5rem; line-height: 1; color: var(--pumpkin); }
 h1 { margin: 0.5rem 0 1rem; font-weight: 600; letter-spacing: 0.02em; }
+/* The two live lines are <output> elements (an implicit status role):
+   block-level and spaced like the paragraphs around them. */
+output { display: block; margin-block: 1em; }
 #message { min-height: 3em; }
 #message.error { color: #ffb4a0; }
 .hint { color: var(--muted); font-size: 0.85rem; margin-top: 2rem; }

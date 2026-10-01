@@ -206,7 +206,9 @@ pub fn seed_scenes(rt: &Runtime, data: &DataDirs) -> std::io::Result<bool> {
     // Both supervisors seed as they start, on their own threads; one at a
     // time, so the second sees the first one's file rather than racing it.
     static SEEDING: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _one = SEEDING.lock().unwrap_or_else(|e| e.into_inner());
+    let _one = SEEDING
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let target = data.scenes();
     if target.exists() {
         return Ok(false);

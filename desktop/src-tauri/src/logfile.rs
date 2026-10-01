@@ -49,7 +49,10 @@ impl LogFile {
     }
 
     pub fn line(&self, message: &str) {
-        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = self
+            .lock
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Ok(mut file) = self.handle() {
             let _ = writeln!(file, "[{}] castle-tools: {message}", utc_now());
         }

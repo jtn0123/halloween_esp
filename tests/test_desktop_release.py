@@ -122,8 +122,9 @@ class TestReleaseApi(unittest.TestCase):
                 rel.release_from_api(body)
 
     def test_offline_is_a_release_error_not_a_traceback(self) -> None:
+        offline = fake_fetch({})
         with self.assertRaises(rel.ReleaseError):
-            rel.find_release(fake_fetch({}))
+            rel.find_release(offline)
 
 
 class TestChecksums(unittest.TestCase):
@@ -155,12 +156,11 @@ class TestChecksums(unittest.TestCase):
         )
 
     def test_no_sums_no_install(self) -> None:
-        r = rel.Release("v0.1.0", {"core.zip": "u/core"})
-        with self.assertRaises(rel.ReleaseError):
-            rel.fetch_verified_asset(r, "core.zip", self.tmp, fake_fetch({}))
-        r2 = rel.Release("v0.1.0", {"SHA256SUMS": "u/sums"})
-        with self.assertRaises(rel.ReleaseError):
-            rel.fetch_verified_asset(r2, "core.zip", self.tmp, fake_fetch({}))
+        nothing = fake_fetch({})
+        for assets in ({"core.zip": "u/core"}, {"SHA256SUMS": "u/sums"}):
+            r = rel.Release("v0.1.0", assets)
+            with self.subTest(assets=assets), self.assertRaises(rel.ReleaseError):
+                rel.fetch_verified_asset(r, "core.zip", self.tmp, nothing)
 
     def test_safe_extract_refuses_zip_slip(self) -> None:
         archive = self.tmp / "evil.zip"
@@ -234,18 +234,12 @@ class TestThirdParty(unittest.TestCase):
             )
             self.assertEqual(Path(ff).read_bytes(), b"ff")
             self.assertEqual(Path(probe).name, "ffprobe.exe")
+            tampered, b2 = fake_fetch({pin.url: body + b"!"}), self.tmp / "b2"
             with self.assertRaises(rel.ReleaseError):
-                tp.fetch_pinned_ffmpeg(
-                    "Windows",
-                    "AMD64",
-                    self.tmp / "b2",
-                    fake_fetch({pin.url: body + b"!"}),
-                    self.tmp,
-                )
+                tp.fetch_pinned_ffmpeg("Windows", "AMD64", b2, tampered, self.tmp)
+        nothing = fake_fetch({})
         with self.assertRaises(rel.ReleaseError):
-            tp.fetch_pinned_ffmpeg(
-                "Linux", "riscv64", self.tmp, fake_fetch({}), self.tmp
-            )
+            tp.fetch_pinned_ffmpeg("Linux", "riscv64", self.tmp, nothing, self.tmp)
 
     def test_ytdlp_is_checked_against_its_release_sums(self) -> None:
         body = b"#!yt-dlp"
@@ -257,8 +251,9 @@ class TestThirdParty(unittest.TestCase):
         self.assertEqual(Path(out).name, "yt-dlp")
         self.assertEqual(Path(out).read_bytes(), body)
         pages[tp.YTDLP_BASE + "yt-dlp_macos"] = b"tampered"
+        tampered, dest = fake_fetch(pages), self.tmp / "t"
         with self.assertRaises(rel.ReleaseError):
-            tp.fetch_ytdlp("Darwin", self.tmp / "t", fake_fetch(pages))
+            tp.fetch_ytdlp("Darwin", dest, tampered)
 
 
 if __name__ == "__main__":

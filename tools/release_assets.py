@@ -48,6 +48,7 @@ import re
 import shutil
 import sys
 import zipfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -267,27 +268,60 @@ def finish(tag: str, out: Path, repo: str | None = None) -> list[str]:
     return want
 
 
+class Usage(Exception):
+    """The command line is not one this script takes: print the usage."""
+
+
+def _check_tag(tag: str) -> None:
+    print("true" if check_tag(tag) else "false")
+
+
+def _stage_firmware(tag: str, src: str, out: str) -> None:
+    check_tag(tag)
+    for p in stage_firmware(tag, Path(src), Path(out)):
+        print(p)
+
+
+def _zip_core(tag: str, target: str, src: str, out: str) -> None:
+    check_tag(tag)
+    print(zip_core(tag, target, Path(src), Path(out)))
+
+
+def _stage_desktop(tag: str, target: str, src: str, out: str) -> None:
+    check_tag(tag)
+    for p in stage_desktop(tag, target, Path(src), Path(out)):
+        print(p)
+
+
+def _finish(tag: str, out: str, *desktop: str) -> None:
+    repo = None
+    if desktop:
+        if len(desktop) != 2 or desktop[0] != "--desktop":
+            raise Usage
+        repo = desktop[1]
+    print("\n".join(finish(tag, Path(out), repo)))
+
+
+#: subcommand -> (handler, the argument counts it accepts)
+COMMANDS: dict[str, tuple[Callable[..., None], tuple[int, ...]]] = {
+    "check-tag": (_check_tag, (1,)),
+    "stage-firmware": (_stage_firmware, (3,)),
+    "zip-core": (_zip_core, (4,)),
+    "stage-desktop": (_stage_desktop, (4,)),
+    "finish": (_finish, (2, 4)),
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     cmd, rest = (args[0], args[1:]) if args else ("", [])
-    if cmd == "check-tag" and len(rest) == 1:
-        print("true" if check_tag(rest[0]) else "false")
-    elif cmd == "stage-firmware" and len(rest) == 3:
-        check_tag(rest[0])
-        for p in stage_firmware(rest[0], Path(rest[1]), Path(rest[2])):
-            print(p)
-    elif cmd == "zip-core" and len(rest) == 4:
-        check_tag(rest[0])
-        print(zip_core(rest[0], rest[1], Path(rest[2]), Path(rest[3])))
-    elif cmd == "stage-desktop" and len(rest) == 4:
-        check_tag(rest[0])
-        for p in stage_desktop(rest[0], rest[1], Path(rest[2]), Path(rest[3])):
-            print(p)
-    elif cmd == "finish" and len(rest) == 2:
-        print("\n".join(finish(rest[0], Path(rest[1]))))
-    elif cmd == "finish" and len(rest) == 4 and rest[2] == "--desktop":
-        print("\n".join(finish(rest[0], Path(rest[1]), rest[3])))
-    else:
+    handler, counts = COMMANDS.get(cmd, (None, ()))
+    if handler is None or len(rest) not in counts:
+        print(__doc__, file=sys.stderr)
+        return 2
+    try:
+        handler(*rest)
+    except Usage:
         print(__doc__, file=sys.stderr)
         return 2
     return 0

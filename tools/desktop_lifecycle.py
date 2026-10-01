@@ -16,6 +16,7 @@ override said.
 from __future__ import annotations
 
 import argparse
+import functools
 import json
 import os
 import shutil
@@ -62,6 +63,42 @@ def _rmtree(path: Path) -> None:
     shutil.rmtree(path, onexc=retry)
 
 
+def uninstall_refusal(dirs: de.Dirs, targets: list[Path], home: Path) -> str | None:
+    """Why this uninstall must not run at all, or None when it may."""
+    for t in targets:
+        why = removable(t, home)
+        if why:
+            return why
+    if dirs.install.exists() and not dirs.install_file.is_file():
+        return f"{dirs.install} has no {de.INSTALL_FILE} — not ours"
+    if dirs.data == dirs.install or dirs.data in dirs.install.parents:
+        return f"the data dir {dirs.data} contains the install"
+    return None
+
+
+def _remove_all(
+    dirs: de.Dirs,
+    targets: list[Path],
+    shortcut: Path,
+    dry_run: bool,
+    say: Callable[[str], None],
+) -> None:
+    """The library link first (rmtree must never follow it into the data),
+    then the Start-menu shortcut, then the trees themselves."""
+    verb = "[dry-run] would remove" if dry_run else "removing"
+    link = dirs.app / de.RADIO_DATA
+    steps: list[tuple[str, Callable[[], None]]] = []
+    if de.is_link(link):
+        steps.append((f"the library link {link}", lambda: de.remove_link(link)))
+    if dirs.system == "Windows" and shortcut.exists():
+        steps.append((str(shortcut), shortcut.unlink))
+    steps += [(str(t), functools.partial(_rmtree, t)) for t in targets if t.exists()]
+    for what, act in steps:
+        say(f"{verb} {what}")
+        if not dry_run:
+            act()
+
+
 def uninstall(
     dirs: de.Dirs,
     purge: bool,
@@ -73,35 +110,11 @@ def uninstall(
     env = dict(os.environ if environ is None else environ)
     home = home or Path.home()
     targets = [dirs.install] + ([dirs.data] if purge else [])
-    for t in targets:
-        why = removable(t, home)
-        if why:
-            say(f"refusing to uninstall: {why}")
-            return 1
-    if dirs.install.exists() and not dirs.install_file.is_file():
-        say(
-            f"refusing to uninstall: {dirs.install} has no {de.INSTALL_FILE} — not ours"
-        )
+    why = uninstall_refusal(dirs, targets, home)
+    if why:
+        say(f"refusing to uninstall: {why}")
         return 1
-    if dirs.data == dirs.install or dirs.data in dirs.install.parents:
-        say(f"refusing to uninstall: the data dir {dirs.data} contains the install")
-        return 1
-    verb = "[dry-run] would remove" if dry_run else "removing"
-    link = dirs.app / de.RADIO_DATA
-    if de.is_link(link):
-        say(f"{verb} the library link {link}")
-        if not dry_run:
-            de.remove_link(link)  # before rmtree, which must never reach the data
-    shortcut = start_menu_shortcut(env, home)
-    if dirs.system == "Windows" and shortcut.exists():
-        say(f"{verb} {shortcut}")
-        if not dry_run:
-            shortcut.unlink()
-    for t in targets:
-        if t.exists():
-            say(f"{verb} {t}")
-            if not dry_run:
-                _rmtree(t)
+    _remove_all(dirs, targets, start_menu_shortcut(env, home), dry_run, say)
     if not purge:
         say(f"kept your songs and show in {dirs.data} (--purge removes them)")
     say(

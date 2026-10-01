@@ -167,6 +167,17 @@ class StagingTests(unittest.TestCase):
             self.assertEqual(ra.main(["finish", TAG]), 2)
         self.assertIn("release contract", err.getvalue())
 
+    def test_every_malformed_command_line_is_usage_not_a_crash(self) -> None:
+        for argv in (
+            [],
+            ["no-such-command"],
+            ["zip-core", TAG],
+            ["finish", TAG, str(self.out), "--desk", "owner/repo"],
+            ["finish", TAG, str(self.out), "--desktop"],
+        ):
+            with self.subTest(argv=argv), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(ra.main(argv), 2)
+
 
 if __name__ == "__main__":
     unittest.main()

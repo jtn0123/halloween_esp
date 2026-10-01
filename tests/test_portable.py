@@ -218,12 +218,13 @@ class TestRunProgress(unittest.TestCase):
     def test_a_stall_times_out_and_takes_the_grandchild(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             beat = Path(td, "beat")
+            cmd = [PY, "-c", parent_of_beat(beat)]
             started = time.monotonic()
             with (
                 redirect_stdout(io.StringIO()),
                 self.assertRaises(subprocess.TimeoutExpired),
             ):
-                progress_process.run_progress([PY, "-c", parent_of_beat(beat)], 1.5)
+                progress_process.run_progress(cmd, 1.5)
             self.assertLess(time.monotonic() - started, 10)
             self.assertTrue(beat.exists(), "the grandchild never started")
             self.assertFalse(still_beating(beat), "the grandchild outlived the kill")
