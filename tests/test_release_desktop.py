@@ -33,13 +33,17 @@ def fake_bundle(root: Path, target: str) -> Path:
     if target == WIN:
         (b / "nsis").mkdir(parents=True)
         (b / "nsis" / "Castle Tools_0.1.0_x64-setup.exe").write_bytes(b"nsis")
-        (b / "nsis" / "Castle Tools_0.1.0_x64-setup.exe.sig").write_text("SIG-WIN\n")
+        (b / "nsis" / "Castle Tools_0.1.0_x64-setup.exe.sig").write_text(
+            "SIG-WIN\n", encoding="utf-8"
+        )
     else:
         (b / "dmg").mkdir(parents=True)
         (b / "macos").mkdir()
         (b / "dmg" / "Castle Tools_0.1.0_aarch64.dmg").write_bytes(b"dmg")
         (b / "macos" / "Castle Tools.app.tar.gz").write_bytes(b"tgz")
-        (b / "macos" / "Castle Tools.app.tar.gz.sig").write_text("SIG-MAC\n")
+        (b / "macos" / "Castle Tools.app.tar.gz.sig").write_text(
+            "SIG-MAC\n", encoding="utf-8"
+        )
     return b
 
 
@@ -96,7 +100,7 @@ class DesktopTests(unittest.TestCase):
         ra.stage_desktop(TAG, MAC, b, self.out)
         tgz = self.out / "castle-tools-aarch64-apple-darwin-v0.1.0.app.tar.gz"
         self.assertEqual(tgz.read_bytes(), b"tgz")
-        self.assertEqual(Path(f"{tgz}.sig").read_text(), "SIG-MAC\n")
+        self.assertEqual(Path(f"{tgz}.sig").read_text(encoding="utf-8"), "SIG-MAC\n")
 
     def test_an_unsigned_build_is_refused(self) -> None:
         b = fake_bundle(self.tmp, WIN)
@@ -117,7 +121,7 @@ class DesktopTests(unittest.TestCase):
         self.assertEqual(
             self._quiet(["finish", TAG, str(self.out), "--desktop", REPO]), 0
         )
-        doc = json.loads((self.out / "latest.json").read_text())
+        doc = json.loads((self.out / "latest.json").read_text(encoding="utf-8"))
         self.assertEqual(doc["version"], "0.1.0")
         base = "https://github.com/jtn0123/halloween_esp/releases/download/v0.1.0/"
         self.assertEqual(
@@ -134,7 +138,9 @@ class DesktopTests(unittest.TestCase):
                 },
             },
         )
-        self.assertIn("latest.json", (self.out / "SHA256SUMS").read_text())
+        self.assertIn(
+            "latest.json", (self.out / "SHA256SUMS").read_text(encoding="utf-8")
+        )
 
     def test_finish_without_desktop_refuses_stray_bundles(self) -> None:
         self._stage_everything()

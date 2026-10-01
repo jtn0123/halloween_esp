@@ -242,13 +242,17 @@ def main() -> int:
     ]
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    OUT.write_text("\n".join(out))
+    OUT.write_text("\n".join(out), encoding="utf-8")
 
-    AUDIO_SD.write_text(ga.emit_audio_sd(doc))
+    AUDIO_SD.write_text(ga.emit_audio_sd(doc), encoding="utf-8")
 
-    RIG_OUT.write_text(emit_rig_header(layouts, zones, round(cap * 100)))
-    LIGHTS_OUT.write_text(emit_lights(layouts, zones, per))
-    FALLBACK_SCENES_OUT.write_text(gen_scene_cards.fallback_header(doc))
+    RIG_OUT.write_text(
+        emit_rig_header(layouts, zones, round(cap * 100)), encoding="utf-8"
+    )
+    LIGHTS_OUT.write_text(emit_lights(layouts, zones, per), encoding="utf-8")
+    FALLBACK_SCENES_OUT.write_text(
+        gen_scene_cards.fallback_header(doc), encoding="utf-8"
+    )
 
     # And the show itself, as card files. Last, so a scene the validation
     # above rejects never leaves a half-written manifest behind for

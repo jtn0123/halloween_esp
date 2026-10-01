@@ -462,7 +462,8 @@ class TestShowPlaylistLength(unittest.TestCase):
         the playlist would cut the tail off every scene of the evening."""
         self.assertIs(ge.SOUND_WAIT_MS, gs.SOUND_WAIT_MS)
         runner = yaml.load(
-            (ROOT_DIR / "firmware" / "castle_scenes.yaml").read_text(), EsphomeLoader
+            (ROOT_DIR / "firmware" / "castle_scenes.yaml").read_text(encoding="utf-8"),
+            EsphomeLoader,
         )
         run = next(s for s in runner["script"] if s["id"] == "scene_run")
         body = next(st for st in run["then"] if "if" in st)["if"]["then"]

@@ -152,7 +152,7 @@ class TestFirmwareRenderPath(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         rows = [json.loads(line) for line in run.stdout.splitlines()]
         zones = [r for r in rows if r["kind"] == "zone"]
-        rig = (FIRMWARE / "generated" / "rig.h").read_text()
+        rig = (FIRMWARE / "generated" / "rig.h").read_text(encoding="utf-8")
         declared = int(
             rig.split("inline constexpr Fixture RIG[", 1)[1].split("]", 1)[0]
         )
@@ -177,7 +177,7 @@ class TestFirmwareRenderPath(unittest.TestCase):
     def test_every_zone_renders_its_own_pixel_count(self) -> None:
         """A zone whose Fixture disagrees with its strip length would write
         past the buffer on the device, where there is nothing to catch it."""
-        rig = (FIRMWARE / "generated" / "rig.h").read_text()
+        rig = (FIRMWARE / "generated" / "rig.h").read_text(encoding="utf-8")
         self.assertIn("inline constexpr Fixture RIG[", rig)
         self.assertIn("RIG_MAX_PIXELS", rig)
         biggest = max(

@@ -63,7 +63,10 @@ class Published:
         path = record_path()
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(self.hosts, indent=1, sort_keys=True) + "\n")
+            path.write_text(
+                json.dumps(self.hosts, indent=1, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
         except OSError as e:
             print(f"  (could not write {bp.rel(path)}: {e})")
             return
@@ -78,7 +81,7 @@ def _load(path: Path) -> dict[str, dict[str, str]]:
     """host -> {name: sha256}. Anything unreadable or the wrong shape is
     simply no record: the byte compare is still there to be right."""
     try:
-        raw = json.loads(path.read_text())
+        raw = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
     if not isinstance(raw, dict):

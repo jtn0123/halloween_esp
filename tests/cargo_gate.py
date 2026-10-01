@@ -31,7 +31,9 @@ CARGO = shutil.which("cargo")
 
 def pinned_channel() -> str:
     """The channel core/rust-toolchain.toml pins, e.g. "1.88.0"."""
-    m = re.search(r'^channel\s*=\s*"([^"]+)"', TOOLCHAIN.read_text(), re.MULTILINE)
+    m = re.search(
+        r'^channel\s*=\s*"([^"]+)"', TOOLCHAIN.read_text(encoding="utf-8"), re.MULTILINE
+    )
     assert m is not None, f"no [toolchain] channel in {TOOLCHAIN}"
     return m.group(1)
 

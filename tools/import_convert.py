@@ -9,12 +9,13 @@ manifest or prints the summary. import_track re-exports these names, so
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
+import exe_paths
+import portable_fs
 from track_lib import SRC_DIR, TRACKS
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -78,7 +79,13 @@ def _encode(cmd: list[str], src: Path, out: Path, part: Path) -> None:
     step, so a failure leaves whatever was already there untouched."""
     try:
         r = subprocess.run(
-            cmd, capture_output=True, text=True, check=False, timeout=300
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=300,
         )
     except subprocess.TimeoutExpired:
         part.unlink(missing_ok=True)
@@ -94,12 +101,12 @@ def _encode(cmd: list[str], src: Path, out: Path, part: Path) -> None:
             f"ffmpeg could not convert it "
             f"({tail[-1] if tail else f'exit {r.returncode}'})"
         )
-    os.replace(part, out)
+    portable_fs.replace(part, out)
 
 
 def convert(src: Path, out: Path, o: dict[str, Any]) -> None:
     """One ffmpeg pass: trim, filter, downmix, resample, encode."""
-    cmd = ["ffmpeg", "-v", "quiet", "-y"]
+    cmd = [exe_paths.ffmpeg(), "-v", "quiet", "-y"]
     if o["start"]:
         cmd += ["-ss", str(o["start"])]
     cmd += ["-i", str(src)]
@@ -128,7 +135,7 @@ def probe_duration(src: Path) -> float | None:
     try:
         r = subprocess.run(
             [
-                "ffprobe",
+                exe_paths.ffprobe(),
                 "-v",
                 "error",
                 "-show_entries",
@@ -139,6 +146,8 @@ def probe_duration(src: Path) -> float | None:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=60,
         )

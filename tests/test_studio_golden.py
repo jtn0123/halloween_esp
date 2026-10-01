@@ -36,11 +36,12 @@ import cargo_gate
 import golden_case as gc
 import golden_corpus as corpus
 from check_loc import SCENE_LIMIT
+from exe_paths import exe
 from helpers import SANDBOX_ENV
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
-BIN = ROOT / "core" / "target" / "release" / "studio"
+BIN = ROOT / "core" / "target" / "release" / exe("studio")
 
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")

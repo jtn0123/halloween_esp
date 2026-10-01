@@ -93,11 +93,11 @@ def generate(scenes: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[s
             ("MARKERS", tmp / "m.json"),
         ):
             stack.enter_context(mock.patch.object(ge, n, v))
-        ge.SRC.write_text(yaml.safe_dump(doc))
+        ge.SRC.write_text(yaml.safe_dump(doc), encoding="utf-8")
         assert ge.main() == 0
-        out: list[dict[str, Any]] = yaml.load(ge.OUT.read_text(), EsphomeLoader)[
-            "script"
-        ]
+        out: list[dict[str, Any]] = yaml.load(
+            ge.OUT.read_text(encoding="utf-8"), EsphomeLoader
+        )["script"]
         return out, sorted(p.name for p in card.iterdir())
 
 
@@ -110,7 +110,7 @@ def firmware_scripts() -> list[tuple[str, str, list[Any]]]:
     """
     out: list[tuple[str, str, list[Any]]] = []
     for path in sorted((ROOT / "firmware").glob("*.yaml")):
-        doc = yaml.load(path.read_text(), EsphomeLoader)
+        doc = yaml.load(path.read_text(encoding="utf-8"), EsphomeLoader)
         if not isinstance(doc, dict):
             continue
         out.extend(

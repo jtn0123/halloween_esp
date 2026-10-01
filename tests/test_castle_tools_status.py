@@ -30,7 +30,9 @@ class CastleToolsStatusTests(unittest.TestCase):
             cache = Path(tmp)
             snap = cache / "models--adefossez--HTDemucs" / "snapshots" / "revision"
             snap.mkdir(parents=True)
-            (snap / "htdemucs.yaml").write_text("models: [one, two]\n")
+            (snap / "htdemucs.yaml").write_text(
+                "models: [one, two]\n", encoding="utf-8"
+            )
             (snap / "one.safetensors").write_bytes(b"weight")
             with mock.patch.dict(os.environ, {"HF_HUB_CACHE": str(cache)}):
                 self.assertFalse(tools_status._model()["ok"])
@@ -42,7 +44,7 @@ class CastleToolsStatusTests(unittest.TestCase):
             ok = name not in {"demucs", "torch"}
             return {"name": name, "ok": ok, "detail": "test", "required": required}
 
-        good_command = lambda name, required=True: {  # noqa: E731
+        good_command = lambda name, required=True, command=None: {  # noqa: E731
             "name": name,
             "ok": True,
             "detail": "test",
@@ -84,7 +86,9 @@ class CastleToolsStatusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             snap = Path(tmp) / "models--adefossez--HTDemucs" / "snapshots" / "revision"
             snap.mkdir(parents=True)
-            (snap / "htdemucs.yaml").write_text("models: [unterminated")
+            (snap / "htdemucs.yaml").write_text(
+                "models: [unterminated", encoding="utf-8"
+            )
             with mock.patch.dict(os.environ, {"HF_HUB_CACHE": tmp}):
                 self.assertFalse(tools_status._model()["ok"])
 
@@ -99,11 +103,14 @@ class CastleToolsStatusTests(unittest.TestCase):
             curl = fake / "bin" / "curl"
             curl.write_text(
                 "#!/bin/sh\nprintf '%s\\n' "
-                '\'{"service":"castle-radio","protocol":1}\'\n'
+                '\'{"service":"castle-radio","protocol":1}\'\n',
+                encoding="utf-8",
             )
             opened = fake / "opened"
             opener = fake / "bin" / "open"
-            opener.write_text(f"#!/bin/sh\nprintf '%s' \"$1\" > '{opened}'\n")
+            opener.write_text(
+                f"#!/bin/sh\nprintf '%s' \"$1\" > '{opened}'\n", encoding="utf-8"
+            )
             curl.chmod(0o755)
             opener.chmod(0o755)
             env = os.environ.copy()
@@ -119,7 +126,7 @@ class CastleToolsStatusTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("already running", result.stdout)
-            self.assertEqual(opened.read_text(), "http://10.27.27.81/")
+            self.assertEqual(opened.read_text(encoding="utf-8"), "http://10.27.27.81/")
 
     def test_launcher_refuses_a_different_service_on_its_port(self) -> None:
         root = Path(__file__).resolve().parents[1]
@@ -131,7 +138,8 @@ class CastleToolsStatusTests(unittest.TestCase):
             os.symlink(sys.executable, fake / ".venv" / "bin" / "python")
             curl = fake / "bin" / "curl"
             curl.write_text(
-                "#!/bin/sh\nprintf '%s\\n' '{\"service\":\"someone-else\"}'\n"
+                "#!/bin/sh\nprintf '%s\\n' '{\"service\":\"someone-else\"}'\n",
+                encoding="utf-8",
             )
             curl.chmod(0o755)
             env = os.environ.copy()

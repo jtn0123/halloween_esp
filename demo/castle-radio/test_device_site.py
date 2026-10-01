@@ -46,7 +46,8 @@ class FakeData(unittest.TestCase):
                     },
                     {"key": "radio_gone", "title": "Gone", "duration": 3, "cues": cues},
                 ]
-            )
+            ),
+            encoding="utf-8",
         )
 
 
@@ -106,7 +107,7 @@ class TestBuild(FakeData):
     def test_the_castle_guard_is_in_the_source_not_only_the_build(self):
         """B47: the control-room laptop must not fetch media/ either, so the
         castle-mode guard lives in app.js and the build only moves the path."""
-        source = (HERE / "app.js").read_text()
+        source = (HERE / "app.js").read_text(encoding="utf-8")
         self.assertIn(
             "if($('output-target').value==='castle')"
             "{audio.removeAttribute('src');audio.load();}",
@@ -133,7 +134,7 @@ class TestBuild(FakeData):
         )
 
     def test_inventory_and_version_parse_match_the_python_bridge(self):
-        page = (HERE / "castle-direct.js").read_text()
+        page = (HERE / "castle-direct.js").read_text(encoding="utf-8")
         self.assertIn("f.name && !f.dir", page)
         self.assertIn("/^(\\d+)\\.(\\d+)/.exec(", page)
         self.assertIn("hex.toLowerCase()", page)

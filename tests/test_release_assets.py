@@ -141,9 +141,11 @@ class StagingTests(unittest.TestCase):
     def test_finish_writes_manifest_and_sums_over_everything_else(self) -> None:
         self._stage_all()
         self.assertEqual(self._quiet(["finish", TAG, str(self.out)]), 0)
-        manifest = json.loads((self.out / "flasher-manifest.json").read_text())
+        manifest = json.loads(
+            (self.out / "flasher-manifest.json").read_text(encoding="utf-8")
+        )
         self.assertEqual(manifest["version"], TAG)
-        sums = (self.out / "SHA256SUMS").read_text().splitlines()
+        sums = (self.out / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
         named = {line.split("  ", 1)[1]: line.split("  ", 1)[0] for line in sums}
         self.assertEqual(sorted(named), sorted(ra.expected_assets(TAG)[:-1]))
         for name, digest in named.items():
@@ -155,7 +157,7 @@ class StagingTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "missing .*castle-core"):
             ra.finish(TAG, self.out)
         self._stage_all()
-        (self.out / "notes.txt").write_text("stray")
+        (self.out / "notes.txt").write_text("stray", encoding="utf-8")
         with self.assertRaisesRegex(SystemExit, r"extra \['notes.txt'\]"):
             ra.finish(TAG, self.out)
 

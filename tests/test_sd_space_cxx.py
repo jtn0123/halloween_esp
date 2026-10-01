@@ -64,9 +64,9 @@ class TestStatusDoesNotTimeOutTheCache(unittest.TestCase):
         """A grep, deliberately: the defect was a 60 s expiry read by
         h_status, and a re-introduced one would pass every behaviour test
         that runs in under a minute."""
-        space = (ROOT / "firmware" / "sd_space.h").read_text()
+        space = (ROOT / "firmware" / "sd_space.h").read_text(encoding="utf-8")
         self.assertNotIn("esp_timer_get_time", space)
-        web = (ROOT / "firmware" / "sd_web.h").read_text()
+        web = (ROOT / "firmware" / "sd_web.h").read_text(encoding="utf-8")
         self.assertNotIn("esp_vfs_fat_info", web)
         status = web.split("inline esp_err_t h_status(")[1].split("\ninline ")[0]
         self.assertIn("sd_space_kb(sd_total, sd_free)", status)

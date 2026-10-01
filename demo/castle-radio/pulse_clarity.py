@@ -78,7 +78,7 @@ def experiment(source, destination):
     target.write_bytes(blob)
     after = preview_from_blob(source.stem, blob)
     after["name"] = before["name"] + " — pulse clarity experiment"
-    target.with_suffix(".show.json").write_text(json.dumps(after))
+    target.with_suffix(".show.json").write_text(json.dumps(after), encoding="utf-8")
     assert source.read_bytes() == original
     return {
         "source": str(source),

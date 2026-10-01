@@ -227,11 +227,11 @@ class TestInjection(unittest.TestCase):
             gp.BUNDLE,
         )
         gp.STYLES = self.tmp / "styles.css"
-        gp.STYLES.write_text("body { color: red }\n\n")
+        gp.STYLES.write_text("body { color: red }\n\n", encoding="utf-8")
         gp.PANELS = self.tmp / "panels.css"
-        gp.PANELS.write_text("/* panels */\n")
+        gp.PANELS.write_text("/* panels */\n", encoding="utf-8")
         gp.MOBILE = self.tmp / "mobile.css"
-        gp.MOBILE.write_text("/* mobile */\n")
+        gp.MOBILE.write_text("/* mobile */\n", encoding="utf-8")
         gp.WEB = self.tmp / "web"
         (gp.WEB / "node_modules").mkdir(parents=True)
         gp.BUNDLE = gp.WEB / "dist" / "bundle.js"
@@ -251,7 +251,7 @@ class TestInjection(unittest.TestCase):
         """Stand in for esbuild: the bundler is not what these tests are about."""
 
         def run(*_a: object, **_k: object) -> types.SimpleNamespace:
-            gp.BUNDLE.write_text(self.js)
+            gp.BUNDLE.write_text(self.js, encoding="utf-8")
             return types.SimpleNamespace(returncode=rc, stdout="out", stderr="err")
 
         return types.SimpleNamespace(run=run)

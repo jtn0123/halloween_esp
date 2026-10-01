@@ -28,11 +28,12 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import cargo_gate
+from exe_paths import exe
 from synth_probes import numpy_uniform_mode
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
-DUMP = ROOT / "core" / "target" / "release" / "synth_dump"
+DUMP = ROOT / "core" / "target" / "release" / exe("synth_dump")
 SR = 44100
 
 
@@ -260,7 +261,9 @@ class TestMasterChainParity(unittest.TestCase):
 
         modes = kernel_modes()
         umode = numpy_uniform_mode()
-        doc = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
+        doc = yaml.safe_load(
+            (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
+        )
         wanted = {"storm", "approach", "visitation", "ballroom", "crypt"}
         scenes = [sc for sc in doc["scenes"] if sc["id"] in wanted]
         self.assertEqual(len(scenes), 5, "scenes.yaml no longer has these ids")

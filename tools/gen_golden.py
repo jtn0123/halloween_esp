@@ -47,9 +47,10 @@ sys.path.insert(0, str(ROOT / "tools"))
 import cargo_gate  # noqa: E402
 import golden_case as gc  # noqa: E402
 from check_loc import SCENE_LIMIT  # noqa: E402
+from exe_paths import exe  # noqa: E402
 from helpers import SANDBOX_ENV  # noqa: E402
 
-BIN = ROOT / "core" / "target" / "release" / "studio"
+BIN = ROOT / "core" / "target" / "release" / exe("studio")
 
 
 def capture() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -91,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         stale = []
         for path, data in pairs:
             want = gc.serialize(data)
-            if not path.exists() or path.read_text() != want:
+            if not path.exists() or path.read_text(encoding="utf-8") != want:
                 stale.append(path)
         for path in stale:
             print(f"STALE: {path}")

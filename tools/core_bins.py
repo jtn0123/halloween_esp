@@ -23,6 +23,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import exe_paths
+
 ROOT = Path(__file__).resolve().parent.parent
 CORE = ROOT / "core"
 
@@ -55,7 +57,7 @@ def _is_fresh(exe: Path) -> bool:
 def core_bin(name: str) -> Path:
     """core/target/release/<name>, rebuilt when it is stale and cargo is
     here to do it — once per process (the cache), not once per call."""
-    exe = CORE / "target" / "release" / name
+    exe = CORE / "target" / "release" / exe_paths.exe(name)
     cargo = shutil.which("cargo")
     if cargo and not _is_fresh(exe):
         # From core/, not with --manifest-path: rustup finds the toolchain pin

@@ -39,7 +39,7 @@ def _entries() -> dict[str, _Device]:
     malformed file means no devices, not a traceback — the studio runs
     castle-less by design."""
     try:
-        doc = tomllib.loads(DEVICES.read_text())
+        doc = tomllib.loads(DEVICES.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
         return {}
     out: dict[str, _Device] = {}

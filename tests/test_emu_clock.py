@@ -109,7 +109,7 @@ class TestTheGraceIsTheFirmwareNumber(unittest.TestCase):
         """castle_emu_clock.SOUND_WAIT_S is sd_web_state.h's kSoundWaitUs;
         a grace that drifted apart would have the emulator report an end the
         board is still calling "starting"."""
-        state = (ROOT / "firmware" / "sd_web_state.h").read_text()
+        state = (ROOT / "firmware" / "sd_web_state.h").read_text(encoding="utf-8")
         match = re.search(r"kSoundWaitUs = (\d+);", state)
         assert match is not None, "kSoundWaitUs is gone from sd_web_state.h"
         self.assertEqual(castle_emu_clock.SOUND_WAIT_S, int(match.group(1)) / 1e6)

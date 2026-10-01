@@ -93,7 +93,7 @@ class DeviceEventsRouteTests(unittest.TestCase):
         served = set(server.Handler.GET_ROUTES) | set(server.Handler.POST_ROUTES)
         prefixes = (server.DEVICE_AUDIO_PREFIX, "/radio/device/sync")
         for name in ("device-link.js", "remote-library.js", "castle-direct.js"):
-            for path in DEVICE_PATH.findall((HERE / name).read_text()):
+            for path in DEVICE_PATH.findall((HERE / name).read_text(encoding="utf-8")):
                 self.assertTrue(
                     path in served or path.startswith(prefixes),
                     f"{name} calls {path}, which server.py does not route",
@@ -117,7 +117,7 @@ class DesktopRoutesTests(unittest.TestCase):
         )
 
     def test_every_page_script_is_served_by_the_desktop(self):
-        page = (HERE / "index.html").read_text()
+        page = (HERE / "index.html").read_text(encoding="utf-8")
         for name in re.findall(r'<script src="([^"]+)"', page):
             self.assertIn("/" + name, server.STATIC_ROUTES)
 
@@ -302,7 +302,9 @@ class SimplePostTests(unittest.TestCase):
     def test_rename_changes_the_catalog_title_and_nothing_else(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "catalog.json"
-            path.write_text('[{"key": "radio_a", "title": "old", "cues": [1]}]')
+            path.write_text(
+                '[{"key": "radio_a", "title": "old", "cues": [1]}]', encoding="utf-8"
+            )
             with patch("radio_jobs.CATALOG", path):
                 ask = b'{"key": "radio_a", "title": "  Monster   Mash "}'
                 self.assertEqual(
@@ -318,7 +320,7 @@ class SimplePostTests(unittest.TestCase):
                     400,
                 )
             self.assertEqual(
-                __import__("json").loads(path.read_text()),
+                __import__("json").loads(path.read_text(encoding="utf-8")),
                 [{"key": "radio_a", "title": "Monster Mash", "cues": [1]}],
             )
 

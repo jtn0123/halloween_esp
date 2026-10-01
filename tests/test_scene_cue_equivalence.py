@@ -193,9 +193,11 @@ class TestSceneCueEquivalence(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls.show = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
+        cls.show = yaml.safe_load(
+            (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
+        )
         mf = ROOT / "audio" / "markers.json"
-        cls.markers = json.loads(mf.read_text()) if mf.exists() else {}
+        cls.markers = json.loads(mf.read_text(encoding="utf-8")) if mf.exists() else {}
 
     def each(self) -> Any:
         zone_ids = [z["id"] for z in self.show["zones"]]

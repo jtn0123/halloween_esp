@@ -42,7 +42,9 @@ class TestShape(unittest.TestCase):
     def test_every_real_scene_is_clean(self) -> None:
         """The rule set must accept the show as it is, or it is the wrong
         rule set."""
-        doc = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
+        doc = yaml.safe_load(
+            (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
+        )
         zones = [z["id"] for z in doc["zones"]]
         for s in doc["scenes"]:
             self.assertEqual(ss.validate(s, zones), [], s["id"])

@@ -89,7 +89,7 @@ def slot_size(img: Path) -> int:
     csv = img.parent.parent / "partitions.csv"
     if not csv.exists():
         raise SystemExit(f"no partition table beside {img}: expected {csv}")
-    for line in csv.read_text().splitlines():
+    for line in csv.read_text(encoding="utf-8").splitlines():
         cols = [c.strip() for c in line.split(",")]
         if cols and cols[0] == "app0":
             return int(cols[4], 0)

@@ -12,11 +12,15 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+import exe_paths
 
 RATE = 16000
 HOP = 160  # 10 ms
@@ -29,7 +33,7 @@ QUIET = 0.02  # a frame this far under the stem's loudest is silence
 def decode(path: Path) -> np.ndarray:
     """Mono float32 samples at RATE."""
     raw = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(path), "-f", "f32le", "-ac", "1",
+        [exe_paths.ffmpeg(), "-v", "error", "-i", str(path), "-f", "f32le", "-ac", "1",
          "-ar", str(RATE), "-"],
         capture_output=True, check=True,
     ).stdout  # fmt: skip
@@ -117,8 +121,10 @@ def midi(hz: float | None) -> float | None:
 def track(vocals: Path, cache: Path) -> Pitch:
     """The stem's pitch track, from `cache` when it is newer than the stem."""
     if cache.is_file() and cache.stat().st_mtime >= vocals.stat().st_mtime:
-        doc = json.loads(cache.read_text())
+        doc = json.loads(cache.read_text(encoding="utf-8"))
         return Pitch(doc["hop_ms"], tuple(doc["notes"]))
     notes = tuple(midi(f) for f in yin(decode(vocals)))
-    cache.write_text(json.dumps({"hop_ms": HOP * 1000 // RATE, "notes": notes}))
+    cache.write_text(
+        json.dumps({"hop_ms": HOP * 1000 // RATE, "notes": notes}), encoding="utf-8"
+    )
     return Pitch(HOP * 1000 // RATE, notes)

@@ -29,6 +29,7 @@ os.environ.update(
     CASTLE_BUILD=str(DATA / "build"),
 )
 sys.path.insert(0, str(ROOT / "tools"))
+import portable_fs  # noqa: E402
 from import_scene import fit_to_density, scene_block  # noqa: E402
 from import_track import crate_analysis  # noqa: E402
 
@@ -51,7 +52,7 @@ QUALITY_BITRATES = {
 
 def track_manifest():
     path = LIBRARY / "tracks.json"
-    return json.loads(path.read_text()) if path.exists() else {}
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
 def source_metadata(key, manifest=None):
@@ -104,7 +105,7 @@ def source_metadata(key, manifest=None):
 
 
 def catalog():
-    rows = json.loads(CATALOG.read_text()) if CATALOG.exists() else []
+    rows = json.loads(CATALOG.read_text(encoding="utf-8")) if CATALOG.exists() else []
     manifest = track_manifest()
     return [{**source_metadata(row["key"], manifest), **row} for row in rows]
 
@@ -184,14 +185,16 @@ def rename(key, title):
     if not title:
         raise ValueError("Type a name for this song.")
     with LOCK:
-        rows = json.loads(CATALOG.read_text()) if CATALOG.exists() else []
+        rows = (
+            json.loads(CATALOG.read_text(encoding="utf-8")) if CATALOG.exists() else []
+        )
         row = next((r for r in rows if r["key"] == key), None)
         if row is None:
             raise ValueError("This song is no longer in the library")
         row["title"] = title
         temp = CATALOG.with_suffix(".tmp")
-        temp.write_text(json.dumps(rows))
-        temp.replace(CATALOG)
+        temp.write_text(json.dumps(rows), encoding="utf-8")
+        portable_fs.replace(temp, CATALOG)
     return {"key": key, "title": title}
 
 
@@ -327,7 +330,9 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
             try:
                 run_tool(job, "stems.py", [tid], 900)
                 analysis = json.loads(
-                    (LIBRARY / "stems" / tid / "analysis.json").read_text()
+                    (LIBRARY / "stems" / tid / "analysis.json").read_text(
+                        encoding="utf-8"
+                    )
                 )
                 layers = analysis["layers"]
                 cues = zone_cues(layers["vocals"]["both"]["onsets"], "door")
@@ -344,7 +349,9 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
             percent=None,
             detail="Saving audio and generated cues",
         )
-        manifest = json.loads((LIBRARY / "tracks.json").read_text())[tid]
+        manifest = json.loads((LIBRARY / "tracks.json").read_text(encoding="utf-8"))[
+            tid
+        ]
         details = source_metadata(tid, {tid: manifest})
         if job.get("source_name"):
             details["source_label"] = job["source_name"]
@@ -363,12 +370,14 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
         )
         rich_show.prepare(LIBRARY, record)
         # Keep the existing generated scene recipe alongside the demo's split-aware preview cues.
-        (DATA / f"{tid}.yaml").write_text(scene_block(tid, duration, marks))
+        (DATA / f"{tid}.yaml").write_text(
+            scene_block(tid, duration, marks), encoding="utf-8"
+        )
         with LOCK:
             rows = [r for r in catalog() if r["key"] != tid] + [record]
             temp = CATALOG.with_suffix(".tmp")
-            temp.write_text(json.dumps(rows))
-            temp.replace(CATALOG)
+            temp.write_text(json.dumps(rows), encoding="utf-8")
+            portable_fs.replace(temp, CATALOG)
         update(
             job,
             phase="Ready in demo"

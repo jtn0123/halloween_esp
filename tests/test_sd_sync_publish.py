@@ -39,7 +39,7 @@ class TestPublishedRecord(SdCase):
         self.seed_card()
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
         self.assertIn("/sd/scenes/01_vigil.mp3", self.scene_gets())
-        rec = json.loads(published.record_path().read_text())
+        rec = json.loads(published.record_path().read_text(encoding="utf-8"))
         self.assertIn("scenes/01_vigil.mp3", rec["10.0.0.9"])
 
     def test_a_second_publish_with_nothing_changed_fetches_nothing(self) -> None:
@@ -69,20 +69,20 @@ class TestPublishedRecord(SdCase):
         a match under the wrong key proves nothing."""
         self.seed_card()
         self.run_quiet(sd_sync.cmd_scenes, "1.2.3.4")
-        rec = json.loads(published.record_path().read_text())
+        rec = json.loads(published.record_path().read_text(encoding="utf-8"))
         self.assertEqual(list(rec), ["1.2.3.4"])
         self.card.calls.clear()
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
         self.assertIn("/sd/scenes/01_vigil.mp3", self.scene_gets())
         self.assertEqual(
-            sorted(json.loads(published.record_path().read_text())),
+            sorted(json.loads(published.record_path().read_text(encoding="utf-8"))),
             ["1.2.3.4", "10.0.0.9"],
         )
 
     def test_an_unreadable_record_is_simply_no_record(self) -> None:
         path = published.record_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("not json at all")
+        path.write_text("not json at all", encoding="utf-8")
         self.seed_card()
         self.assertEqual(self.run_quiet(sd_sync.cmd_scenes, "10.0.0.9"), 0)
         self.assertIn("/sd/scenes/01_vigil.mp3", self.scene_gets())

@@ -267,10 +267,10 @@ class TestGeneratorFuzz(unittest.TestCase):
             self.assertEqual(prev["dur"], scene["duration_ms"])
 
         # The whole document, through main(): every output loads as YAML.
-        ge.SRC.write_text(yaml.safe_dump(doc))
-        ge.MARKERS.write_text(json.dumps(markers))
+        ge.SRC.write_text(yaml.safe_dump(doc), encoding="utf-8")
+        ge.MARKERS.write_text(json.dumps(markers), encoding="utf-8")
         self.assertEqual(ge.main(), 0)
-        out = yaml.load(ge.OUT.read_text(), Loader=EsphomeLoader)
+        out = yaml.load(ge.OUT.read_text(encoding="utf-8"), Loader=EsphomeLoader)
         # Three scripts, whatever the document holds: the show's shape is on
         # the card. (Their action counts are tests/test_gen_chunks.py's.)
         self.assertEqual(
@@ -294,13 +294,14 @@ class TestGeneratorFuzz(unittest.TestCase):
         pir = next(t for t in out["text"] if t["id"] == "pir_scene")
         self.assertIn(pir["initial_value"], [s["id"] for s in doc["scenes"]])
         for path in (ge.AUDIO_SD, ge.LIGHTS_OUT):
-            yaml.load(path.read_text(), Loader=EsphomeLoader)
+            yaml.load(path.read_text(encoding="utf-8"), Loader=EsphomeLoader)
         # The rig outputs agree with the layouts the cues were emitted against.
         layouts = rl.zone_layouts(zones, doc["hardware"]["pixels_per_zone"])
         self.assertEqual(
-            ge.RIG_OUT.read_text(), gen_rig.emit_rig_header(layouts, zones)
+            ge.RIG_OUT.read_text(encoding="utf-8"),
+            gen_rig.emit_rig_header(layouts, zones),
         )
-        lights = yaml.safe_load(ge.LIGHTS_OUT.read_text())
+        lights = yaml.safe_load(ge.LIGHTS_OUT.read_text(encoding="utf-8"))
         live = [z["id"] for z in zones if layouts[z["id"]].n > 0]
         self.assertEqual(
             [s["id"] for s in lights["light"]], [f"zone_{z}" for z in live]
@@ -312,7 +313,7 @@ class TestGeneratorFuzz(unittest.TestCase):
             # silently changed the number would agree with itself.
             self.assertEqual(s["rmt_symbols"], 48)
             self.assertIs(s["use_psram"], False)
-        header = ge.RIG_OUT.read_text()
+        header = ge.RIG_OUT.read_text(encoding="utf-8")
         biggest = max(layouts[z["id"]].n for z in zones)
         self.assertIn(f"RIG_MAX_PIXELS = {max(1, biggest)};", header)
         for z in zones:

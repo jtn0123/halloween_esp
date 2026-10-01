@@ -124,7 +124,7 @@ class CardCase(StudioCase):
     def setUpClass(cls) -> None:
         cls.jail = Path(tempfile.mkdtemp(prefix="relay-rs-jail-"))
         cls.card = cls.jail / "card"
-        (cls.jail / "secret.txt").write_text("outside the card")
+        (cls.jail / "secret.txt").write_text("outside the card", encoding="utf-8")
         cls.emu = castle_emu.CastleEmu(
             port=0, sd_dir=cls.card, scenes=["vigil", "storm"]
         )
