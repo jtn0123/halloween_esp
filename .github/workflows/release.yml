@@ -1,0 +1,410 @@
+# One tag, one GitHub Release, one version of everything a buyer's castle
+# needs (docs/PRODUCTION-TODO.md 1.2, 5.4, 9; docs/RELEASING.md is the
+# operator's view). Asset NAMES are a contract the desktop app and the web
+# flasher are written against; they are spelled once, in
+# tools/release_assets.py, and this file only ever asks that script for them.
+#
+#   git tag v0.1.0 && git push origin v0.1.0     -> build, publish, deploy flasher
+#   gh workflow run release.yml                  -> dry run: build everything,
+#                                                   keep it as a run artifact,
+#                                                   publish nothing
+#
+# A tag with a suffix (v0.2.0-rc.1) publishes a PRE-release: the app's
+# update check ignores it unless opted in, and the web flasher keeps serving
+# the latest full release.
+
+name: release
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build every asset but publish nothing"
+        type: boolean
+        default: true
+      tag:
+        description: "Existing tag to (re)build; empty = a throwaway dry-run name"
+        type: string
+        default: ""
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+# Two runs for one tag must not race each other to `gh release create`.
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  meta:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      ref: ${{ steps.tag.outputs.ref }}
+      dry_run: ${{ steps.tag.outputs.dry_run }}
+      prerelease: ${{ steps.tag.outputs.prerelease }}
+      desktop: ${{ steps.desktop.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v7
+      # A tag push always publishes. A dispatch publishes only when told to
+      # AND given a tag that already exists — a release is never cut from a
+      # name that is not in git.
+      - name: tag, ref and mode
+        id: tag
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_TAG: ${{ github.event.inputs.tag }}
+          IN_DRY: ${{ github.event.inputs.dry_run }}
+          RUN: ${{ github.run_number }}
+        run: |
+          if [ "$EVENT" = push ]; then
+            tag="$GITHUB_REF_NAME"; ref="$GITHUB_REF"; dry=false
+          elif [ -n "$IN_TAG" ]; then
+            tag="$IN_TAG"; ref="refs/tags/$IN_TAG"; dry="$IN_DRY"
+            git fetch --depth=1 origin "$ref:$ref" || { echo "no tag $IN_TAG in the repo"; exit 1; }
+          else
+            [ "$IN_DRY" = true ] || { echo "publishing needs an existing tag — set the tag input"; exit 1; }
+            tag="v0.0.0-dryrun.$RUN"; ref="$GITHUB_SHA"; dry=true
+          fi
+          pre=$(python3 tools/release_assets.py check-tag "$tag")
+          { echo "tag=$tag"; echo "ref=$ref"; echo "dry_run=$dry"; echo "prerelease=$pre"; } >> "$GITHUB_OUTPUT"
+          echo "release $tag from $ref — dry run: $dry, pre-release: $pre"
+      # The Tauri app (desktop/) lands on its own branch; until the tagged
+      # tree carries it, the `desktop` job is SKIPPED and the release is the
+      # castle-only contract — no latest.json, nothing pretending to build.
+      # Asked of the tag's tree, not of this checkout.
+      - name: does the tagged tree carry the desktop app
+        id: desktop
+        env:
+          REF: ${{ steps.tag.outputs.ref }}
+        run: |
+          if git cat-file -e "$REF:desktop/src-tauri/tauri.conf.json" 2>/dev/null; then
+            echo "desktop=true" >> "$GITHUB_OUTPUT"; echo "desktop app: building"
+          else
+            echo "desktop=false" >> "$GITHUB_OUTPUT"; echo "desktop app: absent, job skipped"
+          fi
+
+  # The buyer image: the S3 Feather build with no Wi-Fi baked in, softAP +
+  # captive portal + Improv (firmware/castle_buyer.yaml), built by the same
+  # `make build-buyer` a developer types. The setup steps mirror ci.yml's
+  # firmware-weekly job, which has already paid for every lesson in them;
+  # the comments there say why each one exists.
+  firmware:
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.meta.outputs.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: ./.github/actions/media-tools
+      # The lock carries esphome at requirements.txt's pin — the same rule as
+      # ci.yml: the pin lives in one file.
+      - run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
+      - name: esphome is the pinned one
+        run: |
+          PIN=$(grep -E '^esphome==' requirements.txt | cut -d= -f3)
+          HAVE=$(esphome version | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)
+          echo "esphome $HAVE (pin $PIN)"
+          [ "$HAVE" = "$PIN" ]
+      - name: toolchain channel
+        id: rust
+        run: echo "channel=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' core/rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
+        with:
+          toolchain: ${{ steps.rust.outputs.channel }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: core
+      - name: build castle-core
+        run: make rust
+      # The buyer build must not need these; they are written only so a
+      # shared package that still names a !secret resolves. The value is
+      # unique to the run, and the guard after the compile proves it did not
+      # end up in the image a stranger will flash.
+      - name: fake secrets
+        env:
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          printf 'wifi_ssid: "ci-%s"\nwifi_password: "ci-pw-%s"\n' "$RUN" "$RUN" \
+            > firmware/secrets.yaml
+      - name: build under the checkout, not the USB drive
+        run: |
+          # shellcheck disable=SC2016  # ${name} is ESPHome's substitution, not the shell's
+          printf 'esphome:\n  build_path: %s/firmware/.esphome/build/${name}\n' \
+            "$GITHUB_WORKSPACE" > firmware/build_path.yaml
+      # audio + generate + compile + THE size gate (check_image --require:
+      # warns from 90% of the OTA slot, fails at 97%). A release image that
+      # cannot be OTA'd strands every buyer who installs it.
+      - name: make build-buyer
+        run: make build-buyer PY=python ESPHOME=esphome
+      - name: the generated show is the committed show
+        run: git diff --exit-code --stat -- firmware/generated audio/markers.json
+      # The device name is the build tree's directory name; this is a fresh
+      # checkout, so the compile above made exactly one.
+      - name: name the build
+        id: dev
+        run: |
+          mapfile -t trees < <(find firmware/.esphome/build -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
+          [ "${#trees[@]}" -eq 1 ] || { echo "expected one build tree, found: ${trees[*]}"; exit 1; }
+          echo "name=${trees[0]}" >> "$GITHUB_OUTPUT"
+      - name: stage the images under their release names
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          DEVICE: ${{ steps.dev.outputs.name }}
+        run: |
+          IMG=$(python tools/check_image.py "$DEVICE" --path)
+          python tools/release_assets.py stage-firmware "$TAG" "$IMG" dist
+      - name: no CI credential in the image
+        env:
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          if grep -l -F -e "ci-$RUN" -e "ci-pw-$RUN" dist/*.bin; then
+            echo "the buyer image carries this run's fake Wi-Fi secret — castle_buyer.yaml must not reference !secret wifi_*"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-firmware
+          retention-days: 14
+          if-no-files-found: error
+          path: dist/*
+
+  # castle-core's three shipped binaries, per platform the desktop app runs
+  # on. Both macOS targets build on the arm64 runner: the crate has no
+  # dependencies and Apple's toolchain cross-compiles to x86_64 natively,
+  # so there is no Intel runner to wait for. The Windows entry fails until
+  # the port lands (TODO 4.1) — and because publish needs every asset, so
+  # does a release; that is deliberate. A release missing its Windows half
+  # is not one.
+  core:
+    needs: meta
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+          - { os: macos-14, target: aarch64-apple-darwin }
+          - { os: macos-14, target: x86_64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.meta.outputs.ref }}
+      - name: toolchain channel
+        id: rust
+        run: echo "channel=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' core/rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
+        with:
+          toolchain: ${{ steps.rust.outputs.channel }}
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: core
+          key: ${{ matrix.target }}
+      - name: build analyze_track, scene_render, studio
+        working-directory: core
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          cargo build --locked --release --target "$TARGET" \
+            --bin analyze_track --bin scene_render --bin studio
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: zip
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          python tools/release_assets.py zip-core "$TAG" "$TARGET" \
+            "core/target/$TARGET/release" dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-core-${{ matrix.target }}
+          retention-days: 14
+          if-no-files-found: error
+          path: dist/*
+
+  # The Tauri desktop app (TODO 5.4, 9): unsigned by decision (Tauri's
+  # ad-hoc signature on macOS; NSIS per-user .exe on Windows, no admin
+  # prompt), but UPDATE-signed — createUpdaterArtifacts in
+  # tauri.release.conf.json makes Tauri sign each updater bundle with the
+  # minisign key in TAURI_SIGNING_PRIVATE_KEY, and the installed app refuses
+  # any update its baked-in public key does not verify. Losing that key
+  # strands every installed app (docs/RELEASING.md). Skipped, not failed,
+  # while the tagged tree has no desktop/ (see meta). Intel Macs are not a
+  # target yet (TODO 9 leaves "mac x64?" open); castle-core already builds
+  # for them, so adding one is a matrix row and a DESKTOP_TARGETS entry.
+  desktop:
+    needs: [meta, core]
+    if: needs.meta.outputs.desktop == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, bundles: nsis }
+          - { os: macos-14, target: aarch64-apple-darwin, bundles: "app,dmg" }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.meta.outputs.ref }}
+      # The committed pubkey must be the real one, or every app this run
+      # ships could never verify the next release.
+      - name: the updater key is configured
+        env:
+          KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          [ -n "$KEY" ] || { echo "secret TAURI_SIGNING_PRIVATE_KEY is not set (docs/RELEASING.md)"; exit 1; }
+          if grep -q PLACEHOLDER desktop/src-tauri/tauri.conf.json; then
+            echo "tauri.conf.json still carries the placeholder updater pubkey"; exit 1
+          fi
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: desktop/src-tauri
+          key: ${{ matrix.target }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      # castle-core rides along as the app's sidecar — the `core` job's zip,
+      # not a second build — into the directory tauri.release.conf.json
+      # bundles as resources. `unzip`, not python's zipfile, which drops the
+      # executable bit release_assets.py stored.
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-core-${{ matrix.target }}
+          path: core-zip
+      - name: sidecar
+        run: unzip -o core-zip/*.zip -d desktop/sidecar/castle/
+      # Tauri's version is the tag's (the updater compares semver against
+      # latest.json); the CLI is pinned to the crate's tauri in Cargo.lock.
+      - name: tauri build
+        working-directory: desktop
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+          BUNDLES: ${{ matrix.bundles }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          npx --yes @tauri-apps/cli@2.12.1 build --ci --target "$TARGET" --bundles "$BUNDLES" \
+            --config src-tauri/tauri.release.conf.json \
+            --config "{\"version\":\"${TAG#v}\"}" -- --locked
+      - name: stage under the release names
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          python tools/release_assets.py stage-desktop "$TAG" "$TARGET" \
+            "desktop/src-tauri/target/$TARGET/release/bundle" dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-desktop-${{ matrix.target }}
+          retention-days: 14
+          if-no-files-found: error
+          path: dist/*
+
+  # `desktop` may be skipped (no desktop/ in the tag), and a skipped need
+  # would skip this job too, so the condition is spelled out: every build
+  # green, and the desktop one either green or legitimately absent.
+  publish:
+    needs: [meta, firmware, core, desktop]
+    if: >-
+      !cancelled() && needs.firmware.result == 'success' && needs.core.result == 'success'
+      && (needs.desktop.result == 'success'
+          || (needs.desktop.result == 'skipped' && needs.meta.outputs.desktop != 'true'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.meta.outputs.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: dist
+      # Writes flasher-manifest.json, latest.json (with the desktop app)
+      # and SHA256SUMS, then refuses unless the directory is exactly the
+      # contract: nothing missing, nothing extra.
+      - name: manifest, checksums, contract check
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          DESKTOP: ${{ needs.meta.outputs.desktop }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$DESKTOP" = true ]; then
+            python tools/release_assets.py finish "$TAG" dist --desktop "$REPO"
+          else
+            python tools/release_assets.py finish "$TAG" dist
+          fi
+          cat dist/SHA256SUMS
+          (cd dist && sha256sum --check SHA256SUMS)
+      # Kept for a dry run to inspect; harmless on a real one.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-dist-${{ needs.meta.outputs.tag }}
+          retention-days: 14
+          if-no-files-found: error
+          path: dist/*
+      - name: create the GitHub Release
+        if: needs.meta.outputs.dry_run != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
+          PRE: ${{ needs.meta.outputs.prerelease }}
+        run: |
+          flags=()
+          [ "$PRE" = true ] && flags+=(--prerelease)
+          assets=()
+          for f in dist/*; do [ "$(basename "$f")" = latest.json ] || assets+=("$f"); done
+          gh release create "$TAG" "${assets[@]}" --verify-tag --title "$TAG" \
+            --generate-notes "${flags[@]}"
+      # The updater's pointer goes up LAST, once every bundle it names is
+      # downloadable: an app that read it a moment earlier would chase a 404.
+      - name: publish latest.json last
+        if: needs.meta.outputs.dry_run != 'true' && needs.meta.outputs.desktop == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.meta.outputs.tag }}
+        run: gh release upload "$TAG" dist/latest.json
+
+  # A release made with GITHUB_TOKEN does not fire `release: published` in
+  # other workflows (GitHub's loop guard), so pages.yml's own trigger would
+  # never see a tagged release. It is called here instead; its trigger still
+  # covers a release published by hand.
+  flasher:
+    needs: [meta, publish]
+    if: >-
+      !cancelled() && needs.publish.result == 'success'
+      && needs.meta.outputs.dry_run != 'true' && needs.meta.outputs.prerelease != 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml

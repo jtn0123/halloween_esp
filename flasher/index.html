@@ -1,0 +1,102 @@
+<!doctype html>
+<!--
+  The castle's web flasher (docs/PRODUCTION-TODO.md 1.2, docs/RELEASING.md).
+  Static, no build step. .github/workflows/pages.yml deploys this file next
+  to the latest release's flasher-manifest.json and factory image, so the
+  manifest path below is relative on purpose. esp-web-tools is pinned to an
+  exact version: a flasher that changes under a stranger's castle without a
+  commit here is not one anybody tested.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Halloween Castle — set up or repair</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+<style>
+  :root { color-scheme: dark; --ink: #f4ecdf; --dim: #b9ab96; --pumpkin: #ff8a1f; --panel: #1d1720; }
+  body { margin: 0; background: #120e14; color: var(--ink);
+         font: 18px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 40rem; margin: 0 auto; padding: 2rem 1.25rem 4rem; }
+  h1 { font-size: 1.8rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.15rem; margin: 2rem 0 .5rem; color: var(--pumpkin); }
+  .sub { color: var(--dim); margin: 0 0 1.5rem; }
+  ol, ul { padding-left: 1.4rem; }
+  li { margin: .4rem 0; }
+  .card { background: var(--panel); border-radius: 12px; padding: 1.25rem 1.25rem .75rem; }
+  .go { text-align: center; padding: 1.5rem 0 1rem; }
+  esp-web-install-button button, .go button {
+    font: inherit; font-weight: 600; padding: .8rem 1.6rem; border: 0; border-radius: 999px;
+    background: var(--pumpkin); color: #1a0f05; cursor: pointer; }
+  .warn { background: #3a1c12; border-radius: 10px; padding: .75rem 1rem; }
+  small, .ver { color: var(--dim); }
+  kbd { background: #2d2530; border-radius: 4px; padding: 0 .35rem; font-size: .95em; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Halloween Castle</h1>
+  <p class="sub">Set up a new castle, or put a castle's software back the way it came.</p>
+
+  <div class="card">
+    <h2 style="margin-top:0">Before you start</h2>
+    <ul>
+      <li>Use <b>Google Chrome</b> or <b>Microsoft Edge</b> on a Windows PC or a Mac.
+          Safari and Firefox cannot do this.</li>
+      <li>A <b>USB-C cable that carries data</b> (the one that came with the castle
+          does). Some phone-charging cables only carry power.</li>
+      <li>Your home <b>Wi-Fi name and password</b>.</li>
+    </ul>
+
+    <h2>Steps</h2>
+    <ol>
+      <li>Plug the castle into the computer with the USB cable.</li>
+      <li>Click <b>Connect to the castle</b> below.</li>
+      <li>A small window lists devices. Pick the one that appeared when you plugged
+          the castle in, then click <b>Connect</b>.</li>
+      <li>Choose <b>Install</b>. If it asks whether to erase the castle, say <b>yes</b>
+          for a fresh start — your songs on the memory card are not touched.</li>
+      <li>Wait about two minutes. Keep the cable plugged in until it says it is done.</li>
+      <li>When it asks, choose your <b>Wi-Fi network</b> and type its password.
+          The castle joins your Wi-Fi and is ready.</li>
+    </ol>
+
+    <div class="go">
+      <esp-web-install-button manifest="flasher-manifest.json">
+        <button slot="activate">Connect to the castle</button>
+        <span slot="unsupported" class="warn">This browser can't talk to the castle.
+          Open this page in Google Chrome or Microsoft Edge on a computer.</span>
+        <span slot="not-allowed" class="warn">This page has to be opened over
+          https:// to reach the castle.</span>
+      </esp-web-install-button>
+      <p class="ver" id="ver"></p>
+    </div>
+  </div>
+
+  <h2>If the computer can't find the castle</h2>
+  <ul>
+    <li>Try a different USB cable or a different USB port — this fixes it most often.</li>
+    <li>Still nothing? On the castle's circuit board, hold the button marked
+        <kbd>BOOT</kbd>, tap the button marked <kbd>RESET</kbd>, then let go of
+        <kbd>BOOT</kbd>. Click <b>Connect to the castle</b> again.</li>
+    <li>On Windows 10 and 11 no driver is needed. If the device list stays empty,
+        unplug the castle, wait five seconds and plug it back in.</li>
+  </ul>
+
+  <h2>Already set up?</h2>
+  <p>You don't need this page to update the castle — the Castle app does that over
+     Wi-Fi. This page is for a new castle, a new Wi-Fi network, or a castle that
+     stopped starting up.</p>
+
+  <p><small>Source and release notes:
+     <a href="https://github.com/jtn0123/halloween_esp/releases" style="color:inherit">github.com/jtn0123/halloween_esp</a></small></p>
+</main>
+<script>
+  // Say which release this page installs (the release tag, not the v5.xx firmware string).
+  fetch("flasher-manifest.json")
+    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then((m) => { document.getElementById("ver").textContent = "Installs release " + m.version; })
+    .catch(() => { document.getElementById("ver").textContent = "No castle software is published here yet."; });
+</script>
+</body>
+</html>

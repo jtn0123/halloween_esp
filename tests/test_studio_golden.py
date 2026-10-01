@@ -62,8 +62,10 @@ class GoldenReplay(unittest.TestCase):
         box.seed()
         # The operator's own exported knobs must not reach the child;
         # CASTLE_PY, which the studio's children need, is not one of the
-        # four and survives (CLAUDE.md).
+        # four and survives (CLAUDE.md); unset, it is this suite's own
+        # interpreter, as in studio_rs_case.
         env = {k: v for k, v in os.environ.items() if k not in SANDBOX_ENV}
+        env.setdefault("CASTLE_PY", sys.executable)
         cls.proc, port = gc.launch([str(BIN)], box, env)
         cls.read = gc.capture_read(port)
         cls.scenes = gc.capture_scene_errors(port, box, SCENE_LIMIT)

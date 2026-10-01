@@ -301,10 +301,11 @@ class StudioCase(unittest.TestCase):
         # HERE, in the child's environment only — a suite that exported it
         # into this process would leak it into every other one, which is
         # the hermeticity tests/test_hermetic.py exists to catch. An
-        # interpreter the operator named on purpose still wins.
-        venv = ROOT / ".venv" / "bin" / "python"
-        if "CASTLE_PY" not in env and venv.exists():
-            env["CASTLE_PY"] = str(venv)
+        # interpreter the operator named on purpose still wins; otherwise
+        # it is the one running this suite, which is the one the lock was
+        # installed into — the venv locally, setup-python's on a runner
+        # (Windows has no `python3` and no .venv/bin to fall back on).
+        env.setdefault("CASTLE_PY", sys.executable)
         cls.procs = [
             subprocess.Popen(
                 [str(BIN), str(cls.port), "--localhost"],

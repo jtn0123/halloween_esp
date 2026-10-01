@@ -259,12 +259,14 @@ bench-audio-logs:
 
 # pyproject.toml says >=3.13; the bare-python3 fallback above could silently
 # hand an older interpreter to everything below (grade report 2026-08-23 F5).
+# The suites themselves are spelled in tools/run_checks.py, which the
+# cross-platform CI job runs directly on a Windows runner with no make
+# (docs/PRODUCTION-TODO.md 4.3) — one definition, two doors.
 pycheck:
-	@$(PY) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else \
-		(print(f"python {sys.version.split()[0]} is too old — this repo needs 3.13+ (make setup)") or 1))'
+	@$(PY) tools/run_checks.py pycheck
 
 test: pycheck
-	@$(PY) -m unittest discover -s tests -q
+	@$(PY) tools/run_checks.py test
 
 # The inner loop: everything except the suites that exist to wait — the
 # castle chaos/relay/protocol fuzz and the generator fuzz spend their time
@@ -277,10 +279,7 @@ SLOW_SUITES := chaos|relay|fuzz|_rust|_rs|castle_core|studio
 # Castle Radio: the Python suite next to the sources plus the browser
 # sources run under node:test (needs node 22, no npm install).
 test-radio:
-	@$(PY) -m unittest discover -s demo/castle-radio -t demo/castle-radio -p 'test_*.py' -q \
-		&& node --test demo/castle-radio/test_castle_radio.test.mjs demo/castle-radio/test_castle_fuzz.test.mjs \
-		demo/castle-radio/test_castle_honesty.test.mjs demo/castle-radio/test_desktop_tools.test.mjs demo/castle-radio/test_companion.test.mjs demo/castle-radio/test_device_helper.test.mjs demo/castle-radio/test_card_cues.test.mjs \
-		demo/castle-radio/test_rich_preview.test.mjs demo/castle-radio/test_lab_leds.test.mjs
+	@$(PY) tools/run_checks.py test-radio
 
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \

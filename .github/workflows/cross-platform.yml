@@ -1,0 +1,116 @@
+# The castle's desktop half on the two systems a buyer will run it on:
+# Windows and Apple Silicon macOS (docs/PRODUCTION-TODO.md 4.3). ci.yml is
+# Ubuntu-only and sits near the 500-line rule, so this is its own file.
+#
+# What runs: castle-core built and unit-tested (`cargo build --release`,
+# `cargo test --release` — the same profile `make rust-test` uses), then the
+# Python suites through tools/run_checks.py, which is what `make test` and
+# `make test-radio` call. Windows runners have no make; the script is the one
+# definition both doors share, so this job cannot quietly test less than a
+# developer's `make test` does. fmt/clippy stay in ci.yml's `rust` job: they
+# judge source, not platform, and say the same thing everywhere.
+#
+# Coverage floors, the browser suite and the esphome steps stay in ci.yml:
+# they are about the code, not the OS, and Ubuntu answers them already.
+
+name: cross-platform
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            blocking: true
+          # castle-core does not compile on Windows today (flock FFI, Unix
+          # exec, process groups — TODO 4.1) and several Python paths assume
+          # POSIX (4.2). That work is in flight on its own branch. Until it
+          # lands this entry reports red without failing the run; it becomes
+          # blocking — delete `blocking: false`, and with it the
+          # continue-on-error below — once the Windows port is merged (TODO
+          # 4.3). Nothing is skipped meanwhile: the failures ARE the to-do list.
+          - os: windows-latest
+            blocking: false
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ !matrix.blocking }}
+    # A cold cargo cache on Windows (release + LTO) plus Homebrew/Chocolatey
+    # media installs, plus the suites that drive the studio binary.
+    timeout-minutes: 60
+    env:
+      # The three toolchain gates belong to ci.yml's `rust` job — routed,
+      # not dropped; see RUST_GATES_ELSEWHERE in tests/test_castle_core.py.
+      CI_RUST_GATES_ELSEWHERE: "1"
+    steps:
+      - uses: actions/checkout@v7
+      # The channel comes from core/rust-toolchain.toml rather than a literal:
+      # the Windows port is expected to move it (std's File::lock is 1.89),
+      # and this file should follow without a second edit.
+      - name: toolchain channel
+        id: rust
+        run: echo "channel=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' core/rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
+        with:
+          toolchain: ${{ steps.rust.outputs.channel }}
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: core
+      - name: build castle-core
+        working-directory: core
+        run: cargo build --locked --release
+      - name: castle-core unit tests
+        working-directory: core
+        run: cargo test --locked --release
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      # ffmpeg decodes for the analysis suites and lame encodes the renders;
+      # .github/actions/media-tools is apt-only, so each OS gets its own line.
+      - name: ffmpeg + lame (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg lame
+      - name: ffmpeg + lame (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg lame --yes --no-progress
+      # Same pin as ci.yml's python job, for the same reason (the parity
+      # suites drift a last ulp under numpy's AVX-512 kernels) — x86-64 only;
+      # on arm64 these names are not numpy targets and would only warn.
+      - name: numpy baseline kernels (x86-64)
+        if: runner.os == 'Windows'
+        run: echo "NPY_DISABLE_CPU_FEATURES=X86_V3 X86_V4 AVX512_ICL AVX512_SPR" >> "$GITHUB_ENV"
+      - run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
+      # No CASTLE_PY exported, though the studio bin asks it first: the
+      # suites that spawn the studio name it in the CHILD's environment as
+      # their own sys.executable (tests/studio_rs_case.py), which is the
+      # interpreter this lock went into — Windows has neither `python3` nor
+      # .venv/bin for py()'s fall-backs to find.
+      # esbuild for the generator sandbox test; node 22 for test-radio's
+      # browser half.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: web
+      - name: python suites (make test + make test-radio)
+        run: python tools/run_checks.py test test-radio
