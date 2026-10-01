@@ -136,6 +136,9 @@ pub mod studio_wave;
 pub mod testkit;
 #[cfg(feature = "native")]
 pub mod vocab;
+/// kernel32, by hand: the Windows twins of the crate's Unix externs.
+#[cfg(all(windows, feature = "native"))]
+pub mod win32;
 #[cfg(feature = "native")]
 pub mod yaml;
 #[cfg(feature = "native")]
