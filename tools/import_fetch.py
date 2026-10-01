@@ -9,26 +9,23 @@ a link and a scratch directory, and hands back a file.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
-import sys
 import urllib.parse
 from pathlib import Path
 
+import exe_paths
+
 
 def _ytdlp() -> str:
-    """The venv's yt-dlp when present, else the system one.
-
-    YouTube deliberately breaks stale clients (403s, SABR-only sessions), and
-    Homebrew's formula trails releases by weeks — pip does not. So the venv
-    copy, updated with `pip install -U yt-dlp`, wins when it exists.
-    """
-    local = Path(sys.executable).with_name("yt-dlp")
-    if local.exists():
-        return str(local)
-    if not shutil.which("yt-dlp"):
-        raise SystemExit("yt-dlp not installed — `brew install yt-dlp`")
-    return "yt-dlp"
+    """The yt-dlp to run (exe_paths.ytdlp says which, and why the venv's
+    own copy beats PATH's), or a sentence saying there is none."""
+    found = exe_paths.ytdlp()
+    if found is None:
+        raise SystemExit(
+            "yt-dlp not installed — `pip install yt-dlp` into this Python, "
+            "or point CASTLE_YTDLP at one"
+        )
+    return found
 
 
 def is_web_url(source: str) -> bool:
@@ -93,6 +90,8 @@ def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
                 ],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,  # handled below
                 timeout=900,  # a hung download must not wedge the studio's lock
             )

@@ -12,6 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 import cue_file
+import portable_fs
 from effect_vocab import EFFECT_IDS, FLASH_MODE_IDS, OVERLAY_IDS, PALETTE_IDS
 from pulse_expand import pulse_cues
 from render_cues import desk_scene, markers_ms, waveform
@@ -150,7 +151,7 @@ def _prepare(library, row):
     if row.get("split"):
         if not analysis.is_file():
             raise ValueError("Separated analysis is missing; reprocess the song first")
-        layers = json.loads(analysis.read_text())["layers"]
+        layers = json.loads(analysis.read_text(encoding="utf-8"))["layers"]
     blob, preview = build(row["key"], wave, layers, source.suffix[1:])
     preview["name"] = row.get("title", row["key"])
     cue_path = source.with_suffix(".cue")
@@ -158,7 +159,7 @@ def _prepare(library, row):
     for path, data in ((cue_path, blob), (show_path, json.dumps(preview).encode())):
         temp = path.with_suffix(path.suffix + ".tmp")
         temp.write_bytes(data)
-        temp.replace(path)
+        portable_fs.replace(temp, path)
     return metadata(library, row)
 
 
@@ -173,7 +174,10 @@ def metadata(library, row):
         return None
     blob = cue.read_bytes()
     try:
-        if json.loads(show.read_text()).get("cue_crc32") != f"{zlib.crc32(blob):08x}":
+        if (
+            json.loads(show.read_text(encoding="utf-8")).get("cue_crc32")
+            != f"{zlib.crc32(blob):08x}"
+        ):
             return None
     except (ValueError, OSError):
         return None

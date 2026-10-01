@@ -32,11 +32,12 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import cargo_gate
+from exe_paths import exe
 from synth_probes import kernel_modes, numpy_uniform_mode
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
-DUMP = ROOT / "core" / "target" / "release" / "synth_dump"
+DUMP = ROOT / "core" / "target" / "release" / exe("synth_dump")
 
 RANGES = [
     (-1.0, 1.0),

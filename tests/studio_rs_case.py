@@ -41,11 +41,12 @@ import cargo_gate
 import gen_scene_cards
 import manifest as mf
 import yaml
+from exe_paths import exe, venv_python
 from helpers import make_click_track
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
-BIN = ROOT / "core" / "target" / "release" / "studio"
+BIN = ROOT / "core" / "target" / "release" / exe("studio")
 
 #: Two renderable-in-a-blink scenes riding the REPO's own preamble
 #: (hardware, zones, palette — the parts the generators need real).
@@ -75,7 +76,7 @@ SCENES_TAIL = """\
 
 
 def scenes_fixture() -> str:
-    real = (ROOT / "scenes" / "scenes.yaml").read_text()
+    real = (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
     preamble = real.split("\nscenes:\n", 1)[0]
     return preamble + "\nscenes:\n" + SCENES_TAIL
 
@@ -199,7 +200,8 @@ def seed_library(tracks: Path) -> None:
                 },
                 "note": "fixture 🎃",
             }
-        )
+        ),
+        encoding="utf-8",
     )
     (d / "vocals.mp3").write_bytes(b"\xff\xfbSTEMBYTES" * 40)
     st_beta = (tracks / "t_beta.wav").stat()
@@ -212,7 +214,8 @@ def seed_library(tracks: Path) -> None:
                 "src_mtime": int(st_beta.st_mtime),
                 "layers": {},
             }
-        )
+        ),
+        encoding="utf-8",
     )
 
 
@@ -249,7 +252,9 @@ class StudioCase(unittest.TestCase):
         cls.tmp = Path(tempfile.mkdtemp(prefix="studio-rs-"))
         cls.build = cls.tmp / "build"
         (cls.build / "previewer").mkdir(parents=True)
-        (cls.build / "previewer" / "castle-cue-desk.html").write_text(PAGE)
+        (cls.build / "previewer" / "castle-cue-desk.html").write_text(
+            PAGE, encoding="utf-8"
+        )
         (cls.build / "audio").mkdir()
         (cls.build / "audio" / "01_vigil.mp3").write_bytes(bytes(range(256)) * 12)
         # The show as card data (v5.67): `sd_sync scenes` pushes show.man and
@@ -265,7 +270,7 @@ class StudioCase(unittest.TestCase):
         cls.tracks = cls.tmp / "tracks"
         seed_library(cls.tracks)
         cls.scenes = cls.tmp / "scenes.yaml"
-        cls.scenes.write_text(scenes_fixture())
+        cls.scenes.write_text(scenes_fixture(), encoding="utf-8")
         # free_port() closes the socket before the server binds it, so a
         # busy machine (another suite, the user's own studio) can take the
         # port in between. One retry on a fresh port is the cheap answer:
@@ -302,7 +307,7 @@ class StudioCase(unittest.TestCase):
         # into this process would leak it into every other one, which is
         # the hermeticity tests/test_hermetic.py exists to catch. An
         # interpreter the operator named on purpose still wins.
-        venv = ROOT / ".venv" / "bin" / "python"
+        venv = venv_python(ROOT / ".venv")
         if "CASTLE_PY" not in env and venv.exists():
             env["CASTLE_PY"] = str(venv)
         cls.procs = [

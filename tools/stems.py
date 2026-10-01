@@ -56,7 +56,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana
+import exe_paths
 import numpy as np
+import portable_fs
 
 ROOT = Path(__file__).resolve().parent.parent
 # Same override the studio honours: a sandboxed test must not write stems
@@ -118,7 +120,7 @@ def fresh(tid: str, root: Path | None = None) -> bool:
     if src is None or not meta_p.exists():
         return False
     try:
-        meta = json.loads(meta_p.read_text())
+        meta = json.loads(meta_p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
     st = src.stat()
@@ -141,7 +143,7 @@ def analysis(tid: str) -> dict:
     if not p.exists():
         return {"ok": False, "error": "not split yet"}
     try:
-        out: dict = json.loads(p.read_text())
+        out: dict = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         return {"ok": False, "error": f"stems analysis unreadable: {e}"}
     out["ok"] = True
@@ -227,6 +229,8 @@ def _run_demucs(src: Path, out: Path, device: str) -> subprocess.CompletedProces
         argv,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=SEPARATE_TIMEOUT,
     )
@@ -272,7 +276,7 @@ def _encode(wav: Path, mp3: Path) -> None:
     """Stereo 160 kbps — a validation listen, not a flash-budget citizen."""
     r = subprocess.run(
         [
-            "ffmpeg",
+            exe_paths.ffmpeg(),
             "-v",
             "quiet",
             "-y",
@@ -286,6 +290,8 @@ def _encode(wav: Path, mp3: Path) -> None:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=300,
     )
@@ -306,8 +312,8 @@ def separate(tid: str, force: bool = False, out: Path | None = None) -> int:
     if importlib.util.find_spec("demucs") is None:
         raise SystemExit(
             "demucs is not installed — "
-            ".venv/bin/pip install demucs (then re-pin: "
-            ".venv/bin/pip install click==8.3.3)"
+            "python -m pip install demucs (then re-pin: "
+            "python -m pip install click==8.3.3), with this repo's python"
         )
 
     dest = root / Path(tid).name
@@ -350,8 +356,8 @@ def separate(tid: str, force: bool = False, out: Path | None = None) -> int:
     data.update(id=tid, src_bytes=st.st_size, src_mtime=int(st.st_mtime))
     # Atomic, like every other write that another process may be reading.
     tmp_json = dest / f"{ANALYSIS_JSON}.tmp"
-    tmp_json.write_text(json.dumps(data))
-    os.replace(tmp_json, dest / ANALYSIS_JSON)
+    tmp_json.write_text(json.dumps(data), encoding="utf-8")
+    portable_fs.replace(tmp_json, dest / ANALYSIS_JSON)
     print(f"stems ready — {dest}/", flush=True)
     return 0
 

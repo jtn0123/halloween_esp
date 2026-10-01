@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import build_paths as bp
+import exe_paths
 
 # The page's weight budget and the un-inlining that keeps it: one question,
 # one module (previewer_budget.py). Imported as a module, not by name, so a
@@ -158,7 +159,7 @@ def lean_page(page: Path) -> tuple[bytes, str]:
     key = (str(page), st.st_mtime_ns, st.st_size)
     if key not in _lean_cache:
         _lean_cache.clear()
-        _lean_cache[key] = lean(page.read_text()).encode()
+        _lean_cache[key] = lean(page.read_text(encoding="utf-8")).encode()
     return _lean_cache[key], f'"{st.st_mtime_ns}-{st.st_size}-lean"'
 
 
@@ -187,9 +188,10 @@ def inject_bundle(html: str) -> str:
         # --minify: the page is re-sent on every studio restart and every
         # phone load, and the unminified bundle was a quarter of it. Debug
         # against `npm run watch`'s dist/bundle.js, not the spliced page.
+        # The linked binary rather than `npx`: on Windows npx is npx.cmd,
+        # which CreateProcess will not find by its bare name.
         [
-            "npx",
-            "esbuild",
+            str(exe_paths.npm_bin(WEB / "node_modules" / ".bin", "esbuild")),
             "src/main.ts",
             "--bundle",
             "--minify",
@@ -200,12 +202,14 @@ def inject_bundle(html: str) -> str:
         cwd=WEB,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,  # handled below
     )
     if r.returncode != 0:
         sys.exit(f"esbuild failed:\n{r.stdout}\n{r.stderr}")
 
-    js = BUNDLE.read_text()
+    js = BUNDLE.read_text(encoding="utf-8")
     i = html.find(BUNDLE_MARK)
     if i < 0:
         sys.exit(f"{BUNDLE_MARK} marker not found in {TEMPLATE}")
@@ -229,17 +233,17 @@ def inject_styles(html: str) -> str:
         sys.exit(f"{STYLE_MARK} marker not found in {TEMPLATE}")
     j = html.index("*/", i) + 2
     css = (
-        STYLES.read_text().rstrip()
+        STYLES.read_text(encoding="utf-8").rstrip()
         + "\n\n"
-        + PANELS.read_text().rstrip()
+        + PANELS.read_text(encoding="utf-8").rstrip()
         + "\n\n"
-        + MOBILE.read_text().rstrip()
+        + MOBILE.read_text(encoding="utf-8").rstrip()
     )
     return html[:i] + css + html[j:]
 
 
 def main() -> int:
-    raw = SRC.read_text()
+    raw = SRC.read_text(encoding="utf-8")
     doc = yaml.safe_load(raw)
     markers = scene_schema.load_markers(MARKERS_FILE)
     scenes = [
@@ -261,7 +265,7 @@ def main() -> int:
             " previewer will fall back to live synth for those scenes"
         )
 
-    html = TEMPLATE.read_text()
+    html = TEMPLATE.read_text(encoding="utf-8")
     pattern = re.compile(re.escape(START) + r".*?" + re.escape(END), re.DOTALL)
     if not pattern.search(html):
         sys.exit(f"markers not found in {TEMPLATE} — expected {START} ... {END}")

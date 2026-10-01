@@ -46,6 +46,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import cargo_gate
 import rig_layout
 import scene_schema
+from exe_paths import exe
 
 CORE = ROOT / "core"
 CXX_SRC = ROOT / "tests" / "cxx" / "parity_dump.cpp"
@@ -75,7 +76,9 @@ def rig_spec() -> str:
     walk/fall go through the SAME %.6f quantisation gen_esphome bakes into
     generated/rig.h — the C++ side computes on the rounded values, so the
     Rust side must too."""
-    doc = scene_schema.parse_show((ROOT / "scenes" / "scenes.yaml").read_text())
+    doc = scene_schema.parse_show(
+        (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
+    )
     per = int(doc["hardware"]["pixels_per_zone"])
     layouts = rig_layout.zone_layouts(doc["zones"], per)
     parts = []
@@ -234,7 +237,7 @@ class TestCastleCoreParity(unittest.TestCase):
             timeout=60,
         )
         rust = subprocess.run(
-            [str(CORE / "target" / "release" / "parity_dump"), SEED],
+            [str(CORE / "target" / "release" / exe("parity_dump")), SEED],
             capture_output=True,
             text=True,
             check=True,
@@ -286,7 +289,7 @@ class TestCastleCoreParity(unittest.TestCase):
                 "rig drift between generated/rig.h and rig_layout",
             )
         rust = subprocess.run(
-            [str(CORE / "target" / "release" / "parity_dump"), SEED, "3000", spec],
+            [str(CORE / "target" / "release" / exe("parity_dump")), SEED, "3000", spec],
             capture_output=True,
             text=True,
             check=True,
@@ -382,7 +385,7 @@ class TestCastleCoreParity(unittest.TestCase):
         # shows up as a size jump rather than as nothing at all.
         self.assertLess(size, 20_000, f"castle_core.wasm is {size:,} bytes")
         script = Path(self.tmp) / "wasm_check.mjs"
-        script.write_text(WASM_CHECK)
+        script.write_text(WASM_CHECK, encoding="utf-8")
         r = subprocess.run(
             [NODE, str(script), str(wasm)],
             capture_output=True,

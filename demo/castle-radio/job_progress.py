@@ -3,11 +3,15 @@
 import json
 import os
 import re
-import signal
 import subprocess
+import sys
 import threading
 import time
+from pathlib import Path
 from typing import IO, cast
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+from portable_proc import group_kwargs, kill_tree
 
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 # tools/stems.py prints one line per layer/channel analysis: six layers
@@ -102,15 +106,25 @@ def _progress(line, stage, analyzed):
 def run(args, timeout, stage, report, extra_env=None, stop=None):
     """`stop` is an Event the caller sets to cancel: the child's whole process
     group is killed, as it is on a timeout, and the run raises Cancelled."""
-    env = {**os.environ, "CASTLE_PROGRESS_STREAM": "1", **(extra_env or {})}
+    # The children are this repo's Python tools: PYTHONUTF8 makes them write
+    # UTF-8 on Windows too (a song title in Japanese would otherwise die in
+    # cp1252), and the pipe is read as UTF-8 on every system to match.
+    env = {
+        **os.environ,
+        "CASTLE_PROGRESS_STREAM": "1",
+        "PYTHONUTF8": "1",
+        **(extra_env or {}),
+    }
     process = subprocess.Popen(
         args,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
         env=env,
-        start_new_session=True,
+        **group_kwargs(),
     )
     # stdout=PIPE always opens one; the stubs cannot know that (the same
     # cast tools/progress_process.py makes for the same reason).
@@ -120,10 +134,7 @@ def run(args, timeout, stage, report, extra_env=None, stop=None):
     def expire():
         timed_out.set()
         if process.poll() is None:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            kill_tree(process)
 
     timer = threading.Timer(timeout, expire)
     timer.start()

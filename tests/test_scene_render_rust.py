@@ -33,12 +33,13 @@ sys.path.insert(0, str(ROOT / "tests"))
 import cargo_gate
 import helpers  # noqa: F401  (hermetic env)
 import render_audio as ra
+from exe_paths import exe
 from helpers import make_click_track
 from synth_probes import kernel_modes, numpy_uniform_mode
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
-BIN = ROOT / "core" / "target" / "release" / "scene_render"
+BIN = ROOT / "core" / "target" / "release" / exe("scene_render")
 
 #: crc32 of the WAV the canonical profile renders for CANON_SCENE — the
 #: cross-machine determinism pin. A change here means the render itself

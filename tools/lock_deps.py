@@ -46,6 +46,8 @@ import urllib.request
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
+import exe_paths
+
 ROOT = Path(__file__).resolve().parent.parent
 LOCK = ROOT / "requirements.lock"
 SOURCES = ("requirements.txt", "requirements-dev.txt")
@@ -145,7 +147,7 @@ def read_lock(path: Path) -> dict[str, str]:
         return {}
     out: dict[str, str] = {}
     key = ""
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         name = package(line)
         if name:
@@ -163,16 +165,20 @@ def freeze_clean(sources: list[Path], quiet: bool = False) -> list[str]:
         say = (lambda *_: None) if quiet else print
         say(f"lock: building a clean venv in {venv} …")
         subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
-        pip = venv / "bin" / "pip"
-        subprocess.run([str(pip), "install", "--quiet", "--upgrade", "pip"], check=True)
+        # `python -m pip`, not the pip script: on Windows a running pip.exe
+        # cannot replace itself, so the upgrade below would fail there.
+        pip = [str(exe_paths.venv_python(venv)), "-m", "pip"]
+        subprocess.run([*pip, "install", "--quiet", "--upgrade", "pip"], check=True)
         args = [a for s in sources for a in ("-r", str(s))]
         say(f"lock: installing {', '.join(s.name for s in sources)} …")
-        subprocess.run([str(pip), "install", "--quiet", *args], check=True)
+        subprocess.run([*pip, "install", "--quiet", *args], check=True)
         out = subprocess.run(
-            [str(pip), "freeze", "--exclude-editable"],
+            [*pip, "freeze", "--exclude-editable"],
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     return [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
 
@@ -314,7 +320,7 @@ def main(argv: list[str] | None = None, fetch: Fetcher = pypi_hashes) -> int:
     except LockError as exc:
         print(f"lock: {exc}", file=sys.stderr)
         return 1
-    args.out.write_text("\n".join(entries) + "\n")
+    args.out.write_text("\n".join(entries) + "\n", encoding="utf-8")
     if not args.quiet:
         _report(args.out.name, lines, entries, carried, previous)
     return 0
