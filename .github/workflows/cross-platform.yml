@@ -1,5 +1,5 @@
 # The castle's desktop half on the two systems a buyer will run it on:
-# Windows and Apple Silicon macOS (docs/PRODUCTION-TODO.md 4.3). ci.yml is
+# Windows and Apple Silicon macOS (production plan item 4.3). ci.yml is
 # Ubuntu-only and sits near the 500-line rule, so this is its own file.
 #
 # What runs: castle-core built and unit-tested (`cargo build --release`,
@@ -41,13 +41,12 @@ jobs:
         include:
           - os: macos-14
             blocking: true
-          # castle-core does not compile on Windows today (flock FFI, Unix
-          # exec, process groups — TODO 4.1) and several Python paths assume
-          # POSIX (4.2). That work is in flight on its own branch. Until it
-          # lands this entry reports red without failing the run; it becomes
-          # blocking — delete `blocking: false`, and with it the
-          # continue-on-error below — once the Windows port is merged (TODO
-          # 4.3). Nothing is skipped meanwhile: the failures ARE the to-do list.
+          # The Windows port (plan items 4.1 castle-core, 4.2 Python) is on
+          # this branch, but this entry has no green history yet, so it
+          # reports red without failing the run. Making it blocking is
+          # deleting `blocking: false` and, with it, the continue-on-error
+          # below (plan item 4.3). Nothing is skipped meanwhile: a failure
+          # here is a Windows bug to fix, not a test to quiet.
           - os: windows-latest
             blocking: false
     runs-on: ${{ matrix.os }}

@@ -1,5 +1,5 @@
 # One tag, one GitHub Release, one version of everything a buyer's castle
-# needs (docs/PRODUCTION-TODO.md 1.2, 5.4, 9; docs/RELEASING.md is the
+# needs (production plan items 1.2, 5.4, 9; docs/RELEASING.md is the
 # operator's view). Asset NAMES are a contract the desktop app and the web
 # flasher are written against; they are spelled once, in
 # tools/release_assets.py, and this file only ever asks that script for them.
@@ -183,10 +183,10 @@ jobs:
   # castle-core's three shipped binaries, per platform the desktop app runs
   # on. Both macOS targets build on the arm64 runner: the crate has no
   # dependencies and Apple's toolchain cross-compiles to x86_64 natively,
-  # so there is no Intel runner to wait for. The Windows entry fails until
-  # the port lands (TODO 4.1) — and because publish needs every asset, so
-  # does a release; that is deliberate. A release missing its Windows half
-  # is not one.
+  # so there is no Intel runner to wait for. The Windows entry builds on the
+  # Windows port (plan item 4.1); publish needs every asset, so a Windows
+  # build that fails fails the release too — deliberately. A release
+  # missing its Windows half is not one.
   core:
     needs: meta
     strategy:
@@ -237,7 +237,7 @@ jobs:
           if-no-files-found: error
           path: dist/*
 
-  # The Tauri desktop app (TODO 5.4, 9): unsigned by decision (Tauri's
+  # The Tauri desktop app (plan items 5.4, 9): unsigned by decision (Tauri's
   # ad-hoc signature on macOS; NSIS per-user .exe on Windows, no admin
   # prompt), but UPDATE-signed — createUpdaterArtifacts in
   # tauri.release.conf.json makes Tauri sign each updater bundle with the
@@ -245,7 +245,7 @@ jobs:
   # any update its baked-in public key does not verify. Losing that key
   # strands every installed app (docs/RELEASING.md). Skipped, not failed,
   # while the tagged tree has no desktop/ (see meta). Intel Macs are not a
-  # target yet (TODO 9 leaves "mac x64?" open); castle-core already builds
+  # target yet (plan item 9 leaves "mac x64?" open); castle-core already builds
   # for them, so adding one is a matrix row and a DESKTOP_TARGETS entry.
   desktop:
     needs: [meta, core]
@@ -296,8 +296,19 @@ jobs:
           path: core-zip
       - name: sidecar
         run: unzip -o core-zip/*.zip -d desktop/sidecar/castle/
+      # The CLI is pinned to the crate's tauri in Cargo.lock, installed once
+      # with --ignore-scripts (it has none; its native half is a prebuilt
+      # optional dependency) and run by path — no npx, so nothing is fetched
+      # or run on demand.
+      - name: tauri cli
+        env:
+          CLI_DIR: ${{ runner.temp }}/tauri-cli
+        run: |
+          npm install --no-save --no-package-lock --ignore-scripts --no-fund --no-audit \
+            --prefix "$CLI_DIR" @tauri-apps/cli@2.12.1
+          echo "TAURI_JS=$CLI_DIR/node_modules/@tauri-apps/cli/tauri.js" >> "$GITHUB_ENV"
       # Tauri's version is the tag's (the updater compares semver against
-      # latest.json); the CLI is pinned to the crate's tauri in Cargo.lock.
+      # latest.json).
       - name: tauri build
         working-directory: desktop
         env:
@@ -307,7 +318,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          npx --yes @tauri-apps/cli@2.12.1 build --ci --target "$TARGET" --bundles "$BUNDLES" \
+          node "$TAURI_JS" build --ci --target "$TARGET" --bundles "$BUNDLES" \
             --config src-tauri/tauri.release.conf.json \
             --config "{\"version\":\"${TAG#v}\"}" -- --locked
       - name: stage under the release names

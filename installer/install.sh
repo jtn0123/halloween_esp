@@ -53,7 +53,8 @@ if [ -z "$uv" ]; then
 		exit 1
 	}
 	echo "Installing uv (https://docs.astral.sh/uv/)..."
-	curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh
+	# HTTPS only, redirects included, and nothing older than TLS 1.2.
+	curl --proto '=https' --tlsv1.2 -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh
 	uv=$(find_uv)
 	[ -n "$uv" ] || {
 		echo "install.sh: uv installed but cannot be found; open a new Terminal and retry." >&2

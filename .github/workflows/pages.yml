@@ -1,6 +1,6 @@
 # The web flasher on GitHub Pages: flasher/index.html plus the LATEST full
 # release's factory image and esp-web-tools manifest, served from one origin
-# (docs/PRODUCTION-TODO.md 1.2; docs/RELEASING.md).
+# (production plan item 1.2; docs/RELEASING.md is the operator's view).
 #
 # Why copy the assets instead of pointing the page at the Release: a
 # release download URL redirects to another host that sends no CORS
@@ -29,10 +29,10 @@ defaults:
   run:
     shell: bash -eo pipefail {0}
 
+# Read-only by default; only the deploy job can write to Pages or mint the
+# OIDC token deploy-pages exchanges for it.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 # One deploy at a time, and never cancel one halfway.
 concurrency:
@@ -44,6 +44,9 @@ jobs:
     if: github.event_name != 'release' || !github.event.release.prerelease
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read # gh release download
+      pages: read # configure-pages reads the site's settings
     steps:
       - uses: actions/checkout@v7
       - name: fetch the latest release's flasher assets
@@ -84,6 +87,9 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

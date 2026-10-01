@@ -1,18 +1,25 @@
 <!doctype html>
 <!--
-  The castle's web flasher (docs/PRODUCTION-TODO.md 1.2, docs/RELEASING.md).
+  The castle's web flasher (production plan item 1.2, docs/RELEASING.md).
   Static, no build step. .github/workflows/pages.yml deploys this file next
   to the latest release's flasher-manifest.json and factory image, so the
   manifest path below is relative on purpose. esp-web-tools is pinned to an
   exact version: a flasher that changes under a stranger's castle without a
-  commit here is not one anybody tested.
+  commit here is not one anybody tested. The integrity hash is that file's
+  sha384 as npm published it (checked against the registry tarball); a new
+  version needs a new hash:
+    curl -sL <url> | openssl dgst -sha384 -binary | openssl base64 -A
+  No `?module`: unpkg would rewrite the file and the hash with it, and the
+  bundle needs no rewriting — its chunks are relative imports.
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Halloween Castle — set up or repair</title>
-<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js?module"></script>
+<script type="module" src="https://unpkg.com/esp-web-tools@10.4.0/dist/web/install-button.js"
+        integrity="sha384-9XfyvAabgkISlB/Xb3OpshGKpZx0TOt5Mmu78SeiNU3so/p4o2s9m66vy6Utdnom"
+        crossorigin="anonymous"></script>
 <style>
   :root { color-scheme: dark; --ink: #f4ecdf; --dim: #b9ab96; --pumpkin: #ff8a1f; --panel: #1d1720; }
   body { margin: 0; background: #120e14; color: var(--ink);
@@ -91,12 +98,16 @@
   <p><small>Source and release notes:
      <a href="https://github.com/jtn0123/halloween_esp/releases" style="color:inherit">github.com/jtn0123/halloween_esp</a></small></p>
 </main>
-<script>
+<script type="module">
   // Say which release this page installs (the release tag, not the v5.xx firmware string).
-  fetch("flasher-manifest.json")
-    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-    .then((m) => { document.getElementById("ver").textContent = "Installs release " + m.version; })
-    .catch(() => { document.getElementById("ver").textContent = "No castle software is published here yet."; });
+  const ver = document.getElementById("ver");
+  try {
+    const r = await fetch("flasher-manifest.json");
+    if (!r.ok) throw new Error(String(r.status));
+    ver.textContent = "Installs release " + (await r.json()).version;
+  } catch {
+    ver.textContent = "No castle software is published here yet.";
+  }
 </script>
 </body>
 </html>

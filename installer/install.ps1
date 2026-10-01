@@ -80,7 +80,21 @@ if (-not $Uv) {
     Write-Host 'Installing uv (https://docs.astral.sh/uv/)...'
     $env:UV_NO_MODIFY_PATH = '1'
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-RestMethod -Uri 'https://astral.sh/uv/install.ps1' | Invoke-Expression
+    # uv's installer is saved and run as a script file in a child of this
+    # same PowerShell, rather than piped through Invoke-Expression: the
+    # bytes on disk are what runs, and a failed download stops here.
+    $UvInstaller = Join-Path ([IO.Path]::GetTempPath()) ("uv-install-" + [Guid]::NewGuid() + '.ps1')
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri 'https://astral.sh/uv/install.ps1' -OutFile $UvInstaller
+        $Shell = (Get-Process -Id $PID).Path
+        & $Shell -NoProfile -ExecutionPolicy Bypass -File $UvInstaller
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "install.ps1: uv's installer failed (exit $LASTEXITCODE)."
+            exit 1
+        }
+    } finally {
+        Remove-Item -Force -ErrorAction SilentlyContinue $UvInstaller
+    }
     $Uv = Find-Uv
     if (-not $Uv) {
         Write-Error 'install.ps1: uv installed but cannot be found; open a new window and retry.'
