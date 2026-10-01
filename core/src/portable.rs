@@ -87,6 +87,24 @@ pub fn last_segment(s: &str) -> String {
         .to_string()
 }
 
+/// Twelve hex digits no other call in this process has returned — a job
+/// id. Not /dev/urandom: Windows has none, and the old fall-back was a
+/// FIXED id, so every job shared one and the registry answered with the
+/// oldest. RandomState is seeded from the OS once per process; the counter
+/// separates two calls in the same nanosecond.
+pub fn unique_id() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u64(SEQ.fetch_add(1, Ordering::Relaxed));
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    h.write_u128(nanos);
+    format!("{:012x}", h.finish() & 0xffff_ffff_ffff)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +161,13 @@ mod tests {
         }
         assert_eq!(program("_T_CASTLE_UNSET_VAR", "tool"), "tool");
         assert!(named("_T_CASTLE_UNSET_VAR").is_none());
+    }
+
+    /// Ids are the job registry's only key, so no two may match.
+    #[test]
+    fn every_unique_id_is_unique_and_twelve_digits() {
+        let ids: std::collections::HashSet<String> = (0..1000).map(|_| unique_id()).collect();
+        assert_eq!(ids.len(), 1000);
+        assert!(ids.iter().all(|i| i.len() == 12));
     }
 }

@@ -88,20 +88,6 @@ fn jobs() -> &'static Registry {
     J.get_or_init(|| Mutex::new(Vec::new()))
 }
 
-fn new_id() -> String {
-    use std::io::Read;
-    let mut b = [0u8; 6];
-    // read_exact, never fs::read — /dev/urandom has no EOF to read to.
-    if std::fs::File::open("/dev/urandom")
-        .and_then(|mut f| f.read_exact(&mut b))
-        .is_err()
-    {
-        // Never reached on macOS/Linux; a fixed id would still work.
-        b = [1, 2, 3, 4, 5, 6];
-    }
-    b.iter().map(|x| format!("{x:02x}")).collect()
-}
-
 pub fn get(job_id: &str) -> Option<Json> {
     let reg = jobs().lock().unwrap_or_else(PoisonError::into_inner);
     let job = reg.iter().find(|(k, _)| k == job_id)?.1.clone();
@@ -113,7 +99,7 @@ pub fn get(job_id: &str) -> Option<Json> {
 /// JobRunner.start: a job begins queued, runs behind the studio's encode
 /// lock, and reports as yt-dlp prints.
 pub fn start(app: &Arc<App>, argv: Vec<String>) -> Json {
-    let job = Arc::new(Mutex::new(Job::new(new_id())));
+    let job = Arc::new(Mutex::new(Job::new(crate::portable::unique_id())));
     let id = job
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
