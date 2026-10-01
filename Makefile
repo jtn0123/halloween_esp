@@ -37,7 +37,7 @@ YAML_S3 := firmware/castle_s3.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
@@ -84,6 +84,7 @@ help:
 	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
 	@echo "  make lock       relock requirements.lock from a clean throwaway venv"
 	@echo "  make lock-hashes  refresh the lock's sha256 lines, same pins, no resolve"
+	@echo "  make lock-desktop relock requirements-desktop.lock (the installer's; needs uv)"
 	@echo "  make clean      drop firmware/.esphome and rendered wavs"
 	@echo "  make sd-build / sd-upload   older names for build / upload"
 	@echo "  make bench-audio-logs       tail the bench-audio build's logs"
@@ -354,6 +355,12 @@ lock:
 
 lock-hashes:
 	@$(PY) tools/lock_deps.py --hashes-only
+
+# The desktop installer's lock (installer/install.sh, install.ps1): macOS arm64
+# + Windows x64, universal, hash-pinned, resolved by uv — see the docstring of
+# tools/lock_desktop.py for why it is not a section of requirements.lock.
+lock-desktop:
+	@$(PY) tools/lock_desktop.py
 
 # castle-core, the Rust half — 9k lines that had no spelling here at all
 # (grade report 2026-08-31 I1). These three ARE the Rust gate: tests/test_castle_core.py
