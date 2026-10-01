@@ -98,11 +98,11 @@ jobs:
         if: runner.os == 'Windows'
         run: echo "NPY_DISABLE_CPU_FEATURES=X86_V3 X86_V4 AVX512_ICL AVX512_SPR" >> "$GITHUB_ENV"
       - run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
-      # The studio bin spawns its Python children through CASTLE_PY first;
-      # without it a Windows runner falls through to a `python3` that is not
-      # the interpreter the lock was installed into.
-      - name: name the interpreter for the studio's children
-        run: echo "CASTLE_PY=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+      # No CASTLE_PY exported, though the studio bin asks it first: the
+      # suites that spawn the studio name it in the CHILD's environment as
+      # their own sys.executable (tests/studio_rs_case.py), which is the
+      # interpreter this lock went into — Windows has neither `python3` nor
+      # .venv/bin for py()'s fall-backs to find.
       # esbuild for the generator sandbox test; node 22 for test-radio's
       # browser half.
       - uses: actions/setup-node@v7
