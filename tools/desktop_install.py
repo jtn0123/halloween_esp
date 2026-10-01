@@ -384,6 +384,7 @@ class Installer:
         self.data()
         self.launcher()
         self.write_record(core)
+        shutil.rmtree(self.scratch, ignore_errors=True)
         self.status()
         self.say(
             "dry run: nothing changed"

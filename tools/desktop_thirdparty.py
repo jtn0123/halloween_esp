@@ -132,14 +132,17 @@ def fetch_pinned_ffmpeg(
     bin_dir.mkdir(parents=True, exist_ok=True)
     for i, pin in enumerate(pins):
         archive = rel.download(pin.url, scratch / f"ffmpeg-{i}.zip", fetch, pin.sha256)
-        files = rel.safe_extract(archive, scratch / f"ffmpeg-{i}")
+        unpacked = scratch / f"ffmpeg-{i}"
+        files = rel.safe_extract(archive, unpacked)
+        archive.unlink()  # the zip and its other members are ~100 MB of scratch
         by_name = {p.name: p for p in files}
         for member in pin.members:
             if member not in by_name:
                 raise rel.ReleaseError(f"{pin.url} has no {member}")
             out = bin_dir / member
-            shutil.copyfile(by_name[member], out)
+            shutil.move(by_name[member], out)
             out.chmod(0o755)
+        shutil.rmtree(unpacked, ignore_errors=True)
     ext = ".exe" if system == "Windows" else ""
     return str(bin_dir / f"ffmpeg{ext}"), str(bin_dir / f"ffprobe{ext}")
 
