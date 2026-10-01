@@ -31,13 +31,19 @@ DEVICE_S3 := castle-s3
 # It has never been on hardware; the weekly CI job compiles it so it cannot
 # rot unnoticed.
 YAML_S3 := firmware/castle_s3.yaml
+# The BUYER build (v5.74): the same Feather and carrier as $(YAML), with no
+# Wi-Fi credentials compiled in — softAP + captive portal + Improv-over-USB
+# to hand it a network, and a per-unit castle-xxxxxx hostname. Its device
+# name is the hostname STEM, so its build tree is "castle".
+YAML_BUYER := firmware/castle_buyer.yaml
+DEVICE_BUYER := castle
 # The documented target; pyproject/CI/mypy all say 3.13. Found on PATH rather
 # than at one Homebrew path, which is not where every machine keeps it.
 # Recursive (=), not :=, so the lookup — and the error — only happen when
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: build-buyer validate-buyer show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
@@ -52,6 +58,7 @@ help:
 	@echo "  make upload     compile and flash over the Feather's USB-C"
 	@echo "  make logs       tail device logs over the same cable"
 	@echo "  make build-s3 / upload-s3 / logs-s3   the same for the WROOM carrier"
+	@echo "  make build-buyer / validate-buyer   the buyer image: no Wi-Fi baked in, AP + Improv setup"
 	@echo "  make build-fs3 / upload-fs3 / logs-fs3   aliases for build / upload / logs"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"
@@ -203,7 +210,7 @@ bench: audio generate
 bench-logs:
 	$(ESPHOME_RUN) logs firmware/bench.yaml
 
-validate: generate validate-s3
+validate: generate validate-s3 validate-buyer
 	@$(ESPHOME_RUN) config $(YAML) > /dev/null && echo "config OK"
 
 # The carrier build is validated by the same target, not by a habit anyone
@@ -211,6 +218,15 @@ validate: generate validate-s3
 validate-s3: generate
 	@$(ESPHOME_RUN) config $(YAML_S3) > /dev/null && echo "config OK (s3)"
 	@$(ESPHOME_RUN) config firmware/castle_s3_qemu.yaml > /dev/null && echo "config OK (s3 qemu)"
+
+# The buyer image. No upload target on purpose: a buyer's castle is
+# flashed from a release through the web flasher, never from this checkout.
+validate-buyer: generate
+	@$(ESPHOME_RUN) config $(YAML_BUYER) > /dev/null && echo "config OK (buyer)"
+
+build-buyer: audio generate
+	$(ESPHOME_RUN) compile $(YAML_BUYER)
+	@$(PY) tools/check_image.py $(DEVICE_BUYER) --require
 
 # The S3 Feather's USB-C is the chip's own USB Serial/JTAG, so `upload` and
 # `logs` share one cable — except the FIRST flash of a factory Feather, which
@@ -416,6 +432,7 @@ lint: rust-lint
 check: audio test test-radio lint
 	@$(PY) tools/check_image.py $(DEVICE)
 	@$(PY) tools/check_image.py $(DEVICE_S3)
+	@$(PY) tools/check_image.py $(DEVICE_BUYER)
 	@$(PY) tools/check_loc.py
 	@$(PY) tools/check_citations.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"
