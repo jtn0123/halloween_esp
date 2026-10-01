@@ -343,6 +343,8 @@ class Handler(Uploads):
         self._json({"queued": True})
 
     def h_pir(self, raw: bytes) -> None:
+        if not self._key_ok():  # a setting (v5.74)
+            return self._locked()
         if wire.query_truncated(raw):
             return self._err(414, QUERY_TOO_LONG)
         a, c, s = (wire.query_param(raw, k) for k in ("armed", "cooldown", "scene"))
@@ -365,9 +367,62 @@ class Handler(Uploads):
         self.server.queue("PIRCFG", "|".join(wire.fs_name(x) for x in (a, c, s)))
         self._json({"queued": True})
 
+    # -- the owner's settings (sd_web_prefs.h, v5.74) ----------------------
+
+    def h_settings(self, raw: bytes) -> None:
+        if not self._key_ok():
+            return self._locked()
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
+        bp = wire.query_param(raw, "boot_play")
+        if not bp:
+            return self._err(400, "need boot_play=")
+        ok, bp = wire.pir_armed_ok(bp)
+        if not ok:
+            return self._err(400, "bad boot_play")
+        self.server.boot_play = bp == b"1"
+        self._raw(
+            200,
+            b'{"boot_play":true}' if self.server.boot_play else b'{"boot_play":false}',
+            JSON_MIME,
+        )
+
+    def h_key(self, raw: bytes) -> None:
+        if not self._key_ok():
+            return self._locked()
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
+        nk = wire.query_param(raw, "new")
+        clear = wire.query_param(raw, "clear") == b"1"
+        if (not nk) == (not clear):
+            return self._err(400, "need new=<key> or clear=1")
+        if not clear and not wire.key_chars_ok(nk):
+            return self._err(400, "bad key")
+        self.server.key = b"" if clear else nk
+        self._raw(
+            200,
+            b'{"locked":false}' if clear else b'{"locked":true}',
+            JSON_MIME,
+        )
+
+    def h_factory_reset(self, raw: bytes) -> None:
+        """The board erases NVS and reboots after this reply; the emulator
+        forgets its settings, which is everything a client can observe."""
+        if not self._key_ok():
+            return self._locked()
+        if wire.query_truncated(raw):
+            return self._err(414, QUERY_TOO_LONG)
+        if wire.query_param(raw, "confirm") != b"yes":
+            return self._err(400, "need confirm=yes")
+        self.server.key = b""
+        self.server.boot_play = True
+        self._raw(200, b'{"resetting":true}', JSON_MIME)
+
     # -- PUT/DELETE: the card ----------------------------------------------
 
     def h_ota(self, _raw: bytes) -> None:
+        if not self._key_ok():
+            return self._locked()
         n = self._content_len()
         if n is None:
             return self._idf(400)

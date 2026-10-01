@@ -28,6 +28,9 @@ class _Device(TypedDict):
 
     host: str
     fallbacks: list[str]
+    #: The castle key (firmware v5.74, sd_web_prefs.h) — "" for a castle
+    #: that has none, which is every castle until its owner sets one.
+    key: str
 
 
 def _table() -> dict[str, str]:
@@ -48,6 +51,7 @@ def _entries() -> dict[str, _Device]:
             out[name] = {
                 "host": str(cfg["host"]),
                 "fallbacks": [str(h) for h in cfg.get("fallbacks") or []],
+                "key": str(cfg.get("key") or ""),
             }
     return out
 
@@ -103,6 +107,31 @@ def resolve(arg: str | None = None) -> str:
         "no device given: pass an IP or name, set CASTLE_HOST, "
         "or add an entry to devices.toml"
     )
+
+
+def castle_key(host: str | None = None) -> str:
+    """The castle key to send, or "" to send none.
+
+    CASTLE_KEY wins when it is set (set-but-empty is "no key", the same
+    convention CASTLE_HOST has); else the `key` of the devices.toml entry
+    whose host or fallbacks name `host`; else the first entry's when no host
+    is given. A castle with no key ignores the header, so sending one to the
+    wrong castle costs nothing but a 401 from a castle that has a different
+    one — which is the answer that should come back.
+    """
+    env = os.environ.get("CASTLE_KEY")
+    if env is not None:
+        return env.strip()
+    for e in _entries().values():
+        if host is None or host in (e["host"], *e["fallbacks"]):
+            return e["key"]
+    return ""
+
+
+def key_headers(host: str | None = None) -> dict[str, str]:
+    """{"X-Castle-Key": key} for a castle with a key configured, else {}."""
+    k = castle_key(host)
+    return {"X-Castle-Key": k} if k else {}
 
 
 def maybe_host(argv: list[str]) -> tuple[str, list[str]]:

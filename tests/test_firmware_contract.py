@@ -217,11 +217,13 @@ class TestValidatorConstants(unittest.TestCase):
             self.assertIn(f"g_status.{field} =", publish)
         # Every snprintf in h_status must fit the buffer it fills with every
         # number at its widest: a truncated reply is a parse error in every
-        # client (v5.72 added two 64-bit numbers and grew it to 384).
+        # client (v5.72 added two 64-bit numbers and grew it to 384; v5.74
+        # added locked + boot_play and grew it to 448).
         declared = re.search(r"std::array<char, (\d+)> buf\{\}", body)
         assert declared is not None
         size = int(declared.group(1))
-        # %s here is only ever true/false, the version or the build date.
+        # %s here is only ever true/false, the version, the build date, or
+        # the board and variant ids (v5.74, all under 16).
         widest = {"%lld": 20, "%u": 10, "%d": 11, "%s": 16}
         formats = re.findall(
             r"snprintf\(buf\.data\(\), buf\.size\(\),((?:\s*R\"\(.*?\)\")+)",

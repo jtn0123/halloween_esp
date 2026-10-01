@@ -171,6 +171,12 @@ class CastleC:
             headers[name] = value
         return Reply(status, self.proc.stdout.read(blen), headers)
 
+    def set_key(self, key: bytes) -> None:
+        """The X-Castle-Key every later request carries; b"" sends none."""
+        assert self.proc.stdin
+        self.proc.stdin.write(f"KEY {len(key)}\n".encode() + key)
+        self.proc.stdin.flush()
+
     def tick(
         self, now_us: int, playing: bool = False, sounding: bool = False
     ) -> tuple[str, bytes]:
@@ -223,9 +229,10 @@ def emu_http(
     body: bytes = b"",
     declared: int | None = None,
     timeout: float = 20.0,
+    key: bytes = b"",
 ) -> Reply:
     """One raw request at the emulator, with the request target and the
-    Content-Length exactly as given."""
+    Content-Length exactly as given — and X-Castle-Key when `key` is set."""
     n = len(body) if declared is None else declared
     head = (
         method.encode()
@@ -233,6 +240,7 @@ def emu_http(
         + target
         + b" HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: "
         + str(n).encode()
+        + (b"\r\nX-Castle-Key: " + key if key else b"")
         + b"\r\nConnection: close\r\n\r\n"
     )
     chunks: list[bytes] = []
@@ -321,7 +329,15 @@ class Pair:
         # flash, spelled to both castles from one place (J3, grade report
         # 2026-09-17 pm). The C reads CASTLE_QUIESCE in seed_from_env.
         self.emu.quiesce = env.get("CASTLE_QUIESCE", "0") != "0"
+        #: The X-Castle-Key both castles are sent from here on (v5.74).
+        self.key = b""
         self.emu.start()
+
+    def send_key(self, key: bytes) -> None:
+        """Every later request to EITHER castle carries this X-Castle-Key
+        (b"" = none) — the client's side of sd_web_prefs.h."""
+        self.key = key
+        self.c.set_key(key)
 
     def close(self) -> None:
         self.c.close()
@@ -338,7 +354,7 @@ class Pair:
     ) -> tuple[Reply, Reply]:
         return (
             self.c.http(method, target, body, declared, port),
-            emu_http(self.emu.port, method, target, body, declared),
+            emu_http(self.emu.port, method, target, body, declared, key=self.key),
         )
 
     #: The interval castle_sd_common.yaml runs the main loop on, in

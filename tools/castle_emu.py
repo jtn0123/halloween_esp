@@ -146,6 +146,8 @@ class CastleEmu(ThreadingHTTPServer):
         sd_mounted: bool = True,
         serial: bool = False,
         ota_slot: int = OTA_SLOT,
+        board: str = "feather-s3-4m2p",
+        fw_variant: str = "yard",
     ) -> None:
         super().__init__(("127.0.0.1", port), Handler)
         self.state = _State()
@@ -163,6 +165,15 @@ class CastleEmu(ThreadingHTTPServer):
             else card_scene_ids(self.sd_dir) or show_scene_ids() or list(DEFAULT_SCENES)
         )
         self.version = version
+        #: h_status's "board" and "fw_variant" (v5.74, sd_web_state.h): the
+        #: module + memory and the build. The yard's by default, as the C's.
+        self.board = board
+        self.fw_variant = fw_variant
+        #: sd_web_prefs.h, v5.74: the owner's castle key ("" = none, every
+        #: route open) and whether a power-on boot starts the show. NVS on
+        #: the board; this emulator's lifetime here, which is a boot.
+        self.key = b""
+        self.boot_play = True
         #: h_status's "missing": the boot manifest's comma-separated list of
         #: scene files the card lacks. Tests set it to rehearse the escaping.
         self.missing = ""

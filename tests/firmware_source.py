@@ -32,6 +32,9 @@ SD_SITE = (FW / "sd_web_site.h").read_text()
 SD_REMOTE = (FW / "sd_web_remote.h").read_text()
 SD_EVENTS = (FW / "sd_web_events.h").read_text()
 SD_STATE = (FW / "sd_web_state.h").read_text()
+#: v5.74: the owner's settings — the castle key and boot_play — and the two
+#: routes that change them.
+SD_PREFS = (FW / "sd_web_prefs.h").read_text()
 #: v5.67: the event ring, the light-frame counters and the radio transition
 #: came out of sd_web_state.h on the 500-line cap — a history is not a
 #: mailbox. Read as ONE text with its parent, because every check below is
@@ -68,6 +71,9 @@ HARDWARE_ONLY = {
     "ota begin failed",
     "ota end failed",
     "could not select slot",
+    # v5.74: an NVS write that failed. The emulator keeps its settings in
+    # memory, which does not refuse.
+    "settings not saved",
 }
 
 
@@ -89,7 +95,14 @@ def c_functions(*sources: str) -> dict[str, str]:
 #: v5.61: h_put's answers now come through upload_offload, which reaches
 #: write_body, and a handler's verdicts must not go quiet because a call
 #: grew a step (A9 put the upload worker in between).
-ERR_HELPERS = ("write_body", "send_sd_file", "query_ok", "upload_offload")
+ERR_HELPERS = (
+    "write_body",
+    "send_sd_file",
+    "query_ok",
+    "upload_offload",
+    # v5.74: the 401 every guarded route answers with (sd_web_prefs.h).
+    "reply_locked",
+)
 
 
 def reply_errs(body: str) -> set[tuple[int, str]]:
@@ -110,7 +123,7 @@ EMU_CONSTS: dict[str, str] = dict(
 #: handler hands the rest of the work to. castle_emu_upload's _write_upload
 #: is the upload worker's half of h_put (A9, v5.61); _list_dir is h_list's
 #: ?d=<subdir> validation, which answers both of that route's refusals.
-EMU_ERR_HELPERS = ("_write_upload", "_list_dir")
+EMU_ERR_HELPERS = ("_write_upload", "_list_dir", "_locked")
 
 
 def emu_method(name: str) -> str:
@@ -151,7 +164,9 @@ def firmware_routes() -> list[tuple[str, str, str]]:
     ]
 
 
-FUNCS = c_functions(SD_WEB, SD_OTA, SD_UPLOAD, SD_SITE, SD_REMOTE, SD_EVENTS, SD_UTIL)
+FUNCS = c_functions(
+    SD_WEB, SD_OTA, SD_UPLOAD, SD_SITE, SD_REMOTE, SD_EVENTS, SD_UTIL, SD_PREFS
+)
 
 
 def grab(pattern: str, text: str, group: int = 1) -> str:

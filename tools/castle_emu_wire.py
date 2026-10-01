@@ -27,6 +27,8 @@ MAX_URI = 512
 #: (A10). 3*99 + 2 now, past anything the query ceiling can deliver.
 QUERY_BUF = 200
 VALUE_BUF = 301
+#: sd_web_prefs.h kKeyMax: the castle key's ceiling, in bytes.
+KEY_MAX = 64
 #: safe_name's / safe_subpath's length ceilings.
 NAME_MAX = 100
 SUBPATH_MAX = 140
@@ -56,6 +58,9 @@ ROUTES: tuple[tuple[str, str, str], ...] = (
     ("/api/light", "POST", "h_light"),
     ("/api/pir", "POST", "h_pir"),
     ("/api/ota", "PUT", "h_ota"),
+    ("/api/settings", "POST", "h_settings"),
+    ("/api/key", "POST", "h_key"),
+    ("/api/factory-reset", "POST", "h_factory_reset"),
     ("/api/bootlog", "GET", "h_bootlog"),
     ("/sd/*", "GET", "h_sd_get"),
     ("/site/*", "GET", "h_site"),
@@ -258,6 +263,11 @@ def query_truncated(raw_target: bytes) -> bool:
         return False
     qry = raw_target.split(b"?", 1)[1]
     return bool(qry) and len(qry) + 1 > QUERY_BUF
+
+
+def key_chars_ok(k: bytes) -> bool:
+    """sd_web_prefs.h key_chars_ok: 1..64 printable ASCII bytes, no space."""
+    return 0 < len(k) <= KEY_MAX and all(0x21 <= c <= 0x7E for c in k)
 
 
 def pir_armed_ok(a: bytes) -> tuple[bool, bytes]:

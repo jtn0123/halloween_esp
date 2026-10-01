@@ -41,6 +41,10 @@ def status_json(emu: CastleEmu) -> dict[str, object]:
         )
         return {
             "version": emu.version,
+            # v5.74: what this image IS — an updater picks a release asset
+            # by these two names (sd_web_state.h g_board / g_fw_variant).
+            "board": emu.board,
+            "fw_variant": emu.fw_variant,
             "compiled": "emulated",
             "uptime_s": int(time.monotonic() - st.boot),
             "sd_mounted": emu.sd_mounted,
@@ -81,6 +85,10 @@ def status_json(emu: CastleEmu) -> dict[str, object]:
             # the same reason psram_free_kb is fixed: the number means
             # nothing off the board, the key means everything.
             "rssi": -55,
+            # v5.74 (sd_web_prefs.h): a castle key is set, and whether a
+            # power-on boot starts the show.
+            "locked": bool(emu.key),
+            "boot_play": emu.boot_play,
             "pir": {
                 "armed": st.pir["armed"],
                 "cooldown_s": st.pir["cooldown_s"],
@@ -105,16 +113,20 @@ def status_text(emu: CastleEmu) -> str:
         return wire.json_escape(str(s[k]))
 
     return (
-        '{"version":"%s","compiled":"%s","uptime_s":%d,'
+        '{"version":"%s","board":"%s","fw_variant":"%s",'
+        '"compiled":"%s","uptime_s":%d,'
         '"sd_mounted":%s,"psram_free_kb":%d,"heap_free_kb":%d,'
         '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
         '"volume":%d,"scene":"%s","track":"%s","scenes":"%s",'
         '"show_on":%s,"playing":%s,"position_ms":%d,'
         '"light_applied":%d,"light_evicted":%d,"cues":%d,'
         '"sync_lead_ms":%d,"sync_drift_ms":%d,"epoch":%d,"rssi":%d,'
+        '"locked":%s,"boot_play":%s,'
         '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
         % (
             t("version"),
+            t("board"),
+            t("fw_variant"),
             t("compiled"),
             i("uptime_s"),
             b[bool(s["sd_mounted"])],
@@ -137,6 +149,8 @@ def status_text(emu: CastleEmu) -> str:
             i("sync_drift_ms"),
             i("epoch"),
             i("rssi"),
+            b[bool(s["locked"])],
+            b[bool(s["boot_play"])],
             b[bool(pir["armed"])],
             int(pir["cooldown_s"]),
             wire.json_escape(str(pir["scene"])),
