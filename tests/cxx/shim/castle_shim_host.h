@@ -1,11 +1,13 @@
 #pragma once
-// The host operating system under the shim — the three things a harness
+// The host operating system under the shim — the four things a harness
 // does that POSIX and Windows spell differently. Everything else the shim
 // needs from the host is in the C library both have.
 //
 //   set_env  — the harness configures the firmware's fake card through the
 //              environment, and Windows has no setenv;
 //   make_dir — mkdir(path, mode) is POSIX; Windows' mkdir takes no mode;
+//   localtime_r — castle_health stamps its log with it; the Windows runtime
+//              spells the same call localtime_s, arguments swapped;
 //   binary pipes — the web and mailbox harnesses speak raw HTTP and JSON
 //              over stdin/stdout, byte for byte, and the Windows C runtime
 //              opens both in TEXT mode: every "\n" written would arrive as
@@ -16,6 +18,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <string>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -24,6 +27,12 @@
 #include <direct.h>
 #include <fcntl.h>
 #include <io.h>
+#endif
+
+#if defined(_WIN32) && !defined(_POSIX_THREAD_SAFE_FUNCTIONS)
+inline struct tm *localtime_r(const time_t *t, struct tm *out) {
+  return localtime_s(out, t) == 0 ? out : nullptr;
+}
 #endif
 
 namespace castle_shim {

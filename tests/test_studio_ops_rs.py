@@ -83,7 +83,7 @@ class Publish(StudioCase):
         # beside it.
         sd = Path(self.emu.sd_dir)
         self.assertEqual(
-            sorted(str(f.relative_to(sd)) for f in sd.rglob("*") if f.is_file()),
+            sorted(f.relative_to(sd).as_posix() for f in sd.rglob("*") if f.is_file()),
             [
                 # The show itself is card data since v5.67 — one .cue per
                 # scene and the manifest that names them — so a publish

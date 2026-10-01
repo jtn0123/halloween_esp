@@ -126,7 +126,9 @@ class SceneRunnerCase(unittest.TestCase):
                 (self.card / f"{token}.mp3").write_bytes(b"\xff\xfb")
 
     def run_ops(self, *ops: str) -> list[str]:
-        run = subprocess.run([str(self.exe), str(self.card), *ops],
+        # On stdin, not argv: the J7 tick run is past Windows' 32 KB limit.
+        run = subprocess.run([str(self.exe), str(self.card), "-"],
+                             input="".join(f"{op}\n" for op in ops),
                              capture_output=True, text=True, check=False)  # fmt: skip
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         return run.stdout.splitlines()

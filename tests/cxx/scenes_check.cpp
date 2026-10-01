@@ -1,6 +1,10 @@
 // firmware/castle_scenes.h, run on this machine against a real card.
 //
 //   scenes_check <dir> <op> [<op> ...]
+//   scenes_check <dir> -          (the ops on stdin, one per line)
+//
+// The stdin form is what the test uses: a 4,000-frame tick run is ~50 KB of
+// argv, past the 32 KB command line Windows allows a process.
 //
 // The scene runner is the v5.67 replacement for twelve generated ESPHome
 // scripts, and everything it knows it reads out of two card files that
@@ -43,6 +47,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "castle_scenes.h"
 
@@ -76,8 +81,18 @@ long long heard_to = 0;
 int main(int argc, char **argv) {
   if (argc < 3) return 2;
   const char *dir = argv[1];
-  for (int i = 2; i < argc; i++) {
-    const char *op = argv[i];
+  std::vector<std::string> ops(argv + 2, argv + argc);
+  if (argc == 3 && std::strcmp(argv[2], "-") == 0) {
+    ops.clear();
+    char line[512];
+    while (std::fgets(line, sizeof line, stdin) != nullptr) {
+      std::string op(line);
+      while (!op.empty() && (op.back() == '\n' || op.back() == '\r')) op.pop_back();
+      if (!op.empty()) ops.push_back(op);
+    }
+  }
+  for (const std::string &each : ops) {
+    const char *op = each.c_str();
     if (std::strcmp(op, "ids") == 0) {
       std::printf("ids %s\n", castle_scenes::ids_csv(dir).c_str());
     } else if (std::strcmp(op, "missing") == 0) {
@@ -98,7 +113,10 @@ int main(int argc, char **argv) {
       std::printf("begin known=%d\n", known ? 1 : 0);
       if (known) {
         std::printf("audio %s\n", castle_scenes::audio());
-        std::printf("cues loaded=%d count=%u\n", castle_scenes::load_cues(dir) ? 1 : 0,
+        // Loaded FIRST, then counted: as two printf arguments the order is
+        // unspecified, and g++ counts before it loads.
+        const bool loaded = castle_scenes::load_cues(dir);
+        std::printf("cues loaded=%d count=%u\n", loaded ? 1 : 0,
                     (unsigned) castle_cues::count());
       }
       print_state("state");

@@ -18,12 +18,14 @@ import castle_tools_status as tools_status
 def _bash() -> str:
     """A POSIX bash for the launcher. On Windows the `bash` CreateProcess
     finds first is System32's WSL stub, which only says no distribution is
-    installed; Git for Windows' own bash sits two levels above its git."""
+    installed. Git for Windows' bash is under its usr/bin — the real one,
+    not bin/bash.exe, a launcher that puts Git's own curl ahead of the
+    fakes on PATH."""
     if os.name == "nt":
         git = shutil.which("git")
         for up in Path(git).resolve().parents[:3] if git else ():
-            if (up / "bin" / "bash.exe").is_file():
-                return str(up / "bin" / "bash.exe")
+            if (up / "usr" / "bin" / "bash.exe").is_file():
+                return str(up / "usr" / "bin" / "bash.exe")
     return shutil.which("bash") or "bash"
 
 
