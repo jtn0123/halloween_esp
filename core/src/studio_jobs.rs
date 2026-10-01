@@ -3,31 +3,40 @@
 //! door (`studio_progress`), and hands the desk a one-line reason
 //! (`studio_reason`) instead of raw shell when one of them dies.
 
-use std::io::{BufRead, BufReader};
-use std::process::{Command, ExitStatus, Stdio};
+use std::io::{BufRead, BufReader, PipeReader};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use crate::jsonio::{Json, py_float};
+use crate::procgroup::{adopt, kill_group, own_group, release};
 use crate::studio::App;
-use crate::studio_proc::{kill_group, own_group};
 use crate::studio_progress::{Job, interpret};
 use crate::studio_reason::explain;
 
-unsafe extern "C" {
-    fn dup2(oldfd: i32, newfd: i32) -> i32;
-}
-
-/// The child's stderr joins its stdout at the fd level (Python's
-/// stderr=STDOUT): after the pipe lands on fd 1, dup it onto fd 2.
-fn merge_stderr(cmd: &mut Command) {
-    use std::os::unix::process::CommandExt;
-    unsafe {
-        cmd.pre_exec(|| {
-            dup2(1, 2);
-            Ok(())
-        });
-    }
+/// Spawn `argv` with its stderr joined to its stdout (Python's
+/// stderr=STDOUT) and hand back the one read end both write into. A pipe
+/// of our own given to both streams, rather than a dup2 in the child
+/// between fork and exec — which is Unix-only, and was the last thing in
+/// the runner that would not build on Windows.
+///
+/// The Command is dropped before this returns, deliberately: it holds its
+/// own copies of the write end, and the reader sees EOF only once every
+/// copy is gone.
+fn spawn_merged(argv: &[String]) -> std::io::Result<(Child, PipeReader)> {
+    let (reader, writer) = std::io::pipe()?;
+    let mut cmd = Command::new(&argv[0]);
+    cmd.args(&argv[1..])
+        .stdin(Stdio::null())
+        .stdout(writer.try_clone()?)
+        .stderr(writer);
+    // yt-dlp spawns ffmpeg; the group is what the watchdog has to be able
+    // to kill, or the read loop waits for the grandchild and the oplock
+    // stays held with it (grade report 2026-09-17 B2).
+    own_group(&mut cmd);
+    let child = cmd.spawn()?;
+    adopt(&child);
+    Ok((child, reader))
 }
 
 /// The importer's CLI flags — shared by import, async import and refresh.
@@ -150,18 +159,8 @@ fn set<F: FnOnce(&mut Job)>(job: &Arc<Mutex<Job>>, f: F) {
 
 fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
     set(job, |j| j.phase = "fetching".to_string());
-    let mut cmd = Command::new(&argv[0]);
-    cmd.args(&argv[1..])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    merge_stderr(&mut cmd);
-    // yt-dlp spawns ffmpeg; the group is what the watchdog below has to be
-    // able to kill, or the read loop waits for the grandchild and the
-    // oplock stays held with it (grade report 2026-09-17 B2).
-    own_group(&mut cmd);
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
+    let (mut child, out) = match spawn_merged(argv) {
+        Ok(spawned) => spawned,
         Err(e) => {
             set(job, |j| {
                 j.phase = "failed".to_string();
@@ -188,20 +187,19 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
         kill_group(pid);
         true
     });
-    if let Some(out) = child.stdout.take() {
-        for raw in BufReader::new(out).lines() {
-            let Ok(raw) = raw else { break };
-            let line = raw.trim_end().to_string();
-            set(job, |j| {
-                if !line.is_empty() {
-                    j.log.push(line.clone());
-                }
-                interpret(j, &line);
-            });
-        }
+    for raw in BufReader::new(out).lines() {
+        let Ok(raw) = raw else { break };
+        let line = raw.trim_end().to_string();
+        set(job, |j| {
+            if !line.is_empty() {
+                j.log.push(line.clone());
+            }
+            interpret(j, &line);
+        });
     }
     let status = child.wait();
     crate::studio_reap::forget(pid);
+    release(pid);
     done.store(true, Ordering::Relaxed);
     if let Ok(t) = watchdog.join() {
         timed_out = t;
@@ -234,6 +232,7 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testkit_child::python_argv;
     use std::path::PathBuf;
     use std::sync::MutexGuard;
     use std::time::{Duration, Instant};
@@ -254,7 +253,17 @@ mod tests {
     }
 
     fn start_id(app: &Arc<App>, argv: &[&str]) -> String {
-        let snap = start(app, argv.iter().map(|s| s.to_string()).collect());
+        start_argv(app, argv.iter().map(|s| s.to_string()).collect())
+    }
+
+    /// A job whose child is `python -c code` — the portable stand-in for
+    /// the `sh -c`, `sleep`, `true` and `false` these tests used to run.
+    fn start_py(app: &Arc<App>, code: &str) -> String {
+        start_argv(app, python_argv(code))
+    }
+
+    fn start_argv(app: &Arc<App>, argv: Vec<String>) -> String {
+        let snap = start(app, argv);
         snap.get("id")
             .and_then(Json::as_str)
             .expect("start() returned no id")
@@ -301,7 +310,7 @@ mod tests {
         let _g = registry_gate();
         let app = app();
         let t0 = Instant::now();
-        let id = start_id(&app, &["sleep", "1"]);
+        let id = start_py(&app, "import time; time.sleep(1)");
         assert!(
             t0.elapsed() < Duration::from_millis(300),
             "start() blocked on the child process"
@@ -332,7 +341,7 @@ mod tests {
         let _g = registry_gate();
         let app = app();
         let held = app.oplock.lock().unwrap_or_else(PoisonError::into_inner);
-        let id = start_id(&app, &["true"]);
+        let id = start_py(&app, "pass");
         std::thread::sleep(Duration::from_millis(150));
         assert_eq!(text(&id, "phase"), "queued");
         drop(held);
@@ -346,7 +355,7 @@ mod tests {
     fn a_running_job_holds_the_oplock_until_its_child_exits() {
         let _g = registry_gate();
         let app = app();
-        let id = start_id(&app, &["sleep", "0.3"]);
+        let id = start_py(&app, "import time; time.sleep(0.3)");
         std::thread::sleep(Duration::from_millis(100));
         assert!(app.oplock.try_lock().is_err(), "the gate was free mid-job");
         wait_done(&id);
@@ -368,7 +377,7 @@ mod tests {
     #[test]
     fn a_successful_child_ends_done_at_a_hundred_with_no_error() {
         let _g = registry_gate();
-        let id = start_id(&app(), &["true"]);
+        let id = start_py(&app(), "pass");
         assert_eq!(wait_done(&id), "done");
         let j = get(&id).unwrap();
         assert_eq!(j.get("percent").and_then(Json::as_f64), Some(100.0));
@@ -380,7 +389,7 @@ mod tests {
     #[test]
     fn a_failing_child_ends_failed_naming_the_exit_code() {
         let _g = registry_gate();
-        let id = start_id(&app(), &["false"]);
+        let id = start_py(&app(), "raise SystemExit(1)");
         assert_eq!(wait_done(&id), "failed");
         let err = text(&id, "error");
         assert!(err.contains("exit 1"), "{err}");
@@ -391,13 +400,9 @@ mod tests {
     #[test]
     fn a_failing_childs_output_is_translated_before_the_desk_sees_it() {
         let _g = registry_gate();
-        let id = start_id(
+        let id = start_py(
             &app(),
-            &[
-                "sh",
-                "-c",
-                "echo 'ERROR: [youtube] x: Private video'; exit 1",
-            ],
+            "print('ERROR: [youtube] x: Private video'); raise SystemExit(1)",
         );
         assert_eq!(wait_done(&id), "failed");
         assert_eq!(text(&id, "error"), "That video is private.");
@@ -424,9 +429,25 @@ mod tests {
     fn progress_from_a_real_child_reaches_the_jobs_log() {
         let _g = registry_gate();
         let line = "[download]  41.8% of 2.39MiB at 1.0MiB/s ETA 00:03";
-        let id = start_id(&app(), &["sh", "-c", &format!("echo '{line}'")]);
+        let id = start_py(&app(), &format!("print({line:?})"));
         assert_eq!(wait_done(&id), "done");
         assert_eq!(log_of(&id), vec![line.to_string()]);
+    }
+
+    /// stderr=STDOUT: what the child says on either stream reaches the log,
+    /// in the order it said it — yt-dlp's useful ERROR line is on stderr.
+    #[test]
+    fn the_childs_stderr_joins_its_stdout_in_the_log() {
+        let _g = registry_gate();
+        let id = start_py(
+            &app(),
+            "import sys\nprint('to out', flush=True)\nsys.stderr.write('to err\\n')",
+        );
+        assert_eq!(wait_done(&id), "done");
+        assert_eq!(
+            log_of(&id),
+            vec!["to out".to_string(), "to err".to_string()]
+        );
     }
 
     /// yt-dlp pads its output with blank lines; logging them would push
@@ -434,7 +455,7 @@ mod tests {
     #[test]
     fn blank_output_lines_are_not_logged() {
         let _g = registry_gate();
-        let id = start_id(&app(), &["sh", "-c", "echo; echo kept; echo"]);
+        let id = start_py(&app(), "print(); print('kept'); print()");
         assert_eq!(wait_done(&id), "done");
         assert_eq!(log_of(&id), vec!["kept".to_string()]);
     }
@@ -451,12 +472,12 @@ mod tests {
             .clear();
         let app = app();
         for _ in 0..40 {
-            let id = start_id(&app, &["true"]);
+            let id = start_py(&app, "pass");
             wait_done(&id);
         }
         let before = jobs().lock().unwrap_or_else(PoisonError::into_inner).len();
         assert_eq!(before, 40);
-        let newest = start_id(&app, &["true"]);
+        let newest = start_py(&app, "pass");
         let after = jobs().lock().unwrap_or_else(PoisonError::into_inner).len();
         assert!(after < 41, "finished jobs were never pruned ({after})");
         assert!(

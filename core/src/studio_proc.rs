@@ -9,40 +9,10 @@
 //! editor re-exports the whole surface, so `studio_scenes::run` still
 //! means what it did.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-unsafe extern "C" {
-    fn kill(pid: i32, sig: i32) -> i32;
-}
-
-/// Give a child its own process group, so a watchdog can kill what the
-/// child SPAWNED as well as the child itself.
-///
-/// yt-dlp shells out to ffmpeg, `sh -c` forks, and a killed parent leaves
-/// those holding the write end of the pipe we are draining — so the reader
-/// thread blocked for the GRANDCHILD's full run and a "timed out after 60s"
-/// reply arrived at 85 s (grade report 2026-09-17 B2). Python's side has
-/// always done this: `tools/progress_process.py` spawns with
-/// `start_new_session=True` and kills with `os.killpg`.
-pub fn own_group(cmd: &mut Command) {
-    use std::os::unix::process::CommandExt;
-    cmd.process_group(0);
-}
-
-/// SIGKILL a whole process group — the child `own_group` made a leader of,
-/// and everything it spawned. `pid` is the leader's, which is the group's.
-///
-/// A negative pid is the group; a stray positive one would be a signal to
-/// something else entirely, so a pid that is not a plausible leader is left
-/// alone and the caller's `child.kill()` stands on its own.
-pub fn kill_group(pid: i32) {
-    if pid > 1 {
-        unsafe {
-            kill(-pid, 9);
-        }
-    }
-}
+use crate::procgroup::{adopt, kill_group, own_group, release};
 
 /// The interpreter the studio's children run under.
 ///
@@ -53,19 +23,36 @@ pub fn kill_group(pid: i32) {
 /// CI, a venv somewhere else entirely), then the project venv, then
 /// `python3` — which, missing numpy/scipy/yaml, is the spelling that used
 /// to fail every rebuild confusingly. `check_py` says so at startup.
+///
+/// On Windows the venv keeps its interpreter in `Scripts\python.exe`, and
+/// the PATH fallback is `python`: `python3` there is, as often as not, the
+/// Microsoft Store's stub, which opens the Store rather than running. A
+/// packaged app names its bundled interpreter through `CASTLE_PY`.
 pub fn py(root: &Path) -> String {
     if let Some(p) = std::env::var_os("CASTLE_PY") {
         if !p.is_empty() {
             return p.to_string_lossy().into_owned();
         }
     }
-    let v = root.join(".venv").join("bin").join("python");
+    let v = venv_python(root);
     if v.exists() {
         v.to_string_lossy().into_owned()
     } else {
-        "python3".to_string()
+        FALLBACK_PY.to_string()
     }
 }
+
+/// Where a venv made at `root/.venv` keeps its interpreter.
+pub fn venv_python(root: &Path) -> PathBuf {
+    let venv = root.join(".venv");
+    if cfg!(windows) {
+        venv.join("Scripts").join("python.exe")
+    } else {
+        venv.join("bin").join("python")
+    }
+}
+
+const FALLBACK_PY: &str = if cfg!(windows) { "python" } else { "python3" };
 
 /// Can the interpreter `py()` picked actually run the studio's children?
 /// `import yaml` is the cheapest question that separates the project venv
@@ -151,6 +138,7 @@ fn run_piped(mut cmd: Command, input: Option<String>, timeout_s: u64) -> Timed {
             let _ = pipe.write_all(text.as_bytes());
         });
     }
+    adopt(&child);
     let pid = child.id() as i32;
     // On the shutdown list until it is waited for: a ctrl-c between here
     // and the join below has to reach the group too, not just the watchdog
@@ -193,6 +181,7 @@ fn run_piped(mut cmd: Command, input: Option<String>, timeout_s: u64) -> Timed {
     let out = out_t.join().unwrap_or_default();
     let err = err_t.join().unwrap_or_default();
     crate::studio_reap::forget(pid);
+    release(pid);
     match status {
         None => Timed::Out,
         Some(st) => Timed::Done(
@@ -212,6 +201,8 @@ pub enum Timed {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::procgroup::alive;
+    use crate::testkit_child::{python_cmd, spawner};
 
     #[test]
     fn the_log_tail_counts_characters_not_bytes() {
@@ -231,8 +222,10 @@ mod tests {
 
     #[test]
     fn a_child_is_captured_whole_on_both_streams() {
-        let mut c = Command::new("/bin/sh");
-        c.args(["-c", "printf out; printf err 1>&2; exit 3"]);
+        let c = python_cmd(
+            "import sys\nsys.stdout.write('out'); sys.stdout.flush()\n\
+             sys.stderr.write('err'); sys.exit(3)",
+        );
         let (ok, log) = run(c, 30);
         assert!(!ok, "exit 3 is a failure");
         assert_eq!(log, "outerr", "stdout then stderr, both kept");
@@ -248,10 +241,9 @@ mod tests {
     #[test]
     fn the_watchdog_kills_a_child_that_will_not_finish() {
         // The simple case: one process, spawned directly, the way the
-        // generators are. The shell-wrapper case — where the grandchild used
-        // to hold the pipe open past the deadline — is the next test.
-        let mut c = Command::new("sleep");
-        c.arg("30");
+        // generators are. The case where a grandchild used to hold the pipe
+        // open past the deadline is the next test.
+        let c = python_cmd("import time; time.sleep(30)");
         let start = std::time::Instant::now();
         let (ok, log) = run(c, 1);
         assert!(!ok);
@@ -263,25 +255,19 @@ mod tests {
     /// joined the reader threads, which wait for every holder of the pipe —
     /// so a `yt-dlp` that had forked (or an `sh -c` that had) kept the
     /// deadline waiting for the GRANDCHILD. Reproduced as a 60 s timeout
-    /// answering at 85 s. The child is its own process group now and the
-    /// group is what gets killed, so both processes go and the joins return.
+    /// answering at 85 s. The child is its own process group (a job, on
+    /// Windows) and the group is what gets killed, so both processes go and
+    /// the joins return.
     #[test]
     fn the_watchdog_takes_the_grandchildren_with_it() {
-        // The process id, not the thread's: this is the one test that needs
-        // the path, and a thread id's `ThreadId(3)` is not shell-safe.
         let dir = std::env::temp_dir().join(format!("castle-pgid-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let pidfile = dir.join("grandchild.pid");
-        let mut c = Command::new("/bin/sh");
-        c.args([
-            "-c",
-            &format!("sleep 30 & echo $! > {}; wait", pidfile.display()),
-        ]);
         let start = std::time::Instant::now();
-        let (ok, log) = run(c, 1);
+        let (ok, log) = run(spawner(&pidfile, 30), 2);
         let took = start.elapsed();
         assert!(!ok);
-        assert!(log.contains("gave up after 1s"), "{log}");
+        assert!(log.contains("gave up after 2s"), "{log}");
         assert!(
             took < std::time::Duration::from_secs(10),
             "the watchdog waited for the grandchild ({took:?})"
@@ -289,19 +275,19 @@ mod tests {
         // And the grandchild is actually gone, rather than orphaned holding
         // the CPU it was killed to release.
         let pid: i32 = std::fs::read_to_string(&pidfile)
-            .expect("the shell wrote its child's pid")
+            .expect("the child wrote its child's pid")
             .trim()
             .parse()
             .expect("a pid");
         let mut gone = false;
         for _ in 0..200 {
-            if unsafe { kill(pid, 0) } != 0 {
+            if !alive(pid) {
                 gone = true;
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
-        assert!(gone, "the grandchild sleep {pid} outlived the watchdog");
+        assert!(gone, "the grandchild {pid} outlived the watchdog");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -309,26 +295,24 @@ mod tests {
     /// comes back whole — the shim's shape, minus the shim.
     #[test]
     fn a_child_can_be_fed_on_stdin_under_the_same_watchdog() {
-        let mut c = Command::new("/bin/sh");
-        c.args(["-c", "cat"]);
+        let c = python_cmd("import sys; sys.stdout.write(sys.stdin.read())");
         match run_input(c, "{\"codec\": \"opus\"}\n", 30) {
             Timed::Done(ok, out, _) => {
                 assert!(ok);
                 assert_eq!(out.trim(), "{\"codec\": \"opus\"}");
             }
-            Timed::Out => panic!("cat did not finish"),
+            Timed::Out => panic!("the echo did not finish"),
         }
         // A payload larger than a pipe buffer must not deadlock: the writer
         // is a thread, and the readers drain while it writes.
         let big = "x".repeat(500_000);
-        let mut c = Command::new("/bin/sh");
-        c.args(["-c", "wc -c"]);
+        let c = python_cmd("import sys; print(len(sys.stdin.buffer.read()))");
         match run_input(c, &big, 30) {
             Timed::Done(ok, out, _) => {
                 assert!(ok);
                 assert_eq!(out.trim(), "500000");
             }
-            Timed::Out => panic!("wc deadlocked on a 500 KB payload"),
+            Timed::Out => panic!("the count deadlocked on a 500 KB payload"),
         }
     }
 
@@ -342,10 +326,11 @@ mod tests {
         match std::env::var_os("CASTLE_PY").filter(|p| !p.is_empty()) {
             Some(named) => assert_eq!(py(root), named.to_string_lossy()),
             None => {
-                assert_eq!(py(root), "python3");
+                assert_eq!(py(root), FALLBACK_PY);
                 let repo = crate::studio::repo_root();
-                if repo.join(".venv").join("bin").join("python").exists() {
-                    assert!(py(&repo).ends_with("/.venv/bin/python"), "{}", py(&repo));
+                let venv = venv_python(&repo);
+                if venv.exists() {
+                    assert_eq!(py(&repo), venv.to_string_lossy(), "the venv's own file");
                 }
             }
         }

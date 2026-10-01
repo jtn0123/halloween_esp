@@ -275,23 +275,24 @@ mod tests {
     /// `rebuild` used to hold the oplock across `publish_body` too — two
     /// `sd_sync` runs with a 900 s ceiling each — so every encode and import
     /// queued behind a porch-Wi-Fi upload (grade report 2026-09-17 pm G2).
-    /// The fake interpreter below makes each step slow enough to observe the
-    /// gate from another thread. Skipped when CASTLE_PY names the
-    /// interpreter, because then the tree's `.venv` is not what runs.
+    /// Stand-in generators under a scratch root make each step slow enough
+    /// to observe the gate from another thread. They are Python, run by the
+    /// interpreter the studio would pick anyway, so the test is the same on
+    /// every platform and no longer needs a fake `.venv/bin/python` shell
+    /// script — which also means it runs when CASTLE_PY is set. Skipped
+    /// when CASTLE_HOST names a castle, because the push would find it.
     #[test]
     fn the_gate_is_held_for_the_generators_and_not_for_the_push() {
-        if std::env::var_os("CASTLE_PY").is_some_and(|v| !v.is_empty())
-            || std::env::var_os("CASTLE_HOST").is_some_and(|v| !v.is_empty())
-        {
+        if std::env::var_os("CASTLE_HOST").is_some_and(|v| !v.is_empty()) {
             return;
         }
-        use std::os::unix::fs::PermissionsExt;
         let d = tmpdir("gate");
-        let bin = d.join(".venv").join("bin");
-        std::fs::create_dir_all(&bin).expect("fake venv");
-        std::fs::write(bin.join("python"), "#!/bin/sh\nsleep 0.4\n").expect("fake py");
-        std::fs::set_permissions(bin.join("python"), std::fs::Permissions::from_mode(0o755))
-            .expect("chmod");
+        let tools = d.join("tools");
+        std::fs::create_dir_all(&tools).expect("fake tools");
+        for tool in ["render_audio.py", "gen_esphome.py", "gen_previewer.py"] {
+            std::fs::write(tools.join(tool), "import time\ntime.sleep(0.4)\n")
+                .expect("fake generator");
+        }
         let mut app = App::new(d.clone());
         app.scenes = d.join("scenes.yaml");
         std::fs::write(&app.scenes, SHOW).expect("seed");

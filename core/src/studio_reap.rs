@@ -2,7 +2,7 @@
 //! [`studio_proc`](crate::studio_proc).
 //!
 //! Every studio child is spawned into its own process group
-//! (`studio_proc::own_group`), because a watchdog that kills only the child
+//! (`procgroup::own_group`), because a watchdog that kills only the child
 //! leaves the grandchild holding the pipe (grade report 2026-09-17 B2). The
 //! price of that fix was the terminal's own signal: a child in its own group
 //! no longer hears the Ctrl-C that reaches `make studio`, so quitting the
@@ -18,12 +18,20 @@
 //! `write()` down a self-pipe, both async-signal-safe. A dedicated thread
 //! reads the pipe and does the killing, so no `Mutex` is ever locked from
 //! signal context.
+//!
+//! Windows needs none of the signal half: each child is in a Job Object
+//! created KILL_ON_JOB_CLOSE (`procgroup::adopt`), so however the studio
+//! ends — ctrl-c, a closed console, Task Manager — the kernel closes its
+//! handles and the jobs take the children down. The registry is still
+//! kept there, because `kill_all` is the same call on both.
 
+#[cfg(unix)]
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Mutex, OnceLock, PoisonError};
 
-use crate::studio_proc::kill_group;
+use crate::procgroup::kill_group;
 
+#[cfg(unix)]
 unsafe extern "C" {
     fn pipe(fds: *mut i32) -> i32;
     fn read(fd: i32, buf: *mut u8, n: usize) -> isize;
@@ -31,7 +39,9 @@ unsafe extern "C" {
     fn signal(sig: i32, handler: extern "C" fn(i32)) -> usize;
 }
 
+#[cfg(unix)]
 const SIGINT: i32 = 2;
+#[cfg(unix)]
 const SIGTERM: i32 = 15;
 
 /// The live group leaders — one entry per spawned child that is still
@@ -83,11 +93,14 @@ pub fn live_count() -> usize {
         .len()
 }
 
+#[cfg(unix)]
 static PENDING: AtomicI32 = AtomicI32::new(0);
+#[cfg(unix)]
 static WAKE_FD: AtomicI32 = AtomicI32::new(-1);
 
 /// Async-signal-safe by construction: a lock-free store and a one-byte
 /// `write()`, and nothing else. No allocation, no locking, no formatting.
+#[cfg(unix)]
 extern "C" fn on_signal(sig: i32) {
     PENDING.store(sig, Ordering::SeqCst);
     let fd = WAKE_FD.load(Ordering::SeqCst);
@@ -102,6 +115,7 @@ extern "C" fn on_signal(sig: i32) {
 /// Catch SIGINT and SIGTERM for the life of the process: kill every
 /// registered group, then exit 128+signo the way a shell-killed process
 /// does. Idempotent — the studio calls it once, the tests may not.
+#[cfg(unix)]
 pub fn install_shutdown_handlers() {
     static ONCE: OnceLock<()> = OnceLock::new();
     ONCE.get_or_init(|| {
@@ -126,9 +140,15 @@ pub fn install_shutdown_handlers() {
     });
 }
 
+/// Nothing to install on Windows: the jobs `procgroup::adopt` made are
+/// KILL_ON_JOB_CLOSE, so the process ending is itself what ends them.
+#[cfg(windows)]
+pub fn install_shutdown_handlers() {}
+
 /// Block until the handler pokes the pipe. `read` is interrupted by every
 /// signal that arrives while we are in it, so a short error pause keeps a
 /// broken fd from becoming a spin.
+#[cfg(unix)]
 fn wait_for_signal(fd: i32) {
     let mut byte = [0u8; 1];
     loop {
@@ -143,10 +163,12 @@ fn wait_for_signal(fd: i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::procgroup::alive;
     use std::path::PathBuf;
-    use std::process::{Command, Stdio};
+    use std::process::{Child, Command, Stdio};
     use std::time::{Duration, Instant};
 
+    #[cfg(unix)]
     unsafe extern "C" {
         fn kill(pid: i32, sig: i32) -> i32;
     }
@@ -154,10 +176,6 @@ mod tests {
     /// The harness below is this same test binary, re-run with the pidfile
     /// it should report through named in the environment.
     const HARNESS_ENV: &str = "CASTLE_REAP_HARNESS_PIDFILE";
-
-    fn alive(pid: i32) -> bool {
-        unsafe { kill(pid, 0) == 0 }
-    }
 
     #[test]
     fn the_registry_forgets_a_reaped_leader_and_only_that_one() {
@@ -179,12 +197,16 @@ mod tests {
 
     /// grade report 2026-09-17 pm B1: in the shape of
     /// `studio_proc.rs`'s watchdog-grandchild test, but the thing that
-    /// fires is a SIGNAL rather than a deadline. A child studio (this test
-    /// binary, re-run as the harness) starts a `sleep` through the real
-    /// `studio_proc::run` path; we SIGTERM the studio and the sleep has to
-    /// die with it, rather than outliving the server that started it.
+    /// fires is the studio ENDING rather than a deadline. A child studio
+    /// (this test binary, re-run as the harness) starts a sleeper through
+    /// the real `studio_proc::run` path; we stop the studio and the sleeper
+    /// has to die with it, rather than outliving the server that started it.
+    /// How the studio is stopped is the platform's own: SIGTERM on Unix,
+    /// where the handlers above do the reaping, and TerminateProcess on
+    /// Windows — no handler runs at all, and the closed job handle is what
+    /// has to do it.
     #[test]
-    fn a_signalled_studio_takes_its_children_with_it() {
+    fn a_stopped_studio_takes_its_children_with_it() {
         let dir = std::env::temp_dir().join(format!("castle-reap-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let pidfile = dir.join("grandchild.pid");
@@ -204,7 +226,7 @@ mod tests {
             .spawn()
             .expect("re-running this binary as a harness studio");
 
-        // The harness writes the grandchild's pid once the shell has it.
+        // The harness writes the grandchild's pid once its child has it.
         let deadline = Instant::now() + Duration::from_secs(60);
         let pid = loop {
             if let Ok(t) = std::fs::read_to_string(&pidfile) {
@@ -220,13 +242,7 @@ mod tests {
         };
         assert!(alive(pid), "the grandchild {pid} never ran");
 
-        unsafe { kill(harness.id() as i32, SIGTERM) };
-        let st = harness.wait().expect("the harness exits");
-        assert_eq!(
-            st.code(),
-            Some(128 + SIGTERM),
-            "a signalled studio exits 128+signo"
-        );
+        stop_studio(&mut harness);
 
         let mut gone = false;
         for _ in 0..400 {
@@ -236,6 +252,7 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(25));
         }
+        #[cfg(unix)]
         if !gone {
             unsafe { kill(pid, 9) };
         }
@@ -246,11 +263,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// SIGTERM, and the exit a shell-killed process makes: 128+signo.
+    #[cfg(unix)]
+    fn stop_studio(harness: &mut Child) {
+        unsafe { kill(harness.id() as i32, SIGTERM) };
+        let st = harness.wait().expect("the harness exits");
+        assert_eq!(
+            st.code(),
+            Some(128 + SIGTERM),
+            "a signalled studio exits 128+signo"
+        );
+    }
+
+    /// TerminateProcess — the hardest stop there is, and the one Task
+    /// Manager makes. Nothing in the studio runs; only the kernel does.
+    #[cfg(windows)]
+    fn stop_studio(harness: &mut Child) {
+        harness.kill().expect("TerminateProcess on the harness");
+        harness.wait().expect("the harness exits");
+    }
+
     /// Not a test: the studio the test above kills. Ignored so a plain
     /// `cargo test` never runs it, and a no-op unless the environment names
     /// the pidfile, so `cargo test -- --ignored` on its own still passes.
     #[test]
-    #[ignore = "a harness process, spawned by a_signalled_studio_takes_its_children_with_it"]
+    #[ignore = "a harness process, spawned by a_stopped_studio_takes_its_children_with_it"]
     fn the_harness_studio() {
         let Some(pidfile) = std::env::var_os(HARNESS_ENV) else {
             return;
@@ -258,12 +295,9 @@ mod tests {
         let pidfile = PathBuf::from(pidfile);
         install_shutdown_handlers();
         std::thread::spawn(move || {
-            let mut c = Command::new("/bin/sh");
-            c.args([
-                "-c",
-                &format!("sleep 300 & echo $! > {}; wait", pidfile.display()),
-            ]);
-            // The production path: own_group, register, watchdog, forget.
+            let c = crate::testkit_child::spawner(&pidfile, 300);
+            // The production path: own_group, adopt, register, watchdog,
+            // forget, release.
             let _ = crate::studio_proc::run(c, 600);
         });
         // The signal arrives within a second or two; this is only a ceiling
