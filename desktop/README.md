@@ -140,13 +140,16 @@ Debug, from a checkout (uses the checkout's `.venv` and `core/target/release/stu
 cd desktop/src-tauri && cargo run        # or: make desktop-test / desktop-lint
 ```
 
-A release bundle needs the Tauri CLI (`npx @tauri-apps/cli@2`) and, for a
+A release bundle needs the Tauri CLI — the exact one CI uses is locked in
+`desktop/cli/` (`npm ci --ignore-scripts --prefix desktop/cli`) — and, for a
 self-contained app, a staged `desktop/sidecar/castle/` (layout above):
 
 ```sh
+npm ci --ignore-scripts --prefix desktop/cli
 cd desktop/src-tauri
-npx @tauri-apps/cli@2 build                                       # no sidecar, no updater artifacts
-npx @tauri-apps/cli@2 build --config tauri.release.conf.json      # CI: bundles castle/, signs latest.json
+TAURI=../cli/node_modules/@tauri-apps/cli/tauri.js
+node $TAURI build                                     # no sidecar, no updater artifacts
+node $TAURI build --config tauri.release.conf.json    # CI: bundles castle/, signs latest.json
 ```
 
 Run it with `CI=true` on a desktop Mac: without it the dmg step styles the

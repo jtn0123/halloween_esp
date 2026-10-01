@@ -296,17 +296,15 @@ jobs:
           path: core-zip
       - name: sidecar
         run: unzip -o core-zip/*.zip -d desktop/sidecar/castle/
-      # The CLI is pinned to the crate's tauri in Cargo.lock, installed once
-      # with --ignore-scripts (it has none; its native half is a prebuilt
-      # optional dependency) and run by path — no npx, so nothing is fetched
-      # or run on demand.
+      # The CLI is pinned to the crate's tauri in Cargo.lock and locked with
+      # integrity hashes in desktop/cli/package-lock.json; `npm ci` installs
+      # exactly that, with --ignore-scripts (it has none; its native half is
+      # a prebuilt optional dependency), and it runs by path — no npx, so
+      # nothing is resolved, fetched or run on demand.
       - name: tauri cli
-        env:
-          CLI_DIR: ${{ runner.temp }}/tauri-cli
         run: |
-          npm install --no-save --no-package-lock --ignore-scripts --no-fund --no-audit \
-            --prefix "$CLI_DIR" @tauri-apps/cli@2.12.1
-          echo "TAURI_JS=$CLI_DIR/node_modules/@tauri-apps/cli/tauri.js" >> "$GITHUB_ENV"
+          npm ci --ignore-scripts --no-fund --no-audit --prefix desktop/cli
+          echo "TAURI_JS=$GITHUB_WORKSPACE/desktop/cli/node_modules/@tauri-apps/cli/tauri.js" >> "$GITHUB_ENV"
       # Tauri's version is the tag's (the updater compares semver against
       # latest.json).
       - name: tauri build

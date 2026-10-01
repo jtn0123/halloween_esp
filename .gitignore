@@ -24,6 +24,7 @@ __pycache__/
 *.pyc
 .DS_Store
 web/node_modules
+desktop/cli/node_modules
 web/dist/
 
 # Playwright
