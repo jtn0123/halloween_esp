@@ -54,11 +54,14 @@ fn find_block(text: &str, sid: &str) -> Option<(usize, usize)> {
 }
 
 /// studio_scenes._write: keep the pre-edit text, then replace atomically —
-/// a crash mid-write must never be able to truncate the show.
+/// a crash mid-write must never be able to truncate the show. The show is
+/// written with `\n` line ends whatever the request carried: a desk on
+/// Windows can send `\r\n`, and `find_block` counts lines by `\n`.
 fn write_scenes(scenes: &Path, before: &str, raw: &str) -> std::io::Result<()> {
     std::fs::write(scenes.with_extension("yaml.bak"), before)?;
     let tmp = scenes.with_extension("yaml.tmp");
-    std::fs::write(&tmp, format!("{}\n", raw.trim_end()))?;
+    let text = raw.trim_end().replace("\r\n", "\n");
+    std::fs::write(&tmp, format!("{text}\n"))?;
     std::fs::rename(&tmp, scenes)
 }
 
@@ -256,6 +259,15 @@ mod tests {
     }
 
     #[test]
+    fn a_show_sent_with_windows_line_ends_is_written_with_unix_ones() {
+        let d = tmpdir("crlf");
+        let f = d.join("scenes.yaml");
+        write_scenes(&f, SHOW, &SHOW.replace('\n', "\r\n")).expect("written");
+        assert_eq!(std::fs::read_to_string(&f).expect("read"), SHOW);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn a_header_only_counts_at_the_start_of_a_line() {
         // The id appears inside a comment first; the block is the real one.
         let text = "scenes:\n  # not   - id: vigil\n here\n  - id: vigil\n    len: 3\n";
@@ -275,23 +287,24 @@ mod tests {
     /// `rebuild` used to hold the oplock across `publish_body` too — two
     /// `sd_sync` runs with a 900 s ceiling each — so every encode and import
     /// queued behind a porch-Wi-Fi upload (grade report 2026-09-17 pm G2).
-    /// The fake interpreter below makes each step slow enough to observe the
-    /// gate from another thread. Skipped when CASTLE_PY names the
-    /// interpreter, because then the tree's `.venv` is not what runs.
+    /// Stand-in generators under a scratch root make each step slow enough
+    /// to observe the gate from another thread. They are Python, run by the
+    /// interpreter the studio would pick anyway, so the test is the same on
+    /// every platform and no longer needs a fake `.venv/bin/python` shell
+    /// script — which also means it runs when CASTLE_PY is set. Skipped
+    /// when CASTLE_HOST names a castle, because the push would find it.
     #[test]
     fn the_gate_is_held_for_the_generators_and_not_for_the_push() {
-        if std::env::var_os("CASTLE_PY").is_some_and(|v| !v.is_empty())
-            || std::env::var_os("CASTLE_HOST").is_some_and(|v| !v.is_empty())
-        {
+        if std::env::var_os("CASTLE_HOST").is_some_and(|v| !v.is_empty()) {
             return;
         }
-        use std::os::unix::fs::PermissionsExt;
         let d = tmpdir("gate");
-        let bin = d.join(".venv").join("bin");
-        std::fs::create_dir_all(&bin).expect("fake venv");
-        std::fs::write(bin.join("python"), "#!/bin/sh\nsleep 0.4\n").expect("fake py");
-        std::fs::set_permissions(bin.join("python"), std::fs::Permissions::from_mode(0o755))
-            .expect("chmod");
+        let tools = d.join("tools");
+        std::fs::create_dir_all(&tools).expect("fake tools");
+        for tool in ["render_audio.py", "gen_esphome.py", "gen_previewer.py"] {
+            std::fs::write(tools.join(tool), "import time\ntime.sleep(0.4)\n")
+                .expect("fake generator");
+        }
         let mut app = App::new(d.clone());
         app.scenes = d.join("scenes.yaml");
         std::fs::write(&app.scenes, SHOW).expect("seed");

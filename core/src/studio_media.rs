@@ -144,7 +144,7 @@ fn waveform_of(id: &str, dec: &Decoded, sens: [f64; 3]) -> Json {
 
 /// stems.track_file — name-stripped, any container.
 fn stems_track_file(tracks: &Path, tid: &str) -> Option<PathBuf> {
-    let tid = tid.rsplit('/').next().unwrap_or("");
+    let tid = &crate::portable::last_segment(tid);
     AUDIO_EXT
         .iter()
         .map(|e| tracks.join(format!("{tid}.{e}")))
@@ -179,7 +179,7 @@ fn fail(msg: &str) -> Json {
 /// stems.analysis — the cached nine-way analysis, served straight from
 /// disk, with ok/stale stamped on.
 pub fn stems_analysis(tracks: &Path, tid: &str) -> (Json, u16) {
-    let tid = tid.rsplit('/').next().unwrap_or("");
+    let tid = &crate::portable::last_segment(tid);
     if stems_track_file(tracks, tid).is_none() {
         return (fail("no such track"), 404);
     }
@@ -210,7 +210,7 @@ pub fn stem_file(tracks: &Path, tid: &str, layer: &str) -> Option<PathBuf> {
     if layer != "vocals" && layer != "backing" {
         return None;
     }
-    let tid = tid.rsplit('/').next().unwrap_or("");
+    let tid = crate::portable::last_segment(tid);
     let p = tracks.join("stems").join(tid).join(format!("{layer}.mp3"));
     p.exists().then_some(p)
 }

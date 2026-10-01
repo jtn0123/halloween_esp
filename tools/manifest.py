@@ -100,7 +100,12 @@ def save(data: dict[str, Entry]) -> None:
     # file: os.replace is atomic on the same filesystem (and retried while
     # Windows reports the target busy).
     tmp = PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    # newline="\n": Windows' text mode would otherwise write \r\n.
+    tmp.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     portable_fs.replace(tmp, PATH)
 
 
