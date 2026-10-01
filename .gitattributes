@@ -1,0 +1,6 @@
+# GitHub's release source zips are `git archive` output: this fills in the
+# tag the tree was cut from, so installer/desktop_install.py knows which
+# release's castle-core binaries match it. In a clone it stays a template.
+installer/VERSION export-subst
+# Windows launchers keep CRLF wherever they are checked out.
+*.cmd text eol=crlf
