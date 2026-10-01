@@ -14,12 +14,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import job_progress
+import radio_paths
 import rich_show
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
-DATA = HERE / ".radio-data"
-DATA.mkdir(exist_ok=True)
+DATA = radio_paths.data_dir()
+DATA.mkdir(parents=True, exist_ok=True)
 LIBRARY = DATA / "tracks"
 LIBRARY.mkdir(exist_ok=True)
 os.environ.update(

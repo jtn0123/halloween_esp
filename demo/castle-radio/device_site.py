@@ -28,11 +28,12 @@ import json
 from pathlib import Path
 
 import device_bridge
+import radio_paths
 import remote_library
 import rich_show
 
 HERE = Path(__file__).resolve().parent
-DATA = HERE / ".radio-data"
+DATA = radio_paths.data_dir()
 INDEX = "index.html"
 APP = "app.js"
 IMPORTS = "imports.js"

@@ -233,7 +233,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         def answer():
             with LOCK:
-                self.reply(library_ops.waveform(HERE, LIBRARY, key))
+                self.reply(library_ops.waveform(HERE, LIBRARY, key, DATA))
 
         self.guard(answer, 404)
 
