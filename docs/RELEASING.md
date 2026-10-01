@@ -109,11 +109,9 @@ Microsoft sense, by decision — TODO 5.4). The rules:
 
 ## Not yet in the release
 
-- **Windows castle-core.** castle-core does not compile on Windows until the
-  port (TODO 4.1) lands, so the Windows `core` job — and with it every tagged
-  release — fails today. That is deliberate: a release without its Windows
-  half is not one. `cross-platform.yml` shows the same failure on every
-  push, non-blocking, until then.
+- **A tagged Windows build.** castle-core and the Python suites build and
+  pass on Windows in `cross-platform.yml`, blocking since 2026-10-01; the
+  release's Windows `core` job has not yet been exercised by a tag.
 - **The buyer firmware** (`firmware/castle_buyer.yaml`, `make build-buyer`)
   and **the desktop app** (`desktop/`) land from their own branches; until
   both are on the tagged commit, the `firmware` job fails on the missing

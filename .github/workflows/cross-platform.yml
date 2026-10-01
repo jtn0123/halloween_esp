@@ -38,19 +38,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-14
-            blocking: true
-          # The Windows port (plan items 4.1 castle-core, 4.2 Python) is on
-          # this branch, but this entry has no green history yet, so it
-          # reports red without failing the run. Making it blocking is
-          # deleting `blocking: false` and, with it, the continue-on-error
-          # below (plan item 4.3). Nothing is skipped meanwhile: a failure
-          # here is a Windows bug to fix, not a test to quiet.
-          - os: windows-latest
-            blocking: false
+        # Both blocking (plan item 4.3). Windows went green on 2026-10-01 —
+        # the whole of `make test` and `make test-radio`, nothing skipped
+        # that macOS runs — and a red here is a Windows bug to fix, not a
+        # test to quiet.
+        os: [macos-14, windows-latest]
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ !matrix.blocking }}
     # A cold cargo cache on Windows (release + LTO) plus Homebrew/Chocolatey
     # media installs, plus the suites that drive the studio binary.
     timeout-minutes: 60

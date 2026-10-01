@@ -224,12 +224,14 @@ Everything here is needed for BOTH option A and option B.
       replaces them.
 
 ### 4.3 CI
-- [ ] `windows-latest` job: `cargo build --release` + `cargo test` for `core/`.
-- [ ] `windows-latest` job: `make test`-equivalent Python suite (no Make on
-      Windows — a `tools/run_checks.py` the Makefile also calls).
-- [ ] `macos-14` job: same, so Apple Silicon is tested in CI, not just here.
-- [ ] Tests that assume POSIX (`/bin/sh`, `/tmp`, chmod) get a Windows path
-      or a portable rewrite — never a skip (CLAUDE.md rule).
+- [x] `windows-latest` job: `cargo build --release` + `cargo test` for `core/`.
+- [x] `windows-latest` job: `make test`-equivalent Python suite (no Make on
+      Windows — a `tools/run_checks.py` the Makefile also calls). Green and
+      blocking since 2026-10-01.
+- [x] `macos-14` job: same, so Apple Silicon is tested in CI, not just here.
+- [x] Tests that assume POSIX (`/bin/sh`, `/tmp`, chmod) get a Windows path
+      or a portable rewrite — never a skip (CLAUDE.md rule). The C++ card
+      harnesses build with MinGW's g++ there (`tests/cxx_compiler.py`).
 
 ## 5. Option B — the Tauri desktop app (P1, primary)
 
