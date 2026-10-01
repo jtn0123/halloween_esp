@@ -146,6 +146,52 @@ def start(cmd: list[str], env: Mapping[str, str], cwd: Path) -> subprocess.Popen
     return subprocess.Popen(cmd, env=dict(env), cwd=cwd)
 
 
+def spawn(
+    dirs: de.Dirs, env: Mapping[str, str], port: int, desk: bool
+) -> list[subprocess.Popen[bytes]]:
+    """Castle Radio first (the list's head is the one main waits on), then
+    the cue desk when asked for and its port is free."""
+    py = str(env["CASTLE_PY"])
+    radio = [py, str(dirs.app / "demo" / "castle-radio" / "server.py"), str(port)]
+    children = [start(radio, env, dirs.app)]
+    if desk and desk_state(de.DESK_PORT) == "free":
+        exe = dirs.app / "core" / "target" / "release" / dirs.exe("studio")
+        children.append(
+            start([str(exe), str(de.DESK_PORT), "--localhost"], env, dirs.app)
+        )
+    return children
+
+
+def run_children(
+    children: list[subprocess.Popen[bytes]],
+    port: int,
+    url: str,
+    show: Callable[[str], object],
+) -> int:
+    """Wait for Castle Radio to answer, open it, and hold the window until
+    it exits; every child goes with it."""
+    radio = children[0]
+    up = wait_until(
+        lambda: radio_state(port) == "ours", 30, lambda: radio.poll() is None
+    )
+    if not up:
+        print("Castle Tools did not start. See the messages above.")
+        for child in children:
+            child.terminate()
+        return 1
+    show(url)
+    print(f"Castle Tools are running at {url}")
+    print("Close this window (or press Ctrl-C) to stop them.")
+    try:
+        return radio.wait()
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        for child in children:
+            if child.poll() is None:
+                child.terminate()
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--port", type=int, default=de.RADIO_PORT)
@@ -184,39 +230,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for note in de.prepare(dirs):
         print(note)
-    py = str(env["CASTLE_PY"])
-    children = [
-        start(
-            [py, str(dirs.app / "demo" / "castle-radio" / "server.py"), str(port)],
-            env,
-            dirs.app,
-        )
-    ]
-    if args.desk and desk_state(de.DESK_PORT) == "free":
-        exe = dirs.app / "core" / "target" / "release" / dirs.exe("studio")
-        children.append(
-            start([str(exe), str(de.DESK_PORT), "--localhost"], env, dirs.app)
-        )
-    radio = children[0]
-    up = wait_until(
-        lambda: radio_state(port) == "ours", 30, lambda: radio.poll() is None
-    )
-    if not up:
-        print("Castle Tools did not start. See the messages above.")
-        for child in children:
-            child.terminate()
-        return 1
-    show(url)
-    print(f"Castle Tools are running at {url}")
-    print("Close this window (or press Ctrl-C) to stop them.")
-    try:
-        return radio.wait()
-    except KeyboardInterrupt:
-        return 0
-    finally:
-        for child in children:
-            if child.poll() is None:
-                child.terminate()
+    return run_children(spawn(dirs, env, port, args.desk), port, url, show)
 
 
 if __name__ == "__main__":
