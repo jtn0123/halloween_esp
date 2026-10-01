@@ -24,6 +24,8 @@
 //   response  "<status> <bodylen> <nhdr>\n", <nhdr> lines of "name: value",
 //             then <bodylen> raw body bytes. Content-Type is the first
 //             header; the rest follow in the order the handler set them.
+//   key       "KEY <len>\n" + <len> bytes: the X-Castle-Key header every
+//             request after it carries (v5.74); "KEY 0" sends none. No reply.
 //   tick      "TICK <now_us> <playing> <sounding>\n" — ONE main-loop tick
 //             (C6). `playing` is the media pipeline's word and `sounding`
 //             the speaker's, the two inputs castle_sd_common.yaml's 200 ms
@@ -281,6 +283,13 @@ int serve() {
       printf("%s %zu\n", action_name(act.type), act.arg.size());
       fwrite(act.arg.data(), 1, act.arg.size(), stdout);
       fflush(stdout);
+      continue;
+    }
+    if (line.compare(0, 4, "KEY ") == 0) {
+      // The X-Castle-Key every following request carries ("KEY 0" = none).
+      std::string k;
+      if (!read_exact(k, strtoul(line.c_str() + 4, nullptr, 10))) return 2;
+      castle_shim::req_key() = k;
       continue;
     }
     char method[16] = {0};

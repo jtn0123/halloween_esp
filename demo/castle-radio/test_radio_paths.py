@@ -55,9 +55,11 @@ class DataDirTest(unittest.TestCase):
             root, data = Path(tmp) / "root", Path(tmp) / "data"
             library = data / "tracks"
             (library / "stems" / "radio_x").mkdir(parents=True)
-            (library / "stems" / "radio_x" / "analysis.json").write_text('{"ok": 1}')
+            (library / "stems" / "radio_x" / "analysis.json").write_text(
+                '{"ok": 1}', encoding="utf-8"
+            )
             data.mkdir(exist_ok=True)
-            (data / "catalog.json").write_text('[{"key": "radio_x"}]')
+            (data / "catalog.json").write_text('[{"key": "radio_x"}]', encoding="utf-8")
             self.assertEqual(
                 library_ops.waveform(root, library, "radio_x", data), {"ok": 1}
             )

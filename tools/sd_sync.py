@@ -41,7 +41,7 @@ from pathlib import Path
 
 import build_paths as bp
 import sd_ota
-from hosts import maybe_host
+from hosts import key_headers, maybe_host
 from published import Published
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -52,7 +52,11 @@ FILES_API = "/api/files"  # and the card ROOT, which the listing reads too
 def api(
     ip: str, method: str, path: str, body: bytes | None = None, timeout: float = 60
 ) -> bytes:
-    req = urllib.request.Request(f"http://{ip}{path}", data=body, method=method)
+    # The castle key (v5.74), when one is configured: a castle that has none
+    # ignores the header, and one that has one refuses its writes without it.
+    req = urllib.request.Request(
+        f"http://{ip}{path}", data=body, method=method, headers=key_headers(ip)
+    )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return bytes(r.read())
 

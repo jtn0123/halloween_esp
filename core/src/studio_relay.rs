@@ -21,7 +21,7 @@ const STATUS_TTL_S: f64 = 1.5;
 const DOWN_TTL_S: f64 = 3.0;
 
 /// Every route the firmware actually serves — castle_link.KNOWN_API.
-pub const KNOWN_API: [&str; 16] = [
+pub const KNOWN_API: [&str; 19] = [
     "/api/status",
     "/api/health",
     // v5.59's event ring (C2): served by the castle, refused here.
@@ -38,6 +38,11 @@ pub const KNOWN_API: [&str; 16] = [
     "/api/blackout",
     "/api/bootlog",
     "/api/ota",
+    // v5.74 (firmware/sd_web_prefs.h): the owner's settings, the castle key
+    // and the factory reset.
+    "/api/settings",
+    "/api/key",
+    "/api/factory-reset",
     "/remote",
 ];
 pub const KNOWN_PREFIX: [&str; 4] = ["/api/files/", "/api/site/", "/api/scenes/", "/sd/"];

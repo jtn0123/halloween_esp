@@ -170,7 +170,10 @@ inline esp_err_t h_sd_get(httpd_req_t *req) {
 
 // The fallback page, for a card with no /site/ on it (or no card at all).
 // Deliberately spartan: the good page lives on the card, this one only has to
-// prove the server works and give you buttons that press.
+// prove the server works and give you buttons that press. v5.74 adds the two
+// owner settings (sd_web_prefs.h), because this is the one page every castle
+// is guaranteed to have: power-on autoplay, and the castle key — which this
+// browser remembers and sends as X-Castle-Key with every button.
 inline const char kFallbackPage[] = R"HTML(<!doctype html><meta charset=utf-8>
 <meta name=viewport content="width=device-width,initial-scale=1">
 <title>Castle</title>
@@ -182,11 +185,21 @@ small{color:#9a8fb0}h1{font-size:1.3rem}</style>
 <div id=scenes></div>
 <button onclick="api('/api/stop')">■ Stop</button>
 <h3>SD card</h3><ul id=files></ul><pre id=log></pre>
+<h3>Settings</h3>
+<label><input type=checkbox id=bp onchange="api('/api/settings?boot_play='+(bp.checked?1:0)).then(say)"> start the show at power-on</label>
+<p><input id=k type=password placeholder="castle key" size=14>
+<button onclick="localStorage.castleKey=k.value;say({ok:1})">Use</button>
+<button onclick="api('/api/key?new='+encodeURIComponent(k.value)).then(r=>{if(r.ok)localStorage.castleKey=k.value;say(r)})">Set</button>
+<button onclick="api('/api/key?clear=1').then(r=>{if(r.ok)localStorage.removeItem('castleKey');say(r)})">Clear</button>
+<small id=lk></small></p>
+<button onclick="confirm('Erase Wi-Fi, key and settings, and restart?')&&api('/api/factory-reset?confirm=yes').then(say)">Factory reset</button>
 <script>
 const S=[__FALLBACK_SCENES__];
-const api=(u,m)=>fetch(u,{method:m||'POST'});
+const api=(u,m)=>fetch(u,{method:m||'POST',headers:localStorage.castleKey?{'X-Castle-Key':localStorage.castleKey}:{}});
+const say=r=>{lk.textContent=r.ok?'saved':r.status==401?'wrong or missing key':'refused';sync()};
+const sync=()=>fetch('/api/status').then(r=>r.json()).then(s=>{v.textContent=s.version+' · '+(s.sd_mounted?'SD ok':'no SD')+(s.locked?' · 🔒':'');bp.checked=s.boot_play});
 scenes.innerHTML=S.map(s=>`<button onclick="api('/api/scene?s=${s}')">${s}</button>`).join('');
-fetch('/api/status').then(r=>r.json()).then(s=>v.textContent=s.version+' · '+(s.sd_mounted?'SD ok':'no SD'));
+sync();
 fetch('/api/files').then(r=>r.json()).then(fs=>files.innerHTML=fs.filter(f=>!f.dir).map(f=>
  `<li><button onclick="api('/api/play?f=${encodeURIComponent(f.name)}')">▶</button> ${f.name} <small>${(f.size/1024)|0} KB</small></li>`).join(''))
  .catch(()=>files.innerHTML='<li><small>no card</small></li>');

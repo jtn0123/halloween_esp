@@ -248,6 +248,7 @@ inline void route_dir(const httpd_req_t *req, const char *&dir, const char *&pre
 /// PUT into /sd, /sd/site or /sd/scenes depending on the route. The scenes
 /// directory is where the show's own tracks live (see audio_sd.yaml).
 inline esp_err_t h_put(httpd_req_t *req) {
+  if (!key_ok(req)) return reply_locked(req);   // v5.74, sd_web_prefs.h
   if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
   if (req->content_len == 0)
     return reply_err(req, "400 Bad Request", "empty body");
@@ -285,6 +286,7 @@ inline esp_err_t h_put(httpd_req_t *req) {
 }
 
 inline esp_err_t h_delete(httpd_req_t *req) {
+  if (!key_ok(req)) return reply_locked(req);
   if (!castle_sd::g_mounted) return reply_err(req, "503 Service Unavailable", "no SD card");
   const char *dir = nullptr; const char *prefix = nullptr;
   route_dir(req, dir, prefix);

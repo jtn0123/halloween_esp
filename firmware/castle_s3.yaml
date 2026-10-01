@@ -37,6 +37,9 @@
 substitutions:
   name: castle-s3
   friendly: Castle S3
+  # /api/status's `board` (v5.74): the module and its memory, in the same
+  # shape as the Feather's feather-s3-4m2p.
+  board_id: wroom-s3-8m2p
 
 packages:
   base: !include castle.yaml

@@ -22,6 +22,16 @@
 # firmware/sd_audio.h for the whole story.
 
 substitutions:
+  # ── What /api/status says this image is (v5.74) ──────────────────────
+  # The yard's values; castle_buyer.yaml says "buyer" and castle_s3.yaml
+  # names its own module. sd_web_state.h has the why.
+  board_id: feather-s3-4m2p
+  fw_variant: yard
+  # Whether a power-on or crash boot starts the opening scene until the owner
+  # says otherwise (POST /api/settings?boot_play=, kept in NVS — see
+  # sd_web_prefs.h). true in the yard, as it has been since the first boot;
+  # false for a buyer. A C bool: it is pasted into a lambda.
+  boot_play_default: "true"
   # ── SD pins ──────────────────────────────────────────────────────────
   # The carrier board's microSD socket sits on the Feather's SPI header with
   # its chip select on D5 — the same pin the eInk FeatherWing used for its
@@ -113,6 +123,8 @@ esphome:
     - sd_web_state.h
     - sd_web_events.h
     - sd_web_stream.h
+    # v5.74: the castle key and boot_play, in NVS. sd_web.h includes it.
+    - sd_web_prefs.h
     - sd_web.h
     - generated/fallback_scenes.h
     - sd_web_ota.h
@@ -152,6 +164,11 @@ esphome:
         # which is BEFORE castle_web::start() and still matters (v5.60, A5).
         - script.execute: seed_scene_ids
         - lambda: |-
+            // Before the first request can be answered (v5.74).
+            castle_web::g_board = "${board_id}";
+            castle_web::g_fw_variant = "${fw_variant}";
+            castle_web::g_boot_play_default = ${boot_play_default};
+            castle_web::g_on_factory_reset = castle_sd::factory_reset_now;
             // Started whether or not the card mounted: the server is also how
             // you find out the card is missing without walking to the castle.
             castle_web::start();
@@ -184,14 +201,18 @@ esphome:
         # empty (v5.73).
         - if:
             condition:
-              lambda: 'return castle_health::g_reason != ESP_RST_SW;'
+              # v5.74: and only if the owner has not turned it off
+              # (sd_web_prefs.h boot_play, read from NVS by start() above).
+              lambda: |-
+                return castle_health::g_reason != ESP_RST_SW &&
+                       castle_web::g_boot_play.load();
             then:
               - script.execute:
                   id: run_scene
                   scene: !lambda 'return castle_web::first_scene_id();'
             else:
               - lambda: 'id(current_scene).publish_state("stop");'
-              - logger.log: "software restart: opening scene not started"
+              - logger.log: "software restart or boot_play off: opening scene not started"
         # #26: a visible sweep of every colour channel at plug-in, so a dead
         # channel is a porch-step diagnosis, not a mid-show mystery.
         - script.execute: boot_selftest

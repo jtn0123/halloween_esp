@@ -32,6 +32,9 @@
 
 #include "esp_ota_ops.h"
 #include "esp_system.h"
+#include "nvs_flash.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "soc/rtc_cntl_reg.h"
 
 namespace castle_sd {
@@ -86,6 +89,22 @@ inline void mark_firmware_healthy() {
     }
   }
   confirmed = true;
+}
+
+/// The factory reset's second half (POST /api/factory-reset, v5.74 — the
+/// first half, forgetting the settings in memory and answering, is
+/// sd_web_prefs.h). Runs on the httpd task once the reply is out: a moment
+/// for the socket to flush, then the WHOLE NVS partition — Wi-Fi, the castle
+/// key, boot_play, ESPHome's restored states, the season counters — and a
+/// restart. esp_restart rather than App.safe_reboot, which would write
+/// ESPHome's preferences straight back into the partition just erased. One
+/// way, like download mode above, and behind the same kind of deliberate act.
+inline void factory_reset_now() {
+  ESP_LOGW("castle_reset", "factory reset: erasing NVS and restarting");
+  vTaskDelay(pdMS_TO_TICKS(300));
+  nvs_flash_deinit();
+  nvs_flash_erase();
+  esp_restart();
 }
 
 }  // namespace castle_sd

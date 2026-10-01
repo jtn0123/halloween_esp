@@ -204,6 +204,20 @@ inline esp_err_t httpd_start(httpd_handle_t *handle, const httpd_config_t *cfg) 
   return ESP_OK;
 }
 
+/// castle_web::stop() (the buyer build's port-80 handover) — the port is
+/// free again for the next httpd_start, as on the board.
+inline esp_err_t httpd_stop(httpd_handle_t handle) {
+  auto &v = castle_shim::servers();
+  for (auto it = v.begin(); it != v.end(); ++it) {
+    if (*it == handle) {
+      delete *it;
+      v.erase(it);
+      return ESP_OK;
+    }
+  }
+  return ESP_ERR_INVALID_ARG;
+}
+
 namespace castle_shim {
 
 /// httpd_find_uri_handler: first match wins, the method decides between a
@@ -316,6 +330,34 @@ inline int httpd_req_recv(httpd_req_t *r, char *buf, size_t buf_len) {
   c->pos += n;
   c->remaining -= n;
   return (int) n;
+}
+
+// ── request headers — IDF 5.5.5 httpd_parse.c ───────────────────────────
+// The firmware reads exactly one (X-Castle-Key, sd_web_prefs.h, v5.74), and
+// the harness sets it for every request that follows with a KEY line
+// (tests/cxx/web_check.cpp) — the emulator's client sends the same header.
+// Absent is "" here and a missing header on the board: len 0, NOT_FOUND.
+namespace castle_shim {
+inline std::string &req_key() {
+  static std::string k;
+  return k;
+}
+}  // namespace castle_shim
+
+inline size_t httpd_req_get_hdr_value_len(httpd_req_t *r, const char *field) {
+  if (r == nullptr || strcasecmp(field, "X-Castle-Key") != 0) return 0;
+  return castle_shim::req_key().size();
+}
+
+inline esp_err_t httpd_req_get_hdr_value_str(httpd_req_t *r, const char *field,
+                                             char *val, size_t val_size) {
+  if (r == nullptr || val == nullptr || val_size == 0) return ESP_ERR_INVALID_ARG;
+  const std::string &k = castle_shim::req_key();
+  if (strcasecmp(field, "X-Castle-Key") != 0 || k.empty()) return ESP_ERR_NOT_FOUND;
+  const size_t n = k.size() < val_size - 1 ? k.size() : val_size - 1;
+  memcpy(val, k.data(), n);
+  val[n] = '\0';
+  return n < k.size() ? ESP_ERR_HTTPD_RESULT_TRUNC : ESP_OK;
 }
 
 // ── query strings — IDF 5.5.5 httpd_parse.c ─────────────────────────────

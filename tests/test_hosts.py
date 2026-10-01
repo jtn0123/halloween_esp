@@ -188,5 +188,35 @@ class TestMaybeHost(HostCase):
             self.assertEqual((host, rest), ("10.0.0.7", [cmd]), cmd)
 
 
+class TestCastleKey(HostCase):
+    """v5.74: the X-Castle-Key a tool sends (firmware/sd_web_prefs.h)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        os.environ.pop("CASTLE_KEY", None)
+        self.toml.write_text(
+            TABLE.replace('host = "10.0.0.9"', 'host = "10.0.0.9"\nkey = "b3nch"'),
+            encoding="utf-8",
+        )
+
+    def test_no_key_anywhere_sends_no_header(self) -> None:
+        self.assertEqual(hosts.castle_key("10.0.0.7"), "")
+        self.assertEqual(hosts.key_headers("10.0.0.7"), {})
+        self.assertEqual(hosts.key_headers(), {})  # the first entry has none
+
+    def test_the_entry_naming_the_host_gives_its_key(self) -> None:
+        self.assertEqual(hosts.key_headers("10.0.0.9"), {"X-Castle-Key": "b3nch"})
+        self.assertEqual(hosts.castle_key("10.0.0.8"), "")  # porch's fallback
+
+    def test_the_env_wins_and_empty_means_none(self) -> None:
+        os.environ["CASTLE_KEY"] = "fr0m-env"
+        self.assertEqual(hosts.key_headers("10.0.0.9"), {"X-Castle-Key": "fr0m-env"})
+        os.environ["CASTLE_KEY"] = ""
+        self.assertEqual(hosts.key_headers("10.0.0.9"), {})
+
+    def test_an_unknown_host_sends_none(self) -> None:
+        self.assertEqual(hosts.key_headers("127.0.0.1:8093"), {})
+
+
 if __name__ == "__main__":
     unittest.main()

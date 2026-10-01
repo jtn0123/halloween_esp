@@ -66,6 +66,17 @@ class Replies(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _key_ok(self) -> bool:
+        """sd_web_prefs.h key_ok: no key set, or X-Castle-Key equals it."""
+        want: bytes = self.server.key
+        if not want:
+            return True
+        got = self.headers.get("X-Castle-Key")
+        return got is not None and got.encode("latin-1") == want
+
+    def _locked(self) -> None:
+        self._err(401, "castle key required")
+
     def _err(self, code: int, msg: str, extra: dict[str, str] | None = None) -> None:
         """reply_err(): a status line and a one-line text/plain body.
 

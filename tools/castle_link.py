@@ -171,7 +171,11 @@ def _call(
         try:
             if conn.sock is not None:
                 conn.sock.settimeout(read_s)
-            conn.request(method, path, body=body or None)
+            # X-Castle-Key when one is configured for this castle (v5.74,
+            # hosts.castle_key) — the desk's writes relay with it.
+            conn.request(
+                method, path, body=body or None, headers=hosts_mod.key_headers(host)
+            )
             r = conn.getresponse()
             return (r.status, r.read(), r.getheader("Content-Type") or JSON_MIME)
         except (OSError, http.client.HTTPException) as e:
@@ -215,6 +219,11 @@ KNOWN_API = (
     "/api/blackout",
     "/api/bootlog",
     "/api/ota",
+    # v5.74 (firmware/sd_web_prefs.h): the owner's settings, the castle key
+    # and the factory reset — what an app drives through the studio.
+    "/api/settings",
+    "/api/key",
+    "/api/factory-reset",
     "/remote",
 )
 KNOWN_PREFIX = ("/api/files/", "/api/site/", "/api/scenes/", "/sd/")
