@@ -15,6 +15,8 @@ card's write plane); this is the shape of what they hand back.
 from __future__ import annotations
 
 import json
+import socket
+import time
 from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler
 from typing import TYPE_CHECKING
@@ -45,6 +47,29 @@ class Replies(BaseHTTPRequestHandler):
 
     def log_message(self, fmt: str, *args: object) -> None:
         pass  # tests and background use; the port banner is enough
+
+    def finish(self) -> None:
+        """Let the last reply arrive before the socket closes. A refusal
+        sent before the body was read (a bad OTA magic, the size window)
+        leaves request bytes unread, and closing over them is a reset —
+        which Windows delivers by DISCARDING the reply the client had not
+        read yet. So: FIN after the reply, then drop what the client still
+        sends until it hangs up, bounded so a client streaming a refused
+        image cannot hold the thread. The studio does the same
+        (core/src/bin/studio.rs hand_over)."""
+        super().finish()
+        conn = self.connection
+        try:
+            conn.shutdown(socket.SHUT_WR)
+            conn.settimeout(0.5)
+            deadline, left = time.monotonic() + 2.0, 1 << 20
+            while left > 0 and time.monotonic() < deadline:
+                got = conn.recv(65536)
+                if not got:
+                    break
+                left -= len(got)
+        except OSError:
+            pass  # already gone, or a timeout: either way, done waiting
 
     def _json(self, body: dict[str, object] | list[object]) -> None:
         # Compact separators, because the firmware's replies are snprintf

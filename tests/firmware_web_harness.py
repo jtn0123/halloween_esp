@@ -249,7 +249,7 @@ def emu_http(
     with socket.create_connection(("127.0.0.1", port), timeout=timeout) as s:
         try:
             s.sendall(head + body)
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             # The reply came back before the body finished going out — an
             # OTA image bigger than the slot is refused on its declared
             # length alone, and 2 MB is a long time to keep writing at a
@@ -258,7 +258,8 @@ def emu_http(
         while True:
             try:
                 got = s.recv(65536)
-            except ConnectionResetError:
+            except (ConnectionResetError, ConnectionAbortedError):
+                # (Aborted is how Windows spells the same reset.)
                 # A handler that refuses before reading the body (the OTA
                 # size window, the 413 cap) closes with bytes still in the
                 # kernel's receive queue, and the peer answers RST. The
