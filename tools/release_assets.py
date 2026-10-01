@@ -4,7 +4,8 @@
     release_assets.py check-tag TAG            prints "true" for a pre-release
     release_assets.py stage-firmware TAG OTA_BIN OUT
     release_assets.py zip-core TAG TARGET BIN_DIR OUT
-    release_assets.py finish TAG OUT
+    release_assets.py stage-desktop TAG TARGET BUNDLE_DIR OUT
+    release_assets.py finish TAG OUT [--desktop OWNER/REPO]
 
 .github/workflows/release.yml calls every one of these; pages.yml relies on
 what `finish` writes. The asset names are a CONTRACT other code is written
@@ -21,6 +22,18 @@ repo's own tooling:
   SHA256SUMS                                    sha256sum format, every
                                                 other asset
 
+and, once desktop/ exists and the release builds the Tauri app (`finish
+--desktop`), per DESKTOP_TARGETS:
+
+  castle-tools-<rust-target>-<tag>.dmg          macOS installer
+  castle-tools-<rust-target>-<tag>.app.tar.gz   macOS updater bundle (+ .sig)
+  castle-tools-<rust-target>-<tag>-setup.exe    Windows NSIS per-user
+                                                installer = updater bundle
+                                                (+ .sig)
+  latest.json                                   the Tauri updater's pointer;
+                                                uploaded LAST, because it
+                                                names every bundle above
+
 `feather-s3-4m2p` is the board identifier the firmware reports as `board`
 in /api/status (ESP32-S3 Feather #5477: 4 MB flash, 2 MB PSRAM), so the app
 can match a castle to its image by string equality. Stdlib only: the publish
@@ -35,6 +48,7 @@ import re
 import shutil
 import sys
 import zipfile
+from datetime import UTC, datetime
 from pathlib import Path
 
 BOARD = "feather-s3-4m2p"
@@ -46,6 +60,12 @@ CORE_TARGETS = (
 CORE_BINS = ("analyze_track", "scene_render", "studio")
 MANIFEST = "flasher-manifest.json"
 SUMS = "SHA256SUMS"
+LATEST = "latest.json"
+#: Rust target -> the Tauri updater's platform key in latest.json.
+DESKTOP_TARGETS = {
+    "aarch64-apple-darwin": "darwin-aarch64",
+    "x86_64-pc-windows-msvc": "windows-x86_64",
+}
 
 #: vMAJOR.MINOR.PATCH, optionally `-suffix` (which makes it a pre-release).
 TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(-[0-9A-Za-z][0-9A-Za-z.-]*)?$")
@@ -72,11 +92,28 @@ def core_zip_name(target: str, tag: str) -> str:
     return f"castle-core-{target}-{tag}.zip"
 
 
-def expected_assets(tag: str) -> list[str]:
-    """Every asset a complete release carries, SHA256SUMS last."""
+def desktop_names(target: str, tag: str) -> dict[str, str]:
+    """`updater` is the bundle latest.json points at (its signature is
+    `updater` + ".sig"); `installer` is what a first-time owner downloads.
+    On Windows they are the same NSIS file, as Tauri 2 signs the installer
+    itself."""
+    stem = f"castle-tools-{target}-{tag}"
+    if "windows" in target:
+        return {"installer": f"{stem}-setup.exe", "updater": f"{stem}-setup.exe"}
+    return {"installer": f"{stem}.dmg", "updater": f"{stem}.app.tar.gz"}
+
+
+def expected_assets(tag: str, desktop: bool = False) -> list[str]:
+    """Every asset a complete release carries, SHA256SUMS last (and, with
+    the desktop app, latest.json after it — the upload order)."""
     names = [factory_name(tag), ota_name(tag)]
     names += [core_zip_name(t, tag) for t in CORE_TARGETS]
-    return [*names, MANIFEST, SUMS]
+    if not desktop:
+        return [*names, MANIFEST, SUMS]
+    for t in DESKTOP_TARGETS:
+        d = desktop_names(t, tag)
+        names += sorted({d["installer"], d["updater"], d["updater"] + ".sig"})
+    return [*names, MANIFEST, SUMS, LATEST]
 
 
 def stage_firmware(tag: str, ota_bin: Path, out: Path) -> list[Path]:
@@ -115,6 +152,67 @@ def zip_core(tag: str, target: str, bin_dir: Path, out: Path) -> Path:
     return dest
 
 
+def _one(bundle: Path, pattern: str) -> Path:
+    found = sorted(bundle.glob(pattern))
+    if len(found) != 1:
+        raise SystemExit(f"expected one {pattern} under {bundle}, found {found}")
+    return found[0]
+
+
+def stage_desktop(tag: str, target: str, bundle: Path, out: Path) -> list[Path]:
+    """Copy one target's Tauri bundles (`target/<target>/release/bundle`)
+    under their release names. A build without an updater signature is not
+    a release: installed apps could never take the next one."""
+    if target not in DESKTOP_TARGETS:
+        raise SystemExit(
+            f"{target!r} is not a desktop target: {', '.join(DESKTOP_TARGETS)}"
+        )
+    names = desktop_names(target, tag)
+    if "windows" in target:
+        srcs = {"installer": _one(bundle, "nsis/*-setup.exe")}
+        srcs["updater"] = srcs["installer"]
+    else:
+        srcs = {
+            "installer": _one(bundle, "dmg/*.dmg"),
+            "updater": _one(bundle, "macos/*.app.tar.gz"),
+        }
+    sig = srcs["updater"].with_name(srcs["updater"].name + ".sig")
+    if not sig.is_file():
+        raise SystemExit(
+            f"missing updater signature: {sig} (is TAURI_SIGNING_PRIVATE_KEY set?)"
+        )
+    out.mkdir(parents=True, exist_ok=True)
+    pairs = {names["installer"]: srcs["installer"], names["updater"]: srcs["updater"]}
+    pairs[names["updater"] + ".sig"] = sig
+    for name, src in pairs.items():
+        shutil.copyfile(src, out / name)
+    return [out / n for n in sorted(pairs)]
+
+
+def latest_json(tag: str, out: Path, repo: str, pub_date: str) -> dict[str, object]:
+    """The Tauri updater's static manifest. `version` is the tag without its
+    `v` (the updater compares semver); each platform's `signature` is the
+    .sig file's text, which is what the app verifies against the public key
+    baked into it."""
+    base = f"https://github.com/{repo}/releases/download/{tag}"
+    platforms: dict[str, dict[str, str]] = {}
+    for target, key in DESKTOP_TARGETS.items():
+        updater = desktop_names(target, tag)["updater"]
+        sig = out / (updater + ".sig")
+        if not sig.is_file():
+            raise SystemExit(f"missing updater signature: {sig}")
+        platforms[key] = {
+            "signature": sig.read_text(encoding="utf-8").strip(),
+            "url": f"{base}/{updater}",
+        }
+    return {
+        "version": tag.removeprefix("v"),
+        "notes": f"Castle Tools {tag}",
+        "pub_date": pub_date,
+        "platforms": platforms,
+    }
+
+
 def flasher_manifest(tag: str) -> dict[str, object]:
     """esp-web-tools' manifest: one build, the factory image at offset 0
     (it carries the bootloader and partition table, so nothing else is
@@ -145,15 +243,20 @@ def sha256sums(out: Path) -> str:
     return "".join(lines)
 
 
-def finish(tag: str, out: Path) -> list[str]:
-    """Write the manifest and the sums, then insist the directory is
-    exactly the contract: nothing missing, nothing extra."""
+def finish(tag: str, out: Path, repo: str | None = None) -> list[str]:
+    """Write the manifest, latest.json when REPO names the desktop app's
+    home, and the sums; then insist the directory is exactly the contract:
+    nothing missing, nothing extra."""
     check_tag(tag)
     (out / MANIFEST).write_text(
         json.dumps(flasher_manifest(tag), indent=2) + "\n", encoding="utf-8"
     )
+    if repo is not None:
+        now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        doc = latest_json(tag, out, repo, now)
+        (out / LATEST).write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     (out / SUMS).write_text(sha256sums(out), encoding="utf-8", newline="\n")
-    want = expected_assets(tag)
+    want = expected_assets(tag, desktop=repo is not None)
     have = sorted(p.name for p in out.iterdir() if p.is_file())
     if sorted(want) != have:
         missing = sorted(set(want) - set(have))
@@ -176,8 +279,14 @@ def main(argv: list[str] | None = None) -> int:
     elif cmd == "zip-core" and len(rest) == 4:
         check_tag(rest[0])
         print(zip_core(rest[0], rest[1], Path(rest[2]), Path(rest[3])))
+    elif cmd == "stage-desktop" and len(rest) == 4:
+        check_tag(rest[0])
+        for p in stage_desktop(rest[0], rest[1], Path(rest[2]), Path(rest[3])):
+            print(p)
     elif cmd == "finish" and len(rest) == 2:
         print("\n".join(finish(rest[0], Path(rest[1]))))
+    elif cmd == "finish" and len(rest) == 4 and rest[2] == "--desktop":
+        print("\n".join(finish(rest[0], Path(rest[1]), rest[3])))
     else:
         print(__doc__, file=sys.stderr)
         return 2

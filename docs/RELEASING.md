@@ -51,11 +51,20 @@ contract check, and keeps the lot as the run artifact
 | `castle-core-<target>-<tag>.zip` | `analyze_track`, `scene_render`, `studio` (`.exe` on Windows), flat. Targets: `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`, `x86_64-apple-darwin`. | The desktop app's sidecars. |
 | `flasher-manifest.json` | The esp-web-tools manifest: ESP32-S3, factory image at offset 0, Improv Wi-Fi, erase offered. | The web flasher. |
 | `SHA256SUMS` | `sha256sum` format over every other asset. | Anything that downloads an asset; `pages.yml` checks it. |
+| `castle-tools-aarch64-apple-darwin-<tag>.dmg` | The desktop app's macOS installer (ad-hoc signed, not notarized). | A first-time owner on a Mac. |
+| `castle-tools-aarch64-apple-darwin-<tag>.app.tar.gz` (+ `.sig`) | The macOS updater bundle and its minisign signature. | The installed app's updater. |
+| `castle-tools-x86_64-pc-windows-msvc-<tag>-setup.exe` (+ `.sig`) | The NSIS per-user installer, which is also the Windows updater bundle. | A first-time owner on Windows; the updater. |
+| `latest.json` | The Tauri updater's pointer: version, and per platform the bundle URL and its signature. Uploaded **last**. | Every installed app, via `releases/latest/download/latest.json`. |
+
+The five desktop rows exist only when the tagged tree has `desktop/` (the
+`meta` job asks the tag, and the `desktop` job is skipped otherwise — the
+release is then the castle-only list and `finish` refuses stray bundles).
 
 `feather-s3-4m2p` is the ESP32-S3 Feather #5477 (4 MB flash, 2 MB PSRAM) and
 is the same string the buyer firmware reports as `board` in `/api/status`, so
 the app matches a castle to its image by equality. The firmware is
-`firmware/castle_buyer.yaml`: no Wi-Fi baked in, softAP and captive portal,
+`firmware/castle_buyer.yaml`, built by `make build-buyer` (the same target a
+developer runs, image gate included): no Wi-Fi baked in, softAP and captive portal,
 Improv over USB. The `firmware` job fails if the run's fake CI Wi-Fi secret
 turns up in the image.
 
@@ -73,6 +82,31 @@ published by hand, and on `gh workflow run pages.yml` (after editing the
 page). One-time setup: repository **Settings → Pages → Source: GitHub
 Actions**.
 
+## The updater key (minisign) — read before the first desktop release
+
+The desktop app updates itself from `latest.json`, and it installs only a
+bundle whose signature verifies against the public key compiled into it.
+That key pair is Tauri's own **minisign** update-signing key: free, made
+locally, and NOT code signing (the app is still unsigned in the Apple /
+Microsoft sense, by decision — TODO 5.4). The rules:
+
+1. Generate it once: `npx @tauri-apps/cli signer generate -w ~/.tauri/castle-tools.key`
+   (give it a password).
+2. The **public** key goes in `desktop/src-tauri/tauri.conf.json`
+   (`plugins.updater.pubkey`), committed. The `desktop` job refuses to run
+   while that field still says `PLACEHOLDER`.
+3. The **private** key goes in the repository secret
+   `TAURI_SIGNING_PRIVATE_KEY` (the file's contents) and its password in
+   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: Settings → Secrets and variables →
+   Actions. The job refuses to run without the first; `stage-desktop`
+   refuses a bundle that came out with no `.sig`.
+4. Back the private key and password up **outside GitHub** (a secret cannot
+   be read back). Lose them and every installed app is stranded: it will
+   never accept an update signed by a new key, and each owner has to
+   download and install by hand again. Never rotate it casually; never
+   commit it.
+5. `latest.json` is uploaded after every other asset, because it names them.
+
 ## Not yet in the release
 
 - **Windows castle-core.** castle-core does not compile on Windows until the
@@ -80,7 +114,10 @@ Actions**.
   release — fails today. That is deliberate: a release without its Windows
   half is not one. `cross-platform.yml` shows the same failure on every
   push, non-blocking, until then.
-- **The Tauri desktop app** and the updater's `latest.json` (TODO 5.4, 9).
-  `release.yml` holds a commented placeholder where the job goes; it will
-  need the minisign update-signing key as a repository secret, and
-  `latest.json` must be the last asset uploaded.
+- **The buyer firmware** (`firmware/castle_buyer.yaml`, `make build-buyer`)
+  and **the desktop app** (`desktop/`) land from their own branches; until
+  both are on the tagged commit, the `firmware` job fails on the missing
+  target and the `desktop` job is skipped.
+- **Intel Macs** get castle-core but not the app: TODO 9 leaves "mac x64?"
+  open. Adding it is a matrix row in `desktop` and an entry in
+  `release_assets.DESKTOP_TARGETS`.
