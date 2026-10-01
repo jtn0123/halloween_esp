@@ -53,7 +53,7 @@ fn main() {
     if host == "0.0.0.0" {
         println!("  (OPEN TO YOUR LAN — anyone on the WiFi can edit the show)");
     } else {
-        println!("  (this Mac only — pass --lan to reach it from your phone)");
+        println!("  (this computer only — pass --lan to reach it from your phone)");
     }
     println!("  serving the previewer with track management enabled");
     println!("  ctrl-c to stop");
@@ -141,106 +141,150 @@ fn bind_retry(host: &str, port: u16) -> std::io::Result<TcpListener> {
     Err(last.unwrap_or_else(|| std::io::Error::other("bind never attempted")))
 }
 
-/// os.execv(sys.executable, sys.argv): the same process image again, PID
-/// kept, after the response has actually gone out.
-fn restart_self() -> ! {
-    use std::os::unix::process::CommandExt;
+/// The same program, the same arguments, marked as a restart — what both
+/// platforms' `restart_self` start.
+fn restart_command() -> std::process::Command {
     std::thread::sleep(std::time::Duration::from_millis(400));
     let exe = std::env::current_exe().unwrap_or_default();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let err = std::process::Command::new(exe)
-        .args(args)
-        .env("CASTLE_STUDIO_RESTART", "1")
-        .exec();
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(args).env("CASTLE_STUDIO_RESTART", "1");
+    cmd
+}
+
+/// os.execv(sys.executable, sys.argv): the same process image again, PID
+/// kept, after the response has actually gone out.
+#[cfg(unix)]
+fn restart_self() -> ! {
+    use std::os::unix::process::CommandExt;
+    let err = restart_command().exec();
     eprintln!("studio: restart failed: {err}");
     std::process::exit(1);
 }
 
-#[cfg(target_os = "macos")]
-mod so {
-    pub const SOL_SOCKET: i32 = 0xffff;
-    pub const SO_REUSEADDR: i32 = 0x0004;
-    #[repr(C)]
-    pub struct SockaddrIn {
-        pub sin_len: u8,
-        pub sin_family: u8,
-        pub sin_port: u16,
-        pub sin_addr: u32,
-        pub sin_zero: [u8; 8],
-    }
-    pub fn addr(family: u8, port: u16, ip: u32) -> SockaddrIn {
-        SockaddrIn {
-            sin_len: 16,
-            sin_family: family,
-            sin_port: port.to_be(),
-            sin_addr: ip.to_be(),
-            sin_zero: [0; 8],
+/// Windows has no exec, so the restart is a successor and an exit: the new
+/// studio starts (same console, same arguments, same environment) and this
+/// one leaves, freeing the port the successor's bind_retry is waiting on.
+/// The PID changes. Nothing in the repo holds the old one — the desk and
+/// tests/test_studio_ops_rs.py find the studio by its port — but a
+/// launcher that supervises the process by PID sees it exit 0 here, and a
+/// terminal gets its prompt back while the successor carries on.
+#[cfg(windows)]
+fn restart_self() -> ! {
+    match restart_command().spawn() {
+        Ok(_) => std::process::exit(0),
+        Err(err) => {
+            eprintln!("studio: restart failed: {err}");
+            std::process::exit(1);
         }
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod so {
-    pub const SOL_SOCKET: i32 = 1;
-    pub const SO_REUSEADDR: i32 = 2;
-    #[repr(C)]
-    pub struct SockaddrIn {
-        pub sin_family: u16,
-        pub sin_port: u16,
-        pub sin_addr: u32,
-        pub sin_zero: [u8; 8],
-    }
-    pub fn addr(family: u8, port: u16, ip: u32) -> SockaddrIn {
-        SockaddrIn {
-            sin_family: family as u16,
-            sin_port: port.to_be(),
-            sin_addr: ip.to_be(),
-            sin_zero: [0; 8],
-        }
-    }
-}
+#[cfg(unix)]
+use reuse::bind_reuse;
 
-unsafe extern "C" {
-    fn socket(domain: i32, ty: i32, protocol: i32) -> i32;
-    // Variadic for real: fcntl(2) is `int fcntl(int, int, ...)`, and on
-    // arm64 a variadic argument travels on the stack, not in x2. Declared
-    // with a fixed third parameter the flag never arrives — FD_CLOEXEC is
-    // set from whatever the stack happened to hold, so the restart's exec
-    // inherits the old listener and the fresh image cannot rebind its own
-    // port. It worked by luck until an unrelated edit moved the stack.
-    fn fcntl(fd: i32, cmd: i32, ...) -> i32;
-    fn setsockopt(fd: i32, level: i32, name: i32, value: *const i32, len: u32) -> i32;
-    fn bind(fd: i32, addr: *const so::SockaddrIn, len: u32) -> i32;
-    fn listen(fd: i32, backlog: i32) -> i32;
-    fn close(fd: i32) -> i32;
-}
-
-/// TcpListener::bind with SO_REUSEADDR — what ThreadingHTTPServer's
-/// allow_reuse_address does, without which a restart inside TIME_WAIT
-/// cannot rebind its own port.
+/// A plain bind on Windows, deliberately. SO_REUSEADDR there does not mean
+/// "forgive TIME_WAIT", it means "let a second socket bind this port while
+/// the first still listens on it" — a port hijack, not a convenience. The
+/// TIME_WAIT case it exists for on BSD stacks is the predecessor's dying
+/// connections, and the successor's retry loop (bind_retry) is what waits
+/// those out here. std's sockets are created non-inheritable on Windows,
+/// so the successor never holds its predecessor's listener either.
+#[cfg(windows)]
 fn bind_reuse(host: &str, port: u16) -> std::io::Result<TcpListener> {
-    use std::os::unix::io::FromRawFd;
-    let ip: u32 = if host == "0.0.0.0" { 0 } else { 0x7f00_0001 };
-    unsafe {
-        let fd = socket(2, 1, 0); // AF_INET, SOCK_STREAM
-        if fd < 0 {
-            return Err(std::io::Error::last_os_error());
+    TcpListener::bind((host, port))
+}
+
+#[cfg(unix)]
+mod reuse {
+    use std::net::TcpListener;
+
+    #[cfg(target_os = "macos")]
+    mod so {
+        pub const SOL_SOCKET: i32 = 0xffff;
+        pub const SO_REUSEADDR: i32 = 0x0004;
+        #[repr(C)]
+        pub struct SockaddrIn {
+            pub sin_len: u8,
+            pub sin_family: u8,
+            pub sin_port: u16,
+            pub sin_addr: u32,
+            pub sin_zero: [u8; 8],
         }
-        // FD_CLOEXEC, or the restart's exec inherits the old listener
-        // and the fresh image can never rebind its own port.
-        fcntl(fd, 2, 1);
-        let one: i32 = 1;
-        if setsockopt(fd, so::SOL_SOCKET, so::SO_REUSEADDR, &one, 4) != 0 {
-            let e = std::io::Error::last_os_error();
-            close(fd);
-            return Err(e);
+        pub fn addr(family: u8, port: u16, ip: u32) -> SockaddrIn {
+            SockaddrIn {
+                sin_len: 16,
+                sin_family: family,
+                sin_port: port.to_be(),
+                sin_addr: ip.to_be(),
+                sin_zero: [0; 8],
+            }
         }
-        let sa = so::addr(2, port, ip);
-        if bind(fd, &sa, 16) != 0 || listen(fd, 128) != 0 {
-            let e = std::io::Error::last_os_error();
-            close(fd);
-            return Err(e);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    mod so {
+        pub const SOL_SOCKET: i32 = 1;
+        pub const SO_REUSEADDR: i32 = 2;
+        #[repr(C)]
+        pub struct SockaddrIn {
+            pub sin_family: u16,
+            pub sin_port: u16,
+            pub sin_addr: u32,
+            pub sin_zero: [u8; 8],
         }
-        Ok(TcpListener::from_raw_fd(fd))
+        pub fn addr(family: u8, port: u16, ip: u32) -> SockaddrIn {
+            SockaddrIn {
+                sin_family: family as u16,
+                sin_port: port.to_be(),
+                sin_addr: ip.to_be(),
+                sin_zero: [0; 8],
+            }
+        }
+    }
+
+    unsafe extern "C" {
+        fn socket(domain: i32, ty: i32, protocol: i32) -> i32;
+        // Variadic for real: fcntl(2) is `int fcntl(int, int, ...)`, and on
+        // arm64 a variadic argument travels on the stack, not in x2. Declared
+        // with a fixed third parameter the flag never arrives — FD_CLOEXEC is
+        // set from whatever the stack happened to hold, so the restart's exec
+        // inherits the old listener and the fresh image cannot rebind its own
+        // port. It worked by luck until an unrelated edit moved the stack.
+        fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+        fn setsockopt(fd: i32, level: i32, name: i32, value: *const i32, len: u32) -> i32;
+        fn bind(fd: i32, addr: *const so::SockaddrIn, len: u32) -> i32;
+        fn listen(fd: i32, backlog: i32) -> i32;
+        fn close(fd: i32) -> i32;
+    }
+
+    /// TcpListener::bind with SO_REUSEADDR — what ThreadingHTTPServer's
+    /// allow_reuse_address does, without which a restart inside TIME_WAIT
+    /// cannot rebind its own port.
+    pub fn bind_reuse(host: &str, port: u16) -> std::io::Result<TcpListener> {
+        use std::os::unix::io::FromRawFd;
+        let ip: u32 = if host == "0.0.0.0" { 0 } else { 0x7f00_0001 };
+        unsafe {
+            let fd = socket(2, 1, 0); // AF_INET, SOCK_STREAM
+            if fd < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            // FD_CLOEXEC, or the restart's exec inherits the old listener
+            // and the fresh image can never rebind its own port.
+            fcntl(fd, 2, 1);
+            let one: i32 = 1;
+            if setsockopt(fd, so::SOL_SOCKET, so::SO_REUSEADDR, &one, 4) != 0 {
+                let e = std::io::Error::last_os_error();
+                close(fd);
+                return Err(e);
+            }
+            let sa = so::addr(2, port, ip);
+            if bind(fd, &sa, 16) != 0 || listen(fd, 128) != 0 {
+                let e = std::io::Error::last_os_error();
+                close(fd);
+                return Err(e);
+            }
+            Ok(TcpListener::from_raw_fd(fd))
+        }
     }
 }
