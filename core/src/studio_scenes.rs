@@ -54,11 +54,14 @@ fn find_block(text: &str, sid: &str) -> Option<(usize, usize)> {
 }
 
 /// studio_scenes._write: keep the pre-edit text, then replace atomically —
-/// a crash mid-write must never be able to truncate the show.
+/// a crash mid-write must never be able to truncate the show. The show is
+/// written with `\n` line ends whatever the request carried: a desk on
+/// Windows can send `\r\n`, and `find_block` counts lines by `\n`.
 fn write_scenes(scenes: &Path, before: &str, raw: &str) -> std::io::Result<()> {
     std::fs::write(scenes.with_extension("yaml.bak"), before)?;
     let tmp = scenes.with_extension("yaml.tmp");
-    std::fs::write(&tmp, format!("{}\n", raw.trim_end()))?;
+    let text = raw.trim_end().replace("\r\n", "\n");
+    std::fs::write(&tmp, format!("{text}\n"))?;
     std::fs::rename(&tmp, scenes)
 }
 
@@ -253,6 +256,15 @@ mod tests {
         let ended = "scenes:\n  - id: only\n    len: 1\n";
         let (s, e) = find_block(ended, "only").expect("found");
         assert_eq!(&ended[s..e], "  - id: only\n    len: 1\n");
+    }
+
+    #[test]
+    fn a_show_sent_with_windows_line_ends_is_written_with_unix_ones() {
+        let d = tmpdir("crlf");
+        let f = d.join("scenes.yaml");
+        write_scenes(&f, SHOW, &SHOW.replace('\n', "\r\n")).expect("written");
+        assert_eq!(std::fs::read_to_string(&f).expect("read"), SHOW);
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

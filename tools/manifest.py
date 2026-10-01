@@ -101,7 +101,12 @@ def save(data: dict[str, Entry]) -> None:
     # Write-then-rename so a crash mid-write can never truncate the real
     # file: os.replace is atomic on the same filesystem.
     tmp = PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    # newline="\n": Windows' text mode would otherwise write \r\n.
+    tmp.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
     os.replace(tmp, PATH)
 
 
