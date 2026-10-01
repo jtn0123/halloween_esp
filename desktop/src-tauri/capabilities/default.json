@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The local splash page only. Castle Radio's page (http://127.0.0.1:8871) is remote content and gets no Tauri API: no capability names a remote URL.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

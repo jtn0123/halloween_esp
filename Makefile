@@ -37,7 +37,7 @@ YAML_S3 := firmware/castle_s3.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
 
 help:
 	@echo "Halloween Castle"
@@ -79,6 +79,7 @@ help:
 	@echo "  make check-all  every check, including the browser tests"
 	@echo "  make coverage   unit tests under coverage.py, report on tools/ (non-gating)"
 	@echo "  make rust-coverage  cargo llvm-cov summary for core/ (non-gating)"
+	@echo "  make desktop-test / desktop-lint  the Tauri app (desktop/README.md; not in check)"
 	@echo "  make coverage-gate  the same, failing under $(COVERAGE_MIN)% (what CI enforces)"
 	@echo "  make coverage-radio demo/castle-radio under its own floor ($(COVERAGE_RADIO_MIN)%)"
 	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
@@ -396,6 +397,17 @@ rust-lint:
 	$(HAVE_CARGO) cd core && { cargo fmt --check \
 		|| { echo "rustfmt drift — run: cd core && cargo fmt"; exit 1; }; }
 	$(HAVE_CARGO) cd core && cargo clippy --quiet --all-targets -- -D warnings
+
+# The desktop app (desktop/README.md). Not part of `check` or `lint`: it
+# compiles ~450 crates and a webview toolkit, which CI's Linux runners would
+# need webkit2gtk for, and a debug target is 1-2 GB — `cargo clean` after.
+desktop-test:
+	$(HAVE_CARGO) cd desktop/src-tauri && CARGO_INCREMENTAL=0 cargo test --quiet
+
+desktop-lint:
+	$(HAVE_CARGO) cd desktop/src-tauri && { cargo fmt --check \
+		|| { echo "rustfmt drift — run: cd desktop/src-tauri && cargo fmt"; exit 1; }; }
+	$(HAVE_CARGO) cd desktop/src-tauri && CARGO_INCREMENTAL=0 cargo clippy --quiet --all-targets -- -D warnings
 
 # Lint + type-check the Python half; config lives in pyproject.toml. The TS
 # half's equivalent is the tsc line in `check`, the Rust half's is rust-lint.

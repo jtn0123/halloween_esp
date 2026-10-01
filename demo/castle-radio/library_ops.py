@@ -37,8 +37,11 @@ def known_key(root, catalog_path, key):
     raise ValueError("Unknown song")
 
 
-def waveform(root, library, key):
-    key = known_key(root, root / ".radio-data" / "catalog.json", key)
+def waveform(root, library, key, data=None):
+    """`data` is the server's library dir (radio_paths.data_dir()); callers
+    that predate CASTLE_RADIO_DATA get `root/.radio-data`, as before."""
+    data = data or root / ".radio-data"
+    key = known_key(root, data / "catalog.json", key)
     split = library / "stems" / key / "analysis.json"
     if split.exists():
         return json.loads(split.read_text(encoding="utf-8"))
@@ -48,8 +51,8 @@ def waveform(root, library, key):
         source = root / "media" / key
     if source is None or not source.is_file():
         raise ValueError("Audio is not available")
-    cache = root / ".radio-data" / "waveforms"
-    cache.mkdir(exist_ok=True)
+    cache = data / "waveforms"
+    cache.mkdir(parents=True, exist_ok=True)
     target = cache / f"{key}.json"
     if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
         return json.loads(target.read_text(encoding="utf-8"))
