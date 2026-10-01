@@ -77,6 +77,7 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
                     ("error".into(), Json::Str(msg)),
                 ]);
                 let _ = respond_json(conn.stream(), &body, 400);
+                hand_over(conn.stream());
                 break;
             }
             Ok(Some(req)) => {
@@ -103,6 +104,7 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
                 if conn.close {
                     // The reply left the connection unusable — a body that
                     // came up short of its own Content-Length.
+                    hand_over(conn.stream());
                     break;
                 }
                 match pending() {
@@ -121,18 +123,28 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
     }
 }
 
-/// Let the reply that announced a stop or a restart actually arrive before
-/// the process goes. Windows resets every socket a dying process still
-/// holds, and a reset discards whatever the client had not read yet — the
-/// desk saw "connection reset" where "stopping" had been sent. So: no more
-/// to send (FIN after the reply), then wait — briefly — for the client to
-/// read it and hang up.
+/// Let the last reply on a connection actually arrive before the socket
+/// (or the whole process) goes. Closing a socket with request bytes still
+/// unread — the body of a request refused off its head — or exiting with it
+/// open makes Windows send a reset, and a reset discards whatever the
+/// client had not read yet: the desk saw "connection reset" where a 400 or
+/// "stopping" had been sent. So: no more to send (FIN after the reply),
+/// then read and drop what the client still sends until it hangs up —
+/// bounded in time and bytes, so a client streaming a refused half-gigabyte
+/// cannot hold the thread.
 fn hand_over(stream: &mut TcpStream) {
     use std::io::Read;
     let _ = stream.shutdown(std::net::Shutdown::Write);
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
-    let mut sink = [0u8; 512];
-    while matches!(stream.read(&mut sink), Ok(n) if n > 0) {}
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut sink = [0u8; 4096];
+    let mut left: usize = 1 << 20;
+    while left > 0 && std::time::Instant::now() < deadline {
+        match stream.read(&mut sink) {
+            Ok(n) if n > 0 => left = left.saturating_sub(n),
+            _ => break,
+        }
+    }
 }
 
 /// A restarted image races its own predecessor: the dying connections'
