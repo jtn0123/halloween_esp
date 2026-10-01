@@ -80,7 +80,24 @@ PLATFORM_MARKERS = {
 #: invisible until `--require-hashes` refused a requirement with no digest
 #: (2026-09-18). Its line carries `sys_platform == "linux"` in the lock and is
 #: carried with it; bump it by hand when bleak asks for a newer one.
-CARRY_OVER = ("yt-dlp", "dbus-fast")
+#:
+#: The winrt-* family is the same story for WINDOWS (bleak 3.x's
+#: `sys_platform == "win32"` half): invisible to a macOS freeze, and refused
+#: by `--require-hashes` on the first windows-latest run (2026-10-01).
+#: Versions are what `uv pip compile --python-platform x86_64-pc-windows-msvc`
+#: resolves; bump them together, by hand, when bleak moves.
+WINRT = (
+    "winrt-runtime",
+    "winrt-windows-devices-bluetooth",
+    "winrt-windows-devices-bluetooth-advertisement",
+    "winrt-windows-devices-bluetooth-genericattributeprofile",
+    "winrt-windows-devices-enumeration",
+    "winrt-windows-devices-radios",
+    "winrt-windows-foundation",
+    "winrt-windows-foundation-collections",
+    "winrt-windows-storage-streams",
+)
+CARRY_OVER = ("yt-dlp", "dbus-fast", *WINRT)
 
 #: How pip spells one digest of a pinned file; read and written in this form.
 HASH_FLAG = "--hash=sha256:"
