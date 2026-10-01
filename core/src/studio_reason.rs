@@ -101,7 +101,10 @@ fn exception_line(name: &str, rest: Option<&str>) -> String {
     if let Some(at) = rest.find("Command '['") {
         let after = &rest[at + 11..];
         if let Some(end) = after.find('\'') {
-            let prog = after[..end].rsplit('/').next().unwrap_or("");
+            // A Windows repr doubles its backslashes ('C:\\ff\\ffmpeg.exe');
+            // splitting on each one leaves the same last segment.
+            let prog = after[..end].rsplit(['/', '\\']).next().unwrap_or("");
+            let prog = strip_exe(prog);
             let code = rest
                 .find("exit status ")
                 .map(|p| {
@@ -125,17 +128,37 @@ fn exception_line(name: &str, rest: Option<&str>) -> String {
     }
 }
 
+/// `ffmpeg.exe` reads as `ffmpeg` — the desk names the tool, not the file.
+fn strip_exe(prog: &str) -> &str {
+    let n = prog.len();
+    if n > 4 && prog.is_char_boundary(n - 4) && prog[n - 4..].eq_ignore_ascii_case(".exe") {
+        &prog[..n - 4]
+    } else {
+        prog
+    }
+}
+
+fn is_sep(c: u8) -> bool {
+    c == b'/' || c == b'\\'
+}
+
 /// studio_jobs.basenames — '/a/b/x.wav' → 'x.wav'; URLs untouched
 /// (a '/' preceded by ':', '/' or a word character never starts a match).
+/// Windows paths too: '\' separates like '/', and a drive-letter path
+/// ('C:\Users\…\x.wav', 'C:/…/x.wav') loses its prefix, drive and all.
 pub fn basenames(s: &str) -> String {
     let b = s.as_bytes();
     let mut out = String::new();
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'/'
+        if is_sep(b[i])
             && starts_a_path(b, i)
             && let Some(end) = path_prefix_end(b, i)
         {
+            i = end + 1;
+            continue;
+        }
+        if let Some(end) = drive_prefix_end(b, i) {
             i = end + 1;
             continue;
         }
@@ -157,20 +180,40 @@ fn starts_a_path(b: &[u8], i: usize) -> bool {
         return true;
     }
     let p = b[i - 1];
-    !(p == b':' || p == b'/' || p.is_ascii_alphanumeric() || p == b'_')
+    !(p == b':' || is_sep(p) || p.is_ascii_alphanumeric() || p == b'_')
+}
+
+/// A Windows drive path starting at `i` — one letter, ':', a separator,
+/// with nothing word-like before the letter (so 'https:' is never a
+/// drive) — and the end of what to strip: its last separator, or just
+/// the 'C:\' of a file in the drive's root.
+fn drive_prefix_end(b: &[u8], i: usize) -> Option<usize> {
+    let letter = b[i].is_ascii_alphabetic()
+        && b.get(i + 1) == Some(&b':')
+        && b.get(i + 2).is_some_and(|&c| is_sep(c));
+    if !letter || (i > 0 && (b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) {
+        return None;
+    }
+    Some(path_prefix_end(b, i + 2).unwrap_or(i + 2))
 }
 
 /// The last '/' of the `[^/\s'"]+/` run starting at `i`, consumed
 /// possessively like the Python regex — None when there is no run, so the
-/// '/' is just a character.
+/// '/' is just a character. '\' counts as '/', and a doubled one (a
+/// Python repr of a Windows path) as one separator.
 fn path_prefix_end(b: &[u8], i: usize) -> Option<usize> {
     let mut j = i + 1;
     let mut last_slash = None;
     let mut seg_len = 0;
     while j < b.len() {
         let c = b[j];
-        if c == b'/' {
+        if is_sep(c) {
             if seg_len == 0 {
+                if c == b'\\' && b[j - 1] == b'\\' {
+                    last_slash = Some(j);
+                    j += 1;
+                    continue;
+                }
                 break;
             }
             last_slash = Some(j);
@@ -228,6 +271,33 @@ mod tests {
             "https://example.com/watch/thing"
         );
         assert_eq!(basenames("word /tmp/у/f.mp3"), "word f.mp3");
+    }
+
+    /// The same failures, said by a Windows machine: backslashes, drive
+    /// letters, Python's doubled-backslash repr, and an `.exe` on the tool.
+    #[test]
+    fn windows_paths_lose_their_folders_too() {
+        assert_eq!(
+            basenames("no such file: C:\\Users\\me\\AppData\\Local\\Temp\\_upload\\jb.wav"),
+            "no such file: jb.wav"
+        );
+        assert_eq!(
+            basenames("open C:/castle/tracks/x.mp3 failed"),
+            "open x.mp3 failed"
+        );
+        assert_eq!(basenames("at C:\\x.wav"), "at x.wav");
+        assert_eq!(basenames("'C:\\\\castle\\\\t\\\\x.mp3'"), "'x.mp3'");
+        assert_eq!(basenames("\\a\\b\\x.wav told us"), "x.wav told us");
+        // Not drives: a URL scheme, and a letter that is part of a word.
+        assert_eq!(basenames("https://e.com/a/b"), "https://e.com/a/b");
+        assert_eq!(basenames("abc:\\x\\y"), "abc:\\x\\y");
+        assert_eq!(
+            explain(&[
+                "Traceback (most recent call last):".to_string(),
+                "subprocess.CalledProcessError: Command '['C:\\\\ff\\\\bin\\\\ffmpeg.exe', '-i']' returned non-zero exit status 1.".to_string(),
+            ]),
+            "ffmpeg failed (exit 1)"
+        );
     }
 
     /// Each of these is a failure someone will actually hit — a private
