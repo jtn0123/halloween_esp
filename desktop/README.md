@@ -149,6 +149,11 @@ npx @tauri-apps/cli@2 build                                       # no sidecar, 
 npx @tauri-apps/cli@2 build --config tauri.release.conf.json      # CI: bundles castle/, signs latest.json
 ```
 
+Run it with `CI=true` on a desktop Mac: without it the dmg step styles the
+Finder window by AppleScript, and `bundle_dmg.sh` fails where the terminal has
+no Automation permission (seen 2026-09-30; with `CI=true` the dmg builds, 2.9 MB
+without a sidecar, ad-hoc signed, `castle-tools` in its URL types).
+
 `tauri.macos.conf.json` builds `.app` + `.dmg` (ad-hoc signed, `signingIdentity
 "-"` — Apple Silicon needs at least that); `tauri.windows.conf.json` builds the
 NSIS `.exe` only, per-user (`installMode: currentUser`, no admin prompt),
