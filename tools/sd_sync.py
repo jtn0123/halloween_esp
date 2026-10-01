@@ -47,6 +47,16 @@ from published import Published
 ROOT = Path(__file__).resolve().parent.parent
 SCENES_API = "/api/scenes"  # where the card's scenes/ directory is PUT
 FILES_API = "/api/files"  # and the card ROOT, which the listing reads too
+CASTLE_SCHEME = "http"  # the board's web server has no TLS (castle_url)
+
+
+def castle_url(ip: str, path: str) -> str:
+    """A URL on the castle. Plain HTTP by necessity, not by choice: ESPHome's
+    web server on the board has no TLS, and the castle lives on the owner's
+    home LAN — the accepted position in CLAUDE.md "Security position". The
+    scheme is spelled once, here, so a castle that ever speaks HTTPS is one
+    line."""
+    return urllib.parse.urlunsplit((CASTLE_SCHEME, ip, path, "", ""))
 
 
 def api(
@@ -55,7 +65,7 @@ def api(
     # The castle key (v5.74), when one is configured: a castle that has none
     # ignores the header, and one that has one refuses its writes without it.
     req = urllib.request.Request(
-        f"http://{ip}{path}", data=body, method=method, headers=key_headers(ip)
+        castle_url(ip, path), data=body, method=method, headers=key_headers(ip)
     )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return bytes(r.read())

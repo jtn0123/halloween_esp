@@ -132,6 +132,16 @@ def check_for_update(
     return None
 
 
+def listen_port(value: int) -> int:
+    """The Castle Radio port a launch may ask for, as a plain int — the
+    only shape of `--port` that reaches the server's command line. Below
+    1024 is a privileged port no buyer's launch should want."""
+    port = int(value)
+    if not 1024 <= port <= 65535:
+        raise ValueError(f"--port must be 1024-65535, not {port}")
+    return port
+
+
 def start(cmd: list[str], env: Mapping[str, str], cwd: Path) -> subprocess.Popen[bytes]:
     return subprocess.Popen(cmd, env=dict(env), cwd=cwd)
 
@@ -142,6 +152,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--desk", action="store_true", help="also start the cue desk")
     ap.add_argument("--no-browser", action="store_true")
     args = ap.parse_args(argv)
+    try:
+        port = listen_port(args.port)
+    except ValueError as exc:
+        print(exc)
+        return 2
 
     dirs = de.installed_dirs()
     record = de.read_json(dirs.install_file)
@@ -150,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     settings = de.read_json(dirs.settings_file)
     env = de.launch_env(dirs, record, settings, os.environ)
-    url = f"http://127.0.0.1:{args.port}/"
+    url = f"http://127.0.0.1:{port}/"
     show = (lambda u: None) if args.no_browser else webbrowser.open
 
     threading.Thread(
@@ -158,13 +173,13 @@ def main(argv: list[str] | None = None) -> int:
         daemon=True,
     ).start()
 
-    state = radio_state(args.port)
+    state = radio_state(port)
     if state == "ours":
         print(f"Castle Tools are already running: {url}")
         show(url)
         return 0
     if state == "taken":
-        print(f"Port {args.port} is in use by another program. Close it and try again.")
+        print(f"Port {port} is in use by another program. Close it and try again.")
         return 1
 
     for note in de.prepare(dirs):
@@ -172,7 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     py = str(env["CASTLE_PY"])
     children = [
         start(
-            [py, str(dirs.app / "demo" / "castle-radio" / "server.py"), str(args.port)],
+            [py, str(dirs.app / "demo" / "castle-radio" / "server.py"), str(port)],
             env,
             dirs.app,
         )
@@ -184,7 +199,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     radio = children[0]
     up = wait_until(
-        lambda: radio_state(args.port) == "ours", 30, lambda: radio.poll() is None
+        lambda: radio_state(port) == "ours", 30, lambda: radio.poll() is None
     )
     if not up:
         print("Castle Tools did not start. See the messages above.")

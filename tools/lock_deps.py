@@ -281,12 +281,16 @@ def _report(
             print(f"note: {tool} is in CARRY_OVER but nothing pins it")
 
 
-def main(argv: list[str] | None = None, fetch: Fetcher = pypi_hashes) -> int:
+def main(
+    argv: list[str] | None = None, fetch: Fetcher = pypi_hashes, out: Path = LOCK
+) -> int:
     """`fetch` is a parameter for the same reason `with_hashes` takes one:
     the CLI path — read the lock, re-hash it, write it back — is the half
-    worth a test, and a test must not reach the index to get one."""
+    worth a test, and a test must not reach the index to get one. `out` is
+    a parameter and NOT a flag for the same reason: the tool only ever
+    writes the repo's own lock, so no command line names a path for it to
+    read or overwrite; only a test points it at a scratch copy."""
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", type=Path, default=LOCK, help="lock file to write")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument(
         "--hashes-only",
@@ -297,10 +301,10 @@ def main(argv: list[str] | None = None, fetch: Fetcher = pypi_hashes) -> int:
     args = ap.parse_args(argv)
 
     say = (lambda _m: None) if args.quiet else print
-    previous = read_lock(args.out)
+    previous = read_lock(out)
     if args.hashes_only:
         if not previous:
-            print(f"lock: {args.out} has no pins to re-hash", file=sys.stderr)
+            print(f"lock: {out} has no pins to re-hash", file=sys.stderr)
             return 1
         lines = sorted((pin_line(e) for e in previous.values()), key=package)
         carried: list[str] = []
@@ -320,9 +324,9 @@ def main(argv: list[str] | None = None, fetch: Fetcher = pypi_hashes) -> int:
     except LockError as exc:
         print(f"lock: {exc}", file=sys.stderr)
         return 1
-    args.out.write_text("\n".join(entries) + "\n", encoding="utf-8")
+    out.write_text("\n".join(entries) + "\n", encoding="utf-8")
     if not args.quiet:
-        _report(args.out.name, lines, entries, carried, previous)
+        _report(out.name, lines, entries, carried, previous)
     return 0
 
 

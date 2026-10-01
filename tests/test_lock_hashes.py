@@ -160,7 +160,7 @@ class TestHashesOnlyCli(unittest.TestCase):
 
     def run_main(self, *argv: str) -> tuple[int, str]:
         with contextlib.redirect_stdout(io.StringIO()) as out:
-            code = ld.main(["--out", str(self.out), *argv], fake_fetch())
+            code = ld.main(list(argv), fake_fetch(), out=self.out)
         return code, out.getvalue()
 
     def test_every_version_survives_and_every_pin_is_rehashed(self) -> None:
@@ -186,7 +186,7 @@ class TestHashesOnlyCli(unittest.TestCase):
     def test_an_empty_lock_is_refused_rather_than_silently_emptied(self) -> None:
         self.out.write_text("# nothing here\n", encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()) as err:
-            code = ld.main(["--out", str(self.out), "--hashes-only"], fake_fetch())
+            code = ld.main(["--hashes-only"], fake_fetch(), out=self.out)
         self.assertEqual(code, 1)
         self.assertIn("no pins", err.getvalue())
 
@@ -196,8 +196,9 @@ class TestHashesOnlyCli(unittest.TestCase):
         before = self.out.read_text(encoding="utf-8")
         with contextlib.redirect_stderr(io.StringIO()) as err:
             code = ld.main(
-                ["--out", str(self.out), "--hashes-only", "--quiet"],
+                ["--hashes-only", "--quiet"],
                 fake_fetch({"numpy==2.5.0": []}),
+                out=self.out,
             )
         self.assertEqual(code, 1)
         self.assertIn("numpy==2.5.0", err.getvalue())

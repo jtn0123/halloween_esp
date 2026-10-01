@@ -118,10 +118,11 @@ def resolve(reqs: list[str], uv: str) -> str:
     return out.stdout
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, out: Path = LOCK) -> int:
+    """`out` is a parameter, not a flag: the tool writes the repo's own lock
+    and nothing else, so no command line names a path for it to overwrite."""
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", type=Path, default=LOCK)
-    args = ap.parse_args(argv)
+    ap.parse_args(argv)
     uv = shutil.which("uv")
     if not uv:
         print(
@@ -131,9 +132,9 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     reqs = requirements(SOURCE.read_text(encoding="utf-8"))
     body = resolve(reqs, uv)
-    args.out.write_text(HEADER + body, encoding="utf-8")
+    out.write_text(HEADER + body, encoding="utf-8")
     pins = sum(1 for ln in body.splitlines() if _NAME.match(ln) and "==" in ln)
-    print(f"{args.out.name}: {pins} pins for {len(ENVIRONMENTS)} platforms")
+    print(f"{out.name}: {pins} pins for {len(ENVIRONMENTS)} platforms")
     return 0
 
 

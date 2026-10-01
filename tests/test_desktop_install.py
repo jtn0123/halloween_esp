@@ -10,6 +10,7 @@ re-runs which tree, when a launch reuses a server — not uv or cargo.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import sys
 import tempfile
@@ -30,17 +31,19 @@ import desktop_release as rel
 from test_desktop_release import api_body, fake_fetch
 
 
+def native(dirs: de.Dirs) -> de.Dirs:
+    """The same folders on this machine's own system: cases that make a real
+    link use it, so on Windows they exercise the junction and not a
+    privileged symlink."""
+    return de.Dirs(dirs.install, dirs.data, de.platform.system())
+
+
 class TempCase(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
         self.dirs = de.Dirs(self.tmp / "inst", self.tmp / "data", "Darwin")
-
-    def native(self) -> None:
-        """Cases that make a real link use this machine's own system, so on
-        Windows they exercise the junction and not a privileged symlink."""
-        self.dirs = de.Dirs(self.dirs.install, self.dirs.data, de.platform.system())
 
     def args(self, *argv: str) -> argparse.Namespace:
         return di.build_parser().parse_args(["--uv", "uv", *argv])
@@ -106,7 +109,7 @@ class TestPlan(TempCase):
 class TestStaging(TempCase):
     def setUp(self) -> None:
         super().setUp()
-        self.native()
+        self.dirs = native(self.dirs)
 
     def test_a_tree_without_git_is_copied_minus_build_output(self) -> None:
         src = self.tmp / "src"
@@ -173,7 +176,7 @@ class TestStaging(TempCase):
 class TestUninstall(TempCase):
     def setUp(self) -> None:
         super().setUp()
-        self.native()
+        self.dirs = native(self.dirs)
 
     def installed(self) -> None:
         de.write_json(self.dirs.install_file, {"data": str(self.dirs.data)})
@@ -247,7 +250,6 @@ class TestUpdate(TempCase):
         )
 
     def test_newer_release_runs_the_new_trees_installer(self) -> None:
-        import io
         import zipfile
 
         buf = io.BytesIO()
@@ -284,6 +286,21 @@ class TestUpdate(TempCase):
 
 
 class TestLauncher(TempCase):
+    def test_the_port_reaches_the_server_only_as_a_checked_int(self) -> None:
+        self.assertEqual(dl.listen_port(8871), 8871)
+        for bad in (0, 80, 1023, 65536):
+            with self.subTest(port=bad), self.assertRaises(ValueError):
+                dl.listen_port(bad)
+
+    def test_an_out_of_range_port_is_refused_before_anything_starts(self) -> None:
+        with (
+            mock.patch.object(dl, "start") as start,
+            mock.patch("sys.stdout", new_callable=io.StringIO) as out,
+        ):
+            self.assertEqual(dl.main(["--port", "22"]), 2)
+        start.assert_not_called()
+        self.assertIn("1024-65535", out.getvalue())
+
     def test_radio_state_reads_the_identity_route(self) -> None:
         ours = {"service": "castle-radio", "protocol": 1}
         self.assertEqual(dl.radio_state(1, lambda _u: ours), "ours")
