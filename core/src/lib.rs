@@ -88,6 +88,8 @@ pub mod netguard;
 #[cfg(feature = "native")]
 pub mod onsets;
 #[cfg(feature = "native")]
+pub mod portable;
+#[cfg(feature = "native")]
 pub mod procgroup;
 #[cfg(feature = "native")]
 pub mod scene;

@@ -9,7 +9,7 @@
 use std::process::Command;
 
 fn decode(path: &str, channels: u32, sr: u32) -> Option<Vec<u8>> {
-    let out = Command::new("ffmpeg")
+    let out = Command::new(crate::portable::ffmpeg())
         .args([
             "-v",
             "quiet",

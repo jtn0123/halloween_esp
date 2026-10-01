@@ -12,14 +12,6 @@ use crate::studio::App;
 use crate::studio_media::compares;
 use crate::studio_proc::{Timed, run_input};
 
-/// shutil.which, for the one binary probe cares about.
-fn which(name: &str) -> bool {
-    std::env::var("PATH")
-        .unwrap_or_default()
-        .split(':')
-        .any(|d| Path::new(d).join(name).is_file())
-}
-
 /// studio_media.probe — what is at this link, without downloading it.
 pub fn probe(url: &str) -> (Json, bool) {
     use crate::studio_scenes::{Timed, run_split};
@@ -32,10 +24,10 @@ pub fn probe(url: &str) -> (Json, bool) {
             false,
         )
     };
-    if let Some(why) = preflight(url, which("yt-dlp")) {
+    if let Some(why) = preflight(url, crate::portable::have_yt_dlp()) {
         return fail(why);
     }
-    let mut cmd = std::process::Command::new("yt-dlp");
+    let mut cmd = std::process::Command::new(crate::portable::yt_dlp());
     cmd.args(["--dump-json", "--no-playlist", "--no-warnings", url]);
     let (ok, out, err) = match run_split(cmd, 60) {
         Timed::Out => return fail("timed out after 60s asking about that link".into()),
@@ -149,8 +141,7 @@ fn num_of(req: &Json, k: &str, d: f64) -> Result<f64, String> {
 pub fn compare(app: &App, req: &Json) -> (Json, u16) {
     use crate::studio_scenes::py;
     let raw = req.str_or("id", "");
-    let name = raw.trim().trim_end_matches('/');
-    let name = name.rsplit('/').next().unwrap_or("");
+    let name = &crate::portable::last_segment(raw.trim());
     let Some(p) = crate::studio_tracks::track_path(&app.tracks, name) else {
         return (
             Json::Obj(vec![
