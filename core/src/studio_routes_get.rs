@@ -79,6 +79,9 @@ fn small(app: &App, req: &Request, path: &str) -> Option<Reply> {
     if path == "/api/status" {
         return Some(crate::studio_relay::status_reply(app));
     }
+    if path == crate::studio_key::ROUTE {
+        return Some(crate::studio_key::get(app));
+    }
     if path == "/studio/tracks" {
         let _ = std::fs::create_dir(&app.tracks);
         return Some(Reply::Json(

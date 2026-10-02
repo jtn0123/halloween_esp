@@ -147,7 +147,7 @@ fn delete(app: &App, req: &Request) -> Reply {
 type Post = fn(&Arc<App>, &Request, &str) -> Option<Reply>;
 
 fn post(app: &Arc<App>, req: &Request) -> Reply {
-    let groups: [Post; 4] = [imports, probes, server, show];
+    let groups: [Post; 5] = [imports, probes, server, show, castle_key];
     let path = studio_path(&req.target);
     for group in groups {
         if let Some(r) = group(app, req, &path) {
@@ -254,6 +254,11 @@ fn show(app: &Arc<App>, req: &Request, path: &str) -> Option<Reply> {
         return Some(Reply::Json(out, code));
     }
     None
+}
+
+/// The castle key the relay sends (studio_key): use, set or clear it.
+fn castle_key(app: &Arc<App>, req: &Request, path: &str) -> Option<Reply> {
+    (path == crate::studio_key::ROUTE).then(|| crate::studio_key::post(app, req))
 }
 
 /// A failed scene splice carries its log; the desk shows the one-line

@@ -29,6 +29,10 @@ SANDBOX_ENV = (
     # v5.74: the castle key a tool sends. A shell that exported one must not
     # turn the emulator's open castle into a refused write in a test.
     "CASTLE_KEY",
+    # ...and the file the key (and the inventory) is read from: the packaged
+    # app exports a per-user one, and a test that patches hosts.DEVICES
+    # must not be overruled by it.
+    "CASTLE_DEVICES",
 )
 for _k in SANDBOX_ENV:
     os.environ.pop(_k, None)
