@@ -185,7 +185,7 @@ jobs:
       - name: LOC cap
         run: python tools/check_loc.py
       # Every grade-report citation names its audit. IDs renumber, so a bare
-      # one points at six reports and none of them.
+      # one points at every report and none of them.
       - name: citation dates
         run: python tools/check_citations.py
       # Advisories against the locked venv. Informational only — see the

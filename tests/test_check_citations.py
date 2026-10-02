@@ -1,6 +1,6 @@
 """The citation guard — `tools/check_citations.py` and what it refuses.
 
-Item IDs renumber every audit, so a bare "grade report A1" names six reports
+Item IDs renumber every audit, so a bare "grade report A1" names every report
 at once. The guard's whole job is to keep the next undated one out of the
 tree, which means two things have to hold: it must PASS on the tree as it
 stands (proved here against the live repo), and it must FAIL on a planted

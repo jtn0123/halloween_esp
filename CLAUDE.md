@@ -283,7 +283,7 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   `.cue` beside it (v5.63, `make cues`) with no slot at all.
 - v5.42 feeds the upload watchdog every 32 KB (was 8 KB). Verified on the
   emulator only — watch the first big push on real hardware; if an upload
-  reboots the board, revert the cadence in `sd_web.h write_body`.
+  reboots the board, revert the cadence in `sd_web_upload.h write_body`.
 
 ## Security position (accepted risk — do not re-raise)
 

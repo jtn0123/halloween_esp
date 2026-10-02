@@ -122,4 +122,4 @@ Work down this list — it is ordered by how often each one was the answer:
   watchdog every 32 KB instead of every 8 KB during uploads (4× faster
   pushes); it behaved on the emulator but the real watchdog only exists on
   the board — if an upload reboots the castle, that cadence is the suspect
-  (`firmware/sd_web.h write_body`).
+  (`firmware/sd_web_upload.h write_body`, where it has lived since v5.61).

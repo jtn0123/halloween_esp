@@ -58,7 +58,8 @@ inline bool g_mounted = false;
 inline volatile bool g_quiesce = false;
 
 /// Mount the card. Safe to call when no card is present — it logs and returns
-/// false, and the rest of the device carries on with the flash scenes.
+/// false, and the rest of the device carries on without its show: a scene
+/// start with no card files to read plays one chirp.
 ///
 /// A3 (v5.61): `max_files` is the number of files FATFS will hold OPEN AT
 /// ONCE on this volume, and 4 was not a budget, it was the ESP-IDF example's

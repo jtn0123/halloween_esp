@@ -58,7 +58,7 @@ an ESP32-S2 Feather; `castle_sd.yaml` was deleted the same day
 
 - **The upload watchdog cadence** (v5.42): fed every 32 KB, was 8 KB.
   Verified on the emulator only. Watch the first big push on real hardware; if
-  an upload reboots the board, revert the cadence in `sd_web.h write_body`.
+  an upload reboots the board, revert the cadence in `sd_web_upload.h write_body`.
 - **The `sdkconfig` diet** (`castle.yaml`): every line of it was bought with
   the S2's ~20 bytes of dram0 headroom and the S3 measured 35.1% RAM at v5.67,
   so each was a line to give back and measure ONE AT A TIME. That list is now
