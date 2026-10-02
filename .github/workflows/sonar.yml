@@ -96,6 +96,10 @@ jobs:
           source <(cargo llvm-cov show-env --export-prefix)
           cargo test --release
           cargo llvm-cov report --release --failure-mode all --lcov --output-path lcov.info
-      - uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+      # Dependabot's pull requests get no SONAR_TOKEN, so the upload could
+      # only fail "Not authorized" (PRs #48, #54). Everything above still
+      # runs on them; the coverage steps are what the bump can break.
+      - if: github.event_name == 'push' || github.event.pull_request.user.login != 'dependabot[bot]'
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
