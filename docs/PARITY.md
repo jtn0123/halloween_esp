@@ -159,7 +159,10 @@ firmware layer, and the same is true of every Rust row without cargo.
    imported, naming this wheel's dispatch targets — the failure message
    computes that list for the installed wheel rather than quoting one, since
    numpy renames the targets between releases and a name outside the list is
-   an ImportWarning that disables nothing. CI's Linux x86_64 job exports
-   exactly that (`ci.yml:101`).
+   an ImportWarning that disables nothing. CI's x86_64 jobs export exactly
+   that (`NPY_DISABLE_CPU_FEATURES` in ci.yml, sonar.yml and
+   cross-platform.yml), and so does the Makefile on an x86_64 host, so a
+   local `make check` there runs the same arithmetic; tests/test_preflight.py
+   holds the four values equal.
 
 Never skip or loosen a parity test to get a green run.

@@ -92,12 +92,13 @@ before the Feather** rather than drawing it all through its USB trace.
 You need Python 3.13 and **a Rust toolchain** (`rustup`, which brings cargo).
 `make setup` does not install Rust, and the step after it does not work
 without one: `make audio` renders through castle-core and stops with a
-sentence rather than falling back to Python. Node 22+ is needed only for the
-cue desk's own build and tests.
+sentence rather than falling back to Python. Node 22+, `lame` and `ffmpeg`
+are needed for `make check`; `make setup` ends by naming whichever is missing,
+with the command that installs it.
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # once
-make setup      # venv + esphome + render deps + the commit hook
+make setup      # venv from the hashed lock + web/ npm ci + the commit hook
 make audio      # render the scene audio (builds core/ on first use)
 make validate   # check the config without a toolchain
 make build      # compile firmware/castle_feather_s3.yaml — the castle in the yard
