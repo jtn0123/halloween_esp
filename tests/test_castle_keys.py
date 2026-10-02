@@ -14,6 +14,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -201,6 +202,40 @@ class TestSdSyncSaysIt(StoreCase):
         self.assertEqual(
             json.loads(sd_sync.api(host, "POST", "/api/pir?armed=1")), {"queued": True}
         )
+
+
+#: Where each refusal is copied, by its name here.
+COPIES = {
+    "core/src/studio_key.rs": (
+        "KEY_REQUIRED",
+        "WRONG_KEY",
+        "BAD_KEY",
+        "PINNED",
+        "OLD_FIRMWARE",
+    ),
+    "web/src/castle_act.ts": ("KEY_REQUIRED",),
+    "demo/castle-radio/castle-direct.js": (
+        "KEY_REQUIRED",
+        "WRONG_KEY",
+        "BAD_KEY",
+        "OLD_FIRMWARE",
+    ),
+}
+
+
+class TestOneSentence(unittest.TestCase):
+    """The refusals are COPIED, not imported — the Rust studio, the desk and
+    the castle-served page cannot import Python — so every copy is held to
+    this module's words, and "enter it in Settings" reads the same in each."""
+
+    def test_every_copy_says_the_same_words(self) -> None:
+        for rel, names in COPIES.items():
+            text = (ROOT / rel).read_text(encoding="utf-8")
+            # Rust's line-continuation and JS's escaped quote, undone.
+            text = re.sub(r"\\\n\s*", "", text).replace("\\'", "'")
+            for name in names:
+                with self.subTest(file=rel, message=name):
+                    self.assertIn(getattr(ck, name), text)
 
 
 class TestCli(StoreCase):
