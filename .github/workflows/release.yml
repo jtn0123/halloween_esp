@@ -93,8 +93,8 @@ jobs:
 
   # The buyer image: the S3 Feather build with no Wi-Fi baked in, softAP +
   # captive portal + Improv (firmware/castle_buyer.yaml), built by the same
-  # `make build-buyer` a developer types. The setup steps mirror ci.yml's
-  # firmware-weekly job, which has already paid for every lesson in them;
+  # `make build-buyer` a developer types. The setup steps mirror
+  # firmware.yml's compile job, which has already paid for every lesson in them;
   # the comments there say why each one exists.
   firmware:
     needs: meta

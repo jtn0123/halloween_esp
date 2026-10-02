@@ -76,8 +76,9 @@ file is the one that governs.
   v3.3a, THE build and the castle in the yard (`make build` / `upload` /
   `logs` / `ota`; `build-fs3` etc. are aliases for muscle memory), and
   `castle_s3.yaml` (2026-09-05) is the bare-ESP32-S3-WROOM-1 carrier v5 —
-  `make build-s3` / `upload-s3` / `logs-s3` / `validate-s3`. Both are
-  compiled by the weekly CI job; the carrier has never been on hardware and
+  `make build-s3` / `upload-s3` / `logs-s3` / `validate-s3`. All three are
+  compiled by `.github/workflows/firmware.yml` (weekly, by hand, and on a PR
+  that touches `firmware/`); the carrier has never been on hardware and
   its board does not exist yet. The show itself — the card, the loopback
   stream, the web API (`sd_web.h`) the desk talks to — is
   `castle_sd_common.yaml`, which both include; `castle.yaml` is the shared
