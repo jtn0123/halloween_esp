@@ -149,8 +149,8 @@
     display: grid; gap: 1px; background: var(--line);
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   }
-  /* A scene the castle's firmware was built without (C6): playable on the
-     desk, "unknown scene" on the board — dimmed until a rebuild + OTA. */
+  /* A scene the castle does not list yet (C6): playable on the desk,
+     "unknown scene" on the board — dimmed until a publish reaches it. */
   .scene--stale { opacity: .55; }
 
   .scene {

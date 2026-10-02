@@ -153,17 +153,32 @@ class CastleEmu(ThreadingHTTPServer):
         self.state = _State()
         self.sd_dir = sd_dir or Path(tempfile.mkdtemp(prefix="castle-emu-sd-"))
         self.sd_dir.mkdir(parents=True, exist_ok=True)
-        # The card first (v5.67: /sd/scenes/show.man IS the scene list), then
-        # the show this emulator was pointed at, standing in for the ids a
-        # real image was compiled with, then the defaults. Read once here, the
-        # way the firmware seeds its list once at boot — a manifest published
-        # while the castle is up is not visible until it reboots, on both
-        # castles, and a test that wants the new list restarts the emulator.
+        #: The ids the image was "compiled with" — firmware/generated's
+        #: fallback list, which the castle wears when the card has no
+        #: manifest it believes: `scenes` when a test names them, else the
+        #: show this emulator was pointed at, else the defaults.
+        self.built_scenes = (
+            scenes if scenes is not None else show_scene_ids() or list(DEFAULT_SCENES)
+        )
+        # At boot the card first (v5.67: /sd/scenes/show.man IS the scene
+        # list) — unless a test named the list, which then stands for a castle
+        # that has not read any card yet.
         self.scenes = (
             scenes
             if scenes is not None
-            else card_scene_ids(self.sd_dir) or show_scene_ids() or list(DEFAULT_SCENES)
+            else card_scene_ids(self.sd_dir) or self.built_scenes
         )
+        #: castle_web::g_scenes_dirty (v5.69, J1 of grade report 2026-09-17
+        #: pm): a PUT that lands scenes/show.man rings it, and the next tick
+        #: re-reads the list — so a scene published to a running castle is
+        #: startable without a reboot, on both castles. This emulator used to
+        #: read the list once at boot, which is why the studio's
+        #: `needs_reboot` went on asking for a reboot nobody needed (grade
+        #: report 2026-09-24 H2).
+        self.scenes_dirty = False
+        #: False rehearses a castle from before v5.69, which read show.man at
+        #: boot only: the bell rings and nothing answers it.
+        self.reseeds = True
         self.version = version
         #: h_status's "board" and "fw_variant" (v5.74, sd_web_state.h): the
         #: module + memory and the build. The yard's by default, as the C's.
@@ -237,6 +252,15 @@ class CastleEmu(ThreadingHTTPServer):
     def uptime_ms(self) -> int:
         """esp_timer's clock as the ring stamps it: milliseconds since boot."""
         return int((time.monotonic() - self.state.boot) * 1000)
+
+    def reseed_scenes(self) -> None:
+        """castle_scenes.yaml's seed_scene_ids: the card's manifest, else
+        the list the image was built with. Run by the tick that drains
+        `scenes_dirty`, never by the upload — that is card I/O, and on the
+        board the upload worker only rings the bell."""
+        ids = card_scene_ids(self.sd_dir) or self.built_scenes
+        with self.state.lock:
+            self.scenes = ids
 
     def heal_missing(self, name: str) -> None:
         """castle_web::heal_missing: REMOVE one name from /api/status's

@@ -124,18 +124,21 @@ test("what the castle says is printed, never executed", async ({ page }) => {
   expect(castle.hits("/api/status")).toBeGreaterThan(0);
 });
 
-test("a firmware behind scenes.yaml is said in the panel and dimmed in the picker", async ({ page }) => {
-  // v5.42 status carries the ids the BUILD was compiled with; a board that
-  // predates a scene must say so BEFORE a pick answers "unknown scene" (C6).
+test("a castle behind scenes.yaml is said in the panel and dimmed in the picker", async ({ page }) => {
+  // status carries the ids the castle can start (its card's show.man since
+  // v5.67); a castle the latest publish has not reached must say so BEFORE a
+  // pick answers "unknown scene" (C6) — and name the publish, not an OTA,
+  // as the cure (grade report 2026-09-24 H1).
   await fakeCastle(page, [], { scenes: "vigil" });
   await page.goto("/");
   await expect(page.locator("#deviceChip")).toBeVisible();
   await expect(page.locator(".scene--stale").first()).toBeVisible();
   await page.locator("#devMore").click();
   const warn = page.locator("#devicePanel .dp__note--warn",
-                            { hasText: "newer than the firmware" });
+                            { hasText: "not on the castle yet" });
   await expect(warn).toBeVisible();
-  await expect(warn).toContainText("rebuild and OTA");
+  await expect(warn).toContainText("make publish");
+  await expect(warn).not.toContainText("OTA");
 });
 
 test("a firmware that knows every scene dims nothing", async ({ page }) => {

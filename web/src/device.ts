@@ -70,9 +70,9 @@ export interface BridgeOpts {
   /** The card's reported size, KB, on every answer — null when the castle
    *  does not say (older firmware, no card) or has stopped answering. */
   onCard?: (totalKb: number | null) => void;
-  /** The scene ids the castle's FIRMWARE was built with, on every answer —
-   *  null when the firmware predates the field. The desk diffs this against
-   *  its own list and dims scenes the board cannot play (C6). */
+  /** The scene ids the castle can start (its card's show.man), on every
+   *  answer — null when the firmware predates the field. The desk diffs this
+   *  against its own list and dims scenes the board cannot play yet (C6). */
   onScenes?: (ids: string[] | null) => void;
   /**
    * The device half of the masthead's status line — "castle v1.4 · SD ok ·

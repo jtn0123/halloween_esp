@@ -97,6 +97,12 @@ def start_ticker(emu: CastleEmu) -> None:
 def ticker(emu: CastleEmu) -> None:
     while True:
         time.sleep(APPLY_DELAY_S)
+        # The publish bell first, as castle_sd_common.yaml's interval does:
+        # exchange(false), so one show.man is one re-read (v5.69, J1).
+        if emu.scenes_dirty:
+            emu.scenes_dirty = False
+            if emu.reseeds:
+                emu.reseed_scenes()
         with emu.state.lock:
             # take_pending(): the restart latch drains first and leaves
             # the slot alone, so a command queued beside it still lands.

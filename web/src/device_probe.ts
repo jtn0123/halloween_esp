@@ -30,8 +30,9 @@ export interface Status {
   /** On the studio's marker answer: the castle host it is configured to
    *  relay to — present means "a castle is expected and not answering". */
   castle?: string;
-  /** Comma-joined scene ids the firmware was BUILT with (v5.42+) — the
-   *  desk diffs them against its own list to spot a stale board (C6). */
+  /** Comma-joined scene ids the castle can start (v5.42+; the card's
+   *  show.man since v5.67) — the desk diffs them against its own list to
+   *  spot a castle the latest publish has not reached (C6). */
   scenes?: string;
 }
 

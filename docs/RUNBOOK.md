@@ -16,15 +16,18 @@ of the Witches' Road sat rendered on the Mac while the castle answered
    (the show — audio, `<id>.cue`, `show.man` — plus the lean page, to the
    card). Watch the rebuild log — it says what was pushed and what it could
    not do.
-3. **Reboot, if the log says so.** Since v5.67 a new scene is card data, not
-   a compile-time object: no OTA. But the castle reads `show.man` ONCE at
-   boot — nothing may touch the card while a song is playing
-   (docs/ISSUE-ring-flicker.md) — so a brand-new id is unknown until it
-   restarts. The publish answers `needs_reboot: [ids]` and the desk shows the
-   same fact two ways: the scene's tile is dimmed, and the 🏰 panel's health
-   row names the count. `tools/sd_sync.py` → 🏰 panel "restart", or pull power.
-   *Editing* an existing scene needs neither a reboot nor a flash: the runner
-   reads its cue file at every start.
+3. **Nothing else — no reboot, no flash.** Since v5.67 a scene is card data,
+   not a compile-time object, so there is no OTA; and since v5.69 the castle
+   re-reads `show.man` itself, on the main loop's next 200 ms tick after the
+   publish lands it (`g_scenes_dirty` in `firmware/sd_web_upload.h`), so a
+   brand-new scene is startable on the castle that is already running.
+   *Editing* an existing scene was always free: the runner reads its cue file
+   at every start. The publish's `needs_reboot` is read AFTER the push and is
+   empty on v5.69+; it names ids only for a castle running firmware older
+   than that, which reads the manifest at boot alone — restart that one (🏰
+   panel "restart", or pull power), or better, update it. The desk dims a
+   scene's tile, and the 🏰 panel's health row names it, while the castle's
+   own list (`/api/status` `scenes`) lacks it.
 4. **Verify** — the panel shows the new version; press the scene; the chip's
    ▶ line names the right track. `tools/sd_sync.py status` from a terminal
    says the same.
@@ -49,10 +52,12 @@ without `CASTLE_PY` it finds a bare `python3`, and every rebuild dies on
 
 Work down this list — it is ordered by how often each one was the answer:
 
-- **`unknown scene` toast** → the castle has not read the manifest with that
-  id in it. `make publish`, then reboot the board (v5.67; before that it was
-  `make ota`). `/api/status`'s `scenes` is exactly what `show.man` said at
-  boot, so compare it with `scenes/scenes.yaml`.
+- **`unknown scene` toast** → the castle has not read a manifest with that
+  id in it: the publish has not happened, or did not land. `make publish` —
+  since v5.69 that is the whole fix (it was a publish plus a reboot on v5.67
+  and v5.68, and `make ota` before that). `/api/status`'s `scenes` is
+  exactly what the card's `show.man` said when the castle last read it, so
+  compare it with `scenes/scenes.yaml`.
 - **Scene runs, lights but no cues (`cues: 0` in status)** → its `<id>.cue`
   is not on the card, or is not one the reader believes (magic, version,
   length). `make publish`; `/api/status`'s `missing` names it. Since v5.68

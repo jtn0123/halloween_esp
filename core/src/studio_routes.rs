@@ -244,7 +244,8 @@ fn show(app: &Arc<App>, req: &Request, path: &str) -> Option<Reply> {
     }
     if path == "/studio/publish" {
         // The last mile: sd_sync scenes (audio + cue files + show.man) +
-        // lean site, and what still needs a reboot; rebuild() runs it too
+        // lean site, and any scene a pre-v5.69 castle still needs a reboot
+        // to read (studio_publish.rs); rebuild() runs it too
         // when a castle answers. No oplock: the push only reads the build
         // tree and talks to the castle, and holding the gate across a
         // network round-trip queued every import and scene write behind it
