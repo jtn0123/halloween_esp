@@ -296,11 +296,18 @@ class Handler(SimpleHTTPRequestHandler):
     # ---- POST ------------------------------------------------------------
 
     def json_body(self, message, limit=4096):
+        """The request's JSON OBJECT. Every route reads its fields with
+        `.get`, so a `[]` or a bare string is refused here as a 400 rather
+        than reaching one as an AttributeError, which no route catches and
+        which dropped the connection (grade report 2026-09-24 E4)."""
         request_guard.json_type(self.headers.get("Content-Type"))
         length = int(self.headers.get("Content-Length", 0))
         if not 0 < length <= limit:
             raise ValueError(message)
-        return json.loads(self.rfile.read(length))
+        body = json.loads(self.rfile.read(length))
+        if not isinstance(body, dict):
+            raise ValueError(message)
+        return body
 
     def marked(self):
         """The bodiless and raw-bodied routes carry no content type to

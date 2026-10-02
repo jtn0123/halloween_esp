@@ -340,5 +340,38 @@ class SimplePostTests(unittest.TestCase):
             self.assertEqual(post("/radio/import", headers, b"ID3 audio")[0], 202)
 
 
+class JsonObjectTests(unittest.TestCase):
+    """Every JSON route reads an OBJECT (grade report 2026-09-24 E4), and the
+    link import reads it under json_body's cap rather than the upload's
+    100 MB (grade report 2026-09-24 B4)."""
+
+    def setUp(self):
+        self.pool = patch("radio_jobs.POOL").start()
+        patch.dict(radio_jobs.HANDLES, {}, clear=True).start()
+        patch.dict(server.JOBS, {}, clear=True).start()
+        self.addCleanup(patch.stopall)
+
+    def test_a_body_that_is_not_an_object_is_a_400_on_every_json_route(self):
+        """`[]` used to reach `payload.get` and raise AttributeError, which no
+        route catches: the client saw a dropped connection, not an answer."""
+        for route in server.Handler.POST_ROUTES:
+            for body in (b"[]", b'"url"', b"3", b"null"):
+                with self.subTest(route=route, body=body):
+                    status, answer = post(route, JSON, body)
+                    self.assertEqual(status, 400)
+                    self.assertIn("Invalid", answer["error"])
+        self.assertEqual(server.JOBS, {})
+        self.assertEqual(self.pool.submit.call_count, 0)
+
+    def test_the_link_import_is_capped_like_every_other_json_route(self):
+        small = b'{"url": "https://e.com/a", "title": "A"}'
+        large = b'{"url": "https://e.com/b", "title": "' + b"x" * 5000 + b'"}'
+        status, answer = post("/radio/import", JSON, large)
+        self.assertEqual((status, answer["error"]), (400, "Invalid import request"))
+        self.assertEqual(server.JOBS, {})
+        self.assertEqual(post("/radio/import", JSON, small)[0], 202)
+        self.assertEqual(self.pool.submit.call_count, 1)
+
+
 if __name__ == "__main__":
     unittest.main()
