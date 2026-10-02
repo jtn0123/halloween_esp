@@ -396,3 +396,69 @@ test('C6: the timeout message names the budget it gave up after', async () => {
   timeouts.at(-1).fire();
   await assert.rejects(() => call, /did not answer within 6s/);
 });
+
+/* ------------------------------------------------------- the import queue */
+
+const served = (jobs, rows = []) => url => ({ok: true, status: 200,
+  json: async () => (url === '/radio/jobs' ? jobs : rows)});
+
+test('a job is shown by name — the link itself while it downloads, never "Linked song"', async () => {
+  const jobs = [
+    {id: 'radio_a', title: '', phase: 'Ready in demo', done: true, finished_at: 9, started_at: 1},
+    {id: 'radio_b', title: '', phase: 'Downloading audio', done: false, percent: 12,
+      source: 'https://www.youtube.com/watch?v=abc'},
+    {id: 'radio_c', title: 'Thriller', phase: 'Queued', done: false, source: 'https://e.com/t'},
+    {id: 'radio_d', title: '', phase: 'Queued', done: false, source: '/tmp/radio_d.mp3',
+      source_name: 'spooky.mp3'},
+  ];
+  const {ctx} = importsContext(served(jobs, [{key: 'radio_a', title: 'A'}]));
+  await settle();
+  const html = ctx.$('import-jobs').innerHTML;
+  assert.doesNotMatch(html, /Linked song/);
+  assert.match(html, /<b>A<\/b>/, 'a finished job with no title borrows the library’s');
+  assert.match(html, /youtube\.com\/watch\?v=abc/, 'a link still downloading is named by its link');
+  // What runs first is first: preparing, then the line in order, then finished.
+  const order = ['youtube.com', 'Thriller', 'spooky.mp3', '<b>A</b>'].map(text => html.indexOf(text));
+  assert.deepEqual(order, order.slice().sort((a, b) => a - b));
+  assert.match(html, /Thriller<\/b><span>Next up/);
+  assert.match(html, /spooky\.mp3<\/b><span>Number 2 in line/);
+  assert.match(html, /1 preparing · 2 waiting · 1 finished/);
+  assert.equal((html.match(/data-cancel=/g) || []).length, 3, 'everything unfinished can be cancelled');
+});
+
+test('clearing finished jobs keeps failures, and a retried job comes back when it finishes again', async () => {
+  const jobs = [
+    {id: 'radio_a', title: 'Fine', phase: 'Ready in demo', done: true, finished_at: 5},
+    {id: 'radio_b', title: 'Broken', phase: 'Import failed', done: true, finished_at: 6, error: 'no audio'},
+  ];
+  const {ctx} = importsContext(served(jobs));
+  await settle();
+  await ctx.$('import-jobs').onclick({target: {closest: query => (query === '[data-clear-finished]' ? {} : null)}});
+  let html = ctx.$('import-jobs').innerHTML;
+  assert.doesNotMatch(html, /Fine/);
+  assert.match(html, /Broken/, 'a failure stays until it is dismissed or retried');
+  jobs[0].finished_at = 50;
+  await ctx.refresh();
+  html = ctx.$('import-jobs').innerHTML;
+  assert.match(html, /Fine/, 'hidden by id AND finish time, so the second result is shown');
+});
+
+test('several links are queued one by one, and the ones refused stay in the box with the reason', async () => {
+  const posted = [];
+  const {ctx} = importsContext((url, init) => {
+    if (init?.method !== 'POST') {return served([])(url);}
+    const link = JSON.parse(init.body).url;
+    posted.push(link);
+    return link.endsWith('/dup')
+      ? {ok: false, status: 400, text: async () => JSON.stringify({error: 'That link is already in the queue.'})}
+      : {ok: true, status: 202, json: async () => ({})};
+  });
+  await settle();
+  ctx.$('import-file').files = [];
+  ctx.$('import-url').value = 'https://e.com/1\nhttps://e.com/dup\n\nhttps://e.com/1  https://e.com/2';
+  await ctx.$('import-form').onsubmit({preventDefault() {}});
+  assert.deepEqual(posted, ['https://e.com/1', 'https://e.com/dup', 'https://e.com/2']);
+  assert.equal(ctx.$('import-url').value, 'https://e.com/dup');
+  assert.match(ctx.$('import-message').textContent, /Queued 2 songs/);
+  assert.match(ctx.$('import-message').textContent, /Not queued · https:\/\/e\.com\/dup — That link is already in the queue\./);
+});

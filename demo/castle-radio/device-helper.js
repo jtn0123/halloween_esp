@@ -6,7 +6,7 @@
   const pending = new Map();
   let popup = null, sequence = 0, connected = false, tools = null;
   let handshakeTimer = null;
-  const localPaths = /^\/radio\/(?:tools$|jobs$|library(?:\/|$)|import$|retry$|reprocess$|restore\/|waveform\/|audio\/|device\/(?:library$|sync(?:-status)?(?:\?|$)))/;
+  const localPaths = /^\/radio\/(?:tools$|jobs$|library(?:\/|$)|import$|retry$|reprocess$|cancel$|rename$|restore\/|waveform\/|audio\/|device\/(?:library$|sync(?:-status)?(?:\?|$)))/;
   const byId = id => document.getElementById(id);
 
   function update(value) {

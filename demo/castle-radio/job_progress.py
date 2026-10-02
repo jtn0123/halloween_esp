@@ -12,6 +12,10 @@ from typing import IO, cast
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 
 
+class Cancelled(ValueError):
+    """The listener cancelled this preparation; not a failure to report."""
+
+
 def percent_value(text):
     """The number written just before the first `%` (`41.8% of` is 41.8),
     clamped to 0..100; None when no percentage is on the line. Splitting on
@@ -24,7 +28,26 @@ def percent_value(text):
     return None
 
 
+def found_title(clean):
+    """The song's own name, the moment the downloader says it: the importer
+    saves a link as `<title>.<ext>`, so the Destination line carries it long
+    before the manifest does."""
+    _, marker, path = clean.partition("Destination: ")
+    if not marker or not clean.startswith(("[download]", "[ExtractAudio]")):
+        return None
+    return os.path.splitext(os.path.basename(path.strip()))[0][:200] or None
+
+
 def interpret(line, stage, analyzed):
+    """One line of a tool's output as a progress record, plus `found_title`
+    when the line is the one that names the song."""
+    values, analyzed = _progress(line, stage, analyzed)
+    clean = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", line)
+    named = found_title(clean.partition('{"line": "')[2] or clean)
+    return ({**values, "found_title": named} if named else values), analyzed
+
+
+def _progress(line, stage, analyzed):
     if line.startswith("CASTLE_PROGRESS "):
         try:
             line = json.loads(line[len("CASTLE_PROGRESS ") :])["line"]
@@ -70,7 +93,9 @@ def interpret(line, stage, analyzed):
     return {}, analyzed
 
 
-def run(args, timeout, stage, report, extra_env=None):
+def run(args, timeout, stage, report, extra_env=None, stop=None):
+    """`stop` is an Event the caller sets to cancel: the child's whole process
+    group is killed, as it is on a timeout, and the run raises Cancelled."""
     env = {**os.environ, "CASTLE_PROGRESS_STREAM": "1", **(extra_env or {})}
     process = subprocess.Popen(
         args,
@@ -96,6 +121,15 @@ def run(args, timeout, stage, report, extra_env=None):
 
     timer = threading.Timer(timeout, expire)
     timer.start()
+
+    def watch():
+        while process.poll() is None:
+            if stop.wait(0.25):
+                expire()
+                return
+
+    if stop is not None:
+        threading.Thread(target=watch, daemon=True).start()
     tail = []
     analyzed = 0
     started = time.time()
@@ -108,6 +142,8 @@ def run(args, timeout, stage, report, extra_env=None):
             if values:
                 report(**values)
         code = process.wait()
+        if stop is not None and stop.is_set():
+            raise Cancelled("Cancelled")
         if timed_out.is_set():
             raise ValueError("Preparation timed out. Retry this song.")
         if code:

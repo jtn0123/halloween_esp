@@ -149,7 +149,8 @@ The server binds loopback, but loopback is not a wall a browser respects: any
 page open in the same browser can post to `127.0.0.1:8871`. So every
 state-changing route is shaped so a browser has to ask permission first, and
 this server answers no `OPTIONS` at all. JSON routes (`/radio/device/command`,
-`/radio/device/sync`, `/radio/retry`, `/radio/reprocess`, link imports) require
+`/radio/device/sync`, `/radio/retry`, `/radio/cancel`, `/radio/rename`,
+`/radio/reprocess`, link imports) require
 `Content-Type: application/json` — `; charset=…` is fine — and answer 415
 otherwise; `application/json` is not a content type a cross-origin form can
 send without a preflight. The raw upload (`/radio/import` with audio bytes) and

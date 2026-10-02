@@ -301,7 +301,7 @@ export function importsContext(reply) {
   const timeouts = [];
   const ctx = {
     console, JSON, Math, Number, String, Set, Map, Date, Promise, Error, SyntaxError,
-    encodeURIComponent, XMLHttpRequest: function XMLHttpRequest() {},
+    encodeURIComponent, URL, XMLHttpRequest: function XMLHttpRequest() {},
     $, tracks: [{id: 0, key: 'radio_a', title: 'A', file: 'radio_a.mp3'}],
     queue: [], history: [], current: 0, window: {},
     art: () => '', load() {}, start() {}, stop() {}, deleteSong() {}, openPreview() {},

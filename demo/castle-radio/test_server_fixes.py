@@ -11,6 +11,7 @@ from unittest.mock import patch
 from urllib.parse import urlsplit
 
 import import_routes
+import radio_jobs
 import request_guard
 import server
 
@@ -191,7 +192,8 @@ class SimplePostTests(unittest.TestCase):
     this server answers no OPTIONS at all."""
 
     def setUp(self):
-        self.pool = patch("import_routes.POOL").start()
+        self.pool = patch("radio_jobs.POOL").start()
+        patch.dict(radio_jobs.HANDLES, {}, clear=True).start()
         patch.dict(server.JOBS, {}, clear=True).start()
         self.addCleanup(patch.stopall)
 
@@ -247,6 +249,77 @@ class SimplePostTests(unittest.TestCase):
             restore.assert_not_called()
             self.assertEqual(
                 post("/radio/restore/radio_a", MARKED), (200, {"ok": True})
+            )
+
+    def test_a_link_already_waiting_or_already_a_song_is_refused_by_name(self):
+        body = b'{"url": "https://example.com/song"}'
+        with patch("import_routes.catalog", return_value=[]):
+            self.assertEqual(post("/radio/import", JSON, body)[0], 202)
+            status, answer = post("/radio/import", JSON, body)
+        self.assertEqual(status, 400)
+        self.assertIn("already in the queue", answer["error"])
+        rows = [{"key": "radio_a", "title": "Day-O", "source_url": "https://e.com/b"}]
+        with patch("import_routes.catalog", return_value=rows):
+            status, answer = post("/radio/import", JSON, b'{"url": "https://e.com/b"}')
+        self.assertEqual(status, 400)
+        self.assertIn("Day-O", answer["error"])
+        self.assertEqual(self.pool.submit.call_count, 1)
+
+    def test_a_waiting_job_is_cancelled_and_can_be_retried(self):
+        self.pool.submit.return_value.cancel.return_value = True
+        with patch("import_routes.catalog", return_value=[]):
+            _, job = post("/radio/import", JSON, b'{"url": "https://e.com/c"}')
+        ask = ('{"id": "%s"}' % job["id"]).encode()
+        status, answer = post("/radio/cancel", JSON, ask)
+        self.assertEqual(
+            (status, answer["phase"], answer["done"]), (200, "Cancelled", True)
+        )
+        self.assertIsNone(answer["error"])
+        self.assertNotIn(job["id"], radio_jobs.HANDLES)
+        self.assertEqual(post("/radio/cancel", JSON, ask)[0], 400)
+        self.assertEqual(post("/radio/cancel", {}, ask)[0], 415)
+        status, again = post("/radio/retry", JSON, ask)
+        self.assertEqual(
+            (status, again["done"], again["cancelled"]), (202, False, False)
+        )
+
+    def test_cancelling_a_running_job_stops_its_tools_and_is_not_a_failure(self):
+        self.pool.submit.return_value.cancel.return_value = False  # already running
+        with patch("import_routes.catalog", return_value=[]):
+            _, job = post("/radio/import", JSON, b'{"url": "https://e.com/d"}')
+        post("/radio/cancel", JSON, ('{"id": "%s"}' % job["id"]).encode())
+        self.assertTrue(radio_jobs.HANDLES[job["id"]][1].is_set())
+        self.assertFalse(job["done"])
+        radio_jobs.prepare(job, job["source"], "", True, "mp3")  # the worker's turn
+        self.assertEqual((job["phase"], job["error"]), ("Cancelled", None))
+
+    def test_a_found_title_fills_an_empty_name_and_never_a_typed_one(self):
+        job = {"id": "radio_t", "title": ""}
+        radio_jobs.report(job, found_title="Monster Mash", percent=None)
+        radio_jobs.report(job, found_title="Something else")
+        self.assertEqual(job["title"], "Monster Mash")
+
+    def test_rename_changes_the_catalog_title_and_nothing_else(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "catalog.json"
+            path.write_text('[{"key": "radio_a", "title": "old", "cues": [1]}]')
+            with patch("radio_jobs.CATALOG", path):
+                ask = b'{"key": "radio_a", "title": "  Monster   Mash "}'
+                self.assertEqual(
+                    post("/radio/rename", JSON, ask),
+                    (200, {"key": "radio_a", "title": "Monster Mash"}),
+                )
+                self.assertEqual(
+                    post("/radio/rename", JSON, b'{"key": "radio_a", "title": " "}')[0],
+                    400,
+                )
+                self.assertEqual(
+                    post("/radio/rename", JSON, b'{"key": "nope", "title": "x"}')[0],
+                    400,
+                )
+            self.assertEqual(
+                __import__("json").loads(path.read_text()),
+                [{"key": "radio_a", "title": "Monster Mash", "cues": [1]}],
             )
 
     def test_the_ninth_waiting_job_is_refused_rather_than_queued(self):

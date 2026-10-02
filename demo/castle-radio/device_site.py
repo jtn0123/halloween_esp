@@ -29,6 +29,7 @@ from pathlib import Path
 
 import device_bridge
 import remote_library
+import rich_show
 
 HERE = Path(__file__).resolve().parent
 DATA = HERE / ".radio-data"
@@ -41,6 +42,7 @@ LINK = "device-link.js"
 SCRIPTS = (
     "device-helper.js",
     "visuals.js",
+    "cue-playback.js",
     APP,
     IMPORTS,
     PREVIEW,
@@ -158,8 +160,12 @@ def catalog_rows(data: Path) -> list[dict]:
         audio = remote_library.playback_path(data / "tracks", row)
         if audio is None:
             continue
+        prepared = rich_show.metadata(data / "tracks", row)
+        if prepared:
+            prepared["url"] = f"/sd/{audio.stem}.show.json"
         rows.append(
             {
+                "prepared_show": prepared,
                 "key": row["key"],
                 "title": row.get("title", row["key"]),
                 "artist": row.get("artist", "Your imports"),

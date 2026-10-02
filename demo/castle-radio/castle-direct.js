@@ -351,7 +351,8 @@
     for (const row of library) {
       const present = audio.get(row.filename) === row.bytes;
       known.add(row.filename);
-      tracks[row.key] = {status: present ? 'audio_only' : 'missing', audio: present, lights: installed.has(row.key), can_sync: false, filename: present ? row.filename : null, bytes: present ? row.bytes : null};
+      const lights = !!row.prepared_show && audio.get(row.prepared_show.filename) === row.prepared_show.bytes;
+      tracks[row.key] = {status: present && lights ? 'ready' : present ? 'audio_only' : 'missing', audio: present, lights, can_sync: false, filename: present ? row.filename : null, bytes: present ? row.bytes : null};
     }
     const other = [...audio].filter(([name]) => AUDIO.test(name) && !known.has(name)).map(([name, bytes]) => ({name, bytes})).sort((a, b) => a.name.localeCompare(b.name));
     return {tracks, jobs: {}, other_audio: other};
@@ -369,7 +370,7 @@
   async function presentRows() {
     const files = namedFiles(await listing());
     const audio = new Map(files.map(f => [f.name, f.size]));
-    const rows = library.filter(row => audio.get(row.filename) === row.bytes).map(({frames, ...row}) => ({...row, url:`/sd/${row.filename}`, split:false, source_available:false}));
+    const rows = library.filter(row => audio.get(row.filename) === row.bytes).map(({frames, ...row}) => ({...row, url:`/sd/${row.filename}`, prepared_show:row.prepared_show?{...row.prepared_show,url:`/sd/${stem(row.filename)}.show.json`}:null, split:false, source_available:false}));
     const listed = new Set(rows.map(row => row.filename));
     for (const f of cardShows(files)) {
       if (listed.has(f.name)) {continue;}

@@ -9,6 +9,7 @@ import zlib
 from pathlib import Path
 
 import device_bridge
+import rich_show
 from device_bridge import FILES_PATH, STATUS_PATH
 
 _POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -74,10 +75,16 @@ def inventory(root, library, rows):
         key = row["key"]
         path = playback_path(library, row)
         present = path is not None and audio.get(path.name) == path.stat().st_size
+        prepared = rich_show.metadata(library, row)
+        lights = bool(prepared and audio.get(prepared["filename"]) == prepared["bytes"])
         result[key] = {
-            "status": "audio_only" if present else "missing",
+            "status": "ready"
+            if present and lights
+            else "audio_only"
+            if present
+            else "missing",
             "audio": present,
-            "lights": key in installed,
+            "lights": lights,
             "can_sync": True,
             "filename": path.name if present else None,
             "bytes": audio.get(path.name) if present else None,
@@ -150,6 +157,14 @@ def start(root, library, rows, key):
         raise ValueError("Song audio is no longer available on this computer.")
     # Snapshot before queueing: local deletion must not change an in-flight transfer.
     data = source.read_bytes()
+    companions = []
+    if row is not None:
+        if not rich_show.metadata(library, row):
+            rich_show.prepare(library, row)
+        companions = [
+            (source.with_suffix(suffix).name, source.with_suffix(suffix).read_bytes())
+            for suffix in (".show.json", ".cue")
+        ]
     with _LOCK:
         if key in _JOBS and not _JOBS[key]["done"]:
             return dict(_JOBS[key])
@@ -158,23 +173,32 @@ def start(root, library, rows, key):
             "done": False,
             "error": None,
             "phase": "Queued",
-            "bytes": len(data),
+            "bytes": len(data) + sum(len(blob) for _, blob in companions),
             "sent_bytes": 0,
             "percent": 0,
         }
         _JOBS[key] = job
-    _POOL.submit(transfer, key, route, source.name, data)
+    _POOL.submit(transfer, key, route, source.name, data, companions)
     return dict(job)
 
 
-def transfer(key, route, name, data):
+def transfer(key, route, name, data, companions=()):
     try:
-        upload_with_progress(key, route, name, data)
+        total = len(data) + sum(len(blob) for _, blob in companions)
+        offset = 0
+        for filename, blob in [(name, data), *companions]:
+            upload_with_progress(
+                key, route, filename, blob, progress_base=offset, total_bytes=total
+            )
+            offset += len(blob)
         with _LOCK:
             _JOBS[key].update(
                 done=True,
-                phase="Audio verified on castle",
-                sent_bytes=len(data),
+                phase="Audio and show verified on castle"
+                if companions
+                else "Audio verified on castle",
+                sent_bytes=total,
+                bytes=total,
                 percent=100,
             )
     except (OSError, ValueError, http.client.HTTPException) as exc:
@@ -182,7 +206,16 @@ def transfer(key, route, name, data):
             _JOBS[key].update(done=True, phase="Sync failed", error=str(exc))
 
 
-def upload_with_progress(key, route, name, data, connection_factory=None):
+def upload_with_progress(
+    key,
+    route,
+    name,
+    data,
+    connection_factory=None,
+    *,
+    progress_base=0,
+    total_bytes=None,
+):
     """Stream chunks so the UI sees bytes handed to the castle socket."""
     factory = connection_factory or (
         lambda: http.client.HTTPConnection(device_bridge.HOST, timeout=600)
@@ -201,12 +234,27 @@ def upload_with_progress(key, route, name, data, connection_factory=None):
             sent += len(block)
             with _LOCK:
                 _JOBS[key].update(
-                    phase="Uploading audio to castle",
-                    sent_bytes=sent,
-                    percent=min(99, round(sent * 100 / len(data), 1)),
+                    phase=f"Uploading {name} to castle",
+                    bytes=total_bytes or len(data),
+                    sent_bytes=progress_base + sent,
+                    percent=min(
+                        99,
+                        round(
+                            (progress_base + sent) * 100 / (total_bytes or len(data)), 1
+                        ),
+                    ),
                 )
         with _LOCK:
-            _JOBS[key].update(phase="Verifying castle SD copy", percent=99)
+            _JOBS[key].update(
+                phase="Verifying castle SD copy",
+                percent=min(
+                    99,
+                    round(
+                        (progress_base + len(data)) * 100 / (total_bytes or len(data)),
+                        1,
+                    ),
+                ),
+            )
         response = connection.getresponse()
         raw = response.read()
         if response.status >= 400:

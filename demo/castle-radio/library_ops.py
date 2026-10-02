@@ -79,7 +79,9 @@ def remove(data, library, catalog_path, key):
         data / f"{key}.yaml",
         data / "waveforms" / f"{key}.json",
     ]
-    candidates += [library / f"{key}.{suffix}" for suffix in AUDIO_SUFFIXES]
+    candidates += [
+        library / f"{key}.{suffix}" for suffix in (*AUDIO_SUFFIXES, "cue", "show.json")
+    ]
     named = row.get("playback_file")
     if named:
         candidates.append(library / Path(named).name)

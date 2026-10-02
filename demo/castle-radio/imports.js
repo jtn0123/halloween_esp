@@ -36,23 +36,107 @@ let reprocessTrack=null;
 function integrate(rows){const keys=new Set(rows.map(r=>r.key));for(const t of tracks){if(t.key&&!keys.has(t.key)){t.deleted=true;imported.delete(t.key);}}for(const record of rows){let t=tracks.find(t=>t.key===record.key);if(!t){t={id:tracks.length,key:record.key,file:'',color:'#6c927b',symbol:'✧',kind:'song'};tracks.push(t);}Object.assign(t,record,{deleted:false});imported.set(record.key,t);}
 const count=tracks.filter(t=>!t.deleted).length;$('collection-count').textContent=count;$('collection-caption').textContent=`${count} tracks · automatic light shows`;
 queue=queue.filter(id=>!tracks[id].deleted);history=history.filter(id=>!tracks[id].deleted);if(tracks[current].deleted){if(!window.castlePlayer?.active()||window.castlePlayer.owns(tracks[current])){stop();}load(tracks.find(t=>!t.deleted)?.id??0);}renderTracks();renderQueue();renderImports();}
-function renderImports(){const list=$('imported-list');list.innerHTML='';for(const t of imported.values()){const row=document.createElement('div');row.className='prepared-track';const source=t.source_url?`<a href="${escapeHTML(t.source_url)}" target="_blank" rel="noreferrer">Saved link · ${escapeHTML(t.source_label)}</a>`:`Saved source · ${escapeHTML(t.source_label||'unavailable')}`;const bitrate=t.playback_bitrate?` · ${t.playback_bitrate} kbps`:'';const format=`${String(t.playback_format||'mp3').toUpperCase()}${bitrate} · ${importBytes(t.playback_bytes)}`;row.innerHTML=`${art(t)}<div><strong>${escapeHTML(t.title)}</strong><small>${t.split?'Voice + background lights':'Combined-audio lights'} · ${format}</small><small class="saved-source">${source}</small>${window.remoteLibrary?.badge(t)||''}</div>${window.remoteLibrary?.button(t)||''}<button data-import-play="${t.id}">▶ Play</button><button data-split-open="${t.id}">${t.split?'Hear split':'Preview'}</button><button data-reprocess="${t.id}" ${t.source_available?'':'disabled'}>Change audio</button><button data-delete-song="${t.id}" aria-label="Remove ${escapeHTML(t.title)}">Remove</button>`;list.append(row);}if(!imported.size){list.innerHTML='<p class="subtle">Your imported songs will appear here and in Listen.</p>';}}
+/* The prepared songs as the listener asked to see them: newest first unless
+   they chose a name or size order, and only those matching the filter. */
+function shownImports(){const rows=[...imported.values()].reverse(),find=String($('library-filter').value||'').trim().toLowerCase(),sort=$('library-sort').value;
+if(sort==='title'){rows.sort((a,b)=>String(a.title).localeCompare(String(b.title),undefined,{sensitivity:'base',numeric:true}));}
+if(sort==='size'){rows.sort((a,b)=>(b.playback_bytes||0)-(a.playback_bytes||0));}
+return find?rows.filter(t=>`${t.title} ${t.source_label||''}`.toLowerCase().includes(find)):rows;}
+function renderImports(){const list=$('imported-list');list.innerHTML='';const shown=shownImports();
+$('library-summary').textContent=imported.size?`${shown.length===imported.size?imported.size:`${shown.length} of ${imported.size}`} song${imported.size===1?'':'s'} · ${importBytes([...imported.values()].reduce((sum,t)=>sum+(t.playback_bytes||0),0))}`:'';
+for(const t of shown){const row=document.createElement('div');row.className='prepared-track';const source=t.source_url?`<a href="${escapeHTML(t.source_url)}" target="_blank" rel="noreferrer">Saved link · ${escapeHTML(t.source_label)}</a>`:`Saved source · ${escapeHTML(t.source_label||'unavailable')}`;const bitrate=t.playback_bitrate?` · ${t.playback_bitrate} kbps`:'';const format=`${String(t.playback_format||'mp3').toUpperCase()}${bitrate} · ${importBytes(t.playback_bytes)}`;row.innerHTML=`${art(t)}<div><strong>${escapeHTML(t.title)}</strong><small>${t.split?'Voice + background lights':'Combined-audio lights'} · ${format}</small><small class="saved-source">${source}</small>${window.remoteLibrary?.badge(t)||''}</div>${window.remoteLibrary?.button(t)||''}<button data-import-play="${t.id}">▶ Play</button><button data-split-open="${t.id}">${t.prepared_show?'Preview show':t.split?'Hear split':'Preview'}</button><button data-rename="${t.id}">Rename</button><button data-reprocess="${t.id}" ${t.source_available?'':'disabled'}>Change audio</button><button data-delete-song="${t.id}" aria-label="Remove ${escapeHTML(t.title)}">Remove</button>`;list.append(row);}if(!imported.size){list.innerHTML='<p class="subtle">Your imported songs will appear here and in Listen.</p>';}else if(!shown.length){list.innerHTML='<p class="subtle">No prepared song matches that search.</p>';}}
 function jobProgressText(j){
   if(Number.isFinite(j.percent)){return `${Math.round(j.percent)}% of this stage`;}
   return j.done?'Finished':'Working…';
 }
-function renderJob(j){
+/* A job's name, best first: the server's, the finished song's, the library's,
+   the uploaded file's, and for a link still downloading the link itself. */
+function jobName(j){
+  const known=j.title||j.result?.title||tracks.find(t=>t.key===j.id&&!t.deleted)?.title||j.source_name;
+  if(known){return known;}
+  try{const u=new URL(j.source);return `${u.hostname.replace(/^www\./,'')}${u.pathname}${u.search}`.slice(0,90);}catch{return 'Imported song';}
+}
+/* Finished jobs the listener cleared, by id AND finish time: a retry reuses
+   the id, and its next result must not arrive already hidden. */
+let jobsNow=[],hiddenJobs=new Set();
+try{hiddenJobs=new Set(JSON.parse(localStorage.getItem('castle-radio-hidden-jobs')||'[]'));}catch{/* no storage: nothing hidden */}
+const jobStamp=j=>`${j.id}:${j.finished_at||0}`;
+const isWaiting=j=>!j.done&&String(j.phase).startsWith('Queued');
+function hideJobs(jobs){for(const j of jobs){hiddenJobs.add(jobStamp(j));}try{localStorage.setItem('castle-radio-hidden-jobs',JSON.stringify([...hiddenJobs].slice(-200)));}catch{/* hidden for this page only */}renderJobs();}
+function took(j){const s=Math.max(0,Math.round((j.finished_at||0)-(j.started_at||j.finished_at||0)));return s>=60?`${Math.floor(s/60)}m ${s%60}s`:`${s}s`;}
+/* The queue as it will run: what is being prepared, then what waits in the
+   order it will start, then what finished, newest first. */
+let holdingJob=false;
+function renderJobs(){
+  // A button that is replaced between press and release never clicks.
+  if(holdingJob){return;}
+  const running=jobsNow.filter(j=>!j.done&&!isWaiting(j)),waiting=jobsNow.filter(isWaiting);
+  const finished=jobsNow.filter(j=>j.done&&!hiddenJobs.has(jobStamp(j))).reverse();
+  const clearable=finished.filter(j=>!j.error&&!j.result?.split_error);
+  const counts=[[running.length,'preparing'],[waiting.length,'waiting'],[finished.length,'finished']].filter(c=>c[0]).map(c=>c.join(' ')).join(' · ');
+  const head=counts?`<div class="queue-head"><b>Import queue</b><span>${counts}</span>${clearable.length?'<button data-clear-finished>Clear finished</button>':''}</div>`:'';
+  $('import-jobs').innerHTML=head+[...running.map(j=>renderJob(j)),...waiting.map((j,i)=>renderJob(j,i)),...finished.map(j=>renderJob(j))].join('');
+}
+function renderDone(j){
+  const state=j.phase==='Cancelled'?'Cancelled':`${escapeHTML(j.phase)} · took ${took(j)}`;
+  const retry=j.phase==='Cancelled'?`<button data-retry="${j.id}">Retry</button>`:'';
+  return `<article class="import-job finished"><div><b>${escapeHTML(jobName(j))}</b><span>${state}</span></div>${retry}<button data-dismiss="${j.id}" aria-label="Clear ${escapeHTML(jobName(j))} from the queue">Clear</button></article>`;
+}
+function renderJob(j,place){
+  if(j.done&&!j.error&&!j.result?.split_error){return renderDone(j);}
+  const waitingNote=place===undefined?'':(place===0?'Next up':`Number ${place+1} in line`);
+  const cancelButton=j.done?`<button data-dismiss="${j.id}">Clear</button>`:`<button data-cancel="${j.id}">${place===undefined?'Cancel':'Remove from queue'}</button>`;
   const percentAttr=Number.isFinite(j.percent)?`value="${j.percent}"`:'';
   const errorNote=j.error?`<p class="import-error">${escapeHTML(j.error)}</p>`:'';
   const splitNote=j.result?.split_error?'<p class="import-error">The song and rhythm lights are ready, but voice separation failed. Retry to prepare the split.</p>':'';
   const retryButton=j.done&&(j.error||j.result?.split_error)?`<button data-retry="${j.id}">Retry preparation</button>`:'';
-  return `<article class="import-job"><div><b>${escapeHTML(j.title||'Linked song')}</b><span>${escapeHTML(j.phase)}</span></div><div class="job-measure"><progress max="100" ${percentAttr} aria-label="${escapeHTML(j.phase)} progress"></progress><b>${jobProgressText(j)}</b></div><p class="subtle">${escapeHTML(j.detail||'Waiting for a preparation slot')} <span data-started="${j.started_at||0}" data-finished="${j.finished_at||0}"></span></p>${errorNote}${splitNote}${retryButton}</article>`;
+  if(waitingNote){return `<article class="import-job waiting"><div><b>${escapeHTML(jobName(j))}</b><span>${waitingNote}</span></div>${cancelButton}</article>`;}
+  return `<article class="import-job"><div><b>${escapeHTML(jobName(j))}</b><span>${escapeHTML(j.phase)}</span></div>${j.done?'':`<div class="job-measure"><progress max="100" ${percentAttr} aria-label="${escapeHTML(j.phase)} progress"></progress><b>${jobProgressText(j)}</b></div><p class="subtle">${escapeHTML(j.detail||'Starting…')} <span data-started="${j.started_at||0}" data-finished="${j.finished_at||0}"></span></p>`}${errorNote}${splitNote}${retryButton}${cancelButton}</article>`;
 }
-async function refresh(){if(pollBusy){return;}pollBusy=true;try{const [jobs,rows]=await Promise.all([request('/radio/jobs'),request('/radio/library')]);$('service-status').textContent='Import service ready · files stay in this demo';if(JSON.stringify(jobs)!==lastJobs){lastJobs=JSON.stringify(jobs);$('import-jobs').innerHTML=jobs.slice().reverse().map(renderJob).join('');}const signature=JSON.stringify(rows);if(signature!==lastLibrary){lastLibrary=signature;integrate(rows);}}catch{ // any failure reads the same to the user: the service is not answering
+async function refresh(){if(pollBusy){return;}pollBusy=true;try{const [jobs,rows]=await Promise.all([request('/radio/jobs'),request('/radio/library')]);$('service-status').textContent='Import service ready · files stay in this demo';if(JSON.stringify(jobs)!==lastJobs){lastJobs=JSON.stringify(jobs);jobsNow=jobs;renderJobs();}const signature=JSON.stringify(rows);if(signature!==lastLibrary){lastLibrary=signature;integrate(rows);renderJobs();}}catch{ // any failure reads the same to the user: the service is not answering
 $('service-status').textContent='Import service unavailable. Start server.py to import songs.';}finally{pollBusy=false;}}
-$('import-form').onsubmit=async e=>{e.preventDefault();const button=$('import-submit');button.disabled=true;try{const file=$('import-file').files[0],url=$('import-url').value.trim(),split=$('import-split').checked;if(file&&url){throw new Error('Choose a file or paste a link, then clear the other source.');}if(!file&&!url){throw new Error('Paste a link or choose an audio file first.');}if(file&&file.size>100*1024*1024){throw new Error('Choose a file smaller than 100 MB.');}$('import-message').textContent=file?'Uploading your audio…':'Submitting link…';if(file){await uploadAudio(file,split);}else {await request('/radio/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,split,audio_format:window.radioAudioFormat,audio_quality:window.radioAudioQuality})});}$('import-file').value='';$('import-url').value='';$('import-message').textContent='Queued. The source is saved so you can reprocess this song later.';await refresh();}catch(e){$('import-message').textContent=e.message;}finally{button.disabled=false;}};
-$('import-jobs').onclick=async e=>{const b=e.target.closest('[data-retry]');if(!b){return;}b.disabled=true;try{await request('/radio/retry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.retry})});await refresh();}catch(err){toast(err.message);}finally{b.disabled=false;}};
-$('imported-list').onclick=e=>{const p=e.target.closest('[data-import-play]'),s=e.target.closest('[data-split-open]'),r=e.target.closest('[data-reprocess]'),d=e.target.closest('[data-delete-song]');if(p){start(Number(p.dataset.importPlay));openPreview();}if(s){const id=Number(s.dataset.splitOpen);if(current!==id){stop();load(id);}openPreview();}if(r){reprocessTrack=tracks[Number(r.dataset.reprocess)];$('reprocess-title').textContent=reprocessTrack.title;$('reprocess-source').textContent=`${reprocessTrack.source_kind==='link'?'Saved link':'Saved original file'}: ${reprocessTrack.source_label}`;$('reprocess-format').value=reprocessTrack.playback_format||'mp3';$('reprocess-quality').value=reprocessTrack.playback_quality||'standard';$('reprocess-quality').disabled=$('reprocess-format').value==='wav';$('reprocess-split').checked=!!reprocessTrack.split;reprocessDialog.showModal();}if(d){deleteSong(Number(d.dataset.deleteSong));}};
+/* One import, or many: every link on its own line and every chosen file is
+   queued in the order given. What could not be queued stays in the box with
+   the reason, so a full queue or one bad link does not cost the whole list. */
+async function queueLink(url,split){return request('/radio/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,split,audio_format:window.radioAudioFormat,audio_quality:window.radioAudioQuality})});}
+$('import-form').onsubmit=async e=>{e.preventDefault();const button=$('import-submit');button.disabled=true;
+try{
+  const files=[...($('import-file').files||[])],links=[...new Set(String($('import-url').value).split(/\s+/).filter(Boolean))],split=$('import-split').checked;
+  if(files.length&&links.length){throw new Error('Choose files or paste links, then clear the other source.');}
+  if(!files.length&&!links.length){throw new Error('Paste a link or choose an audio file first.');}
+  const tooBig=files.find(f=>f.size>100*1024*1024);if(tooBig){throw new Error(`${tooBig.name} is over 100 MB. Choose smaller files.`);}
+  let queued=0;const left=[];
+  for(const [index,item] of [...files,...links].entries()){
+    const name=typeof item==='string'?item:item.name;
+    $('import-message').textContent=`${typeof item==='string'?'Submitting':'Uploading'} ${index+1} of ${files.length+links.length} · ${name}`;
+    try{if(typeof item==='string'){await queueLink(item,split);}else{await uploadAudio(item,split);}queued++;lastJobs='';refresh();}
+    catch(error){left.push({name,reason:error.message});}
+  }
+  $('import-file').value='';$('import-url').value=left.filter(l=>links.includes(l.name)).map(l=>l.name).join('\n');
+  const done=queued?`Queued ${queued} song${queued===1?'':'s'}. Sources are saved so you can reprocess later.`:'';
+  $('import-message').textContent=[done,...left.map(l=>`Not queued · ${l.name} — ${l.reason}`)].filter(Boolean).join('\n');
+  await refresh();
+}catch(error){$('import-message').textContent=error.message;}finally{button.disabled=false;}};
+$('import-jobs').onpointerdown=()=>{holdingJob=true;};
+$('import-jobs').onpointerup=$('import-jobs').onpointerleave=$('import-jobs').onpointercancel=()=>{if(holdingJob){holdingJob=false;setTimeout(renderJobs,0);}};
+$('import-jobs').onclick=async e=>{
+  holdingJob=false;
+  const pick=name=>e.target.closest(`[data-${name}]`),retry=pick('retry'),cancel=pick('cancel'),dismiss=pick('dismiss');
+  if(pick('clear-finished')){hideJobs(jobsNow.filter(j=>j.done&&!j.error&&!j.result?.split_error));return;}
+  if(dismiss){hideJobs(jobsNow.filter(j=>j.id===dismiss.dataset.dismiss&&j.done));return;}
+  const b=retry||cancel;if(!b){renderJobs();return;}
+  b.disabled=true;
+  try{await request(retry?'/radio/retry':'/radio/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.retry||b.dataset.cancel})});lastJobs='';await refresh();}
+  catch(err){toast(/^404/.test(err.message)?'Restart Castle Radio on your Mac to cancel imports — it is still running the older version.':err.message);}
+  finally{b.disabled=false;}};
+$('imported-list').onclick=e=>{const p=e.target.closest('[data-import-play]'),s=e.target.closest('[data-split-open]'),r=e.target.closest('[data-reprocess]'),d=e.target.closest('[data-delete-song]'),n=e.target.closest('[data-rename]');if(n){renameSong(tracks[Number(n.dataset.rename)]);}if(p){start(Number(p.dataset.importPlay));openPreview();}if(s){const id=Number(s.dataset.splitOpen);if(current!==id){stop();load(id);}openPreview();}if(r){reprocessTrack=tracks[Number(r.dataset.reprocess)];$('reprocess-title').textContent=reprocessTrack.title;$('reprocess-source').textContent=`${reprocessTrack.source_kind==='link'?'Saved link':'Saved original file'}: ${reprocessTrack.source_label}`;$('reprocess-format').value=reprocessTrack.playback_format||'mp3';$('reprocess-quality').value=reprocessTrack.playback_quality||'standard';$('reprocess-quality').disabled=$('reprocess-format').value==='wav';$('reprocess-split').checked=!!reprocessTrack.split;reprocessDialog.showModal();}if(d){deleteSong(Number(d.dataset.deleteSong));}};
+async function renameSong(t){
+  const title=String(window.prompt('Name this song',t.title)||'').trim();
+  if(!title||title===t.title){return;}
+  try{await request('/radio/rename',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:t.key,title})});lastLibrary='';await refresh();toast(`Renamed to ${title}`);}
+  catch(err){toast(/^404/.test(err.message)?'Restart Castle Radio on your Mac to rename songs — it is still running the older version.':err.message);}
+}
+$('library-filter').oninput=renderImports;$('library-sort').onchange=renderImports;
 $('reprocess-format').onchange=()=>{$('reprocess-quality').disabled=$('reprocess-format').value==='wav';};
 $('reprocess-form').onsubmit=async e=>{if(e.submitter?.value!=='save'||!reprocessTrack){return;}e.preventDefault();e.submitter.disabled=true;try{await request('/radio/reprocess',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:reprocessTrack.key,audio_format:$('reprocess-format').value,audio_quality:$('reprocess-quality').value,split:$('reprocess-split').checked})});reprocessDialog.close();lastJobs='';toast('Reprocessing from the saved source');await refresh();}catch(error){$('reprocess-note').textContent=error.message;}finally{e.submitter.disabled=false;}};
 refresh();setInterval(refresh,2000);
