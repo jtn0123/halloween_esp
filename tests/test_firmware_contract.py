@@ -217,11 +217,13 @@ class TestValidatorConstants(unittest.TestCase):
             self.assertIn(f"g_status.{field} =", publish)
         # Every snprintf in h_status must fit the buffer it fills with every
         # number at its widest: a truncated reply is a parse error in every
-        # client (v5.72 added two 64-bit numbers and grew it to 384).
+        # client (v5.72 added two 64-bit numbers and grew it to 384; v5.74
+        # added locked + boot_play and grew it to 448).
         declared = re.search(r"std::array<char, (\d+)> buf\{\}", body)
         assert declared is not None
         size = int(declared.group(1))
-        # %s here is only ever true/false, the version or the build date.
+        # %s here is only ever true/false, the version, the build date, or
+        # the board and variant ids (v5.74, all under 16).
         widest = {"%lld": 20, "%u": 10, "%d": 11, "%s": 16}
         formats = re.findall(
             r"snprintf\(buf\.data\(\), buf\.size\(\),((?:\s*R\"\(.*?\)\")+)",
@@ -253,12 +255,12 @@ class TestValidatorConstants(unittest.TestCase):
         have. A web-OTA'd image was therefore never confirmed and rolled
         back on the next power cycle, silently undoing a working update."""
         self.assertIn("g_status_served.store(true);", FUNCS["h_status"])
-        boot = (ROOT / "firmware" / "castle_sd_common.yaml").read_text()
+        boot = (ROOT / "firmware" / "castle_sd_common.yaml").read_text(encoding="utf-8")
         self.assertIn("castle_web::g_status_served.load()", boot)
         self.assertIn("castle_sd::mark_firmware_healthy();", boot)
         # The log line that says it happened, and the one-shot that keeps it
         # from happening twice, both stay in flash_mode.h.
-        flash = (ROOT / "firmware" / "flash_mode.h").read_text()
+        flash = (ROOT / "firmware" / "flash_mode.h").read_text(encoding="utf-8")
         self.assertIn("image confirmed — rollback cancelled", flash)
 
     def test_pending_mailbox_is_one_slot(self) -> None:
@@ -355,7 +357,7 @@ class TestStreamServer(unittest.TestCase):
             "firmware/castle_web_actions.yaml",
             "firmware/sd_audio.h",
         ):
-            text = (ROOT / name).read_text()
+            text = (ROOT / name).read_text(encoding="utf-8")
             spelled = {
                 int(p) for p in re.findall(r"http://127\.0\.0\.1:(\d+)/sd/", text)
             }

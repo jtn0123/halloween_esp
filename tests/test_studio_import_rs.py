@@ -96,7 +96,7 @@ class ImportCase(StudioCase):
 
     def entry(self, tid: str) -> dict[str, Any]:
         """What tracks.json remembers about this id."""
-        data = json.loads((self.tracks / "tracks.json").read_text())
+        data = json.loads((self.tracks / "tracks.json").read_text(encoding="utf-8"))
         self.assertIn(tid, data, "the import was not recorded")
         found = data[tid]
         assert isinstance(found, dict)

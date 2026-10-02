@@ -166,7 +166,8 @@ meant as any: it only means a foreign origin cannot reach these routes with a
 ## Isolation and limitations
 
 All imported audio, sources, analysis, generated recipes, and catalog data go in
-ignored `.radio-data/`. The device bridge is limited to the configured private
+ignored `.radio-data/` — or wherever `CASTLE_RADIO_DATA` points (`radio_paths.py`;
+the desktop app sets it to the per-user app-data dir). The device bridge is limited to the configured private
 castle address and explicit playback, lighting, test, sync, and cleanup actions.
 Set `CASTLE_RADIO_HOST` to point the bridge at another castle (default 10.27.27.81).
 The local server only binds 127.0.0.1. Upload limit: 100 MB. Jobs run one at a time.

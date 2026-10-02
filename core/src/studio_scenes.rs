@@ -53,12 +53,25 @@ fn find_block(text: &str, sid: &str) -> Option<(usize, usize)> {
     }
 }
 
+/// The show as `find_block` reads it: `\n` line ends. A scenes.yaml saved
+/// with `\r\n` — by a Windows editor, or by a Python tool writing in text
+/// mode there — has no `  - id: x\n` header in it at all, so every edit
+/// used to miss the scene it was aimed at: a replace became a duplicate,
+/// a delete a silent no-op. The write below stores the `\n` form, so a
+/// file that arrives with `\r\n` is normalised by its first edit.
+fn lf(text: &str) -> String {
+    text.replace("\r\n", "\n")
+}
+
 /// studio_scenes._write: keep the pre-edit text, then replace atomically —
-/// a crash mid-write must never be able to truncate the show.
+/// a crash mid-write must never be able to truncate the show. The show is
+/// written with `\n` line ends whatever the request carried: a desk on
+/// Windows can send `\r\n`, and `find_block` counts lines by `\n`.
 fn write_scenes(scenes: &Path, before: &str, raw: &str) -> std::io::Result<()> {
     std::fs::write(scenes.with_extension("yaml.bak"), before)?;
     let tmp = scenes.with_extension("yaml.tmp");
-    std::fs::write(&tmp, format!("{}\n", raw.trim_end()))?;
+    let text = raw.trim_end().replace("\r\n", "\n");
+    std::fs::write(&tmp, format!("{text}\n"))?;
     std::fs::rename(&tmp, scenes)
 }
 
@@ -80,11 +93,12 @@ pub fn splice(app: &App, req: &Json) -> (Json, u16) {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let before = std::fs::read_to_string(&app.scenes).unwrap_or_default();
-        let span = find_block(&before, sid);
+        let show = lf(&before);
+        let span = find_block(&show, sid);
         replaced = span.is_some();
         let raw = match span {
-            Some((s, e)) => format!("{}{}\n\n{}", &before[..s], block, &before[e..]),
-            None => format!("{}\n\n{}\n", before.trim_end(), block),
+            Some((s, e)) => format!("{}{}\n\n{}", &show[..s], block, &show[e..]),
+            None => format!("{}\n\n{}\n", show.trim_end(), block),
         };
         if write_scenes(&app.scenes, &before, &raw).is_err() {
             return (
@@ -123,7 +137,8 @@ pub fn remove(app: &App, sid: &str) -> (Json, u16) {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let before = std::fs::read_to_string(&app.scenes).unwrap_or_default();
-        let Some((s, e)) = find_block(&before, sid) else {
+        let show = lf(&before);
+        let Some((s, e)) = find_block(&show, sid) else {
             return (
                 Json::Obj(vec![
                     ("ok".into(), Json::Bool(true)),
@@ -138,7 +153,7 @@ pub fn remove(app: &App, sid: &str) -> (Json, u16) {
                 200,
             );
         };
-        let raw = format!("{}{}", &before[..s], &before[e..]);
+        let raw = format!("{}{}", &show[..s], &show[e..]);
         if write_scenes(&app.scenes, &before, &raw).is_err() {
             return (
                 Json::Obj(vec![
@@ -256,6 +271,26 @@ mod tests {
     }
 
     #[test]
+    fn a_show_sent_with_windows_line_ends_is_written_with_unix_ones() {
+        let d = tmpdir("crlf");
+        let f = d.join("scenes.yaml");
+        write_scenes(&f, SHOW, &SHOW.replace('\n', "\r\n")).expect("written");
+        assert_eq!(std::fs::read_to_string(&f).expect("read"), SHOW);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The FILE with Windows line ends, not the request: the block is still
+    /// found, so an edit replaces the scene instead of appending a twin.
+    #[test]
+    fn a_show_saved_with_windows_line_ends_still_has_its_blocks() {
+        let crlf = SHOW.replace('\n', "\r\n");
+        assert_eq!(find_block(&crlf, "storm"), None, "the bug this guards");
+        let show = lf(&crlf);
+        let (s, e) = find_block(&show, "storm").expect("storm is in there");
+        assert_eq!(&show[s..e], "  - id: storm\n    len: 40\n");
+    }
+
+    #[test]
     fn a_header_only_counts_at_the_start_of_a_line() {
         // The id appears inside a comment first; the block is the real one.
         let text = "scenes:\n  # not   - id: vigil\n here\n  - id: vigil\n    len: 3\n";
@@ -275,23 +310,24 @@ mod tests {
     /// `rebuild` used to hold the oplock across `publish_body` too — two
     /// `sd_sync` runs with a 900 s ceiling each — so every encode and import
     /// queued behind a porch-Wi-Fi upload (grade report 2026-09-17 pm G2).
-    /// The fake interpreter below makes each step slow enough to observe the
-    /// gate from another thread. Skipped when CASTLE_PY names the
-    /// interpreter, because then the tree's `.venv` is not what runs.
+    /// Stand-in generators under a scratch root make each step slow enough
+    /// to observe the gate from another thread. They are Python, run by the
+    /// interpreter the studio would pick anyway, so the test is the same on
+    /// every platform and no longer needs a fake `.venv/bin/python` shell
+    /// script — which also means it runs when CASTLE_PY is set. Skipped
+    /// when CASTLE_HOST names a castle, because the push would find it.
     #[test]
     fn the_gate_is_held_for_the_generators_and_not_for_the_push() {
-        if std::env::var_os("CASTLE_PY").is_some_and(|v| !v.is_empty())
-            || std::env::var_os("CASTLE_HOST").is_some_and(|v| !v.is_empty())
-        {
+        if std::env::var_os("CASTLE_HOST").is_some_and(|v| !v.is_empty()) {
             return;
         }
-        use std::os::unix::fs::PermissionsExt;
         let d = tmpdir("gate");
-        let bin = d.join(".venv").join("bin");
-        std::fs::create_dir_all(&bin).expect("fake venv");
-        std::fs::write(bin.join("python"), "#!/bin/sh\nsleep 0.4\n").expect("fake py");
-        std::fs::set_permissions(bin.join("python"), std::fs::Permissions::from_mode(0o755))
-            .expect("chmod");
+        let tools = d.join("tools");
+        std::fs::create_dir_all(&tools).expect("fake tools");
+        for tool in ["render_audio.py", "gen_esphome.py", "gen_previewer.py"] {
+            std::fs::write(tools.join(tool), "import time\ntime.sleep(0.4)\n")
+                .expect("fake generator");
+        }
         let mut app = App::new(d.clone());
         app.scenes = d.join("scenes.yaml");
         std::fs::write(&app.scenes, SHOW).expect("seed");

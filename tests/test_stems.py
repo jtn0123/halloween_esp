@@ -86,7 +86,7 @@ class TestGuards(StemsCase):
         d = self.sandbox / "stems" / "song"
         d.mkdir(parents=True, exist_ok=True)
         (d / "vocals.mp3").write_bytes(b"x")
-        (d / "analysis.json").write_text("{}")
+        (d / "analysis.json").write_text("{}", encoding="utf-8")
         self.assertIsNotNone(stems.stem_file("song", "vocals"))
         # `combined` streams via /api/track; anything else is not a layer.
         self.assertIsNone(stems.stem_file("song", "combined"))
@@ -112,7 +112,8 @@ class TestFreshness(StemsCase):
         d.mkdir(parents=True, exist_ok=True)
         st = src.stat()
         (d / "analysis.json").write_text(
-            json.dumps({"src_bytes": st.st_size, "src_mtime": int(st.st_mtime)})
+            json.dumps({"src_bytes": st.st_size, "src_mtime": int(st.st_mtime)}),
+            encoding="utf-8",
         )
         self.assertTrue(stems.fresh("tune"))
         # A re-import rewrites the file; the old split must stop counting.
@@ -164,7 +165,9 @@ def fake_sources(seconds: float = 2.0) -> dict[str, np.ndarray]:
     return {k: np.stack([v, v], axis=1).astype(np.float32) for k, v in tone.items()}
 
 
-def fake_demucs(src: Path, out: Path, _device: str) -> subprocess.CompletedProcess[str]:
+def fake_demucs(
+    src: Path, out: Path, _device: str, _fast: bool = False
+) -> subprocess.CompletedProcess[str]:
     """Writes the four sources where `demucs.separate -n htdemucs` would."""
     where = out / "htdemucs" / src.stem
     where.mkdir(parents=True)
@@ -218,7 +221,7 @@ class TestSeparateOut(StemsCase):
         dest = scratch / "song"
         for name in ("vocals", "backing", "drums", "bass", "other"):
             self.assertTrue((dest / f"{name}.mp3").is_file(), name)
-        data = json.loads((dest / "analysis.json").read_text())
+        data = json.loads((dest / "analysis.json").read_text(encoding="utf-8"))
         self.assertEqual(tuple(data["layers"]), stems.LAYERS)
         for layer in data["layers"].values():
             self.assertEqual(set(layer), set(stems.CHANNELS))
@@ -251,7 +254,8 @@ class TestSeparateOut(StemsCase):
                     "src_bytes": st.st_size,
                     "src_mtime": int(st.st_mtime),
                 }
-            )
+            ),
+            encoding="utf-8",
         )
         self.assertTrue(stems.fresh("old"))
         got = stems.analysis("old")
@@ -265,6 +269,54 @@ class TestSeparateOut(StemsCase):
         (d / "drums.mp3").write_bytes(b"x")
         # The studio's Rust twin (studio_media.rs) serves vocals/backing only.
         self.assertIsNone(stems.stem_file("kit", "drums"))
+
+
+class TestFastCpu(unittest.TestCase):
+    """The CPU shortcut is opt-in, CPU-only, and reaches demucs's argv."""
+
+    SRC, OUT = Path("song.wav"), Path("sep")
+
+    def test_the_default_argv_is_demucs_own_defaults(self) -> None:
+        argv = stems.demucs_argv(self.SRC, self.OUT, "cpu")
+        self.assertNotIn("--overlap", argv)
+        self.assertNotIn("-j", argv)
+        self.assertEqual(argv[-1], "song.wav")
+
+    def test_fast_adds_overlap_and_one_job_per_core_on_cpu(self) -> None:
+        with mock.patch.object(stems.os, "cpu_count", return_value=6):
+            argv = stems.demucs_argv(self.SRC, self.OUT, "cpu", fast=True)
+        at = argv.index("--overlap")
+        self.assertEqual(argv[at : at + 4], ["--overlap", "0.1", "-j", "6"])
+        self.assertEqual(argv[-1], "song.wav", "the track stays the last word")
+
+    def test_fast_leaves_a_gpu_run_alone(self) -> None:
+        self.assertEqual(
+            stems.demucs_argv(self.SRC, self.OUT, "mps", fast=True),
+            stems.demucs_argv(self.SRC, self.OUT, "mps"),
+        )
+
+    def test_the_environment_opts_in(self) -> None:
+        for value, want in (("1", True), ("", False), ("0", False)):
+            with mock.patch.dict(stems.os.environ, {stems.FAST_ENV: value}):
+                self.assertIs(stems.fast_cpu(), want, value)
+
+    def test_separate_and_the_cli_hand_fast_to_demucs(self) -> None:
+        with (
+            mock.patch.object(stems, "track_file", return_value=Path("x.wav")),
+            mock.patch.object(stems, "fresh", return_value=False),
+            mock.patch.object(stems.importlib.util, "find_spec", return_value=True),
+            mock.patch.object(stems.platform, "system", return_value="Windows"),
+            mock.patch.object(
+                stems,
+                "_run_demucs",
+                return_value=subprocess.CompletedProcess([], 1, "", "boom"),
+            ) as run,
+            mock.patch.object(sys, "argv", ["stems.py", "x", "--fast-cpu"]),
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaises(SystemExit),
+        ):
+            stems.main()
+        self.assertEqual(run.call_args.args[2:], ("cpu", True))
 
 
 if __name__ == "__main__":

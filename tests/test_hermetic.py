@@ -27,8 +27,14 @@ class TestHermeticEnv(unittest.TestCase):
             self.assertNotIn(k, os.environ, k)
 
     def test_a_polluted_shell_is_scrubbed_in_a_fresh_interpreter(self) -> None:
+        # Built from a base with every CASTLE_* removed, so the "[]" below
+        # measures helpers' scrub of the four sandbox knobs and nothing
+        # else: CASTLE_PY and CASTLE_E2E_PORT are not sandbox knobs, and a
+        # worktree or runner that exports one (as CLAUDE.md says to) must
+        # not redden this test.
+        base = {k: v for k, v in os.environ.items() if not k.startswith("CASTLE_")}
         env = {
-            **os.environ,
+            **base,
             "CASTLE_HOST": "127.0.0.1:9",
             "CASTLE_TRACKS": "/tmp/castle-hermetic-x",
             "CASTLE_SCENES": "/tmp/castle-hermetic-x/scenes.yaml",

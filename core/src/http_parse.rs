@@ -325,12 +325,8 @@ pub fn parse_multipart(raw: &[u8], ctype: &str) -> Result<(String, Vec<u8>), Str
         } else {
             name_part.trim().to_string()
         };
-        let name = name
-            .trim_end_matches('/')
-            .rsplit('/')
-            .next()
-            .unwrap_or("")
-            .to_string();
+        // A browser on Windows may send the whole C:\\…\\x.wav.
+        let name = crate::portable::last_segment(&name);
         if name.is_empty() || name == "." || name == ".." {
             return Err(format!("upload filename {name:?} is not a file name"));
         }

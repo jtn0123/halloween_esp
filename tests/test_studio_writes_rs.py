@@ -68,7 +68,7 @@ class SceneEditing(StudioCase):
     )
 
     def setUp(self) -> None:
-        self.scenes.write_text(self.ORIGINAL)
+        self.scenes.write_text(self.ORIGINAL, encoding="utf-8")
         self.scenes.with_suffix(".yaml.bak").unlink(missing_ok=True)
 
     def post(self, sid: str, yaml: str) -> tuple[int, dict[str, Any]]:
@@ -80,7 +80,7 @@ class SceneEditing(StudioCase):
             self.assertEqual(code, 400, req)
             self.assertIn("need id and yaml", d["error"])
         self.assertEqual(
-            self.scenes.read_text(),
+            self.scenes.read_text(encoding="utf-8"),
             self.ORIGINAL,
             "a rejected request still edited the file",
         )
@@ -90,7 +90,7 @@ class SceneEditing(StudioCase):
         self.assertEqual(code, 200, d)
         self.assertEqual(d["id"], "storm")
         self.assertTrue(d["replaced"])
-        text = self.scenes.read_text()
+        text = self.scenes.read_text(encoding="utf-8")
         self.assertIn("duration_ms: 9999", text)
         self.assertNotIn("duration_ms: 2000", text)
         self.assertEqual(text.count("- id: storm"), 1, "the scene was duplicated")
@@ -99,7 +99,7 @@ class SceneEditing(StudioCase):
         """Comments carry the reasoning behind the show; a YAML round-trip
         would erase them, which is why this splices text."""
         self.post("storm", block("storm", duration_ms=3))
-        text = self.scenes.read_text()
+        text = self.scenes.read_text(encoding="utf-8")
         self.assertIn("# a comment that must survive", text)
         self.assertIn("- id: vigil", text)
         self.assertIn("THE CEILING", text, "the preamble's own notes survived")
@@ -108,7 +108,7 @@ class SceneEditing(StudioCase):
         code, d = self.post("brand_new", block("brand_new"))
         self.assertEqual(code, 200, d)
         self.assertFalse(d["replaced"])
-        text = self.scenes.read_text()
+        text = self.scenes.read_text(encoding="utf-8")
         self.assertIn("- id: brand_new", text)
         self.assertLess(text.index("- id: storm"), text.index("- id: brand_new"))
         # The row's "in the show" badge reads this, so it must be the list
@@ -128,15 +128,16 @@ class SceneEditing(StudioCase):
         """ "Update scene" on an unchanged track should be a no-op in git,
         not a whitespace diff that has to be explained."""
         self.post("storm", block("storm", duration_ms=7))
-        once = self.scenes.read_text()
+        once = self.scenes.read_text(encoding="utf-8")
         self.post("storm", block("storm", duration_ms=7))
-        self.assertEqual(self.scenes.read_text(), once)
+        self.assertEqual(self.scenes.read_text(encoding="utf-8"), once)
 
     def test_a_write_keeps_the_previous_show_beside_it(self) -> None:
         """A crash mid-write must never be able to truncate the show."""
         self.post("storm", block("storm", duration_ms=11))
         self.assertEqual(
-            self.scenes.with_suffix(".yaml.bak").read_text(), self.ORIGINAL
+            self.scenes.with_suffix(".yaml.bak").read_text(encoding="utf-8"),
+            self.ORIGINAL,
         )
         self.assertFalse(self.scenes.with_suffix(".yaml.tmp").exists())
 
@@ -160,7 +161,7 @@ class SceneEditing(StudioCase):
         joined = "\n".join(d["errors"])
         self.assertIn("unknown effect 'glow'", joined)
         self.assertIn("past the scene's duration_ms", joined)
-        self.assertEqual(self.scenes.read_text(), self.ORIGINAL)
+        self.assertEqual(self.scenes.read_text(encoding="utf-8"), self.ORIGINAL)
         self.assertFalse(self.scenes.with_suffix(".yaml.bak").exists())
         self.assertEqual(self.build_stamp(), before, "a refused scene rebuilt")
 
@@ -182,7 +183,7 @@ class SceneEditing(StudioCase):
         where scenes get written — and discovering the ceiling as a red
         pre-commit hook means discovering it with scenes.yaml already
         edited and the show already re-rendered (grade report 2026-08-31 A8)."""
-        self.scenes.write_text(self.FULL)
+        self.scenes.write_text(self.FULL, encoding="utf-8")
         before = self.build_stamp()
         code, d = self.post("one_too_many", block("one_too_many"))
         self.assertEqual(code, 400)
@@ -192,7 +193,9 @@ class SceneEditing(StudioCase):
         self.assertEqual(
             d["errors"], [f"scene ceiling: {SCENE_LIMIT}/{SCENE_LIMIT} scenes"]
         )
-        self.assertEqual(self.scenes.read_text(), self.FULL, "the file was edited")
+        self.assertEqual(
+            self.scenes.read_text(encoding="utf-8"), self.FULL, "the file was edited"
+        )
         self.assertFalse(
             self.scenes.with_suffix(".yaml.bak").exists(), "a .bak was written"
         )
@@ -202,10 +205,10 @@ class SceneEditing(StudioCase):
         """The ceiling counts scenes, not writes: re-saving a scene that is
         already in the show never grows it, and a full show is exactly when
         the operator is most likely to be editing rather than adding."""
-        self.scenes.write_text(self.FULL)
+        self.scenes.write_text(self.FULL, encoding="utf-8")
         _code, d = self.post("s0", block("s0", duration_ms=4242))
         self.assertTrue(d["replaced"], d)
-        self.assertIn("duration_ms: 4242", self.scenes.read_text())
+        self.assertIn("duration_ms: 4242", self.scenes.read_text(encoding="utf-8"))
         self.assertEqual(len(d["scenes"]), SCENE_LIMIT)
 
 
@@ -215,7 +218,7 @@ class Rebuilding(StudioCase):
     operator is told when one of them stops."""
 
     def setUp(self) -> None:
-        self.scenes.write_text(scenes_fixture())
+        self.scenes.write_text(scenes_fixture(), encoding="utf-8")
 
     def test_the_rebuild_runs_the_three_generators_in_order(self) -> None:
         code, d = self.json("/studio/rebuild", "POST", {})
@@ -265,15 +268,15 @@ class DeleteWithScene(StudioCase):
     def setUp(self) -> None:
         """Each case gets the library and the show back: the sandbox is
         class-scoped and these tests delete out of it."""
-        self.scenes.write_text(show_of("vigil", "t_del"))
+        self.scenes.write_text(show_of("vigil", "t_del"), encoding="utf-8")
         seed_library(self.tracks)
 
     def test_a_plain_delete_leaves_the_scene_alone(self) -> None:
-        before = self.scenes.read_text()
+        before = self.scenes.read_text(encoding="utf-8")
         code, d = self.json("/studio/tracks/t_del", "DELETE")
         self.assertEqual(code, 200, d)
         self.assertNotIn("scene_removed", d)
-        self.assertEqual(self.scenes.read_text(), before)
+        self.assertEqual(self.scenes.read_text(encoding="utf-8"), before)
         self.assertFalse((self.tracks / "t_del.wav").exists())
 
     def test_delete_with_scene_removes_the_block_and_rebuilds(self) -> None:
@@ -282,11 +285,17 @@ class DeleteWithScene(StudioCase):
         self.assertTrue(d["removed"])
         self.assertTrue(d["scene_removed"])
         self.assertEqual(d["scenes"], ["vigil"])
-        self.assertNotIn("- id: t_del", self.scenes.read_text())
-        self.assertIn("- id: t_del", self.scenes.with_suffix(".yaml.bak").read_text())
+        self.assertNotIn("- id: t_del", self.scenes.read_text(encoding="utf-8"))
+        self.assertIn(
+            "- id: t_del",
+            self.scenes.with_suffix(".yaml.bak").read_text(encoding="utf-8"),
+        )
         self.assertFalse((self.tracks / "t_del.wav").exists())
         self.assertFalse((self.tracks / "_src" / "t_del.orig.wav").exists())
-        self.assertNotIn("t_del", json.loads((self.tracks / "tracks.json").read_text()))
+        self.assertNotIn(
+            "t_del",
+            json.loads((self.tracks / "tracks.json").read_text(encoding="utf-8")),
+        )
 
     def test_delete_with_scene_removes_an_orphan_whose_file_is_gone(self) -> None:
         (self.tracks / "t_del.wav").unlink()

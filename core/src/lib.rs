@@ -88,6 +88,10 @@ pub mod netguard;
 #[cfg(feature = "native")]
 pub mod onsets;
 #[cfg(feature = "native")]
+pub mod portable;
+#[cfg(feature = "native")]
+pub mod procgroup;
+#[cfg(feature = "native")]
 pub mod scene;
 #[cfg(feature = "native")]
 pub mod scene_cues;
@@ -134,8 +138,14 @@ pub mod studio_wave;
 /// Fixtures and probes for the crate's own tests — never built otherwise.
 #[cfg(test)]
 pub mod testkit;
+/// Portable child processes for the process tests — likewise test-only.
+#[cfg(all(test, feature = "native"))]
+pub mod testkit_child;
 #[cfg(feature = "native")]
 pub mod vocab;
+/// kernel32, by hand: the Windows twins of the crate's Unix externs.
+#[cfg(all(windows, feature = "native"))]
+pub mod win32;
 #[cfg(feature = "native")]
 pub mod yaml;
 #[cfg(feature = "native")]

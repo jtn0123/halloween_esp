@@ -110,13 +110,16 @@ class TestCastleHost(HostEnv, unittest.TestCase):
         os.environ.pop("CASTLE_HOST", None)
 
     def test_env_wins_over_the_file(self) -> None:
-        (self.tmp / "devices.toml").write_text('[a]\nhost = "1.2.3.4"\n')
+        (self.tmp / "devices.toml").write_text(
+            '[a]\nhost = "1.2.3.4"\n', encoding="utf-8"
+        )
         self.host_env("9.9.9.9")
         self.assertEqual(cl.castle_host(), "9.9.9.9")
 
     def test_first_toml_entry_with_a_host(self) -> None:
         (self.tmp / "devices.toml").write_text(
-            '[noise]\nnote = "no host key"\n[castle]\nhost = "1.2.3.4"\n'
+            '[noise]\nnote = "no host key"\n[castle]\nhost = "1.2.3.4"\n',
+            encoding="utf-8",
         )
         self.assertEqual(cl.castle_host(), "1.2.3.4")
 
@@ -126,7 +129,7 @@ class TestCastleHost(HostEnv, unittest.TestCase):
     def test_hosts_is_the_shared_candidate_list_with_fallbacks(self) -> None:
         """One resolver: what castle_link walks IS hosts.candidates()."""
         (self.tmp / "devices.toml").write_text(
-            '[castle]\nhost = "1.2.3.4"\nfallbacks = ["1.2.3.5"]\n'
+            '[castle]\nhost = "1.2.3.4"\nfallbacks = ["1.2.3.5"]\n', encoding="utf-8"
         )
         self.assertEqual(cl.castle_hosts(), ["1.2.3.4", "1.2.3.5"])
         self.assertEqual(cl.castle_hosts(), hosts.candidates())
@@ -136,7 +139,7 @@ class TestCastleHost(HostEnv, unittest.TestCase):
         self.assertEqual(cl.castle_hosts(), [])
 
     def test_malformed_toml_means_no_castle_not_a_traceback(self) -> None:
-        (self.tmp / "devices.toml").write_text("host = = =\n")
+        (self.tmp / "devices.toml").write_text("host = = =\n", encoding="utf-8")
         self.assertIsNone(cl.castle_host())
 
 

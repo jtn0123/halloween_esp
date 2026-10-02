@@ -133,7 +133,7 @@ class TestValidationParity(EmuCase):
         doc = yaml.safe_load(
             (
                 Path(__file__).resolve().parent.parent / "scenes" / "scenes.yaml"
-            ).read_text()
+            ).read_text(encoding="utf-8")
         )
         self.assertEqual(
             round(doc["hardware"]["audio"]["max_volume"] * 100),
@@ -196,7 +196,7 @@ class TestRemotePage(EmuCase):
         page = body.decode()
         header = (
             Path(__file__).resolve().parent.parent / "firmware" / "sd_web_remote.h"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         start = header.index('R"HTML(') + len('R"HTML(')
         self.assertEqual(page, header[start : header.index(')HTML"', start)])
         for needle in (
@@ -222,14 +222,14 @@ class TestSceneSeeding(unittest.TestCase):
 
     def test_ids_come_from_a_scenes_yaml(self) -> None:
         tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
-        tmp.write_text("scenes:\n  - id: seance\n  - id: crypt\n")
+        tmp.write_text("scenes:\n  - id: seance\n  - id: crypt\n", encoding="utf-8")
         self.assertEqual(
             castle_emu_scenes.show_scene_ids(tmp), ["seance", "crypt", "stop"]
         )
 
     def test_castle_scenes_env_is_honoured(self) -> None:
         tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
-        tmp.write_text("scenes:\n  - id: only_this\n")
+        tmp.write_text("scenes:\n  - id: only_this\n", encoding="utf-8")
         with unittest.mock.patch.dict(os.environ, {"CASTLE_SCENES": str(tmp)}):
             emu = castle_emu.CastleEmu(port=0)
         self.addCleanup(emu.server_close)
@@ -238,7 +238,7 @@ class TestSceneSeeding(unittest.TestCase):
     def test_an_empty_show_falls_back_too(self) -> None:
         """'scenes:' with nothing under it is what the e2e sandbox writes."""
         tmp = Path(tempfile.mkdtemp()) / "scenes.yaml"
-        tmp.write_text("scenes:\n")
+        tmp.write_text("scenes:\n", encoding="utf-8")
         self.assertIsNone(castle_emu_scenes.show_scene_ids(tmp))
 
     def test_unreadable_show_falls_back_to_the_defaults(self) -> None:
@@ -327,8 +327,15 @@ class TestJsonEscaping(EmuCase):
     break the parse for every client."""
 
     def test_a_quoted_name_placed_on_the_card_does_not_break_the_list(self) -> None:
-        (self.card / 'say "boo".mp3').write_bytes(b"x")
-        (self.card / "back\\slash.mp3").write_bytes(b"y")
+        # Every byte safe_name refuses because it would break the JSON (or
+        # its UTF-8) that the host's filesystem can hold: NTFS has no room
+        # for '"' or '\\' in a name, so a Windows card directory meets only
+        # the other two — which are refused for the same reason.
+        odd = ["caf\u00e9.mp3", "rub\x7fout.mp3"]
+        if os.name != "nt":
+            odd += ['say "boo".mp3', "back\\slash.mp3"]
+        for i, name in enumerate(odd):
+            (self.card / name).write_bytes(bytes([i]))
         (self.card / "plain.mp3").write_bytes(b"z")
         try:
             code, out = self.http("GET", "/api/files")
@@ -336,13 +343,13 @@ class TestJsonEscaping(EmuCase):
             files = json.loads(out)  # the whole point: it parses
             names = [f["name"] for f in files if "name" in f]
             self.assertIn("plain.mp3", names)
-            self.assertNotIn('say "boo".mp3', names)
-            self.assertNotIn("back\\slash.mp3", names)
-            self.assertEqual([f for f in files if "skipped" in f], [{"skipped": 2}])
+            for name in odd:
+                self.assertNotIn(name, names)
+            want = [{"skipped": len(odd)}]
+            self.assertEqual([f for f in files if "skipped" in f], want)
         finally:
-            (self.card / 'say "boo".mp3').unlink()
-            (self.card / "back\\slash.mp3").unlink()
-            (self.card / "plain.mp3").unlink()
+            for name in [*odd, "plain.mp3"]:
+                (self.card / name).unlink()
         files = json.loads(self.http("GET", "/api/files")[1])
         self.assertFalse(any("skipped" in f for f in files))  # none → no trailer
 
@@ -365,7 +372,7 @@ class TestJsonEscaping(EmuCase):
         (It lives in sd_web_util.h since the v5.42 helper-layer split.)"""
         src = (
             Path(__file__).resolve().parent.parent / "firmware" / "sd_web_util.h"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         body = src[src.index("inline std::string json_escape") :]
         body = body[: body.index("\n}\n")]
         for token in (
@@ -451,7 +458,7 @@ class TestShowFileGuard(unittest.TestCase):
 
     def test_a_yaml_file_is_a_show(self) -> None:
         p = self.tmp / "scenes.yaml"
-        p.write_text("scenes:\n  - {id: vigil}\n")
+        p.write_text("scenes:\n  - {id: vigil}\n", encoding="utf-8")
         self.assertEqual(castle_emu_scenes.a_show_file(p), p.resolve())
         self.assertEqual(castle_emu_scenes.show_scene_ids(p), ["vigil", "stop"])
 
@@ -463,14 +470,14 @@ class TestShowFileGuard(unittest.TestCase):
 
     def test_something_that_is_not_yaml_is_not(self) -> None:
         p = self.tmp / "passwd"
-        p.write_text("root:x:0:0\n")
+        p.write_text("root:x:0:0\n", encoding="utf-8")
         self.assertIsNone(castle_emu_scenes.a_show_file(p))
         self.assertIsNone(castle_emu_scenes.show_scene_ids(p))
 
     def test_a_parent_hop_is_resolved_before_it_is_used(self) -> None:
         (self.tmp / "sub").mkdir()
         p = self.tmp / "scenes.yaml"
-        p.write_text("scenes:\n  - {id: storm}\n")
+        p.write_text("scenes:\n  - {id: storm}\n", encoding="utf-8")
         hop = self.tmp / "sub" / ".." / "scenes.yaml"
         self.assertEqual(castle_emu_scenes.a_show_file(hop), p.resolve())
 

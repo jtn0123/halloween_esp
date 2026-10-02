@@ -174,9 +174,9 @@ class TestStaleSweep(unittest.TestCase):
         self.out.mkdir()
         for stale in ("00_chirp.mp3", "02_one.mp3", "03_two.mp3", "01_gone.mp3"):
             (self.out / stale).write_bytes(b"old")
-        (self.out / "notes.txt").write_text("not ours")
+        (self.out / "notes.txt").write_text("not ours", encoding="utf-8")
         scenes = self.tmp / "scenes.yaml"
-        scenes.write_text(self.SHOW)
+        scenes.write_text(self.SHOW, encoding="utf-8")
         fake_encode = lambda wav, mp3, br: mp3.write_bytes(b"new")  # noqa: E731
 
         # The sweep is what this class tests; the render itself is the
@@ -243,7 +243,8 @@ class TestStaleSweep(unittest.TestCase):
         rewritten whole."""
         (self.out / "markers.json").write_text(
             '{"one": {"wind": [0], "stale": [1]}, '
-            '"two": {"wind": [0], "onset_high": [5, 9], "beat": [2]}}'
+            '"two": {"wind": [0], "onset_high": [5, 9], "beat": [2]}}',
+            encoding="utf-8",
         )
 
         def absent_song(scene: dict, cfg: dict, wav: Path) -> dict:
@@ -254,7 +255,7 @@ class TestStaleSweep(unittest.TestCase):
 
         with mock.patch.object(ra, "render_scene", absent_song):
             self.run_main()
-        got = json.loads((self.out / "markers.json").read_text())
+        got = json.loads((self.out / "markers.json").read_text(encoding="utf-8"))
         self.assertEqual(got["two"], {"wind": [7], "onset_high": [5, 9], "beat": [2]})
         self.assertEqual(got["one"], {"wind": [7]})  # here: fresh, nothing kept
 
@@ -285,7 +286,7 @@ class TestUnchangedSkip(TestStaleSweep):
         self.assertEqual(self.calls(), ["one", "two"])
         self.assertEqual(self.calls(), [])
         # ...and still writes markers.json whole, from the stamps.
-        got = json.loads((self.out / "markers.json").read_text())
+        got = json.loads((self.out / "markers.json").read_text(encoding="utf-8"))
         self.assertEqual(got, {"one": {"wind": [3]}, "two": {"wind": [3]}})
 
     def test_an_edited_scene_renders_again_alone(self) -> None:
@@ -294,7 +295,8 @@ class TestUnchangedSkip(TestStaleSweep):
         scenes.write_text(
             self.SHOW.replace(
                 "duration_ms: 200\n  - id: two", "duration_ms: 300\n  - id: two"
-            )
+            ),
+            encoding="utf-8",
         )
         self.assertEqual(self.calls(), ["one"])
 
@@ -307,7 +309,9 @@ class TestUnchangedSkip(TestStaleSweep):
         self.calls()
         self.assertEqual(self.calls("--force"), ["one", "two"])
         scenes = self.tmp / "scenes.yaml"
-        scenes.write_text(self.SHOW.replace("bitrate: 32", "bitrate: 48"))
+        scenes.write_text(
+            self.SHOW.replace("bitrate: 32", "bitrate: 48"), encoding="utf-8"
+        )
         self.assertEqual(self.calls(), ["one", "two"])
 
     def test_a_song_that_turns_up_renders_its_scene(self) -> None:
@@ -319,7 +323,8 @@ class TestUnchangedSkip(TestStaleSweep):
             scenes.write_text(
                 self.SHOW.replace(
                     "id: two\n", "id: two\n    audio_file: tracks/song.mp3\n"
-                )
+                ),
+                encoding="utf-8",
             )
             self.assertEqual(self.calls(), ["one", "two"])
             self.assertEqual(self.calls(), [])

@@ -31,7 +31,14 @@ select = [
     "ISC",             # implicit string concatenation traps
     "FURB",            # modernisation with behaviour-preserving fixes
     "EXE",             # shebang/executable-bit agreement
+    "PLW1514",         # open()/read_text() with no encoding= (Windows: cp1252)
 ]
+# PLW1514 is still a preview rule. explicit-preview-rules keeps preview to
+# the rules named above by their full code, so no other preview rule rides
+# in on "PLW". Ruff only flags calls whose receiver it can SEE is a Path, so
+# tests/test_text_encoding.py walks the same files for the rest.
+preview = true
+explicit-preview-rules = true
 
 [tool.ruff.lint.per-file-ignores]
 # Every test bootstraps sys.path before importing tools/ — the imports HAVE
@@ -92,7 +99,8 @@ module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_sc
     "golden_case", "golden_corpus", "test_studio_golden", "gen_golden",
     "test_scene_render_rust", "core_bins", "test_analyze_track_rust",
     "cargo_gate", "lock_deps", "test_lock_deps",
-    "check_citations", "test_check_citations"]
+    "check_citations", "test_check_citations",
+    "run_checks", "test_run_checks", "release_assets", "test_release_assets"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_decorators = true

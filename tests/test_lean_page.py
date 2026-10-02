@@ -87,7 +87,9 @@ class TestLeanRewrite(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp(prefix="castle-lean-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         page = tmp / "desk.html"
-        page.write_text(page_with({"a": "data:audio/mpeg;base64,AAAA"}))
+        page.write_text(
+            page_with({"a": "data:audio/mpeg;base64,AAAA"}), encoding="utf-8"
+        )
         body1, etag1 = gp.lean_page(page)
         with mock.patch.object(gp, "lean", side_effect=AssertionError("re-ran")):
             body2, etag2 = gp.lean_page(page)
@@ -95,7 +97,9 @@ class TestLeanRewrite(unittest.TestCase):
         self.assertIn(b"/studio/scene-audio/a", body1)
         self.assertTrue(etag1.endswith('-lean"'))
         # A rewritten page (new mtime/size) is rewritten again.
-        page.write_text(page_with({"b": "data:audio/mpeg;base64,AAAA"}))
+        page.write_text(
+            page_with({"b": "data:audio/mpeg;base64,AAAA"}), encoding="utf-8"
+        )
         os.utime(
             page, ns=(page.stat().st_atime_ns, page.stat().st_mtime_ns + 10_000_000)
         )

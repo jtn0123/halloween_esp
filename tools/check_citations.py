@@ -109,7 +109,7 @@ def scan(
         if rel in EXEMPT or is_audit_output(rel) or not p.is_file() or is_binary(p):
             continue
         try:
-            text = p.read_text(errors="replace")
+            text = p.read_text(errors="replace", encoding="utf-8")
         except OSError:
             continue
         for line, dated, excerpt in scan_text(text):

@@ -67,8 +67,12 @@ file is the one that governs.
   Python server (`tools/studio.py` and its `studio_*.py`) until 2026-09-06;
   `docs/RETIREMENT.md` is the plan that removed it and the tag
   `python-studio-final` is the last tree that carries it.
-- `firmware/` — ESPHome YAML + C++ headers. **Two** buildable targets, one
-  show: `castle_feather_s3.yaml` is the ESP32-S3 Feather #5477 in carrier
+- `firmware/` — ESPHome YAML + C++ headers. **Three** buildable targets, one
+  show (the third, `castle_buyer.yaml` since v5.74, is the Feather build for
+  a castle someone else owns: no Wi-Fi compiled in, a `Castle-XXXX` setup
+  hotspot + captive portal + Improv over USB, silent power-on boots —
+  `make build-buyer` / `validate-buyer`, deliberately no upload target;
+  docs/notes/06-buyer-build.md): `castle_feather_s3.yaml` is the ESP32-S3 Feather #5477 in carrier
   v3.3a, THE build and the castle in the yard (`make build` / `upload` /
   `logs` / `ota`; `build-fs3` etc. are aliases for muscle memory), and
   `castle_s3.yaml` (2026-09-05) is the bare-ESP32-S3-WROOM-1 carrier v5 —

@@ -23,7 +23,7 @@ class Server(unittest.TestCase):
         quiet.start()
         self.addCleanup(quiet.stop)
         self.dir = Path(tempfile.mkdtemp())
-        (self.dir / "show-lab.html").write_text("<p>lab</p>")
+        (self.dir / "show-lab.html").write_text("<p>lab</p>", encoding="utf-8")
         self.httpd = lab_server.server(self.dir, 0, "127.0.0.1")
         self.base = f"http://127.0.0.1:{self.httpd.server_address[1]}"
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
@@ -53,7 +53,7 @@ class Server(unittest.TestCase):
         status, stored = self.post("/notes", NOTE)
         self.assertEqual(status, 201)
         self.post("/notes", {**NOTE, "t": 1000, "tags": ["love"], "text": ""})
-        lines = (self.dir / "notes.jsonl").read_text().splitlines()
+        lines = (self.dir / "notes.jsonl").read_text(encoding="utf-8").splitlines()
         self.assertEqual([json.loads(line)["t"] for line in lines], [83_500, 1000])
         self.assertEqual(stored["text"], "door just sits there")
         self.assertIn("at", stored)
@@ -95,7 +95,9 @@ class Report(unittest.TestCase):
                 lab_server.clean(NOTE),
                 lab_server.clean({**liked, "text": "", "section": ""}),
             ]
-            path.write_text("".join(json.dumps(r) + "\n" for r in rows))
+            path.write_text(
+                "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+            )
             self.assertEqual(
                 lab_server.report(path),
                 [

@@ -37,6 +37,7 @@ from typing import Any
 import build_paths as bp
 import core_bins
 import cue_file
+import exe_paths
 import yaml
 from pulse_expand import pulse_cues
 from scene_schema import load_show
@@ -73,7 +74,7 @@ def waveform(path: Path, sensitivity: Any) -> dict[str, Any]:
 
 
 def _esbuild() -> Path:
-    local = WEB / "node_modules" / ".bin" / "esbuild"
+    local = exe_paths.npm_bin(WEB / "node_modules" / ".bin", "esbuild")
     found = local if local.exists() else shutil.which("esbuild")
     if not found or not shutil.which("node"):
         raise SystemExit(
@@ -88,7 +89,7 @@ def desk_scene(tid: str, wave: dict[str, Any], ext: str) -> dict[str, Any]:
     with tempfile.TemporaryDirectory() as tmp:
         bundle = Path(tmp) / "scene_cli.mjs"
         wave_json = Path(tmp) / "wave.json"
-        wave_json.write_text(json.dumps(wave))
+        wave_json.write_text(json.dumps(wave), encoding="utf-8")
         subprocess.run(
             [str(_esbuild()), str(WEB / "src" / "scene_cli.ts"), "--bundle",
              "--platform=node", "--format=esm", "--log-level=warning",
@@ -97,7 +98,7 @@ def desk_scene(tid: str, wave: dict[str, Any], ext: str) -> dict[str, Any]:
         )  # fmt: skip
         run = subprocess.run(
             ["node", str(bundle), tid, str(wave_json), ext],
-            capture_output=True, text=True, check=True,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
         )  # fmt: skip
     scene: dict[str, Any] = yaml.safe_load(run.stdout)[0]
     return scene

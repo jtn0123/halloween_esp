@@ -1,0 +1,20 @@
+# Every text file is LF in every checkout, Windows included: the generated
+# firmware files, scenes.yaml and the parity fixtures are compared byte for
+# byte, and a core.autocrlf checkout would turn each of them into a diff.
+* text=auto eol=lf
+
+# The card's scene files are binary records (tools/cue_file.py,
+# tools/scene_manifest.py), never text to be converted.
+*.cue binary
+*.man binary
+*.mp3 binary
+*.wav binary
+
+# Windows launchers keep CRLF wherever they are checked out (after the LF
+# default above, so this line wins for them).
+*.cmd text eol=crlf
+
+# GitHub's release source zips are `git archive` output: this fills in the
+# tag the tree was cut from, so installer/desktop_install.py knows which
+# release's castle-core binaries match it. In a clone it stays a template.
+installer/VERSION export-subst

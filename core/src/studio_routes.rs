@@ -61,14 +61,9 @@ pub(crate) fn bad_request(msg: &str) -> Reply {
     )
 }
 
-/// Path(...).name — the traversal-stripping last segment.
-pub(crate) fn last_segment(s: &str) -> String {
-    s.trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .unwrap_or("")
-        .to_string()
-}
+/// Path(...).name — the traversal-stripping last segment, `\\` and all
+/// (crate::portable has the platform reasoning).
+pub(crate) use crate::portable::last_segment;
 
 pub fn handle(app: &Arc<App>, req: &Request) -> Reply {
     match req.method.as_str() {

@@ -53,6 +53,8 @@ class Uploads(Replies):
             lock.acquire()
 
     def h_put(self, raw: bytes) -> None:
+        if not self._key_ok():
+            return self._locked()
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
         n = self._content_len()
@@ -141,6 +143,8 @@ class Uploads(Replies):
         self._json({"path": card, "bytes": written, "crc32": "%08x" % crc})
 
     def h_delete(self, raw: bytes) -> None:
+        if not self._key_ok():
+            return self._locked()
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
         sub, prefix = wire.route_dir(raw)

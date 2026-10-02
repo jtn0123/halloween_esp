@@ -28,11 +28,12 @@ import json
 from pathlib import Path
 
 import device_bridge
+import radio_paths
 import remote_library
 import rich_show
 
 HERE = Path(__file__).resolve().parent
-DATA = HERE / ".radio-data"
+DATA = radio_paths.data_dir()
 INDEX = "index.html"
 APP = "app.js"
 IMPORTS = "imports.js"
@@ -156,7 +157,7 @@ def catalog_rows(data: Path) -> list[dict]:
     if not path.exists():
         return []
     rows: list[dict] = []
-    for row in json.loads(path.read_text()):
+    for row in json.loads(path.read_text(encoding="utf-8")):
         audio = remote_library.playback_path(data / "tracks", row)
         if audio is None:
             continue
@@ -190,16 +191,16 @@ def catalog_rows(data: Path) -> list[dict]:
 
 def scene_rows(root: Path) -> list[dict]:
     """scenes.json without the YAML source the light studio shows."""
-    rows = json.loads((root / "scenes.json").read_text())
+    rows = json.loads((root / "scenes.json").read_text(encoding="utf-8"))
     return [{k: v for k, v in row.items() if k != "yaml"} for row in rows]
 
 
 def build(root: Path = HERE, data: Path = DATA) -> bytes:
-    page = rewritten(INDEX, (root / INDEX).read_text())
+    page = rewritten(INDEX, (root / INDEX).read_text(encoding="utf-8"))
     if page.count(STYLE_TAGS) != 1 or page.count(SCRIPT_TAGS) != 1:
         raise SystemExit(f"{INDEX} no longer links its styles and scripts as expected")
     styles = "".join(
-        f"<style>{rewritten(name, (root / name).read_text())}</style>"
+        f"<style>{rewritten(name, (root / name).read_text(encoding='utf-8'))}</style>"
         for name in STYLES
     )
     data_tags = (
@@ -207,7 +208,7 @@ def build(root: Path = HERE, data: Path = DATA) -> bytes:
         f'<script id="radio-library" type="application/json">{inline_json(catalog_rows(data))}</script>'
     )
     scripts = "".join(
-        f"<script>{inline_script(rewritten(name, (root / name).read_text()))}</script>"
+        f"<script>{inline_script(rewritten(name, (root / name).read_text(encoding='utf-8')))}</script>"
         for name in ("castle-direct.js", *SCRIPTS)
     )
     page = page.replace(STYLE_TAGS, styles).replace(SCRIPT_TAGS, data_tags + scripts)

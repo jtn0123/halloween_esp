@@ -1,0 +1,98 @@
+# The web flasher on GitHub Pages: flasher/index.html plus the LATEST full
+# release's factory image and esp-web-tools manifest, served from one origin
+# (production plan item 1.2; docs/RELEASING.md is the operator's view).
+#
+# Why copy the assets instead of pointing the page at the Release: a
+# release download URL redirects to another host that sends no CORS
+# headers, and esp-web-tools fetches the manifest and the image with
+# fetch(), so the browser refuses them. Every esp-web-tools project hosted
+# on Pages solves it this way — the deploy carries the bytes — and the
+# manifest's part path is relative, so it resolves beside the manifest.
+#
+# Triggers: release.yml calls this after it publishes (a release created
+# with GITHUB_TOKEN fires no `release` event elsewhere); `release:
+# published` covers one published by hand; a dispatch redeploys the page
+# after an edit to flasher/. A PRE-release never moves the flasher: `gh
+# release download` with no tag fetches the latest full release.
+#
+# One-time setup: Settings -> Pages -> Source: "GitHub Actions".
+
+name: pages
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  workflow_call:
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+# Read-only by default; only the deploy job can write to Pages or mint the
+# OIDC token deploy-pages exchanges for it.
+permissions:
+  contents: read
+
+# One deploy at a time, and never cancel one halfway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name != 'release' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read # gh release download
+      pages: read # configure-pages reads the site's settings
+    steps:
+      - uses: actions/checkout@v7
+      - name: fetch the latest release's flasher assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download --repo "$GITHUB_REPOSITORY" --dir dl \
+            --pattern flasher-manifest.json \
+            --pattern 'castle-fw-*.factory.bin' \
+            --pattern SHA256SUMS
+          ls -l dl
+      # The bytes a stranger will write to their castle: checked against the
+      # sums the release published, and the manifest must name an image
+      # that is actually here.
+      - name: verify
+        working-directory: dl
+        run: |
+          sha256sum --check --ignore-missing SHA256SUMS
+          python3 - <<'EOF'
+          import json, pathlib, sys
+          m = json.loads(pathlib.Path("flasher-manifest.json").read_text())
+          parts = [p["path"] for b in m["builds"] for p in b["parts"]]
+          missing = [p for p in parts if not pathlib.Path(p).is_file()]
+          sys.exit(f"manifest names missing images: {missing}" if missing else 0)
+          EOF
+      - name: assemble the site
+        run: |
+          mkdir _site
+          cp -R flasher/. _site/
+          cp dl/flasher-manifest.json dl/castle-fw-*.factory.bin _site/
+          ls -l _site
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

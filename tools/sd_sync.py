@@ -41,18 +41,32 @@ from pathlib import Path
 
 import build_paths as bp
 import sd_ota
-from hosts import maybe_host
+from hosts import key_headers, maybe_host
 from published import Published
 
 ROOT = Path(__file__).resolve().parent.parent
 SCENES_API = "/api/scenes"  # where the card's scenes/ directory is PUT
 FILES_API = "/api/files"  # and the card ROOT, which the listing reads too
+CASTLE_SCHEME = "http"  # the board's web server has no TLS (castle_url)
+
+
+def castle_url(ip: str, path: str) -> str:
+    """A URL on the castle. Plain HTTP by necessity, not by choice: ESPHome's
+    web server on the board has no TLS, and the castle lives on the owner's
+    home LAN — the accepted position in CLAUDE.md "Security position". The
+    scheme is spelled once, here, so a castle that ever speaks HTTPS is one
+    line."""
+    return urllib.parse.urlunsplit((CASTLE_SCHEME, ip, path, "", ""))
 
 
 def api(
     ip: str, method: str, path: str, body: bytes | None = None, timeout: float = 60
 ) -> bytes:
-    req = urllib.request.Request(f"http://{ip}{path}", data=body, method=method)
+    # The castle key (v5.74), when one is configured: a castle that has none
+    # ignores the header, and one that has one refuses its writes without it.
+    req = urllib.request.Request(
+        castle_url(ip, path), data=body, method=method, headers=key_headers(ip)
+    )
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return bytes(r.read())
 
@@ -397,7 +411,7 @@ def cmd_logs(ip: str, args: list[str]) -> int:
     if not text.strip():
         print("no log on the card — has this castle booted with it in the slot?")
         return 1
-    out.write_text(text)
+    out.write_text(text, encoding="utf-8")
     lines = text.splitlines()
     print(f"saved {len(lines)} lines to {out}\n")
     print("\n".join(lines[-TAIL_LINES:]))

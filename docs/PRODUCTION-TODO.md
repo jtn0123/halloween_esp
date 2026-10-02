@@ -1,0 +1,389 @@
+# Production TODO — a castle someone else can own
+
+Started 2026-09-30. Someone may buy a one-off castle. That changes who the
+software is for: today it assumes one operator (you), one LAN, an Apple
+Silicon Mac with Homebrew, and a repo checkout. A buyer has none of that.
+
+**The plan, in one line:** the castle stands on its own from any browser;
+the desktop song tools ship as a **Tauri app** (`.dmg` + `.msi`) — option B —
+with a **uv bootstrap installer** (option A) as the fallback if Tauri stalls.
+
+Ordering principle: the castle must be usable, recoverable and updatable
+with NO desktop software before any packaging work starts. A buyer who only
+runs the show should never need sections 4–7.
+
+Legend: `[ ]` open · `[x]` done · **(blocker)** = cannot hand over without it
+· **(decide)** = a question for you or the buyer, not engineering work.
+
+---
+
+## 0. Scope decisions (answer first — they size everything below)
+
+- [x] **(decide)** What does the buyer DO? Unknown — plan for all three:
+      run the show, add songs, edit scenes (2026-09-30).
+- [x] **(decide)** Deadline: working before Halloween 2026 (~4 weeks from
+      2026-09-30). Sections 1–3 + option A (section 6) are the Halloween
+      target; the Tauri app (section 5) and signing most likely land after.
+- [x] **(decide)** Buyer's computer: unknown, most likely Windows — support
+      BOTH (2026-09-30). Windows is the primary test target for section 4+.
+- [x] **(decide)** Handover in person (2026-09-30): you set up their Wi-Fi
+      and install the desktop tools on their computer yourself. Captive
+      portal is still wanted for "router changed" later, but is no longer a
+      day-one blocker.
+- [x] **(decide)** Updates (2026-09-30): the desktop app watches
+      `github.com/jtn0123/halloween_esp` Releases (public — no token) and
+      auto-updates itself, and offers the matching firmware + card format to
+      the castle. See section 9.
+- [x] **(decide)** Hardware (2026-09-30): carrier v3.3a OR a follow-on v3.4,
+      with the 4 MB flash / 2 MB PSRAM S3 (the Feather #5477, today's build)
+      ONLY for now. 16 MB / 4 MB is deferred — 1.5 keeps the door open
+      without building it. PSU and case still open.
+- [x] **(decide)** Security (2026-09-30): an OPTIONAL password, OFF by
+      default — see 1.6. With it off, behaviour is today's.
+- [x] **(decide)** Signing (2026-09-30): Windows unsigned. macOS unsigned,
+      downloaded from GitHub Releases — see 5.4 for what that costs the
+      buyer on first launch.
+- [x] **(decide)** Windows test machine (2026-09-30): you have one; a later
+      Opus agent session runs the Windows checklist on it (section 4.4).
+- [x] **(decide)** Songs (2026-09-30): the card ships with NO songs. The
+      buyer adds their own with the app's built-in downloader (URL import,
+      yt-dlp) and file import. What they download is theirs to answer for.
+- [x] **(decide)** Vocal separation (Demucs/PyTorch): leaning ALWAYS
+      INCLUDE (2026-09-30). See 5.2 for the Windows speed plan.
+
+## 1. Castle stands alone — firmware (P0)
+
+### 1.1 Wi-Fi onboarding **(blocker)**
+Today `firmware/castle.yaml:328` compiles `!secret wifi_ssid/password` in,
+softAP is stripped (`CONFIG_ESP_WIFI_SOFTAP_SUPPORT: "n"`), and
+`captive_portal` was removed for the S2's flash/dram limits — which no longer
+bind (S3: 67.9% flash, 35.2% RAM at v5.69).
+- [x] Bring back softAP + `captive_portal` as the first "diet" line restored
+      (CLAUDE.md lists it). Measure the flash/RAM delta; `check_image.py`.
+- [x] Add `improv_serial` so the web flasher (1.2) can hand over Wi-Fi
+      credentials over USB at flash time.
+- [x] Build a "buyer" firmware variant with NO baked-in credentials (empty
+      secrets file or a `castle_buyer.yaml` that composes the S3 build).
+- [x] Decide the AP name/password scheme (e.g. `Castle-XXXX`, printed on a
+      label) and what the AP serves (captive portal only).
+- [ ] Prove the "Wi-Fi changed / router replaced" path: castle falls back
+      to AP after N minutes of failed association, no USB needed. The buyer
+      build falls back after 3 minutes (v5.74) — built, not yet proven on
+      hardware.
+- [x] Hostname: per-unit mDNS name so two castles on one LAN don't collide
+      (`castle-feather-s3.local` is fixed today). The buyer build answers
+      as `castle-xxxxxx.local` (v5.74).
+
+### 1.2 Browser-based recovery and updates **(blocker)**
+A failed OTA today means USB + ESPHome installed.
+- [x] esp-web-tools page (static, GitHub Pages) with a `manifest.json` pointing
+      at the release `.factory.bin`. Works in Chrome/Edge on Mac and Windows,
+      nothing installed. Covers: factory reset, firmware update, Wi-Fi (Improv).
+- [x] CI job that builds the buyer firmware and attaches the factory + OTA
+      images to a GitHub Release, tag = firmware version.
+- [ ] Windows USB driver check: the S3 Feather's native USB (CDC) should
+      enumerate without a driver on Win 10/11 — verify on a real Windows box.
+- [ ] Document "hold BOOT, tap RESET" as the last-resort bootloader entry.
+- [ ] Decide whether the castle's own page offers OTA upload (it already has
+      `PUT /api/ota`) as the everyday update path, with the web flasher as
+      the recovery path.
+
+### 1.3 Owner-facing controls on the castle's own page
+- [ ] Audit `sd_web.h`'s page from an owner's eyes: play/stop, scene pick,
+      volume, schedule/evening playlist, motion arm, blackout. Anything only
+      reachable from the studio or Castle Radio gets a castle-page control or
+      is explicitly out of scope.
+- [ ] Settings that are compile-time today and an owner may want to change
+      (volume cap, quiet hours, boot behaviour) → runtime prefs in NVS.
+- [x] Boot behaviour: power-on and crash boots autoplay "vigil" (OTA/soft
+      restarts are silent since v5.72). Make it a setting; default for buyer.
+- [ ] PIR: disabled at boot since v5.69 (not wired). Ship wired+enabled, or
+      remove the control from the owner page.
+- [ ] A "Report a problem" button on the castle page that bundles
+      `/api/status` + `/api/events` into a downloadable text file.
+
+### 1.4 Device housekeeping
+- [ ] Time: NTP + timezone setting (needed for any schedule).
+- [x] Factory-reset that clears NVS prefs and Wi-Fi without reflashing
+      (long-press a button, or a page action).
+- [ ] Remove developer-only endpoints from the buyer build, or gate them.
+
+### 1.5 Board support — 4 MB / 2 MB only, room for more later
+Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
+`firmware/castle_feather_s3.yaml` already builds), on carrier v3.3a or v3.4.
+- [ ] If v3.4 changes pins (amp, strips, PIR, card), add a pin-map package
+      per carrier composed with the S3 build; `tools/gen_rig.py` RMT budget
+      per carrier (status pixel or not). Same pins → nothing to do.
+- [x] `/api/status` reports `board` (carrier + memory) and `fw_variant` NOW,
+      even with one variant, so the app's updater (section 9) picks images by
+      name from day one and a second variant later is additive.
+- [x] Release asset names carry the variant (`castle-v3x-4m2p-vX.Y.ota.bin`).
+- [ ] Deferred — 16 MB / 4 MB S3: a memory-profile package (flash size,
+      partition table, PSRAM quad vs octal — must match the module), slot
+      size per profile in `tools/check_image.py`, CI per variant, one web
+      flasher button per variant (esp-web-tools cannot tell flash sizes apart).
+
+### 1.6 Optional password, off by default
+- [x] One setting, `password` (empty = off = today's behaviour exactly).
+- [x] When set: required for `PUT /api/ota`, `/api/files/` writes, and
+      settings changes. Read-only status and playback stay open (decide).
+- [ ] ESPHome `ota:` password + `api:` encryption key follow the same
+      setting, or stay off; decide when building it.
+- [ ] Set/clear it from the castle page and from the app; the app stores it
+      per castle. Factory reset (1.4) clears it.
+- [x] Emulator (`tools/castle_emu_wire.py`) + `tests/test_firmware_contract.py`
+      learn the header in the same commit as `sd_web.h`.
+
+## 2. Stability — freeze and soak (P0)
+
+- [ ] Pick the release firmware version; freeze features for it.
+- [ ] Door ring frame corruption — `docs/ISSUE-ring-flicker.md` next tests;
+      close it or document it as known.
+- [ ] Upload watchdog cadence (v5.42, every 32 KB) is verified on the
+      emulator only — exercise a large card push on hardware.
+- [ ] `docs/ISSUE-scene-start-audio.md` — close or document.
+- [ ] 72-hour soak on the buyer's hardware: evening playlist on a loop,
+      scheduled starts, motion triggers if wired. Log `/api/events`, uptime,
+      heap, Wi-Fi RSSI drops. Make a tool do the logging (no manual watching).
+- [ ] Power-cycle torture: 50 cold boots via a smart plug; every one reaches
+      the show and the card mounts.
+- [ ] Wi-Fi loss/return: router reboot mid-show; castle reconnects unaided.
+- [ ] SD card: corrupt/missing card behaviour is graceful (page says so,
+      no boot loop). Spare pre-loaded card in the box.
+- [ ] Brownout check at full brightness + full volume on the shipped PSU.
+- [ ] Thermal: an evening's run inside the closed castle.
+- [ ] Watchdog/crash reporting: reset reason surfaced on the page.
+
+## 3. Handover package (P0)
+
+- [ ] Owner's guide (1–2 pages, not `RUNBOOK.md`): power on, join Wi-Fi,
+      open the page, pick a show, what the lights mean, what to do when it
+      misbehaves, how to update, how to factory reset.
+- [ ] Labels: AP name/password, URL, recovery-page URL, QR code to the guide.
+- [ ] SD card ships with NO songs (decided): scenes that need no track
+      (light-only or synth audio) or an empty show. The castle page and the
+      app must look sensible with zero songs — first-run "add your first
+      song" state, not errors. Re-render `make publish` from that show.
+- [ ] Electrical: PSU rating, which connector is which, no user-serviceable
+      wiring (`docs/WIRING*.md` is for you, not them).
+- [ ] Licences: Demucs (MIT) + htdemucs weights, ffmpeg (LGPL build only —
+      no GPL/nonfree codecs if redistributed), ESPHome (MIT/GPL parts),
+      castle-core, fonts. A `THIRD-PARTY-NOTICES` file in every bundle.
+- [ ] URL import STAYS (decided) — it is how the buyer gets songs. yt-dlp
+      breaks whenever sites change: ship it as a separate standalone binary
+      the app updates on its own schedule (yt-dlp releases often), not frozen
+      inside the app bundle. A failed download says "update the downloader"
+      with a button, not a stack trace.
+
+---
+
+## 4. Cross-platform core — make it compile and run on Windows (P1)
+
+Everything here is needed for BOTH option A and option B.
+
+### 4.1 Rust (`core/`) — does not compile on Windows today
+- [x] `core/src/manifest.rs:15` — hand-declared `flock` FFI → `std::fs::File::lock`
+      (stable since Rust 1.89; bump `rust-version` from 1.88). Keeps zero deps.
+- [x] `core/src/bin/studio.rs:146` `restart_self()` uses Unix `exec` →
+      `#[cfg(windows)]` spawn-then-exit (the PID changes; check whoever
+      relies on "PID kept").
+- [x] `core/src/bin/studio.rs:222` `bind_reuse` raw `socket/setsockopt` with a
+      macOS-only `so` module → `#[cfg(windows)]` plain `TcpListener::bind`
+      (Windows' SO_REUSEADDR means something else — do NOT set it there).
+- [x] `core/src/studio_proc.rs:29` + `studio_jobs.rs:24` `own_group`/`kill_group`
+      (process groups so yt-dlp→ffmpeg grandchildren die) → Windows Job
+      Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Needs a small FFI
+      block or the `windows-sys` crate (decide: keep zero-dep or not).
+- [x] `core/src/studio_scenes.rs:288` `PermissionsExt` — cfg-gate.
+- [x] `/bin/sh` in `studio_proc.rs` / `studio_reap.rs` tests → cfg(unix) or
+      use a cross-platform child (e.g. the test binary re-invoking itself).
+- [x] `studio_proc.rs` `py()` looks for `.venv/bin/python` → also
+      `.venv\Scripts\python.exe`, and a bundled interpreter path (section 5).
+- [x] Paths: audit for `/`-joined strings, `/tmp`, and `basenames()` that
+      split on `/` only (`studio_reason.rs`). Windows paths use `\` and `C:`.
+- [x] ffmpeg/yt-dlp lookup: honour a `CASTLE_FFMPEG` / bundled sidecar path
+      before `PATH`; `.exe` suffix on Windows.
+- [x] Line endings: anything that writes cue/manifest files writes `\n`
+      explicitly; `.gitattributes` pins LF for generated card files.
+
+### 4.2 Python (`tools/`, `demo/castle-radio/`)
+- [x] `tools/manifest.py:30` `fcntl.flock` → cross-platform lock (`msvcrt.locking`
+      on Windows, or a lock-file with `os.open(O_CREAT|O_EXCL)`), shared helper.
+- [x] `tools/progress_process.py:16,31` and `demo/castle-radio/job_progress.py:107`
+      `start_new_session` + `os.killpg` → Windows `CREATE_NEW_PROCESS_GROUP` +
+      `taskkill /T /F` (or a job object via ctypes). One helper, both callers.
+- [x] Every hardcoded `.venv/bin/python` / `bin/` path → `sys.executable` or
+      a resolver that knows `Scripts\`.
+- [x] `os.replace` atomic-write paths: Windows fails if the target is open —
+      retry loop around the rename.
+- [x] Temp files: `NamedTemporaryFile(delete=False)` pattern where a child
+      process must reopen the file (Windows can't reopen an open temp file).
+- [x] Encoding: every `open()` passes `encoding="utf-8"` (Windows default is
+      cp1252). Add a ruff rule (`PLW1514`) so it stays that way.
+- [ ] Ports: Windows firewall prompt on first bind — bind `127.0.0.1` only
+      (already the default) so the prompt does not appear.
+- [ ] `demo/castle-radio/desktop_tools.py` + `tools/register_castle_launcher.py`:
+      Mac-only branches stay, behind a platform check, until the Tauri app
+      replaces them.
+
+### 4.3 CI
+- [x] `windows-latest` job: `cargo build --release` + `cargo test` for `core/`.
+- [x] `windows-latest` job: `make test`-equivalent Python suite (no Make on
+      Windows — a `tools/run_checks.py` the Makefile also calls). Green and
+      blocking since 2026-10-01.
+- [x] `macos-14` job: same, so Apple Silicon is tested in CI, not just here.
+- [x] Tests that assume POSIX (`/bin/sh`, `/tmp`, chmod) get a Windows path
+      or a portable rewrite — never a skip (CLAUDE.md rule). The C++ card
+      harnesses build with MinGW's g++ there (`tests/cxx_compiler.py`).
+
+## 5. Option B — the Tauri desktop app (P1, primary)
+
+### 5.1 Architecture
+- [ ] **One server for the buyer.** Today: Rust studio on 8765 + Python
+      Castle Radio on 8871. Decide which UI the buyer sees (likely Castle
+      Radio's player + import, the cue desk hidden) and make the app talk to
+      ONE local server. Long-term: port Castle Radio's routes into the Rust
+      studio so Python is only a worker, never a server.
+- [ ] Tauri shell embeds the studio as a library (not a child process) — the
+      Rust server already exists; `tauri::Builder` hosts the webview pointed
+      at it. Or keep it a sidecar if that is less churn; decide.
+- [ ] Webview differences: WebKit (macOS) vs WebView2 (Windows). Run the
+      Playwright suite against WebKit too; audio/blob/wake-lock APIs checked
+      on both.
+- [x] The `castle-tools://` URL handler + popup bridge (castle page ↔ local
+      helper) → Tauri deep-link plugin; retire `tools/castle_launcher.swift`.
+- [x] Menu-bar ♜ icon → Tauri system tray (works on both OSes).
+- [x] Logs: `~/Library/Logs/Castle Tools/` → Tauri app-log dir per OS.
+
+### 5.2 Sidecars
+- [ ] Python: python-build-standalone 3.13 per target (macOS arm64, macOS
+      x86_64?, Windows x64) + a pre-installed site-packages, OR PyInstaller
+      one-dir builds of the import/stems/sync entry points. Measure size.
+- [ ] ffmpeg: static LGPL builds per target as a Tauri `externalBin`.
+- [ ] Demucs: bundled (torch CPU wheels + htdemucs model). Windows speed:
+      measured 2026-09-30 on an M4, 4:06 song, `--two-stems vocals`:
+      GPU (mps) 65 s · CPU defaults 133 s · CPU `--overlap 0.1 -j 4` 65 s.
+      A mid-range Windows laptop CPU is expected to be slower than an M4.
+  - [x] Tune `tools/stems.py` for CPU: `--overlap 0.1`, `-j <cores>`; check
+        the stems still drive the same lights (quality A/B) before adopting.
+        Done 2026-10-01 as OPT-IN only (`--fast-cpu` / `CASTLE_DEMUCS_FAST=1`):
+        the A/B moved the bass stem too far to make it the default.
+  - [ ] Run separation in the background with progress; never block import.
+  - [ ] NVIDIA present → CUDA torch (large extra download; optional).
+  - [ ] Later: drop PyTorch for an ONNX export of htdemucs on ONNX Runtime
+        + DirectML (any DX12 GPU: Intel/AMD/NVIDIA), or demucs.cpp on CPU.
+        Removes the biggest dependency and gives most Windows PCs a GPU path.
+- [ ] Rust bins (`analyze_track`, `scene_render`): link into the app or ship
+      as sidecars — `tools/core_bins.py` must find them without cargo
+      (today it builds on demand: a buyer has no cargo).
+
+### 5.3 Data location
+- [x] Today everything lives in the repo checkout (`tracks/`, `scenes/`,
+      `audio/`, `.venv-desktop`). The app needs per-user dirs: tracks +
+      scenes + build output under the OS app-data dir. The `CASTLE_TRACKS` /
+      `CASTLE_SCENES` / `CASTLE_BUILD` knobs already exist — the app sets them.
+- [x] First-run: seed scenes.yaml from the shipped show; never touch a repo.
+- [x] Settings file: castle address (mDNS name + manual IP), last port.
+
+### 5.4 Ship it
+- [ ] macOS UNSIGNED from GitHub Releases (decided): Apple Silicon still
+      needs an ad-hoc signature (Tauri's build applies one). A downloaded
+      unsigned app is quarantined — first launch is System Settings →
+      Privacy & Security → "Open Anyway" (Sequoia+; right-click → Open no
+      longer bypasses it). Owner's guide gets screenshots of exactly that.
+      Updates fetched BY the app are not quarantined, so it is a one-time step.
+- [ ] Windows UNSIGNED (decided): SmartScreen "More info → Run anyway" on
+      first install; document with screenshots. Prefer the NSIS `.exe`
+      per-user installer (no admin prompt) over `.msi`.
+- [ ] Auto-update: section 9.
+- [x] CI release workflow: tag → build dmg/msi on macOS + Windows runners →
+      sign → Release. Firmware images attached to the same Release (1.2).
+- [ ] Uninstaller leaves the user's tracks unless asked.
+
+## 6. Option A — uv bootstrap installer (P1, fallback)
+
+Worth doing first even if B is the goal: it forces sections 4 and 5.3 to be
+true, and it is the dev/support path forever.
+- [x] `install.sh` (macOS) and `install.ps1` (Windows): install `uv` → `uv
+      python install 3.13` → `uv sync` from `requirements-desktop` (lockfile
+      with hashes, like `requirements.lock`).
+- [x] Prebuilt Rust bins downloaded from the matching GitHub Release (no
+      cargo on the buyer's machine); checksum verified.
+- [x] ffmpeg: winget/brew if present, else a pinned static download.
+- [ ] Replace Homebrew assumptions in `tools/install_castle_tools.sh`.
+- [x] Launchers: `Castle Tools.command` (mac) + `Castle Tools.bat`/Start-menu
+      shortcut (Windows) that start the server and open the browser.
+- [x] `--repair` and `--uninstall` flags; idempotent re-run.
+- [x] Works from a downloaded zip of the release, not only a git clone.
+
+## 7. Desktop-tool stability (P1)
+
+- [ ] Import pipeline failure messages written for an owner, not a developer
+      (`studio_reason.rs` already explains errors — audit the wording).
+- [ ] Castle offline / wrong address: one clear state, one "find my castle"
+      action (mDNS browse + manual IP).
+- [ ] Sync interrupted mid-push: resumable or safely retried; card never left
+      with a half-written `show.man`.
+- [ ] Disk-full, unsupported file type, 2-hour file, non-ASCII filenames
+      (Windows + mac), file on a network drive.
+- [ ] Firmware/app version handshake: the app refuses (with a message) to push
+      a show format the castle's firmware cannot read.
+- [ ] Crash reporting: a local "copy diagnostics" button (no telemetry).
+
+### 4.4 Windows hands-on pass (an Opus agent on your Windows PC)
+- [ ] Fresh Windows user account: install from a Release, first-run, import
+      a song (mp3 + wav + a non-ASCII name), separate stems, sync, play.
+- [ ] Time Demucs per song on that CPU (compare: M4 CPU 133 s / tuned 65 s).
+- [ ] Flash a castle from the web flasher in Edge; check the USB driver.
+- [ ] Auto-update from one Release to the next.
+- [ ] Run the Rust + Python suites natively; file what fails as follow-up.
+
+## 8. Repo and process
+
+- [ ] Branch strategy: buyer releases tagged from `main`; a `release/x.y`
+      branch if fixes must ship without new features.
+- [ ] Version numbers: one release number for app + firmware + card format,
+      shown in the app, on the castle page, and in the owner's guide.
+- [ ] `docs/RUNBOOK.md` gains a "supporting a buyer's castle" section.
+- [ ] Repo is public: confirm nothing personal ships (Wi-Fi secrets, your
+      `devices.toml`, `tracks.json` provenance with your file paths).
+- [ ] Per-unit record: serial/MAC, firmware version, date, buyer — kept by
+      you, not in the repo.
+
+---
+
+## Suggested order
+
+1. Section 0 answers.
+2. 1.1 Wi-Fi onboarding + 1.2 web flasher — the castle stands alone.
+3. Section 2 soak, section 3 handover package. **A run-only buyer is done here.**
+4. Section 4 Windows port + CI, then 5.3 data location.
+5. Section 6 (option A) as the first working cross-platform installer.
+6. Section 5 (option B) on top of the same pieces; section 7 throughout.
+
+## 9. Updates from GitHub (app, firmware, show format)
+
+The repo is public, so the app reads Releases with no token (60 API
+calls/hour unauthenticated — check once a day and on launch, not more).
+- [ ] One Release = one version of everything: Tauri bundles (mac arm64,
+      mac x64?, Windows x64), `latest.json` for the updater, firmware images
+      named by variant (1.5), web-flasher manifest, checksums.
+- [ ] Tauri updater: its own update-signing keypair (minisign — free, NOT
+      code signing; required even for unsigned apps). Private key in a
+      GitHub Actions secret; losing it strands installed apps.
+- [x] Release workflow: tag `vX.Y` → build on macOS + Windows runners →
+      build firmware → upload all assets → publish `latest.json` last.
+- [ ] Channels: `stable` only for the buyer; pre-releases ignored unless a
+      hidden setting opts in (so you can test on your own castle first).
+- [ ] Firmware update from the app: compare `/api/status` firmware +
+      `board` with the Release, download the matching OTA image, verify
+      checksum, stop audio, `PUT /api/ota`, confirm the new version on
+      `/api/status`. Never auto-flash — the owner presses "Update castle".
+- [ ] Show/card format: app refuses to publish a format newer than the
+      castle's firmware reads; tells the owner to update the castle first.
+- [ ] Rollback: the previous Release stays downloadable; firmware keeps
+      ESP-IDF's two OTA slots, so a failed boot rolls back on its own.
+- [x] Option A (uv installer) path: `--update` pulls the latest Release
+      zip + bins, same `latest.json`; a "new version" banner in the page.
+- [ ] Never break an installed buyer: old app versions keep working
+      against new Releases (the update check is the only contract).

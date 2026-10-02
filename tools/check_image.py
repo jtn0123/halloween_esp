@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Guard the OTA slot budget — and be the one place that FINDS a built image.
 
-    tools/check_image.py [castle-feather-s3|castle-s3] [--require] [--path]
+    tools/check_image.py [castle-feather-s3|castle-s3|castle] [--require] [--path]
+
+("castle" is the buyer build, castle_buyer.yaml: its device name is the
+hostname stem name_add_mac_suffix extends at boot.)
 
 Flash is the tight resource on the 4 MB Feather in the yard: v5.67 measured
 67.9% of its 1,835,008-byte OTA slot with RAM at 35.1% — the card show gave
@@ -89,7 +92,7 @@ def slot_size(img: Path) -> int:
     csv = img.parent.parent / "partitions.csv"
     if not csv.exists():
         raise SystemExit(f"no partition table beside {img}: expected {csv}")
-    for line in csv.read_text().splitlines():
+    for line in csv.read_text(encoding="utf-8").splitlines():
         cols = [c.strip() for c in line.split(",")]
         if cols and cols[0] == "app0":
             return int(cols[4], 0)

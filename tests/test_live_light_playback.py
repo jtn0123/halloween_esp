@@ -20,12 +20,12 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = (ROOT / "firmware" / "castle_sd_common.yaml").read_text()
+SOURCE = (ROOT / "firmware" / "castle_sd_common.yaml").read_text(encoding="utf-8")
 #: The 200 ms bridge is two files since v5.70: the tick that mirrors state
 #: out lives in castle_sd_common.yaml, and the mailbox's if/else chain is
 #: the `web_action` script it runs inline (castle_web_actions.yaml). The
 #: branches below are read out of the second; the mirror out of the first.
-ACTIONS = (ROOT / "firmware" / "castle_web_actions.yaml").read_text()
+ACTIONS = (ROOT / "firmware" / "castle_web_actions.yaml").read_text(encoding="utf-8")
 COMPILER = shutil.which("clang++") or shutil.which("g++")
 FLAGS = [
     "-std=c++17",
@@ -137,9 +137,9 @@ class LiveLightPlaybackTests(unittest.TestCase):
         self.assertIn('id(current_track).publish_state("")', mirror)
 
     def test_status_reports_the_audio_clock(self):
-        web = (ROOT / "firmware" / "sd_web.h").read_text()
+        web = (ROOT / "firmware" / "sd_web.h").read_text(encoding="utf-8")
         self.assertIn('"playing":%s,"position_ms":%lld', web)
-        state = (ROOT / "firmware" / "sd_web_state.h").read_text()
+        state = (ROOT / "firmware" / "sd_web_state.h").read_text(encoding="utf-8")
         self.assertIn(
             "inline bool mirror_audio(bool playing, bool sounding, long long now_us,",
             state,

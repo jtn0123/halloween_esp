@@ -33,10 +33,11 @@ sys.path.insert(0, str(ROOT / "tests"))
 import cargo_gate
 import castle_emu
 import hosts as hosts_mod
+from exe_paths import exe
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
-BIN = ROOT / "core" / "target" / "release" / "castle"
+BIN = ROOT / "core" / "target" / "release" / exe("castle")
 
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
@@ -54,7 +55,8 @@ class TestBridgeVerbs(unittest.TestCase):
         (cls.card / "logs").mkdir(exist_ok=True)
         (cls.card / "logs" / "castle.log").write_text(
             "2026-09-16T21:14:02 boot #7 v5.62 reason=PANIC crashes=1 "
-            "sd_errors_prev=0 part=ota_1 ota=valid\n"
+            "sd_errors_prev=0 part=ota_1 ota=valid\n",
+            encoding="utf-8",
         )
         cls.emu = castle_emu.CastleEmu(
             port=0, sd_dir=cls.card, scenes=["vigil", "storm"]
@@ -72,6 +74,7 @@ class TestBridgeVerbs(unittest.TestCase):
             [str(BIN), "--host", f"127.0.0.1:{self.emu.port}", *verb],
             capture_output=True,
             text=True,
+            encoding="utf-8",  # what the binary writes, on every OS
             check=False,
             timeout=15,
         )
@@ -186,13 +189,13 @@ class TestBridgeVerbs(unittest.TestCase):
         (self.card / "doomed_b.mp3").write_bytes(b"b" * 32)
         keep = self.card / "site"
         keep.mkdir(exist_ok=True)
-        (keep / "index.html").write_text("kept")
+        (keep / "index.html").write_text("kept", encoding="utf-8")
         code, body = self.castle("purge")
         self.assertEqual(code, 0, body)
         self.assertIn("deleted doomed_a.mp3", body)
         self.assertFalse((self.card / "doomed_a.mp3").exists())
         self.assertFalse((self.card / "doomed_b.mp3").exists())
-        self.assertEqual((keep / "index.html").read_text(), "kept")
+        self.assertEqual((keep / "index.html").read_text(encoding="utf-8"), "kept")
         code, body = self.castle("purge")
         self.assertEqual(code, 0, body)
         self.assertIn("no files", body)
@@ -215,6 +218,7 @@ class TestBridgeVerbs(unittest.TestCase):
             [str(BIN), "--host", f"127.0.0.1:{self.emu.port}", "ota", str(img)],
             capture_output=True,
             text=True,
+            encoding="utf-8",  # what the binary writes, on every OS
             check=False,
             timeout=30,
             env={**os.environ, "CASTLE_OTA_WAIT_S": "5"},
@@ -247,6 +251,7 @@ class TestBridgeVerbs(unittest.TestCase):
             [str(BIN), "--host", "127.0.0.1:1", "status"],
             capture_output=True,
             text=True,
+            encoding="utf-8",  # what the binary writes, on every OS
             check=False,
             timeout=15,
         )
@@ -284,7 +289,7 @@ class TestHostDiscoveryParity(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.tmp = Path(tempfile.mkdtemp(prefix="bridge-hosts-"))
         cls.toml = cls.tmp / "devices.toml"
-        cls.toml.write_text(cls.TOML)
+        cls.toml.write_text(cls.TOML, encoding="utf-8")
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -337,7 +342,8 @@ class TestHostDiscoveryParity(unittest.TestCase):
         try:
             toml = self.tmp / "walk.toml"
             toml.write_text(
-                f'[porch]\nhost = "127.0.0.1:1"\nfallbacks = ["127.0.0.1:{emu.port}"]\n'
+                f'[porch]\nhost = "127.0.0.1:1"\nfallbacks = ["127.0.0.1:{emu.port}"]\n',
+                encoding="utf-8",
             )
             e = {k: v for k, v in os.environ.items() if k != "CASTLE_HOST"}
             e["CASTLE_DEVICES"] = str(toml)

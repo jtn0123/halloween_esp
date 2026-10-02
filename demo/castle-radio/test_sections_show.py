@@ -261,7 +261,7 @@ class Lab(unittest.TestCase):
             library, output = Path(tmp) / "tracks", Path(tmp) / "out"
             (library / "stems" / "radio_x").mkdir(parents=True)
             (library / "stems" / "radio_x" / "analysis.json").write_text(
-                json.dumps({"layers": layers})
+                json.dumps({"layers": layers}), encoding="utf-8"
             )
             (library / "radio_x.mp3").write_bytes(b"not really a song")
             output.mkdir()
@@ -285,7 +285,9 @@ class Lab(unittest.TestCase):
             library, output = Path(tmp) / "tracks", Path(tmp) / "out"
             for root in (library, output):
                 (root / "stems" / "k").mkdir(parents=True)
-                (root / "stems" / "k" / "analysis.json").write_text("{}")
+                (root / "stems" / "k" / "analysis.json").write_text(
+                    "{}", encoding="utf-8"
+                )
             self.assertEqual(
                 show_lab.analysis_for(library, output, "k"),
                 output / "stems" / "k" / "analysis.json",
@@ -304,7 +306,7 @@ class Lab(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "picks.json"
-            path.write_text(json.dumps(picks))
+            path.write_text(json.dumps(picks), encoding="utf-8")
             lines = show_lab.verdicts(path)
         self.assertIn("sections", lines[0])
         self.assertIn("picked   2", lines[0])
@@ -318,9 +320,9 @@ class Lab(unittest.TestCase):
                 folder / "castle-lab-verdicts.json",
                 folder / "castle-lab-verdicts (1).json",
             )
-            (folder / "other.json").write_text("[]")
+            (folder / "other.json").write_text("[]", encoding="utf-8")
             for age, path in ((100, old), (50, new)):
-                path.write_text("[]")
+                path.write_text("[]", encoding="utf-8")
                 os.utime(path, (time.time() - age, time.time() - age))
             self.assertEqual(show_lab.latest_verdicts(folder), new)
 

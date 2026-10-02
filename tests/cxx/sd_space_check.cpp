@@ -27,9 +27,9 @@ void check(bool ok, const char *what, int line) {
 void card_says(unsigned total_kb, unsigned free_kb) {
   std::array<char, 24> buf{};
   std::snprintf(buf.data(), buf.size(), "%u", total_kb);
-  setenv("CASTLE_SD_TOTAL_KB", buf.data(), 1);
+  castle_shim::set_env("CASTLE_SD_TOTAL_KB", buf.data());
   std::snprintf(buf.data(), buf.size(), "%u", free_kb);
-  setenv("CASTLE_SD_FREE_KB", buf.data(), 1);
+  castle_shim::set_env("CASTLE_SD_FREE_KB", buf.data());
 }
 }  // namespace
 

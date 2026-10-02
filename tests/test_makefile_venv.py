@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 class MakefileVenvTests(unittest.TestCase):
     def test_missing_venv_tells_you_to_run_setup(self):
-        text = (ROOT / "Makefile").read_text()
+        text = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertIn("run make setup", text)
         self.assertIn("origin PY),command line", text)
         self.assertIn("PY = $(error", text)

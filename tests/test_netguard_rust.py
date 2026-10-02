@@ -35,11 +35,12 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import cargo_gate
 import netguard as ng
+from exe_paths import exe
 from test_netguard import fake_dns
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
-BIN = ROOT / "core" / "target" / "release" / "netguard_dump"
+BIN = ROOT / "core" / "target" / "release" / exe("netguard_dump")
 
 #: What the world resolves to for this corpus — split-horizon and
 #: rebinding answers included.

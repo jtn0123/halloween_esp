@@ -27,7 +27,6 @@ part that makes an import reproducible, and it costs nothing to keep.
 
 from __future__ import annotations
 
-import fcntl
 import json
 import os
 import time
@@ -36,6 +35,8 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, TypedDict, Unpack
+
+import portable_fs
 
 
 class Entry(TypedDict, total=False):
@@ -67,21 +68,18 @@ def _locked() -> Iterator[None]:
     The studio server (forget) and its import_track children (record) both
     rewrite this file; without the lock, two concurrent imports could each
     load, mutate and save — and one import's provenance would silently
-    vanish."""
+    vanish. core/src/manifest.rs takes the same lock on the same file;
+    portable_fs says how that stays true on Windows."""
     PATH.parent.mkdir(exist_ok=True)
-    with open(PATH.with_suffix(".lock"), "w") as fh:
-        fcntl.flock(fh, fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(fh, fcntl.LOCK_UN)
+    with portable_fs.exclusive(PATH.with_suffix(".lock")):
+        yield
 
 
 def load() -> dict[str, Entry]:
     if not PATH.exists():
         return {}
     try:
-        return dict(json.loads(PATH.read_text()))
+        return dict(json.loads(PATH.read_text(encoding="utf-8")))
     except json.JSONDecodeError:
         # A half-written manifest used to read as "no tracks were ever
         # imported" — and the NEXT save then persisted that empty dict,
@@ -99,10 +97,16 @@ def load() -> dict[str, Entry]:
 def save(data: dict[str, Entry]) -> None:
     PATH.parent.mkdir(exist_ok=True)
     # Write-then-rename so a crash mid-write can never truncate the real
-    # file: os.replace is atomic on the same filesystem.
+    # file: os.replace is atomic on the same filesystem (and retried while
+    # Windows reports the target busy).
     tmp = PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
-    os.replace(tmp, PATH)
+    # newline="\n": Windows' text mode would otherwise write \r\n.
+    tmp.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    portable_fs.replace(tmp, PATH)
 
 
 def record(

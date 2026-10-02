@@ -30,6 +30,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import cargo_gate
 import pulse_dynamics as pd
 import pulse_expand as pe
+from exe_paths import exe
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
@@ -128,7 +129,7 @@ class TestPulseRustParity(unittest.TestCase):
             want.append(",".join(str(c["i"]) for c in kept))
 
         run = subprocess.run(
-            [str(ROOT / "core" / "target" / "release" / "pulse_dump")],
+            [str(ROOT / "core" / "target" / "release" / exe("pulse_dump"))],
             input="\n".join(lines) + "\n",
             capture_output=True,
             text=True,
@@ -252,7 +253,7 @@ class TestPulseRustParity(unittest.TestCase):
             lines.append(f"pc {g_arg} {';'.join(parts)} {beat_arg}")
 
         run = subprocess.run(
-            [str(ROOT / "core" / "target" / "release" / "pulse_dump")],
+            [str(ROOT / "core" / "target" / "release" / exe("pulse_dump"))],
             input="\n".join(lines) + "\n",
             capture_output=True,
             text=True,

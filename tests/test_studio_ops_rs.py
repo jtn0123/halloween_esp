@@ -70,7 +70,9 @@ class Publish(StudioCase):
             },
         )
         masked = self.masked(log).replace(self.HOST_ENV, "<CASTLE>")
-        self.assertIn("source: <BUILD>/audio/", masked)
+        # The build dir is outside the repo, so the line names it the way
+        # the OS spells paths (build_paths.rel): a backslash on Windows.
+        self.assertRegex(masked, r"source: <BUILD>[\\/]audio/")
         self.assertIn("uploading 01_vigil.mp3", masked)
         self.assertIn("1 scene tracks in /sd/scenes/", masked)
         self.assertIn("2 cue files (2 sent) + show.man", masked)
@@ -81,7 +83,7 @@ class Publish(StudioCase):
         # beside it.
         sd = Path(self.emu.sd_dir)
         self.assertEqual(
-            sorted(str(f.relative_to(sd)) for f in sd.rglob("*") if f.is_file()),
+            sorted(f.relative_to(sd).as_posix() for f in sd.rglob("*") if f.is_file()),
             [
                 # The show itself is card data since v5.67 — one .cue per
                 # scene and the manifest that names them — so a publish

@@ -101,7 +101,9 @@ class PreparedFilesTests(unittest.TestCase):
                 info = rich_show.prepare(library, row)
             self.assertEqual(audio.read_bytes(), b"unchanged audio")
             blob = audio.with_suffix(".cue").read_bytes()
-            preview = json.loads(audio.with_suffix(".show.json").read_text())
+            preview = json.loads(
+                audio.with_suffix(".show.json").read_text(encoding="utf-8")
+            )
             expected = rich_show.preview_from_blob(row["key"], blob)
             expected["name"] = "Test"
             self.assertEqual(preview, expected)

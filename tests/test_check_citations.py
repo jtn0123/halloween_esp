@@ -72,7 +72,9 @@ class TestTree(unittest.TestCase):
         bare must report it."""
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            (root / "planted.py").write_text("# the fix for grade report A1\n")
+            (root / "planted.py").write_text(
+                "# the fix for grade report A1\n", encoding="utf-8"
+            )
             rows = check_citations.scan(root=root, files=[root / "planted.py"])
         self.assertEqual([(r[0], r[2]) for r in rows], [("planted.py", False)])
 

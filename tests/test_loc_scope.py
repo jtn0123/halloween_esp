@@ -33,6 +33,7 @@ DOCUMENTED_GENERATED = {
     "firmware/generated/fallback_scenes.h",
     "audio/markers.json",
     "web/package-lock.json",
+    "desktop/src-tauri/Cargo.lock",
     "requirements.lock",
     "tests/golden/read_routes.json",
     "tests/golden/scene_errors.json",
@@ -215,16 +216,16 @@ class TestSceneBudget(unittest.TestCase):
 
     def test_counts_scene_blocks_and_not_the_zone_list(self) -> None:
         """The zone list above `scenes:` uses `- {id: …}` and must not count."""
-        self.show.write_text(self.SHOW)
+        self.show.write_text(self.SHOW, encoding="utf-8")
         self.assertEqual(check_loc.count_scenes(self.show), 2)
 
     def test_a_show_within_the_ceiling_has_no_complaint(self) -> None:
-        self.show.write_text(self.SHOW)
+        self.show.write_text(self.SHOW, encoding="utf-8")
         self.assertEqual(check_loc.scene_budget(self.show), (2, None))
 
     def test_a_thirteenth_scene_fails_and_says_what_to_do_instead(self) -> None:
         blocks = "".join(f"  - id: s{i}\n    name: S{i}\n" for i in range(13))
-        self.show.write_text("scenes:\n" + blocks)
+        self.show.write_text("scenes:\n" + blocks, encoding="utf-8")
         n, complaint = check_loc.scene_budget(self.show)
         self.assertEqual(n, 13)
         assert complaint is not None
@@ -246,7 +247,7 @@ class TestSceneBudget(unittest.TestCase):
         """No scenes: header, no count — the check must not invent a failure
         for a sandboxed or half-written file."""
         self.assertEqual(check_loc.count_scenes(self.tmp / "ghost.yaml"), 0)
-        self.show.write_text("hardware: {}\n")
+        self.show.write_text("hardware: {}\n", encoding="utf-8")
         self.assertEqual(check_loc.count_scenes(self.show), 0)
 
 
@@ -265,15 +266,15 @@ class TestSyntheticTree(unittest.TestCase):
         return {rel: (n, over) for n, rel, over in rows}
 
     def test_a_501_line_markdown_fails(self) -> None:
-        (self.tmp / "notes.md").write_text("line\n" * 501)
-        (self.tmp / "fine.md").write_text("line\n" * 500)
+        (self.tmp / "notes.md").write_text("line\n" * 501, encoding="utf-8")
+        (self.tmp / "fine.md").write_text("line\n" * 500, encoding="utf-8")
         got = self._measure(["notes.md", "fine.md"])
         self.assertEqual(got["notes.md"], (501, True))
         self.assertEqual(got["fine.md"], (500, False))
 
     def test_a_501_line_html_and_yaml_fail(self) -> None:
-        (self.tmp / "page.html").write_text("<p>x</p>\n" * 501)
-        (self.tmp / "cfg.yaml").write_text("- x\n" * 501)
+        (self.tmp / "page.html").write_text("<p>x</p>\n" * 501, encoding="utf-8")
+        (self.tmp / "cfg.yaml").write_text("- x\n" * 501, encoding="utf-8")
         got = self._measure(["page.html", "cfg.yaml"])
         self.assertTrue(got["page.html"][1])
         self.assertTrue(got["cfg.yaml"][1])
@@ -284,7 +285,7 @@ class TestSyntheticTree(unittest.TestCase):
         self.assertEqual(self._measure(["blob.dat", "sound.mp3"]), {})
 
     def test_exempt_path_is_skipped_even_when_over(self) -> None:
-        (self.tmp / "gen.json").write_text("1\n" * 900)
+        (self.tmp / "gen.json").write_text("1\n" * 900, encoding="utf-8")
         rows = check_loc.measure(
             root=self.tmp,
             files=[self.tmp / "gen.json"],
@@ -317,7 +318,7 @@ class TestThresholds(unittest.TestCase):
     def test_the_hook_runs_check_loc_in_hook_mode(self) -> None:
         """The threshold only bites if the hook asks for it — this is the
         wiring, and it is one flag away from being silently lost."""
-        hook = (ROOT / "githooks" / "pre-commit").read_text()
+        hook = (ROOT / "githooks" / "pre-commit").read_text(encoding="utf-8")
         self.assertIn("tools/check_loc.py --hook", hook)
 
     def test_check_mode_passes_a_file_the_hook_would_refuse(self) -> None:
@@ -336,7 +337,7 @@ class TestThresholds(unittest.TestCase):
         `--hook` exit 1 and plain mode exit 0."""
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp, True)
-        (tmp / "big.py").write_text("x = 1\n" * 495)
+        (tmp / "big.py").write_text("x = 1\n" * 495, encoding="utf-8")
         rows = [(495, "big.py", False)]
         with mock.patch.object(check_loc, "measure", return_value=rows):
             out = io.StringIO()

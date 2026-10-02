@@ -15,6 +15,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 import castle_tools_status as tools_status
 
 
+def _bash() -> str:
+    """A POSIX bash for the launcher. On Windows the `bash` CreateProcess
+    finds first is System32's WSL stub, which only says no distribution is
+    installed. Git for Windows' bash is under its usr/bin — the real one,
+    not bin/bash.exe, a launcher that puts Git's own curl ahead of the
+    fakes on PATH."""
+    if os.name == "nt":
+        git = shutil.which("git")
+        for up in Path(git).resolve().parents[:3] if git else ():
+            if (up / "usr" / "bin" / "bash.exe").is_file():
+                return str(up / "usr" / "bin" / "bash.exe")
+    return shutil.which("bash") or "bash"
+
+
+def _fake_checkout(fake: Path) -> Path:
+    """The launcher, a venv python and a bin/ for the fakes, under `fake`.
+    The interpreter is a one-line script rather than a symlink: Windows
+    makes symlinks a privilege, and the launcher only asks that it run."""
+    root = Path(__file__).resolve().parents[1]
+    (fake / ".venv" / "bin").mkdir(parents=True)
+    (fake / "bin").mkdir()
+    shutil.copy(root / "Open Castle Studio.command", fake)
+    python = fake / ".venv" / "bin" / "python"
+    exe = Path(sys.executable).as_posix()
+    python.write_text(f"#!/bin/sh\nexec '{exe}' \"$@\"\n", encoding="utf-8")
+    python.chmod(0o755)
+    return fake / "Open Castle Studio.command"
+
+
+def _launch(launcher: Path, env: dict[str, str], stdin: str = "") -> Any:
+    env["PATH"] = os.pathsep.join([str(launcher.parent / "bin"), env["PATH"]])
+    return subprocess.run(
+        [_bash(), launcher.as_posix()],
+        cwd=launcher.parent,
+        env=env,
+        input=stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=5,
+    )
+
+
 class CastleToolsStatusTests(unittest.TestCase):
     def test_status_has_stable_identity_and_capabilities(self) -> None:
         result = tools_status.status()
@@ -30,7 +73,9 @@ class CastleToolsStatusTests(unittest.TestCase):
             cache = Path(tmp)
             snap = cache / "models--adefossez--HTDemucs" / "snapshots" / "revision"
             snap.mkdir(parents=True)
-            (snap / "htdemucs.yaml").write_text("models: [one, two]\n")
+            (snap / "htdemucs.yaml").write_text(
+                "models: [one, two]\n", encoding="utf-8"
+            )
             (snap / "one.safetensors").write_bytes(b"weight")
             with mock.patch.dict(os.environ, {"HF_HUB_CACHE": str(cache)}):
                 self.assertFalse(tools_status._model()["ok"])
@@ -42,7 +87,7 @@ class CastleToolsStatusTests(unittest.TestCase):
             ok = name not in {"demucs", "torch"}
             return {"name": name, "ok": ok, "detail": "test", "required": required}
 
-        good_command = lambda name, required=True: {  # noqa: E731
+        good_command = lambda name, required=True, command=None: {  # noqa: E731
             "name": name,
             "ok": True,
             "detail": "test",
@@ -84,68 +129,46 @@ class CastleToolsStatusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             snap = Path(tmp) / "models--adefossez--HTDemucs" / "snapshots" / "revision"
             snap.mkdir(parents=True)
-            (snap / "htdemucs.yaml").write_text("models: [unterminated")
+            (snap / "htdemucs.yaml").write_text(
+                "models: [unterminated", encoding="utf-8"
+            )
             with mock.patch.dict(os.environ, {"HF_HUB_CACHE": tmp}):
                 self.assertFalse(tools_status._model()["ok"])
 
     def test_launcher_reuses_only_castle_radio_identity(self) -> None:
-        root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:
             fake = Path(tmp)
-            (fake / ".venv" / "bin").mkdir(parents=True)
-            (fake / "bin").mkdir()
-            shutil.copy(root / "Open Castle Studio.command", fake)
-            os.symlink(sys.executable, fake / ".venv" / "bin" / "python")
+            launcher = _fake_checkout(fake)
             curl = fake / "bin" / "curl"
             curl.write_text(
                 "#!/bin/sh\nprintf '%s\\n' "
-                '\'{"service":"castle-radio","protocol":1}\'\n'
+                '\'{"service":"castle-radio","protocol":1}\'\n',
+                encoding="utf-8",
             )
             opened = fake / "opened"
             opener = fake / "bin" / "open"
-            opener.write_text(f"#!/bin/sh\nprintf '%s' \"$1\" > '{opened}'\n")
+            opener.write_text(
+                f"#!/bin/sh\nprintf '%s' \"$1\" > '{opened.as_posix()}'\n",
+                encoding="utf-8",
+            )
             curl.chmod(0o755)
             opener.chmod(0o755)
-            env = os.environ.copy()
-            env["PATH"] = f"{fake / 'bin'}:{env['PATH']}"
-            result = subprocess.run(
-                ["bash", str(fake / "Open Castle Studio.command")],
-                cwd=fake,
-                env=env,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=5,
-            )
+            result = _launch(launcher, os.environ.copy())
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn("already running", result.stdout)
-            self.assertEqual(opened.read_text(), "http://10.27.27.81/")
+            self.assertEqual(opened.read_text(encoding="utf-8"), "http://10.27.27.81/")
 
     def test_launcher_refuses_a_different_service_on_its_port(self) -> None:
-        root = Path(__file__).resolve().parents[1]
         with tempfile.TemporaryDirectory() as tmp:
             fake = Path(tmp)
-            (fake / ".venv" / "bin").mkdir(parents=True)
-            (fake / "bin").mkdir()
-            shutil.copy(root / "Open Castle Studio.command", fake)
-            os.symlink(sys.executable, fake / ".venv" / "bin" / "python")
+            launcher = _fake_checkout(fake)
             curl = fake / "bin" / "curl"
             curl.write_text(
-                "#!/bin/sh\nprintf '%s\\n' '{\"service\":\"someone-else\"}'\n"
+                "#!/bin/sh\nprintf '%s\\n' '{\"service\":\"someone-else\"}'\n",
+                encoding="utf-8",
             )
             curl.chmod(0o755)
-            env = os.environ.copy()
-            env["PATH"] = f"{fake / 'bin'}:{env['PATH']}"
-            result = subprocess.run(
-                ["bash", str(fake / "Open Castle Studio.command")],
-                cwd=fake,
-                env=env,
-                input="\n",
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=5,
-            )
+            result = _launch(launcher, os.environ.copy(), stdin="\n")
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("being used by another app", result.stdout)
 

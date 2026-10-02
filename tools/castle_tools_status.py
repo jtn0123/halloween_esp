@@ -8,10 +8,12 @@ import importlib.metadata
 import importlib.util
 import json
 import os
-import shutil
 import sys
 from pathlib import Path
 from typing import TypedDict
+
+import exe_paths
+from exe_paths import exe
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_NAME = "htdemucs model"
@@ -39,8 +41,10 @@ def _package(name: str, module: str, required: bool = True) -> Check:
     }
 
 
-def _command(name: str, required: bool = True) -> Check:
-    path = shutil.which(name)
+def _command(name: str, required: bool = True, command: str | None = None) -> Check:
+    """`name` as the user knows it; `command` what is actually run when a
+    bundled copy (CASTLE_FFMPEG, CASTLE_YTDLP) stands in for PATH's."""
+    path = exe_paths.which(command or name)
     return {
         "name": name,
         "ok": path is not None,
@@ -58,7 +62,7 @@ def _python() -> Check:
 
 
 def _analyzer() -> Check:
-    binary = ROOT / "core" / "target" / "release" / "analyze_track"
+    binary = ROOT / "core" / "target" / "release" / exe("analyze_track")
     ok = binary.is_file() and os.access(binary, os.X_OK)
     return {
         "name": "analyze_track",
@@ -95,7 +99,7 @@ def _model() -> Check:
         candidates = []
     for bag_file in candidates:
         try:
-            bag = yaml.safe_load(bag_file.read_text())
+            bag = yaml.safe_load(bag_file.read_text(encoding="utf-8"))
             signatures = bag.get("models", []) if isinstance(bag, dict) else []
             weights = [bag_file.parent / f"{sig}.safetensors" for sig in signatures]
             if signatures and all(
@@ -125,8 +129,8 @@ def status() -> dict[str, object]:
         _package("numpy", "numpy"),
         _package("scipy", "scipy"),
         _package("PyYAML", "yaml"),
-        _command("ffmpeg"),
-        _command("yt-dlp", False),
+        _command("ffmpeg", command=exe_paths.ffmpeg()),
+        _command("yt-dlp", False, exe_paths.ytdlp()),
         _command("cargo", False),
         _analyzer(),
         _package("demucs", "demucs", False),

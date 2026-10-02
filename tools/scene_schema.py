@@ -132,7 +132,7 @@ def load_markers(path: Path) -> Markers:
     generators say so themselves and carry on."""
     if not path.exists():
         return {}
-    return cast(Markers, json.loads(path.read_text()))
+    return cast(Markers, json.loads(path.read_text(encoding="utf-8")))
 
 
 def parse_show(text: str) -> ShowDoc:
@@ -142,7 +142,7 @@ def parse_show(text: str) -> ShowDoc:
 
 
 def load_show(path: Path) -> ShowDoc:
-    return parse_show(path.read_text())
+    return parse_show(path.read_text(encoding="utf-8"))
 
 
 REQUIRED = ("id", "name", "kind", "duration_ms", "base")

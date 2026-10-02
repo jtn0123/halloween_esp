@@ -44,12 +44,13 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import cargo_gate
 import golden_case as gc
+from exe_paths import exe
 from golden_corpus import JSON_HDRS
 from helpers import SANDBOX_ENV
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
-BIN = ROOT / "core" / "target" / "release" / "studio"
+BIN = ROOT / "core" / "target" / "release" / exe("studio")
 
 #: The body from the report, unchanged: 100 KB of one byte. It is nothing
 #: like the ~20 KB actually needed, and that is the point — MAX_BODY is

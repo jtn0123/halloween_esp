@@ -31,13 +31,19 @@ DEVICE_S3 := castle-s3
 # It has never been on hardware; the weekly CI job compiles it so it cannot
 # rot unnoticed.
 YAML_S3 := firmware/castle_s3.yaml
+# The BUYER build (v5.74): the same Feather and carrier as $(YAML), with no
+# Wi-Fi credentials compiled in — softAP + captive portal + Improv-over-USB
+# to hand it a network, and a per-unit castle-xxxxxx hostname. Its device
+# name is the hostname STEM, so its build tree is "castle".
+YAML_BUYER := firmware/castle_buyer.yaml
+DEVICE_BUYER := castle
 # The documented target; pyproject/CI/mypy all say 3.13. Found on PATH rather
 # than at one Homebrew path, which is not where every machine keeps it.
 # Recursive (=), not :=, so the lookup — and the error — only happen when
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: build-buyer validate-buyer show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
 
 help:
 	@echo "Halloween Castle"
@@ -52,6 +58,7 @@ help:
 	@echo "  make upload     compile and flash over the Feather's USB-C"
 	@echo "  make logs       tail device logs over the same cable"
 	@echo "  make build-s3 / upload-s3 / logs-s3   the same for the WROOM carrier"
+	@echo "  make build-buyer / validate-buyer   the buyer image: no Wi-Fi baked in, AP + Improv setup"
 	@echo "  make build-fs3 / upload-fs3 / logs-fs3   aliases for build / upload / logs"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"
@@ -79,11 +86,13 @@ help:
 	@echo "  make check-all  every check, including the browser tests"
 	@echo "  make coverage   unit tests under coverage.py, report on tools/ (non-gating)"
 	@echo "  make rust-coverage  cargo llvm-cov summary for core/ (non-gating)"
+	@echo "  make desktop-test / desktop-lint  the Tauri app (desktop/README.md; not in check)"
 	@echo "  make coverage-gate  the same, failing under $(COVERAGE_MIN)% (what CI enforces)"
 	@echo "  make coverage-radio demo/castle-radio under its own floor ($(COVERAGE_RADIO_MIN)%)"
 	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
 	@echo "  make lock       relock requirements.lock from a clean throwaway venv"
 	@echo "  make lock-hashes  refresh the lock's sha256 lines, same pins, no resolve"
+	@echo "  make lock-desktop relock requirements-desktop.lock (the installer's; needs uv)"
 	@echo "  make clean      drop firmware/.esphome and rendered wavs"
 	@echo "  make sd-build / sd-upload   older names for build / upload"
 	@echo "  make bench-audio-logs       tail the bench-audio build's logs"
@@ -203,7 +212,7 @@ bench: audio generate
 bench-logs:
 	$(ESPHOME_RUN) logs firmware/bench.yaml
 
-validate: generate validate-s3
+validate: generate validate-s3 validate-buyer
 	@$(ESPHOME_RUN) config $(YAML) > /dev/null && echo "config OK"
 
 # The carrier build is validated by the same target, not by a habit anyone
@@ -211,6 +220,15 @@ validate: generate validate-s3
 validate-s3: generate
 	@$(ESPHOME_RUN) config $(YAML_S3) > /dev/null && echo "config OK (s3)"
 	@$(ESPHOME_RUN) config firmware/castle_s3_qemu.yaml > /dev/null && echo "config OK (s3 qemu)"
+
+# The buyer image. No upload target on purpose: a buyer's castle is
+# flashed from a release through the web flasher, never from this checkout.
+validate-buyer: generate
+	@$(ESPHOME_RUN) config $(YAML_BUYER) > /dev/null && echo "config OK (buyer)"
+
+build-buyer: audio generate
+	$(ESPHOME_RUN) compile $(YAML_BUYER)
+	@$(PY) tools/check_image.py $(DEVICE_BUYER) --require
 
 # The S3 Feather's USB-C is the chip's own USB Serial/JTAG, so `upload` and
 # `logs` share one cable — except the FIRST flash of a factory Feather, which
@@ -258,12 +276,14 @@ bench-audio-logs:
 
 # pyproject.toml says >=3.13; the bare-python3 fallback above could silently
 # hand an older interpreter to everything below (grade report 2026-08-23 F5).
+# The suites themselves are spelled in tools/run_checks.py, which the
+# cross-platform CI job runs directly on a Windows runner with no make
+# (docs/PRODUCTION-TODO.md 4.3) — one definition, two doors.
 pycheck:
-	@$(PY) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else \
-		(print(f"python {sys.version.split()[0]} is too old — this repo needs 3.13+ (make setup)") or 1))'
+	@$(PY) tools/run_checks.py pycheck
 
 test: pycheck
-	@$(PY) -m unittest discover -s tests -q
+	@$(PY) tools/run_checks.py test
 
 # The inner loop: everything except the suites that exist to wait — the
 # castle chaos/relay/protocol fuzz and the generator fuzz spend their time
@@ -276,10 +296,7 @@ SLOW_SUITES := chaos|relay|fuzz|_rust|_rs|castle_core|studio
 # Castle Radio: the Python suite next to the sources plus the browser
 # sources run under node:test (needs node 22, no npm install).
 test-radio:
-	@$(PY) -m unittest discover -s demo/castle-radio -t demo/castle-radio -p 'test_*.py' -q \
-		&& node --test demo/castle-radio/test_castle_radio.test.mjs demo/castle-radio/test_castle_fuzz.test.mjs \
-		demo/castle-radio/test_castle_honesty.test.mjs demo/castle-radio/test_desktop_tools.test.mjs demo/castle-radio/test_companion.test.mjs demo/castle-radio/test_device_helper.test.mjs demo/castle-radio/test_card_cues.test.mjs \
-		demo/castle-radio/test_rich_preview.test.mjs demo/castle-radio/test_lab_leds.test.mjs
+	@$(PY) tools/run_checks.py test-radio
 
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \
@@ -355,6 +372,12 @@ lock:
 lock-hashes:
 	@$(PY) tools/lock_deps.py --hashes-only
 
+# The desktop installer's lock (installer/install.sh, install.ps1): macOS arm64
+# + Windows x64, universal, hash-pinned, resolved by uv — see the docstring of
+# tools/lock_desktop.py for why it is not a section of requirements.lock.
+lock-desktop:
+	@$(PY) tools/lock_desktop.py
+
 # castle-core, the Rust half — 9k lines that had no spelling here at all
 # (grade report 2026-08-31 I1). These three ARE the Rust gate: tests/test_castle_core.py
 # shells out to them, so the definition lives in one place and `make rust-lint`
@@ -391,6 +414,17 @@ rust-lint:
 		|| { echo "rustfmt drift — run: cd core && cargo fmt"; exit 1; }; }
 	$(HAVE_CARGO) cd core && cargo clippy --quiet --all-targets -- -D warnings
 
+# The desktop app (desktop/README.md). Not part of `check` or `lint`: it
+# compiles ~450 crates and a webview toolkit, which CI's Linux runners would
+# need webkit2gtk for, and a debug target is 1-2 GB — `cargo clean` after.
+desktop-test:
+	$(HAVE_CARGO) cd desktop/src-tauri && CARGO_INCREMENTAL=0 cargo test --quiet
+
+desktop-lint:
+	$(HAVE_CARGO) cd desktop/src-tauri && { cargo fmt --check \
+		|| { echo "rustfmt drift — run: cd desktop/src-tauri && cargo fmt"; exit 1; }; }
+	$(HAVE_CARGO) cd desktop/src-tauri && CARGO_INCREMENTAL=0 cargo clippy --quiet --all-targets -- -D warnings
+
 # Lint + type-check the Python half; config lives in pyproject.toml. The TS
 # half's equivalent is the tsc line in `check`, the Rust half's is rust-lint.
 # The Python the gate reads. demo/castle-radio joined it on 2026-09-17
@@ -416,6 +450,7 @@ lint: rust-lint
 check: audio test test-radio lint
 	@$(PY) tools/check_image.py $(DEVICE)
 	@$(PY) tools/check_image.py $(DEVICE_S3)
+	@$(PY) tools/check_image.py $(DEVICE_BUYER)
 	@$(PY) tools/check_loc.py
 	@$(PY) tools/check_citations.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"

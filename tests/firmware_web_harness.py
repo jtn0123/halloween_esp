@@ -33,13 +33,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
+import cxx_compiler
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 CXX_DIR = ROOT / "tests" / "cxx"
 FIRMWARE = ROOT / "firmware"
 
-COMPILER = shutil.which("clang++") or shutil.which("g++")
+COMPILER = cxx_compiler.COMPILER  # g++ first on Windows; see the module
 #: Locally a missing compiler is a skip; in CI it is a failure. Same rule as
 #: tests/test_firmware_cxx.py, and for the same reason — a green tick that
 #: compiled nothing is worse than a red one.
@@ -50,7 +52,7 @@ def firmware_version() -> str:
     """The version string the device build compiles in (castle.yaml's
     project.version, ESPHOME_PROJECT_VERSION in the real build's defines.h),
     so the harness and the emulator answer /api/status the same."""
-    for line in (FIRMWARE / "castle.yaml").read_text().splitlines():
+    for line in (FIRMWARE / "castle.yaml").read_text(encoding="utf-8").splitlines():
         if line.strip().startswith("version:"):
             return line.split(":", 1)[1].strip().strip('"')
     raise AssertionError("no version: in firmware/castle.yaml")
@@ -171,6 +173,12 @@ class CastleC:
             headers[name] = value
         return Reply(status, self.proc.stdout.read(blen), headers)
 
+    def set_key(self, key: bytes) -> None:
+        """The X-Castle-Key every later request carries; b"" sends none."""
+        assert self.proc.stdin
+        self.proc.stdin.write(f"KEY {len(key)}\n".encode() + key)
+        self.proc.stdin.flush()
+
     def tick(
         self, now_us: int, playing: bool = False, sounding: bool = False
     ) -> tuple[str, bytes]:
@@ -223,9 +231,10 @@ def emu_http(
     body: bytes = b"",
     declared: int | None = None,
     timeout: float = 20.0,
+    key: bytes = b"",
 ) -> Reply:
     """One raw request at the emulator, with the request target and the
-    Content-Length exactly as given."""
+    Content-Length exactly as given — and X-Castle-Key when `key` is set."""
     n = len(body) if declared is None else declared
     head = (
         method.encode()
@@ -233,13 +242,14 @@ def emu_http(
         + target
         + b" HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: "
         + str(n).encode()
+        + (b"\r\nX-Castle-Key: " + key if key else b"")
         + b"\r\nConnection: close\r\n\r\n"
     )
     chunks: list[bytes] = []
     with socket.create_connection(("127.0.0.1", port), timeout=timeout) as s:
         try:
             s.sendall(head + body)
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             # The reply came back before the body finished going out — an
             # OTA image bigger than the slot is refused on its declared
             # length alone, and 2 MB is a long time to keep writing at a
@@ -248,7 +258,8 @@ def emu_http(
         while True:
             try:
                 got = s.recv(65536)
-            except ConnectionResetError:
+            except (ConnectionResetError, ConnectionAbortedError):
+                # (Aborted is how Windows spells the same reset.)
                 # A handler that refuses before reading the body (the OTA
                 # size window, the 413 cap) closes with bytes still in the
                 # kernel's receive queue, and the peer answers RST. The
@@ -321,7 +332,15 @@ class Pair:
         # flash, spelled to both castles from one place (J3, grade report
         # 2026-09-17 pm). The C reads CASTLE_QUIESCE in seed_from_env.
         self.emu.quiesce = env.get("CASTLE_QUIESCE", "0") != "0"
+        #: The X-Castle-Key both castles are sent from here on (v5.74).
+        self.key = b""
         self.emu.start()
+
+    def send_key(self, key: bytes) -> None:
+        """Every later request to EITHER castle carries this X-Castle-Key
+        (b"" = none) — the client's side of sd_web_prefs.h."""
+        self.key = key
+        self.c.set_key(key)
 
     def close(self) -> None:
         self.c.close()
@@ -338,7 +357,7 @@ class Pair:
     ) -> tuple[Reply, Reply]:
         return (
             self.c.http(method, target, body, declared, port),
-            emu_http(self.emu.port, method, target, body, declared),
+            emu_http(self.emu.port, method, target, body, declared, key=self.key),
         )
 
     #: The interval castle_sd_common.yaml runs the main loop on, in

@@ -90,6 +90,17 @@ inline void record_action(ActionType type, const std::string &arg, long long now
   }
 }
 
+// ── what this image IS (v5.74, PRODUCTION-TODO §1.5) ───────────────────
+// `board` is the module and its memory, `fw_variant` the build: "yard" is
+// castle_feather_s3.yaml, the owner's own castle; "buyer" is
+// castle_buyer.yaml. An updater picks a release image by these two names, so
+// they are reported from the first variant on and a second one is additive.
+// Set once from the YAML's substitutions at boot, before the server starts
+// (castle_sd_common.yaml); the defaults are the yard's, which is what the
+// host harness and the emulator report.
+inline const char *g_board = "feather-s3-4m2p";
+inline const char *g_fw_variant = "yard";
+
 // ── state mirrored FROM the main loop, readable by handlers ─────────────
 inline std::atomic g_volume{70};
 // FALSE at boot since v5.69: the AM312 is not wired on the S3 carrier, so

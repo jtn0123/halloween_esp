@@ -49,7 +49,7 @@ def rust_list(name: str) -> list[str]:
     """One `pub const <name>: [&str; N] = [...]` from studio_relay.rs."""
     body = re.search(
         rf"pub const {name}: \[&str; (\d+)\] = \[(.*?)\];",
-        RELAY_RS.read_text(),
+        RELAY_RS.read_text(encoding="utf-8"),
         re.DOTALL,
     )
     assert body is not None, f"no {name} in {RELAY_RS}"
@@ -65,7 +65,7 @@ def documented_paths() -> set[str]:
     """Every castle path named in docs/API.md's relayed table, normalised
     to the spelling an allowlist uses: the parameters, the `<name>` stand-in
     and the `[?d=…]` optional query all come off."""
-    text = API_DOC.read_text()
+    text = API_DOC.read_text(encoding="utf-8")
     # Past the heading itself: it names the `/api/…` family, not a route.
     start = text.index("\n", text.index("## Relayed to the castle"))
     found = set()

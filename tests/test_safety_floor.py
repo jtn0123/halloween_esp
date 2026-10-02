@@ -46,13 +46,13 @@ class TestManifestSafety(unittest.TestCase):
         self.addCleanup(self._patch.stop)
 
     def test_corrupt_manifest_is_moved_aside_not_erased(self) -> None:
-        mf.PATH.write_text('{"chant": {truncated')
+        mf.PATH.write_text('{"chant": {truncated', encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(mf.load(), {})
         self.assertIn("moved to tracks.json.corrupt-", out.getvalue())
         survivors = list(self.tmp.glob("tracks.json.corrupt-*"))
         self.assertEqual(len(survivors), 1, "the damaged file must survive")
-        self.assertIn("truncated", survivors[0].read_text())
+        self.assertIn("truncated", survivors[0].read_text(encoding="utf-8"))
 
     def test_save_is_atomic_write_then_rename(self) -> None:
         mf.record("chant", source="file:/x")
@@ -60,16 +60,18 @@ class TestManifestSafety(unittest.TestCase):
             mf.PATH.with_suffix(".tmp").exists(),
             "the temp file must not be left behind",
         )
-        self.assertIn("chant", json.loads(mf.PATH.read_text()))
+        self.assertIn("chant", json.loads(mf.PATH.read_text(encoding="utf-8")))
 
     def test_record_after_corruption_keeps_the_evidence(self) -> None:
         """The old failure: corrupt -> load()=={} -> next save persists {}.
         Now the corrupt original is still on disk to recover from."""
-        mf.PATH.write_text("not json at all")
+        mf.PATH.write_text("not json at all", encoding="utf-8")
         with contextlib.redirect_stdout(io.StringIO()) as out:
             mf.record("fresh", source="file:/y")
         self.assertIn("WARNING", out.getvalue())
-        self.assertEqual(list(json.loads(mf.PATH.read_text())), ["fresh"])
+        self.assertEqual(
+            list(json.loads(mf.PATH.read_text(encoding="utf-8"))), ["fresh"]
+        )
         self.assertTrue(list(self.tmp.glob("tracks.json.corrupt-*")))
 
 

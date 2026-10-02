@@ -116,7 +116,7 @@ class Sandbox:
     def seed(self) -> None:
         self.tracks.mkdir(parents=True, exist_ok=True)
         make_click_track(self.tracks / "t_alpha.wav", seconds=2.0)
-        self.scenes.write_text(scenes_fixture())
+        self.scenes.write_text(scenes_fixture(), encoding="utf-8")
         (self.build / "audio").mkdir(parents=True, exist_ok=True)
         (self.build / "previewer").mkdir(parents=True, exist_ok=True)
 
@@ -133,7 +133,7 @@ class Sandbox:
         """Rewrite the show as `limit` scenes, so the next id is refused."""
         head = scenes_fixture().split("\nscenes:\n", 1)[0]
         body = "\n".join(tiny(f"s{i}") + "\n" for i in range(limit))
-        self.scenes.write_text(head + "\nscenes:\n" + body)
+        self.scenes.write_text(head + "\nscenes:\n" + body, encoding="utf-8")
 
 
 def _tracks_shape(body: Any) -> Any:
@@ -237,7 +237,7 @@ def _clip_detail(rec: dict[str, Any]) -> dict[str, Any]:
 
 def dump(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(serialize(data))
+    path.write_text(serialize(data), encoding="utf-8")
 
 
 def load(path: Path) -> dict[str, Any]:
@@ -252,7 +252,7 @@ def load(path: Path) -> dict[str, Any]:
             "`.venv/bin/python tools/gen_golden.py`, read the diff, and "
             "commit the result"
         )
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or not data:
         raise AssertionError(f"golden {path} is empty — it proves nothing")
     return data

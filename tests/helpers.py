@@ -21,7 +21,15 @@ from pathlib import Path
 # (track_lib.TRACKS is bound at import), and every case that needs one
 # sets it explicitly. unittest discovery loads test_analysis.py — which
 # imports this — before any other module, so the whole run sees a clean env.
-SANDBOX_ENV = ("CASTLE_HOST", "CASTLE_TRACKS", "CASTLE_SCENES", "CASTLE_BUILD")
+SANDBOX_ENV = (
+    "CASTLE_HOST",
+    "CASTLE_TRACKS",
+    "CASTLE_SCENES",
+    "CASTLE_BUILD",
+    # v5.74: the castle key a tool sends. A shell that exported one must not
+    # turn the emulator's open castle into a refused write in a test.
+    "CASTLE_KEY",
+)
 for _k in SANDBOX_ENV:
     os.environ.pop(_k, None)
 

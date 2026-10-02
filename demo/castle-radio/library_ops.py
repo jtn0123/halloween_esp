@@ -2,7 +2,11 @@
 
 import json
 import shutil
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+import portable_fs
 
 AUDIO_SUFFIXES = ("mp3", "opus", "wav", "flac")
 
@@ -24,7 +28,7 @@ def known_key(root, catalog_path, key):
     if not key or Path(key).name != key:
         raise ValueError("Unknown song")
     if catalog_path.exists():
-        for row in json.loads(catalog_path.read_text()):
+        for row in json.loads(catalog_path.read_text(encoding="utf-8")):
             if row.get("key") == key:
                 return str(row["key"])
     for path in (root / "media").glob("*.mp3"):
@@ -33,39 +37,42 @@ def known_key(root, catalog_path, key):
     raise ValueError("Unknown song")
 
 
-def waveform(root, library, key):
-    key = known_key(root, root / ".radio-data" / "catalog.json", key)
+def waveform(root, library, key, data=None):
+    """`data` is the server's library dir (radio_paths.data_dir()); callers
+    that predate CASTLE_RADIO_DATA get `root/.radio-data`, as before."""
+    data = data or root / ".radio-data"
+    key = known_key(root, data / "catalog.json", key)
     split = library / "stems" / key / "analysis.json"
     if split.exists():
-        return json.loads(split.read_text())
+        return json.loads(split.read_text(encoding="utf-8"))
     if key.startswith("radio_"):
         source = track_path(library, key)
     else:
         source = root / "media" / key
     if source is None or not source.is_file():
         raise ValueError("Audio is not available")
-    cache = root / ".radio-data" / "waveforms"
-    cache.mkdir(exist_ok=True)
+    cache = data / "waveforms"
+    cache.mkdir(parents=True, exist_ok=True)
     target = cache / f"{key}.json"
     if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
-        return json.loads(target.read_text())
+        return json.loads(target.read_text(encoding="utf-8"))
     from stems import analyse_layers
 
     result = analyse_layers({"combined": source})
     tmp = target.with_suffix(".tmp")
-    tmp.write_text(json.dumps(result))
-    tmp.replace(target)
+    tmp.write_text(json.dumps(result), encoding="utf-8")
+    portable_fs.replace(tmp, target)
     return result
 
 
 def write_catalog(path, rows):
     temp = path.with_suffix(".tmp")
-    temp.write_text(json.dumps(rows))
-    temp.replace(path)
+    temp.write_text(json.dumps(rows), encoding="utf-8")
+    portable_fs.replace(temp, path)
 
 
 def remove(data, library, catalog_path, key):
-    rows = json.loads(catalog_path.read_text())
+    rows = json.loads(catalog_path.read_text(encoding="utf-8"))
     row = next((r for r in rows if r["key"] == key), None)
     if row is None:
         raise ValueError("This song is no longer in the library")
@@ -96,7 +103,9 @@ def remove(data, library, catalog_path, key):
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(path, dest)
                 moved.append(str(relative))
-        (trash / "record.json").write_text(json.dumps({"track": row, "paths": moved}))
+        (trash / "record.json").write_text(
+            json.dumps({"track": row, "paths": moved}), encoding="utf-8"
+        )
         write_catalog(catalog_path, [r for r in rows if r["key"] != key])
     except Exception:
         for relative in moved:
@@ -111,8 +120,8 @@ def restore(data, catalog_path, key):
     if trash is None:
         raise ValueError("Unknown removed song")
     key = trash.name
-    record = json.loads((trash / "record.json").read_text())
-    rows = json.loads(catalog_path.read_text())
+    record = json.loads((trash / "record.json").read_text(encoding="utf-8"))
+    rows = json.loads(catalog_path.read_text(encoding="utf-8"))
     if any(r["key"] == key for r in rows):
         raise ValueError("That song is already in the library")
     for relative in record["paths"]:
