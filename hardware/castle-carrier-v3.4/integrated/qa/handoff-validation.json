@@ -1,0 +1,65 @@
+{
+  "status": "PASS",
+  "generated_at": "2026-10-02T01:43:13.134970+00:00",
+  "scope": "Copied Integrated project, portable library tables, manufacturing ZIP and fresh KiCad 10.0.6 DRC/ERC. Not the complete original engineering suite.",
+  "source_receipt": "20261002T012938Z-df738972",
+  "native_pcb_sha256": "7e0d40f3cdcd34683121ee41ba6961aa1a13e2d4339a32e0a654a27cba34bd18",
+  "source_native_and_custom_libraries_byte_preserved": true,
+  "surface_finish": "ENIG",
+  "filled_capped_holes": 16,
+  "drc": {
+    "$schema": "https://schemas.kicad.org/drc.v1.json",
+    "coordinate_units": "mm",
+    "date": "2026-10-01T18:42:12",
+    "ignored_checks": [],
+    "included_severities": [
+      "error",
+      "warning",
+      "exclusion"
+    ],
+    "kicad_version": "10.0.6",
+    "schematic_parity": [],
+    "source": "castle-carrier.kicad_pcb",
+    "unconnected_items": [],
+    "violations": []
+  },
+  "erc": {
+    "$schema": "https://schemas.kicad.org/erc.v1.json",
+    "coordinate_units": "mm",
+    "date": "2026-10-01T18:42:14",
+    "ignored_checks": [
+      {
+        "description": "Global label only appears once in the schematic",
+        "key": "single_global_label"
+      },
+      {
+        "description": "Four connection points are joined together",
+        "key": "four_way_junction"
+      },
+      {
+        "description": "SPICE model issue",
+        "key": "simulation_model_issue"
+      },
+      {
+        "description": "Assigned footprint doesn't match footprint filters",
+        "key": "footprint_filter"
+      }
+    ],
+    "included_severities": [
+      "error",
+      "warning",
+      "exclusion"
+    ],
+    "kicad_version": "10.0.6",
+    "sheets": [
+      {
+        "path": "/",
+        "uuid_path": "/6f0c8b6a-2a41-4d2f-9d51-c357a1e0b001",
+        "violations": []
+      }
+    ],
+    "source": "castle-carrier.kicad_sch"
+  },
+  "physical_validation": "NOT_PERFORMED",
+  "fabrication_release": false
+}
