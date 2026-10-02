@@ -10,7 +10,9 @@ exactly; and no key ever reaches an error, an argument or a commit.
 
 from __future__ import annotations
 
+import contextlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -163,6 +165,42 @@ class TestAct(StoreCase):
         self.assertEqual(hosts.castle_key("10.0.0.9"), "n&w=1")
         with self.assertRaises(ck.Refusal):
             ck.act("10.0.0.9", "reveal")
+
+
+class TestSdSyncSaysIt(StoreCase):
+    """sd_sync (the publish the desk runs, and `make ota`) sends the stored
+    key, and a refusal ends it with the sentence every app shows."""
+
+    def test_against_a_keyed_emulator(self) -> None:
+        import castle_emu
+        import sd_sync
+
+        card = self.tmp / "card"
+        card.mkdir()
+        emu = castle_emu.CastleEmu(port=0, sd_dir=card, scenes=["vigil"])
+        emu.start()
+        self.addCleanup(emu.server_close)
+        self.addCleanup(emu.shutdown)
+        emu.key = b"s3cret"
+        host = f"127.0.0.1:{emu.port}"
+        with self.assertRaises(SystemExit) as cm:
+            sd_sync.api(host, "POST", "/api/pir?armed=1")
+        self.assertEqual(str(cm.exception), ck.KEY_REQUIRED)
+        # `make ota` on a keyed castle: the refusal is the key, not "is this
+        # build for the chip at that address?", and nothing is flashed.
+        image = self.tmp / "app.bin"
+        image.write_bytes(b"\xe9" + bytes(70 * 1024))
+        with (
+            self.assertRaises(SystemExit) as cm,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            sd_sync.sd_ota.flash(host, [str(image)], sd_sync.api, ROOT)
+        self.assertEqual(str(cm.exception), ck.KEY_REQUIRED)
+        self.assertFalse(emu.quiesce)
+        ck.remember(host, "s3cret")
+        self.assertEqual(
+            json.loads(sd_sync.api(host, "POST", "/api/pir?armed=1")), {"queued": True}
+        )
 
 
 class TestCli(StoreCase):

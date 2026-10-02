@@ -34,6 +34,7 @@ import importlib.util
 import json
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
@@ -41,6 +42,7 @@ from pathlib import Path
 
 import build_paths as bp
 import sd_ota
+from castle_keys import KEY_REQUIRED
 from hosts import key_headers, maybe_host
 from published import Published
 
@@ -67,8 +69,13 @@ def api(
     req = urllib.request.Request(
         castle_url(ip, path), data=body, method=method, headers=key_headers(ip)
     )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return bytes(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return bytes(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 401:  # the desk's publish shows this line as its reason
+            raise SystemExit(KEY_REQUIRED) from None
+        raise
 
 
 def listing(ip: str) -> list[dict]:
