@@ -30,7 +30,7 @@ import json
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -59,17 +59,23 @@ def track_file(tid: str) -> Path:
     raise SystemExit(f"no track {tid!r} in {TRACKS}")
 
 
-def waveform(path: Path, sensitivity: Any) -> dict[str, Any]:
+#: A stand-in for subprocess.run (the default, looked up at call time) that a
+#: caller can stop: Castle Radio passes one so its Cancel reaches the
+#: children below.
+Runner = Callable[..., subprocess.CompletedProcess[Any]]
+
+
+def waveform(path: Path, sensitivity: Any, run: Runner | None = None) -> dict[str, Any]:
     req = {"path": str(path), "sensitivity": sensitivity, "waveform": True}
-    run = subprocess.run(
+    done = (run or subprocess.run)(
         [str(core_bins.core_bin("analyze_track"))],
         input=json.dumps(req).encode(),
         capture_output=True,
         check=False,
     )
-    if run.returncode != 0:
-        raise SystemExit(run.stderr.decode().strip() or f"cannot analyse {path.name}")
-    wave: dict[str, Any] = json.loads(run.stdout)
+    if done.returncode != 0:
+        raise SystemExit(done.stderr.decode().strip() or f"cannot analyse {path.name}")
+    wave: dict[str, Any] = json.loads(done.stdout)
     return wave
 
 
@@ -84,23 +90,26 @@ def _esbuild() -> Path:
     return Path(found)
 
 
-def desk_scene(tid: str, wave: dict[str, Any], ext: str) -> dict[str, Any]:
+def desk_scene(
+    tid: str, wave: dict[str, Any], ext: str, run: Runner | None = None
+) -> dict[str, Any]:
     """The scene the desk would splice for this track (web/src/scene_cli.ts)."""
     with tempfile.TemporaryDirectory() as tmp:
         bundle = Path(tmp) / "scene_cli.mjs"
         wave_json = Path(tmp) / "wave.json"
         wave_json.write_text(json.dumps(wave), encoding="utf-8")
-        subprocess.run(
+        run = run or subprocess.run
+        run(
             [str(_esbuild()), str(WEB / "src" / "scene_cli.ts"), "--bundle",
              "--platform=node", "--format=esm", "--log-level=warning",
              f"--outfile={bundle}"],
             check=True,
         )  # fmt: skip
-        run = subprocess.run(
+        done = run(
             ["node", str(bundle), tid, str(wave_json), ext],
             capture_output=True, text=True, encoding="utf-8", errors="replace", check=True,
         )  # fmt: skip
-    scene: dict[str, Any] = yaml.safe_load(run.stdout)[0]
+    scene: dict[str, Any] = yaml.safe_load(done.stdout)[0]
     return scene
 
 

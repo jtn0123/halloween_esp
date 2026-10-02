@@ -6,6 +6,7 @@ import re
 import subprocess
 import threading
 import time
+from pathlib import Path
 from typing import IO, cast
 
 import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
@@ -172,3 +173,43 @@ def run(args, timeout, stage, report, extra_env=None, stop=None):
         if process.poll() is None:
             expire()
             process.wait()
+
+
+def runner(stop=None, timeout=600.0):
+    """A stand-in for `subprocess.run` that `stop` can end, for the children
+    whose OUTPUT is the answer — analyze_track's JSON, the desk's scene YAML —
+    where `run`'s line-by-line progress reading does not apply. The tools
+    that spawn them (import_track.crate_analysis, render_cues.waveform and
+    desk_scene) take it as their `run=`, so a Cancel that arrives while the
+    light show is being built kills that child's whole group and raises
+    Cancelled, just as it does mid-download (grade report 2026-09-24 B6).
+    `timeout` is per child: none of them had one."""
+
+    def call(args, *, input=None, capture_output=False, check=False, **kwargs):
+        pipe = subprocess.PIPE if capture_output else None
+        stdin = subprocess.PIPE if input is not None else None
+        deadline = time.monotonic() + timeout
+        with subprocess.Popen(
+            args, stdin=stdin, stdout=pipe, stderr=pipe, **kwargs, **group_kwargs()
+        ) as process:
+            pending = input  # communicate takes the input on its first call only
+            while True:
+                try:
+                    out, err = process.communicate(pending, timeout=0.25)
+                    break
+                except subprocess.TimeoutExpired:
+                    pending = None
+                    late = time.monotonic() > deadline
+                    if not late and (stop is None or not stop.is_set()):
+                        continue
+                    kill_tree(process)
+                    process.communicate()
+                    if late:
+                        raise ValueError(f"{Path(args[0]).name} timed out") from None
+                    raise Cancelled("Cancelled") from None
+        result = subprocess.CompletedProcess(args, process.returncode, out, err)
+        if check:
+            result.check_returncode()
+        return result
+
+    return call

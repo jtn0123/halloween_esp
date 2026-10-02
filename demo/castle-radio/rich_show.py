@@ -102,8 +102,10 @@ def preview_from_blob(key, blob):
     }
 
 
-def build(key, wave, layers=None, ext="mp3"):
-    scene = desk_scene(key, wave, ext)
+def build(key, wave, layers=None, ext="mp3", run=None):
+    """`run` reaches every child the desk's builder spawns (render_cues'
+    Runner): the radio passes job_progress.runner so Cancel can stop one."""
+    scene = desk_scene(key, wave, ext, run)
     cues = list(scene.get("cues") or [])
     if layers:
         # Keep voice on the door and stereo backing on its respective tower.
@@ -115,7 +117,7 @@ def build(key, wave, layers=None, ext="mp3"):
         ):
             marks = layers[layer][channel]["onsets"]
             # A band present only in a stem must still receive a style recipe.
-            recipe = desk_scene(key, {**wave, "onsets": marks}, ext)
+            recipe = desk_scene(key, {**wave, "onsets": marks}, ext, run)
             configs = []
             for original in recipe.get("pulse", []):
                 cfg = {**original, "zones": [target], "alternate": False}
@@ -132,28 +134,29 @@ def build(key, wave, layers=None, ext="mp3"):
     return blob, preview_from_blob(key, blob)
 
 
-def prepare(library, row):
-    """Report tool failures to the job/API instead of terminating its thread."""
+def prepare(library, row, run=None):
+    """Report tool failures to the job/API instead of terminating its thread.
+    A Cancelled from `run` is not a failure, and passes through."""
     try:
-        return _prepare(library, row)
+        return _prepare(library, row, run)
     except (SystemExit, subprocess.CalledProcessError) as exc:
         raise ValueError(f"Could not prepare the light show: {exc}") from exc
 
 
-def _prepare(library, row):
+def _prepare(library, row, run=None):
     """Create local companion files; never copy, re-encode or play the audio."""
     name = Path(row.get("playback_file") or f"{row['key']}.mp3").name
     source = library / name
     if not source.is_file():
         raise ValueError("Audio is unavailable for show preparation")
-    wave = waveform(source, 1.1)
+    wave = waveform(source, 1.1, run)
     layers = None
     analysis = library / "stems" / row["key"] / "analysis.json"
     if row.get("split"):
         if not analysis.is_file():
             raise ValueError("Separated analysis is missing; reprocess the song first")
         layers = json.loads(analysis.read_text(encoding="utf-8"))["layers"]
-    blob, preview = build(row["key"], wave, layers, source.suffix[1:])
+    blob, preview = build(row["key"], wave, layers, source.suffix[1:], run)
     preview["name"] = row.get("title", row["key"])
     cue_path = source.with_suffix(".cue")
     show_path = source.with_suffix(".show.json")
