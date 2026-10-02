@@ -8,8 +8,9 @@ written against them.
 
 ## Cut a release
 
-1. `make check` green on `main`, and the weekly firmware compile (or
-   `gh workflow run ci.yml`) green on the commit you are tagging.
+1. `make check` green on `main`, and the firmware compile (weekly, or
+   `gh workflow run firmware.yml`) green on the commit you are tagging —
+   it builds the buyer image the release will ship.
 2. If the device build changed, the firmware's own `v5.xx` string was bumped
    (CLAUDE.md, "Commit style"). The release tag does not replace it: the tag
    versions the whole release, `v5.xx` is what the castle's panel shows.
