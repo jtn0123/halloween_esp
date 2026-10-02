@@ -93,6 +93,11 @@ export interface FakeCastle {
   delay: number;
   /** Castle gone: status becomes the studio's {studio:true}, the rest 502. */
   up: boolean;
+  /** A keyed castle (firmware v5.74) the studio holds no right key for:
+   *  every change — the POST /api/key probe included — is 401. Whether the
+   *  status SAYS `locked` is the spec's to set, so a castle locked after its
+   *  last status can be played too. */
+  keyed: boolean;
   /** How many calls mention `part`. */
   hits(part: string): number;
 }
@@ -107,10 +112,10 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
     Promise<FakeCastle> {
   const c: FakeCastle = {
     calls: [], status: { ...CASTLE_STATUS, ...status }, files,
-    putBytes: null, delay: 0, up: true,
+    putBytes: null, delay: 0, up: true, keyed: false,
     hits: (part) => c.calls.filter((x) => x.includes(part)).length,
   };
-  const CASTLE = /^\/api\/(status|files|play|stop|volume|scene|light|pir|show|bootlog|card)\b/;
+  const CASTLE = /^\/api\/(status|files|play|stop|volume|scene|light|pir|show|bootlog|card|key)\b/;
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const p = url.pathname;
@@ -122,6 +127,8 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
       return route.fulfill({ json: c.up ? c.status : { studio: true } });
     }
     if (!c.up) return route.fulfill({ status: 502, json: { error: "castle not reachable" } });
+    if (c.keyed && method !== "GET") return route.fulfill({ status: 401, body: "castle key required\n" });
+    if (p === "/api/key") return route.fulfill({ status: 400, body: "need new=<key> or clear=1\n" });
     if (p === "/api/files" && method === "GET") return route.fulfill({ json: c.files });
     if (p.startsWith("/api/files/") && method === "PUT") {
       const name = decodeURIComponent(p.slice("/api/files/".length));

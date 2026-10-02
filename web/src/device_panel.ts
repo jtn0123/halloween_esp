@@ -21,7 +21,8 @@
  *   - the test bench: strip test and speaker test (device_tests.ts)
  *   - the card: every track on it, with play and delete, plus whether the
  *     show's own scene tracks are all present
- *   - the motion sensor, the drop zone, and the boot log
+ *   - the motion sensor, the drop zone, the castle key (device_key.ts) and
+ *     the boot log
  * Volume lives on the chip (device.ts) alone — the same slider twice was
  * the scatter the dogfood pass called out, and two sliders drift.
  *
@@ -32,8 +33,9 @@
  */
 
 import { api } from "./api.js";
-import { castleAct } from "./castle_act.js";
+import { castleAct, KEY_REQUIRED } from "./castle_act.js";
 import { cardChanged } from "./castle_bus.js";
+import { wireKey } from "./device_key.js";
 import { el as byId, reqIn, sel } from "./dom.js";
 import { panelMarkup, type DeviceStatus, type SdFile } from "./device_panel_view.js";
 import { testPct, wireTests } from "./device_tests.js";
@@ -151,6 +153,7 @@ export class DevicePanel {
     this.wireShow(st);
     this.wireCard(tracks);
     this.wireSensorAndLog();
+    wireKey(this.body, st);
   }
 
   /** One poll's worth of truth, or null when the castle is not answering.
@@ -270,7 +273,8 @@ export class DevicePanel {
         const kb = Math.trunc(f.size / 1024);
         drop.textContent = `uploading ${f.name} (${kb} KB)…`;
         const r = await api.castlePut(f.name, f);
-        drop.textContent = r.ok ? `✓ ${f.name}` : `✗ ${f.name} failed`;
+        drop.textContent = r.ok ? `✓ ${f.name}`
+          : r.status === 401 ? `✗ ${f.name} — ${KEY_REQUIRED}` : `✗ ${f.name} failed`;
       }
       cardChanged();                 // the Library below re-reads the card now
       void this.render();

@@ -40,6 +40,10 @@ process.env.CASTLE_TRACKS = TRACKS;
    the one that cannot be forgotten by a new spec. */
 const SCENES_FILE = join(TRACKS, "scenes.yaml");
 process.env.CASTLE_SCENES = SCENES_FILE;
+/* And the castle-key store (tools/hosts.py devices_path): the studio's
+   /studio/castle-key writes there, and a dev checkout's default is the
+   repo's own devices.toml — tracked, in a public repo. */
+const DEVICES_FILE = join(TRACKS, "devices.toml");
 
 export default defineConfig({
   testDir: "./test/e2e",
@@ -90,7 +94,10 @@ export default defineConfig({
     // is merged over the environment, so CASTLE_PY still reaches the studio
     // and names the interpreter its children run under — which a worktree
     // sharing another checkout's venv, and CI's runner, both need.
-    env: { CASTLE_TRACKS: TRACKS, CASTLE_SCENES: SCENES_FILE, CASTLE_HOST: "" },
+    env: {
+      CASTLE_TRACKS: TRACKS, CASTLE_SCENES: SCENES_FILE, CASTLE_HOST: "",
+      CASTLE_DEVICES: DEVICES_FILE,
+    },
     stdout: "pipe",
     stderr: "pipe",
     timeout: 30_000,
