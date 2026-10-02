@@ -37,7 +37,7 @@ YAML_S3 := firmware/castle_s3.yaml
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
 
-.PHONY: show-lab cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes sd-build sd-upload rust rust-test rust-lint rust-coverage
 
 help:
 	@echo "Halloween Castle"
@@ -64,6 +64,8 @@ help:
 	@echo "  make test-fast  the same minus the slow + Rust suites (inner loop)"
 	@echo "  make show-lab   opt-in light-show lab: rebuild the beat-locked candidates and serve"
 	@echo "                  the before/after page on 127.0.0.1:8894 (SHOW_LAB_PORT=…); software only"
+	@echo "  make show-lab-phone  the same page on the home network, to review on a phone"
+	@echo "                  (the flags you tap there: .venv/bin/python demo/castle-radio/show_lab.py --notes)"
 	@echo "  make test-radio demo/castle-radio: its python suite + its node --test suites"
 	@echo "  make rust       build castle-core (release: the binaries the tools spawn)"
 	@echo "  make rust-test  cargo test the crate"
@@ -137,8 +139,17 @@ SHOW_LAB_PORT ?= 8894
 show-lab:
 	@$(PY) demo/castle-radio/show_lab.py
 	@echo "open http://127.0.0.1:$(SHOW_LAB_PORT)/show-lab.html   (Ctrl-C stops the server)"
-	@$(PY) -m http.server $(SHOW_LAB_PORT) --bind 127.0.0.1 \
-		--directory demo/castle-radio/.radio-data/comparison
+	@$(PY) demo/castle-radio/lab_server.py --port $(SHOW_LAB_PORT) --bind 127.0.0.1
+
+# The same lab for a phone on the home network. A separate target because it
+# lets every device on the LAN read the comparison directory — the lab's
+# shows and its links to the songs — and add to its notes.jsonl (the page's
+# flags; `show_lab.py --notes` prints them) for as long as it runs.
+show-lab-phone:
+	@$(PY) demo/castle-radio/show_lab.py
+	@ip=$$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname); \
+		echo "on your phone: http://$$ip:$(SHOW_LAB_PORT)/show-lab.html   (Ctrl-C stops the server)"
+	@$(PY) demo/castle-radio/lab_server.py --port $(SHOW_LAB_PORT) --bind 0.0.0.0
 
 studio: preview
 	@tools/studio_launch.sh $(ARGS)
@@ -268,7 +279,7 @@ test-radio:
 	@$(PY) -m unittest discover -s demo/castle-radio -t demo/castle-radio -p 'test_*.py' -q \
 		&& node --test demo/castle-radio/test_castle_radio.test.mjs demo/castle-radio/test_castle_fuzz.test.mjs \
 		demo/castle-radio/test_castle_honesty.test.mjs demo/castle-radio/test_desktop_tools.test.mjs demo/castle-radio/test_companion.test.mjs demo/castle-radio/test_device_helper.test.mjs demo/castle-radio/test_card_cues.test.mjs \
-		demo/castle-radio/test_rich_preview.test.mjs
+		demo/castle-radio/test_rich_preview.test.mjs demo/castle-radio/test_lab_leds.test.mjs
 
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \

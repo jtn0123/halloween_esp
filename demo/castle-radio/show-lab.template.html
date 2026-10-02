@@ -11,70 +11,248 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Castle light-show lab</title>
 <style>
-:root{color-scheme:dark;--ink:#e9e4f5;--dim:#9a8fb0;--line:#2a2138;--bg:#0b0812;--panel:#130e1e;--hot:#ff8a1a}
+:root{color-scheme:dark;--ink:#ededf0;--soft:#b8b8c2;--dim:#8b8b94;--line:#232329;--bg:#000;--panel:#0b0b0e;--field:#141418;--hot:#ff8a1a;
+  --chev:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b8b94' stroke-width='1.6'/%3E%3C/svg%3E")}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif}
-main{max-width:1180px;margin:0 auto;padding:16px}
-h1{font-size:20px;margin:0 0 2px}
-h2{font-size:15px;margin:0}
+html{background:var(--bg)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:1680px;margin:0 auto;padding:14px 24px 0}
+h1{font-size:19px;font-weight:650;letter-spacing:-.01em;margin:0}
+h2{font-size:14px;font-weight:600;margin:0}
 p{margin:6px 0}
-.dim{color:var(--dim);font-size:13px}#sound-note{display:block;margin:1em 0}#sound-note:empty{margin:0}
-.controls{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin:12px 0}
-label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--dim)}
-select,button{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;min-width:0}
-button{cursor:pointer}
+.dim{color:var(--dim);font-size:13px}#sound-note{display:block;margin:0 0 12px}#sound-note:empty{margin:0}
+.masthead{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin-bottom:10px}
+.masthead>div{display:flex;align-items:baseline;gap:14px;min-width:0}
+.intro{margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:500;color:var(--dim)}
+select,button{font:inherit;font-size:14px;color:var(--ink);background:var(--field);border:1px solid var(--line);border-radius:8px;height:36px;padding:0 12px;min-width:0}
+select{appearance:none;-webkit-appearance:none;padding-right:32px;background:var(--field) var(--chev) no-repeat right 12px center;cursor:pointer}
+button{cursor:pointer;-webkit-tap-highlight-color:transparent;white-space:nowrap;transition:background .12s,border-color .12s}
+select:hover,button:hover{border-color:#3a3a43}
+button:active{background:#1c1c22}
+button:disabled{opacity:.4;cursor:default;border-color:var(--line)}
+:focus-visible{outline:2px solid var(--hot);outline-offset:2px}
+input[type=checkbox],input[type=range]{accent-color:var(--hot)}
 button.primary{background:var(--hot);border-color:var(--hot);color:#1a0d00;font-weight:600}
-.sides{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-@media(max-width:720px){.sides{grid-template-columns:1fr}}
-.side{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;min-width:0}
-.side header{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin-bottom:6px}
-canvas{display:block;width:100%;height:auto;border-radius:8px}
+button.primary:hover{background:#ff9b3d;border-color:#ff9b3d}
+/* The castles take the page's width, but no more than lets each castle AND
+   its LED strip clear the pinned timeline: a side is 65px of card and header
+   plus .82 of its width (castle .65, strip .17), and the bars take 404px of
+   the window. Under about 790px tall the pair stops narrowing at 1000px. */
+.sides{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-inline:auto;max-width:max(1000px,calc(244.8svh - 922px))}
+.side{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;min-width:0}
+.side header{display:flex;justify-content:space-between;gap:8px;align-items:baseline;margin:0 2px 10px}
+.side header .dim{font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}.side h2{flex:none}
+.warn{color:#ffb27a!important}
+canvas{display:block;width:100%;height:auto;border-radius:10px}
 .stage{aspect-ratio:800/520;background:#05070e}
-.pixels{margin-top:8px}
-#timeline{height:74px;margin-top:12px;cursor:pointer;background:var(--panel);border:1px solid var(--line)}
-#seek{width:100%;margin:8px 0 0}
-#note{min-height:3em}
-label.check{flex-direction:row;align-items:center;gap:6px;font-size:14px;color:var(--ink);padding:7px 0}
-#volume{width:110px}
+.pixels{margin-top:10px}
+#timeline{height:86px;cursor:pointer;background:var(--panel);border:1px solid var(--line)}
+label.check{flex-direction:row;align-items:center;gap:8px;font-size:14px;font-weight:400;color:var(--ink);height:36px;cursor:pointer}
+#volume{width:96px;height:36px;margin:0}
 .row{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.blind{background:var(--panel);border:1px solid var(--hot);border-radius:14px;padding:10px 14px;margin:0 0 14px}
+.blind button{margin:4px 4px 0 0}
+.sides[data-view="0"],.sides[data-view="1"]{grid-template-columns:minmax(0,min(100%,calc((100svh - 322px) * 1.54)));justify-content:center}
+.sides[data-view="0"] .side:last-child,.sides[data-view="1"] .side:first-child{display:none}
+/* The desk: the song and the comparison first, the castle's settings on a
+   quieter second row, and the candidate's description under both. */
+.top{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:0 0 12px;padding:12px 16px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+.picker,.controls{display:contents}
+.top label:not(.check){flex-direction:row;align-items:center;gap:8px;white-space:nowrap}
+.picker label:first-child{flex:2 1 300px}.picker label:nth-child(2){flex:1.2 1 300px}
+.picker label{min-width:0}.picker select{flex:1;width:0}
+.break{flex-basis:100%;height:0}
+#blind-start{margin-left:auto}
+#note{flex:1 1 120px;margin:0 0 0 8px;padding-left:16px;border-left:1px solid var(--line);color:var(--soft);font-size:13px;line-height:1.5;max-width:none}
+#note:not(.clamp){flex-basis:100%;margin:0;padding:10px 0 0;border-left:0;border-top:1px solid var(--line)}
+#note.clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:1;overflow:hidden;cursor:pointer}
+/* The timeline and the transport stay under the hand while the page
+   scrolls, as a player's do; the transport is 60px, so the timeline sits on it. */
+.track,.transport{position:sticky;z-index:5;margin-inline:-24px;padding-inline:24px;background:rgba(0,0,0,.88);-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.track{bottom:60px;margin-top:14px;padding-top:10px;border-top:1px solid var(--line)}
+.transport{bottom:0;display:flex;align-items:center;gap:12px;height:60px}
+.transport .bar{display:contents}
+#play{min-width:8.5em}
+#seek{flex:1;min-width:120px;margin:0}
+#clock{white-space:nowrap;font-variant-numeric:tabular-nums;font-size:13px}
+#section{max-width:30ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jumps{display:flex;gap:8px}
+.phone{display:none}
+/* A flag: the moment, which show, a tag or a few words (show-lab-flags.js). */
+.flag-sheet{position:fixed;z-index:8;left:50%;bottom:24px;transform:translateX(-50%);width:min(460px,100vw - 16px);background:var(--panel);
+  border:1px solid var(--hot);border-radius:14px;padding:12px;box-shadow:0 12px 40px #000c}
+.flag-sheet[hidden]{display:none}
+.flag-head,.flag-foot{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.seg button{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.flag-sheet [aria-pressed="true"]{background:var(--hot);border-color:var(--hot);color:#1a0d00}
+#flag-text{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+#flag-save{flex:none}#flag-status{display:block;margin:0 0 8px}#flag-status:empty{display:none}
+/* A phone, either way up: the castles fill the screen, the song and the
+   candidate sit in a slim bar above them, the transport is pinned under the
+   thumb, and every other setting lives in a sheet behind the gear. Nothing
+   that takes typing is under 16px, so iOS does not zoom on focus. */
+@media (max-width:720px),(max-height:520px) and (orientation:landscape){
+  main{display:flex;flex-direction:column;min-height:100svh;padding:8px 8px calc(106px + env(safe-area-inset-bottom))}
+  #volume{height:auto}
+  .masthead,.side header .dim:not(.warn){display:none}
+  .break{display:none}
+  #blind-start{margin-left:0}
+  select,button{height:auto}
+  #note{margin:0;padding:0;border:0;display:block;-webkit-line-clamp:unset;cursor:auto}
+  .top label:not(.check){flex-direction:column;align-items:stretch;gap:5px;white-space:normal}
+  .side header .warn{display:block;font-size:12px;color:#ffb27a;max-width:80%}
+  .top{display:block;margin:0 0 8px;padding:0;background:none;border:0}
+  .track{display:contents}
+  .picker{display:grid;grid-template-columns:1.25fr 1fr;gap:6px}
+  .picker label{font-size:0;gap:0}.picker select{width:100%}
+  select{font-size:16px;padding:8px 30px 8px 10px;width:100%;background-position:right 10px center}
+  button{font-size:15px;padding:8px 12px}
+  .controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:end;position:fixed;z-index:6;left:0;right:0;
+    bottom:calc(88px + env(safe-area-inset-bottom));max-height:65svh;overflow:auto;padding:12px 14px 16px;background:var(--panel);
+    border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -12px 32px #000c;visibility:hidden;transform:translateY(110%);transition:transform .18s,visibility .18s}
+  body.sheet .controls{visibility:visible;transform:none}
+  .controls .phone,#note{grid-column:1/-1}
+  .sheet-head{display:flex;justify-content:space-between;align-items:center}
+  #settings{display:inline-block}
+  #volume{width:100%}
+  #note{font-size:13px;color:var(--dim)}
+  /* The blind test's votes sit above the castles, which shrink to make room. */
+  #blind{margin:0 0 8px;padding:8px 10px}
+  #blind p{font-size:12px;margin:0 0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #blind .row{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  #blind .row>span{display:contents}
+  #blind button{margin:0;padding:7px 2px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #blind-next,#blind-save,#blind-stop{font-size:12px;padding:4px 2px;color:var(--dim)}
+  #blind #blind-result{margin:6px 0 0}
+  #blind-result:empty{display:none}
+  body:has(#blind:not([hidden])) .stage{width:min(100vw - 16px,calc((100svh - 360px) / 1.3))}
+  #sound-note{order:4}
+  .sides{gap:8px;justify-items:center;margin-block:auto;max-width:none}
+  .sides[data-view="0"],.sides[data-view="1"]{grid-template-columns:1fr}
+  .sides[data-view="both"]{grid-template-columns:1fr}
+  /* A card is exactly its castle, so the name sits on that castle's sky. */
+  .side{position:relative;width:fit-content;padding:0;border:0;background:none;cursor:pointer}
+  .side header{position:absolute;z-index:1;top:7px;left:10px;right:10px;margin:0;flex-direction:column;align-items:flex-start;
+    pointer-events:none;text-shadow:0 1px 4px #000}
+  .side h2{font-size:13px}
+  .side::after{content:'⤢';position:absolute;right:10px;bottom:8px;color:var(--dim);font-size:14px;pointer-events:none}
+  .sides:not([data-view="both"]) .side::after{content:'⤡'}
+  /* Both castles fit one screen: 208px is the bars, the timeline and gaps.
+     One castle leaves room for its LEDs up close (drawn taller, see draw). */
+  .stage{width:min(100vw - 16px,calc((100svh - 222px) / 1.3))}
+  .sides:not([data-view="both"]) .stage{width:min(100vw - 16px,calc((100svh - 354px) / .65))}
+  .pixels{width:min(100vw - 16px,100%)}
+  body:not(.roomy) .sides[data-view="both"] .pixels{display:none}
+  #timeline{height:44px;margin-top:8px}
+  .transport{display:block;height:auto;position:fixed;z-index:7;left:0;right:0;bottom:0;margin:0;background:var(--bg);
+    border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom))}
+  .transport .bar{display:flex;align-items:center;gap:10px}
+  .transport .bar+.bar{margin-top:6px;justify-content:space-between}
+  #play{min-width:5.2em}
+  #section{max-width:none}
+  #section{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .jumps{flex:none;gap:6px}
+  .jumps button{padding:7px 10px}
+  .flag-sheet{bottom:calc(104px + env(safe-area-inset-bottom));max-height:calc(100svh - 116px);overflow:auto}
+}
+@media (max-height:520px) and (orientation:landscape){
+  .sides[data-view="both"]{grid-template-columns:1fr 1fr}
+  .stage{width:min(50vw - 16px,calc((100svh - 212px) / .65))}
+  .sides:not([data-view="both"]) .stage{width:min(100vw - 16px,calc((100svh - 212px) / .65))}
+  .sides:not([data-view="both"]) .pixels{display:none}
+  .flag-sheet{width:min(720px,100vw - 16px);padding:8px 10px}
+  .flag-sheet .seg{margin-top:6px}.flag-sheet .chips{margin:6px 0;gap:5px}
+  .flag-sheet button{font-size:13px;padding:5px 9px}#flag-text{padding:5px 10px}
+}
 </style>
 </head>
 <body>
 <main>
-  <h1>Castle light-show lab</h1>
-  <p class="dim">Software simulation. Nothing here talks to the castle, and it is silent unless you tick <b>Play the song</b> — that plays through this browser only. Left is the show as prepared today; right is a candidate. Both run on one song clock.</p>
-  <div class="controls">
-    <label>Song<select id="song"></select></label>
-    <label>Compare with<select id="candidate"></select></label>
+  <div class="masthead"><div><h1>Castle light-show lab</h1>
+    <p class="dim intro" title="Silent unless you turn on Play the song, which plays in this browser only. Left is today's prepared show, right a candidate, on one clock.">A simulation — nothing here talks to the castle. Left is today's show, right the candidate.</p></div>
+    <span class="dim" title="[ and ] step through the options; X swaps back to the one you had before">Space plays · ← → skip 5 s · [ ] option · X swap</span></div>
+  <div class="top">
+  <div class="picker">
+    <label>Song<select id="song" aria-label="Song"></select></label>
+    <label>Compare with<select id="candidate" aria-label="Compare with"></select></label>
+  </div>
+  <div class="controls" id="sheet">
+    <div class="phone sheet-head"><b>Settings</b><button id="sheet-close" type="button">Done</button></div>
+    <label>Show<select id="view"><option value="both">Both castles</option><option value="1">Candidate only</option><option value="0">Current only</option></select></label>
+    <button id="blind-start" type="button" title="Two shows, names hidden, a short clip: pick the one you like">Blind test</button>
+    <span class="break"></span>
+    <label title="The castle runs v5.73 (2026-09-23). Since v5.71 it softens only a zone struck again within a third of a second; v5.70 softened every strike and refuses a v2 file">Firmware<select id="firmware"><option value="v5.71">The castle's v5.73</option><option value="own">Each show's own</option><option value="v5.70">The old v5.70</option></select></label>
     <label>Speed<select id="speed"><option value="1">1×</option><option value="0.5">½×</option><option value="0.25">¼×</option></select></label>
+    <label class="check" title="The castle's own switch, on unless someone turned it off: fast flash trains are dimmed and slowed"><input id="soften" type="checkbox" checked>Soften lightning</label>
+    <label class="check" title="The LEDs as they really emit: the castle gamma-corrects every write (2.8), so a resting glow is dimmer than a screen shows it. A full hit is unchanged"><input id="real-leds" type="checkbox">Real LEDs</label>
+    <label class="check" title="Ring every pixel where the two shows differ right now"><input id="diffs" type="checkbox">Differences</label>
     <label class="check"><input id="sound" type="checkbox">Play the song</label>
     <label>Volume<input id="volume" type="range" min="0" max="1" step="0.05" value="0.8"></label>
-    <button id="play" class="primary" type="button">Play silently</button>
-    <button id="next-section" type="button">Next section ▸</button>
-    <button id="next-drop" type="button">Next drop ⚡</button>
+    <p id="note" title="Click to show all of it"></p>
+  </div>
+  </div>
+  <div id="blind" class="blind" hidden>
+    <p><b>Blind test.</b> <span id="blind-what" class="dim"></span></p>
+    <div class="row"><span>
+      <button type="button" data-vote="a">A looks better</button>
+      <button type="button" data-vote="same">About the same</button>
+      <button type="button" data-vote="b">B looks better</button>
+      <button type="button" id="blind-next">Skip / next clip</button></span>
+      <span><button type="button" id="blind-save">Download my picks</button>
+      <button type="button" id="blind-stop">Leave blind test</button></span></div>
+    <p id="blind-result" class="dim"></p>
   </div>
   <output id="sound-note" class="dim"></output>
-  <p id="note"></p>
-  <div class="sides">
-    <section class="side"><header><h2>Current prepared show</h2><span class="dim" id="info-0"></span></header>
+  <div class="sides" id="sides" data-view="both">
+    <section class="side"><header><h2 id="title-0">Current prepared show</h2><span class="dim" id="info-0"></span></header>
       <canvas class="stage" id="stage-0" aria-label="Current show on the castle"></canvas>
-      <canvas class="pixels" id="pixels-0" width="720" height="150" aria-label="Current show, every real pixel: left tower, door, right tower"></canvas></section>
+      <canvas class="pixels" id="pixels-0" width="720" height="120" aria-label="Current show, every real pixel: left tower, door, right tower"></canvas></section>
     <section class="side"><header><h2 id="title-1">Candidate</h2><span class="dim" id="info-1"></span></header>
       <canvas class="stage" id="stage-1" aria-label="Candidate show on the castle"></canvas>
-      <canvas class="pixels" id="pixels-1" width="720" height="150" aria-label="Candidate show, every real pixel: left tower, door, right tower"></canvas></section>
+      <canvas class="pixels" id="pixels-1" width="720" height="120" aria-label="Candidate show, every real pixel: left tower, door, right tower"></canvas></section>
   </div>
-  <canvas id="timeline" width="1148" height="74" aria-label="Candidate sections and beats; click to seek"></canvas>
-  <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Song time">
-  <div class="row"><span id="clock" class="dim">0:00</span><span id="section" class="dim"></span></div>
+  <div class="track"><canvas id="timeline" width="1148" height="86" aria-label="Candidate sections and beats, then every colour each show's lights hold over the song; click to seek"></canvas></div>
+  <div class="transport">
+    <div class="bar">
+      <button id="play" class="primary" type="button">Play silently</button>
+      <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Song time">
+      <span id="clock" class="dim">0:00</span>
+    </div>
+    <div class="bar"><span id="section" class="dim"></span><span class="jumps">
+      <button id="next-section" type="button" title="Next section">Section ▸</button>
+      <button id="next-drop" type="button" title="Next drop">Drop ⚡</button>
+      <button id="flag" type="button" aria-label="Flag this moment" title="Flag this moment">🚩</button>
+      <button id="settings" class="phone" type="button" aria-label="Settings" title="Settings">⚙︎</button></span></div>
+  </div>
+  <div id="flag-sheet" class="flag-sheet" role="dialog" aria-labelledby="flag-when" hidden>
+    <div class="flag-head"><b id="flag-when">Flag</b><button id="flag-cancel" type="button">Cancel</button></div>
+    <div class="seg" id="flag-about" aria-label="About which show">
+      <button type="button" data-about="current">Current</button><button type="button" data-about="candidate">Candidate</button>
+      <button type="button" data-about="both">Both</button></div>
+    <div class="chips" id="flag-tags" aria-label="What you saw">
+      <button type="button" data-tag="love">Love this</button><button type="button" data-tag="boring">Boring</button>
+      <button type="button" data-tag="busy">Too busy</button><button type="button" data-tag="late">Off the beat</button>
+      <button type="button" data-tag="colour">Wrong colour</button><button type="button" data-tag="dim">Too dim</button>
+      <button type="button" data-tag="bright">Too bright</button><button type="button" data-tag="other">Something else</button></div>
+    <output id="flag-status" class="dim"></output>
+    <div class="flag-foot"><input id="flag-text" type="text" maxlength="500" placeholder="Anything to add?" aria-label="Note (optional)" autocomplete="off">
+      <button id="flag-save" class="primary" type="button">Save flag</button></div>
+  </div>
 </main>
 <script>/*{{visuals.js}}*/</script>
 <script>/*{{cue-playback.js}}*/</script>
+<script>/*{{lab-leds.js}}*/</script>
+<script>/*{{show-lab-leds.js}}*/</script>
 <script>
 'use strict';
 const SONGS=/*{{songs}}*/null;
 const V=CastleVisuals,TICK=16,$=id=>document.getElementById(id);
 const LABELS={clarity:'1 · Pulse clarity',option2:'2 · Alternating towers',option3:'3 · Tower → door response',
-  option4:'4 · Full-castle accents',beat:'5 · Beat lock',motion:'6 · Sweeps',show:'7 · Full show',duet:'8 · Singer’s door'};
+  option4:'4 · Full-castle accents',beat:'5 · Beat lock',motion:'6 · Sweeps',show:'7 · Full show',duet:'8 · Singer’s door',
+  sections:'9 · Sections',sections2:'10 · Sections, new firmware',spin:'11 · Spin',ensemble:'12 · Ensemble',colour:'13 · Colour',palette:'14 · Palette',spectrum:'15 · Spectrum',glow:'16 · Any-colour glow (preview only)'};
 const OLD={clarity:'Shorter tails; competing nearby hits filtered.',option2:'Amber / violet tower alternation on detected onsets; door keeps vocal hits.',
   option3:'Alternating towers; green door answers every third accent.',option4:'Alternation plus amber full-castle accents every fourth accent.'};
 const RANK=['#2b3a67','#6a3d9a','#b5451b'];
@@ -82,76 +260,91 @@ const order=['towerL','door','towerR'],names={towerL:'left tower',door:'door',to
 const params=V.defaultParams();
 const stages=[0,1].map(i=>new V.Stage($('stage-'+i)));
 const audio=new Audio();audio.preload='auto';
-let sides=[],clock=0,playing=false,last=0,duration=1,audible=false;
+let sides=[],clock=0,playing=false,last=0,duration=1,audible=false,blind=null,tall=120,shown=null,before=null;
+// The two finalists, grouped first in the picker; everything older after them.
+const FINAL=['spectrum','glow'];
+params.soft=true;
 
 function fmt(ms){const s=Math.floor(ms/1000);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
-function makeSide(scene){const state=V.createState(scene,0);return {scene,state,at:-1};}
+// Which castle a side renders: the one its show was written for, unless the
+// page asks for one castle for both. v5.70 softened every strike, and it
+// refuses a version-2 file whole — the song plays dark.
+function firmwareFor(scene){const pick=$('firmware').value;return pick==='own'?(scene.lab?.firmware||'v5.70'):pick;}
+function makeSide(original){
+  const fw=firmwareFor(original),refused=fw==='v5.70'&&original.lab?.version===2;
+  const scene=refused?{...original,cues:[],levels:{towerL:0,towerR:0,door:0}}:original;
+  const state=V.createState(scene,0);state.soft=params.soft;state.softAll=fw==='v5.70';
+  return {scene,state,at:-1,fw,refused,original};
+}
 function seekSide(side,t){
   const from=Math.max(0,Math.floor((t-3000)/TICK)*TICK);
-  V.rebuildLightsAt(side.state,side.scene,from);side.at=from;advance(side,t);
+  CastleCuePlayback.rebuild(side.state,side.scene,from);side.at=from;advance(side,t);
 }
 function advance(side,t){
   if(t<side.at||t-side.at>4000){return seekSide(side,t);}
   while(side.at+TICK<=t){side.at+=TICK;CastleCuePlayback.fire(side.state,side.at);V.decayFlashes(side.state);}
 }
+// A change of base effect on some zone; a level-only set (the towers following
+// the band) is not a new look.
+function lookChanges(scene){const now={...scene.base};let n=0;
+  for(const c of scene.cues){if(c.op==='set'&&now[c.zone]!==c.eff){now[c.zone]=c.eff;n++;}}return n;}
 function lab(){return sides[1].scene.lab||null;}
 function sectionAt(t){const l=lab();return l?l.sections.find(s=>t>=s.t&&t<s.end):null;}
 
 function load(){
   const song=SONGS[+$('song').value],pick=song.candidates.find(c=>c.id===$('candidate').value)||song.candidates[0];
   sides=[makeSide(song.baseline),makeSide(pick.show)];duration=song.baseline.dur;
-  $('title-1').textContent=LABELS[pick.id]||pick.id;
-  [0,1].forEach(i=>{const s=sides[i].scene;$('info-'+i).textContent=s.cues.filter(c=>c.op==='strike').length+' hits · '+
-    new Set(s.cues.filter(c=>c.op==='set').map(c=>c.t)).size+' look changes';});
+  $('title-1').textContent=LABELS[pick.id]||pick.id;if(shown&&shown!==pick.id){before=shown;}shown=pick.id;
+  [0,1].forEach(i=>{const side=sides[i],s=side.scene;$('info-'+i).textContent=side.refused?
+    `on ${side.fw}: that castle refuses this version-2 file — the song plays dark`:
+    s.cues.filter(c=>c.op==='strike').length+' hits · '+lookChanges(s)+' looks'+(side.fw==='v5.71'?'':' · on '+side.fw);
+    $('info-'+i).classList.toggle('warn',side.refused);});
   const l=lab();
-  $('note').textContent=l?l.note+' Detected tempo '+l.bpm+' BPM.':(OLD[pick.id]||'');
+  $('note').textContent=l?l.note+' Detected tempo '+l.bpm+' BPM.':(OLD[pick.id]||'');$('note').classList.add('clamp');$('note').title=$('note').textContent;
   $('next-drop').disabled=l?.sections.some(s=>s.drop)!==true;$('next-section').disabled=l===null;
-  clock=Math.min(clock,duration);sides.forEach(s=>seekSide(s,clock));draw();
+  clock=Math.min(clock,duration);sides.forEach(s=>seekSide(s,clock));studyShows();draw();
 }
 function fill(select,rows){select.replaceChildren(...rows.map(([value,text])=>Object.assign(document.createElement('option'),{value,textContent:text})));}
 function candidatesFor(){
   const ids=SONGS[+$('song').value].candidates.map(c=>c.id),known=Object.keys(LABELS);
   ids.sort((a,b)=>(known.indexOf(a)+1||99)-(known.indexOf(b)+1||99));
-  const keep=$('candidate').value;fill($('candidate'),ids.map(id=>[id,LABELS[id]||id]));
-  const fallback=ids.includes('show')?'show':ids[0];$('candidate').value=ids.includes(keep)?keep:fallback;
+  const keep=$('candidate').value;
+  const best=ids.filter(id=>FINAL.includes(id)),rest=ids.filter(id=>!FINAL.includes(id)),opt=id=>Object.assign(document.createElement('option'),{value:id,textContent:LABELS[id]||id});
+  const groups=[['Recommended',best],['Earlier ideas',rest]].filter(([,g])=>g.length).map(([label,g])=>{const el=document.createElement('optgroup');el.label=label;el.append(...g.map(opt));return el;});
+  $('candidate').replaceChildren(...(best.length?groups:rest.map(opt)));
+  const fallback=['glow','spectrum','palette','colour','ensemble','spin','sections','show'].find(id=>ids.includes(id))??ids[0];$('candidate').value=ids.includes(keep)?keep:fallback;
 }
 
-function drawPixels(canvas,out){
-  const g=canvas.getContext('2d'),w=canvas.width,h=canvas.height,cell=w/3;
-  g.fillStyle='#0d0a14';g.fillRect(0,0,w,h);
-  order.forEach((zone,i)=>{
-    const layout=V.zoneLayout(V.DEFAULT_RIG,zone),size=Math.min(cell,h-26)*.8,x0=i*cell+(cell-size)/2,y0=(h-26-size)/2+4;
-    layout.pos.forEach((p,k)=>{
-      const [r,gr,b]=out[zone].pix[k],x=x0+p[0]*size,y=y0+p[1]*size,peak=Math.max(r,gr,b);
-      if(peak>.02){const halo=g.createRadialGradient(x,y,2,x,y,26);halo.addColorStop(0,`rgba(${Math.trunc(r*255)},${Math.trunc(gr*255)},${Math.trunc(b*255)},${.6*peak})`);
-        halo.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=halo;g.beginPath();g.arc(x,y,26,0,7);g.fill();}
-      g.fillStyle=`rgb(${Math.trunc(Math.min(255,24+r*231))},${Math.trunc(Math.min(255,24+gr*231))},${Math.trunc(Math.min(255,24+b*231))})`;
-      g.beginPath();g.arc(x,y,9,0,7);g.fill();
-    });
-    g.fillStyle='#9a8fb0';g.font='13px system-ui';g.textAlign='center';g.fillText(names[zone],i*cell+cell/2,h-8);
-  });
-}
+// Drawn at the size it is shown, so a phone's thin strip is as sharp as the
+// desk's: names only where a section is wide and tall enough to hold them.
 function drawTimeline(){
-  const c=$('timeline'),g=c.getContext('2d'),w=c.width,h=c.height,l=lab();
-  g.fillStyle='#130e1e';g.fillRect(0,0,w,h);
-  if(l){
+  const c=$('timeline'),dpr=Math.min(devicePixelRatio||1,2),w=c.clientWidth||c.width,h=c.clientHeight||c.height,l=lab();
+  if(c.width!==Math.round(w*dpr)||c.height!==Math.round(h*dpr)){c.width=Math.round(w*dpr);c.height=Math.round(h*dpr);}
+  // Sections, beat ticks, then the shows' colour barcodes (show-lab-leds.js barcodeHint reads the same rows).
+  const g=c.getContext('2d'),bh=h>=60?30:14,tick=bh+7;g.setTransform(dpr,0,0,dpr,0,0);
+  g.fillStyle='#0b0b0e';g.fillRect(0,0,w,h);g.font='12px system-ui';g.textAlign='left';
+  if(blind){g.fillStyle='#5a5a63';g.fillText('Hidden during the blind test.',10,Math.min(30,h-8));}
+  else if(l){
     for(const s of l.sections){
       const x=s.t/duration*w,x2=s.end/duration*w;
-      g.fillStyle=RANK[s.rank];g.fillRect(x+1,4,x2-x-2,44);
-      g.save();g.beginPath();g.rect(x+2,4,x2-x-4,44);g.clip();g.fillStyle='#fff';g.font='11px system-ui';g.textAlign='left';
-      g.fillText(s.look,x+4,20);g.fillStyle='#d8cfee';g.fillText(s.pattern+(s.drop?' ⚡':''),x+4,36);g.restore();
+      g.fillStyle=RANK[s.rank];g.fillRect(x+1,4,x2-x-2,bh);
+      const room=x2-x-7,fits=t=>t&&g.measureText(t).width<=room?t:'';g.font='11px system-ui';g.fillStyle='#fff';
+      if(bh<30){const t=fits(s.label);if(t){g.textAlign='center';g.fillText(t,(x+x2)/2,4+bh/2+4);g.textAlign='left';}continue;}
+      g.fillText(fits((s.label?s.label+' · ':'')+s.look)||fits(s.label),x+4,17);
+      g.fillStyle='#d6d6de';g.fillText(fits(s.pattern+(s.drop?' ⚡':''))||fits(s.drop?'⚡':''),x+4,31);
     }
-    g.fillStyle='#6d6480';for(const b of l.beats){g.fillRect(b/duration*w,54,1,8);}
-  }else{g.fillStyle='#6d6480';g.font='12px system-ui';g.textAlign='left';g.fillText('This candidate has no sections or beat grid — it follows detected onsets only.',10,30);}
+    g.fillStyle='#4a4a52';for(const b of l.beats){g.fillRect(b/duration*w,tick,1,6);}
+    g.fillStyle='rgba(0,0,0,.8)';for(const [a,b] of l.breaks||[]){g.fillRect(a/duration*w,4,Math.max(2,(b-a)/duration*w),bh);}
+  }else{g.fillStyle='#5a5a63';g.fillText('This candidate has no sections or beat grid — it follows detected onsets only.',10,Math.min(30,h-8));}
+  drawBarcodes(g,w,bh+16,h-bh-18);
+  if(typeof drawFlags==='function'){drawFlags(g,w,h);}
   g.fillStyle='#ff8a1a';g.fillRect(clock/duration*w-1,0,2,h);
 }
 function draw(){
-  sides.forEach((side,i)=>{
-    const out=V.renderZones(side.state,clock/1000,params);
-    stages[i].draw(out,clock/1000,0,[1,1,1,0]);drawPixels($('pixels-'+i),out);
-  });
+  const outs=sides.map(side=>emitted(V.renderZones(side.state,clock/1000,params)));
+  sides.forEach((side,i)=>{stages[i].draw(outs[i],clock/1000,0,[1,1,1,0]);drawPixels($('pixels-'+i),outs[i],i,outs[1-i]);});
   drawTimeline();$('seek').value=String(Math.round(clock/duration*1000));
-  const s=sectionAt(clock);$('clock').textContent=fmt(clock)+' / '+fmt(duration);
+  const s=blind?null:sectionAt(clock);$('clock').textContent=fmt(clock)+' / '+fmt(duration);
   const drop=s?.drop?' · drop at the end ⚡':'';
   $('section').textContent=s?`${s.look} · ${s.pattern}${drop}`:'';
 }
@@ -161,6 +354,7 @@ function frame(now){
   // With sound on, the song's own playhead is the clock, as it is in the Radio.
   clock=audible?audio.currentTime*1000:clock+Math.min(100,now-last)*(+$('speed').value);last=now;
   if(clock>=duration||(audible&&audio.ended)){clock=Math.min(clock,duration);setPlaying(false);}
+  if(blind&&clock>=blind.end){seek(blind.start);}
   sides.forEach(s=>advance(s,clock));draw();
 }
 function setPlaying(on){
@@ -185,20 +379,70 @@ async function loadSound(){
     audio.src=URL.createObjectURL(blob);audible=true;
     $('sound-note').textContent='Sound on: the song plays in this browser only; ½× and ¼× slow it with the lights.';
     setPlaying(was);
-  }catch(e){soundOff('Could not load the song ('+e.message+') — open this page from http://127.0.0.1:8894, not from disk. Playing silently.');}
+  }catch(e){soundOff('Could not load the song ('+e.message+') — open this page from the lab server (make show-lab), not from disk. Playing silently.');}
 }
 
 fill($('song'),SONGS.map((s,i)=>[String(i),s.baseline.name]));candidatesFor();
-$('song').onchange=()=>{setPlaying(false);clock=0;candidatesFor();load();loadSound();};
+$('song').onchange=()=>{if(blind){blind=null;$('blind').hidden=true;$('title-0').textContent='Current prepared show';}setPlaying(false);clock=0;candidatesFor();load();loadSound();};
 $('sound').onchange=loadSound;$('volume').oninput=e=>{audio.volume=+e.target.value;};audio.volume=+$('volume').value;
 $('speed').onchange=e=>{audio.playbackRate=+e.target.value;};
-$('candidate').onchange=load;
+$('candidate').onchange=()=>{if(blind){return;}load();};
+$('firmware').onchange=()=>load();
+// The phone's view: one castle or both, the settings sheet, and a redraw
+// whenever a canvas changes size (the stage clears itself when it resizes,
+// so a paused page would otherwise sit black after the first layout).
+const PHONE=matchMedia('(max-width:720px),(max-height:520px) and (orientation:landscape)');
+// A phone showing one castle draws its LEDs taller, into whatever room the
+// castle leaves above the timeline — the rings grow to about twice the size,
+// which is as large as a third of the width lets them (290 tall).
+function fitPixels(){
+  const i=$('sides').dataset.view,both=i==='both',st=$(both?'stage-0':'stage-'+i)?.getBoundingClientRect(),px=$(both?'pixels-0':'pixels-'+i);
+  if(both){document.body.classList.toggle('roomy',PHONE.matches&&!!st&&roomBoth(st)>=80);}
+  if(!PHONE.matches||!st||getComputedStyle(px).display==='none'){tall=120;return;}
+  if(both){tall=Math.round(Math.min(150,roomBoth(st)));return;}
+  const room=document.querySelector('.transport').getBoundingClientRect().top-st.bottom-$('timeline').offsetHeight-28;
+  tall=Math.round(Math.max(150,Math.min(290,room*720/st.width)));
+}
+// Each strip's height in 720-wide units if both castles and both strips
+// share what is left between the song bar and the timeline. Measured from the
+// picker, not the castles, because showing the strips moves the castles.
+function roomBoth(st){
+  const top=document.querySelector('.picker').getBoundingClientRect().bottom,bottom=document.querySelector('.transport').getBoundingClientRect().top;
+  return (bottom-top-$('timeline').offsetHeight-2*st.height-48)/2*720/st.width;
+}
+function setView(v){$('view').value=v;$('sides').dataset.view=v;}
+function sheet(open){document.body.classList.toggle('sheet',open);}
+$('view').onchange=e=>setView(e.target.value);
+document.querySelectorAll('.side').forEach((el,i)=>{el.onclick=()=>{if(PHONE.matches){setView($('sides').dataset.view==='both'?String(i):'both');}};});
+$('settings').onclick=()=>sheet(!document.body.classList.contains('sheet'));
+$('sheet-close').onclick=()=>sheet(false);
+$('blind-start').addEventListener('click',()=>sheet(false));
+new ResizeObserver(()=>{fitPixels();if(!playing){requestAnimationFrame(draw);}}).observe($('sides'));
+$('soften').onchange=e=>{params.soft=e.target.checked;sides.forEach(s=>{s.state.soft=params.soft;});seek(clock);studyShows();};
 $('play').onclick=()=>{if(!playing&&clock>=duration){seek(0);}setPlaying(!playing);};
 $('seek').oninput=e=>seek(+e.target.value/1000*duration);
+// Every section's whole name on hover, however narrow its block.
+$('timeline').onmousemove=e=>{const r=e.target.getBoundingClientRect(),t=(e.clientX-r.left)/r.width*duration,s=blind?null:sectionAt(t);
+  e.target.title=barcodeHint(e.clientY-r.top,t,r.height)||(s?`${s.label?s.label+' · ':''}${s.look} · ${s.pattern}${s.drop?' ⚡':''} · ${fmt(s.t)}–${fmt(s.end)}`:'');};
 $('timeline').onclick=e=>{const r=e.target.getBoundingClientRect();seek((e.clientX-r.left)/r.width*duration);};
 $('next-section').onclick=()=>{const l=lab(),n=l&&l.sections.find(s=>s.t>clock+50);if(n){seek(n.t);}};
 $('next-drop').onclick=()=>{const l=lab(),n=l&&l.sections.find(s=>s.drop&&s.end-3000>clock+50);if(n){seek(n.end-3000);setPlaying(true);}};
-load();requestAnimationFrame(frame);
+// The description is two lines until clicked; the keys a player answers to.
+$('note').onclick=e=>{if(!PHONE.matches){e.currentTarget.classList.toggle('clamp');}};
+document.addEventListener('keydown',e=>{
+  const t=e.target,typing=t.matches('input[type=text],textarea,select');
+  if(typing||e.metaKey||e.ctrlKey||e.altKey||!$('flag-sheet').hidden){return;}
+  if(e.key===' '){e.preventDefault();$('play').click();}
+  else if((e.key==='['||e.key===']'||e.key==='x'||e.key==='X')&&!blind){
+    const ids=[...$('candidate').options].map(o=>o.value),at=ids.indexOf($('candidate').value);
+    const next=e.key==='['?ids[(at+ids.length-1)%ids.length]:e.key===']'?ids[(at+1)%ids.length]:before;
+    if(next&&ids.includes(next)&&next!==shown){$('candidate').value=next;load();}}
+  else if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&!t.matches('input[type=range]')){
+    e.preventDefault();seek(clock+(e.key==='ArrowLeft'?-5000:5000));}
+});
+ledsInit();load();requestAnimationFrame(frame);
 </script>
+<script>/*{{show-lab-blind.js}}*/</script>
+<script>/*{{show-lab-flags.js}}*/</script>
 </body>
 </html>

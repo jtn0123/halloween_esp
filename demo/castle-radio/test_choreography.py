@@ -210,7 +210,20 @@ class Lab(unittest.TestCase):
             before = (library / "radio_test.show.json").read_bytes()
             report = show_lab.candidates(library, output)
             page = show_lab.page(library, output)
-            self.assertEqual({r["style"] for r in report}, set(choreography.STYLES))
+            self.assertEqual(
+                {r["style"] for r in report},
+                {
+                    *choreography.STYLES,
+                    "sections",
+                    "sections2",
+                    "spin",
+                    "ensemble",
+                    "colour",
+                    "palette",
+                    "spectrum",
+                    "glow",
+                },
+            )
             self.assertEqual(sorted(p.name for p in library.iterdir()),
                              ["radio_test.mp3", "radio_test.show.json", "stems"])  # fmt: skip
             self.assertEqual((library / "radio_test.show.json").read_bytes(), before)

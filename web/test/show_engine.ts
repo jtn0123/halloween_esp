@@ -121,21 +121,42 @@ const P = defaultParams();
   decayFlashes(st);
   ok(st.flash.door === 0, "a flash below the floor snaps to zero, not a long tail");
 
-  // Soft mode slows the fall: 0.90 -> 1-(1-0.90)*0.35 = 0.965
+  // Soft mode slows the fall of a strike in a train: 0.90 -> 1-(1-0.90)*0.35
   const s2 = createState(scene(), 0);
-  s2.flash.door = 1; s2.flashDecay.door = 0.9; s2.soft = true;
+  s2.flash.door = 1; s2.flashDecay.door = 0.9; s2.soft = true; s2.x.door.train0 = true;
   decayFlashes(s2);
-  near(s2.flash.door, 0.965, 1e-9, "soft mode slows decay to the firmware's curve");
+  near(s2.flash.door, 0.965, 1e-9, "soft mode slows a train's decay to the firmware's curve");
+  // ...and leaves an isolated strike's alone (v5.71).
+  const s3 = createState(scene(), 0);
+  s3.flash.door = 1; s3.flashDecay.door = 0.9; s3.soft = true;
+  decayFlashes(s3);
+  near(s3.flash.door, 0.9, 1e-9, "soft mode does not slow an isolated strike");
 }
 
-/* ── Soft mode caps strike intensity (photosensitivity) ──────────── */
+/* ── Soft mode damps a flash TRAIN (photosensitivity), per zone ──── */
 {
-  const sc = scene({ cues: [{ t: 0, bus: "LED", op: "strike", ms: 80 }] });
-  const st = createState(sc, 0);
-  rebuildLightsAt(st, sc, 0);
-  st.soft = true;
-  fireCues(st, 0, () => {});
-  near(st.flash.door, 0.42, 1e-9, "soft mode damps a full-intensity strike");
+  // Two strikes on a zone < 333 ms apart: the second is part of a train and
+  // is damped to 0.42 of itself. 333 ms apart, or the first after load, not.
+  const hit = (t: number, targets = ["door"]) =>
+    ({ t, bus: "LED", op: "strike", ms: 80, intensity: 0.3, targets });
+  const run = (cues: object[], until: number): ReturnType<typeof createState> => {
+    const sc = scene({ cues });
+    const st = createState(sc, 0);
+    rebuildLightsAt(st, sc, 0);
+    st.soft = true;
+    fireCues(st, until, () => {});
+    return st;
+  };
+  near(run([hit(0)], 0).flash.door, 0.3, 1e-9, "the first strike on a zone is never softened");
+  near(run([hit(0), hit(332)], 332).flash.door, 0.3 + 0.126, 1e-9,
+       "a strike 332 ms after the zone's last is damped");
+  near(run([hit(0), hit(333)], 333).flash.door, 0.6, 1e-9,
+       "a strike 333 ms after the zone's last is not");
+  // Per zone: a strike on ANOTHER zone in between does not start a train.
+  const st = run([hit(0, ["towerL"]), hit(100, ["door"]), hit(400, ["towerL"])], 400);
+  near(st.flash.door, 0.3, 1e-9, "the door's first strike is its own");
+  near(st.flash.towerL, 0.6, 1e-9, "towerL's beat is not softened by the door between");
+  ok(!st.x.towerL.train0 && !st.x.door.train0, "neither zone is in a train");
 }
 
 /* ── Rendering ───────────────────────────────────────────────────── */

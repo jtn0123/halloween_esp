@@ -87,7 +87,7 @@ interface Row {
   k: number; a: number; b: number; c: number; x: number;
   hashi: number; hash3: number; vnoise: number; fbm: number;
   eff: number; hue: number; soft: number; pal: number; t: number; seed: number;
-  base: Rgbw; ov: number; p: number; epoch: number; mode: number;
+  base: Rgbw; ov: number; p: number; epoch: number; mode: number; head: number;
   ovl: Rgbw; gate: number;
 }
 
@@ -203,7 +203,7 @@ const uni = [
 /* ── pixels ── */
 const perEff: Record<string, Stat> = Object.fromEntries(NAMES.map((n) => [n, stat()]));
 const perOv = [stat(), stat(), stat(), stat()];
-const gates = { same: 0, total: 0, scatterN: 0, edges: 0 };
+const gates = { same: 0, total: 0, scatterN: 0, halvesN: 0, arcsN: 0, tableN: 0, edges: 0 };
 const sparkle = { fwLit: 0, deskLit: 0, n: 0, both: 0 };
 
 /** Float32 bound on |sin(w*t + k)| evaluation error: ulp of the phase, with
@@ -252,7 +252,10 @@ for (const r of rows.filter((r) => r.kind === "px")) {
 
   // Overlays, applied by BOTH sides to the firmware's own base colour so the
   // overlay arithmetic is judged on its own and not through the base.
-  const ovl = applyOverlay(r.ov, r.base, r.t, r.p, r.zi, L);
+  // `head` >= 0 is a look record's tempo-locked head (cue v2); -1 the
+  // legacy clock, whose phase is the one the bounds below reason about.
+  const ovl = applyOverlay(r.ov, r.base, r.t, r.p, r.zi, L, r.head);
+  const locked = r.head >= 0;
   const dOvl = maxDiff(ovl, r.ovl);
   add(perOv[r.ov]!, dOvl);
   if (r.ov === 0) ok(dOvl === 0, `overlay none changed a pixel: ${r.ovl} vs ${r.base}`);
@@ -269,7 +272,12 @@ for (const r of rows.filter((r) => r.kind === "px")) {
     else ok(dOvl <= 1e-5 && fwLit === deskLit,
             `sparkle p=${r.p} zi=${r.zi} t=${r.t}: firmware ${r.ovl} desk ${ovl} (|d|=${f(dOvl)})`);
   }
-  if (r.ov === 2) {
+  if (r.ov === 2 && locked) {
+    // A handed head is the same float on both sides: no phase error at all.
+    ok(dOvl <= 2e-4, `chase p=${r.p} zi=${r.zi} head=${r.head}: firmware ${r.ovl} `
+       + `desk ${ovl} (|d|=${f(dOvl)})`);
+  }
+  if (r.ov === 2 && !locked) {
     const ph = r.t * 0.45 + r.zi * 0.37;
     // The head's width is set in pixels, so the phase error is amplified by
     // the pixel count (loop_dist * span * 0.9) before it reaches the colour.
@@ -277,7 +285,7 @@ for (const r of rows.filter((r) => r.kind === "px")) {
        `chase p=${r.p} zi=${r.zi} t=${r.t}: firmware ${r.ovl} desk ${ovl} (|d|=${f(dOvl)}, ph=${ph})`);
   }
   if (r.ov === 3) {
-    const ph = r.t / 2.6 + r.zi * 0.41;
+    const ph = locked ? r.head : r.t / 2.6 + r.zi * 0.41;
     const frac = ph - Math.floor(ph);
     const edge = Math.min(frac, 1 - frac, Math.abs(frac - 0.12));
     if (nearEdge(ph, edge)) gates.edges++;
@@ -286,17 +294,33 @@ for (const r of rows.filter((r) => r.kind === "px")) {
             `meteor p=${r.p} zi=${r.zi} t=${r.t}: firmware ${r.ovl} desk ${ovl} (|d|=${f(dOvl)})`);
   }
 
-  // Gates: centre/ring/all are table lookups and scatter is hash3 over three
-  // integers — every one is exact, frame for frame.
+  // Gates: centre/ring/all are table lookups, scatter is hash3 over three
+  // integers, the four halves (modes 4-7, cue v2) compare a rig.h position
+  // against a midline band wide enough to swallow its 6-decimal rounding,
+  // and the arcs (8-15) snap walk to whole steps and ramp in integers —
+  // every one is exact, frame for frame.
   // (Math.fround: the dump prints the firmware's float32 0.15f, which is
   // not the double 0.15 — same constant, different precision.)
   const gate = flashGate(r.mode, r.p, r.zi, r.epoch, L);
   gates.total++;
   if (Math.fround(gate) === Math.fround(r.gate)) gates.same++;
   if (r.mode === 1) gates.scatterN++;
+  if (r.mode >= 4 && r.mode < 8) gates.halvesN++;
+  if (r.mode >= 8) gates.arcsN++;
   ok(Math.fround(gate) === Math.fround(r.gate), `gate mode ${r.mode} p=${r.p} zi=${r.zi} `
     + `epoch=${r.epoch}: firmware ${r.gate} desk ${gate}`);
 }
+
+/* ── the exhaustive gate table: every mask on every pixel of every zone ── */
+for (const r of rows.filter((r) => r.kind === "gate")) {
+  const gate = flashGate(r.mode, r.p, r.zi, 0, layouts[r.zi]!);
+  gates.tableN++;
+  ok(Math.fround(gate) === Math.fround(r.gate),
+     `gate table mode ${r.mode} zone ${r.zi} p=${r.p}: firmware ${r.gate} desk ${gate}`);
+}
+const arcRows = rows.filter((r) => r.kind === "gate" && r.mode >= 8);
+ok(arcRows.length === 8 * layouts.reduce((a, L) => a + L.n, 0),
+   `the gate table holds ${arcRows.length} arc rows, not one per arc per pixel`);
 
 /* ── report ── */
 const pct = (k: number, n: number): string => n ? `${(100 * k / n).toFixed(1)}%` : "-";
@@ -313,7 +337,9 @@ for (const name of NAMES) {
 }
 console.log("  overlays on the firmware base: " + perOv.map((s, i) =>
   `ov${i} n=${s.n} max|d| ${f(s.max)}`).join(", "));
-console.log(`  gates: ${gates.same}/${gates.total} identical (${gates.scatterN} scatter); `
+console.log(`  gates: ${gates.same}/${gates.total} identical (${gates.scatterN} scatter, `
+  + `${gates.halvesN} halves, ${gates.arcsN} arcs); `
+  + `${gates.tableN} table rows (${arcRows.length} arcs) identical; `
   + `sparkle lit on both sides ${sparkle.both}/${sparkle.n} frames, glint rate firmware `
   + `${pct(sparkle.fwLit, sparkle.n)} desk ${pct(sparkle.deskLit, sparkle.n)}`);
 console.log(`  ${gates.edges} frames sat within float32 error of a branch edge and were not judged`);

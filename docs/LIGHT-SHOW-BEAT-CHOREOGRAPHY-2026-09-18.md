@@ -109,6 +109,43 @@ Open the page over http, not from disk, or the song cannot load.
   lab never writing beside a baseline.
 - Limits: 4/4 and 4-bar phrases are assumed; "loud" is relative to the
   song, so a flat-mastered song still gets all three ranks; bar phase is a
-  guess from the low band and can sit a beat off; a song without stems has
+  guess from the low band and can sit a beat off (see the four-stem
+  follow-up below); a song without stems has
   no path into `choreograph` yet. None of this is wired into
   `rich_show.prepare` — adopting one is step 4 of the handoff, unstarted.
+
+## Follow-up, 2026-09-23 · the drum stem decides the "one"
+
+`tools/stems.py` now keeps all four htdemucs sources (one pass, unclipped;
+`backing` is drums + bass + other summed and clip-guarded exactly as
+two-stem mode built `no_vocals` — Thriller's new backing correlates 0.998
+with the old one, RMS within 0.04%). `analysis.json` gains `drums`, `bass`
+and `other` beside the old three layers; two-stem caches stay valid.
+`--out DIR` splits into a scratch directory; the six lab songs are in the
+lights worktree's `.radio-data/comparison/stems/`.
+
+With a kit, `beat_grid.analyse` walks the drum envelope (backing blended in
+at half weight — drums alone lock Day-o onto its 3-3-2 calypso figure at
+92 BPM and leave drumless intros without beats) and votes "one" from the
+backbeat, a heavier kick, bass and chords (`other`) on the downbeat, and
+section changes (`phase_cues`). Measured on the six (old = two-stem low-band
+method on the library's analysis; offset = where the old "one" lands in the
+new bar):
+
+| Song | BPM (both) | on a kick/snare, old → new | old "one" in new bar | decided by | margin |
+| --- | --- | --- | --- | --- | --- |
+| Monster Mash | 139.5 | 90% → 90% | 1 (agree, 108/108 bars) | kick | 1.0 |
+| Day-o | 122.4 | 57% → 58% | 1 (agree, 50/50) | kick | 0.19 |
+| Oogie Boogie | 109.1 | 68% → 70% | 4 (71 of 76) | sections | 0.17 |
+| I Put a Spell on You | 150.0 | 64% → 64% | 1 (52 of 62; 9 on 2) | harmony | 1.0 |
+| Thriller | 117.6 | 86% → 87% | **2** (97/97) | harmony | 0.35 |
+| Halloween Theme | 136.4 | 97% → 97% | 2 (104/104) | bass | 0.05 |
+
+Nothing was listened to. Thriller is the case this was for: its strong snare
+hits sit on the old grid's "one" and three, so the old grid was on the
+backbeat; which of the new 1 and 3 is right rests on the synth stabs. Oogie
+Boogie has no backbeat to read (±0.03) and the old method itself
+moves by a beat between two separations of the same song — low confidence
+either way. Halloween Theme is presumably Carpenter's 5/4, which a 4-beat bar cannot fit; its
+0.05 margin says so. Limits unchanged otherwise: 4/4, a single bar phase
+for the whole song (a beat missed mid-song shifts every bar after it).

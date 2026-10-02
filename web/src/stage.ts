@@ -13,6 +13,7 @@
 import type { ZoneId } from "./types.js";
 import { hash } from "./effects.js";
 import { DEFAULT_RIG, zoneLayout, type Layout } from "./rig.js";
+import { bloom, hue, interior, leds, luma, rgba, stoneMask } from "./stage_light.js";
 
 /** Screen RGB, 0..1 per channel — what a pixel actually looks like. */
 export type Rgb = readonly [r: number, g: number, b: number];
@@ -81,16 +82,18 @@ const STARS: readonly Star[] = Array.from({ length: 110 }, (_, i) => ({
   p: hash(i * 11.1) * 6.28,
 }));
 
-const rgba = (c: Rgb, a: number): string =>
-  `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)},${a})`;
-
-const luma = (c: Rgb): number => Math.max(c[0], c[1], c[2]);
+/** The two towers' walls, left and right edge. */
+const TOWERS: readonly (readonly [number, number])[] = [[150, 250], [550, 650]];
+/** Where the ground starts. */
+const GROUND = 476;
 
 export class Stage {
   private readonly cvs: HTMLCanvasElement;
   private readonly g2: CanvasRenderingContext2D;
   /** viewBox units -> backing-store pixels. Recomputed on every resize. */
   private scale = 1;
+  /** The stonework mask at the current backing size (stage_light.stoneMask). */
+  private stone: HTMLCanvasElement | null = null;
   private layouts: Record<ZoneId, Layout> = {
     towerL: zoneLayout(DEFAULT_RIG, "towerL"),
     door: zoneLayout(DEFAULT_RIG, "door"),
@@ -118,6 +121,22 @@ export class Stage {
     this.cvs.width = Math.max(1, Math.round(r.width * dpr));
     this.cvs.height = Math.max(1, Math.round(r.height * dpr));
     this.scale = (r.width / VW) * dpr;
+    this.stone = null; // rebuilt at the new size on the next frame
+  }
+
+  /** Every surface of the castle a window can light, as one path to clip to. */
+  private castlePath(): void {
+    const g2 = this.g2;
+    g2.beginPath();
+    for (const [x0, x1] of TOWERS) {
+      g2.rect(x0, 182, x1 - x0, GROUND - 182);
+      g2.moveTo(x0 - 12, 182);
+      g2.lineTo(x1 + 12, 182);
+      g2.lineTo((x0 + x1) / 2, 104);
+      g2.closePath();
+    }
+    g2.rect(250, 258, 300, GROUND - 258);
+    for (let i = 0; i < 6; i++) g2.rect(252 + i * 50, 238, 30, 22);
   }
 
   /** The pointed arch shared by both windows and the door. */
@@ -155,8 +174,10 @@ export class Stage {
     this.drawSky(ts, fl, fc0, fc1, fc2);
     this.drawCastle(fl, fc0, fc1, fc2);
     this.drawSpill(out);
+    this.drawStone();
     this.drawApertures(out);
-    this.drawAtmosphere(ts);
+    for (const id of ZONE_IDS) bloom(g2, APERTURE[id], out[id].avg);
+    this.drawAtmosphere(ts, out);
   }
 
   /** Sky gradient, stars, moon, and the strike wash over all of them. */
@@ -221,8 +242,7 @@ export class Stage {
     g2.fillStyle = stone;
 
     // towers
-    const towers: readonly (readonly [number, number])[] = [[150, 250], [550, 650]];
-    for (const [x0, x1] of towers) {
+    for (const [x0, x1] of TOWERS) {
       g2.fillRect(x0, 182, x1 - x0, 300);
       g2.beginPath();
       g2.moveTo(x0 - 12, 182);
@@ -238,33 +258,88 @@ export class Stage {
 
     // ground
     g2.fillStyle = "#04060c";
-    g2.fillRect(0, 476, VW, VH - 476);
+    g2.fillRect(0, GROUND, VW, VH - GROUND);
+
+    // A sill under each window and a step under the door, to catch the light.
+    g2.fillStyle = stone;
+    for (const id of ZONE_IDS) {
+      const a = APERTURE[id];
+      g2.fillRect(a.x - 6, a.base, a.w + 12, id === "door" ? 6 : 5);
+    }
   }
 
-  /** The halo each lit aperture throws onto the stone around it. */
+  /**
+   * The light each aperture throws: a wash on the stone around it (clipped
+   * to the castle, so the sky beside a tower stays dark), leaning downward
+   * the way light out of a window falls, and a pool on the ground in front
+   * of the door.
+   */
   private drawSpill(out: ZoneRender): void {
     const g2 = this.g2;
     g2.save();
+    this.castlePath();
+    g2.clip();
     g2.globalCompositeOperation = "lighter";
     for (const id of ZONE_IDS) {
       const a = APERTURE[id];
-      const c = out[id].avg;
-      const lum = luma(c);
+      const lum = luma(out[id].avg);
       if (lum < 0.01) continue;
-      const rad = id === "door" ? 190 : 140;
-      const gr = g2.createRadialGradient(a.cx, a.cy, 2, a.cx, a.cy, rad);
-      gr.addColorStop(0, rgba(c, 0.50 * lum));
-      gr.addColorStop(0.45, rgba(c, 0.13 * lum));
-      gr.addColorStop(1, rgba(c, 0));
+      const h = hue(out[id].avg);
+      const rad = id === "door" ? 140 : 100;
+      g2.save();
+      g2.translate(a.cx, a.cy + rad * 0.12);
+      g2.scale(1, 1.25);
+      const gr = g2.createRadialGradient(0, 0, a.w * 0.3, 0, 0, rad);
+      // Falling off near the square of the distance, as real light does.
+      gr.addColorStop(0, rgba(h, 0.6 * lum));
+      gr.addColorStop(0.25, rgba(h, 0.2 * lum));
+      gr.addColorStop(0.6, rgba(h, 0.05 * lum));
+      gr.addColorStop(1, rgba(h, 0));
       g2.fillStyle = gr;
-      g2.beginPath();
-      g2.arc(a.cx, a.cy, rad, 0, TAU);
-      g2.fill();
+      g2.fillRect(-rad, -rad, rad * 2, rad * 2);
+      g2.restore();
     }
+    g2.restore();
+
+    const door = out.door.avg;
+    const lum = luma(door);
+    if (lum < 0.01) return;
+    const h = hue(door);
+    g2.save();
+    g2.beginPath();
+    g2.rect(0, GROUND, VW, VH - GROUND);
+    g2.clip();
+    g2.globalCompositeOperation = "lighter";
+    g2.translate(APERTURE.door.cx, GROUND + 4);
+    g2.scale(1, 0.22);
+    const pool = g2.createRadialGradient(0, 0, 0, 0, 0, 170);
+    pool.addColorStop(0, rgba(h, 0.55 * lum));
+    pool.addColorStop(0.5, rgba(h, 0.16 * lum));
+    pool.addColorStop(1, rgba(h, 0));
+    g2.fillStyle = pool;
+    g2.fillRect(-170, -170, 340, 340);
     g2.restore();
   }
 
-  /** The openings themselves: dark pane, wash, then the configured fixture behind it. */
+  /** The stonework, multiplied over the castle: it shows only where lit. */
+  private drawStone(): void {
+    const g2 = this.g2;
+    if (!(this.scale > 0)) return; // hidden: nothing to texture
+    this.stone ??= stoneMask(this.cvs.width, this.cvs.height, this.scale);
+    g2.save();
+    this.castlePath();
+    g2.clip();
+    g2.globalCompositeOperation = "multiply";
+    g2.drawImage(this.stone, 0, 0, VW, VH);
+    g2.restore();
+  }
+
+  /**
+   * The openings: a dark pane, the room behind it lit by the fixture, every
+   * configured pixel as a real emitter, and the reveal and sill the light
+   * catches on its way out. Rings have no invented centre; grids and sticks
+   * keep their layout.
+   */
   private drawApertures(out: ZoneRender): void {
     const g2 = this.g2;
     for (const id of ZONE_IDS) {
@@ -273,49 +348,38 @@ export class Stage {
       this.archPath(a);
       g2.fillStyle = "#02030a";
       g2.fill();
-
-      // A pane wash plus every pixel in the configured fixture geometry.
-      // Rings have no invented center; grids and sticks retain their layout.
       const lum = luma(zone.avg);
-      if (lum > 0.005) {
-        const ig = g2.createLinearGradient(0, a.top, 0, a.base);
-        ig.addColorStop(0, rgba(zone.avg, 0.40));
-        ig.addColorStop(1, rgba(zone.avg, 0.16));
-        g2.fillStyle = ig;
-        g2.fill();
-      }
       g2.save();
       this.archPath(a);
       g2.clip();
       g2.globalCompositeOperation = "lighter";
-      const layout = this.layouts[id];
-      const pr = a.w * Math.min(0.12, 0.38 / Math.sqrt(Math.max(1, layout.n)));
-      for (let p = 0; p < layout.n; p++) {
-        const point = layout.pos[p];
-        if (!point) continue;
-        const px = a.cx + (point[0] - 0.5) * a.w * 0.8;
-        const py = a.cy + (point[1] - 0.5) * a.w * 0.8;
-        // A short frame is a caller bug, but skipping beats throwing mid-paint.
-        const c = zone.pix[p];
-        if (!c) continue;
-        const plum = luma(c);
-        if (plum < 0.01) continue;
-        const pg = g2.createRadialGradient(px, py, 0.5, px, py, pr * 2.6);
-        pg.addColorStop(0, rgba(c, 0.95));
-        pg.addColorStop(0.4, rgba(c, 0.45 * plum));
-        pg.addColorStop(1, rgba(c, 0));
-        g2.fillStyle = pg;
-        g2.beginPath();
-        g2.arc(px, py, pr * 2.6, 0, TAU);
-        g2.fill();
-      }
+      if (lum > 0.005) interior(g2, a, zone.avg, lum);
+      leds(g2, a, this.layouts[id], zone.pix);
       g2.restore();
+      if (lum > 0.005) this.drawReveal(a, zone.avg, lum);
     }
   }
 
-  /** Ground fog and the vignette that closes the frame. */
-  private drawAtmosphere(ts: number): void {
+  /** The inner edge of the arch and the top of the sill, rim-lit. */
+  private drawReveal(a: Aperture, c: Rgb, lum: number): void {
     const g2 = this.g2;
+    const h = hue(c);
+    g2.save();
+    g2.globalCompositeOperation = "lighter";
+    this.archPath(a);
+    g2.strokeStyle = rgba(h, 0.15 * lum);
+    g2.lineWidth = 2.2;
+    g2.stroke();
+    g2.fillStyle = rgba(h, 0.35 * lum);
+    g2.fillRect(a.x - 6, a.base, a.w + 12, 1.4);
+    g2.restore();
+  }
+
+  /** Ground fog — tinted where the door lights it — and the vignette. */
+  private drawAtmosphere(ts: number, out: ZoneRender): void {
+    const g2 = this.g2;
+    const door = out.door.avg;
+    const dl = luma(door);
 
     // ground fog
     g2.save();
@@ -328,6 +392,13 @@ export class Stage {
       g2.fillStyle = fg;
       g2.beginPath();
       g2.ellipse(fx, 486, 170, 42, 0, 0, TAU);
+      g2.fill();
+      const lit = dl * Math.max(0, 1 - Math.abs(fx - APERTURE.door.cx) / 320);
+      if (lit < 0.01) continue;
+      const tg = g2.createRadialGradient(fx, 486, 4, fx, 486, 170);
+      tg.addColorStop(0, rgba(hue(door), 0.2 * lit));
+      tg.addColorStop(1, rgba(hue(door), 0));
+      g2.fillStyle = tg;
       g2.fill();
     }
     g2.restore();

@@ -6,8 +6,8 @@ minutes away, and only if someone happens to run one. And the device has
 nothing that would catch a write past a zone's buffer, a NaN turning a pixel
 white, or a centre role surviving a blackout.
 
-Two host programs, both in tests/cxx/ (a third, web_check.cpp, does the same
-for the web layer — tests/test_firmware_web_cxx.py):
+Three host programs, all in tests/cxx/ (web_check.cpp does the same for the
+web layer — tests/test_firmware_web_cxx.py):
 
   render_check.cpp   the invariant harness — every effect/overlay/gate entry
                      point, every fixture in generated/rig.h plus the rest of
@@ -17,6 +17,11 @@ for the web layer — tests/test_firmware_web_cxx.py):
   parity_dump.cpp    the numeric dump web/test/firmware_parity.ts compares
                      against the TypeScript port. Here it is only built and
                      smoke-run; the comparison lives on the node side.
+  layers_check.cpp   what cue format v2 added (castle_layers.h): the
+                     ornament layer adds and clamps, the half masks are
+                     complementary, a rate change never moves the overlay
+                     head, and only a strike < 333 ms after its zone's last
+                     one is softened.
 
 Skipped, not failed, where no host C++ compiler exists.
 """
@@ -63,6 +68,8 @@ class TestFirmwareRenderPath(unittest.TestCase):
     dump: ClassVar[Path]
     built: ClassVar[subprocess.CompletedProcess[str]]
     built_dump: ClassVar[subprocess.CompletedProcess[str]]
+    layers: ClassVar[Path]
+    built_layers: ClassVar[subprocess.CompletedProcess[str]]
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -76,6 +83,8 @@ class TestFirmwareRenderPath(unittest.TestCase):
         cls.dump = Path(cls.tmp) / "parity_dump"
         cls.built = build(CXX_DIR / "render_check.cpp", cls.check)
         cls.built_dump = build(CXX_DIR / "parity_dump.cpp", cls.dump)
+        cls.layers = Path(cls.tmp) / "layers_check"
+        cls.built_layers = build(CXX_DIR / "layers_check.cpp", cls.layers)
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -118,6 +127,21 @@ class TestFirmwareRenderPath(unittest.TestCase):
             checks = int(run.stdout.split("rendered ok, ")[1].split(" checks")[0])
             self.assertGreater(checks, 500_000, "the harness lost most of its checks")
 
+    def test_v2_layers_hold(self) -> None:
+        """The ornament layer, half masks, overlay clock and train soften."""
+        self.assertEqual(
+            self.built_layers.returncode,
+            0,
+            f"layers_check.cpp did not compile:\n{self.built_layers.stderr}",
+        )
+        run = subprocess.run(
+            [str(self.layers)], capture_output=True, text=True, check=False
+        )
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIn("layers ok", run.stdout)
+        checks = int(run.stdout.split("layers ok, ")[1].split(" checks")[0])
+        self.assertGreater(checks, 1000, "the v2 harness lost most of its checks")
+
     def test_parity_dump_is_well_formed(self) -> None:
         """Every line parses; every zone in rig.h is described; every effect,
         overlay and strike mask appears; every value is finite and in 0..1."""
@@ -136,7 +160,12 @@ class TestFirmwareRenderPath(unittest.TestCase):
         px = [r for r in rows if r["kind"] == "px"]
         self.assertEqual({r["eff"] for r in px}, set(range(13)))
         self.assertEqual({r["ov"] for r in px}, {0, 1, 2, 3})
-        self.assertEqual({r["mode"] for r in px}, {0, 1, 2, 3})
+        self.assertEqual({r["mode"] for r in px}, set(range(16)))
+        table = {(r["zi"], r["mode"], r["p"]) for r in rows if r["kind"] == "gate"}
+        want = {
+            (z["zi"], m, p) for z in zones for m in range(16) for p in range(z["n"])
+        }
+        self.assertEqual(table, want, "the gate table misses a mask, pixel or zone")
         self.assertEqual({r["pal"] for r in px}, {0, 1, 2, 3})
         for r in px:
             for key in ("base", "ovl"):

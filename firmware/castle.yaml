@@ -31,7 +31,7 @@ substitutions:
   # Bump on every flash you intend to verify — the number is displayed by the
   # device's web page and reported by /api/status, which is how you prove the
   # image you meant to send is the image that is running.
-  version: "5.70"
+  version: "5.73"
   # Which checkout this build tree belongs to — see build_path.yaml. The
   # Makefile passes the directory name (-s checkout <dir>); a bare
   # `esphome compile` gets the main checkout's tree.
@@ -103,6 +103,8 @@ esphome:
     # generated/rig.h includes its neighbour flat rather than by path.
     - castle_effects.h
     - generated/rig.h
+    # v5.71: the ornament layer, overlay clock and soften memory (cue v2).
+    - castle_layers.h
     - castle_pixels.h
     - flash_mode.h
     - boot_log.h
@@ -455,7 +457,12 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
     # Hard ~7 Hz white strobe is a photosensitivity risk on a public porch.
-    # Default ON; turning it off is a deliberate act.
+    # Default ON; turning it off is a deliberate act. Since v5.71 it softens
+    # only a strike that lands on its zone < 333 ms after that ZONE's last
+    # strike (either layer) — a train faster than 3 a second. Per zone, so a
+    # steady left/right beat never turns soft because the door flashed in
+    # between; an isolated strike renders as if the switch were off
+    # (castle_layers.h kSoftenWindowMs). The soft STROBE effect is unchanged.
 
 # The `light:` components are GENERATED into generated/lights.yaml — one
 # strip per zone, because an RGBW fixture and an RGB one cannot share a data

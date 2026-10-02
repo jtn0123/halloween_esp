@@ -116,9 +116,27 @@ export function fbm(x: number): number {
   return 0.55 * vnoise(x) + 0.30 * vnoise(x * 2.13 + 11.3) + 0.15 * vnoise(x * 4.31 + 27.7);
 }
 
+/* Pole pairs past the firmware's four: the light-show lab's preview of a
+   resting glow in any colour. No castle reads them and a card cannot name
+   one, so indices 0-3 — the parity contract — are untouched. */
+const EXTRA: Array<readonly [Pole, Pole]> = [];
+const EXTRA_AT = new Map<string, number>();
+
+/** The index of a preview-only palette for these two poles (made once). */
+export function previewPalette(a: Pole, b: Pole): number {
+  const key = `${a.join()}|${b.join()}`;
+  let at = EXTRA_AT.get(key);
+  if (at === undefined) {
+    at = PALETTES.length + EXTRA.length;
+    EXTRA.push([a, b]);
+    EXTRA_AT.set(key, at);
+  }
+  return at;
+}
+
 /** The zone's palette poles, chosen by P.pal (index 0 = classic haunt). */
 const pole = (P: EffectParams, which: 0 | 1): Pole =>
-  (PALETTES[P.pal] ?? PALETTES[0]!)[which];
+  (PALETTES[P.pal] ?? EXTRA[P.pal - PALETTES.length] ?? PALETTES[0]!)[which];
 
 /** What the jewel's white die actually looks like, for screen rendering. */
 const WARM_W: readonly [number, number, number] = [1.00, 0.83, 0.62];
@@ -284,10 +302,12 @@ function ovSparkle(c: Rgbw, t: number, p: number, zi: number): Rgbw {
   return c;
 }
 
-/** chase: a point of light travelling the fixture. */
-function ovChase(c: Rgbw, t: number, p: number, zi: number, L: Layout): Rgbw {
+/** chase: a point of light travelling the fixture. `h` is the head a look
+ *  record locked to the tempo (show_layers.overlayHead); -1 is the legacy
+ *  clock, which is what every v1 show runs. */
+function ovChase(c: Rgbw, t: number, p: number, zi: number, L: Layout, h: number): Rgbw {
   if (p === L.center) return [c[0] * 0.55, c[1] * 0.55, c[2] * 0.55, c[3] * 0.55];
-  const head = (t * 0.45 + zi * 0.37) % 1;
+  const head = h >= 0 ? h : (t * 0.45 + zi * 0.37) % 1;
   // Width is set in PIXELS, not in turns, so the lit head stays one pixel
   // wide whether it is going round six of them or sixteen.
   const span = L.center === null ? L.n : L.n - 1;
@@ -297,9 +317,10 @@ function ovChase(c: Rgbw, t: number, p: number, zi: number, L: Layout): Rgbw {
           Math.min(1, c[3] * k + 0.50 * boost * boost)];
 }
 
-/** meteor: a drip forms at the top, then falls. */
-function ovMeteor(c: Rgbw, t: number, p: number, zi: number, L: Layout): Rgbw {
-  const ph = (t / 2.6 + zi * 0.41) % 1;
+/** meteor: a drip forms at the top, then falls — one drip per turn of the
+ *  head when a look has set a rate (`h` >= 0), else the legacy 2.6 s. */
+function ovMeteor(c: Rgbw, t: number, p: number, zi: number, L: Layout, h: number): Rgbw {
+  const ph = h >= 0 ? h : (t / 2.6 + zi * 0.41) % 1;
   // One level of fall, used both as the head's height and as what counts
   // as "the top" for the forming flash.
   const rung = 1 / Math.max(1, L.fallSteps - 1);
@@ -332,20 +353,28 @@ function ovMeteor(c: Rgbw, t: number, p: number, zi: number, L: Layout): Rgbw {
  * `Layout` in rig.ts for how those two coordinates are built.
  */
 export function applyOverlay(
-  ov: number, c: Rgbw, t: number, p: number, zi: number, L: Layout,
+  ov: number, c: Rgbw, t: number, p: number, zi: number, L: Layout, head = -1,
 ): Rgbw {
   if (ov === 1) return ovSparkle(c, t, p, zi);
-  if (ov === 2) return ovChase(c, t, p, zi, L);
-  if (ov === 3) return ovMeteor(c, t, p, zi, L);
+  if (ov === 2) return ovChase(c, t, p, zi, L, head);
+  if (ov === 3) return ovMeteor(c, t, p, zi, L, head);
   return c;
 }
 
 /* ── Strike masks — which pixels a flash actually hits ─────────────────
    Mode 0 hits the whole jewel (the classic look). The others give a strike
    spatial texture: scatter picks a different random subset each strike
-   (epoch changes per strike cue), centre and ring split the jewel by role. */
+   (epoch changes per strike cue), centre and ring split the jewel by role,
+   and (cue format v2) left/right/top/bottom split it by where each pixel is
+   DRAWN — the layout's `pos`, which rig.h carries as x/y. A pixel on the
+   dividing line gets half; the far half keeps the 0.1 glow the role masks
+   leave. arc0..arc7 (8-15, also v2) light one patch of the loop — see
+   arcGate. */
 
-export const FLASH_MODES = ["all", "scatter", "center", "ring"] as const;
+export const FLASH_MODES = [
+  "all", "scatter", "center", "ring", "left", "right", "top", "bottom",
+  "arc0", "arc1", "arc2", "arc3", "arc4", "arc5", "arc6", "arc7",
+] as const;
 export const flashModeIndex = (name: string): number => {
   const i = (FLASH_MODES as readonly string[]).indexOf(name);
   return Math.max(0, i);
@@ -360,5 +389,39 @@ export function flashGate(
   // or a matrix it is whatever `Layout.core` decided the middle is.
   if (mode === 2) return L.core[p] ? 1 : 0.1;
   if (mode === 3) return L.core[p] ? 0.1 : 1;
+  if (mode >= 4 && mode <= 7) {
+    const at = L.pos[p] ?? [0.5, 0.5];
+    return halfGate(mode < 6 ? at[0] : at[1], mode === 4 || mode === 6);
+  }
+  if (mode >= ARC_FIRST && mode < ARC_FIRST + 8) return arcGate(mode - ARC_FIRST, p, L);
   return 1;
+}
+
+const ARC_FIRST = 8;
+const ARC_TURN = 3072;
+
+/** Arc k (mode 8 + k): one patch of the loop centred at walk k/8 — arc0 is
+ *  12 o'clock on a ring, arc2 3 o'clock, arc4 the bottom. 1 within 1/12
+ *  turn, linear to 0.1 at 1/4 turn, 0.1 beyond; a hub's centre (no place on
+ *  the loop) takes 0.3. Exact against castle_effects.h arc_gate by
+ *  construction: walk snapped to whole 1/3072 turns, integer distance and
+ *  ramp, and a gate in thousandths — one division, which the firmware's
+ *  float32 and this double rounded to float32 agree on. */
+function arcGate(k: number, p: number, L: Layout): number {
+  if (p === L.center) return 0.3;
+  const q = Math.floor((L.walk[p] ?? 0) * ARC_TURN + 0.5);
+  let d = (((q - k * (ARC_TURN / 8)) % ARC_TURN) + ARC_TURN) % ARC_TURN;
+  if (d > ARC_TURN / 2) d = ARC_TURN - d;
+  const x = d < 256 ? 0 : d > 768 ? 512 : d - 256;
+  return (1000 - Math.floor((225 * x) / 128)) / 1000;
+}
+
+/** One coordinate against the fixture's midline: 1 on the struck side, 0.5
+ *  on the line (a Jewel's centre, a ring's 12 and 6 o'clock), 0.1 beyond.
+ *  The ±0.001 band is what makes 0.5 + 1e-17 (the desk's cosine) and the
+ *  0.500000f rig.h prints the same pixel. */
+function halfGate(v: number, low: boolean): number {
+  if (v < 0.499) return low ? 1 : 0.1;
+  if (v > 0.501) return low ? 0.1 : 1;
+  return 0.5;
 }

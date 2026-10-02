@@ -133,6 +133,8 @@ struct Status {
   unsigned light_applied{0};
   unsigned light_evicted{0};
   unsigned cues{0};
+  long long sync_lead_ms{-1};   // v5.72, castle_cues.h g_sync_*
+  long long sync_drift_ms{-1};
   bool pir_armed{false};   // v5.69: the PIR boots disarmed (not wired)
   int pir_cooldown{60};
   // L6 (v5.62): the radio, which nothing reported at all. A castle that
@@ -361,6 +363,8 @@ inline void mirror_show_state(std::string_view scene, std::string_view track,
   g_status.light_applied = g_light_applied.load();
   g_status.light_evicted = g_light_evicted.load();
   g_status.cues = g_cues.load();
+  g_status.sync_lead_ms = g_sync_lead_ms.load();
+  g_status.sync_drift_ms = g_sync_drift_ms.load();
   g_status.pir_armed = g_pir_armed.load();
   g_status.pir_cooldown = g_pir_cooldown.load();
   g_status.rssi = g_rssi.load();

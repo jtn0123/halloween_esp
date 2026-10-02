@@ -27,8 +27,9 @@ def emit_rig_header(
 ) -> str:
     """Bake each zone's geometry into a header the firmware only indexes.
 
-    The device does no layout arithmetic: `walk`, `fall` and `core` are the
-    tables computed by rig_layout.py, which web/test/rig_parity.ts holds
+    The device does no layout arithmetic: `walk`, `fall`, `core` and the
+    drawn position `x`/`y` (v5.71's half masks) are the tables computed by
+    rig_layout.py, which web/test/rig_parity.ts holds
     identical to the browser's. That is the whole reason there is no third
     copy of this maths in C++.
     """
@@ -74,6 +75,8 @@ def emit_rig_header(
         arr("walk", zid, [f"{v:.6f}f" for v in lay.walk])
         arr("fall", zid, [f"{v:.6f}f" for v in lay.fall])
         arr("core", zid, ["true" if v else "false" for v in lay.core])
+        arr("x", zid, [f"{x:.6f}f" for x, _y in lay.pos])
+        arr("y", zid, [f"{y:.6f}f" for _x, y in lay.pos])
         out.append("")
 
     out.append("}  // namespace rig_tables")
@@ -87,7 +90,8 @@ def emit_rig_header(
         center = -1 if lay.center is None else lay.center
         out.append(
             f"    {{{lay.n}, {center}, {lay.fall_steps}, rig_tables::{zid}_walk,"
-            f" rig_tables::{zid}_fall, rig_tables::{zid}_core}},  // {zid}"
+            f" rig_tables::{zid}_fall, rig_tables::{zid}_core,"
+            f" rig_tables::{zid}_x, rig_tables::{zid}_y}},  // {zid}"
         )
     out.append("};")
     out.append("")
@@ -357,7 +361,8 @@ def emit_lights(
             f"                id(zone_effect)[{zi}], id(zone_center)[{zi}],",
             f"                id(zone_overlay)[{zi}], id(zone_palette)[{zi}],",
             f"                id(zone_flash_mode)[{zi}], id(zone_flash_epoch)[{zi}],",
-            "                id(soften).state};",
+            "                id(soften).state,",
+            f"                &g_zone_x[{zi}]}};",
             "            step_flash(io);",
             "            render_zone(buf, %d, fx, millis() / 1000.0f, io);" % zi,
             "            for (int p = 0; p < fx.n; p++)",

@@ -14,17 +14,22 @@ import io
 import json
 import shutil
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
 import wave
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 import numpy as np
 import stems
+from scipy.io import wavfile
+
+SR = 44100
 
 
 def write_left_clicks(path: Path, seconds: float = 6.0, sr: int = 44100) -> int:
@@ -138,6 +143,128 @@ class TestChannelAnalysis(StemsCase):
         self.assertEqual(chans["right"]["level"], 0.0)
         self.assertEqual(len(chans["left"]["peaks"]), stems.PEAKS)
         self.assertAlmostEqual(data["duration"], 6.0, places=1)
+
+
+def fake_sources(seconds: float = 2.0) -> dict[str, np.ndarray]:
+    """What htdemucs hands back, stereo float: a kick every half second, a
+    bass hum, a high 'other' tone and a sung mid tone. The kick and bass are
+    loud enough that their raw sum would clip."""
+    n = int(seconds * SR)
+    t = np.arange(n) / SR
+    drums = np.zeros(n)
+    for at in np.arange(0.25, seconds - 0.1, 0.5):
+        a = int(at * SR)
+        drums[a : a + 400] = 0.8
+    tone = {
+        "drums": drums,
+        "bass": 0.6 * np.sin(2 * np.pi * 55 * t),
+        "other": 0.2 * np.sin(2 * np.pi * 2000 * t),
+        "vocals": 0.3 * np.sin(2 * np.pi * 440 * t) * (t > 1.0),
+    }
+    return {k: np.stack([v, v], axis=1).astype(np.float32) for k, v in tone.items()}
+
+
+def fake_demucs(src: Path, out: Path, _device: str) -> subprocess.CompletedProcess[str]:
+    """Writes the four sources where `demucs.separate -n htdemucs` would."""
+    where = out / "htdemucs" / src.stem
+    where.mkdir(parents=True)
+    for name, x in fake_sources().items():
+        wavfile.write(where / f"{name}.wav", SR, x)
+    return subprocess.CompletedProcess([], 0, "", "")
+
+
+class TestFourStemMix(StemsCase):
+    def test_backing_is_the_three_instruments_summed_then_guarded(self) -> None:
+        sep = self.sandbox / "mix-sep"
+        fake_demucs(Path("song.mp3"), sep, "cpu")
+        wavs = stems.mix_stems(sep, self.sandbox / "mix-out")
+        self.assertEqual(set(wavs), {"vocals", "backing", "drums", "bass", "other"})
+        src = fake_sources()
+        raw = src["drums"] + src["bass"] + src["other"]
+        peak = float(np.abs(raw).max())
+        self.assertGreater(peak, 1.0, "the fixture must exercise the guard")
+        _, backing = wavfile.read(wavs["backing"])
+        # demucs's two-stem `no_vocals`: summed raw, then rescaled once.
+        np.testing.assert_allclose(backing, raw / (1.01 * peak), atol=1e-6)
+        # A stem that never clips is passed through untouched.
+        _, drums = wavfile.read(wavs["drums"])
+        np.testing.assert_allclose(drums, src["drums"], atol=1e-6)
+
+    def test_a_missing_source_is_named(self) -> None:
+        sep = self.sandbox / "half-sep"
+        (sep / "htdemucs" / "x").mkdir(parents=True)
+        wavfile.write(sep / "htdemucs" / "x" / "drums.wav", SR, np.zeros((10, 2)))
+        with self.assertRaises(SystemExit) as c:
+            stems.mix_stems(sep, self.sandbox / "half-out")
+        self.assertIn("bass", str(c.exception))
+
+
+class TestSeparateOut(StemsCase):
+    def test_out_splits_beside_the_library_not_into_it(self) -> None:
+        src = fake_sources()
+        mix = sum(src.values(), np.zeros_like(src["drums"])) / 2
+        wavfile.write(self.sandbox / "song.wav", SR, mix)
+        scratch = self.sandbox / "scratch"
+        with (
+            mock.patch.object(stems, "_run_demucs", side_effect=fake_demucs),
+            mock.patch.object(stems, "_encode", side_effect=shutil.copyfile),
+            mock.patch.object(stems.importlib.util, "find_spec", return_value=True),
+            contextlib.redirect_stdout(io.StringIO()) as out,
+        ):
+            self.assertEqual(stems.separate("song", out=scratch), 0)
+        self.assertFalse(
+            (self.sandbox / "stems" / "song").exists(), "the library was written"
+        )
+        dest = scratch / "song"
+        for name in ("vocals", "backing", "drums", "bass", "other"):
+            self.assertTrue((dest / f"{name}.mp3").is_file(), name)
+        data = json.loads((dest / "analysis.json").read_text())
+        self.assertEqual(tuple(data["layers"]), stems.LAYERS)
+        for layer in data["layers"].values():
+            self.assertEqual(set(layer), set(stems.CHANNELS))
+        kick = data["layers"]["drums"]["both"]["onsets"].get("onset_low", [])
+        self.assertGreaterEqual(len(kick), 3, "the drum stem hears its kicks")
+        self.assertIn("drums     both", out.getvalue())
+        self.assertTrue(stems.fresh("song", scratch))
+        self.assertFalse(stems.fresh("song"), "the library holds no split")
+        # A current split is not redone without --force.
+        with (
+            mock.patch.object(stems, "_run_demucs") as rerun,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            stems.separate("song", out=scratch)
+        rerun.assert_not_called()
+
+    def test_a_two_stem_cache_is_still_current(self) -> None:
+        """Splits made before drums/bass/other existed stay valid."""
+        (self.sandbox / "old.mp3").write_bytes(b"abc")
+        d = self.sandbox / "stems" / "old"
+        d.mkdir(parents=True, exist_ok=True)
+        st = (self.sandbox / "old.mp3").stat()
+        layers: dict[str, object] = {
+            k: {"both": {"peaks": []}} for k in ("vocals", "backing", "combined")
+        }
+        (d / "analysis.json").write_text(
+            json.dumps(
+                {
+                    "layers": layers,
+                    "src_bytes": st.st_size,
+                    "src_mtime": int(st.st_mtime),
+                }
+            )
+        )
+        self.assertTrue(stems.fresh("old"))
+        got = stems.analysis("old")
+        self.assertTrue(got["ok"])
+        self.assertFalse(got["stale"])
+        self.assertEqual(set(got["layers"]), {"vocals", "backing", "combined"})
+
+    def test_stem_file_does_not_serve_the_instrument_stems(self) -> None:
+        d = self.sandbox / "stems" / "kit"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "drums.mp3").write_bytes(b"x")
+        # The studio's Rust twin (studio_media.rs) serves vocals/backing only.
+        self.assertIsNone(stems.stem_file("kit", "drums"))
 
 
 if __name__ == "__main__":
