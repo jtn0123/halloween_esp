@@ -29,8 +29,12 @@ updates:
       # for weeks proving it; 46 arrived with esphome 2026.9.0 instead. The
       # version moves when esphome moves, which the group above delivers as
       # one PR. (grade report 2026-09-01 F2)
+      #
+      # And minors and patches too: requirements.txt holds only a floor, so
+      # a bump with no esphome release beside it raises the floor past
+      # esphome's exact pin and can never install (PR #47, >=46.5.0 against
+      # ==46.3.0). requirements.lock is what moves when esphome moves.
       - dependency-name: aioesphomeapi
-        update-types: [version-update:semver-major]
 
   - package-ecosystem: npm
     directory: /web
