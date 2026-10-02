@@ -97,10 +97,29 @@ def source_metadata(key, manifest=None):
     }
 
 
+#: The one catalog field that is a fact about the DISK rather than about the
+#: import: whether the saved source file is still there. Persisted, it froze —
+#: "Change audio" stayed enabled for an original that was gone — so it is
+#: derived on every read and never written (grade report 2026-09-24 B8). The
+#: rest of source_metadata may stay in the row: none of it moves until a
+#: reprocess rewrites the row, and device_site.py reads playback_format and
+#: playback_bitrate straight out of catalog.json.
+LIVE = "source_available"
+
+
 def catalog():
     rows = json.loads(CATALOG.read_text(encoding="utf-8")) if CATALOG.exists() else []
     manifest = track_manifest()
-    return [{**source_metadata(row["key"], manifest), **row} for row in rows]
+    merged = []
+    for row in rows:
+        fresh = source_metadata(row["key"], manifest)
+        merged.append({**fresh, **row, LIVE: fresh[LIVE]})
+    return merged
+
+
+def stored(row):
+    """A catalog row as it is written: without the field every read derives."""
+    return {k: v for k, v in row.items() if k != LIVE}
 
 
 def update(job, **values):
@@ -395,7 +414,8 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
         # after it (refused — the job is done), never between.
         with LOCK:
             checkpoint(job)
-            rows = [r for r in catalog() if r["key"] != tid] + [record]
+            rows = [stored(r) for r in catalog() if r["key"] != tid]
+            rows.append(stored(record))
             temp = CATALOG.with_suffix(".tmp")
             temp.write_text(json.dumps(rows), encoding="utf-8")
             portable_fs.replace(temp, CATALOG)
