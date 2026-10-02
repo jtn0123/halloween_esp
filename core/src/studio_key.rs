@@ -141,3 +141,29 @@ fn store(app: &App, host: &str, key: Option<&str>) -> Result<(), String> {
         Timed::Out => Err("tools/castle_keys.py did not finish".into()),
     }
 }
+
+/// A request target as the studio's access log may print it. The relay
+/// forwards `/api/key` (studio_relay::KNOWN_API), and `?new=` carries a key
+/// in the query: the line keeps the route and drops the rest. Nothing the
+/// desk sends goes that way — it POSTs the key in a body to [`ROUTE`] — but
+/// a log is read by whoever has the terminal, so the rule is the log's.
+pub fn loggable(target: &str) -> std::borrow::Cow<'_, str> {
+    match target.split_once('?') {
+        Some((path, _)) if path == "/api/key" => format!("{path}?…").into(),
+        _ => target.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::loggable;
+
+    #[test]
+    fn a_key_in_a_relayed_query_never_reaches_the_access_log() {
+        assert_eq!(loggable("/api/key?new=s3cret"), "/api/key?…");
+        assert_eq!(loggable("/api/key?clear=1"), "/api/key?…");
+        assert_eq!(loggable("/api/key"), "/api/key");
+        assert_eq!(loggable("/api/volume?v=40"), "/api/volume?v=40");
+        assert_eq!(loggable("/api/keys?x=1"), "/api/keys?x=1");
+    }
+}
