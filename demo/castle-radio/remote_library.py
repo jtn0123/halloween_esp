@@ -9,6 +9,7 @@ import zlib
 from pathlib import Path
 
 import device_bridge
+import hosts  # tools/, on the path through device_bridge
 import rich_show
 from device_bridge import FILES_PATH, STATUS_PATH
 
@@ -155,6 +156,7 @@ def start(root, library, rows, key):
             )
     if source is None or not source.is_file():
         raise ValueError("Song audio is no longer available on this computer.")
+    device_bridge.require_key()
     # Snapshot before queueing: local deletion must not change an in-flight transfer.
     data = source.read_bytes()
     companions = []
@@ -226,11 +228,19 @@ def upload_with_progress(
         connection.putrequest("PUT", path)
         connection.putheader("Content-Length", str(len(data)))
         connection.putheader("Content-Type", "application/octet-stream")
+        for header, value in hosts.key_headers(device_bridge.HOST).items():
+            connection.putheader(header, value)
         connection.endheaders()
         sent = 0
         for offset in range(0, len(data), 32 * 1024):
             block = data[offset : offset + 32 * 1024]
-            connection.send(block)
+            try:
+                connection.send(block)
+            except (BrokenPipeError, ConnectionResetError):
+                # A castle that refused before reading the body may hang up
+                # mid-send; its answer can still be waiting to be read.
+                _refused(connection)
+                raise
             sent += len(block)
             with _LOCK:
                 _JOBS[key].update(
@@ -257,6 +267,8 @@ def upload_with_progress(
             )
         response = connection.getresponse()
         raw = response.read()
+        if response.status == 401:
+            raise device_bridge.KeyRequired()
         if response.status >= 400:
             raise OSError(
                 f"Castle upload failed ({response.status}): {raw.decode(errors='replace')}"
@@ -271,3 +283,13 @@ def upload_with_progress(
             raise OSError("Castle SD verification failed: CRC mismatch")
     finally:
         connection.close()
+
+
+def _refused(connection):
+    """Raise KeyRequired when the castle's early answer was a 401."""
+    try:
+        status = connection.getresponse().status
+    except (OSError, http.client.HTTPException):
+        return
+    if status == 401:
+        raise device_bridge.KeyRequired()

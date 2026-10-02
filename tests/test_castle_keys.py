@@ -17,7 +17,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import AbstractContextManager
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -111,6 +113,56 @@ class TestRemember(StoreCase):
             self.assertTrue(ck.pinned())
             # The file half is what the store holds, pinned or not.
             self.assertEqual(ck.stored_key("10.0.0.9"), "old-key")
+
+
+class TestAct(StoreCase):
+    """The castle's answers `act` has to word — the happy paths and the
+    emulator walk are demo/castle-radio/test_castle_key.py's."""
+
+    def answering(self, code: int, body: bytes = b"") -> AbstractContextManager[Any]:
+        return mock.patch.object(ck, "ask", return_value=(code, body))
+
+    def test_what_the_castle_said_becomes_a_status_and_a_sentence(self) -> None:
+        cases = [
+            ("use", 401, 401, ck.WRONG_KEY),
+            ("set", 401, 401, ck.KEY_REQUIRED),
+            ("set", 404, 409, ck.OLD_FIRMWARE),
+            ("set", 400, 400, "bad key"),
+            ("clear", 500, 502, "castle answered 500"),
+        ]
+        for action, castle, status, said in cases:
+            with (
+                self.subTest(action=action, castle=castle),
+                self.answering(castle, b"bad key\n"),
+            ):
+                with self.assertRaises(ck.Refusal) as cm:
+                    ck.act("10.0.0.7", action, "s3cret")
+                self.assertEqual(
+                    (cm.exception.status, str(cm.exception)), (status, said)
+                )
+        self.assertEqual(self.text(), OWN, "nothing the castle refused is remembered")
+
+    def test_a_store_that_cannot_follow_says_the_castle_already_changed(self) -> None:
+        self.file.write_text("[porch\n", encoding="utf-8")
+        with self.answering(200), self.assertRaises(ck.Refusal) as cm:
+            ck.act("10.0.0.7", "set", "s3cret")
+        self.assertEqual(cm.exception.status, 500)
+        self.assertIn("the castle took it", str(cm.exception))
+        self.assertNotIn("s3cret", str(cm.exception))
+
+    def test_an_unreachable_castle_never_names_the_url(self) -> None:
+        with self.assertRaises(OSError) as cm:
+            ck.ask("127.0.0.1:9", "/api/key?new=s3cret", "", timeout=2)
+        self.assertIn("castle not reachable", str(cm.exception))
+        self.assertNotIn("s3cret", str(cm.exception))
+
+    def test_set_sends_the_held_key_and_the_new_one_percent_encoded(self) -> None:
+        with self.answering(200) as asked:
+            ck.act("10.0.0.9", "set", "n&w=1")
+        asked.assert_called_once_with("10.0.0.9", "/api/key?new=n%26w%3D1", "old-key")
+        self.assertEqual(hosts.castle_key("10.0.0.9"), "n&w=1")
+        with self.assertRaises(ck.Refusal):
+            ck.act("10.0.0.9", "reveal")
 
 
 class TestCli(StoreCase):

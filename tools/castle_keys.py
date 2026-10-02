@@ -27,6 +27,11 @@ ever prints a key.
 
 devices.toml is TRACKED and the repo is public, so `check-staged` refuses a
 commit that stages a devices.toml carrying a key (githooks/pre-commit).
+
+`act` is the owner's three moves against the castle itself — use a key, set
+a new one, clear it — remembering or forgetting only once the castle has
+agreed. Castle Radio calls it; the studio's copy is core/src/studio_key.rs,
+with the same sentences, both walked against castle_emu by their tests.
 """
 
 from __future__ import annotations
@@ -36,6 +41,9 @@ import re
 import subprocess
 import sys
 import tomllib
+import urllib.error
+import urllib.parse
+import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -52,6 +60,24 @@ _KEY = re.compile(r"^\s*key\s*=")
 _HOST = re.compile(r"^\s*host\s*=")
 #: What a castle address may be: a name, an IPv4/IPv6 literal, a port.
 _HOST_OK = re.compile(r"^[A-Za-z0-9.\-:\[\]]{1,253}$")
+
+#: What every app says when a keyed castle refuses a write (firmware 401).
+KEY_REQUIRED = "This castle has a key — enter it in Settings"
+WRONG_KEY = "that is not this castle's key"
+BAD_KEY = "a castle key is 1-64 printable characters, no spaces"
+PINNED = (
+    "CASTLE_KEY sets this castle's key for the whole session "
+    "(settings.json castle_key in the app) — change it there"
+)
+OLD_FIRMWARE = "this castle's firmware has no key (v5.74 and newer do)"
+
+
+class Refusal(ValueError):
+    """A key action the castle (or the rules) refused, with its HTTP status."""
+
+    def __init__(self, message: str, status: int) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def pinned() -> bool:
@@ -168,6 +194,68 @@ def remember(host: str, key: str, path: Path | None = None) -> None:
 def forget(host: str, path: Path | None = None) -> None:
     """Forget the key remembered for `host`; a no-op when there is none."""
     _write(path or hosts.devices_path(), host, None)
+
+
+def ask(host: str, path: str, key: str, timeout: float = 8) -> tuple[int, bytes]:
+    """POST `path` to the castle with `key` as X-Castle-Key: (status, body).
+    A transport failure is the caller's OSError — never a key-bearing one."""
+    headers = {"X-Castle-Key": key} if hosts.valid_key(key) else {}
+    req = urllib.request.Request(
+        f"http://{host}{path}", data=b"", method="POST", headers=headers
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.read()
+    except urllib.error.URLError as e:
+        # The URL can hold a new key (?new=): say the reason, not the request.
+        raise OSError(f"castle not reachable: {e.reason}") from None
+
+
+def act(host: str, action: str, key: str = "") -> None:
+    """`use` (try `key`; remember it when the castle opens to it), `set`
+    (the castle's key becomes `key`, sent with the one held now) or `clear`.
+    `POST /api/key` with nothing to change is the probe: 400 to the right
+    key — or any key, on a castle without one — and 401 to a wrong one."""
+    _check_host(host)
+    if pinned():
+        raise Refusal(PINNED, 409)
+    if action in ("use", "set") and not hosts.valid_key(key):
+        raise Refusal(BAD_KEY, 400)
+    held = stored_key(host)
+    if action == "use":
+        path, send, opened = "/api/key", key, 400
+    elif action == "set":
+        path, send, opened = (
+            f"/api/key?new={urllib.parse.quote(key, safe='')}",
+            held,
+            200,
+        )
+    elif action == "clear":
+        path, send, opened = "/api/key?clear=1", held, 200
+    else:
+        raise Refusal("action is use, set or clear", 400)
+    code, body = ask(host, path, send)
+    if code == 401:
+        raise Refusal(WRONG_KEY if action == "use" else KEY_REQUIRED, 401)
+    if code == 404:
+        raise Refusal(OLD_FIRMWARE, 409)
+    if code != opened:
+        said = body.decode("utf-8", "replace").strip()
+        if code == 400:
+            raise Refusal(said, 400)
+        raise Refusal(f"castle answered {code}", 502)
+    try:
+        if action == "clear":
+            forget(host)
+        else:
+            remember(host, key)
+    except (OSError, ValueError) as e:
+        # The castle has already changed: say so, or the owner is left
+        # guessing which key it now has.
+        why = f"the castle took it, but this computer could not remember it: {e}"
+        raise Refusal(why, 500) from None
 
 
 def holds_key(text: str) -> bool:
