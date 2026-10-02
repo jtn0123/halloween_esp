@@ -4,13 +4,13 @@ import json
 import os
 import re
 import subprocess
-import sys
 import threading
 import time
-from pathlib import Path
 from typing import IO, cast
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
 from portable_proc import group_kwargs, kill_tree
 
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")

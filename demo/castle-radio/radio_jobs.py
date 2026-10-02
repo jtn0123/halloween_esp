@@ -5,7 +5,6 @@ Imports stay isolated; explicit device actions connect to the porch castle.
 
 import concurrent.futures
 import json
-import os
 import subprocess
 import sys
 import threading
@@ -13,26 +12,19 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+# The sandbox (CASTLE_TRACKS and the rest) is set by radio_env, first, so no
+# tools/ module below can bind the repo's own library (grade report
+# 2026-09-24 B7). DATA and LIBRARY are re-exported for server.py.
+from radio_env import DATA, LIBRARY, ROOT
+
+# isort: split
 import job_progress
-import radio_paths
+import portable_fs
 import rich_show
+from import_scene import fit_to_density, scene_block
+from import_track import crate_analysis
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent
-DATA = radio_paths.data_dir()
-DATA.mkdir(parents=True, exist_ok=True)
-LIBRARY = DATA / "tracks"
-LIBRARY.mkdir(exist_ok=True)
-os.environ.update(
-    CASTLE_TRACKS=str(LIBRARY),
-    CASTLE_HOST="",
-    CASTLE_SCENES=str(DATA / "scenes.yaml"),
-    CASTLE_BUILD=str(DATA / "build"),
-)
-sys.path.insert(0, str(ROOT / "tools"))
-import portable_fs  # noqa: E402
-from import_scene import fit_to_density, scene_block  # noqa: E402
-from import_track import crate_analysis  # noqa: E402
 
 #: Preparation jobs by id, as the page reads them: a record of mixed
 #: strings, flags and progress numbers, which is what /radio/jobs serves.
