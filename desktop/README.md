@@ -44,6 +44,8 @@ Both children get the same environment (`runtime::child_env`):
 | `CASTLE_BUILD` | `<app data>/radio/build` |
 | `CASTLE_HOST` | `""` — explicitly no castle for the toolchain |
 | `CASTLE_RADIO_HOST` | `castle_host` from settings.json, when set |
+| `CASTLE_DEVICES` | `<app data>/radio/devices.toml` — the castle keys either app remembers (`tools/castle_keys.py`); never a checkout's tracked file |
+| `CASTLE_KEY` | `castle_key` from settings.json, only when set — it then wins over that store |
 | `CASTLE_PY` | the runtime's interpreter, so the studio's children use it |
 
 `<app data>` is Tauri's `app_data_dir()` for the identifier
@@ -83,12 +85,19 @@ the defaults plus a log line:
 
 ```json
 { "castle_host": "castle-feather-s3.local",
+  "castle_key": "the key the castle was locked with",
   "install_dir": "/Users/me/CastleTools",
   "python": "/Users/me/CastleTools/.venv/bin/python" }
 ```
 
 `castle_host` accepts a host name, IPv4 address or `host:port` and nothing
-that could reshape a URL (`settings::valid_host`).
+that could reshape a URL (`settings::valid_host`). `castle_key` (firmware
+v5.74's optional lock) is trimmed and passed only if the castle could hold it
+— 1-64 printable characters, no spaces (`settings::valid_key`); anything else
+is dropped with a log line that names the rule, never the key. Most owners
+never need it: entering the key in either app's Settings remembers it in
+`CASTLE_DEVICES`, and a key set here pins it instead (the apps then refuse to
+change it, since the store could not follow).
 
 ## Tray, deep link, window
 
