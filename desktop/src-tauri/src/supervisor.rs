@@ -2,13 +2,17 @@
 //! ours dies, and stops only what it started — the rules the Swift launcher
 //! and `Open Castle Studio.command` kept, in one place. One Supervisor per
 //! server (service.rs): Castle Radio, and the cue desk studio beside it.
+//! Both resolve their runtime through the one Setup (setup.rs), which sets
+//! the app's own runtime up first when it is not ready.
 
 use crate::child::Tree;
+use crate::childenv::{self, DataDirs};
 use crate::logfile::LogFile;
 use crate::probe::{self, Probe};
-use crate::runtime::{self, DataDirs, Runtime};
+use crate::runtime::{Resolved, Runtime, Source};
 use crate::service::Service;
 use crate::settings::Settings;
+use crate::setup::{Setup, SUPERSEDED};
 use serde::Serialize;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -27,9 +31,18 @@ const REUSED_WATCH: Duration = Duration::from_secs(5);
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum Status {
     Idle,
-    Starting { detail: String },
-    Running { url: String, owned: bool },
-    Failed { message: String },
+    Starting {
+        detail: String,
+    },
+    Running {
+        url: String,
+        owned: bool,
+    },
+    /// `repair`: the app's own runtime is involved, so Repair is offered.
+    Failed {
+        message: String,
+        repair: bool,
+    },
 }
 
 /// What the supervisor tells the UI layer; the UI decides what to show.
@@ -41,14 +54,17 @@ pub trait Events: Send + Sync + 'static {
 pub struct Config {
     pub service: Service,
     pub port: u16,
-    pub resource_dir: Option<PathBuf>,
     pub app_data: PathBuf,
     pub settings: Settings,
+    pub setup: Arc<Setup>,
 }
 
 struct Inner {
     status: Status,
     child: Option<Tree>,
+    /// This start involves the app's own runtime (a setup, or a server
+    /// started from it): a failure offers Repair.
+    repairable: bool,
     /// Bumped by every start and stop; a watcher from an older generation
     /// sees the change and exits instead of reporting on a world it no
     /// longer owns.
@@ -71,6 +87,7 @@ impl Supervisor {
             inner: Mutex::new(Inner {
                 status: Status::Idle,
                 child: None,
+                repairable: false,
                 generation: 0,
             }),
         })
@@ -128,6 +145,7 @@ impl Supervisor {
                 Status::Idle | Status::Failed { .. } => {}
             }
             inner.generation += 1;
+            inner.repairable = false;
             inner.status = Status::Starting {
                 detail: format!("Looking for {}…", self.name()),
             };
@@ -164,14 +182,17 @@ impl Supervisor {
 
     fn fail(&self, generation: u64, message: String) {
         self.log.line(&message);
-        if self.set(
-            generation,
-            Status::Failed {
+        {
+            let mut inner = self.lock();
+            if inner.generation != generation {
+                return;
+            }
+            inner.status = Status::Failed {
                 message: message.clone(),
-            },
-        ) {
-            self.events.failed(&message);
+                repair: inner.repairable,
+            };
         }
+        self.events.failed(&message);
     }
 
     fn running(&self, generation: u64, owned: bool) -> bool {
@@ -209,12 +230,9 @@ impl Supervisor {
             }
             Probe::Nothing => {}
         }
-        let rt = match runtime::resolve(
-            self.config.resource_dir.as_deref(),
-            &self.config.settings,
-            &|k| std::env::var_os(k),
-        ) {
+        let rt = match self.runtime(generation) {
             Ok(rt) => rt,
+            Err(message) if message == SUPERSEDED => return,
             Err(message) => return self.fail(generation, message),
         };
         if let Err(message) = self.spawn(generation, &rt) {
@@ -223,12 +241,42 @@ impl Supervisor {
         self.wait_ready(generation);
     }
 
+    /// The runtime to start from — set up first when it is the app's own and
+    /// not ready (both servers wait on the one setup).
+    fn runtime(&self, generation: u64) -> Result<Runtime, String> {
+        let setup = &self.config.setup;
+        let env = |k: &str| std::env::var_os(k);
+        for _ in 0..2 {
+            match setup.resolve(&self.config.settings, &env)? {
+                Resolved::Ready(rt) => {
+                    self.lock().repairable = rt.source == Source::Bundled;
+                    return Ok(rt);
+                }
+                Resolved::Setup(plan) => {
+                    self.lock().repairable = true;
+                    self.set(
+                        generation,
+                        Status::Starting {
+                            detail: plan.reason.waiting().into(),
+                        },
+                    );
+                    setup.ensure(&plan, &|| self.lock().generation == generation)?;
+                }
+            }
+        }
+        Err(
+            "Castle Tools finished setting up, but its tools are still not ready. \
+             Choose Repair to set them up again."
+                .into(),
+        )
+    }
+
     fn spawn(&self, generation: u64, rt: &Runtime) -> Result<(), String> {
         let launch = self.config.service.launch(rt, self.config.port)?;
         let data = DataDirs::new(&self.config.app_data);
         std::fs::create_dir_all(&data.radio)
             .map_err(|e| format!("Could not create {}: {e}", data.radio.display()))?;
-        match runtime::seed_scenes(rt, &data) {
+        match childenv::seed_scenes(rt, &data) {
             Ok(true) => self
                 .log
                 .line(&format!("first run: seeded {}", data.scenes().display())),
@@ -249,11 +297,11 @@ impl Supervisor {
             .stdout(out)
             .stderr(err);
         // A castle this app inherited is not the owner's: settings pin one,
-        // or the per-user store decides (runtime::child_env).
+        // or the per-user store decides (childenv::child_env).
         cmd.env_remove("CASTLE_HOST")
             .env_remove("CASTLE_RADIO_HOST");
         for (key, value) in
-            runtime::child_env(rt, &data, &self.config.settings, std::env::var_os("PATH"))
+            childenv::child_env(rt, &data, &self.config.settings, std::env::var_os("PATH"))
         {
             cmd.env(key, value);
         }

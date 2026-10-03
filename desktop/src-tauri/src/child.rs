@@ -52,6 +52,17 @@ impl Tree {
         self.child.try_wait()
     }
 
+    /// The child's stdout and stderr, when the command asked for pipes:
+    /// read them outside any lock, so the tree can still be killed meanwhile.
+    pub fn take_pipes(
+        &mut self,
+    ) -> (
+        Option<std::process::ChildStdout>,
+        Option<std::process::ChildStderr>,
+    ) {
+        (self.child.stdout.take(), self.child.stderr.take())
+    }
+
     /// Ask nicely, wait a moment, then make sure. Safe to call twice.
     pub fn kill_tree(&mut self) {
         #[cfg(unix)]

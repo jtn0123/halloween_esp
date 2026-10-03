@@ -72,6 +72,24 @@ def rust_std(version: str) -> Component:
     )
 
 
+def uv(version: str) -> Component:
+    """Astral's uv, carried in the app as castle/uv/ to set its runtime up on
+    the first launch — tools/desktop_bundle.py pins it by version and
+    sha256, and that pin is the version given here."""
+    return Component(
+        "uv",
+        version,
+        "MIT OR Apache-2.0",
+        ("Copyright (c) 2025 Astral Software Inc.",),
+        source=f"https://github.com/astral-sh/uv/tree/{version}",
+        note="The unmodified release binary from github.com/astral-sh/uv, run "
+        "as its own program to install Python 3.13 and the locked packages "
+        "on the owner's machine. It is statically linked with Rust crates "
+        "under their own permissive licences, which its release does not "
+        "list; docs/LICENSING.md tracks that as an open decision.",
+    )
+
+
 def windows_extras() -> list[Component]:
     """What the Windows build adds that is not a crate: the WebView2 loader
     linked into the app, and the NSIS installer the app is wrapped in."""

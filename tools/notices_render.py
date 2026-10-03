@@ -13,6 +13,7 @@ import textwrap
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+import desktop_bundle
 import notices_desktop
 import notices_firmware
 from notices_external import EXTERNAL
@@ -78,6 +79,14 @@ ARTIFACTS: dict[str, Artifact] = {
                     'standard library. Entries marked "macos only" or "windows '
                     "only\" are in that platform's app alone."
                 ),
+                (
+                    "The app also carries a copy of the project's own source "
+                    "tree, which its first launch sets Castle Radio up from, "
+                    "and Astral's uv (listed below). That first launch uses uv "
+                    "to download Python 3.13, and downloads the other programs "
+                    "and data named at the end of this file, onto your "
+                    "computer. None of them is part of the app."
+                ),
             ),
             external=True,
         ),
@@ -128,7 +137,12 @@ def components(key: str) -> list[Component]:
     if key == "desktop":
         doc = notices_desktop.load()
         std = notices_desktop.rust_std("the stable toolchain of the release build")
-        return [std, *notices_desktop.crates(doc), *notices_desktop.windows_extras()]
+        return [
+            std,
+            *notices_desktop.crates(doc),
+            notices_desktop.uv(desktop_bundle.UV_VERSION),
+            *notices_desktop.windows_extras(),
+        ]
     return [notices_desktop.rust_std(notices_desktop.CORE_RUST)]
 
 

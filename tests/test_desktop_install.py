@@ -30,6 +30,7 @@ import desktop_install as di
 import desktop_launch as dl
 import desktop_lifecycle as life
 import desktop_release as rel
+import desktop_tree as dt
 import ytdlp_update as yu
 from test_desktop_release import api_body, fake_fetch, sha
 
@@ -178,10 +179,7 @@ class TestStaging(TempCase):
             (src / rel_path).write_text("x", encoding="utf-8")
 
         def staged(git: str | None) -> set[Path]:
-            inst = di.Installer(
-                self.args(), self.dirs, which=lambda _n: git, say=lambda _m: None
-            )
-            return set(inst.source_files(src))
+            return set(dt.source_files(src, lambda _n: git))
 
         self.assertEqual(staged(None), {Path("tools/a.py")}, "a copied tree")
         git = shutil.which("git")

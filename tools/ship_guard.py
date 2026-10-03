@@ -10,7 +10,9 @@ built from it three ways:
   * the installer run from a clone, which copies `git ls-files` minus
     PERSONAL (tools/desktop_install.py) — the same list as the zip;
   * the release assets, tools/release_assets.py's contract: firmware
-    images, castle-core zips, the desktop bundles and their manifests.
+    images, castle-core zips, the desktop bundles and their manifests. The
+    desktop app carries this tree's file list as `castle/app/`
+    (tools/desktop_bundle.py); a member there is judged as the tree is.
 
 None of them may carry:
 
@@ -75,6 +77,8 @@ DEVICES = "devices.toml"
 PERSONAL = (DEVICES, "tracks/tracks.json")
 #: Names no tracked file and no release asset (or member of one) may have.
 FORBIDDEN_NAMES = frozenset({"secrets.yaml", DEVICES, "tracks.json"})
+#: Where the desktop app carries this tree (tools/desktop_bundle.py).
+BUNDLED_TREE = "castle/app/"
 
 
 def read_allow(path: Path = ALLOW) -> dict[str, list[str]]:
@@ -127,11 +131,13 @@ _SELLER_BYTES = re.compile(
 BLOB_MAX = 96_000_000
 
 
-def scan_text(path: str, text: str) -> list[str]:
-    """Every finding in one file's text, as `path:line: what`."""
+def scan_text(path: str, text: str, rules: str | None = None) -> list[str]:
+    """Every finding in one file's text, as `path:line: what`, under the
+    rules for the tree path `rules` (default: `path` itself)."""
     found: list[str] = []
     macs = 0
-    history = path.startswith(HISTORY)
+    rule = path if rules is None else rules
+    history = rule.startswith(HISTORY)
     for n, line in enumerate(text.splitlines(), 1):
         found.extend(
             f"{path}:{n}: {what}"
@@ -140,7 +146,7 @@ def scan_text(path: str, text: str) -> list[str]:
         )
         for m in _MAC.finditer(line):
             macs += 1
-            if macs > MAC_ALLOWED.get(path, 0):
+            if macs > MAC_ALLOWED.get(rule, 0):
                 found.append(f"{path}:{n}: a MAC address {m.group(0)}")
         found.extend(
             f"{path}:{n}: a home directory ({m.group(1)})"
@@ -250,6 +256,24 @@ def scan_release(dist: Path) -> list[str]:
     return found
 
 
+def tree_path(member: str) -> str | None:
+    """A member's path in this tree when it is in the desktop app's copy of
+    the tree (`…/castle/app/<path>`), else None."""
+    head, sep, rest = member.replace("\\", "/").partition(BUNDLED_TREE)
+    return rest if sep and rest and (not head or head.endswith("/")) else None
+
+
+def scan_member(where: str, member: str, data: bytes) -> list[str]:
+    """One archive member's bytes. The app's copy of the tree is read the
+    way scan_tree reads the tree: text under its tree path's rules (history
+    is history there too), the guard's own files and binaries unread."""
+    path = tree_path(member)
+    if path is None:
+        return scan_blob(where, data)
+    text = None if path in UNREAD else _text(data)
+    return [] if text is None else scan_text(where, text, rules=path)
+
+
 def _scan_zip(f: Path) -> list[str]:
     found: list[str] = []
     with zipfile.ZipFile(f) as z:
@@ -257,7 +281,7 @@ def _scan_zip(f: Path) -> list[str]:
             where = f"{f.name}!{info.filename}"
             found += _name(where, info.filename)
             if not info.is_dir() and info.file_size <= BLOB_MAX:
-                found += scan_blob(where, z.read(info))
+                found += scan_member(where, info.filename, z.read(info))
     return found
 
 
@@ -269,7 +293,7 @@ def _scan_tar(f: Path) -> list[str]:
             found += _name(where, m.name)
             fh = t.extractfile(m) if m.isfile() and m.size <= BLOB_MAX else None
             if fh is not None:
-                found += scan_blob(where, fh.read())
+                found += scan_member(where, m.name, fh.read())
     return found
 
 

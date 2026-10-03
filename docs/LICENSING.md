@@ -63,7 +63,9 @@ The gates (`tests/test_third_party_notices.py`,
   components below, and the test lists them by name;
 - a non-commercial licence appears anywhere, whatever the table says;
 - a weak-copyleft component (MPL-2.0, NSIS) gives no source address;
-- something is added to the app bundle beyond castle-core's sidecar.
+- something is added to the app bundle beyond its `castle/` folder (this
+  tree, castle-core and the pinned uv), or uv's pin moves without its
+  notices entry.
 
 ## What each artifact contains
 
@@ -97,7 +99,18 @@ The image is this project's ESPHome configuration and C++ headers
 
 ### Castle Tools (desktop app)
 
-The app and its castle-core sidecar are this project's own code. Linked in:
+The app and the castle-core programs it carries are this project's own
+code. Its `castle/` folder (`tools/desktop_bundle.py`) also holds this
+tree's own files, which the first launch installs Castle Radio from, and
+one program someone else wrote:
+
+- **uv 0.12.22** (Astral): MIT OR Apache-2.0. It is the release binary for
+  the app's platform, checked by sha256 when the release is built. On the
+  buyer's first launch it fetches Python 3.13 and the locked packages, and
+  none of those ship (see the next section). The release binary statically
+  links Rust crates that Astral does not list with it. See open decision 9.
+
+Linked in:
 
 - 272 crates out of the lock's 518. 204 are in both builds, 42 are macOS
   only and 26 are Windows only. Licences complied with: MIT (239),
@@ -127,8 +140,12 @@ unpkg.com into the visitor's browser, and does not carry it.
 
 ## Not redistributed: what the buyer's own machine downloads
 
-None of these is inside any published file today. They are listed in the
-desktop and source notices so a buyer can see where each comes from.
+None of these is inside any published file today. The one exception is
+uv: the desktop app carries its own pinned copy, described above, and this
+row is the copy the option-A installer scripts fetch. The table is printed
+in the desktop and source notices so a buyer can see where each comes from.
+The desktop app's first launch runs the same installer as option A, so it
+fetches the same things.
 
 | Component | Terms as published | How it arrives |
 | --- | --- | --- |
@@ -138,14 +155,17 @@ desktop and source notices so a buyer can see where each comes from.
 | htdemucs weights (signature 955717e8) | **no licence statement found** (the Hugging Face model card declares none; the package's MIT statement names its code) | downloaded by demucs on first use |
 | PyTorch, NumPy, SciPy and the rest of `requirements-desktop.lock` | each package's own (the three named are BSD-3-Clause and bundle further libraries) | PyPI, through uv, hash-checked |
 | Python 3.13 (python-build-standalone) | PSF-2.0 plus the libraries it is built with | `uv python install` |
-| uv | MIT OR Apache-2.0 | astral.sh |
+| uv (option A) | MIT OR Apache-2.0 | astral.sh, by `installer/install.sh` and `install.ps1` |
 | WebView2 Runtime | Microsoft's runtime terms | part of Windows 10/11, else Microsoft's bootstrapper |
 | DM Sans, Manrope | SIL OFL 1.1 | the browser fetches them from Google Fonts when a Castle Radio page opens on a computer; the castle's own copy of the page drops the import |
 
-`tests/test_third_party_notices.py` pins the app's bundled resources and
-the release job's sidecar step. Moving any of these into a bundle (the
-plan in PRODUCTION-TODO §5.2) fails that test until the bundle gets its
-notices.
+`tests/test_third_party_notices.py` pins the app's bundled resources, the
+release job's bundle step and uv's pin and notices entry.
+`tests/test_desktop_bundle.py` pins what that step puts in the folder:
+this tree, castle-core and uv, and nothing else. Moving any of the rows
+above into the app fails one of the two until the bundle gets its notices.
+`tools/ship_guard.py` reads the app's copy of the tree by the tree's own
+rules.
 
 ## The firmware image and GPLv3
 
@@ -236,19 +256,22 @@ Each of these is yours to make. None of them is settled by this change.
    describe how to install an image. If the castle ever requires a key to
    accept one (the optional password, PRODUCTION-TODO §1.6), decide how an
    owner who wants to install a modified image gets that key.
-4. **The htdemucs weights.** No licence statement was found for them. They
-   are downloaded on the buyer's machine and not shipped. PRODUCTION-TODO
-   §5.2 plans to bundle them, and that needs terms from their publisher
-   first. The demucs README describes the model as trained on MUSDB HQ
-   plus an extra dataset of 800 songs.
-5. **ffmpeg, if it is ever bundled** (§5.2 plans an `externalBin`). Bundle
-   only an LGPL build: no `--enable-gpl`, no `--enable-nonfree`. It also
-   needs its licence text and source offer in the desktop notices. The
-   builds the installer downloads today are GPL builds, which is fine only
-   while they are not redistributed.
-6. **A bundled Python, if §5.2 lands.** python-build-standalone, PyTorch,
-   NumPy, SciPy and their bundled libraries would then be redistributed,
-   and each needs entries in the desktop notices.
+4. **The htdemucs weights.** No licence statement was found for them.
+   They are downloaded on the buyer's machine and not shipped; the desktop
+   app's first launch fetches them too. Bundling them would need terms from
+   their publisher first. The demucs README describes the model as trained
+   on MUSDB HQ plus an extra dataset of 800 songs.
+5. **ffmpeg, if it is ever bundled.** The desktop app fetches it at first
+   launch, as option A does. To bundle it, use only an LGPL build: no
+   `--enable-gpl`, no `--enable-nonfree`. It would also need its licence
+   text and source offer in the desktop notices. The builds the installer
+   downloads today are GPL builds, which is fine only while they are not
+   redistributed.
+6. **A bundled Python, if one is ever shipped.** The desktop app fetches
+   Python and the packages at first launch (PRODUCTION-TODO §5.2). If they
+   were bundled, python-build-standalone, PyTorch, NumPy, SciPy and their
+   bundled libraries would be redistributed, and each would need entries in
+   the desktop notices.
 7. **The desktop toolchain is `stable`, not a pinned version.** The app's
    Rust standard-library entry says "the stable toolchain of the release
    build" because `release.yml` does not pin one. Pin it if you want the
@@ -257,6 +280,13 @@ Each of these is yours to make. None of them is settled by this change.
    as a resource, and the castle's page does not link the firmware notices
    (§5 d) above). Whether either should show them in the interface is a
    product decision. It belongs to the code those interfaces live in.
+9. **uv's statically linked crates.** The desktop app ships Astral's uv
+   release binary. The desktop notices give uv's own licence. That binary
+   links many Rust crates, each under its own permissive licence, and
+   Astral's release does not list them or carry their notices. Decide
+   whether to generate that list (for example with `cargo about` over uv's
+   `Cargo.lock` at the pinned tag) and add it to the desktop notices, or to
+   rely on uv's own licence.
 
 ## Maintenance
 
