@@ -60,6 +60,13 @@ def main() -> None:
         help="the build /api/status reports as fw_variant (default: yard)",
     )
     ap.add_argument(
+        "--reset",
+        type=int,
+        default=1,
+        help="esp_reset_reason_t this boot reports in /api/health — 9 is a "
+        "brownout, 4 a crash (default: 1, power-on)",
+    )
+    ap.add_argument(
         "--serial",
         action="store_true",
         help="one request at a time, like the device's single httpd task",
@@ -88,6 +95,7 @@ def main() -> None:
         ota_slot=OTA_SLOTS[args.board],
         board=BOARD_IDS[args.board],
         fw_variant=args.variant,
+        reset_reason=args.reset,
     )
     if args.dir is None:
         seed(emu.sd_dir)
