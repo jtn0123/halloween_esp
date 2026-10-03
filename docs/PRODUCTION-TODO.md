@@ -277,11 +277,20 @@ Everything here is needed for BOTH option A and option B.
 - [x] Logs: `~/Library/Logs/Castle Tools/` → Tauri app-log dir per OS.
 
 ### 5.2 Sidecars
-- [ ] Python: python-build-standalone 3.13 per target (macOS arm64, macOS
-      x86_64?, Windows x64) + a pre-installed site-packages, OR PyInstaller
-      one-dir builds of the import/stems/sync entry points. Measure size.
-- [ ] ffmpeg: static LGPL builds per target as a Tauri `externalBin`.
-- [ ] Demucs: bundled (torch CPU wheels + htdemucs model). Windows speed:
+- [x] Python: NOT bundled (decided 2026-10-03). The app carries the tree,
+      castle-core and a pinned uv (`tools/desktop_bundle.py`, about 48 MB:
+      uv 34, the tree 12, castle-core 1.7). Its first launch runs the
+      option-A installer under a uv-managed 3.13 into per-user app data,
+      with progress on the splash, and Repair (desktop/README.md "First
+      launch"). The runtime is about 1.7 GB with uv's cache; a second start
+      sets nothing up. Proven per release by `tools/desktop_smoke.py` on
+      macos-14 and windows-latest (docs/RELEASING.md).
+- [x] ffmpeg: not bundled either. The first launch downloads the pinned
+      static build (`--ffmpeg download`), as option A does, so no GPL build
+      is redistributed (docs/LICENSING.md, open decision 5).
+- [ ] Demucs: fetched at first launch, not bundled: torch CPU wheels from
+      the lock, and the htdemucs model by the installer (the weights have
+      no licence statement; docs/LICENSING.md, open decision 4). Windows speed:
       measured 2026-09-30 on an M4, 4:06 song, `--two-stems vocals`:
       GPU (mps) 65 s · CPU defaults 133 s · CPU `--overlap 0.1 -j 4` 65 s.
       A mid-range Windows laptop CPU is expected to be slower than an M4.
@@ -294,9 +303,11 @@ Everything here is needed for BOTH option A and option B.
   - [ ] Later: drop PyTorch for an ONNX export of htdemucs on ONNX Runtime
         + DirectML (any DX12 GPU: Intel/AMD/NVIDIA), or demucs.cpp on CPU.
         Removes the biggest dependency and gives most Windows PCs a GPU path.
-- [ ] Rust bins (`analyze_track`, `scene_render`): link into the app or ship
-      as sidecars — `tools/core_bins.py` must find them without cargo
-      (today it builds on demand: a buyer has no cargo).
+- [x] Rust bins (`analyze_track`, `scene_render`, `studio`): carried in the
+      app as `castle/bin/` (the release's castle-core zip). The installer's
+      `--core-from` places them in `app/core/target/release`. The app sets
+      `CASTLE_CORE_BIN_DIR` there, and `tools/core_bins.py` runs them
+      without cargo.
 
 ### 5.3 Data location
 - [x] Today everything lives in the repo checkout (`tracks/`, `scenes/`,

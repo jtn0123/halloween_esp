@@ -2,18 +2,25 @@
 //! 127.0.0.1:8871), the cue desk studio beside it, the ♜ tray, the
 //! `castle-tools://start` handler and the updater. The servers stay the ones
 //! they always were — Python's Castle Radio and castle-core's `studio` bin —
-//! run as sidecars: this app starts them, watches them and stops them.
+//! run as sidecars: this app starts them, watches them and stops them. A
+//! release sets their runtime up on its first launch (setup.rs).
 //! Architecture: desktop/README.md.
 
+mod bundle;
 mod channel;
 mod child;
+mod childenv;
 mod deeplink;
+mod install_tree;
 mod logfile;
 mod probe;
 mod release;
 mod runtime;
 mod service;
 mod settings;
+mod setup;
+mod setup_cmd;
+mod setup_run;
 mod signals;
 mod supervisor;
 mod tray;
@@ -30,20 +37,36 @@ use tauri_plugin_opener::OpenerExt;
 
 /// Both supervisors, as Tauri state: the window follows Castle Radio; the
 /// studio runs beside it for the light desk and the rebuild/publish work.
+/// The setup both wait on when the app's own runtime is not ready yet.
+#[derive(Clone)]
 pub struct Servers {
     pub radio: Arc<Supervisor>,
     pub desk: Arc<Supervisor>,
+    pub setup: Arc<setup::Setup>,
 }
 
 impl Servers {
     pub fn start(&self) {
+        self.setup.arm();
         self.radio.start();
         self.desk.start();
     }
 
+    /// Stops the servers we started and a setup under way. Blocks while the
+    /// trees die (a few seconds at most).
     pub fn stop(&self) {
         self.radio.stop();
         self.desk.stop();
+        self.setup.stop();
+    }
+
+    /// Set the app's own runtime up again (the installer's --repair), then
+    /// start from it. The servers stop first: the repair replaces the
+    /// environment they run in.
+    pub fn repair(&self) {
+        self.setup.request_repair();
+        self.stop();
+        self.start();
     }
 }
 
@@ -89,6 +112,7 @@ impl Events for DeskEvents {
 struct Statuses {
     radio: Status,
     desk: Status,
+    setup: setup::Progress,
 }
 
 #[tauri::command]
@@ -96,12 +120,20 @@ fn castle_status(servers: tauri::State<'_, Servers>) -> Statuses {
     Statuses {
         radio: servers.radio.status(),
         desk: servers.desk.status(),
+        setup: servers.setup.progress(),
     }
 }
 
 #[tauri::command]
 fn castle_start(servers: tauri::State<'_, Servers>) {
     servers.start();
+}
+
+/// Off the main thread: stopping waits for the servers' trees to die.
+#[tauri::command]
+fn castle_repair(servers: tauri::State<'_, Servers>) {
+    let servers = servers.inner().clone();
+    std::thread::spawn(move || servers.repair());
 }
 
 #[tauri::command]
@@ -119,7 +151,7 @@ fn castle_release(app: AppHandle) -> release::Assets {
 
 fn supervisor(
     service: Service,
-    resource_dir: Option<PathBuf>,
+    setup: &Arc<setup::Setup>,
     app_data: PathBuf,
     settings: settings::Settings,
     log: &Arc<logfile::LogFile>,
@@ -128,9 +160,9 @@ fn supervisor(
     let config = Config {
         service,
         port: service.port(&|k| std::env::var_os(k)),
-        resource_dir,
         app_data,
         settings,
+        setup: Arc::clone(setup),
     };
     Supervisor::new(config, Arc::clone(log), events)
 }
@@ -158,11 +190,18 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(url) = app.get_webview_window("main").and_then(|w| w.url().ok()) {
         let _ = navigator.splash.set(url);
     }
-    let resource_dir = paths.resource_dir().ok();
     let app_data = paths.app_data_dir()?;
+    // Local, not roaming, on Windows: the runtime is a gigabyte of Python
+    // packages that must never follow the owner between machines.
+    let places = runtime::Places {
+        resource_dir: paths.resource_dir().ok(),
+        runtime_dir: paths.app_local_data_dir()?.join("runtime"),
+        data_dir: childenv::DataDirs::new(&app_data).radio,
+    };
+    let setup = setup::Setup::new(places, Box::new(setup_run::Processes), Arc::clone(&log));
     let desk = supervisor(
         Service::Studio,
-        resource_dir.clone(),
+        &setup,
         app_data.clone(),
         settings.clone(),
         &log,
@@ -170,16 +209,18 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     );
     let sup = supervisor(
         Service::Radio,
-        resource_dir,
+        &setup,
         app_data,
         settings,
         &log,
         Box::new(navigator),
     );
-    app.manage(Servers {
-        radio: Arc::clone(&sup),
-        desk: Arc::clone(&desk),
-    });
+    let servers = Servers {
+        radio: sup,
+        desk,
+        setup,
+    };
+    app.manage(servers.clone());
     tray::build(&handle)?;
 
     // Registered by the installer on Windows and by Info.plist on macOS; a
@@ -190,15 +231,13 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
             log.line(&format!("deep link registration failed: {e}"));
         }
     }
-    let on_link = Arc::clone(&sup);
-    let on_desk = Arc::clone(&desk);
+    let on_link = servers.clone();
     app.deep_link().on_open_url(move |event| {
         for url in event.urls() {
             if deeplink::is_start(url.as_str()) {
                 on_link.start();
-                on_desk.start();
             } else {
-                on_link.log_line(&format!(
+                on_link.radio.log_line(&format!(
                     "ignored link {:?}: only {} is honoured",
                     url.as_str(),
                     deeplink::START
@@ -218,8 +257,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     if !by_link {
         tray::show_main(&handle);
     }
-    sup.start();
-    desk.start();
+    servers.start();
     signals::install(handle.clone());
     updater::schedule(handle);
     Ok(())
@@ -247,6 +285,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             castle_status,
             castle_start,
+            castle_repair,
             castle_open_log,
             castle_release
         ])
