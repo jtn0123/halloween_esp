@@ -1,0 +1,10 @@
+# ESPHome License
+
+Copyright (c) 2019 ESPHome
+
+The ESPHome License is made up of two base licenses: MIT and the GNU GENERAL PUBLIC LICENSE.
+The C++/runtime codebase of the ESPHome project (file extensions .c, .cpp, .h, .hpp, .tcc, .ino) are
+published under the GPLv3 license. The python codebase and all other parts of this codebase are
+published under the MIT license.
+
+Both MIT and GPLv3 licenses are attached to this document.
