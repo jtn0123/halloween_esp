@@ -58,6 +58,14 @@ DOCUMENTED_AUDIT = {
 }
 
 
+DOCUMENTED_CAD = {
+    "hardware/castle-carrier-v3.4/integrated/castle-carrier.kicad_pcb",
+    "hardware/castle-carrier-v3.4/integrated/castle-carrier.kicad_sch",
+    "hardware/castle-carrier-v3.4/integrated/castle.kicad_sym",
+    "hardware/castle-carrier-v3.4/integrated/castle.pretty/ESP32-S3-WROOM-1.kicad_mod",
+}
+
+
 class TestScope(unittest.TestCase):
     def setUp(self) -> None:
         self.measured = {rel for _n, rel, _o in check_loc.measure()}
@@ -103,6 +111,22 @@ class TestScope(unittest.TestCase):
 
 
 class TestExemptions(unittest.TestCase):
+    def test_cad_exemptions_are_exact_and_do_not_hide_handwritten_files(self) -> None:
+        self.assertEqual(set(check_loc.CAD_EXEMPT), DOCUMENTED_CAD)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = DOCUMENTED_CAD | {
+                "hardware/castle-carrier-v3.4/integrated/README.md",
+                "hardware/castle-carrier-v3.4/integrated/validate.sh",
+                "hardware/another-board.kicad_pcb",
+            }
+            for rel in paths:
+                path = root / rel
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("geometry or prose\n" * 501)
+            rows = check_loc.measure(root=root, files=[root / rel for rel in paths])
+        self.assertEqual({rel for _, rel, over in rows if over}, paths - DOCUMENTED_CAD)
+
     def test_exemptions_are_exactly_the_documented_generated_files(self) -> None:
         self.assertEqual(set(check_loc.EXEMPT_PATHS), DOCUMENTED_GENERATED)
 
@@ -115,11 +139,13 @@ class TestExemptions(unittest.TestCase):
         """`measure()` skips ALL_EXEMPT, so a path smuggled into neither
         documented set — or quietly added to ALL_EXEMPT directly — fails here.
 
+        CAD geometry is pinned by DOCUMENTED_CAD below.
         The audit exemption is deliberately NOT in ALL_EXEMPT: it is a
         pattern, matched separately by `is_audit_output`, and it is pinned by
         its own tests below."""
         self.assertEqual(
-            set(check_loc.ALL_EXEMPT), DOCUMENTED_GENERATED | DOCUMENTED_DATA
+            set(check_loc.ALL_EXEMPT),
+            DOCUMENTED_GENERATED | DOCUMENTED_DATA | DOCUMENTED_CAD,
         )
         self.assertEqual(
             set(check_loc.EXEMPT_PATHS) & set(check_loc.DATA_EXEMPT), set()

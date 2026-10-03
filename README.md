@@ -56,6 +56,10 @@ is to play it. This raises the quality ceiling rather than lowering it.
 
 ## Hardware
 
+The [v3.4 Integrated PCB handoff](hardware/castle-carrier-v3.4/integrated/README.md)
+contains its KiCad source, ENIG manufacturing review package, board images and QA evidence.
+It remains an engineering prototype pending supplier and powered-board qualification.
+
 | | |
 |---|---|
 | MCU | Adafruit ESP32-S3 Feather [#5477](https://www.adafruit.com/product/5477) — 240 MHz, 4 MB flash, 2 MB PSRAM, on castle-carrier v3.3a. An ESP32-S2 Feather ran the porch until 2026-09-17 ([docs/notes/03-build.md](docs/notes/03-build.md) §12.20) |
