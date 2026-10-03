@@ -370,9 +370,21 @@ true, and it is the dev/support path forever.
       tools, jobs and log tail — paths cut, no key. The desk links `/owner`.
 
 ### 4.4 Windows hands-on pass (an Opus agent on your Windows PC)
-- [ ] Fresh Windows user account: install from a Release, first-run, import
+- [x] Fresh Windows user account: install from a Release, first-run, import
       a song (mp3 + wav + a non-ASCII name), separate stems, sync, play.
-- [ ] Time Demucs per song on that CPU (compare: M4 CPU 133 s / tuned 65 s).
+      2026-10-03: `.github/workflows/install-smoke.yml` does it on
+      windows-latest and macos-14 (PRs that touch the installer or Castle
+      Radio, weekly, by hand): the real install.ps1/install.sh from a
+      git-archive tree with no cargo or Python on PATH, castle-core from a
+      staged release zip, twice and as a dry run; then Castle Radio's own
+      API against `tools/castle_emu.py` — three imports, one split, sync,
+      the card checked file by file, a song played; uninstall keeping the
+      songs, then purging them. `tests/install_smoke.py` is the driver.
+- [x] Time Demucs per song on that CPU (compare: M4 CPU 133 s / tuned 65 s).
+      Each install-smoke run splits a 10 s clip on the runner's CPU and
+      puts the separate step's wall time in the run summary.
+- [ ] Still a person's job, no software stands in: SmartScreen on the
+      downloaded installer, and an import from a real network share.
 - [ ] Flash a castle from the web flasher in Edge; check the USB driver.
 - [ ] Auto-update from one Release to the next.
 - [ ] Run the Rust + Python suites natively; file what fails as follow-up.
