@@ -1,5 +1,7 @@
 """Control requests must address an installed scene and reject unsupported transport."""
 
+import importlib
+import os
 import threading
 import unittest
 from unittest.mock import patch
@@ -184,6 +186,10 @@ class SharedStatusTests(unittest.TestCase):
     def setUp(self):
         device_bridge._status_cache.update({"at": 0.0, "state": None})
         device_bridge._expected.update({"scene": None, "track": None, "until": 0.0})
+        # A castle named here, not by whatever this shell or devices.toml says.
+        host = patch.object(device_bridge, "HOST", "192.168.1.20")
+        host.start()
+        self.addCleanup(host.stop)
 
     @patch("device_bridge.urllib.request.urlopen")
     def test_status_polls_share_one_castle_request(self, urlopen):
@@ -421,3 +427,38 @@ class SoundTrueStartTests(unittest.TestCase):
         state = {"scene": "stop", "track": "radio_a.mp3"}
         self.assertEqual(device_bridge.playback_clock(state)["position_s"], 0)
         self.assertEqual(device_bridge.playback_clock(state)["position_s"], 1.5)
+
+
+class NoBuiltInCastleTests(unittest.TestCase):
+    """docs/PRODUCTION-TODO.md §8: the bridge has no address of its own."""
+
+    def resolved(self, **env):
+        clean = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("CASTLE_RADIO_HOST", "CASTLE_HOST")
+        }
+        with patch.dict(os.environ, {**clean, **env}, clear=True):
+            importlib.reload(device_bridge)
+            return device_bridge.HOST
+
+    def tearDown(self):
+        importlib.reload(device_bridge)  # this process's own environment again
+
+    def test_the_host_comes_from_the_environment_or_the_inventory(self):
+        self.assertEqual(
+            self.resolved(CASTLE_RADIO_HOST="castle.local"), "castle.local"
+        )
+        self.assertEqual(self.resolved(CASTLE_HOST="192.168.1.20"), "192.168.1.20")
+        self.assertEqual(self.resolved(CASTLE_HOST=""), "", "explicitly no castle")
+
+    @patch("device_bridge.urllib.request.urlopen")
+    def test_no_castle_is_said_and_nothing_is_dialled(self, urlopen):
+        with patch.object(device_bridge, "HOST", ""):
+            with self.assertRaisesRegex(OSError, "No castle address set"):
+                device_bridge.call("/api/status", fresh=True)
+            with self.assertRaisesRegex(OSError, "No castle address set"):
+                device_bridge.castle()
+        urlopen.assert_not_called()
+        with patch.object(device_bridge, "HOST", "192.168.1.20"):
+            self.assertEqual(device_bridge.castle(), "192.168.1.20")

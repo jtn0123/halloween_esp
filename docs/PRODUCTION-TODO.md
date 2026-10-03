@@ -69,7 +69,8 @@ bind (S3: 67.9% flash, 35.2% RAM at v5.69).
 - [ ] Prove the "Wi-Fi changed / router replaced" path: castle falls back
       to AP after N minutes of failed association, no USB needed. The buyer
       build falls back after 3 minutes (v5.74) — built, not yet proven on
-      hardware.
+      hardware. *The soak runs it unattended (`--disrupt-cmd`, docs/SOAK.md
+      "Wi-Fi loss and return").*
 - [x] Hostname: per-unit mDNS name so two castles on one LAN don't collide
       (`castle-feather-s3.local` is fixed today). The buyer build answers
       as `castle-xxxxxx.local` (v5.74).
@@ -83,7 +84,8 @@ A failed OTA today means USB + ESPHome installed.
       images to a GitHub Release, tag = firmware version.
 - [ ] Windows USB driver check: the S3 Feather's native USB (CDC) should
       enumerate without a driver on Win 10/11 — verify on a real Windows box.
-- [ ] Document "hold BOOT, tap RESET" as the last-resort bootloader entry.
+- [x] Document "hold BOOT, tap RESET" as the last-resort bootloader entry.
+      docs/OWNER-GUIDE.md, "If it will not start at all" (photo TODO).
 - [ ] Decide whether the castle's own page offers OTA upload (it already has
       `PUT /api/ota`) as the everyday update path, with the web flasher as
       the recovery path.
@@ -157,9 +159,16 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
 - [ ] 72-hour soak on the buyer's hardware: evening playlist on a loop,
       scheduled starts, motion triggers if wired. Log `/api/events`, uptime,
       heap, Wi-Fi RSSI drops. Make a tool do the logging (no manual watching).
+      *Tool built: `make soak HOST=… HOURS=72` (tools/soak.py, verdict +
+      JSONL, thresholds in docs/SOAK.md), emulator-tested with injected
+      faults; not yet run on hardware.*
 - [ ] Power-cycle torture: 50 cold boots via a smart plug; every one reaches
-      the show and the card mounts.
+      the show and the card mounts. *Tool built: `make power-cycle HOST=…
+      OFF=… ON=…` (tools/power_cycle.py), tested on a fake plug; not yet run
+      on hardware.*
 - [ ] Wi-Fi loss/return: router reboot mid-show; castle reconnects unaided.
+      *Tool built: the soak's outage detection + `--disrupt-cmd` on a
+      router plug (docs/SOAK.md); not yet run on hardware.*
 - [ ] SD card: corrupt/missing card behaviour is graceful (page says so,
       no boot loop). Spare pre-loaded card in the box.
 - [ ] Brownout check at full brightness + full volume on the shipped PSU.
@@ -168,9 +177,11 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
 
 ## 3. Handover package (P0)
 
-- [ ] Owner's guide (1–2 pages, not `RUNBOOK.md`): power on, join Wi-Fi,
+- [x] Owner's guide (1–2 pages, not `RUNBOOK.md`): power on, join Wi-Fi,
       open the page, pick a show, what the lights mean, what to do when it
-      misbehaves, how to update, how to factory reset.
+      misbehaves, how to update, how to factory reset. docs/OWNER-GUIDE.md;
+      screenshots are marked TODO, and the castle key and in-app update say
+      "coming in the next release".
 - [ ] Labels: AP name/password, URL, recovery-page URL, QR code to the guide.
 - [ ] SD card ships with NO songs (decided): scenes that need no track
       (light-only or synth audio) or an empty show. The castle page and the
@@ -359,15 +370,23 @@ true, and it is the dev/support path forever.
 
 ## 8. Repo and process
 
-- [ ] Branch strategy: buyer releases tagged from `main`; a `release/x.y`
-      branch if fixes must ship without new features.
+- [x] Branch strategy: buyer releases tagged from `main`; a `release/x.y`
+      branch if fixes must ship without new features. docs/SUPPORT.md,
+      "Release branches".
 - [ ] Version numbers: one release number for app + firmware + card format,
       shown in the app, on the castle page, and in the owner's guide.
-- [ ] `docs/RUNBOOK.md` gains a "supporting a buyer's castle" section.
-- [ ] Repo is public: confirm nothing personal ships (Wi-Fi secrets, your
+- [x] `docs/RUNBOOK.md` gains a "supporting a buyer's castle" section.
+      It is docs/SUPPORT.md (reading a report and a soak log), linked from
+      RUNBOOK.
+- [x] Repo is public: confirm nothing personal ships (Wi-Fi secrets, your
       `devices.toml`, `tracks.json` provenance with your file paths).
-- [ ] Per-unit record: serial/MAC, firmware version, date, buyer — kept by
-      you, not in the repo.
+      `tools/ship_guard.py`: both files are export-ignore and skipped by the
+      installer, no castle address is built into Castle Radio or a launcher,
+      and the tree (tests/test_ship_guard.py, every `make test`) and each
+      release's assets (release.yml) are scanned for secrets, a keyed
+      inventory, home directories, MACs and private-LAN addresses.
+- [x] Per-unit record: serial/MAC, firmware version, date, buyer — kept by
+      you, not in the repo. The template is docs/SUPPORT.md.
 
 ---
 

@@ -118,6 +118,16 @@ test('B6: Play says why nothing happened when the previous command is in the air
   assert.equal(said(calls, /failed/i).length, 0, 'busy is not a failure');
 });
 
+/* ------------------------------------------------- PRODUCTION-TODO §8 */
+
+test('§8: the device address is the castle the bridge asked, never one the page carries', async () => {
+  const named = linkContext({payload: {...idle(), host: 'castle-a1b2c3.local'}});
+  const unnamed = linkContext({payload: idle()});
+  await settle();
+  assert.equal(named.ctx.$('live-host').textContent, 'castle-a1b2c3.local');
+  assert.equal(unnamed.ctx.$('live-host').textContent, 'Not set');
+});
+
 /* --------------------------------------------------------------------- B10 */
 
 test('B10: a castle that names no firmware reads as “—”, never as undefined', async () => {

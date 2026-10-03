@@ -76,6 +76,7 @@ help:
 	@echo "  make studio     serve the cue desk with track management (localhost)"
 	@echo "  make publish    push scene tracks + the Castle Radio page to the castle"
 	@echo "  make ota        build the firmware and flash that image over HTTP"
+	@echo "  make soak HOST=… HOURS=72 / power-cycle HOST=… OFF=… ON=…   unattended hardware runs, PASS/FAIL (mk/soak.mk)"
 	@echo "  make test       python unit tests (~1 min)"
 	@echo "  make test-fast  the same minus the slow + Rust suites (inner loop)"
 	@echo "  make show-lab   opt-in light-show lab: rebuild the beat-locked candidates and serve"
@@ -206,6 +207,8 @@ cues:
 # `make build` just produced.
 ota: build
 	@$(PY) tools/sd_sync.py ota "$$($(PY) tools/check_image.py $(DEVICE) --path)"
+
+include mk/soak.mk
 
 # Kept as aliases, not as a second build. They named the microSD variant back
 # when there were two castles to choose between; every build has streamed the

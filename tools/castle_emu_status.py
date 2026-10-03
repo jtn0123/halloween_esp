@@ -49,7 +49,7 @@ def status_json(emu: CastleEmu) -> dict[str, object]:
             "uptime_s": int(time.monotonic() - st.boot),
             "sd_mounted": emu.sd_mounted,
             "psram_free_kb": 1800,
-            "heap_free_kb": 96,
+            "heap_free_kb": emu.readings["heap_free_kb"],
             "sd_total_kb": du.total // 1024 if emu.sd_mounted else 0,
             "sd_free_kb": du.free // 1024 if emu.sd_mounted else 0,
             "missing": emu.missing,
@@ -72,19 +72,19 @@ def status_json(emu: CastleEmu) -> dict[str, object]:
             # v5.72: the heard clock's measure of the stopwatch it
             # replaced (castle_heard.h). It needs a speaker that plays
             # samples, which an emulator has not got: -1, "not heard yet",
-            # is the honest reading here — and the key is the contract.
-            "sync_lead_ms": -1,
-            "sync_drift_ms": -1,
+            # is the honest default here — and the key is the contract.
+            "sync_lead_ms": emu.readings["sync_lead_ms"],
+            "sync_drift_ms": emu.readings["sync_drift_ms"],
             # L2 (v5.62): unix seconds, or 0 before SNTP answers. The
             # ring stamps uptime and always will; this is the base a
             # page turns one into the other with. An emulator always
             # has a clock, so it is never the 0 case — the KEY is the
             # contract, and a desk that converts must find it on both.
             "epoch": int(time.time()),
-            # L6: the radio, in dBm. A fixed plausible reading here for
-            # the same reason psram_free_kb is fixed: the number means
+            # L6: the radio, in dBm. A plausible reading (emu.readings)
+            # for the same reason psram_free_kb is fixed: the number means
             # nothing off the board, the key means everything.
-            "rssi": -55,
+            "rssi": emu.readings["rssi"],
             # v5.74 (sd_web_prefs.h): a castle key is set, and whether a
             # power-on boot starts the show.
             "locked": bool(emu.key),

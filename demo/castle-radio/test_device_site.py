@@ -93,8 +93,7 @@ class TestBuild(FakeData):
     def test_the_computer_is_named_only_where_it_is_true(self):
         page = device_site.build(HERE, self.data).decode()
         for gone in (
-            "Castle unreachable at 10.27.27.81",
-            "Sending command to 10.27.27.81",
+            "Castle unreachable from this computer",
             "Control room server is not running",
             "Start server.py",
             "files stay in this demo",

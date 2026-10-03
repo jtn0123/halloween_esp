@@ -2,9 +2,10 @@
 
 Order: explicit argument (an IP, or a name from devices.toml) — CASTLE_HOST —
 first entry in devices.toml. `candidates()` is the ordered list (fallbacks
-included) that castle_link walks; `resolve()` is its first entry. Written because "10.27.27.7" was hardcoded in
-three tools and one muscle memory, which is exactly one router-reshuffle away
-from being wrong everywhere at once.
+included) that castle_link walks; `resolve()` is its first entry. Written
+because the porch castle's address was hardcoded in three tools and one
+muscle memory, which is exactly one router-reshuffle away from being wrong
+everywhere at once.
 """
 
 from __future__ import annotations
@@ -191,7 +192,7 @@ def key_headers(host: str | None = None) -> dict[str, str]:
 def maybe_host(argv: list[str]) -> tuple[str, list[str]]:
     """Pop a leading host/name from argv if present, else resolve a default.
 
-    Lets `sd_sync.py status` work as well as `sd_sync.py 10.27.27.7 status`.
+    Lets `sd_sync.py status` work as well as `sd_sync.py 192.168.1.20 status`.
     """
     known_cmds = {
         "status",

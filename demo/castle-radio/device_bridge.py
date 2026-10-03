@@ -31,9 +31,13 @@ from light_show import (  # noqa: F401  (re-exported for callers and tests)
     stop_imported_show,
 )
 
-# The porch castle's private address; CASTLE_RADIO_HOST points the bridge at
-# another castle (a bench unit, a QEMU build) without editing this file.
-HOST = os.environ.get("CASTLE_RADIO_HOST", "10.27.27.81")
+# The castle: CASTLE_RADIO_HOST (the desktop app sets it from its settings),
+# else the first castle tools/hosts.py knows (CASTLE_HOST, devices.toml).
+# Neither is "no castle", and every request says so instead of guessing: no
+# address is built in, because a copy on a buyer's computer would talk to
+# the seller's LAN (docs/PRODUCTION-TODO.md §8, tools/ship_guard.py).
+HOST = os.environ.get("CASTLE_RADIO_HOST") or next(iter(hosts.candidates()), "")
+NO_CASTLE = "No castle address set · name your castle in the app's settings"
 STATUS_PATH = "/api/status"
 FILES_PATH = "/api/files"
 # The castle's httpd has four sockets and answers on one task. Three browser
@@ -145,6 +149,14 @@ class KeyRequired(OSError):
         super().__init__(castle_keys.KEY_REQUIRED)
 
 
+def castle():
+    """HOST, or the reason there is none — never an empty host, which a
+    socket would read as this computer."""
+    if not HOST:
+        raise OSError(NO_CASTLE)
+    return HOST
+
+
 def call(path, method="GET", data=None, timeout=8, fresh=False):
     if path == STATUS_PATH and method == "GET":
         with _STATUS_LOCK:
@@ -156,7 +168,7 @@ def call(path, method="GET", data=None, timeout=8, fresh=False):
             ):
                 return dict(cached)
     request = urllib.request.Request(
-        hosts.castle_url(HOST, path),
+        hosts.castle_url(castle(), path),
         data=data,
         method=method,
         headers=hosts.key_headers(HOST),

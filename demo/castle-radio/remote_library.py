@@ -223,7 +223,7 @@ def upload_with_progress(
 ):
     """Stream chunks so the UI sees bytes handed to the castle socket."""
     factory = connection_factory or (
-        lambda: http.client.HTTPConnection(device_bridge.HOST, timeout=600)
+        lambda: http.client.HTTPConnection(device_bridge.castle(), timeout=600)
     )
     connection = factory()
     path = f"{route}/{urllib.parse.quote(name)}"

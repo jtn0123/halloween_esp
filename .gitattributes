@@ -18,3 +18,11 @@
 # tag the tree was cut from, so installer/desktop_install.py knows which
 # release's castle-core binaries match it. In a clone it stays a template.
 installer/VERSION export-subst
+
+# Tracked for the seller's own tools, never shipped (docs/PRODUCTION-TODO.md
+# §8): the castle inventory (its hosts, and on a keyed castle its key) and
+# the song library's provenance. GitHub's source zip leaves them out, and
+# tools/desktop_install.py skips the same list in a clone (ship_guard.py
+# PERSONAL; tests/test_ship_guard.py holds the two to each other).
+devices.toml export-ignore
+tracks/tracks.json export-ignore

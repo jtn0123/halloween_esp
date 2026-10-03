@@ -12,6 +12,8 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -130,6 +132,28 @@ class TestStaging(TempCase):
         self.assertFalse((self.dirs.app / ".venv").exists())
         self.assertFalse((self.dirs.app / "core" / "target").exists())
         self.assertFalse(self.dirs.app.with_name("app.new").exists())
+
+    def test_the_sellers_own_files_are_never_staged(self) -> None:
+        """devices.toml and the library manifest are export-ignore, so the
+        release zip lacks them; a copied tree or a clone must too."""
+        src = self.tmp / "src"
+        for rel_path in ("tools/a.py", "devices.toml", "tracks/tracks.json"):
+            (src / rel_path).parent.mkdir(parents=True, exist_ok=True)
+            (src / rel_path).write_text("x", encoding="utf-8")
+
+        def staged(git: str | None) -> set[Path]:
+            inst = di.Installer(
+                self.args(), self.dirs, which=lambda _n: git, say=lambda _m: None
+            )
+            return set(inst.source_files(src))
+
+        self.assertEqual(staged(None), {Path("tools/a.py")}, "a copied tree")
+        git = shutil.which("git")
+        if git is None:
+            self.fail("git is needed to stage from a clone")
+        subprocess.run([git, "init", "-q", str(src)], check=True)
+        subprocess.run([git, "-C", str(src), "add", "-A"], check=True)
+        self.assertEqual(staged(git), {Path("tools/a.py")}, "a clone")
 
     def test_restaging_keeps_the_built_core_and_never_touches_data(self) -> None:
         src = self.tmp / "src"

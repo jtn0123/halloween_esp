@@ -49,7 +49,7 @@
     bench.classList.toggle('has-error',error);
   };
   async function command(body, label, note) {
-    result(`Running ${label}…`,'Sending command to 10.27.27.81');
+    result(`Running ${label}…`,'Sending command to the castle');
     const ok=await window.castleLink.command(body);
     // Still sending is not a failure: a second press while the first command
     // was in the air used to paint the console red and say the test failed.
