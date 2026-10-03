@@ -55,6 +55,7 @@ class NameTests(unittest.TestCase):
                 "castle-fw-feather-s3-4m2p-v0.1.0.factory.bin",
                 "castle-fw-feather-s3-4m2p-v0.1.0.ota.bin",
                 "castle-fw-feather-s3-4m2p-v0.1.0.notices.txt",
+                "castle-fw-feather-s3-4m2p-v0.1.0.json",
                 "castle-core-x86_64-pc-windows-msvc-v0.1.0.zip",
                 "castle-core-aarch64-apple-darwin-v0.1.0.zip",
                 "castle-core-x86_64-apple-darwin-v0.1.0.zip",
@@ -116,6 +117,9 @@ class StagingTests(unittest.TestCase):
             notices.read_bytes(),
             (ROOT / "licenses" / "THIRD-PARTY-NOTICES-firmware.txt").read_bytes(),
         )
+        about = json.loads((self.out / ra.about_name(TAG)).read_text("utf-8"))
+        self.assertEqual(about["ota"], ota.name)
+        self.assertEqual((about["ota_bytes"], about["fw_variant"]), (3, "buyer"))
 
     def test_a_build_without_a_factory_image_is_not_a_release(self) -> None:
         (self.ota.parent / "firmware.factory.bin").unlink()

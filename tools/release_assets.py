@@ -19,6 +19,11 @@ repo's own tooling:
   castle-fw-feather-s3-4m2p-<tag>.notices.txt   the images' third-party
                                                 notices (pages.yml serves it
                                                 beside the flasher too)
+  castle-fw-feather-s3-4m2p-<tag>.json          what the images ARE: board,
+                                                build (fw_variant), the
+                                                firmware version /api/status
+                                                will report — the app's
+                                                "Update castle" reads it
   castle-core-<rust-target>-<tag>.zip           analyze_track, scene_render,
                                                 studio (+ .exe on Windows)
                                                 and THIRD-PARTY-NOTICES.txt
@@ -40,8 +45,10 @@ and, once desktop/ exists and the release builds the Tauri app (`finish
 
 `feather-s3-4m2p` is the board identifier the firmware reports as `board`
 in /api/status (ESP32-S3 Feather #5477: 4 MB flash, 2 MB PSRAM), so the app
-can match a castle to its image by string equality. Stdlib only: the publish
-job runs it on a bare runner python.
+can match a castle to its image by string equality, and FW_VARIANT is the
+build the images are (castle_buyer.yaml's `fw_variant`, the same field) — a
+castle running another build is never offered them. Stdlib only, its repo
+imports included: the publish job runs it on a bare runner python.
 """
 
 from __future__ import annotations
@@ -56,7 +63,13 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
+import fw_formats
+
 BOARD = "feather-s3-4m2p"
+#: The build every release's images are: `make build-buyer` (release.yml).
+FW_VARIANT = "buyer"
+#: The descriptor's layout; a reader refuses a schema it does not know.
+ABOUT_SCHEMA = 1
 CORE_TARGETS = (
     "x86_64-pc-windows-msvc",
     "aarch64-apple-darwin",
@@ -103,6 +116,10 @@ def notices_name(tag: str) -> str:
     return f"castle-fw-{BOARD}-{tag}.notices.txt"
 
 
+def about_name(tag: str) -> str:
+    return f"castle-fw-{BOARD}-{tag}.json"
+
+
 def core_zip_name(target: str, tag: str) -> str:
     return f"castle-core-{target}-{tag}.zip"
 
@@ -121,7 +138,7 @@ def desktop_names(target: str, tag: str) -> dict[str, str]:
 def expected_assets(tag: str, desktop: bool = False) -> list[str]:
     """Every asset a complete release carries, SHA256SUMS last (and, with
     the desktop app, latest.json after it — the upload order)."""
-    names = [factory_name(tag), ota_name(tag), notices_name(tag)]
+    names = [factory_name(tag), ota_name(tag), notices_name(tag), about_name(tag)]
     names += [core_zip_name(t, tag) for t in CORE_TARGETS]
     if not desktop:
         return [*names, MANIFEST, SUMS]
@@ -147,7 +164,26 @@ def stage_firmware(tag: str, ota_bin: Path, out: Path) -> list[Path]:
     shutil.copyfile(factory, staged[0])
     shutil.copyfile(ota_bin, staged[1])
     shutil.copyfile(FIRMWARE_NOTICES, staged[2])
+    staged.append(out / about_name(tag))
+    doc = firmware_about(tag, ota_bin.stat().st_size, fw_formats.this_firmware())
+    staged[3].write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     return staged
+
+
+def firmware_about(tag: str, ota_bytes: int, version: str) -> dict[str, object]:
+    """The descriptor: everything the app must know to offer the OTA image to
+    one castle and to confirm it took, without downloading a megabyte first.
+    `version` is firmware/castle.yaml's — what /api/status says once it runs."""
+    return {
+        "schema": ABOUT_SCHEMA,
+        "tag": tag,
+        "board": BOARD,
+        "fw_variant": FW_VARIANT,
+        "version": version,
+        "ota": ota_name(tag),
+        "ota_bytes": ota_bytes,
+        "factory": factory_name(tag),
+    }
 
 
 def zip_core(tag: str, target: str, bin_dir: Path, out: Path) -> Path:
