@@ -36,7 +36,9 @@ class SourceAvailableTests(unittest.TestCase):
     def write_manifest(self, *keys):
         source = radio_jobs.FILE_PREFIX + str(self.original)
         manifest = {key: {"source": source} for key in keys}
-        (self.library / "tracks.json").write_text(json.dumps(manifest), "utf-8")
+        (self.library / "tracks.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
 
     def stored_rows(self):
         return json.loads(self.catalog.read_text(encoding="utf-8"))
