@@ -358,8 +358,12 @@ def policy_errors(components: list[Component]) -> list[str]:
                 errors.append(f"{who}: {term} needs a source location in the notices")
             if base.startswith("LicenseRef-") and not c.texts:
                 errors.append(f"{who}: {term} has no licence text of its own")
-            if not base.startswith("LicenseRef-") and not texts_for(term):
-                errors.append(f"{who}: no licence text for {term}")
+            if not base.startswith("LicenseRef-"):
+                errors.extend(
+                    f"{who}: no licence text for {part}"
+                    for part in term.split(" WITH ")
+                    if part not in GENERIC
+                )
         if not c.copyright:
             errors.append(f"{who}: no copyright line (or a stated reason for none)")
         errors.extend(
