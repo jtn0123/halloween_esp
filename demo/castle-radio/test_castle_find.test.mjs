@@ -37,6 +37,7 @@ function cardPage({where = {host: '', pinned: false, store: true}, found = [], d
     document: {getElementById: byId, createElement: node, querySelector: q => (q.includes('device') ? deviceNav : null)},
     castleLink: {subscribe: fn => subscribers.push(fn), refresh() { calls.push('refresh'); }},
     castleKey: {refresh() { calls.push('key'); }},
+    castleUpdate: {refresh() { calls.push('update'); }},
     async fetch(path, init = {}) {
       const body = init.body ? JSON.parse(init.body) : undefined;
       calls.push({path, method: init.method || 'GET', body});
@@ -74,6 +75,7 @@ test('no castle yet: find, pick, and it is remembered and followed', async () =>
   assert.deepEqual(adopt.body, {host: '192.168.1.50', name: 'castle-a1b2c3.local'});
   assert.equal(byId('find-message').textContent, 'This is your castle now · castle-a1b2c3.local');
   assert.ok(calls.includes('refresh') && calls.includes('key'), 'the link and the key card follow');
+  assert.ok(calls.includes('update'), 'the firmware card asks the castle it now has');
   assert.match(byId('find-state').textContent, /192\.168\.1\.50/);
 });
 
@@ -89,7 +91,7 @@ test('a typed address goes the same way, and a refusal is said', async () => {
   byId('find-address').value = '10.0.0.5';
   byId('find-use').onclick();
   await settle();
-  assert.equal(calls.at(-3).body.host, '10.0.0.5');
+  assert.equal(calls.findLast(c => c.method === 'POST').body.host, '10.0.0.5');
   assert.equal(byId('find-address').value, '', 'the field empties once it is the castle');
 });
 

@@ -51,7 +51,7 @@ ifeq ($(shell uname -m),x86_64)
 export NPY_DISABLE_CPU_FEATURES ?= X86_V3 X86_V4 AVX512_ICL AVX512_SPR
 endif
 
-.PHONY: preflight build-buyer validate-buyer show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
+.PHONY: preflight build-buyer validate-buyer guide-shots cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
 
 help:
 	@echo "Halloween Castle"
@@ -62,6 +62,7 @@ help:
 	@echo "  make cues       render every track's light show to a card cue file (TRACKS=\"a b\" for some)"
 	@echo "  make generate   render scenes.yaml -> firmware/generated/scenes.yaml"
 	@echo "  make preview    splice scenes + rendered audio into the previewer"
+	@echo "  make guide-shots  retake docs/guide/*.png, the owner's guide's pictures (emulator, no network)"
 	@echo "  make validate   check the ESPHome config (fast, no toolchain)"
 	@echo "  make build      compile $(YAML) (implies audio + generate)"
 	@echo "  make upload     compile and flash over the Feather's USB-C"
@@ -81,7 +82,7 @@ help:
 	@echo "  make test-fast  the same minus the slow + Rust suites (inner loop)"
 	@echo "  make show-lab   opt-in light-show lab: rebuild the beat-locked candidates and serve"
 	@echo "                  the before/after page on 127.0.0.1:8894 (SHOW_LAB_PORT=…); software only"
-	@echo "  make show-lab-phone  the same page on the home network, to review on a phone"
+	@echo "  make show-lab-phone  the same page on the home network, to review on a phone (mk/show-lab.mk)"
 	@echo "                  (the flags you tap there: .venv/bin/python demo/castle-radio/show_lab.py --notes)"
 	@echo "  make test-radio demo/castle-radio: its python suite + its node --test suites"
 	@echo "  make rust       build castle-core (release: the binaries the tools spawn)"
@@ -141,29 +142,18 @@ generate:
 preview: audio
 	@$(PY) tools/gen_previewer.py
 
+# The owner's guide's pictures, from emulated castles (tools/guide_shots.py;
+# tests/test_guide_shots.py holds them to the guide). The flasher loads unpkg.
+guide-shots:
+	@cd web && npx playwright install chromium
+	@$(PY) tools/guide_shots.py
+
 # make track SRC=~/Music/thing.wav ID=organ_loop [ARGS="--take 24"]
 track:
 	@test -n "$(SRC)" || (echo "usage: make track SRC=<file|url> [ID=<name>] [ARGS=...]"; exit 1)
 	@$(PY) tools/import_track.py "$(SRC)" $(if $(ID),--id $(ID),) $(ARGS)
 
-# Opt-in and offline: candidates are written only under the ignored
-# .radio-data/comparison/, never beside a prepared show, and nothing here
-# talks to the castle. Adopting a candidate is a separate, deliberate change.
-SHOW_LAB_PORT ?= 8894
-show-lab:
-	@$(PY) demo/castle-radio/show_lab.py
-	@echo "open http://127.0.0.1:$(SHOW_LAB_PORT)/show-lab.html   (Ctrl-C stops the server)"
-	@$(PY) demo/castle-radio/lab_server.py --port $(SHOW_LAB_PORT) --bind 127.0.0.1
-
-# The same lab for a phone on the home network. A separate target because it
-# lets every device on the LAN read the comparison directory — the lab's
-# shows and its links to the songs — and add to its notes.jsonl (the page's
-# flags; `show_lab.py --notes` prints them) for as long as it runs.
-show-lab-phone:
-	@$(PY) demo/castle-radio/show_lab.py
-	@ip=$$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname); \
-		echo "on your phone: http://$$ip:$(SHOW_LAB_PORT)/show-lab.html   (Ctrl-C stops the server)"
-	@$(PY) demo/castle-radio/lab_server.py --port $(SHOW_LAB_PORT) --bind 0.0.0.0
+include mk/show-lab.mk
 
 # The Rust studio is the studio (grade report 2026-09-01 G1, finished by
 # docs/RETIREMENT.md): the launcher builds it when cargo is here and refuses

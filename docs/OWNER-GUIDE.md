@@ -1,9 +1,12 @@
 # Your Halloween Castle
 
-<!-- For the castle's owner: print this (about two pages). Lines marked
-     TODO(screenshot) are where a picture belongs once the real screens
-     have been captured; nothing below describes a screen that does not
-     exist. Seller's notes are in docs/SUPPORT.md. -->
+<!-- For the castle's owner: print this, or send the link (the label's QR
+     code opens it on GitHub). Nothing below describes a screen that does
+     not exist. The pictures are docs/guide/, made from the real pages by
+     `make guide-shots` (tools/guide_shots.py) — regenerate them after a
+     change to a page they show. Pictures software cannot take are listed
+     in comments like this one where they belong. Seller's notes are in
+     docs/SUPPORT.md. -->
 
 ## Switching it on
 
@@ -17,28 +20,38 @@ show begins when you start it (or by itself, if you ask it to — see
 The castle does not know your Wi-Fi yet. Either way below works.
 
 **With a phone.** Open your phone's Wi-Fi settings and join the network
-called **Castle-** followed by four letters and numbers (for example
-`Castle-3F2A`). It has no password. A page opens by itself: pick your home
-Wi-Fi, type its password and save. The Castle- network disappears when the
-castle has joined yours. If no page opens, open a browser on the phone and
-go to `http://192.168.4.1`.
-TODO(screenshot): the phone's Wi-Fi list, and the page that opens.
+called **Castle-** followed by four letters and numbers — the label on the
+castle says which (for example `Castle-3F2A`). It has no password. A page
+opens by itself: tap your home Wi-Fi in its list, type the password and
+press **Save**. The Castle- network disappears when the castle has joined
+yours. If no page opens, open a browser on the phone and go to
+`http://192.168.4.1`.
+
+<img src="guide/portal.png" width="260" alt="The castle's Wi-Fi page on a phone: a list of Wi-Fi networks, a password box and Save">
+
+<!-- Picture still wanted (needs a phone and a castle): the phone's own
+     Wi-Fi list with the Castle- network in it. -->
 
 **With a computer and a USB-C cable.** In Google Chrome or Microsoft Edge,
 open the castle's setup page, **https://jtn0123.github.io/halloween_esp/**,
 plug the castle into the computer, click **Connect to the castle**, and
 follow the Wi-Fi step it offers.
-TODO(screenshot): the setup page and its Wi-Fi step.
+
+<img src="guide/flasher.png" width="540" alt="The castle's setup page: what you need, six steps, and the Connect to the castle button">
+
+<!-- Picture still wanted (needs a castle on USB): the setup page's Wi-Fi
+     step, after Install. -->
 
 ## Opening the castle's page
 
 On a phone or computer on the same Wi-Fi, open a browser and go to the
-castle's name, **http://castle-xxxxxx.local** — the six characters are on
-the label. If the name does not open, use the castle's number address from
-the label, or find "castle" in your router's list of connected devices.
-The castle's own page, with every setting, is always at
+castle's name, **http://castle-xxxxxx.local** — the label on the castle
+has it written out. If the name does not open (some phones and computers
+cannot look such names up), find "castle" in your router's list of
+connected devices and type the number address it shows, such as
+`http://192.168.1.50`; or let Castle Tools find it for you (see the end of
+this guide). The castle's own page, with every setting, is always at
 **http://castle-xxxxxx.local/owner**, even with no memory card in it.
-TODO(screenshot): the castle's page.
 
 ## Picking a show
 
@@ -53,14 +66,19 @@ TODO(screenshot): the castle's page.
 The castle's page has one button for each show: press one to start it, and
 **Stop this scene** to stop it. **▶ Start the evening show** plays the
 evening's shows one after another until **■ Stop the show**. **Blackout**
-turns the lights off, and the slider sets the volume. Under **Settings**,
-tick **Start the show when the castle is switched on** if you want the
-castle to begin by itself every time it is switched on.
+turns the lights off, and the slider sets the volume. Under **Songs on the
+card**, ▶ plays one of your songs. A new castle has none yet, and says so
+until you add some with Castle Tools.
 
-## Loudness, quiet hours and the clock
+<img src="guide/owner-show.png" width="320" alt="The castle's page: show buttons, volume, and three songs on the card">
+<img src="guide/owner-empty.png" width="320" alt="Songs on the card: No songs on the card yet — add some with the Castle app">
 
-Also under **Settings**, all off until you save them:
+## Settings: loudness, quiet hours and the clock
 
+Under **Settings**, all off until you save them:
+
+- **Start the show when the castle is switched on:** tick it if you want
+  the castle to begin by itself every time it is switched on.
 - **Loudest the castle may ever be:** a limit in percent. Nothing on the
   page, a show or a remote can go louder.
 - **Quiet hours:** tick it, pick the times, press **Save**. The castle makes
@@ -68,6 +86,8 @@ Also under **Settings**, all off until you save them:
 - **Time zone:** pick yours so quiet hours follow your clock. The castle
   sets its clock from the internet; without internet it has no clock, and
   quiet hours never start.
+
+<img src="guide/owner-settings.png" width="320" alt="Settings: start on power-up, loudest volume, quiet hours, time zone, castle key and Factory reset">
 
 ## The little light inside
 
@@ -99,16 +119,30 @@ There is a small light on the circuit board inside the castle.
    problem**. It saves one text file; send that file to the person who sold
    you the castle, and say what you see.
 
+<img src="guide/owner-trouble.png" width="320" alt="Red boxes: No SD card, and a last restart caused by the power dipping too low">
+<img src="guide/owner-report.png" width="320" alt="Report a problem, with Report saved. above it">
+
 ## Updating the castle
 
-*In the Castle Tools app: coming in the next release.*
+**With Castle Tools (the usual way).** Open **Your castle** and look at the
+**Castle firmware** card. It shows the firmware on the castle and the
+newest there is; when there is something newer, its button says **Update
+castle to** and the version. Press it and leave the castle switched on: it
+stops playing, takes the new firmware (the light inside turns orange) and
+restarts, and the card says when it is back. Your songs and settings stay.
+If the new firmware cannot start, the castle goes back to the one it had,
+by itself. Nothing is ever updated unless you press the button. A castle
+with a key needs the key in Castle Tools first (see **The castle key**).
 
-Until then, use the setup page with a USB-C cable, exactly as for Wi-Fi:
-open **https://jtn0123.github.io/halloween_esp/** in Chrome or Edge, click
-**Connect to the castle**, choose **Install**, and keep the cable plugged
-in until it says it is done (about two minutes). Your songs on the memory
-card are not touched. If it asks whether to erase the castle, erasing also
-forgets your Wi-Fi: you will set the Wi-Fi up again at the end.
+<img src="guide/radio-update.png" width="420" alt="Castle firmware card: firmware 5.77 is ready, the castle runs 5.76, and an Update castle to 5.77 button">
+
+**With a USB-C cable** (when the castle will not start, or Castle Tools
+cannot reach it): open **https://jtn0123.github.io/halloween_esp/** in
+Chrome or Edge, click **Connect to the castle**, choose **Install**, and
+keep the cable plugged in until it says it is done (about two minutes).
+Your songs on the memory card are not touched. If it asks whether to erase
+the castle, erasing also forgets your Wi-Fi: you will set the Wi-Fi up
+again at the end.
 
 ## Factory reset
 
@@ -120,10 +154,14 @@ songs on the memory card stay.
 ## The castle key
 
 A key stops anyone else on your Wi-Fi from changing the castle's settings,
-songs or software; playing shows stays open to everyone. Under
-**Settings**, type a key and press **Set**. On another phone or computer,
-type it and press **Use** once. **Clear** removes it. Castle Tools asks for
-it in its own Settings. Forgotten it? **Factory reset** removes it too.
+songs or software; playing shows stays open to everyone. On the castle's
+page, under **Settings**, type a key and press **Set**. On another phone or
+computer, type it and press **Use** once. **Clear** removes it. In Castle
+Tools, open **Run settings**, type the key in the **Castle key** card and
+press **Use this key**; the same card can set a new key or remove it.
+Forgotten it? **Factory reset** removes it too.
+
+<img src="guide/radio-key.png" width="420" alt="Castle key card in Castle Tools: Use this key, Set as the new key, Remove the key">
 
 ## If it will not start at all
 
@@ -132,29 +170,55 @@ computer cannot find the castle: try another cable (some only charge) and
 another USB port. Still nothing? On the castle's circuit board, **hold the
 button marked BOOT, tap the button marked RESET, then let go of BOOT**, and
 click **Connect to the castle** again.
-TODO(screenshot): where BOOT and RESET are on the board.
+
+<!-- Picture still wanted (needs the board): a photo of the circuit board
+     with BOOT and RESET marked. -->
 
 ## Castle Tools on your computer (adding songs)
 
 Download it from **https://github.com/jtn0123/halloween_esp/releases/latest**:
-the file ending `.dmg` for a Mac, or the one ending `-setup.exe` for Windows.
-The app is not signed by Apple or Microsoft, so the very first time it opens,
-your computer asks you to confirm.
+the file ending `.dmg` for a Mac with Apple silicon (M1 or newer), or the
+one ending `-setup.exe` for Windows. The app is not signed by Apple or
+Microsoft, so the very first time it opens, your computer asks you to
+confirm.
 
 - **Mac:** open the `.dmg` and drag **Castle Tools** into Applications, then
   open it. When the Mac says it cannot open it, go to **System Settings →
   Privacy & Security**, scroll down, and click **Open Anyway** next to the
   line about Castle Tools; confirm with your password.
-  TODO(screenshot): the Privacy & Security pane with Open Anyway.
 - **Windows:** run the `-setup.exe`. If a blue window says **Windows protected
   your PC**, click **More info**, then **Run anyway**.
-  TODO(screenshot): the SmartScreen window, before and after More info.
 
-You only do this once; the app updates itself after that.
+<!-- Pictures still wanted (need the real computers): the Mac's Privacy &
+     Security pane with Open Anyway; Windows SmartScreen before and after
+     More info. -->
 
-If Castle Tools says the castle is not answering (it is off, or your router
-gave it a new address), open **Your castle** in Castle Radio and press **Find
-my castle**, or type the castle's number address. The light desk follows
-whichever castle you pick. On the same page, **Copy diagnostics** gathers
-what the castle and the app know into one text for whoever is helping you;
-it leaves out your castle key and your folder names, and sends nothing.
+You confirm only once. After that Castle Tools looks for a newer version
+when it starts and once a day, and asks before it installs one: press
+**Install and restart**. Your songs stay.
+
+**Adding a song.** The first time, **Listen** has no songs yet: press
+**Import a song** (or open **Import music**), paste a link or choose a
+file, and press **Import & generate show**. Castle Tools prepares the
+song's light show in the background. Then, in your collection, press the
+song's **⇧ Sync** button and **Sync audio + light show**: the song and its
+lights go to the castle's memory card. A song marked **✓ Castle** is on the
+castle, and on its page.
+
+<img src="guide/radio-first-run.png" width="560" alt="Your collection, empty: Add your first song, with an Import a song button">
+<img src="guide/radio-import.png" width="380" alt="Import & generate: song links or audio files, and the Import & generate show button">
+
+**Finding the castle.** If Castle Tools says the castle is not answering
+(it is off, or your router gave it a new address), open **Your castle** and
+press **⌕ Find my castle**, then **Use this castle** beside it — or type
+the castle's name or number address. Everything in Castle Tools follows
+whichever castle you pick.
+
+<img src="guide/radio-find.png" width="420" alt="Find my castle: one castle found, castle-a1b2c3.local at 192.168.1.50, with Use this castle">
+
+**Getting help.** On the same page, **Help with your castle** opens the
+castle's own page, and **Copy diagnostics** gathers what the castle and the
+app know into one text for whoever is helping you; it leaves out your
+castle key and your folder names, and sends nothing.
+
+<img src="guide/radio-help.png" width="420" alt="Help with your castle: open the castle's own page, Copy diagnostics, Save as a file">

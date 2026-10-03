@@ -184,9 +184,18 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
 - [x] Owner's guide (1–2 pages, not `RUNBOOK.md`): power on, join Wi-Fi,
       open the page, pick a show, what the lights mean, what to do when it
       misbehaves, how to update, how to factory reset. docs/OWNER-GUIDE.md;
-      screenshots are marked TODO, and the castle key and in-app update say
-      "coming in the next release".
-- [ ] Labels: AP name/password, URL, recovery-page URL, QR code to the guide.
+      2026-10-03: in-app update, Castle Tools' key card, adding a song and
+      Find my castle written in, and 13 pictures in docs/guide/ made by
+      `make guide-shots` (emulator + Castle Radio on a pretend LAN, held to
+      the guide by tests/test_guide_shots.py). Still for a person with the
+      hardware: the phone's Wi-Fi list, the flasher's Wi-Fi step, the
+      BOOT/RESET photo, macOS Open Anyway and Windows SmartScreen — each
+      named in an HTML comment where it goes.
+- [x] Labels: AP name/password, URL, recovery-page URL, QR code to the guide.
+      `tools/unit_label.py --mac … | --host …`: a 4×6 in card and a
+      2.25×1.25 in sticker, self-contained HTML; names derived as the
+      firmware does (pinned by tests/test_unit_label.py), open hotspot said
+      as such, QR by `tools/qr_code.py` (no dependency). docs/SUPPORT.md.
 - [ ] SD card ships with NO songs (decided): scenes that need no track
       (light-only or synth audio) or an empty show. The castle page and the
       app must look sensible with zero songs — first-run "add your first
@@ -227,40 +236,7 @@ Everything here is needed for BOTH option A and option B.
 
 ### 4.1 Rust (`core/`) — compiles on Windows; done, in docs/PRODUCTION-DONE.md
 
-### 4.2 Python (`tools/`, `demo/castle-radio/`)
-- [x] `tools/manifest.py:30` `fcntl.flock` → cross-platform lock (`msvcrt.locking`
-      on Windows, or a lock-file with `os.open(O_CREAT|O_EXCL)`), shared helper.
-- [x] `tools/progress_process.py:16,31` and `demo/castle-radio/job_progress.py:107`
-      `start_new_session` + `os.killpg` → Windows `CREATE_NEW_PROCESS_GROUP` +
-      `taskkill /T /F` (or a job object via ctypes). One helper, both callers.
-- [x] Every hardcoded `.venv/bin/python` / `bin/` path → `sys.executable` or
-      a resolver that knows `Scripts\`.
-- [x] `os.replace` atomic-write paths: Windows fails if the target is open —
-      retry loop around the rename.
-- [x] Temp files: `NamedTemporaryFile(delete=False)` pattern where a child
-      process must reopen the file (Windows can't reopen an open temp file).
-- [x] Encoding: every `open()` passes `encoding="utf-8"` (Windows default is
-      cp1252). Add a ruff rule (`PLW1514`) so it stays that way.
-- [x] Ports: Windows firewall prompt on first bind — bind `127.0.0.1` only
-      (already the default) so the prompt does not appear. Castle Radio and
-      the studio, started as the app and the launchers start them, are
-      probed from this machine's LAN address by tests/test_loopback_rs.py;
-      `--lan` stays the studio's opt-in.
-- [x] `demo/castle-radio/desktop_tools.py` + `tools/register_castle_launcher.py`:
-      Mac-only branches stay, behind a platform check, until the Tauri app
-      replaces them. Registration says "not on this platform" elsewhere;
-      `/radio/tools` names each platform's installer and offers website
-      startup on macOS only (tests across darwin, win32 and linux).
-
-### 4.3 CI
-- [x] `windows-latest` job: `cargo build --release` + `cargo test` for `core/`.
-- [x] `windows-latest` job: `make test`-equivalent Python suite (no Make on
-      Windows — a `tools/run_checks.py` the Makefile also calls). Green and
-      blocking since 2026-10-01.
-- [x] `macos-14` job: same, so Apple Silicon is tested in CI, not just here.
-- [x] Tests that assume POSIX (`/bin/sh`, `/tmp`, chmod) get a Windows path
-      or a portable rewrite — never a skip (CLAUDE.md rule). The C++ card
-      harnesses build with MinGW's g++ there (`tests/cxx_compiler.py`).
+### 4.2 Python and 4.3 CI — done, in docs/PRODUCTION-DONE.md
 
 ## 5. Option B — the Tauri desktop app (P1, primary)
 
@@ -351,37 +327,7 @@ true, and it is the dev/support path forever.
 - [x] `--repair` and `--uninstall` flags; idempotent re-run.
 - [x] Works from a downloaded zip of the release, not only a git clone.
 
-## 7. Desktop-tool stability (P1)
-
-- [x] Import pipeline failure messages written for an owner, not a developer
-      (`studio_reason.rs` already explains errors — audit the wording).
-      2026-10-02: one sentence, what happened then what to do, from
-      `tools/import_reason.py` and its word-for-word Rust copy
-      (`core/src/studio_reason_words.rs`, docs/PARITY.md). The importer,
-      the splitter, the studio and Castle Radio all end that way, with the
-      tools' own output behind Details. Cancel still reads "Cancelled".
-- [x] Castle offline / wrong address: one clear state, one "find my castle"
-      action (mDNS browse + manual IP). Castle Radio's Find my castle
-      (`tools/castle_find.py`, stdlib) writes the per-user store; the
-      studio, and so the desk's chip, follow it.
-- [x] Sync interrupted mid-push: resumable or safely retried; card never left
-      with a half-written `show.man`. `sd_sync` and Castle Radio send the
-      show before what names it, record each verified file as it lands and
-      skip it on the retry; `tests/test_sd_sync_resume.py` and the radio's
-      `test_sync_resume.py` cut real pushes on the emulator (`drop_after`).
-- [x] Disk-full, unsupported file type, 2-hour file, non-ASCII filenames
-      (Windows + mac), file on a network drive.
-      2026-10-02: each has a test (`tests/test_import_edges.py`,
-      `demo/castle-radio/test_radio_failures.py`) and a sentence. Songs are
-      limited to 15 minutes because analysis peaks near 250 MB a minute.
-      desktop/README.md "What an import can take". A real Windows machine
-      and a real network share are still the §4.4 hands-on pass.
-- [x] Firmware/app version handshake: the app refuses (with a message) to push
-      a show format the castle's firmware cannot read. Done: §9's show/card
-      format item — one table, `tools/fw_formats.py`.
-- [x] Crash reporting: a local "copy diagnostics" button (no telemetry).
-      Castle Radio's help card: the castle's v5.75 report plus app version,
-      tools, jobs and log tail — paths cut, no key. The desk links `/owner`.
+## 7. Desktop-tool stability — done, in docs/PRODUCTION-DONE.md
 
 ### 4.4 Windows hands-on pass (an Opus agent on your Windows PC)
 - [x] Fresh Windows user account: install from a Release, first-run, import
