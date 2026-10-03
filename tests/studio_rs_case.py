@@ -18,6 +18,7 @@ subclass names an emulator (CLAUDE.md's sandboxing section).
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import shutil
@@ -102,6 +103,14 @@ def free_port() -> int:
         return int(s.getsockname()[1])
 
 
+#: What a request raises when no server is there, or when the one that was
+#: there exits mid-reply. URLError and the socket errors are OSErrors; a
+#: response torn off by the process dying is an http.client.HTTPException
+#: (IncompleteRead, BadStatusLine), which is not — and reading that as a
+#: test error was the flake behind the 2026-10-03 #64 scan-job failure.
+NOT_SERVING = (OSError, http.client.HTTPException)
+
+
 def fetch(
     port: int,
     path: str,
@@ -128,7 +137,7 @@ def wait_up(port: int, deadline_s: float = 45.0) -> None:
         try:
             fetch(port, "/api/status")
             return
-        except (urllib.error.URLError, OSError):
+        except NOT_SERVING:
             time.sleep(0.1)
     raise AssertionError(f"server on {port} never answered")
 

@@ -30,6 +30,7 @@ regenerated to make a failure go away, which is no golden at all.
 
 from __future__ import annotations
 
+import http.client
 import json
 import socket
 import subprocess
@@ -96,7 +97,9 @@ def wait_up(port: int, deadline_s: float = 45.0) -> None:
         try:
             fetch(port, "/api/status")
             return
-        except (urllib.error.URLError, OSError):
+        # A reply torn off by a server still starting or restarting is an
+        # http.client.HTTPException, not an OSError (studio_rs_case.NOT_SERVING).
+        except (OSError, http.client.HTTPException):
             time.sleep(0.1)
     raise AssertionError(f"server on {port} never answered")
 

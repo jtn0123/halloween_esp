@@ -15,17 +15,27 @@ suite's shared server with it.
 
 from __future__ import annotations
 
+import http.client
 import json
+import socket
 import sys
+import threading
 import time
 import unittest
-import urllib.error
 from pathlib import Path
 from typing import Any, ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from studio_rs_case import CARGO, IN_CI, ROOT, StudioCase, fetch, wait_up
+from studio_rs_case import (
+    CARGO,
+    IN_CI,
+    NOT_SERVING,
+    ROOT,
+    StudioCase,
+    fetch,
+    wait_up,
+)
 
 sys.path.insert(0, str(ROOT / "tools"))
 import castle_emu
@@ -246,11 +256,44 @@ class ServerOps(StudioCase):
             try:
                 fetch(self.port, "/api/status")
                 time.sleep(0.1)
-            except (urllib.error.URLError, OSError):
+            except NOT_SERVING:  # a reply torn off by the exit is "stopped" too
                 break
         else:
             self.fail(f"server on {self.port} never stopped")
         self.assertIsNotNone(self.procs[0].wait(timeout=10))
+
+
+class TornReply(unittest.TestCase):
+    """The 2026-10-03 #64 scan-job flake, without the race: a server that
+    exits mid-reply leaves headers that promise 16 bytes and then EOF, and
+    urllib raises http.client.IncompleteRead — no OSError, so a poll that
+    caught only those errored instead of reading the server as gone."""
+
+    TORN = b"HTTP/1.1 200 OK\r\nContent-Length: 16\r\n\r\n"
+    WHOLE = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"
+
+    def serve(self, *replies: bytes) -> int:
+        srv = socket.socket()
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(len(replies))
+        self.addCleanup(srv.close)
+
+        def answer() -> None:
+            for reply in replies:
+                conn, _ = srv.accept()
+                with conn:
+                    conn.recv(65536)
+                    conn.sendall(reply)
+
+        threading.Thread(target=answer, daemon=True).start()
+        return int(srv.getsockname()[1])
+
+    def test_a_torn_reply_is_not_serving_and_wait_up_waits_past_it(self) -> None:
+        port = self.serve(self.TORN, self.TORN, self.WHOLE)
+        with self.assertRaises(NOT_SERVING) as caught:
+            fetch(port, "/api/status")
+        self.assertIsInstance(caught.exception, http.client.IncompleteRead)
+        wait_up(port, deadline_s=10)  # the second torn reply is retried
 
 
 if __name__ == "__main__":
