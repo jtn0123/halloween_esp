@@ -41,6 +41,7 @@ STATIC_ROUTES = frozenset(
         "/remote-library.js",
         "/device-tools.js",
         "/device-words.js",
+        "/castle-key.js",
         "/desktop-tools.js",
         "/device-helper.js",
         "/companion.html",
@@ -141,6 +142,12 @@ class Handler(SimpleHTTPRequestHandler):
             action()
         except request_guard.Refused as exc:
             self.reply({"error": str(exc)}, exc.status)
+        except device_bridge.castle_keys.Refusal as exc:
+            self.reply({"error": str(exc)}, exc.status)
+        except device_bridge.KeyRequired as exc:
+            # The castle's own 401 (firmware v5.74), in the words every
+            # surface uses; the page points at the Settings key card.
+            self.reply({"error": str(exc), "key_required": True}, 401)
         except errors as exc:
             self.reply({"error": str(exc)}, status)
 
@@ -220,6 +227,9 @@ class Handler(SimpleHTTPRequestHandler):
         Same shape as get_device_events: a constant castle path."""
         self.guard(lambda: self.reply(device_bridge.call("/api/health")), 502)
 
+    def get_device_key(self, _parsed):
+        self.reply(device_bridge.key_state())
+
     def get_library(self, _parsed):
         with LOCK:
             self.reply(desktop_tools.catalog(catalog(), LIBRARY))
@@ -242,6 +252,7 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/device/library": get_device_library,
         "/radio/device/events": get_device_events,
         "/radio/device/health": get_device_health,
+        "/radio/device/key": get_device_key,
         "/radio/device": get_device,
         "/radio/library": get_library,
         "/radio/jobs": get_jobs,
@@ -322,6 +333,11 @@ class Handler(SimpleHTTPRequestHandler):
         body = self.json_body("Invalid control request size.")
         self.reply(device_bridge.command(body, imported_show(body)))
 
+    def post_device_key(self):
+        """use / set / clear the castle key (Settings). The key rides in the
+        JSON body and goes nowhere but the castle and the store."""
+        self.reply(device_bridge.key_act(self.json_body("Invalid key request")))
+
     def post_restore(self, route):
         key = song_key(route, RESTORE_PREFIX)
         if key is None:
@@ -338,6 +354,7 @@ class Handler(SimpleHTTPRequestHandler):
     POST_ROUTES: ClassVar[dict] = {
         "/radio/device/sync": post_sync,
         "/radio/device/command": post_command,
+        "/radio/device/key": post_device_key,
         "/radio/import": import_routes.post_import,
         "/radio/retry": import_routes.post_retry,
         "/radio/reprocess": import_routes.post_reprocess,

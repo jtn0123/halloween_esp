@@ -9,6 +9,7 @@
  */
 
 import { api } from "./api.js";
+import { KEY_REQUIRED } from "./castle_act.js";
 import { castleBusy } from "./castle_bus.js";
 import type { TrackInfo } from "./types.js";
 
@@ -49,23 +50,32 @@ export function cardState(t: TrackInfo,
   return size === t.bytes ? "current" : "stale";
 }
 
-/** KB free on the card, or null when the castle (or an older firmware
- *  without the field) can't say. */
-async function freeKb(): Promise<number | null> {
+/** What a send needs to know before a byte moves: KB free on the card
+ *  (null when the castle, or an older firmware without the field, can't
+ *  say), and whether a keyed castle would refuse it. A castle answers a
+ *  refused PUT only after the WHOLE body has arrived (the IDF server drains
+ *  it), so a send to a castle that will say 401 is asked first: POST
+ *  /api/key with nothing to change is 400 to the key the studio sends and
+ *  401 to a wrong or missing one, and changes nothing either way. */
+async function preflight(): Promise<{ free: number | null; refused: boolean }> {
   try {
     const s = await api.castleStatus();
-    return typeof s.sd_free_kb === "number" && s.sd_free_kb > 0
+    const free = typeof s.sd_free_kb === "number" && s.sd_free_kb > 0
       ? s.sd_free_kb : null;
+    const refused = s.locked === true
+      && (await api.castleAction("/api/key", "POST")).status === 401;
+    return { free, refused };
   } catch {
-    return null;
+    return { free: null, refused: false };
   }
 }
 
 /** PUT one blob to the card, reporting upload progress 0–100. XHR rather
  *  than fetch: a WiFi send to an ESP32 takes long enough that a frozen
  *  button reads as a dead one, and fetch cannot see upload progress.
- *  Resolves to the byte count the CASTLE says it wrote (-1 on failure) —
- *  the caller compares it to what was sent, so ✓ means verified. */
+ *  Resolves to the byte count the CASTLE says it wrote (-1 on failure,
+ *  -2 unconfirmed, -3 refused for want of the castle key) — the caller
+ *  compares it to what was sent, so ✓ means verified. */
 function putWithProgress(name: string, blob: Blob,
                          onProgress?: (pct: number) => void): Promise<number> {
   return castleBusy(new Promise((resolve) => {
@@ -78,6 +88,8 @@ function putWithProgress(name: string, blob: Blob,
       // 504: the castle took the bytes but never acked (castle_link) — the
       // file MAY be there; -2 lets the caller say so instead of "failed".
       if (xhr.status === 504) return resolve(-2);
+      // 401: a keyed castle (v5.74) the studio holds no right key for.
+      if (xhr.status === 401) return resolve(-3);
       if (xhr.status < 200 || xhr.status >= 300) return resolve(-1);
       try {
         resolve((JSON.parse(xhr.responseText) as { bytes?: number }).bytes ?? -1);
@@ -105,8 +117,10 @@ export async function sendToCastle(t: TrackInfo,
       return { ok: false, msg: `“${t.id}” is an empty file — nothing to send.` };
     }
     // Fail BEFORE the upload when the card can't hold it — a send that dies
-    // at 99% after a minute of WiFi is the worst version of "no".
-    const free = await freeKb();
+    // at 99% after a minute of WiFi is the worst version of "no" — or when
+    // the castle's key would refuse it at the end.
+    const { free, refused } = await preflight();
+    if (refused) return { ok: false, msg: `Send of “${t.id}” refused — ${KEY_REQUIRED}` };
     if (free !== null && blob.size / 1024 > free) {
       return { ok: false, msg: `No room on the card for “${t.id}” — it needs `
         + `${Math.round(blob.size / 1024)} KB and the card has ${free} KB free.` };
@@ -120,6 +134,7 @@ export async function sendToCastle(t: TrackInfo,
       return { ok: false, msg: `Send of “${t.id}” landed short — the castle wrote `
           + `${wrote} of ${blob.size} bytes. Send it again.` };
     }
+    if (wrote === -3) return { ok: false, msg: `Send of “${t.id}” refused — ${KEY_REQUIRED}` };
     return wrote === -2
       ? { ok: false, msg: `The castle took “${t.id}” but did not confirm in time — `
           + `it may well be on the card. The list below will say; do not `

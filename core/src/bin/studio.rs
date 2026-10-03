@@ -100,7 +100,7 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
                     Ok(code) => eprintln!(
                         "  \"{} {} HTTP/1.1\" {} -",
                         scrub(&req.method),
-                        scrub(&req.target),
+                        scrub(&castle_core::studio_key::loggable(&req.target)),
                         code
                     ),
                     Err(_) => break, // the client hung up mid-response

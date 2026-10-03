@@ -48,11 +48,17 @@ export function toast(msg: string, isError = false): void {
   setTimeout(() => el.remove(), isError ? 3700 : 1900);
 }
 
+/** What every surface says when a keyed castle (firmware v5.74) refuses a
+ *  change: Castle Radio and tools/castle_keys.py use the same words, and
+ *  "Settings" is the 🏰 panel's settings section (device_key.ts). */
+export const KEY_REQUIRED = "This castle has a key — enter it in Settings";
+
 /** Why a castle call failed, in the castle's own words: its error pages are
  *  short plain text ("unknown scene", "need ?v=0..100", "no SD card"), the
  *  studio's relay answers JSON {"error": ...}. "failed" alone cannot tell a
  *  typo from a dead castle (pass 1, J1-6). */
 export async function failReason(r: Response): Promise<string> {
+  if (r.status === 401) return KEY_REQUIRED;
   if (r.status === 502) return "castle not reachable";
   if (r.status === 504) return "castle did not answer in time";
   try {

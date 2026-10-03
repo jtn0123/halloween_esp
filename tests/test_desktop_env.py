@@ -131,6 +131,21 @@ class TestRecordAndEnv(unittest.TestCase):
         self.assertEqual(env["CASTLE_HOST"], "castle.local")
         self.assertEqual(env["CASTLE_RADIO_HOST"], "castle.local")
 
+    def test_the_key_store_is_the_users_and_a_set_key_pins_it(self) -> None:
+        env = de.launch_env(self.dirs, {}, {}, {})
+        self.assertEqual(env["CASTLE_DEVICES"], str(Path("/d/devices.toml")))
+        self.assertNotIn("CASTLE_KEY", env)
+        env = de.launch_env(self.dirs, {}, {"castle_key": ' pa"ss#1 '}, {})
+        self.assertEqual(env["CASTLE_KEY"], 'pa"ss#1')
+        for bad in ("two words", "", 7, "k" * 65):
+            with self.subTest(bad=bad):
+                env = de.launch_env(self.dirs, {}, {"castle_key": bad}, {})
+                self.assertNotIn("CASTLE_KEY", env)
+
+    def test_printing_the_env_withholds_the_key(self) -> None:
+        lines = de.shown({"CASTLE_KEY": "s3cret", "PATH": "/bin"})
+        self.assertEqual(lines, ["CASTLE_KEY=<set>", "PATH=/bin"])
+
 
 class TestDataDir(unittest.TestCase):
     def setUp(self) -> None:

@@ -161,7 +161,7 @@ The server binds loopback, but loopback is not a wall a browser respects: any
 page open in the same browser can post to `127.0.0.1:8871`. So every
 state-changing route is shaped so a browser has to ask permission first, and
 this server answers no `OPTIONS` at all. JSON routes (`/radio/device/command`,
-`/radio/device/sync`, `/radio/retry`, `/radio/cancel`, `/radio/rename`,
+`/radio/device/sync`, `/radio/device/key`, `/radio/retry`, `/radio/cancel`, `/radio/rename`,
 `/radio/reprocess`, link imports) require
 `Content-Type: application/json` — `; charset=…` is fine — and answer 415
 otherwise; `application/json` is not a content type a cross-origin form can
@@ -182,6 +182,12 @@ ignored `.radio-data/` — or wherever `CASTLE_RADIO_DATA` points (`radio_paths.
 the desktop app sets it to the per-user app-data dir). The device bridge is limited to the configured private
 castle address and explicit playback, lighting, test, sync, and cleanup actions.
 Set `CASTLE_RADIO_HOST` to point the bridge at another castle (default 10.27.27.81).
+A castle locked with a key (firmware v5.74) refuses uploads, deletes and the
+motion switch without it; every refusal says "This castle has a key — enter it
+in Settings", and the **Castle key** card in Run settings uses, sets or clears
+it. The key is remembered per castle in the store `tools/hosts.py` and the
+studio read (`tools/castle_keys.py`, docs/notes/06-buyer-build.md); the page
+the castle serves keeps it in that browser instead.
 The local server only binds 127.0.0.1. Upload limit: 100 MB. Jobs run one at a time.
 Closing the page does not cancel preparation; quitting the server interrupts it.
 In-memory job history/retry disappears on server restart; completed songs persist.

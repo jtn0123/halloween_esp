@@ -128,9 +128,21 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
 - [x] When set: required for `PUT /api/ota`, `/api/files/` writes, and
       settings changes. Read-only status and playback stay open (decide).
 - [ ] ESPHome `ota:` password + `api:` encryption key follow the same
-      setting, or stay off; decide when building it.
-- [ ] Set/clear it from the castle page and from the app; the app stores it
-      per castle. Factory reset (1.4) clears it.
+      setting, or stay off; decide when building it. *Partly: decided and
+      compiled in v5.74 — the buyer build's OTA (3232) password follows the
+      key (`castle_buyer.h`), `api:` encryption stays off — but neither has
+      run on a board, and the yard build's OTA password does not follow.*
+- [x] Set/clear it from the castle page and from the app; the app stores it
+      per castle. Castle page: the firmware fallback page and Castle Radio's
+      castle-served Run settings card (`localStorage.castleKey`). App: the
+      desk's 🔑 section (`/studio/castle-key`) and Castle Radio's card, into
+      the one store every client reads (devices.toml, per castle; settings
+      `castle_key` / `CASTLE_KEY` pins it) — docs/notes/06-buyer-build.md
+      §12.23, proven on `tools/castle_emu.py`, not yet on a board.
+- [x] Factory reset (1.4) clears it — on the castle (the NVS erase takes the
+      key). No app offers a factory reset, so there is no app copy to forget
+      at that moment; the one left remembered is harmless (an unkeyed castle
+      ignores the header) and the owner's clear/use replaces it.
 - [x] Emulator (`tools/castle_emu_wire.py`) + `tests/test_firmware_contract.py`
       learn the header in the same commit as `sd_web.h`.
 

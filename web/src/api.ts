@@ -83,6 +83,18 @@ export interface CompareResponse {
   ok: boolean; error?: string; reference?: string; codecs?: CodecRow[];
 }
 
+/** /studio/castle-key (docs/API.md): what the studio's key store knows
+ *  about the castle it relays to — never the key itself. `error` when the
+ *  studio or the castle refused (no castle, a wrong key, CASTLE_KEY pinned). */
+export interface CastleKeyState {
+  ok?: boolean;
+  error?: string;
+  host?: string;
+  remembered?: boolean;
+  pinned?: boolean;
+}
+export type CastleKeyAction = "use" | "set" | "clear";
+
 /** One background import, as /studio/import/async and /studio/job/<id> report it. */
 export interface JobResponse {
   id: string;
@@ -190,6 +202,13 @@ export const api = {
   compare: (req: object): Promise<CompareResponse> =>
     call("/studio/compare", post(req), ENCODE),
 
+  /** The castle key (firmware v5.74): the studio checks a key against the
+   *  castle before it remembers it, so the desk never holds one. */
+  castleKey: (): Promise<CastleKeyState> =>
+    call("/studio/castle-key", { cache: "no-store" }),
+  castleKeyAct: (action: CastleKeyAction, key = ""): Promise<CastleKeyState> =>
+    call("/studio/castle-key", post({ action, key })),
+
   serverStop: (): Promise<ActionResponse> =>
     call("/studio/server/stop", { method: "POST" }),
   serverRestart: (): Promise<ActionResponse> =>
@@ -216,12 +235,12 @@ export const api = {
     if (!r.ok) throw new Error(String(r.status));
     return r.json() as Promise<SdFile[]>;
   },
-  /** The castle's status line — here only for `sd_free_kb`; device.ts owns
-   *  the probe that decides simulator-vs-device. */
-  castleStatus: async (): Promise<{ sd_free_kb?: number }> => {
+  /** The castle's status line — here only for `sd_free_kb` and `locked`;
+   *  device.ts owns the probe that decides simulator-vs-device. */
+  castleStatus: async (): Promise<{ sd_free_kb?: number; locked?: boolean }> => {
     const r = await fetch("/api/status", { signal: AbortSignal.timeout(QUICK) });
     if (!r.ok) throw new Error(String(r.status));
-    return r.json() as Promise<{ sd_free_kb?: number }>;
+    return r.json() as Promise<{ sd_free_kb?: number; locked?: boolean }>;
   },
 
   /* The five calls below moved here from device.ts / device_panel.ts

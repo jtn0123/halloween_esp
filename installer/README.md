@@ -66,6 +66,9 @@ places it itself.
 - **Your castle's address**: give it once with
   `--castle-host <address>` (for example `castle-feather-s3.local` or
   `192.168.1.50`) when you run the installer. It is saved in your settings.
+- **Your castle's key** (if you locked it): enter it once under *Settings* in
+  Castle Radio or the light desk's 🏰 panel. It is remembered in
+  `devices.toml` beside your settings, for that castle only.
 - **Updates**: Castle Tools checks GitHub for a new release at most once a
   day and says so in its window. To update, run the installer again with
   `--update` (Windows: open a Command Prompt in the `installer` folder and

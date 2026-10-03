@@ -47,6 +47,7 @@ RADIO_NODE_TESTS = (
     "test_card_cues.test.mjs",
     "test_rich_preview.test.mjs",
     "test_lab_leds.test.mjs",
+    "test_castle_key.test.mjs",
 )
 
 
