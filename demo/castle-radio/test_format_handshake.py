@@ -8,12 +8,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import remote_library
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
 
 # isort: split
 import cue_file
 import device_bridge
 import fw_formats
+import remote_library
 from castle_emu import CastleEmu
 
 
