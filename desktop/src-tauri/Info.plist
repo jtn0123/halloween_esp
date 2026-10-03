@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Merged into the app's own Info.plist by the Tauri bundler, which reads
+     an Info.plist beside tauri.conf.json. macOS 15 asks the owner before an
+     app reaches the local network, and it attributes the Castle Radio and
+     studio children to this app: the description below is the sentence the
+     prompt shows. NSBonjourServices names what Find my castle browses
+     (tools/castle_find.py SERVICES; tests/test_castle_find.py holds the
+     two lists together). -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>Castle Tools finds your castle on your home network and sends it your songs and light shows.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_esphomelib._tcp</string>
+    <string>_http._tcp</string>
+  </array>
+</dict>
+</plist>

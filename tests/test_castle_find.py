@@ -12,6 +12,7 @@ from __future__ import annotations
 import http.server
 import json
 import os
+import plistlib
 import shutil
 import socket
 import struct
@@ -242,6 +243,22 @@ class TestFind(unittest.TestCase):
         self.assertIn(
             "no castle answered", "".join(c.args[0] for c in out.call_args_list)
         )
+
+
+class TestMacPermission(unittest.TestCase):
+    """macOS 15 refuses a Bonjour browse for a service type the app did not
+    declare, and asks the owner first with the app's own sentence. The
+    desktop app's Info.plist is that declaration, so a service castle_find
+    learns to browse must be named there too or the Mac app finds nothing."""
+
+    def test_the_app_declares_every_service_find_my_castle_browses(self) -> None:
+        with (ROOT / "desktop" / "src-tauri" / "Info.plist").open("rb") as f:
+            info = plistlib.load(f)
+        self.assertEqual(
+            sorted(info["NSBonjourServices"]),
+            sorted(s.removesuffix(".local") for s in cf.SERVICES),
+        )
+        self.assertIn("castle", info["NSLocalNetworkUsageDescription"])
 
 
 if __name__ == "__main__":
