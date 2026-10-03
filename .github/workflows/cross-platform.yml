@@ -106,7 +106,7 @@ jobs:
           dir="$HOME/lame-3.100-64"
           if [ "$HIT" != "true" ]; then
             for try in 1 2 3 4 5; do
-              curl -fsSL --max-time 60 -o lame.zip "$LAME_URL" && break
+              curl -fsSL --proto '=https' --proto-redir '=https' --max-time 60 -o lame.zip "$LAME_URL" && break
               echo "lame download failed (try $try of 5)"
               sleep $((try * 20))
             done
