@@ -192,7 +192,7 @@ class Soak:
                 error=g.error,
             )
         if n % max(1, self.args.slow_every) == 0 or notes:
-            notes += self._slow(wall, status)
+            notes += self._slow(wall)
         for text in notes:
             self.log.note(wall, text)
         rebooted = any(t.startswith("REBOOT") for t in notes)
@@ -200,7 +200,7 @@ class Soak:
             self._bootlog(wall)
         self._drive(wall, status, rebooted)
 
-    def _slow(self, wall: float, status: dict) -> list[str]:
+    def _slow(self, wall: float) -> list[str]:
         """Health and the event ring: the counters and the record of the
         ticks a 10-second poll cannot see."""
         try:
@@ -212,7 +212,7 @@ class Soak:
         notes: list[str] = []
         if health is not None:
             self.log.write("health", wall, reply=health)
-            notes += self.track.health(wall, health, status)
+            notes += self.track.health(wall, health)
         if isinstance(ring, list):
             for ev in self.track.events_in(ring):
                 self.log.write("event", wall, **ev)

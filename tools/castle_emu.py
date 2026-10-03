@@ -45,14 +45,17 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import castle_emu_loop as loop
 import castle_emu_wire as wire
 from castle_emu_events import Events
+from castle_emu_health import HEAP_MIN_KB
 from castle_emu_http import OTA_SLOT, Handler
 from castle_emu_loop import APPLY_DELAY_S, MAX_VOLUME_PCT
+from castle_emu_owner import Owner
 from castle_emu_scenes import card_scene_ids, show_scene_ids
 from castle_emu_status import status_json, status_text
 
@@ -148,6 +151,10 @@ class CastleEmu(ThreadingHTTPServer):
         ota_slot: int = OTA_SLOT,
         board: str = "feather-s3-4m2p",
         fw_variant: str = "yard",
+        pir_fitted: bool | None = None,
+        boots: int = 3,
+        crashes: int = 0,
+        reset_reason: int = 1,
     ) -> None:
         super().__init__(("127.0.0.1", port), Handler)
         self.state = _State()
@@ -188,7 +195,23 @@ class CastleEmu(ThreadingHTTPServer):
         #: route open) and whether a power-on boot starts the show. NVS on
         #: the board; this emulator's lifetime here, which is a boot.
         self.key = b""
-        self.boot_play = True
+        #: castle_web::g_boot_play_default: the yard's castle starts its show
+        #: at power-on, a buyer's does not until its owner says so.
+        self.boot_play_default = fw_variant != "buyer"
+        self.boot_play = self.boot_play_default
+        #: castle_owner.h (v5.75): the owner's zone, volume cap and quiet
+        #: hours, all off until /api/settings sets them.
+        self.owner = Owner()
+        #: The wall clock owner_tick reads (::time on the board). A test that
+        #: wants 3 am, or a clock SNTP never set, hands in its own.
+        self.wall: Callable[[], float] = time.time
+        #: g_pir_fitted (v5.75): no sensor on a buyer's castle, so /api/pir
+        #: answers 409 and the owner's page shows none.
+        self.pir_fitted = fw_variant != "buyer" if pir_fitted is None else pir_fitted
+        #: /api/health's season counters and this boot's reset reason, an
+        #: esp_reset_reason_t (castle_emu_health.REASONS). Given, as the C
+        #: harness's CASTLE_BOOTS / CASTLE_CRASHES / CASTLE_RESET give them.
+        self.boots, self.crashes, self.reset_reason = boots, crashes, reset_reason
         #: h_status's "missing": the boot manifest's comma-separated list of
         #: scene files the card lacks. Tests set it to rehearse the escaping.
         self.missing = ""
@@ -204,17 +227,17 @@ class CastleEmu(ThreadingHTTPServer):
             "sync_lead_ms": -1,
             "sync_drift_ms": -1,
         }
-        #: h_health's counters (castle_health.h), in the C template's order.
-        #: The defaults equal what the C harness's shim reports, so the two
-        #: replies stay byte-identical (tests/test_firmware_web_cxx.py); a
-        #: test sets them to rehearse a reboot, a crash or a dying card.
-        self.health: dict[str, object] = {
-            "boots": 3,
-            "crashes": 0,
-            "last_reset": "power-on",
-            "was_crash": False,
+        #: The rest of /api/health — what the board MEASURES, as `readings`
+        #: is for /api/status: torn card reads, the last one's place, the
+        #: heap's low-water mark. The defaults are what the C harness's shim
+        #: reports, so the two replies stay byte-identical; a test sets them
+        #: to rehearse a dying card (tools/soak.py's suite). The season
+        #: counters and the reset reason are NOT here — boots, crashes and
+        #: reset_reason above are the one place those live
+        #: (castle_emu_health.py renders both).
+        self.health: dict[str, int | str] = {
             "sd_read_errors": 0,
-            "heap_min_kb": 64,
+            "heap_min_kb": HEAP_MIN_KB,
             "sd_last_error": "",
         }
         self.wedge = wedge

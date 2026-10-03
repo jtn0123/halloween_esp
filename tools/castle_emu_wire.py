@@ -54,6 +54,7 @@ ROUTES: tuple[tuple[str, str, str], ...] = (
     ("/api/blackout", "POST", "h_blackout"),
     ("/api/blackout", "GET", "h_blackout"),
     ("/remote", "GET", "h_remote"),
+    ("/owner", "GET", "h_owner"),
     ("/api/volume", "POST", "h_volume"),
     ("/api/light", "POST", "h_light"),
     ("/api/pir", "POST", "h_pir"),
@@ -167,16 +168,37 @@ def _hexval(b: int) -> int:
     return int(c, 16) if c in "0123456789abcdefABCDEF" else -1
 
 
+#: FatFs's create_name() refuses these in a long file name (with '"' and
+#: DEL, which the JSON rule below refuses already).
+FAT_REFUSES = frozenset(b"*:<>?|")
+
+#: The same set as text, '"' and DEL included: what fat_path refuses to look
+#: up, since create_name() refuses it in any segment of any path.
+FAT_REFUSES_IN_PATH = frozenset('*:<>?|"\x7f')
+
+
 def safe_name(n: bytes) -> bool:
     """One path component, nothing hidden, nothing that breaks the JSON it
     is later printed into — sd_web.h safe_name on the raw bytes. Control
     bytes (NUL included — the C length counts it), DEL, '"' and '\\' are
     refused because h_list/h_status snprintf names into JSON unescaped —
     and since v5.46 so is every byte >= 0x80, which json_escape passes
-    through raw and which therefore made the body invalid UTF-8."""
+    through raw and which therefore made the body invalid UTF-8.
+
+    Since v5.75, only what FAT stores as sent: no trailing space or dot
+    (FatFs strips them, so "a." is "a" on the card and " " is no name at
+    all) and none of FAT_REFUSES. That is also what keeps this emulator's
+    card the card's on a Windows host, whose NTFS strips and refuses the
+    same bytes: PUT /api/files/%20 was a 200 on a Mac, a 500 "rename
+    failed" on Windows — and on the board."""
     if not n or len(n) >= NAME_MAX or n[0:1] == b"." or b"/" in n:
         return False
-    return not any(c < 0x20 or c >= 0x80 or c == 0x7F or c in (0x22, 0x5C) for c in n)
+    if n[-1:] in (b".", b" "):
+        return False
+    return not any(
+        c < 0x20 or c >= 0x80 or c == 0x7F or c in (0x22, 0x5C) or c in FAT_REFUSES
+        for c in n
+    )
 
 
 _ZONE_CHARS = set(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
@@ -248,13 +270,24 @@ def fat_path(n: bytes) -> str | None:
     a directory before failing on the empty segment after it. Python's
     pathlib deletes both silently, so "GET /sd/a/" served the file `a` here
     and answered FR_NO_PATH on the board (found by the C harness's storm,
-    tests/test_firmware_web_storm.py)."""
-    name = fs_name(n)
+    tests/test_firmware_web_storm.py).
+
+    And '\\' is a separator to FatFs as much as '/' is (IsSeparator in
+    ff.c), which safe_subpath — splitting on '/' alone — never sees. So
+    "a\\..\\..\\x" is two ".." segments to the board, never found, and
+    on a Windows host it was a walk out of the card directory. A name
+    holding a byte create_name() refuses is never found either, and one of
+    them is ':', which to Windows is a drive: "c:x" was not under the card
+    at all. Leading separators are skipped, as follow_path() skips them, so
+    "\\x" is the card's `x` and never an absolute host path (v5.75)."""
+    name = fs_name(n).replace("\\", "/")
     if not name or name.endswith("/"):
         return None
     if any(seg in (".", "..") for seg in name.split("/")):
         return None
-    return name
+    if any(c in FAT_REFUSES_IN_PATH for c in name):
+        return None
+    return name.lstrip("/")
 
 
 def query_truncated(raw_target: bytes) -> bool:

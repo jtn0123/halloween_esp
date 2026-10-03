@@ -128,6 +128,75 @@ class TestCardWrites(WebPairCase):
         self.assertEqual(json.loads(r.body), {"deleted": True})
         self.assertEqual(*self.pair.cards())
 
+    def test_a_name_fat_would_alter_or_refuse_is_refused_at_the_door(self) -> None:
+        """v5.75 (PR #65's Windows run, seed 1): FatFs strips a trailing space
+        or dot and refuses * : < > ? |, so `PUT /api/files/%20` reached the
+        rename and failed there — a 500 "rename failed" on the board and on
+        an NTFS host, a 200 and a file called " " on a Mac — and
+        `song.mp3.` replaced `song.mp3` on the card. Both castles now refuse
+        all of these with the 400 every other bad name gets, before a byte is
+        read, on every route; and `x.mp3.part.` no longer walks past the
+        reserved-suffix check to land on the sidecar it names."""
+        for card in (self.pair.card_c, self.pair.card_e):
+            (card / "song.mp3").write_bytes(b"the real song")
+            (card / "x.mp3.part").write_bytes(b"an upload in flight")
+        for enc in (b"%20", b"%20%20%20", b"+", b"song.mp3.", b"song.mp3%20",
+                    b"song.mp3.%20.", b"x.mp3.part.", b"a%3Ab.mp3", b"a*b",
+                    b"a%3Cb%3E", b"a%7Cb"):  # fmt: skip
+            for prefix in (b"/api/files/", b"/api/site/", b"/api/scenes/"):
+                with self.subTest(name=enc, prefix=prefix):
+                    r = self.same("PUT", prefix + enc, b"clobber")
+                    self.assertEqual((r.status, r.body), (400, b"bad filename"))
+                    r = self.same("DELETE", prefix + enc)
+                    self.assertEqual((r.status, r.body), (400, b"bad filename"))
+            r = self.same("POST", b"/api/play?f=" + enc)
+            self.assertEqual((r.status, r.body), (400, b"need ?f=<file>"), enc)
+        for card in (self.pair.card_c, self.pair.card_e):
+            self.assertEqual((card / "song.mp3").read_bytes(), b"the real song")
+            self.assertEqual((card / "x.mp3.part").read_bytes(), b"an upload in flight")
+        # Inner spaces and dots are FAT's to keep, and are kept.
+        r = self.same("PUT", b"/api/files/a%20b.c.mp3", b"kept")
+        self.assertEqual(json.loads(r.body)["path"], "/sd/a b.c.mp3")
+        self.assertEqual(*self.pair.cards())
+
+    def test_a_folder_is_not_a_file_to_replace_or_remove(self) -> None:
+        """v5.75: an upload moves whatever holds its name aside as `.old`,
+        and FatFs renames a directory as readily as a file — so
+        `PUT /api/files/scenes` answered 200 on the board with the whole
+        show parked as `scenes.old` and one file in its place (the emulator
+        did the same and then said 500). DELETE of a folder was 200 on the
+        board when it was empty and "no such file" when it was not, and 404
+        on both host castles either way. Both verbs are 409 "is a folder"
+        now, on every route, before a byte of the body is read — and the
+        show is exactly where it was."""
+        for card in (self.pair.card_c, self.pair.card_e):
+            (card / "scenes" / "show.man").write_bytes(b"the show")
+            (card / "scenes" / "spare").mkdir()
+            (card / "site" / "fonts").mkdir()
+        before = self.pair.cards()
+        for target in (
+            b"/api/files/scenes",  # the show itself
+            b"/api/files/site",  # the desk
+            b"/api/files/logs",  # empty: the board's f_unlink took these
+            b"/api/scenes/spare",
+            b"/api/site/fonts",
+        ):
+            with self.subTest(target=target):
+                r = self.same("PUT", target, b"not a show")
+                self.assertEqual((r.status, r.body), (409, b"is a folder"))
+                # Refused on the headers: a body that never comes is not
+                # waited for, so no byte of it was read.
+                r = self.same("PUT", target, b"", declared=4 * 1024 * 1024)
+                self.assertEqual((r.status, r.body), (409, b"is a folder"))
+                r = self.same("DELETE", target)
+                self.assertEqual((r.status, r.body), (409, b"is a folder"))
+        self.assertEqual(self.pair.cards(), before)
+        for card in (self.pair.card_c, self.pair.card_e):
+            self.assertEqual((card / "scenes" / "show.man").read_bytes(), b"the show")
+            self.assertTrue((card / "scenes" / "vigil.mp3").is_file())
+            self.assertTrue((card / "logs").is_dir())
+        self.assertEqual(*self.pair.cards())
+
     def test_delete_reaches_all_three_directories(self) -> None:
         for prefix, sub in (
             (b"/api/files/", ""),

@@ -32,6 +32,9 @@ substitutions:
   # sd_web_prefs.h). true in the yard, as it has been since the first boot;
   # false for a buyer. A C bool: it is pasted into a lambda.
   boot_play_default: "true"
+  # v5.75: whether this castle has a motion sensor. false in the buyer build
+  # (castle_buyer.yaml): /api/pir refuses and the owner's page shows none.
+  pir_fitted: "true"
   # ── SD pins ──────────────────────────────────────────────────────────
   # The carrier board's microSD socket sits on the Feather's SPI header with
   # its chip select on D5 — the same pin the eInk FeatherWing used for its
@@ -131,6 +134,10 @@ esphome:
     - sd_web_upload.h
     - sd_web_site.h
     - sd_web_remote.h
+    # v5.75: the owner's clock and limits, and the owner's page.
+    - castle_tz.h
+    - castle_owner.h
+    - sd_web_owner.h
   on_boot:
     # A LIST, not a mapping, and that matters more than it looks. ESPHome
     # merges a package's lists by appending them, but a mapping written over a
@@ -168,6 +175,7 @@ esphome:
             castle_web::g_board = "${board_id}";
             castle_web::g_fw_variant = "${fw_variant}";
             castle_web::g_boot_play_default = ${boot_play_default};
+            castle_web::g_pir_fitted = ${pir_fitted};
             castle_web::g_on_factory_reset = castle_sd::factory_reset_now;
             // Started whether or not the card mounted: the server is also how
             // you find out the card is missing without walking to the castle.
@@ -299,6 +307,15 @@ interval:
           // Mirror live state OUT to the web server (its handlers must never
           // read ESPHome objects), then execute anything it queued.
           castle_web::g_volume.store((int) (id(castle_media)->volume * 100.0f + 0.5f));
+          // v5.75 (castle_owner.h): the owner's clock, quiet hours and cap —
+          // the one place either pulls the speaker down, or gives back what
+          // quiet hours took.
+          if (const int pull = castle_web::owner_tick(::time(nullptr), castle_web::g_volume.load());
+              pull >= 0) {
+            auto call = id(castle_media)->make_call();
+            call.set_volume(pull / 100.0f);
+            call.perform();
+          }
           castle_web::g_show_on.store(id(show_playlist)->is_running());
           castle_web::g_pir_armed.store(id(pir_armed).state);
           castle_web::g_pir_cooldown.store((int) id(pir_cooldown).state);

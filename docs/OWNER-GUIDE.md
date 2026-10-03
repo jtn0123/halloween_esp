@@ -36,20 +36,38 @@ On a phone or computer on the same Wi-Fi, open a browser and go to the
 castle's name, **http://castle-xxxxxx.local** — the six characters are on
 the label. If the name does not open, use the castle's number address from
 the label, or find "castle" in your router's list of connected devices.
+The castle's own page, with every setting, is always at
+**http://castle-xxxxxx.local/owner**, even with no memory card in it.
 TODO(screenshot): the castle's page.
 
 ## Picking a show
 
-<!-- Seller: this section, Factory reset and the castle key describe the
-     castle's BUILT-IN page (firmware/sd_web_site.h kFallbackPage), which
-     it serves when the card has no /site/ page. A card prepared with
-     `sd_sync site` / `make publish` serves Castle Radio's page at / instead,
-     and that page has no Settings or Factory reset. Check the shipped card
-     before printing (docs/SUPPORT.md, "Before a castle leaves"). -->
+<!-- Seller: this section, the settings, Factory reset and the castle key
+     describe the castle's OWNER page (firmware/sd_web_owner.h, v5.75),
+     built into the castle: at /owner always, and at / when the card has
+     no /site/ page. A card prepared with `sd_sync site` / `make publish`
+     serves Castle Radio's page at / instead, which has no Settings; the
+     owner page is still at /owner. Check the shipped card before printing
+     (docs/SUPPORT.md, "Before a castle leaves"). -->
 
-The castle's page has one button for each show. Press one to start it and
-**■ Stop** to stop it. Under **Settings**, tick **start the show at power-on**
-if you want the castle to begin by itself every time it is switched on.
+The castle's page has one button for each show: press one to start it, and
+**Stop this scene** to stop it. **▶ Start the evening show** plays the
+evening's shows one after another until **■ Stop the show**. **Blackout**
+turns the lights off, and the slider sets the volume. Under **Settings**,
+tick **Start the show when the castle is switched on** if you want the
+castle to begin by itself every time it is switched on.
+
+## Loudness, quiet hours and the clock
+
+Also under **Settings**, all off until you save them:
+
+- **Loudest the castle may ever be:** a limit in percent. Nothing on the
+  page, a show or a remote can go louder.
+- **Quiet hours:** tick it, pick the times, press **Save**. The castle makes
+  no sound between them; the lights keep running.
+- **Time zone:** pick yours so quiet hours follow your clock. The castle
+  sets its clock from the internet; without internet it has no clock, and
+  quiet hours never start.
 
 ## The little light inside
 
@@ -72,10 +90,14 @@ There is a small light on the circuit board inside the castle.
 3. **New router, or a new Wi-Fi password.** Leave the castle on. After
    three minutes without its old network, the **Castle-** network comes back
    by itself: join it and set up the Wi-Fi again, as on the first day.
-4. **Red light.** Switch the castle off, take the memory card out, push it
-   back in until it clicks, and switch it on again.
-5. **Still stuck.** Contact the person who sold you the castle and say what
-   you see.
+4. **Red light, or the page says "No SD card".** Switch the castle off,
+   take the memory card out, push it back in until it clicks, and switch it
+   on again.
+5. **The page shows a red box about the last restart** (a crash, a power
+   dip). Once is nothing. If it keeps happening, do step 6.
+6. **Still stuck.** At the bottom of the castle's page, press **Report a
+   problem**. It saves one text file; send that file to the person who sold
+   you the castle, and say what you see.
 
 ## Updating the castle
 
@@ -97,7 +119,11 @@ songs on the memory card stay.
 
 ## The castle key
 
-*Coming in the next release.*
+A key stops anyone else on your Wi-Fi from changing the castle's settings,
+songs or software; playing shows stays open to everyone. Under
+**Settings**, type a key and press **Set**. On another phone or computer,
+type it and press **Use** once. **Clear** removes it. Castle Tools asks for
+it in its own Settings. Forgotten it? **Factory reset** removes it too.
 
 ## If it will not start at all
 

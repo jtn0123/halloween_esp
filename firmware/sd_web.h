@@ -69,7 +69,7 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // Numbers through snprintf, strings through json_escape into a
   // std::string: a fixed buffer truncated silently when the boot manifest
   // listed more than a few missing files, and every client's parse died.
-  std::array<char, 448> buf{};   // v5.74: 384 + locked/boot_play
+  std::array<char, 448> buf{};   // v5.74: 384 + locked/boot_play; v5.75 re-cut
   snprintf(buf.data(), buf.size(),
            R"({"version":"%s","board":"%s","fw_variant":"%s",)"
            R"("compiled":"%s %s","uptime_s":%lld,)"
@@ -119,6 +119,11 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // L6: `rssi` in dBm, 0 when not associated — a castle at the end of the
   // garden answering slowly and a castle with a failing supply read the
   // same from the desk without it.
+  // v5.75 (castle_owner.h): the owner's cap, whether quiet hours hold the
+  // speaker at 0 right now, the zone and the window as set ("" = never), and
+  // `local` — the castle's own wall clock, "" until SNTP has answered, so a
+  // page can show the time quiet hours are measured in. `pir.fitted` is
+  // false on a castle with no motion sensor (the buyer build).
   // ::time, not time: main.cpp has `using namespace esphome;` and ESPHome
   // has a `time` COMPONENT namespace, which makes the bare name ambiguous.
   const time_t wall = ::time(nullptr);
@@ -126,15 +131,24 @@ inline esp_err_t h_status(httpd_req_t *req) {
            R"(","show_on":%s,"playing":%s,"position_ms":%lld,)"
            R"("light_applied":%u,"light_evicted":%u,"cues":%u,)"
            R"("sync_lead_ms":%lld,"sync_drift_ms":%lld,"epoch":%lld,"rssi":%d,)"
-           R"("locked":%s,"boot_play":%s,)"
-           R"("pir":{"armed":%s,"cooldown_s":%d,"scene":")",
+           R"("locked":%s,"boot_play":%s,"vol_max":%d,"quiet_now":%s,"tz":")",
            st.show_on ? "true" : "false",
            st.playing ? "true" : "false", st.position_ms,
            st.light_applied, st.light_evicted, st.cues,
            st.sync_lead_ms, st.sync_drift_ms,
            (long long) (wall > 1577836800 ? wall : 0), st.rssi,
            locked() ? "true" : "false", g_boot_play.load() ? "true" : "false",
-           st.pir_armed ? "true" : "false", st.pir_cooldown);
+           g_vol_max.load(), g_quiet_now.load() ? "true" : "false");
+  out += buf.data();
+  out += json_escape(tz_copy());
+  out += R"(","quiet":")";
+  out += quiet_str();
+  out += R"(","local":")";
+  out += json_escape(local_copy());
+  snprintf(buf.data(), buf.size(),
+           R"(","pir":{"fitted":%s,"armed":%s,"cooldown_s":%d,"scene":")",
+           g_pir_fitted ? "true" : "false", st.pir_armed ? "true" : "false",
+           st.pir_cooldown);
   out += buf.data();
   out += json_escape(st.pir_scene);
   out += R"("}})";
@@ -305,6 +319,9 @@ inline esp_err_t h_light(httpd_req_t *req) {
 /// — any subset of the three. Encoded "a|c|scene"; empty field = leave alone.
 inline esp_err_t h_pir(httpd_req_t *req) {
   if (!key_ok(req)) return reply_locked(req);   // a setting (v5.74)
+  // v5.75: a castle built without a sensor cannot be armed — a floating pin
+  // would start scenes at the wind (sd_web_state.h g_pir_fitted).
+  if (!g_pir_fitted) return reply_err(req, "409 Conflict", "no motion sensor");
   if (esp_err_t sent; !query_ok(req, {"armed", "cooldown", "scene"}, sent)) return sent;
   std::string a = query_param(req, "armed");
   std::string c = query_param(req, "cooldown");
@@ -342,6 +359,7 @@ inline esp_err_t h_pir(httpd_req_t *req) {
 #include "sd_web_upload.h"
 #include "sd_web_site.h"
 #include "sd_web_remote.h"
+#include "sd_web_owner.h"
 
 namespace castle_web {
 
@@ -356,7 +374,7 @@ inline void start() {
   // player's loopback fetch take the rest.
   cfg.max_open_sockets = 4;
   cfg.uri_match_fn = httpd_uri_match_wildcard;
-  // MUST exceed the reg() count below (29 today). At 20, the LAST THREE
+  // MUST exceed the reg() count below (30 today). At 20, the LAST THREE
   // registrations failed silently on the device — the /sd/ wildcard (the very
   // URL the media pipeline streams scene audio through), /site/ and / — so the
   // cue desk 404'd and SD streaming was dead while every /api route worked.
@@ -407,6 +425,7 @@ inline void start() {
   reg("/api/blackout", HTTP_POST, h_blackout);
   reg("/api/blackout", HTTP_GET, h_blackout);   // bookmarkable
   reg("/remote", HTTP_GET, h_remote);
+  reg("/owner", HTTP_GET, h_owner);   // v5.75: always flash, card or no card
   reg("/api/volume", HTTP_POST, h_volume);
   reg("/api/light", HTTP_POST, h_light);
   reg("/api/pir", HTTP_POST, h_pir);

@@ -76,6 +76,10 @@ script:
             // Never past the measured ceiling (rig.h, from scenes.yaml).
             if (pct > castle::kMaxVolumePct) pct = castle::kMaxVolumePct;
             id(speaker_hush) = pct == 0;
+            // Nor the owner's cap, nor above 0 inside quiet hours (v5.75,
+            // castle_owner.h) — AFTER the hush, which is what was asked
+            // for: quiet hours ending must not leave the porch hushed.
+            pct = castle_web::volume_for(pct);
             auto call = id(castle_media)->make_call();
             call.set_volume(pct / 100.0f);
             call.perform();

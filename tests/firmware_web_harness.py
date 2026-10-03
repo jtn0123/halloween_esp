@@ -58,13 +58,15 @@ def firmware_version() -> str:
     raise AssertionError("no version: in firmware/castle.yaml")
 
 
-def build(out: Path) -> subprocess.CompletedProcess[str]:
+def build(out: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     """Compile web_check.cpp. The shim include path goes FIRST so
-    <esp_http_server.h> and friends resolve to the fakes."""
+    <esp_http_server.h> and friends resolve to the fakes. `extra` flags go
+    in front of the rest (a sanitizer build, tests/test_firmware_boot_cxx.py)."""
     assert COMPILER is not None
     return subprocess.run(
         [
             COMPILER,
+            *extra,
             "-std=c++17",
             "-O1",
             "-Wall",
@@ -180,9 +182,11 @@ class CastleC:
         self.proc.stdin.flush()
 
     def tick(
-        self, now_us: int, playing: bool = False, sounding: bool = False
+        self, now_us: int, playing: bool = False, sounding: bool = False, epoch: int = 0
     ) -> tuple[str, bytes]:
-        """One main-loop tick, at `now_us` on the castle's own clock (C6).
+        """One main-loop tick, at `now_us` on the castle's own clock (C6),
+        with the wall clock at `epoch` (v5.75: what owner_tick reads; 0 is
+        a castle SNTP has not set).
 
         `playing` is the media pipeline's state and `sounding` the
         speaker's — the two inputs castle_sd_common.yaml's 200 ms interval
@@ -195,7 +199,7 @@ class CastleC:
         """
         assert self.proc.stdin and self.proc.stdout
         self.proc.stdin.write(
-            f"TICK {now_us} {int(playing)} {int(sounding)}\n".encode()
+            f"TICK {now_us} {int(playing)} {int(sounding)} {epoch}\n".encode()
         )
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
@@ -325,7 +329,18 @@ class Pair:
             version=firmware_version(),
             sd_mounted=env.get("CASTLE_MOUNTED", "1") != "0",
             ota_slot=slot,
+            # v5.75: the sensor, and /api/health's counters and reset reason,
+            # spelled to both castles from the one env (castle_emu_health.py).
+            pir_fitted=env.get("CASTLE_PIR_FITTED", "1") != "0",
+            boots=int(env.get("CASTLE_BOOTS", "3")),
+            crashes=int(env.get("CASTLE_CRASHES", "0")),
+            reset_reason=int(env.get("CASTLE_RESET") or "1"),
         )
+        #: The wall clock both castles read (v5.75): `tick(epoch=)` sets it
+        #: for the C, and the emulator's own ticker reads it from here. 0 is
+        #: a clock SNTP has not set, which is what the C sees by default.
+        self.epoch = 0
+        self.emu.wall = lambda: self.epoch
         if "CASTLE_SD_FREE_KB" in env:
             self.emu.sd_free_kb = int(env["CASTLE_SD_FREE_KB"])
         # castle_sd::g_quiesce — the flag sd_web_ota.h raises while it burns
@@ -366,9 +381,14 @@ class Pair:
     TICK_US = 200_000
 
     def tick(
-        self, now_us: int, playing: bool = False, sounding: bool = False
+        self,
+        now_us: int,
+        playing: bool = False,
+        sounding: bool = False,
+        epoch: int | None = None,
     ) -> tuple[str, bytes]:
-        """Tick the C castle (C6).
+        """Tick the C castle (C6), and move both castles' wall clock to
+        `epoch` when one is given (v5.75).
 
         The emulator has no tick to call: its 200 ms thread IS its main
         loop, and it runs on wall-clock time. So a test that holds the two
@@ -376,7 +396,9 @@ class Pair:
         same span on the other — `now_us` is the C castle's clock, and the
         test's sleeps are the emulator's.
         """
-        return self.c.tick(now_us, playing, sounding)
+        if epoch is not None:
+            self.epoch = epoch
+        return self.c.tick(now_us, playing, sounding, self.epoch)
 
     def cards(self) -> tuple[set[str], set[str]]:
         """What each card holds, relative — a PUT or DELETE has to leave

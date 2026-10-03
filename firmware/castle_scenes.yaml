@@ -146,7 +146,10 @@ script:
           // The scene's own level, unless the desk has hushed the porch
           // (amp at 0) — what the generated volume lambda did.
           auto call = id(castle_media)->make_call();
-          call.set_volume(id(speaker_hush) ? 0.0f : castle_scenes::volume());
+          // v5.75: and never past the owner's cap, or above 0 in quiet hours.
+          call.set_volume(id(speaker_hush) ? 0.0f
+                                           : std::min(castle_scenes::volume(),
+                                                      castle_web::volume_ceiling_pct() / 100.0f));
           call.perform();
       - if:
           condition:

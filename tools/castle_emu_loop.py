@@ -7,8 +7,9 @@ reply is built from; this is what the device's main loop DOES with that
 state once every APPLY_DELAY_S:
 
   ticker              castle_sd_common.yaml's `interval: 200ms` — drain the
-                      mailbox (the RESTART latch first), mirror, then run
-                      the one action that was waiting
+                      mailbox (the RESTART latch first), the owner's tick,
+                      mirror, then run the one action that was waiting
+  owner_tick          quiet hours and the volume cap (v5.75)
   mirror              the mirroring half: the dropped-frame line and the
                       audio clock's start/end transitions (mirror_audio)
   end_finished_scene  castle_scenes.yaml's `wait_until finished` else branch
@@ -127,6 +128,7 @@ def tick(emu: CastleEmu) -> None:
             taken = ("RESTART", "")
         else:
             taken, emu._pending = emu._pending, None
+        owner_tick(emu)
     mirror(emu)
     if taken is not None:
         emu.events.record_action(*taken, emu.uptime_ms())
@@ -134,6 +136,16 @@ def tick(emu: CastleEmu) -> None:
             apply(emu, *taken)
         finally:
             emu.applied.append(taken)
+
+
+def owner_tick(emu: CastleEmu) -> None:
+    """castle_web::owner_tick, where castle_sd_common.yaml calls it: the
+    owner's clock, quiet hours and cap (castle_emu_owner.py) read the
+    speaker's level and may pull it — down to the cap, to 0 for quiet
+    hours, or back up when they end. On state the caller locks."""
+    pull = emu.owner.tick(int(emu.wall()), emu.state.volume)
+    if pull >= 0:
+        emu.state.volume = pull
 
 
 def mirror(emu: CastleEmu) -> None:
@@ -207,7 +219,9 @@ def apply(emu: CastleEmu, action: str, arg: str) -> None:
     st = emu.state
     with st.lock:
         if action == "VOLUME":
-            st.volume = min(int(arg), MAX_VOLUME_PCT)
+            # v5.75: and through the owner's cap / quiet hours, which also
+            # remember it as the level to give back (castle_web::volume_for).
+            st.volume = emu.owner.volume_for(min(int(arg), MAX_VOLUME_PCT))
         elif action == "PLAY":
             _apply_play(emu, st, arg)
         elif action == "SCENE":

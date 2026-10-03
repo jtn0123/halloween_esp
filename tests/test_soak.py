@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # helpers
 import castle_emu
 import soak
 import soak_run
+from castle_emu_health import CRASHES, reason_code
 from helpers import HostEnv, command_line, exits
 
 
@@ -67,14 +68,19 @@ class Castle:
         e.server_activate()
         e.start()
 
-    def reboot(self, reason: str, crash: bool = False) -> None:
-        """A fresh uptime and the health counters a restart leaves."""
-        h = self.emu.health
-        with self.emu.state.lock:
-            self.emu.state.boot = time.monotonic()
-        h["boots"] = int(str(h["boots"])) + 1
-        h["crashes"] = int(str(h["crashes"])) + int(crash)
-        h["last_reset"], h["was_crash"], h["sd_read_errors"] = reason, crash, 0
+    def reboot(self, reason: str) -> None:
+        """A fresh uptime and the health counters a restart leaves: one more
+        boot, one more crash when castle_health.h's was_crash() says the
+        reason is one, `reason` as this boot's, and the RAM-only torn-read
+        count back at 0. Through the castle's own knobs (v5.75), so
+        /api/health and the owner's page tell the same story."""
+        e = self.emu
+        with e.state.lock:
+            e.state.boot = time.monotonic()
+        e.boots += 1
+        e.crashes += int(reason in CRASHES)
+        e.reset_reason = reason_code(reason)
+        e.health["sd_read_errors"] = 0
 
     def close(self) -> None:
         self.emu.shutdown()
@@ -275,7 +281,7 @@ class TestBadNight(SoakCase):
             c.unplug()
 
         def back() -> None:
-            c.reboot("task-watchdog", crash=True)
+            c.reboot("task-watchdog")
             c.emu.health.update(
                 sd_read_errors=2, sd_last_error="x.mp3@4096", heap_min_kb=12
             )

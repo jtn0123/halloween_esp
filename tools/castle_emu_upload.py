@@ -25,6 +25,9 @@ from typing import IO
 import castle_emu_wire as wire
 from castle_emu_reply import NO_SD, Replies
 
+#: sd_web_upload.h's answer to a PUT or DELETE whose name is a directory.
+IS_A_FOLDER = "is a folder"
+
 
 class Uploads(Replies):
     """h_put and h_delete. Mixed into castle_emu_http.Handler, which is the
@@ -77,14 +80,20 @@ class Uploads(Replies):
         # nobody asked it to touch. firmware/sd_web_upload.h h_put, verbatim.
         if name.endswith((b".part", b".old")):
             return self._err(400, "reserved suffix")
+        dest = self.server.sd_dir / sub if sub else self.server.sd_dir
+        dest.mkdir(parents=True, exist_ok=True)
+        target = dest / wire.fs_name(name)
+        # v5.75: a folder is not a file to replace — write_body would park
+        # it as `<name>.old` (FatFs renames directories too) and put the
+        # upload in its place. Before the free-space check, as h_put's own
+        # stat comes before write_body's.
+        if target.is_dir():
+            return self._err(409, IS_A_FOLDER)
         # B3: write_body's free-space precondition (64 KB slack), when the
         # emulated card declares a size (sd_free_kb None = plenty of room).
         free_kb = self.server.sd_free_kb
         if free_kb is not None and n // 1024 + 64 > free_kb:
             return self._err(507, "not enough room on the card")
-        dest = self.server.sd_dir / sub if sub else self.server.sd_dir
-        dest.mkdir(parents=True, exist_ok=True)
-        target = dest / wire.fs_name(name)
         # write_body: into the sidecar, then unlink + rename (FAT's rename
         # will not overwrite). A short upload costs the sidecar only; the
         # previous copy of `target` is untouched.
@@ -158,8 +167,11 @@ class Uploads(Replies):
         if not wire.safe_name(name):
             return self._err(400, "bad filename")
         dest = self.server.sd_dir / sub if sub else self.server.sd_dir
+        target = dest / wire.fs_name(name)
+        if target.is_dir():  # v5.75: the board's f_unlink took an EMPTY one
+            return self._err(409, IS_A_FOLDER)
         try:
-            (dest / wire.fs_name(name)).unlink()
+            target.unlink()
         except OSError:
             return self._err(404, "no such file")
         self._json({"deleted": True})
