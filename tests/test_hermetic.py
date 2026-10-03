@@ -27,11 +27,13 @@ class TestHermeticEnv(unittest.TestCase):
             self.assertNotIn(k, os.environ, k)
 
     def test_a_polluted_shell_is_scrubbed_in_a_fresh_interpreter(self) -> None:
-        # Built from a base with every CASTLE_* removed, so the "[]" below
-        # measures helpers' scrub of the four sandbox knobs and nothing
-        # else: CASTLE_PY and CASTLE_E2E_PORT are not sandbox knobs, and a
+        # Built from a base with every CASTLE_* removed, so the line below
+        # measures helpers' scrub of the sandbox knobs and nothing else:
+        # CASTLE_PY and CASTLE_E2E_PORT are not sandbox knobs, and a
         # worktree or runner that exports one (as CLAUDE.md says to) must
-        # not redden this test.
+        # not redden this test. The one CASTLE_* left is the managed
+        # yt-dlp's home, which helpers pins set-but-empty ("none") so a
+        # developer's own downloaded copy never runs under a test.
         base = {k: v for k, v in os.environ.items() if not k.startswith("CASTLE_")}
         env = {
             **base,
@@ -39,6 +41,7 @@ class TestHermeticEnv(unittest.TestCase):
             "CASTLE_TRACKS": "/tmp/castle-hermetic-x",
             "CASTLE_SCENES": "/tmp/castle-hermetic-x/scenes.yaml",
             "CASTLE_BUILD": "/tmp/castle-hermetic-x/build",
+            "CASTLE_DOWNLOADER_DIR": "/tmp/castle-hermetic-x/downloader",
         }
         out = subprocess.run(
             [
@@ -46,7 +49,8 @@ class TestHermeticEnv(unittest.TestCase):
                 "-c",
                 (
                     "import os, helpers, track_lib, build_paths;"
-                    "print(sorted(k for k in os.environ if k.startswith('CASTLE_')));"
+                    "print(sorted((k, v) for k, v in os.environ.items()"
+                    " if k.startswith('CASTLE_')));"
                     "print(track_lib.TRACKS);"
                     "print(build_paths.scenes_file())"
                 ),
@@ -59,7 +63,7 @@ class TestHermeticEnv(unittest.TestCase):
         )
         self.assertEqual(out.returncode, 0, out.stderr)
         lines = out.stdout.strip().splitlines()
-        self.assertEqual(lines[0], "[]")
+        self.assertEqual(lines[0], "[('CASTLE_DOWNLOADER_DIR', '')]")
         self.assertEqual(lines[1], str(ROOT / "tracks"))
         self.assertEqual(lines[2], str(ROOT / "scenes" / "scenes.yaml"))
 

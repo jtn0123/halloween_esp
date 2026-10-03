@@ -39,6 +39,10 @@ SANDBOX_ENV = (
 )
 for _k in SANDBOX_ENV:
     os.environ.pop(_k, None)
+# The managed yt-dlp (exe_paths.downloader_dir) defaults to the checkout's
+# Castle Radio data; set-but-empty keeps a developer's own copy, fetched by
+# Update the downloader, out of every suite and every studio it starts.
+os.environ["CASTLE_DOWNLOADER_DIR"] = ""
 
 import shlex
 import subprocess

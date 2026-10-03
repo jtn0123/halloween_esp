@@ -49,6 +49,7 @@ RADIO_NODE_TESTS = (
     "test_lab_leds.test.mjs",
     "test_castle_key.test.mjs",
     "test_castle_update.test.mjs",
+    "test_downloader.test.mjs",
 )
 
 

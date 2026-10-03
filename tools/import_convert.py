@@ -9,17 +9,70 @@ manifest or prints the summary. import_track re-exports these names, so
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
+import stat
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 import exe_paths
+import import_reason as ir
 import portable_fs
 from track_lib import SRC_DIR, TRACKS
 
 ROOT = Path(__file__).resolve().parent.parent
 # Same override as import_track/manifest: the sandbox env names the library.
+
+#: The longest cut an import keeps. Not a format limit — the onset analysis
+#: holds the whole song in memory, and measured on 2026-10-02 it peaks at
+#: about 250 MB per minute of audio (castle-core analyze_track: 30 min →
+#: 7.5 GB, 2 h → 24.6 GB). Fifteen minutes is ~3.8 GB, which an 8 GB
+#: laptop survives; a 2-hour file is refused before anything is converted,
+#: with a sentence, instead of swapping the machine to a halt. A longer
+#: source still imports when a start and length pick the part to keep.
+#: desktop/README.md ("What an import can take") says it for the owner.
+MAX_IMPORT_SECONDS = 15 * 60
+
+
+def longest() -> str:
+    """The limit as a person says it: "15 minutes"."""
+    return f"{MAX_IMPORT_SECONDS // 60} minutes"
+
+
+def clock(seconds: float) -> str:
+    """1:02:03 / 4:05 — a length as a player shows it."""
+    s = round(seconds)
+    h, m = divmod(s // 60, 60)
+    return f"{h}:{m:02d}:{s % 60:02d}" if h else f"{m}:{s % 60:02d}"
+
+
+def too_long(name: str, seconds: float) -> str:
+    return (
+        f"{name} is {clock(seconds)} long, and Castle Tools imports up to "
+        f"{longest()} — set a start and length to import just part of it, "
+        "or choose a shorter song."
+    )
+
+
+def not_audio(name: str) -> str:
+    return (
+        f"{name} does not look like playable audio — choose an MP3, WAV, "
+        "FLAC, M4A or OGG file instead."
+    )
+
+
+#: ffmpeg's context tag, "[out#0/mp3 @ 0x7f…] ", which would otherwise read
+#: as a progress line and hide the message after it from the reason scan.
+_FFMPEG_TAG = re.compile(r"^\[[^\]]* @ 0x[0-9a-fA-F]+\][ \t]*", re.MULTILINE)
+
+
+def detail(lines: list[str]) -> None:
+    """A tool's own words, indented under the sentence (import_fetch.detail)."""
+    for ln in lines:
+        print("    " + ln.rstrip(), file=sys.stderr)
 
 
 def _filters(o: dict[str, Any]) -> list[str]:
@@ -90,23 +143,25 @@ def _encode(cmd: list[str], src: Path, out: Path, part: Path) -> None:
     except subprocess.TimeoutExpired:
         part.unlink(missing_ok=True)
         raise SystemExit(
-            f"ffmpeg stalled encoding {out.name} — gave up after 5 minutes"
+            f"Converting {src.name} took too long and was stopped — try a "
+            "shorter song, or a different copy of this one."
         ) from None
     if r.returncode != 0 or not part.exists() or part.stat().st_size == 0:
         part.unlink(missing_ok=True)
-        # ffmpeg's own last line names the actual problem; a traceback does not.
+        # ffmpeg's own words go in the log; the owner reads what they mean
+        # — a full disk or a file it may not read is not "not audio".
         tail = [ln for ln in (r.stderr or "").splitlines() if ln.strip()]
-        raise SystemExit(
-            f"{src.name} doesn't look like playable audio — "
-            f"ffmpeg could not convert it "
-            f"({tail[-1] if tail else f'exit {r.returncode}'})"
-        )
+        detail(tail[-6:] or [f"ffmpeg exited {r.returncode}"])
+        said = ir.recognised(_FFMPEG_TAG.sub("", r.stderr or ""))
+        raise SystemExit(said or not_audio(src.name))
     portable_fs.replace(part, out)
 
 
 def convert(src: Path, out: Path, o: dict[str, Any]) -> None:
     """One ffmpeg pass: trim, filter, downmix, resample, encode."""
-    cmd = [exe_paths.ffmpeg(), "-v", "quiet", "-y"]
+    # `error`, not `quiet`: when a conversion fails, ffmpeg's reason is the
+    # detail the log keeps — and the full disk the owner is told about.
+    cmd = [exe_paths.ffmpeg(), "-v", "error", "-y"]
     if o["start"]:
         cmd += ["-ss", str(o["start"])]
     cmd += ["-i", str(src)]
@@ -156,16 +211,31 @@ def probe_duration(src: Path) -> float | None:
         return None
 
 
+def _unlink(path: Path) -> None:
+    """Delete a file even when it is read-only: Windows refuses that, and a
+    copy kept by an older importer (copy2 carried the source's read-only
+    bit across from a CD or a share) would otherwise block every re-import."""
+    try:
+        path.unlink()
+    except PermissionError:
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+        path.unlink()
+
+
 def keep_source(src: Path, tid: str) -> Path:
     """Copy a throwaway local source to tracks/_src/<tid><ext>, so a later
-    --refresh has something to rebuild from. Already there: left alone."""
+    --refresh has something to rebuild from. Already there: left alone.
+
+    The bytes and nothing else: a song on a read-only share or a CD would
+    hand its read-only bit to the copy, which Windows will then not let the
+    library replace or delete."""
     kept_dir = TRACKS / SRC_DIR
     kept_dir.mkdir(parents=True, exist_ok=True)
     kept = kept_dir / f"{tid}{src.suffix.lower()}"
     if src.resolve() != kept.resolve():
         for old in kept_dir.glob(f"{tid}.*"):
-            old.unlink()
-        shutil.copy2(src, kept)
+            _unlink(old)
+        shutil.copyfile(src, kept)
     return kept.resolve()
 
 

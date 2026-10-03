@@ -93,8 +93,8 @@ Add these after `install.cmd` (Windows) or `sh install.sh` (macOS):
 | Option | What it does |
 |---|---|
 | *(none)* | Install, or finish an install that was interrupted. Safe to re-run. |
-| `--repair` | Reinstall the Python environment and re-download the castle-core programs, yt-dlp, and ffmpeg if the installer downloaded it. |
-| `--update` | Install the newest release from GitHub, if it is newer than yours. |
+| `--repair` | Reinstall the Python environment and re-download the castle-core programs, the song downloader (yt-dlp), and ffmpeg if the installer downloaded it. |
+| `--update` | Install the newest release from GitHub, if it is newer than yours, and bring the song downloader to yt-dlp's latest release. |
 | `--uninstall` | Remove the app. **Keeps** your songs, show and settings. |
 | `--uninstall --purge` | Remove the app **and** your songs, show and settings. |
 | `--castle-host <address>` | Remember your castle's address. |
@@ -102,6 +102,12 @@ Add these after `install.cmd` (Windows) or `sh install.sh` (macOS):
 | `--no-shortcut` | Windows only: do not add the Start-menu entry. |
 | `--from-source` | Build the castle-core programs with Rust (`cargo`) instead of downloading them. For developers. |
 | `--help` | Every option. |
+
+The song downloader (yt-dlp) is fetched from yt-dlp's own GitHub releases and
+checked against that release's published SHA2-256SUMS before it is used
+(`tools/ytdlp_update.py`). Between installs, **Update the downloader** in
+Castle Radio does the same; nothing updates it by itself. It is public domain
+(the Unlicense), and this project does not ship it.
 
 uv (the Python installer this uses) and its Python stay installed after an
 uninstall; other programs may share them. Remove them with

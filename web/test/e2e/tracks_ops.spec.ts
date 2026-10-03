@@ -184,12 +184,13 @@ test("Re-import on another row ignores the editor's trim", async ({ page }) => {
 test("a failed import shows the studio's one-line reason, never a traceback",
   async ({ page }) => {
     await page.route("**/studio/import", (route) => route.fulfill({
-      status: 500, json: { ok: false, reason: "ffmpeg failed (exit 1)",
+      status: 500, json: { ok: false,
+        reason: "ffmpeg stopped with an error — try again, and if it keeps failing, try a different copy of the song.",
         log: "Traceback (most recent call last):\nsubprocess.CalledProcessError: …" },
     }));
     await dropFile(page, "junk.wav");
     const note = page.locator("#trkNote");
-    await expect(note).toContainText("junk.wav failed — ffmpeg failed (exit 1)");
+    await expect(note).toContainText("junk.wav failed — ffmpeg stopped with an error");
     await expect(note).not.toContainText("Traceback");
     await expect(note).toHaveClass(/err/);
   });

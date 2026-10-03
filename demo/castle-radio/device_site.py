@@ -53,6 +53,7 @@ SCRIPTS = (
     "remote-library.js",
     "device-tools.js",
     "desktop-tools.js",
+    "downloader.js",
     "castle-key.js",
     "castle-update.js",
 )

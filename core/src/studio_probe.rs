@@ -11,34 +11,41 @@ use crate::jsonio::{self, Json, dumps};
 use crate::studio::App;
 use crate::studio_media::compares;
 use crate::studio_proc::{Timed, run_input};
+use crate::studio_reason::recognised;
+use crate::studio_reason_words::{DOWNLOAD_FAILED, DOWNLOADER_MISSING, NETWORK, NOT_A_LINK};
 
 /// studio_media.probe — what is at this link, without downloading it.
 pub fn probe(url: &str) -> (Json, bool) {
     use crate::studio_scenes::{Timed, run_split};
-    let fail = |msg: String| {
-        (
-            Json::Obj(vec![
-                ("ok".into(), Json::Bool(false)),
-                ("error".into(), Json::Str(msg)),
-            ]),
-            false,
-        )
+    // `detail` is yt-dlp's own last word, for whoever helps the owner;
+    // `error` is the sentence the owner reads.
+    let failed = |msg: &str, detail: &str| {
+        let mut body = vec![
+            ("ok".into(), Json::Bool(false)),
+            ("error".into(), Json::Str(msg.to_string())),
+        ];
+        if !detail.is_empty() {
+            body.push(("detail".into(), Json::Str(detail.to_string())));
+        }
+        (Json::Obj(body), false)
     };
+    let fail = |msg: String| failed(&msg, "");
     if let Some(why) = preflight(url, crate::portable::have_yt_dlp()) {
         return fail(why);
     }
     let mut cmd = std::process::Command::new(crate::portable::yt_dlp());
     cmd.args(["--dump-json", "--no-playlist", "--no-warnings", url]);
     let (ok, out, err) = match run_split(cmd, 60) {
-        Timed::Out => return fail("timed out after 60s asking about that link".into()),
+        Timed::Out => return fail(NETWORK.into()),
         Timed::Done(ok, out, err) => (ok, out, err),
     };
     if !ok {
-        return fail(tail_line(&err));
+        let last = err.lines().rev().find(|l| !l.trim().is_empty());
+        return failed(&said_of(&err), last.unwrap_or("").trim());
     }
     match describe(out.lines().next().unwrap_or("")) {
         Some(answer) => (answer, true),
-        None => fail("could not parse what came back".into()),
+        None => failed(DOWNLOAD_FAILED, "yt-dlp's answer was not JSON"),
     }
 }
 
@@ -47,21 +54,24 @@ pub fn probe(url: &str) -> (Json, bool) {
 /// assert on (docs/RETIREMENT.md's port of tests/test_media_failures.py).
 fn preflight(url: &str, have_ytdlp: bool) -> Option<String> {
     if !have_ytdlp {
-        return Some("yt-dlp is not installed (brew install yt-dlp)".into());
+        return Some(DOWNLOADER_MISSING.into());
     }
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Some("that does not look like a link".into());
+        return Some(NOT_A_LINK.into());
     }
     None
 }
 
-/// yt-dlp's own message is usually the useful one — its last line.
-fn tail_line(err: &str) -> String {
-    err.lines()
-        .rev()
-        .find(|l| !l.trim().is_empty())
-        .unwrap_or("could not read that link")
-        .to_string()
+/// What yt-dlp's complaint means for the owner, in the import's own words
+/// (studio_reason) — never its raw last line, and never an empty string,
+/// which reads as "it worked".
+fn said_of(err: &str) -> String {
+    let said = recognised(err);
+    if said.is_empty() {
+        DOWNLOAD_FAILED.to_string()
+    } else {
+        said
+    }
 }
 
 /// What the desk shows about a link, from yt-dlp's `--dump-json` line.
@@ -310,35 +320,27 @@ mod tests {
     fn the_refusals_that_come_before_anything_is_spawned() {
         assert_eq!(
             preflight("https://example.test/a", false).as_deref(),
-            Some("yt-dlp is not installed (brew install yt-dlp)")
+            Some(DOWNLOADER_MISSING)
         );
-        assert_eq!(
-            preflight("ftp://example.test/a", true).as_deref(),
-            Some("that does not look like a link")
-        );
-        assert_eq!(
-            preflight("not a url", true).as_deref(),
-            Some("that does not look like a link")
-        );
-        assert_eq!(
-            preflight("", true).as_deref(),
-            Some("that does not look like a link")
-        );
+        for not_a_link in ["ftp://example.test/a", "not a url", ""] {
+            assert_eq!(preflight(not_a_link, true).as_deref(), Some(NOT_A_LINK));
+        }
         assert_eq!(preflight("https://example.test/a", true), None);
         assert_eq!(preflight("http://example.test/a", true), None);
     }
 
-    /// A failed probe shows yt-dlp's own last word, not a wall of shell —
-    /// and never an empty string, which reads as "it worked".
+    /// A failed probe says what yt-dlp's complaint means, not a wall of
+    /// shell — and never an empty string, which reads as "it worked".
     #[test]
-    fn a_failed_probe_carries_yt_dlps_last_line() {
+    fn a_failed_probe_says_what_yt_dlps_complaint_means() {
+        assert_eq!(said_of("warn\nERROR: Private video"), PRIVATE);
         assert_eq!(
-            tail_line("warn\nERROR: Private video"),
-            "ERROR: Private video"
+            said_of("ERROR: [youtube] x: gone strange\n\n   \n"),
+            DOWNLOADER_OLD
         );
-        assert_eq!(tail_line("ERROR: gone\n\n   \n"), "ERROR: gone");
-        assert_eq!(tail_line(""), "could not read that link");
-        assert_eq!(tail_line("   \n\n"), "could not read that link");
+        assert_eq!(said_of(""), DOWNLOAD_FAILED);
+        assert_eq!(said_of("   \n\n"), DOWNLOAD_FAILED);
+        assert_eq!(said_of("some line it printed"), DOWNLOAD_FAILED);
     }
 
     /// The answer the panel draws, from yt-dlp's --dump-json line: a
@@ -369,6 +371,7 @@ mod tests {
     }
 
     use super::*;
+    use crate::studio_reason_words::{DOWNLOADER_OLD, PRIVATE};
 
     fn req(pairs: Vec<(&str, Json)>) -> Json {
         Json::Obj(pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect())

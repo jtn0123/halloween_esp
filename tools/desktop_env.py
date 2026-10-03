@@ -277,6 +277,9 @@ def launch_env(
     for key, var in (("ffmpeg", "CASTLE_FFMPEG"), ("ytdlp", "CASTLE_YTDLP")):
         if record.get(key):
             env[var] = str(record[key])
+    # The managed yt-dlp is the installer's own, in bin/: Update the
+    # downloader (Castle Radio) and --update replace the one copy.
+    env["CASTLE_DOWNLOADER_DIR"] = str(dirs.bin)
     # The tools that predate CASTLE_FFMPEG/CASTLE_YTDLP find them on PATH,
     # so their directories go first: ours, then wherever ffmpeg was found.
     front = [str(dirs.bin), str(Path(str(env["CASTLE_PY"])).parent)]

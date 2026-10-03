@@ -103,18 +103,37 @@ pub fn interpret(job: &mut Job, line: &str) {
 /// The prefix tools/progress_process.py puts on each line it relays.
 const RELAYED: &str = "CASTLE_PROGRESS ";
 
-/// A child line as the job should see it. With `CASTLE_PROGRESS_STREAM=1`
-/// the importer relays yt-dlp's (and the stem splitter's) output AS IT
-/// COMES, each line wrapped as `CASTLE_PROGRESS {"line": "…"}` so it can
-/// carry anything; without it, yt-dlp ran under capture and the studio's
-/// bar sat still until the download was over (grade report 2026-09-24 B2).
-/// The radio's job_progress.py reads the same wrapper. A line that is not
-/// one — or does not parse — passes through as it was.
-pub fn relayed(line: &str) -> String {
+/// The line a relayed line carries, or None for one that is not relayed
+/// (or does not parse). With `CASTLE_PROGRESS_STREAM=1` the importer relays
+/// yt-dlp's (and the stem splitter's) output AS IT COMES, each line wrapped
+/// as `CASTLE_PROGRESS {"line": "…"}` so it can carry anything; without it,
+/// yt-dlp ran under capture and the studio's bar sat still until the
+/// download was over (grade report 2026-09-24 B2). The radio's
+/// job_progress.py reads the same wrapper.
+fn carried(line: &str) -> Option<String> {
     line.strip_prefix(RELAYED)
         .and_then(|body| crate::jsonio_parse::parse(body).ok())
         .and_then(|j| j.get("line").and_then(Json::as_str).map(str::to_string))
-        .unwrap_or_else(|| line.to_string())
+}
+
+/// One line of a child's output, as the job takes it. The progress reader
+/// sees what a relayed line carries; the log keeps it indented, because it
+/// quotes yt-dlp or the splitter, and studio_reason never reads a verdict
+/// from a quoted line — a download's warning is not why a later step failed.
+pub fn take_line(job: &mut Job, raw: &str) {
+    let raw = raw.trim_end();
+    match carried(raw) {
+        Some(line) => {
+            job.log_line(&format!("    {line}"));
+            interpret(job, &line);
+        }
+        None => {
+            if !raw.is_empty() {
+                job.log_line(raw);
+            }
+            interpret(job, raw);
+        }
+    }
 }
 
 /// `[download]  41.8% of ~2.39MiB at 15.81MiB/s ETA 00:00`
@@ -202,22 +221,39 @@ mod tests {
     }
 
     /// The relayed form is unwrapped before it is read, so a streamed
-    /// download moves the bar exactly as a bare yt-dlp line does.
+    /// download moves the bar exactly as a bare yt-dlp line does — and is
+    /// logged indented, as the quote it is.
     #[test]
     fn a_relayed_line_is_read_as_the_line_it_carries() {
         let inner = "[download]  41.8% of 2.39MiB at 1.0MiB/s ETA 00:03";
         let wrapped = format!("CASTLE_PROGRESS {{\"line\": {inner:?}}}");
-        assert_eq!(relayed(&wrapped), inner);
+        assert_eq!(carried(&wrapped).as_deref(), Some(inner));
         let mut job = Job::new("x".to_string());
-        interpret(&mut job, &relayed(&wrapped));
+        take_line(&mut job, &wrapped);
         assert_eq!((job.phase.as_str(), job.percent), ("fetching", 41.8));
+        assert_eq!(job.log, [format!("    {inner}")]);
         for plain in [
             "imported chant",
             "CASTLE_PROGRESS {not json",
             "CASTLE_PROGRESS [1]",
         ] {
-            assert_eq!(relayed(plain), plain);
+            assert_eq!(carried(plain), None);
+            take_line(&mut job, &format!("{plain}  "));
+            assert_eq!(job.log.last().map(String::as_str), Some(plain));
         }
+        take_line(&mut job, "");
+        assert_eq!(job.log.len(), 4);
+    }
+
+    /// A download's warning, relayed while it ran, is not why a later step
+    /// failed: the importer's own last sentence is the verdict.
+    #[test]
+    fn a_relayed_warning_is_never_the_verdict() {
+        let mut job = Job::new("x".to_string());
+        let warn = "WARNING: [youtube] n challenge failed; please report this issue";
+        take_line(&mut job, &format!("CASTLE_PROGRESS {{\"line\": {warn:?}}}"));
+        take_line(&mut job, "imported chant");
+        assert_eq!(crate::studio_reason::explain(&job.log), "imported chant");
     }
 
     /// yt-dlp says `[download]` about things that are not downloads yet;

@@ -33,7 +33,10 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from studio_rs_case import CARGO, IN_CI, StudioCase
+from studio_rs_case import CARGO, IN_CI, ROOT, StudioCase
+
+sys.path.insert(0, str(ROOT / "tools"))
+import import_reason
 
 #: What `seed_library` actually wrote. `make_click_track` places a kick every
 #: 60/bpm seconds while `t < seconds - 0.3`, so these are the times a correct
@@ -337,8 +340,7 @@ class CompareAndProbe(StudioCase):
         """
         self.assertEqual(status, 400)
         self.assertIs(d["ok"], False)
-        self.assertEqual(d["error"], "that does not look like a link")
-        self.assertIn("link", d["error"])
+        self.assertEqual(d["error"], import_reason.NOT_A_LINK)
         self.assertLess(
             elapsed, 5.0, "the refusal took long enough to have shelled out"
         )

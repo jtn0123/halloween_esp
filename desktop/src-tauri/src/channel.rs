@@ -167,11 +167,9 @@ mod tests {
         assert!(endpoint(true, answer.as_ref())
             .0
             .ends_with("/v2.0.0-beta.3/latest.json"));
-        assert_eq!(
-            crate::probe::get_json(port, ROUTE, WAIT),
-            None,
-            "nobody there now"
-        );
+        // Nobody answering is None. Port 0, not the port just freed: another
+        // test may be handed that one and answer (probe.rs, the same flake).
+        assert_eq!(crate::probe::get_json(0, ROUTE, WAIT), None);
     }
 
     #[test]

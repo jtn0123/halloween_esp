@@ -259,9 +259,13 @@ class TestKeepSourceAndCutGuards(unittest.TestCase):
         self.p_tracks.start()
         self.p_tracks2 = mock.patch.object(ic, "TRACKS", self.tmp / "lib")
         self.p_tracks2.start()
+        # ...and the manifest: _import asks it whether the id is new.
+        self.p_mf = mock.patch.object(mf, "PATH", self.tmp / "lib" / "tracks.json")
+        self.p_mf.start()
         (self.tmp / "lib").mkdir()
 
     def tearDown(self) -> None:
+        self.p_mf.stop()
         self.p_tracks2.stop()
         self.p_tracks.stop()
         shutil.rmtree(self.tmp, ignore_errors=True)
