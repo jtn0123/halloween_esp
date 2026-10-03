@@ -131,7 +131,14 @@ mod tests {
         });
         assert_eq!(identify(port, Identity::Studio), Probe::Ours);
         server.join().unwrap();
-        // The listener is gone with the thread: nothing answers now.
-        assert_eq!(identify(port, Identity::Studio), Probe::Nothing);
+    }
+
+    #[test]
+    fn nothing_listening_is_nothing() {
+        // Port 0 can never be connected to, on any OS. The port the test
+        // above just freed was the first try here, and it flaked: the next
+        // test to bind port 0 is free to be handed that same port, and then
+        // someone answers.
+        assert_eq!(identify(0, Identity::Studio), Probe::Nothing);
     }
 }
