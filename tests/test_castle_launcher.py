@@ -111,9 +111,10 @@ class MainTests(unittest.TestCase):
         return code, out.getvalue(), err.getvalue()
 
     def test_ready_names_the_app_and_the_next_click(self) -> None:
-        code, out, err = self.run_main(Path("/Applications/Castle Tools.app"))
+        app = Path("/Applications/Castle Tools.app")
+        code, out, err = self.run_main(app)
         self.assertEqual((code, err), (0, ""))
-        self.assertIn("Website startup is ready: /Applications/Castle Tools.app", out)
+        self.assertIn(f"Website startup is ready: {app}\n", out)
         self.assertIn("Connect Mac tools", out)
 
     def test_apples_tools_missing_gets_the_xcode_hint(self) -> None:
