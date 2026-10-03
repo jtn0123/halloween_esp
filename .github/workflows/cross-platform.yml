@@ -80,9 +80,19 @@ jobs:
       - name: ffmpeg + lame (macOS)
         if: runner.os == 'macOS'
         run: brew install ffmpeg lame
+      # Chocolatey's lame package fetches its zip from rarewares.org at
+      # install time, and that host drops a connection now and then — a red
+      # job that only a rerun fixed. Three tries, with a pause between them;
+      # a package already in place is a no-op on the next pass.
       - name: ffmpeg + lame (Windows)
         if: runner.os == 'Windows'
-        run: choco install ffmpeg lame --yes --no-progress
+        run: |
+          for try in 1 2 3; do
+            choco install ffmpeg lame --yes --no-progress && exit 0
+            echo "choco install failed (try $try of 3)"
+            sleep $((try * 20))
+          done
+          exit 1
       # Same pin as ci.yml's python job, for the same reason (the parity
       # suites drift a last ulp under numpy's AVX-512 kernels) — x86-64 only;
       # on arm64 these names are not numpy targets and would only warn.
