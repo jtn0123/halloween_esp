@@ -67,5 +67,15 @@ if [ "$dry_run" = 1 ]; then
 else
 	"$uv" python install 3.13
 fi
-python=$("$uv" python find --managed-python 3.13 2> /dev/null || "$uv" python find 3.13)
+python=$("$uv" python find --managed-python 3.13 2> /dev/null || "$uv" python find 3.13 2> /dev/null) || python=""
+if [ -z "$python" ]; then
+	# uv is here but its Python is not yet: a dry run stops where the real
+	# one would install it, as it does where uv itself is missing.
+	if [ "$dry_run" = 1 ]; then
+		echo "[dry-run] would continue under that Python 3.13 with $installer"
+		exit 0
+	fi
+	echo "install.sh: uv could not provide Python 3.13." >&2
+	exit 1
+fi
 exec "$python" "$installer" --uv "$uv" --source "$src" "$@"

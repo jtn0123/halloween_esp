@@ -98,6 +98,11 @@ class CastleToolsStatusTests(unittest.TestCase):
             mock.patch.object(tools_status, "_command", side_effect=good_command),
             mock.patch.object(
                 tools_status,
+                "_analyzer",
+                return_value=good_command("analyze_track"),
+            ),
+            mock.patch.object(
+                tools_status,
                 "_model",
                 return_value={
                     "name": "htdemucs model",
@@ -115,6 +120,20 @@ class CastleToolsStatusTests(unittest.TestCase):
         capabilities = cast(dict[str, Any], result["capabilities"])
         self.assertTrue(capabilities["importing"])
         self.assertFalse(capabilities["separation"])
+
+    def test_cargo_is_not_needed_once_castle_core_is_built(self) -> None:
+        """A release install has prebuilt binaries and no cargo: its card
+        must not go amber over the compiler (tests/install_smoke.py)."""
+        missing = {"name": "cargo", "ok": False, "detail": "missing", "required": False}
+        built = {"name": "analyze_track", "ok": True, "detail": "x", "required": True}
+        unbuilt = {**built, "ok": False, "detail": "not built"}
+        with mock.patch.object(tools_status, "_command", return_value=missing):
+            fine = tools_status._cargo(cast(tools_status.Check, built))
+            needed = tools_status._cargo(cast(tools_status.Check, unbuilt))
+        self.assertTrue(fine["ok"])
+        self.assertIn("not needed", fine["detail"])
+        self.assertFalse(fine["required"])
+        self.assertFalse(needed["ok"])
 
     def test_model_probe_handles_missing_yaml_and_malformed_cache(self) -> None:
         real_import = builtins.__import__

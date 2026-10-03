@@ -72,6 +72,18 @@ def _analyzer() -> Check:
     }
 
 
+def _cargo(analyzer: Check) -> Check:
+    """cargo only ever BUILDS castle-core (tools/core_bins.py). Where
+    analyze_track is already in place — every release install, whose
+    binaries came prebuilt — a missing cargo is nothing to fix, and saying
+    "needs attention" sent every buyer's readiness card amber over a tool
+    they will never need (tests/install_smoke.py found it)."""
+    check = _command("cargo", False)
+    if not check["ok"] and analyzer["ok"]:
+        return {**check, "ok": True, "detail": "not needed: castle-core is built"}
+    return check
+
+
 def _hf_cache() -> Path:
     if explicit := os.environ.get("HF_HUB_CACHE"):
         return Path(explicit).expanduser()
@@ -124,6 +136,7 @@ def _model() -> Check:
 @functools.lru_cache(maxsize=1)
 def status() -> dict[str, object]:
     """Return JSON-safe readiness and feature capability details."""
+    analyzer = _analyzer()
     checks = [
         _python(),
         _package("numpy", "numpy"),
@@ -131,8 +144,8 @@ def status() -> dict[str, object]:
         _package("PyYAML", "yaml"),
         _command("ffmpeg", command=exe_paths.ffmpeg()),
         _command("yt-dlp", False, exe_paths.ytdlp()),
-        _command("cargo", False),
-        _analyzer(),
+        _cargo(analyzer),
+        analyzer,
         _package("demucs", "demucs", False),
         _package("torch", "torch", False),
         _model(),
