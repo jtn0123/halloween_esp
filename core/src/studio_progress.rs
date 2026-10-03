@@ -24,7 +24,22 @@ fn round1(v: f64) -> f64 {
     format!("{v:.1}").parse().unwrap_or(v)
 }
 
+/// The lines a job keeps. The desk is shown the last 40 and a failure's
+/// reason is read from the end, while a streamed download says one line per
+/// progress tick — so an unbounded log grew with every import for as long
+/// as the studio ran (grade report 2026-09-24 B5).
+pub const LOG_KEEP: usize = 500;
+
 impl Job {
+    /// One line of the child's output, the oldest dropped past LOG_KEEP.
+    pub fn log_line(&mut self, line: &str) {
+        self.log.push(line.to_string());
+        if self.log.len() > LOG_KEEP {
+            let extra = self.log.len() - LOG_KEEP;
+            self.log.drain(..extra);
+        }
+    }
+
     /// A job exists before its child does, and it says so: "queued" is what
     /// the page shows while the work is still in line behind the studio's
     /// encode lock (studio_jobs.py's dataclass defaults).
@@ -171,6 +186,19 @@ mod tests {
         assert_eq!(size, "12.34MiB");
         assert_eq!(rate.as_deref(), Some("Unknown"));
         assert_eq!(eta, None);
+    }
+
+    /// The tail is what anyone reads, so the tail is what is kept.
+    #[test]
+    fn the_log_keeps_its_newest_lines_and_no_more() {
+        let mut job = Job::new("x".to_string());
+        for n in 0..LOG_KEEP + 250 {
+            job.log_line(&format!("line {n}"));
+        }
+        assert_eq!(job.log.len(), LOG_KEEP);
+        assert_eq!(job.log.first().map(String::as_str), Some("line 250"));
+        let last = format!("line {}", LOG_KEEP + 249);
+        assert_eq!(job.log.last(), Some(&last));
     }
 
     /// The relayed form is unwrapped before it is read, so a streamed

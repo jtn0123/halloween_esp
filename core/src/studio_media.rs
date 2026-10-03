@@ -222,6 +222,35 @@ pub(crate) fn compares() -> &'static Compares {
     C.get_or_init(|| Mutex::new(Vec::new()))
 }
 
+/// The `castle-cmp-*` directories a studio that has stopped left behind:
+/// the registry above keeps a running studio's newest three and removes
+/// the rest, but nothing removed those three on exit, so each run leaked
+/// them. The studio sweeps them at startup once they are `older_than` —
+/// a day — so another studio's live comparison is never taken
+/// (grade report 2026-09-24 B5). Answers how many went.
+pub fn sweep_compares(temp: &Path, older_than: std::time::Duration) -> usize {
+    let Ok(entries) = std::fs::read_dir(temp) else {
+        return 0;
+    };
+    let now = std::time::SystemTime::now();
+    let mut swept = 0;
+    for e in entries.flatten() {
+        if !e.file_name().to_string_lossy().starts_with("castle-cmp-") {
+            continue;
+        }
+        let stale = e
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| now.duration_since(t).ok())
+            .is_some_and(|age| age >= older_than);
+        if stale && std::fs::remove_dir_all(e.path()).is_ok() {
+            swept += 1;
+        }
+    }
+    swept
+}
+
 /// studio_media.compare_file — the encode behind one comparison row. The
 /// map is filled by POST /studio/compare (the encode pass); until then
 /// every token is unknown, which is also what a restarted Python answers.
@@ -237,6 +266,25 @@ mod tests {
     use super::*;
     use crate::studio_wave::{decoded_of, seed};
     use crate::testkit;
+
+    /// Only `castle-cmp-*`, and only past the age: a fresh one is some
+    /// running studio's, and nothing else in the temp dir is ours.
+    #[test]
+    fn the_sweep_takes_old_comparisons_and_nothing_else() {
+        let temp = testkit::tmpdir("sweep");
+        for name in ["castle-cmp-a-1", "castle-cmp-b-2", "other-dir"] {
+            std::fs::create_dir_all(temp.join(name).join("x")).unwrap();
+        }
+        let day = std::time::Duration::from_secs(86_400);
+        assert_eq!(sweep_compares(&temp, day), 0, "a fresh comparison went");
+        assert_eq!(sweep_compares(&temp, std::time::Duration::ZERO), 2);
+        assert!(!temp.join("castle-cmp-a-1").exists());
+        assert!(
+            temp.join("other-dir").exists(),
+            "a stranger's directory went"
+        );
+        assert_eq!(sweep_compares(&temp.join("absent"), day), 0);
+    }
 
     // Far enough apart that this fixture's onsets really do differ: at 0.4
     // the hats' shoulders pass the threshold, at 2.5 only the kicks do.

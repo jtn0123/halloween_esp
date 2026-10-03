@@ -181,7 +181,7 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
         let line = relayed(raw.trim_end());
         set(job, |j| {
             if !line.is_empty() {
-                j.log.push(line.clone());
+                j.log_line(&line);
             }
             interpret(j, &line);
         });
