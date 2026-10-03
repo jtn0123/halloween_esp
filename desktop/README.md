@@ -52,13 +52,29 @@ Both children get the same environment (`runtime::child_env`):
 `io.github.jtn0123.castletools`: `~/Library/Application Support/…` on macOS,
 `%APPDATA%\…` on Windows. On first run the runtime's shipped
 `scenes/scenes.yaml` is copied there (`runtime::seed_scenes`: copy beside, then
-rename; never overwrites — after that it is the owner's file). The NSIS
-uninstaller leaves this directory unless its "delete application data" box is
-ticked, so songs survive an uninstall by default.
+rename; never overwrites — after that it is the owner's file).
 
 Logs: one file, `castle-tools.log`, in `app_log_dir()` (`~/Library/Logs/…`,
 `%LOCALAPPDATA%\…\logs`), holding the app's own lines and both servers'
 stdout/stderr. Rotated to `.log.1` past 5 MB at launch.
+
+### Removing the app keeps the songs
+
+- **Windows** (Settings → Apps → Castle Tools → Uninstall): Tauri's stock
+  NSIS uninstaller removes the files it installed and leaves
+  `%APPDATA%\io.github.jtn0123.castletools` and
+  `%LOCALAPPDATA%\io.github.jtn0123.castletools` alone unless its **Delete
+  the application data** box is ticked — unticked by default, never ticked
+  by an update (`/UPDATE`) or a silent uninstall, which shows no page.
+  `tests/test_desktop_uninstall.py` holds the config to that template (no
+  custom template, no uninstall hooks, the CLI pinned to the audited one).
+- **macOS** has no uninstaller: the app is removed by dragging **Castle
+  Tools** from Applications to the Bin, which takes the app and its
+  `castle-tools://` handler and nothing else. Songs, scenes and settings
+  stay in `~/Library/Application Support/io.github.jtn0123.castletools`, the
+  log in `~/Library/Logs/io.github.jtn0123.castletools`; reinstalling picks
+  them up. To remove them as well, delete those two folders (Finder: Go → Go
+  to Folder…, paste the path).
 
 ### Where the servers come from (`src/runtime.rs`)
 
