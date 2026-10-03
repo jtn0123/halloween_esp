@@ -62,7 +62,10 @@ that nothing would then send.
 line-level edits that keep the owner's comments, every write read back
 through `hosts.py` before it replaces the file, a missing file created
 0600, a castle the file never named given a marked table that `forget` takes
-away whole. Castle Radio imports it; the studio spawns it with the key on
+away whole. `CASTLE_DEVICES` moves the store but cannot rename it: the
+writer resolves symlinks and refuses anything but a `devices.toml` in a
+folder that already exists (both apps make theirs at start-up), so a
+mistyped or hostile value cannot aim it at another file. Castle Radio imports it; the studio spawns it with the key on
 STDIN, because argv is visible to every user on the machine. Neither the
 writer nor any reply, error or log line carries a key — the access log
 prints a relayed `/api/key` without its query.
