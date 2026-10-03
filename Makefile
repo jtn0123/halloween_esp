@@ -77,6 +77,7 @@ help:
 	@echo "  make publish    push scene tracks + the Castle Radio page to the castle"
 	@echo "  make ota        build the firmware and flash that image over HTTP"
 	@echo "  make soak HOST=<castle> HOURS=72   watch a castle unattended, then PASS/FAIL (docs/SOAK.md)"
+	@echo "  make power-cycle HOST=… OFF='<plug off cmd>' ON='<plug on cmd>' CYCLES=50   cold-boot test"
 	@echo "  make test       python unit tests (~1 min)"
 	@echo "  make test-fast  the same minus the slow + Rust suites (inner loop)"
 	@echo "  make show-lab   opt-in light-show lab: rebuild the beat-locked candidates and serve"
@@ -211,6 +212,8 @@ ota: build
 # Unattended runs against real hardware, each ending in a verdict (docs/SOAK.md).
 soak:
 	@$(PY) tools/soak.py $(HOST) --hours $(or $(HOURS),72) $(ARGS)
+power-cycle:
+	@$(PY) tools/power_cycle.py $(HOST) --off-cmd "$(OFF)" --on-cmd "$(ON)" --cycles $(or $(CYCLES),50) $(ARGS)
 
 # Kept as aliases, not as a second build. They named the microSD variant back
 # when there were two castles to choose between; every build has streamed the
