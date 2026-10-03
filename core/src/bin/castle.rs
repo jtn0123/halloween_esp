@@ -1,6 +1,6 @@
 //! The bridge CLI — the desk's transport verbs, spoken from a terminal.
 //!
-//!     castle --host 10.27.27.7:80 status
+//!     castle --host 192.168.1.20:80 status
 //!     castle --host … scene seance | play 10_ballad.mp3 | stop | volume 60
 //!     castle --host … show start|stop · blackout · files [subdir] · bootlog
 //!     castle --host … logs                the card's boot log, tail included

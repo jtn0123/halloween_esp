@@ -7,7 +7,6 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.cargo/bin:$PATH"
 PORT=${CASTLE_STUDIO_PORT:-8871}
 URL="http://127.0.0.1:$PORT/"
 IDENTITY="${URL}radio/tools"
-DEVICE_URL="http://${CASTLE_RADIO_HOST:-10.27.27.81}/"
 
 pause_on_error() {
   echo
@@ -26,6 +25,12 @@ else
 fi
 PY_BIN=$(dirname "$PY")
 export PATH="$PY_BIN:$PATH"
+# The castle's page: CASTLE_RADIO_HOST, else the first castle tools/hosts.py
+# knows (CASTLE_HOST, devices.toml); with neither, the local page. No castle
+# address is built in — a copy on someone else's computer has its own.
+CASTLE=${CASTLE_RADIO_HOST:-$("$PY" -c 'import sys; sys.path.insert(0, "tools"); import hosts; print((hosts.candidates() or [""])[0])' 2>/dev/null)}
+DEVICE_URL=${CASTLE:+http://$CASTLE/}
+DEVICE_URL=${DEVICE_URL:-$URL}
 
 is_castle_radio() {
   curl -fsS -m 2 "$IDENTITY" 2>/dev/null | "$PY" -c \

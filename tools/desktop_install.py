@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import desktop_env as de
 import desktop_release as rel
 import desktop_thirdparty as tp
+import ship_guard
 
 #: Never copied into <install>/app from a working tree: build output, venvs,
 #: and anybody's library. A release zip has none of them anyway.
@@ -98,7 +99,9 @@ class Installer:
     # -- the source tree -------------------------------------------------
     def source_files(self, src: Path) -> list[Path]:
         """What to copy: git's tracked files in a clone, else the tree
-        minus SKIP_DIRS (an extracted release zip has nothing to skip)."""
+        minus SKIP_DIRS (an extracted release zip has nothing to skip).
+        Either way minus the seller's own files (ship_guard.PERSONAL),
+        which the release zip leaves out too."""
         git = self.which("git")
         if (src / ".git").exists() and git:
             out = subprocess.run(
@@ -106,13 +109,15 @@ class Installer:
                 check=True,
                 capture_output=True,
             ).stdout.decode("utf-8")
-            return [Path(p) for p in out.split("\0") if p and (src / p).is_file()]
-        files: list[Path] = []
-        for dirpath, dirnames, filenames in os.walk(src):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-            rel_dir = Path(dirpath).relative_to(src)
-            files.extend(rel_dir / f for f in filenames)
-        return files
+            files = [Path(p) for p in out.split("\0") if p and (src / p).is_file()]
+        else:
+            files = []
+            for dirpath, dirnames, filenames in os.walk(src):
+                dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+                rel_dir = Path(dirpath).relative_to(src)
+                files.extend(rel_dir / f for f in filenames)
+        personal = {Path(p) for p in ship_guard.PERSONAL}
+        return [f for f in files if f not in personal]
 
     def stage_app(self, src: Path) -> None:
         """Copy `src` into <install>/app via app.new + rename, so a failed
