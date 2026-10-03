@@ -80,6 +80,23 @@ copies. Sample audio is local and is not distributed with the repository.
   drives the respective towers. Without separation, low/mid/high bands drive
   door/left/right. Density tuning reuses tools/import_scene.py.
 - Background jobs, errors and retry; imports persist across page/server reloads.
+  A failed job reads as one sentence — what happened, then what to do
+  (`tools/import_reason.py`, `job_progress.failure`) — with the tools' own
+  words behind **Details** (`error_detail`), and a link that failed because
+  the downloader is old carries an **Update the downloader** button
+  (`action: "update-downloader"`). Cancel ends a job as Cancelled, never as a
+  failure. Songs are imported up to 15 minutes long (desktop/README.md,
+  "What an import can take", says why and what else is refused).
+- **Update the downloader** (`downloader_routes.py`, `downloader.js`): yt-dlp,
+  which fetches links, is a separate program in `downloader/` under the radio's
+  data dir. `GET /radio/downloader` says which copy an import would run;
+  `POST /radio/downloader/update` queues `tools/ytdlp_update.py` — yt-dlp's
+  latest GitHub release, checked against that release's `SHA2-256SUMS`, swapped
+  in only if it runs — on the same one-at-a-time worker as the imports, so it
+  waits for the import ahead of it and never lands in the middle of one. It
+  runs only when pressed. yt-dlp is public domain (the Unlicense) and is
+  downloaded by each computer from yt-dlp's own releases; this project never
+  ships it (THIRD-PARTY-NOTICES.txt).
 - Locally saved style/run preferences and blackout for all demo audio/lights.
 - Physical playback for synced imports. Sync puts three files beside each
   other in the card root — the audio, its `<name>.cue` and `<name>.show.json`
@@ -162,7 +179,7 @@ page open in the same browser can post to `127.0.0.1:8871`. So every
 state-changing route is shaped so a browser has to ask permission first, and
 this server answers no `OPTIONS` at all. JSON routes (`/radio/device/command`,
 `/radio/device/sync`, `/radio/device/key`, `/radio/retry`, `/radio/cancel`, `/radio/rename`,
-`/radio/reprocess`, link imports) require
+`/radio/reprocess`, `/radio/downloader/update`, link imports) require
 `Content-Type: application/json` — `; charset=…` is fine — and answer 415
 otherwise; `application/json` is not a content type a cross-origin form can
 send without a preflight. The raw upload (`/radio/import` with audio bytes) and
@@ -200,7 +217,8 @@ Production scene edits are not implemented. Computer playback stops if the
 page closes; castle playback continues, and the queue only advances while this
 page is open. Pause and seek are not supported by the castle firmware. "While
 music is playing" remains a preview preference. Link support follows yt-dlp;
-login-protected or unsupported sources may fail with a visible error.
+login-protected or unsupported sources fail with a sentence that says which
+(a private video, a sign-in wall, a site the downloader does not know).
 
 ## Shared audio, castle preview, waveforms, and removal
 
