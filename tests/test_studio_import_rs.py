@@ -389,6 +389,11 @@ class Imports(ImportCase):
             set(seen[:-1]), {"queued", "fetching", "converting", "analysing"}, seen
         )
         self.assertTrue(poll["log"], "the job reported nothing at all")
+        # yt-dlp's own lines arrive while it runs, unwrapped: the studio sets
+        # CASTLE_PROGRESS_STREAM and reads the relay (grade report 2026-09-24 B2).
+        log = poll["log"]
+        self.assertTrue([ln for ln in log if ln.startswith("[download]")], log)
+        self.assertFalse([ln for ln in log if ln.startswith("CASTLE_PROGRESS")], log)
         self.assertTrue((self.tracks / "fetched.mp3").exists())
         row = self.row(poll, "fetched")
         self.assertAlmostEqual(row["dur"], 2.0, delta=0.1)
