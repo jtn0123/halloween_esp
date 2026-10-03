@@ -162,7 +162,7 @@ def app_version() -> str:
     if version:
         return f"Castle {version}"
     try:
-        stamped = (radio_env.ROOT / "installer" / "VERSION").read_text("utf-8")
+        stamped = (radio_env.ROOT / "installer" / "VERSION").read_text(encoding="utf-8")
     except OSError:
         stamped = ""
     stamped = stamped.strip()

@@ -218,7 +218,9 @@ class TestOwnerPage(OwnerCase):
             self.assertIn(words, page.body)
         # v5.76: the song list is every format the Feather build can play —
         # 5.75's left .opus out, and a card of opus songs read as empty.
-        feather = (ROOT / "firmware" / "castle_feather_s3.yaml").read_text("utf-8")
+        feather = (ROOT / "firmware" / "castle_feather_s3.yaml").read_text(
+            encoding="utf-8"
+        )
         codecs = re.search(r"\n  codecs:\n((?:    \w+:\n)+)", feather)
         assert codecs, "castle_feather_s3.yaml declares its playback codecs"
         decoded = sorted(re.findall(r"(\w+):", codecs.group(1)))

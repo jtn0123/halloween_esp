@@ -43,6 +43,7 @@
       el('p', {className: 'subtle', textContent: 'Diagnostics hold this app’s version, the castle’s status, health, restarts and recent events, the last imports and syncs, and the app’s log — folder names cut to file names, and never the castle key. Nothing is sent anywhere: you choose who sees it.'}),
     ]));
   message.setAttribute?.('aria-live', 'polite');
+  shown.setAttribute?.('aria-label', 'The diagnostics, as they will be shared');
   const find = byId('castle-find');
   if (find?.parentNode) {find.parentNode.insertBefore(card, find.nextSibling);}
 

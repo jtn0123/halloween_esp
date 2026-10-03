@@ -121,7 +121,7 @@ class TheRule(PlaceCase):
         self.assertTrue(device_bridge.status()["connected"])
         # An address set any other way — a pin, a test — is never overruled.
         device_bridge.HOST = "10.9.9.9"
-        castle_address.adopt("10.9.9.8", "", self.store)
+        castle_address.adopt("10.9.9.20", "", self.store)
         self.assertEqual(device_bridge.castle(), "10.9.9.9")
 
 

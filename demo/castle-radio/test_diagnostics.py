@@ -64,7 +64,7 @@ class Diagnostics(unittest.TestCase):
                     f"relay POST /api/key?new={KEY.replace('/', '%2F')} -> 200",
                     f"headers {{'X-Castle-Key': '{PINNED_KEY}'}}",
                     f"error reading {self.tmp}/tracks/My Song.mp3: gone",
-                    "C:\\Users\\Jo\\AppData\\Castle\\radio.log rotated",
+                    "C:\\Users\\someone\\AppData\\Castle\\radio.log rotated",
                 ]
             ),
             encoding="utf-8",
@@ -141,7 +141,13 @@ class Diagnostics(unittest.TestCase):
             self.assertNotIn(secret, text)
         self.assertIn(f"/api/key?new={diagnostics.REMOVED}", text)
         self.assertIn(f"'X-Castle-Key': '{diagnostics.REMOVED}'", text)
-        for folder in (HOME, str(self.tmp), "Application Support", "AppData", "Jo\\"):
+        for folder in (
+            HOME,
+            str(self.tmp),
+            "Application Support",
+            "AppData",
+            "someone\\",
+        ):
             self.assertNotIn(folder, text)
         self.assertIn("error reading My Song.mp3: gone", text)
         self.assertIn("could not read x.wav", text)
@@ -154,8 +160,8 @@ class Diagnostics(unittest.TestCase):
             diagnostics.scrub(
                 "GET /api/status · /radio/device/audio/a.mp3 · /sd/scenes/show.man"
                 " · http://192.168.1.4/owner · ~/Music/a.mp3 · /usr/bin/python3"
-                " · C:\\Users\\Jo\\x.log · see /etc/hosts"
-                " · /Users/Jo Smith/Music Box/b.mp3 · /usr/bin/ffmpeg then 3/4 done"
+                " · C:\\Users\\someone\\x.log · see /etc/hosts"
+                " · /Users/someone/Music Box/b.mp3 · /usr/bin/ffmpeg then 3/4 done"
             ),
             "GET /api/status · /radio/device/audio/a.mp3 · /sd/scenes/show.man"
             " · http://192.168.1.4/owner · a.mp3 · python3 · x.log · see hosts"
@@ -188,12 +194,16 @@ class Diagnostics(unittest.TestCase):
     def test_the_app_is_named_by_the_app_else_the_release_else_a_checkout(self):
         self.assertEqual(diagnostics.app_version(), "Castle 0.9.1")
         with mock.patch.dict(os.environ, {"CASTLE_APP_VERSION": ""}):
-            stamped = (radio_env.ROOT / "installer" / "VERSION").read_text("utf-8")
+            stamped = (radio_env.ROOT / "installer" / "VERSION").read_text(
+                encoding="utf-8"
+            )
             if stamped.startswith("$Format"):
                 self.assertIn("a checkout", diagnostics.app_version())
             with mock.patch.object(diagnostics.radio_env, "ROOT", self.tmp):
                 (self.tmp / "installer").mkdir()
-                (self.tmp / "installer" / "VERSION").write_text("v1.2.3\n", "utf-8")
+                (self.tmp / "installer" / "VERSION").write_text(
+                    "v1.2.3\n", encoding="utf-8"
+                )
                 self.assertEqual(diagnostics.app_version(), "Castle Radio v1.2.3")
 
     def test_the_route_answers_with_the_text_and_a_file_name(self):

@@ -58,7 +58,7 @@ function cardPage({where = {host: '', pinned: false, store: true}, found = [], d
   return {ctx, byId, calls, say, deviceNav};
 }
 
-const FOUND = [{name: 'castle-a1b2c3.local', address: '192.168.1.40', version: '5.75', fw_variant: 'buyer', current: false}];
+const FOUND = [{name: 'castle-a1b2c3.local', address: '192.168.1.50', version: '5.75', fw_variant: 'buyer', current: false}];
 
 test('no castle yet: find, pick, and it is remembered and followed', async () => {
   const {ctx, byId, calls} = cardPage({found: FOUND});
@@ -66,15 +66,15 @@ test('no castle yet: find, pick, and it is remembered and followed', async () =>
   assert.match(byId('find-state').textContent, /^No castle found yet/);
   await ctx.castleFind.find();
   const [row] = byId('find-results').children;
-  assert.match(row.children[0].textContent, /castle-a1b2c3\.local · 192\.168\.1\.40 · v5\.75 · buyer/);
+  assert.match(row.children[0].textContent, /castle-a1b2c3\.local · 192\.168\.1\.50 · v5\.75 · buyer/);
   assert.equal(byId('find-message').textContent, 'One castle answered.');
   await row.children[1].onclick();
   await settle();
   const adopt = calls.find(c => c.path === '/radio/device/address' && c.method === 'POST');
-  assert.deepEqual(adopt.body, {host: '192.168.1.40', name: 'castle-a1b2c3.local'});
+  assert.deepEqual(adopt.body, {host: '192.168.1.50', name: 'castle-a1b2c3.local'});
   assert.equal(byId('find-message').textContent, 'This is your castle now · castle-a1b2c3.local');
   assert.ok(calls.includes('refresh') && calls.includes('key'), 'the link and the key card follow');
-  assert.match(byId('find-state').textContent, /192\.168\.1\.40/);
+  assert.match(byId('find-state').textContent, /192\.168\.1\.50/);
 });
 
 test('a typed address goes the same way, and a refusal is said', async () => {
@@ -94,7 +94,7 @@ test('a typed address goes the same way, and a refusal is said', async () => {
 });
 
 test('one sentence for each state, and the offline chip opens the card', async () => {
-  const {byId, say, deviceNav} = cardPage({where: {host: '192.168.1.40', pinned: false, store: true}});
+  const {byId, say, deviceNav} = cardPage({where: {host: '192.168.1.50', pinned: false, store: true}});
   await settle();
   say({connected: false, error: 'timed out'});
   assert.match(byId('find-state').textContent, /not answering.*find it again/);
@@ -102,7 +102,7 @@ test('one sentence for each state, and the offline chip opens the card', async (
   byId('castle-chip').listeners.click();
   assert.ok(deviceNav.clicked && byId('castle-find').scrolled);
   say({connected: true});
-  assert.equal(byId('find-state').textContent, 'Connected to your castle at 192.168.1.40.');
+  assert.equal(byId('find-state').textContent, 'Connected to your castle at 192.168.1.50.');
   const pinned = cardPage({where: {host: 'castle.local', pinned: true, store: true}, found: FOUND});
   await settle();
   assert.match(pinned.byId('find-state').textContent, /castle_host in its settings file/);

@@ -43,11 +43,11 @@ test("a castle with no motion sensor shows none of its controls, and says so", a
 });
 
 test("the panel links the castle's own page where the studio reached it", async ({ page }) => {
-  const castle = await fakeCastle(page, [], { bridged: "192.168.4.27" });
+  const castle = await fakeCastle(page, [], { bridged: "192.168.1.5" });
   await page.goto("/");
   await page.locator("#devMore").click();
   const owner = page.locator("#dpOwner");
-  await expect(owner).toHaveAttribute("href", "http://192.168.4.27/owner");
+  await expect(owner).toHaveAttribute("href", "http://192.168.1.5/owner");
   await expect(owner).toHaveAttribute("target", "_blank");
   await expect(owner).toContainText("castle's own page");
   // A status that did not come through the studio names no address.

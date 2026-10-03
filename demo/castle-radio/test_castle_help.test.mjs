@@ -64,10 +64,10 @@ test('the card sits after Find my castle and links the castle’s own page at it
   assert.equal(card.id, 'castle-help');
   assert.equal(find('help-owner').hidden, true, 'no address, no link to nowhere');
   assert.match(find('help-owner-note').textContent, /^Find your castle first/);
-  hear({connected: true, host: '192.168.1.40', state: {pir: {fitted: true}}});
-  assert.equal(find('help-owner').href, 'http://192.168.1.40/owner');
+  hear({connected: true, host: '192.168.1.50', state: {pir: {fitted: true}}});
+  assert.equal(find('help-owner').href, 'http://192.168.1.50/owner');
   assert.equal(find('help-owner').hidden, false);
-  hear({connected: false, host: '192.168.1.40', state: null});
+  hear({connected: false, host: '192.168.1.50', state: null});
   assert.match(find('help-owner-note').textContent, /not answering right now/);
 });
 
@@ -125,7 +125,7 @@ test('the castle-served page links /owner and asks this computer for nothing', (
   const {card, find, calls, hear} = page({direct: true});
   assert.equal(find('help-owner').href, '/owner');
   assert.equal(find('help-copy'), undefined, 'no computer half to copy');
-  hear({connected: true, host: '192.168.1.40', state: {}});
+  hear({connected: true, host: '192.168.1.50', state: {}});
   assert.equal(find('help-owner').href, '/owner');
   assert.match(find('help-owner-note').textContent, /Report a problem/);
   assert.deepEqual(calls, []);

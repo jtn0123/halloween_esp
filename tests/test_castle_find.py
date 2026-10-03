@@ -111,7 +111,7 @@ def question_names(query: bytes) -> list[str]:
 
 class TestParsing(unittest.TestCase):
     def test_a_compressed_answer_reads_back_whole(self) -> None:
-        recs = cf.records(castle_answer("castle-a1b2c3", 8080, "192.168.1.40"))
+        recs = cf.records(castle_answer("castle-a1b2c3", 8080, "192.168.1.20"))
         self.assertIn(
             ("_http._tcp.local", cf._PTR, "castle-a1b2c3._http._tcp.local"), recs
         )
@@ -119,14 +119,14 @@ class TestParsing(unittest.TestCase):
             ("castle-a1b2c3._http._tcp.local", cf._SRV, (8080, "castle-a1b2c3.local")),
             recs,
         )
-        self.assertIn(("castle-a1b2c3.local", cf._A, "192.168.1.40"), recs)
+        self.assertIn(("castle-a1b2c3.local", cf._A, "192.168.1.20"), recs)
         self.assertEqual(
-            cf.candidates([("192.168.1.99", recs)]),
-            {"192.168.1.40:8080": "castle-a1b2c3.local"},
+            cf.candidates([("192.168.1.50", recs)]),
+            {"192.168.1.20:8080": "castle-a1b2c3.local"},
         )
 
     def test_junk_and_queries_carry_nothing(self) -> None:
-        good = castle_answer("castle-a1b2c3", 80, "192.168.1.40")
+        good = castle_answer("castle-a1b2c3", 80, "192.168.1.20")
         loop = struct.pack("!6H", 0, 0x8400, 0, 1, 0, 0) + b"\xc0\x0c"
         for junk in (b"", good[:20], good[:-3], loop, cf.query([("x.local", 1)])):
             with self.subTest(junk=junk[:16]):
@@ -141,7 +141,7 @@ class TestParsing(unittest.TestCase):
         )
 
     def test_only_this_lan_is_ever_probed(self) -> None:
-        for addr in ("192.168.1.40", "10.0.0.5:8080", "169.254.3.4", "127.0.0.1:9"):
+        for addr in ("192.168.1.20", "10.0.0.5:8080", "169.254.3.4", "127.0.0.1:9"):
             self.assertTrue(cf.on_this_lan(addr), addr)
         for addr in ("8.8.8.8", "1.1.1.1:80", "castle.local", ""):
             self.assertFalse(cf.on_this_lan(addr), addr)

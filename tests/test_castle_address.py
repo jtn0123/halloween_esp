@@ -68,23 +68,23 @@ class StoreCase(unittest.TestCase):
 
 class TestAdopt(StoreCase):
     def test_a_castle_that_moved_keeps_its_key_comments_and_place(self) -> None:
-        self.assertTrue(ca.adopt("10.0.0.42", "porch.local"))
-        self.assertEqual(hosts.first_castle(), ["10.0.0.42", "porch.local"])
-        self.assertEqual(hosts.castle_key("10.0.0.42"), "porch-key")
+        self.assertTrue(ca.adopt("10.0.0.20", "porch.local"))
+        self.assertEqual(hosts.first_castle(), ["10.0.0.20", "porch.local"])
+        self.assertEqual(hosts.castle_key("10.0.0.20"), "porch-key")
         self.assertNotIn("10.0.0.7", self.text(), "a moved lease is not a fallback")
         for note in ("owner's own words", "castle in the yard", "a reserved lease"):
             self.assertIn(note, self.text())
         self.assertEqual(self.tables()["bench"], tomllib.loads(OWN)["bench"])
         # Found again, nothing to say: the file is not touched.
         before = self.text()
-        self.assertFalse(ca.adopt("10.0.0.42", "porch.local"))
+        self.assertFalse(ca.adopt("10.0.0.20", "porch.local"))
         self.assertEqual(self.text(), before)
 
     def test_a_later_castle_moves_to_the_top_with_its_key_and_note(self) -> None:
-        self.assertTrue(ca.adopt("10.0.0.50", "bench.local"))
-        self.assertEqual(hosts.first_castle(), ["10.0.0.50", "bench.local"])
+        self.assertTrue(ca.adopt("10.0.0.30", "bench.local"))
+        self.assertEqual(hosts.first_castle(), ["10.0.0.30", "bench.local"])
         self.assertEqual(list(self.tables()), ["bench", "porch"])
-        self.assertEqual(hosts.castle_key("10.0.0.50"), "bench-key")
+        self.assertEqual(hosts.castle_key("10.0.0.30"), "bench-key")
         text = self.text()
         self.assertLess(text.index("the bench board"), text.index("[bench]"))
         self.assertLess(text.index("[bench]"), text.index("[porch]"))
@@ -92,7 +92,7 @@ class TestAdopt(StoreCase):
         self.assertEqual(self.tables()["porch"], tomllib.loads(OWN)["porch"])
         # The studio's walk: the adopted castle first, the other still there.
         self.assertEqual(
-            hosts.candidates()[:3], ["10.0.0.50", "bench.local", "10.0.0.7"]
+            hosts.candidates()[:3], ["10.0.0.30", "bench.local", "10.0.0.7"]
         )
 
     def test_by_address_alone_a_known_castle_is_moved_not_copied(self) -> None:
@@ -102,15 +102,15 @@ class TestAdopt(StoreCase):
         self.assertEqual(self.text().count("10.0.0.9"), 1)
 
     def test_a_new_castle_gets_a_marked_table_on_top(self) -> None:
-        self.assertTrue(ca.adopt("192.168.1.40", "castle-a1b2c3.local"))
+        self.assertTrue(ca.adopt("192.168.1.30", "castle-a1b2c3.local"))
         self.assertEqual(next(iter(self.tables())), "castle-a1b2c3")
         self.assertIn(ca.MARK, self.text())
-        self.assertEqual(hosts.first_castle(), ["192.168.1.40", "castle-a1b2c3.local"])
-        self.assertEqual(hosts.castle_key("192.168.1.40"), "")
+        self.assertEqual(hosts.first_castle(), ["192.168.1.30", "castle-a1b2c3.local"])
+        self.assertEqual(hosts.castle_key("192.168.1.30"), "")
         for name in ("porch", "bench"):
             self.assertEqual(self.tables()[name], tomllib.loads(OWN)[name])
         # A name that is already a table's is not reused.
-        ca.adopt("192.168.1.41")
+        ca.adopt("192.168.1.31")
         self.assertEqual(next(iter(self.tables())), "castle-1")
 
     def test_a_missing_store_is_created_private_with_a_header(self) -> None:
@@ -142,20 +142,20 @@ class TestAdopt(StoreCase):
 class TestTheTwoWriters(StoreCase):
     def test_a_key_only_table_adopted_survives_forgetting_the_key(self) -> None:
         self.file.write_text("", encoding="utf-8")
-        ck.remember("192.168.1.40", "k3y")
+        ck.remember("192.168.1.30", "k3y")
         self.assertIn(ck.MARK, self.text())
-        ca.adopt("192.168.1.40", "castle-a1b2c3.local")
+        ca.adopt("192.168.1.30", "castle-a1b2c3.local")
         self.assertNotIn(ck.MARK, self.text())
         self.assertEqual(hosts.castle_key("castle-a1b2c3.local"), "k3y")
-        ck.forget("192.168.1.40")
-        self.assertEqual(hosts.first_castle(), ["192.168.1.40", "castle-a1b2c3.local"])
-        self.assertEqual(hosts.castle_key("192.168.1.40"), "")
+        ck.forget("192.168.1.30")
+        self.assertEqual(hosts.first_castle(), ["192.168.1.30", "castle-a1b2c3.local"])
+        self.assertEqual(hosts.castle_key("192.168.1.30"), "")
 
     def test_a_key_remembered_after_adopting_lands_in_the_adopted_table(self) -> None:
-        ca.adopt("192.168.1.40", "castle-a1b2c3.local")
+        ca.adopt("192.168.1.30", "castle-a1b2c3.local")
         ck.remember("castle-a1b2c3.local", "k3y")
         self.assertEqual(self.tables()["castle-a1b2c3"]["key"], "k3y")  # type: ignore[index]
-        ck.forget("192.168.1.40")
+        ck.forget("192.168.1.30")
         self.assertIn("[castle-a1b2c3]", self.text())
 
 
@@ -180,7 +180,7 @@ class TestRefusals(StoreCase):
             mock.patch.object(ca.hosts, "first_castle", return_value=["elsewhere"]),
             self.assertRaisesRegex(ValueError, "could not be updated safely"),
         ):
-            ca.adopt("10.0.0.42", "porch.local")
+            ca.adopt("10.0.0.20", "porch.local")
         self.assertEqual(self.text(), OWN)
         self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), ["devices.toml"])
 
