@@ -64,7 +64,16 @@ def load_device_bridge():
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules["device_bridge"] = module
-    spec.loader.exec_module(module)
+    # The bridge comes through radio_env (grade report 2026-09-24 B7), which
+    # writes the Radio's sandbox knobs into os.environ and makes its data
+    # dir: right for the Radio's own process, a leak into every later test
+    # in this one (tests/test_hermetic.py caught it). So the load gets a
+    # scratch data dir, and the environment is put back as it was.
+    with (
+        tempfile.TemporaryDirectory(prefix="radio-env-") as scratch,
+        mock.patch.dict(os.environ, {"CASTLE_RADIO_DATA": scratch}),
+    ):
+        spec.loader.exec_module(module)
     return module
 
 
