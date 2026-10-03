@@ -376,7 +376,9 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
             except job_progress.Cancelled:
                 raise  # a ValueError too, but not a split that failed
             except (ValueError, subprocess.TimeoutExpired) as exc:
-                split_error = str(exc)
+                said = job_progress.failure(exc)
+                split_error = said["error"]
+                update(job, error_detail=said["error_detail"], action=said["action"])
         checkpoint(job)
         update(
             job,
@@ -433,6 +435,7 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
     except job_progress.Cancelled:
         finish_cancelled(job)
     except Exception as exc:
-        update(job, phase="Import failed", done=True, error=str(exc))
+        # One sentence for the owner; the tool's own words for Details.
+        update(job, phase="Import failed", done=True, **job_progress.failure(exc))
     finally:
         HANDLES.pop(tid, None)

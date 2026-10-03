@@ -3,7 +3,11 @@
 import sys
 import unittest
 
-from job_progress import interpret, run
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
+import import_reason as ir
+from job_progress import ToolFailed, interpret, run
 
 
 class ProgressTests(unittest.TestCase):
@@ -79,13 +83,16 @@ class StreamingTests(unittest.TestCase):
         self.assertTrue(any(v.get("percent") == 50 for v in updates))
 
     def test_hung_child_is_bounded(self):
-        with self.assertRaisesRegex(ValueError, "timed out"):
+        with self.assertRaises(ToolFailed) as caught:
             run(
                 [sys.executable, "-c", "import time; time.sleep(10)"],
                 0.1,
                 "split",
                 lambda **v: None,
             )
+        # The owner reads that it was stopped; Details say after how long.
+        self.assertEqual(str(caught.exception), ir.STALLED)
+        self.assertIn("timed out after 0.1 s", caught.exception.log)
 
 
 class ExtraEnvTests(unittest.TestCase):
