@@ -2300,13 +2300,16 @@ their publishers, on your machine, under the publisher's terms:
   redistributed component: only an LGPL build (no --enable-gpl, no
   --enable-nonfree), with its licence text and source offer.
 
-* yt-dlp — latest release, updated by itself (`yt-dlp -U`)
+* yt-dlp — latest stable release, replaced only by Update the downloader
   Terms: Unlicense (public domain dedication); its standalone binary bundles
   third-party code listed in its own THIRD_PARTY_LICENSES.txt
-  How it arrives: downloaded by the installer from github.com/yt-dlp/yt-dlp
-  releases and checked against that release's SHA2-256SUMS
-  Kept out of the app bundle on purpose (docs/PRODUCTION-TODO.md §3): it
-  updates on its own schedule.
+  How it arrives: downloaded from github.com/yt-dlp/yt-dlp releases — by the
+  installer, and by Castle Radio's Update the downloader button — into
+  per-user app data, and checked against that same release's SHA2-256SUMS
+  before it is ever run
+  Kept out of the app bundle on purpose (docs/PRODUCTION-TODO.md §3): websites
+  change under it every few weeks, so it is updated on its own schedule, by
+  the owner, and never in the middle of an import.
 
 * Demucs — 4.1.0 (requirements-desktop.lock)
   Terms: MIT ("Demucs is released under the MIT license")

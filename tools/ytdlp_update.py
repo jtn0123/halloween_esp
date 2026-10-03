@@ -25,7 +25,7 @@ called in the middle of an import.
 
 yt-dlp is released into the public domain (the Unlicense). Each computer
 downloads it from yt-dlp's own GitHub releases; this repo never ships or
-redistributes it (THIRD_PARTY_NOTICES.md, tools/notices_external.py).
+redistributes it (THIRD-PARTY-NOTICES.txt, tools/notices_external.py).
 
 Stdlib only, like desktop_release.py: the installer runs this under a bare
 Python before the environment it is building exists.
