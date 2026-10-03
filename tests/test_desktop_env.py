@@ -121,10 +121,15 @@ class TestRecordAndEnv(unittest.TestCase):
         self.assertEqual(path[-1], "/usr/bin")
         self.assertEqual(len(path), len(set(path)), "PATH entries are deduplicated")
 
-    def test_no_castle_named_means_explicitly_no_castle(self) -> None:
-        env = de.launch_env(self.dirs, {}, {}, {"CASTLE_HOST": "10.0.0.9"})
-        self.assertEqual(env["CASTLE_HOST"], "")
+    def test_no_castle_named_means_the_users_store_decides(self) -> None:
+        """Unpinned, the studio and Castle Radio both read the first castle
+        of CASTLE_DEVICES — so nothing inherited may shadow it, and an empty
+        CASTLE_HOST (which would mean "explicitly none") is not set either."""
+        base = {"CASTLE_HOST": "10.0.0.9", "CASTLE_RADIO_HOST": "10.0.0.8"}
+        env = de.launch_env(self.dirs, {}, {}, base)
+        self.assertNotIn("CASTLE_HOST", env)
         self.assertNotIn("CASTLE_RADIO_HOST", env)
+        self.assertEqual(env["CASTLE_DEVICES"], str(Path("/d/devices.toml")))
 
     def test_settings_castle_feeds_both_servers(self) -> None:
         env = de.launch_env(self.dirs, {}, {"castle_host": " castle.local "}, {})

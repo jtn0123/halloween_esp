@@ -251,6 +251,9 @@ class StudioCase(unittest.TestCase):
 
     #: "" is explicitly castle-less; a subclass names an emulator host.
     HOST_ENV = ""
+    #: True: CASTLE_HOST unset, as the desktop app runs the studio — the
+    #: castle is then the first of DEVICES, re-read on every call.
+    HOST_UNSET = False
     #: The sandbox devices.toml's text — the castle-key store.
     DEVICES = ""
 
@@ -341,7 +344,7 @@ class StudioCase(unittest.TestCase):
                 [str(BIN), str(cls.port), "--localhost"],
                 env={
                     **env,
-                    "CASTLE_HOST": cls.HOST_ENV,
+                    **({} if cls.HOST_UNSET else {"CASTLE_HOST": cls.HOST_ENV}),
                     "CASTLE_TRACKS": str(cls.tracks),
                     "CASTLE_SCENES": str(cls.scenes),
                     "CASTLE_BUILD": str(cls.build),

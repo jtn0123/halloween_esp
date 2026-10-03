@@ -240,11 +240,19 @@ impl Supervisor {
             .stdin(Stdio::null())
             .stdout(out)
             .stderr(err);
+        // A castle this app inherited is not the owner's: settings pin one,
+        // or the per-user store decides (runtime::child_env).
+        cmd.env_remove("CASTLE_HOST")
+            .env_remove("CASTLE_RADIO_HOST");
         for (key, value) in
             runtime::child_env(rt, &data, &self.config.settings, std::env::var_os("PATH"))
         {
             cmd.env(key, value);
         }
+        // What Castle Radio's Copy diagnostics names this app by, and the one
+        // log it may quote (paths cut to file names, no castle key).
+        cmd.env("CASTLE_APP_VERSION", env!("CARGO_PKG_VERSION"))
+            .env("CASTLE_APP_LOG", self.log.path());
         self.log.line(&format!(
             "starting {} from the {} at {}: {} on port {}",
             self.name(),
