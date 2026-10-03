@@ -27,7 +27,7 @@
   let lastUptime = null, lastVersion = '', resumeBoot = false;
   // When the castle was last heard playing, so the end of a song is judged on
   // wall-clock silence rather than on a poll count a hidden tab stretches.
-  let lastLiveAt = 0, shownShowError = '';
+  let lastLiveAt = 0, shownShowError = '', castleHost = '';
   const QUIET_MS = 2000, QUIET_LOOP_MS = 5000, API_TIMEOUT_MS = 8000;
   const BUSY = 'busy';
   const listeners = new Set();
@@ -93,7 +93,7 @@
     try { response = await fetch(path, init); }
     catch (e) { throw new Error(e?.name === 'AbortError' ? 'Castle not answering · request timed out' : friendly(e?.message || 'Castle connection failed')); }
     finally { clearTimeout(timer); }
-    const payload = await response.json();
+    const payload = await response.json(); if (payload?.host) {castleHost = payload.host;}
     if (!response.ok || payload?.error) {throw new Error(friendly(payload?.error || 'Castle connection failed'));}
     return payload;
   }
@@ -151,6 +151,7 @@
   }
   function paintDevicePanel(online) {
     $('live-connection').textContent = online ? 'Connected' : 'Unavailable';
+    $('live-host').textContent = castleHost || 'Not set';
     $('live-health').textContent = healthText(online);
     $('live-destination').textContent = onCastle() ? 'Porch castle' : 'This computer';
     $('live-ready').textContent = readyText(online, state);

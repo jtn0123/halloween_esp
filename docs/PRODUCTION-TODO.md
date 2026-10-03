@@ -378,8 +378,13 @@ true, and it is the dev/support path forever.
 - [x] `docs/RUNBOOK.md` gains a "supporting a buyer's castle" section.
       It is docs/SUPPORT.md (reading a report and a soak log), linked from
       RUNBOOK.
-- [ ] Repo is public: confirm nothing personal ships (Wi-Fi secrets, your
+- [x] Repo is public: confirm nothing personal ships (Wi-Fi secrets, your
       `devices.toml`, `tracks.json` provenance with your file paths).
+      `tools/ship_guard.py`: both files are export-ignore and skipped by the
+      installer, no castle address is built into Castle Radio or a launcher,
+      and the tree (tests/test_ship_guard.py, every `make test`) and each
+      release's assets (release.yml) are scanned for secrets, a keyed
+      inventory, home directories, MACs and private-LAN addresses.
 - [x] Per-unit record: serial/MAC, firmware version, date, buyer — kept by
       you, not in the repo. The template is docs/SUPPORT.md.
 

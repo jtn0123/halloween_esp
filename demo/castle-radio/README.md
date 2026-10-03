@@ -181,7 +181,8 @@ All imported audio, sources, analysis, generated recipes, and catalog data go in
 ignored `.radio-data/` — or wherever `CASTLE_RADIO_DATA` points (`radio_paths.py`;
 the desktop app sets it to the per-user app-data dir). The device bridge is limited to the configured private
 castle address and explicit playback, lighting, test, sync, and cleanup actions.
-Set `CASTLE_RADIO_HOST` to point the bridge at another castle (default 10.27.27.81).
+Set `CASTLE_RADIO_HOST` to point the bridge at another castle; unset, it takes the
+first castle `tools/hosts.py` knows, and with none it says so (no address is built in).
 A castle locked with a key (firmware v5.74) refuses uploads, deletes and the
 motion switch without it; every refusal says "This castle has a key — enter it
 in Settings", and the **Castle key** card in Run settings uses, sets or clears

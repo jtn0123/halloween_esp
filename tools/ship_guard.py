@@ -48,6 +48,10 @@ import tarfile
 import zipfile
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import castle_keys
+
 ROOT = Path(__file__).resolve().parent.parent
 #: The guard names what it guards against, and its test plants it: the two
 #: files the tree scan does not read.
@@ -64,7 +68,7 @@ FORBIDDEN_NAMES = frozenset({"secrets.yaml", "devices.toml", "tracks.json"})
 EXAMPLE_IPS = frozenset(
     {
         "10.0.0.1", "10.0.0.2", "10.0.0.5", "10.0.0.7", "10.0.0.8",
-        "10.0.0.9", "10.0.0.20", "10.1.1.1", "10.1.2.3", "10.2.2.2",
+        "10.0.0.9", "10.0.0.20", "10.0.0.30", "10.1.1.1", "10.1.2.3", "10.2.2.2",
         "10.5.5.5", "10.9.9.1", "10.9.9.2", "10.9.9.3", "10.9.9.9",
         "10.9.9.20", "10.255.255.255", "172.16.0.9", "192.168.0.1",
         "192.168.1.1", "192.168.1.4", "192.168.1.5", "192.168.1.20",
@@ -183,10 +187,25 @@ def export_ignored(paths: list[str], root: Path = ROOT) -> set[str]:
     return {fields[i] for i in range(0, len(fields) - 2, 3) if fields[i + 2] == "set"}
 
 
+def keyed(paths: list[str], root: Path = ROOT) -> list[str]:
+    """Tracked devices.toml files whose INDEX copy holds a castle key — the
+    pre-commit hook's own rule (castle_keys.holds_key), asked of what git
+    would ship. The working copy is the seller's to key; it never ships."""
+    found = []
+    for p in (p for p in paths if Path(p).name == "devices.toml"):
+        text = subprocess.run(
+            ["git", "-C", str(root), "show", f":{p}"], capture_output=True, check=True
+        ).stdout.decode("utf-8", errors="replace")
+        if castle_keys.holds_key(text):
+            found.append(f"{p}: tracked with a castle key in it (castle_keys.py)")
+    return found
+
+
 def scan_tree(root: Path = ROOT) -> list[str]:
     files = tracked(root)
     found = [f"{p}: tracked — Wi-Fi secrets are never committed"
              for p in files if Path(p).name == "secrets.yaml"]  # fmt: skip
+    found += keyed(files, root)
     present = [p for p in PERSONAL if p in files]
     ignored = export_ignored(present, root)
     found += [f"{p}: tracked but not export-ignore — it would ship in the "

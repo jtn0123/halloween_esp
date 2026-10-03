@@ -125,6 +125,20 @@ class TestScanTree(GitRepo):
         self.add(".gitattributes", "".join(f"{p} export-ignore\n" for p in g.PERSONAL))
         self.assertEqual(g.scan_tree(self.root), [], "devices.toml is history")
 
+    def test_a_castle_key_in_the_tracked_inventory_is_a_finding(self) -> None:
+        self.add(".gitattributes", "".join(f"{p} export-ignore\n" for p in g.PERSONAL))
+        self.add("devices.toml", '[porch]\nhost = "192.168.1.20"\nkey = ""\n')
+        self.assertEqual(g.scan_tree(self.root), [], "an empty key is no key")
+        (self.root / "devices.toml").write_text(
+            '[porch]\nhost = "192.168.1.20"\nkey = "pumpkin-42"\n', encoding="utf-8"
+        )
+        self.assertEqual(g.scan_tree(self.root), [], "the working copy never ships")
+        self.git("add", "--", "devices.toml")
+        self.assertEqual(
+            g.scan_tree(self.root),
+            ["devices.toml: tracked with a castle key in it (castle_keys.py)"],
+        )
+
     def test_untracked_files_and_the_guard_itself_are_not_read(self) -> None:
         (self.root / "scratch.txt").write_text(SELLER, encoding="utf-8")
         for path in g.UNREAD:
@@ -240,6 +254,9 @@ class TestThisRepository(unittest.TestCase):
         tracked = g.tracked()
         present = [p for p in g.PERSONAL if p in tracked]
         self.assertEqual(g.export_ignored(present), set(present))
+
+    def test_nothing_personal_ships(self) -> None:
+        self.assertEqual(g.scan_tree(), [])
 
 
 if __name__ == "__main__":

@@ -469,8 +469,6 @@
   // choosing the browser loads the current song (at preload=none: no bytes
   // until Play).
   target?.addEventListener('change', () => { if (target.value === 'computer') {load(current);} });
-  // The computer build prints the castle's address; here the address is our own.
-  for (const dd of document.querySelectorAll('dd')) { if (/^\d{1,3}(\.\d{1,3}){3}$/.test(dd.textContent.trim())) {dd.textContent = location.host;} }
   const form = byId('import-form');
   if (form) {
     for (const control of form.querySelectorAll('input, button')) {control.disabled = true;}
