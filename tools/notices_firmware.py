@@ -38,6 +38,7 @@ MANAGED = {
 
 _IDF_SRC = f"https://github.com/espressif/esp-idf/tree/v{IDF_VERSION}"
 _REG = "https://components.espressif.com/components/"
+_IN_IDF = f"as included in ESP-IDF {IDF_VERSION}"
 _ESPHOME_WHY = (
     "The image is built on ESPHome, whose C++ runtime is published under "
     "GPLv3 only. Its terms reach the image as a whole; docs/LICENSING.md "
@@ -84,8 +85,8 @@ FIRMWARE: dict[str, Component] = {
         source=_REG + "esphome/micro-opus",
     ),
     "opus": Component(
-        "Opus audio codec (as vendored by micro-opus)",
-        MANAGED["esphome/micro-opus"],
+        "Opus audio codec",
+        f"as vendored in micro-opus {MANAGED['esphome/micro-opus']}",
         "BSD-3-Clause",
         (
             (
@@ -147,7 +148,7 @@ FIRMWARE: dict[str, Component] = {
     ),
     "net80211": Component(
         "FreeBSD net80211 (in the Wi-Fi library)",
-        IDF_VERSION,
+        _IN_IDF,
         # ESP-IDF's COPYRIGHT.rst says "BSD License"; FreeBSD's
         # sys/net80211 sources carry the two-clause text:
         # https://github.com/freebsd/freebsd-src/blob/main/sys/net80211/ieee80211.c
@@ -206,7 +207,7 @@ FIRMWARE: dict[str, Component] = {
     ),
     "wpa_supplicant": Component(
         "wpa_supplicant",
-        IDF_VERSION,
+        _IN_IDF,
         "BSD-3-Clause",
         (
             "Copyright (c) 2002-2022, Jouni Malinen <j@w1.fi> and contributors",
@@ -217,7 +218,7 @@ FIRMWARE: dict[str, Component] = {
     ),
     "http_parser": Component(
         "HTTP Parser (NGINX / Node.js derived)",
-        IDF_VERSION,
+        _IN_IDF,
         "MIT",
         ("Copyright Igor Sysoev", "Copyright Joyent, Inc. and other Node contributors"),
         source=_IDF_SRC + "/components/http_parser",
@@ -233,21 +234,21 @@ FIRMWARE: dict[str, Component] = {
     ),
     "tlsf": Component(
         "TLSF allocator",
-        IDF_VERSION,
+        _IN_IDF,
         "BSD-3-Clause",
         ("Copyright (C) 2006-2016 Matthew Conte",),
         source="https://github.com/espressif/tlsf",
     ),
     "sdmmc": Component(
         "SD/MMC driver (derived from OpenBSD)",
-        IDF_VERSION,
+        _IN_IDF,
         "ISC",
         ("Copyright (c) 2006 Uwe Stuehler <uwe@openbsd.org>",),
         source=_IDF_SRC + "/components/sdmmc",
     ),
     "ubsan": Component(
         "UBSAN runtime",
-        IDF_VERSION,
+        _IN_IDF,
         "BSD-2-Clause",
         (
             "Copyright (c) 2016, Linaro Limited (modified for HelenOS by Jiří Zárevúcky)",
@@ -256,7 +257,7 @@ FIRMWARE: dict[str, Component] = {
     ),
     "xtensa": Component(
         "Xtensa HAL and headers",
-        IDF_VERSION,
+        _IN_IDF,
         "MIT",
         (
             "Copyright (C) 2003, 2006, 2010 Tensilica Inc.",

@@ -37,6 +37,9 @@ DOCUMENTED_GENERATED = {
     "requirements.lock",
     "tests/golden/read_routes.json",
     "tests/golden/scene_errors.json",
+    "licenses/THIRD-PARTY-NOTICES-firmware.txt",
+    "licenses/THIRD-PARTY-NOTICES-desktop.txt",
+    "licenses/desktop-crates.json",
 }
 
 # The second exemption, and the only kind of file that may take it: data the
