@@ -26,6 +26,10 @@
 // Every control is one request to an API the desk and Castle Radio already
 // use; the castle key, when one is set, rides along as X-Castle-Key from
 // this browser's localStorage, as it did on the v5.74 page.
+//
+// The song list is every file the Feather build can PLAY — mp3, opus, wav,
+// castle_feather_s3.yaml's codecs (v5.76: 5.75 left .opus out, so a card of
+// Castle Radio's opus imports read "No songs on the card yet").
 
 #include <esp_http_server.h>
 
@@ -114,7 +118,7 @@ function sync(){Promise.all([fetch('/api/status').then(r=>r.json()),fetch('/api/
   :'<p><small>Motion sensor: not fitted on this castle.</small></p>';
 }).catch(()=>say('The castle is not answering.'))}
 function songs(){fetch('/api/files').then(r=>r.ok?r.json():Promise.reject()).then(fs=>{
- const m=fs.filter(f=>f.name&&!f.dir&&/\.(mp3|wav)$/i.test(f.name));
+ const m=fs.filter(f=>f.name&&!f.dir&&/\.(mp3|opus|wav)$/i.test(f.name));
  files.innerHTML=m.length?m.map(f=>`<li><button onclick="api('/api/play?f=${encodeURIComponent(f.name)}')">▶</button> ${esc(f.name)} <small>${(f.size/1024)|0} KB</small></li>`).join('')
   :'<li><small>No songs on the card yet — add some with the Castle app.</small></li>'})
  .catch(()=>files.innerHTML='<li><small>No card to read.</small></li>')}

@@ -6,7 +6,7 @@
  * port is already taken the OS picks a free one instead of failing.
  *
  * Offsets in use: +1/+2 bridge.spec.ts, +3/+4 remote.spec.ts, +5
- * owner.spec.ts. The main web server is the base itself
+ * owner.spec.ts, +6 owner-first-run.spec.ts. The main web server is the base itself
  * (playwright.config.ts).
  */
 
