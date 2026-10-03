@@ -12,6 +12,7 @@ import castle_finder
 import desktop_tools
 import device_bridge
 import downloader_routes
+import first_run
 import import_routes
 import library_ops
 import remote_library
@@ -45,6 +46,7 @@ STATIC_ROUTES = frozenset(
         "/device-words.js",
         "/castle-key.js",
         "/castle-find.js",
+        "/first-run.js",
         "/desktop-tools.js",
         "/downloader.js",
         "/device-helper.js",
@@ -262,6 +264,7 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/jobs": get_jobs,
         "/radio/tools": desktop_tools.get_status,
         **castle_finder.GET_ROUTES,
+        **first_run.GET_ROUTES,
         "/radio/downloader": downloader_routes.get_status,
     }
 

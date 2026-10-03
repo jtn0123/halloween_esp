@@ -152,3 +152,8 @@
 .castle-chip.offline{cursor:pointer}
 .find-results{list-style:none;margin:10px 0;padding:0;display:flex;flex-direction:column;gap:8px}
 .find-results li{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+/* First run (first-run.js): the Listen page with nothing to play yet. */
+.first-run{border:1px dashed currentColor;border-radius:14px;padding:18px 20px;margin:0 0 14px}
+.first-run h3{margin:0 0 6px}
+.first-run p{margin:0 0 12px;opacity:.85}
