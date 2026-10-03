@@ -20,7 +20,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 
-import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+# The sandbox first, then tools/ on the path.
+import radio_env  # noqa: F401
 
 # isort: split
 import import_reason as ir

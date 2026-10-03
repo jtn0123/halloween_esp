@@ -48,6 +48,11 @@ def writable(p: Path) -> None:
     os.chmod(p, stat.S_IWRITE | stat.S_IREAD | (stat.S_IEXEC if p.is_dir() else 0))
 
 
+def library(lib: Path) -> list[str]:
+    """The track files in `lib`, without the manifest's lock."""
+    return sorted(p.name for p in lib.iterdir() if p.suffix != ".lock")
+
+
 class EdgeCase(unittest.TestCase):
     """The library, its manifest and the kept-sources folder in a tempdir —
     all three bindings, or a test writes into a real library."""
@@ -107,16 +112,13 @@ class EdgeCase(unittest.TestCase):
                 self.fake, self.said = fake, str(e.code)
                 raise
 
-    def library(self) -> list[str]:
-        return sorted(p.name for p in self.lib.iterdir() if p.suffix != ".lock")
-
 
 class TestDiskFull(EdgeCase):
     def test_a_full_disk_at_the_last_step_says_so_and_leaves_nothing(self) -> None:
         with mock.patch.object(mf, "record", side_effect=NO_SPACE):
             self.assertEqual(self.refused(str(self.src), "--id", "full"), ir.DISK_FULL)
         self.assertIn("No space left on device", self.detail)
-        self.assertNotIn("full.mp3", self.library())
+        self.assertNotIn("full.mp3", library(self.lib))
         self.assertIsNone(mf.get("full"))
 
     def test_a_full_disk_while_keeping_the_source(self) -> None:
@@ -125,7 +127,7 @@ class TestDiskFull(EdgeCase):
         with mock.patch.object(shutil, "copyfile", side_effect=win):
             said = self.refused(str(self.src), "--id", "kept", "--keep-source")
         self.assertEqual(said, ir.DISK_FULL)
-        self.assertNotIn("kept.mp3", self.library())
+        self.assertNotIn("kept.mp3", library(self.lib))
 
     def test_ffmpeg_running_out_of_room_is_not_called_bad_audio(self) -> None:
         out = self.lib / "x.mp3"
@@ -149,7 +151,7 @@ class TestDiskFull(EdgeCase):
         ):
             ic.convert(self.src, out, opts)
         self.assertEqual(str(cm.exception), ir.DISK_FULL)
-        self.assertEqual(self.library(), [])  # no .part left either
+        self.assertEqual(library(self.lib), [])  # no .part left either
 
     def test_the_downloader_running_out_of_room(self) -> None:
         err = "ERROR: unable to write data: [Errno 28] No space left on device"
@@ -163,7 +165,7 @@ class TestNotASong(EdgeCase):
         doc = self.tmp / "letter.docx"
         doc.write_bytes(b"PK\x03\x04 this is a letter, not a song" * 50)
         self.assertEqual(self.refused(str(doc)), ic.not_audio("letter.docx"))
-        self.assertEqual(self.library(), [])
+        self.assertEqual(library(self.lib), [])
 
 
 class TestLength(EdgeCase):
@@ -189,13 +191,13 @@ class TestLength(EdgeCase):
         with self.probe(7200.0):
             code, _ = self.run_cli(str(self.src), "--id", "part", "--take", "1")
         self.assertEqual(code, 0)
-        self.assertIn("part.mp3", self.library())
+        self.assertIn("part.mp3", library(self.lib))
 
     def test_a_long_cut_is_caught_when_the_source_could_not_be_measured(self) -> None:
         with self.probe(None, cut=7200.0):
             said = self.refused(str(self.src), "--id", "unmeasured")
         self.assertEqual(said, ic.too_long("src.wav", 7200.0))
-        self.assertNotIn("unmeasured.mp3", self.library())
+        self.assertNotIn("unmeasured.mp3", library(self.lib))
 
     def test_a_link_asks_the_downloader_to_refuse_a_long_video(self) -> None:
         skipped = "[download] Long Thing does not pass filter (...), skipping .."
@@ -232,7 +234,7 @@ class TestNames(EdgeCase):
         win = self.copy_as("Caf\u00e9 Noir.wav", "win")  # NFC, as Windows does
         for src in (mac, win):
             self.assertEqual(self.run_cli(str(src))[0], 0)
-        self.assertEqual(self.library(), ["cafe_noir.mp3", "tracks.json"])
+        self.assertEqual(library(self.lib), ["cafe_noir.mp3", "tracks.json"])
         self.assertEqual(list(mf.load()), ["cafe_noir"])
 
     def test_a_name_with_no_ascii_letters_gets_a_stable_id(self) -> None:
@@ -241,7 +243,7 @@ class TestNames(EdgeCase):
         self.assertRegex(tid, r"^song_[0-9a-f]{8}$")
         self.assertEqual(ia.track_slug("\u30cf\u30ed\u30a6\u30a3\u30f3"), tid)
         self.assertEqual(self.run_cli(str(src))[0], 0)
-        self.assertIn(f"{tid}.mp3", self.library())
+        self.assertIn(f"{tid}.mp3", library(self.lib))
 
     def test_slugs(self) -> None:
         for stem, want in (
@@ -263,7 +265,7 @@ class TestNames(EdgeCase):
             with self.subTest(bad=bad):
                 said = self.refused(str(self.src), "--id", bad)
                 self.assertIn("letters, digits and _", said)
-        self.assertEqual(self.library(), [])
+        self.assertEqual(library(self.lib), [])
 
     def test_a_windows_path_that_is_gone_reads_as_its_name(self) -> None:
         gone = "C:\\Users\\you\\Zo\u00eb\\Caf\u00e9.mp3"

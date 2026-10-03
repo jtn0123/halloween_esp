@@ -18,7 +18,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+# The sandbox first, then tools/ on the path.
+import radio_env  # noqa: F401
 
 # isort: split
 import import_reason as ir
@@ -85,8 +86,9 @@ class ChildFailureTests(unittest.TestCase):
         exc = self.ran(["/no/such/python"])
         self.assertEqual(str(exc), ir.START_FAILED)
         self.assertIn("python", exc.log)
+        run_child = job_progress.runner()
         with self.assertRaises(ToolFailed) as caught:
-            job_progress.runner()(["/no/such/analyze_track"])
+            run_child(["/no/such/analyze_track"])
         self.assertEqual(str(caught.exception), ir.START_FAILED)
 
     def test_a_silent_failure_is_still_a_sentence(self):
