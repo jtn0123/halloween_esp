@@ -364,6 +364,8 @@ mod tests {
             "  ",
             "x;rm -rf",
             "a b",
+            "café",
+            "ハロウィン",
         ] {
             assert_eq!(safe_id(no), None, "{no}");
         }

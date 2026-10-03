@@ -8,6 +8,8 @@ copies and must beat everything else.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
 import sys
 import tempfile
@@ -21,6 +23,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import castle_tools_status
 import exe_paths
 import import_fetch
+import import_reason as ir
 
 CLEAN = {"CASTLE_FFMPEG": "", "CASTLE_YTDLP": ""}
 
@@ -97,9 +100,13 @@ class TestMediaTools(unittest.TestCase):
             mock.patch.object(exe_paths.shutil, "which", return_value=None),
         ):
             self.assertIsNone(exe_paths.ytdlp())
-            with self.assertRaises(SystemExit) as cm:
+            err = io.StringIO()
+            with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(err):
                 import_fetch._ytdlp()
-        self.assertIn("CASTLE_YTDLP", str(cm.exception))
+        # The owner reads the sentence with the button in it; the places it
+        # looked go beneath, for whoever helps.
+        self.assertEqual(str(cm.exception), ir.DOWNLOADER_MISSING)
+        self.assertIn("CASTLE_YTDLP", err.getvalue())
 
     def test_which_takes_a_path_or_a_name(self) -> None:
         here = self.tmp / "tool"

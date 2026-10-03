@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import import_fetch as imf
+import import_reason as ir
 import import_track as it
 import manifest as mf
 from helpers import make_click_track
@@ -285,9 +286,12 @@ class TestRefresh(CliCase):
         self.assertEqual(entry["notes"], "keep me")
 
     def test_unknown_id_fails_with_a_useful_message(self) -> None:
-        with self.assertRaises(SystemExit) as cm:
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as cm, contextlib.redirect_stderr(err):
             self.run_cli("--refresh", "never_imported")
-        self.assertIn("--list", str(cm.exception))
+        self.assertIn("'never_imported'", str(cm.exception))
+        self.assertIn("import it again", str(cm.exception))
+        self.assertIn("--list", err.getvalue())  # for whoever helps
 
 
 class TestListAndAnalyze(CliCase):
@@ -354,10 +358,12 @@ class TestUrlIsAUrl(unittest.TestCase):
         with (
             mock.patch.object(subprocess, "run") as run,
             tempfile.TemporaryDirectory() as td,
+            contextlib.redirect_stderr(io.StringIO()) as err,
         ):
             with self.assertRaises(SystemExit) as e:
                 it.fetch_url("--config-location=http://evil.test/x", Path(td))
-            self.assertIn("http(s) only", str(e.exception))
+            self.assertEqual(str(e.exception), ir.NOT_A_LINK)
+            self.assertIn("http(s)", err.getvalue())
             run.assert_not_called()
 
     def test_a_real_link_is_passed_after_a_double_dash(self) -> None:
