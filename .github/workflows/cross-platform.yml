@@ -80,19 +80,50 @@ jobs:
       - name: ffmpeg + lame (macOS)
         if: runner.os == 'macOS'
         run: brew install ffmpeg lame
-      # Chocolatey's lame package fetches its zip from rarewares.org at
-      # install time, and that host drops a connection now and then — a red
-      # job that only a rerun fixed. Three tries, with a pause between them;
-      # a package already in place is a no-op on the next pass.
-      - name: ffmpeg + lame (Windows)
+      - name: ffmpeg (Windows)
         if: runner.os == 'Windows'
+        run: choco install ffmpeg --yes --no-progress
+      # lame is the zip Chocolatey's own lame package fetches (over https
+      # here — the same bytes), pinned to that package's sha256, but kept in
+      # the Actions cache: rarewares.org, its only home, refuses GitHub's
+      # runners often enough to redden the job — three tries in a row over
+      # five minutes on 2026-10-03, while the same URL answered from a home
+      # connection. A cache hit never asks it.
+      - name: lame zip (Windows, cached)
+        if: runner.os == 'Windows'
+        id: lame-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/lame-3.100-64
+          key: lame-3.100-64-20200409-59ea16ac
+      - name: lame (Windows)
+        if: runner.os == 'Windows'
+        env:
+          LAME_URL: https://www.rarewares.org/files/mp3/lame3.100-64-20200409.zip
+          LAME_SHA256: 59ea16ac74afb04f8ed9f33f75618e4e7e5b3e1ea53f5d751e3834e99f58ba6d
+          HIT: ${{ steps.lame-cache.outputs.cache-hit }}
         run: |
-          for try in 1 2 3; do
-            choco install ffmpeg lame --yes --no-progress && exit 0
-            echo "choco install failed (try $try of 3)"
-            sleep $((try * 20))
-          done
-          exit 1
+          dir="$HOME/lame-3.100-64"
+          if [ "$HIT" != "true" ]; then
+            for try in 1 2 3 4 5; do
+              curl -fsSL --proto '=https' --proto-redir '=https' --max-time 60 -o lame.zip "$LAME_URL" && break
+              echo "lame download failed (try $try of 5)"
+              sleep $((try * 20))
+            done
+            python - "$dir" <<'PY'
+          import hashlib, os, sys, zipfile
+          data = open("lame.zip", "rb").read()
+          got = hashlib.sha256(data).hexdigest()
+          if got != os.environ["LAME_SHA256"]:
+              sys.exit(f"lame.zip sha256 {got} is not the pinned one")
+          with zipfile.ZipFile("lame.zip") as z:
+              for name in ("lame.exe", "lame_enc.dll"):
+                  z.extract(name, sys.argv[1])
+          PY
+            rm lame.zip
+          fi
+          cygpath -w "$dir" >> "$GITHUB_PATH"
+          "$dir/lame.exe" --version
       # Same pin as ci.yml's python job, for the same reason (the parity
       # suites drift a last ulp under numpy's AVX-512 kernels) — x86-64 only;
       # on arm64 these names are not numpy targets and would only warn.
