@@ -108,6 +108,8 @@ pub mod studio_import;
 #[cfg(feature = "native")]
 pub mod studio_jobs;
 #[cfg(feature = "native")]
+pub mod studio_key;
+#[cfg(feature = "native")]
 pub mod studio_lean;
 #[cfg(feature = "native")]
 pub mod studio_media;

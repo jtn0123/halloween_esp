@@ -34,6 +34,7 @@ import importlib.util
 import json
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
@@ -41,22 +42,13 @@ from pathlib import Path
 
 import build_paths as bp
 import sd_ota
-from hosts import key_headers, maybe_host
+from castle_keys import KEY_REQUIRED
+from hosts import castle_url, key_headers, maybe_host
 from published import Published
 
 ROOT = Path(__file__).resolve().parent.parent
 SCENES_API = "/api/scenes"  # where the card's scenes/ directory is PUT
 FILES_API = "/api/files"  # and the card ROOT, which the listing reads too
-CASTLE_SCHEME = "http"  # the board's web server has no TLS (castle_url)
-
-
-def castle_url(ip: str, path: str) -> str:
-    """A URL on the castle. Plain HTTP by necessity, not by choice: ESPHome's
-    web server on the board has no TLS, and the castle lives on the owner's
-    home LAN — the accepted position in CLAUDE.md "Security position". The
-    scheme is spelled once, here, so a castle that ever speaks HTTPS is one
-    line."""
-    return urllib.parse.urlunsplit((CASTLE_SCHEME, ip, path, "", ""))
 
 
 def api(
@@ -67,8 +59,13 @@ def api(
     req = urllib.request.Request(
         castle_url(ip, path), data=body, method=method, headers=key_headers(ip)
     )
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return bytes(r.read())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return bytes(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 401:  # the desk's publish shows this line as its reason
+            raise SystemExit(KEY_REQUIRED) from None
+        raise
 
 
 def listing(ip: str) -> list[dict]:

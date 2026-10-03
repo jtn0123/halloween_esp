@@ -13,7 +13,11 @@ a dead `file:` source, and two stem directories (one fresh, one stale).
 
 Nothing here reaches the network or the operator's own files: the four
 CASTLE_* knobs are set explicitly and `CASTLE_HOST` is empty unless a
-subclass names an emulator (CLAUDE.md's sandboxing section).
+subclass names an emulator (CLAUDE.md's sandboxing section). The inventory
+is a sandbox file too (CASTLE_DEVICES, empty unless a subclass writes
+DEVICES) — it is where the studio REMEMBERS a castle key, and a test that
+set one must never write the repo's devices.toml — and CASTLE_KEY is never
+passed through.
 """
 
 from __future__ import annotations
@@ -238,6 +242,8 @@ class StudioCase(unittest.TestCase):
 
     #: "" is explicitly castle-less; a subclass names an emulator host.
     HOST_ENV = ""
+    #: The sandbox devices.toml's text — the castle-key store.
+    DEVICES = ""
 
     tmp: ClassVar[Path]
     tracks: ClassVar[Path]
@@ -245,6 +251,7 @@ class StudioCase(unittest.TestCase):
     procs: ClassVar[list[subprocess.Popen[bytes]]]
     scenes: ClassVar[Path]
     build: ClassVar[Path]
+    devices: ClassVar[Path]
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -271,6 +278,8 @@ class StudioCase(unittest.TestCase):
         seed_library(cls.tracks)
         cls.scenes = cls.tmp / "scenes.yaml"
         cls.scenes.write_text(scenes_fixture(), encoding="utf-8")
+        cls.devices = cls.tmp / "devices.toml"
+        cls.devices.write_text(cls.DEVICES, encoding="utf-8")
         # free_port() closes the socket before the server binds it, so a
         # busy machine (another suite, the user's own studio) can take the
         # port in between. One retry on a fresh port is the cheap answer:
@@ -297,7 +306,14 @@ class StudioCase(unittest.TestCase):
     def _launch(cls) -> None:
         cls.port = free_port()
         env = {**os.environ}
-        for k in ("CASTLE_HOST", "CASTLE_TRACKS", "CASTLE_SCENES", "CASTLE_BUILD"):
+        for k in (
+            "CASTLE_HOST",
+            "CASTLE_TRACKS",
+            "CASTLE_SCENES",
+            "CASTLE_BUILD",
+            "CASTLE_KEY",
+            "CASTLE_DEVICES",
+        ):
             env.pop(k, None)
         # The importer, the generators and the manifest write are Python
         # children of the server, and a BINARY has no sys.executable to
@@ -320,6 +336,7 @@ class StudioCase(unittest.TestCase):
                     "CASTLE_TRACKS": str(cls.tracks),
                     "CASTLE_SCENES": str(cls.scenes),
                     "CASTLE_BUILD": str(cls.build),
+                    "CASTLE_DEVICES": str(cls.devices),
                 },
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

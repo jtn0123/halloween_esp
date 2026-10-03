@@ -99,9 +99,14 @@ class TestBuild(FakeData):
             "Start server.py",
             "files stay in this demo",
             "Waveform unavailable. Reopen",
+            "This computer remembers it",
         ):
             self.assertNotIn(gone, page)
         self.assertIn("This browser", page)
+        # The key card ships, answered by castle-direct.js from this browser.
+        self.assertIn('id="key-input"', page)
+        self.assertIn("The castle key (firmware v5.74)", page)
+        self.assertIn("This browser remembers it for this castle only.", page)
         self.assertIn('<audio id="audio" preload="none">', page)
 
     def test_the_castle_guard_is_in_the_source_not_only_the_build(self):

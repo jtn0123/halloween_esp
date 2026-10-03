@@ -13,7 +13,9 @@ Two directories, kept apart on purpose (docs/PRODUCTION-TODO.md 5.3):
              `models/` (the htdemucs weights), `install.json` (what the
              installer found and fetched). `--uninstall` removes it whole.
   DATA     — the user's. `tracks/`, `scenes.yaml`, `build/`, Castle Radio's
-             catalog and waveforms, `settings.json`. Only `--purge` touches it.
+             catalog and waveforms, `settings.json`, and `devices.toml` (the
+             castle keys either app remembers — tools/castle_keys.py). Only
+             `--purge` touches it.
 
 DATA's layout is Castle Radio's `.radio-data/` layout on purpose: that
 server hard-codes its data home beside its own source, so the installed
@@ -33,6 +35,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import hosts  # stdlib-only, like this module
 
 ROOT = Path(__file__).resolve().parent.parent
 APP_NAME = "CastleTools"
@@ -88,6 +93,11 @@ class Dirs:
     @property
     def build(self) -> Path:
         return self.data / "build"
+
+    @property
+    def devices(self) -> Path:
+        """The castle key store (CASTLE_DEVICES) — the user's, never a tree's."""
+        return self.data / "devices.toml"
 
     @property
     def install_file(self) -> Path:
@@ -253,6 +263,7 @@ def launch_env(
         CASTLE_TRACKS=str(dirs.tracks),
         CASTLE_SCENES=str(dirs.scenes),
         CASTLE_BUILD=str(dirs.build),
+        CASTLE_DEVICES=str(dirs.devices),
         CASTLE_PY=str(record.get("python") or dirs.python),
         # Demucs fetches its weights through huggingface_hub; the installer
         # downloaded them here, so the import never reaches the network.
@@ -285,7 +296,17 @@ def launch_env(
     env["CASTLE_HOST"] = host
     if host:
         env["CASTLE_RADIO_HOST"] = host
+    # A key typed into settings.json pins it for both servers (CASTLE_KEY
+    # wins over the store); one no castle could hold is not passed at all.
+    held = settings.get("castle_key")
+    if isinstance(held, str) and hosts.valid_key(held.strip()):
+        env["CASTLE_KEY"] = held.strip()
     return env
+
+
+def shown(env: Mapping[str, str]) -> list[str]:
+    """`env` as `KEY=value` lines for a person to read — the key withheld."""
+    return [f"{k}={'<set>' if k == 'CASTLE_KEY' else env[k]}" for k in sorted(env)]
 
 
 def prepare(dirs: Dirs) -> list[str]:
@@ -316,8 +337,7 @@ def main(argv: list[str] | None = None) -> int:
             read_json(dirs.settings_file),
             {"PATH": os.environ.get("PATH", "")},
         )
-        for k in sorted(env):
-            print(f"{k}={env[k]}")
+        print("\n".join(shown(env)))
         return 0
     print("usage: desktop_env.py dirs|env", file=sys.stderr)
     return 2

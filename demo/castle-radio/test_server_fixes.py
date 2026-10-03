@@ -92,7 +92,12 @@ class DeviceEventsRouteTests(unittest.TestCase):
         only two of them agreed."""
         served = set(server.Handler.GET_ROUTES) | set(server.Handler.POST_ROUTES)
         prefixes = (server.DEVICE_AUDIO_PREFIX, "/radio/device/sync")
-        for name in ("device-link.js", "remote-library.js", "castle-direct.js"):
+        for name in (
+            "device-link.js",
+            "remote-library.js",
+            "castle-direct.js",
+            "castle-key.js",
+        ):
             for path in DEVICE_PATH.findall((HERE / name).read_text(encoding="utf-8")):
                 self.assertTrue(
                     path in served or path.startswith(prefixes),

@@ -10,13 +10,23 @@
 //! devices.toml name), then CASTLE_HOST (a comma list, names looked up),
 //! then the devices.toml inventory (CASTLE_DEVICES overrides the path);
 //! several candidates are probed and the first that answers wins. The
-//! `hosts` verb prints the walk. Answers print as the castle's own JSON;
+//! `hosts` verb prints the walk. The castle key (v5.74) is hosts.py's too:
+//! CASTLE_KEY, else the `key` of the entry naming the chosen host — sent
+//! as X-Castle-Key with every verb, and never printed. Answers print as the castle's own JSON;
 //! exit 0 on 2xx, 2 when
 //! the castle refuses or the card's answer disagrees, 1 for transport.
 //! tests/test_bridge_rust.py round-trips every verb against castle_emu.
 
 use castle_core::bridge::{UploadFault, encode_query, list_entries, probe, request, upload};
 use castle_core::hosts;
+
+/// The castle key for the castle this run talks to, resolved once in main
+/// by hosts.py's rule (crate::hosts::castle_key) and sent with every verb.
+static KEY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+fn key() -> &'static str {
+    KEY.get().map_or("", String::as_str)
+}
 
 fn fail(msg: &str) -> ! {
     eprintln!("castle: {msg}");
@@ -51,7 +61,7 @@ fn do_put(host: &str, args: &[String]) -> ! {
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default()
     });
-    match upload(host, route, &name, &data) {
+    match upload(host, route, &name, &data, key()) {
         Ok(body) => {
             println!("{body}");
             std::process::exit(0)
@@ -67,7 +77,7 @@ fn do_put(host: &str, args: &[String]) -> ! {
 /// `purge`: delete every FILE in the card root — directories (site/,
 /// scenes/, logs/) stay, exactly sd_sync's "clear the music, not the card".
 fn do_purge(host: &str) -> ! {
-    let listing = match request(host, "GET", "/api/files", b"", 10.0) {
+    let listing = match request(host, "GET", "/api/files", b"", key(), 10.0) {
         Err(e) => fail(&e),
         Ok(r) if !(200..300).contains(&r.code) => refuse(&format!(
             "{host} cannot list the card: {} {}",
@@ -87,7 +97,7 @@ fn do_purge(host: &str) -> ! {
     }
     for name in victims {
         let target = format!("/api/files/{}", encode_query(&name));
-        match request(host, "DELETE", &target, b"", 10.0) {
+        match request(host, "DELETE", &target, b"", key(), 10.0) {
             Err(e) => fail(&e),
             Ok(r) if !(200..300).contains(&r.code) => refuse(&format!(
                 "{host} kept {name}: {} {}",
@@ -115,8 +125,8 @@ fn do_ota(host: &str, args: &[String]) -> ! {
             "{path} does not look like an app image (no 0xE9 magic)"
         ));
     }
-    let _ = request(host, "POST", "/api/stop", b"", 5.0);
-    match request(host, "PUT", "/api/ota", &data, 180.0) {
+    let _ = request(host, "POST", "/api/stop", b"", key(), 5.0);
+    match request(host, "PUT", "/api/ota", &data, key(), 180.0) {
         Ok(r) if (200..300).contains(&r.code) => {
             println!("{}", String::from_utf8_lossy(&r.body).trim_end())
         }
@@ -133,7 +143,7 @@ fn do_ota(host: &str, args: &[String]) -> ! {
         .unwrap_or(90.0);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs_f64(wait_s);
     loop {
-        if let Ok(r) = request(host, "GET", "/api/status", b"", 3.0) {
+        if let Ok(r) = request(host, "GET", "/api/status", b"", key(), 3.0) {
             if (200..300).contains(&r.code) {
                 let body = String::from_utf8_lossy(&r.body).into_owned();
                 let v = castle_core::bridge::json_str(&body, "version").unwrap_or_default();
@@ -181,7 +191,7 @@ fn main() {
         arg_host = Some(args.remove(0));
     }
     let env_host = std::env::var("CASTLE_HOST").ok();
-    let toml_path = std::env::var("CASTLE_DEVICES").unwrap_or_else(|_| "devices.toml".to_string());
+    let toml_path = hosts::devices_path("devices.toml".into());
     let toml = std::fs::read_to_string(&toml_path).unwrap_or_default();
     let verb = args.first().cloned().unwrap_or_default();
     if verb == "hosts" {
@@ -207,6 +217,13 @@ fn main() {
     } else {
         probe(&cands)
     };
+    // The key belongs to the address as the inventory spells it — before
+    // the port goes on, as castle_link and sd_sync look it up.
+    let _ = KEY.set(hosts::castle_key(
+        Some(&host),
+        hosts::env_key().as_deref(),
+        &toml,
+    ));
     if !host.contains(':') {
         host.push_str(":80");
     }
@@ -247,7 +264,7 @@ fn main() {
              put [--to site|scenes] LOCAL [NAME]|rm NAME|purge|ota BIN|hosts [ARG]",
         ),
     };
-    match request(&host, method, &target, b"", read_s) {
+    match request(&host, method, &target, b"", key(), read_s) {
         Err(e) => fail(&e),
         Ok(r) => {
             println!("{}", String::from_utf8_lossy(&r.body).trim_end());

@@ -219,6 +219,38 @@ class TestCastleKey(HostCase):
     def test_an_unknown_host_sends_none(self) -> None:
         self.assertEqual(hosts.key_headers("127.0.0.1:8093"), {})
 
+    def test_a_key_no_castle_could_hold_is_never_sent(self) -> None:
+        """sd_web_prefs.h key_chars_ok: 1-64 printable ASCII, no space. A
+        CR or LF would be a header injection; anything else, a 401."""
+        for bad in ("two words", "line\nbreak", "caf\u00e9", "k" * 65):
+            with mock.patch.dict(os.environ, {"CASTLE_KEY": bad}):
+                self.assertEqual(hosts.key_headers("10.0.0.9"), {}, repr(bad))
+        with mock.patch.dict(os.environ, {"CASTLE_KEY": "  padded\t"}):
+            self.assertEqual(hosts.castle_key(), "padded")
+        self.toml.write_text(
+            '[a]\nhost = "h"\nkey = 1234\n[b]\nhost = "i"\nkey = "x y"\n',
+            encoding="utf-8",
+        )
+        # A key is a TOML string — castle-core's reader reads no other kind.
+        self.assertEqual(hosts.castle_key("h"), "")
+        self.assertEqual(hosts.castle_key("i"), "")
+
+    def test_castle_devices_names_the_store(self) -> None:
+        """A packaged install keeps its inventory (and its keys) in a
+        per-user file named by CASTLE_DEVICES; empty means the default."""
+        other = self.tmp / "elsewhere.toml"
+        other.write_text(
+            '[x]\nhost = "10.5.5.5"\nkey = "3lsewhere"\n', encoding="utf-8"
+        )
+        with mock.patch.dict(os.environ, {"CASTLE_DEVICES": str(other)}):
+            self.assertEqual(hosts.devices_path(), other)
+            self.assertEqual(hosts.castle_key("10.5.5.5"), "3lsewhere")
+            self.assertEqual(hosts.candidates(), ["10.5.5.5"])
+        with mock.patch.dict(os.environ, {"CASTLE_DEVICES": ""}):
+            self.assertEqual(hosts.devices_path(), self.toml)
+            self.assertEqual(hosts.castle_key("10.0.0.9"), "b3nch")
+        self.assertEqual(hosts.stored_key("10.5.5.5", other), "3lsewhere")
+
 
 if __name__ == "__main__":
     unittest.main()
