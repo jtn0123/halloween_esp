@@ -5,6 +5,7 @@
 
 use std::process::Command;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::httpd::{Reply, Request, parse_multipart};
 use crate::jsonio::Json;
@@ -90,13 +91,24 @@ fn importer(app: &App) -> Vec<String> {
     ]
 }
 
+/// A directory of this upload's own beside the library. One shared
+/// `_upload/` was removed by whichever import finished first, taking a
+/// second upload's staged file with it while that one still waited on the
+/// oplock (grade report 2026-09-24 E3).
+fn staging_dir(tracks: &std::path::Path) -> std::path::PathBuf {
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    tracks.join(format!("_upload_{}_{n}", std::process::id()))
+}
+
 /// studio_routes.do_import — blocking import: JSON url, or multipart
-/// upload staged under tracks/_upload with --keep-source.
+/// upload staged in a directory of its own with --keep-source.
 pub fn do_import(app: &Arc<App>, req: &Request) -> Reply {
     let ctype = req.header("content-type").unwrap_or("").to_string();
     let _ = std::fs::create_dir(&app.tracks);
     let mut args = importer(app);
     let opts: Json;
+    let mut upload: Option<(String, Vec<u8>)> = None;
     if ctype.starts_with("application/json") {
         let body = match json_body(&req.body) {
             Ok(v) => v,
@@ -127,15 +139,26 @@ pub fn do_import(app: &Arc<App>, req: &Request) -> Reply {
             Ok(v) => v,
             Err(e) => return bad_request(&e),
         };
-        let tmp = app.tracks.join("_upload");
-        let _ = std::fs::create_dir(&tmp);
         let name = if fname.is_empty() {
             "upload.bin".to_string()
         } else {
             fname
         };
+        upload = Some((name, data));
+    }
+    // Before the staging write, so a refused id leaves nothing behind.
+    if let Some(bad) = id_refused(&opts) {
+        return bad;
+    }
+    let mut staging = None;
+    if let Some((name, data)) = upload {
+        let tmp = staging_dir(&app.tracks);
         let staged = tmp.join(&name);
-        if std::fs::write(&staged, &data).is_err() {
+        if std::fs::create_dir(&tmp)
+            .and_then(|()| std::fs::write(&staged, &data))
+            .is_err()
+        {
+            let _ = std::fs::remove_dir_all(&tmp);
             return Reply::Json(
                 Json::Obj(vec![
                     ("ok".into(), Json::Bool(false)),
@@ -151,9 +174,7 @@ pub fn do_import(app: &Arc<App>, req: &Request) -> Reply {
         // keeps the original beside the library (tracks/_src/).
         args.push(staged.to_string_lossy().into_owned());
         args.push("--keep-source".to_string());
-    }
-    if let Some(bad) = id_refused(&opts) {
-        return bad;
+        staging = Some(tmp);
     }
     args.extend(sj::opt_args(&opts, &sj::OPT_KEYS));
     let (ok, out) = {
@@ -163,7 +184,9 @@ pub fn do_import(app: &Arc<App>, req: &Request) -> Reply {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         run(cmd(&args), 900)
     };
-    let _ = std::fs::remove_dir_all(app.tracks.join("_upload"));
+    if let Some(dir) = &staging {
+        let _ = std::fs::remove_dir_all(dir);
+    }
     let tracks = Json::Arr(st::track_infos(&app.tracks));
     if ok {
         Reply::Json(
