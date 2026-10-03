@@ -89,3 +89,46 @@ class PlatformTests(unittest.TestCase):
                 self.assertNotIn("Command Line Tools", err.getvalue())
                 run.assert_not_called()
                 self.assertFalse((root / "Applications").exists())
+
+
+class MainTests(unittest.TestCase):
+    """What a Mac is told for each way registration ends: ready, Apple's
+    tools missing (the Xcode hint), or the checkout itself wrong (no hint —
+    installing Xcode would not bring the launcher back)."""
+
+    def run_main(self, outcome: Path | BaseException) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        register = mock.Mock(
+            side_effect=outcome if isinstance(outcome, BaseException) else None,
+            return_value=outcome,
+        )
+        with (
+            mock.patch.object(launcher, "register", register),
+            contextlib.redirect_stdout(out),
+            contextlib.redirect_stderr(err),
+        ):
+            code = launcher.main()
+        return code, out.getvalue(), err.getvalue()
+
+    def test_ready_names_the_app_and_the_next_click(self) -> None:
+        code, out, err = self.run_main(Path("/Applications/Castle Tools.app"))
+        self.assertEqual((code, err), (0, ""))
+        self.assertIn("Website startup is ready: /Applications/Castle Tools.app", out)
+        self.assertIn("Connect Mac tools", out)
+
+    def test_apples_tools_missing_gets_the_xcode_hint(self) -> None:
+        for error in (
+            subprocess.CalledProcessError(1, "swiftc"),
+            FileNotFoundError("xcrun"),
+        ):
+            with self.subTest(type(error).__name__):
+                code, out, err = self.run_main(error)
+                self.assertEqual((code, out), (1, ""))
+                self.assertIn("Could not register Castle Tools", err)
+                self.assertIn("Command Line Tools", err)
+
+    def test_a_broken_checkout_is_not_blamed_on_xcode(self) -> None:
+        code, out, err = self.run_main(RuntimeError("launcher is missing"))
+        self.assertEqual((code, out), (1, ""))
+        self.assertIn("Could not register Castle Tools: launcher is missing", err)
+        self.assertNotIn("Command Line Tools", err)

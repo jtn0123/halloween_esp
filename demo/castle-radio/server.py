@@ -403,11 +403,18 @@ def listen(port: int) -> ThreadingHTTPServer:
     return ThreadingHTTPServer((HOST, port), Handler)
 
 
-if __name__ == "__main__":
-    httpd = listen(int(sys.argv[1]) if len(sys.argv) > 1 else 8871)
+def main(argv: list[str]) -> None:
+    """`server.py [port]`: 8871 unless told, and the banner names the port
+    actually bound, which is how a caller that asked for 0 finds it."""
+    httpd = listen(int(argv[0]) if argv else 8871)
     print(
         f"Castle Radio: http://{HOST}:{httpd.server_address[1]}"
         " — isolated imports, castle device bridge",
         flush=True,
     )
-    httpd.serve_forever()
+    with httpd:
+        httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

@@ -17,11 +17,13 @@ from diagnostics import app_version
 
 def get_status(handler, _parsed):
     """The probe checks metadata and cached files, without loading the model.
-    `app_version` is the release this copy came from, for the tools card."""
+    `app_version` is the release this copy came from, for the tools card.
+    `castle_origin` must equal the castle page's own location.origin, which
+    device-helper.js compares it with — and the castle speaks plain HTTP."""
     handler.reply(
         {
             **status(),
-            "castle_origin": "http://" + device_bridge.HOST,
+            "castle_origin": "http://" + device_bridge.HOST,  # NOSONAR — see above
             "app_version": app_version(),
         }
     )

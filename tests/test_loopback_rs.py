@@ -66,6 +66,15 @@ def _lines(proc: subprocess.Popen[str], out: queue.Queue[str]) -> None:
         out.put(line)
 
 
+def _next_line(out: queue.Queue[str], wait: float = 60) -> str | None:
+    """The server's next line, or None when it has said nothing for `wait`
+    seconds — an answer for the caller to report, with what came before."""
+    try:
+        return out.get(timeout=wait)
+    except queue.Empty:
+        return None
+
+
 class LoopbackOnly(unittest.TestCase):
     def setUp(self) -> None:
         tmp = tempfile.TemporaryDirectory(prefix="loopback-")
@@ -112,9 +121,8 @@ class LoopbackOnly(unittest.TestCase):
         seen: list[str] = []
         port = 0
         while not port or then not in "".join(seen):
-            try:
-                line = out.get(timeout=60)
-            except queue.Empty:
+            line = _next_line(out)
+            if line is None:
                 self.fail(f"{argv[0]} never printed its address and {then!r}: {seen}")
             seen.append(line)
             if not port and (m := BANNER.search(line)):
@@ -131,8 +139,10 @@ class LoopbackOnly(unittest.TestCase):
             return
         # Refused at once on every OS; a firewall that drops instead of
         # refusing makes it a timeout, which is the same answer.
-        with self.assertRaises(OSError, msg=f"{lan}:{port} answered: it is on the LAN"):
-            socket.create_connection((lan, port), timeout=5).close()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.settimeout(5)
+            with self.assertRaises(OSError, msg=f"{lan}:{port} answered: on the LAN"):
+                probe.connect((lan, port))
 
     def test_castle_radio(self) -> None:
         self.assert_loopback_only(self.start([sys.executable, str(RADIO), "0"]))
