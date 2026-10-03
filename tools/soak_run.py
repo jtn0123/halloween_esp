@@ -104,10 +104,21 @@ class Soak:
         self.log.note(
             start, f"soaking {self.host} for {self.args.hours:g} h -> {self.out}"
         )
-        self._disrupt(start)
+        disruptor = self._disrupt(start)
         polls, beat = 0, start
+        # The last loop's start, the sleep it asked for and the time its own
+        # work took (on the process clock, which stops while the machine
+        # sleeps): anything the wall clock shows beyond them, nobody watched.
+        head, asked, busy = start, 0.0, 0.0
         try:
-            while (wall := self.clock()) < end:
+            while True:
+                wall = self.clock()
+                # Before the deadline check: a sleep that carries the clock
+                # past the end of the run is still unwatched time.
+                self._unwatched(wall, wall - head - asked - busy)
+                if wall >= end:
+                    break
+                t0 = time.monotonic()
                 self.poll(wall, polls)
                 polls += 1
                 if polls % SUMMARY_EVERY == 0:
@@ -115,28 +126,31 @@ class Soak:
                 if wall - beat >= HEARTBEAT_S:
                     beat = wall
                     self.echo(self.heartbeat())
-                self._wait(min(self.args.interval, max(0.0, end - self.clock())))
+                busy, head = time.monotonic() - t0, wall
+                asked = min(self.args.interval, max(0.0, end - self.clock()))
+                time.sleep(asked)
             self.full = True
         except KeyboardInterrupt:
             self.log.note(self.clock(), "interrupted: judging what was seen")
         finally:
             self.stop.set()
             self._finish_drive()
+            if disruptor is not None:
+                # A disruption still running is judged on how it ended, so
+                # a full run waits for it (its command has its own timeout).
+                disruptor.join(None if self.full else 5.0)
         return self.finish()
 
-    def _wait(self, seconds: float) -> None:
-        """Sleep to the next poll, and notice when this computer did not
-        wake on time — a laptop lid, a stalled process. Those minutes were
-        not watched, and the verdict says so instead of blaming the castle."""
-        before = self.clock()
-        time.sleep(seconds)
-        late = self.clock() - before - seconds
+    def _unwatched(self, wall: float, late: float) -> None:
+        """Wall time that went by with this computer neither polling nor
+        sleeping on purpose — a laptop lid, a stalled process. Those minutes
+        were not watched, and the verdict says so instead of blaming the
+        castle. A sleep in the middle of a poll counts too, because the
+        poll's own time is read on the process clock."""
         if late > max(30.0, 3 * self.args.interval):
             self.track.paused(late)
-            self.log.write("pause", self.clock(), seconds=round(late, 1))
-            self.log.note(
-                self.clock(), f"this computer stalled or slept for {late:.0f} s"
-            )
+            self.log.write("pause", wall, seconds=round(late, 1))
+            self.log.note(wall, f"this computer stalled or slept for {late:.0f} s")
 
     def poll(self, wall: float, n: int) -> None:
         try:
@@ -147,6 +161,10 @@ class Soak:
         if status is None:
             self._missed(wall, "/api/status answered, but not with a status")
             return
+        # The reply's own time: a machine that slept between the loop's
+        # clock read and the request must not pair an old time with a new
+        # uptime — the next poll would read that as a castle reboot.
+        wall = self.clock()
         self.log.write("status", wall, reply=status)
         gaps = len(self.track.gaps)
         notes = self.track.sample(wall, status)
@@ -276,12 +294,12 @@ class Soak:
         except probe.Unreachable:
             pass
 
-    def _disrupt(self, start: float) -> None:
+    def _disrupt(self, start: float) -> threading.Thread | None:
         """--disrupt-cmd at each --disrupt-at hour, on its own thread so the
         polls go on watching while (say) the router is off."""
         cmd = self.args.disrupt_cmd
         if not cmd:
-            return
+            return None
 
         def go() -> None:
             for at_h in self.args.disrupt_at:
@@ -310,7 +328,9 @@ class Soak:
                 self.track.disruptions.append(d)
                 self.log.write("disrupt", self.clock(), **d)
 
-        threading.Thread(target=go, daemon=True, name="soak-disrupt").start()
+        t = threading.Thread(target=go, daemon=True, name="soak-disrupt")
+        t.start()
+        return t
 
     # -- the numbers ---------------------------------------------------------
 

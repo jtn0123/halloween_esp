@@ -7,8 +7,14 @@ tearing reads, its radio fades — and each is made by changing the emulator's
 own state (`readings`, `health`, the boot instant) or by closing and
 reopening its listening socket, never by teaching the wire anything new: the
 emulator stays the byte-level port of sd_web.h that test_firmware_contract
-holds it to. Runs are seconds long with a 0.1 s poll; every emulator and
-timer is stopped in a cleanup, whatever the test did.
+holds it to.
+
+Nothing here races a timer against the loop. The soak's clock is a
+PollClock: it moves only when a poll ends (and the castle's uptime with it),
+a fault is set for "before poll k", and a run is a number of polls — so a
+bad night happens the same way on a slow CI runner as on a fast laptop. The
+only real waits are the loop's own short sleeps and the emulator's 200 ms
+tick, and a test that needs the tick waits for a condition, not a duration.
 """
 
 from __future__ import annotations
@@ -20,7 +26,6 @@ import shutil
 import socket
 import sys
 import tempfile
-import threading
 import time
 import unittest
 from collections.abc import Callable
@@ -77,6 +82,46 @@ class Castle:
         shutil.rmtree(self.card, ignore_errors=True)
 
 
+class PollClock:
+    """The soak's clock, moved by its polls and nothing else. Each poll ends
+    `step` seconds later; `before(k, fault)` runs a fault just before poll k;
+    `sleep(s)` is this computer asleep for s seconds in the middle of a poll.
+    The castle lives on the same clock: its uptime moves with every step and
+    every sleep, as a real castle's does while the monitor is away."""
+
+    def __init__(self, castle: Castle, step: float) -> None:
+        self.castle, self.step = castle, step
+        self.now = 1_800_000_000.0
+        self.polls = 0
+        self.faults: dict[int, Callable[[], object]] = {}
+
+    def __call__(self) -> float:
+        return self.now
+
+    def before(self, poll: int, fault: Callable[[], object]) -> None:
+        self.faults[poll] = fault
+
+    def sleep(self, seconds: float) -> None:
+        self.advance(seconds)
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+        state = self.castle.emu.state
+        with state.lock:
+            state.boot -= seconds
+
+    def wrap(self, real: Callable[..., None]) -> Callable[..., None]:
+        def poll(run: soak_run.Soak, wall: float, n: int) -> None:
+            self.polls += 1
+            fault = self.faults.pop(self.polls, None)
+            if fault is not None:
+                fault()
+            real(run, wall, n)
+            self.advance(self.step)
+
+        return poll
+
+
 class SoakCase(unittest.TestCase, HostEnv):
     def setUp(self) -> None:
         self.host_env("")  # explicitly no castle: only the emulator is named
@@ -85,19 +130,16 @@ class SoakCase(unittest.TestCase, HostEnv):
         self.out = Path(tempfile.mkdtemp(prefix="soak-out-"))
         self.addCleanup(shutil.rmtree, self.out, True)
         self.said: list[str] = []
+        self.clock = PollClock(self.castle, step=1.0)
 
-    def at(self, seconds: float, fault: Callable[[], object]) -> None:
-        timer = threading.Timer(seconds, fault)
-        timer.start()
-        self.addCleanup(timer.cancel)
-
-    def soak(self, seconds: float, *flags: str) -> tuple[int, dict[str, Any]]:
+    def soak(self, polls: int, *flags: str) -> tuple[int, dict[str, Any]]:
+        """A run of `polls` polls on the PollClock, `self.clock.step` apart."""
         argv = [
             self.castle.host,
             "--hours",
-            str(seconds / 3600),
+            str(polls * self.clock.step / 3600),
             "--interval",
-            "0.1",
+            "0.05",
             "--out",
             str(self.out),
             "--no-keep-awake",
@@ -109,11 +151,22 @@ class SoakCase(unittest.TestCase, HostEnv):
             args,
             soak.limits_of(args),
             self.out,
+            clock=self.clock,
             echo=self.said.append,
         )
-        code = run.run()
+        with mock.patch.object(
+            soak_run.Soak, "poll", self.clock.wrap(soak_run.Soak.poll)
+        ):
+            code = run.run()
         summary = json.loads((self.out / "summary.json").read_text(encoding="utf-8"))
         return code, summary
+
+    def until(self, what: str, ok: Callable[[], bool]) -> None:
+        """The emulator's own tick, waited for by condition, not by duration."""
+        deadline = time.monotonic() + 10
+        while not ok():
+            self.assertLess(time.monotonic(), deadline, what)
+            time.sleep(0.05)
 
     def kinds(self) -> list[str]:
         lines = (self.out / "soak.jsonl").read_text(encoding="utf-8").splitlines()
@@ -122,8 +175,9 @@ class SoakCase(unittest.TestCase, HostEnv):
 
 class TestGoodNight(SoakCase):
     def test_a_quiet_castle_passes(self) -> None:
-        code, s = self.soak(1.0)
+        code, s = self.soak(10)
         self.assertEqual(code, 0, "\n".join(self.said))
+        self.assertEqual(s["samples"], 10)
         self.assertEqual((s["reboots"], s["misses"], s["outages"]), (0, 0, []))
         self.assertEqual(s["heap_min_kb"], 64)
         self.assertEqual(s["first_boot_reason"], "power-on")
@@ -135,24 +189,22 @@ class TestGoodNight(SoakCase):
             self.assertIn(kind, self.kinds())
 
     def test_driving_scenes_starts_one_and_stops_it_at_the_end(self) -> None:
-        code, s = self.soak(1.0, "--drive", "scenes", "--start-timeout", "3")
+        code, s = self.soak(10, "--drive", "scenes", "--start-timeout", "5")
         self.assertEqual(code, 0, "\n".join(self.said))
         self.assertEqual((s["starts_ok"], s["starts_failed"]), (1, []))
         self.assertIn("event", self.kinds())  # the ring's record of the start
-        time.sleep(0.5)  # the stop lands on the emulator's next tick
-        self.assertEqual(self.castle.emu.state.scene, "stop")
+        self.until("the stop lands", lambda: self.castle.emu.state.scene == "stop")
 
     def test_driving_the_show_and_a_scene_it_does_not_know(self) -> None:
-        code, s = self.soak(0.8, "--drive", "show", "--start-timeout", "2")
+        code, s = self.soak(8, "--drive", "show", "--start-timeout", "5")
         self.assertEqual((code, s["starts_ok"]), (0, 1), "\n".join(self.said))
-        time.sleep(0.5)
-        self.assertFalse(self.castle.emu.state.show_on)
-        code, s = self.soak(0.8, "--drive", "scenes", "--scenes", "nope")
+        self.until("the show stops", lambda: not self.castle.emu.state.show_on)
+        code, s = self.soak(8, "--drive", "scenes", "--scenes", "nope")
         self.assertEqual(code, 1)
         self.assertEqual(s["starts_failed"], ["nope: HTTP 404"])
 
     def test_a_disruption_command_runs_and_is_judged(self) -> None:
-        code, s = self.soak(1.0, "--disrupt-cmd", "exit 3", "--disrupt-at", "0")
+        code, s = self.soak(5, "--disrupt-cmd", "exit 3", "--disrupt-at", "0")
         self.assertEqual(code, 1)
         self.assertEqual(s["disruptions"][0]["exit"], 3)
 
@@ -173,14 +225,18 @@ class TestBadNight(SoakCase):
             c.emu.sd_mounted = False
             c.replug()
 
-        self.at(0.5, away)
-        self.at(1.3, back)
-        code, s = self.soak(2.5, "--outage-min-s", "0.3")
+        self.clock.before(5, away)
+        self.clock.before(13, back)
+        code, s = self.soak(25, "--outage-min-s", "3")
         said = "\n".join(self.said)
         self.assertEqual(code, 1, said)
         self.assertEqual((s["reboots"], s["crashes"]), (1, 1), said)
         self.assertEqual(s["reset_reasons"], ["task-watchdog"])
-        self.assertEqual(len(s["outages"]), 1)
+        # Gone before poll 5, back before poll 13: polls 5-12 saw it, on
+        # any runner, and they are one outage of eight poll steps.
+        self.assertEqual(s["misses"], 8, said)
+        self.assertEqual(len(s["outages"]), 1, said)
+        self.assertEqual(s["outages"][0]["seconds"], 8.0)
         self.assertTrue(s["outages"][0]["rebooted"])
         self.assertEqual((s["sd_read_errors"], s["sd_last_error"]), (2, "x.mp3@4096"))
         self.assertEqual(s["heap_min_kb"], 12)
@@ -196,56 +252,45 @@ class TestBadNight(SoakCase):
 
     def test_a_castle_that_never_answers(self) -> None:
         self.castle.unplug()
-        code, s = self.soak(0.5)
+        code, s = self.soak(5)
         self.assertEqual((code, s["samples"]), (1, 0))
         self.assertIn("never", (self.out / "verdict.txt").read_text(encoding="utf-8"))
 
     def test_an_interrupted_run_is_judged_as_short(self) -> None:
-        calls = {"n": 0}
-        real = soak_run.Soak.poll
+        def interrupt() -> None:
+            raise KeyboardInterrupt
 
-        def poll(run: soak_run.Soak, wall: float, n: int) -> None:
-            calls["n"] += 1
-            if calls["n"] == 4:
-                raise KeyboardInterrupt
-            real(run, wall, n)
-
-        with mock.patch.object(soak_run.Soak, "poll", poll):
-            code, _ = self.soak(30.0, "--drive", "show")
-        self.assertEqual(code, 1)
+        self.clock.before(4, interrupt)
+        code, s = self.soak(30, "--drive", "show")
+        self.assertEqual((code, s["samples"]), (1, 3))
         self.assertIn(
             "ran the full time", (self.out / "verdict.txt").read_text(encoding="utf-8")
         )
 
     def test_this_computer_sleeping_is_not_the_castles_fault(self) -> None:
-        jump = {"s": 0.0}
-        args = soak.parse(
-            [
-                self.castle.host,
-                "--hours",
-                "0.01",
-                "--interval",
-                "0.1",
-                "--out",
-                str(self.out),
-                "--no-keep-awake",
-            ]
-        )
-        run = soak_run.Soak(
-            self.castle.host,
-            args,
-            soak.limits_of(args),
-            self.out,
-            clock=lambda: time.time() + jump["s"],
-            echo=self.said.append,
-        )
-        self.at(0.4, lambda: jump.update(s=100.0))
+        """Asleep for 60 s in the middle of a 200 s run: unwatched time, and
+        the castle — whose uptime ran on through it — is not blamed."""
+        self.clock.step = 5.0
+        self.clock.before(5, lambda: self.clock.sleep(60))
         with mock.patch.object(soak_run, "HEARTBEAT_S", 0.0):
-            self.assertEqual(run.run(), 0, "\n".join(self.said))
-        s = json.loads((self.out / "summary.json").read_text(encoding="utf-8"))
-        self.assertGreater(s["monitor_paused_s"], 90)
-        self.assertEqual(s["reboots"], 0)
+            code, s = self.soak(40)
+        self.assertEqual(code, 0, "\n".join(self.said))
+        self.assertTrue(55 < s["monitor_paused_s"] < 70, s["monitor_paused_s"])
+        self.assertEqual((s["reboots"], s["misses"], s["outages"]), (0, 0, []))
+        self.assertGreater(s["samples"], 20)  # it went on watching after
         self.assertTrue(any(" polls, " in line for line in self.said))  # heartbeat
+        self.assertIn("pause", self.kinds())
+
+    def test_a_sleep_that_outlasts_the_run_is_still_unwatched_time(self) -> None:
+        """The CI flake on PR #66: the machine wakes after the run's end.
+        The loop must not leave on the deadline before counting the sleep."""
+        self.clock.before(3, lambda: self.clock.sleep(100))
+        code, s = self.soak(10)
+        self.assertEqual(code, 0, "\n".join(self.said))
+        self.assertEqual(s["samples"], 3)
+        self.assertGreater(s["monitor_paused_s"], 90)
+        verdict = (self.out / "verdict.txt").read_text(encoding="utf-8")
+        self.assertIn("unwatched (this computer slept)", verdict)
 
 
 class TestCommandLine(SoakCase):
