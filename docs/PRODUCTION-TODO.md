@@ -91,24 +91,49 @@ A failed OTA today means USB + ESPHome installed.
       the recovery path.
 
 ### 1.3 Owner-facing controls on the castle's own page
-- [ ] Audit `sd_web.h`'s page from an owner's eyes: play/stop, scene pick,
+- [x] Audit `sd_web.h`'s page from an owner's eyes: play/stop, scene pick,
       volume, schedule/evening playlist, motion arm, blackout. Anything only
       reachable from the studio or Castle Radio gets a castle-page control or
-      is explicitly out of scope.
-- [ ] Settings that are compile-time today and an owner may want to change
+      is explicitly out of scope. v5.75: the owner's page (`/owner`, and `/`
+      with no card site) has the evening show, scenes, stop, blackout,
+      volume, the card's songs, motion (when fitted) and every setting.
+      Out of scope, written up in docs/notes/06-buyer-build.md §12.24: a
+      time-of-day schedule (the clock now exists), PIR scene/cooldown, live
+      light override, song import/publish, firmware updates. Built,
+      unproven on hardware.
+- [x] Settings that are compile-time today and an owner may want to change
       (volume cap, quiet hours, boot behaviour) → runtime prefs in NVS.
+      v5.75: `vol_max=` and `quiet=` on `/api/settings` beside `boot_play=`,
+      all off until set; quiet hours mute the speaker and leave the lights
+      running (decided), and a castle with no clock is never quiet. Built,
+      unproven on hardware.
 - [x] Boot behaviour: power-on and crash boots autoplay "vigil" (OTA/soft
       restarts are silent since v5.72). Make it a setting; default for buyer.
-- [ ] PIR: disabled at boot since v5.69 (not wired). Ship wired+enabled, or
-      remove the control from the owner page.
-- [ ] A "Report a problem" button on the castle page that bundles
-      `/api/status` + `/api/events` into a downloadable text file.
+- [x] PIR: disabled at boot since v5.69 (not wired). Ship wired+enabled, or
+      remove the control from the owner page. v5.75: the buyer build has
+      `pir_fitted: "false"` — the page says "not fitted", `/api/pir` answers
+      409, and the native API has no motion input or PIR switch. The yard
+      build is unchanged.
+- [ ] Castle Radio and the app follow the castle: link its `/owner` page,
+      and hide their motion control when `/api/status` says `pir.fitted:
+      false` (v5.75 says it; nothing off the castle reads it yet).
+- [x] A "Report a problem" button on the castle page that bundles
+      `/api/status` + `/api/events` into a downloadable text file. v5.75:
+      status, health, events and the boot log, with time, version and
+      board; page script, no new route.
 
 ### 1.4 Device housekeeping
-- [ ] Time: NTP + timezone setting (needed for any schedule).
+- [x] Time: NTP + timezone setting (needed for any schedule). v5.75: a
+      POSIX TZ string in NVS (`tz=` on `/api/settings`, parsed by
+      `castle_tz.h`, held to zoneinfo); `/api/status` `local` and the page
+      show the castle's local time. SNTP was already on (v5.62). Built,
+      unproven on hardware.
 - [x] Factory-reset that clears NVS prefs and Wi-Fi without reflashing
       (long-press a button, or a page action).
-- [ ] Remove developer-only endpoints from the buyer build, or gate them.
+- [x] Remove developer-only endpoints from the buyer build, or gate them.
+      v5.75, audit in docs/notes/06-buyer-build.md §12.24: every HTTP writer
+      was already keyed (v5.74); the buyer's native API loses Enter flash
+      mode and the motion input, and the PIR settings are internal.
 
 ### 1.5 Board support — 4 MB / 2 MB only, room for more later
 Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
@@ -169,11 +194,20 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
 - [ ] Wi-Fi loss/return: router reboot mid-show; castle reconnects unaided.
       *Tool built: the soak's outage detection + `--disrupt-cmd` on a
       router plug (docs/SOAK.md); not yet run on hardware.*
-- [ ] SD card: corrupt/missing card behaviour is graceful (page says so,
-      no boot loop). Spare pre-loaded card in the box.
+- [x] SD card, castle side: corrupt/missing card behaviour is graceful (page
+      says so, no boot loop). v5.75: "No SD card — the show is on the card"
+      and a no-show card on the owner's page; `web_check --boot` boots over
+      no card, a songs-only card and seven broken manifests under
+      ASan/UBSan (`tests/test_firmware_boot_cxx.py`). Built, unproven on
+      hardware.
+- [ ] SD card, on the board: pull the card and boot, boot a blank one.
+      Spare pre-loaded card in the box.
 - [ ] Brownout check at full brightness + full volume on the shipped PSU.
 - [ ] Thermal: an evening's run inside the closed castle.
-- [ ] Watchdog/crash reporting: reset reason surfaced on the page.
+- [x] Watchdog/crash reporting: reset reason surfaced on the page. v5.75:
+      in plain words on the owner's page, a warning for a crash, watchdog,
+      brownout, power glitch or lock-up, and the boot/crash counts. Built,
+      unproven on hardware.
 
 ## 3. Handover package (P0)
 
