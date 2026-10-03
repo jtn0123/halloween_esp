@@ -85,18 +85,25 @@ in `summary.json` `reset_reasons`.
 
 The soak's outage detection is the test: a router reboot is one outage that
 ends with the castle answering again, ideally with no reboot. To make it
-happen on a schedule, give the soak a command that power-cycles the router
-— a second smart plug — and the hours to run it:
+happen on a schedule, give the soak the commands that switch the router off
+and on — a second smart plug — and the hours to run them:
 
 ```sh
 .venv/bin/python tools/soak.py 192.168.1.20 --hours 6 --drive show \
-    --disrupt-at 1,3.5 \
-    --disrupt-cmd "kasa --host 192.168.1.31 off && sleep 30 && kasa --host 192.168.1.31 on"
+    --disrupt-at 1,3.5 --disrupt-hold 30 \
+    --disrupt-cmd "kasa --host 192.168.1.31 off" \
+    --disrupt-cmd "kasa --host 192.168.1.31 on"
 ```
 
-The command runs on its own thread, so the polls go on while the router is
-down; its exit status and output go into the log (`disrupt`) and a non-zero
-exit fails the verdict. A PASS means: each disruption is one outage, none
+Each `--disrupt-cmd` is one step, run in order `--disrupt-hold` seconds
+apart (default 30). A step is a program and its arguments with no shell in
+between (`tools/operator_cmd.py`), so `&&`, pipes and `sleep` do not work in
+one — the hold is the sleep, and anything more is a script the step names.
+The steps run on their own thread, so the polls go on while the router is
+down. A run that is stopped mid-disruption cuts the hold short and still runs
+the rest, so the router is not left off. Each step's exit status and the
+output go into the log (`disrupt`), and a step that exits non-zero, hangs or
+cannot start fails the verdict. A PASS means: each disruption is one outage, none
 longer than `--max-outage-s`, no reboot, and the castle answering at the end.
 Its own `wifi_down` / `wifi_up` lines from the event ring are in the log
 with the castle's timestamps.
@@ -110,7 +117,7 @@ Things to know:
   after **3 minutes** without its router (`ap_timeout`, firmware/castle_buyer.yaml)
   and keeps trying the saved network the whole time. A router that takes
   longer than that is the case to try deliberately: hold it off for four or
-  five minutes (`sleep 300`) and raise `--max-outage-s` to match — the castle
+  five minutes (`--disrupt-hold 300`) and raise `--max-outage-s` to match — the castle
   must still come back on its own once the router does.
 - With no second plug, the same run is a soak with the router switched off
   and on by hand; the verdict is the same. The plug is what makes it repeatable.
@@ -122,8 +129,9 @@ make power-cycle HOST=192.168.1.20 CYCLES=50 \
     OFF='kasa --host 192.168.1.30 off' ON='kasa --host 192.168.1.30 on'
 ```
 
-`--off-cmd` / `--on-cmd` are any shell commands; nothing is built in for a
-particular plug. Some that work:
+`--off-cmd` / `--on-cmd` are any commands, run as a program and its
+arguments with no shell (the same rule as `--disrupt-cmd`); nothing is built
+in for a particular plug. Some that work:
 
 | Plug | off | on |
 | --- | --- | --- |

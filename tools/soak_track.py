@@ -142,31 +142,49 @@ class Tracker:
         return f"REBOOT detected ({how})"
 
     def _readings(self, wall: float, status: dict) -> list[str]:
-        notes: list[str] = []
+        """Everything else one status reply carries, field by field."""
         boot = self.boot
         assert boot is not None
-        version = status.get("version")
-        if isinstance(version, str) and version not in self.versions[-1:]:
-            if self.versions:
-                notes.append(f"firmware changed: {self.versions[-1]} -> {version}")
-            self.versions.append(version)
-        mounted = status.get("sd_mounted")
-        if isinstance(mounted, bool):
-            if not mounted:
-                self.unmounted += 1
-            if self.mounted is not None and mounted != self.mounted:
-                notes.append("card " + ("mounted again" if mounted else "UNMOUNTED"))
-            self.mounted = mounted
-        rssi = probe.as_int(status, "rssi")
-        if rssi is not None and rssi != 0:  # 0 is "not associated"
-            weak_before = bool(self.rssi) and self.rssi[-1] < self.rssi_floor
-            if rssi < self.rssi_floor and not weak_before:
-                self.rssi_drops += 1
-                notes.append(f"signal weak: {rssi} dBm")
-            self.rssi.append(rssi)
+        notes = [*self._version(status), *self._card(status), *self._radio(status)]
         heap = probe.as_int(status, "heap_free_kb")
         if heap is not None:
             boot.heap.append((wall, heap))
+        self._sync(status)
+        notes += self._missing(status)
+        self._evicted(boot, status)
+        return notes
+
+    def _version(self, status: dict) -> list[str]:
+        version = status.get("version")
+        if not isinstance(version, str) or version in self.versions[-1:]:
+            return []
+        before = self.versions[-1:]
+        self.versions.append(version)
+        return [f"firmware changed: {before[0]} -> {version}"] if before else []
+
+    def _card(self, status: dict) -> list[str]:
+        mounted = status.get("sd_mounted")
+        if not isinstance(mounted, bool):
+            return []
+        if not mounted:
+            self.unmounted += 1
+        was, self.mounted = self.mounted, mounted
+        if was is None or was == mounted:
+            return []
+        return ["card " + ("mounted again" if mounted else "UNMOUNTED")]
+
+    def _radio(self, status: dict) -> list[str]:
+        rssi = probe.as_int(status, "rssi")
+        if rssi is None or rssi == 0:  # 0 is "not associated"
+            return []
+        weak_before = bool(self.rssi) and self.rssi[-1] < self.rssi_floor
+        self.rssi.append(rssi)
+        if rssi >= self.rssi_floor or weak_before:
+            return []
+        self.rssi_drops += 1
+        return [f"signal weak: {rssi} dBm"]
+
+    def _sync(self, status: dict) -> None:
         for key, attr in (
             ("sync_drift_ms", "max_drift_ms"),
             ("sync_lead_ms", "max_lead_ms"),
@@ -174,59 +192,37 @@ class Tracker:
             got = probe.as_int(status, key)
             if got is not None and got >= 0:  # -1 is "not heard yet"
                 setattr(self, attr, max(got, getattr(self, attr) or 0))
+
+    def _missing(self, status: dict) -> list[str]:
         missing = status.get("missing")
-        if isinstance(missing, str) and missing:
-            new = {m for m in missing.split(",") if m} - self.missing
-            if new:
-                notes.append("card missing: " + ",".join(sorted(new)))
-            self.missing |= new
+        if not isinstance(missing, str):
+            return []
+        new = {m for m in missing.split(",") if m} - self.missing
+        self.missing |= new
+        return ["card missing: " + ",".join(sorted(new))] if new else []
+
+    def _evicted(self, boot: Boot, status: dict) -> None:
         evicted = probe.as_int(status, "light_evicted")
-        if evicted is not None:
-            if self._evict_base is None:
-                self._evict_base = evicted  # what happened before we came
-            boot.evicted = max(boot.evicted, evicted - self._evict_base)
-        return notes
+        if evicted is None:
+            return
+        if self._evict_base is None:
+            self._evict_base = evicted  # what happened before we came
+        boot.evicted = max(boot.evicted, evicted - self._evict_base)
 
     def health(
         self, wall: float, health: dict, status: dict | None = None
     ) -> list[str]:
         """One /api/health reply (status: the latest, for v5.75's field)."""
-        notes: list[str] = []
         if self.boot is None:
             self.boots.append(Boot(seen_at=wall))
-        boots = probe.as_int(health, "boots")
-        if boots is not None and self._boots_seen is not None:
-            extra = boots - self._boots_seen
-            if extra > 0 and self._bump_expected:
-                extra -= 1
-            self._bump_expected = False
-            notes.extend(
-                self._new_boot(wall, "boot counter rose") for _ in range(max(0, extra))
-            )
-        if boots is not None:
-            self._boots_seen = boots
+        notes = self._boot_counter(wall, health)
         boot = self.boot
         assert boot is not None
         if self._need_reason:
-            reason = probe.reset_reason(status, health)
-            boot.reason = reason
-            boot.crash = probe.is_crash(reason, health)
-            self._need_reason = False
-            if len(self.boots) > 1 or boot.crash:
-                notes.append(
-                    f"reset reason: {reason or 'not reported'}"
-                    + (" — a CRASH" if boot.crash else "")
-                )
-        errors = probe.as_int(health, "sd_read_errors")
-        if errors is not None:
-            if self._sd_base is None:
-                self._sd_base = errors
-            now = max(0, errors - self._sd_base)
-            if now > boot.sd_errors:
-                notes.append(f"card read errors: {now} this boot")
-            boot.sd_errors = max(boot.sd_errors, now)
+            notes += self._reason(boot, status, health)
+        notes += self._sd_errors(boot, health)
         last = health.get("sd_last_error")
-        if isinstance(last, str) and last and last != self.sd_last_error:
+        if isinstance(last, str) and last:
             self.sd_last_error = last
         low = probe.as_int(health, "heap_min_kb")
         if low is not None:
@@ -234,6 +230,43 @@ class Tracker:
                 low if self.heap_min_kb is None else min(low, self.heap_min_kb)
             )
         return notes
+
+    def _boot_counter(self, wall: float, health: dict) -> list[str]:
+        """Reboots the boot counter saw and the uptime did not — one the
+        uptime already reported (`_bump_expected`) is not counted twice."""
+        boots = probe.as_int(health, "boots")
+        if boots is None:
+            return []
+        seen, self._boots_seen = self._boots_seen, boots
+        if seen is None:
+            return []
+        extra = boots - seen
+        if extra > 0 and self._bump_expected:
+            extra -= 1
+        self._bump_expected = False
+        return [self._new_boot(wall, "boot counter rose") for _ in range(extra)]
+
+    def _reason(self, boot: Boot, status: dict | None, health: dict) -> list[str]:
+        """The reset reason of a boot not yet explained; worth a line when
+        it is a reboot during the run, or a crash at any time."""
+        reason = probe.reset_reason(status, health)
+        boot.reason, boot.crash = reason, probe.is_crash(reason, health)
+        self._need_reason = False
+        if len(self.boots) == 1 and not boot.crash:
+            return []
+        crash = " — a CRASH" if boot.crash else ""
+        return [f"reset reason: {reason or 'not reported'}{crash}"]
+
+    def _sd_errors(self, boot: Boot, health: dict) -> list[str]:
+        errors = probe.as_int(health, "sd_read_errors")
+        if errors is None:
+            return []
+        if self._sd_base is None:
+            self._sd_base = errors
+        now = max(0, errors - self._sd_base)
+        grew = now > boot.sd_errors
+        boot.sd_errors = max(boot.sd_errors, now)
+        return [f"card read errors: {now} this boot"] if grew else []
 
     def events_in(self, ring: list) -> list[dict]:
         """The /api/events reply; returns the entries not seen before."""

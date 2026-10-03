@@ -4,9 +4,9 @@ The plug is tests/fake_plug.py: `on` starts tools/castle_emu.py in its own
 process on a free port and `off` kills it, so every cycle here is a real stop
 and a real cold start of the thing power_cycle.py is watching — the boot is
 timed, the fresh uptime is real, and the card, scene list and play/stop checks
-run against the emulator's own replies. The plugs that misbehave are shell
-one-liners (`exit 0`, `exit 4`). Every test switches the plug off in its
-cleanup, so no emulator outlives it.
+run against the emulator's own replies. The plugs that misbehave are Python
+one-liners that switch nothing and exit 0 or 4 (helpers.exits). Every test
+switches the plug off in its cleanup, so no emulator outlives it.
 """
 
 from __future__ import annotations
@@ -14,8 +14,6 @@ from __future__ import annotations
 import contextlib
 import io
 import json
-import os
-import shlex
 import shutil
 import socket
 import subprocess
@@ -31,8 +29,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # helpers
 
 import castle_emu
+import operator_cmd
 import power_cycle
-from helpers import HostEnv
+from helpers import HostEnv, command_line, exits
 
 FAKE_PLUG = Path(__file__).resolve().parent / "fake_plug.py"
 
@@ -41,11 +40,6 @@ def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return int(s.getsockname()[1])
-
-
-def command(argv: list[str]) -> str:
-    """One shell command line, quoted for the shell power_cycle.py runs."""
-    return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
 
 
 class PlugCase(unittest.TestCase, HostEnv):
@@ -59,22 +53,23 @@ class PlugCase(unittest.TestCase, HostEnv):
         self.out = self.state / "out"
         self.out.mkdir()
 
+    def plug_argv(self, verb: str, *extra: str) -> list[str]:
+        return [
+            sys.executable,
+            str(FAKE_PLUG),
+            verb,
+            "--port",
+            str(self.port),
+            "--state",
+            str(self.state),
+            *extra,
+        ]
+
     def plug_cmd(self, verb: str, *extra: str) -> str:
-        return command(
-            [
-                sys.executable,
-                str(FAKE_PLUG),
-                verb,
-                "--port",
-                str(self.port),
-                "--state",
-                str(self.state),
-                *extra,
-            ]
-        )
+        return command_line(self.plug_argv(verb, *extra))
 
     def plug(self, verb: str, *extra: str) -> None:
-        subprocess.run(self.plug_cmd(verb, *extra), shell=True, check=True, timeout=30)
+        subprocess.run(self.plug_argv(verb, *extra), check=True, timeout=30)
 
     def switch_on(self, *extra: str) -> None:
         self.plug("on", *extra)
@@ -164,7 +159,7 @@ class TestPowerCycle(PlugCase):
     def test_a_castle_that_never_comes_back(self) -> None:
         self.switch_on()
         code, s, said = self.cycle(
-            "--cycles", "3", "--stop-after", "1", "--boot-timeout", "0.5", on="exit 0"
+            "--cycles", "3", "--stop-after", "1", "--boot-timeout", "0.5", on=exits(0)
         )
         self.assertEqual(code, 1, said)
         self.assertEqual(s["cycles_run"], 1)
@@ -174,13 +169,17 @@ class TestPowerCycle(PlugCase):
     def test_plugs_that_misbehave_are_the_harness_failing(self) -> None:
         self.switch_on()
         code, s, said = self.cycle(
-            "--cycles", "1", "--down-timeout", "0.5", off="exit 0"
+            "--cycles", "1", "--down-timeout", "0.5", off=exits(0)
         )
         self.assertEqual(code, 2)
         self.assertIn("did not cut its power", s["harness_error"])
-        code, s, said = self.cycle("--cycles", "1", off="exit 4")
+        code, s, said = self.cycle("--cycles", "1", off=exits(4))
         self.assertEqual(code, 2)
         self.assertIn("exit 4", said)
+        missing = str(self.state / "no-such-plug-tool")
+        code, s, said = self.cycle("--cycles", "1", off=command_line([missing, "off"]))
+        self.assertEqual(code, 2)
+        self.assertIn("the off command could not start", s["harness_error"])
         self.assertIsNotNone(power_cycle.status_now(self.host))  # still on
 
     def test_an_interrupted_run_switches_the_castle_back_on(self) -> None:
@@ -263,6 +262,32 @@ class TestCommandLine(unittest.TestCase, HostEnv):
             ):
                 with self.subTest(bad), self.assertRaises(SystemExit):
                     power_cycle.parse(["h", *bad])
+
+
+class TestOperatorCmd(unittest.TestCase):
+    """A plug command is split, not interpreted: the platform's quoting, no
+    shell (the no-shell run itself is test_soak.TestDisruption's)."""
+
+    def test_each_platform_splits_its_own_quoting(self) -> None:
+        posix = operator_cmd.argv_of(
+            "curl -fsS 'http://plug/relay?turn=off' \"two words\"", posix=True
+        )
+        self.assertEqual(
+            posix, ["curl", "-fsS", "http://plug/relay?turn=off", "two words"]
+        )
+        win = '"C:\\Program Files\\kasa.exe" --host 192.168.1.30 "a b" \'c d\''
+        self.assertEqual(
+            operator_cmd.argv_of(win, posix=False),
+            ["C:\\Program Files\\kasa.exe", "--host", "192.168.1.30", "a b", "c d"],
+        )
+        line = command_line([sys.executable, "-c", "print(1)", r"C:\x y"])
+        self.assertEqual(
+            operator_cmd.argv_of(line), [sys.executable, "-c", "print(1)", r"C:\x y"]
+        )
+
+    def test_an_empty_command_is_refused(self) -> None:
+        with self.assertRaises(ValueError):
+            operator_cmd.run("   ", 5)
 
 
 if __name__ == "__main__":

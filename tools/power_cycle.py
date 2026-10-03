@@ -4,9 +4,10 @@
   .venv/bin/python tools/power_cycle.py 192.168.1.20 --cycles 50 \\
       --off-cmd "kasa --host 192.168.1.30 off" --on-cmd "kasa --host 192.168.1.30 on"
 
-The plug is yours: --off-cmd and --on-cmd are any shell commands that cut and
+The plug is yours: --off-cmd and --on-cmd are any commands that cut and
 restore the castle's power — a smart plug's own CLI, a curl to its local API,
-a Home Assistant webhook. Each cycle:
+a Home Assistant webhook. Each runs as a program with no shell between
+(tools/operator_cmd.py), so a step that needs one is a script. Each cycle:
 
   1. --off-cmd, then wait for the castle to stop answering. A plug that did
      not cut the power is the harness's failure, not the castle's (exit 2);
@@ -47,6 +48,7 @@ from pathlib import Path
 
 import castle_probe as probe
 import hosts
+import operator_cmd
 from soak import keep_awake
 
 REPO = Path(__file__).resolve().parent.parent
@@ -83,21 +85,17 @@ class Cycle:
         return head + "".join(f"\n    {f}" for f in self.failures)
 
 
-def shell(cmd: str, what: str) -> None:
-    """Run a plug command; a non-zero exit is the harness's failure."""
+def plug(cmd: str, what: str) -> None:
+    """Run a plug command (operator_cmd: no shell); a non-zero exit is the
+    harness's failure."""
     try:
-        r = subprocess.run(
-            cmd,
-            shell=True,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=CMD_TIMEOUT_S,
-        )
+        r = operator_cmd.run(cmd, CMD_TIMEOUT_S)
     except subprocess.TimeoutExpired as e:
         raise HarnessError(
             f"the {what} command hung ({CMD_TIMEOUT_S:g} s): {cmd}"
         ) from e
+    except (OSError, ValueError) as e:
+        raise HarnessError(f"the {what} command could not start: {cmd}: {e}") from e
     if r.returncode != 0:
         said = (r.stdout + r.stderr).strip()[-300:]
         raise HarnessError(
@@ -130,7 +128,7 @@ def wait_status(
 
 
 def power_off(host: str, args: argparse.Namespace) -> None:
-    shell(args.off_cmd, "off")
+    plug(args.off_cmd, "off")
     deadline = time.monotonic() + args.down_timeout
     while status_now(host) is not None:
         if time.monotonic() >= deadline:
@@ -142,7 +140,7 @@ def power_off(host: str, args: argparse.Namespace) -> None:
 
 
 def power_on(host: str, args: argparse.Namespace, n: int) -> Cycle:
-    shell(args.on_cmd, "on")
+    plug(args.on_cmd, "on")
     t_on, c = time.monotonic(), Cycle(n)
     up, first = wait_status(host, lambda s: True, args.boot_timeout, args.interval)
     if not up or first is None:
@@ -260,7 +258,7 @@ def run(
         finally:
             if not powered:
                 try:
-                    shell(args.on_cmd, "on")
+                    plug(args.on_cmd, "on")
                 except HarnessError as e:
                     echo(f"power-cycle: could not switch the castle back on: {e}")
     return verdict(host, args, out, cycles, harness, interrupted, echo)
@@ -299,7 +297,9 @@ def verdict(
     }
     text = json.dumps(summary, indent=2) + "\n"
     (out / "summary.json").write_text(text, encoding="utf-8")
-    head = "PASS" if ok else ("HARNESS ERROR" if harness else "FAIL")
+    head = "HARNESS ERROR" if harness else "FAIL"
+    if ok:
+        head = "PASS"
     lines = [f"POWER-CYCLE {head}: {host}, {whole} of {args.cycles} cycles whole"]
     if boots:
         lines.append(
@@ -314,7 +314,9 @@ def verdict(
         lines.append("  interrupted before the last cycle")
     (out / "verdict.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     echo("\n".join(lines))
-    return 2 if harness else (0 if ok else 1)
+    if harness:
+        return 2
+    return 0 if ok else 1
 
 
 def parse(argv: list[str] | None) -> argparse.Namespace:
@@ -330,8 +332,8 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
         help="IP, host:port, mDNS name or devices.toml "
         "name (default: CASTLE_HOST, then devices.toml)",
     )
-    ap.add_argument("--off-cmd", required=True, help="shell command that cuts power")
-    ap.add_argument("--on-cmd", required=True, help="shell command that restores it")
+    ap.add_argument("--off-cmd", required=True, help="command that cuts the power")
+    ap.add_argument("--on-cmd", required=True, help="command that restores it")
     num = (
         ("--cycles", int, 50, "how many (default 50)"),
         ("--off-s", float, 10.0, "seconds held off (default 10)"),

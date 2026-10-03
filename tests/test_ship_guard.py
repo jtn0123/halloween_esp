@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import ipaddress
 import subprocess
 import sys
 import tarfile
@@ -158,6 +159,47 @@ class TestScanTree(GitRepo):
         path.write_bytes(b"\0\1\2 192.168.7.40 \0")
         self.git("add", "--", "audio/x.bin")
         self.assertEqual(g.scan_tree(self.root), [])
+
+
+class TestAllowFile(GitRepo):
+    """What the guard lets through is data (tools/ship_guard_allow.txt): each
+    entry has its section's shape, and the file — which names the seller's
+    LAN — is the one place the scan it feeds does not read."""
+
+    def test_every_entry_has_the_shape_its_section_needs(self) -> None:
+        for ip in sorted(g.EXAMPLE_IPS):
+            with self.subTest(ip=ip):
+                self.assertTrue(ipaddress.ip_address(ip).is_private)
+                self.assertEqual([m.group(1) for m in g._IP.finditer(ip)], [ip])
+        self.assertTrue(g.SELLER_NET.is_private)
+        self.assertTrue(g.MAC_ALLOWED and all(n > 0 for n in g.MAC_ALLOWED.values()))
+        self.assertIn(g.DEVICES, g.HISTORY)
+        self.assertIn("runner", g.PLACEHOLDER_USERS)
+
+    def test_a_malformed_allow_file_is_refused(self) -> None:
+        allow = self.root / "allow.txt"
+        allow.write_text("[a]\nx  # why\n\n[b]\n", encoding="utf-8")
+        self.assertEqual(g.read_allow(allow), {"a": ["x"], "b": []})
+        allow.write_text("# no section yet\n192.168.1.20\n", encoding="utf-8")
+        with self.assertRaises(ValueError):
+            g.read_allow(allow)
+
+    def test_the_allow_file_is_not_scanned_but_its_lines_elsewhere_are(self) -> None:
+        text = g.ALLOW.read_text(encoding="utf-8")
+        self.add("tools/ship_guard_allow.txt", text)
+        self.assertEqual(g.scan_tree(self.root), [])
+        self.add("tools/copy.txt", text)
+        found = g.scan_tree(self.root)
+        self.assertEqual(len(found), 1, found)
+        self.assertRegex(found[0], r"^tools/copy\.txt:\d+: the seller's LAN address ")
+
+    def test_the_guards_own_source_names_no_address(self) -> None:
+        source = Path(g.__file__).read_text(encoding="utf-8")
+        named = []
+        for m in g._IP.finditer(source):
+            with contextlib.suppress(ValueError):  # 10.300.1.1 is no address
+                named.append(str(ipaddress.ip_address(m.group(1))))
+        self.assertEqual(named, [])
 
 
 class TestScanRelease(unittest.TestCase):

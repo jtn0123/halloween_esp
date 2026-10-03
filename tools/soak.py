@@ -3,8 +3,9 @@
 
   .venv/bin/python tools/soak.py 192.168.1.20 --hours 72
   .venv/bin/python tools/soak.py castle-ab12cd.local --hours 24 --drive show
-  .venv/bin/python tools/soak.py --hours 12 --disrupt-at 2 \\
-      --disrupt-cmd "curl -s http://router-plug.example/cycle"
+  .venv/bin/python tools/soak.py --hours 12 --disrupt-at 2 --disrupt-hold 30 \\
+      --disrupt-cmd "kasa --host 192.168.1.31 off" \\
+      --disrupt-cmd "kasa --host 192.168.1.31 on"
 
 What it asks, and how often (--interval, default 10 s): /api/status every
 poll; /api/health and /api/events every --slow-every polls (default 3, so
@@ -130,8 +131,17 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
     )
     ap.add_argument(
         "--disrupt-cmd",
-        help="a shell command that disturbs the castle "
-        "on purpose, e.g. a smart plug cycling the router",
+        action="append",
+        default=[],
+        help="a command that disturbs the castle on purpose, e.g. a smart "
+        "plug switching the router off; repeat it for the steps, which run in "
+        "order (no shell: tools/operator_cmd.py)",
+    )
+    ap.add_argument(
+        "--disrupt-hold",
+        type=float,
+        default=30.0,
+        help="seconds between one --disrupt-cmd step and the next (default 30)",
     )
     ap.add_argument(
         "--disrupt-at",
@@ -155,6 +165,8 @@ def parse(argv: list[str] | None) -> argparse.Namespace:
     args = ap.parse_args(argv)
     if args.hours <= 0 or args.interval <= 0:
         ap.error("--hours and --interval must be positive")
+    if args.disrupt_hold < 0:
+        ap.error("--disrupt-hold cannot be negative")
     if args.disrupt_at and not args.disrupt_cmd:
         ap.error("--disrupt-at needs --disrupt-cmd")
     if any(not 0 <= h < args.hours for h in args.disrupt_at):

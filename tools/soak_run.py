@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import castle_probe as probe
+import operator_cmd
 from soak_track import Tracker
 from soak_verdict import Limits, passed, verdict
 
@@ -36,6 +37,18 @@ LOUD_EVENTS = frozenset({"wifi_down", "wifi_up", "restart", "scene_missing"})
 
 def stamp(wall: float) -> str:
     return datetime.fromtimestamp(wall, UTC).isoformat(timespec="seconds")
+
+
+def _step(cmd: str) -> dict[str, object]:
+    """One --disrupt-cmd (operator_cmd: no shell): its exit status — -1 when
+    it hung or never started — and the tail of what it printed."""
+    try:
+        r = operator_cmd.run(cmd, DISRUPT_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        return {"exit": -1, "output": f"still running after {DISRUPT_TIMEOUT_S} s"}
+    except (OSError, ValueError) as e:
+        return {"exit": -1, "output": f"could not start: {e}"}
+    return {"exit": r.returncode, "output": (r.stdout + r.stderr)[-500:]}
 
 
 class Log:
@@ -136,9 +149,10 @@ class Soak:
             self.stop.set()
             self._finish_drive()
             if disruptor is not None:
-                # A disruption still running is judged on how it ended, so
-                # a full run waits for it (its command has its own timeout).
-                disruptor.join(None if self.full else 5.0)
+                # A disruption in flight runs its last step (the router back
+                # on) and is judged on how it ended; every step has its own
+                # timeout, and a stopping run cuts the holds between them.
+                disruptor.join()
         return self.finish()
 
     def _unwatched(self, wall: float, late: float) -> None:
@@ -295,42 +309,44 @@ class Soak:
             pass
 
     def _disrupt(self, start: float) -> threading.Thread | None:
-        """--disrupt-cmd at each --disrupt-at hour, on its own thread so the
-        polls go on watching while (say) the router is off."""
-        cmd = self.args.disrupt_cmd
-        if not cmd:
+        """The --disrupt-cmd steps at each --disrupt-at hour, on a thread of
+        their own so the polls go on watching while (say) the router is off."""
+        if not self.args.disrupt_cmd:
             return None
 
         def go() -> None:
             for at_h in self.args.disrupt_at:
                 if self.stop.wait(max(0.0, start + at_h * 3600 - self.clock())):
                     return
-                t0 = self.clock()
-                self.log.note(t0, f"disruption at {at_h:g} h: {cmd}")
-                try:
-                    r = subprocess.run(
-                        cmd,
-                        shell=True,
-                        check=False,
-                        capture_output=True,
-                        text=True,
-                        timeout=DISRUPT_TIMEOUT_S,
-                    )
-                    code, said = r.returncode, (r.stdout + r.stderr)[-500:]
-                except subprocess.TimeoutExpired:
-                    code, said = -1, f"still running after {DISRUPT_TIMEOUT_S} s"
-                d = {
-                    "at_h": at_h,
-                    "exit": code,
-                    "seconds": round(self.clock() - t0, 1),
-                    "output": said,
-                }
-                self.track.disruptions.append(d)
-                self.log.write("disrupt", self.clock(), **d)
+                self._disruption(at_h)
 
         t = threading.Thread(target=go, daemon=True, name="soak-disrupt")
         t.start()
         return t
+
+    def _disruption(self, at_h: float) -> None:
+        """Every step, in order, --disrupt-hold apart — and every step even
+        when the run is stopping (the hold is cut short instead), because the
+        last one is what switches the router back on."""
+        steps: list[dict[str, object]] = []
+        t0 = self.clock()
+        cmds: list[str] = self.args.disrupt_cmd
+        self.log.note(t0, f"disruption at {at_h:g} h: " + " ; then ".join(cmds))
+        for i, cmd in enumerate(cmds):
+            if i:
+                self.stop.wait(self.args.disrupt_hold)
+            steps.append({"cmd": cmd, **_step(cmd)})
+        code = next((st["exit"] for st in steps if st["exit"] != 0), 0)
+        said = "".join(str(st["output"]) for st in steps)[-500:]
+        d = {
+            "at_h": at_h,
+            "exit": code,
+            "seconds": round(self.clock() - t0, 1),
+            "output": said,
+            "steps": [{"cmd": st["cmd"], "exit": st["exit"]} for st in steps],
+        }
+        self.track.disruptions.append(d)
+        self.log.write("disrupt", self.clock(), **d)
 
     # -- the numbers ---------------------------------------------------------
 

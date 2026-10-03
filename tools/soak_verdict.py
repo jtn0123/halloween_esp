@@ -16,6 +16,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, fields
 
+#: The heap-trend check's name, which each of its three outcomes carries.
+HEAP_TREND = "heap trend"
+
 #: The flag help, one line each — the documentation of every default.
 LIMIT_HELP = {
     "max_reboots": "reboots allowed during the run (uptime went back, or the "
@@ -103,65 +106,72 @@ def _judge(
 
 def verdict(s: dict, lim: Limits, *, full: bool = True) -> list[Check]:
     """Every check, in the order a person reads a bad night."""
-    checks: list[Check] = []
     if not s["samples"]:
         return [Check("castle answered", "FAIL", "never — nothing to judge")]
+    return [
+        *_life(s, lim),
+        *_card_and_heap(s, lim),
+        *_radio_and_show(s, lim),
+        *_disruptions(s),
+        *_notes(s, full),
+    ]
+
+
+def _life(s: dict, lim: Limits) -> list[Check]:
+    """Reboots, crashes and outages: did it stay up, and stay on the air?"""
     reasons = ", ".join(s["reset_reasons"]) or "none"
-    checks.append(
+    outages = s["outages"]
+    rebooted = sum(1 for o in outages if o["rebooted"])
+    answering = s["answering_at_end"]
+    return [
         _judge(
             "reboots",
             s["reboots"],
             lim.max_reboots,
             shown=f"{s['reboots']} ({reasons})",
-        )
-    )
-    checks.append(_judge("crashes", s["crashes"], lim.max_crashes))
-    outages = s["outages"]
-    rebooted = sum(1 for o in outages if o["rebooted"])
-    checks.append(
+        ),
+        _judge("crashes", s["crashes"], lim.max_crashes),
         _judge(
             "Wi-Fi outages",
             len(outages),
             lim.max_outages,
             shown=f"{len(outages)} ({rebooted} with a reboot, {s['blips']} blips)",
-        )
-    )
-    checks.append(
-        _judge("longest outage", s["longest_outage_s"], lim.max_outage_s, " s")
-    )
-    end = "yes" if s["answering_at_end"] else "NO — it never came back"
-    checks.append(
-        Check("answering at the end", "PASS" if s["answering_at_end"] else "FAIL", end)
-    )
+        ),
+        _judge("longest outage", s["longest_outage_s"], lim.max_outage_s, " s"),
+        Check(
+            "answering at the end",
+            "PASS" if answering else "FAIL",
+            "yes" if answering else "NO — it never came back",
+        ),
+    ]
+
+
+def _card_and_heap(s: dict, lim: Limits) -> list[Check]:
     last = f" (last: {s['sd_last_error']})" if s["sd_last_error"] else ""
-    checks.append(
+    return [
         _judge(
             "card read errors",
             s["sd_read_errors"],
             lim.max_sd_errors,
             shown=f"{s['sd_read_errors']}{last}",
-        )
-    )
-    checks.append(
-        _judge("card unmounted polls", s["unmounted_samples"], lim.max_unmounted)
-    )
-    checks.append(
-        _judge("heap low-water", s["heap_min_kb"], lim.heap_floor_kb, " KB", below=True)
-    )
-    checks.append(_heap_trend(s["heap_trend_kb_h"], lim))
-    weak = s["rssi_weak_pct"]
-    checks.append(
+        ),
+        _judge("card unmounted polls", s["unmounted_samples"], lim.max_unmounted),
         _judge(
-            "weak signal",
-            weak,
-            lim.max_weak_rssi_pct,
-            "%",
-            shown=f"{weak}% of polls under {lim.rssi_floor} dBm, "
+            "heap low-water", s["heap_min_kb"], lim.heap_floor_kb, " KB", below=True
+        ),
+        _heap_trend(s["heap_trend_kb_h"], lim),
+    ]
+
+
+def _radio_and_show(s: dict, lim: Limits) -> list[Check]:
+    weak = s["rssi_weak_pct"]
+    shown = ""
+    if weak is not None:
+        shown = (
+            f"{weak}% of polls under {lim.rssi_floor} dBm, "
             f"{s['rssi_drops']} drops, worst {s['rssi_min']} dBm"
-            if weak is not None
-            else "",
         )
-    )
+    checks = [_judge("weak signal", weak, lim.max_weak_rssi_pct, "%", shown=shown)]
     drift = s["sync_drift_ms_max"]
     if drift is None:
         checks.append(
@@ -174,8 +184,8 @@ def verdict(s: dict, lim: Limits, *, full: bool = True) -> list[Check]:
         checks.append(Check("light frames evicted", "INFO", str(evicted)))
     else:
         checks.append(_judge("light frames evicted", evicted, lim.max_light_evicted))
-    if s["starts_ok"] or s["starts_failed"]:
-        failed = s["starts_failed"]
+    failed = s["starts_failed"]
+    if s["starts_ok"] or failed:
         shown = f"{len(failed)} of {s['starts_ok'] + len(failed)}"
         if failed:
             shown += f" (first: {failed[0]})"
@@ -184,56 +194,53 @@ def verdict(s: dict, lim: Limits, *, full: bool = True) -> list[Check]:
                 "failed show starts", len(failed), lim.max_failed_starts, shown=shown
             )
         )
-    for d in s["disruptions"]:
-        ok = d.get("exit") == 0
-        checks.append(
-            Check(
-                "disruption command",
-                "PASS" if ok else "FAIL",
-                f"at {d.get('at_h')} h, exit {d.get('exit')}",
-            )
+    return checks
+
+
+def _disruptions(s: dict) -> list[Check]:
+    return [
+        Check(
+            "disruption command",
+            "PASS" if d.get("exit") == 0 else "FAIL",
+            f"at {d.get('at_h')} h, exit {d.get('exit')}",
         )
+        for d in s["disruptions"]
+    ]
+
+
+def _notes(s: dict, full: bool) -> list[Check]:
+    """What the verdict could not judge but a person should know."""
+    checks = []
     if s["missing"]:
         checks.append(Check("card reports missing", "INFO", ",".join(s["missing"])))
     if s["monitor_paused_s"]:
-        checks.append(
-            Check(
-                "monitor paused",
-                "INFO",
-                f"{s['monitor_paused_s']} s unwatched (this computer slept)",
-            )
-        )
+        paused = f"{s['monitor_paused_s']} s unwatched (this computer slept)"
+        checks.append(Check("monitor paused", "INFO", paused))
     if s["event_overflows"]:
-        checks.append(
-            Check(
-                "event ring overflows",
-                "INFO",
-                f"{s['event_overflows']} (events pushed out between polls)",
-            )
-        )
+        overflows = f"{s['event_overflows']} (events pushed out between polls)"
+        checks.append(Check("event ring overflows", "INFO", overflows))
     if not full:
-        checks.append(
-            Check("ran the full time", "FAIL", f"stopped early at {s['hours']} h")
-        )
+        early = f"stopped early at {s['hours']} h"
+        checks.append(Check("ran the full time", "FAIL", early))
     return checks
 
 
 def _heap_trend(trend: dict | None, lim: Limits) -> Check:
     if trend is None:
-        return Check("heap trend", "INFO", "too few readings")
+        return Check(HEAP_TREND, "INFO", "too few readings")
+    reading = f"{trend['kb_per_h']:+g} KB/h over {trend['hours']:g} h"
     if trend["hours"] < lim.heap_trend_min_h:
         return Check(
-            "heap trend",
+            HEAP_TREND,
             "INFO",
-            f"{trend['kb_per_h']:+g} KB/h over "
-            f"{trend['hours']:g} h — too short to judge",
+            f"{reading} — too short to judge",
             f">= {lim.heap_trend_min_h:g} h",
         )
     ok = trend["kb_per_h"] >= -lim.max_heap_fall_kb_h
     return Check(
-        "heap trend",
+        HEAP_TREND,
         "PASS" if ok else "FAIL",
-        f"{trend['kb_per_h']:+g} KB/h over {trend['hours']:g} h",
+        reading,
         f"-{lim.max_heap_fall_kb_h:g} KB/h",
     )
 

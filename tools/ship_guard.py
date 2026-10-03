@@ -30,6 +30,10 @@ ran what, measured where — and is accepted in HISTORY only. Anywhere a
 buyer's copy would ACT on it (a default host, a string on a page) is a
 finding.
 
+What the guard lets through — the examples, the seller's LAN and where it is
+history, the MAC allowance, the placeholder names — is data, not code:
+tools/ship_guard_allow.txt, each entry with its reason, read at start-up.
+
     ship_guard.py                 scan the tracked tree: exit 1 with findings
     ship_guard.py --release DIR   and a staged release directory
 
@@ -53,58 +57,53 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import castle_keys
 
 ROOT = Path(__file__).resolve().parent.parent
-#: The guard names what it guards against, and its test plants it: the two
-#: files the tree scan does not read.
-UNREAD = ("tools/ship_guard.py", "tests/test_ship_guard.py")
+#: What the guard lets through, with the reason for each entry.
+ALLOW = ROOT / "tools" / "ship_guard_allow.txt"
+#: The guard names what it guards against, its allow-list names the seller's
+#: LAN, and its test plants both: the files the tree scan does not read.
+UNREAD = (
+    "tools/ship_guard.py",
+    "tools/ship_guard_allow.txt",
+    "tests/test_ship_guard.py",
+)
 
+#: The seller's castle inventory: tracked, never shipped, and the one file a
+#: castle key could be committed in.
+DEVICES = "devices.toml"
 #: Tracked for the seller's own tools, never shipped: export-ignore in
 #: .gitattributes (the source zip) and skipped by the installer (a clone).
-PERSONAL = ("devices.toml", "tracks/tracks.json")
+PERSONAL = (DEVICES, "tracks/tracks.json")
 #: Names no tracked file and no release asset (or member of one) may have.
-FORBIDDEN_NAMES = frozenset({"secrets.yaml", "devices.toml", "tracks.json"})
+FORBIDDEN_NAMES = frozenset({"secrets.yaml", DEVICES, "tracks.json"})
 
-#: The documented stand-ins: what docs, docstrings and tests write where a
-#: castle's or a router's address goes. One more is a decision, made here.
-EXAMPLE_IPS = frozenset(
-    {
-        "10.0.0.1", "10.0.0.2", "10.0.0.5", "10.0.0.7", "10.0.0.8",
-        "10.0.0.9", "10.0.0.20", "10.0.0.30", "10.1.1.1", "10.1.2.3", "10.2.2.2",
-        "10.5.5.5", "10.9.9.1", "10.9.9.2", "10.9.9.3", "10.9.9.9",
-        "10.9.9.20", "10.255.255.255", "172.16.0.9", "192.168.0.1",
-        "192.168.1.1", "192.168.1.4", "192.168.1.5", "192.168.1.20",
-        "192.168.1.30", "192.168.1.31", "192.168.1.50",
-        # Not an example: ESPHome's own setup-network address, which the
-        # owner's guide tells a buyer to open (docs/OWNER-GUIDE.md).
-        "192.168.4.1",
-    }
-)  # fmt: skip
+
+def read_allow(path: Path = ALLOW) -> dict[str, list[str]]:
+    """The allow file's sections: a `[name]` line opens one, every other line
+    is an entry, and `#` starts a comment."""
+    sections: dict[str, list[str]] = {}
+    entries: list[str] | None = None
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line.startswith("[") and line.endswith("]"):
+            entries = sections.setdefault(line[1:-1], [])
+        elif line and entries is None:
+            raise ValueError(f"{path.name}: an entry before any [section]: {line}")
+        elif line and entries is not None:
+            entries.append(line)
+    return sections
+
+
+_ALLOWED = read_allow()
+#: The documented stand-ins for a castle's or a router's address.
+EXAMPLE_IPS = frozenset(_ALLOWED["example-ips"])
 #: The seller's home LAN, where the porch castle and the bench boards live.
-SELLER_NET = ipaddress.ip_network("10.27.27.0/24")
-#: Where the seller's addresses are history, not configuration: the design
-#: record and the notes, the firmware's own comments, the test fixtures
-#: (a realistic address is the point of a fixture), and devices.toml itself,
-#: which never ships. A path here is a prefix.
-HISTORY = (
-    "docs/",
-    "PROJECT_NOTES.md",
-    ".claude/",
-    "firmware/castle_feather_s3.yaml",
-    "firmware/pending/README.md",
-    "demo/castle-radio/VALIDATION.md",
-    "demo/castle-radio/test_",
-    "tests/",
-    "web/test/",
-    "core/src/netguard.rs",  # its #[cfg(test)] corpus, shared with tests/
-    "devices.toml",
-)
-#: (path, how many MACs) accepted. RUNBOOK names the yard castle's MAC so
-#: the operator can find its DHCP reservation; it is the seller's runbook.
-MAC_ALLOWED = {"docs/RUNBOOK.md": 1}
+SELLER_NET = ipaddress.ip_network(_ALLOWED["seller-net"][0])
+#: Where the seller's addresses are history, not configuration (prefixes).
+HISTORY = tuple(_ALLOWED["history"])
+#: How many MACs a path may carry.
+MAC_ALLOWED = {p: int(n) for p, n in (e.split() for e in _ALLOWED["mac-allowed"])}
 #: Home-directory names that are nobody's: examples and CI runners.
-PLACEHOLDER_USERS = frozenset(
-    {"me", "you", "someone", "b", "j", "name", "user", "runner", "runneradmin",
-     "Shared", "USERNAME"}
-)  # fmt: skip
+PLACEHOLDER_USERS = frozenset(_ALLOWED["placeholder-users"])
 
 _IP = re.compile(
     r"(?<![\d.])(10(?:\.\d{1,3}){3}|172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}"
@@ -134,20 +133,11 @@ def scan_text(path: str, text: str) -> list[str]:
     macs = 0
     history = path.startswith(HISTORY)
     for n, line in enumerate(text.splitlines(), 1):
-        for m in _IP.finditer(line):
-            ip = m.group(1)
-            try:
-                addr = ipaddress.ip_address(ip)
-            except ValueError:
-                continue  # 10.300.1.1 is a version number, not an address
-            if ip in EXAMPLE_IPS or (history and addr in SELLER_NET):
-                continue
-            what = (
-                "the seller's LAN address"
-                if addr in SELLER_NET
-                else ("a private-LAN address that is not a documented example")
-            )
-            found.append(f"{path}:{n}: {what} {ip}")
+        found.extend(
+            f"{path}:{n}: {what}"
+            for what in (_address(m.group(1), history) for m in _IP.finditer(line))
+            if what
+        )
         for m in _MAC.finditer(line):
             macs += 1
             if macs > MAC_ALLOWED.get(path, 0):
@@ -158,6 +148,19 @@ def scan_text(path: str, text: str) -> list[str]:
             if m.group(1) not in PLACEHOLDER_USERS
         )
     return found
+
+
+def _address(ip: str, history: bool) -> str:
+    """What is wrong with one private-looking address ("" when nothing)."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ""  # 10.300.1.1 is a version number, not an address
+    if ip in EXAMPLE_IPS or (history and addr in SELLER_NET):
+        return ""
+    if addr in SELLER_NET:
+        return f"the seller's LAN address {ip}"
+    return f"a private-LAN address that is not a documented example {ip}"
 
 
 def _text(data: bytes) -> str | None:
@@ -192,7 +195,7 @@ def keyed(paths: list[str], root: Path = ROOT) -> list[str]:
     pre-commit hook's own rule (castle_keys.holds_key), asked of what git
     would ship. The working copy is the seller's to key; it never ships."""
     found = []
-    for p in (p for p in paths if Path(p).name == "devices.toml"):
+    for p in (p for p in paths if Path(p).name == DEVICES):
         text = subprocess.run(
             ["git", "-C", str(root), "show", f":{p}"], capture_output=True, check=True
         ).stdout.decode("utf-8", errors="replace")
@@ -239,22 +242,34 @@ def scan_release(dist: Path) -> list[str]:
     for f in sorted(p for p in dist.iterdir() if p.is_file()):
         found += _name(f.name, f.name)
         if f.suffix == ".zip":
-            with zipfile.ZipFile(f) as z:
-                for info in z.infolist():
-                    where = f"{f.name}!{info.filename}"
-                    found += _name(where, info.filename)
-                    if not info.is_dir() and info.file_size <= BLOB_MAX:
-                        found += scan_blob(where, z.read(info))
+            found += _scan_zip(f)
         elif f.name.endswith(".tar.gz"):
-            with tarfile.open(f) as t:
-                for m in t.getmembers():
-                    where = f"{f.name}!{m.name}"
-                    found += _name(where, m.name)
-                    fh = t.extractfile(m) if m.isfile() and m.size <= BLOB_MAX else None
-                    if fh is not None:
-                        found += scan_blob(where, fh.read())
+            found += _scan_tar(f)
         elif f.stat().st_size <= BLOB_MAX:
             found += scan_blob(f.name, f.read_bytes())
+    return found
+
+
+def _scan_zip(f: Path) -> list[str]:
+    found: list[str] = []
+    with zipfile.ZipFile(f) as z:
+        for info in z.infolist():
+            where = f"{f.name}!{info.filename}"
+            found += _name(where, info.filename)
+            if not info.is_dir() and info.file_size <= BLOB_MAX:
+                found += scan_blob(where, z.read(info))
+    return found
+
+
+def _scan_tar(f: Path) -> list[str]:
+    found: list[str] = []
+    with tarfile.open(f) as t:
+        for m in t.getmembers():
+            where = f"{f.name}!{m.name}"
+            found += _name(where, m.name)
+            fh = t.extractfile(m) if m.isfile() and m.size <= BLOB_MAX else None
+            if fh is not None:
+                found += scan_blob(where, fh.read())
     return found
 
 

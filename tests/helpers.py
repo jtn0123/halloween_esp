@@ -37,6 +37,8 @@ SANDBOX_ENV = (
 for _k in SANDBOX_ENV:
     os.environ.pop(_k, None)
 
+import shlex
+import subprocess
 from typing import Any
 from unittest import mock
 
@@ -146,3 +148,14 @@ class HostEnv:
         if value is None:
             os.environ.pop("CASTLE_HOST", None)
         self.addCleanup(env.stop)  # type: ignore[attr-defined]
+
+
+def command_line(argv: list[str]) -> str:
+    """argv as one command line, quoted the way tools/operator_cmd.py splits
+    one on this OS — what a test hands --off-cmd, --on-cmd or --disrupt-cmd."""
+    return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+
+
+def exits(code: int) -> str:
+    """A command line that switches nothing and exits with `code`."""
+    return command_line([sys.executable, "-c", f"raise SystemExit({code})"])

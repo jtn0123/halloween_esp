@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # helpers
 import castle_emu
 import soak
 import soak_run
-from helpers import HostEnv
+from helpers import HostEnv, command_line, exits
 
 
 class Castle:
@@ -203,10 +203,67 @@ class TestGoodNight(SoakCase):
         self.assertEqual(code, 1)
         self.assertEqual(s["starts_failed"], ["nope: HTTP 404"])
 
-    def test_a_disruption_command_runs_and_is_judged(self) -> None:
-        code, s = self.soak(5, "--disrupt-cmd", "exit 3", "--disrupt-at", "0")
+
+class TestDisruption(SoakCase):
+    """--disrupt-cmd: steps run in order, as programs (no shell), judged on
+    their exits — and the last one runs even when the soak is stopping."""
+
+    def step(self, word: str, code: int = 0) -> str:
+        """A step that writes `word,` to the marker file and exits `code`."""
+        src = "import sys; open(sys.argv[1], 'a').write(sys.argv[2] + ',')"
+        argv = [sys.executable, "-c", f"{src}; raise SystemExit({code})"]
+        return command_line([*argv, str(self.marker), word])
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.marker = self.out / "steps.txt"
+
+    def steps_seen(self) -> str:
+        return self.marker.read_text(encoding="utf-8") if self.marker.exists() else ""
+
+    def test_every_step_runs_in_order_and_a_failed_one_fails_the_night(self) -> None:
+        flags = ("--disrupt-at", "0", "--disrupt-hold", "0")
+        cmds = ("--disrupt-cmd", self.step("off", 3), "--disrupt-cmd", self.step("on"))
+        code, s = self.soak(5, *flags, *cmds)
         self.assertEqual(code, 1)
-        self.assertEqual(s["disruptions"][0]["exit"], 3)
+        self.assertEqual(self.steps_seen(), "off,on,")  # the failure stopped nothing
+        d = s["disruptions"][0]
+        self.assertEqual((d["exit"], [st["exit"] for st in d["steps"]]), (3, [3, 0]))
+        self.assertIn("disruption command", self.verdict())
+        code, s = self.soak(5, "--disrupt-at", "0", "--disrupt-cmd", exits(0))
+        self.assertEqual((code, s["disruptions"][0]["exit"]), (0, 0))
+
+    def test_a_step_is_a_program_and_its_arguments_with_no_shell(self) -> None:
+        missing = command_line([str(self.out / "no-such-plug-tool"), "off"])
+        code, s = self.soak(5, "--disrupt-at", "0", "--disrupt-cmd", missing)
+        d = s["disruptions"][0]
+        self.assertEqual((code, d["exit"]), (1, -1))
+        self.assertIn("could not start", d["output"])
+        echo = [sys.executable, "-c", "import sys; print(sys.argv[1:])"]
+        line = command_line(echo) + " && exit 4 | $HOME"
+        code, s = self.soak(5, "--disrupt-at", "0", "--disrupt-cmd", line)
+        self.assertEqual(code, 0)
+        self.assertIn(
+            "['&&', 'exit', '4', '|', '$HOME']", s["disruptions"][0]["output"]
+        )
+
+    def test_a_stopped_run_cuts_the_hold_and_still_switches_back_on(self) -> None:
+        def interrupt() -> None:
+            self.until("the off step ran", lambda: self.steps_seen() == "off,")
+            raise KeyboardInterrupt
+
+        self.clock.before(4, interrupt)
+        flags = ("--disrupt-at", "0", "--disrupt-hold", "600")
+        cmds = ("--disrupt-cmd", self.step("off"), "--disrupt-cmd", self.step("on"))
+        t0 = time.monotonic()
+        code, s = self.soak(30, *flags, *cmds)
+        self.assertLess(time.monotonic() - t0, 120)  # not the 600 s hold
+        self.assertEqual(code, 1)  # stopped early
+        self.assertEqual(self.steps_seen(), "off,on,")
+        self.assertEqual([st["exit"] for st in s["disruptions"][0]["steps"]], [0, 0])
+
+    def verdict(self) -> str:
+        return (self.out / "verdict.txt").read_text(encoding="utf-8")
 
 
 class TestBadNight(SoakCase):
@@ -330,6 +387,7 @@ class TestCommandLine(SoakCase):
                 ["--hours", "0"],
                 ["--disrupt-at", "1"],
                 ["--disrupt-cmd", "true", "--disrupt-at", "5", "--hours", "2"],
+                ["--disrupt-cmd", "true", "--disrupt-hold", "-1"],
             ):
                 with self.subTest(bad), self.assertRaises(SystemExit):
                     soak.parse(["h", *bad])

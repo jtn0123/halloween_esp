@@ -1,0 +1,81 @@
+# What tools/ship_guard.py lets through: things in a buyer's copy that look
+# personal and are not. Read when the guard starts. A `[section]` line opens
+# a list, every other line is one entry, and `#` starts a comment. One more
+# entry is a decision, made here, with its reason beside it. The guard does
+# not scan this file (ship_guard.UNREAD); tests/test_ship_guard.py holds
+# every entry to the shape its section needs.
+
+[example-ips]
+# The documented stand-ins: what docs, docstrings and tests write where a
+# castle's or a router's address goes.
+10.0.0.1
+10.0.0.2
+10.0.0.5
+10.0.0.7
+10.0.0.8
+10.0.0.9
+10.0.0.20
+10.0.0.30
+10.1.1.1
+10.1.2.3
+10.2.2.2
+10.5.5.5
+10.9.9.1
+10.9.9.2
+10.9.9.3
+10.9.9.9
+10.9.9.20
+10.255.255.255
+172.16.0.9
+192.168.0.1
+192.168.1.1
+192.168.1.4
+192.168.1.5
+192.168.1.20
+192.168.1.30
+192.168.1.31
+192.168.1.50
+# Not an example: ESPHome's own setup-network address, which the owner's
+# guide tells a buyer to open (docs/OWNER-GUIDE.md).
+192.168.4.1
+
+[seller-net]
+# The seller's home LAN, where the porch castle and the bench boards live.
+10.27.27.0/24
+
+[history]
+# Where the seller's addresses are history, not configuration: the design
+# record and the notes, the firmware's own comments, the test fixtures (a
+# realistic address is the point of a fixture), and devices.toml itself,
+# which never ships. Each entry is a path prefix.
+docs/
+PROJECT_NOTES.md
+.claude/
+firmware/castle_feather_s3.yaml
+firmware/pending/README.md
+demo/castle-radio/VALIDATION.md
+demo/castle-radio/test_
+tests/
+web/test/
+core/src/netguard.rs   # its cfg(test) corpus, shared with tests/
+devices.toml
+
+[mac-allowed]
+# A path and how many MAC addresses it may carry. RUNBOOK names the yard
+# castle's MAC so the operator can find its DHCP reservation; it is the
+# seller's runbook.
+docs/RUNBOOK.md 1
+
+[placeholder-users]
+# Home-directory names that are nobody's: examples and CI runners.
+me
+you
+someone
+b
+j
+name
+user
+runner
+runneradmin
+Shared
+USERNAME
