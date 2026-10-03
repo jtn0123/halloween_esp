@@ -42,6 +42,9 @@ LOG_NAME = "castle-tools.log"
 #: setup.rs's log lines: a setup starting, and one that finished.
 SETUP_BEGAN = "setup ("
 SETUP_DONE = "setup finished in"
+#: And one that failed: the app then waits on its splash for Try again, so a
+#: smoke that only asked the port would sit out the whole --timeout.
+SETUP_FAILED = "setup failed: "
 #: supervisor.rs's, when Castle Radio starts from runtime.rs's Source::Bundled
 #: — the app's own, not a configured install or a checkout the runner has.
 STARTED_OWN = "starting Castle Radio from the app's own runtime"
@@ -139,14 +142,22 @@ def size(log: Path) -> int:
         return 0
 
 
+def setup_failure(wrote: str) -> str | None:
+    """setup.rs's failure line in what a launch wrote, when its setup failed."""
+    lines = (ln.strip() for ln in wrote.splitlines() if SETUP_FAILED in ln)
+    return next(lines, None)
+
+
 def wait_for(
     proc: subprocess.Popen[bytes],
     ask: Callable[[], Json | None],
     good: Callable[[Json], bool],
     timeout: float,
     what: str,
+    doomed: Callable[[], str | None] = lambda: None,
 ) -> Json:
-    """Ask until `good`; the app exiting, or the time running out, fails."""
+    """Ask until `good`. The app exiting, `doomed` naming a reason it never
+    will answer, or the time running out, fails."""
     deadline = time.monotonic() + timeout
     while True:
         body = ask()
@@ -156,6 +167,9 @@ def wait_for(
             raise SmokeError(
                 f"the app exited ({proc.returncode}) before {what} answered"
             )
+        why = doomed()
+        if why:
+            raise SmokeError(f"{what} will not answer: {why}")
         if time.monotonic() > deadline:
             raise SmokeError(f"{what} did not answer within {timeout:.0f}s")
         time.sleep(POLL)
@@ -219,6 +233,7 @@ def start(
             is_radio,
             timeout,
             "Castle Radio",
+            lambda: setup_failure(read_from(log, mark)),
         )
         wait_for(
             proc,

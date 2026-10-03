@@ -228,6 +228,20 @@ class WaitingAndQuitting(unittest.TestCase):
         with self.assertRaisesRegex(smoke.SmokeError, "did not answer within 0s"):
             smoke.wait_for(running, lambda: None, smoke.is_radio, 0, "radio")
 
+    def test_a_failed_setup_fails_at_once_with_its_reason(self) -> None:
+        at = "[2026-10-03T12:00:09Z] castle-tools:"  # logfile.rs's prefix
+        wrote = f"{at} setup (FirstRun): …\n{at} setup failed: no internet\n"
+        why = smoke.setup_failure(wrote)
+        self.assertEqual(why, f"{at} setup failed: no internet")
+        self.assertIsNone(smoke.setup_failure(f"{at} setup finished in 9s\n"))
+        running = proc(Running())
+        with self.assertRaisesRegex(
+            smoke.SmokeError, "radio will not answer: .*no internet"
+        ):
+            smoke.wait_for(
+                running, lambda: None, smoke.is_radio, 60, "radio", lambda: why
+            )
+
     def test_quit_asks_politely_where_it_can(self) -> None:
         proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
         self.addCleanup(proc.kill)
@@ -359,6 +373,7 @@ class TheAppWritesWhatTheSmokeReads(unittest.TestCase):
         setup = self.rust("setup.rs")
         self.assertIn(f'"{smoke.SETUP_BEGAN}{{:?}}): ', setup)
         self.assertIn(f'"{smoke.SETUP_DONE} {{}}s"', setup)
+        self.assertIn(f'"{smoke.SETUP_FAILED}{{message}}"', setup)
         self.assertIn(
             '"starting {} from the {} at {}: {} on port {}"', self.rust("supervisor.rs")
         )

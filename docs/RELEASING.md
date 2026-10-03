@@ -95,9 +95,12 @@ NSIS setup silently, per user, and starts what that installed. Then:
 2. After a quit, the second launch must answer within three minutes
    without running a setup.
 
-On a failure it prints the app's log. So a red smoke means the release
+A setup that fails ends the smoke at once, with the app's own reason; it
+does not wait out the 30 minutes on a splash that is waiting for Try again.
+On any failure it prints the app's log. So a red smoke means the release
 would not have worked on a buyer's first launch, or that one of those hosts
-was down; the log says which. The job's timeout is 120 minutes for this.
+was down or turned the runner away; the log says which. The job's timeout
+is 120 minutes for this.
 
 **Bumping uv:** download both archives from the new release, check them
 against the `digest` GitHub reports for each asset, change `UV_VERSION`
