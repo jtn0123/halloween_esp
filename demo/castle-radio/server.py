@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import ClassVar
 from urllib.parse import parse_qs, unquote, urlsplit
 
+import castle_finder
 import desktop_tools
 import device_bridge
 import import_routes
@@ -42,6 +43,7 @@ STATIC_ROUTES = frozenset(
         "/device-tools.js",
         "/device-words.js",
         "/castle-key.js",
+        "/castle-find.js",
         "/desktop-tools.js",
         "/device-helper.js",
         "/companion.html",
@@ -257,6 +259,7 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/library": get_library,
         "/radio/jobs": get_jobs,
         "/radio/tools": desktop_tools.get_status,
+        **castle_finder.GET_ROUTES,
     }
 
     def do_GET(self):
@@ -360,6 +363,7 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/reprocess": import_routes.post_reprocess,
         "/radio/cancel": import_routes.post_cancel,
         "/radio/rename": import_routes.post_rename,
+        **castle_finder.POST_ROUTES,
     }
 
     def do_POST(self):

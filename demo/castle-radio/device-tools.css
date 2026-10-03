@@ -147,3 +147,8 @@
 .bench-events{display:flex;flex-direction:column;gap:8px;margin-top:14px}
 .bench-events button{align-self:flex-start}
 .bench-events pre{margin:0;max-height:220px;overflow:auto;white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* Find my castle (castle-find.js): the chip opens it while the castle is offline. */
+.castle-chip.offline{cursor:pointer}
+.find-results{list-style:none;margin:10px 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.find-results li{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
