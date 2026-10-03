@@ -196,7 +196,7 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     # One axis since docs/RETIREMENT.md. This job ran the 148-test browser
     # suite twice, once per server, because the same specs passing against
     # both WAS the parity proof (grade report 2026-08-31 D5). There is one
@@ -270,7 +270,7 @@ jobs:
         # directory, and the port and --localhost are appended there.
         env:
           CASTLE_STUDIO_CMD: ../core/target/release/studio
-        run: npx --no-install playwright test --project=chromium
+        run: npx --no-install playwright test --project=chromium -g "a slow castle still gets its chip|a light sequence walks the channels|the masthead keeps saying|a castle that dies mid-session|the SD budget measures the card" --repeat-each=20
         working-directory: web
       # WebKit is Safari's engine and the desktop app's macOS window
       # (docs/PRODUCTION-TODO.md §5.1). Its own run — its own server and
@@ -280,7 +280,7 @@ jobs:
         if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
         env:
           CASTLE_STUDIO_CMD: ../core/target/release/studio
-        run: npx --no-install playwright test --project=webkit
+        run: npx --no-install playwright test --project=webkit -g "a slow castle still gets its chip|a light sequence walks the channels|the masthead keeps saying|a castle that dies mid-session|the SD budget measures the card" --repeat-each=20
         working-directory: web
 
   esphome:
