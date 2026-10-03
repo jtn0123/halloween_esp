@@ -382,12 +382,17 @@ true, and it is the dev/support path forever.
       songs, then purging them. `tests/install_smoke.py` is the driver.
 - [x] Time Demucs per song on that CPU (compare: M4 CPU 133 s / tuned 65 s).
       Each install-smoke run splits a 10 s clip on the runner's CPU and
-      puts the separate step's wall time in the run summary.
+      puts the separate step's wall time in the run summary. 2026-10-03:
+      windows-latest (EPYC 7763, 4 cores) 12.0 s, macos-14 (M1, 3 cores)
+      12.0 s — about 1.2× the audio's length; the whole split step 23.4 s
+      and 17.4 s. A buyer's own CPU is still unmeasured.
 - [ ] Still a person's job, no software stands in: SmartScreen on the
       downloaded installer, and an import from a real network share.
 - [ ] Flash a castle from the web flasher in Edge; check the USB driver.
 - [ ] Auto-update from one Release to the next.
-- [ ] Run the Rust + Python suites natively; file what fails as follow-up.
+- [x] Run the Rust + Python suites natively; file what fails as follow-up.
+      §4.3's cross-platform.yml does it on windows-latest (cargo test,
+      `run_checks.py test` and `test-radio`), green and blocking.
 
 ## 8. Repo and process
 
