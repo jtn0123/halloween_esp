@@ -415,6 +415,7 @@ test("an EXPECTED castle that never answers becomes a visible, retryable state",
   await expect(chip).toBeVisible({ timeout: 25_000 });   // three misses later
   await expect(chip).toContainText("looking for the castle");
   await expect(chip).toContainText("10.27.27.247");
+  await expect(chip).toContainText("Find my castle");      // the way on if it moved
   up = true;                                             // Retry finds it
   await page.locator("#devRetry").click();
   await expect(chip).toContainText("castle v5.42");
