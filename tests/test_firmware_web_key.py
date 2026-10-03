@@ -88,7 +88,11 @@ class TestCastleKey(WebPairCase):
     def test_an_open_castle_says_so_and_asks_for_nothing(self) -> None:
         self.assertFalse(self.status()["locked"])
         r = self.same("POST", b"/api/settings?boot_play=1")
-        self.assertEqual((r.status, json.loads(r.body)), (200, {"boot_play": True}))
+        # v5.75: the reply is every setting, the owner's three still unset.
+        self.assertEqual(
+            (r.status, json.loads(r.body)),
+            (200, {"boot_play": True, "vol_max": 100, "tz": "", "quiet": ""}),
+        )
 
     def test_every_write_is_refused_without_the_key(self) -> None:
         self.lock()
@@ -117,7 +121,7 @@ class TestCastleKey(WebPairCase):
         self.lock()
         self.pair.send_key(b"s3cret-key")
         r = self.same("POST", b"/api/settings?boot_play=0")
-        self.assertEqual(json.loads(r.body), {"boot_play": False})
+        self.assertFalse(json.loads(r.body)["boot_play"])
         self.assertFalse(self.status()["boot_play"])
         self.assertEqual(self.same("PUT", b"/api/files/k.mp3", b"\xff\xfb").status, 200)
         self.assertEqual(self.same("DELETE", b"/api/files/k.mp3").status, 200)
@@ -134,7 +138,7 @@ class TestCastleKey(WebPairCase):
             (b"/api/key?clear=0", b"need new=<key> or clear=1"),
             (b"/api/key?new=has%20space", b"bad key"),
             (b"/api/key?new=" + b"k" * 65, b"bad key"),
-            (b"/api/settings", b"need boot_play="),
+            (b"/api/settings", b"need boot_play=, tz=, vol_max= or quiet="),
             (b"/api/settings?boot_play=maybe", b"bad boot_play"),
         ):
             r = self.same("POST", target)

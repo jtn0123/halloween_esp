@@ -245,6 +245,13 @@ inline void route_dir(const httpd_req_t *req, const char *&dir, const char *&pre
   if (strncmp(req->uri, "/api/scenes/", 12) == 0) { dir = "scenes/"; prefix = "/api/scenes/"; }
 }
 
+/// Whether `path` names a directory on the card. Read before a byte of an
+/// upload is, and before DELETE's unlink, by the two handlers below.
+inline bool is_folder(const std::string &path) {
+  struct stat st {};
+  return stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+}
+
 /// PUT into /sd, /sd/site or /sd/scenes depending on the route. The scenes
 /// directory is where the show's own tracks live (see audio_sd.yaml).
 inline esp_err_t h_put(httpd_req_t *req) {
@@ -279,6 +286,13 @@ inline esp_err_t h_put(httpd_req_t *req) {
     mkdir(d.c_str(), 0775);
   }
   const std::string path = std::string("/sd/") + dir + name;
+  // v5.75: a name that is a FOLDER on the card is not a file to replace.
+  // write_body's dance moves whatever holds the name aside, and FatFs
+  // renames a directory as readily as a file — so `PUT /api/files/scenes`
+  // used to answer 200 with the show's whole directory parked as
+  // `scenes.old` and a lone file in its place. Mirrored in
+  // tools/castle_emu_upload.py.
+  if (is_folder(path)) return reply_err(req, "409 Conflict", "is a folder");
   // Everything above is cheap and must stay on the httpd task: a 400 for a
   // bad name has to come back as fast as it always did. The BYTES are what
   // moves off it (A9).
@@ -293,6 +307,10 @@ inline esp_err_t h_delete(httpd_req_t *req) {
   std::string name = name_from_uri(req, prefix);
   if (!safe_name(name)) return reply_err(req, "400 Bad Request", "bad filename");
   const std::string path = std::string("/sd/") + dir + name;
+  // v5.75: one answer for a folder, the same as PUT's. FatFs's f_unlink
+  // removes an EMPTY directory and refuses a full one, so the board said 200
+  // or "no such file" by what was inside, and a host castle said 404 either way.
+  if (is_folder(path)) return reply_err(req, "409 Conflict", "is a folder");
   if (unlink(path.c_str()) != 0) return reply_err(req, "404 Not Found", "no such file");
   ESP_LOGI(TAG, "deleted %s", path.c_str());
   unsigned t = 0, f = 0;

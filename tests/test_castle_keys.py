@@ -261,6 +261,8 @@ COPIES = {
         "OLD_FIRMWARE",
     ),
     "web/src/castle_act.ts": ("KEY_REQUIRED",),
+    # v5.75: the owner's page, in flash (its Settings heading is the place).
+    "firmware/sd_web_owner.h": ("KEY_REQUIRED",),
     "demo/castle-radio/castle-direct.js": (
         "KEY_REQUIRED",
         "WRONG_KEY",

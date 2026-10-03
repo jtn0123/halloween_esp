@@ -109,8 +109,7 @@ class TestGenEsphomeMain(unittest.TestCase):
     def test_fallback_scene_ids_are_generated_from_the_show(self) -> None:
         self.assertEqual(ge.main(), 0)
         text = ge.FALLBACK_SCENES_OUT.read_text(encoding="utf-8")
-        self.assertIn("'a'", text)
-        self.assertIn("'b'", text)
+        self.assertIn('kFallbackSceneIdsCsv[] = "a,b";', text)
 
     def test_blackout_script_clears_every_zone(self) -> None:
         """One call has to be enough to make the whole castle go dark."""

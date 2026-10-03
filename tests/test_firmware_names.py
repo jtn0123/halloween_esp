@@ -58,13 +58,17 @@ class TestNameRules(unittest.TestCase):
                 if lit.startswith("0x")
                 else ord(lit[1:-1].encode().decode("unicode_escape"))
             )
+        # v5.75: the last byte FatFs would strip, read off the C too.
+        tail = {t.encode() for t in re.findall(r"n\.back\(\) == '(.)'", body)}
         self.assertEqual(limit, wire.NAME_MAX)
-        self.assertEqual(bad, {0x7F, ord('"'), ord("\\")})
+        self.assertEqual(bad, {0x7F, ord('"'), ord("\\"), *wire.FAT_REFUSES})
+        self.assertEqual(tail, {b".", b" "})
         self.assertEqual(above, 0x80)  # ASCII only, since v5.46
         return lambda n: (
             bool(n)
             and len(n) < limit
             and n[:1] != lead
+            and n[-1:] not in tail
             and all(f not in n for f in finds)
             and all(below <= c < above and c not in bad for c in n)
         )
@@ -84,7 +88,7 @@ class TestNameRules(unittest.TestCase):
 
     def corpus(self, seed: int = 7) -> list[bytes]:
         rng = random.Random(seed)
-        alphabet = b"ab./\\?%+ \x00\xc3\xa9\"'\t\x1f\x7f"
+        alphabet = b"ab./\\?%+ :*|\x00\xc3\xa9\"'\t\x1f\x7f"
         out = [
             b"",
             b".",
@@ -112,6 +116,19 @@ class TestNameRules(unittest.TestCase):
             b"a'b",
             b"\xc3\xa9.mp3",
             b"a\x80b",
+            b" ",
+            b"   ",
+            b"a.",
+            b"a ",
+            b"a. ",
+            b" a",
+            b"a:b",
+            b"a*b",
+            b"a<b>",
+            b"a|b",
+            b"x.mp3.part.",
+            b"CON",
+            b"nul.mp3",
         ]
         out += [
             bytes(rng.choice(alphabet) for _ in range(rng.randint(0, 150)))
@@ -165,6 +182,23 @@ class TestNameRules(unittest.TestCase):
             b"a~b",
             b"foo..bar.mp3",
         ):
+            self.assertTrue(wire.safe_name(good), repr(good))
+
+    def test_safe_name_takes_only_what_fat_stores_as_sent(self) -> None:
+        """v5.75: FatFs strips a trailing space or dot and refuses * : < > ?
+        | (ff.c create_name), so those names were either a different file
+        on the card than the one asked for or a 500 after the bytes had
+        been sent. A Windows host's NTFS does the same, which is how the
+        emulator's PUT /api/files/%20 came to be a 500 there and a 200 on a
+        Mac (PR #65's Windows run)."""
+        for bad in (b" ", b"   ", b"a.", b"song.mp3.", b"a ", b"a. ", b"a .",
+                    b"x.mp3.part.", b"x.mp3.old ", b"a:b.mp3", b"a*b", b"a<b",
+                    b"a>b", b"a?b", b"a|b"):  # fmt: skip
+            self.assertFalse(wire.safe_name(bad), repr(bad))
+        # Kept as FAT keeps them: a leading space, inner dots and spaces, and
+        # DOS device names, which FAT stores like any other.
+        for good in (b" a.mp3", b"a b c.mp3", b"a.b.mp3", b"CON", b"nul.mp3",
+                     b"COM1.cue"):  # fmt: skip
             self.assertTrue(wire.safe_name(good), repr(good))
 
     def test_safe_name_refuses_the_whole_high_half(self) -> None:

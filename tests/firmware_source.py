@@ -35,6 +35,8 @@ SD_STATE = (FW / "sd_web_state.h").read_text(encoding="utf-8")
 #: v5.74: the owner's settings — the castle key and boot_play — and the two
 #: routes that change them.
 SD_PREFS = (FW / "sd_web_prefs.h").read_text(encoding="utf-8")
+#: v5.75: the owner's page and the two routes that serve it (/owner, /).
+SD_OWNER = (FW / "sd_web_owner.h").read_text(encoding="utf-8")
 #: v5.67: the event ring, the light-frame counters and the radio transition
 #: came out of sd_web_state.h on the 500-line cap — a history is not a
 #: mailbox. Read as ONE text with its parent, because every check below is
@@ -51,13 +53,19 @@ SD_UTIL = (FW / "sd_web_util.h").read_text(encoding="utf-8")
 #: emulator has to read the same manifest with the same limits.
 SD_SCENES = (FW / "castle_scenes.h").read_text(encoding="utf-8")
 SD_STREAM = (FW / "sd_web_stream.h").read_text(encoding="utf-8")
-#: The emulator's handlers, read as ONE text. They live in two files since
-#: v5.61 — castle_emu_upload.py took the card's write plane, the way
-#: firmware/sd_web_upload.h did on the other side — and every check below
-#: is about what a handler answers, not which file it sits in.
+#: The emulator's handlers, read as ONE text. They live in several files —
+#: castle_emu_upload.py took the card's write plane in v5.61, the way
+#: firmware/sd_web_upload.h did on the other side, and castle_emu_prefs.py
+#: the owner's settings in v5.75 — and every check below is about what a
+#: handler answers, not which file it sits in.
 EMU_HTTP = "\n".join(
     (ROOT / "tools" / name).read_text(encoding="utf-8")
-    for name in ("castle_emu_http.py", "castle_emu_upload.py", "castle_emu_reply.py")
+    for name in (
+        "castle_emu_http.py",
+        "castle_emu_upload.py",
+        "castle_emu_prefs.py",
+        "castle_emu_reply.py",
+    )
 )
 
 #: reply_err strings the emulator has no way to produce: flash, heap and
@@ -165,7 +173,15 @@ def firmware_routes() -> list[tuple[str, str, str]]:
 
 
 FUNCS = c_functions(
-    SD_WEB, SD_OTA, SD_UPLOAD, SD_SITE, SD_REMOTE, SD_EVENTS, SD_UTIL, SD_PREFS
+    SD_WEB,
+    SD_OTA,
+    SD_UPLOAD,
+    SD_SITE,
+    SD_REMOTE,
+    SD_EVENTS,
+    SD_UTIL,
+    SD_PREFS,
+    SD_OWNER,
 )
 
 

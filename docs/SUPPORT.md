@@ -7,10 +7,12 @@ you cannot walk over to.
 
 ## What the owner sends you
 
-The castle page's "Report a problem" button (PRODUCTION-TODO 1.3) is not
-built yet. It will bundle `/api/status` and `/api/events`. Until it lands,
-ask for the same four replies, each opened in a browser on the owner's
-Wi-Fi and saved or screenshotted:
+**Report a problem** on the castle's own page (`/owner`, v5.75) saves one
+file, `castle-report-<time>.txt`: when it was made, the version, board and
+build, then the four replies below under `== /api/status ==` headings. Ask
+for that file. A castle on v5.74 or older has no such button: ask for the
+same four replies, each opened in a browser on the owner's Wi-Fi and saved
+or screenshotted:
 
 ```
 http://castle-xxxxxx.local/api/status
@@ -27,7 +29,7 @@ questions:
 | --- | --- |
 | status `version`, `fw_variant`, `board` | Which image, which build (`buyer`), which board. Compare with the unit's record below. |
 | status `uptime_s` | Seconds since it last started. Small when the owner says "it's been on all day" = it rebooted. |
-| health `boots`, `crashes`, `last_reset`, `was_crash` (`reset_reason` from v5.75) | How many starts this season, how many were crashes, and why it last started. `power-on` is a plug; `software` is a restart or an update; `PANIC`, the watchdogs and `BROWNOUT` are crashes. Brownouts point at the power supply. |
+| health `boots`, `crashes`, `last_reset`, `was_crash` | How many starts this season, how many were crashes, and why it last started. `power-on` is a plug; `software` is a restart or an update; `PANIC`, the watchdogs and `BROWNOUT` are crashes, and since v5.75 `power-glitch` and `cpu-lockup` too. Brownouts point at the power supply. |
 | status `sd_mounted`, `missing`; health `sd_read_errors`, `sd_last_error` | The card. Unmounted = reseat or replace it. A missing name = a publish that did not finish. Read errors on one file (`sd_last_error` is `<path>@<offset>`) = that file; on many = the card is dying. |
 | status `heap_free_kb`; health `heap_min_kb` | Free memory now, and the lowest it has been since boot. Under ~20 KB is trouble (RUNBOOK, "When a scene will not play"). |
 | status `rssi` | Signal in dBm; 0 = not on Wi-Fi. Worse than about -80 = the castle is too far from the router. |
@@ -100,8 +102,9 @@ Notes:
 
 - The card: what is on it, and which page the castle will serve. A card
   with a published `/site/` page shows Castle Radio's page at `/`; without
-  one the castle shows its built-in page, which is the one the Owner's guide
-  describes (Settings, Factory reset). Check that the guide matches.
+  one the castle shows its built-in owner page there. The owner page, which
+  the Owner's guide describes (Settings, Factory reset, Report a problem),
+  is at `/owner` either way. Check that the guide matches.
 - The image: the buyer build (`fw_variant: buyer` in status) from a tagged
   release, not a local build.
 - The record above, filled in, and the label printed (PRODUCTION-TODO §3).

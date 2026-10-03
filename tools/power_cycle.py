@@ -182,7 +182,7 @@ def after_boot(host: str, args: argparse.Namespace, c: Cycle, first: dict) -> No
         health = probe.get_dict(host, "/api/health")
     except probe.Unreachable:
         health = None
-    c.reason = probe.reset_reason(last, health)
+    c.reason = probe.reset_reason(health)
     if probe.is_crash(c.reason, health):
         c.failures.append(f"came back from a crash: {c.reason}")
     c.scene = args.scene or probe.scene_ids(last)[0]

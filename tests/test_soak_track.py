@@ -84,14 +84,14 @@ class TestReboots(unittest.TestCase):
         self.assertEqual(notes.count("REBOOT detected (boot counter rose)"), 2)
         self.assertEqual(t.summary(30.0)["crashes"], 1)  # the reason says crash
 
-    def test_v575_reset_reason_is_read_first(self) -> None:
-        self.assertEqual(
-            probe.reset_reason({"reset_reason": "PANIC"}, health()), "PANIC"
-        )
-        self.assertEqual(probe.reset_reason(None, health(reset_reason="sw")), "sw")
-        self.assertEqual(probe.reset_reason(None, health()), "power-on")
-        self.assertEqual(probe.reset_reason(None, None), "")
-        self.assertTrue(probe.is_crash("int-watchdog"))
+    def test_the_reason_is_last_reset(self) -> None:
+        """v5.75 added no second field: `last_reset` is the reason, and the
+        two crashes its was_crash() learned are crashes here too."""
+        self.assertEqual(probe.reset_reason(health()), "power-on")
+        self.assertEqual(probe.reset_reason(health(last_reset=7)), "")
+        self.assertEqual(probe.reset_reason(None), "")
+        for word in ("int-watchdog", "PANIC", "power-glitch", "cpu-lockup"):
+            self.assertTrue(probe.is_crash(word), word)
         self.assertFalse(probe.is_crash("software"))
 
 

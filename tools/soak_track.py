@@ -209,17 +209,15 @@ class Tracker:
             self._evict_base = evicted  # what happened before we came
         boot.evicted = max(boot.evicted, evicted - self._evict_base)
 
-    def health(
-        self, wall: float, health: dict, status: dict | None = None
-    ) -> list[str]:
-        """One /api/health reply (status: the latest, for v5.75's field)."""
+    def health(self, wall: float, health: dict) -> list[str]:
+        """One /api/health reply."""
         if self.boot is None:
             self.boots.append(Boot(seen_at=wall))
         notes = self._boot_counter(wall, health)
         boot = self.boot
         assert boot is not None
         if self._need_reason:
-            notes += self._reason(boot, status, health)
+            notes += self._reason(boot, health)
         notes += self._sd_errors(boot, health)
         last = health.get("sd_last_error")
         if isinstance(last, str) and last:
@@ -246,10 +244,10 @@ class Tracker:
         self._bump_expected = False
         return [self._new_boot(wall, "boot counter rose") for _ in range(extra)]
 
-    def _reason(self, boot: Boot, status: dict | None, health: dict) -> list[str]:
+    def _reason(self, boot: Boot, health: dict) -> list[str]:
         """The reset reason of a boot not yet explained; worth a line when
         it is a reboot during the run, or a crash at any time."""
-        reason = probe.reset_reason(status, health)
+        reason = probe.reset_reason(health)
         boot.reason, boot.crash = reason, probe.is_crash(reason, health)
         self._need_reason = False
         if len(self.boots) == 1 and not boot.crash:

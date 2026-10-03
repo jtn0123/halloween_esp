@@ -3,8 +3,9 @@
 #include <array>
 #include <memory>
 #include <string_view>
-// The serving half of the castle's web server: static files off the card,
-// the built-in fallback page, and the /sd/ streaming route.
+// The serving half of the castle's web server: static files off the card
+// and the /sd/ streaming route. The page served when the card has none —
+// the owner's page, and `/` itself — is sd_web_owner.h since v5.75.
 //
 // Split from sd_web.h purely for the 500-line rule; sd_web.h includes this
 // and registers these handlers from its start(). The split line is "bytes
@@ -28,7 +29,6 @@
 #include "esphome/core/log.h"
 #include "castle_health.h"
 #include "sd_audio.h"
-#include "fallback_scenes.h"
 
 namespace castle_web {
 
@@ -36,8 +36,9 @@ esp_err_t reply_err(httpd_req_t *req, const char *status, const char *msg);
 std::string url_decode(const char *s);
 
 /// E4: one CSP on every page we serve — depth behind the escaping, not a
-/// substitute for it (safe_name still admits '<' and '>', so a filename is
-/// one missed esc() away from running). The desk is deliberately a single
+/// substitute for it (safe_name refuses '<' and '>' since v5.75, because FAT
+/// cannot hold them, but it still admits '&' and '\'', so a filename is one
+/// missed esc() away from breaking an attribute). The desk is deliberately a single
 /// self-contained file, so inline script/style must stay allowed; what the
 /// header removes is everything ELSE an injected tag could do: no external
 /// fetches, no foreign media, no form posts off-box.
@@ -166,67 +167,6 @@ inline esp_err_t h_sd_get(httpd_req_t *req) {
     case Sent::WHOLE: break;
   }
   return ESP_OK;
-}
-
-// The fallback page, for a card with no /site/ on it (or no card at all).
-// Deliberately spartan: the good page lives on the card, this one only has to
-// prove the server works and give you buttons that press. v5.74 adds the two
-// owner settings (sd_web_prefs.h), because this is the one page every castle
-// is guaranteed to have: power-on autoplay, and the castle key — which this
-// browser remembers and sends as X-Castle-Key with every button.
-inline const char kFallbackPage[] = R"HTML(<!doctype html><meta charset=utf-8>
-<meta name=viewport content="width=device-width,initial-scale=1">
-<title>Castle</title>
-<style>body{font:16px system-ui;background:#14101c;color:#e8e0f0;margin:2rem auto;max-width:40rem;padding:0 1rem}
-button{background:#3a2a55;color:inherit;border:0;border-radius:8px;padding:.6rem 1rem;margin:.2rem;cursor:pointer}
-button:hover{background:#503a75}li{margin:.3rem 0;list-style:none}#files{padding:0}
-small{color:#9a8fb0}h1{font-size:1.3rem}</style>
-<h1>🏰 Castle <small id=v></small></h1>
-<div id=scenes></div>
-<button onclick="api('/api/stop')">■ Stop</button>
-<h3>SD card</h3><ul id=files></ul><pre id=log></pre>
-<h3>Settings</h3>
-<label><input type=checkbox id=bp onchange="api('/api/settings?boot_play='+(bp.checked?1:0)).then(say)"> start the show at power-on</label>
-<p><input id=k type=password placeholder="castle key" size=14>
-<button onclick="localStorage.castleKey=k.value;say({ok:1})">Use</button>
-<button onclick="api('/api/key?new='+encodeURIComponent(k.value)).then(r=>{if(r.ok)localStorage.castleKey=k.value;say(r)})">Set</button>
-<button onclick="api('/api/key?clear=1').then(r=>{if(r.ok)localStorage.removeItem('castleKey');say(r)})">Clear</button>
-<small id=lk></small></p>
-<button onclick="confirm('Erase Wi-Fi, key and settings, and restart?')&&api('/api/factory-reset?confirm=yes').then(say)">Factory reset</button>
-<script>
-const S=[__FALLBACK_SCENES__];
-const api=(u,m)=>fetch(u,{method:m||'POST',headers:localStorage.castleKey?{'X-Castle-Key':localStorage.castleKey}:{}});
-const say=r=>{lk.textContent=r.ok?'saved':r.status==401?'wrong or missing key':'refused';sync()};
-const sync=()=>fetch('/api/status').then(r=>r.json()).then(s=>{v.textContent=s.version+' · '+(s.sd_mounted?'SD ok':'no SD')+(s.locked?' · 🔒':'');bp.checked=s.boot_play});
-scenes.innerHTML=S.map(s=>`<button onclick="api('/api/scene?s=${s}')">${s}</button>`).join('');
-sync();
-fetch('/api/files').then(r=>r.json()).then(fs=>files.innerHTML=fs.filter(f=>!f.dir).map(f=>
- `<li><button onclick="api('/api/play?f=${encodeURIComponent(f.name)}')">▶</button> ${f.name} <small>${(f.size/1024)|0} KB</small></li>`).join(''))
- .catch(()=>files.innerHTML='<li><small>no card</small></li>');
-</script>)HTML";
-
-inline esp_err_t h_root(httpd_req_t *req) {
-  set_csp(req);
-  if (castle_sd::g_mounted) {
-    // Prefer the pre-compressed desk: ~3x fewer bytes over the radio, and
-    // every browser this decade sends Accept-Encoding: gzip. sd_sync pushes
-    // both forms. The .gz wins when both exist — a newer plain index.html
-    // is ignored until the gzipped copy is replaced too (see README).
-    // MISSING falls through to the next candidate; anything else is this
-    // request's whole answer, torn or not (A8) — a desk page that died
-    // half way must not be followed by a second, smaller desk page.
-    Sent sent = send_sd_file(req, "/sd/site/index.html.gz", "gzip",
-                             "text/html; charset=utf-8");
-    if (sent == Sent::MISSING) sent = send_sd_file(req, "/sd/site/index.html");
-    if (sent == Sent::TORN) return ESP_FAIL;
-    if (sent == Sent::WHOLE) return ESP_OK;
-  }
-  httpd_resp_set_type(req, "text/html; charset=utf-8");
-  std::string page = kFallbackPage;
-  static constexpr const char kMark[] = "__FALLBACK_SCENES__";
-  if (const auto at = page.find(kMark); at != std::string::npos)
-    page.replace(at, sizeof(kMark) - 1, kFallbackSceneIds);
-  return httpd_resp_send(req, page.c_str(), page.size());
 }
 
 inline esp_err_t h_site(httpd_req_t *req) {

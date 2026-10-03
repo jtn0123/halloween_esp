@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # helpers
 import castle_emu
 import operator_cmd
 import power_cycle
+from castle_emu_health import reason_code
 from helpers import HostEnv, command_line, exits
 
 FAKE_PLUG = Path(__file__).resolve().parent / "fake_plug.py"
@@ -205,7 +206,7 @@ class TestAfterBoot(unittest.TestCase):
         self.addCleanup(shutil.rmtree, card, True)
         emu = castle_emu.CastleEmu(port=0, sd_dir=card, scenes=["vigil"])
         emu.state.boot = time.monotonic() - 1000
-        emu.health.update(last_reset="BROWNOUT", was_crash=True)
+        emu.reset_reason = reason_code("BROWNOUT")  # was_crash follows the word
         emu.start()
         self.addCleanup(emu.server_close)
         self.addCleanup(emu.shutdown)
