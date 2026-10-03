@@ -114,9 +114,10 @@ A failed OTA today means USB + ESPHome installed.
       `pir_fitted: "false"` — the page says "not fitted", `/api/pir` answers
       409, and the native API has no motion input or PIR switch. The yard
       build is unchanged.
-- [ ] Castle Radio and the app follow the castle: link its `/owner` page,
+- [x] Castle Radio and the app follow the castle: link its `/owner` page,
       and hide their motion control when `/api/status` says `pir.fitted:
-      false` (v5.75 says it; nothing off the castle reads it yet).
+      false`. 2026-10-02: Radio's help card and the desk's castle panel
+      link it; both drop the motion controls and say "not fitted".
 - [x] A "Report a problem" button on the castle page that bundles
       `/api/status` + `/api/events` into a downloadable text file. v5.75:
       status, health, events and the boot log, with time, version and
@@ -222,6 +223,7 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
       (light-only or synth audio) or an empty show. The castle page and the
       app must look sensible with zero songs — first-run "add your first
       song" state, not errors. Re-render `make publish` from that show.
+      Zero songs done 2026-10-02 (/owner v5.76, Radio, desk); the show is not.
 - [ ] Electrical: PSU rating, which connector is which, no user-serviceable
       wiring (`docs/WIRING*.md` is for you, not them).
 - [ ] Licences: Demucs (MIT) + htdemucs weights, ffmpeg (LGPL build only —
@@ -399,8 +401,10 @@ true, and it is the dev/support path forever.
       (`core/src/studio_reason_words.rs`, docs/PARITY.md). The importer,
       the splitter, the studio and Castle Radio all end that way, with the
       tools' own output behind Details. Cancel still reads "Cancelled".
-- [ ] Castle offline / wrong address: one clear state, one "find my castle"
-      action (mDNS browse + manual IP).
+- [x] Castle offline / wrong address: one clear state, one "find my castle"
+      action (mDNS browse + manual IP). Castle Radio's Find my castle
+      (`tools/castle_find.py`, stdlib) writes the per-user store; the
+      studio, and so the desk's chip, follow it.
 - [x] Sync interrupted mid-push: resumable or safely retried; card never left
       with a half-written `show.man`. `sd_sync` and Castle Radio send the
       show before what names it, record each verified file as it lands and
@@ -415,7 +419,9 @@ true, and it is the dev/support path forever.
       and a real network share are still the §4.4 hands-on pass.
 - [ ] Firmware/app version handshake: the app refuses (with a message) to push
       a show format the castle's firmware cannot read.
-- [ ] Crash reporting: a local "copy diagnostics" button (no telemetry).
+- [x] Crash reporting: a local "copy diagnostics" button (no telemetry).
+      Castle Radio's help card: the castle's v5.75 report plus app version,
+      tools, jobs and log tail — paths cut, no key. The desk links `/owner`.
 
 ### 4.4 Windows hands-on pass (an Opus agent on your Windows PC)
 - [ ] Fresh Windows user account: install from a Release, first-run, import

@@ -151,3 +151,10 @@ your computer asks you to confirm.
   TODO(screenshot): the SmartScreen window, before and after More info.
 
 You only do this once; the app updates itself after that.
+
+If Castle Tools says the castle is not answering (it is off, or your router
+gave it a new address), open **Your castle** in Castle Radio and press **Find
+my castle**, or type the castle's number address. The light desk follows
+whichever castle you pick. On the same page, **Copy diagnostics** gathers
+what the castle and the app know into one text for whoever is helping you;
+it leaves out your castle key and your folder names, and sends nothing.
