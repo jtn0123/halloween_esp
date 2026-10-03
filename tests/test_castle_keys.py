@@ -115,16 +115,14 @@ class TestRemember(StoreCase):
             link.symlink_to(dotfile)
             targets.append(link)
         for target in targets:
-            for env in (False, True):
-                with self.subTest(target=target.name, env=env):
-                    with (
-                        mock.patch.dict(os.environ, {"CASTLE_DEVICES": str(target)}),
-                        self.assertRaises(ValueError) as cm,
-                    ):
-                        if env:
-                            ck.remember("10.0.0.7", "s3cret")
-                        else:
-                            ck.remember("10.0.0.7", "s3cret", target)
+            # None: the store named by CASTLE_DEVICES, as the apps reach it.
+            for given in (target, None):
+                with (
+                    self.subTest(target=target.name, given=given is not None),
+                    mock.patch.dict(os.environ, {"CASTLE_DEVICES": str(target)}),
+                ):
+                    with self.assertRaises(ValueError) as cm:
+                        ck.remember("10.0.0.7", "s3cret", given)
                     self.assertIn("devices.toml", str(cm.exception))
                     self.assertNotIn("s3cret", str(cm.exception))
         self.assertEqual(dotfile.read_text(encoding="utf-8"), "export PATH=/usr/bin\n")
@@ -134,6 +132,16 @@ class TestRemember(StoreCase):
             sorted(p.name for p in self.tmp.iterdir() if p.name.startswith(".devices")),
             [],
         )
+
+    def test_a_failed_read_back_leaves_the_file_and_no_probe(self) -> None:
+        with (
+            mock.patch.object(ck.hosts, "stored_key", return_value="not-it"),
+            self.assertRaises(ValueError) as cm,
+        ):
+            ck.remember("10.0.0.7", "s3cret")
+        self.assertIn("could not be updated safely", str(cm.exception))
+        self.assertEqual(self._text(), OWN)
+        self.assertEqual(list(self.tmp.glob(".devices.toml.*.tmp")), [])
 
     def test_refusals_name_the_rule_never_the_key(self) -> None:
         with self.assertRaises(ValueError) as cm:

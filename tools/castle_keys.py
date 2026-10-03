@@ -40,6 +40,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import tomllib
 import urllib.error
 import urllib.parse
@@ -199,9 +200,15 @@ def _write(path: Path, host: str, key: str | None) -> None:
     new = _edit(text, doc, host, key)
     # Read back through the reader every client uses before the file is
     # touched: the edit is only good if hosts.py now answers what was meant.
-    probe = path.with_name(f".{STORE_NAME}.{os.getpid()}.tmp")
+    # The probe is mkstemp's — unique, 0600 from birth, in the folder just
+    # checked — and written through its own descriptor.
+    fd, name = tempfile.mkstemp(
+        prefix=f".{STORE_NAME}.", suffix=".tmp", dir=path.parent
+    )
+    probe = Path(name)
     try:
-        probe.write_text(new, encoding="utf-8")
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            out.write(new)
         mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
         os.chmod(probe, mode)
         if hosts.stored_key(host, probe) != (key or ""):
