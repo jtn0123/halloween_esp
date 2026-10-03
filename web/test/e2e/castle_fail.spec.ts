@@ -6,7 +6,7 @@
  * asked for.
  */
 
-import { test, expect, fakeCastle, realBytes } from "./fixtures.js";
+import { test, expect, fakeCastle, holdCastle, realBytes } from "./fixtures.js";
 import { MP3_ID, WAV_ID } from "./global-setup.js";
 
 const row = (id: string) => `.trk[data-id="${id}"]`;
@@ -20,20 +20,43 @@ async function inShow(page: import("@playwright/test").Page, ids: string[]): Pro
 }
 
 test("a slow castle still gets its chip, and the desk never waits on it", async ({ page }) => {
+  // "Never waits" is an ORDER, and the test asserts it as one. It used to
+  // time the pick below at < 1000 ms, which Linux WebKit in CI (~5 fps)
+  // spends on one Playwright click while the desk answers the click in the
+  // same task; and it looked for a still-hidden chip after a cold load,
+  // when Playwright could get its first look later than a 1.2 s castle.
   const castle = await fakeCastle(page);
   castle.delay = 1200;                       // inside the 2.5 s probe budget
+  // So the page notes for itself which came first: the scene grid (the
+  // desk, live) or the chip (the castle's first answer).
+  await page.addInitScript(() => {
+    const firsts: string[] = [];
+    (window as unknown as { __firsts: string[] }).__firsts = firsts;
+    const note = (what: string): void => { if (!firsts.includes(what)) firsts.push(what); };
+    new MutationObserver((records) => {
+      for (const r of records) {
+        const t = r.target as Element;
+        if (r.type === "childList" && t.querySelector("button.scene")) note("scenes");
+        if (t.id === "deviceChip" && t.classList.contains("live")) note("chip");
+      }
+    }).observe(document, { subtree: true, childList: true, attributeFilter: ["class"] });
+  });
+  // And the pick's answer is held, so the desk is seen to have moved on
+  // while the castle has still said nothing.
+  const pick = await holdCastle(page, /\/api\/scene\?/);
   await page.goto("/");
   await expect(page.locator("#stage")).toBeVisible();
-  // The stage is live long before the castle answers.
-  await expect(page.locator("#deviceChip")).toBeHidden();
   await expect(page.locator("#deviceChip")).toBeVisible({ timeout: 5000 });
-  // A scene pick returns to the operator at once; the toast arrives when
-  // the castle does.
-  const t = Date.now();
-  await page.locator("button.scene", { hasText: "Storm" }).first().click();
-  await expect(page.locator("button.scene", { hasText: "Storm" }).first())
-    .toHaveAttribute("aria-pressed", "true");
-  expect(Date.now() - t).toBeLessThan(1000);
+  expect(await page.evaluate(() => (window as unknown as { __firsts: string[] }).__firsts))
+    .toEqual(["scenes", "chip"]);
+  // A scene pick returns to the operator while the castle still holds it;
+  // the toast arrives when the castle does.
+  const storm = page.locator("button.scene", { hasText: "Storm" }).first();
+  await storm.click();
+  await pick.arrived;
+  await expect(storm).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".toast", { hasText: "scene storm" })).toHaveCount(0);
+  pick.release();
   await expect(page.locator("#toasts")).toContainText("scene storm", { timeout: 5000 });
 });
 
@@ -157,7 +180,7 @@ test("a castle that dies mid-session takes its badges and Sync with it", async (
   await inShow(page, [WAV_ID]);
   await page.goto("/");
   await expect(page.locator("#trkSync")).toHaveText("Sync show → castle (1)");
-  castle.up = false;
+  castle.dieOn = "/api/stop";
   // Any action's re-poll discovers the loss within a second; presence flips
   // and the library re-reads the card (and gets nothing).
   await page.locator("#devStop").click();
@@ -174,7 +197,7 @@ test("a castle back from a reboot is hushed again while sound is on the Mac", as
   const castle = await fakeCastle(page);
   await page.goto("/");
   await expect.poll(() => castle.hits("/api/volume?v=0")).toBe(1);   // first contact
-  castle.up = false;
+  castle.dieOn = "/api/stop";
   await page.locator("#devStop").click();                            // re-poll finds it gone
   await expect(page.locator("#headTxt")).toContainText("castle not answering");
   castle.up = true;

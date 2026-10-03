@@ -7,7 +7,7 @@
  * because every laptop user of the desk lives in that world.
  */
 
-import { test, expect } from "./fixtures.js";
+import { test, expect, holdCastle } from "./fixtures.js";
 
 const STATUS = {
   version: "5.3",
@@ -248,17 +248,45 @@ test("the panel lists what is actually on the card, and what each track is for",
 });
 
 test("a light sequence walks the channels and can be superseded", async ({ page }) => {
-  const calls = await stubCastle(page);
+  await stubCastle(page);
+  // Every light the page SENDS, logged as it calls fetch rather than when a
+  // route gets round to it, and the ones the castle answered.
+  await page.addInitScript(() => {
+    const w = window as unknown as { __lights: string[]; __lit: string[] };
+    w.__lights = []; w.__lit = [];
+    const send = window.fetch;
+    window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+      const sent = send.call(this, input, init);
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      const c = url.pathname === "/api/light" ? url.searchParams.get("c") : null;
+      if (c !== null) {
+        w.__lights.push(c.replace(/@.*/, ""));
+        void sent.then((r) => { if (r.ok) w.__lit.push(c.replace(/@.*/, "")); }, () => {});
+      }
+      return sent;
+    };
+  });
+  // The walk's first step waits on the wire until the strip click is in, so
+  // the click lands mid-walk however slowly the browser draws. It used to
+  // have to land inside the step's 1.2 s beat, and Linux WebKit in CI (5 fps)
+  // could spend that on the poll and the click, and see green go out.
+  const first = await holdCastle(page, /\/api\/light\?c=ff0000@/);
   await page.goto("/");
   await page.locator("#devMore").click();
   await page.locator("[data-seq='cycle']").click();
-  await expect.poll(() => calls.filter((c) => c.includes("c=ff0000@")).length).toBe(1);
+  await first.arrived;
   // A plain strip click supersedes the running walk rather than interleaving.
   await page.locator("[data-zl='door:0000ff']").click();
-  const after = calls.length;
-  await page.waitForTimeout(2000);
-  expect(calls.filter((c) => c.includes("c=00ff00@"))).toHaveLength(0);
-  expect(calls.length).toBeLessThanOrEqual(after + 1);
+  first.release();
+  // Answered, the walk sits out its beat and then chooses its next step. A
+  // page timer longer than any beat, set after the walk's, fires after it —
+  // the browser runs timers in order — so by then the choice is made.
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { __lit: string[] }).__lit.includes("ff0000"))).toBe(true);
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 2000)));
+  // No green, no blue on every strip, no closing "off": the walk just stopped.
+  expect(await page.evaluate(() => (window as unknown as { __lights: string[] }).__lights))
+    .toEqual(["ff0000", "door:0000ff"]);
 });
 
 test("the boot log is one tap away", async ({ page }) => {
@@ -316,9 +344,16 @@ test("the masthead keeps saying 'not answering' across a ♪ toggle", async ({ p
   // J1-4: toggling ♪ (or the mirror box) re-said the LAST GOOD status with
   // a green dot while the castle was dead and the volume POST had failed.
   const castle = flakyCastle(page);
+  // The castle dies the moment it has taken the ■ below. Switched off before
+  // the click, it raced the desk's own re-poll — first contact hushes the
+  // amp, and that re-polls ~1 s later — and in Linux WebKit in CI (5 fps)
+  // the poll won: ■ went disabled, rightly, and the click waited out the test.
+  await page.route("**/api/stop", (route) => {
+    castle.set(false);
+    return route.fallback();
+  });
   await page.goto("/");
   await expect(page.locator("#headTxt")).toContainText("castle v5.3");
-  castle.set(false);
   // A successful action re-polls ~1 s later — that poll finds the castle gone.
   await page.locator("#devStop").click();
   await expect(page.locator("#headTxt")).toContainText("castle not answering");
