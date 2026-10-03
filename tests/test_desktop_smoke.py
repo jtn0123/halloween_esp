@@ -200,9 +200,11 @@ class FindingTheApp(unittest.TestCase):
     def test_the_log_is_read_from_this_launchs_mark(self) -> None:
         log = self.tmp / "app.log"
         self.assertEqual((smoke.size(log), smoke.read_from(log, 0)), (0, ""))
-        log.write_text("first\nsecond\n", encoding="utf-8")
+        # Bytes, as logfile.rs writes them: a text-mode write would make
+        # every newline two bytes on Windows and move the offsets.
+        log.write_bytes(b"first\nsecond\n")
         self.assertEqual(smoke.read_from(log, 6), "second\n")
-        log.write_text("new\n", encoding="utf-8")  # moved aside at start
+        log.write_bytes(b"new\n")  # moved aside at start
         self.assertEqual(smoke.read_from(log, 14), "new\n")
 
 
