@@ -252,10 +252,13 @@ of the release Castle Radio names (`GET /radio/app/release`, which asks
 release tag builds a URL, so the manifest is always one of this repo's.
 
 **The signing key.** Updates are verified with a minisign key pair — free,
-and required even for an unsigned app; it is not code signing. Until the
-placeholder `CASTLE_TOOLS_UPDATER_PUBKEY_PLACEHOLDER` in `tauri.conf.json`
-is replaced, the app skips every check and "Check for updates" says why.
-Once, on the owner's machine:
+and required even for an unsigned app; it is not code signing. This repo's
+pair was made on 2026-10-03: the public key is in `tauri.conf.json`, the
+private key and its password are the two Actions secrets below, and the
+originals are kept off GitHub by the maintainer (the key file, and a copy
+in the login Keychain). A build whose `tauri.conf.json` still says
+`CASTLE_TOOLS_UPDATER_PUBKEY_PLACEHOLDER` (a fork, say) skips every check,
+and "Check for updates" says why. Making a pair, once, for a fork:
 
 ```sh
 npx @tauri-apps/cli signer generate -w ~/.tauri/castle-tools.key
