@@ -49,6 +49,12 @@ def job(key):
         return dict(value)
 
 
+def jobs():
+    """Every sync since start, oldest first — for Copy diagnostics."""
+    with _LOCK:
+        return [dict(value) for value in _JOBS.values()]
+
+
 def _listed_files(rows):
     """Name+size of files in an /api/files listing, ignoring {"skipped":N}."""
     return {

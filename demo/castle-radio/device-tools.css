@@ -157,3 +157,6 @@
 .first-run{border:1px dashed currentColor;border-radius:14px;padding:18px 20px;margin:0 0 14px}
 .first-run h3{margin:0 0 6px}
 .first-run p{margin:0 0 12px;opacity:.85}
+/* Help with your castle (castle-help.js): the diagnostics, shown before they are shared. */
+#help-text{width:100%;box-sizing:border-box;font:12px/1.4 ui-monospace,Menlo,monospace;margin-top:10px}
+#help-owner-note{margin-left:4px}

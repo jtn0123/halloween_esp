@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import castle_finder
 import desktop_tools
 import device_bridge
+import diagnostics
 import downloader_routes
 import first_run
 import import_routes
@@ -47,6 +48,7 @@ STATIC_ROUTES = frozenset(
         "/castle-key.js",
         "/castle-find.js",
         "/first-run.js",
+        "/castle-help.js",
         "/desktop-tools.js",
         "/downloader.js",
         "/device-helper.js",
@@ -265,6 +267,7 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/tools": desktop_tools.get_status,
         **castle_finder.GET_ROUTES,
         **first_run.GET_ROUTES,
+        **diagnostics.GET_ROUTES,
         "/radio/downloader": downloader_routes.get_status,
     }
 

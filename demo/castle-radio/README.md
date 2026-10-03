@@ -142,6 +142,27 @@ copies. Sample audio is local and is not distributed with the repository.
   drained before STOP can evict it. The show holds a screen wake lock and
   re-aligns when a throttled tab comes back.
 - Motion arming and cooldown are sent to the castle and read back from it.
+  A castle with no motion sensor (`pir.fitted` false, firmware 5.75 — the
+  buyer build) has the switch and its two settings taken away and the card
+  says why; older firmware does not say, and keeps them (`castle-help.js`).
+- **Find my castle** (`castle_finder.py`, `castle-find.js`, Your castle): one
+  state for "not answering" and two ways on — a one-shot mDNS browse
+  (`tools/castle_find.py`) or an address typed in. The answer is asked first,
+  then remembered as the first castle of the per-user store
+  (`CASTLE_DEVICES`, `tools/castle_address.py`), which the bridge re-reads
+  (`castle_place.py`) and the light desk reads too. `CASTLE_RADIO_HOST` pins
+  a castle instead, and the card says so.
+- **First run** (`first_run.py`, `first-run.js`): demo rows whose audio this
+  computer does not have are hidden, and with nothing left to play the Listen
+  page leads with "Add your first song", one press from Import.
+- **Help with your castle** (`diagnostics.py`, `castle-help.js`, Your castle):
+  a link to the castle's own page (`/owner`, firmware 5.75), and **Copy
+  diagnostics** / **Save as a file** — `GET /radio/diagnostics`, the castle's
+  own problem report in its own format followed by this app's version, its
+  tools, the recent imports and syncs and the tail of the desktop app's log
+  (`CASTLE_APP_LOG`). Folder names are cut to file names and no castle key
+  survives in it; the text is shown before it is shared, and nothing is sent
+  anywhere.
 - Phone layout: sticky top bar, two-row header, 40 px controls, safe-area
   aware player bar; audited at 390 x 844 with no horizontal overflow.
 - The original LED-channel and speaker diagnostic bench under Your castle.
