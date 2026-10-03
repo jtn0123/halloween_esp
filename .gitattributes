@@ -10,6 +10,9 @@
 *.mp3 binary
 *.wav binary
 
+# Pictures, the owner's guide's among them (docs/guide/, tools/guide_shots.py).
+*.png binary
+
 # Windows launchers keep CRLF wherever they are checked out (after the LF
 # default above, so this line wins for them).
 *.cmd text eol=crlf
