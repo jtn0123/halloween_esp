@@ -109,13 +109,23 @@ class TestTheCommittedShippedShow(unittest.TestCase):
 
     def test_every_first_run_seeds_it(self) -> None:
         self.assertEqual(desktop_env.SHIPPED_SCENES, Path("scenes") / "shipped.yaml")
-        rs = (ROOT / "desktop" / "src-tauri" / "src" / "runtime.rs").read_text(
-            encoding="utf-8"
-        )
+        # Wherever the app keeps its seed (runtime.rs today; a refactor may
+        # move it), the one seed_scenes there is reads the shipped show.
+        src = ROOT / "desktop" / "src-tauri" / "src"
+        homes = [
+            p
+            for p in sorted(src.glob("*.rs"))
+            if "pub fn seed_scenes" in p.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(len(homes), 1, f"one seed_scenes, found in {homes}")
+        rs = homes[0].read_text(encoding="utf-8")
         body = rs[rs.index("pub fn seed_scenes") :]
         body = body[: body.index("\n}\n")]
-        self.assertIn('join("shipped.yaml")', body)
-        self.assertNotIn('join("scenes.yaml")', body.replace("data.scenes()", ""))
+        why = (
+            f"{homes[0].name}: a first run seeds scenes/shipped.yaml, never the yard's"
+        )
+        self.assertIn('join("shipped.yaml")', body, why)
+        self.assertNotIn('join("scenes.yaml")', body.replace("data.scenes()", ""), why)
 
 
 SOURCE = """\
