@@ -65,7 +65,7 @@
       }
     },
     "updater": {
-      "pubkey": "CASTLE_TOOLS_UPDATER_PUBKEY_PLACEHOLDER",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNCMUE1QkY0QUREOENBMTYKUldRV3l0aXQ5RnNhT3l3d056RGQ4dlhqamhwMmY4U3JHTm90WkN6aCtDRHZJbUtyKys0R2duMHcK",
       "endpoints": [
         "https://github.com/jtn0123/halloween_esp/releases/latest/download/latest.json"
       ],

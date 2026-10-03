@@ -4,6 +4,7 @@ import concurrent.futures
 import http.client
 import json
 import threading
+import urllib.error
 import urllib.parse
 import zlib
 from pathlib import Path
@@ -65,10 +66,24 @@ def _listed_files(rows):
     }
 
 
+def _listing(path):
+    """An /api/files listing, where a folder the card does not have is an
+    empty one. The castle answers 404 for a missing `?d=scenes` — a card
+    with songs and no show on it, a freshly formatted one — and that is
+    nothing to fail the whole castle library over (tests/install_smoke.py
+    found it on a card that had only ever been sent songs)."""
+    try:
+        return device_bridge.call(path)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404 and "?d=" in path:
+            return []
+        raise
+
+
 def inventory(root, library, rows):
     state = device_bridge.call(STATUS_PATH)
     files = device_bridge.call(FILES_PATH)
-    scenes = device_bridge.call(f"{FILES_PATH}?d=scenes")
+    scenes = _listing(f"{FILES_PATH}?d=scenes")
     installed = set(state.get("scenes", "").split(","))
     audio = _listed_files(files)
     scene_audio = set(_listed_files(scenes))
@@ -212,7 +227,7 @@ STOPPED = (
 
 def _card_sizes(route):
     listing = f"{FILES_PATH}?d=scenes" if route == "/api/scenes" else FILES_PATH
-    return _listed_files(device_bridge.call(listing))
+    return _listed_files(_listing(listing))
 
 
 def transfer(key, route, name, data, companions=()):

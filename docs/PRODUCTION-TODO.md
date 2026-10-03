@@ -236,35 +236,7 @@ Everything here is needed for BOTH option A and option B.
 
 ### 4.1 Rust (`core/`) — compiles on Windows; done, in docs/PRODUCTION-DONE.md
 
-### 4.2 Python (`tools/`, `demo/castle-radio/`)
-- [x] `tools/manifest.py:30` `fcntl.flock` → cross-platform lock (`msvcrt.locking`
-      on Windows, or a lock-file with `os.open(O_CREAT|O_EXCL)`), shared helper.
-- [x] `tools/progress_process.py:16,31` and `demo/castle-radio/job_progress.py:107`
-      `start_new_session` + `os.killpg` → Windows `CREATE_NEW_PROCESS_GROUP` +
-      `taskkill /T /F` (or a job object via ctypes). One helper, both callers.
-- [x] Every hardcoded `.venv/bin/python` / `bin/` path → `sys.executable` or
-      a resolver that knows `Scripts\`.
-- [x] `os.replace` atomic-write paths: Windows fails if the target is open —
-      retry loop around the rename.
-- [x] Temp files: `NamedTemporaryFile(delete=False)` pattern where a child
-      process must reopen the file (Windows can't reopen an open temp file).
-- [x] Encoding: every `open()` passes `encoding="utf-8"` (Windows default is
-      cp1252). Add a ruff rule (`PLW1514`) so it stays that way.
-- [ ] Ports: Windows firewall prompt on first bind — bind `127.0.0.1` only
-      (already the default) so the prompt does not appear.
-- [ ] `demo/castle-radio/desktop_tools.py` + `tools/register_castle_launcher.py`:
-      Mac-only branches stay, behind a platform check, until the Tauri app
-      replaces them.
-
-### 4.3 CI
-- [x] `windows-latest` job: `cargo build --release` + `cargo test` for `core/`.
-- [x] `windows-latest` job: `make test`-equivalent Python suite (no Make on
-      Windows — a `tools/run_checks.py` the Makefile also calls). Green and
-      blocking since 2026-10-01.
-- [x] `macos-14` job: same, so Apple Silicon is tested in CI, not just here.
-- [x] Tests that assume POSIX (`/bin/sh`, `/tmp`, chmod) get a Windows path
-      or a portable rewrite — never a skip (CLAUDE.md rule). The C++ card
-      harnesses build with MinGW's g++ there (`tests/cxx_compiler.py`).
+### 4.2 Python and 4.3 CI — done, in docs/PRODUCTION-DONE.md
 
 ## 5. Option B — the Tauri desktop app (P1, primary)
 
@@ -277,9 +249,13 @@ Everything here is needed for BOTH option A and option B.
 - [ ] Tauri shell embeds the studio as a library (not a child process) — the
       Rust server already exists; `tauri::Builder` hosts the webview pointed
       at it. Or keep it a sidecar if that is less churn; decide.
-- [ ] Webview differences: WebKit (macOS) vs WebView2 (Windows). Run the
+- [x] Webview differences: WebKit (macOS) vs WebView2 (Windows). Run the
       Playwright suite against WebKit too; audio/blob/wake-lock APIs checked
-      on both.
+      on both. `make e2e` and CI's `web` job run every spec in Chromium (as
+      WebView2 is) and then WebKit. Audio and Blob uploads pass in both; the
+      page's real Safari gaps were 11px buttons and a styled select's 18px
+      height on a phone (previewer/mobile.css). Wake lock is Castle Radio's
+      (castle-direct.js), feature-tested, and outside this suite.
 - [x] The `castle-tools://` URL handler + popup bridge (castle page ↔ local
       helper) → Tauri deep-link plugin; retire `tools/castle_launcher.swift`.
 - [x] Menu-bar ♜ icon → Tauri system tray (works on both OSes).
@@ -328,7 +304,10 @@ Everything here is needed for BOTH option A and option B.
 - [ ] Auto-update: section 9.
 - [x] CI release workflow: tag → build dmg/msi on macOS + Windows runners →
       sign → Release. Firmware images attached to the same Release (1.2).
-- [ ] Uninstaller leaves the user's tracks unless asked.
+- [x] Uninstaller leaves the user's tracks unless asked. Tauri's stock NSIS
+      uninstaller deletes app data only when its unticked box is ticked;
+      tests/test_desktop_uninstall.py holds the config to that template, and
+      desktop/README.md says what removing the app on macOS keeps.
 
 ## 6. Option A — uv bootstrap installer (P1, fallback)
 
@@ -340,51 +319,40 @@ true, and it is the dev/support path forever.
 - [x] Prebuilt Rust bins downloaded from the matching GitHub Release (no
       cargo on the buyer's machine); checksum verified.
 - [x] ffmpeg: winget/brew if present, else a pinned static download.
-- [ ] Replace Homebrew assumptions in `tools/install_castle_tools.sh`.
+- [x] Replace Homebrew assumptions in `tools/install_castle_tools.sh`.
+      Retired instead: `installer/install.sh` does all of it without
+      Homebrew, and every pointer to the old script now names the installer.
 - [x] Launchers: `Castle Tools.command` (mac) + `Castle Tools.bat`/Start-menu
       shortcut (Windows) that start the server and open the browser.
 - [x] `--repair` and `--uninstall` flags; idempotent re-run.
 - [x] Works from a downloaded zip of the release, not only a git clone.
 
-## 7. Desktop-tool stability (P1)
-
-- [x] Import pipeline failure messages written for an owner, not a developer
-      (`studio_reason.rs` already explains errors — audit the wording).
-      2026-10-02: one sentence, what happened then what to do, from
-      `tools/import_reason.py` and its word-for-word Rust copy
-      (`core/src/studio_reason_words.rs`, docs/PARITY.md). The importer,
-      the splitter, the studio and Castle Radio all end that way, with the
-      tools' own output behind Details. Cancel still reads "Cancelled".
-- [x] Castle offline / wrong address: one clear state, one "find my castle"
-      action (mDNS browse + manual IP). Castle Radio's Find my castle
-      (`tools/castle_find.py`, stdlib) writes the per-user store; the
-      studio, and so the desk's chip, follow it.
-- [x] Sync interrupted mid-push: resumable or safely retried; card never left
-      with a half-written `show.man`. `sd_sync` and Castle Radio send the
-      show before what names it, record each verified file as it lands and
-      skip it on the retry; `tests/test_sd_sync_resume.py` and the radio's
-      `test_sync_resume.py` cut real pushes on the emulator (`drop_after`).
-- [x] Disk-full, unsupported file type, 2-hour file, non-ASCII filenames
-      (Windows + mac), file on a network drive.
-      2026-10-02: each has a test (`tests/test_import_edges.py`,
-      `demo/castle-radio/test_radio_failures.py`) and a sentence. Songs are
-      limited to 15 minutes because analysis peaks near 250 MB a minute.
-      desktop/README.md "What an import can take". A real Windows machine
-      and a real network share are still the §4.4 hands-on pass.
-- [x] Firmware/app version handshake: the app refuses (with a message) to push
-      a show format the castle's firmware cannot read. Done: §9's show/card
-      format item — one table, `tools/fw_formats.py`.
-- [x] Crash reporting: a local "copy diagnostics" button (no telemetry).
-      Castle Radio's help card: the castle's v5.75 report plus app version,
-      tools, jobs and log tail — paths cut, no key. The desk links `/owner`.
+## 7. Desktop-tool stability — done, in docs/PRODUCTION-DONE.md
 
 ### 4.4 Windows hands-on pass (an Opus agent on your Windows PC)
-- [ ] Fresh Windows user account: install from a Release, first-run, import
+- [x] Fresh Windows user account: install from a Release, first-run, import
       a song (mp3 + wav + a non-ASCII name), separate stems, sync, play.
-- [ ] Time Demucs per song on that CPU (compare: M4 CPU 133 s / tuned 65 s).
+      2026-10-03: `.github/workflows/install-smoke.yml` does it on
+      windows-latest and macos-14 (PRs that touch the installer or Castle
+      Radio, weekly, by hand): the real install.ps1/install.sh from a
+      git-archive tree with no cargo or Python on PATH, castle-core from a
+      staged release zip, twice and as a dry run; then Castle Radio's own
+      API against `tools/castle_emu.py` — three imports, one split, sync,
+      the card checked file by file, a song played; uninstall keeping the
+      songs, then purging them. `tests/install_smoke.py` is the driver.
+- [x] Time Demucs per song on that CPU (compare: M4 CPU 133 s / tuned 65 s).
+      Each install-smoke run splits a 10 s clip on the runner's CPU and
+      puts the separate step's wall time in the run summary. 2026-10-03:
+      windows-latest (EPYC 7763, 4 cores) 12.0 s, macos-14 (M1, 3 cores)
+      12.0 s — about 1.2× the audio's length; the whole split step 23.4 s
+      and 17.4 s. A buyer's own CPU is still unmeasured.
+- [ ] Still a person's job, no software stands in: SmartScreen on the
+      downloaded installer, and an import from a real network share.
 - [ ] Flash a castle from the web flasher in Edge; check the USB driver.
 - [ ] Auto-update from one Release to the next.
-- [ ] Run the Rust + Python suites natively; file what fails as follow-up.
+- [x] Run the Rust + Python suites natively; file what fails as follow-up.
+      §4.3's cross-platform.yml does it on windows-latest (cargo test,
+      `run_checks.py test` and `test-radio`), green and blocking.
 
 ## 8. Repo and process
 
@@ -393,6 +361,10 @@ true, and it is the dev/support path forever.
       "Release branches".
 - [ ] Version numbers: one release number for app + firmware + card format,
       shown in the app, on the castle page, and in the owner's guide.
+      In the app: the splash and Castle Radio's tools card and diagnostics
+      show the release tag; docs/SUPPORT.md "Which release is it" maps a
+      firmware number to its tag. Left: the castle page (firmware, which
+      knows only its own number) and the owner's guide.
 - [x] `docs/RUNBOOK.md` gains a "supporting a buyer's castle" section.
       It is docs/SUPPORT.md (reading a report and a soak log), linked from
       RUNBOOK.
@@ -424,9 +396,13 @@ calls/hour unauthenticated — check once a day and on launch, not more).
 - [ ] One Release = one version of everything: Tauri bundles (mac arm64,
       mac x64?, Windows x64), `latest.json` for the updater, firmware images
       named by variant (1.5), web-flasher manifest, checksums.
-- [ ] Tauri updater: its own update-signing keypair (minisign — free, NOT
+      *Built end to end by the release dry run on 2026-10-03 (run
+      37142954369, every job green); not yet published from a tag.*
+- [x] Tauri updater: its own update-signing keypair (minisign — free, NOT
       code signing; required even for unsigned apps). Private key in a
-      GitHub Actions secret; losing it strands installed apps.
+      GitHub Actions secret; losing it strands installed apps. Made
+      2026-10-03: pubkey committed, both secrets set, originals kept off
+      GitHub (docs/RELEASING.md); dry run 3's signatures verify.
 - [x] Release workflow: tag `vX.Y` → build on macOS + Windows runners →
       build firmware → upload all assets → publish `latest.json` last.
 - [x] Channels: `stable` only for the buyer; pre-releases ignored unless a

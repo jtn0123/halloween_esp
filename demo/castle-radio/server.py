@@ -392,10 +392,29 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(404)
 
 
-if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8871
+#: The loopback, never "" or 0.0.0.0: Windows Firewall asks an owner to
+#: "allow access" the first time a program listens where the network can
+#: reach it, and nothing here is for the Wi-Fi (tests/test_loopback_rs.py).
+HOST = "127.0.0.1"
+
+
+def listen(port: int) -> ThreadingHTTPServer:
+    """Bound and listening; port 0 takes a free one (the banner names it)."""
+    return ThreadingHTTPServer((HOST, port), Handler)
+
+
+def main(argv: list[str]) -> None:
+    """`server.py [port]`: 8871 unless told, and the banner names the port
+    actually bound, which is how a caller that asked for 0 finds it."""
+    httpd = listen(int(argv[0]) if argv else 8871)
     print(
-        f"Castle Radio: http://127.0.0.1:{port} — isolated imports, castle device bridge",
+        f"Castle Radio: http://{HOST}:{httpd.server_address[1]}"
+        " — isolated imports, castle device bridge",
         flush=True,
     )
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    with httpd:
+        httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

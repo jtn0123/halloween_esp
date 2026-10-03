@@ -5,7 +5,7 @@
    which songs there are. */
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {directContext, lightsSent, settle, showContext} from './test_support.mjs';
+import {directContext, lightsSent, refused, settle, showContext} from './test_support.mjs';
 
 const play = (ctx, file, key) => ctx.window.fetch('/radio/device/command', {method: 'POST',
   body: JSON.stringify({action: 'file', file, key})});
@@ -46,4 +46,27 @@ test('a song this page already lists is not listed twice', async () => {
   const {ctx} = showContext([], {version: '5.63'});
   const rows = JSON.parse(await (await ctx.window.fetch('/radio/library')).text());
   assert.deepEqual(rows.map(r => r.key), ['radio_a']);
+});
+
+test('a card with songs and no scenes folder still lists them', async () => {
+  // The castle answers 404 for ?d=scenes when the card has never held a show.
+  const {ctx} = directContext({
+    '/api/status': {version: '5.76', scene: 'stop', track: '', scenes: 'stop'},
+    '/api/files?d=scenes': refused(404, 'no such directory\n'),
+    '/api/files': [{name: 'radio_a.mp3', size: 9, dir: false}],
+  }, [{key: 'radio_a', filename: 'radio_a.mp3', bytes: 9, duration: 30, frames: []}]);
+  const reply = await ctx.window.fetch('/radio/device/library');
+  assert.equal(reply.status, 200);
+  const {tracks} = JSON.parse(await reply.text());
+  assert.deepEqual([tracks.radio_a.status, tracks.radio_a.audio], ['audio_only', true]);
+});
+
+test('any other refusal of the scenes folder is still the castle failing', async () => {
+  const {ctx} = directContext({
+    '/api/status': {version: '5.76', scene: 'stop', track: '', scenes: 'stop'},
+    '/api/files?d=scenes': refused(503, 'no SD card\n'),
+    '/api/files': [],
+  }, []);
+  const reply = await ctx.window.fetch('/radio/device/library');
+  assert.notEqual(reply.status, 200);
 });

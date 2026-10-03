@@ -51,7 +51,7 @@ ifeq ($(shell uname -m),x86_64)
 export NPY_DISABLE_CPU_FEATURES ?= X86_V3 X86_V4 AVX512_ICL AVX512_SPR
 endif
 
-.PHONY: preflight build-buyer validate-buyer guide-shots cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
+.PHONY: preflight build-buyer validate-buyer guide-shots cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
 
 help:
 	@echo "Halloween Castle"
@@ -92,7 +92,7 @@ help:
 	@echo "  make check      preflight + test + test-radio + lint + guards + tsc + node suites"
 	@echo "                  = CI's blocking python/TS steps; NOT the coverage floors,"
 	@echo "                  the esphome builds or the browser suite (see the comment)"
-	@echo "  make e2e        browser tests (needs: cd web && npx playwright install chromium)"
+	@echo "  make e2e        browser tests, Chromium then WebKit (installs both browsers)"
 	@echo "                  CASTLE_E2E_PORT=8821 make e2e   to run beside another suite"
 	@echo "  make check-all  every check, including the browser tests"
 	@echo "  make coverage   unit tests under coverage.py, report on tools/ (non-gating)"
@@ -460,21 +460,7 @@ check: preflight audio test test-radio lint
 	@cd web && npm run --silent test
 	@echo "note: the browser e2e suite did NOT run — 'make e2e' (or 'make check-all') covers the UI"
 
-# Browser tests. Separate from `check` because they need a built page and a
-# browser binary, and they take an order of magnitude longer than everything
-# else put together. They drive the real studio server against a scratch
-# tracks directory, and Chromium runs with --mute-audio, so a run is silent.
-# `playwright install chromium` is idempotent and near-instant once the
-# browser is cached — running it here turns the two tribal setup steps
-# ("build the page, install the browser") into the target itself.
-e2e: preview
-	@cd web && node -e "require('@playwright/test')" 2>/dev/null \
-		|| { echo "e2e needs its deps first: cd web && npm ci"; exit 1; }
-	@if command -v cargo >/dev/null 2>&1; then \
-		(cd core && cargo build --release --quiet --bin studio) \
-			|| { echo "e2e: the Rust studio failed to build — fix it rather than testing a stale binary"; exit 1; }; \
-	fi
-	@cd web && npx playwright install chromium
-	@cd web && npx playwright test
+# The browser suite, Chromium then WebKit: mk/e2e.mk.
+include mk/e2e.mk
 
 check-all: check validate e2e

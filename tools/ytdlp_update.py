@@ -9,7 +9,10 @@ it exists every importer runs it (exe_paths.ytdlp, core/src/portable.rs).
 
 An update is one sequence, all or nothing:
 
-  1. ask GitHub's Releases API for yt-dlp's latest stable release (one call);
+  1. ask GitHub's Releases API for yt-dlp's latest stable release (one call)
+     — or, when the API turns this address away (60 unauthenticated calls
+     an hour per address, shared by everyone behind one router), ask
+     GitHub's website, whose /releases/latest redirects to the same tag;
   2. fetch that SAME release's SHA2-256SUMS and this computer's standalone
      build, and refuse the bytes unless they match;
   3. run the new file once (`--version`): a build that will not start is
@@ -40,6 +43,9 @@ import platform
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -51,17 +57,28 @@ import import_reason as ir
 import portable_fs
 
 API_LATEST = "https://api.github.com/repos/yt-dlp/yt-dlp/releases/latest"
+#: The same releases on GitHub's website: `<it>/latest` redirects to
+#: `<it>/tag/<tag>`, and each asset is at `<it>/download/<tag>/<name>`.
+WEB_RELEASES = "https://github.com/yt-dlp/yt-dlp/releases"
+#: The API's "not now, not this address": its hourly limit is a 403 that
+#: says "rate limit exceeded", or a 429.
+TURNED_AWAY = (403, 429)
 SUMS = "SHA2-256SUMS"
 RECORD = "downloader.json"
 
 #: Runs `[program, "--version"]` and returns what it printed.
 Version = Callable[[str], str]
+#: (url) -> the URL it lands on after its redirects.
+Resolve = Callable[[str], str]
 
 OFFLINE = (
     "Castle Tools could not reach GitHub to fetch the downloader — check that "
     "this computer is online, then try again."
 )
 UNREADABLE = "GitHub's answer about the downloader could not be used — try again later."
+TURNED_AWAY_SAID = (
+    "GitHub is turning away requests from this network for now — try again in an hour."
+)
 TAMPERED = (
     "The downloaded update did not match its published checksum, so it was "
     "not installed — try again later."
@@ -83,8 +100,10 @@ IN_USE = (
 )
 
 
-class UpdateError(RuntimeError):
-    """str() is the owner's sentence; `detail` is for whoever helps."""
+class UpdateError(rel.ReleaseError):
+    """str() is the owner's sentence; `detail` is for whoever helps. A
+    ReleaseError, so the installer's one "install failed" ending says it
+    rather than a traceback."""
 
     def __init__(self, said: str, detail: str = "") -> None:
         super().__init__(said)
@@ -110,6 +129,42 @@ def api_url() -> str:
     """The Releases-API answer to read: GitHub's, unless a test (or a
     mirror) names another with CASTLE_DOWNLOADER_RELEASES."""
     return os.environ.get("CASTLE_DOWNLOADER_RELEASES", "").strip() or API_LATEST
+
+
+def web_url() -> str | None:
+    """The website to ask when the API turns this address away: GitHub's,
+    or CASTLE_DOWNLOADER_WEB's — and none for a mirror (or a test) that
+    named its own API answer and no website, so a test never reaches out."""
+    named = os.environ.get("CASTLE_DOWNLOADER_WEB", "").strip()
+    if named:
+        return named.rstrip("/")
+    return (
+        None
+        if os.environ.get("CASTLE_DOWNLOADER_RELEASES", "").strip()
+        else WEB_RELEASES
+    )
+
+
+def landing(url: str) -> str:
+    """Where `url` lands after its redirects — a HEAD, so the page itself is
+    never downloaded."""
+    req = urllib.request.Request(
+        url, method="HEAD", headers={"User-Agent": rel.USER_AGENT}
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        return str(resp.geturl())
+
+
+def latest_from_web(web: str, asset: str, resolve: Resolve) -> rel.Release:
+    """The latest release as the website names it: the tag its /latest
+    redirects to, and that tag's `asset` and sums at their download URLs."""
+    landed = resolve(f"{web}/latest")
+    _before, found, tag = landed.split("?", 1)[0].rstrip("/").rpartition("/tag/")
+    tag = urllib.parse.unquote(tag)
+    if not found or not tag or "/" in tag:
+        raise rel.ReleaseError(f"{web}/latest led to {landed}, not a release")
+    assets = {name: f"{web}/download/{tag}/{name}" for name in (asset, SUMS)}
+    return rel.Release(tag=tag, assets=assets)
 
 
 def run_version(program: str) -> str:
@@ -163,15 +218,34 @@ def status(run: Version | None = None) -> dict[str, Any]:
     }
 
 
-def _latest(fetch: rel.Fetch) -> rel.Release:
+def _latest(fetch: rel.Fetch, asset: str, resolve: Resolve) -> rel.Release:
     try:
         body = fetch(api_url())
+    except urllib.error.HTTPError as exc:
+        web = web_url()
+        if exc.code not in TURNED_AWAY or web is None:
+            raise UpdateError(OFFLINE, f"{api_url()}: {exc}") from exc
+        return _from_web(web, asset, resolve, f"{api_url()}: {exc}")
     except OSError as exc:
         raise UpdateError(OFFLINE, f"{api_url()}: {exc}") from exc
     try:
         return rel.release_from_api(body)
     except rel.ReleaseError as exc:
         raise UpdateError(UNREADABLE, str(exc)) from exc
+
+
+def _from_web(web: str, asset: str, resolve: Resolve, why: str) -> rel.Release:
+    """The API said no; the website, outside the API's limit, names the
+    same release. Turned away there too is GitHub's word, not the network's."""
+    try:
+        return latest_from_web(web, asset, resolve)
+    except urllib.error.HTTPError as exc:
+        said = TURNED_AWAY_SAID if exc.code in TURNED_AWAY else UNREADABLE
+        raise UpdateError(said, f"{why}; {web}/latest: {exc}") from exc
+    except OSError as exc:
+        raise UpdateError(OFFLINE, f"{why}; {web}/latest: {exc}") from exc
+    except rel.ReleaseError as exc:
+        raise UpdateError(UNREADABLE, f"{why}; {exc}") from exc
 
 
 def _sums(release: rel.Release, asset: str, fetch: rel.Fetch) -> str:
@@ -250,6 +324,7 @@ def update(
     machine: str = "",
     force: bool = False,
     now: Callable[[], float] = time.time,
+    resolve: Resolve | None = None,
 ) -> dict[str, Any]:
     """Make `home`'s yt-dlp the latest release's, verified. Returns what
     is there now, and whether this call changed it. `force` (the
@@ -260,7 +335,7 @@ def update(
     if asset is None:
         raise UpdateError(NO_BUILD, f"no standalone yt-dlp for {system}/{machine}")
     target = home / ("yt-dlp.exe" if system == "Windows" else "yt-dlp")
-    release = _latest(fetch)
+    release = _latest(fetch, asset, resolve or landing)
     have = version_of(str(target), run) if target.is_file() else None
     if have == release.tag and not force:
         return {"changed": False, "version": have, "path": str(target)}

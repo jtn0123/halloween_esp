@@ -115,17 +115,63 @@ class DesktopRoutesTests(unittest.TestCase):
             "checks": [{"name": "model", "ok": False}],
         }
         caller = _Caller()
-        with patch("desktop_tools.status", return_value=payload):
+        with (
+            patch("desktop_tools.status", return_value=payload),
+            patch.dict("os.environ", {"CASTLE_APP_VERSION": "v1.4.0"}),
+        ):
             server.Handler.GET_ROUTES["/radio/tools"](caller, None)
         self.assertEqual(
             caller.sent,
-            (200, {**payload, "castle_origin": "http://" + server.device_bridge.HOST}),
+            (
+                200,
+                {
+                    **payload,
+                    "castle_origin": "http://" + server.device_bridge.HOST,
+                    # The release the app was built from (docs/SUPPORT.md).
+                    "app_version": "Castle Tools v1.4.0",
+                },
+            ),
         )
 
     def test_every_page_script_is_served_by_the_desktop(self):
         page = (HERE / "index.html").read_text(encoding="utf-8")
         for name in re.findall(r'<script src="([^"]+)"', page):
             self.assertIn("/" + name, server.STATIC_ROUTES)
+
+
+class ListenTests(unittest.TestCase):
+    """The bind in-process; tests/test_loopback_rs.py probes it from the LAN."""
+
+    def test_the_loopback_on_the_port_it_was_given(self):
+        with server.listen(0) as httpd:
+            host, port = httpd.server_address[:2]
+        self.assertEqual(host, "127.0.0.1")
+        self.assertNotEqual(port, 0)
+
+    def test_the_banner_names_the_port_actually_bound(self):
+        # Asked for, then bound on 0 regardless: 8871 may be the user's own.
+        asked, made, listen = [], [], server.listen
+
+        def keep(port):
+            asked.append(port)
+            made.append(listen(0))
+            return made[-1]
+
+        out = io.StringIO()
+        with (
+            patch.object(server, "listen", side_effect=keep),
+            patch.object(server.ThreadingHTTPServer, "serve_forever") as serve,
+            patch("sys.stdout", out),
+        ):
+            server.main(["0"])
+            server.main([])
+        self.assertEqual(asked, [0, 8871])
+        self.assertEqual(serve.call_count, 2)
+        for httpd in made:
+            port = httpd.server_address[1]
+            self.assertIn(f"Castle Radio: http://127.0.0.1:{port} ", out.getvalue())
+            with self.assertRaises(OSError, msg="main() closes what it served"):
+                httpd.socket.getsockname()
 
 
 class ImportRouteTableTests(unittest.TestCase):

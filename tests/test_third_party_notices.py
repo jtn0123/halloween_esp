@@ -208,7 +208,11 @@ class ShippingTests(unittest.TestCase):
             if "desktop/sidecar" in ln
         ]
         self.assertEqual(
-            sidecar, ["run: unzip -o core-zip/*.zip -d desktop/sidecar/castle/"]
+            sidecar,
+            [
+                "mkdir -p desktop/sidecar/castle",
+                "unzip -o core-zip/*.zip -d desktop/sidecar/castle/",
+            ],
         )
 
     def test_the_release_assets_are_the_generated_files(self) -> None:

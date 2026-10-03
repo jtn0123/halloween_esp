@@ -193,11 +193,9 @@ confirm.
      Security pane with Open Anyway; Windows SmartScreen before and after
      More info. -->
 
-You confirm only once. A newer Castle Tools is installed the same way,
-over the old one; your songs stay.
-
-<!-- Seller: when the app's own updater ships (PRODUCTION-TODO §9, its
-     signing keypair), say here that it updates itself. -->
+You confirm only once. After that Castle Tools looks for a newer version
+when it starts and once a day, and asks before it installs one: press
+**Install and restart**. Your songs stay.
 
 **Adding a song.** The first time, **Listen** has no songs yet: press
 **Import a song** (or open **Import music**), paste a link or choose a

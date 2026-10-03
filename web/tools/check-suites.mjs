@@ -7,14 +7,18 @@
 // suite that tests nothing, which is the worst failure mode a test harness
 // has. A file in neither is worse still — it is invisible.
 //
-// Three assertions, run as the first step of `npm test` so the answer arrives
+// Four assertions, run as the first step of `npm test` so the answer arrives
 // before the compile rather than after it:
 //
 //   1. within each script, the bundled set and the executed set are equal;
 //   2. no name is bundled or run twice;
 //   3. every test/*.ts that is not a named helper appears in exactly one
 //      script — so adding a suite file and no script line is a failure, not
-//      a silent omission.
+//      a silent omission;
+//   4. every e2e spec takes `test` from test/e2e/fixtures.ts, never straight
+//      from @playwright/test: WebKit has no --mute-audio, and the fixture is
+//      what keeps a WebKit run silent (test/e2e/webkit.ts). A spec that went
+//      round it would pass in Chromium and could play out loud in Safari.
 //
 // Kept as a check rather than a glob-driven runner on purpose: the ORDER of
 // the chain is meaningful (the cheap logic suites run before the slow parity
@@ -90,6 +94,18 @@ if (orphans.length)
       `"test:desk" — add it to a suite list, or to HELPERS in ` +
       `web/tools/check-suites.mjs if it is not a suite.`,
   );
+
+const E2E = resolve(WEB, "test", "e2e");
+const OURS = /import\s*\{[^}]*\btest\b[^}]*\}\s*from\s*"\.\/fixtures\.js"/;
+const RAW = /import\s*\{[^}]*\btest\b[^}]*\}\s*from\s*"@playwright\/test"/;
+for (const f of readdirSync(E2E).filter((n) => n.endsWith(".spec.ts"))) {
+  const src = readFileSync(resolve(E2E, f), "utf8");
+  if (!OURS.test(src) || RAW.test(src))
+    problems.push(
+      `web/test/e2e/${f} must import { test } from "./fixtures.js", not ` +
+        `@playwright/test — the fixture is what silences a WebKit run.`,
+    );
+}
 
 if (problems.length) {
   console.error("suite lists out of step:\n  " + problems.join("\n  "));

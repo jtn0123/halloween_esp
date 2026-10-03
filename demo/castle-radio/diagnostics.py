@@ -156,11 +156,13 @@ def _json(text: str) -> dict:
 
 
 def app_version() -> str:
-    """The desktop app's (src/supervisor.rs), else the release tag the
-    installer stamped, else this is a checkout."""
+    """The release tag the desktop app was built from (src/supervisor.rs),
+    else the one the installer's archive stamped, else this is a checkout —
+    shown on the tools card (/radio/tools) and in every diagnostics report,
+    docs/SUPPORT.md "Which release is it"."""
     version = os.environ.get("CASTLE_APP_VERSION", "").strip()
     if version:
-        return f"Castle {version}"
+        return f"Castle Tools {version}"
     try:
         stamped = (radio_env.ROOT / "installer" / "VERSION").read_text(encoding="utf-8")
     except OSError:

@@ -15,7 +15,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures.js";
 import { lanePort } from "./ports.js";
 
 const ROOT = resolve(__dirname, "../../..");
