@@ -37,6 +37,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import desktop_env as de
 import desktop_release as rel
+import release_channel as channel
 
 UPDATE_STAMP = "update-check.json"
 UPDATE_EVERY = timedelta(days=1)
@@ -116,15 +117,16 @@ def check_for_update(
     stamp_file = dirs.data / UPDATE_STAMP
     if not update_due(de.read_json(stamp_file), now):
         return None
+    early = channel.opted_in(settings)
     try:
-        latest = rel.find_release(fetch).tag
+        latest = channel.newest(fetch, early).tag
     except rel.ReleaseError:
         return None
     de.write_json(
         stamp_file, {"checked": now.isoformat(timespec="seconds"), "latest": latest}
     )
     installed = str(record.get("tag") or "")
-    if rel.is_newer(latest, installed):
+    if channel.is_newer(latest, installed, early):
         return (
             f"Castle Tools {latest} is available (you have {installed or 'a dev build'}). "
             "Run the installer with --update to get it."

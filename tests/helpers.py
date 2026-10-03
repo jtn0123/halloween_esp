@@ -33,6 +33,9 @@ SANDBOX_ENV = (
     # app exports a per-user one, and a test that patches hosts.DEVICES
     # must not be overruled by it.
     "CASTLE_DEVICES",
+    # The hidden pre-release opt-in (tools/release_channel.py): a shell that
+    # opted in must not move a test onto the other channel.
+    "CASTLE_PRERELEASE",
 )
 for _k in SANDBOX_ENV:
     os.environ.pop(_k, None)

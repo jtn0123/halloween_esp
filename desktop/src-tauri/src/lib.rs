@@ -5,6 +5,7 @@
 //! run as sidecars: this app starts them, watches them and stops them.
 //! Architecture: desktop/README.md.
 
+mod channel;
 mod child;
 mod deeplink;
 mod logfile;

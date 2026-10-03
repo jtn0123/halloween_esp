@@ -30,6 +30,7 @@ from pathlib import Path
 import desktop_env as de
 import desktop_install as di
 import desktop_release as rel
+import release_channel as channel
 
 START_MENU_LINK = "Castle Tools.lnk"
 
@@ -153,7 +154,8 @@ def update(
         )
         return 1
     installed = str(record.get("tag") or "")
-    latest = rel.find_release(fetch)  # the run's one API call
+    early = channel.opted_in(de.read_json(dirs.settings_file))
+    latest = channel.newest(fetch, early)  # the run's one API call
     scratch = Path(tempfile.mkdtemp(prefix="castle-update-"))
     resolved = scratch / "release.json"
     resolved.write_text(
@@ -170,7 +172,7 @@ def update(
         "--prefix", str(dirs.install), "--data-dir", str(dirs.data),
         "--uv", str(args.uv), "--release-json", str(resolved), "--update",
     ]  # fmt: skip
-    if not rel.is_newer(latest.tag, installed):
+    if not channel.is_newer(latest.tag, installed, early):
         say(
             f"Castle Tools {installed or '(unknown)'} is up to date (latest: {latest.tag})"
         )

@@ -41,6 +41,7 @@ import zlib
 from pathlib import Path
 
 import build_paths as bp
+import fw_formats
 import sd_ota
 from castle_keys import KEY_REQUIRED
 from hosts import castle_url, key_headers, maybe_host
@@ -191,6 +192,7 @@ def cmd_scenes(ip: str) -> int:
     )
     if not files:
         raise SystemExit("no audio/NN_*.mp3 — run `make audio` first")
+    fw_formats.check_publish(ip, api, (bp.AUDIO / "card" / "scenes").glob("*"))
     print(f"  source: {bp.rel(files[0].parent)}/")
     have = card_dir(ip, "scenes")
     rec = Published(ip)
@@ -276,6 +278,7 @@ def cmd_cues(ip: str) -> int:
         raise SystemExit(
             "no audio/card/cues/*.cue — tools/render_cues.py <track> first"
         )
+    fw_formats.check_publish(ip, api, files)
     have = {f["name"]: int(f["size"]) for f in listing(ip) if not f.get("dir")}
     songs = {name.rsplit(".", 1)[0] for name in have if not name.endswith(".cue")}
     sent = 0

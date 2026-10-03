@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import ClassVar
 from urllib.parse import parse_qs, unquote, urlsplit
 
+import castle_update_routes
 import desktop_tools
 import device_bridge
 import downloader_routes
@@ -43,6 +44,7 @@ STATIC_ROUTES = frozenset(
         "/device-tools.js",
         "/device-words.js",
         "/castle-key.js",
+        "/castle-update.js",
         "/desktop-tools.js",
         "/downloader.js",
         "/device-helper.js",
@@ -259,6 +261,8 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/library": get_library,
         "/radio/jobs": get_jobs,
         "/radio/tools": desktop_tools.get_status,
+        "/radio/castle/update": castle_update_routes.get_update,
+        "/radio/app/release": castle_update_routes.get_app_release,
         "/radio/downloader": downloader_routes.get_status,
     }
 
@@ -358,6 +362,7 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/device/sync": post_sync,
         "/radio/device/command": post_command,
         "/radio/device/key": post_device_key,
+        "/radio/castle/update": castle_update_routes.post_update,
         "/radio/import": import_routes.post_import,
         "/radio/retry": import_routes.post_retry,
         "/radio/reprocess": import_routes.post_reprocess,

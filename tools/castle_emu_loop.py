@@ -247,6 +247,9 @@ def apply(emu: CastleEmu, action: str, arg: str) -> None:
             _apply_pircfg(st, arg)
         elif action == "RESTART":
             st.boot = time.monotonic()
+            if emu.ota_landed:  # the new image, or the old one rolled back
+                emu.ota_landed = False
+                emu.version = emu.boots_as or emu.version
             st.scene, st.track, st.show_on = "", "", False
             st.starting_until = 0.0
 

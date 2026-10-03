@@ -42,6 +42,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import castle_emu
 import castle_emu_flash
 import castle_emu_wire as wire
+import fw_formats
 
 #: Verbatim from tests/test_studio_relay_fuzz.py — encoded separators,
 #: bare dots, a backslash, a NUL and a hidden name. The corpus is the
@@ -189,7 +190,7 @@ class Bridge(CardCase):
         code, body = self.json("/api/status")
         self.assertEqual(code, 200)
         # The emulator's own fields, not a studio summary of them.
-        self.assertEqual(body["version"], "5.40")
+        self.assertEqual(body["version"], fw_formats.this_firmware())
         self.assertEqual(body["compiled"], "emulated")
         self.assertEqual(body["scenes"], "vigil,storm")
         # `bridged` names WHO answered; the absence of `studio` is what

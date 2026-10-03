@@ -3,7 +3,8 @@
 The repo is public, so this reads the Releases API with no token — 60 calls
 an hour per address, which is why every caller asks AT MOST ONCE per run and
 the launcher once a day (docs/PRODUCTION-TODO.md section 9). The asset names
-are a contract with the release workflow (release tags `vMAJOR.MINOR.PATCH`;
+are a contract with the release workflow (release tags `vMAJOR.MINOR.PATCH`,
+which tools/release_channel.py orders;
 `castle-core-<rust-target>-<tag>.zip`; `SHA256SUMS` in sha256sum format
 covering every other asset) and are spelled once, here.
 
@@ -36,8 +37,6 @@ USER_AGENT = "castle-tools-installer"
 #: (url) -> body bytes. urllib in production, a dict lookup under test.
 Fetch = Callable[[str], bytes]
 
-_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
-
 
 class ReleaseError(RuntimeError):
     """A release, asset or checksum the installer cannot use — a hard stop."""
@@ -48,28 +47,6 @@ class Release:
     tag: str
     assets: Mapping[str, str] = field(default_factory=dict)  # name -> download URL
     source_zip: str = ""
-
-
-def parse_tag(tag: str) -> tuple[int, int, int] | None:
-    """`v1.2.3` as a comparable tuple; anything else (a pre-release, a
-    branch name, "dev") is None — not a version an update is measured by."""
-    m = _TAG.match(tag.strip())
-    return (int(m[1]), int(m[2]), int(m[3])) if m else None
-
-
-def is_newer(candidate: str, installed: str) -> bool:
-    """Should `--update` move from `installed` to `candidate`?
-
-    A candidate that is not a release tag never wins. An installed version
-    that is not one (a from-source install, an unknown) loses to any real
-    release — the owner asked for the update, and a tagged build is what
-    the update path exists to deliver.
-    """
-    new = parse_tag(candidate)
-    if new is None:
-        return False
-    old = parse_tag(installed)
-    return old is None or new > old
 
 
 def rust_target(system: str, machine: str) -> str | None:
@@ -102,10 +79,10 @@ def http_fetch(url: str) -> bytes:
     return body
 
 
-def release_from_api(body: bytes) -> Release:
-    """A Release from one Releases-API answer. Drafts and pre-releases are
-    refused here as well as by the `latest` endpoint: the buyer's channel is
-    stable only."""
+def release_from_api(body: bytes, prerelease: bool = False) -> Release:
+    """A Release from one Releases-API answer. Drafts are refused, and so
+    are pre-releases unless the caller opted in (tools/release_channel.py):
+    the buyer's channel is stable only."""
     try:
         data = json.loads(body)
     except ValueError as exc:
@@ -114,7 +91,7 @@ def release_from_api(body: bytes) -> Release:
         ) from exc
     if not isinstance(data, dict) or not data.get("tag_name"):
         raise ReleaseError("GitHub answered without a release tag")
-    if data.get("draft") or data.get("prerelease"):
+    if data.get("draft") or (data.get("prerelease") and not prerelease):
         raise ReleaseError(f"{data['tag_name']} is a draft or pre-release")
     assets = {
         str(a["name"]): str(a["browser_download_url"])
@@ -127,13 +104,14 @@ def release_from_api(body: bytes) -> Release:
 
 
 def find_release(fetch: Fetch, tag: str | None = None) -> Release:
-    """The named release, or the latest stable one. ONE API call."""
+    """The named release — a pre-release too, when that is the tree being
+    installed — or the latest stable one. ONE API call."""
     url = API_TAG.format(tag=tag) if tag else API_LATEST
     try:
         body = fetch(url)
     except OSError as exc:
         raise ReleaseError(f"cannot reach GitHub ({exc})") from exc
-    return release_from_api(body)
+    return release_from_api(body, prerelease=bool(tag))
 
 
 def parse_sums(text: str) -> dict[str, str]:

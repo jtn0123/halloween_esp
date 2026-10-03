@@ -1,11 +1,12 @@
 //! The release contract, as the app reads it.
 //!
 //! `tools/release_assets.py` spells every GitHub Release asset name once;
-//! this is the app's copy of the names it is written against — the updater's
-//! tag rule now, and the castle firmware check (PRODUCTION-TODO §9: compare
-//! `/api/status` `board` + firmware with the Release, fetch the OTA image)
-//! when that lands. Change one, change the other: the parity pairs are
-//! listed in desktop/README.md "Release contract".
+//! this is the app's copy of the names it is written against, and of the
+//! tag grammar the updater's channel rule (channel.rs) is built on. The
+//! castle's firmware update is Castle Radio's (tools/castle_update.py), which
+//! reads the same names. Change one, change the other: the parity pairs are
+//! listed in desktop/README.md "Release contract", and
+//! tests/test_release_contract.py holds these literals to release_assets.py.
 
 use serde::Serialize;
 
@@ -66,11 +67,6 @@ pub fn parse_tag(tag: &str) -> Option<Tag<'_>> {
 /// The tag a version string is released under (`0.2.0` → `v0.2.0`).
 pub fn tag(version: &str) -> String {
     format!("v{version}")
-}
-
-/// True only for a well-formed stable tag — what the buyer's channel takes.
-pub fn is_stable(tag: &str) -> bool {
-    parse_tag(tag).is_some_and(|t| t.suffix.is_none())
 }
 
 pub fn factory_name(tag: &str) -> String {
@@ -136,9 +132,6 @@ mod tests {
         ] {
             assert_eq!(parse_tag(bad), None, "{bad}");
         }
-        assert!(is_stable("v1.2.3"));
-        assert!(!is_stable("v1.2.3-beta"));
-        assert!(!is_stable("1.2.3"));
     }
 
     #[test]

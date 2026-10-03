@@ -50,6 +50,10 @@ pub struct Settings {
     /// The interpreter for that install, when it is not one of the venvs
     /// the app looks for itself.
     pub python: Option<PathBuf>,
+    /// The hidden pre-release opt-in, deliberately on no page: true offers
+    /// the newest release of either kind, for the app and the castle alike.
+    /// CASTLE_PRERELEASE, when set, wins (channel.rs).
+    pub prerelease: bool,
 }
 
 pub const FILE_NAME: &str = "settings.json";
@@ -138,6 +142,9 @@ mod tests {
         assert!(load(&dir).1.is_some());
         fs::write(dir.join(FILE_NAME), r#"{"castle_host":"10.0.0.9"}"#).unwrap();
         assert_eq!(load(&dir).0.castle_host.as_deref(), Some("10.0.0.9"));
+        assert!(!load(&dir).0.prerelease, "stable unless asked");
+        fs::write(dir.join(FILE_NAME), r#"{"prerelease":true}"#).unwrap();
+        assert!(load(&dir).0.prerelease);
         fs::write(dir.join(FILE_NAME), r#"{"castle_host":"a/b"}"#).unwrap();
         let (s, w) = load(&dir);
         assert!(s.castle_host.is_none() && w.is_some());

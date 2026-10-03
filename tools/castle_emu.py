@@ -51,6 +51,7 @@ from pathlib import Path
 
 import castle_emu_loop as loop
 import castle_emu_wire as wire
+import fw_formats
 from castle_emu_events import Events
 from castle_emu_health import HEAP_MIN_KB
 from castle_emu_http import OTA_SLOT, Handler
@@ -144,7 +145,7 @@ class CastleEmu(ThreadingHTTPServer):
         port: int = 0,
         sd_dir: Path | None = None,
         scenes: list[str] | None = None,
-        version: str = "5.40",
+        version: str | None = None,
         wedge: bool = False,
         sd_mounted: bool = True,
         serial: bool = False,
@@ -186,7 +187,13 @@ class CastleEmu(ThreadingHTTPServer):
         #: False rehearses a castle from before v5.69, which read show.man at
         #: boot only: the bell rings and nothing answers it.
         self.reseeds = True
-        self.version = version
+        #: castle.yaml's, as the build this emulator ports answers — a test
+        #: names an older one to rehearse a castle that has not been updated.
+        self.version = version or fw_formats.this_firmware()
+        #: What the next image PUT /api/ota lands boots as: None rehearses the
+        #: image that never comes up, the bootloader's rollback to this one.
+        self.boots_as: str | None = None
+        self.ota_landed = False
         #: h_status's "board" and "fw_variant" (v5.74, sd_web_state.h): the
         #: module + memory and the build. The yard's by default, as the C's.
         self.board = board

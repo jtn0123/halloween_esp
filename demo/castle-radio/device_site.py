@@ -55,6 +55,7 @@ SCRIPTS = (
     "desktop-tools.js",
     "downloader.js",
     "castle-key.js",
+    "castle-update.js",
 )
 STYLES = ("style.css", "device-tools.css")
 STYLE_TAGS = "".join(f'<link rel="stylesheet" href="{name}">' for name in STYLES)

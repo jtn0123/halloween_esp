@@ -80,9 +80,9 @@ class DesktopTests(unittest.TestCase):
     def test_the_desktop_contract_names(self) -> None:
         plain = ra.expected_assets(TAG)
         full = ra.expected_assets(TAG, desktop=True)
-        self.assertEqual(full[:6], plain[:6])
+        self.assertEqual(full[:7], plain[:7])
         self.assertEqual(
-            full[6:],
+            full[7:],
             [
                 "castle-tools-aarch64-apple-darwin-v0.1.0.app.tar.gz",
                 "castle-tools-aarch64-apple-darwin-v0.1.0.app.tar.gz.sig",

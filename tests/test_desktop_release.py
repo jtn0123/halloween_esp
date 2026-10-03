@@ -59,26 +59,7 @@ def api_body(tag: str, assets: dict[str, str], **extra: object) -> bytes:
     ).encode()
 
 
-class TestVersions(unittest.TestCase):
-    def test_parse_tag(self) -> None:
-        self.assertEqual(rel.parse_tag("v0.1.0"), (0, 1, 0))
-        self.assertEqual(rel.parse_tag(" v10.2.33 "), (10, 2, 33))
-        for bad in ("0.1.0", "v1.2", "v1.2.3-rc1", "v5.73", "dev", ""):
-            with self.subTest(tag=bad):
-                self.assertIsNone(rel.parse_tag(bad))
-
-    def test_is_newer_compares_numerically_not_as_text(self) -> None:
-        self.assertTrue(rel.is_newer("v0.10.0", "v0.9.9"))
-        self.assertTrue(rel.is_newer("v1.0.0", "v0.99.99"))
-        self.assertFalse(rel.is_newer("v0.1.0", "v0.1.0"))
-        self.assertFalse(rel.is_newer("v0.1.0", "v0.2.0"), "never a downgrade")
-
-    def test_unknown_installs_take_any_release_and_odd_tags_never_win(self) -> None:
-        self.assertTrue(rel.is_newer("v0.1.0", ""))
-        self.assertTrue(rel.is_newer("v0.1.0", "source"))
-        self.assertFalse(rel.is_newer("v0.2.0-beta", "v0.1.0"))
-        self.assertFalse(rel.is_newer("nightly", ""))
-
+class TestTargets(unittest.TestCase):
     def test_rust_targets_match_the_release_contract(self) -> None:
         self.assertEqual(rel.rust_target("Darwin", "arm64"), "aarch64-apple-darwin")
         self.assertEqual(rel.rust_target("Darwin", "x86_64"), "x86_64-apple-darwin")

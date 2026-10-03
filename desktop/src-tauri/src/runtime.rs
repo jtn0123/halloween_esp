@@ -264,6 +264,9 @@ pub fn child_env(
     if let Some(key) = &settings.castle_key {
         vars.push(("CASTLE_KEY".into(), key.expose().into()));
     }
+    if crate::channel::opted_in_now(settings.prerelease) {
+        vars.push((crate::channel::ENV.into(), "1".into()));
+    }
     if rt.source == Source::Sidecar {
         // The bundle is read-only once installed (and signed on macOS).
         vars.push(("PYTHONDONTWRITEBYTECODE".into(), "1".into()));
