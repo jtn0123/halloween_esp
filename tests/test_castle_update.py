@@ -107,10 +107,30 @@ class Updates(UpdateCase):
         self.assertIn("came back running 5.70, not 5.76", self.refused())
 
     def test_a_castle_that_never_comes_back_is_said(self) -> None:
-        self.castle()
+        emu = self.castle()
         self.release()
-        with mock.patch.object(sd_ota, "wait_back", return_value=None):
+
+        def gone(*_args: object) -> None:
+            emu.shutdown()
+            emu.server_close()
+
+        with mock.patch.object(sd_ota, "wait_back", side_effect=gone):
             self.assertIn("has not come back", self.refused())
+
+    def test_a_castle_that_never_restarted_is_told_from_one_that_did(self) -> None:
+        emu = self.castle()
+        self.release()
+        with (
+            mock.patch.object(sd_ota, "push", return_value=None),  # lost in transit
+            self.assertRaises(cu.UpdateError) as caught,
+        ):
+            cu.run(
+                self.host, self.github.fetch, False, self.lines.append, None, 3, 0.01
+            )
+        why = str(caught.exception)
+        self.assertIn("did not restart and still runs firmware 5.75", why)
+        self.assertIn("nothing changed", why)
+        self.assertEqual(emu.version, "5.75")
 
     def test_the_pre_release_channel_is_opt_in(self) -> None:
         emu = self.castle()

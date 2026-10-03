@@ -73,7 +73,7 @@ class Table(unittest.TestCase):
             self.assertIsNone(fw_formats.parse_version(bad))
 
     def test_the_studio_finds_the_refusal_by_the_same_words(self) -> None:
-        rust = (ROOT / "core" / "src" / "studio_publish.rs").read_text("utf-8")
+        rust = (ROOT / "core" / "src" / "studio_publish.rs").read_text(encoding="utf-8")
         m = re.search(r'pub const UPDATE_FIRST: &str = "([^"]+)";', rust)
         self.assertIsNotNone(m)
         assert m

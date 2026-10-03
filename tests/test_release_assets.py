@@ -117,7 +117,7 @@ class StagingTests(unittest.TestCase):
             notices.read_bytes(),
             (ROOT / "licenses" / "THIRD-PARTY-NOTICES-firmware.txt").read_bytes(),
         )
-        about = json.loads((self.out / ra.about_name(TAG)).read_text("utf-8"))
+        about = json.loads((self.out / ra.about_name(TAG)).read_text(encoding="utf-8"))
         self.assertEqual(about["ota"], ota.name)
         self.assertEqual((about["ota_bytes"], about["fw_variant"]), (3, "buyer"))
 

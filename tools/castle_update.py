@@ -227,6 +227,23 @@ def rolled_back(host: str, before: str, wanted: str) -> str:
     )
 
 
+def never_back(host: str, before: str, waited: int) -> str:
+    """No fresh boot answered: the castle is either down or never restarted."""
+    try:
+        still = castle_status(host)
+    except UpdateError:
+        return (
+            f"The castle has not come back after the update ({waited} s). If it "
+            "stays silent, switch it off and on again: a castle whose new "
+            "firmware cannot start goes back to the old one by itself."
+        )
+    return (
+        f"The castle did not restart and still runs firmware {still['version']} "
+        f"(it ran {before}): the new firmware never reached it in full, so "
+        "nothing changed. Try again."
+    )
+
+
 def install(
     host: str,
     st: Mapping[str, Any],
@@ -262,11 +279,7 @@ def install(
 
     back = sd_ota.wait_back(host, sd_sync.api, new_boot, tries, every)
     if back is None:
-        raise UpdateError(
-            f"The castle has not come back after the update ({round(tries * every)} s). "
-            "If it stays silent, switch it off and on again: a castle whose new "
-            "firmware cannot start goes back to the old one by itself."
-        )
+        raise UpdateError(never_back(host, before, round(tries * every)))
     now = str(back.get("version") or "")
     if fw_formats.parse_version(now) == fw_formats.parse_version(off.version):
         return f"The castle now runs firmware {now} (it ran {before})."
