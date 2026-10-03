@@ -156,7 +156,7 @@ def call(path, method="GET", data=None, timeout=8, fresh=False):
             ):
                 return dict(cached)
     request = urllib.request.Request(
-        f"http://{HOST}{path}",
+        hosts.castle_url(HOST, path),
         data=data,
         method=method,
         headers=hosts.key_headers(HOST),

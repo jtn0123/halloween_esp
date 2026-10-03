@@ -55,9 +55,14 @@ NEW_FILE = (
     "# Castle keys this computer remembers (tools/castle_keys.py), one table\n"
     "# per castle, read by tools/hosts.py and castle-core's hosts.rs.\n"
 )
-_HEADER = re.compile(r"^\s*\[\s*([^\[\]#]+?)\s*\]\s*(#.*)?$")
+# Linear on purpose: the name class holds no bracket, so nothing around it
+# can trade characters with it — `_tables` strips the padding instead.
+_HEADER = re.compile(r"^\s*\[([^\[\]#]+)\]\s*(?:#.*)?$")
 _KEY = re.compile(r"^\s*key\s*=")
 _HOST = re.compile(r"^\s*host\s*=")
+#: The only file the writer touches. CASTLE_DEVICES may MOVE the store —
+#: the apps point it at a per-user file — but never aim it at another file.
+STORE_NAME = "devices.toml"
 #: What a castle address may be: a name, an IPv4/IPv6 literal, a port.
 _HOST_OK = re.compile(r"^[A-Za-z0-9.\-:\[\]]{1,253}$")
 
@@ -165,16 +170,36 @@ def _edit(text: str, doc: dict[str, object], host: str, key: str | None) -> str:
     return "\n".join(lines[:start] + body + lines[end:]) + "\n"
 
 
+def _store_file(path: Path) -> Path:
+    """`path` as the writer may touch it: symlinks resolved, named
+    devices.toml, inside a folder that already exists (both apps make theirs
+    at start-up). Anything else — a CASTLE_DEVICES aimed at a dotfile, a
+    folder nobody made — is refused before a byte is read or written."""
+    real = os.path.realpath(path)
+    folder = os.path.dirname(real)
+    if os.path.basename(real) != STORE_NAME or not os.path.isdir(folder):
+        raise ValueError(
+            f"the castle key store must be a file named {STORE_NAME} "
+            "in a folder that exists"
+        )
+    target = os.path.realpath(os.path.join(folder, STORE_NAME))
+    # Containment stated, not assumed: what is written is inside the folder
+    # just checked.
+    if os.path.commonpath([target, folder]) != folder:
+        raise ValueError(f"the castle key store must be a file named {STORE_NAME}")
+    return Path(target)
+
+
 def _write(path: Path, host: str, key: str | None) -> None:
     _check_host(host)
+    path = _store_file(path)
     if key is not None and not hosts.valid_key(key):
         raise ValueError("a castle key is 1-64 printable characters, no spaces")
     text, doc = _read(path)
     new = _edit(text, doc, host, key)
     # Read back through the reader every client uses before the file is
     # touched: the edit is only good if hosts.py now answers what was meant.
-    probe = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    probe.parent.mkdir(parents=True, exist_ok=True)
+    probe = path.with_name(f".{STORE_NAME}.{os.getpid()}.tmp")
     try:
         probe.write_text(new, encoding="utf-8")
         mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
@@ -201,7 +226,7 @@ def ask(host: str, path: str, key: str, timeout: float = 8) -> tuple[int, bytes]
     A transport failure is the caller's OSError — never a key-bearing one."""
     headers = {"X-Castle-Key": key} if hosts.valid_key(key) else {}
     req = urllib.request.Request(
-        f"http://{host}{path}", data=b"", method="POST", headers=headers
+        hosts.castle_url(host, path), data=b"", method="POST", headers=headers
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -211,6 +236,31 @@ def ask(host: str, path: str, key: str, timeout: float = 8) -> tuple[int, bytes]
     except urllib.error.URLError as e:
         # The URL can hold a new key (?new=): say the reason, not the request.
         raise OSError(f"castle not reachable: {e.reason}") from None
+
+
+def _plan(host: str, action: str, key: str) -> tuple[str, str, int]:
+    """(path, the key to send with it, the status that means the castle
+    agreed) for one action."""
+    if action == "use":
+        return "/api/key", key, 400
+    if action == "set":
+        return f"/api/key?new={urllib.parse.quote(key, safe='')}", stored_key(host), 200
+    if action == "clear":
+        return "/api/key?clear=1", stored_key(host), 200
+    raise Refusal("action is use, set or clear", 400)
+
+
+def _judge(action: str, code: int, body: bytes, agreed: int) -> None:
+    """Return when the castle agreed; else raise what its answer means."""
+    if code == agreed:
+        return
+    if code == 401:
+        raise Refusal(WRONG_KEY if action == "use" else KEY_REQUIRED, 401)
+    if code == 404:
+        raise Refusal(OLD_FIRMWARE, 409)
+    if code == 400:
+        raise Refusal(body.decode("utf-8", "replace").strip(), 400)
+    raise Refusal(f"castle answered {code}", 502)
 
 
 def act(host: str, action: str, key: str = "") -> None:
@@ -223,29 +273,8 @@ def act(host: str, action: str, key: str = "") -> None:
         raise Refusal(PINNED, 409)
     if action in ("use", "set") and not hosts.valid_key(key):
         raise Refusal(BAD_KEY, 400)
-    held = stored_key(host)
-    if action == "use":
-        path, send, opened = "/api/key", key, 400
-    elif action == "set":
-        path, send, opened = (
-            f"/api/key?new={urllib.parse.quote(key, safe='')}",
-            held,
-            200,
-        )
-    elif action == "clear":
-        path, send, opened = "/api/key?clear=1", held, 200
-    else:
-        raise Refusal("action is use, set or clear", 400)
-    code, body = ask(host, path, send)
-    if code == 401:
-        raise Refusal(WRONG_KEY if action == "use" else KEY_REQUIRED, 401)
-    if code == 404:
-        raise Refusal(OLD_FIRMWARE, 409)
-    if code != opened:
-        said = body.decode("utf-8", "replace").strip()
-        if code == 400:
-            raise Refusal(said, 400)
-        raise Refusal(f"castle answered {code}", 502)
+    path, send, agreed = _plan(host, action, key)
+    _judge(action, *ask(host, path, send), agreed)
     try:
         if action == "clear":
             forget(host)

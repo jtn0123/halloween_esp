@@ -43,22 +43,12 @@ from pathlib import Path
 import build_paths as bp
 import sd_ota
 from castle_keys import KEY_REQUIRED
-from hosts import key_headers, maybe_host
+from hosts import castle_url, key_headers, maybe_host
 from published import Published
 
 ROOT = Path(__file__).resolve().parent.parent
 SCENES_API = "/api/scenes"  # where the card's scenes/ directory is PUT
 FILES_API = "/api/files"  # and the card ROOT, which the listing reads too
-CASTLE_SCHEME = "http"  # the board's web server has no TLS (castle_url)
-
-
-def castle_url(ip: str, path: str) -> str:
-    """A URL on the castle. Plain HTTP by necessity, not by choice: ESPHome's
-    web server on the board has no TLS, and the castle lives on the owner's
-    home LAN — the accepted position in CLAUDE.md "Security position". The
-    scheme is spelled once, here, so a castle that ever speaks HTTPS is one
-    line."""
-    return urllib.parse.urlunsplit((CASTLE_SCHEME, ip, path, "", ""))
 
 
 def api(

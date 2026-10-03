@@ -56,7 +56,7 @@ class StoreCase(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
 
-    def text(self) -> str:
+    def _text(self) -> str:
         return self.file.read_text(encoding="utf-8")
 
 
@@ -67,34 +67,73 @@ class TestRemember(StoreCase):
                 ck.remember("porch.local", key)  # a fallback names the table
                 self.assertEqual(hosts.castle_key("10.0.0.7"), key)
                 self.assertEqual(ck.stored_key("porch.local"), key)
-                self.assertIn("# the castle in the yard", self.text())
-                self.assertEqual(self.text().count("[porch]"), 1)
+                self.assertIn("# the castle in the yard", self._text())
+                self.assertEqual(self._text().count("[porch]"), 1)
         ck.forget("10.0.0.7")
-        self.assertEqual(self.text(), OWN)
+        self.assertEqual(self._text(), OWN)
 
     def test_an_existing_key_line_is_replaced_not_duplicated(self) -> None:
         ck.remember("10.0.0.9", "new-key")
         self.assertEqual(hosts.castle_key("10.0.0.9"), "new-key")
-        self.assertEqual(self.text().count("key ="), 1)
+        self.assertEqual(self._text().count("key ="), 1)
         ck.forget("10.0.0.9")
         self.assertEqual(hosts.castle_key("10.0.0.9"), "")
-        self.assertIn("[bench]", self.text())  # the owner's table stays
+        self.assertIn("[bench]", self._text())  # the owner's table stays
 
     def test_an_unknown_castle_gets_a_marked_table_forget_takes_whole(self) -> None:
         ck.remember("127.0.0.1:8093", "emu-key")
-        self.assertIn(ck.MARK, self.text())
+        self.assertIn(ck.MARK, self._text())
         self.assertEqual(hosts.castle_key("127.0.0.1:8093"), "emu-key")
         ck.forget("127.0.0.1:8093")
-        self.assertEqual(self.text(), OWN)
+        self.assertEqual(self._text(), OWN)
         ck.forget("127.0.0.1:8093")  # nothing to forget is not an error
-        self.assertEqual(self.text(), OWN)
+        self.assertEqual(self._text(), OWN)
 
     def test_a_missing_file_is_created_private(self) -> None:
+        # The folder is the app's (both make theirs at start-up); the file is
+        # this module's to create.
+        (self.tmp / "per-user").mkdir()
         fresh = self.tmp / "per-user" / "devices.toml"
         ck.remember("10.1.1.1", "k3y", fresh)
         self.assertEqual(hosts.stored_key("10.1.1.1", fresh), "k3y")
         if os.name == "posix":
             self.assertEqual(fresh.stat().st_mode & 0o777, 0o600)
+
+    def test_the_store_can_move_but_never_become_another_file(self) -> None:
+        """CASTLE_DEVICES chooses the FOLDER: a target that is not a
+        devices.toml — a dotfile, a .toml of another name, a symlink that
+        leads to one — or that sits in a folder nobody made, is refused
+        with nothing read or written."""
+        dotfile = self.tmp / ".profile"
+        dotfile.write_text("export PATH=/usr/bin\n", encoding="utf-8")
+        other = self.tmp / "settings.toml"
+        other.write_text('[a]\nhost = "h"\n', encoding="utf-8")
+        targets = [dotfile, other, self.tmp / "nowhere" / "devices.toml"]
+        if os.name == "posix":
+            link = self.tmp / "linked" / "devices.toml"
+            link.parent.mkdir()
+            link.symlink_to(dotfile)
+            targets.append(link)
+        for target in targets:
+            for env in (False, True):
+                with self.subTest(target=target.name, env=env):
+                    with (
+                        mock.patch.dict(os.environ, {"CASTLE_DEVICES": str(target)}),
+                        self.assertRaises(ValueError) as cm,
+                    ):
+                        if env:
+                            ck.remember("10.0.0.7", "s3cret")
+                        else:
+                            ck.remember("10.0.0.7", "s3cret", target)
+                    self.assertIn("devices.toml", str(cm.exception))
+                    self.assertNotIn("s3cret", str(cm.exception))
+        self.assertEqual(dotfile.read_text(encoding="utf-8"), "export PATH=/usr/bin\n")
+        self.assertEqual(other.read_text(encoding="utf-8"), '[a]\nhost = "h"\n')
+        self.assertFalse((self.tmp / "nowhere").exists())
+        self.assertEqual(
+            sorted(p.name for p in self.tmp.iterdir() if p.name.startswith(".devices")),
+            [],
+        )
 
     def test_refusals_name_the_rule_never_the_key(self) -> None:
         with self.assertRaises(ValueError) as cm:
@@ -103,12 +142,12 @@ class TestRemember(StoreCase):
         with self.assertRaises(ValueError) as cm:
             ck.remember("bad host/x", "s3cret")
         self.assertEqual(str(cm.exception), "not a castle address")
-        self.assertEqual(self.text(), OWN)
+        self.assertEqual(self._text(), OWN)
         self.file.write_text("[porch\nhost = ", encoding="utf-8")
         with self.assertRaises(ValueError) as cm:
             ck.remember("10.0.0.7", "s3cret")
         self.assertIn("not valid TOML", str(cm.exception))
-        self.assertEqual(self.text(), "[porch\nhost = ")  # never "repaired"
+        self.assertEqual(self._text(), "[porch\nhost = ")  # never "repaired"
 
     def test_the_pin_is_castle_key_set_at_all(self) -> None:
         self.assertFalse(ck.pinned())
@@ -143,7 +182,7 @@ class TestAct(StoreCase):
                 self.assertEqual(
                     (cm.exception.status, str(cm.exception)), (status, said)
                 )
-        self.assertEqual(self.text(), OWN, "nothing the castle refused is remembered")
+        self.assertEqual(self._text(), OWN, "nothing the castle refused is remembered")
 
     def test_a_store_that_cannot_follow_says_the_castle_already_changed(self) -> None:
         self.file.write_text("[porch\n", encoding="utf-8")
@@ -253,7 +292,7 @@ class TestCli(StoreCase):
         self.assertEqual(self.run_cli("remember", "10.0.0.7", stdin="s3cret\n")[0], 0)
         self.assertEqual(hosts.castle_key("10.0.0.7"), "s3cret")
         self.assertEqual(self.run_cli("forget", "10.0.0.7")[0], 0)
-        self.assertEqual(self.text(), OWN)
+        self.assertEqual(self._text(), OWN)
 
     def test_a_bad_key_fails_without_saying_it(self) -> None:
         code, err = self.run_cli("remember", "10.0.0.7", stdin="not a key\n")

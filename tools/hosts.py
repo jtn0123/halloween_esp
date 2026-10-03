@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import tomllib
+import urllib.parse
 from pathlib import Path
 from typing import TypedDict
 
@@ -165,6 +166,20 @@ def stored_key(host: str | None = None, path: Path | None = None) -> str:
         "",
     )
     return key if valid_key(key) else ""
+
+
+#: The board's web server has no TLS (castle_url).
+CASTLE_SCHEME = "http"
+
+
+def castle_url(host: str, path: str) -> str:
+    """A URL on the castle. Plain HTTP by necessity, not by choice: ESPHome's
+    web server on the board has no TLS, and the castle lives on the owner's
+    home LAN — the accepted position in CLAUDE.md "Security position". The
+    scheme is spelled once, here, for every Python client (sd_sync,
+    castle_keys, Castle Radio's bridge), so a castle that ever speaks HTTPS
+    is one line."""
+    return urllib.parse.urlunsplit((CASTLE_SCHEME, host, path, "", ""))
 
 
 def key_headers(host: str | None = None) -> dict[str, str]:
