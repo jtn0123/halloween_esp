@@ -125,8 +125,10 @@ which the page links) and deploys them together, after checking them against
 
 It deploys when `release.yml` publishes a full release, when a release is
 published by hand, and on `gh workflow run pages.yml` (after editing the
-page). One-time setup: repository **Settings → Pages → Source: GitHub
-Actions**.
+page). One-time setup, done 2026-10-03: repository **Settings → Pages →
+Source: GitHub Actions**, and the `github-pages` environment's deployment
+rules allow the tag pattern `v*.*.*` beside `main` — `release.yml` runs on
+the tag, and the default rule (main only) refuses its deploy.
 
 ## The updater key (minisign) — read before the first desktop release
 
@@ -135,6 +137,9 @@ bundle whose signature verifies against the public key compiled into it.
 That key pair is Tauri's own **minisign** update-signing key: free, made
 locally, and NOT code signing (the app is still unsigned in the Apple /
 Microsoft sense, by decision — TODO 5.4). The rules:
+
+Steps 1–4 were done on 2026-10-03; the rest of this list is what a fork, or
+a lost key, would need.
 
 1. Generate it once: `npx @tauri-apps/cli signer generate -w ~/.tauri/castle-tools.key`
    (give it a password).
