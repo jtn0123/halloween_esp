@@ -25,16 +25,26 @@ from notices_model import Component, shown
 ESPHOME = "2026.9.0"
 IDF_VERSION = "5.5.5"
 TOOLCHAIN = "esp-14.2.0_20260121"
+#: The managed components, by their component-registry names.
+AUDIO_LIBS = "esphome/esp-audio-libs"
+MICRO_MP3 = "esphome/micro-mp3"
+MICRO_OPUS = "esphome/micro-opus"
+MICRO_WAV = "esphome/micro-wav"
+MDNS = "espressif/mdns"
+IMPROV = "improv/Improv"
+MULTIPART = "zorxx/multipart-parser"
 #: idf_component_manager's dependencies.lock, as the build resolved it.
 MANAGED = {
-    "esphome/esp-audio-libs": "3.2.1",
-    "esphome/micro-mp3": "0.4.0",
-    "esphome/micro-opus": "0.4.1",
-    "esphome/micro-wav": "0.2.0",
-    "espressif/mdns": "1.12.0",
-    "improv/Improv": "*",
-    "zorxx/multipart-parser": "1.0.1",
+    AUDIO_LIBS: "3.2.1",
+    MICRO_MP3: "0.4.0",
+    MICRO_OPUS: "0.4.1",
+    MICRO_WAV: "0.2.0",
+    MDNS: "1.12.0",
+    IMPROV: "*",
+    MULTIPART: "1.0.1",
 }
+#: The licence most of the image's components come under.
+APACHE = "Apache-2.0"
 
 _IDF_SRC = f"https://github.com/espressif/esp-idf/tree/v{IDF_VERSION}"
 _REG = "https://components.espressif.com/components/"
@@ -60,10 +70,10 @@ FIRMWARE: dict[str, Component] = {
     ),
     "esp-audio-libs": Component(
         "esp-audio-libs",
-        MANAGED["esphome/esp-audio-libs"],
+        MANAGED[AUDIO_LIBS],
         "GPL-3.0-only",
         ("Copyright (c) 2019 ESPHome",),
-        source=_REG + "esphome/esp-audio-libs",
+        source=_REG + AUDIO_LIBS,
         texts=("components/esphome-LICENSE-preamble.txt",),
         note="Carries the ESPHome License; the linked files (gain.cpp, "
         "pcm_convert.cpp) are C++ and so fall under its GPLv3 half.",
@@ -71,22 +81,22 @@ FIRMWARE: dict[str, Component] = {
     ),
     "micro-mp3": Component(
         "micro-mp3",
-        MANAGED["esphome/micro-mp3"],
-        "Apache-2.0",
+        MANAGED[MICRO_MP3],
+        APACHE,
         ("Copyright 2026 Kevin Ahrendt", "Copyright (C) 1998-2009 PacketVideo"),
-        source=_REG + "esphome/micro-mp3",
+        source=_REG + MICRO_MP3,
         texts=("components/micro-mp3-NOTICE.txt",),
     ),
     "micro-opus": Component(
         "micro-opus (with micro-ogg-demuxer)",
-        MANAGED["esphome/micro-opus"],
-        "Apache-2.0",
+        MANAGED[MICRO_OPUS],
+        APACHE,
         ("Copyright 2025 Kevin Ahrendt",),
-        source=_REG + "esphome/micro-opus",
+        source=_REG + MICRO_OPUS,
     ),
     "opus": Component(
         "Opus audio codec",
-        f"as vendored in micro-opus {MANAGED['esphome/micro-opus']}",
+        f"as vendored in micro-opus {MANAGED[MICRO_OPUS]}",
         "BSD-3-Clause",
         (
             (
@@ -102,36 +112,36 @@ FIRMWARE: dict[str, Component] = {
     ),
     "micro-wav": Component(
         "micro-wav",
-        MANAGED["esphome/micro-wav"],
-        "Apache-2.0",
+        MANAGED[MICRO_WAV],
+        APACHE,
         ("Copyright 2026 Kevin Ahrendt",),
-        source=_REG + "esphome/micro-wav",
+        source=_REG + MICRO_WAV,
     ),
     "mdns": Component(
         "mDNS (espressif/mdns)",
-        MANAGED["espressif/mdns"],
-        "Apache-2.0",
+        MANAGED[MDNS],
+        APACHE,
         ("Copyright 2015-2025 Espressif Systems (Shanghai) CO LTD",),
-        source=_REG + "espressif/mdns",
+        source=_REG + MDNS,
     ),
     "multipart-parser": Component(
         "multipart-parser",
-        MANAGED["zorxx/multipart-parser"],
+        MANAGED[MULTIPART],
         "MIT",
         ("Copyright (c) 2023 Zorxx Software",),
-        source=_REG + "zorxx/multipart-parser",
+        source=_REG + MULTIPART,
     ),
     "improv": Component(
         "Improv Wi-Fi SDK (C++)",
         "1.2.7",
-        "Apache-2.0",
+        APACHE,
         ("No copyright line in the package; published by the Improv Wi-Fi project",),
         source="https://github.com/improv-wifi/sdk-cpp",
     ),
     "esp-idf": Component(
         "ESP-IDF",
         IDF_VERSION,
-        "Apache-2.0",
+        APACHE,
         ("Copyright (C) 2015-2025 Espressif Systems (Shanghai) CO LTD",),
         source=_IDF_SRC,
         note="Espressif's framework: drivers, Wi-Fi, networking, storage, "
@@ -140,7 +150,7 @@ FIRMWARE: dict[str, Component] = {
     "wifi-libs": Component(
         "ESP-IDF Wi-Fi and PHY libraries (precompiled)",
         IDF_VERSION,
-        "Apache-2.0",
+        APACHE,
         ("Copyright (C) 2015-2025 Espressif Systems (Shanghai) CO LTD",),
         source=_IDF_SRC + "/components/esp_wifi/lib",
         note="Distributed as binaries with ESP-IDF under Apache-2.0 "
@@ -351,7 +361,17 @@ def components() -> list[Component]:
     return list(FIRMWARE.values())
 
 
-_MEMBER = re.compile(r"^(\S+\.a)\(([^)]+)\)", re.MULTILINE)
+def _archive(line: str) -> str | None:
+    """The archive basename of one `archive(member)` line of the block, or
+    None. Read by hand, not by regex: a pattern such as `\\S+\\.a\\(` backtracks
+    over every dot in a long path, and a map has thousands of these lines.
+    The reference that may follow on the same line is past the first space."""
+    if not line or line[0].isspace():
+        return None
+    head, sep, member = line.split(maxsplit=1)[0].rpartition(".a(")
+    if not (head and sep and len(member) > 1 and member.endswith(")")):
+        return None
+    return (head + ".a").replace("\\", "/").rsplit("/", 1)[-1]
 
 
 def linked_archives(map_text: str) -> set[str]:
@@ -362,10 +382,11 @@ def linked_archives(map_text: str) -> set[str]:
         return set()
     end = map_text.find("Discarded input sections", start)
     block = map_text[start : end if end > 0 else len(map_text)]
-    return {
-        m.group(1).replace("\\", "/").rsplit("/", 1)[-1]
-        for m in _MEMBER.finditer(block)
-    }
+    return {a for a in map(_archive, block.splitlines()) if a}
+
+
+_LOCK_NAME = re.compile(r"^ {2}([\w./-]+):\s*$")
+_LOCK_VERSION = re.compile(r"^ {4}version: '?([^'\s]+)'?\s*$")
 
 
 def _locked_versions(lock_text: str) -> dict[str, str]:
@@ -374,59 +395,75 @@ def _locked_versions(lock_text: str) -> dict[str, str]:
     out: dict[str, str] = {}
     current = None
     for line in lock_text.splitlines():
-        top = re.match(r"^  ([\w./-]+):\s*$", line)
+        top = _LOCK_NAME.match(line)
         if top:
             current = top.group(1)
             continue
-        ver = re.match(r"^    version: '?([^'\s]+)'?\s*$", line)
+        ver = _LOCK_VERSION.match(line)
         if ver and current:
             out[current] = ver.group(1)
     return out
+
+
+def _map_errors(path: Path) -> list[str]:
+    """One linker map: every archive it pulled from is in ARCHIVES, and the
+    toolchain that linked it is the reviewed one."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    archives = linked_archives(text)
+    errors = (
+        [] if archives else [f"{path.name}: no archive members — not a GNU ld map?"]
+    )
+    errors.extend(
+        f"{path.name}: {lib} is linked but not in notices_firmware.ARCHIVES"
+        for lib in sorted(archives - set(ARCHIVES))
+    )
+    if "xtensa-esp-elf" in text and TOOLCHAIN not in text:
+        errors.append(f"{path.name}: linked by a toolchain other than {TOOLCHAIN}")
+    return errors
+
+
+def _lock_errors(locked: dict[str, str]) -> list[str]:
+    """dependencies.lock: the reviewed ESP-IDF and managed components, all
+    of them and no others."""
+    errors = []
+    if locked.get("idf") != IDF_VERSION:
+        errors.append(
+            f"ESP-IDF {locked.get('idf')} built this; the table is {IDF_VERSION}"
+        )
+    errors.extend(
+        f"component {name} {version} is not the reviewed one ({MANAGED.get(name)})"
+        for name, version in sorted(locked.items())
+        if name != "idf" and MANAGED.get(name) != version
+    )
+    errors.extend(
+        f"component {name} is in the table but not in this build"
+        for name in sorted(set(MANAGED) - set(locked))
+    )
+    return errors
+
+
+def _esphome_errors(version_h: Path) -> list[str]:
+    """ESPHome's own version.h, when the build tree has one."""
+    if not version_h.is_file():
+        return []
+    m = re.search(r'ESPHOME_VERSION "([^"]+)"', version_h.read_text(encoding="utf-8"))
+    if m and m.group(1) != ESPHOME:
+        return [f"ESPHome {m.group(1)} built this; the table is {ESPHOME}"]
+    return []
 
 
 def check_build(build: Path) -> list[str]:
     """What a build links that the table does not cover, one line each.
     BUILD is ESPHome's build directory for the device (it holds
     dependencies.lock and build/<name>.map)."""
-    errors: list[str] = []
     maps = sorted((build / "build").glob("*.map"))
     maps += sorted((build / "build" / "bootloader").glob("*.map"))
     if not maps:
         where = shown(build / "build")
         return [f"no linker map under {where} — is this an ESPHome build directory?"]
-    for path in maps:
-        text = path.read_text(encoding="utf-8", errors="replace")
-        archives = linked_archives(text)
-        if not archives:
-            errors.append(f"{path.name}: no archive members — not a GNU ld map?")
-        errors.extend(
-            f"{path.name}: {lib} is linked but not in notices_firmware.ARCHIVES"
-            for lib in sorted(archives - set(ARCHIVES))
-        )
-        if "xtensa-esp-elf" in text and TOOLCHAIN not in text:
-            errors.append(f"{path.name}: linked by a toolchain other than {TOOLCHAIN}")
+    errors = [e for path in maps for e in _map_errors(path)]
     lock = build / "dependencies.lock"
     if not lock.is_file():
         return [*errors, f"{shown(lock)} is missing"]
-    locked = _locked_versions(lock.read_text(encoding="utf-8"))
-    if locked.get("idf") != IDF_VERSION:
-        errors.append(
-            f"ESP-IDF {locked.get('idf')} built this; the table is {IDF_VERSION}"
-        )
-    for name, version in sorted(locked.items()):
-        if name != "idf" and MANAGED.get(name) != version:
-            errors.append(
-                f"component {name} {version} is not the reviewed one ({MANAGED.get(name)})"
-            )
-    errors.extend(
-        f"component {name} is in the table but not in this build"
-        for name in sorted(set(MANAGED) - set(locked))
-    )
-    version_h = build / "src" / "esphome" / "core" / "version.h"
-    if version_h.is_file():
-        m = re.search(
-            r'ESPHOME_VERSION "([^"]+)"', version_h.read_text(encoding="utf-8")
-        )
-        if m and m.group(1) != ESPHOME:
-            errors.append(f"ESPHome {m.group(1)} built this; the table is {ESPHOME}")
-    return errors
+    errors += _lock_errors(_locked_versions(lock.read_text(encoding="utf-8")))
+    return errors + _esphome_errors(build / "src" / "esphome" / "core" / "version.h")

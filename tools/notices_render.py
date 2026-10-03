@@ -183,12 +183,15 @@ def _external() -> list[str]:
         "",
     ]
     for e in EXTERNAL:
-        out.append(f"* {e.name} — {e.version}")
-        out.append(_para(f"Terms: {e.terms}", "  "))
-        out.append(_para(f"How it arrives: {e.obtained}", "  "))
-        if e.note:
-            out.append(_para(e.note, "  "))
-        out.append("")
+        out.extend(
+            [
+                f"* {e.name} — {e.version}",
+                _para(f"Terms: {e.terms}", "  "),
+                _para(f"How it arrives: {e.obtained}", "  "),
+                *([_para(e.note, "  ")] if e.note else []),
+                "",
+            ]
+        )
     return out
 
 

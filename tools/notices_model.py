@@ -31,6 +31,12 @@ LICENSES = ROOT / "licenses"
 SPDX = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/"
 IDF = "ESP-IDF v5.5.5, components/"
 XTENSA_TC = "xtensa-esp-elf esp-14.2.0_20260121 toolchain, "
+#: The one text both GPL-3.0 ids print (GENERIC).
+GPL3_TEXT = "texts/GPL-3.0.txt"
+#: The Mozilla Public License: the file-level copyleft the notices allow.
+MPL = "MPL-2.0"
+#: How an SPDX expression attaches an exception to its licence.
+WITH = " WITH "
 
 #: Every licence text in licenses/, relative to it: (where it came from,
 #: sha256). tests/test_third_party_notices.py hashes each file against this
@@ -53,7 +59,7 @@ TEXTS: dict[str, tuple[str, str]] = {
         SPDX + "GCC-exception-3.1.txt",
         "7103d4f7f7e2f8ce10d282a05e0689637f8d6d9ef7b399d808d1da313e69b960",
     ),
-    "texts/GPL-3.0.txt": (
+    GPL3_TEXT: (
         SPDX + "GPL-3.0-or-later.txt",
         "fb981668c18a279e285fc4d83fba1e836cc84dd4daa73c9697d3cfd2d8aca6e0",
     ),
@@ -160,12 +166,12 @@ GENERIC: dict[str, str] = {
     "BSD-2-Clause": "texts/BSD-2-Clause.txt",
     "BSD-3-Clause": "texts/BSD-3-Clause.txt",
     "GCC-exception-3.1": "texts/GCC-exception-3.1.txt",
-    "GPL-3.0-only": "texts/GPL-3.0.txt",
-    "GPL-3.0-or-later": "texts/GPL-3.0.txt",
+    "GPL-3.0-only": GPL3_TEXT,
+    "GPL-3.0-or-later": GPL3_TEXT,
     "ISC": "texts/ISC.txt",
     "LLVM-exception": "texts/LLVM-exception.txt",
     "MIT": "texts/MIT.txt",
-    "MPL-2.0": "texts/MPL-2.0.txt",
+    MPL: "texts/MPL-2.0.txt",
     "Unicode-3.0": "texts/Unicode-3.0.txt",
     "Zlib": "texts/Zlib.txt",
 }
@@ -182,19 +188,19 @@ PREFERENCE = (
     "ISC",
     "Zlib",
     "Unicode-3.0",
-    "MPL-2.0",
+    MPL,
 )
 #: Permissive: a copyright line and the text are the whole obligation.
 PERMISSIVE = frozenset(PREFERENCE[:7])
 #: File-level copyleft: ships fine, but the recipient must be told where
 #: the source is — a component under one of these needs `source`.
-WEAK_COPYLEFT = frozenset({"MPL-2.0", "LicenseRef-NSIS"})
+WEAK_COPYLEFT = frozenset({MPL, "LicenseRef-NSIS"})
 #: Whole-work copyleft. Never shipped silently: a component under one of
 #: these needs an `override` saying why, which the notices print.
-COPYLEFT = re.compile(r"^(A|L)?GPL-")
+COPYLEFT = re.compile(r"^[AL]?GPL-")
 #: Terms that forbid commercial use. The castle is sold; nothing under
 #: one of these ships, override or not.
-NONCOMMERCIAL = re.compile(r"(^|-)NC(-|$)|Noncommercial|NonCommercial", re.IGNORECASE)
+NONCOMMERCIAL = re.compile(r"(?:^|-)NC(?:-|$)|noncommercial", re.IGNORECASE)
 #: A component's own licence that has no SPDX id: it ships with its own
 #: text (licenses/components/), so the policy reads its category here.
 CUSTOM = {
@@ -228,7 +234,7 @@ class SpdxError(ValueError):
     """An expression this parser cannot read: fix the table, not the parser."""
 
 
-_TOKEN = re.compile(r"\s*(\(|\)|[A-Za-z0-9.+:-]+)")
+_TOKEN = re.compile(r"\s*([()]|[A-Za-z0-9.+:-]+)")
 
 
 def _tokens(expr: str) -> list[str]:
@@ -247,62 +253,69 @@ def _tokens(expr: str) -> list[str]:
     return out
 
 
+class _Parser:
+    """Recursive descent over `_tokens(expr)`: or := and (OR and)*,
+    and := atom (AND atom)*, atom := ( or ) | id [WITH id]."""
+
+    def __init__(self, expr: str) -> None:
+        self.expr = expr
+        self.toks = _tokens(expr)
+        self.pos = 0
+
+    def peek(self) -> str | None:
+        return self.toks[self.pos] if self.pos < len(self.toks) else None
+
+    def take(self) -> str:
+        if self.pos >= len(self.toks):
+            raise SpdxError(f"licence expression ends early: {self.expr!r}")
+        self.pos += 1
+        return self.toks[self.pos - 1]
+
+    def atom(self) -> list[tuple[str, ...]]:
+        word = self.take()
+        if word == "(":
+            inner = self.or_expr()
+            if self.take() != ")":
+                raise SpdxError(f"unbalanced parenthesis in {self.expr!r}")
+            return inner
+        if word in {")", "AND", "OR", "WITH"}:
+            raise SpdxError(f"unexpected {word!r} in {self.expr!r}")
+        if self.peek() != "WITH":
+            return [(word,)]
+        self.take()
+        return [(f"{word}{WITH}{self.take()}",)]
+
+    def and_expr(self) -> list[tuple[str, ...]]:
+        result = self.atom()
+        while self.peek() == "AND":
+            self.take()
+            rhs = self.atom()
+            result = [a + b for a in result for b in rhs]
+        return result
+
+    def or_expr(self) -> list[tuple[str, ...]]:
+        result = self.and_expr()
+        while self.peek() == "OR":
+            self.take()
+            result += self.and_expr()
+        return result
+
+
 def alternatives(expr: str) -> list[tuple[str, ...]]:
     """`expr` in disjunctive form: each alternative is the licences that
     must ALL be complied with if that branch is chosen. `X WITH Y` stays one
     term, because the exception only exists attached to its licence."""
-    toks = _tokens(expr)
-    pos = 0
-
-    def peek() -> str | None:
-        return toks[pos] if pos < len(toks) else None
-
-    def take() -> str:
-        nonlocal pos
-        if pos >= len(toks):
-            raise SpdxError(f"licence expression ends early: {expr!r}")
-        pos += 1
-        return toks[pos - 1]
-
-    def atom() -> list[tuple[str, ...]]:
-        word = take()
-        if word == "(":
-            inner = or_expr()
-            if take() != ")":
-                raise SpdxError(f"unbalanced parenthesis in {expr!r}")
-            return inner
-        if word in {")", "AND", "OR", "WITH"}:
-            raise SpdxError(f"unexpected {word!r} in {expr!r}")
-        if peek() == "WITH":
-            take()
-            return [(f"{word} WITH {take()}",)]
-        return [(word,)]
-
-    def and_expr() -> list[tuple[str, ...]]:
-        result = atom()
-        while peek() == "AND":
-            take()
-            rhs = atom()
-            result = [a + b for a in result for b in rhs]
-        return result
-
-    def or_expr() -> list[tuple[str, ...]]:
-        result = and_expr()
-        while peek() == "OR":
-            take()
-            result += and_expr()
-        return result
-
-    if not toks:
+    parser = _Parser(expr)
+    if not parser.toks:
         raise SpdxError("empty licence expression")
-    result = or_expr()
-    if pos != len(toks):
+    result = parser.or_expr()
+    if parser.pos != len(parser.toks):
         raise SpdxError(f"trailing tokens in licence expression {expr!r}")
     return result
 
 
 def _rank(term: str) -> int:
-    base = term.split(" WITH ")[0]
+    base = term.split(WITH)[0]
     return PREFERENCE.index(base) if base in PREFERENCE else len(PREFERENCE) + 10
 
 
@@ -315,7 +328,7 @@ def chosen(expr: str) -> tuple[str, ...]:
 
 def category(term: str) -> str:
     """permissive | weak | copyleft | noncommercial | unknown, for one term."""
-    base, _, exception = term.partition(" WITH ")
+    base, _, exception = term.partition(WITH)
     if NONCOMMERCIAL.search(base):
         return "noncommercial"
     if COPYLEFT.match(base):
@@ -330,7 +343,31 @@ def category(term: str) -> str:
 def texts_for(term: str) -> list[str]:
     """The generic texts one chosen term needs (none for a LicenseRef — its
     own text travels with the component)."""
-    return [GENERIC[p] for p in term.split(" WITH ") if p in GENERIC]
+    return [GENERIC[p] for p in term.split(WITH) if p in GENERIC]
+
+
+def _term_errors(who: str, term: str, c: Component) -> list[str]:
+    """Why one chosen term of a component could not ship."""
+    kind = category(term)
+    base = term.split(WITH)[0]
+    errors = []
+    if kind == "noncommercial":
+        errors.append(f"{who}: {term} forbids commercial use — it cannot ship")
+    elif kind == "unknown":
+        errors.append(f"{who}: {term} is not a licence the policy knows")
+    elif kind == "copyleft" and not c.override:
+        errors.append(f"{who}: {term} is copyleft and has no recorded override")
+    elif kind == "weak" and not c.source:
+        errors.append(f"{who}: {term} needs a source location in the notices")
+    if not base.startswith("LicenseRef-"):
+        errors.extend(
+            f"{who}: no licence text for {part}"
+            for part in term.split(WITH)
+            if part not in GENERIC
+        )
+    elif not c.texts:
+        errors.append(f"{who}: {term} has no licence text of its own")
+    return errors
 
 
 def policy_errors(components: list[Component]) -> list[str]:
@@ -346,24 +383,7 @@ def policy_errors(components: list[Component]) -> list[str]:
             errors.append(f"{who}: {exc}")
             continue
         for term in terms:
-            kind = category(term)
-            base = term.split(" WITH ")[0]
-            if kind == "noncommercial":
-                errors.append(f"{who}: {term} forbids commercial use — it cannot ship")
-            elif kind == "unknown":
-                errors.append(f"{who}: {term} is not a licence the policy knows")
-            elif kind == "copyleft" and not c.override:
-                errors.append(f"{who}: {term} is copyleft and has no recorded override")
-            elif kind == "weak" and not c.source:
-                errors.append(f"{who}: {term} needs a source location in the notices")
-            if base.startswith("LicenseRef-") and not c.texts:
-                errors.append(f"{who}: {term} has no licence text of its own")
-            if not base.startswith("LicenseRef-"):
-                errors.extend(
-                    f"{who}: no licence text for {part}"
-                    for part in term.split(" WITH ")
-                    if part not in GENERIC
-                )
+            errors.extend(_term_errors(who, term, c))
         if not c.copyright:
             errors.append(f"{who}: no copyright line (or a stated reason for none)")
         errors.extend(
