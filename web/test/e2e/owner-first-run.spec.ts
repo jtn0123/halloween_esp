@@ -51,7 +51,7 @@ test("an empty card says how to add the first song, and an opus song is listed o
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto(`${CASTLE}/owner`);
   const files = page.locator("#files");
-  await expect(files).toHaveText("No songs on the card yet — add some with the Castle app.");
+  await expect(files).toHaveText("No songs on the card yet — add some with Castle Tools.");
   await expect(page.locator("#alerts")).not.toContainText("No SD card");
 
   const put = await fetch(`${CASTLE}/api/files/first%20song.opus`, {

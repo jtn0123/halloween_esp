@@ -128,7 +128,7 @@ function sync(){Promise.all([fetch('/api/status').then(r=>r.json()),fetch('/api/
 function songs(){fetch('/api/files').then(r=>r.ok?r.json():Promise.reject()).then(fs=>{
  const m=fs.filter(f=>f.name&&!f.dir&&/\.(mp3|opus|wav)$/i.test(f.name));
  files.innerHTML=m.length?m.map(f=>`<li><button onclick="api('/api/play?f=${encodeURIComponent(f.name)}')">▶</button> ${esc(f.name)} <small>${(f.size/1024)|0} KB</small></li>`).join('')
-  :'<li><small>No songs on the card yet — add some with the Castle app.</small></li>'})
+  :'<li><small>No songs on the card yet — add some with Castle Tools.</small></li>'})
  .catch(()=>files.innerHTML='<li><small>No card to read.</small></li>')}
 function licences(){fetch('/api/files?d=licenses').then(r=>r.ok?r.json():[]).then(fs=>{const n=fs.map(f=>f.name);
  licl.innerHTML=Object.entries({'THIRD-PARTY-NOTICES.txt':'Licences','SOURCE-OFFER.txt':'Source code'})
