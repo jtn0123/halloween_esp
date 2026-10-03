@@ -35,13 +35,15 @@ RELAY_RS = ROOT / "core" / "src" / "studio_relay.rs"
 API_DOC = ROOT / "docs" / "API.md"
 
 #: Routes the castle serves that a relay deliberately does NOT carry, with
-#: the reason. Neither is a `/api/*` route and neither is a client's to ask
-#: for through the studio: the studio answers `/` with its own page, and
-#: `/site/*` is the castle serving the Castle Radio page off its own card to
-#: a browser pointed straight at it.
+#: the reason. None is a `/api/*` route and none is a client's to ask for
+#: through the studio: the studio answers `/` with its own page, `/site/*` is
+#: the castle serving the Castle Radio page off its own card to a browser
+#: pointed straight at it, and `/owner` (v5.75) is the castle's own page for
+#: a castle with no studio — its script calls `/api/*` on whatever served it.
 NOT_RELAYED = {
     "/": "the studio serves its own page at /",
     "/site/*": "the card's own page, read by a browser pointed at the castle",
+    "/owner": "the owner's page, read by a browser pointed at the castle",
 }
 
 
