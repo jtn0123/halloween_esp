@@ -284,7 +284,9 @@ Everything here is needed for BOTH option A and option B.
       with progress on the splash, and Repair (desktop/README.md "First
       launch"). The runtime is about 1.7 GB with uv's cache; a second start
       sets nothing up. Proven per release by `tools/desktop_smoke.py` on
-      macos-14 and windows-latest (docs/RELEASING.md).
+      macos-14 and windows-latest (docs/RELEASING.md); the first proof,
+      dry run 37146724040 on 2026-10-03, set up in 23 s on macOS and 50 s
+      on Windows (runner bandwidth), and the second start took 2 s on both.
 - [x] ffmpeg: not bundled either. The first launch downloads the pinned
       static build (`--ffmpeg download`), as option A does, so no GPL build
       is redistributed (docs/LICENSING.md, open decision 5).
