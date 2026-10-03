@@ -260,7 +260,9 @@ def update(
     record: dict[str, object] = {"tag": release.tag, "asset": asset}
     record.update(sha256=digest, installed_at=round(now()))
     try:
-        (home / RECORD).write_text(json.dumps(record, indent=1) + "\n", "utf-8")
+        (home / RECORD).write_text(
+            json.dumps(record, indent=1) + "\n", encoding="utf-8"
+        )
     except OSError:
         pass  # the record is a note for whoever helps; the update stands
     return {"changed": True, "version": version, "path": str(target)}

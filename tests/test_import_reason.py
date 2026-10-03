@@ -24,8 +24,12 @@ sys.path.insert(0, str(ROOT / "tests"))
 import helpers  # noqa: F401  (the sandbox scrub)
 import import_reason as ir
 
-CORPUS = json.loads((ROOT / "tests" / "import_reasons.json").read_text("utf-8"))
-WORDS_RS = (ROOT / "core" / "src" / "studio_reason_words.rs").read_text("utf-8")
+CORPUS = json.loads(
+    (ROOT / "tests" / "import_reasons.json").read_text(encoding="utf-8")
+)
+WORDS_RS = (ROOT / "core" / "src" / "studio_reason_words.rs").read_text(
+    encoding="utf-8"
+)
 #: Module constants that are not sentences.
 NOT_SENTENCES = {"KNOWN", "UPDATE_DOWNLOADER"}
 

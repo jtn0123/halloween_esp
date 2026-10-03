@@ -113,10 +113,16 @@ class TestFetchUrl(unittest.TestCase):
 
 class TestStems(unittest.TestCase):
     def test_encode_failure_names_the_file(self) -> None:
-        with mock.patch.object(stems.subprocess, "run", return_value=done(1)):
+        # The owner reads the sentence; the file it was making is in the log.
+        log = io.StringIO()
+        with (
+            mock.patch.object(stems.subprocess, "run", return_value=done(1)),
+            contextlib.redirect_stderr(log),
+        ):
             with self.assertRaises(SystemExit) as c:
                 stems._encode(Path("in.wav"), Path("out.mp3"))
-        self.assertIn("out.mp3", str(c.exception))
+        self.assertEqual(str(c.exception), ir.TOOL_FAILED.format(prog="ffmpeg"))
+        self.assertIn("    ffmpeg could not encode out.mp3", log.getvalue())
 
     def test_separate_refuses_a_missing_track(self) -> None:
         with mock.patch.object(stems, "track_file", return_value=None):
@@ -125,14 +131,19 @@ class TestStems(unittest.TestCase):
         self.assertIn("no such track", str(c.exception))
 
     def test_missing_demucs_says_how_to_install(self) -> None:
+        # The owner is told to reinstall; the pip line is for whoever reads
+        # the log.
+        log = io.StringIO()
         with (
             mock.patch.object(stems, "track_file", return_value=Path("x.mp3")),
             mock.patch.object(stems, "fresh", return_value=False),
             mock.patch.object(stems.importlib.util, "find_spec", return_value=None),
+            contextlib.redirect_stderr(log),
         ):
             with self.assertRaises(SystemExit) as c:
                 stems.separate("x")
-        self.assertIn("demucs", str(c.exception))
+        self.assertEqual(str(c.exception), ir.DEMUCS_MISSING)
+        self.assertIn("python -m pip install demucs", log.getvalue())
 
 
 if __name__ == "__main__":
