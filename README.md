@@ -145,10 +145,11 @@ open sockets (`firmware/sd_web.h`); that is the board's pool, not a desk bug.
 
 ## Castle Radio on your desktop
 
-Run `./tools/install_castle_tools.sh` once on an Apple Silicon Mac. Existing
-installations can double-click **Enable Website Startup.command** once instead.
-Then use **Import music → Start Mac tools → Connect Mac tools** on the castle
-website. The helper runs in the background without Terminal; keep the small
+Install it with `sh installer/install.sh` on an Apple Silicon Mac, or
+`installer\install.cmd` on Windows ([installer/README.md](installer/README.md)):
+it brings its own Python, ffmpeg and voice model, with no Homebrew. On a Mac,
+double-click **Enable Website Startup.command** once, then use **Import
+music → Start Mac tools → Connect Mac tools** on the castle website. The helper runs in the background without Terminal; keep the small
 connection window open. Startup checks tools without installing anything. [Desktop setup and limitations](demo/castle-radio/README.md).
 
 ## The cue desk

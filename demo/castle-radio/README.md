@@ -5,24 +5,28 @@ separation, and a bounded bridge to the porch castle.
 
 ## Desktop setup and everyday startup
 
-On an Apple Silicon Mac, install [Homebrew](https://brew.sh) if it is not already available,
-then run this once from the project root:
+Install with the installer, once, from the project root — no Homebrew:
 
 ```sh
-./tools/install_castle_tools.sh
+sh installer/install.sh        # macOS (Apple Silicon)
+installer\install.cmd          # Windows
 ```
 
-The installer prepares a dedicated `.venv-desktop`, system audio tools, the
-Rust audio analyzer, and the Demucs model. Run it again explicitly to repair
-missing dependencies. It does not flash the castle or sync the music library.
+It brings a uv-managed Python 3.13, ffmpeg, castle-core's prebuilt audio
+analyzer, and the Demucs model ([installer/README.md](../../installer/README.md)).
+Run it again to repair: it resumes rather than starting over. It does not
+flash the castle or sync the music library. `/radio/tools` names the command
+for the platform it runs on (`tools/castle_tools_status.py`).
 
-For everyday use, click **Start Mac tools** on the castle website and allow the
-browser to open Castle Tools. Then choose **Connect Mac tools**. The existing
-script runs in the background without a Terminal window. Keep the small
-connection window open. Imports, separation, and previews stay on the website.
+On a Mac, everyday use can start from the website: click **Start Mac tools** on
+the castle website and allow the browser to open Castle Tools. Then choose
+**Connect Mac tools**. The existing script runs in the background without a
+Terminal window. Keep the small connection window open. Imports, separation,
+and previews stay on the website.
 
-Existing installations can enable this once by double-clicking **Enable Website
-Startup.command** in the project folder. The full installer also registers it.
+Enable this once by double-clicking **Enable Website Startup.command** in the
+project folder; it is macOS-only, and elsewhere says so and does nothing (the
+desktop app registers `castle-tools://` itself, desktop/README.md).
 Registration compiles a small native URL handler into `~/Applications/Castle
 Tools.app` using Apple's Command Line Tools. It accepts only the fixed
 `castle-tools://start` action; no URL-supplied shell command, path, or host is

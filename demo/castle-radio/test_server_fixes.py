@@ -115,11 +115,22 @@ class DesktopRoutesTests(unittest.TestCase):
             "checks": [{"name": "model", "ok": False}],
         }
         caller = _Caller()
-        with patch("desktop_tools.status", return_value=payload):
+        with (
+            patch("desktop_tools.status", return_value=payload),
+            patch.dict("os.environ", {"CASTLE_APP_VERSION": "v1.4.0"}),
+        ):
             server.Handler.GET_ROUTES["/radio/tools"](caller, None)
         self.assertEqual(
             caller.sent,
-            (200, {**payload, "castle_origin": "http://" + server.device_bridge.HOST}),
+            (
+                200,
+                {
+                    **payload,
+                    "castle_origin": "http://" + server.device_bridge.HOST,
+                    # The release the app was built from (docs/SUPPORT.md).
+                    "app_version": "Castle Tools v1.4.0",
+                },
+            ),
         )
 
     def test_every_page_script_is_served_by_the_desktop(self):
