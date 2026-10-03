@@ -76,7 +76,11 @@ def node_modules_probe() -> str | None:
 
 
 def ytdlp_probe() -> str | None:
-    return None if exe_paths.ytdlp() else "not in the venv or on PATH"
+    """Wherever the importer looks — the managed copy Castle Radio's Update
+    the downloader fetched (exe_paths.downloader_dir) counts too."""
+    if exe_paths.ytdlp():
+        return None
+    return "no managed copy, none in the venv, none on PATH"
 
 
 ROWS = (
@@ -111,7 +115,10 @@ ROWS = (
         "yt-dlp",
         "the importer fetches through it, and test_import asserts it is there",
         ytdlp_probe,
-        {"": "make setup (it is pinned in requirements.lock)"},
+        {
+            "": "make setup (it is pinned in requirements.lock), or "
+            "`.venv/bin/python tools/ytdlp_update.py update`"
+        },
     ),
     Row(
         "cargo",

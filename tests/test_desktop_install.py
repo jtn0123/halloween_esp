@@ -30,7 +30,8 @@ import desktop_install as di
 import desktop_launch as dl
 import desktop_lifecycle as life
 import desktop_release as rel
-from test_desktop_release import api_body, fake_fetch
+import ytdlp_update as yu
+from test_desktop_release import api_body, fake_fetch, sha
 
 
 def native(dirs: de.Dirs) -> de.Dirs:
@@ -98,6 +99,41 @@ class TestPlan(TempCase):
         )
         inst.ffmpeg()
         self.assertTrue(any("pinned static ffmpeg" in s for s in said))
+
+    def test_the_downloader_is_kept_until_an_update_asks_for_the_latest(self) -> None:
+        mine = self.dirs.bin / "yt-dlp"
+        mine.parent.mkdir(parents=True)
+        mine.write_bytes(b"#!old")
+        said: list[str] = []
+        kept = di.Installer(
+            self.args(), self.dirs, which=lambda _n: None, say=said.append
+        )
+        kept.ytdlp()
+        self.assertEqual((kept.found["ytdlp"], said), (str(mine), []))
+        # --update runs the same code as Castle Radio's Update the downloader:
+        # the latest release, checked against its SHA2-256SUMS.
+        new = b"#!new"
+        links = [("yt-dlp_macos", "dl/bin"), (yu.SUMS, "dl/sums")]
+        assets = [{"name": n, "browser_download_url": u} for n, u in links]
+        latest = {"tag_name": "2026.10.01", "assets": assets}
+        fetch = fake_fetch(
+            {
+                yu.API_LATEST: json.dumps(latest).encode(),
+                "dl/bin": new,
+                "dl/sums": f"{sha(new)}  yt-dlp_macos\n".encode(),
+            }
+        )
+        args = self.args("--update")
+        inst = di.Installer(
+            args, self.dirs, fetch=fetch, machine="arm64", say=said.append
+        )
+        version = {b"#!old": "2026.09.01", new: "2026.10.01"}
+        with mock.patch.object(
+            yu, "run_version", lambda p: version[Path(p).read_bytes()]
+        ):
+            inst.ytdlp()
+        self.assertEqual((mine.read_bytes(), inst.found["ytdlp"]), (new, str(mine)))
+        self.assertEqual(yu.read_record(self.dirs.bin)["tag"], "2026.10.01")
 
     def test_package_manager_comes_before_the_pin(self) -> None:
         said: list[str] = []

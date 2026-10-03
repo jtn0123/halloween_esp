@@ -12,7 +12,11 @@ failures. They are held together by `tests/test_import_reason.py`: the
 same corpus (`tests/import_reasons.json`) through both, and the table below
 compared with the Rust one line for line (docs/PARITY.md).
 
-The scan, in order: a phrase from KNOWN anywhere outside the `[…]`
+The scan never reads a line that starts with whitespace: that is a quote
+of a tool (the importer's detail(), a yt-dlp line relayed while it ran, a
+traceback's frames), kept for Details. Of the rest, in order: a last line
+already in the owner's form — "what happened — what to do", the importer's
+own verdict — as it stands; else a phrase from KNOWN anywhere outside the `[…]`
 progress chatter (case ignored — yt-dlp's capitalisation drifts between
 releases); else the last `ERROR:` line, which is yt-dlp's (a `[site]`-tagged
 one is an extractor the site has outgrown, any other a download that did not

@@ -241,20 +241,6 @@ class TestThirdParty(unittest.TestCase):
         with self.assertRaises(rel.ReleaseError):
             tp.fetch_pinned_ffmpeg("Linux", "riscv64", self.tmp, nothing, self.tmp)
 
-    def test_ytdlp_is_checked_against_its_release_sums(self) -> None:
-        body = b"#!yt-dlp"
-        pages = {
-            tp.YTDLP_BASE + tp.YTDLP_SUMS: f"{sha(body)}  yt-dlp_macos\n".encode(),
-            tp.YTDLP_BASE + "yt-dlp_macos": body,
-        }
-        out = tp.fetch_ytdlp("Darwin", self.tmp, fake_fetch(pages))
-        self.assertEqual(Path(out).name, "yt-dlp")
-        self.assertEqual(Path(out).read_bytes(), body)
-        pages[tp.YTDLP_BASE + "yt-dlp_macos"] = b"tampered"
-        tampered, dest = fake_fetch(pages), self.tmp / "t"
-        with self.assertRaises(rel.ReleaseError):
-            tp.fetch_ytdlp("Darwin", dest, tampered)
-
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

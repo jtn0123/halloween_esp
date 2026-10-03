@@ -9,7 +9,7 @@ Everything after is here, once, for both platforms:
   2. a uv environment from requirements-desktop.lock, --require-hashes
   3. castle-core's binaries from the matching GitHub Release, sha256-checked
      (or `--from-source`: cargo build, when cargo is present)
-  4. ffmpeg and a standalone yt-dlp (desktop_thirdparty.py)
+  4. ffmpeg (desktop_thirdparty.py) and the managed yt-dlp (ytdlp_update.py)
   5. the htdemucs weights, downloaded once into <install>/models
   6. the user's data dir: tracks, a seeded scenes.yaml, settings.json
   7. the launcher, and install.json recording all of the above
@@ -42,6 +42,7 @@ import desktop_env as de
 import desktop_release as rel
 import desktop_thirdparty as tp
 import ship_guard
+import ytdlp_update as yu
 
 #: Never copied into <install>/app from a working tree: build output, venvs,
 #: and anybody's library. A release zip has none of them anyway.
@@ -294,17 +295,24 @@ class Installer:
         self.step(f"download the pinned static ffmpeg into {self.dirs.bin}", fetch)
 
     def ytdlp(self) -> None:
+        """The managed song downloader in bin/ — ytdlp_update, the code
+        Castle Radio's Update the downloader button runs: fetched when
+        missing, brought to the latest release on --update, re-fetched on
+        --repair, and verified against its release's SHA2-256SUMS each time."""
         mine = self.dirs.bin / self.dirs.exe("yt-dlp")
-        if mine.is_file() and not self.args.repair:
+        if mine.is_file() and not (self.args.repair or self.args.update):
             self.found["ytdlp"] = str(mine)
-            if self.args.update:
-                self.run([str(mine), "-U"])
             return
 
         def fetch() -> None:
-            self.found["ytdlp"] = tp.fetch_ytdlp(
-                self.dirs.system, self.dirs.bin, self.fetch
+            got = yu.update(
+                self.dirs.bin,
+                self.fetch,
+                system=self.dirs.system,
+                machine=self.machine,
+                force=self.args.repair,
             )
+            self.found["ytdlp"] = str(got["path"])
 
         self.step(f"download the standalone yt-dlp into {self.dirs.bin}", fetch)
 

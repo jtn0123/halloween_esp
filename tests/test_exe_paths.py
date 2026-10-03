@@ -25,7 +25,8 @@ import exe_paths
 import import_fetch
 import import_reason as ir
 
-CLEAN = {"CASTLE_FFMPEG": "", "CASTLE_YTDLP": ""}
+#: No bundled copy, and no managed one (set-but-empty: exe_paths.downloader_dir).
+CLEAN = {"CASTLE_FFMPEG": "", "CASTLE_YTDLP": "", "CASTLE_DOWNLOADER_DIR": ""}
 
 
 class TestNames(unittest.TestCase):
@@ -80,8 +81,34 @@ class TestMediaTools(unittest.TestCase):
             self.assertEqual(exe_paths.ffprobe(), "ffprobe")
 
     def test_castle_ytdlp_wins(self) -> None:
-        with mock.patch.dict(os.environ, {"CASTLE_YTDLP": "C:\\tools\\yt-dlp.exe"}):
+        bundled = {**CLEAN, "CASTLE_YTDLP": "C:\\tools\\yt-dlp.exe"}
+        with mock.patch.dict(os.environ, bundled):
             self.assertEqual(exe_paths.ytdlp(), "C:\\tools\\yt-dlp.exe")
+
+    def test_the_managed_copy_beats_even_a_bundled_one(self) -> None:
+        # The owner can update the managed copy; a signed app's bundled one
+        # never changes, so once Update the downloader has run, it wins.
+        home = self.tmp / "downloader"
+        home.mkdir()
+        managed = home / exe_paths.exe("yt-dlp")
+        env = {"CASTLE_YTDLP": "/app/bin/yt-dlp", "CASTLE_DOWNLOADER_DIR": str(home)}
+        with mock.patch.dict(os.environ, env):
+            self.assertEqual(exe_paths.ytdlp(), "/app/bin/yt-dlp")  # none yet
+            managed.touch()
+            self.assertEqual(exe_paths.ytdlp(), str(managed))
+            self.assertEqual(exe_paths.managed_ytdlp(), str(managed))
+
+    def test_the_managed_copy_lives_in_castle_radios_data(self) -> None:
+        with mock.patch.dict(os.environ, {"CASTLE_RADIO_DATA": str(self.tmp)}):
+            os.environ.pop("CASTLE_DOWNLOADER_DIR", None)
+            self.assertEqual(exe_paths.downloader_dir(), self.tmp / "downloader")
+            os.environ.pop("CASTLE_RADIO_DATA")
+            self.assertEqual(
+                exe_paths.downloader_dir(), exe_paths.RADIO_DATA / "downloader"
+            )
+        with mock.patch.dict(os.environ, {"CASTLE_DOWNLOADER_DIR": " "}):
+            self.assertIsNone(exe_paths.downloader_dir())
+            self.assertIsNone(exe_paths.managed_ytdlp())
 
     def test_the_interpreters_own_ytdlp_beats_path(self) -> None:
         python = self.tmp / "python"

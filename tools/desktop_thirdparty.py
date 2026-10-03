@@ -1,14 +1,14 @@
-"""ffmpeg and yt-dlp for the desktop installer: found, installed, or fetched.
+"""ffmpeg for the desktop installer: found, installed, or fetched.
 
 ffmpeg, in order: one already on PATH; else the platform's package manager
 (winget on Windows, Homebrew on macOS) when it is there; else a PINNED
 static build whose sha256 is written below — a moving "latest" download
 would make the same installer fetch different bytes on different days.
 
-yt-dlp is always its own standalone binary in `<install>/bin`, never a pip
-package in the environment: sites break old clients every few weeks, and
-`yt-dlp -U` (or `--update`) must be able to replace it without touching
-torch. It is verified against the SHA2-256SUMS of the release it came from.
+yt-dlp is not here: it is the managed song downloader, fetched, verified
+and replaced by tools/ytdlp_update.py — the same code Castle Radio's Update
+the downloader button runs — so the installer and the button keep one copy
+in `<install>/bin` the one way.
 
 Bumping a pin: the GitHub API reports each asset's `digest`; for
 ffmpeg.martin-riedl.de the `.sha256` file sits beside the zip. Download it
@@ -18,7 +18,6 @@ once and check the digest locally before committing a new pin.
 from __future__ import annotations
 
 import shutil
-import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,18 +59,8 @@ FFMPEG_PINS: dict[tuple[str, str], tuple[Pin, ...]] = {
     ),
 }
 
-YTDLP_BASE = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/"
-YTDLP_SUMS = "SHA2-256SUMS"
-YTDLP_ASSETS = {
-    "Windows": "yt-dlp.exe",
-    "Darwin": "yt-dlp_macos",
-    "Linux": "yt-dlp_linux",
-}
-
 #: shutil.which, injectable.
 Which = Callable[[str], str | None]
-#: Runs a command, returns its exit code. The installer's dry-run swaps it.
-Run = Callable[[list[str]], int]
 
 
 def machine_key(machine: str) -> str:
@@ -145,29 +134,3 @@ def fetch_pinned_ffmpeg(
         shutil.rmtree(unpacked, ignore_errors=True)
     ext = ".exe" if system == "Windows" else ""
     return str(bin_dir / f"ffmpeg{ext}"), str(bin_dir / f"ffprobe{ext}")
-
-
-def fetch_ytdlp(system: str, bin_dir: Path, fetch: rel.Fetch) -> str:
-    """The latest standalone yt-dlp, checked against its release's sums."""
-    asset = YTDLP_ASSETS.get(system)
-    if not asset:
-        raise rel.ReleaseError(f"yt-dlp publishes no standalone build for {system}")
-    sums = rel.parse_sums(fetch(YTDLP_BASE + YTDLP_SUMS).decode("utf-8"))
-    if asset not in sums:
-        raise rel.ReleaseError(f"{YTDLP_SUMS} does not list {asset}")
-    out = bin_dir / ("yt-dlp.exe" if system == "Windows" else "yt-dlp")
-    tmp = bin_dir / (out.name + ".download")
-    rel.download(YTDLP_BASE + asset, tmp, fetch, sums[asset])
-    tmp.chmod(0o755)
-    tmp.replace(out)
-    return str(out)
-
-
-def self_update_ytdlp(ytdlp: str, run: Run) -> int:
-    """`yt-dlp -U`: the standalone binary replaces itself in place."""
-    return run([ytdlp, "-U"])
-
-
-def run_checked(cmd: list[str]) -> int:
-    """The production Run: inherit the console so the user sees progress."""
-    return subprocess.run(cmd, check=False).returncode
