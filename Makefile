@@ -51,7 +51,7 @@ ifeq ($(shell uname -m),x86_64)
 export NPY_DISABLE_CPU_FEATURES ?= X86_V3 X86_V4 AVX512_ICL AVX512_SPR
 endif
 
-.PHONY: preflight build-buyer validate-buyer show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
+.PHONY: preflight soak power-cycle build-buyer validate-buyer show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
 
 help:
 	@echo "Halloween Castle"
@@ -76,6 +76,7 @@ help:
 	@echo "  make studio     serve the cue desk with track management (localhost)"
 	@echo "  make publish    push scene tracks + the Castle Radio page to the castle"
 	@echo "  make ota        build the firmware and flash that image over HTTP"
+	@echo "  make soak HOST=<castle> HOURS=72   watch a castle unattended, then PASS/FAIL (docs/SOAK.md)"
 	@echo "  make test       python unit tests (~1 min)"
 	@echo "  make test-fast  the same minus the slow + Rust suites (inner loop)"
 	@echo "  make show-lab   opt-in light-show lab: rebuild the beat-locked candidates and serve"
@@ -206,6 +207,10 @@ cues:
 # `make build` just produced.
 ota: build
 	@$(PY) tools/sd_sync.py ota "$$($(PY) tools/check_image.py $(DEVICE) --path)"
+
+# Unattended runs against real hardware, each ending in a verdict (docs/SOAK.md).
+soak:
+	@$(PY) tools/soak.py $(HOST) --hours $(or $(HOURS),72) $(ARGS)
 
 # Kept as aliases, not as a second build. They named the microSD variant back
 # when there were two castles to choose between; every build has streamed the
