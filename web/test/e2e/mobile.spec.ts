@@ -102,12 +102,22 @@ test("the clip editor's band rows stack instead of clipping", async ({ page }) =
   expect(m.over).toBeLessThanOrEqual(0);
   expect(m.hitsVisible).toBe(true);
   expect(m.pageOver).toBeLessThanOrEqual(0);
-  // The flavour note is a paragraph, not a one-word-per-line column.
+  // The flavour note is a paragraph, not a one-word-per-line column. Counted
+  // in words a line rather than pixels tall: Safari sets var(--f-data) in SF
+  // Mono, a hair wider than Chromium's Menlo, so the same 325px-wide note is
+  // five lines there and four here — a paragraph both times.
   const hint = page.locator(".stylelab__flavhint");
   await expect(hint).toBeVisible();
-  const hb = (await hint.boundingBox())!;
-  expect(hb.width).toBeGreaterThan(250);
-  expect(hb.height).toBeLessThan(90);
+  const p = await hint.evaluate((el) => {
+    const box = el.getBoundingClientRect();
+    return {
+      width: box.width,
+      lines: Math.round(box.height / parseFloat(getComputedStyle(el).lineHeight)),
+      words: (el.textContent ?? "").trim().split(/\s+/).length,
+    };
+  });
+  expect(p.width).toBeGreaterThan(250);
+  expect(p.words / p.lines).toBeGreaterThanOrEqual(5);
 });
 
 test("no caption drops under 12px on a phone", async ({ page }) => {

@@ -19,8 +19,8 @@ supports, and `uv export` turns its uv.lock into requirements form. Linux
 is deliberately absent: PyPI's Linux torch is the CUDA build and pulls
 ~3 GB of nvidia wheels for a decoration's song importer.
 
-yt-dlp is in requirements-desktop.txt (the Mac-only install_castle_tools.sh
-still pip-installs it) and deliberately NOT in this lock: the installer
+yt-dlp is named in requirements-desktop.txt (the desktop tools need it) and
+deliberately NOT in this lock: the installer
 fetches the standalone yt-dlp binary instead, so it can be updated on its
 own when a site breaks old clients, without re-locking torch.
 

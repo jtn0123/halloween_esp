@@ -72,7 +72,7 @@ class Diagnostics(unittest.TestCase):
         env = {
             "CASTLE_DEVICES": str(store),
             "CASTLE_KEY": PINNED_KEY,
-            "CASTLE_APP_VERSION": "0.9.1",
+            "CASTLE_APP_VERSION": "v0.9.1",
             "CASTLE_APP_LOG": str(self.log),
         }
         for patch in (
@@ -111,7 +111,7 @@ class Diagnostics(unittest.TestCase):
             lines[2],
             f"version {self.emu.version} · board {self.emu.board} · build buyer",
         )
-        self.assertEqual(lines[3], "page Castle 0.9.1 diagnostics")
+        self.assertEqual(lines[3], "page Castle Tools v0.9.1 diagnostics")
         heads = re.findall(r"^== (.+) ==$", text, re.MULTILINE)
         self.assertEqual(
             heads,
@@ -192,7 +192,7 @@ class Diagnostics(unittest.TestCase):
         )
 
     def test_the_app_is_named_by_the_app_else_the_release_else_a_checkout(self):
-        self.assertEqual(diagnostics.app_version(), "Castle 0.9.1")
+        self.assertEqual(diagnostics.app_version(), "Castle Tools v0.9.1")
         with mock.patch.dict(os.environ, {"CASTLE_APP_VERSION": ""}):
             stamped = (radio_env.ROOT / "installer" / "VERSION").read_text(
                 encoding="utf-8"
