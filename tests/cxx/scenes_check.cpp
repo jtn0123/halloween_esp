@@ -40,6 +40,11 @@
 //   rm:<name>          delete one file from the card mid-run — the card
 //                      changing underneath a running show, which is the only
 //                      way to prove a re-run did not read it again
+//   evening:<skip>     the evening playlist the manifest describes (v5.77),
+//                      `skip` being the PIR's scene for a pre-5.77 card
+//   set:<csv>          seed the evening list, as seed_scene_ids does
+//   next               one pass of show_playlist: the id it plays
+//   rewind             "start show": back to the top of the evening
 //
 // The zone globals are this file's, not ESPHome's — castle_cues::Pixels is
 // addresses by design, which is exactly what makes it testable here.
@@ -174,6 +179,16 @@ int main(int argc, char **argv) {
     } else if (std::strncmp(op, "rm:", 3) == 0) {
       const std::string path = std::string(dir) + "/" + arg_of(op);
       std::printf("rm %s %s\n", arg_of(op), std::remove(path.c_str()) == 0 ? "ok" : "fail");
+    } else if (std::strncmp(op, "evening:", 8) == 0) {
+      std::printf("evening %s\n", castle_scenes::evening_csv(arg_of(op), dir).c_str());
+    } else if (std::strncmp(op, "set:", 4) == 0) {
+      castle_scenes::set_evening(arg_of(op));
+      std::printf("set n=%u\n", (unsigned) castle_scenes::evening_count());
+    } else if (std::strcmp(op, "next") == 0) {
+      std::printf("next %s\n", castle_scenes::evening_next().c_str());
+    } else if (std::strcmp(op, "rewind") == 0) {
+      castle_scenes::evening_rewind();
+      std::printf("rewind\n");
     } else {
       std::printf("?%s\n", op);
       return 3;

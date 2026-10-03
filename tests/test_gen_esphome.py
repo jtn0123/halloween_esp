@@ -424,36 +424,48 @@ class TestShowPlaylistLength(unittest.TestCase):
         return {"scenes": list(scenes), "show": {"gap_ms": 12000}}
 
     def _then(self, doc: dict[str, Any]) -> list[dict[str, Any]]:
+        """One pass of the playlist: the body of its `if` (v5.77)."""
         lines = gs.emit_show_playlist(doc)
-        return list(
-            yaml.load("script:\n" + "\n".join(lines), EsphomeLoader)["script"][0][
-                "then"
-            ]
+        script = yaml.load("script:\n" + "\n".join(lines), EsphomeLoader)["script"][0]
+        (step,) = script["then"]
+        self.assertEqual(
+            step["if"]["condition"],
+            {"lambda": "return castle_scenes::evening_count() > 0;"},
         )
+        return list(step["if"]["then"])
 
     def test_playlist_delay_is_the_wait_plus_the_cards_own_length(self) -> None:
         then = self._then(self._doc(scene(duration_ms=6500)))
         self.assertEqual(
-            then[0]["script.execute"], {"id": "run_scene", "scene": "probe"}
+            then[0]["script.execute"],
+            {"id": "run_scene", "scene": "return castle_scenes::evening_next();"},
         )
         self.assertEqual(then[1], {"delay": self.HOLD})
         self.assertEqual(then[2], {"script.execute": "scene_stop"})
         self.assertEqual(then[3], {"delay": "12000ms"})
+        self.assertEqual(then[4], {"script.execute": "show_playlist"})
 
-    def test_every_scene_in_the_order_gets_the_wait(self) -> None:
-        doc = self._doc(
-            scene(id="a", duration_ms=1000), scene(id="b", duration_ms=193360)
+    def test_one_scene_a_pass_whatever_the_show_holds(self) -> None:
+        """v5.77: the evening is the card's list (castle_scenes::evening_next),
+        so the script is one pass whatever the show holds — the same five
+        steps for one scene or twelve, and no scene id anywhere in it."""
+        one = gs.emit_show_playlist(self._doc(scene(id="a")))
+        many = gs.emit_show_playlist(
+            self._doc(*(scene(id=f"s{i}", duration_ms=1000 + i) for i in range(12)))
         )
-        delays = [st["delay"] for st in self._then(doc) if "delay" in st]
-        self.assertEqual(delays, [self.HOLD, "12000ms", self.HOLD, "12000ms"])
+        self.assertEqual(one, many)
+        self.assertNotIn("probe", "\n".join(one))
 
     def test_an_edited_duration_leaves_the_generated_playlist_alone(self) -> None:
         """The property J1 actually bought: the emitted YAML does not carry a
         scene's length at all, so changing one is a publish and nothing else.
-        Only the ORDER and the gap are still facts about the build."""
+        Since v5.77 neither is the ORDER; only the gap is still a fact about
+        the build."""
         short = gs.emit_show_playlist(self._doc(scene(duration_ms=1000)))
         long = gs.emit_show_playlist(self._doc(scene(duration_ms=193360)))
         self.assertEqual(short, long)
+        gap = gs.emit_show_playlist({"scenes": [scene()], "show": {"gap_ms": 500}})
+        self.assertIn("            - delay: 500ms", gap)
 
     def test_the_runner_waits_for_exactly_that_long(self) -> None:
         """The two numbers are one constant. The scene side is hand-written

@@ -18,6 +18,7 @@ writes them from reviewed tables, and `make check` fails when they go stale.
 | castle-core zips (`castle-core-<target>-<tag>.zip`) | `licenses/THIRD-PARTY-NOTICES-castle-core.txt` | `THIRD-PARTY-NOTICES.txt` inside each zip (`tools/release_assets.py zip-core`) |
 | Source zip / the uv installer's bundle | `THIRD-PARTY-NOTICES.txt` | at the top of the tree, so GitHub's "Source code" zip carries it (no `export-ignore`) |
 | Web flasher page (`flasher/`) | the firmware notices | `pages.yml` copies the release's notices asset into the site |
+| The sold castle's SD card (`make buyer-card`) | the firmware notices, plus the written source offer | `licenses/THIRD-PARTY-NOTICES.txt` and `licenses/SOURCE-OFFER.txt` on the card (`tools/buyer_card.py`), linked from the castle's owner page as "Licences" and "Source code" (firmware v5.77) |
 
 ## How the notices are made
 
@@ -125,6 +126,17 @@ runtime npm dependencies (all four are dev-only). The web flasher page is
 this project's HTML. It loads esp-web-tools 10.4.0 (Apache-2.0) from
 unpkg.com into the visitor's browser, and does not carry it.
 
+### The sold castle's SD card
+
+`make buyer-card [TAG=<release tag>]` writes the card a castle is sold
+with: the shipped show (`scenes/shipped.yaml`: the yard's scenes that need
+no imported song, with synthesised sound), the firmware notices and the
+written source offer. It copies nothing from `tracks/`, and it refuses a
+scene that needs a song. The scene audio is this project's own, rendered
+from scenes.yaml. The offer's text is `tools/buyer_card.py`
+`source_offer`, and `tests/test_buyer_card.py` holds it to the §6 b)
+points quoted below.
+
 ## Not redistributed: what the buyer's own machine downloads
 
 None of these is inside any published file today. They are listed in the
@@ -210,28 +222,42 @@ The image reaches people in two ways. Each one meets a different part of
    "User Product" definition describes. The castle accepts a new image over
    USB (the web flasher) and over the network (`PUT /api/ota`).
 
+   Since 2026-10-03 (decision 2 below) the card it ships with carries the
+   firmware notices and a written offer under §6 b). The offer is dated and
+   valid three years, or for as long as spare parts or customer support are
+   offered, whichever is later. It is made to anyone who possesses the
+   object code. It offers both (1) a copy on a durable physical medium at
+   no more than cost, asked for through this repository's issues, and (2)
+   network access at no charge: this repository at the release tag, that
+   tag's "Source code" zip, and each third-party component at the source
+   address its notice gives. It ends with the Installation Information.
+   USB installs need no key and no signature, and the castle has no secure
+   boot. Network installs ask for the castle key only when one is set, and
+   a USB install that erases the castle clears it. The castle's owner page
+   links both files (§5 d)).
+
 ## Open decisions
 
-Each of these is yours to make. None of them is settled by this change.
+Each of these is yours to make. Decision 2 has been made and carried out;
+it keeps its number because other documents cite it. The rest are open.
 
 1. **A licence for this repository.** The repo has no LICENSE file, so
    nobody else has a licence to its code. §5 c) above concerns the
    firmware image as a whole. Decide what licence `firmware/`, and the rest
    of the tree, is offered under. The notices currently call it "the
    Halloween Castle project's own work (copyright jtn0123)".
-2. **How the sold castle carries its notices and source.** The firmware
-   notices reach people who download the image. They do not yet reach
-   someone who receives a castle with the image already installed. Options
-   that fit the texts quoted above:
-   - put the notices and the Corresponding Source (or a written offer) on
-     the castle's SD card, and link them from the castle's page;
-   - print them, or a written offer with a URL, in the owner's guide
-     (PRODUCTION-TODO §3);
-   - both.
-
-   Also decide whether the source you rely on lives on your own server or
-   on GitHub and upstream's servers, which §6 d) requires you to keep
-   available.
+2. **How the sold castle carries its notices and source. DECIDED
+   2026-10-03: both, and IMPLEMENTED (firmware v5.77).** The castle's SD
+   card carries the firmware notices and a written offer
+   (`licenses/THIRD-PARTY-NOTICES.txt`, `licenses/SOURCE-OFFER.txt`, made
+   by `make buyer-card`). The castle's owner page links them, and
+   docs/OWNER-GUIDE.md "Licences and source code" says where they are. The
+   source the offer relies on is this public GitHub repository and the
+   tagged release, plus the upstream addresses in the notices. Keeping it
+   there for the offer's whole period is the seller's job: §6 d)'s "you
+   remain obligated". So the repository stays public and the release tag
+   is never deleted. Make each card with `TAG=` naming the release the
+   castle's image came from, so the offer names that tag.
 3. **Installation Information.** docs/RELEASING.md and the web flasher
    describe how to install an image. If the castle ever requires a key to
    accept one (the optional password, PRODUCTION-TODO §1.6), decide how an
@@ -254,11 +280,17 @@ Each of these is yours to make. None of them is settled by this change.
    build" because `release.yml` does not pin one. Pin it if you want the
    notices to name the exact version.
 8. **Showing the notices in the apps.** The desktop app carries its file
-   as a resource, and the castle's page does not link the firmware notices
-   (§5 d) above). Whether either should show them in the interface is a
-   product decision. It belongs to the code those interfaces live in.
+   as a resource, and does not show it in its interface. The castle's
+   owner page links the firmware notices and the source offer when its
+   card holds them (v5.77, decision 2). Whether the desktop app should show
+   its notices is still a product decision. It belongs to the code that
+   interface lives in.
 
 ## Maintenance
+
+- Before a castle is sold: `make buyer-card OUT=<the card> TAG=<the
+  release its image came from>` (docs/SUPPORT.md). The offer is dated the
+  day it is made.
 
 - A crate added or bumped in `desktop/src-tauri/Cargo.lock`: run
   `cargo fetch --locked` in `desktop/src-tauri`, then

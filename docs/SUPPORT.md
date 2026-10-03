@@ -105,6 +105,11 @@ Notes:
   one the castle shows its built-in owner page there. The owner page, which
   the Owner's guide describes (Settings, Factory reset, Report a problem),
   is at `/owner` either way. Check that the guide matches.
+  `make buyer-card OUT=<card> TAG=<the image's release tag>` writes the
+  card: the shipped show (no songs), no `/site/`, and the licence notices
+  plus the written source offer under `licenses/`, which the owner page
+  links (docs/LICENSING.md decision 2). Copy the directory's contents onto
+  the root of a FAT32 card.
 - The image: the buyer build (`fw_variant: buyer` in status) from a tagged
   release, not a local build.
 - The record above, filled in, and the label printed (PRODUCTION-TODO §3).

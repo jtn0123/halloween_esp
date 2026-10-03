@@ -92,6 +92,14 @@ script:
           // travelled in this list when it came from pir_scene's options.
           scene_ids.emplace_back("stop");
           castle_web::set_scene_ids(std::move(scene_ids));
+          // v5.77: and the evening playlist, off the same manifest — the
+          // card's place numbers, or (a pre-5.77 card) every scene but the
+          // PIR's. With no manifest, the compiled fallback's.
+          castle_scenes::set_evening(
+              from_card ? castle_scenes::evening_csv(id(pir_scene).state.c_str())
+                        : std::string(kFallbackEveningCsv));
+          ESP_LOGI("castle", "evening show: %u scenes",
+                   (unsigned) castle_scenes::evening_count());
 
   # Start scene `scene`, whatever the caller is: /api/scene, the PIR, a
   # button, the evening playlist. `run_scene` (generated) is still the door —

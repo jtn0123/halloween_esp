@@ -32,6 +32,7 @@ DOCUMENTED_GENERATED = {
     "firmware/generated/scenes.yaml",
     "firmware/generated/fallback_scenes.h",
     "audio/markers.json",
+    "scenes/shipped.yaml",
     "web/package-lock.json",
     "desktop/src-tauri/Cargo.lock",
     "requirements.lock",

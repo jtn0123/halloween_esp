@@ -8,7 +8,8 @@
  * nothing left the first-run card leads, the count says 0 and Import is one
  * press away; the first song to arrive takes the card down; the demo rows
  * the computer does have stay; and the castle-served page asks nothing and
- * points at the computer instead. */
+ * points at the computer instead, hiding the rows whose audio its own card
+ * does not hold (a sold castle's card has the scenes and no song). */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
@@ -34,7 +35,7 @@ const APP = `
   function load(id) { current = id; loaded.push(id); updatePlayer(); }
 `;
 
-function page({demo = [], direct = false, failing = false} = {}) {
+function page({demo = [], direct = false, failing = false, onCard = undefined} = {}) {
   const nodes = new Map();
   const byId = id => { if (!nodes.has(id)) {nodes.set(id, node());} return nodes.get(id); };
   const placed = [];
@@ -53,6 +54,14 @@ function page({demo = [], direct = false, failing = false} = {}) {
   ctx.window = ctx;
   ctx.$ = byId;
   if (direct) {ctx.castleDirect = {scenes: []};}
+  // remote-library.js's inventory of the castle's card, keyed by file:
+  // `onCard` lists the files on it; null is a card that never answered.
+  if (onCard !== undefined) {
+    ctx.remoteLibrary = {ensure: async () => {
+      if (onCard === 'fails') {throw new Error('listing timed out');}
+      return onCard && {tracks: Object.fromEntries(onCard.map(f => [f, {audio: true}]))};
+    }};
+  }
   vm.createContext(ctx);
   vm.runInContext(APP, ctx);
   vm.runInContext(read('first-run.js'), ctx, {filename: 'first-run.js'});
@@ -112,4 +121,22 @@ test('the castle-served page asks nothing and points at the computer', async () 
   assert.equal(card.children.length, 2, 'no Import button where importing cannot happen');
   run('tracks.forEach(t => { t.deleted = true; }); renderTracks();');
   assert.equal(card.hidden, false);
+});
+
+test('on the castle, a built-in row whose audio its card lacks is hidden', async () => {
+  const {calls, val, byId, card} = page({direct: true, onCard: ['01_vigil.mp3', '02_storm.mp3']});
+  await settle();
+  assert.deepEqual(calls, [], 'the card is read through remote-library.js, not the computer');
+  assert.deepEqual(val('tracks.map(t => !!t.deleted)'), [false, false, true], 'the song is not on it');
+  assert.deepEqual(val('queue'), [1]);
+  assert.equal(card.hidden, true);
+  assert.equal(byId('collection-count').textContent, 2);
+});
+
+test('on the castle, a card that does not answer hides nothing', async () => {
+  for (const answer of [null, 'fails']) {
+    const {val} = page({direct: true, onCard: answer});
+    await settle();
+    assert.equal(val('tracks.filter(t => !t.deleted).length'), 3, String(answer));
+  }
 });

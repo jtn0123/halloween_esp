@@ -50,9 +50,11 @@ Both children get the same environment (`runtime::child_env`):
 
 `<app data>` is Tauri's `app_data_dir()` for the identifier
 `io.github.jtn0123.castletools`: `~/Library/Application Support/…` on macOS,
-`%APPDATA%\…` on Windows. On first run the runtime's shipped
-`scenes/scenes.yaml` is copied there (`runtime::seed_scenes`: copy beside, then
-rename; never overwrites — after that it is the owner's file). The NSIS
+`%APPDATA%\…` on Windows. On first run the runtime's
+`scenes/shipped.yaml` is copied there (`runtime::seed_scenes`: copy beside, then
+rename; never overwrites — after that it is the owner's file). That is the
+shipped show, the one a sold castle's card carries (`tools/shipped_show.py`):
+the yard's `scenes/scenes.yaml` minus every scene that needs a song. The NSIS
 uninstaller leaves this directory unless its "delete application data" box is
 ticked, so songs survive an uninstall by default.
 
