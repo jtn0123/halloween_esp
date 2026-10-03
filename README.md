@@ -19,22 +19,28 @@ will not play — see [docs/RUNBOOK.md](docs/RUNBOOK.md).
 scenes/scenes.yaml            ← THE SOURCE OF TRUTH
         │
         ├── tools/render_audio.py ─▶ core/ scene_render ─▶ audio/NN_<id>.mp3
-        │                            (Rust: synths, reverb, master chain)
-        ├── tools/gen_esphome.py  ──▶ firmware/generated/     (light cue scripts)
-        └── previewer/            ──▶ browser cue desk        (tuning tool)
+        │                            (Rust: synths, reverb,   and audio/card/
+        │                             master chain)            (the 96 kbps copies)
+        ├── tools/gen_esphome.py  ──▶ audio/card/scenes/      (THE SHOW: show.man
+        │                         │                            + one <id>.cue a scene)
+        │                         └─▶ firmware/generated/     (sfx, rig.h, lights)
+        └── tools/gen_previewer.py ─▶ previewer/castle-cue-desk.html (the desk)
 ```
 
 One file defines every scene: its light cues, its audio score, its length and its
 playback level. Everything else is generated. Cue timings tuned in the previewer
 cannot drift away from the ones on the device, because both come from here.
+Since v5.67 the show is card data, not firmware: one runner
+(`firmware/castle_scenes.h`) reads `show.man` and the `.cue` files, so a scene
+edit is `make publish`, never a flash.
 
 `core/` is castle-core, the project's zero-dependency Rust crate. It renders the
 scene audio (`scene_render`) and analyses imported tracks (`analyze_track`) —
 those are the production paths, not experiments; the Python originals survive
 only as the parity references the Rust is checked against. It also holds a
-WASM face the cue desk loads and the studio server itself — the twin became
-the default on 2026-09-01, with the Python one behind it. Everything else
-reaches the crate through
+WASM face the cue desk loads and the studio server itself — the only one since
+the Python studio retired on 2026-09-06 ([docs/RETIREMENT.md](docs/RETIREMENT.md)).
+Everything else reaches the crate through
 `tools/core_bins.py`, as a subprocess: no cargo means a hard stop with a
 sentence, never a quiet fall-back to arithmetic that differs per machine.
 

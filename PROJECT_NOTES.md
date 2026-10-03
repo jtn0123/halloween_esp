@@ -29,7 +29,7 @@ belongs to; start a new part when one nears the cap.
 |---|---|---|
 | [01 — Research and architecture](docs/notes/01-research-and-architecture.md) | §1–§9 | Hardware inventory; why the RAK18060 was shelved; the DFPlayer architecture and ESPHome-vs-WLED; repurposing the RAK4630; shopping list; staged plan; effect brainstorm; open questions; buying a DFPlayer that actually works (the chip lottery, mitigations, sound sources) |
 | [02 — Mockup and bill of materials](docs/notes/02-mockup-and-bom.md) | §10–§11 | The Mac-side mockup and the Castle Cue Desk as built, with its fidelity caveats; board facts that constrain everything; the parts list; power plan; wiring map; speakers; where to buy what; the DFPlayer's honest assessment; gotchas |
-| [03 — Build: firmware, light, previewer, tracks](docs/notes/03-build.md) | §12–§12.8, §12.15 | What was pinned down during the build; the flash wall; what compiling verified and what still needs the board; dry-run work; making audio actually drive the light; the previewer transport rebuild; custom tracks; the flash wall winning, and the SD build becoming the only build (§12.15, filed here because it is where §12.2 recorded the wall) |
+| [03 — Build: firmware, light, previewer, tracks](docs/notes/03-build.md) | §12–§12.8, §12.15, §12.20–§12.22 | What was pinned down during the build; the flash wall; what compiling verified and what still needs the board; dry-run work; making audio actually drive the light; the previewer transport rebuild; custom tracks; the flash wall winning, and the SD build becoming the only build (§12.15, filed here because it is where §12.2 recorded the wall); the S2 retired for the S3 Feather (§12.20); the show moved to the card (§12.21, v5.67); the 200 ms v5.67 added to a scene start, and the start split in two (§12.22, v5.68) |
 | [04 — Build: microSD, pins, audio capacity, benchmark, logs](docs/notes/04-build-sd-pins-audio-bench.md) | §12.9–§12.14 | microSD audio — what's true and what it costs; the eInk FeatherWing taking three pins; audio capacity numbers; the on-board MP3 decode benchmark and its results; getting logs off the board; build trees moved off the internal disk (§12.12, filed after §12.14) |
 | [05 — Decision log and roadmap](docs/notes/05-decisions-and-roadmap.md) | §13–§14 | Every decision with date and rationale; the 2026-08-10 roadmap closed out, and where the project stands as of 2026-09-01 — what is done, what waits on the board |
 | [06 — Build: the buyer image](docs/notes/06-buyer-build.md) | §12.23 | The castle someone else owns (v5.74): no Wi-Fi compiled in, softAP + captive portal + Improv, the optional castle key and boot_play in NVS, `board`/`fw_variant` in `/api/status`, the port-80 handover, and what each cost in flash and RAM |
@@ -68,6 +68,10 @@ the firmware evidence are in the file, with the next tests in order.
 | 12.14 | Getting logs off this board | 04 |
 | 12.12 | Build trees moved off the internal disk | 04 |
 | 12.15 | One build, on the card — the flash build retired | 03 |
+| 12.20 | The S2 retired; the S3 Feather is the build | 03 |
+| 12.21 | The show moved to the card; the scene scripts are gone (v5.67) | 03 |
+| 12.22 | Two steps, not one: the 200 ms v5.67 added to a scene start (v5.68) | 03 |
+| 12.23 | The buyer build, the castle key and boot_play (v5.74) | 06 |
 | 13 | Decision log | 05 |
 | 14 | Roadmap | 05 |
 
