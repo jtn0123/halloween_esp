@@ -54,6 +54,7 @@ ROUTES: tuple[tuple[str, str, str], ...] = (
     ("/api/blackout", "POST", "h_blackout"),
     ("/api/blackout", "GET", "h_blackout"),
     ("/remote", "GET", "h_remote"),
+    ("/owner", "GET", "h_owner"),
     ("/api/volume", "POST", "h_volume"),
     ("/api/light", "POST", "h_light"),
     ("/api/pir", "POST", "h_pir"),

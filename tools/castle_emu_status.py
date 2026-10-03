@@ -89,7 +89,17 @@ def status_json(emu: CastleEmu) -> dict[str, object]:
             # power-on boot starts the show.
             "locked": bool(emu.key),
             "boot_play": emu.boot_play,
+            # v5.75 (castle_owner.h): the cap, whether quiet hours hold the
+            # speaker at 0 now, the zone and window as set ("" = never), and
+            # the castle's wall clock in that zone ("" until it has one).
+            "vol_max": emu.owner.vol_max,
+            "quiet_now": emu.owner.quiet_now,
+            "tz": emu.owner.tz,
+            "quiet": emu.owner.quiet_str(),
+            "local": emu.owner.local,
             "pir": {
+                # v5.75: false on a castle with no sensor (the buyer build).
+                "fitted": emu.pir_fitted,
                 "armed": st.pir["armed"],
                 "cooldown_s": st.pir["cooldown_s"],
                 "scene": st.pir["scene"],
@@ -121,8 +131,9 @@ def status_text(emu: CastleEmu) -> str:
         '"show_on":%s,"playing":%s,"position_ms":%d,'
         '"light_applied":%d,"light_evicted":%d,"cues":%d,'
         '"sync_lead_ms":%d,"sync_drift_ms":%d,"epoch":%d,"rssi":%d,'
-        '"locked":%s,"boot_play":%s,'
-        '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
+        '"locked":%s,"boot_play":%s,"vol_max":%d,"quiet_now":%s,'
+        '"tz":"%s","quiet":"%s","local":"%s",'
+        '"pir":{"fitted":%s,"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
         % (
             t("version"),
             t("board"),
@@ -151,6 +162,12 @@ def status_text(emu: CastleEmu) -> str:
             i("rssi"),
             b[bool(s["locked"])],
             b[bool(s["boot_play"])],
+            i("vol_max"),
+            b[bool(s["quiet_now"])],
+            t("tz"),
+            t("quiet"),
+            t("local"),
+            b[bool(pir["fitted"])],
             b[bool(pir["armed"])],
             int(pir["cooldown_s"]),
             wire.json_escape(str(pir["scene"])),

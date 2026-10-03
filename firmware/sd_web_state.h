@@ -100,6 +100,10 @@ inline void record_action(ActionType type, const std::string &arg, long long now
 // host harness and the emulator report.
 inline const char *g_board = "feather-s3-4m2p";
 inline const char *g_fw_variant = "yard";
+/// v5.75: whether this castle HAS a motion sensor (`pir_fitted`). The buyer
+/// build says no: /api/pir refuses and the owner's page shows none, rather
+/// than offering to arm a pin with nothing on it. Same boot-time setting.
+inline bool g_pir_fitted = true;
 
 // ── state mirrored FROM the main loop, readable by handlers ─────────────
 inline std::atomic g_volume{70};

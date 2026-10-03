@@ -48,6 +48,9 @@ substitutions:
   friendly: Castle
   fw_variant: buyer
   boot_play_default: "false"
+  # No PIR on a buyer's castle (v5.75): the owner's page says "not fitted" and
+  # /api/pir refuses, instead of a switch that arms a pin with nothing on it.
+  pir_fitted: "false"
 
 packages:
   feather: !include castle_feather_s3.yaml

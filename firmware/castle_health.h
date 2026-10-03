@@ -88,16 +88,27 @@ inline const char *reason_str() {
     case ESP_RST_DEEPSLEEP: return "deep-sleep";
     case ESP_RST_BROWNOUT: return "BROWNOUT";
     case ESP_RST_SDIO: return "sdio";
+    // v5.75: the rest of IDF 5.5's list. The owner's page words every one
+    // of these, so "unknown" is now only what IDF itself does not know.
+    case ESP_RST_EXT: return "external";
+    case ESP_RST_USB: return "usb";
+    case ESP_RST_JTAG: return "jtag";
+    case ESP_RST_EFUSE: return "efuse";
+    case ESP_RST_PWR_GLITCH: return "power-glitch";
+    case ESP_RST_CPU_LOCKUP: return "cpu-lockup";
     default: return "unknown";
   }
 }
 
 /// True for the reset reasons that mean "the firmware fell over" rather than
 /// "someone turned it off/on or flashed it".
+/// v5.75: a CPU lock-up is a crash by another name, and a power glitch is
+/// the brownout's cousin — both are the owner page's red banner.
 inline bool was_crash() {
   return g_reason == ESP_RST_PANIC || g_reason == ESP_RST_INT_WDT ||
          g_reason == ESP_RST_TASK_WDT || g_reason == ESP_RST_WDT ||
-         g_reason == ESP_RST_BROWNOUT;
+         g_reason == ESP_RST_BROWNOUT || g_reason == ESP_RST_PWR_GLITCH ||
+         g_reason == ESP_RST_CPU_LOCKUP;
 }
 
 /// L2 (v5.62): an ISO stamp when SNTP has answered, and the uptime when it

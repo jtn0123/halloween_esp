@@ -218,7 +218,8 @@ class TestValidatorConstants(unittest.TestCase):
         # Every snprintf in h_status must fit the buffer it fills with every
         # number at its widest: a truncated reply is a parse error in every
         # client (v5.72 added two 64-bit numbers and grew it to 384; v5.74
-        # added locked + boot_play and grew it to 448).
+        # added locked + boot_play and grew it to 448; v5.75's owner fields
+        # cut the middle in two around the strings, so 448 still holds).
         declared = re.search(r"std::array<char, (\d+)> buf\{\}", body)
         assert declared is not None
         size = int(declared.group(1))
@@ -230,7 +231,8 @@ class TestValidatorConstants(unittest.TestCase):
             body,
             re.DOTALL,
         )
-        self.assertEqual(len(formats), 3)  # the header, the volume, the middle
+        # the header, the volume, the middle, and the PIR object (v5.75)
+        self.assertEqual(len(formats), 4)
         for fmt in formats:
             text = "".join(re.findall(r'R"\((.*?)\)"', fmt, re.DOTALL))
             specs = re.findall(r"%lld|%u|%d|%s", text)
