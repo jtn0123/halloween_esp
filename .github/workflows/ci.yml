@@ -259,16 +259,28 @@ jobs:
       - name: engine unit tests
         run: npm test
         working-directory: web
-      - name: browser tests
+      - name: install browsers
+        id: browsers
+        run: npx --no-install playwright install --with-deps chromium webkit
+        working-directory: web
+      - name: browser tests (chromium)
         # Named rather than defaulted, because playwright.config falls back
         # with `??`: an empty CASTLE_STUDIO_CMD is not absent, it is a server
         # command of "". The path is relative to web/, the config's own
         # directory, and the port and --localhost are appended there.
         env:
           CASTLE_STUDIO_CMD: ../core/target/release/studio
-        run: |
-          npx --no-install playwright install --with-deps chromium
-          npx --no-install playwright test
+        run: npx --no-install playwright test --project=chromium
+        working-directory: web
+      # WebKit is Safari's engine and the desktop app's macOS window
+      # (docs/PRODUCTION-TODO.md §5.1). Its own run — its own server and
+      # scratch tracks, as the specs expect — and it still runs when the
+      # Chromium step is red, so one browser's failure never hides the other's.
+      - name: browser tests (webkit)
+        if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
+        env:
+          CASTLE_STUDIO_CMD: ../core/target/release/studio
+        run: npx --no-install playwright test --project=webkit
         working-directory: web
 
   esphome:

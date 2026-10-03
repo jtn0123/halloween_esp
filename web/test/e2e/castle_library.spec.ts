@@ -7,7 +7,8 @@
  * actual bytes the actual endpoint serves.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { test, expect, bodyBytes } from "./fixtures.js";
 import { MP3_ID, WAV_ID } from "./global-setup.js";
 
 const STATUS = {
@@ -38,7 +39,7 @@ async function stubCard(page: Page, files: SdFile[],
       const name = decodeURIComponent(p.slice("/api/files/".length));
       // Record the REAL byte count — the desk verifies it against what it
       // sent, and the stale check compares it on the next listing.
-      const size = route.request().postDataBuffer()?.length ?? 0;
+      const size = bodyBytes(route.request());
       const i = files.findIndex((f) => f.name === name);
       if (i >= 0) files.splice(i, 1);
       files.push({ name, size, dir: false });
