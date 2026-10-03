@@ -251,6 +251,15 @@ class StagedRelease(TempCase):
 
 
 class TheBuyerAndTheCli(TempCase):
+    def test_the_log_takes_any_character_on_an_ansi_pipe(self) -> None:
+        raw = io.BytesIO()
+        pipe = io.TextIOWrapper(raw, encoding="cp1252")
+        with mock.patch.object(sys, "stdout", pipe):
+            smoke.utf8_output()
+            print("█ 鬼", end="")
+            pipe.flush()
+        self.assertEqual(raw.getvalue().decode("utf-8"), "█ 鬼")
+
     def test_outside_ci_a_run_needs_a_throwaway_home(self) -> None:
         se.write_state(self.tmp, {"tree": "t", "release_json": "r", "home": None})
         with mock.patch.object(sb, "in_ci", return_value=False):

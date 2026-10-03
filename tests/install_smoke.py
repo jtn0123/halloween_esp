@@ -36,6 +36,7 @@ whose home is that folder, so nothing lands in the account running it.
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import platform
@@ -233,7 +234,17 @@ def uninstall(work: Path) -> None:
         b.keep_evidence()
 
 
+def utf8_output() -> None:
+    """The job log reads UTF-8; Windows' Python on a pipe writes the ANSI
+    code page and dies on the first character outside it — winget's
+    progress bar, relayed by tee."""
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main(argv: list[str] | None = None) -> int:
+    utf8_output()
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
