@@ -220,10 +220,11 @@ class WaitingAndQuitting(unittest.TestCase):
         self.assertEqual(got, GOOD)
 
     def test_an_app_that_exits_or_never_answers_fails(self) -> None:
+        exited, running = proc(Done()), proc(Running())
         with self.assertRaisesRegex(smoke.SmokeError, r"exited \(3\) before radio"):
-            smoke.wait_for(proc(Done()), lambda: None, smoke.is_radio, 5, "radio")
+            smoke.wait_for(exited, lambda: None, smoke.is_radio, 5, "radio")
         with self.assertRaisesRegex(smoke.SmokeError, "did not answer within 0s"):
-            smoke.wait_for(proc(Running()), lambda: None, smoke.is_radio, 0, "radio")
+            smoke.wait_for(running, lambda: None, smoke.is_radio, 0, "radio")
 
     def test_quit_asks_politely_where_it_can(self) -> None:
         proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])

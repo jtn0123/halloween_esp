@@ -188,10 +188,12 @@ impl Plan {
         let uv = self.uv_program();
         let partial = uv.with_extension("partial");
         std::fs::write(&partial, std::fs::read(self.bundle.uv())?)?;
+        // The owner's own program in the owner's own app data: nobody else
+        // reads or runs it.
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&partial, std::fs::Permissions::from_mode(0o755))?;
+            std::fs::set_permissions(&partial, std::fs::Permissions::from_mode(0o700))?;
         }
         std::fs::rename(&partial, &uv)
     }
@@ -323,7 +325,7 @@ mod tests {
         {
             use std::os::unix::fs::PermissionsExt;
             let mode = fs::metadata(&uv).unwrap().permissions().mode();
-            assert_eq!(mode & 0o777, 0o755);
+            assert_eq!(mode & 0o777, 0o700);
         }
         p.finish().unwrap();
         assert_eq!(set_up_from(&p.runtime).as_deref(), Some("s1"));
