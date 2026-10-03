@@ -41,9 +41,9 @@ _REG = "https://components.espressif.com/components/"
 _IN_IDF = f"as included in ESP-IDF {IDF_VERSION}"
 _ESPHOME_WHY = (
     "The image is built on ESPHome, whose C++ runtime is published under "
-    "GPLv3 only. Its terms reach the image as a whole; docs/LICENSING.md "
-    '("The firmware image is a GPLv3 work") records what GPLv3 asks of '
-    "whoever conveys it and the decisions still open."
+    "GPLv3 only, and that runtime is compiled into it. docs/LICENSING.md "
+    '("The firmware image and GPLv3") quotes what GPLv3 asks of whoever '
+    "conveys such an image, and lists the decisions about it still open."
 )
 
 FIRMWARE: dict[str, Component] = {
@@ -286,8 +286,9 @@ FIRMWARE: dict[str, Component] = {
         texts=("components/libstdcxx-hp-sgi.txt",),
         override="Linked under the GCC Runtime Library Exception 3.1, whose "
         "section 1 permits propagating a work of Target Code formed with "
-        "these libraries under terms of your choice when it was made by an "
-        "Eligible Compilation Process (GCC compiling the image, as here).",
+        "these libraries under terms of your choice when it is made by an "
+        "Eligible Compilation Process as that exception defines it. The "
+        "image is compiled by this GCC toolchain, from source.",
     ),
 }
 

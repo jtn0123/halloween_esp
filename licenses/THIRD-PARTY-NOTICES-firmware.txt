@@ -29,9 +29,10 @@ Components
    Note: The ESPHome License puts the C++ runtime under GPLv3 and the Python
    code generator under MIT; only the runtime is in the image.
    Why this licence ships: The image is built on ESPHome, whose C++ runtime is
-   published under GPLv3 only. Its terms reach the image as a whole;
-   docs/LICENSING.md ("The firmware image is a GPLv3 work") records what GPLv3
-   asks of whoever conveys it and the decisions still open.
+   published under GPLv3 only, and that runtime is compiled into it.
+   docs/LICENSING.md ("The firmware image and GPLv3") quotes what GPLv3 asks
+   of whoever conveys such an image, and lists the decisions about it still
+   open.
 
 2. esp-audio-libs 3.2.1
    Licence: GPL-3.0-only
@@ -40,9 +41,10 @@ Components
    Note: Carries the ESPHome License; the linked files (gain.cpp,
    pcm_convert.cpp) are C++ and so fall under its GPLv3 half.
    Why this licence ships: The image is built on ESPHome, whose C++ runtime is
-   published under GPLv3 only. Its terms reach the image as a whole;
-   docs/LICENSING.md ("The firmware image is a GPLv3 work") records what GPLv3
-   asks of whoever conveys it and the decisions still open.
+   published under GPLv3 only, and that runtime is compiled into it.
+   docs/LICENSING.md ("The firmware image and GPLv3") quotes what GPLv3 asks
+   of whoever conveys such an image, and lists the decisions about it still
+   open.
 
 3. micro-mp3 0.4.0
    Licence: Apache-2.0
@@ -182,8 +184,9 @@ Components
    Copyright (c) 1996 Silicon Graphics Computer Systems, Inc.
    Why this licence ships: Linked under the GCC Runtime Library Exception 3.1,
    whose section 1 permits propagating a work of Target Code formed with these
-   libraries under terms of your choice when it was made by an Eligible
-   Compilation Process (GCC compiling the image, as here).
+   libraries under terms of your choice when it is made by an Eligible
+   Compilation Process as that exception defines it. The image is compiled by
+   this GCC toolchain, from source.
 
 Licence texts
 -------------
