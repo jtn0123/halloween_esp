@@ -165,10 +165,12 @@ castle; the yard sets them from the desk), live light override and the cue
 desk, importing and publishing songs (the app), and firmware updates (the
 app's updater and the web flasher).
 
-**Cost, compiled 2026-10-02, NOT on hardware.** Yard: image 1,264,864 B
-(68.9%, +11,856 over v5.74), static RAM 120,995 B (35.4%, +144). Buyer:
-image 1,338,416 B (72.9%, +9,696), RAM 121,331 B (35.5%, −188) — the
-native-API removals alone gave back 2,048 B of image and 332 B of RAM.
+**Cost, compiled by CI 2026-10-03 (ESPHome 2026.9.0), NOT on hardware.**
+Yard: image 1,260,240 B (68.7%, +11,920 over v5.74), static RAM 120,979 B
+(35.4%, +144). Buyer: image 1,333,328 B (72.7%, +9,872), RAM 121,299 B
+(35.5%, −204) — the native-API removals alone gave back 2,048 B of image
+and 332 B of RAM (a local 2026.8.1 compile). firmware/pending/README.md
+names the runs.
 
 **Proved where.** `tests/test_firmware_owner_cxx.py` (the real C and the
 emulator, byte for byte: every setting, every refusal, the cap, a US Eastern
