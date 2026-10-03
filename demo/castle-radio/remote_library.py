@@ -11,6 +11,7 @@ from pathlib import Path
 import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
 
 # isort: split
+import castle_sent
 import device_bridge
 import fw_formats
 import hosts
@@ -47,6 +48,12 @@ def job(key):
         if value is None:
             raise ValueError("Unknown sync job")
         return dict(value)
+
+
+def jobs():
+    """Every sync since start, oldest first — for Copy diagnostics."""
+    with _LOCK:
+        return [dict(value) for value in _JOBS.values()]
 
 
 def _listed_files(rows):
@@ -192,14 +199,47 @@ def start(root, library, rows, key):
     return dict(job)
 
 
+#: A sync the link dropped under. True by construction: the castle writes
+#: each upload beside the file and swaps it in only once the last byte has
+#: landed (sd_web_upload.h), and the song's audio goes LAST — so the card
+#: holds the old song or the new one, and never lists a song whose light
+#: show has not arrived.
+STOPPED = (
+    "The castle stopped answering partway through {name} ({why}). Nothing on "
+    "it is half-written — sync again to finish; what already landed is skipped."
+)
+
+
+def _card_sizes(route):
+    listing = f"{FILES_PATH}?d=scenes" if route == "/api/scenes" else FILES_PATH
+    return _listed_files(device_bridge.call(listing))
+
+
 def transfer(key, route, name, data, companions=()):
+    """The light show first, the song's audio last, each verified by the
+    castle's byte count and CRC — and anything the castle already holds,
+    identical by its own CRC (castle_sent.py), skipped. The audio is what
+    puts a song on the castle's list (castle-direct.js `cardShows`, the
+    owner page), so ordering it last means a song appears with its lights
+    or not at all, and a retry after a cut resumes rather than restarts."""
+    current = None
     try:
-        total = len(data) + sum(len(blob) for _, blob in companions)
+        files = [*companions, (name, data)]
+        total = sum(len(blob) for _, blob in files)
+        host = device_bridge.castle()
+        sizes = _card_sizes(route)
         offset = 0
-        for filename, blob in [(name, data), *companions]:
-            upload_with_progress(
-                key, route, filename, blob, progress_base=offset, total_bytes=total
-            )
+        for filename, blob in files:
+            path = f"{route}/{filename}"
+            if castle_sent.landed(host, path, blob, sizes.get(filename)):
+                with _LOCK:
+                    _JOBS[key].update(phase=f"{filename} already on castle")
+            else:
+                current = filename
+                reported = upload_with_progress(
+                    key, route, filename, blob, progress_base=offset, total_bytes=total
+                )
+                castle_sent.record(host, path, blob, reported)
             offset += len(blob)
         with _LOCK:
             _JOBS[key].update(
@@ -212,8 +252,12 @@ def transfer(key, route, name, data, companions=()):
                 percent=100,
             )
     except (OSError, ValueError, http.client.HTTPException) as exc:
+        cut = isinstance(
+            exc, (ConnectionError, TimeoutError, http.client.HTTPException)
+        )
+        error = STOPPED.format(name=current, why=exc) if cut and current else str(exc)
         with _LOCK:
-            _JOBS[key].update(done=True, phase="Sync failed", error=str(exc))
+            _JOBS[key].update(done=True, phase="Sync failed", error=error)
 
 
 def upload_with_progress(
@@ -226,7 +270,8 @@ def upload_with_progress(
     progress_base=0,
     total_bytes=None,
 ):
-    """Stream chunks so the UI sees bytes handed to the castle socket."""
+    """Stream chunks so the UI sees bytes handed to the castle socket; the
+    CRC the castle reported for what it wrote (None from old firmware)."""
     factory = connection_factory or (
         lambda: http.client.HTTPConnection(device_bridge.castle(), timeout=600)
     )
@@ -289,6 +334,7 @@ def upload_with_progress(
         reported_crc = result.get("crc32")
         if reported_crc is not None and int(str(reported_crc), 16) != zlib.crc32(data):
             raise OSError("Castle SD verification failed: CRC mismatch")
+        return reported_crc
     finally:
         connection.close()
 

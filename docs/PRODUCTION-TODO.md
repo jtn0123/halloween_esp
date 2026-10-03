@@ -17,39 +17,7 @@ Legend: `[ ]` open · `[x]` done · **(blocker)** = cannot hand over without it
 
 ---
 
-## 0. Scope decisions (answer first — they size everything below)
-
-- [x] **(decide)** What does the buyer DO? Unknown — plan for all three:
-      run the show, add songs, edit scenes (2026-09-30).
-- [x] **(decide)** Deadline: working before Halloween 2026 (~4 weeks from
-      2026-09-30). Sections 1–3 + option A (section 6) are the Halloween
-      target; the Tauri app (section 5) and signing most likely land after.
-- [x] **(decide)** Buyer's computer: unknown, most likely Windows — support
-      BOTH (2026-09-30). Windows is the primary test target for section 4+.
-- [x] **(decide)** Handover in person (2026-09-30): you set up their Wi-Fi
-      and install the desktop tools on their computer yourself. Captive
-      portal is still wanted for "router changed" later, but is no longer a
-      day-one blocker.
-- [x] **(decide)** Updates (2026-09-30): the desktop app watches
-      `github.com/jtn0123/halloween_esp` Releases (public — no token) and
-      auto-updates itself, and offers the matching firmware + card format to
-      the castle. See section 9.
-- [x] **(decide)** Hardware (2026-09-30): carrier v3.3a OR a follow-on v3.4,
-      with the 4 MB flash / 2 MB PSRAM S3 (the Feather #5477, today's build)
-      ONLY for now. 16 MB / 4 MB is deferred — 1.5 keeps the door open
-      without building it. PSU and case still open.
-- [x] **(decide)** Security (2026-09-30): an OPTIONAL password, OFF by
-      default — see 1.6. With it off, behaviour is today's.
-- [x] **(decide)** Signing (2026-09-30): Windows unsigned. macOS unsigned,
-      downloaded from GitHub Releases — see 5.4 for what that costs the
-      buyer on first launch.
-- [x] **(decide)** Windows test machine (2026-09-30): you have one; a later
-      Opus agent session runs the Windows checklist on it (section 4.4).
-- [x] **(decide)** Songs (2026-09-30): the card ships with NO songs. The
-      buyer adds their own with the app's built-in downloader (URL import,
-      yt-dlp) and file import. What they download is theirs to answer for.
-- [x] **(decide)** Vocal separation (Demucs/PyTorch): leaning ALWAYS
-      INCLUDE (2026-09-30). See 5.2 for the Windows speed plan.
+## 0. Scope decisions — all answered; in docs/PRODUCTION-DONE.md
 
 ## 1. Castle stands alone — firmware (P0)
 
@@ -114,9 +82,10 @@ A failed OTA today means USB + ESPHome installed.
       `pir_fitted: "false"` — the page says "not fitted", `/api/pir` answers
       409, and the native API has no motion input or PIR switch. The yard
       build is unchanged.
-- [ ] Castle Radio and the app follow the castle: link its `/owner` page,
+- [x] Castle Radio and the app follow the castle: link its `/owner` page,
       and hide their motion control when `/api/status` says `pir.fitted:
-      false` (v5.75 says it; nothing off the castle reads it yet).
+      false`. 2026-10-02: Radio's help card and the desk's castle panel
+      link it; both drop the motion controls and say "not fitted".
 - [x] A "Report a problem" button on the castle page that bundles
       `/api/status` + `/api/events` into a downloadable text file. v5.75:
       status, health, events and the boot log, with time, version and
@@ -222,6 +191,7 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
       (light-only or synth audio) or an empty show. The castle page and the
       app must look sensible with zero songs — first-run "add your first
       song" state, not errors. Re-render `make publish` from that show.
+      Zero songs done 2026-10-02 (/owner v5.76, Radio, desk); the show is not.
 - [ ] Electrical: PSU rating, which connector is which, no user-serviceable
       wiring (`docs/WIRING*.md` is for you, not them).
 - [ ] Licences: Demucs (MIT) + htdemucs weights, ffmpeg (LGPL build only —
@@ -255,30 +225,7 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
 
 Everything here is needed for BOTH option A and option B.
 
-### 4.1 Rust (`core/`) — does not compile on Windows today
-- [x] `core/src/manifest.rs:15` — hand-declared `flock` FFI → `std::fs::File::lock`
-      (stable since Rust 1.89; bump `rust-version` from 1.88). Keeps zero deps.
-- [x] `core/src/bin/studio.rs:146` `restart_self()` uses Unix `exec` →
-      `#[cfg(windows)]` spawn-then-exit (the PID changes; check whoever
-      relies on "PID kept").
-- [x] `core/src/bin/studio.rs:222` `bind_reuse` raw `socket/setsockopt` with a
-      macOS-only `so` module → `#[cfg(windows)]` plain `TcpListener::bind`
-      (Windows' SO_REUSEADDR means something else — do NOT set it there).
-- [x] `core/src/studio_proc.rs:29` + `studio_jobs.rs:24` `own_group`/`kill_group`
-      (process groups so yt-dlp→ffmpeg grandchildren die) → Windows Job
-      Object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`. Needs a small FFI
-      block or the `windows-sys` crate (decide: keep zero-dep or not).
-- [x] `core/src/studio_scenes.rs:288` `PermissionsExt` — cfg-gate.
-- [x] `/bin/sh` in `studio_proc.rs` / `studio_reap.rs` tests → cfg(unix) or
-      use a cross-platform child (e.g. the test binary re-invoking itself).
-- [x] `studio_proc.rs` `py()` looks for `.venv/bin/python` → also
-      `.venv\Scripts\python.exe`, and a bundled interpreter path (section 5).
-- [x] Paths: audit for `/`-joined strings, `/tmp`, and `basenames()` that
-      split on `/` only (`studio_reason.rs`). Windows paths use `\` and `C:`.
-- [x] ffmpeg/yt-dlp lookup: honour a `CASTLE_FFMPEG` / bundled sidecar path
-      before `PATH`; `.exe` suffix on Windows.
-- [x] Line endings: anything that writes cue/manifest files writes `\n`
-      explicitly; `.gitattributes` pins LF for generated card files.
+### 4.1 Rust (`core/`) — compiles on Windows; done, in docs/PRODUCTION-DONE.md
 
 ### 4.2 Python (`tools/`, `demo/castle-radio/`)
 - [x] `tools/manifest.py:30` `fcntl.flock` → cross-platform lock (`msvcrt.locking`
@@ -399,10 +346,15 @@ true, and it is the dev/support path forever.
       (`core/src/studio_reason_words.rs`, docs/PARITY.md). The importer,
       the splitter, the studio and Castle Radio all end that way, with the
       tools' own output behind Details. Cancel still reads "Cancelled".
-- [ ] Castle offline / wrong address: one clear state, one "find my castle"
-      action (mDNS browse + manual IP).
-- [ ] Sync interrupted mid-push: resumable or safely retried; card never left
-      with a half-written `show.man`.
+- [x] Castle offline / wrong address: one clear state, one "find my castle"
+      action (mDNS browse + manual IP). Castle Radio's Find my castle
+      (`tools/castle_find.py`, stdlib) writes the per-user store; the
+      studio, and so the desk's chip, follow it.
+- [x] Sync interrupted mid-push: resumable or safely retried; card never left
+      with a half-written `show.man`. `sd_sync` and Castle Radio send the
+      show before what names it, record each verified file as it lands and
+      skip it on the retry; `tests/test_sd_sync_resume.py` and the radio's
+      `test_sync_resume.py` cut real pushes on the emulator (`drop_after`).
 - [x] Disk-full, unsupported file type, 2-hour file, non-ASCII filenames
       (Windows + mac), file on a network drive.
       2026-10-02: each has a test (`tests/test_import_edges.py`,
@@ -413,7 +365,9 @@ true, and it is the dev/support path forever.
 - [x] Firmware/app version handshake: the app refuses (with a message) to push
       a show format the castle's firmware cannot read. Done: §9's show/card
       format item — one table, `tools/fw_formats.py`.
-- [ ] Crash reporting: a local "copy diagnostics" button (no telemetry).
+- [x] Crash reporting: a local "copy diagnostics" button (no telemetry).
+      Castle Radio's help card: the castle's v5.75 report plus app version,
+      tools, jobs and log tail — paths cut, no key. The desk links `/owner`.
 
 ### 4.4 Windows hands-on pass (an Opus agent on your Windows PC)
 - [ ] Fresh Windows user account: install from a Release, first-run, import

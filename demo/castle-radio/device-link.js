@@ -404,7 +404,7 @@
     }, document.hidden ? 4000 : 1000);
   }
   document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); holdForQueue(); } schedule(); });
-  const snapshot = () => ({connected: !!state, state, data, caps, lightShow, error, pageFault,
+  const snapshot = () => ({connected: !!state, host: castleHost, state, data, caps, lightShow, error, pageFault,
     health: health(), healthLine: healthLine(), framesText: framesText(lightShow)});
   // One panel that throws must not silence the others or stop the poll,
   // whether it is hearing the shared snapshot or its own first one.

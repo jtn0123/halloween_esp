@@ -81,8 +81,9 @@ export interface DeviceStatus {
   missing?: string;
   /** 0–100, mirrored from the media player; older firmware omits it. */
   volume?: number;
-  /** Motion-sensor config, mirrored from the pir_* entities. */
-  pir?: { armed: boolean; cooldown_s: number; scene: string };
+  /** Motion-sensor config, mirrored from the pir_* entities. `fitted`
+   *  (v5.75) is false on a castle with no sensor — the buyer build. */
+  pir?: { fitted?: boolean; armed: boolean; cooldown_s: number; scene: string };
   /** Is the evening playlist running; older firmware omits it. */
   show_on?: boolean;
   /** Current scene id, "" when idle. */
@@ -158,6 +159,41 @@ function firmwareDrift(st: DeviceStatus): string {
     `the castle yet (${esc(newer.join(", "))}) — make publish</div>`;
 }
 
+/** The motion row — or, on a castle that says it has no sensor (v5.75's
+ *  `pir.fitted` false: the buyer build, whose firmware refuses /api/pir),
+ *  the sentence the castle's own page uses instead of controls that would
+ *  only be refused. Older firmware does not say, and keeps the controls. */
+function pirMarkup(st: DeviceStatus): string {
+  if (st.pir?.fitted === false) {
+    return `<div id="dpPirNone" class="dp__note dp__note--tight">` +
+      `Motion sensor: not fitted on this castle.</div>`;
+  }
+  return `<div class="dp__row dp__row--tight">` +
+    `<label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
+    `<select id="dpPirScene" title="Which scene the motion sensor plays">` +
+    sceneIds().map((s) =>
+      `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") +
+    `</select> ` +
+    `<input id="dpPirCool" class="dp__cool" type="number" min="5" max="600" step="5" ` +
+    `value="${st.pir?.cooldown_s ?? 60}" ` +
+    `title="Cooldown: seconds before the sensor can fire again">` +
+    `<small class="dp__muted">s between triggers</small>` +
+    `</div>`;
+}
+
+/** The castle's own page (v5.75, firmware/sd_web_owner.h) at the address the
+ *  studio reached it on (`bridged`) — straight to the castle, not through
+ *  the relay, because it is the page that still works when this computer is
+ *  off. Its "Report a problem" is the castle's diagnostics. A status that did
+ *  not come through the studio names no address, so no link. */
+function ownerLink(st: DeviceStatus): string {
+  if (!st.bridged) return "";
+  return ` <a id="dpOwner" class="dp__owner" href="http://${esc(st.bridged)}/owner" ` +
+    `target="_blank" rel="noopener" title="The castle's own page: its settings, ` +
+    `its songs and Report a problem — served by the castle itself. Opens in a ` +
+    `new tab">castle's own page ↗</a>`;
+}
+
 /** The panel's whole body for one poll's worth of truth. `tracks` is the
  *  card's playable root files; `onCard` is their names, which the speaker
  *  bench needs to know whether its tones are already pushed. */
@@ -220,22 +256,13 @@ export function panelMarkup(
 
     `<div class="dp__sec">` +
     sectionHead("👣", "motion sensor", "who it wakes for, and how often") +
-    `<div class="dp__row dp__row--tight">` +
-    `<label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
-    `<select id="dpPirScene" title="Which scene the motion sensor plays">` +
-    sceneIds().map((s) =>
-      `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") +
-    `</select> ` +
-    `<input id="dpPirCool" class="dp__cool" type="number" min="5" max="600" step="5" ` +
-    `value="${st.pir?.cooldown_s ?? 60}" ` +
-    `title="Cooldown: seconds before the sensor can fire again">` +
-    `<small class="dp__muted">s between triggers</small>` +
-    `</div></div>` +
+    pirMarkup(st) + `</div>` +
 
     keyMarkup(st) +
 
     `<div class="dp__foot">` +
     `<button id="dpLog" class="dp__logbtn">boot log ▸</button>` +
+    ownerLink(st) +
     `<pre id="dpLogOut" class="dp__log" hidden></pre>` +
     `</div>`
   );

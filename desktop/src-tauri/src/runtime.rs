@@ -248,16 +248,16 @@ pub fn child_env(
         ("CASTLE_TRACKS".into(), data.tracks().into()),
         ("CASTLE_SCENES".into(), data.scenes().into()),
         ("CASTLE_BUILD".into(), data.build().into()),
-        // Where a key the owner enters in either app is remembered, and read.
+        // Where Find my castle remembers the castle, and either app its key.
         ("CASTLE_DEVICES".into(), data.devices().into()),
-        // Explicitly no castle for the toolchain; the device bridge has its
-        // own variable (CASTLE_RADIO_HOST) and its own allow-list of actions.
-        ("CASTLE_HOST".into(), OsString::new()),
         ("CASTLE_STUDIO_NO_BROWSER".into(), "1".into()),
         ("PYTHONUNBUFFERED".into(), "1".into()),
         ("PYTHONIOENCODING".into(), "utf-8".into()),
     ];
+    // Pinned in settings, both servers use that castle; unpinned, both follow
+    // CASTLE_DEVICES' first one (and supervisor.rs drops inherited values).
     if let Some(host) = &settings.castle_host {
+        vars.push(("CASTLE_HOST".into(), host.into()));
         vars.push(("CASTLE_RADIO_HOST".into(), host.into()));
     }
     // Only when set: CASTLE_KEY wins over the store, even set-but-empty.
@@ -352,7 +352,7 @@ mod tests {
             get("CASTLE_YTDLP").is_none(),
             "only tools that exist are named"
         );
-        assert_eq!(get("CASTLE_HOST"), Some(OsString::new()));
+        assert!(get("CASTLE_HOST").is_none(), "unpinned, the store decides");
         assert_eq!(
             get("CASTLE_TRACKS"),
             Some(res.join("data/radio/tracks").into())
@@ -464,7 +464,7 @@ mod tests {
         let none = child_env(&rt, &data, &Settings::default(), None);
         assert!(!none
             .iter()
-            .any(|(k, _)| k == "CASTLE_RADIO_HOST" || k == "CASTLE_KEY"));
+            .any(|(k, _)| k.ends_with("_HOST") || k == "CASTLE_KEY"));
         // The store is the user's even from a checkout: never the repo's.
         assert!(none
             .iter()
@@ -475,7 +475,11 @@ mod tests {
         fs::write(dir.join(crate::settings::FILE_NAME), json).unwrap();
         let some = child_env(&rt, &data, &crate::settings::load(&dir).0, None);
         let _ = fs::remove_dir_all(dir);
-        for (var, want) in [("CASTLE_RADIO_HOST", "10.1.2.3"), ("CASTLE_KEY", "k3y!")] {
+        let pins = [
+            ("CASTLE_HOST", "10.1.2.3"),
+            ("CASTLE_RADIO_HOST", "10.1.2.3"),
+        ];
+        for (var, want) in [pins[0], pins[1], ("CASTLE_KEY", "k3y!")] {
             assert!(some.iter().any(|(k, v)| k == var && v == want), "{var}");
         }
     }

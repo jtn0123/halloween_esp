@@ -42,9 +42,9 @@ Both children get the same environment (`runtime::child_env`):
 | `CASTLE_TRACKS` | `<app data>/radio/tracks` |
 | `CASTLE_SCENES` | `<app data>/radio/scenes.yaml` |
 | `CASTLE_BUILD` | `<app data>/radio/build` |
-| `CASTLE_HOST` | `""` — explicitly no castle for the toolchain |
-| `CASTLE_RADIO_HOST` | `castle_host` from settings.json, when set |
-| `CASTLE_DEVICES` | `<app data>/radio/devices.toml` — the castle keys either app remembers (`tools/castle_keys.py`); never a checkout's tracked file |
+| `CASTLE_HOST`, `CASTLE_RADIO_HOST` | `castle_host` from settings.json, when set — a pin. Otherwise neither is set (an inherited one is removed), and both servers talk to the first castle of `CASTLE_DEVICES`, re-read as it changes |
+| `CASTLE_DEVICES` | `<app data>/radio/devices.toml` — the castle Find my castle chose (`tools/castle_address.py`, Castle Radio's Your castle page) and the keys either app remembers (`tools/castle_keys.py`); never a checkout's tracked file |
+| `CASTLE_APP_VERSION`, `CASTLE_APP_LOG` | this app's version and its log file, for Castle Radio's Copy diagnostics (`src/supervisor.rs`) |
 | `CASTLE_KEY` | `castle_key` from settings.json, only when set — it then wins over that store |
 | `CASTLE_PY` | the runtime's interpreter, so the studio's children use it |
 
@@ -145,7 +145,11 @@ the defaults plus a log line:
 ```
 
 `castle_host` accepts a host name, IPv4 address or `host:port` and nothing
-that could reshape a URL (`settings::valid_host`). `castle_key` (firmware
+that could reshape a URL (`settings::valid_host`). Most owners never need it
+either: Castle Radio's **Find my castle** (Your castle page) browses the LAN
+for it, or takes a typed address, and remembers it in `CASTLE_DEVICES`,
+where the light desk reads it too; a `castle_host` here pins the castle
+instead, and Find my castle then says so rather than change it. `castle_key` (firmware
 v5.74's optional lock) is trimmed and passed only if the castle could hold it
 — 1-64 printable characters, no spaces (`settings::valid_key`); anything else
 is dropped with a log line that names the rule, never the key. Most owners

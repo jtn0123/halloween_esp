@@ -1,7 +1,6 @@
 """Bounded bridge to the existing castle firmware; never pretends to pause/seek."""
 
 import json
-import os
 import re
 import threading
 import time
@@ -16,6 +15,7 @@ import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
 # The key store and its one rule live in tools/ (hosts.py, castle_keys.py):
 # the studio, sd_sync and this bridge send the same key to the same castle.
 import castle_keys
+import castle_place
 import hosts
 
 # The imported light-show runner lives next door; every name it owns stays
@@ -31,13 +31,14 @@ from light_show import (  # noqa: F401  (re-exported for callers and tests)
     stop_imported_show,
 )
 
-# The castle: CASTLE_RADIO_HOST (the desktop app sets it from its settings),
-# else the first castle tools/hosts.py knows (CASTLE_HOST, devices.toml).
-# Neither is "no castle", and every request says so instead of guessing: no
-# address is built in, because a copy on a buyer's computer would talk to
-# the seller's LAN (docs/PRODUCTION-TODO.md §8, tools/ship_guard.py).
-HOST = os.environ.get("CASTLE_RADIO_HOST") or next(iter(hosts.candidates()), "")
-NO_CASTLE = "No castle address set · name your castle in the app's settings"
+# The castle: CASTLE_RADIO_HOST (the app's settings pin it), else the first
+# castle of the per-user store "Find my castle" writes (castle_place.py, which
+# follows the file as it changes). Neither is "no castle", and every request
+# says so instead of guessing: no address is built in, because a copy on a
+# buyer's computer would talk to the seller's LAN (docs/PRODUCTION-TODO.md
+# §8, tools/ship_guard.py).
+HOST = castle_place.initial()
+NO_CASTLE = "No castle found yet · use Find my castle on the Your castle page"
 STATUS_PATH = "/api/status"
 FILES_PATH = "/api/files"
 # The castle's httpd has four sockets and answers on one task. Three browser
@@ -152,6 +153,8 @@ class KeyRequired(OSError):
 def castle():
     """HOST, or the reason there is none — never an empty host, which a
     socket would read as this computer."""
+    global HOST  # noqa: PLW0603 — read as device_bridge.HOST, and patched so
+    HOST = castle_place.follow(HOST)
     if not HOST:
         raise OSError(NO_CASTLE)
     return HOST

@@ -97,6 +97,7 @@ class DeviceEventsRouteTests(unittest.TestCase):
             "remote-library.js",
             "castle-direct.js",
             "castle-key.js",
+            "castle-find.js",
         ):
             for path in DEVICE_PATH.findall((HERE / name).read_text(encoding="utf-8")):
                 self.assertTrue(

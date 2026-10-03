@@ -1,4 +1,4 @@
-"""The owner's settings and page (v5.75), run twice: the real C and the emulator.
+"""The owner's settings and page (v5.75, v5.76), run twice: the real C and the emulator.
 
 firmware/castle_owner.h gave the castle a timezone, a volume cap and quiet
 hours, all set through POST /api/settings and all off until set; the owner's
@@ -17,6 +17,7 @@ daylight saving ends at 2 am — the window opens in EDT and closes in EST.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 import unittest
@@ -212,8 +213,20 @@ class TestOwnerPage(OwnerCase):
         self.assertEqual(page.status, 200)
         self.assertIn("Content-Security-Policy", page.extra)
         for words in (b"No SD card", b"the show is on the card", b"Report a problem",
-                      b"Motion sensor: not fitted", b"Quiet hours", b"Time zone"):  # fmt: skip
+                      b"Motion sensor: not fitted", b"Quiet hours", b"Time zone",
+                      b"No songs on the card yet"):  # fmt: skip
             self.assertIn(words, page.body)
+        # v5.76: the song list is every format the Feather build can play —
+        # 5.75's left .opus out, and a card of opus songs read as empty.
+        feather = (ROOT / "firmware" / "castle_feather_s3.yaml").read_text(
+            encoding="utf-8"
+        )
+        codecs = re.search(r"\n  codecs:\n((?:    \w+:\n)+)", feather)
+        assert codecs, "castle_feather_s3.yaml declares its playback codecs"
+        decoded = sorted(re.findall(r"(\w+):", codecs.group(1)))
+        listed = re.search(rb"/\\\.\(([\w|]+)\)\$/i\.test\(f\.name\)", page.body)
+        assert listed, "the owner's page filters the card listing by suffix"
+        self.assertEqual(sorted(listed.group(1).decode().split("|")), decoded)
         # `/` is the card's own site while it has one...
         self.assertNotEqual(self.same("GET", b"/").body, page.body)
         # ...and the owner's page once it has not.

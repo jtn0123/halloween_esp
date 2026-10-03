@@ -55,6 +55,9 @@ SCRIPTS = (
     "desktop-tools.js",
     "downloader.js",
     "castle-key.js",
+    "castle-find.js",
+    "first-run.js",
+    "castle-help.js",
     "castle-update.js",
 )
 STYLES = ("style.css", "device-tools.css")

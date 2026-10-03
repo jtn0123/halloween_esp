@@ -66,10 +66,15 @@ export function chipHtml(s: ChipStatus, vol: number, mirror: boolean): string {
 
 /** The chip's other face: no castle yet, but one is expected. Said after
  *  three missed probes so a blank corner stops being a mystery (C3) — the
- *  host it is trying, how often, and a button to ask again now. */
+ *  host it is trying, how often, and a button to ask again now. And the way
+ *  on when the castle has MOVED (a router that handed it a new address):
+ *  Castle Radio's Find my castle writes the store the studio re-reads, so
+ *  the desk follows without a restart. */
 export const seekingHtml = (host: string, retryS: number): string =>
   `<div>🏰 looking for the castle… <small class="chip__seek">` +
   `no answer from ${esc(host)} — retrying every ${retryS} s</small></div>` +
+  `<div><small class="chip__seek">Switched on but moved? Castle Radio's ` +
+  `<b>Find my castle</b> (Your castle) finds it, and this desk follows.</small></div>` +
   `<button id="devRetry" class="chip__btn" type="button" ` +
   `title="Probe the castle again right now">Retry</button>`;
 

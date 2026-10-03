@@ -295,11 +295,14 @@ def launch_env(
             seen.append(p)
     env["PATH"] = os.pathsep.join(seen)
     host = str(settings.get("castle_host") or "").strip()
-    # Unset, the studio falls back to the repo's devices.toml — the owner's
-    # castle. A buyer who has not named theirs gets "explicitly no castle".
-    env["CASTLE_HOST"] = host
+    # A castle named in settings.json pins both servers to it. Unnamed, both
+    # follow the first castle of CASTLE_DEVICES — the per-user store "Find my
+    # castle" writes (tools/castle_address.py) — so neither variable is set,
+    # and one this launcher inherited is not passed on.
+    env.pop("CASTLE_HOST", None)
+    env.pop("CASTLE_RADIO_HOST", None)
     if host:
-        env["CASTLE_RADIO_HOST"] = host
+        env["CASTLE_HOST"] = env["CASTLE_RADIO_HOST"] = host
     # A key typed into settings.json pins it for both servers (CASTLE_KEY
     # wins over the store); one no castle could hold is not passed at all.
     held = settings.get("castle_key")

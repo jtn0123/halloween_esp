@@ -104,6 +104,14 @@ def _from_table() -> list[str]:
     return [h for e in _entries().values() for h in (e["host"], *e["fallbacks"])]
 
 
+def first_castle(path: Path | None = None) -> list[str]:
+    """The store's FIRST castle — its host, then its fallbacks — or [] for
+    an empty store. "Find my castle" (tools/castle_address.py `adopt`) puts
+    the castle it found first, so this is the castle an owner's app means."""
+    e = next(iter(_entries(path).values()), None)
+    return [e["host"], *e["fallbacks"]] if e else []
+
+
 def resolve(arg: str | None = None) -> str:
     """An IP to talk to, or a SystemExit that says how to provide one.
 

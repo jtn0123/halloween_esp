@@ -2,10 +2,13 @@
 
 import importlib
 import os
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+import castle_place
 import device_bridge
 
 
@@ -436,28 +439,37 @@ class NoBuiltInCastleTests(unittest.TestCase):
         clean = {
             k: v
             for k, v in os.environ.items()
-            if k not in ("CASTLE_RADIO_HOST", "CASTLE_HOST")
+            if k not in ("CASTLE_RADIO_HOST", "CASTLE_HOST", "CASTLE_DEVICES")
         }
-        with patch.dict(os.environ, {**clean, **env}, clear=True):
+        with (
+            patch.dict(os.environ, {**clean, **env}, clear=True),
+            patch.dict(castle_place._last),
+        ):
             importlib.reload(device_bridge)
             return device_bridge.HOST
 
     def tearDown(self):
         importlib.reload(device_bridge)  # this process's own environment again
 
-    def test_the_host_comes_from_the_environment_or_the_inventory(self):
+    def test_the_host_is_the_apps_pin_or_its_own_store(self):
+        """CASTLE_HOST is the toolchain's (radio_env blanks it), and a store
+        nobody named is the checkout's tracked devices.toml — the seller's
+        yard. Neither is this app's castle (castle_place.py)."""
         self.assertEqual(
             self.resolved(CASTLE_RADIO_HOST="castle.local"), "castle.local"
         )
-        self.assertEqual(self.resolved(CASTLE_HOST="192.168.1.20"), "192.168.1.20")
-        self.assertEqual(self.resolved(CASTLE_HOST=""), "", "explicitly no castle")
+        self.assertEqual(self.resolved(CASTLE_HOST="192.168.1.20"), "")
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "devices.toml"
+            store.write_text('[c]\nhost = "192.168.1.30"\n', encoding="utf-8")
+            self.assertEqual(self.resolved(CASTLE_DEVICES=str(store)), "192.168.1.30")
 
     @patch("device_bridge.urllib.request.urlopen")
     def test_no_castle_is_said_and_nothing_is_dialled(self, urlopen):
         with patch.object(device_bridge, "HOST", ""):
-            with self.assertRaisesRegex(OSError, "No castle address set"):
+            with self.assertRaisesRegex(OSError, "No castle found yet"):
                 device_bridge.call("/api/status", fresh=True)
-            with self.assertRaisesRegex(OSError, "No castle address set"):
+            with self.assertRaisesRegex(OSError, "No castle found yet"):
                 device_bridge.castle()
         urlopen.assert_not_called()
         with patch.object(device_bridge, "HOST", "192.168.1.20"):
