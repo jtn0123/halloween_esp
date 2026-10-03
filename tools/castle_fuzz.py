@@ -228,7 +228,7 @@ class Fuzzer:
         code, body, _ = self.req("DELETE", "/api/files/" + raw)
         if not safe and code != 400:
             raise Violation(f"seed={self.seed} DELETE {name!r} unsafe but {code}")
-        if safe and code not in (200, 404):
+        if safe and code not in (200, 404, 409):  # 409: a folder (v5.75)
             raise Violation(f"seed={self.seed} DELETE {name!r} → {code} {body!r}")
 
     def _file_play(self, name: str, raw: str) -> None:
@@ -262,6 +262,8 @@ class Fuzzer:
             return
         if code == 500:
             return  # "cannot create file": NUL-empty or un-storable name
+        if (code, body) == (409, b"is a folder"):
+            return  # v5.75: the name is a directory on the card
         if code != 200:
             raise Violation(f"seed={self.seed} safe {decoded!r} → {code} {body!r}")
         if self.card is not None:
