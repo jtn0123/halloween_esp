@@ -52,6 +52,7 @@ from pathlib import Path
 
 import build_paths as bp
 import fw_formats
+import release_assets
 import scene_manifest
 import shipped_show
 import yaml
@@ -285,9 +286,29 @@ def build(
     return ids
 
 
+#: What a release tag's `-suffix` may hold (release_assets.TAG_RE).
+_SUFFIX = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-"
+
+
+def release_tag(text: str) -> str:
+    """--tag as the release workflow takes one (release_assets.TAG_RE),
+    rebuilt from its parts: the numbers as numbers and the suffix out of
+    _SUFFIX, so the offer carries nothing the pattern did not name."""
+    m = release_assets.TAG_RE.match(text)
+    if m is None:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not a release tag (vMAJOR.MINOR.PATCH[-suffix])"
+        )
+    major, minor, patch = (int(g) for g in m.group(1, 2, 3))
+    suffix = "".join(_SUFFIX[_SUFFIX.index(c)] for c in m.group(4) or "")
+    return f"v{major}.{minor}.{patch}{suffix}"
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--tag", help="the release tag the castle's firmware is from")
+    ap.add_argument(
+        "--tag", type=release_tag, help="the release tag the castle's firmware is from"
+    )
     ap.add_argument("--date", type=dt.date.fromisoformat, help="the offer's date")
     args = ap.parse_args(argv)
     ids = build(CARD_DIR, SHOW, args.tag, args.date)

@@ -154,12 +154,16 @@ def derive(text: str) -> str:
     return out.rstrip("\n") + "\n"
 
 
-def write(src: Path = SOURCE, dst: Path = SHIPPED) -> bool:
-    """Write `dst` from `src`; True when its bytes changed."""
-    text = derive(src.read_text(encoding="utf-8"))
-    if dst.exists() and dst.read_text(encoding="utf-8") == text:
+def write() -> bool:
+    """Write SHIPPED from SOURCE; True when its bytes changed.
+
+    Both are this module's own files and never a caller's path, so nothing
+    a shell or an environment names is read here and copied on. A test moves
+    them by patching the two names."""
+    text = derive(SOURCE.read_text(encoding="utf-8"))
+    if SHIPPED.exists() and SHIPPED.read_text(encoding="utf-8") == text:
         return False
-    dst.write_text(text, encoding="utf-8")
+    SHIPPED.write_text(text, encoding="utf-8")
     return True
 
 
@@ -167,20 +171,17 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--check", action="store_true", help="fail when stale")
     args = ap.parse_args(argv)
-    # The two files are this module's, never typed paths; a test moves them
-    # by patching SOURCE and SHIPPED.
-    src, out = SOURCE, SHIPPED
     if args.check:
-        want = derive(src.read_text(encoding="utf-8"))
-        have = out.read_text(encoding="utf-8") if out.exists() else ""
+        want = derive(SOURCE.read_text(encoding="utf-8"))
+        have = SHIPPED.read_text(encoding="utf-8") if SHIPPED.exists() else ""
         if have != want:
-            print(f"{out} is stale — run tools/shipped_show.py", file=sys.stderr)
+            print(f"{SHIPPED} is stale — run tools/shipped_show.py", file=sys.stderr)
             return 1
-        print(f"{out}: current")
+        print(f"{SHIPPED}: current")
         return 0
-    changed = write(src, out)
-    ids = shipped_ids(yaml.safe_load(out.read_text(encoding="utf-8")))
-    print(f"{'wrote' if changed else 'unchanged'} {out}: {', '.join(ids)}")
+    changed = write()
+    ids = shipped_ids(yaml.safe_load(SHIPPED.read_text(encoding="utf-8")))
+    print(f"{'wrote' if changed else 'unchanged'} {SHIPPED}: {', '.join(ids)}")
     return 0
 
 

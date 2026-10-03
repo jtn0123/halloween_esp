@@ -198,7 +198,7 @@ class TestTheDerivation(unittest.TestCase):
             self.assertEqual(ss.main(["--check"]), 1, "missing is stale")
             self.assertEqual(ss.main([]), 0)
             self.assertEqual(ss.main(["--check"]), 0)
-            self.assertFalse(ss.write(src, out), "a second write changes nothing")
+            self.assertFalse(ss.write(), "a second write changes nothing")
             src.write_text(
                 SOURCE.replace("gap_ms: 100", "gap_ms: 200"), encoding="utf-8"
             )

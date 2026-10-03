@@ -20,6 +20,7 @@ The fixture show is two short synthesised scenes, so the real renderer runs
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import datetime as dt
 import io
@@ -150,6 +151,15 @@ class TestTheCard(unittest.TestCase):
         offer = (out / bc.CARD_OFFER).read_text(encoding="utf-8")
         self.assertIn(f"{bc.REPO}/releases\n", offer, "no tag: the releases page")
         self.assertIn("the release that carries firmware", offer)
+
+
+class TestTheTag(unittest.TestCase):
+    def test_a_release_tag_passes_whole_and_anything_else_is_refused(self) -> None:
+        for tag in ("v0.2.0", "v1.10.3", "v0.2.0-rc.1", "v0.0.0-dryrun.7"):
+            self.assertEqual(bc.release_tag(tag), tag)
+        for bad in ("0.2.0", "v0.2", "v0.2.0/../x", "v0.2.0-", "v0.2.0 ", "vx.y.z"):
+            with self.subTest(tag=bad), self.assertRaises(argparse.ArgumentTypeError):
+                bc.release_tag(bad)
 
 
 class TestRefusals(unittest.TestCase):

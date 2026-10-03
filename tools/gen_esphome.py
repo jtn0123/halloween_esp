@@ -267,7 +267,7 @@ def main() -> int:
     # `sd_sync scenes` to publish.
     n_scenes, n_cues = gen_scene_cards.write(doc, CARD_SCENES, markers)
     if SRC == bp.SCENES and not bp.sandboxed() and bp.BUILD == bp.ROOT:
-        if shipped_show.write(SRC, SHIPPED_OUT):
+        if shipped_show.write():  # scenes.yaml → scenes/shipped.yaml
             print(f"  and the shipped show: {bp.rel(SHIPPED_OUT)}")
 
     print(
