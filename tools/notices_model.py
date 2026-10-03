@@ -115,7 +115,7 @@ TEXTS: dict[str, tuple[str, str]] = {
     ),
     # 1,293 lines: kept whole by splitting it between sections (23)/(24)
     # and (40)/(41), the only way a verbatim text fits the 500-line rule.
-    # read_text() puts the three back together; the joined bytes are the
+    # licence_text() puts the three back together; the joined bytes are the
     # toolchain file's (sha256 422aa402…57e9).
     "components/newlib-COPYING.NEWLIB.1.txt": (
         XTENSA_TC + "share/licenses/newlib/COPYING.NEWLIB, lines 1-479",
@@ -394,7 +394,7 @@ def text_errors(root: Path = LICENSES) -> list[str]:
     return errors
 
 
-def read_text(rel: str, root: Path = LICENSES) -> str:
+def licence_text(rel: str, root: Path = LICENSES) -> str:
     """A pinned text (a SPLIT one joined back together), newline-terminated."""
     parts = SPLIT.get(rel, (rel,))
     body = "".join((root / p).read_text(encoding="utf-8") for p in parts)

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 import notices_desktop
 import notices_firmware
 from notices_external import EXTERNAL
-from notices_model import ROOT, Component, chosen, read_text, texts_for
+from notices_model import ROOT, Component, chosen, licence_text, texts_for
 
 REPO = "https://github.com/jtn0123/halloween_esp"
 WIDTH = 78
@@ -231,7 +231,7 @@ def render(key: str) -> str:
     ]
     for rel in generic:
         out += [f"=== {rel.removeprefix('texts/').removesuffix('.txt')} ===", ""]
-        out += [read_text(rel).rstrip(), ""]
+        out += [licence_text(rel).rstrip(), ""]
     if own:
         out += [_heading("Licence and notice files of individual components"), ""]
         for rel in own:
@@ -239,7 +239,7 @@ def render(key: str) -> str:
                 f"=== {rel.removeprefix('components/').removesuffix('.txt')} ===",
                 "",
             ]
-            out += [read_text(rel).rstrip(), ""]
+            out += [licence_text(rel).rstrip(), ""]
     if art.external:
         out += _external()
     return "\n".join(out).rstrip() + "\n"

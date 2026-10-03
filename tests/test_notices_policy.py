@@ -191,7 +191,7 @@ class TextTests(unittest.TestCase):
         )
 
     def test_newlib_is_put_back_together_byte_for_byte(self) -> None:
-        text = nm.read_text("components/newlib-COPYING.NEWLIB.txt")
+        text = nm.licence_text("components/newlib-COPYING.NEWLIB.txt")
         self.assertEqual(len(text.splitlines()), 1293)
         self.assertEqual(
             hashlib.sha256(text.encode("utf-8")).hexdigest(),
@@ -200,7 +200,7 @@ class TextTests(unittest.TestCase):
 
     def test_a_text_without_a_final_newline_gets_one(self) -> None:
         (self.tmp / "texts" / "MIT.txt").write_text("no newline", encoding="utf-8")
-        self.assertEqual(nm.read_text("texts/MIT.txt", self.tmp), "no newline\n")
+        self.assertEqual(nm.licence_text("texts/MIT.txt", self.tmp), "no newline\n")
 
 
 class CopyrightLineTests(unittest.TestCase):

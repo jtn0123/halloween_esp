@@ -81,12 +81,12 @@ class CurrentTests(unittest.TestCase):
             encoding="utf-8",
         )
         (tmp / "rust-toolchain.toml").write_text(
-            '[toolchain]\nchannel = "1.99.0"\n', "utf-8"
+            '[toolchain]\nchannel = "1.99.0"\n', encoding="utf-8"
         )
         cli = tmp / "desktop" / "cli"
         cli.mkdir(parents=True)
         (cli / "package.json").write_text(
-            '{"devDependencies": {"@tauri-apps/cli": "3.0.0"}}'
+            '{"devDependencies": {"@tauri-apps/cli": "3.0.0"}}', encoding="utf-8"
         )
         doc = nd.load()
         doc = {

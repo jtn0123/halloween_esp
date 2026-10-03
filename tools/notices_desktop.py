@@ -337,11 +337,15 @@ def staleness(doc: dict) -> list[str]:
             f"has none — list them in tools/notices_desktop.py: {sorted(core)}"
         )
     pin = re.search(
-        r'^channel\s*=\s*"([^"]+)"', CORE_TOOLCHAIN.read_text(), re.MULTILINE
+        r'^channel\s*=\s*"([^"]+)"',
+        CORE_TOOLCHAIN.read_text(encoding="utf-8"),
+        re.MULTILINE,
     )
     if pin is None or pin.group(1) != CORE_RUST:
         errors.append(f"core/rust-toolchain.toml is no longer Rust {CORE_RUST}")
-    cli = json.loads((ROOT / "desktop" / "cli" / "package.json").read_text())
+    cli = json.loads(
+        (ROOT / "desktop" / "cli" / "package.json").read_text(encoding="utf-8")
+    )
     if cli.get("devDependencies", {}).get("@tauri-apps/cli") != TAURI_CLI:
         errors.append(
             f"desktop/cli pins a Tauri CLI other than {TAURI_CLI}: re-check the "
