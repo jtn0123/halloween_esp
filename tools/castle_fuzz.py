@@ -27,11 +27,12 @@ message so a run can be replayed here.
 Pointing it at a REAL castle (--host) is allowed but it writes and deletes
 files in the card root. Do it on the bench, not on the night.
 
-Three files, one fuzz, split at the cap on seams rather than by the yard:
+Four files, one fuzz, split at the cap on seams rather than by the yard:
 tools/fuzz_http.py sends a request on a bare socket, tools/fuzz_corpus.py
-decides what to send (atoms, names, query shapes, near-miss routes), and
-this file is the ORACLE — what each answer is allowed to be, and what must
-still be true after the storm.
+decides what to send (atoms, names, query shapes, near-miss routes), this
+file is the ORACLE — what each answer is allowed to be, and what must
+still be true after the storm — and tools/fuzz_card.py is the oracle's
+card half: where an accepted upload may land.
 """
 
 from __future__ import annotations
@@ -50,6 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import castle_emu_wire as wire
 import fuzz_corpus as corpus
+from fuzz_card import Card
 from fuzz_corpus import DOCUMENTED_5XX, poisoned_text
 from fuzz_http import SlowRead, Violation, raw_request
 
@@ -110,6 +112,8 @@ class Fuzzer:
         self, host: str, port: int, seed: int, card: Path | None = None
     ) -> None:
         self.host, self.port, self.seed, self.card = host, port, seed, card
+        #: The card half of the oracle (tools/fuzz_card.py).
+        self.on_card = Card(card) if card is not None else None
         self.rng = random.Random(seed)
         self.sent = 0
         self.lock = threading.Lock()
@@ -266,11 +270,11 @@ class Fuzzer:
             return  # v5.75: the name is a directory on the card
         if code != 200:
             raise Violation(f"seed={self.seed} safe {decoded!r} → {code} {body!r}")
-        if self.card is not None:
-            f = self.card / wire.fs_name(decoded)
+        if self.on_card is not None:
+            f = self.on_card.path / wire.fs_name(decoded)
             if self.threads == 1 and (not f.is_file() or f.read_bytes() != payload):
                 raise Violation(f"seed={self.seed} {decoded!r} not on the card intact")
-            if f.exists() and f.resolve().parent != self.card.resolve():
+            if f.exists() and self.on_card.escaped(f):
                 raise Violation(f"seed={self.seed} {decoded!r} escaped the card")
 
     def _want(
@@ -417,14 +421,9 @@ class Fuzzer:
                 f"seed={self.seed}: castle not answering after the storm: "
                 f"{code} {body[:100]!r}"
             )
-        if self.card is not None:
-            for p in self.card.rglob("*"):
-                if (
-                    p.is_file()
-                    and p.parent != self.card
-                    and p.parent.name not in ("site", "scenes", "logs")
-                ):
-                    raise Violation(f"seed={self.seed}: stray file {p}")
+        stray = self.on_card.strays() if self.on_card is not None else []
+        if stray:
+            raise Violation(f"seed={self.seed}: stray file {stray[0]}")
 
 
 def main() -> int:
