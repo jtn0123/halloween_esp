@@ -128,6 +128,37 @@ class TestCardWrites(WebPairCase):
         self.assertEqual(json.loads(r.body), {"deleted": True})
         self.assertEqual(*self.pair.cards())
 
+    def test_a_name_fat_would_alter_or_refuse_is_refused_at_the_door(self) -> None:
+        """v5.75 (PR #65's Windows run, seed 1): FatFs strips a trailing space
+        or dot and refuses * : < > ? |, so `PUT /api/files/%20` reached the
+        rename and failed there — a 500 "rename failed" on the board and on
+        an NTFS host, a 200 and a file called " " on a Mac — and
+        `song.mp3.` replaced `song.mp3` on the card. Both castles now refuse
+        all of these with the 400 every other bad name gets, before a byte is
+        read, on every route; and `x.mp3.part.` no longer walks past the
+        reserved-suffix check to land on the sidecar it names."""
+        for card in (self.pair.card_c, self.pair.card_e):
+            (card / "song.mp3").write_bytes(b"the real song")
+            (card / "x.mp3.part").write_bytes(b"an upload in flight")
+        for enc in (b"%20", b"%20%20%20", b"+", b"song.mp3.", b"song.mp3%20",
+                    b"song.mp3.%20.", b"x.mp3.part.", b"a%3Ab.mp3", b"a*b",
+                    b"a%3Cb%3E", b"a%7Cb"):  # fmt: skip
+            for prefix in (b"/api/files/", b"/api/site/", b"/api/scenes/"):
+                with self.subTest(name=enc, prefix=prefix):
+                    r = self.same("PUT", prefix + enc, b"clobber")
+                    self.assertEqual((r.status, r.body), (400, b"bad filename"))
+                    r = self.same("DELETE", prefix + enc)
+                    self.assertEqual((r.status, r.body), (400, b"bad filename"))
+            r = self.same("POST", b"/api/play?f=" + enc)
+            self.assertEqual((r.status, r.body), (400, b"need ?f=<file>"), enc)
+        for card in (self.pair.card_c, self.pair.card_e):
+            self.assertEqual((card / "song.mp3").read_bytes(), b"the real song")
+            self.assertEqual((card / "x.mp3.part").read_bytes(), b"an upload in flight")
+        # Inner spaces and dots are FAT's to keep, and are kept.
+        r = self.same("PUT", b"/api/files/a%20b.c.mp3", b"kept")
+        self.assertEqual(json.loads(r.body)["path"], "/sd/a b.c.mp3")
+        self.assertEqual(*self.pair.cards())
+
     def test_delete_reaches_all_three_directories(self) -> None:
         for prefix, sub in (
             (b"/api/files/", ""),

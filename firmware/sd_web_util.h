@@ -90,8 +90,22 @@ inline std::string url_encode(const std::string &s) {
 
 /// One path component: no slashes, nothing hidden. `..` is refused only as
 /// the whole name (it starts with `.`); `foo..bar` is a legal FAT name.
+///
+/// And since v5.75, only a name FAT can STORE AS SENT. FatFs's create_name()
+/// (ff.c, long-file-name build) does two things to a name that POSIX does
+/// not, and the castle used to find out after the bytes were on the card:
+///   - it strips trailing spaces and dots. "song.mp3." is "song.mp3" — the
+///     PUT replaced a file it never named, and "x.mp3.part." walked straight
+///     past the reserved-suffix check below it in h_put — and " " is the
+///     empty name, refused only at the rename, as a 500 "rename failed";
+///   - it refuses * : < > ? | outright (and '"' and DEL, refused already),
+///     which reached the client as a 500 "cannot create file".
+/// Both are now the 400 every other bad name gets. Leading spaces are kept
+/// (FatFs keeps them), and DOS device names — CON, NUL, COM1 — are ordinary
+/// names to FAT, so they stay legal here whatever a Windows PC thinks.
 inline bool safe_name(const std::string &n) {
-  if (n.empty() || n.size() >= 100 || n[0] == '.' ||
+  if (n.empty() || n.size() >= 100 || n[0] == '.' || n.back() == '.' ||
+      n.back() == ' ' ||
       std::any_of(n.begin(), n.end(), [](char ch) { return ch == '/'; }))
     return false;
   // Names go out inside /api/files and /api/status JSON. json_escape keeps
@@ -102,7 +116,8 @@ inline bool safe_name(const std::string &n) {
   // UTF-8 and every Python client of the castle raised instead of parsing
   // (make publish, the desk's device panel). ASCII names only.
   return std::none_of(n.begin(), n.end(), [](unsigned char c) {
-    return c < 0x20 || c >= 0x80 || c == 0x7f || c == '"' || c == '\\';
+    return c < 0x20 || c >= 0x80 || c == 0x7f || c == '"' || c == '\\' ||
+           c == '*' || c == ':' || c == '<' || c == '>' || c == '?' || c == '|';
   });
 }
 

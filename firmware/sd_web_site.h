@@ -36,8 +36,9 @@ esp_err_t reply_err(httpd_req_t *req, const char *status, const char *msg);
 std::string url_decode(const char *s);
 
 /// E4: one CSP on every page we serve — depth behind the escaping, not a
-/// substitute for it (safe_name still admits '<' and '>', so a filename is
-/// one missed esc() away from running). The desk is deliberately a single
+/// substitute for it (safe_name refuses '<' and '>' since v5.75, because FAT
+/// cannot hold them, but it still admits '&' and '\'', so a filename is one
+/// missed esc() away from breaking an attribute). The desk is deliberately a single
 /// self-contained file, so inline script/style must stay allowed; what the
 /// header removes is everything ELSE an injected tag could do: no external
 /// fetches, no foreign media, no form posts off-box.

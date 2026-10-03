@@ -168,16 +168,33 @@ def _hexval(b: int) -> int:
     return int(c, 16) if c in "0123456789abcdefABCDEF" else -1
 
 
+#: FatFs's create_name() refuses these in a long file name (with '"' and
+#: DEL, which the JSON rule below refuses already).
+FAT_REFUSES = frozenset(b"*:<>?|")
+
+
 def safe_name(n: bytes) -> bool:
     """One path component, nothing hidden, nothing that breaks the JSON it
     is later printed into — sd_web.h safe_name on the raw bytes. Control
     bytes (NUL included — the C length counts it), DEL, '"' and '\\' are
     refused because h_list/h_status snprintf names into JSON unescaped —
     and since v5.46 so is every byte >= 0x80, which json_escape passes
-    through raw and which therefore made the body invalid UTF-8."""
+    through raw and which therefore made the body invalid UTF-8.
+
+    Since v5.75, only what FAT stores as sent: no trailing space or dot
+    (FatFs strips them, so "a." is "a" on the card and " " is no name at
+    all) and none of FAT_REFUSES. That is also what keeps this emulator's
+    card the card's on a Windows host, whose NTFS strips and refuses the
+    same bytes: PUT /api/files/%20 was a 200 on a Mac, a 500 "rename
+    failed" on Windows — and on the board."""
     if not n or len(n) >= NAME_MAX or n[0:1] == b"." or b"/" in n:
         return False
-    return not any(c < 0x20 or c >= 0x80 or c == 0x7F or c in (0x22, 0x5C) for c in n)
+    if n[-1:] in (b".", b" "):
+        return False
+    return not any(
+        c < 0x20 or c >= 0x80 or c == 0x7F or c in (0x22, 0x5C) or c in FAT_REFUSES
+        for c in n
+    )
 
 
 _ZONE_CHARS = set(b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
