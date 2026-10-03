@@ -83,11 +83,12 @@ jobs:
       - name: ffmpeg (Windows)
         if: runner.os == 'Windows'
         run: choco install ffmpeg --yes --no-progress
-      # lame is the zip Chocolatey's own lame package fetches, pinned to that
-      # package's sha256, but kept in the Actions cache: rarewares.org, its
-      # only home, refuses GitHub's runners often enough to redden the job —
-      # three tries in a row over five minutes on 2026-10-03, while the same
-      # URL answered from a home connection. A cache hit never asks it.
+      # lame is the zip Chocolatey's own lame package fetches (over https
+      # here — the same bytes), pinned to that package's sha256, but kept in
+      # the Actions cache: rarewares.org, its only home, refuses GitHub's
+      # runners often enough to redden the job — three tries in a row over
+      # five minutes on 2026-10-03, while the same URL answered from a home
+      # connection. A cache hit never asks it.
       - name: lame zip (Windows, cached)
         if: runner.os == 'Windows'
         id: lame-cache
@@ -98,7 +99,7 @@ jobs:
       - name: lame (Windows)
         if: runner.os == 'Windows'
         env:
-          LAME_URL: http://www.rarewares.org/files/mp3/lame3.100-64-20200409.zip
+          LAME_URL: https://www.rarewares.org/files/mp3/lame3.100-64-20200409.zip
           LAME_SHA256: 59ea16ac74afb04f8ed9f33f75618e4e7e5b3e1ea53f5d751e3834e99f58ba6d
           HIT: ${{ steps.lame-cache.outputs.cache-hit }}
         run: |
