@@ -129,18 +129,23 @@ class PreparedFilesTests(unittest.TestCase):
                     rich_show.prepare(library, {"key": "radio_test", "split": True})
             self.assertFalse((library / "radio_test.cue").exists())
 
-    def test_sync_failure_in_cues_does_not_report_a_complete_show(self):
+    def test_a_sync_failure_partway_does_not_report_a_complete_show(self):
         from unittest.mock import patch
 
+        import device_bridge
         import remote_library
 
         remote_library._JOBS["rich_test"] = {"done": False}
         try:
-            with patch.object(
-                remote_library,
-                "upload_with_progress",
-                side_effect=[None, None, OSError("cue failed")],
-            ) as upload:
+            with (
+                patch.object(device_bridge, "castle", return_value="10.0.0.9"),
+                patch.object(remote_library, "_card_sizes", return_value={}),
+                patch.object(
+                    remote_library,
+                    "upload_with_progress",
+                    side_effect=[None, None, OSError("audio failed")],
+                ) as upload,
+            ):
                 remote_library.transfer(
                     "rich_test",
                     "/api/files",
@@ -148,8 +153,10 @@ class PreparedFilesTests(unittest.TestCase):
                     b"audio",
                     [("song.show.json", b"preview"), ("song.cue", b"cue")],
                 )
-            self.assertEqual(upload.call_count, 3)
-            self.assertEqual(remote_library.job("rich_test")["error"], "cue failed")
+            # The show first, the audio last: what failed is the song itself.
+            sent = [call.args[2] for call in upload.call_args_list]
+            self.assertEqual(sent, ["song.show.json", "song.cue", "song.mp3"])
+            self.assertEqual(remote_library.job("rich_test")["error"], "audio failed")
             self.assertEqual(remote_library.job("rich_test")["phase"], "Sync failed")
         finally:
             remote_library._JOBS.pop("rich_test")
@@ -163,12 +170,16 @@ class NativeSyncTests(unittest.TestCase):
         import urllib.request
         from unittest.mock import patch
 
+        import castle_sent
         import device_bridge
         import remote_library
         from castle_emu import CastleEmu
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
+            sent_record = patch.object(castle_sent, "FILE", root / "castle-sent.json")
+            sent_record.start()
+            self.addCleanup(sent_record.stop)
             library = root / "tracks"
             library.mkdir()
             (root / "media").mkdir()

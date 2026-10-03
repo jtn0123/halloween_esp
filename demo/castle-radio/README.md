@@ -87,6 +87,10 @@ copies. Sample audio is local and is not distributed with the repository.
   itself when the song plays, with no page open. A song reads "On castle ·
   audio + lights" only when the card holds its audio AND its `.cue` at the
   sizes this computer prepared; audio without that `.cue` is "audio only".
+  The show goes first and the audio last, so a song never reaches the
+  castle's list ahead of its lights, and a sync the Wi-Fi cut short is
+  finished by syncing again: what already landed — the same size, and the
+  CRC the castle reported for it (`castle_sent.py`) — is skipped.
   The Radio streams mailbox-rate frames only when the castle reports no card
   show for the playing song — no `.cue` beside it, or firmware older than
   5.63, whose `/api/status` has no `cues`.

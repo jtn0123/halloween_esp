@@ -387,8 +387,11 @@ true, and it is the dev/support path forever.
       (`studio_reason.rs` already explains errors — audit the wording).
 - [ ] Castle offline / wrong address: one clear state, one "find my castle"
       action (mDNS browse + manual IP).
-- [ ] Sync interrupted mid-push: resumable or safely retried; card never left
-      with a half-written `show.man`.
+- [x] Sync interrupted mid-push: resumable or safely retried; card never left
+      with a half-written `show.man`. `sd_sync` and Castle Radio send the
+      show before what names it, record each verified file as it lands and
+      skip it on the retry; `tests/test_sd_sync_resume.py` and the radio's
+      `test_sync_resume.py` cut real pushes on the emulator (`drop_after`).
 - [ ] Disk-full, unsupported file type, 2-hour file, non-ASCII filenames
       (Windows + mac), file on a network drive.
 - [ ] Firmware/app version handshake: the app refuses (with a message) to push
