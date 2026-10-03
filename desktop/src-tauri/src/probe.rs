@@ -8,7 +8,9 @@
 //!
 //! Anything else listening there is someone else's server, which we neither
 //! use nor kill. A raw HTTP/1.0 request over std's TcpStream: one loopback
-//! GET does not justify an HTTP client in the supervisor.
+//! GET does not justify an HTTP client in the supervisor. `get_json` is the
+//! same GET for a question Castle Radio answers on the app's behalf (the
+//! updater's pre-release channel, channel.rs).
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpStream};
@@ -53,36 +55,51 @@ const TIMEOUT: Duration = Duration::from_secs(3);
 const LIMIT: u64 = 4 * 1024 * 1024;
 
 pub fn identify(port: u16, who: Identity) -> Probe {
+    match get(port, who.path(), TIMEOUT) {
+        Ok(raw) => classify(&raw, who),
+        Err(probe) => probe,
+    }
+}
+
+/// A 200's JSON body from our own server on `port`, or None. `wait` is
+/// how long the answer may take: one that asks GitHub first is slower than
+/// an identity.
+pub fn get_json(port: u16, path: &str, wait: Duration) -> Option<serde_json::Value> {
+    body(&get(port, path, wait).ok()?)
+}
+
+fn get(port: u16, path: &str, wait: Duration) -> Result<Vec<u8>, Probe> {
     let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
     let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(500)) else {
-        return Probe::Nothing;
+        return Err(Probe::Nothing);
     };
-    let _ = stream.set_read_timeout(Some(TIMEOUT));
+    let _ = stream.set_read_timeout(Some(wait));
     let _ = stream.set_write_timeout(Some(TIMEOUT));
     let request = format!(
-        "GET {} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nAccept: application/json\r\n\r\n",
-        who.path()
+        "GET {path} HTTP/1.0\r\nHost: 127.0.0.1:{port}\r\nAccept: application/json\r\n\r\n"
     );
     if stream.write_all(request.as_bytes()).is_err() {
-        return Probe::Other;
+        return Err(Probe::Other);
     }
     let mut raw = Vec::new();
     if stream.take(LIMIT).read_to_end(&mut raw).is_err() && raw.is_empty() {
-        return Probe::Other;
+        return Err(Probe::Other);
     }
-    classify(&raw, who)
+    Ok(raw)
+}
+
+fn body(raw: &[u8]) -> Option<serde_json::Value> {
+    let text = String::from_utf8_lossy(raw);
+    let (head, body) = text.split_once("\r\n\r\n")?;
+    if !head.starts_with("HTTP/1.") || head.split_whitespace().nth(1) != Some("200") {
+        return None;
+    }
+    serde_json::from_str(body).ok()
 }
 
 fn classify(raw: &[u8], who: Identity) -> Probe {
-    let text = String::from_utf8_lossy(raw);
-    let Some((head, body)) = text.split_once("\r\n\r\n") else {
-        return Probe::Other;
-    };
-    if !head.starts_with("HTTP/1.") || head.split_whitespace().nth(1) != Some("200") {
-        return Probe::Other;
-    }
-    match serde_json::from_str::<serde_json::Value>(body) {
-        Ok(v) if who.matches(&v) => Probe::Ours,
+    match body(raw) {
+        Some(v) if who.matches(&v) => Probe::Ours,
         _ => Probe::Other,
     }
 }

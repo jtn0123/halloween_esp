@@ -98,6 +98,14 @@ impl Supervisor {
         format!("http://127.0.0.1:{}/", self.config.port)
     }
 
+    pub fn port(&self) -> u16 {
+        self.config.port
+    }
+
+    pub fn settings(&self) -> &Settings {
+        &self.config.settings
+    }
+
     pub fn status(&self) -> Status {
         self.lock().status.clone()
     }

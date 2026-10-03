@@ -2,17 +2,18 @@
 //! always asked, never installed silently.
 //!
 //! The endpoint is `releases/latest/download/latest.json`; GitHub's
-//! "latest" never names a pre-release, so this is the stable channel and
-//! nothing else. Each check is one unauthenticated request, far inside the
-//! 60-an-hour limit.
+//! "latest" never names a pre-release, so this is the stable channel. An
+//! owner who opted in to pre-releases (channel.rs — hidden, on no page) is
+//! pointed at the newest release's own latest.json instead. Each check is
+//! one unauthenticated request, far inside the 60-an-hour limit.
 //!
 //! Until a real minisign public key replaces the placeholder in
 //! tauri.conf.json the checks are skipped (and "Check for updates" says
 //! so): an update the app cannot verify is not one it should offer.
 
-use crate::{release, Servers};
+use crate::{channel, probe, release, Servers};
 use std::time::Duration;
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Url};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
 
@@ -62,6 +63,21 @@ fn ask(app: &AppHandle, text: &str) -> bool {
         .blocking_show()
 }
 
+/// The channel this check is on, and its latest.json (channel::endpoint):
+/// opted in, Castle Radio is asked which release that is.
+fn where_to_look(app: &AppHandle) -> (bool, (String, Option<String>)) {
+    let servers = app.try_state::<Servers>();
+    let setting = servers
+        .as_ref()
+        .is_some_and(|s| s.radio.settings().prerelease);
+    let prerelease = channel::opted_in_now(setting);
+    let answer = match (&servers, prerelease) {
+        (Some(s), true) => probe::get_json(s.radio.port(), channel::ROUTE, channel::WAIT),
+        _ => None,
+    };
+    (prerelease, channel::endpoint(prerelease, answer.as_ref()))
+}
+
 /// Blocking: call from a worker thread, never the main thread (the dialogs
 /// wait for an answer). `manual` is "Check for updates" from the tray — it
 /// reports every outcome; the scheduled check speaks only when there is
@@ -79,8 +95,19 @@ pub fn check(app: &AppHandle, manual: bool) {
         }
         return;
     }
+    let (prerelease, endpoint) = where_to_look(app);
+    let endpoint = match endpoint {
+        (url, Some(note)) => {
+            log(&note);
+            url
+        }
+        (url, None) => url,
+    };
     let found = tauri::async_runtime::block_on(async {
-        app.updater()
+        let url = Url::parse(&endpoint).map_err(|e| e.to_string())?;
+        app.updater_builder()
+            .endpoints(vec![url])
+            .and_then(|b| b.build())
             .map_err(|e| e.to_string())?
             .check()
             .await
@@ -113,12 +140,12 @@ pub fn check(app: &AppHandle, manual: bool) {
         }
     };
     // latest.json is published by the release workflow, but the buyer's
-    // channel is stable tags only (PRODUCTION-TODO §9): a pre-release or a
-    // version the release contract cannot name is not offered, whatever
-    // the file says.
-    if !release::is_stable(&release::tag(&update.version)) {
+    // channel is stable tags only unless they opted in (PRODUCTION-TODO §9):
+    // a version the channel does not take, or the release contract cannot
+    // name, is not offered, whatever the file says.
+    if !channel::accepts(&release::tag(&update.version), prerelease) {
         log(&format!(
-            "update {} ignored: not a stable release tag",
+            "update {} ignored: not a release tag this channel takes",
             update.version
         ));
         if manual {

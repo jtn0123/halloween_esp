@@ -38,6 +38,7 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import hosts  # stdlib-only, like this module
+import release_channel  # and this
 
 ROOT = Path(__file__).resolve().parent.parent
 APP_NAME = "CastleTools"
@@ -301,6 +302,11 @@ def launch_env(
     held = settings.get("castle_key")
     if isinstance(held, str) and hosts.valid_key(held.strip()):
         env["CASTLE_KEY"] = held.strip()
+    # The hidden pre-release opt-in (tools/release_channel.py), for every
+    # child that asks GitHub — Castle Radio's "Update castle" among them. A
+    # CASTLE_PRERELEASE already in `base` is left to win, as it does there.
+    if release_channel.opted_in(settings, base):
+        env[release_channel.ENV] = "1"
     return env
 
 
