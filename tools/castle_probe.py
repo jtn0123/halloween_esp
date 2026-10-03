@@ -14,13 +14,12 @@ use — status, health, events, bootlog, play/scene/stop/show — are open on a
 keyed castle anyway (firmware/sd_web_prefs.h), so a missing key costs
 nothing here.
 
-The reset reason. /api/health has carried `last_reset` and `was_crash`
-(castle_health.h reason_str) since long before the buyer build; firmware
-v5.75 is adding a `reset_reason` field, to /api/status or /api/health. This
-module reads `reset_reason` first wherever it appears and falls back to
-`last_reset`, so a tool written today reads both firmwares and neither has
-to be special-cased by its caller. Either may be absent on an older image:
-the answer is then "", which every caller reports as "not reported".
+The reset reason is /api/health's `last_reset` and `was_crash`
+(castle_health.h reason_str), carried since long before the buyer build.
+v5.75 did not add a second field for it: it put the same word on the
+owner's page, and taught was_crash() two more crashes (`power-glitch`,
+`cpu-lockup`). A castle that does not report it answers "", which every
+caller reports as "not reported".
 """
 
 from __future__ import annotations
@@ -34,8 +33,17 @@ import hosts
 #: castle_health.h reason_str() for the resets was_crash() counts — the
 #: firmware fell over, rather than someone switching it off or flashing it.
 #: Compared case-insensitively: the C spells PANIC and BROWNOUT in capitals.
+#: The last two since v5.75, whose was_crash() says so itself anyway.
 CRASH_RESETS = frozenset(
-    {"panic", "int-watchdog", "task-watchdog", "watchdog", "brownout"}
+    {
+        "panic",
+        "int-watchdog",
+        "task-watchdog",
+        "watchdog",
+        "brownout",
+        "power-glitch",
+        "cpu-lockup",
+    }
 )
 
 #: How long one exchange may take. A busy ESP32 on Wi-Fi answers status in
@@ -102,13 +110,8 @@ def post(host: str, path: str, timeout: float = TIMEOUT_S) -> int:
     return request(host, "POST", path, timeout)[0]
 
 
-def reset_reason(status: dict | None, health: dict | None) -> str:
-    """Why the castle last started: `reset_reason` (v5.75, either reply)
-    when present, else /api/health's `last_reset`, else ""."""
-    for reply in (status, health):
-        got = (reply or {}).get("reset_reason")
-        if isinstance(got, str) and got:
-            return got
+def reset_reason(health: dict | None) -> str:
+    """Why the castle last started: /api/health's `last_reset`, else ""."""
     got = (health or {}).get("last_reset")
     return got if isinstance(got, str) else ""
 

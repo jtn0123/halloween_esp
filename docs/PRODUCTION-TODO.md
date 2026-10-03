@@ -160,8 +160,9 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
       key (`castle_buyer.h`), `api:` encryption stays off — but neither has
       run on a board, and the yard build's OTA password does not follow.*
 - [x] Set/clear it from the castle page and from the app; the app stores it
-      per castle. Castle page: the firmware fallback page and Castle Radio's
-      castle-served Run settings card (`localStorage.castleKey`). App: the
+      per castle. Castle page: the firmware's owner page (`/owner`, v5.75)
+      and Castle Radio's castle-served Run settings card
+      (`localStorage.castleKey`). App: the
       desk's 🔑 section (`/studio/castle-key`) and Castle Radio's card, into
       the one store every client reads (devices.toml, per castle; settings
       `castle_key` / `CASTLE_KEY` pins it) — docs/notes/06-buyer-build.md

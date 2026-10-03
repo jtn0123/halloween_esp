@@ -75,11 +75,11 @@ Every limit is a flag; `tools/soak.py --help` lists them all.
 A reading the firmware does not report is INFO ("not reported"), never a
 pass or a fail, so an older image is not judged on a field it lacks.
 
-**Reset reasons.** `/api/health` has carried `last_reset` and `was_crash`
-since well before v5.74. Firmware v5.75 adds `reset_reason`; the soak reads
-`reset_reason` first, from status or health, and falls back to `last_reset`
-(`tools/castle_probe.py`). Each reboot's reason is in the verdict line and
-in `summary.json` `reset_reasons`.
+**Reset reasons.** `/api/health`'s `last_reset` and `was_crash`, carried
+since well before v5.74 (`tools/castle_probe.py`); v5.75 adds no second
+field, and its `was_crash` also counts `power-glitch` and `cpu-lockup`. Each
+reboot's reason is in the verdict line and in `summary.json`
+`reset_reasons`.
 
 ## Wi-Fi loss and return (a router reboot)
 

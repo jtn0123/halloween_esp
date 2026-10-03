@@ -79,7 +79,8 @@ tree sets `CASTLE_DEVICES` to a file outside the repo.
 **The castle-served page.** Castle Radio served BY the castle has no
 computer behind it: it keeps the key in that browser's
 `localStorage.castleKey`, the name the firmware's fallback page already
-used, so a key entered on either page opens both.
+used (and its successor, v5.75's owner page, still does), so a key entered
+on either page opens both.
 
 ---
 
