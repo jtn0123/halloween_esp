@@ -122,7 +122,8 @@ def import_songs(b: Buyer, r: radio.Radio) -> dict[str, dict[str, Any]]:
     jobs = {name: final[i] for name, i in ids.items()}
     for song in radio.SONGS:
         job = jobs[song.name]
-        detail = f"{job['phase']} {job.get('error')} {job.get('error_detail')}"
+        said = (job["phase"], job.get("error"), job.get("error_detail"))
+        detail = ": ".join(str(part) for part in said if part)
         check(job["phase"] == "Ready in demo" and not job.get("error"),
               f"{song.name!r} imports ({detail})")  # fmt: skip
         result = job["result"]
@@ -141,7 +142,7 @@ def send_and_play(
         key, filename = job["result"]["key"], job["result"]["playback_file"]
         done = r.sync(key)
         check(done.get("error") is None and done["phase"] == "Audio and show verified on castle",
-              f"{name!r} sends to the castle ({done['phase']}: {done.get('error')})")  # fmt: skip
+              f"{name!r} sends to the castle ({done['phase']}{': ' + str(done['error']) if done.get('error') else ''})")  # fmt: skip
         problems = radio.card_problems(card, b.dirs.tracks, filename)
         check(not problems, f"{name!r} is whole on the card {problems}")
     inventory = r.get("/radio/device/library")["tracks"]
