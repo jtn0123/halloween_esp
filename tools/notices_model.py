@@ -394,6 +394,13 @@ def text_errors(root: Path = LICENSES) -> list[str]:
     return errors
 
 
+def shown(path: Path) -> str:
+    """Every path the notices tools print, printed one way: forward slashes
+    on every OS, so a message — and the test that compares it — reads the
+    same on Windows as on the Mac."""
+    return path.as_posix()
+
+
 def licence_text(rel: str, root: Path = LICENSES) -> str:
     """A pinned text (a SPLIT one joined back together), newline-terminated."""
     parts = SPLIT.get(rel, (rel,))

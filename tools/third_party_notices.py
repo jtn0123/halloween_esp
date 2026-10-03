@@ -40,7 +40,7 @@ from pathlib import Path
 import notices_desktop
 import notices_firmware
 import notices_render
-from notices_model import ROOT, policy_errors, text_errors
+from notices_model import ROOT, policy_errors, shown, text_errors
 
 #: Exit status for a check that found something.
 FAILED = 1
@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     cmd, rest = (args[0], args[1:]) if args else ("", [])
     if cmd == "generate" and not rest:
         for path in generate():
-            print(path.relative_to(ROOT))
+            print(shown(path.relative_to(ROOT)))
         return 0
     if cmd == "check" and not rest:
         return _report(problems(), "third-party notices: current")
@@ -95,9 +95,9 @@ def main(argv: list[str] | None = None) -> int:
         return _report(problems(), "third-party notices: refreshed and current")
     if cmd == "check-firmware" and len(rest) == 1:
         errors = notices_firmware.check_build(Path(rest[0]))
-        return _report(errors, f"firmware notices cover {rest[0]}")
+        return _report(errors, f"firmware notices cover {shown(Path(rest[0]))}")
     if cmd == "path" and len(rest) == 1 and rest[0] in notices_render.ARTIFACTS:
-        print(ROOT / notices_render.ARTIFACTS[rest[0]].path)
+        print(shown(ROOT / notices_render.ARTIFACTS[rest[0]].path))
         return 0
     print(__doc__, file=sys.stderr)
     return 2

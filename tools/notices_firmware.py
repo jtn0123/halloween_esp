@@ -20,7 +20,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from notices_model import Component
+from notices_model import Component, shown
 
 ESPHOME = "2026.9.0"
 IDF_VERSION = "5.5.5"
@@ -392,9 +392,8 @@ def check_build(build: Path) -> list[str]:
     maps = sorted((build / "build").glob("*.map"))
     maps += sorted((build / "build" / "bootloader").glob("*.map"))
     if not maps:
-        return [
-            f"no linker map under {build}/build — is this an ESPHome build directory?"
-        ]
+        where = shown(build / "build")
+        return [f"no linker map under {where} — is this an ESPHome build directory?"]
     for path in maps:
         text = path.read_text(encoding="utf-8", errors="replace")
         archives = linked_archives(text)
@@ -408,7 +407,7 @@ def check_build(build: Path) -> list[str]:
             errors.append(f"{path.name}: linked by a toolchain other than {TOOLCHAIN}")
     lock = build / "dependencies.lock"
     if not lock.is_file():
-        return [*errors, f"{lock} is missing"]
+        return [*errors, f"{shown(lock)} is missing"]
     locked = _locked_versions(lock.read_text(encoding="utf-8"))
     if locked.get("idf") != IDF_VERSION:
         errors.append(

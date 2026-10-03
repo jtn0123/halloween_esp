@@ -171,7 +171,9 @@ class TextTests(unittest.TestCase):
 
     def test_an_edited_text_fails(self) -> None:
         path = self.tmp / "texts" / "MIT.txt"
-        path.write_text(path.read_text(encoding="utf-8") + "extra\n", encoding="utf-8")
+        path.write_text(
+            path.read_text(encoding="utf-8") + "extra\n", encoding="utf-8", newline="\n"
+        )
         self.assertEqual(
             nm.text_errors(self.tmp),
             [
@@ -181,7 +183,9 @@ class TextTests(unittest.TestCase):
 
     def test_a_missing_or_unpinned_text_fails(self) -> None:
         (self.tmp / "texts" / "ISC.txt").unlink()
-        (self.tmp / "components" / "stray.txt").write_text("x\n", encoding="utf-8")
+        (self.tmp / "components" / "stray.txt").write_text(
+            "x\n", encoding="utf-8", newline="\n"
+        )
         self.assertEqual(
             nm.text_errors(self.tmp),
             [
@@ -199,7 +203,9 @@ class TextTests(unittest.TestCase):
         )
 
     def test_a_text_without_a_final_newline_gets_one(self) -> None:
-        (self.tmp / "texts" / "MIT.txt").write_text("no newline", encoding="utf-8")
+        (self.tmp / "texts" / "MIT.txt").write_text(
+            "no newline", encoding="utf-8", newline="\n"
+        )
         self.assertEqual(nm.licence_text("texts/MIT.txt", self.tmp), "no newline\n")
 
 

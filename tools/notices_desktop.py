@@ -27,7 +27,7 @@ import tomllib
 from collections.abc import Callable, Iterable
 from pathlib import Path
 
-from notices_model import LICENSES, ROOT, Component
+from notices_model import LICENSES, ROOT, Component, shown
 
 INVENTORY = LICENSES / "desktop-crates.json"
 DESKTOP_LOCK = ROOT / "desktop" / "src-tauri" / "Cargo.lock"
@@ -253,7 +253,7 @@ def cargo_metadata(manifest_dir: Path, target: str) -> dict:
     if out.returncode != 0:
         raise SystemExit(
             "cargo metadata failed — run `cargo fetch --locked` in "
-            f"{manifest_dir} first:\n{out.stderr.strip()}"
+            f"{shown(manifest_dir)} first:\n{out.stderr.strip()}"
         )
     meta: dict = json.loads(out.stdout)
     return meta

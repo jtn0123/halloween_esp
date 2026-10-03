@@ -32,7 +32,7 @@ import notices_render as nr
 import release_assets as ra
 import third_party_notices as tp
 from notices_external import EXTERNAL
-from notices_model import category, chosen
+from notices_model import category, chosen, shown
 
 WORKFLOWS = ROOT / ".github" / "workflows"
 
@@ -79,14 +79,17 @@ class CurrentTests(unittest.TestCase):
             '[[package]]\nname = "castle-core"\nversion = "0.1.0"\n\n'
             '[[package]]\nname = "rand"\nversion = "0.9.0"\n',
             encoding="utf-8",
+            newline="\n",
         )
         (tmp / "rust-toolchain.toml").write_text(
-            '[toolchain]\nchannel = "1.99.0"\n', encoding="utf-8"
+            '[toolchain]\nchannel = "1.99.0"\n', encoding="utf-8", newline="\n"
         )
         cli = tmp / "desktop" / "cli"
         cli.mkdir(parents=True)
         (cli / "package.json").write_text(
-            '{"devDependencies": {"@tauri-apps/cli": "3.0.0"}}', encoding="utf-8"
+            '{"devDependencies": {"@tauri-apps/cli": "3.0.0"}}',
+            encoding="utf-8",
+            newline="\n",
         )
         doc = nd.load()
         doc = {
@@ -127,7 +130,9 @@ class CurrentTests(unittest.TestCase):
         with mock.patch.object(nr, "ROOT", tmp):
             self.assertEqual(len(nr.stale()), len(nr.ARTIFACTS))
             self.assertTrue(all("is missing" in e for e in nr.stale()))
-            (tmp / "THIRD-PARTY-NOTICES.txt").write_text("old\n", encoding="utf-8")
+            (tmp / "THIRD-PARTY-NOTICES.txt").write_text(
+                "old\n", encoding="utf-8", newline="\n"
+            )
             self.assertIn(
                 "THIRD-PARTY-NOTICES.txt is stale — run: tools/third_party_notices.py generate",
                 nr.stale(),
@@ -256,7 +261,7 @@ class CliTests(unittest.TestCase):
         )
         code, out, _ = self.run_main("path", "firmware")
         self.assertEqual(
-            (code, out.strip()), (0, str(ROOT / nr.ARTIFACTS["firmware"].path))
+            (code, out.strip()), (0, shown(ROOT / nr.ARTIFACTS["firmware"].path))
         )
 
     def test_bad_arguments_print_the_usage(self) -> None:
@@ -285,7 +290,8 @@ class CliTests(unittest.TestCase):
             code, out, _ = self.run_main("generate")
         self.assertEqual(code, 0)
         self.assertEqual(
-            sorted(out.split()), sorted(a.path for a in nr.ARTIFACTS.values())
+            sorted(out.split()),
+            sorted(shown(Path(a.path)) for a in nr.ARTIFACTS.values()),
         )
         for a in nr.ARTIFACTS.values():
             self.assertEqual((tmp / a.path).read_text(encoding="utf-8"), read(a.path))

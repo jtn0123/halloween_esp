@@ -141,7 +141,7 @@ def stage_firmware(tag: str, ota_bin: Path, out: Path) -> list[Path]:
         if not src.is_file():
             raise SystemExit(f"missing firmware image: {src}")
     if not FIRMWARE_NOTICES.is_file():
-        raise SystemExit(f"missing third-party notices: {FIRMWARE_NOTICES}")
+        raise SystemExit(f"missing third-party notices: {FIRMWARE_NOTICES.as_posix()}")
     out.mkdir(parents=True, exist_ok=True)
     staged = [out / factory_name(tag), out / ota_name(tag), out / notices_name(tag)]
     shutil.copyfile(factory, staged[0])

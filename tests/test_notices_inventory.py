@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 import notices_desktop as nd
 import notices_firmware as nf
+from notices_model import shown
 
 APP = ("castle-tools", "0.1.0")
 
@@ -77,11 +78,11 @@ class InventoryTests(unittest.TestCase):
         ]
         a = self.tmp / "a-1.0.0"
         (a / "LICENSE-MIT").write_text(
-            "Copyright (c) 2020 The A people\n", encoding="utf-8"
+            "Copyright (c) 2020 The A people\n", encoding="utf-8", newline="\n"
         )
-        (a / "NOTICE").write_text("A notice.\n", encoding="utf-8")
+        (a / "NOTICE").write_text("A notice.\n", encoding="utf-8", newline="\n")
         (a / "src.rs").write_text(
-            "Copyright (c) 1999 not a licence file\n", encoding="utf-8"
+            "Copyright (c) 1999 not a licence file\n", encoding="utf-8", newline="\n"
         )
         metas = {"macos": self.meta(False), "windows": self.meta(True)}
         lock = {APP, *((n, "1.0.0") for n in "abcdef")}
@@ -209,18 +210,20 @@ class FirmwareBuildTests(unittest.TestCase):
         self.tc = f"/t/idf/tools/xtensa-esp-elf/{nf.TOOLCHAIN}"
         self.write_map()
         (self.build / "build" / "bootloader" / "bootloader.map").write_text(
-            MAP.format(tc=self.tc, extra=""), encoding="utf-8"
+            MAP.format(tc=self.tc, extra=""), encoding="utf-8", newline="\n"
         )
         self.write_lock(dict(nf.MANAGED))
         version_h = self.build / "src" / "esphome" / "core" / "version.h"
         version_h.parent.mkdir(parents=True)
         version_h.write_text(
-            f'#define ESPHOME_VERSION "{nf.ESPHOME}"\n', encoding="utf-8"
+            f'#define ESPHOME_VERSION "{nf.ESPHOME}"\n', encoding="utf-8", newline="\n"
         )
 
     def write_map(self, extra: str = "", tc: str | None = None) -> None:
         text = MAP.format(tc=tc or self.tc, extra=extra)
-        (self.build / "build" / "castle.map").write_text(text, encoding="utf-8")
+        (self.build / "build" / "castle.map").write_text(
+            text, encoding="utf-8", newline="\n"
+        )
 
     def write_lock(self, managed: dict[str, str], idf: str = nf.IDF_VERSION) -> None:
         lines = ["dependencies:"]
@@ -233,7 +236,7 @@ class FirmwareBuildTests(unittest.TestCase):
             ]
         lines.append("manifest_hash: abc")
         (self.build / "dependencies.lock").write_text(
-            "\n".join(lines) + "\n", encoding="utf-8"
+            "\n".join(lines) + "\n", encoding="utf-8", newline="\n"
         )
 
     def test_a_build_the_table_covers_passes(self) -> None:
@@ -274,7 +277,9 @@ class FirmwareBuildTests(unittest.TestCase):
 
     def test_another_esphome_fails(self) -> None:
         version_h = self.build / "src" / "esphome" / "core" / "version.h"
-        version_h.write_text('#define ESPHOME_VERSION "2027.1.0"\n', encoding="utf-8")
+        version_h.write_text(
+            '#define ESPHOME_VERSION "2027.1.0"\n', encoding="utf-8", newline="\n"
+        )
         self.assertEqual(
             nf.check_build(self.build),
             [f"ESPHome 2027.1.0 built this; the table is {nf.ESPHOME}"],
@@ -286,10 +291,11 @@ class FirmwareBuildTests(unittest.TestCase):
         self.assertIn("no linker map", nf.check_build(empty)[0])
         (self.build / "dependencies.lock").unlink()
         self.assertEqual(
-            nf.check_build(self.build), [f"{self.build}/dependencies.lock is missing"]
+            nf.check_build(self.build),
+            [f"{shown(self.build / 'dependencies.lock')} is missing"],
         )
         (self.build / "build" / "castle.map").write_text(
-            "not a map\n", encoding="utf-8"
+            "not a map\n", encoding="utf-8", newline="\n"
         )
         self.assertIn("no archive members", nf.check_build(self.build)[0])
 
