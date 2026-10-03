@@ -174,6 +174,29 @@ test("the ♪ route survives a reload without re-hushing the castle", async ({ p
   expect(castle.hits("/api/volume")).toBe(0);        // nothing to enforce
 });
 
+test("♪ Castle and unmute bring back the castle's level after a poll has seen it at 0", async ({ page }) => {
+  // A hushed castle SAYS 0, and a poll landing while it was hushed (or
+  // muted) used to overwrite the level the desk meant to come back to:
+  // ♪ Castle and unmute then sent 70, not the castle's own 40. Only a slow
+  // browser let that poll land before the click — Linux WebKit did.
+  const castle = await fakeCastle(page);
+  const levels = (): string[] => castle.calls.filter((c) => c.includes("/api/volume?"))
+    .map((c) => c.replace(/.*v=/, ""));
+  await page.goto("/");
+  await expect.poll(levels).toEqual(["0"]);                          // ♪ Mac hushes it…
+  await expect(page.locator("#devMute")).toHaveText("🔇");           // …and a poll has said so
+  await page.locator(".transport #sndRoute").click();
+  await expect.poll(levels).toEqual(["0", "40"]);
+  await expect(page.locator("#devMute")).toHaveText("🔊");
+  await page.locator("#devMute").click();
+  await expect.poll(levels).toEqual(["0", "40", "0"]);
+  // The hand leaves the chip, so the poll's render is not parked (C1).
+  await page.locator("#devMute").blur();
+  await expect(page.locator("#devMute")).toHaveText("🔇");           // the poll saw the mute
+  await page.locator("#devMute").click();
+  await expect.poll(levels).toEqual(["0", "40", "0", "40"]);
+});
+
 test("a castle that dies mid-session takes its badges and Sync with it", async ({ page }) => {
   const castle = await fakeCastle(page,
     [{ name: `${MP3_ID}.mp3`, size: await realBytes(page, MP3_ID), dir: false }]);
