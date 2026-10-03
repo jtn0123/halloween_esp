@@ -211,6 +211,37 @@ def _fetch_checked(url: str, part: Path, digest: str, fetch: rel.Fetch) -> None:
         raise UpdateError(TAMPERED, str(exc)) from exc
 
 
+def _swap_in(part: Path, target: Path, run: Version, what: str) -> str:
+    """Run the verified `part` once, then rename it over `target`; the
+    version it reported. On any failure the part goes and the old copy
+    stays."""
+    try:
+        version = run(str(part))
+    except (OSError, subprocess.SubprocessError) as exc:
+        part.unlink(missing_ok=True)
+        raise UpdateError(BROKEN, f"{what}: {exc}") from exc
+    try:
+        portable_fs.replace(part, target)
+    except OSError as exc:
+        part.unlink(missing_ok=True)
+        # The part was written beside the target, so the folder takes
+        # writes: refused here, the old copy is running (Windows locks it).
+        busy = isinstance(exc, PermissionError)
+        said = IN_USE if busy else ir.for_os_error(exc) or IN_USE
+        raise UpdateError(said, f"{target}: {exc}") from exc
+    return version
+
+
+def _note(home: Path, record: dict[str, object]) -> None:
+    """What was installed, for whoever helps; the update stands without it."""
+    try:
+        (home / RECORD).write_text(
+            json.dumps(record, indent=1) + "\n", encoding="utf-8"
+        )
+    except OSError:
+        pass
+
+
 def update(
     home: Path,
     fetch: rel.Fetch | None = None,
@@ -243,28 +274,10 @@ def update(
     _fetch_checked(release.assets[asset], part, digest, fetch)
     if system != "Windows":
         part.chmod(0o755)
-    try:
-        version = run(str(part))
-    except (OSError, subprocess.SubprocessError) as exc:
-        part.unlink(missing_ok=True)
-        raise UpdateError(BROKEN, f"{asset} {release.tag}: {exc}") from exc
-    try:
-        portable_fs.replace(part, target)
-    except OSError as exc:
-        part.unlink(missing_ok=True)
-        # The part was written beside the target, so the folder takes
-        # writes: refused here, the old copy is running (Windows locks it).
-        busy = isinstance(exc, PermissionError)
-        said = IN_USE if busy else ir.for_os_error(exc) or IN_USE
-        raise UpdateError(said, f"{target}: {exc}") from exc
+    version = _swap_in(part, target, run, f"{asset} {release.tag}")
     record: dict[str, object] = {"tag": release.tag, "asset": asset}
     record.update(sha256=digest, installed_at=round(now()))
-    try:
-        (home / RECORD).write_text(
-            json.dumps(record, indent=1) + "\n", encoding="utf-8"
-        )
-    except OSError:
-        pass  # the record is a note for whoever helps; the update stands
+    _note(home, record)
     return {"changed": True, "version": version, "path": str(target)}
 
 

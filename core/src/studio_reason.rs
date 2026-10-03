@@ -53,48 +53,54 @@ fn scan(log: &[String], passthrough: bool) -> String {
         .map(String::as_str)
         .filter(|l| !is_quoted(l))
         .collect();
-    let last = said
+    let heard: Vec<&str> = said.iter().copied().filter(|l| !is_chatter(l)).collect();
+    let last = heard
         .iter()
         .rev()
-        .find(|l| !is_chatter(l) && !l.starts_with("Traceback"))
+        .find(|l| !l.starts_with("Traceback"))
         .map_or("", |l| l.trim_ascii());
     if passthrough && is_verdict(last) {
         return basenames(last);
     }
-    let text = said
-        .iter()
-        .filter(|l| !is_chatter(l))
-        .copied()
-        .collect::<Vec<_>>()
-        .join("\n")
-        .to_lowercase();
-    for (needle, friendly) in KNOWN {
-        if text.contains(&needle.to_lowercase()) {
-            return friendly.to_string();
-        }
-    }
-    for line in said.iter().rev().filter(|l| !is_chatter(l)) {
-        if let Some((_, tail)) = line.split_once("ERROR:") {
-            let said = if tail.trim_ascii().starts_with('[') {
-                DOWNLOADER_OLD
+    known(&heard)
+        .or_else(|| download_error(&heard))
+        .or_else(|| crash(&said))
+        .unwrap_or_else(|| {
+            if passthrough {
+                basenames(last)
             } else {
-                DOWNLOAD_FAILED
-            };
-            return said.to_string();
-        }
-    }
-    for line in said.iter().rev() {
-        if let Some((name, rest)) = exc_match(line)
-            && is_exception(&name)
-        {
-            return exception_line(rest.as_deref());
-        }
-    }
-    if passthrough {
-        basenames(last)
+                String::new()
+            }
+        })
+}
+
+/// The sentence for a KNOWN phrase anywhere in what was said.
+fn known(heard: &[&str]) -> Option<String> {
+    let text = heard.join("\n").to_lowercase();
+    KNOWN
+        .iter()
+        .find(|(needle, _)| text.contains(&needle.to_lowercase()))
+        .map(|(_, friendly)| (*friendly).to_string())
+}
+
+/// yt-dlp's last `ERROR:` line: a `[site]`-tagged one is an extractor the
+/// site has outgrown, any other a download that did not finish.
+fn download_error(heard: &[&str]) -> Option<String> {
+    let (_, tail) = heard.iter().rev().find_map(|l| l.split_once("ERROR:"))?;
+    let said = if tail.trim_ascii().starts_with('[') {
+        DOWNLOADER_OLD
     } else {
-        String::new()
-    }
+        DOWNLOAD_FAILED
+    };
+    Some(said.to_string())
+}
+
+/// A Python traceback's last line: a program that failed, or a crash.
+fn crash(said: &[&str]) -> Option<String> {
+    said.iter().rev().find_map(|line| match exc_match(line) {
+        Some((name, rest)) if is_exception(&name) => Some(exception_line(rest.as_deref())),
+        _ => None,
+    })
 }
 
 /// `^([A-Za-z_][\w.]*)(?::\s*(.*))?$`

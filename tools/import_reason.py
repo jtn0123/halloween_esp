@@ -324,25 +324,42 @@ def _verdict(line: str) -> bool:
     return " — " in line and not (m and m[0].endswith(_EXC_TAIL))
 
 
-def _scan(log: list[str], passthrough: bool) -> str:
-    said = [ln for ln in log if not _quoted(ln)]
-    meant = [ln for ln in said if not _chatter(ln) and not ln.startswith("Traceback")]
-    last = meant[-1].strip(_SPACE) if meant else ""
-    if passthrough and _verdict(last):
-        return basenames(last)
-    text = "\n".join(ln for ln in said if not _chatter(ln)).lower()
-    for needle, friendly in KNOWN:
-        if needle.lower() in text:
-            return friendly
-    for line in reversed(said):
-        if not _chatter(line) and "ERROR:" in line:
+def _known(heard: list[str]) -> str:
+    """The sentence for a KNOWN phrase anywhere in what was said."""
+    text = "\n".join(heard).lower()
+    return next((friendly for needle, friendly in KNOWN if needle.lower() in text), "")
+
+
+def _download_error(heard: list[str]) -> str:
+    """yt-dlp's last `ERROR:` line: a `[site]`-tagged one is an extractor
+    the site has outgrown, any other a download that did not finish."""
+    for line in reversed(heard):
+        if "ERROR:" in line:
             tail = line.split("ERROR:", 1)[1].strip(_SPACE)
             return DOWNLOADER_OLD if tail.startswith("[") else DOWNLOAD_FAILED
+    return ""
+
+
+def _crash(said: list[str]) -> str:
+    """A Python traceback's last line: a program that failed, or a crash."""
     for line in reversed(said):
         m = _exc_match(line)
         if m and m[0].endswith(_EXC_TAIL):
             return _exception_line(m[1])
-    return basenames(last) if passthrough else ""
+    return ""
+
+
+def _scan(log: list[str], passthrough: bool) -> str:
+    said = [ln for ln in log if not _quoted(ln)]
+    heard = [ln for ln in said if not _chatter(ln)]
+    meant = [ln for ln in heard if not ln.startswith("Traceback")]
+    last = meant[-1].strip(_SPACE) if meant else ""
+    if passthrough and _verdict(last):
+        return basenames(last)
+    found = _known(heard) or _download_error(heard) or _crash(said)
+    if found or not passthrough:
+        return found
+    return basenames(last)
 
 
 def explain(log: list[str]) -> str:
