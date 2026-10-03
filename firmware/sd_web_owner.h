@@ -89,7 +89,7 @@ tzs.innerHTML='<option value="">Other…</option>'+Z.map(z=>`<option value="${z[
 const esc=t=>String(t).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
 const say=t=>msg.textContent=t;
 const api=(u,m)=>fetch(u,{method:m||'POST',headers:localStorage.castleKey?{'X-Castle-Key':localStorage.castleKey}:{}})
- .then(async r=>{say(r.ok?'':r.status==401?'That needs the castle key (Settings, below).':'The castle said: '+await r.text());setTimeout(sync,400);return r})
+ .then(async r=>{say(r.ok?'':r.status==401?'This castle has a key — enter it in Settings':'The castle said: '+await r.text());setTimeout(sync,400);return r})
  .catch(()=>say('The castle is not answering.'));
 const set=q=>api('/api/settings?'+q).then(r=>{if(r&&r.ok)say('Saved.')});
 const box=(c,t)=>`<div class=${c}>${t}</div>`;
