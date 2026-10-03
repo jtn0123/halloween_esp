@@ -12,6 +12,7 @@ import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
 
 # isort: split
 import device_bridge
+import fw_formats
 import hosts
 import rich_show
 from device_bridge import FILES_PATH, STATUS_PATH
@@ -170,6 +171,10 @@ def start(root, library, rows, key):
             (source.with_suffix(suffix).name, source.with_suffix(suffix).read_bytes())
             for suffix in (".show.json", ".cue")
         ]
+        # A .cue in a format this castle's firmware cannot read would play dark.
+        why = fw_formats.refusal(device_bridge.call(STATUS_PATH), dict(companions))
+        if why:
+            raise ValueError(why)
     with _LOCK:
         if key in _JOBS and not _JOBS[key]["done"]:
             return dict(_JOBS[key])
