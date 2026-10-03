@@ -15,10 +15,16 @@ The route functions take the handler as their first argument — the shape
 """
 
 import os
+import unicodedata
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 from uuid import uuid4
 
+# The sandbox first, then tools/ on the path.
+import radio_env  # noqa: F401
+
+# isort: split
+import import_reason as ir
 import request_guard
 from radio_jobs import (
     DATA,
@@ -121,14 +127,22 @@ def upload_job(handler, tid, length):
     ext = request_guard.upload_suffix(body[:128], Path(name).suffix.lower())
     # basename: the name written is one component, never a path.
     source = str(DATA / os.path.basename(tid + ext))
-    with open(source, "wb") as upload:
-        upload.write(body)
+    try:
+        with open(source, "wb") as upload:
+            upload.write(body)
+    except OSError as exc:
+        # A full disk or a data folder it may not write: said as the owner
+        # reads it, and no half-written song left behind to queue.
+        Path(source).unlink(missing_ok=True)
+        raise ValueError(ir.for_os_error(exc) or ir.GENERIC) from exc
     audio_format, audio_quality = playback_choices(
         handler,
         handler.headers.get("X-Audio-Format"),
         handler.headers.get("X-Audio-Quality"),
     )
-    title = Path(name).stem[:200]
+    # NFC: a Mac hands over a name like "Café" decomposed, and the title
+    # would then neither match nor sort beside the same name typed.
+    title = unicodedata.normalize("NFC", Path(name).stem)[:200]
     split = handler.headers.get("X-Split", "true") == "true"
     return new_job(tid, source, title, split, audio_format, audio_quality, name)
 
@@ -161,6 +175,7 @@ def post_retry(handler):
         if not job or not job["done"]:
             raise ValueError("That job is not available to retry.")
         update(job, done=False, phase="Queued", error=None, result=None)
+        job.update(error_detail=None, action=None)
         job.update(cancelled=False, finished_at=0, percent=None, detail="")
     queue(handler, job)
 

@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, unquote, urlsplit
 import castle_finder
 import desktop_tools
 import device_bridge
+import downloader_routes
 import import_routes
 import library_ops
 import remote_library
@@ -45,6 +46,7 @@ STATIC_ROUTES = frozenset(
         "/castle-key.js",
         "/castle-find.js",
         "/desktop-tools.js",
+        "/downloader.js",
         "/device-helper.js",
         "/companion.html",
         "/companion.js",
@@ -260,6 +262,7 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/jobs": get_jobs,
         "/radio/tools": desktop_tools.get_status,
         **castle_finder.GET_ROUTES,
+        "/radio/downloader": downloader_routes.get_status,
     }
 
     def do_GET(self):
@@ -364,6 +367,7 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/cancel": import_routes.post_cancel,
         "/radio/rename": import_routes.post_rename,
         **castle_finder.POST_ROUTES,
+        "/radio/downloader/update": downloader_routes.post_update,
     }
 
     def do_POST(self):

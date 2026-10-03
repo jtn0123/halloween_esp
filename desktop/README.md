@@ -69,7 +69,8 @@ First match wins:
    castle/app/       the repo's tools/, demo/castle-radio/, scenes/, web/…
    castle/python/    python-build-standalone 3.13 + site-packages
    castle/bin/       studio, analyze_track, scene_render (from the Release's
-                     castle-core-<target>-<tag>.zip), ffmpeg, yt-dlp
+                     castle-core-<target>-<tag>.zip), ffmpeg — never yt-dlp,
+                     which lives in app data ("The song downloader" below)
    castle/models/    a Hugging Face hub cache with the Demucs model
    ```
 2. **Configured install** — `CASTLE_INSTALL_DIR`, else `install_dir` in
@@ -77,6 +78,59 @@ First match wins:
    one is an error, not a silent fall-through.
 3. **Developer checkout** — the repo this crate was built from. The studio
    is `core/target/release/studio` there (`make rust`).
+
+## What an import can take
+
+A failed import says one sentence: what happened, then what to do. The
+words are `tools/import_reason.py`'s, and the light desk's are castle-core's
+copy (`core/src/studio_reason_words.rs`), held word for word by
+`tests/test_import_reason.py` (docs/PARITY.md). The tools' own output stays
+in the log and behind the queue's **Details**; no exit code, exception name
+or traceback reaches the sentence.
+
+| What the owner tries | What happens |
+|---|---|
+| A song longer than **15 minutes** | Refused before anything is converted, with its length and the limit. A start and length that pick a shorter part still import. A link is refused by yt-dlp before it downloads (`--match-filters "!is_live & duration <=? 900"`); live streams never start. |
+| A file that is not audio (a document, a renamed picture) | "… does not look like playable audio — choose an MP3, WAV, FLAC, M4A or OGG file instead." Castle Radio refuses an unknown type at upload, before the bytes are kept. |
+| A full disk | "The disk is full — …", from the conversion, the copy of the source, the download, the splitter or the upload. Nothing half-made is left: the conversion writes a `.part` beside the track and renames last, and an upload that fails is deleted. |
+| A name in any alphabet | The title keeps its letters, composed (NFC): a Mac's decomposed "Café" and a typed one are one song. The track id — a file name on the castle's FAT card — is ASCII: accents fold away, and a name with no Latin letters gets a stable `song_<hash>`. |
+| A read-only or network location (a CD, a share, a NAS, `\\server\share`) | Read, never written. The kept source is a plain copy without the read-only bit, so a re-import can replace it. A file this user may not read, or a share that drops mid-read, says "Castle Tools was not allowed to read or save a file it needed — copy the song to a folder on this computer and choose it again." |
+| Cancel | Ends the job as **Cancelled** at any stage — never as a failure. |
+
+**Why 15 minutes.** Not a format limit: castle-core's onset analysis holds
+the whole song in memory, and measured on 2026-10-02 it peaks at about
+250 MB per minute of audio (30 minutes → 7.5 GB, 2 hours → 24.6 GB).
+Fifteen minutes is about 3.8 GB, which an 8 GB laptop survives; a 2-hour
+file would swap the machine to a halt instead of failing. The number is
+`MAX_IMPORT_SECONDS` in `tools/import_convert.py`; streaming the analysis
+would lift it.
+
+## The song downloader
+
+yt-dlp fetches a pasted link. It is **not** in the app bundle: websites
+change under it every few weeks, so it is a separate program in per-user
+app data — `<app data>/radio/downloader/` (`tools/exe_paths.py`
+`downloader_dir()`: `CASTLE_DOWNLOADER_DIR`, else `downloader/` in
+`CASTLE_RADIO_DATA`) — that every importer runs first when it is there
+(`exe_paths.ytdlp()`, `core/src/portable.rs`).
+
+**Update the downloader** — a button in Castle Radio's import panel, and on
+any job whose link failed because the downloader is old ("The downloader may
+be out of date — Update the downloader, then try the link again.") — runs
+`tools/ytdlp_update.py`: one call to GitHub's Releases API for yt-dlp's
+latest stable release, that same release's `SHA2-256SUMS` and this
+computer's standalone build, a refusal unless the bytes match, a trial
+`--version` run, then one rename over the old copy. Any failure keeps the
+old copy and says why in one sentence. The update is queued on the same
+one-at-a-time worker as the imports, so it waits for the import ahead of
+it and is never swapped in under one; nothing updates by itself. The
+option-A installer runs the same updater into its `bin/` on install,
+`--update` and `--repair`.
+
+yt-dlp is released into the public domain (the Unlicense); its standalone
+build bundles third-party code listed in its own `THIRD_PARTY_LICENSES.txt`.
+This project never ships or redistributes it — THIRD-PARTY-NOTICES.txt lists
+it under what the buyer's machine downloads (`tools/notices_external.py`).
 
 ## Settings
 
@@ -199,7 +253,7 @@ app's copy of the names it reads; keep the pairs equal:
 - `CASTLE_CORE_BIN_DIR` is set to the sidecar's `bin/`, but
   `tools/core_bins.py` still builds `analyze_track`/`scene_render` with cargo;
   a buyer has no cargo, so it must learn to read that directory first.
-- The sidecar tree (python-build-standalone, site-packages, ffmpeg, yt-dlp,
+- The sidecar tree (python-build-standalone, site-packages, ffmpeg,
   the Demucs model, the castle-core zip) is staged by the release workflow,
   which does not exist on this branch.
 - `latest.json` and the Tauri bundles are Release assets that

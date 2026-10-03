@@ -2,7 +2,9 @@
 //! on, answered once: which external program to start, and what part of a
 //! name the network handed us is a file name.
 //!
-//! **Programs.** ffmpeg and yt-dlp are asked for in three places, first
+//! **Programs.** yt-dlp is first asked for as the managed copy the owner
+//! updates (`managed_yt_dlp`, tools/exe_paths.py's `managed_ytdlp`). Then
+//! ffmpeg and yt-dlp are asked for in three places, first
 //! answer wins: `CASTLE_FFMPEG` / `CASTLE_YTDLP` when set and non-empty
 //! (the launcher naming them, the same way `CASTLE_PY` names its
 //! interpreter; the Python children inherit the same variables), then a
@@ -20,23 +22,57 @@
 //! Windows, where it can never be part of a file name.
 
 use std::ffi::OsString;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// The ffmpeg to run: `CASTLE_FFMPEG`, a sidecar, else `ffmpeg` from PATH.
 pub fn ffmpeg() -> OsString {
     program("CASTLE_FFMPEG", "ffmpeg")
 }
 
-/// The yt-dlp to run: `CASTLE_YTDLP`, a sidecar, else `yt-dlp` from PATH.
+/// The yt-dlp to run: the managed copy, `CASTLE_YTDLP`, a sidecar, else
+/// `yt-dlp` from PATH.
 pub fn yt_dlp() -> OsString {
-    program("CASTLE_YTDLP", "yt-dlp")
+    managed_yt_dlp().unwrap_or_else(|| program("CASTLE_YTDLP", "yt-dlp"))
 }
 
-/// Is yt-dlp there to be run? The named file when `CASTLE_YTDLP` names
-/// one, the sidecar when there is one, a PATH search otherwise — shutil.which's answer, before a spawn
-/// turns "not installed" into an OS error string.
+/// Is yt-dlp there to be run? The managed copy, the named file when
+/// `CASTLE_YTDLP` names one, the sidecar when there is one, a PATH search
+/// otherwise — shutil.which's answer, before a spawn turns "not installed"
+/// into an OS error string.
 pub fn have_yt_dlp() -> bool {
-    have("CASTLE_YTDLP", "yt-dlp")
+    managed_yt_dlp().is_some() || have("CASTLE_YTDLP", "yt-dlp")
+}
+
+/// The yt-dlp "Update the downloader" fetched (tools/ytdlp_update.py), when
+/// there is one. It lives in `CASTLE_DOWNLOADER_DIR` — set-but-empty means
+/// none — else in Castle Radio's data dir's `downloader/`: CASTLE_RADIO_DATA
+/// (the desktop app's per-user dir), else the checkout's own. The same rule
+/// as exe_paths.downloader_dir, so the probe asks the copy the import runs.
+fn managed_yt_dlp() -> Option<OsString> {
+    let dir = downloader_dir(
+        std::env::var_os("CASTLE_DOWNLOADER_DIR"),
+        named("CASTLE_RADIO_DATA"),
+        crate::studio::repo_root,
+    )?;
+    beside(&dir, "yt-dlp")
+}
+
+fn downloader_dir(
+    named_dir: Option<OsString>,
+    radio: Option<OsString>,
+    root: impl FnOnce() -> PathBuf,
+) -> Option<PathBuf> {
+    match named_dir {
+        Some(d) if d.is_empty() => None,
+        Some(d) => Some(PathBuf::from(d)),
+        None => {
+            let data = radio.map_or_else(
+                || root().join("demo").join("castle-radio").join(".radio-data"),
+                PathBuf::from,
+            );
+            Some(data.join("downloader"))
+        }
+    }
 }
 
 fn named(env: &str) -> Option<OsString> {
@@ -122,6 +158,28 @@ mod tests {
         // prefix goes there; elsewhere ':' is an ordinary character.
         let want = if cfg!(windows) { "x.mp3" } else { "C:x.mp3" };
         assert_eq!(last_segment("C:x.mp3"), want);
+    }
+
+    /// The managed copy is looked for where Castle Radio keeps it, so the
+    /// probe asks the yt-dlp the import will run (exe_paths.downloader_dir).
+    #[test]
+    fn the_managed_downloader_is_looked_for_where_the_radio_keeps_it() {
+        let root = || PathBuf::from("/repo");
+        let some = |s: &str| Some(OsString::from(s));
+        assert_eq!(downloader_dir(some(""), some("/r"), root), None);
+        assert_eq!(
+            downloader_dir(some("/d"), some("/r"), root),
+            Some(PathBuf::from("/d"))
+        );
+        assert_eq!(
+            downloader_dir(None, some("/r"), root),
+            Some(Path::new("/r").join("downloader"))
+        );
+        let checkout = Path::new("/repo/demo/castle-radio/.radio-data/downloader");
+        assert_eq!(
+            downloader_dir(None, None, root),
+            Some(checkout.to_path_buf())
+        );
     }
 
     #[test]

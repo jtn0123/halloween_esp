@@ -12,7 +12,12 @@ from typing import IO, cast
 import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
 
 # isort: split
+import import_reason as ir
 from portable_proc import group_kwargs, kill_tree
+
+RELAYED = "CASTLE_PROGRESS "
+#: What a job record keeps of a failed child's words, for Details.
+LOG_CHARS = 8000
 
 _NUMBER = re.compile(r"\d+(?:\.\d+)?")
 # tools/stems.py prints one line per layer/channel analysis: six layers
@@ -25,6 +30,51 @@ ANALYSES = 18
 
 class Cancelled(ValueError):
     """The listener cancelled this preparation; not a failure to report."""
+
+
+class ToolFailed(ValueError):
+    """A child that failed. str() is the owner's one sentence
+    (tools/import_reason.py — the importer's own last line, when it printed
+    one); `log` is what the child said, which the page keeps behind
+    Details. The Rust studio's job ends the same way (studio_jobs.rs)."""
+
+    def __init__(self, said, log):
+        super().__init__(said)
+        self.log = log[-LOG_CHARS:]
+
+
+def failure(exc):
+    """The page's fields for the exception that ended a job: the owner's
+    sentence, the words behind it (Details), and the one-button fix when the
+    sentence offers one — "Update the downloader". A Cancelled never comes
+    here: cancelling is not a failure (grade report 2026-09-24 B6)."""
+    if isinstance(exc, ToolFailed):
+        said, log = str(exc), exc.log
+    else:
+        log = f"{type(exc).__name__}: {exc}"
+        known = ir.for_os_error(exc) if isinstance(exc, OSError) else None
+        said = known or ir.recognised(log) or ir.GENERIC
+    return {"error": said, "error_detail": log[-LOG_CHARS:], "action": ir.action(said)}
+
+
+def logged(line):
+    """A line as the job's log keeps it. A relayed one (`CASTLE_PROGRESS
+    {"line": …}`) is the yt-dlp or splitter line it carries, indented as a
+    quote — the Rust studio's take_line does the same — so the reason scan
+    never reads a download's warning as the reason a later step failed."""
+    if line.startswith(RELAYED):
+        try:
+            carried = json.loads(line[len(RELAYED) :])["line"]
+        except (ValueError, KeyError, TypeError):
+            return line
+        if isinstance(carried, str):
+            return "    " + carried.rstrip() + "\n"
+    return line
+
+
+def ended(code):
+    """The exit, for the log and never the sentence (studio_jobs.rs)."""
+    return f"(the job ended with {'a signal' if code < 0 else f'exit {code}'})\n"
 
 
 def percent_value(text):
@@ -59,9 +109,9 @@ def interpret(line, stage, analyzed):
 
 
 def _progress(line, stage, analyzed):
-    if line.startswith("CASTLE_PROGRESS "):
+    if line.startswith(RELAYED):
         try:
-            line = json.loads(line[len("CASTLE_PROGRESS ") :])["line"]
+            line = json.loads(line[len(RELAYED) :])["line"]
         except (ValueError, KeyError):
             return {}, analyzed
     clean = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", line)
@@ -104,6 +154,16 @@ def _progress(line, stage, analyzed):
     return {}, analyzed
 
 
+def spawn(args, **kwargs):
+    """Popen in its own process group, a child that cannot start said in
+    the owner's words: a missing interpreter is a broken install."""
+    try:
+        return subprocess.Popen(args, **kwargs, **group_kwargs())
+    except OSError as exc:
+        said = ir.for_os_error(exc) or ir.START_FAILED
+        raise ToolFailed(said, f"{Path(args[0]).name}: {exc}\n") from exc
+
+
 def run(args, timeout, stage, report, extra_env=None, stop=None):
     """`stop` is an Event the caller sets to cancel: the child's whole process
     group is killed, as it is on a timeout, and the run raises Cancelled."""
@@ -116,7 +176,7 @@ def run(args, timeout, stage, report, extra_env=None, stop=None):
         "PYTHONUTF8": "1",
         **(extra_env or {}),
     }
-    process = subprocess.Popen(
+    process = spawn(
         args,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
@@ -125,7 +185,6 @@ def run(args, timeout, stage, report, extra_env=None, stop=None):
         errors="replace",
         bufsize=1,
         env=env,
-        **group_kwargs(),
     )
     # stdout=PIPE always opens one; the stubs cannot know that (the same
     # cast tools/progress_process.py makes for the same reason).
@@ -154,7 +213,7 @@ def run(args, timeout, stage, report, extra_env=None, stop=None):
     report(started_at=started, percent=None, detail="Starting the audio tools")
     try:
         for line in output:
-            tail.append(line)
+            tail.append(logged(line))
             tail = tail[-100:]
             values, analyzed = interpret(line.strip(), stage, analyzed)
             if values:
@@ -162,11 +221,15 @@ def run(args, timeout, stage, report, extra_env=None, stop=None):
         code = process.wait()
         if stop is not None and stop.is_set():
             raise Cancelled("Cancelled")
+        log = "".join(tail)
         if timed_out.is_set():
-            raise ValueError("Preparation timed out. Retry this song.")
+            # A stall is the cause whatever the last line says: that line
+            # is only where the child was when it was stopped.
+            stopped = f"(stopped: timed out after {timeout:g} s)\n"
+            raise ToolFailed(ir.STALLED, log + stopped)
         if code:
-            raise ValueError("".join(tail)[-1800:] or "Audio preparation failed")
-        return "".join(tail)
+            raise ToolFailed(ir.reason(log) or ir.GENERIC, log + ended(code))
+        return log
     finally:
         timer.cancel()
         output.close()
@@ -189,9 +252,7 @@ def runner(stop=None, timeout=600.0):
         pipe = subprocess.PIPE if capture_output else None
         stdin = subprocess.PIPE if input is not None else None
         deadline = time.monotonic() + timeout
-        with subprocess.Popen(
-            args, stdin=stdin, stdout=pipe, stderr=pipe, **kwargs, **group_kwargs()
-        ) as process:
+        with spawn(args, stdin=stdin, stdout=pipe, stderr=pipe, **kwargs) as process:
             pending = input  # communicate takes the input on its first call only
             while True:
                 try:
@@ -205,7 +266,8 @@ def runner(stop=None, timeout=600.0):
                     kill_tree(process)
                     process.communicate()
                     if late:
-                        raise ValueError(f"{Path(args[0]).name} timed out") from None
+                        log = f"{Path(args[0]).name} timed out after {timeout:g} s\n"
+                        raise ToolFailed(ir.STALLED, log) from None
                     raise Cancelled("Cancelled") from None
         result = subprocess.CompletedProcess(args, process.returncode, out, err)
         if check:

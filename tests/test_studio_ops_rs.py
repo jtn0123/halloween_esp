@@ -39,6 +39,7 @@ from studio_rs_case import (
 
 sys.path.insert(0, str(ROOT / "tools"))
 import castle_emu
+import import_reason
 
 JSON_HDRS = {"Content-Type": "application/json"}
 
@@ -163,7 +164,7 @@ class Media(StudioCase):
         code, body = self.post("/studio/probe", {"url": "notalink"})
         self.assertEqual(
             (code, body),
-            (400, {"ok": False, "error": "that does not look like a link"}),
+            (400, {"ok": False, "error": import_reason.NOT_A_LINK}),
         )
 
     def test_02_probe_of_an_unreachable_url_is_a_400_not_a_500(self) -> None:
@@ -172,9 +173,14 @@ class Media(StudioCase):
         )
         self.assertEqual(code, 400)
         self.assertIs(body["ok"], False)
-        # The fetcher's own words, carrying the address that failed —
-        # the operator needs to see WHICH url did not answer.
-        self.assertIn("127.0.0.1", str(body["error"]))
+        # The owner reads a sentence; the fetcher's own words, carrying the
+        # address that did not answer, stay in `detail` for whoever helps.
+        self.assertIn(
+            body["error"],
+            (import_reason.NETWORK, import_reason.DOWNLOADER_MISSING),
+        )
+        if body["error"] == import_reason.NETWORK:
+            self.assertIn("127.0.0.1", str(body["detail"]))
 
     def test_03_compare_ranks_the_codecs(self) -> None:
         code, body = self.post(

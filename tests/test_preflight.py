@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -113,6 +115,21 @@ class RealRowTests(unittest.TestCase):
             self.assertIsNotNone(preflight.ytdlp_probe())
         with mock.patch.object(preflight.exe_paths, "ytdlp", return_value="/v/yt"):
             self.assertIsNone(preflight.ytdlp_probe())
+
+    def test_a_downloaded_managed_copy_counts_as_present(self) -> None:
+        # Update the downloader (tools/ytdlp_update.py) puts yt-dlp in the
+        # per-user data dir; a machine with only that copy is not missing it.
+        ep = preflight.exe_paths
+        with tempfile.TemporaryDirectory() as home:
+            env = {"CASTLE_DOWNLOADER_DIR": home, "CASTLE_YTDLP": ""}
+            with (
+                mock.patch.dict(os.environ, env),
+                mock.patch.object(ep.sys, "executable", str(Path(home, "py"))),
+                mock.patch.object(ep.shutil, "which", return_value=None),
+            ):
+                self.assertIsNotNone(preflight.ytdlp_probe())
+                Path(home, ep.exe("yt-dlp")).write_bytes(b"")
+                self.assertIsNone(preflight.ytdlp_probe())
 
 
 def recipe(target: str) -> list[str]:

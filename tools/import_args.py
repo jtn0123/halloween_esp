@@ -10,7 +10,12 @@ reach them through that module.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
+import unicodedata
+
+#: studio_tracks.rs valid_id: what the studio will look a track up by.
+ID_MAX = 64
 
 
 def secs(v: str) -> float:
@@ -75,3 +80,32 @@ def sensitivity_arg(raw: str) -> float | dict[str, float]:
         except ValueError:
             raise argparse.ArgumentTypeError(f"not a number for {k}: {v!r}") from None
     return out
+
+
+def track_slug(stem: str) -> str:
+    """A file name as a track id: ASCII letters, digits and _, cut at a word
+    boundary inside 32 characters (truncate BEFORE stripping — the other
+    order leaves "the_citizens_of_halloween___this" on the desk and the
+    card). Accents fold, so "Café" is "cafe" whether a Mac handed over the
+    decomposed name (e + U+0301) or Windows the composed one; a name with
+    no ASCII letter at all ("ハロウィン") gets a stable id of its own,
+    because the studio looks tracks up by an ASCII id and a Unicode one
+    became a track nothing could find."""
+    nfc = unicodedata.normalize("NFC", stem)
+    folded = "".join(
+        c for c in unicodedata.normalize("NFKD", nfc) if not unicodedata.combining(c)
+    )
+    slug = "".join(c if c.isascii() and c.isalnum() else "_" for c in folded.lower())
+    slug = slug[:32]
+    if "_" in slug[1:] and len(slug) == 32:
+        slug = slug[: slug.rindex("_")]
+    slug = slug.strip("_")
+    return slug or "song_" + hashlib.sha256(nfc.encode("utf-8")).hexdigest()[:8]
+
+
+def valid_track_id(tid: str) -> bool:
+    """The one alphabet every spelling of an id is held to — the derived
+    one, `--id`, `--refresh` — and the studio's own (`^\\w{1,64}$`, ASCII)."""
+    return 0 < len(tid) <= ID_MAX and all(
+        c.isascii() and (c.isalnum() or c == "_") for c in tid
+    )

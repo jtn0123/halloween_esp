@@ -57,6 +57,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana
 import exe_paths
+import import_reason as ir
 import numpy as np
 import portable_fs
 
@@ -70,6 +71,16 @@ STEMS = TRACKS / "stems"
 #: re-import has invalidated it. Named because three paths point at it.
 ANALYSIS_JSON = "analysis.json"
 AUDIO_EXT = ("mp3", "wav", "flac", "opus")
+
+
+def _fail(said: str, *detail: str) -> SystemExit:
+    """The owner's sentence (tools/import_reason.py) as the exit message,
+    with the tool's own words printed above it, indented: the studio and
+    Castle Radio show the sentence and keep the rest for Details."""
+    for line in detail:
+        print("    " + line.rstrip(), file=sys.stderr, flush=True)
+    return SystemExit(said)
+
 
 #: What htdemucs separates, in the order it names them.
 SOURCES = ("drums", "bass", "other", "vocals")
@@ -288,7 +299,7 @@ def mix_stems(separated: Path, dest: Path) -> dict[str, Path]:
     for name in SOURCES:
         found = next(separated.rglob(f"{name}.wav"), None)
         if found is None:
-            raise SystemExit(f"demucs produced no {name} stem")
+            raise _fail(ir.GENERIC, f"demucs produced no {name} stem")
         rate, data = wavfile.read(found)
         raw[name] = np.asarray(data, dtype=np.float32)
     raw["backing"] = raw["drums"] + raw["bass"] + raw["other"]
@@ -306,7 +317,7 @@ def _encode(wav: Path, mp3: Path) -> None:
         [
             exe_paths.ffmpeg(),
             "-v",
-            "quiet",
+            "error",
             "-y",
             "-i",
             str(wav),
@@ -324,7 +335,9 @@ def _encode(wav: Path, mp3: Path) -> None:
         timeout=300,
     )
     if r.returncode != 0:
-        raise SystemExit(f"ffmpeg could not encode {mp3.name}")
+        said = ir.recognised(r.stderr or "") or ir.TOOL_FAILED.format(prog="ffmpeg")
+        tail = (r.stderr or "").strip().splitlines()[-4:]
+        raise _fail(said, f"ffmpeg could not encode {mp3.name}", *tail)
 
 
 def separate(
@@ -342,10 +355,10 @@ def separate(
         print(f"stems for {tid} are current — --force to redo")
         return 0
     if importlib.util.find_spec("demucs") is None:
-        raise SystemExit(
-            "demucs is not installed — "
-            "python -m pip install demucs (then re-pin: "
-            "python -m pip install click==8.3.3), with this repo's python"
+        raise _fail(
+            ir.DEMUCS_MISSING,
+            "demucs is not installed: python -m pip install demucs (then re-pin: "
+            "python -m pip install click==8.3.3), with this repo's python",
         )
 
     dest = root / Path(tid).name
@@ -361,14 +374,16 @@ def separate(
                 print("  GPU path failed — retrying on CPU", flush=True)
                 r = _run_demucs(src, tmp / "sep", "cpu", fast)
         except subprocess.TimeoutExpired:
-            raise SystemExit(
-                f"demucs stalled — gave up after {SEPARATE_TIMEOUT // 60} minutes"
+            raise _fail(
+                ir.STALLED,
+                f"demucs stalled: gave up after {SEPARATE_TIMEOUT // 60} minutes",
             ) from None
         if r.returncode != 0:
             tail = [
                 ln for ln in (r.stderr or r.stdout or "").splitlines() if ln.strip()
             ][-3:]
-            raise SystemExit("demucs failed:\n" + "\n".join(tail))
+            said = ir.recognised(r.stderr or r.stdout or "") or ir.GENERIC
+            raise _fail(said, "demucs failed:", *tail)
         wavs = mix_stems(tmp / "sep", tmp / "mix")
 
         print("encoding stems…", flush=True)

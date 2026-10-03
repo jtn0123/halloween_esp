@@ -11,8 +11,9 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use crate::jsonio::{Json, py_float};
 use crate::procgroup::{adopt, kill_group, own_group, release};
 use crate::studio::App;
-use crate::studio_progress::{Job, interpret, relayed};
+use crate::studio_progress::{Job, take_line};
 use crate::studio_reason::explain;
+use crate::studio_reason_words::{GENERIC, STALLED, START_FAILED};
 
 /// Spawn `argv` with its stderr joined to its stdout (Python's
 /// stderr=STDOUT) and hand back the one read end both write into. A pipe
@@ -35,7 +36,7 @@ fn spawn_merged(argv: &[String]) -> std::io::Result<(Child, PipeReader)> {
     // stays held with it (grade report 2026-09-17 B2).
     own_group(&mut cmd);
     crate::studio_proc::utf8_child(&mut cmd);
-    // Line by line, not at the end: see studio_progress::relayed.
+    // Line by line, not at the end: see studio_progress::take_line.
     cmd.env("CASTLE_PROGRESS_STREAM", "1");
     let child = cmd.spawn()?;
     adopt(&child);
@@ -151,9 +152,12 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
     let (mut child, out) = match spawn_merged(argv) {
         Ok(spawned) => spawned,
         Err(e) => {
+            // The OS's words go in the log for whoever helps; the owner
+            // gets a sentence that says what to do about it.
             set(job, |j| {
                 j.phase = "failed".to_string();
-                j.error = e.to_string();
+                j.log.push(format!("could not start {}: {e}", argv[0]));
+                j.error = START_FAILED.to_string();
             });
             return;
         }
@@ -178,13 +182,7 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
     });
     for raw in BufReader::new(out).lines() {
         let Ok(raw) = raw else { break };
-        let line = relayed(raw.trim_end());
-        set(job, |j| {
-            if !line.is_empty() {
-                j.log_line(&line);
-            }
-            interpret(j, &line);
-        });
+        set(job, |j| take_line(j, &raw));
     }
     let status = child.wait();
     crate::studio_reap::forget(pid);
@@ -201,19 +199,22 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
             j.detail = String::new();
         } else {
             j.phase = "failed".to_string();
+            // A stall is the cause even when the log's last line says
+            // something else — that line is just where the child stopped.
+            // The exit code goes in the log, never in the sentence.
+            let code = status
+                .ok()
+                .and_then(|s| s.code())
+                .map_or_else(|| "a signal".to_string(), |c| format!("exit {c}"));
             let exp = explain(&j.log);
-            j.error = if !exp.is_empty() {
+            j.error = if timed_out {
+                STALLED.to_string()
+            } else if !exp.is_empty() {
                 exp
-            } else if timed_out {
-                "gave up after 15 minutes — the job stalled".to_string()
             } else {
-                let code = status
-                    .ok()
-                    .and_then(|s| s.code())
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "-9".to_string());
-                format!("import failed (exit {code})")
+                GENERIC.to_string()
             };
+            j.log.push(format!("(the job ended with {code})"));
         }
     });
 }
@@ -374,14 +375,18 @@ mod tests {
     }
 
     /// A failure with nothing to explain still needs a non-empty message:
-    /// an empty error box tells the person nothing at all.
+    /// an empty error box tells the person nothing at all. The exit code
+    /// is for whoever reads the log, never the sentence.
     #[test]
-    fn a_failing_child_ends_failed_naming_the_exit_code() {
+    fn a_failing_child_with_nothing_to_say_gets_the_generic_sentence() {
         let _g = registry_gate();
         let id = start_py(&app(), "raise SystemExit(1)");
         assert_eq!(wait_done(&id), "failed");
-        let err = text(&id, "error");
-        assert!(err.contains("exit 1"), "{err}");
+        assert_eq!(text(&id, "error"), GENERIC);
+        assert!(
+            log_of(&id).contains(&"(the job ended with exit 1)".to_string()),
+            "the exit code never reached the log"
+        );
     }
 
     /// When the child did say something worth reading, the desk gets the
@@ -394,7 +399,7 @@ mod tests {
             "print('ERROR: [youtube] x: Private video'); raise SystemExit(1)",
         );
         assert_eq!(wait_done(&id), "failed");
-        assert_eq!(text(&id, "error"), "That video is private.");
+        assert_eq!(text(&id, "error"), crate::studio_reason_words::PRIVATE);
         assert!(
             log_of(&id).contains(&"ERROR: [youtube] x: Private video".to_string()),
             "the raw line was dropped from the log"
@@ -409,7 +414,11 @@ mod tests {
         let _g = registry_gate();
         let id = start_id(&app(), &["/nonexistent/definitely-not-here"]);
         assert_eq!(wait_done(&id), "failed");
-        assert!(!text(&id, "error").is_empty(), "failure carried no reason");
+        assert_eq!(text(&id, "error"), START_FAILED);
+        assert!(
+            log_of(&id)[0].starts_with("could not start /nonexistent/definitely-not-here: "),
+            "the OS's own words were dropped from the log"
+        );
     }
 
     /// End to end through the pipe: a line the child printed reaches the

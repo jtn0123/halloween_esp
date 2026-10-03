@@ -133,7 +133,7 @@ desktop and source notices so a buyer can see where each comes from.
 | Component | Terms as published | How it arrives |
 | --- | --- | --- |
 | FFmpeg 9.0.2 (pinned static builds) | GPL-3.0, because those builds enable GPL parts; FFmpeg is LGPL-2.1-or-later when built without them | already on PATH, winget or Homebrew, or a pinned download checked by sha256 |
-| yt-dlp | Unlicense; its standalone binary bundles code listed in its own THIRD_PARTY_LICENSES.txt | downloaded from its GitHub releases, checked against SHA2-256SUMS |
+| yt-dlp | Unlicense; its standalone binary bundles code listed in its own THIRD_PARTY_LICENSES.txt | downloaded from its GitHub releases into per-user app data, by the installer or the owner's Update the downloader (`tools/ytdlp_update.py`), and checked against that release's SHA2-256SUMS |
 | Demucs 4.1.0 | MIT | PyPI, through uv, hash-checked |
 | htdemucs weights (signature 955717e8) | **no licence statement found** (the Hugging Face model card declares none; the package's MIT statement names its code) | downloaded by demucs on first use |
 | PyTorch, NumPy, SciPy and the rest of `requirements-desktop.lock` | each package's own (the three named are BSD-3-Clause and bundle further libraries) | PyPI, through uv, hash-checked |

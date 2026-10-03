@@ -113,6 +113,9 @@ class TestRecordAndEnv(unittest.TestCase):
         self.assertEqual(env["CASTLE_PY"], "/i/env/bin/python")
         self.assertEqual(env["CASTLE_FFMPEG"], "/opt/ff/ffmpeg")
         self.assertEqual(env["CASTLE_YTDLP"], "/i/bin/yt-dlp")
+        # One managed yt-dlp: the installer's, which Update the downloader
+        # replaces in place (tools/ytdlp_update.py).
+        self.assertEqual(env["CASTLE_DOWNLOADER_DIR"], str(Path("/i/bin")))
         self.assertEqual(env["PYTHONUTF8"], "1")
         self.assertEqual(env["OTHER"], "kept")
         path = env["PATH"].split(os.pathsep)
