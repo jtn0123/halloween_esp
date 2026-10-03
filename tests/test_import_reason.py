@@ -120,6 +120,19 @@ class TestSentences(unittest.TestCase):
                 self.assertTrue(text.endswith("."), text)
                 self.assertNotRegex(text, r"exit \d|Error\b|Traceback|errno")
 
+    def test_each_is_its_own_verdict(self) -> None:
+        # The importer prints its sentence last; the studio and the radio
+        # re-read the whole log, and must land on that sentence and no other
+        # — whatever the tool quoted above it.
+        quoted = [
+            "    ERROR: [youtube] x: Private video",
+            "    No space left on device",
+        ]
+        for name, text in sentences().items():
+            said = text.format(prog="ffmpeg")
+            with self.subTest(name=name):
+                self.assertEqual(ir.explain([*quoted, said]), said)
+
     def test_the_downloader_failures_offer_the_update(self) -> None:
         for said in (ir.DOWNLOADER_OLD, ir.DOWNLOADER_MISSING, ir.DOWNLOAD_FAILED):
             self.assertEqual(ir.action(said), ir.UPDATE_DOWNLOADER)

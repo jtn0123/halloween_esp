@@ -306,27 +306,39 @@ def _exception_line(rest: str | None) -> str:
     return GENERIC
 
 
+def _quoted(line: str) -> bool:
+    """A line that starts with whitespace quotes a tool — detail(), a line
+    relayed from yt-dlp, a traceback's frames — for whoever helps; the
+    verdict is never read from one."""
+    return not line or line[0] in _SPACE
+
+
+def _verdict(line: str) -> bool:
+    """Already the owner's sentence — what happened — what to do — rather
+    than an exception's message that happens to hold a dash."""
+    m = _exc_match(line)
+    return " — " in line and not (m and m[0].endswith(_EXC_TAIL))
+
+
 def _scan(log: list[str], passthrough: bool) -> str:
-    text = "\n".join(ln for ln in log if not _chatter(ln)).lower()
+    said = [ln for ln in log if not _quoted(ln)]
+    meant = [ln for ln in said if not _chatter(ln) and not ln.startswith("Traceback")]
+    last = meant[-1].strip(_SPACE) if meant else ""
+    if passthrough and _verdict(last):
+        return basenames(last)
+    text = "\n".join(ln for ln in said if not _chatter(ln)).lower()
     for needle, friendly in KNOWN:
         if needle.lower() in text:
             return friendly
-    for line in reversed(log):
+    for line in reversed(said):
         if not _chatter(line) and "ERROR:" in line:
             tail = line.split("ERROR:", 1)[1].strip(_SPACE)
             return DOWNLOADER_OLD if tail.startswith("[") else DOWNLOAD_FAILED
-    for line in reversed(log):
+    for line in reversed(said):
         m = _exc_match(line)
         if m and m[0].endswith(_EXC_TAIL):
             return _exception_line(m[1])
-    if not passthrough:
-        return ""
-    for line in reversed(log):
-        lt = line.strip(_SPACE)
-        if lt and line[0] not in _SPACE and not _chatter(line):
-            if not line.startswith("Traceback"):
-                return basenames(lt)
-    return ""
+    return basenames(last) if passthrough else ""
 
 
 def explain(log: list[str]) -> str:

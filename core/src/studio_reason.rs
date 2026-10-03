@@ -19,20 +19,52 @@ fn is_chatter(line: &str) -> bool {
 
 /// One sentence worth showing a person, or "" when the log holds none.
 ///
-/// In order: a KNOWN phrase anywhere outside the chatter; else the last
-/// `ERROR:` line, which is yt-dlp's — a `[site]`-tagged one is an extractor
-/// the site has outgrown, any other a download that did not finish; else a
-/// Python traceback's last line, a program that failed or a crash; else the
-/// last meaningful line, which is where the importer's own sentences land.
+/// Lines that start with whitespace are never read: they quote a tool
+/// (the importer's detail, a line relayed from yt-dlp, a traceback's
+/// frames) for whoever helps. Of the rest, in order: a last line that is
+/// already the owner's sentence — the importer's own verdict, "what
+/// happened — what to do" — as it stands; else a KNOWN phrase anywhere
+/// outside the chatter; else the last `ERROR:` line, which is yt-dlp's —
+/// a `[site]`-tagged one is an extractor the site has outgrown, any other
+/// a download that did not finish; else a Python traceback's last line, a
+/// program that failed or a crash; else the last meaningful line.
 pub fn explain(log: &[String]) -> String {
     scan(log, true)
 }
 
+/// A line quoting a tool, kept for the log and never read for a verdict.
+fn is_quoted(line: &str) -> bool {
+    line.as_bytes().first().is_none_or(u8::is_ascii_whitespace)
+}
+
+/// Already the owner's sentence, rather than an exception's message that
+/// happens to hold a dash.
+fn is_verdict(line: &str) -> bool {
+    line.contains(" — ") && !exc_match(line).is_some_and(|(n, _)| is_exception(&n))
+}
+
+fn is_exception(name: &str) -> bool {
+    EXC_TAIL.iter().any(|t| name.ends_with(t))
+}
+
 fn scan(log: &[String], passthrough: bool) -> String {
-    let text = log
+    let said: Vec<&str> = log
+        .iter()
+        .map(String::as_str)
+        .filter(|l| !is_quoted(l))
+        .collect();
+    let last = said
+        .iter()
+        .rev()
+        .find(|l| !is_chatter(l) && !l.starts_with("Traceback"))
+        .map_or("", |l| l.trim_ascii());
+    if passthrough && is_verdict(last) {
+        return basenames(last);
+    }
+    let text = said
         .iter()
         .filter(|l| !is_chatter(l))
-        .map(String::as_str)
+        .copied()
         .collect::<Vec<_>>()
         .join("\n")
         .to_lowercase();
@@ -41,7 +73,7 @@ fn scan(log: &[String], passthrough: bool) -> String {
             return friendly.to_string();
         }
     }
-    for line in log.iter().rev().filter(|l| !is_chatter(l)) {
+    for line in said.iter().rev().filter(|l| !is_chatter(l)) {
         if let Some((_, tail)) = line.split_once("ERROR:") {
             let said = if tail.trim_ascii().starts_with('[') {
                 DOWNLOADER_OLD
@@ -51,27 +83,18 @@ fn scan(log: &[String], passthrough: bool) -> String {
             return said.to_string();
         }
     }
-    for line in log.iter().rev() {
+    for line in said.iter().rev() {
         if let Some((name, rest)) = exc_match(line)
-            && EXC_TAIL.iter().any(|t| name.ends_with(t))
+            && is_exception(&name)
         {
             return exception_line(rest.as_deref());
         }
     }
-    if !passthrough {
-        return String::new();
+    if passthrough {
+        basenames(last)
+    } else {
+        String::new()
     }
-    for line in log.iter().rev() {
-        let lt = line.trim_ascii();
-        if !lt.is_empty()
-            && !line.as_bytes()[0].is_ascii_whitespace()
-            && !is_chatter(line)
-            && !line.starts_with("Traceback")
-        {
-            return basenames(lt);
-        }
-    }
-    String::new()
 }
 
 /// `^([A-Za-z_][\w.]*)(?::\s*(.*))?$`
