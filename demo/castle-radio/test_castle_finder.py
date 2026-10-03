@@ -144,7 +144,9 @@ class TheRoutes(PlaceCase):
             )
             status, body = adopt_post(castle["address"], castle["name"])
             self.assertEqual(status, 200, body)
-            self.assertEqual((body["host"], body["version"]), (self.addr, "5.40"))
+            self.assertEqual(
+                (body["host"], body["version"]), (self.addr, self.emu.version)
+            )
             self.assertEqual(hosts.first_castle(self.store), [self.addr, NAME])
             self.assertEqual(device_bridge.HOST, self.addr)
             status, again = post("/radio/device/find", JSON, b"{}")
