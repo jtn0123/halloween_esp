@@ -95,7 +95,8 @@
   byId('find-run').onclick = find;
   byId('find-use').onclick = () => {
     const host = typed.value.trim();
-    if (host) { adopt(host); } else { message.textContent = 'Type the castle’s address first'; }
+    // adopt() says its own failure on the card and never rejects.
+    if (host) { void adopt(host); } else { message.textContent = 'Type the castle’s address first'; }
   };
   chip?.addEventListener('click', () => { if (online === false) {open();} });
   window.castleLink?.subscribe(snapshot => {
