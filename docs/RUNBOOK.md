@@ -5,6 +5,7 @@ view: what to run, in what order, and what to check when it doesn't take.
 (Grade report 2026-08-23 H1 — the missing last-mile documentation is how the Ballad
 of the Witches' Road sat rendered on the Mac while the castle answered
 `unknown scene` all evening.)
+A castle someone else owns (their report, a soak log, the unit record): docs/SUPPORT.md.
 
 ## Adding a song, end to end
 
