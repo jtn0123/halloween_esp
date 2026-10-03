@@ -415,9 +415,13 @@ calls/hour unauthenticated — check once a day and on launch, not more).
 - [ ] One Release = one version of everything: Tauri bundles (mac arm64,
       mac x64?, Windows x64), `latest.json` for the updater, firmware images
       named by variant (1.5), web-flasher manifest, checksums.
-- [ ] Tauri updater: its own update-signing keypair (minisign — free, NOT
+      *Built end to end by the release dry run on 2026-10-03 (run
+      37142954369, every job green); not yet published from a tag.*
+- [x] Tauri updater: its own update-signing keypair (minisign — free, NOT
       code signing; required even for unsigned apps). Private key in a
-      GitHub Actions secret; losing it strands installed apps.
+      GitHub Actions secret; losing it strands installed apps. Made
+      2026-10-03: pubkey committed, both secrets set, originals kept off
+      GitHub (docs/RELEASING.md); dry run 3's signatures verify.
 - [x] Release workflow: tag `vX.Y` → build on macOS + Windows runners →
       build firmware → upload all assets → publish `latest.json` last.
 - [x] Channels: `stable` only for the buyer; pre-releases ignored unless a
