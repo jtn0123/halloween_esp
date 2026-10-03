@@ -18,6 +18,7 @@ every block's Reed-Solomon syndromes).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from itertools import pairwise
 
@@ -245,34 +246,49 @@ class _Grid:
         self.fixed[r][c] = True
 
     def functions(self) -> None:
-        n = self.n
-        for i in range(n):  # timing
+        self._timing()
+        self._finders()
+        self._alignments()
+        self.format(0)  # reserve, with any value
+        if self.version >= 7:
+            self._version_info()
+
+    def _timing(self) -> None:
+        for i in range(self.n):
             self.put(6, i, i % 2 == 0)
             self.put(i, 6, i % 2 == 0)
-        for r0, c0 in ((3, 3), (3, n - 4), (n - 4, 3)):  # finders + separators
+
+    def _finders(self) -> None:
+        """The three finders with their separators: rings 2 and 4 light."""
+        n = self.n
+        for r0, c0 in ((3, 3), (3, n - 4), (n - 4, 3)):
             for dr in range(-4, 5):
                 for dc in range(-4, 5):
                     r, c = r0 + dr, c0 + dc
                     if 0 <= r < n and 0 <= c < n:
-                        ring = max(abs(dr), abs(dc))
-                        self.put(r, c, ring not in (2, 4))
+                        self.put(r, c, max(abs(dr), abs(dc)) not in (2, 4))
+
+    def _alignments(self) -> None:
         centres = alignment_centres(self.version)
         last = len(centres) - 1
+        under_finders = {(0, 0), (0, last), (last, 0)}
         for i, r0 in enumerate(centres):
             for j, c0 in enumerate(centres):
-                if (i, j) in ((0, 0), (0, last), (last, 0)):
-                    continue  # under a finder
-                for dr in range(-2, 3):
-                    for dc in range(-2, 3):
-                        self.put(r0 + dr, c0 + dc, max(abs(dr), abs(dc)) != 1)
-        self.format(0)  # reserve, with any value
-        if self.version >= 7:
-            bits = version_bits(self.version)
-            for i in range(18):
-                dark = ((bits >> i) & 1) == 1
-                a, b = n - 11 + i % 3, i // 3
-                self.put(a, b, dark)
-                self.put(b, a, dark)
+                if (i, j) not in under_finders:
+                    self._alignment(r0, c0)
+
+    def _alignment(self, r0: int, c0: int) -> None:
+        for dr in range(-2, 3):
+            for dc in range(-2, 3):
+                self.put(r0 + dr, c0 + dc, max(abs(dr), abs(dc)) != 1)
+
+    def _version_info(self) -> None:
+        bits = version_bits(self.version)
+        for i in range(18):
+            dark = ((bits >> i) & 1) == 1
+            a, b = self.n - 11 + i % 3, i // 3
+            self.put(a, b, dark)
+            self.put(b, a, dark)
 
     def format(self, bits: int) -> None:
         n = self.n
@@ -294,11 +310,15 @@ class _Grid:
         self.put(n - 8, 8, True)  # the dark module
 
     def place(self, codewords: list[int]) -> None:
-        """The zigzag of §7.7.3: column pairs from the right, skipping the
-        vertical timing column, alternately upwards and downwards."""
-        n = self.n
         bits = [((w >> (7 - i)) & 1) == 1 for w in codewords for i in range(8)]
-        k = 0
+        for k, (r, c) in enumerate(self._zigzag()):
+            self.dark[r][c] = bits[k] if k < len(bits) else False
+
+    def _zigzag(self) -> Iterator[tuple[int, int]]:
+        """The data modules in the order of §7.7.3: column pairs from the
+        right, skipping the vertical timing column, alternately upwards and
+        downwards."""
+        n = self.n
         right = n - 1
         while right >= 1:
             if right == 6:
@@ -306,10 +326,7 @@ class _Grid:
             upward = ((right + 1) & 2) == 0
             for v in range(n):
                 r = n - 1 - v if upward else v
-                for c in (right, right - 1):
-                    if not self.fixed[r][c]:
-                        self.dark[r][c] = bits[k] if k < len(bits) else False
-                        k += 1
+                yield from ((r, c) for c in (right, right - 1) if not self.fixed[r][c])
             right -= 2
 
     def masked(self, mask: int) -> list[list[bool]]:

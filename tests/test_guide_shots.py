@@ -214,8 +214,9 @@ class TestMake(unittest.TestCase):
     def test_make_runs_the_browser_on_live_stand_ins_and_compresses_what_it_took(
         self,
     ) -> None:
-        def browser(argv: list[str], check: bool) -> None:
-            plan = json.loads(Path(argv[-1]).read_text(encoding="utf-8"))
+        def browser(argv: list[str], input: str, text: bool, check: bool) -> None:
+            plan = json.loads(input)
+            self.assertEqual(len(argv), 2, "a path on the command line")
             for url in (plan["radio"], plan["portal"], *plan["owner"].values()):
                 self.assertEqual(
                     get(url + ("/api/status" if url in plan["owner"].values() else ""))[
@@ -224,11 +225,10 @@ class TestMake(unittest.TestCase):
                     200,
                 )
             for stem in gs.SHOTS:
-                Image.new("RGB", (20, 10), "purple").save(
-                    Path(plan["out"]) / f"{stem}.png"
-                )
+                Image.new("RGB", (20, 10), "purple").save(gs.RAW / f"{stem}.png")
 
-        with tempfile.TemporaryDirectory() as out, \
+        with tempfile.TemporaryDirectory() as out, tempfile.TemporaryDirectory() as raw, \
+                mock.patch.object(gs, "RAW", Path(raw) / "raw"), \
                 mock.patch.object(gs, "bundle", return_value=Path("shots.mjs")), \
                 mock.patch.object(gs.subprocess, "run", side_effect=browser):  # fmt: skip
             sizes = gs.make(Path(out))
@@ -236,7 +236,8 @@ class TestMake(unittest.TestCase):
             self.assertEqual(len(list(Path(out).glob("*.png"))), len(gs.SHOTS))
 
     def test_a_picture_the_browser_did_not_take_is_said(self) -> None:
-        with tempfile.TemporaryDirectory() as out, \
+        with tempfile.TemporaryDirectory() as out, tempfile.TemporaryDirectory() as raw, \
+                mock.patch.object(gs, "RAW", Path(raw) / "raw"), \
                 mock.patch.object(gs, "bundle", return_value=Path("shots.mjs")), \
                 mock.patch.object(gs.subprocess, "run"), \
                 self.assertRaisesRegex(gs.ShotError, "did not make: portal"):  # fmt: skip

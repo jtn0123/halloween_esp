@@ -37,7 +37,7 @@ RADIO = ROOT / "demo" / "castle-radio"
 
 #: The castle in the pictures: a documented example address (the ship guard
 #: allows it) and the name the label tool gives the MAC guide_shots uses.
-CASTLE_IP = "192.168.1.50"
+CASTLE_IP = "192.168.1.50"  # NOSONAR — never dialled: guard() maps it to the emulator
 CASTLE_NAME = "castle-a1b2c3"
 #: What the update card offers: a release tag a little ahead of the app.
 OFFER_TAG = "v0.2.0"
@@ -112,7 +112,7 @@ def main(argv: list[str]) -> int:
     handler = install(int(argv[0]))
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     print(httpd.server_address[1], flush=True)
-    httpd.serve_forever()
+    httpd.serve_forever()  # NOSONAR — loopback only, for the browser taking pictures
     return 0
 
 

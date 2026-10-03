@@ -58,7 +58,7 @@ class TestFirmwareSource(unittest.TestCase):
         assert m is not None, "castle_buyer.h no longer names the AP by snprintf"
         fmt, a, b = m.group(1), int(m.group(2)), int(m.group(3))
         self.assertEqual(fmt, ul.AP_PREFIX + "%02X%02X")
-        self.assertEqual((a, b), ul.AP_BYTES)
+        self.assertEqual(ul.AP_BYTES, (a, b))
         # The C format, run: Python's % is printf's for %02X.
         self.assertEqual(fmt % (MAC[a], MAC[b]), ul.from_mac(MAC).hotspot)
         self.assertEqual(ul.from_mac(MAC).hotspot, "Castle-C3D4")
@@ -205,8 +205,9 @@ class TestHost(unittest.TestCase):
         self.assertEqual(unit.hotspot, "Castle-C3D4")
 
     def test_the_yard_build_is_refused(self) -> None:
+        host = self.emulator("yard")
         with self.assertRaisesRegex(ul.LabelError, "runs the yard build"):
-            ul.from_host(self.emulator("yard"))
+            ul.from_host(host)
 
     def test_nothing_answering_is_said(self) -> None:
         with self.assertRaisesRegex(ul.LabelError, "Nothing at 10.0.0.9 answered"):
@@ -227,30 +228,24 @@ class TestMain(unittest.TestCase):
             code = ul.main(list(argv))
         return code, out.getvalue(), err.getvalue()
 
-    def test_a_mac_makes_the_sheet_and_prints_the_record(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            target = Path(tmp) / "label.html"
-            code, out, _ = self.run_main(
-                "--mac", COLONS, "--unit", "U1", "-o", str(target)
-            )
+    def test_a_mac_makes_the_sheet_here_and_prints_the_record(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, contextlib.chdir(tmp):
+            code, out, _ = self.run_main("--mac", COLONS, "--unit", "U1")
             self.assertEqual(code, 0)
+            target = Path(tmp) / "castle-label-castle-b2c3d4.html"
             self.assertIn("Castle-C3D4", target.read_text(encoding="utf-8"))
         self.assertIn("Castle name:     castle-b2c3d4.local", out)
+        self.assertIn("label: castle-label-castle-b2c3d4.html", out)
         self.assertIn("2.25x1.25 in sticker", out)
-
-    def test_the_default_file_is_named_after_the_castle(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp, contextlib.chdir(tmp):
-            self.assertEqual(self.run_main("--mac", MAC.hex())[0], 0)
-            self.assertTrue((Path(tmp) / "castle-label-castle-b2c3d4.html").is_file())
 
     def test_a_host_is_asked_through_the_same_door(self) -> None:
         case = TestHost("test_the_yard_build_is_refused")
         host = case.emulator()
         fake = case.responder(host)
         self.addCleanup(case.doCleanups)
-        with tempfile.TemporaryDirectory() as tmp, \
+        with tempfile.TemporaryDirectory() as tmp, contextlib.chdir(tmp), \
                 mock.patch.object(ul, "MDNS_GROUP", fake.addr):  # fmt: skip
-            code, out, _ = self.run_main("--host", host, "-o", f"{tmp}/l.html")
+            code, out, _ = self.run_main("--host", host)
         self.assertEqual(code, 0)
         self.assertIn("Firmware:        castle v", out)
 

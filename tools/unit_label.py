@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """The unit label — one printable sheet for one castle (PRODUCTION-TODO §3).
 
-    unit_label.py --mac A4CF12B2C3D4 [--unit CASTLE-2026-001] [-o FILE]
-    unit_label.py --host castle-b2c3d4.local [--unit ...] [-o FILE]
+    unit_label.py --mac A4CF12B2C3D4 [--unit CASTLE-2026-001]
+    unit_label.py --host castle-b2c3d4.local [--unit ...]
+
+It writes castle-label-<name>.html in the current folder; run it where the
+sheet should land.
 
 One self-contained HTML file, nothing fetched when it opens: a 4 x 6 in card
 for the box and a 2.25 x 1.25 in sticker for the castle's base, each its own
@@ -36,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import os
 import re
 import sys
 from collections.abc import Callable
@@ -97,7 +101,7 @@ class Unit:
 
     @property
     def page(self) -> str:
-        return f"http://{self.name}.local"
+        return f"http://{self.name}.local"  # NOSONAR — the castle serves no TLS
 
 
 def parse_mac(text: str) -> bytes:
@@ -266,7 +270,6 @@ def main(argv: list[str] | None = None) -> int:
     which.add_argument("--host", help="ask a castle on this network instead")
     ap.add_argument("--unit", default="", help="your serial for it, printed small")
     ap.add_argument("--guide-url", default=GUIDE_URL, help="what the QR code opens")
-    ap.add_argument("-o", "--out", type=Path, help="default: castle-label-<name>.html")
     args = ap.parse_args(argv)
     try:
         if args.mac:
@@ -276,7 +279,9 @@ def main(argv: list[str] | None = None) -> int:
     except (LabelError, OSError) as exc:
         print(f"unit_label: {exc}", file=sys.stderr)
         return 1
-    out = args.out or Path(f"castle-label-{unit.name}.html")
+    # One component, never a path: the name is castle-<hex> by construction,
+    # and basename keeps it so whatever --host was told.
+    out = Path(os.path.basename(f"castle-label-{unit.name}.html"))
     out.write_text(page(unit, args.guide_url), encoding="utf-8")
     print(record(unit))
     print(

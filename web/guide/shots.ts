@@ -3,8 +3,9 @@
  *
  * `make guide-shots` starts the stand-in servers (emulated castles, Castle
  * Radio on a pretend LAN, the captive portal page and the flasher), writes
- * their addresses to a plan file and runs this, bundled by esbuild, with the
- * plan's path as its one argument. Each function below opens one screen as
+ * their addresses as a JSON plan on this script's stdin and runs it, bundled
+ * by esbuild. Nothing it is handed is a path: the raw PNGs go to
+ * web/dist/guide-shots/, beside the bundle, where guide_shots.py RAW reads them. Each function below opens one screen as
  * an owner would, waits for the words that prove it finished drawing, and
  * saves raw PNGs named after tools/guide_shots.py's SHOTS; the Python side
  * compresses them into docs/guide/. A screen that never says its words is a
@@ -13,20 +14,19 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Locator, type Page } from "@playwright/test";
 
 type Plan = {
-  out: string;
   owner: { songs: string; empty: string; trouble: string };
   radio: string;
   portal: string;
   flasher: string;
 };
 
-const planPath = process.argv[2];
-if (!planPath) throw new Error("usage: guide_shots.mjs PLAN.json");
-const plan = JSON.parse(readFileSync(planPath, "utf8")) as Plan;
-const file = (name: string): string => join(plan.out, `${name}.png`);
+const plan = JSON.parse(readFileSync(0, "utf8")) as Plan; // stdin
+const OUT = fileURLToPath(new URL("guide-shots/", import.meta.url));
+const file = (name: string): string => join(OUT, `${name}.png`);
 const WAIT = 15_000;
 
 /** Wait until the element's text holds `words` (with `gone`, until it no longer does). */

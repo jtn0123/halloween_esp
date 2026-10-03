@@ -57,6 +57,9 @@ GUIDE = ROOT / "docs" / "OWNER-GUIDE.md"
 OUT = ROOT / "docs" / "guide"
 SCRIPT = WEB / "guide" / "shots.ts"
 BUNDLE = WEB / "dist" / "guide_shots.mjs"
+# Where the browser leaves its raw PNGs: beside the bundle, fixed in
+# web/guide/shots.ts, so no path is ever handed to it (web/dist/ is ignored).
+RAW = WEB / "dist" / "guide-shots"
 
 #: Every picture, by file stem, and what it shows. web/guide/shots.ts
 #: writes exactly these; audit() holds the guide to exactly these.
@@ -187,7 +190,7 @@ class _SiteHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, format: str, *args: object) -> None:
-        pass
+        pass  # a picture run prints the pictures, not every request for them
 
 
 def seed_card(card: Path, songs: dict[str, int] = SONGS) -> None:
@@ -331,27 +334,27 @@ def site() -> Iterator[str]:
 def make(out: Path = OUT) -> dict[str, int]:
     """Every picture in SHOTS, taken and compressed into `out`: stem -> bytes."""
     script = bundle()
+    shutil.rmtree(RAW, ignore_errors=True)
+    RAW.mkdir(parents=True)
     with tempfile.TemporaryDirectory(prefix="guide-shots-") as tmp:
         scratch = Path(tmp)
-        raw = scratch / "raw"
-        raw.mkdir()
         with castles(scratch) as emus, radio(scratch, emus["songs"].port) as radio_url, \
                 site() as site_url:  # fmt: skip
             plan = {
-                "out": str(raw),
                 "owner": {k: f"http://127.0.0.1:{e.port}" for k, e in emus.items()},
                 "radio": radio_url,
                 "portal": f"{site_url}/",
                 "flasher": f"{site_url}/flasher/",
             }
-            (scratch / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+            # On stdin: the plan is addresses only, and the browser's half
+            # reads no file it was told the name of.
             subprocess.run(
-                [node(), str(script), str(scratch / "plan.json")], check=True
+                [node(), str(script)], input=json.dumps(plan), text=True, check=True
             )
-        missing = [s for s in SHOTS if not (raw / f"{s}.png").is_file()]
-        if missing:
-            raise ShotError(f"the browser did not make: {', '.join(missing)}")
-        return {s: compress(raw / f"{s}.png", out / f"{s}.png") for s in SHOTS}
+    missing = [s for s in SHOTS if not (RAW / f"{s}.png").is_file()]
+    if missing:
+        raise ShotError(f"the browser did not make: {', '.join(missing)}")
+    return {s: compress(RAW / f"{s}.png", out / f"{s}.png") for s in SHOTS}
 
 
 def main(argv: list[str] | None = None) -> int:

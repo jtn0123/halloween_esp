@@ -90,9 +90,10 @@ works them out, so the label and the castle cannot disagree:
 .venv/bin/python tools/unit_label.py --host castle-xxxxxx.local --unit CASTLE-2026-007
 ```
 
-It writes `castle-label-castle-xxxxxx.html`: open it in a browser and
-print page 1 on a 4×6 in (or A6) card for the box, page 2 on a
-2.25×1.25 in sticker for the castle's base, both at 100 % scale. `--host`
+It writes `castle-label-castle-xxxxxx.html` in the folder it runs from:
+open it in a browser and print page 1 on a 4×6 in (or A6) card for the
+box, page 2 on a 2.25×1.25 in sticker for the castle's base, both at
+100 % scale. `--host`
 asks a buyer-build castle on your Wi-Fi (by name, or by address plus an
 mDNS look-up) and refuses the yard build.
 
