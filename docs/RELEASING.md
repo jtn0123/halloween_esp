@@ -49,7 +49,8 @@ contract check, and keeps the lot as the run artifact
 | --- | --- | --- |
 | `castle-fw-feather-s3-4m2p-<tag>.factory.bin` | The whole flash image from offset 0: bootloader, partition table and app. | The web flasher (new castle, recovery). |
 | `castle-fw-feather-s3-4m2p-<tag>.ota.bin` | The app image alone, what `PUT /api/ota` takes. Size-gated by `tools/check_image.py` (fails at 97% of the 1,835,008-byte slot). | The desktop app's "Update castle". |
-| `castle-core-<target>-<tag>.zip` | `analyze_track`, `scene_render`, `studio` (`.exe` on Windows), flat. Targets: `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`, `x86_64-apple-darwin`. | The desktop app's sidecars. |
+| `castle-fw-feather-s3-4m2p-<tag>.notices.txt` | The two images' third-party notices (`licenses/THIRD-PARTY-NOTICES-firmware.txt`, docs/LICENSING.md). | Anyone given an image; `pages.yml` serves it beside the flasher. |
+| `castle-core-<target>-<tag>.zip` | `analyze_track`, `scene_render`, `studio` (`.exe` on Windows) and `THIRD-PARTY-NOTICES.txt`, flat. Targets: `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`, `x86_64-apple-darwin`. | The desktop app's sidecars. |
 | `flasher-manifest.json` | The esp-web-tools manifest: ESP32-S3, factory image at offset 0, Improv Wi-Fi, erase offered. | The web flasher. |
 | `SHA256SUMS` | `sha256sum` format over every other asset. | Anything that downloads an asset; `pages.yml` checks it. |
 | `castle-tools-aarch64-apple-darwin-<tag>.dmg` | The desktop app's macOS installer (ad-hoc signed, not notarized). | A first-time owner on a Mac. |
@@ -74,9 +75,10 @@ turns up in the image.
 `flasher/index.html` is a static page using esp-web-tools (pinned version).
 GitHub's release-download URLs redirect to a host that sends no CORS
 headers, so the page cannot fetch the image from the Release directly;
-`pages.yml` copies the latest full release's manifest and factory image next
-to the page and deploys the three files together, after checking them
-against `SHA256SUMS`.
+`pages.yml` copies the latest full release's manifest, factory image and
+firmware notices next to the page (the notices as `THIRD-PARTY-NOTICES.txt`,
+which the page links) and deploys them together, after checking them against
+`SHA256SUMS`.
 
 It deploys when `release.yml` publishes a full release, when a release is
 published by hand, and on `gh workflow run pages.yml` (after editing the

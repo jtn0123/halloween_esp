@@ -9,8 +9,9 @@
 #
 # It runs weekly; by hand (`gh workflow run firmware.yml`) so a firmware
 # change can be compiled the day it lands; and on a PR that touches
-# firmware/, this workflow, or requirements.txt (the esphome pin), because
-# those are the PRs where "it validated" is not the same as "it builds".
+# firmware/, this workflow, requirements.txt (the esphome pin) or the
+# firmware's notices table, because those are the PRs where "it validated"
+# is not the same as "it builds".
 
 name: firmware
 
@@ -23,6 +24,7 @@ on:
       - "firmware/**"
       - ".github/workflows/firmware.yml"
       - "requirements.txt"
+      - "tools/notices_firmware.py"
 
 # `bash -eo pipefail`: GitHub's default for a plain step is `bash -e` with NO
 # pipefail, so `esphome compile … | tee` reported tee's exit status — always
@@ -175,6 +177,12 @@ jobs:
         run: esphome compile firmware/castle_buyer.yaml | tee /tmp/build_buyer.out
       - name: buyer OTA slot
         run: python tools/check_image.py castle --require
+      # The notices a release stages beside this image must name everything
+      # it links (tools/notices_firmware.py): a new archive, ESP-IDF,
+      # toolchain or managed component is red here, on the PR, rather than
+      # on the day of the tag, where release.yml runs the same check.
+      - name: buyer third-party notices cover the link
+        run: python tools/third_party_notices.py check-firmware firmware/.esphome/build/castle
       - name: no CI credential in the buyer image
         env:
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}
