@@ -127,7 +127,8 @@ class TestScanTree(GitRepo):
 
     def test_untracked_files_and_the_guard_itself_are_not_read(self) -> None:
         (self.root / "scratch.txt").write_text(SELLER, encoding="utf-8")
-        self.add(g.SELF, f"SELLER_NET = '{SELLER}'\n")
+        for path in g.UNREAD:
+            self.add(path, f"SELLER_NET = '{SELLER}'\n")
         self.assertEqual(g.scan_tree(self.root), [])
 
     def test_a_leak_in_shipping_code_is_named_by_line(self) -> None:

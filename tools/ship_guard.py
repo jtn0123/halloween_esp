@@ -49,8 +49,9 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-#: This file names what it guards against, so it is the one file not read.
-SELF = "tools/ship_guard.py"
+#: The guard names what it guards against, and its test plants it: the two
+#: files the tree scan does not read.
+UNREAD = ("tools/ship_guard.py", "tests/test_ship_guard.py")
 
 #: Tracked for the seller's own tools, never shipped: export-ignore in
 #: .gitattributes (the source zip) and skipped by the installer (a clone).
@@ -191,7 +192,7 @@ def scan_tree(root: Path = ROOT) -> list[str]:
     found += [f"{p}: tracked but not export-ignore — it would ship in the "
               "release source zip (.gitattributes)" for p in present if p not in ignored]  # fmt: skip
     for p in files:
-        if p == SELF or not (root / p).is_file():
+        if p in UNREAD or not (root / p).is_file():
             continue
         text = _text((root / p).read_bytes())
         if text is not None:

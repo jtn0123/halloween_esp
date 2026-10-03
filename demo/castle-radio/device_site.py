@@ -90,16 +90,11 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
         "'Waveform unavailable. Reopen this song to retry.'",
         "'Connect Mac tools to view waveforms, then reopen this song.'",
     ),
-    (WORDS, "'Castle unreachable at 10.27.27.81'", "'Castle unreachable'"),
+    (WORDS, "'Castle unreachable from this computer'", "'Castle unreachable'"),
     (
         WORDS,
         "'Control room server is not running'",
         "'Castle not answering'",
-    ),
-    (
-        "device-tools.js",
-        "'Sending command to 10.27.27.81'",
-        "'Sending command to the castle'",
     ),
     (
         IMPORTS,

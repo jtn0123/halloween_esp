@@ -129,8 +129,8 @@ copies. Sample audio is local and is not distributed with the repository.
 ## On the castle itself
 
 `make publish` (or `tools/sd_sync.py site`) pushes this control room to the
-castle's SD card as ONE self-contained page, and http://10.27.27.81/ serves
-it: 68 KB gzipped, about 1.5 s to first paint over the porch Wi-Fi.
+castle's SD card as ONE self-contained page, and the castle serves it at
+`/`: 68 KB gzipped, about 1.5 s to first paint over the porch Wi-Fi.
 `device_site.py` builds it; `castle-direct.js`, inlined first, answers every
 `/radio/*` route from the firmware's own `/api` (status settling, the command
 builders, the SD inventory and the generated-light streamer are ports of
