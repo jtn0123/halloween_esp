@@ -16,8 +16,12 @@ repo's own tooling:
   castle-fw-feather-s3-4m2p-<tag>.factory.bin   full image, offset 0 — the
                                                 web flasher writes this
   castle-fw-feather-s3-4m2p-<tag>.ota.bin       app image — PUT /api/ota
+  castle-fw-feather-s3-4m2p-<tag>.notices.txt   the images' third-party
+                                                notices (pages.yml serves it
+                                                beside the flasher too)
   castle-core-<rust-target>-<tag>.zip           analyze_track, scene_render,
                                                 studio (+ .exe on Windows)
+                                                and THIRD-PARTY-NOTICES.txt
   flasher-manifest.json                         esp-web-tools manifest
   SHA256SUMS                                    sha256sum format, every
                                                 other asset
@@ -62,6 +66,12 @@ CORE_BINS = ("analyze_track", "scene_render", "studio")
 MANIFEST = "flasher-manifest.json"
 SUMS = "SHA256SUMS"
 LATEST = "latest.json"
+#: tools/third_party_notices.py's output for the two artifacts staged here.
+LICENSES = Path(__file__).resolve().parent.parent / "licenses"
+FIRMWARE_NOTICES = LICENSES / "THIRD-PARTY-NOTICES-firmware.txt"
+CORE_NOTICES = LICENSES / "THIRD-PARTY-NOTICES-castle-core.txt"
+#: What the notices file is called inside a castle-core zip.
+NOTICES_IN_ZIP = "THIRD-PARTY-NOTICES.txt"
 #: Rust target -> the Tauri updater's platform key in latest.json.
 DESKTOP_TARGETS = {
     "aarch64-apple-darwin": "darwin-aarch64",
@@ -89,6 +99,10 @@ def ota_name(tag: str) -> str:
     return f"castle-fw-{BOARD}-{tag}.ota.bin"
 
 
+def notices_name(tag: str) -> str:
+    return f"castle-fw-{BOARD}-{tag}.notices.txt"
+
+
 def core_zip_name(target: str, tag: str) -> str:
     return f"castle-core-{target}-{tag}.zip"
 
@@ -107,7 +121,7 @@ def desktop_names(target: str, tag: str) -> dict[str, str]:
 def expected_assets(tag: str, desktop: bool = False) -> list[str]:
     """Every asset a complete release carries, SHA256SUMS last (and, with
     the desktop app, latest.json after it — the upload order)."""
-    names = [factory_name(tag), ota_name(tag)]
+    names = [factory_name(tag), ota_name(tag), notices_name(tag)]
     names += [core_zip_name(t, tag) for t in CORE_TARGETS]
     if not desktop:
         return [*names, MANIFEST, SUMS]
@@ -118,22 +132,27 @@ def expected_assets(tag: str, desktop: bool = False) -> list[str]:
 
 
 def stage_firmware(tag: str, ota_bin: Path, out: Path) -> list[Path]:
-    """Copy ESPHome's two images under their release names. OTA_BIN is what
+    """Copy ESPHome's two images under their release names, with the
+    third-party notices that must travel beside them. OTA_BIN is what
     `tools/check_image.py --path` printed; ESPHome writes the factory image
     beside it, and a build without one is not a release."""
     factory = ota_bin.with_name("firmware.factory.bin")
     for src in (ota_bin, factory):
         if not src.is_file():
             raise SystemExit(f"missing firmware image: {src}")
+    if not FIRMWARE_NOTICES.is_file():
+        raise SystemExit(f"missing third-party notices: {FIRMWARE_NOTICES}")
     out.mkdir(parents=True, exist_ok=True)
-    staged = [out / factory_name(tag), out / ota_name(tag)]
+    staged = [out / factory_name(tag), out / ota_name(tag), out / notices_name(tag)]
     shutil.copyfile(factory, staged[0])
     shutil.copyfile(ota_bin, staged[1])
+    shutil.copyfile(FIRMWARE_NOTICES, staged[2])
     return staged
 
 
 def zip_core(tag: str, target: str, bin_dir: Path, out: Path) -> Path:
-    """The three castle-core binaries, flat, executable bit kept."""
+    """The three castle-core binaries, flat, executable bit kept, and the
+    notices for what they link."""
     if target not in CORE_TARGETS:
         raise SystemExit(
             f"{target!r} is not a release target: {', '.join(CORE_TARGETS)}"
@@ -150,6 +169,10 @@ def zip_core(tag: str, target: str, bin_dir: Path, out: Path) -> Path:
             info.external_attr = 0o755 << 16
             info.compress_type = zipfile.ZIP_DEFLATED
             zf.writestr(info, src.read_bytes())
+        info = zipfile.ZipInfo(NOTICES_IN_ZIP, date_time=(1980, 1, 1, 0, 0, 0))
+        info.external_attr = 0o644 << 16
+        info.compress_type = zipfile.ZIP_DEFLATED
+        zf.writestr(info, CORE_NOTICES.read_bytes())
     return dest
 
 

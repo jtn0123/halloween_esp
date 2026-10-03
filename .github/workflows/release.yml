@@ -158,6 +158,13 @@ jobs:
           mapfile -t trees < <(find firmware/.esphome/build -mindepth 1 -maxdepth 1 -type d -printf '%f\n')
           [ "${#trees[@]}" -eq 1 ] || { echo "expected one build tree, found: ${trees[*]}"; exit 1; }
           echo "name=${trees[0]}" >> "$GITHUB_OUTPUT"
+      # The notices staged beside the images (stage-firmware copies them)
+      # must cover what this build linked: every archive in its linker maps,
+      # its ESP-IDF, toolchain, managed components and ESPHome version.
+      - name: the third-party notices cover this image
+        env:
+          DEVICE: ${{ steps.dev.outputs.name }}
+        run: python tools/third_party_notices.py check-firmware "firmware/.esphome/build/$DEVICE"
       - name: stage the images under their release names
         env:
           TAG: ${{ needs.meta.outputs.tag }}

@@ -1,5 +1,6 @@
 # The web flasher on GitHub Pages: flasher/index.html plus the LATEST full
-# release's factory image and esp-web-tools manifest, served from one origin
+# release's factory image, its third-party notices and esp-web-tools
+# manifest, served from one origin
 # (production plan item 1.2; docs/RELEASING.md is the operator's view).
 #
 # Why copy the assets instead of pointing the page at the Release: a
@@ -56,6 +57,7 @@ jobs:
           gh release download --repo "$GITHUB_REPOSITORY" --dir dl \
             --pattern flasher-manifest.json \
             --pattern 'castle-fw-*.factory.bin' \
+            --pattern 'castle-fw-*.notices.txt' \
             --pattern SHA256SUMS
           ls -l dl
       # The bytes a stranger will write to their castle: checked against the
@@ -77,6 +79,9 @@ jobs:
           mkdir _site
           cp -R flasher/. _site/
           cp dl/flasher-manifest.json dl/castle-fw-*.factory.bin _site/
+          # The image's third-party notices travel with the image; the page
+          # links them under this fixed name.
+          cp dl/castle-fw-*.notices.txt _site/THIRD-PARTY-NOTICES.txt
           ls -l _site
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5

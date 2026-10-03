@@ -54,6 +54,7 @@ class NameTests(unittest.TestCase):
             [
                 "castle-fw-feather-s3-4m2p-v0.1.0.factory.bin",
                 "castle-fw-feather-s3-4m2p-v0.1.0.ota.bin",
+                "castle-fw-feather-s3-4m2p-v0.1.0.notices.txt",
                 "castle-core-x86_64-pc-windows-msvc-v0.1.0.zip",
                 "castle-core-aarch64-apple-darwin-v0.1.0.zip",
                 "castle-core-x86_64-apple-darwin-v0.1.0.zip",
@@ -110,6 +111,11 @@ class StagingTests(unittest.TestCase):
         self.assertEqual(factory.read_bytes(), b"boot+table+app")
         ota = self.out / "castle-fw-feather-s3-4m2p-v0.1.0.ota.bin"
         self.assertEqual(ota.read_bytes(), b"app")
+        notices = self.out / "castle-fw-feather-s3-4m2p-v0.1.0.notices.txt"
+        self.assertEqual(
+            notices.read_bytes(),
+            (ROOT / "licenses" / "THIRD-PARTY-NOTICES-firmware.txt").read_bytes(),
+        )
 
     def test_a_build_without_a_factory_image_is_not_a_release(self) -> None:
         (self.ota.parent / "firmware.factory.bin").unlink()
@@ -122,14 +128,26 @@ class StagingTests(unittest.TestCase):
         with zipfile.ZipFile(win) as zf:
             self.assertEqual(
                 sorted(zf.namelist()),
-                ["analyze_track.exe", "scene_render.exe", "studio.exe"],
+                [
+                    "THIRD-PARTY-NOTICES.txt",
+                    "analyze_track.exe",
+                    "scene_render.exe",
+                    "studio.exe",
+                ],
             )
         with zipfile.ZipFile(mac) as zf:
             self.assertEqual(
-                sorted(zf.namelist()), ["analyze_track", "scene_render", "studio"]
+                sorted(zf.namelist()),
+                ["THIRD-PARTY-NOTICES.txt", "analyze_track", "scene_render", "studio"],
             )
             mode = zf.getinfo("studio").external_attr >> 16
             self.assertEqual(mode & 0o111, 0o111)
+            self.assertEqual(
+                zf.read("THIRD-PARTY-NOTICES.txt"),
+                (
+                    ROOT / "licenses" / "THIRD-PARTY-NOTICES-castle-core.txt"
+                ).read_bytes(),
+            )
 
     def test_unknown_target_and_missing_binary_are_refused(self) -> None:
         with self.assertRaisesRegex(SystemExit, "not a release target"):
