@@ -91,7 +91,10 @@ NSIS setup silently, per user, and starts what that installed. Then:
    is a real download from PyPI, uv's Python builds, ffmpeg's and yt-dlp's
    publishers and Hugging Face. Castle Radio must then answer
    `GET /radio/tools` able to import, import from a link and split voices,
-   and the cue desk studio must answer beside it.
+   and the cue desk studio must answer beside it. A setup may finish
+   without yt-dlp (an owner gets it from Update the downloader), but the
+   smoke still demands links: a runner that could not fetch it is red, and
+   the installer's "yt-dlp: not downloaded (…)" line in the log says why.
 2. After a quit, the second launch must answer within three minutes
    without running a setup.
 

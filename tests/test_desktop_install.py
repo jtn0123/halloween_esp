@@ -30,6 +30,7 @@ import desktop_install as di
 import desktop_launch as dl
 import desktop_lifecycle as life
 import desktop_release as rel
+import desktop_thirdparty as tp
 import desktop_tree as dt
 import ytdlp_update as yu
 from test_desktop_release import api_body, fake_fetch, sha
@@ -111,7 +112,7 @@ class TestPlan(TempCase):
         inst = di.Installer(
             self.args("--dry-run"), dirs, which={"winget": "w"}.get, say=said.append
         )
-        with mock.patch.object(di.tp, "after_package_manager", return_value=[links]):
+        with mock.patch.object(tp, "after_package_manager", return_value=[links]):
             self.assertIsNone(inst.existing_ffmpeg())
             self.assertIn("winget install", said[-1])
             links.mkdir()
@@ -163,7 +164,7 @@ class TestPlan(TempCase):
             self.args("--dry-run"), self.dirs, which={"brew": "/b"}.get, say=said.append
         )
         # Not this machine's /opt/homebrew/bin, which may hold an ffmpeg.
-        with mock.patch.object(di.tp, "after_package_manager", return_value=[]):
+        with mock.patch.object(tp, "after_package_manager", return_value=[]):
             inst.ffmpeg()
         self.assertTrue(any("brew install ffmpeg" in s for s in said))
 

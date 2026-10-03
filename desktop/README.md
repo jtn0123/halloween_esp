@@ -135,7 +135,10 @@ says so. The runtime takes about 1.7 GB with uv's cache. The steps:
    It is the same installer as option A. It stages the tree, makes the
    locked environment (`--require-hashes`), places the carried castle-core
    and fetches the pinned ffmpeg, the song downloader and the Demucs model.
-   It prints `@castle-step N/M <what>` per step (`tools/desktop_progress.py`),
+   The downloader is the one fetch a setup survives: only links need it,
+   so when GitHub will not hand it over the setup says so in the log and
+   finishes, and Castle Radio's downloader card offers **Update the
+   downloader** ("The song downloader" below). It prints `@castle-step N/M <what>` per step (`tools/desktop_progress.py`),
    and the splash shows them as "Step N of M".
 3. Only then is `bundle.json` copied in (beside, then renamed). A setup
    that stops early leaves no copy, so the next start finishes it.
@@ -192,10 +195,13 @@ would lift it.
 
 yt-dlp fetches a pasted link. It is **not** in the app bundle: websites
 change under it every few weeks, so it is a separate program in per-user
-app data — `<app data>/radio/downloader/` (`tools/exe_paths.py`
-`downloader_dir()`: `CASTLE_DOWNLOADER_DIR`, else `downloader/` in
-`CASTLE_RADIO_DATA`) — that every importer runs first when it is there
-(`exe_paths.ytdlp()`, `core/src/portable.rs`).
+app data — the runtime's `bin/`, where the first launch fetches it
+(`tools/exe_paths.py` `downloader_dir()`: `CASTLE_DOWNLOADER_DIR`, which the
+app sets there, else `downloader/` in `CASTLE_RADIO_DATA`) — that every
+importer runs first when it is there (`exe_paths.ytdlp()`,
+`core/src/portable.rs`). A first launch that could not fetch it finishes
+without it; the card then says "Links need the downloader", and the button
+below installs it into the same folder.
 
 **Update the downloader** — a button in Castle Radio's import panel, and on
 any job whose link failed because the downloader is old ("The downloader may

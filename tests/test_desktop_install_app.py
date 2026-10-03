@@ -34,7 +34,9 @@ import desktop_env as de
 import desktop_install as di
 import desktop_progress as progress
 import desktop_release as rel
-from test_desktop_release import fake_fetch
+import exe_paths
+import ytdlp_update as yu
+from test_desktop_release import api_body, fake_fetch, sha
 
 APP_FLAGS = ("--ffmpeg", "download", "--no-launcher", "--progress")
 
@@ -134,6 +136,86 @@ class Ffmpeg(Case):
         inst, said = self.installer("--dry-run", "--repair")
         inst.ffmpeg()
         self.assertTrue(any("pinned static ffmpeg" in s for s in said), said)
+
+
+class Downloader(Case):
+    """yt-dlp is optional (desktop_steps.no_ytdlp): a first launch that could
+    not fetch it finishes, and Castle Radio's Update the downloader button —
+    ytdlp_update.update into CASTLE_DOWNLOADER_DIR — fetches it later."""
+
+    HEAVY = ("stage_app", "python_env", "ffmpeg", "model", "data", "status")
+
+    def test_a_failed_fetch_finishes_the_setup_without_it(self) -> None:
+        inst, said = self.installer()  # every URL is "no route" (OSError)
+        with contextlib.ExitStack() as stack:
+            for name in self.HEAVY:  # uv, torch and the network: not here
+                stack.enter_context(mock.patch.object(inst, name))
+            self.assertEqual(inst.install(), 0)
+        marks = [s for s in said if s.startswith(progress.STEP_MARK)]
+        self.assertEqual(len(marks), len(progress.STEPS))
+        self.assertFalse(any(s.startswith(progress.FAILED_MARK) for s in said))
+        note = next(s for s in said if s.startswith("yt-dlp: not downloaded"))
+        self.assertIn(yu.OFFLINE, note)  # the owner's sentence, not a traceback
+        self.assertIn("no route to", note)  # and the detail, for whoever helps
+        self.assertIn("Update the downloader in Castle Radio", note)
+        self.assertEqual(said[-1], "Castle Tools are installed.")
+        record = de.read_json(self.dirs.install_file)
+        self.assertEqual(record["core"], "bundled")
+        self.assertNotIn("ytdlp", record)
+        self.assertNotIn("CASTLE_YTDLP", de.launch_env(self.dirs, record, {}, {}))
+
+    def test_a_failed_refetch_keeps_the_copy_already_there(self) -> None:
+        mine = self.dirs.bin / "yt-dlp"
+        mine.parent.mkdir(parents=True)
+        mine.write_bytes(b"#!old")
+        inst, said = self.installer("--repair")
+        inst.ytdlp()
+        self.assertEqual(inst.found["ytdlp"], str(mine))
+        self.assertEqual(mine.read_bytes(), b"#!old")
+        self.assertTrue(said[-1].endswith("kept the copy already there"), said)
+
+    def test_the_update_button_then_installs_it_where_the_app_looks(self) -> None:
+        inst, _ = self.installer()
+        inst.ytdlp()  # offline: nothing fetched, nothing recorded
+        self.assertNotIn("ytdlp", inst.found)
+        nothing = self.tmp / "empty-path"
+        nothing.mkdir()
+        record = de.install_record(self.dirs, core="bundled")
+        env = de.launch_env(self.dirs, record, {}, {"PATH": str(nothing)})
+        # This runner's own file name for it, so status() finds what update() wrote.
+        system = "Windows" if os.name == "nt" else "Darwin"
+        asset = yu.asset_name(system, "arm64")
+        assert asset is not None
+        new = b"#!yt-dlp"
+        fetch = fake_fetch(
+            {
+                yu.API_LATEST: api_body(
+                    "2026.10.01", {asset: "dl/bin", yu.SUMS: "dl/sums"}
+                ),
+                "dl/bin": new,
+                "dl/sums": f"{sha(new)}  {asset}\n".encode(),
+            }
+        )
+
+        def version(_program: str) -> str:
+            return "2026.10.01"
+
+        here = str(self.tmp / "venv" / "bin" / "python")  # no yt-dlp beside it
+        with (
+            mock.patch.dict(os.environ, env, clear=True),
+            mock.patch.object(sys, "executable", here),
+        ):
+            before = yu.status(run=version)
+            home = exe_paths.downloader_dir()  # what downloader_routes passes
+            assert home is not None
+            yu.update(home, fetch, run=version, system=system, machine="arm64")
+            after = yu.status(run=version)
+            mine = str(self.dirs.bin / exe_paths.exe("yt-dlp"))
+        # The card's "Links need the downloader", then the button's result.
+        self.assertFalse(before["installed"])
+        self.assertEqual(before["home"], str(self.dirs.bin))
+        self.assertEqual((after["installed"], after["managed"]), (True, True))
+        self.assertEqual((after["path"], after["version"]), (mine, "2026.10.01"))
 
 
 class Failures(Case):

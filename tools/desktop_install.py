@@ -11,7 +11,9 @@ Everything after is here, once, for both platforms:
   3. castle-core's binaries from the matching GitHub Release, sha256-checked
      (or `--from-source`: cargo build, when cargo is present; or
      `--core-from DIR`: the copies the desktop app carries)
-  4. ffmpeg (desktop_thirdparty.py) and the managed yt-dlp (ytdlp_update.py)
+  4. ffmpeg (desktop_thirdparty.py), and the managed yt-dlp (ytdlp_update.py),
+     the one fetch whose failure the install survives: only links need it
+     (desktop_steps.py)
   5. the htdemucs weights, downloaded once into <install>/models
   6. the user's data dir: tracks, a seeded scenes.yaml, settings.json
   7. the launcher, and install.json recording all of the above
@@ -30,12 +32,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
 import shutil
 import subprocess
 import sys
-import tempfile
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -44,10 +43,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import desktop_env as de
 import desktop_progress as progress
 import desktop_release as rel
-import desktop_thirdparty as tp
 import desktop_tree as dt
 import release_channel as channel
-import ytdlp_update as yu
+from desktop_steps import Steps
 
 LAUNCHERS = {"Windows": "Castle Tools.cmd"}
 LAUNCHER_DEFAULT = "Castle Tools.command"
@@ -58,42 +56,9 @@ MODEL_SCRIPT = (
 )
 
 
-class Installer:
-    """One run. Every effect goes through `step`/`run`, so a dry run is the
-    same code path with the effects swapped for a printed plan."""
-
-    def __init__(
-        self,
-        args: argparse.Namespace,
-        dirs: de.Dirs,
-        fetch: rel.Fetch = rel.http_fetch,
-        which: tp.Which = shutil.which,
-        machine: str = "",
-        say: Callable[[str], None] = print,
-    ) -> None:
-        self.args = args
-        self.dirs = dirs
-        self.fetch = fetch
-        self.which = which
-        self.machine = machine or platform.machine()
-        self.say = say
-        self.record = de.read_json(dirs.install_file)
-        self.found: dict[str, str] = {}
-        self.scratch = Path(tempfile.mkdtemp(prefix="castle-install-"))
-
-    # -- effects ---------------------------------------------------------
-    def step(self, what: str, fn: Callable[[], object]) -> None:
-        self.say(("[dry-run] would " if self.args.dry_run else "") + what)
-        if not self.args.dry_run:
-            fn()
-
-    def run(
-        self, cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None
-    ) -> None:
-        self.step(
-            "run: " + " ".join(cmd),
-            lambda: subprocess.run(cmd, check=True, cwd=cwd, env=env),
-        )
+class Installer(Steps):
+    """One install, repair or update: the eight steps in order (`install`),
+    on the effects and tools of desktop_steps.Steps."""
 
     def phase(self, n: int) -> None:
         """Step `n` begins — a line for the desktop app (desktop_progress.py)."""
@@ -227,82 +192,6 @@ class Installer:
             and self.record.get("tag") == tag
             and all((dest / (b + suffix)).is_file() for b in rel.CORE_BINS)
         )
-
-    # -- ffmpeg / yt-dlp -------------------------------------------------
-    def our_ffmpeg(self) -> tuple[str, str] | None:
-        """The pinned pair a previous run downloaded into bin/ — never on
-        --repair, which re-fetches it."""
-        ff, probe = (self.dirs.bin / self.dirs.exe(n) for n in ("ffmpeg", "ffprobe"))
-        if ff.is_file() and probe.is_file() and not self.args.repair:
-            return str(ff), str(probe)
-        return None
-
-    def existing_ffmpeg(self) -> tuple[str, str] | None:
-        """Ours from a previous run, else one on PATH, else what the
-        package manager can install."""
-        have = self.our_ffmpeg() or tp.ffmpeg_on_path(self.which, self.dirs.exe)
-        if have:
-            return have
-        cmd = tp.package_manager_command(self.dirs.system, self.which)
-        if not cmd:
-            return None
-
-        def landed() -> tuple[str, str] | None:
-            """Where the package manager puts it, off this process's PATH:
-            this run's install, or an earlier run's (not installed again)."""
-            extra = tp.after_package_manager(self.dirs.system, Path.home())
-            return tp.ffmpeg_on_path(lambda n: tp.find_in(extra, n), self.dirs.exe)
-
-        if earlier := landed():
-            return earlier
-        self.run(cmd)
-        return tp.ffmpeg_on_path(self.which, self.dirs.exe) or landed()
-
-    def ffmpeg(self) -> None:
-        choice = self.args.ffmpeg
-        if choice not in ("auto", "download"):
-            self.found["ffmpeg"] = choice
-            self.found["ffprobe"] = str(
-                Path(choice).with_name(self.dirs.exe("ffprobe"))
-            )
-            return
-        # `download` (the desktop app's choice: the pinned build, whatever
-        # is on PATH) still keeps the copy an earlier run downloaded.
-        have = self.existing_ffmpeg() if choice == "auto" else self.our_ffmpeg()
-        if have:
-            self.found["ffmpeg"], self.found["ffprobe"] = have
-            self.say(f"ffmpeg: {have[0]}")
-            return
-
-        def fetch() -> None:
-            ff, probe = tp.fetch_pinned_ffmpeg(
-                self.dirs.system, self.machine, self.dirs.bin, self.fetch, self.scratch
-            )
-            self.found["ffmpeg"], self.found["ffprobe"] = ff, probe
-
-        self.step(f"download the pinned static ffmpeg into {self.dirs.bin}", fetch)
-
-    def ytdlp(self) -> None:
-        """The managed song downloader in bin/ — ytdlp_update, the code
-        Castle Radio's Update the downloader button runs: fetched when
-        missing, brought to the latest release on --update, re-fetched on
-        --repair, and verified against its release's SHA2-256SUMS each time."""
-        mine = self.dirs.bin / self.dirs.exe("yt-dlp")
-        if mine.is_file() and not (self.args.repair or self.args.update):
-            self.found["ytdlp"] = str(mine)
-            return
-
-        def fetch() -> None:
-            got = yu.update(
-                self.dirs.bin,
-                self.fetch,
-                system=self.dirs.system,
-                machine=self.machine,
-                force=self.args.repair,
-            )
-            self.found["ytdlp"] = str(got["path"])
-
-        self.step(f"download the standalone yt-dlp into {self.dirs.bin}", fetch)
 
     # -- the rest --------------------------------------------------------
     def env(self) -> dict[str, str]:
