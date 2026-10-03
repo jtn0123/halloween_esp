@@ -302,7 +302,11 @@ jobs:
           name: release-core-${{ matrix.target }}
           path: core-zip
       - name: sidecar
-        run: unzip -o core-zip/*.zip -d desktop/sidecar/castle/
+        # sidecar/ is gitignored, so a fresh checkout has no parent for
+        # unzip to create castle/ in.
+        run: |
+          mkdir -p desktop/sidecar/castle
+          unzip -o core-zip/*.zip -d desktop/sidecar/castle/
       # The CLI is pinned to the crate's tauri in Cargo.lock and locked with
       # integrity hashes in desktop/cli/package-lock.json; `npm ci` installs
       # exactly that, with --ignore-scripts (it has none; its native half is

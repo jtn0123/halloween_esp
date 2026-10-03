@@ -1,16 +1,18 @@
 /**
  * The desk's scene builder, without the desk.
  *
- * `sceneYaml` decides everything an imported song's show looks like, and it
- * only ever ran behind a button in a browser: re-rendering a song meant
- * opening the page and clicking through it. This is the same function on a
- * command line, bundled for node by tools/render_cues.py — so the show a
- * song gets headless is, by construction, the show the desk would splice.
+ * `sceneYaml` decides everything an imported song's show looks like. This is
+ * the same function on a command line, for holding a REAL song's scene
+ * against tools/track_scene.py — the Python twin render_cues.py and Castle
+ * Radio run, so a buyer needs no node — when web/test/scene_parity.ts's
+ * seeded corpus is not enough to explain a difference:
  *
+ *   esbuild src/scene_cli.ts --bundle --platform=node --outfile=scene_cli.mjs
  *   node scene_cli.mjs <track-id> <waveform.json> [ext]
  *
- * `waveform.json` is what GET /studio/waveform/<id> answers: duration,
- * per-band onsets and the loudness envelope. The scene block goes to stdout.
+ * `waveform.json` is what GET /studio/waveform/<id> answers (or
+ * analyze_track with `"waveform": true`): duration, per-band onsets and the
+ * loudness envelope. The scene block goes to stdout.
  */
 
 import { readFileSync } from "node:fs";

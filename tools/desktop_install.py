@@ -265,13 +265,17 @@ class Installer:
         cmd = tp.package_manager_command(self.dirs.system, self.which)
         if not cmd:
             return None
+
+        def landed() -> tuple[str, str] | None:
+            """Where the package manager puts it, off this process's PATH:
+            this run's install, or an earlier run's (not installed again)."""
+            extra = tp.after_package_manager(self.dirs.system, Path.home())
+            return tp.ffmpeg_on_path(lambda n: tp.find_in(extra, n), self.dirs.exe)
+
+        if earlier := landed():
+            return earlier
         self.run(cmd)
-        extra = tp.after_package_manager(self.dirs.system, Path.home())
-        ff2 = tp.find_in(extra, self.dirs.exe("ffmpeg"))
-        probe2 = tp.find_in(extra, self.dirs.exe("ffprobe"))
-        return tp.ffmpeg_on_path(self.which, self.dirs.exe) or (
-            (ff2, probe2) if ff2 and probe2 else None
-        )
+        return tp.ffmpeg_on_path(self.which, self.dirs.exe) or landed()
 
     def ffmpeg(self) -> None:
         choice = self.args.ffmpeg

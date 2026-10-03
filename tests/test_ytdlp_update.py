@@ -66,16 +66,31 @@ class FakeGitHub:
     def __init__(self) -> None:
         self.pages: dict[str, bytes] = {}
         self.hits: dict[str, int] = {}
-        pages, hits = self.pages, self.hits
+        #: A path's refusal (the API's 403), and the website's redirects.
+        self.status: dict[str, int] = {}
+        self.moved: dict[str, str] = {}
+        pages, hits, status, moved = self.pages, self.hits, self.status, self.moved
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self) -> None:
-                hits[self.path] = hits.get(self.path, 0) + 1
+                key = self.path if self.command == "GET" else f"HEAD {self.path}"
+                hits[key] = hits.get(key, 0) + 1
+                if self.path in moved:
+                    self.send_response(302)
+                    self.send_header("Location", moved[self.path])
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 body = pages.get(self.path)
-                self.send_response(200 if body is not None else 404)
+                code = status.get(self.path, 200 if body is not None else 404)
+                body = body if code == 200 else b"rate limit exceeded"
+                self.send_response(code)
                 self.send_header("Content-Length", str(len(body or b"")))
                 self.end_headers()
-                self.wfile.write(body or b"")
+                if self.command == "GET":
+                    self.wfile.write(body or b"")
+
+            do_HEAD = do_GET
 
             def log_message(self, *_: object) -> None:
                 pass
@@ -103,6 +118,18 @@ class FakeGitHub:
         self.pages["/latest"] = json.dumps({**release, "assets": assets}).encode()
         self.pages[f"/dl/{asset}"] = body
         self.pages["/dl/sums"] = sums or f"{digest}  {asset}\n".encode()
+
+    def on_the_website(self, tag: str, body: bytes, asset: str = ASSET) -> str:
+        """The same release as github.com serves it: /releases/latest
+        redirects to its tag, the files sit under download/<tag>/. Returns
+        the website's base URL."""
+        web = f"{self.base}/web"
+        self.moved["/web/latest"] = f"{web}/tag/{tag}"
+        self.pages[f"/web/tag/{tag}"] = b"<html>release page</html>"
+        self.pages[f"/web/download/{tag}/{asset}"] = body
+        digest = hashlib.sha256(body).hexdigest()
+        self.pages[f"/web/download/{tag}/{yu.SUMS}"] = f"{digest}  {asset}\n".encode()
+        return web
 
     def stop(self) -> None:
         self.server.shutdown()
@@ -236,6 +263,69 @@ def same_file(a: object, b: Path) -> bool:
     return isinstance(a, str) and os.path.normcase(a) == os.path.normcase(str(b))
 
 
+class TestTurnedAway(UpdateCase):
+    """The Releases API allows 60 calls an hour to an address, and everyone
+    behind one router shares it — an office, a school, a CI runner pool
+    (tests/install_smoke.py met it on macos-14). The website is outside
+    that limit and names the same release."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.github.publish(TAG, build(TAG))
+        self.github.status["/latest"] = 403
+        web = self.github.on_the_website(TAG, build(TAG))
+        self.enterContext(mock.patch.dict(os.environ, {"CASTLE_DOWNLOADER_WEB": web}))
+
+    def test_the_website_names_the_release_and_it_is_verified(self) -> None:
+        got = self.update()
+        self.assertEqual((got["changed"], got["version"]), (True, TAG))
+        self.assertEqual(installed(self.home), build(TAG))
+        self.assertEqual(self.github.hits[f"/web/download/{TAG}/{ASSET}"], 1)
+        self.assertEqual(self.github.hits[f"HEAD /web/tag/{TAG}"], 1)
+        self.assertNotIn(f"/web/tag/{TAG}", self.github.hits)  # never the page
+        self.assertEqual(yu.read_record(self.home)["tag"], TAG)
+        self.assertIs(self.update()["changed"], False)
+
+    def test_the_websites_bytes_still_answer_to_its_sums(self) -> None:
+        self.github.pages[f"/web/download/{TAG}/{ASSET}"] = build("tampered")
+        self.assertEqual(str(self.failed()), yu.TAMPERED)
+        self.assertFalse((self.home / "yt-dlp").exists())
+
+    def test_turned_away_by_both_says_so_not_offline(self) -> None:
+        self.github.moved.clear()
+        self.github.status["/web/latest"] = 429
+        err = self.failed()
+        self.assertEqual(str(err), yu.TURNED_AWAY_SAID)
+        self.assertIn("403", err.detail)
+        self.assertIn("429", err.detail)
+
+    def test_a_landing_that_is_not_a_release_is_unreadable(self) -> None:
+        self.github.moved["/web/latest"] = f"{self.github.base}/web/tag/"
+        self.github.pages["/web/tag/"] = b"<html>all releases</html>"
+        self.assertEqual(str(self.failed()), yu.UNREADABLE)
+        self.github.moved["/web/latest"] = f"{self.github.base}/web/gone"
+        self.assertEqual(str(self.failed()), yu.UNREADABLE)
+
+    def test_other_refusals_and_a_mirror_with_no_website_do_not_go_round(
+        self,
+    ) -> None:
+        self.github.status["/latest"] = 500
+        self.assertEqual(str(self.failed()), yu.OFFLINE)
+        self.github.status["/latest"] = 403
+        with mock.patch.dict(os.environ, {"CASTLE_DOWNLOADER_WEB": ""}):
+            self.assertIsNone(yu.web_url())
+            self.assertEqual(str(self.failed()), yu.OFFLINE)
+        self.assertNotIn("HEAD /web/latest", self.github.hits)
+        with mock.patch.dict(
+            os.environ, {"CASTLE_DOWNLOADER_WEB": "", "CASTLE_DOWNLOADER_RELEASES": ""}
+        ):
+            self.assertEqual(yu.web_url(), yu.WEB_RELEASES)
+
+    def test_the_installer_ends_on_the_sentence_not_a_traceback(self) -> None:
+        # desktop_install.main reports a ReleaseError as "install failed — …".
+        self.assertTrue(issubclass(yu.UpdateError, yu.rel.ReleaseError))
+
+
 class TestStatus(UpdateCase):
     """Every place exe_paths.ytdlp() looks is this test's own — the managed
     folder, CASTLE_YTDLP, the interpreter's folder and PATH — so a yt-dlp
@@ -304,7 +394,8 @@ class TestStatus(UpdateCase):
 
 class TestWords(unittest.TestCase):
     def test_every_sentence_says_what_happened_then_what_to_do(self) -> None:
-        for name in ("OFFLINE", "UNREADABLE", "TAMPERED", "BROKEN", "NO_BUILD"):
+        for name in ("OFFLINE", "UNREADABLE", "TURNED_AWAY_SAID", "TAMPERED", "BROKEN",
+                     "NO_BUILD"):  # fmt: skip
             text = getattr(yu, name)
             with self.subTest(name=name):
                 self.assertEqual(text.count(" — "), 1, text)

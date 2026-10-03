@@ -249,11 +249,16 @@ Everything here is needed for BOTH option A and option B.
       process must reopen the file (Windows can't reopen an open temp file).
 - [x] Encoding: every `open()` passes `encoding="utf-8"` (Windows default is
       cp1252). Add a ruff rule (`PLW1514`) so it stays that way.
-- [ ] Ports: Windows firewall prompt on first bind — bind `127.0.0.1` only
-      (already the default) so the prompt does not appear.
-- [ ] `demo/castle-radio/desktop_tools.py` + `tools/register_castle_launcher.py`:
+- [x] Ports: Windows firewall prompt on first bind — bind `127.0.0.1` only
+      (already the default) so the prompt does not appear. Castle Radio and
+      the studio, started as the app and the launchers start them, are
+      probed from this machine's LAN address by tests/test_loopback_rs.py;
+      `--lan` stays the studio's opt-in.
+- [x] `demo/castle-radio/desktop_tools.py` + `tools/register_castle_launcher.py`:
       Mac-only branches stay, behind a platform check, until the Tauri app
-      replaces them.
+      replaces them. Registration says "not on this platform" elsewhere;
+      `/radio/tools` names each platform's installer and offers website
+      startup on macOS only (tests across darwin, win32 and linux).
 
 ### 4.3 CI
 - [x] `windows-latest` job: `cargo build --release` + `cargo test` for `core/`.
@@ -276,9 +281,13 @@ Everything here is needed for BOTH option A and option B.
 - [ ] Tauri shell embeds the studio as a library (not a child process) — the
       Rust server already exists; `tauri::Builder` hosts the webview pointed
       at it. Or keep it a sidecar if that is less churn; decide.
-- [ ] Webview differences: WebKit (macOS) vs WebView2 (Windows). Run the
+- [x] Webview differences: WebKit (macOS) vs WebView2 (Windows). Run the
       Playwright suite against WebKit too; audio/blob/wake-lock APIs checked
-      on both.
+      on both. `make e2e` and CI's `web` job run every spec in Chromium (as
+      WebView2 is) and then WebKit. Audio and Blob uploads pass in both; the
+      page's real Safari gaps were 11px buttons and a styled select's 18px
+      height on a phone (previewer/mobile.css). Wake lock is Castle Radio's
+      (castle-direct.js), feature-tested, and outside this suite.
 - [x] The `castle-tools://` URL handler + popup bridge (castle page ↔ local
       helper) → Tauri deep-link plugin; retire `tools/castle_launcher.swift`.
 - [x] Menu-bar ♜ icon → Tauri system tray (works on both OSes).
@@ -327,7 +336,10 @@ Everything here is needed for BOTH option A and option B.
 - [ ] Auto-update: section 9.
 - [x] CI release workflow: tag → build dmg/msi on macOS + Windows runners →
       sign → Release. Firmware images attached to the same Release (1.2).
-- [ ] Uninstaller leaves the user's tracks unless asked.
+- [x] Uninstaller leaves the user's tracks unless asked. Tauri's stock NSIS
+      uninstaller deletes app data only when its unticked box is ticked;
+      tests/test_desktop_uninstall.py holds the config to that template, and
+      desktop/README.md says what removing the app on macOS keeps.
 
 ## 6. Option A — uv bootstrap installer (P1, fallback)
 
@@ -339,7 +351,9 @@ true, and it is the dev/support path forever.
 - [x] Prebuilt Rust bins downloaded from the matching GitHub Release (no
       cargo on the buyer's machine); checksum verified.
 - [x] ffmpeg: winget/brew if present, else a pinned static download.
-- [ ] Replace Homebrew assumptions in `tools/install_castle_tools.sh`.
+- [x] Replace Homebrew assumptions in `tools/install_castle_tools.sh`.
+      Retired instead: `installer/install.sh` does all of it without
+      Homebrew, and every pointer to the old script now names the installer.
 - [x] Launchers: `Castle Tools.command` (mac) + `Castle Tools.bat`/Start-menu
       shortcut (Windows) that start the server and open the browser.
 - [x] `--repair` and `--uninstall` flags; idempotent re-run.
@@ -378,12 +392,29 @@ true, and it is the dev/support path forever.
       tools, jobs and log tail — paths cut, no key. The desk links `/owner`.
 
 ### 4.4 Windows hands-on pass (an Opus agent on your Windows PC)
-- [ ] Fresh Windows user account: install from a Release, first-run, import
+- [x] Fresh Windows user account: install from a Release, first-run, import
       a song (mp3 + wav + a non-ASCII name), separate stems, sync, play.
-- [ ] Time Demucs per song on that CPU (compare: M4 CPU 133 s / tuned 65 s).
+      2026-10-03: `.github/workflows/install-smoke.yml` does it on
+      windows-latest and macos-14 (PRs that touch the installer or Castle
+      Radio, weekly, by hand): the real install.ps1/install.sh from a
+      git-archive tree with no cargo or Python on PATH, castle-core from a
+      staged release zip, twice and as a dry run; then Castle Radio's own
+      API against `tools/castle_emu.py` — three imports, one split, sync,
+      the card checked file by file, a song played; uninstall keeping the
+      songs, then purging them. `tests/install_smoke.py` is the driver.
+- [x] Time Demucs per song on that CPU (compare: M4 CPU 133 s / tuned 65 s).
+      Each install-smoke run splits a 10 s clip on the runner's CPU and
+      puts the separate step's wall time in the run summary. 2026-10-03:
+      windows-latest (EPYC 7763, 4 cores) 12.0 s, macos-14 (M1, 3 cores)
+      12.0 s — about 1.2× the audio's length; the whole split step 23.4 s
+      and 17.4 s. A buyer's own CPU is still unmeasured.
+- [ ] Still a person's job, no software stands in: SmartScreen on the
+      downloaded installer, and an import from a real network share.
 - [ ] Flash a castle from the web flasher in Edge; check the USB driver.
 - [ ] Auto-update from one Release to the next.
-- [ ] Run the Rust + Python suites natively; file what fails as follow-up.
+- [x] Run the Rust + Python suites natively; file what fails as follow-up.
+      §4.3's cross-platform.yml does it on windows-latest (cargo test,
+      `run_checks.py test` and `test-radio`), green and blocking.
 
 ## 8. Repo and process
 
@@ -392,6 +423,10 @@ true, and it is the dev/support path forever.
       "Release branches".
 - [ ] Version numbers: one release number for app + firmware + card format,
       shown in the app, on the castle page, and in the owner's guide.
+      In the app: the splash and Castle Radio's tools card and diagnostics
+      show the release tag; docs/SUPPORT.md "Which release is it" maps a
+      firmware number to its tag. Left: the castle page (firmware, which
+      knows only its own number) and the owner's guide.
 - [x] `docs/RUNBOOK.md` gains a "supporting a buyer's castle" section.
       It is docs/SUPPORT.md (reading a report and a soak log), linked from
       RUNBOOK.
@@ -423,9 +458,13 @@ calls/hour unauthenticated — check once a day and on launch, not more).
 - [ ] One Release = one version of everything: Tauri bundles (mac arm64,
       mac x64?, Windows x64), `latest.json` for the updater, firmware images
       named by variant (1.5), web-flasher manifest, checksums.
-- [ ] Tauri updater: its own update-signing keypair (minisign — free, NOT
+      *Built end to end by the release dry run on 2026-10-03 (run
+      37142954369, every job green); not yet published from a tag.*
+- [x] Tauri updater: its own update-signing keypair (minisign — free, NOT
       code signing; required even for unsigned apps). Private key in a
-      GitHub Actions secret; losing it strands installed apps.
+      GitHub Actions secret; losing it strands installed apps. Made
+      2026-10-03: pubkey committed, both secrets set, originals kept off
+      GitHub (docs/RELEASING.md); dry run 3's signatures verify.
 - [x] Release workflow: tag `vX.Y` → build on macOS + Windows runners →
       build firmware → upload all assets → publish `latest.json` last.
 - [x] Channels: `stable` only for the buyer; pre-releases ignored unless a

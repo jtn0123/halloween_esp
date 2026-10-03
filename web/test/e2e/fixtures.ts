@@ -14,12 +14,23 @@
  * Note that Chromium's --mute-audio (see playwright.config.ts) silences the
  * *output* but does not touch `element.muted`. That separation is deliberate:
  * the browser guarantees the run is silent, while these assertions still test
- * the app's own muting rather than the flag that is hiding it.
+ * the app's own muting rather than the flag that is hiding it. WebKit has no
+ * such flag; webkit.ts does the same job from just under the page, on the
+ * context, so a popup or second page is as quiet as the first. That is why
+ * every spec imports `test` from here (web/tools/check-suites.mjs holds it).
  */
 
-import { test as base, expect, type Page } from "@playwright/test";
+import { test as base, expect, type Page, type Request } from "@playwright/test";
+import { silenceOutput, tellBlobSizes } from "./webkit.js";
 
 export const test = base.extend({
+  context: async ({ context, browserName }, use) => {
+    if (browserName !== "chromium") {
+      await context.addInitScript(silenceOutput);
+      await context.addInitScript(tellBlobSizes);
+    }
+    await use(context);
+  },
   page: async ({ page }, use) => {
     await page.addInitScript(() => {
       const seen: HTMLMediaElement[] = [];
@@ -49,6 +60,11 @@ export const test = base.extend({
 });
 
 export { expect };
+
+/** How many bytes a request carried: its body, or — where the browser hands
+ *  a route no Blob body (WebKit; webkit.ts) — the size sent beside it. */
+export const bodyBytes = (request: Request): number =>
+  request.postDataBuffer()?.length ?? Number(request.headers()["x-e2e-blob-bytes"] ?? 0);
 
 /** Every media element the page has ever made, plus any in the markup. */
 const ALL = `[...new Set([
@@ -132,7 +148,7 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
     if (p === "/api/files" && method === "GET") return route.fulfill({ json: c.files });
     if (p.startsWith("/api/files/") && method === "PUT") {
       const name = decodeURIComponent(p.slice("/api/files/".length));
-      const real = route.request().postDataBuffer()?.length ?? 0;
+      const real = bodyBytes(route.request());
       // Either arm may answer null, and it means the same thing in both:
       // no opinion, report the length that actually arrived.
       const said = (typeof c.putBytes === "function"

@@ -6,26 +6,18 @@
  * on the LAN downloads: the page without 1.9 MB of base64 it may never play.
  *
  * Same stubbed non-loopback host as lan_host.spec.ts (`studio.lan` →
- * 127.0.0.1): the case the rewrite exists for. The loopback desk gets the
- * same page — the rule is "served by the studio", not "served to a phone".
+ * 127.0.0.1, lan.ts): the case the rewrite exists for. The loopback desk
+ * gets the same page — the rule is "served by the studio", not "served to a
+ * phone".
  */
 
 import { test, expect, playing } from "./fixtures.js";
+import { LAN, lanLaunch, reachAsLan } from "./lan.js";
 
-const PORT = Number(process.env.CASTLE_E2E_PORT || 8799);
-const LAN = `http://studio.lan:${PORT}`;
+test.use({ launchOptions: lanLaunch });
 
-test.use({
-  launchOptions: {
-    args: [
-      "--mute-audio",
-      "--autoplay-policy=no-user-gesture-required",
-      "--host-resolver-rules=MAP studio.lan 127.0.0.1",
-    ],
-  },
-});
-
-test("a LAN phone's scene audio is linked, not inlined — and plays", async ({ page }) => {
+test("a LAN phone's scene audio is linked, not inlined — and plays", async ({ page, browserName }) => {
+  await reachAsLan(page, browserName);
   const res = await page.goto(`${LAN}/`);
   expect(res?.ok()).toBe(true);
   // The page itself carries no base64 audio any more.

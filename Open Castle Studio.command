@@ -19,8 +19,11 @@ if [ -x .venv-desktop/bin/python ]; then
 elif [ -x .venv/bin/python ]; then
   PY="$PWD/.venv/bin/python"
 else
-  echo "Castle Tools are not installed. Run this once in Terminal:"
-  echo "  ./tools/install_castle_tools.sh"
+  echo "This folder has no Python environment. To install Castle Tools for"
+  echo "this user (its own Python, ffmpeg and model; no Homebrew), run once:"
+  echo "  sh installer/install.sh"
+  echo "and start it from the launcher it places (installer/README.md)."
+  echo "To run from this checkout instead:  make setup && make rust"
   pause_on_error
 fi
 PY_BIN=$(dirname "$PY")
@@ -52,8 +55,8 @@ fi
 echo "Checking Castle Tools..."
 if ! "$PY" tools/castle_tools_status.py --human --require-core; then
   echo
-  echo "A required tool is missing. Run this once in Terminal:"
-  echo "  ./tools/install_castle_tools.sh"
+  echo "A required tool is missing. In this checkout:  make setup && make rust"
+  echo "(or install Castle Tools for this user:  sh installer/install.sh)"
   pause_on_error
 fi
 
