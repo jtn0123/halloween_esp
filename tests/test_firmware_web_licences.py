@@ -18,6 +18,7 @@ and both live on two castles that must not drift:
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 import unittest
@@ -71,11 +72,25 @@ class TestLicencesOnTheCard(WebPairCase):
                 self.assertEqual(r.ctype, "text/plain; charset=utf-8")
 
     def test_the_listing_the_owner_page_reads_names_both(self) -> None:
-        r = self.same("GET", b"/api/files?d=licenses")
-        self.assertEqual(r.status, 200)
-        names = {Path(n).name for n in (buyer_card.CARD_NOTICES, buyer_card.CARD_OFFER)}
+        # Not self.same: the board lists in readdir order (hash order on
+        # Linux CI, sorted on APFS) and the emulator sorts. The owner page
+        # looks each name up, so order is not part of the contract — the
+        # entries are, and both castles must give the same ones.
+        c, e = self.pair.both("GET", b"/api/files?d=licenses")
+        self.assertEqual((c.status, c.ctype, c.extra), (e.status, e.ctype, e.extra))
+        self.assertEqual(c.status, 200)
+
+        def entries(body: bytes) -> list[tuple[str, int, bool]]:
+            rows = json.loads(body)
+            return sorted((r["name"], r["size"], r["dir"]) for r in rows)
+
+        self.assertEqual(entries(c.body), entries(e.body))
         self.assertEqual(
-            set(re.findall(rb'"name":"([^"]+)"', r.body)), {n.encode() for n in names}
+            entries(c.body),
+            [
+                (Path(buyer_card.CARD_OFFER).name, len(self.OFFER), False),
+                (Path(buyer_card.CARD_NOTICES).name, len(self.NOTICES), False),
+            ],
         )
 
     def test_an_opus_song_is_typed_alike(self) -> None:
