@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import exe_paths
 import helpers  # noqa: F401  (the sandbox scrub)
 import import_reason as ir
 import portable_fs
@@ -46,6 +47,15 @@ def fake_version(program: str) -> str:
     if len(lines) != 2 or not lines[0].startswith("#!fake"):
         raise OSError(8, "Exec format error")
     return lines[1]
+
+
+def installed(home: Path) -> bytes:
+    return (home / "yt-dlp").read_bytes()
+
+
+def parts_left(home: Path) -> list[str]:
+    """Half-fetched builds an update left beside the copy."""
+    return [p.name for p in home.glob("*.download*")] if home.is_dir() else []
 
 
 class FakeGitHub:
@@ -76,18 +86,23 @@ class FakeGitHub:
         threading.Thread(target=serve, daemon=True).start()
 
     def publish(
-        self, tag: str, body: bytes, sums: bytes | None = None, with_sums: bool = True
+        self,
+        tag: str,
+        body: bytes,
+        sums: bytes | None = None,
+        with_sums: bool = True,
+        asset: str = ASSET,
     ) -> None:
         digest = hashlib.sha256(body).hexdigest()
-        assets = [{"name": ASSET, "browser_download_url": f"{self.base}/dl/{ASSET}"}]
+        assets = [{"name": asset, "browser_download_url": f"{self.base}/dl/{asset}"}]
         if with_sums:
             assets.append(
                 {"name": yu.SUMS, "browser_download_url": f"{self.base}/dl/sums"}
             )
         release = {"tag_name": tag, "draft": False, "prerelease": False}
         self.pages["/latest"] = json.dumps({**release, "assets": assets}).encode()
-        self.pages[f"/dl/{ASSET}"] = body
-        self.pages["/dl/sums"] = sums or f"{digest}  {ASSET}\n".encode()
+        self.pages[f"/dl/{asset}"] = body
+        self.pages["/dl/sums"] = sums or f"{digest}  {asset}\n".encode()
 
     def stop(self) -> None:
         self.server.shutdown()
@@ -118,17 +133,6 @@ class UpdateCase(unittest.TestCase):
             self.update(force)
         return cm.exception
 
-    def installed(self) -> bytes:
-        return (self.home / "yt-dlp").read_bytes()
-
-    def no_part_left(self) -> None:
-        left = (
-            [p.name for p in self.home.glob("*.download*")]
-            if self.home.is_dir()
-            else []
-        )
-        self.assertEqual(left, [])
-
 
 class TestUpdate(UpdateCase):
     def test_a_first_update_installs_the_verified_build(self) -> None:
@@ -137,20 +141,20 @@ class TestUpdate(UpdateCase):
         self.assertEqual(
             got, {"changed": True, "version": TAG, "path": str(self.home / "yt-dlp")}
         )
-        self.assertEqual(self.installed(), build(TAG))
+        self.assertEqual(installed(self.home), build(TAG))
         record = yu.read_record(self.home)
         self.assertEqual((record["tag"], record["asset"]), (TAG, ASSET))
         self.assertEqual(record["sha256"], hashlib.sha256(build(TAG)).hexdigest())
         if os.name != "nt":
             self.assertTrue(os.access(self.home / "yt-dlp", os.X_OK))
-        self.no_part_left()
+        self.assertEqual(parts_left(self.home), [])
 
     def test_an_up_to_date_copy_is_left_alone_unless_forced(self) -> None:
         self.github.publish(TAG, build(TAG))
         self.update()
-        self.assertEqual(self.update()["changed"], False)
+        self.assertIs(self.update()["changed"], False)
         self.assertEqual(self.github.hits.get(f"/dl/{ASSET}"), 1)
-        self.assertEqual(self.update(force=True)["changed"], True)
+        self.assertIs(self.update(force=True)["changed"], True)
         self.assertEqual(self.github.hits.get(f"/dl/{ASSET}"), 2)
 
     def test_a_newer_release_replaces_the_old_copy(self) -> None:
@@ -158,7 +162,7 @@ class TestUpdate(UpdateCase):
         self.update()
         self.github.publish(TAG, build(TAG))
         self.assertEqual(self.update()["version"], TAG)
-        self.assertEqual(self.installed(), build(TAG))
+        self.assertEqual(installed(self.home), build(TAG))
 
     def test_bytes_that_do_not_match_the_sums_are_never_installed(self) -> None:
         self.github.publish("2026.09.01", build("2026.09.01"))
@@ -168,14 +172,14 @@ class TestUpdate(UpdateCase):
         err = self.failed()
         self.assertEqual(str(err), yu.TAMPERED)
         self.assertIn("checksum mismatch", err.detail)
-        self.assertEqual(self.installed(), build("2026.09.01"))
-        self.no_part_left()
+        self.assertEqual(installed(self.home), build("2026.09.01"))
+        self.assertEqual(parts_left(self.home), [])
 
     def test_a_build_that_will_not_start_is_not_installed(self) -> None:
         self.github.publish(TAG, b"not a program at all")
         self.assertEqual(str(self.failed()), yu.BROKEN)
         self.assertFalse((self.home / "yt-dlp").exists())
-        self.no_part_left()
+        self.assertEqual(parts_left(self.home), [])
 
     def test_a_release_without_sums_is_refused(self) -> None:
         self.github.publish(TAG, build(TAG), with_sums=False)
@@ -193,7 +197,7 @@ class TestUpdate(UpdateCase):
         self.github.stop()  # its port now refuses the connection
         err = self.failed(force=True)
         self.assertEqual(str(err), yu.OFFLINE)
-        self.assertEqual(self.installed(), build(TAG))
+        self.assertEqual(installed(self.home), build(TAG))
 
     def test_a_busy_copy_is_kept_and_named_as_busy(self) -> None:
         self.github.publish("2026.09.01", build("2026.09.01"))
@@ -202,8 +206,8 @@ class TestUpdate(UpdateCase):
         locked = PermissionError(13, "The process cannot access the file")
         with mock.patch.object(portable_fs, "replace", side_effect=locked):
             self.assertEqual(str(self.failed()), yu.IN_USE)
-        self.assertEqual(self.installed(), build("2026.09.01"))
-        self.no_part_left()
+        self.assertEqual(installed(self.home), build("2026.09.01"))
+        self.assertEqual(parts_left(self.home), [])
 
     def test_a_full_disk_says_so(self) -> None:
         self.github.publish(TAG, build(TAG))
@@ -218,16 +222,60 @@ class TestUpdate(UpdateCase):
         self.assertEqual(self.github.hits, {})
 
 
+#: This computer as ytdlp_update.update sees it, so the copy it installs
+#: has the name exe_paths looks for (`yt-dlp.exe` on Windows).
+HOST = (
+    ("Windows", "AMD64", "yt-dlp.exe")
+    if exe_paths.WINDOWS
+    else ("Darwin", "arm64", ASSET)
+)
+
+
+def same_file(a: object, b: Path) -> bool:
+    """Windows' shutil.which spells the extension as PATHEXT does (.EXE)."""
+    return isinstance(a, str) and os.path.normcase(a) == os.path.normcase(str(b))
+
+
 class TestStatus(UpdateCase):
+    """Every place exe_paths.ytdlp() looks is this test's own — the managed
+    folder, CASTLE_YTDLP, the interpreter's folder and PATH — so a yt-dlp
+    the machine happens to have (a CI runner's, a developer's) never
+    answers for the copy under test."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.path = self.tmp / "path"
+        self.path.mkdir()
+        # Windows' which also searches the working directory unless told not to.
+        env = {"PATH": str(self.path), "NoDefaultCurrentDirectoryInExePath": "1"}
+        self.enterContext(mock.patch.dict(os.environ, env))
+        python = self.tmp / "python" / exe_paths.exe("python")
+        self.enterContext(mock.patch.object(exe_paths.sys, "executable", str(python)))
+
     def test_status_names_the_copy_an_import_would_run(self) -> None:
-        self.assertEqual(yu.status(run=fake_version)["managed"], False)
-        self.github.publish(TAG, build(TAG))
-        self.update()
+        none = yu.status(run=fake_version)
+        self.assertEqual(
+            (none["installed"], none["path"], none["version"]), (False, None, None)
+        )
+        # A copy on PATH runs, but it is not the one Update replaces.
+        system_copy = self.path / exe_paths.exe("yt-dlp")
+        system_copy.write_bytes(build("2026.09.01"))
+        system_copy.chmod(0o755)
+        mine = yu.status(run=fake_version)
+        self.assertIs(mine["installed"], True)
+        self.assertIs(mine["managed"], False)
+        self.assertTrue(same_file(mine["path"], system_copy), mine["path"])
+        self.assertEqual(mine["version"], "2026.09.01")
+        self.assertIsNone(mine["updated_at"])
+        # Once fetched, the managed copy is what an import runs.
+        system, machine, asset = HOST
+        self.github.publish(TAG, build(TAG), asset=asset)
+        yu.update(self.home, run=fake_version, system=system, machine=machine)
         now = yu.status(run=fake_version)
         self.assertEqual(
             (now["installed"], now["managed"], now["version"]), (True, True, TAG)
         )
-        self.assertEqual(now["path"], str(self.home / "yt-dlp"))
+        self.assertEqual(now["path"], str(self.home / exe_paths.exe("yt-dlp")))
         self.assertIsInstance(now["updated_at"], int)
 
     def test_the_command_line(self) -> None:
