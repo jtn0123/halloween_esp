@@ -196,6 +196,12 @@ impl DataDirs {
     pub fn build(&self) -> PathBuf {
         self.radio.join("build")
     }
+
+    /// The castle key store (tools/castle_keys.py) — this user's, never a
+    /// checkout's tracked devices.toml (docs/notes/06-buyer-build.md).
+    pub fn devices(&self) -> PathBuf {
+        self.radio.join("devices.toml")
+    }
 }
 
 /// First run: the show the runtime ships (`<root>/scenes/scenes.yaml`)
@@ -242,6 +248,8 @@ pub fn child_env(
         ("CASTLE_TRACKS".into(), data.tracks().into()),
         ("CASTLE_SCENES".into(), data.scenes().into()),
         ("CASTLE_BUILD".into(), data.build().into()),
+        // Where a key the owner enters in either app is remembered, and read.
+        ("CASTLE_DEVICES".into(), data.devices().into()),
         // Explicitly no castle for the toolchain; the device bridge has its
         // own variable (CASTLE_RADIO_HOST) and its own allow-list of actions.
         ("CASTLE_HOST".into(), OsString::new()),
@@ -251,6 +259,10 @@ pub fn child_env(
     ];
     if let Some(host) = &settings.castle_host {
         vars.push(("CASTLE_RADIO_HOST".into(), host.into()));
+    }
+    // Only when set: CASTLE_KEY wins over the store, even set-but-empty.
+    if let Some(key) = &settings.castle_key {
+        vars.push(("CASTLE_KEY".into(), key.expose().into()));
     }
     if rt.source == Source::Sidecar {
         // The bundle is read-only once installed (and signed on macOS).
@@ -436,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn castle_host_only_from_settings() {
+    fn castle_host_and_key_only_from_settings() {
         let rt = Runtime {
             source: Source::Checkout,
             root: PathBuf::from("/r"),
@@ -447,14 +459,21 @@ mod tests {
         };
         let data = DataDirs::new(Path::new("/d"));
         let none = child_env(&rt, &data, &Settings::default(), None);
-        assert!(!none.iter().any(|(k, _)| k == "CASTLE_RADIO_HOST"));
-        let set = Settings {
-            castle_host: Some("10.1.2.3".into()),
-            ..Settings::default()
-        };
-        let some = child_env(&rt, &data, &set, None);
-        assert!(some
+        assert!(!none
             .iter()
-            .any(|(k, v)| k == "CASTLE_RADIO_HOST" && v == "10.1.2.3"));
+            .any(|(k, _)| k == "CASTLE_RADIO_HOST" || k == "CASTLE_KEY"));
+        // The store is the user's even from a checkout: never the repo's.
+        assert!(none
+            .iter()
+            .any(|(k, v)| k == "CASTLE_DEVICES" && v == "/d/radio/devices.toml"));
+        let dir = std::env::temp_dir().join(format!("castle-rt-key-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let json = r#"{"castle_host":"10.1.2.3","castle_key":"k3y!"}"#;
+        fs::write(dir.join(crate::settings::FILE_NAME), json).unwrap();
+        let some = child_env(&rt, &data, &crate::settings::load(&dir).0, None);
+        let _ = fs::remove_dir_all(dir);
+        for (var, want) in [("CASTLE_RADIO_HOST", "10.1.2.3"), ("CASTLE_KEY", "k3y!")] {
+            assert!(some.iter().any(|(k, v)| k == var && v == want), "{var}");
+        }
     }
 }

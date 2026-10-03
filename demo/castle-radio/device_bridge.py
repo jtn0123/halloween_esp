@@ -3,11 +3,20 @@
 import json
 import os
 import re
+import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any, TypedDict
+
+# The key store and its one rule live in tools/ (hosts.py, castle_keys.py):
+# the studio, sd_sync and this bridge send the same key to the same castle.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+import castle_keys
+import hosts
 
 # The imported light-show runner lives next door; every name it owns stays
 # importable from here so callers (and the tests that patch `call`) keep one
@@ -128,6 +137,14 @@ def _estimated_clock(state, commanded, now):
         }
 
 
+class KeyRequired(OSError):
+    """The castle has a key (firmware v5.74) and this request did not carry
+    the right one — every surface words it the same way."""
+
+    def __init__(self):
+        super().__init__(castle_keys.KEY_REQUIRED)
+
+
 def call(path, method="GET", data=None, timeout=8, fresh=False):
     if path == STATUS_PATH and method == "GET":
         with _STATUS_LOCK:
@@ -138,14 +155,58 @@ def call(path, method="GET", data=None, timeout=8, fresh=False):
                 and time.monotonic() - _status_cache["at"] < STATUS_CACHE_S
             ):
                 return dict(cached)
-    request = urllib.request.Request(f"http://{HOST}{path}", data=data, method=method)
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        result = json.loads(response.read())
+    request = urllib.request.Request(
+        hosts.castle_url(HOST, path),
+        data=data,
+        method=method,
+        headers=hosts.key_headers(HOST),
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            result = json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401:
+            raise KeyRequired() from None
+        raise
     if path == STATUS_PATH and method == "GET":
         with _STATUS_LOCK:
             _status_cache.update({"at": time.monotonic(), "state": dict(result)})
         return dict(result)
     return result
+
+
+def require_key():
+    """Before megabytes go out: a locked castle that would refuse the key
+    this computer holds (or the lack of one) is said now, not after the
+    whole file has crossed the Wi-Fi — the firmware drains a refused body."""
+    if not call(STATUS_PATH).get("locked"):
+        return
+    if castle_keys.ask(HOST, "/api/key", hosts.castle_key(HOST))[0] == 401:
+        raise KeyRequired()
+
+
+def key_state():
+    """The castle key as the Settings card shows it: whether this computer
+    remembers one for the castle, whether CASTLE_KEY pins it, and whether the
+    castle says it is locked (None when it does not answer). Never the key."""
+    try:
+        locked = call(STATUS_PATH).get("locked")
+    except (OSError, ValueError):
+        locked = None
+    return {
+        "host": HOST,
+        "remembered": bool(castle_keys.stored_key(HOST)),
+        "pinned": castle_keys.pinned(),
+        "locked": locked,
+    }
+
+
+def key_act(body):
+    """use / set / clear (tools/castle_keys.py `act`), then the new state."""
+    castle_keys.act(HOST, str(body.get("action", "")), str(body.get("key", "")))
+    with _STATUS_LOCK:
+        _status_cache["state"] = None
+    return key_state()
 
 
 def expect(scene=None, track=None):

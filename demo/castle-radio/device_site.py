@@ -53,6 +53,7 @@ SCRIPTS = (
     "remote-library.js",
     "device-tools.js",
     "desktop-tools.js",
+    "castle-key.js",
 )
 STYLES = ("style.css", "device-tools.css")
 STYLE_TAGS = "".join(f'<link rel="stylesheet" href="{name}">' for name in STYLES)
@@ -114,6 +115,13 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
         INDEX,
         '<option value="computer">This computer</option>',
         '<option value="computer">This browser</option>',
+    ),
+    # The castle key (v5.74): this page keeps it in the browser, under the
+    # name the firmware's fallback page uses — not in the computer's store.
+    (
+        INDEX,
+        "This computer remembers it for this castle only.",
+        "This browser remembers it for this castle only.",
     ),
     # The firmware streams a whole file per request (no Range) through the
     # one task that also answers /api/status. A metadata preload of the

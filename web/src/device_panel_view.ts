@@ -9,6 +9,7 @@
  * so theme and phone CSS reach every row (grade report 2026-08-21 C2).
  */
 
+import { keyMarkup } from "./device_key.js";
 import { esc } from "./dom.js";
 import { lightsMarkup, sectionHead, speakerMarkup } from "./device_tests.js";
 
@@ -93,6 +94,8 @@ export interface DeviceStatus {
   /** Set by the studio's relay: this status came through the bridge, and
    *  the desk's merged Library is on the same page. */
   bridged?: string;
+  /** Firmware v5.74+: a castle key guards its changes (device_key.ts). */
+  locked?: boolean;
 }
 
 /** Scene ids for the PIR select — read from the page's own generated data,
@@ -223,6 +226,8 @@ export function panelMarkup(
     `title="Cooldown: seconds before the sensor can fire again">` +
     `<small class="dp__muted">s between triggers</small>` +
     `</div></div>` +
+
+    keyMarkup(st) +
 
     `<div class="dp__foot">` +
     `<button id="dpLog" class="dp__logbtn">boot log ▸</button>` +

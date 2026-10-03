@@ -36,17 +36,24 @@
   const isAudioName = name => !!name && !name.includes('/') && !name.includes('\\') && AUDIO.test(name);
 
   // ── the castle's own API, with a timeout the page can name ─────────────
-  async function castle(path, method = 'GET') {
+  // Firmware v5.74's optional key: entered in Run settings, kept in this
+  // browser under the name the firmware's own fallback page uses (same
+  // origin, so the two pages share it) and sent with every change.
+  const KEY_MSG = 'This castle has a key — enter it in Settings', KEY_OK = /^[!-~]{1,64}$/;
+  const heldKey = () => { try { return localStorage.getItem('castleKey') || ''; } catch { return ''; } };
+  const keyed = (key = heldKey()) => (KEY_OK.test(key) ? {'X-Castle-Key': key} : {});
+  async function castle(path, method = 'GET', key = undefined) {
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
     let response;
-    try { response = await nativeFetch(path, {method, signal: abort.signal, cache: 'no-store'}); }
+    try { response = await nativeFetch(path, {method, signal: abort.signal, cache: 'no-store', headers: method === 'GET' ? {} : keyed(key)}); }
     catch (error) {
       if (error.name === 'AbortError') {throw new Error('Castle not answering · request timed out');}
       throw new Error('Castle not answering · check the Wi-Fi link');
     } finally { clearTimeout(timer); }
     const text = await response.text();
-    if (!response.ok) {throw new Error(text.trim() || `Castle answered ${response.status}`);}
+    if (response.status === 401) {throw Object.assign(new Error(KEY_MSG), {status: 401});}
+    if (!response.ok) {throw Object.assign(new Error(text.trim() || `Castle answered ${response.status}`), {status: response.status});}
     return text ? JSON.parse(text) : {};
   }
   let statusAt = 0, statusPromise = null;
@@ -389,6 +396,31 @@
     return result;
   }
 
+  // use / set / clear, as tools/castle_keys.py `act` does on the computer:
+  // POST /api/key with nothing to change answers 400 to the right key.
+  const keyState = async () => ({host: location.host, remembered: !!heldKey(), pinned: false,
+    locked: (await status(true).catch(() => ({}))).locked ?? null});
+  const KEY_PATHS = {use: () => '/api/key', set: key => `/api/key?new=${encodeURIComponent(key)}`, clear: () => '/api/key?clear=1'};
+  // What the castle's refusal means here — null for the probe's 400, which is the right key.
+  function keyRefusal(use, error) {
+    if (use && error.status === 401) {return refuse('that is not this castle\'s key', 401);}
+    if (error.status === 404) {return refuse('this castle\'s firmware has no key (v5.74 and newer do)', 409);}
+    if (use && error.status === 400) {return null;}
+    return refuse(error.message, [400, 401].includes(error.status) ? error.status : 502);
+  }
+  async function keyRoute(method, options) {
+    if (method !== 'POST') {return json(await keyState());}
+    const {action, key = ''} = JSON.parse(options.body || '{}');
+    if (!Object.hasOwn(KEY_PATHS, action)) {return refuse('action is use, set or clear');}
+    if (action !== 'clear' && !KEY_OK.test(key)) {return refuse('a castle key is 1-64 printable characters, no spaces');}
+    const use = action === 'use';
+    try { await castle(KEY_PATHS[action](key), 'POST', use ? key : heldKey()); }
+    catch (error) { const refused = keyRefusal(use, error); if (refused) {return refused;} }
+    try { if (action === 'clear') {localStorage.removeItem('castleKey');} else {localStorage.setItem('castleKey', key);} }
+    catch { return refuse('the castle took it, but this browser could not remember it', 500); }
+    return json(await keyState());
+  }
+
   // ── the routes server.py used to answer ────────────────────────────────
   async function device() {
     try {
@@ -405,6 +437,7 @@
     if (path === '/radio/device') {return device();}
     if (path === '/radio/device/command' && method === 'POST') {return json(await command(JSON.parse(options.body || '{}')));}
     if (path === '/radio/device/library') {return json(await inventory());}
+    if (path === '/radio/device/key') {return keyRoute(method, options);}
     // The firmware's own ring of what happened; 404 on anything older.
     if (path === '/radio/device/events') {return json(await castle('/api/events'));}
     // L7/L9 (v5.62): the season counters, the heap low-water mark and the
@@ -424,8 +457,8 @@
     const local = url.pathname.startsWith('/radio/') || url.pathname === '/scenes.json';
     if (url.origin !== location.origin || !local) {return nativeFetch(input, options);}
     return answer(url.pathname, options).catch(error => {
-      const busy = /not answering|answered \d+/.test(error.message);
-      return refuse(error.message, busy ? 502 : 400);
+      const code = /not answering|answered \d+/.test(error.message) ? 502 : 400;
+      return refuse(error.message, error.status === 401 ? 401 : code);
     });
   };
 
