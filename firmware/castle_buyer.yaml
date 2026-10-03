@@ -108,3 +108,34 @@ interval:
       - lambda: |-
           castle_buyer::share_port_80();
           castle_buyer::follow_key(id(castle_ota));
+
+# What the native API (port 6053, Home Assistant's door) does not offer a
+# buyer — v5.75, PRODUCTION-TODO §1.4; the whole audit, HTTP routes too, is
+# docs/notes/06-buyer-build.md §12.24. The API takes no castle key, so the
+# one entity on it that is a developer's tool goes:
+#   Enter flash mode   reboots into the ROM's download mode, one way, until a
+#                      USB reflash. A buyer's recovery is the web flasher
+#                      (hold BOOT, tap RESET), not a button anyone on the
+#                      LAN can press.
+# and so does a motion sensor this castle does not have: the GPIO input is
+# not compiled at all, and the three settings that steered it are internal,
+# so Home Assistant is not shown a switch that arms nothing. /api/pir already
+# answers 409 (pir_fitted above). Every other entity is what the open HTTP
+# playback routes already offer, or reads.
+button:
+  - id: !remove flash_mode
+
+binary_sensor:
+  - id: !remove walkway_pir
+
+switch:
+  - id: !extend pir_armed
+    internal: true
+
+number:
+  - id: !extend pir_cooldown
+    internal: true
+
+text:
+  - id: !extend pir_scene
+    internal: true

@@ -93,7 +93,9 @@ button:
   # ready for esptool over the wire. No buttons.
   #
   # A button, not a service, on purpose: pressing it takes the show off the air.
+  # The id is for castle_buyer.yaml, which compiles the button out (v5.75).
   - platform: template
+    id: flash_mode
     name: "Enter flash mode"
     entity_category: config
     on_press:
