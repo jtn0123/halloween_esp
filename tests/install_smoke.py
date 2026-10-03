@@ -186,6 +186,9 @@ def again(b: Buyer) -> None:
     check(
         f"castle-core: {TAG} already installed" in said, "castle-core is not re-fetched"
     )
+    again_ff = ("run: winget", "run: brew")
+    managers = [line for line in said.splitlines() if line.startswith(again_ff)]
+    check(not managers, f"ffmpeg is not installed again {managers}")
     now = {
         "bin": se.snapshot(b.dirs.bin),
         "core": se.snapshot(b.dirs.app / "core" / "target" / "release"),
