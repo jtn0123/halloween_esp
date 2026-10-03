@@ -241,11 +241,16 @@ Everything here is needed for BOTH option A and option B.
       process must reopen the file (Windows can't reopen an open temp file).
 - [x] Encoding: every `open()` passes `encoding="utf-8"` (Windows default is
       cp1252). Add a ruff rule (`PLW1514`) so it stays that way.
-- [ ] Ports: Windows firewall prompt on first bind — bind `127.0.0.1` only
-      (already the default) so the prompt does not appear.
-- [ ] `demo/castle-radio/desktop_tools.py` + `tools/register_castle_launcher.py`:
+- [x] Ports: Windows firewall prompt on first bind — bind `127.0.0.1` only
+      (already the default) so the prompt does not appear. Castle Radio and
+      the studio, started as the app and the launchers start them, are
+      probed from this machine's LAN address by tests/test_loopback_rs.py;
+      `--lan` stays the studio's opt-in.
+- [x] `demo/castle-radio/desktop_tools.py` + `tools/register_castle_launcher.py`:
       Mac-only branches stay, behind a platform check, until the Tauri app
-      replaces them.
+      replaces them. Registration says "not on this platform" elsewhere;
+      `/radio/tools` names each platform's installer and offers website
+      startup on macOS only (tests across darwin, win32 and linux).
 
 ### 4.3 CI
 - [x] `windows-latest` job: `cargo build --release` + `cargo test` for `core/`.
@@ -268,9 +273,13 @@ Everything here is needed for BOTH option A and option B.
 - [ ] Tauri shell embeds the studio as a library (not a child process) — the
       Rust server already exists; `tauri::Builder` hosts the webview pointed
       at it. Or keep it a sidecar if that is less churn; decide.
-- [ ] Webview differences: WebKit (macOS) vs WebView2 (Windows). Run the
+- [x] Webview differences: WebKit (macOS) vs WebView2 (Windows). Run the
       Playwright suite against WebKit too; audio/blob/wake-lock APIs checked
-      on both.
+      on both. `make e2e` and CI's `web` job run every spec in Chromium (as
+      WebView2 is) and then WebKit. Audio and Blob uploads pass in both; the
+      page's real Safari gaps were 11px buttons and a styled select's 18px
+      height on a phone (previewer/mobile.css). Wake lock is Castle Radio's
+      (castle-direct.js), feature-tested, and outside this suite.
 - [x] The `castle-tools://` URL handler + popup bridge (castle page ↔ local
       helper) → Tauri deep-link plugin; retire `tools/castle_launcher.swift`.
 - [x] Menu-bar ♜ icon → Tauri system tray (works on both OSes).
@@ -319,7 +328,10 @@ Everything here is needed for BOTH option A and option B.
 - [ ] Auto-update: section 9.
 - [x] CI release workflow: tag → build dmg/msi on macOS + Windows runners →
       sign → Release. Firmware images attached to the same Release (1.2).
-- [ ] Uninstaller leaves the user's tracks unless asked.
+- [x] Uninstaller leaves the user's tracks unless asked. Tauri's stock NSIS
+      uninstaller deletes app data only when its unticked box is ticked;
+      tests/test_desktop_uninstall.py holds the config to that template, and
+      desktop/README.md says what removing the app on macOS keeps.
 
 ## 6. Option A — uv bootstrap installer (P1, fallback)
 
@@ -331,7 +343,9 @@ true, and it is the dev/support path forever.
 - [x] Prebuilt Rust bins downloaded from the matching GitHub Release (no
       cargo on the buyer's machine); checksum verified.
 - [x] ffmpeg: winget/brew if present, else a pinned static download.
-- [ ] Replace Homebrew assumptions in `tools/install_castle_tools.sh`.
+- [x] Replace Homebrew assumptions in `tools/install_castle_tools.sh`.
+      Retired instead: `installer/install.sh` does all of it without
+      Homebrew, and every pointer to the old script now names the installer.
 - [x] Launchers: `Castle Tools.command` (mac) + `Castle Tools.bat`/Start-menu
       shortcut (Windows) that start the server and open the browser.
 - [x] `--repair` and `--uninstall` flags; idempotent re-run.
@@ -384,6 +398,10 @@ true, and it is the dev/support path forever.
       "Release branches".
 - [ ] Version numbers: one release number for app + firmware + card format,
       shown in the app, on the castle page, and in the owner's guide.
+      In the app: the splash and Castle Radio's tools card and diagnostics
+      show the release tag; docs/SUPPORT.md "Which release is it" maps a
+      firmware number to its tag. Left: the castle page (firmware, which
+      knows only its own number) and the owner's guide.
 - [x] `docs/RUNBOOK.md` gains a "supporting a buyer's castle" section.
       It is docs/SUPPORT.md (reading a report and a soak log), linked from
       RUNBOOK.

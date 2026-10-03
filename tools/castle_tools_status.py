@@ -17,7 +17,30 @@ from exe_paths import exe
 
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_NAME = "htdemucs model"
-INSTALL_COMMAND = "./tools/install_castle_tools.sh"
+
+
+def install_command(platform: str | None = None) -> str:
+    """How this platform installs or repairs the tools: the installer/ folder,
+    which every install carries a copy of (desktop_install.py places its
+    launcher from it). Re-running it resumes; it never starts over."""
+    platform = platform or sys.platform
+    if platform == "win32":
+        return r"installer\install.cmd"
+    if platform == "darwin":
+        return "sh installer/install.sh"
+    # No release ships a prebuilt castle-core for Linux (installer/install.sh).
+    return "sh installer/install.sh --from-source"
+
+
+def website_startup(platform: str | None = None) -> str | None:
+    """The double-click that registers the castle-tools:// helper, or None
+    where there is none: it compiles a macOS URL handler with Apple's tools
+    (register_castle_launcher.py), so elsewhere the page must not offer it."""
+    return (
+        "Enable Website Startup.command"
+        if (platform or sys.platform) == "darwin"
+        else None
+    )
 
 
 class Check(TypedDict):
@@ -163,7 +186,8 @@ def status() -> dict[str, object]:
             "separation": separating,
         },
         "checks": checks,
-        "install_command": INSTALL_COMMAND,
+        "install_command": install_command(),
+        "website_startup": website_startup(),
     }
 
 
@@ -184,7 +208,10 @@ def main() -> int:
             for check in checks:
                 if not check["ok"]:
                     print(f"  - {check['name']}: {check['detail']}")
-            print(f"Run {result['install_command']} to install or repair them.")
+            print(
+                f"Run {result['install_command']} in the Castle Tools folder"
+                " to install or repair them."
+            )
     else:
         print(json.dumps(result, indent=2))
     failed = (args.require_core and not result["core_ready"]) or (

@@ -17,8 +17,16 @@ import { join } from "node:path";
  *   Never make a sound. Chromium is launched with --mute-audio, which the
  *   browser enforces rather than the page under test — so even a regression
  *   that unmuted everything could not come out of the speakers during a run.
+ *   WebKit has no such switch; test/e2e/webkit.ts holds its output at zero
+ *   from under the page instead, on every context the fixture makes (which
+ *   is why web/tools/check-suites.mjs fails a spec that skips the fixture).
  *   The app's whole audio contract is "silent until you ask for it", and a
  *   suite that broke that while checking it would be absurd.
+ *
+ *   Two projects: chromium, and webkit — the engine of Safari and of the
+ *   desktop app's macOS window (docs/PRODUCTION-TODO.md §5.1). They share
+ *   one server and one tracks directory, so run them one at a time
+ *   (`--project=chromium`, then `--project=webkit`), as `make e2e` and CI do.
  *
  *   Never touch the real tracks. CASTLE_TRACKS points the server at a scratch
  *   directory, so imports, deletes and the manifest all land somewhere
@@ -61,18 +69,26 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     trace: "retain-on-failure",
-    launchOptions: {
-      args: [
-        // The guarantee, at the browser level.
-        "--mute-audio",
-        // Media elements otherwise refuse to start without a real gesture,
-        // which would make "does Play actually play" untestable. Muted anyway.
-        "--autoplay-policy=no-user-gesture-required",
-      ],
-    },
   },
 
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: {
+          args: [
+            // The guarantee, at the browser level.
+            "--mute-audio",
+            // Media elements otherwise refuse to start without a real gesture,
+            // which would make "does Play actually play" untestable. Muted anyway.
+            "--autoplay-policy=no-user-gesture-required",
+          ],
+        },
+      },
+    },
+    { name: "webkit", use: { ...devices["Desktop Safari"] } },
+  ],
 
   webServer: {
     // The server is the built Rust studio — the one production runs.

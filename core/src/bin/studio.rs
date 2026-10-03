@@ -23,11 +23,7 @@ fn main() {
         .find(|a| !a.starts_with("--"))
         .and_then(|a| a.parse().ok())
         .unwrap_or(8765);
-    let host = if args.iter().any(|a| a == "--lan") {
-        "0.0.0.0"
-    } else {
-        "127.0.0.1"
-    };
+    let host = listen_host(&args);
     let app = Arc::new(App::new(repo_root()));
     // Every rebuild, import and generator run is a child of this
     // interpreter. Asking it one question now beats watching each of them
@@ -65,6 +61,19 @@ fn main() {
         let Ok(stream) = stream else { continue };
         let app = Arc::clone(&app);
         std::thread::spawn(move || conn_loop(&app, stream));
+    }
+}
+
+/// Where the studio listens: the loopback unless `--lan` asks for every
+/// interface. The loopback by default because the server has no auth (an
+/// accepted design), and because Windows Firewall asks an owner to "allow
+/// access" the first time a program listens where the network can reach it.
+/// tests/test_loopback_rs.py starts the binary the ways both launchers do.
+fn listen_host(args: &[String]) -> &'static str {
+    if args.iter().any(|a| a == "--lan") {
+        "0.0.0.0"
+    } else {
+        "127.0.0.1"
     }
 }
 
@@ -322,5 +331,24 @@ mod reuse {
             }
             Ok(TcpListener::from_raw_fd(fd))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::listen_host;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|a| (*a).to_string()).collect()
+    }
+
+    #[test]
+    fn the_loopback_unless_lan_is_asked_for() {
+        // What the desktop app passes (desktop/src-tauri/src/service.rs),
+        // what the launcher and the e2e suite pass, and nothing at all.
+        assert_eq!(listen_host(&args(&["8775"])), "127.0.0.1");
+        assert_eq!(listen_host(&args(&["8765", "--localhost"])), "127.0.0.1");
+        assert_eq!(listen_host(&args(&[])), "127.0.0.1");
+        assert_eq!(listen_host(&args(&["8765", "--lan"])), "0.0.0.0");
     }
 }

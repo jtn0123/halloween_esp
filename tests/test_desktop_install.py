@@ -361,6 +361,22 @@ class TestLauncher(TempCase):
         start.assert_not_called()
         self.assertIn("1024-65535", out.getvalue())
 
+    def test_neither_server_is_asked_onto_the_lan(self) -> None:
+        """Castle Radio takes only its port (server.py binds the loopback);
+        the cue desk is started --localhost, never --lan — the commands
+        tests/test_loopback_rs.py runs and probes from the LAN side."""
+        with (
+            mock.patch.object(dl, "start") as start,
+            mock.patch.object(dl, "desk_state", return_value="free"),
+        ):
+            dl.spawn(self.dirs, {"CASTLE_PY": "py"}, 8871, desk=True)
+        radio, desk = (c.args[0] for c in start.call_args_list)
+        self.assertEqual(
+            radio[1:],
+            [str(self.dirs.app / "demo" / "castle-radio" / "server.py"), "8871"],
+        )
+        self.assertEqual(desk[1:], [str(de.DESK_PORT), "--localhost"])
+
     def test_radio_state_reads_the_identity_route(self) -> None:
         ours = {"service": "castle-radio", "protocol": 1}
         self.assertEqual(dl.radio_state(1, lambda _u: ours), "ours")

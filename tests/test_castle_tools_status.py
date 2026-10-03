@@ -63,10 +63,44 @@ class CastleToolsStatusTests(unittest.TestCase):
         result = tools_status.status()
         self.assertEqual(result["service"], "castle-radio")
         self.assertEqual(result["protocol"], 1)
-        self.assertEqual(result["install_command"], "./tools/install_castle_tools.sh")
+        self.assertEqual(result["install_command"], tools_status.install_command())
+        self.assertEqual(result["website_startup"], tools_status.website_startup())
         capabilities = cast(dict[str, Any], result["capabilities"])
         self.assertIn("separation", capabilities)
         self.assertTrue(result["checks"])
+
+    def test_each_platform_is_told_its_own_installer(self) -> None:
+        """docs/PRODUCTION-TODO.md §4.2: the Mac-only half (the website
+        startup double-click) is offered on macOS alone, and every platform
+        is pointed at an installer this tree actually ships."""
+        root = Path(__file__).resolve().parents[1]
+        for platform, command, script, startup in (
+            (
+                "darwin",
+                "sh installer/install.sh",
+                "installer/install.sh",
+                "Enable Website Startup.command",
+            ),
+            ("win32", r"installer\install.cmd", "installer/install.cmd", None),
+            (
+                "linux",
+                "sh installer/install.sh --from-source",
+                "installer/install.sh",
+                None,
+            ),
+        ):
+            with self.subTest(platform):
+                # Only the two answers run under the patch: the stdlib reads
+                # sys.platform too, and shutil.which on a "win32" Mac is no test.
+                with mock.patch.object(tools_status.sys, "platform", platform):
+                    said = (
+                        tools_status.install_command(),
+                        tools_status.website_startup(),
+                    )
+                self.assertEqual(said, (command, startup))
+                self.assertTrue((root / script).is_file(), script)
+                if startup:
+                    self.assertTrue((root / startup).is_file(), startup)
 
     def test_model_probe_requires_yaml_and_every_weight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

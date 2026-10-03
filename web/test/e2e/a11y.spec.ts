@@ -79,15 +79,19 @@ test("toasts and the masthead line are live regions", async ({ page }) => {
   await expect(host.locator(".toast--err").first()).toHaveAttribute("role", "alert");
 });
 
-test("Tab walks the transport in reading order, ♪ switch included", async ({ page }) => {
+test("Tab walks the transport in reading order, ♪ switch included", async ({ page, browserName }) => {
   await fakeCastle(page);
   await page.goto("/");
   await expect(page.locator(".transport #sndRoute")).toBeVisible();
   await page.locator("#play").focus();
+  // Safari's own Tab skips buttons unless the user has turned on "Press Tab
+  // to highlight each item"; Option-Tab walks every control, and is what a
+  // Safari keyboard user presses. The order it walks is the page's either way.
+  const tab = browserName === "webkit" ? "Alt+Tab" : "Tab";
   const order: string[] = [];
   for (let i = 0; i < 6; i++) {
     order.push(await page.evaluate(() => document.activeElement?.id ?? ""));
-    await page.keyboard.press("Tab");
+    await page.keyboard.press(tab);
   }
   expect(order.slice(0, 6)).toEqual(["play", "restart", "stop", "mute", "sndRoute", "scrub"]);
   // Space on the focused scrub must not start the show; Space on Play does.
