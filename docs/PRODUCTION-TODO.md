@@ -184,9 +184,18 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
 - [x] Owner's guide (1–2 pages, not `RUNBOOK.md`): power on, join Wi-Fi,
       open the page, pick a show, what the lights mean, what to do when it
       misbehaves, how to update, how to factory reset. docs/OWNER-GUIDE.md;
-      screenshots are marked TODO, and the castle key and in-app update say
-      "coming in the next release".
-- [ ] Labels: AP name/password, URL, recovery-page URL, QR code to the guide.
+      2026-10-03: in-app update, Castle Tools' key card, adding a song and
+      Find my castle written in, and 13 pictures in docs/guide/ made by
+      `make guide-shots` (emulator + Castle Radio on a pretend LAN, held to
+      the guide by tests/test_guide_shots.py). Still for a person with the
+      hardware: the phone's Wi-Fi list, the flasher's Wi-Fi step, the
+      BOOT/RESET photo, macOS Open Anyway and Windows SmartScreen — each
+      named in an HTML comment where it goes.
+- [x] Labels: AP name/password, URL, recovery-page URL, QR code to the guide.
+      `tools/unit_label.py --mac … | --host …`: a 4×6 in card and a
+      2.25×1.25 in sticker, self-contained HTML; names derived as the
+      firmware does (pinned by tests/test_unit_label.py), open hotspot said
+      as such, QR by `tools/qr_code.py` (no dependency). docs/SUPPORT.md.
 - [ ] SD card ships with NO songs (decided): scenes that need no track
       (light-only or synth audio) or an empty show. The castle page and the
       app must look sensible with zero songs — first-run "add your first
