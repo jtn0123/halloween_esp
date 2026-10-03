@@ -192,6 +192,31 @@ class CastleEmu(ThreadingHTTPServer):
         #: h_status's "missing": the boot manifest's comma-separated list of
         #: scene files the card lacks. Tests set it to rehearse the escaping.
         self.missing = ""
+        #: What the board MEASURES rather than decides: the radio, the heap
+        #: and the heard clock (castle_heard.h). Fixed, plausible readings —
+        #: the number means nothing off the board, the key everything — and
+        #: settable, so a test can walk them the way a night on the porch
+        #: would (tools/soak.py's suite). The defaults are the bytes
+        #: /api/status always carried.
+        self.readings = {
+            "heap_free_kb": 96,
+            "rssi": -55,
+            "sync_lead_ms": -1,
+            "sync_drift_ms": -1,
+        }
+        #: h_health's counters (castle_health.h), in the C template's order.
+        #: The defaults equal what the C harness's shim reports, so the two
+        #: replies stay byte-identical (tests/test_firmware_web_cxx.py); a
+        #: test sets them to rehearse a reboot, a crash or a dying card.
+        self.health: dict[str, object] = {
+            "boots": 3,
+            "crashes": 0,
+            "last_reset": "power-on",
+            "was_crash": False,
+            "sd_read_errors": 0,
+            "heap_min_kb": 64,
+            "sd_last_error": "",
+        }
         self.wedge = wedge
         self.sd_mounted = sd_mounted
         #: h_ota's ceiling: the app partition of the build being rehearsed.
