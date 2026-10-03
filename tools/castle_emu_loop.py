@@ -29,8 +29,10 @@ detail, not a new contract.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
+import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -97,28 +99,41 @@ def start_ticker(emu: CastleEmu) -> None:
 def ticker(emu: CastleEmu) -> None:
     while True:
         time.sleep(APPLY_DELAY_S)
-        # The publish bell first, as castle_sd_common.yaml's interval does:
-        # exchange(false), so one show.man is one re-read (v5.69, J1).
-        if emu.scenes_dirty:
-            emu.scenes_dirty = False
-            if emu.reseeds:
-                emu.reseed_scenes()
-        with emu.state.lock:
-            # take_pending(): the restart latch drains first and leaves
-            # the slot alone, so a command queued beside it still lands.
-            taken: tuple[str, str] | None
-            if emu._restart_pending:
-                emu._restart_pending = False
-                taken = ("RESTART", "")
-            else:
-                taken, emu._pending = emu._pending, None
-        mirror(emu)
-        if taken is not None:
-            emu.events.record_action(*taken, emu.uptime_ms())
-            try:
-                apply(emu, *taken)
-            finally:
-                emu.applied.append(taken)
+        try:
+            tick(emu)
+        except Exception:
+            # The device's loop does not die of one command it cannot parse,
+            # and a thread that did would leave this castle answering
+            # /api/status for ever while applying nothing — a silence no test
+            # can tell from a slow tick (grade report 2026-09-24 B3). Say it,
+            # then keep ticking.
+            traceback.print_exc(file=sys.stderr)
+
+
+def tick(emu: CastleEmu) -> None:
+    """One pass of the 200 ms interval."""
+    # The publish bell first, as castle_sd_common.yaml's interval does:
+    # exchange(false), so one show.man is one re-read (v5.69, J1).
+    if emu.scenes_dirty:
+        emu.scenes_dirty = False
+        if emu.reseeds:
+            emu.reseed_scenes()
+    with emu.state.lock:
+        # take_pending(): the restart latch drains first and leaves
+        # the slot alone, so a command queued beside it still lands.
+        taken: tuple[str, str] | None
+        if emu._restart_pending:
+            emu._restart_pending = False
+            taken = ("RESTART", "")
+        else:
+            taken, emu._pending = emu._pending, None
+    mirror(emu)
+    if taken is not None:
+        emu.events.record_action(*taken, emu.uptime_ms())
+        try:
+            apply(emu, *taken)
+        finally:
+            emu.applied.append(taken)
 
 
 def mirror(emu: CastleEmu) -> None:
