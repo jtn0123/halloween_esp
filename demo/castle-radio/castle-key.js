@@ -18,6 +18,7 @@
   if (!input) {return;}
   const state = byId('key-state');
   const message = byId('key-message');
+  const LOCK = {true: 'This castle has a key.', false: 'This castle has no key.'};
   const DONE = {
     use: 'Key accepted · remembered for this castle',
     set: 'The castle has its new key · remembered for this castle',
@@ -26,8 +27,7 @@
 
   function describe(s) {
     if (s.pinned) {return 'This castle’s key is set in the app’s settings file (castle_key) · change it there';}
-    const lock = s.locked === true ? 'This castle has a key.'
-      : s.locked === false ? 'This castle has no key.' : 'The castle is not answering.';
+    const lock = LOCK[s.locked] ?? 'The castle is not answering.';
     return `${lock} ${s.remembered ? 'A key is remembered for it here.' : 'No key is remembered for it here.'}`;
   }
 
@@ -60,6 +60,6 @@
   byId('key-use').onclick = () => act('use');
   byId('key-set').onclick = () => act('set');
   byId('key-clear').onclick = () => act('clear');
-  refresh();
+  void refresh();          // it says its own failure, on the state line
   window.castleKey = {refresh, act};
 })();

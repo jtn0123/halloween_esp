@@ -146,3 +146,11 @@ test('a pinned key sends the owner to the settings file', async () => {
   await settle();
   assert.match($('key-state').textContent, /settings file \(castle_key\)/);
 });
+
+test('the card says an open castle, and a silent one, in its own words', async () => {
+  for (const [locked, said] of [[false, 'This castle has no key.'], [null, 'The castle is not answering.']]) {
+    const {$} = card(() => [200, {host: 'h', remembered: false, pinned: false, locked}]);
+    await settle();
+    assert.equal($('key-state').textContent, `${said} No key is remembered for it here.`);
+  }
+});

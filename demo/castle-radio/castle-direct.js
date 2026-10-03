@@ -398,24 +398,27 @@
 
   // use / set / clear, as tools/castle_keys.py `act` does on the computer:
   // POST /api/key with nothing to change answers 400 to the right key.
+  const keyState = async () => ({host: location.host, remembered: !!heldKey(), pinned: false,
+    locked: (await status(true).catch(() => ({}))).locked ?? null});
+  const KEY_PATHS = {use: () => '/api/key', set: key => `/api/key?new=${encodeURIComponent(key)}`, clear: () => '/api/key?clear=1'};
+  // What the castle's refusal means here — null for the probe's 400, which is the right key.
+  function keyRefusal(use, error) {
+    if (use && error.status === 401) {return refuse('that is not this castle\'s key', 401);}
+    if (error.status === 404) {return refuse('this castle\'s firmware has no key (v5.74 and newer do)', 409);}
+    if (use && error.status === 400) {return null;}
+    return refuse(error.message, [400, 401].includes(error.status) ? error.status : 502);
+  }
   async function keyRoute(method, options) {
-    const state = async () => ({host: location.host, remembered: !!heldKey(), pinned: false,
-      locked: (await status(true).catch(() => ({}))).locked ?? null});
-    if (method !== 'POST') {return json(await state());}
+    if (method !== 'POST') {return json(await keyState());}
     const {action, key = ''} = JSON.parse(options.body || '{}');
-    const paths = {use: '/api/key', set: `/api/key?new=${encodeURIComponent(key)}`, clear: '/api/key?clear=1'};
-    const path = Object.hasOwn(paths, action) ? paths[action] : null;
-    if (!path) {return refuse('action is use, set or clear');}
+    if (!Object.hasOwn(KEY_PATHS, action)) {return refuse('action is use, set or clear');}
     if (action !== 'clear' && !KEY_OK.test(key)) {return refuse('a castle key is 1-64 printable characters, no spaces');}
-    try { await castle(path, 'POST', action === 'use' ? key : heldKey()); }
-    catch (error) {
-      if (action === 'use' && error.status === 401) {return refuse('that is not this castle\'s key', 401);}
-      if (error.status === 404) {return refuse('this castle\'s firmware has no key (v5.74 and newer do)', 409);}
-      if (!(action === 'use' && error.status === 400)) {return refuse(error.message, [400, 401].includes(error.status) ? error.status : 502);}
-    }
+    const use = action === 'use';
+    try { await castle(KEY_PATHS[action](key), 'POST', use ? key : heldKey()); }
+    catch (error) { const refused = keyRefusal(use, error); if (refused) {return refused;} }
     try { if (action === 'clear') {localStorage.removeItem('castleKey');} else {localStorage.setItem('castleKey', key);} }
     catch { return refuse('the castle took it, but this browser could not remember it', 500); }
-    return json(await state());
+    return json(await keyState());
   }
 
   // ── the routes server.py used to answer ────────────────────────────────
@@ -454,8 +457,8 @@
     const local = url.pathname.startsWith('/radio/') || url.pathname === '/scenes.json';
     if (url.origin !== location.origin || !local) {return nativeFetch(input, options);}
     return answer(url.pathname, options).catch(error => {
-      const busy = /not answering|answered \d+/.test(error.message);
-      return refuse(error.message, error.status === 401 ? 401 : busy ? 502 : 400);
+      const code = /not answering|answered \d+/.test(error.message) ? 502 : 400;
+      return refuse(error.message, error.status === 401 ? 401 : code);
     });
   };
 

@@ -273,8 +273,8 @@ export class DevicePanel {
         const kb = Math.trunc(f.size / 1024);
         drop.textContent = `uploading ${f.name} (${kb} KB)…`;
         const r = await api.castlePut(f.name, f);
-        drop.textContent = r.ok ? `✓ ${f.name}`
-          : r.status === 401 ? `✗ ${f.name} — ${KEY_REQUIRED}` : `✗ ${f.name} failed`;
+        const why = r.status === 401 ? ` — ${KEY_REQUIRED}` : " failed";
+        drop.textContent = r.ok ? `✓ ${f.name}` : `✗ ${f.name}${why}`;
       }
       cardChanged();                 // the Library below re-reads the card now
       void this.render();
