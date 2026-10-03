@@ -391,8 +391,9 @@ true, and it is the dev/support path forever.
       with a half-written `show.man`.
 - [ ] Disk-full, unsupported file type, 2-hour file, non-ASCII filenames
       (Windows + mac), file on a network drive.
-- [ ] Firmware/app version handshake: the app refuses (with a message) to push
-      a show format the castle's firmware cannot read.
+- [x] Firmware/app version handshake: the app refuses (with a message) to push
+      a show format the castle's firmware cannot read. Done: §9's show/card
+      format item — one table, `tools/fw_formats.py`.
 - [ ] Crash reporting: a local "copy diagnostics" button (no telemetry).
 
 ### 4.4 Windows hands-on pass (an Opus agent on your Windows PC)
@@ -446,17 +447,24 @@ calls/hour unauthenticated — check once a day and on launch, not more).
       GitHub Actions secret; losing it strands installed apps.
 - [x] Release workflow: tag `vX.Y` → build on macOS + Windows runners →
       build firmware → upload all assets → publish `latest.json` last.
-- [ ] Channels: `stable` only for the buyer; pre-releases ignored unless a
+- [x] Channels: `stable` only for the buyer; pre-releases ignored unless a
       hidden setting opts in (so you can test on your own castle first).
-- [ ] Firmware update from the app: compare `/api/status` firmware +
+      Done: `"prerelease": true` / `CASTLE_PRERELEASE`, one rule
+      (`tools/release_channel.py`, `channel.rs`) for app, installer, castle.
+- [x] Firmware update from the app: compare `/api/status` firmware +
       `board` with the Release, download the matching OTA image, verify
       checksum, stop audio, `PUT /api/ota`, confirm the new version on
       `/api/status`. Never auto-flash — the owner presses "Update castle".
-- [ ] Show/card format: app refuses to publish a format newer than the
+      Done: `tools/castle_update.py` + Castle Radio's card; refuses another
+      board or build, says a rollback. Not yet run on the real castle.
+- [x] Show/card format: app refuses to publish a format newer than the
       castle's firmware reads; tells the owner to update the castle first.
+      Done: `fw_formats.refusal` — sd_sync (so `make publish`, the studio), Radio.
 - [ ] Rollback: the previous Release stays downloadable; firmware keeps
       ESP-IDF's two OTA slots, so a failed boot rolls back on its own.
 - [x] Option A (uv installer) path: `--update` pulls the latest Release
       zip + bins, same `latest.json`; a "new version" banner in the page.
-- [ ] Never break an installed buyer: old app versions keep working
-      against new Releases (the update check is the only contract).
+- [x] Never break an installed buyer: old app versions keep working
+      against new Releases (the update check is the only contract). Done:
+      docs/RELEASING.md "What an installed app reads" +
+      `tests/test_release_contract.py`.

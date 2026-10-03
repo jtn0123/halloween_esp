@@ -22,8 +22,9 @@ written against them.
    ```
 
    Tags are `vMAJOR.MINOR.PATCH`. A suffix (`v0.2.0-rc.1`) makes a
-   **pre-release**: published, but ignored by the app's update check unless
-   opted in, and the web flasher keeps serving the previous full release.
+   **pre-release**: published, but offered by no updater unless its owner
+   opted in (see "Channels" below), and the web flasher keeps serving the
+   previous full release.
 4. Watch the run (`gh run watch`). `publish` only starts when every build
    job is green, and refuses unless the assets are exactly the list below —
    a release is never published half-built.
@@ -48,8 +49,9 @@ contract check, and keeps the lot as the run artifact
 | Asset | What it is | Who uses it |
 | --- | --- | --- |
 | `castle-fw-feather-s3-4m2p-<tag>.factory.bin` | The whole flash image from offset 0: bootloader, partition table and app. | The web flasher (new castle, recovery). |
-| `castle-fw-feather-s3-4m2p-<tag>.ota.bin` | The app image alone, what `PUT /api/ota` takes. Size-gated by `tools/check_image.py` (fails at 97% of the 1,835,008-byte slot). | The desktop app's "Update castle". |
+| `castle-fw-feather-s3-4m2p-<tag>.ota.bin` | The app image alone, what `PUT /api/ota` takes. Size-gated by `tools/check_image.py` (fails at 97% of the 1,835,008-byte slot). | Castle Radio's "Update castle" (`tools/castle_update.py`). |
 | `castle-fw-feather-s3-4m2p-<tag>.notices.txt` | The two images' third-party notices (`licenses/THIRD-PARTY-NOTICES-firmware.txt`, docs/LICENSING.md). | Anyone given an image; `pages.yml` serves it beside the flasher. |
+| `castle-fw-feather-s3-4m2p-<tag>.json` | The images' descriptor: board, build (`fw_variant`), the firmware version `/api/status` will report, the OTA image's name and size. | "Update castle", before it downloads a megabyte. |
 | `castle-core-<target>-<tag>.zip` | `analyze_track`, `scene_render`, `studio` (`.exe` on Windows) and `THIRD-PARTY-NOTICES.txt`, flat. Targets: `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`, `x86_64-apple-darwin`. | The desktop app's sidecars. |
 | `flasher-manifest.json` | The esp-web-tools manifest: ESP32-S3, factory image at offset 0, Improv Wi-Fi, erase offered. | The web flasher. |
 | `SHA256SUMS` | `sha256sum` format over every other asset. | Anything that downloads an asset; `pages.yml` checks it. |
@@ -69,6 +71,47 @@ the app matches a castle to its image by equality. The firmware is
 developer runs, image gate included): no Wi-Fi baked in, softAP and captive portal,
 Improv over USB. The `firmware` job fails if the run's fake CI Wi-Fi secret
 turns up in the image.
+
+## What an installed app reads — never rename it
+
+An app already on a buyer's computer cannot be told that a release changed.
+It looks for these, by these names, forever; rename one and every install
+behind it silently stops updating. `tests/test_release_contract.py` builds a
+release the way the workflow does and holds every reader's own spelling to
+it, then runs a castle update against that very release.
+
+| What | Where it is looked for | Read by |
+| --- | --- | --- |
+| The newest release | `GET api.github.com/repos/jtn0123/halloween_esp/releases/latest` (stable); `…/releases?per_page=30` when opted in (newest non-draft by semver) | `tools/release_channel.py` — the installer's `--update`, the launcher's daily notice, "Update castle", `/radio/app/release` |
+| `latest.json` | `releases/latest/download/latest.json` (stable); `releases/download/<tag>/latest.json` for the tag Castle Radio names when opted in | The app's updater (`tauri.conf.json`, `desktop/src-tauri/src/channel.rs`) |
+| `castle-fw-<board>-<tag>.json` | An asset of the release, verified against `SHA256SUMS` | `tools/castle_update.py` |
+| `castle-fw-<board>-<tag>.ota.bin` | The name the descriptor's `ota` field must equal; verified, then its length must equal `ota_bytes` and its first byte be `0xE9` | `tools/castle_update.py` |
+| `castle-core-<target>-<tag>.zip` | An asset, verified | `tools/desktop_release.py` (the installer) |
+| `SHA256SUMS` | An asset: one line per other asset, 64 hex digits, two spaces, the name (`sha256sum`'s text format) | Everything above — a release without it, or with a name it does not cover, is refused |
+
+The descriptor is schema 1: `{"schema": 1, "tag", "board", "fw_variant",
+"version", "ota", "ota_bytes", "factory"}`. A reader refuses a schema it does
+not know ("update Castle Tools first"), so a new field is free and a changed
+meaning is a schema 2 — shipped only after an app that reads it. `board` and
+`fw_variant` are what `/api/status` reports, and the app flashes nothing
+whose board or build differs from the castle's: a yard castle is never handed
+the buyer build, nor the other way round. `version` is `firmware/castle.yaml`'s
+`version:`, so "the castle came back on the old version" is a rollback.
+
+Tags never change meaning either: `vMAJOR.MINOR.PATCH`, a `-suffix` making a
+pre-release (`release_assets.TAG_RE`, `release_channel.py`, `release.rs` —
+one table in `channel.rs` holds all three).
+
+### Channels
+
+Every owner is on the stable channel. The pre-release channel is an opt-in
+on no page: `"prerelease": true` in the app's `settings.json`, or
+`CASTLE_PRERELEASE=1` in the environment (which wins when set). The app
+passes the decision to Castle Radio and the studio as `CASTLE_PRERELEASE=1`,
+so the app's own update, the castle's firmware update and the installer all
+take the same releases. Opted in, the newest release of either kind is
+offered — and a release that is newer than an owner's pre-release moves them
+onto it.
 
 ## The web flasher
 
