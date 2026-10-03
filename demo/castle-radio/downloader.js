@@ -20,7 +20,8 @@
      words go behind Details. */
   function words(s) {
     const u = s.update || {phase: 'idle'};
-    const have = s.installed ? (s.version ? `version ${s.version}` : 'installed') : 'not installed yet';
+    let have = 'not installed yet';
+    if (s.installed) { have = s.version ? `version ${s.version}` : 'installed'; }
     const state = `Song downloader · ${have}`;
     if (u.phase === 'waiting') { return {state, note: 'Waiting for the import in progress to finish, then updating…', busy: true}; }
     if (u.phase === 'updating') { return {state, note: 'Updating the downloader…', busy: true}; }
@@ -45,12 +46,14 @@
      connected tools; with none connected there is nothing to update. */
   const reachable = () => !window.castleDirect || !!window.castleDesktop?.connected;
 
+  /* Never rejects: a check that fails says so in the panel, which is all a
+     caller (the page load, a poll, a reconnect) could do with it. */
   async function refresh() {
-    box.hidden = !reachable();
-    if (box.hidden) { return; }
     try {
+      box.hidden = !reachable();
+      if (box.hidden) { return; }
       const r = await fetch('/radio/downloader', {cache: 'no-store', signal: AbortSignal.timeout(20000)});
-      if (!r.ok) { throw new Error(); }
+      if (!r.ok) { throw new Error(`the import service answered ${r.status}`); }
       show(await r.json());
     } catch {
       byId('downloader-state').textContent = 'Song downloader';
@@ -75,5 +78,7 @@
   button.onclick = update;
   window.addEventListener('castle-tools-connection', refresh);
   window.castleDownloader = {update, refresh, words, available: reachable};
-  refresh();
+  // Fire and forget is right here: nothing waits on the first check, and
+  // refresh() reports its own failure on the page rather than rejecting.
+  void refresh();
 })();
