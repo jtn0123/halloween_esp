@@ -30,6 +30,7 @@ are left alone; purge means "clear the music", not "wipe the card".
 from __future__ import annotations
 
 import gzip
+import http.client
 import importlib.util
 import json
 import re
@@ -41,6 +42,7 @@ import zlib
 from pathlib import Path
 
 import build_paths as bp
+import sd_logs
 import sd_ota
 from castle_keys import KEY_REQUIRED
 from hosts import castle_url, key_headers, maybe_host
@@ -72,11 +74,28 @@ def listing(ip: str) -> list[dict]:
     return list(json.loads(api(ip, "GET", FILES_API)))
 
 
+#: A push cut off partway — Wi-Fi gone, castle unplugged — ends on this,
+#: and it is true by construction: the castle writes every upload beside the
+#: file and swaps it in only once the last byte has landed (sd_web_upload.h
+#: write_body), and `scenes` sends show.man last, so the card holds the old
+#: show or the new one, never half of either.
+STOPPED = (
+    "stopped partway through {name} ({why}). Nothing on the card is "
+    "half-written: a file that did not finish is left as it was, and the "
+    "show's manifest goes last. Run it again: scene and cue files that "
+    "already landed are skipped."
+)
+
+
 def upload(ip: str, route: str, name: str, data: bytes, timeout: float = 600) -> None:
     print(f"  uploading {name} ({len(data) // 1024} KB) ...", end="", flush=True)
-    resp = json.loads(
-        api(ip, "PUT", f"{route}/{urllib.parse.quote(name)}", data, timeout=timeout)
-    )
+    path = f"{route}/{urllib.parse.quote(name)}"
+    try:
+        resp = json.loads(api(ip, "PUT", path, data, timeout=timeout))
+    except urllib.error.HTTPError:
+        raise  # the castle answered, and its reason is the one to see
+    except (OSError, http.client.HTTPException) as e:
+        raise SystemExit(f"\n{STOPPED.format(name=name, why=e)}") from None
     got = resp.get("bytes", -1)
     if got != len(data):
         raise SystemExit(f" FAILED ({got} of {len(data)} bytes)")
@@ -163,6 +182,15 @@ def cmd_push(ip: str, args: list[str]) -> int:
     return cmd_ls(ip)
 
 
+def _send_scene(ip: str, name: str, data: bytes, rec: Published) -> None:
+    """One file into /sd/scenes/, and on the record the moment the card
+    confirms it — so a push cut off halfway has already told the retry what
+    landed, and the retry skips it without pulling it back to check."""
+    upload(ip, SCENES_API, name, data)
+    rec.record(f"scenes/{name}", data)
+    rec.save()
+
+
 def cmd_scenes(ip: str) -> int:
     """The whole show into /sd/scenes/: audio, cue files and the manifest.
 
@@ -204,8 +232,7 @@ def cmd_scenes(ip: str) -> int:
         if _scene_unchanged(ip, src.name, data, have, rec):
             print(f"  {src.name} unchanged, skipped")
             continue
-        upload(ip, SCENES_API, src.name, data)
-        rec.record(f"scenes/{src.name}", data)
+        _send_scene(ip, src.name, data, rec)
         sent += 1
     print(
         f"  {len(files)} scene tracks in /sd/scenes/ ({sent} sent, "
@@ -240,8 +267,7 @@ def _push_show(ip: str, have: dict[str, int], rec: Published) -> int:
         if _scene_unchanged(ip, src.name, data, have, rec):
             print(f"  {src.name} unchanged, skipped")
             continue
-        upload(ip, SCENES_API, src.name, data)
-        rec.record(f"scenes/{src.name}", data)
+        _send_scene(ip, src.name, data, rec)
         sent += 1
     # Unconditionally, and before any delete: it is 16 + 96·n bytes, and it is
     # the file that decides what the castle believes about every one of the
@@ -385,37 +411,9 @@ def delete_route(name: str) -> str:
     return f"/api/files/{urllib.parse.quote(name)}"
 
 
-#: L9 (v5.62): the card's own log, oldest rotation first. The castle has
-#: written one line per boot since v5.44 and, since v5.62, the tail of the
-#: previous life's event ring underneath it — and nothing ever fetched it,
-#: so the one record that survives a crash was only readable by pulling the
-#: card. It has been HTTP-readable the whole time (sd_web_site.h).
-LOG_FILES = ("logs/castle.log.1", "logs/castle.log")
-#: Lines printed after the save. The whole file goes to disk; this is the
-#: part you read standing in the hall with a laptop.
-TAIL_LINES = 40
-
-
 def cmd_logs(ip: str, args: list[str]) -> int:
-    out = Path(args[0]) if args else ROOT / "castle.log"
-    text = ""
-    for name in LOG_FILES:
-        # A constant path, not one built from anything the castle said: the
-        # rule for every URL in this file.
-        try:
-            text += api(ip, "GET", f"/sd/{name}").decode("utf-8", "replace")
-        except OSError as e:
-            # castle.log.1 only exists after the first rotation (~200 KB),
-            # so its absence is the normal case and not a failure.
-            print(f"  {name}: {e}")
-    if not text.strip():
-        print("no log on the card — has this castle booted with it in the slot?")
-        return 1
-    out.write_text(text, encoding="utf-8")
-    lines = text.splitlines()
-    print(f"saved {len(lines)} lines to {out}\n")
-    print("\n".join(lines[-TAIL_LINES:]))
-    return 0
+    """tools/sd_logs.py — handed `api` and ROOT, as cmd_ota hands sd_ota."""
+    return sd_logs.fetch(ip, args, api, ROOT)
 
 
 def cmd_purge(ip: str) -> int:

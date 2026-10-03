@@ -116,16 +116,23 @@ class Uploads(Replies):
         worker task — is the seam this file has too (A9)."""
         written = 0
         crc = 0
+        cut = False
         with f:
             try:
-                for chunk in self._body_chunks(n):
+                for got in self._body_chunks(n):
+                    chunk, cut = self._carried(got)
                     f.write(chunk)
                     written += len(chunk)
                     crc = zlib.crc32(chunk, crc)  # B5: sd_sync compares
+                    if cut:
+                        break
             except OSError:  # TimeoutError is one of these
                 pass
         if written != n:
             part.unlink(missing_ok=True)  # the sidecar only
+            if cut:  # the link is gone, so is the client: nobody to answer
+                self.close_connection = True
+                return None
             return self._err(500, "short write")
         # A11 (v5.61): the previous copy is MOVED aside, never deleted on
         # the promise of a rename that has not happened yet. If the rename
@@ -156,6 +163,19 @@ class Uploads(Replies):
             self.server.scenes_dirty = True
         card = f"/sd/{sub}/{target.name}" if sub else f"/sd/{target.name}"
         self._json({"path": card, "bytes": written, "crc32": "%08x" % crc})
+
+    def _carried(self, chunk: bytes) -> tuple[bytes, bool]:
+        """The Wi-Fi under a publish, when a test cuts it (`drop_after`):
+        that many more upload bytes arrive, counted across uploads, and then
+        the link is gone mid-body, once. True means it just went — what is
+        returned is the part that made it."""
+        left = self.server.drop_after
+        if left is None or len(chunk) <= left:
+            if left is not None:
+                self.server.drop_after = left - len(chunk)
+            return chunk, False
+        self.server.drop_after = None
+        return chunk[:left], True
 
     def h_delete(self, raw: bytes) -> None:
         if not self._key_ok():

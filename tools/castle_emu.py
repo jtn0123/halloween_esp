@@ -252,6 +252,10 @@ class CastleEmu(ThreadingHTTPServer):
         #: write_body's free-space precondition (B3): KB free the emulated
         #: card claims. None = report the disk's real number and never 507.
         self.sd_free_kb: int | None = None
+        #: A publish's Wi-Fi, cut: this many more upload bytes reach the card,
+        #: then the link drops mid-file and the client hears nothing back
+        #: (castle_emu_upload._carried). None = it holds, as it does by default.
+        self.drop_after: int | None = None
         # The real httpd is ONE task: a long PUT holds every other request
         # (the status poll included) until it finishes. --serial rehearses
         # that; the default threads so the bench stays snappy.

@@ -202,6 +202,7 @@ class TestTheLogIsReadable(unittest.TestCase):
     """L9. /sd/logs/castle.log was HTTP-readable and nobody read it."""
 
     def test_sd_sync_has_a_logs_verb_and_documents_it(self) -> None:
+        import sd_logs
         import sd_sync
 
         self.assertTrue(hasattr(sd_sync, "cmd_logs"))
@@ -209,7 +210,7 @@ class TestTheLogIsReadable(unittest.TestCase):
         self.assertIn("logs", sd_sync.__doc__)
         # Both files, newest last, and the tail printed — the point is to
         # answer "what happened last night" without a browser.
-        self.assertIn("logs/castle.log.1", sd_sync.LOG_FILES)
+        self.assertIn("logs/castle.log.1", sd_logs.LOG_FILES)
 
     def test_the_bridge_cli_mirrors_the_verb(self) -> None:
         castle_rs = (ROOT / "core" / "src" / "bin" / "castle.rs").read_text(
