@@ -49,6 +49,14 @@
         checks.append(row);
       }
       if (result.install_command) { byId('tools-install').textContent = result.install_command; }
+      // Website startup is a macOS URL handler: null is the computer saying it
+      // has none (castle_tools_status.website_startup), so it is not offered.
+      byId('tools-mac').hidden = result.website_startup === null;
+      // The release this copy came from — what support asks first
+      // (docs/SUPPORT.md "Which release is it").
+      const version = byId('tools-version');
+      version.textContent = typeof result.app_version === 'string' ? result.app_version : '';
+      version.hidden = !version.textContent;
       show(result.ready ? 'Desktop tools connected' : 'Connected · setup needs attention',
         result.ready ? 'Ready to import music, split voice and background, and generate light previews.'
           : 'Your studio is running. Review the checks below before preparing a new song. Existing songs remain available.',

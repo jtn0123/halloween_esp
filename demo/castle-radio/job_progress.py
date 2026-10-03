@@ -240,10 +240,10 @@ def run(args, timeout, stage, report, extra_env=None, stop=None):
 
 def runner(stop=None, timeout=600.0):
     """A stand-in for `subprocess.run` that `stop` can end, for the children
-    whose OUTPUT is the answer — analyze_track's JSON, the desk's scene YAML —
-    where `run`'s line-by-line progress reading does not apply. The tools
-    that spawn them (import_track.crate_analysis, render_cues.waveform and
-    desk_scene) take it as their `run=`, so a Cancel that arrives while the
+    whose OUTPUT is the answer — analyze_track's JSON — where `run`'s
+    line-by-line progress reading does not apply. The tools that spawn them
+    (import_track.crate_analysis, and render_cues.waveform through
+    rich_show.prepare) take it as their `run=`, so a Cancel that arrives while the
     light show is being built kills that child's whole group and raises
     Cancelled, just as it does mid-download (grade report 2026-09-24 B6).
     `timeout` is per child: none of them had one."""

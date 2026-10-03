@@ -136,6 +136,14 @@ export const pollAt = (ctx, position_s, uptime_s) => poll(ctx, playingAt(positio
    prefix to the JSON the firmware would return. Every sleep is recorded and
    resolved at once, and moves ctx.clock the way a real wait would, so the
    frame clock is read honestly and never actually waited on. */
+/* An answer directContext gives as the castle's error instead of a 200:
+   `refused(404, 'no such directory\n')`. Keys are matched by prefix in
+   their order, so a refusal for `/api/files?d=…` goes before `/api/files`. */
+class Refusal {
+  constructor(status, body) { this.status = status; this.body = body; }
+}
+export const refused = (status, body) => new Refusal(status, body);
+
 export function directContext(answers, library) {
   const delays = [];
   const asked = [];
@@ -181,7 +189,9 @@ export function directContext(answers, library) {
     await new Promise(resolve => setImmediate(resolve));
     live.pop();
     const key = Object.keys(answers).find(p => path.startsWith(p));
-    return {ok: true, status: 200, text: async () => JSON.stringify(answers[key] ?? {})};
+    const answer = answers[key];
+    if (answer instanceof Refusal) {return {ok: false, status: answer.status, text: async () => answer.body};}
+    return {ok: true, status: 200, text: async () => JSON.stringify(answer ?? {})};
   };
   vm.createContext(ctx);
   vm.runInContext(read('castle-direct.js'), ctx, {filename: 'castle-direct.js'});

@@ -38,6 +38,12 @@
   .stylelab button, .stylelab__ab, #rigYaml, #zdYaml, .zd input,
   .foot-fold summary, .sheet-fold summary, .trim-fold summary, .stylelab summary,
   #trkOpts summary { min-height: 44px; }
+  /* Safari sets a STYLED select's min-height itself — one with its own border
+     or background is drawn as a menulist-button, and WebKit's theme pins
+     that at 18px over this sheet — so the band editor's window select (the
+     styled one) was 21px tall there. A height it leaves alone; one line is
+     one line, so it is the same 44px Chromium gave. */
+  .bandcfg__zone { height: 44px; }
   #deviceChip .chip__mirror, #dpPirArm { min-height: 44px; display: inline-flex; align-items: center; }
   #deviceChip .chip__btn, .bandcfg__mute, .bandcfg__solo { min-width: 44px; }
   /* Readable, too: the desk's 9.5–11px data captions are for a desk at
@@ -57,6 +63,11 @@
     .budget__pickmeta, .budget__row span, .budget__row b, table.sheet,
     .transport .tc, .stylelab__val, .codecab__bar button, .trk-lib__hd span) { font-size: 12px; }
   #deviceChip, .toast { font-size: 13px; }
+  /* A control this sheet never sized takes the browser's size: 13.3px in
+     Chromium, 11px in Safari — under the floor on the phone most likely to
+     be on the porch. :where() weighs nothing, so every sized control above
+     and in styles.css/panels.css keeps its own. */
+  :where(button, select, input, textarea) { font-size: 13px; }
   .head__id { flex-wrap: wrap; gap: 4px 12px; }
   .eyebrow { white-space: normal; }
 

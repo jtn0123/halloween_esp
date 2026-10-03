@@ -109,6 +109,40 @@ Notes:
   release, not a local build.
 - The record above, filled in, and the label printed (PRODUCTION-TODO §3).
 
+## Which release is it
+
+The **release tag** `vX.Y.Z` is the one number for a delivery: the app,
+castle-core, the firmware images and the card formats a buyer gets all come
+from one tag's build (docs/RELEASING.md).
+
+- **The desktop app** shows it on its splash, `Castle Tools vX.Y.Z`:
+  release.yml builds the app with its version set from the tag. The app
+  hands the same tag to Castle Radio (`CASTLE_APP_VERSION`).
+- **Castle Radio** shows it on its tools card (Import music → Castle Tools)
+  and on the first line of every diagnostics report it adds to the castle's:
+  `Castle Tools vX.Y.Z` inside the app, `Castle Radio vX.Y.Z` from the
+  installer (its release zip stamps `installer/VERSION`), or "a checkout, no
+  release version".
+- **The castle** reports its own firmware number, `firmware/castle.yaml`'s
+  `version` (`5.76`, shown as v5.76) — status `version`, the castle's own
+  page and the report's `version` line. It moves on every device build, not on every
+  release, and two releases can carry the same firmware (an app-only fix),
+  so a firmware number alone does not name a release. The map is in each
+  release: its `castle-fw-feather-s3-4m2p-<tag>.json` holds `tag` and
+  `version` side by side (tools/release_assets.py `firmware_about`), and is
+  what the app's "Update castle" reads. Which release shipped castle 5.76?
+
+  ```sh
+  for t in $(gh release list --json tagName -q '.[].tagName'); do
+    gh release download "$t" -p 'castle-fw-*.json' -O - | jq -r '"\(.tag)  castle \(.version)"'
+  done
+  ```
+
+  The per-unit record above keeps both numbers for the same reason.
+- **Card formats** (`show.man`, `.cue`) carry their own format version in
+  each file's header; which firmware reads which is tools/fw_formats.py's
+  table, and a publish refuses a castle too old for the release's formats.
+
 ## Release branches
 
 - **Buyer releases are tagged from `main`** (docs/RELEASING.md): `make check`

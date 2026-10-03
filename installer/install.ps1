@@ -118,6 +118,12 @@ function Invoke-Quiet([scriptblock]$Block) {
 $Python = Invoke-Quiet { & $Uv python find --managed-python 3.13 }
 if (-not $Python) { $Python = Invoke-Quiet { & $Uv python find 3.13 } }
 if (-not $Python) {
+    # uv is here but its Python is not yet: a dry run stops where the real
+    # one would install it, as it does where uv itself is missing.
+    if ($DryRun) {
+        Write-Host "[dry-run] would continue under that Python 3.13 with $Installer"
+        exit 0
+    }
     Write-Error 'install.ps1: uv could not provide Python 3.13.'
     exit 1
 }

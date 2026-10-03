@@ -57,6 +57,9 @@ pub struct Config {
     pub app_data: PathBuf,
     pub settings: Settings,
     pub setup: Arc<Setup>,
+    /// The release tag this build is (`release::tag` of the bundle's version,
+    /// which release.yml sets from the tag): what the children name it by.
+    pub release: String,
 }
 
 struct Inner {
@@ -305,9 +308,11 @@ impl Supervisor {
         {
             cmd.env(key, value);
         }
-        // What Castle Radio's Copy diagnostics names this app by, and the one
-        // log it may quote (paths cut to file names, no castle key).
-        cmd.env("CASTLE_APP_VERSION", env!("CARGO_PKG_VERSION"))
+        // What Castle Radio names this app by — its tools card and Copy
+        // diagnostics — and the one log it may quote (paths cut to file
+        // names, no castle key). The release tag, not Cargo.toml's version,
+        // which no release changes (docs/SUPPORT.md "Which release is it").
+        cmd.env("CASTLE_APP_VERSION", &self.config.release)
             .env("CASTLE_APP_LOG", self.log.path());
         self.log.line(&format!(
             "starting {} from the {} at {}: {} on port {}",

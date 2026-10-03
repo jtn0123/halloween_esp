@@ -31,7 +31,9 @@ file is the one that governs.
   track is played (`firmware/castle_cues.h`, v5.63) — any track in `tracks/`,
   every pulse (no PULSE_CAP), no scene slot, no OTA. The scene block is the
   one in scenes.yaml when the song is a scene, else the desk's own
-  `sceneYaml` run headless (`web/src/scene_cli.ts`, bundled with esbuild).
+  `sceneYaml` — run by its Python twin `tools/track_scene.py` (no node: a
+  buyer has none), held to the TypeScript text for text by
+  `web/test/scene_parity.ts`.
   `tools/cue_file.py` is the format; `tests/test_cue_file_cxx.py` runs the
   real header against it. `sd_sync cues` (and `make publish`) puts each file
   beside its song in the card root.

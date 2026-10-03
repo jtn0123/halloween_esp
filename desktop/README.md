@@ -44,7 +44,7 @@ Both children get the same environment (`childenv::child_env`):
 | `CASTLE_BUILD` | `<app data>/radio/build` |
 | `CASTLE_HOST`, `CASTLE_RADIO_HOST` | `castle_host` from settings.json, when set — a pin. Otherwise neither is set (an inherited one is removed), and both servers talk to the first castle of `CASTLE_DEVICES`, re-read as it changes |
 | `CASTLE_DEVICES` | `<app data>/radio/devices.toml` — the castle Find my castle chose (`tools/castle_address.py`, Castle Radio's Your castle page) and the keys either app remembers (`tools/castle_keys.py`); never a checkout's tracked file |
-| `CASTLE_APP_VERSION`, `CASTLE_APP_LOG` | this app's version and its log file, for Castle Radio's Copy diagnostics (`src/supervisor.rs`) |
+| `CASTLE_APP_VERSION`, `CASTLE_APP_LOG` | this app's release tag and its log file, for Castle Radio's tools card and Copy diagnostics (`src/supervisor.rs`) |
 | `CASTLE_KEY` | `castle_key` from settings.json, only when set — it then wins over that store |
 | `CASTLE_PY` | the runtime's interpreter, so the studio's children use it |
 | `HF_HOME`, `TORCH_HOME`, `CASTLE_DOWNLOADER_DIR` | an installed runtime's `models/huggingface`, `models/torch` and `bin/`: where its installer put the Demucs model and the song downloader |
@@ -55,13 +55,34 @@ Both children get the same environment (`childenv::child_env`):
 `io.github.jtn0123.castletools`: `~/Library/Application Support/…` on macOS,
 `%APPDATA%\…` on Windows. On first run the runtime's shipped
 `scenes/scenes.yaml` is copied there (`childenv::seed_scenes`: copy beside, then
-rename; never overwrites — after that it is the owner's file). The NSIS
-uninstaller leaves this directory unless its "delete application data" box is
-ticked, so songs survive an uninstall by default.
+rename; never overwrites — after that it is the owner's file).
 
 Logs: one file, `castle-tools.log`, in `app_log_dir()` (`~/Library/Logs/…`,
 `%LOCALAPPDATA%\…\logs`), holding the app's own lines and both servers'
 stdout/stderr. Rotated to `.log.1` past 5 MB at launch.
+
+### Removing the app keeps the songs
+
+- **Windows** (Settings → Apps → Castle Tools → Uninstall): Tauri's stock
+  NSIS uninstaller removes the files it installed and leaves
+  `%APPDATA%\io.github.jtn0123.castletools` and
+  `%LOCALAPPDATA%\io.github.jtn0123.castletools` alone unless its **Delete
+  the application data** box is ticked — unticked by default, never ticked
+  by an update (`/UPDATE`) or a silent uninstall, which shows no page.
+  `tests/test_desktop_uninstall.py` holds the config to that template (no
+  custom template, no uninstall hooks, the CLI pinned to the audited one).
+- **macOS** has no uninstaller: the app is removed by dragging **Castle
+  Tools** from Applications to the Bin, which takes the app and its
+  `castle-tools://` handler and nothing else. Songs, scenes and settings
+  stay in `~/Library/Application Support/io.github.jtn0123.castletools`, the
+  log in `~/Library/Logs/io.github.jtn0123.castletools`; reinstalling picks
+  them up. To remove them as well, delete those two folders (Finder: Go → Go
+  to Folder…, paste the path).
+
+The first launch's runtime (`runtime/` in the local data folder, about
+1.7 GB) stays with them on both systems, so reinstalling the same release
+starts without a setup. Deleting the folder costs only the next launch's
+download.
 
 ### Where the servers come from (`src/runtime.rs`)
 
@@ -252,10 +273,13 @@ of the release Castle Radio names (`GET /radio/app/release`, which asks
 release tag builds a URL, so the manifest is always one of this repo's.
 
 **The signing key.** Updates are verified with a minisign key pair — free,
-and required even for an unsigned app; it is not code signing. Until the
-placeholder `CASTLE_TOOLS_UPDATER_PUBKEY_PLACEHOLDER` in `tauri.conf.json`
-is replaced, the app skips every check and "Check for updates" says why.
-Once, on the owner's machine:
+and required even for an unsigned app; it is not code signing. This repo's
+pair was made on 2026-10-03: the public key is in `tauri.conf.json`, the
+private key and its password are the two Actions secrets below, and the
+originals are kept off GitHub by the maintainer (the key file, and a copy
+in the login Keychain). A build whose `tauri.conf.json` still says
+`CASTLE_TOOLS_UPDATER_PUBKEY_PLACEHOLDER` (a fork, say) skips every check,
+and "Check for updates" says why. Making a pair, once, for a fork:
 
 ```sh
 npx @tauri-apps/cli signer generate -w ~/.tauri/castle-tools.key

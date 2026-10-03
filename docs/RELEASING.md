@@ -160,8 +160,10 @@ which the page links) and deploys them together, after checking them against
 
 It deploys when `release.yml` publishes a full release, when a release is
 published by hand, and on `gh workflow run pages.yml` (after editing the
-page). One-time setup: repository **Settings → Pages → Source: GitHub
-Actions**.
+page). One-time setup, done 2026-10-03: repository **Settings → Pages →
+Source: GitHub Actions**, and the `github-pages` environment's deployment
+rules allow the tag pattern `v*.*.*` beside `main` — `release.yml` runs on
+the tag, and the default rule (main only) refuses its deploy.
 
 ## The updater key (minisign) — read before the first desktop release
 
@@ -170,6 +172,9 @@ bundle whose signature verifies against the public key compiled into it.
 That key pair is Tauri's own **minisign** update-signing key: free, made
 locally, and NOT code signing (the app is still unsigned in the Apple /
 Microsoft sense, by decision — TODO 5.4). The rules:
+
+Steps 1–4 were done on 2026-10-03; the rest of this list is what a fork, or
+a lost key, would need.
 
 1. Generate it once: `npx @tauri-apps/cli signer generate -w ~/.tauri/castle-tools.key`
    (give it a password).
@@ -190,13 +195,16 @@ Microsoft sense, by decision — TODO 5.4). The rules:
 
 ## Not yet in the release
 
-- **A tagged Windows build.** castle-core and the Python suites build and
-  pass on Windows in `cross-platform.yml`, blocking since 2026-10-01; the
-  release's Windows `core` job has not yet been exercised by a tag.
-- **The buyer firmware** (`firmware/castle_buyer.yaml`, `make build-buyer`)
-  and **the desktop app** (`desktop/`) land from their own branches; until
-  both are on the tagged commit, the `firmware` job fails on the missing
-  target and the `desktop` job is skipped.
+- **A published one.** Dry run 3 (2026-10-03, run 37142954369) built every
+  asset on this list — buyer firmware v5.76 (OTA image 1,333,328 B),
+  castle-core for three targets, the signed `.dmg` / `.app.tar.gz` and the
+  NSIS `-setup.exe` — and the `publish` job's checks passed. Both updater
+  signatures were verified against the committed public key outside Tauri.
+  No tag has been pushed yet, so nothing is published and the web flasher
+  has no release to serve.
+- **A self-contained desktop app.** The bundle's `castle/` holds castle-core
+  only; the app finds Python and the tools through a configured install or a
+  checkout (desktop/README.md, "Where the servers come from").
 - **Intel Macs** get castle-core but not the app: TODO 9 leaves "mac x64?"
   open. Adding it is a matrix row in `desktop` and an entry in
   `release_assets.DESKTOP_TARGETS`.

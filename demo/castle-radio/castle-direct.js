@@ -345,7 +345,8 @@
     // and a three-way fan-out throws the page's own keep-alive socket out.
     const state = await status();
     const files = await listing();
-    const sceneFiles = await listing('scenes');
+    // A card with songs and no show has no scenes/ folder: the castle's 404 is an empty one.
+    const sceneFiles = await listing('scenes').catch(error => { if (error.status === 404) {return [];} throw error; });
     const installed = new Set(state.scenes.split(','));
     const audio = new Map(namedFiles(files).map(f => [f.name, f.size]));
     const sceneAudio = new Set(namedFiles(sceneFiles).map(f => f.name));

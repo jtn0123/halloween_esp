@@ -74,3 +74,34 @@ test('an established device connection hides the unnecessary startup action', as
   assert.equal(ctx.$('tools-start').hidden, true);
   assert.equal(ctx.$('tools-state').textContent, 'Desktop tools connected');
 });
+
+// docs/PRODUCTION-TODO.md §4.2: the Mac-only setup steps (the .command files,
+// the ♜ menu) are offered where the computer says it has them, and only there.
+for (const [platform, startup, hidden, install] of [
+  ['darwin', 'Enable Website Startup.command', false, 'sh installer/install.sh'],
+  ['win32', null, true, 'installer\\install.cmd'],
+  ['linux', null, true, 'sh installer/install.sh --from-source'],
+]) {
+  test(`setup offers website startup only where it exists (${platform})`, async () => {
+    const ctx = boot({service:'castle-radio', protocol:1, ready:true, checks:[],
+      install_command:install, website_startup:startup});
+    await settle();
+    assert.equal(ctx.$('tools-mac').hidden, hidden);
+    assert.equal(ctx.$('tools-install').textContent, install);
+  });
+}
+
+test('an older helper that never says keeps the Mac steps visible', async () => {
+  const ctx = boot({service:'castle-radio', protocol:1, ready:true, checks:[]});
+  await settle();
+  assert.equal(ctx.$('tools-mac').hidden, false);
+  assert.equal(ctx.$('tools-version').hidden, true, 'no version line it cannot fill');
+});
+
+test('the tools card names the release this copy came from', async () => {
+  const ctx = boot({service:'castle-radio', protocol:1, ready:true, checks:[],
+    app_version:'Castle Tools v1.4.0'});
+  await settle();
+  assert.equal(ctx.$('tools-version').textContent, 'Castle Tools v1.4.0');
+  assert.equal(ctx.$('tools-version').hidden, false);
+});

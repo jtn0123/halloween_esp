@@ -156,6 +156,7 @@ fn supervisor(
     settings: settings::Settings,
     log: &Arc<logfile::LogFile>,
     events: Box<dyn Events>,
+    release: String,
 ) -> Arc<Supervisor> {
     let config = Config {
         service,
@@ -163,6 +164,7 @@ fn supervisor(
         app_data,
         settings,
         setup: Arc::clone(setup),
+        release,
     };
     Supervisor::new(config, Arc::clone(log), events)
 }
@@ -199,6 +201,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         data_dir: childenv::DataDirs::new(&app_data).radio,
     };
     let setup = setup::Setup::new(places, Box::new(setup_run::Processes), Arc::clone(&log));
+    // The same tag the splash shows (castle_release).
+    let tag = release::tag(&app.package_info().version.to_string());
     let desk = supervisor(
         Service::Studio,
         &setup,
@@ -206,6 +210,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         settings.clone(),
         &log,
         Box::new(DeskEvents),
+        tag.clone(),
     );
     let sup = supervisor(
         Service::Radio,
@@ -214,6 +219,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         settings,
         &log,
         Box::new(navigator),
+        tag,
     );
     let servers = Servers {
         radio: sup,

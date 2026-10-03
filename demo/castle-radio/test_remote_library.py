@@ -1,7 +1,9 @@
 import json
 import tempfile
 import unittest
+import urllib.error
 import zlib
+from email.message import Message
 from pathlib import Path
 from unittest.mock import patch
 
@@ -67,6 +69,32 @@ class RemoteLibraryTests(unittest.TestCase):
             self.assertFalse(result["radio_a"]["lights"])
             self.assertEqual(result["radio_a"]["filename"], "radio_a.mp3")
             self.assertEqual(result["radio_a"]["bytes"], 5)
+
+    @patch("device_bridge.call")
+    def test_a_card_with_no_scenes_folder_still_lists_its_songs(self, call):
+        """The castle's 404 for a missing ?d=scenes is an empty folder; any
+        other refusal, or a 404 for the card root, is still a failure."""
+        gone = urllib.error.HTTPError("u", 404, "no such directory", Message(), None)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "media").mkdir()
+            (root / "radio_a.mp3").write_bytes(b"audio")
+            call.side_effect = [
+                {"scenes": "stop"},
+                [{"name": "radio_a.mp3", "size": 5}],
+                gone,
+            ]
+            result = remote_library.inventory(root, root, [{"key": "radio_a"}])
+            self.assertEqual(result["tracks"]["radio_a"]["status"], "audio_only")
+            call.side_effect = [gone]
+            self.assertEqual(remote_library._card_sizes("/api/scenes"), {})
+            call.side_effect = [gone]
+            with self.assertRaises(urllib.error.HTTPError):
+                remote_library._card_sizes("/api/files")
+            refused = urllib.error.HTTPError("u", 503, "no SD card", Message(), None)
+            call.side_effect = [refused]
+            with self.assertRaises(urllib.error.HTTPError):
+                remote_library._card_sizes("/api/scenes")
 
     @patch("device_bridge.call")
     def test_missing_scene_audio_is_not_ready(self, call):
