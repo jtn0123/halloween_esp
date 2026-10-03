@@ -51,46 +51,51 @@ def emit_show_playlist(doc: Mapping[str, Any]) -> list[str]:
     breakage), then the next starts. The script re-executes itself at the
     end, so one button press covers the night; the web SHOW action stops it.
 
-    Motion-kind scenes are excluded: the PIR owns those, and a playlist that
-    plays the jump-scare on schedule teaches the street to ignore it.
+    v5.77: WHICH scenes, and in what order, is the card's business too. The
+    script used to be four actions per scene id, compiled in — so the image
+    named every scene in the yard's show, the two imported songs included,
+    and a castle sold with a card that does not carry them would have
+    walked into two "missing" scenes every round of the evening. The list
+    is the manifest's now (tools/scene_manifest.py, MARKS_EVENING), held by
+    castle_scenes.h, and this script plays ONE scene of it per pass and
+    re-executes itself for the next: castle_scenes::evening_next() hands out
+    the ids in order and wraps. An empty evening (every scene motion-kind)
+    ends the script, which /api/status reads as the show being off.
+
+    What is left compiled is the gap — a fact about the show, not a scene —
+    and nothing else from scenes.yaml, so adding, dropping or reordering a
+    scene in the evening is a publish like every other scene edit.
     """
     cfg = doc.get("show") or {}
     gap = int(cfg.get("gap_ms", 15000))
-    by_id = {s["id"]: s for s in doc["scenes"]}
-    order = cfg.get("order") or [
-        s["id"] for s in doc["scenes"] if s.get("kind") != "motion"
-    ]
     out = ["  # ── The evening playlist (#19) ───────────────────"]
     out.append("  - id: show_playlist")
     out.append("    mode: restart")
     out.append(THEN)
-    for sid in order:
-        if sid not in by_id:
-            raise SystemExit(f"show.order names unknown scene {sid!r}")
-        out.append(f"      - script.execute: {{id: run_scene, scene: {sid}}}")
-        # The wait is bounded (a dead speaker times out), so the playlist
-        # can be at most SOUND_WAIT_MS long per scene, never short: stopping
-        # early clipped the authored tail of every scene.
-        #
-        # J1 (grade report 2026-09-17 pm): read at RUN time, not compiled.
-        # `run_scene` dispatches to `scene_run`, whose first action is a
-        # lambda — so castle_scenes::begin() has already taken this scene's
-        # row off the card by the time this delay is evaluated, and the hold
-        # is the length the CARD says. Compiled, a republished duration_ms
-        # was cut short or left a gap until the next OTA, which is the one
-        # thing "a scene edit is a publish" must not mean. A scene the card
-        # cannot name has length 0 and holds only the speaker wait, then
-        # scene_stop — the same as before, one gap earlier.
-        # No duration in the emitted line, on purpose: an edit to
-        # `duration_ms` alone must leave this file byte-identical, or "a
-        # scene edit is a publish" would still be regenerating firmware.
-        out.append(
-            f"      - delay: !lambda 'return {SOUND_WAIT_MS} + "
-            f"castle_scenes::length_ms();'   # {sid}"
-        )
-        out.append("      - script.execute: scene_stop")
-        out.append(f"      - delay: {gap}ms")
-    out.append("      - script.execute: show_playlist")
+    out.append("      - if:")
+    out.append("          condition:")
+    out.append("            lambda: 'return castle_scenes::evening_count() > 0;'")
+    out.append("          then:")
+    out.append("            - script.execute:")
+    out.append("                id: run_scene")
+    out.append("                scene: !lambda 'return castle_scenes::evening_next();'")
+    # The wait is bounded (a dead speaker times out), so the playlist
+    # can be at most SOUND_WAIT_MS long per scene, never short: stopping
+    # early clipped the authored tail of every scene.
+    #
+    # J1 (grade report 2026-09-17 pm): read at RUN time, not compiled.
+    # `run_scene` dispatches to `scene_run`, whose first action is a
+    # lambda — so castle_scenes::begin() has already taken this scene's
+    # row off the card by the time this delay is evaluated, and the hold
+    # is the length the CARD says. A scene the card cannot name has
+    # length 0 and holds only the speaker wait, then scene_stop.
+    out.append(
+        f"            - delay: !lambda 'return {SOUND_WAIT_MS} + "
+        "castle_scenes::length_ms();'"
+    )
+    out.append("            - script.execute: scene_stop")
+    out.append(f"            - delay: {gap}ms")
+    out.append("            - script.execute: show_playlist")
     out.append("")
     return out
 
@@ -108,7 +113,7 @@ def emit_dispatch(
     and the playlist: "what does one scene DO, cue by cue" is not generated
     at all any more — it is a cue file on the card, walked by the one generic
     `scene_run` (firmware/castle_scenes.yaml). These three still are, because
-    the zone count, the playlist order and its gap are facts about the show
+    the zone count and the playlist's gap are facts about the show
     that live in scenes.yaml.
     """
     out: list[str] = []

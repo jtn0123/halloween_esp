@@ -40,6 +40,8 @@ core/lcov.info
 dogfood-output/
 # tools/soak.py and tools/power_cycle.py runs (docs/SOAK.md): a castle's night, not source.
 /soak-logs/
+# make buyer-card's default target (tools/buyer_card.py): a card to copy, not source.
+/buyer-card/
 # The scene editor's backup and scratch files.
 scenes/*.bak
 scenes/*.tmp

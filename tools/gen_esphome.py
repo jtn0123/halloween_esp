@@ -21,6 +21,9 @@ What it writes, and why each is here rather than on the card:
     generated/fallback_scenes.h  what the firmware knows with NO card
     audio/card/scenes/       show.man + one <id>.cue per scene — the show
                              itself, for `sd_sync scenes` to publish
+    scenes/shipped.yaml      the yard's show minus its songs, what a sold
+                             castle starts with (tools/shipped_show.py) —
+                             only when this IS the repo's own build
 
 Until v5.67 each scene was also an ESPHome script: publish current_scene, a
 lambda of base-state assignments, `sfx`, and then a `delay:` and a lambda per
@@ -40,6 +43,7 @@ from typing import Any
 import build_paths as bp
 import gen_esphome_audio as ga
 import gen_scene_cards
+import shipped_show
 from effect_vocab import EFFECT_IDS, FLASH_MODE_IDS, OVERLAY_IDS, PALETTE_IDS
 from gen_rig import emit_lights, emit_rig_header
 from gen_show import LAMBDA as LAMBDA
@@ -64,6 +68,10 @@ ROOT = Path(__file__).resolve().parent.parent
 # CASTLE_SCENES) generates under its own build root, never the repo's.
 SRC = bp.SCENES
 MARKERS = bp.AUDIO / "markers.json"
+#: Rewritten beside the source whenever this run builds the repo's own show,
+#: so a desk edit reaches the shipped show with the same rebuild that reaches
+#: firmware/generated/. Never from a sandbox: an owner's show is not the repo's.
+SHIPPED_OUT = shipped_show.SHIPPED
 OUT = bp.GENERATED / "scenes.yaml"
 RIG_OUT = bp.GENERATED / "rig.h"
 # The strips, written ONCE and read by both builds. There was a second,
@@ -258,6 +266,9 @@ def main() -> int:
     # above rejects never leaves a half-written manifest behind for
     # `sd_sync scenes` to publish.
     n_scenes, n_cues = gen_scene_cards.write(doc, CARD_SCENES, markers)
+    if SRC == bp.SCENES and not bp.sandboxed() and bp.BUILD == bp.ROOT:
+        if shipped_show.write(SRC, SHIPPED_OUT):
+            print(f"  and the shipped show: {bp.rel(SHIPPED_OUT)}")
 
     print(
         f"wrote {bp.rel(OUT)} + {AUDIO_SD.name} + {RIG_OUT.name} + "

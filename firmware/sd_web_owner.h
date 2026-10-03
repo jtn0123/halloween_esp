@@ -30,6 +30,14 @@
 // The song list is every file the Feather build can PLAY — mp3, opus, wav,
 // castle_feather_s3.yaml's codecs (v5.76: 5.75 left .opus out, so a card of
 // Castle Radio's opus imports read "No songs on the card yet").
+//
+// LICENCES (v5.77, docs/LICENSING.md decision 2). A castle that is sold
+// carries the firmware's third-party notices and the GPLv3 written source
+// offer ON ITS CARD (tools/buyer_card.py writes both into licenses/), and
+// the footer links to each one the card actually holds — so the page never
+// offers a link that 404s, and a yard card with no licenses/ shows none.
+// Read off the card rather than compiled in: the offer names a date and a
+// release, which change without an OTA, and flash is the budget that binds.
 
 #include <esp_http_server.h>
 
@@ -71,7 +79,7 @@ label{display:block;margin:.5rem 0}a{color:#b9a6e8}</style>
 <h2>Something wrong?</h2>
 <button id=rep onclick="report()">Report a problem</button>
 <small>Saves one text file with everything the castle knows about itself. Send it to whoever looks after your castle.</small>
-<p><a href=/remote>Phone remote</a> · <a href=/>Castle page</a></p>
+<p><a href=/remote>Phone remote</a> · <a href=/>Castle page</a><span id=licl></span></p>
 <script>
 const Z=[['UTC','UTC0'],['US Pacific','PST8PDT,M3.2.0,M11.1.0'],['US Mountain','MST7MDT,M3.2.0,M11.1.0'],
 ['Arizona','MST7'],['US Central','CST6CDT,M3.2.0,M11.1.0'],['US Eastern','EST5EDT,M3.2.0,M11.1.0'],
@@ -122,6 +130,9 @@ function songs(){fetch('/api/files').then(r=>r.ok?r.json():Promise.reject()).the
  files.innerHTML=m.length?m.map(f=>`<li><button onclick="api('/api/play?f=${encodeURIComponent(f.name)}')">▶</button> ${esc(f.name)} <small>${(f.size/1024)|0} KB</small></li>`).join('')
   :'<li><small>No songs on the card yet — add some with the Castle app.</small></li>'})
  .catch(()=>files.innerHTML='<li><small>No card to read.</small></li>')}
+function licences(){fetch('/api/files?d=licenses').then(r=>r.ok?r.json():[]).then(fs=>{const n=fs.map(f=>f.name);
+ licl.innerHTML=Object.entries({'THIRD-PARTY-NOTICES.txt':'Licences','SOURCE-OFFER.txt':'Source code'})
+  .filter(x=>n.includes(x[0])).map(x=>` · <a href=/sd/licenses/${x[0]}>${x[1]}</a>`).join('')}).catch(()=>{})}
 async function report(){
  const g=u=>fetch(u).then(async r=>(r.ok?'':'HTTP '+r.status+': ')+await r.text()).catch(()=>'(no answer)');
  const [st,he,ev,bl]=await Promise.all(['/api/status','/api/health','/api/events','/api/bootlog'].map(g));
@@ -130,7 +141,7 @@ async function report(){
   +'\npage '+location.href+'\n\n== /api/status ==\n'+st+'\n\n== /api/health ==\n'+he+'\n\n== /api/events ==\n'+ev+'\n\n== /api/bootlog ==\n'+bl+'\n';
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([t],{type:'text/plain'}));
  a.download='castle-report-'+now.toISOString().slice(0,19).replace(/:/g,'-')+'.txt';document.body.append(a);a.click();a.remove();say('Report saved.')}
-sync();songs();setInterval(sync,5000);
+sync();songs();licences();setInterval(sync,5000);
 </script>)HTML";
 
 inline esp_err_t send_owner_page(httpd_req_t *req) {

@@ -50,7 +50,9 @@ RADIO_PORT = 8871
 DESK_PORT = 8765
 #: Where Castle Radio keeps its data, relative to an app tree.
 RADIO_DATA = Path("demo") / "castle-radio" / ".radio-data"
-SHIPPED_SCENES = Path("scenes") / "scenes.yaml"
+#: The show a first run seeds: the yard's minus its songs (no song ships —
+#: tools/shipped_show.py), never scenes/scenes.yaml itself.
+SHIPPED_SCENES = Path("scenes") / "shipped.yaml"
 
 
 @dataclass(frozen=True)

@@ -158,3 +158,11 @@ my castle**, or type the castle's number address. The light desk follows
 whichever castle you pick. On the same page, **Copy diagnostics** gathers
 what the castle and the app know into one text for whoever is helping you;
 it leaves out your castle key and your folder names, and sends nothing.
+
+## Licences and source code
+
+The castle's software is built from free software, some of it under the
+GNU General Public License. Its memory card holds the licence notices and
+a written offer of the source code, in the `licenses` folder. **Licences**
+and **Source code**, at the foot of the castle's page, open them. The
+source is also at **https://github.com/jtn0123/halloween_esp**.

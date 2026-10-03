@@ -17,9 +17,10 @@
 // helpers it uses are defined — no forward declarations needed.
 namespace castle_web {
 
-// The all-evening playlist (#19): every scene in order with an ambient gap,
-// looping until told to stop. The script itself is generated into
-// scenes.yaml; these just flip it.
+// The all-evening playlist (#19): the card's evening scenes in order with an
+// ambient gap, looping until told to stop. The script is generated into
+// scenes.yaml and the list is the card's (castle_scenes.h, v5.77); these
+// just flip it.
 inline esp_err_t h_show_start(httpd_req_t *req) {
   set_pending(ActionType::SHOW, "1");
   return reply_json(req, "{\"queued\":true}");

@@ -56,43 +56,17 @@ script:
   - id: show_playlist
     mode: restart
     then:
-      - script.execute: {id: run_scene, scene: vigil}
-      - delay: !lambda 'return 1500 + castle_scenes::length_ms();'   # vigil
-      - script.execute: scene_stop
-      - delay: 12000ms
-      - script.execute: {id: run_scene, scene: storm}
-      - delay: !lambda 'return 1500 + castle_scenes::length_ms();'   # storm
-      - script.execute: scene_stop
-      - delay: 12000ms
-      - script.execute: {id: run_scene, scene: seance}
-      - delay: !lambda 'return 1500 + castle_scenes::length_ms();'   # seance
-      - script.execute: scene_stop
-      - delay: 12000ms
-      - script.execute: {id: run_scene, scene: ballroom}
-      - delay: !lambda 'return 1500 + castle_scenes::length_ms();'   # ballroom
-      - script.execute: scene_stop
-      - delay: 12000ms
-      - script.execute: {id: run_scene, scene: descent}
-      - delay: !lambda 'return 1500 + castle_scenes::length_ms();'   # descent
-      - script.execute: scene_stop
-      - delay: 12000ms
-      - script.execute: {id: run_scene, scene: visitation}
-      - delay: !lambda 'return 1500 + castle_scenes::length_ms();'   # visitation
-      - script.execute: scene_stop
-      - delay: 12000ms
-      - script.execute: {id: run_scene, scene: crypt}
-      - delay: !lambda 'return 1500 + castle_scenes::length_ms();'   # crypt
-      - script.execute: scene_stop
-      - delay: 12000ms
-      - script.execute: {id: run_scene, scene: the_citizens_of_halloween___this}
-      - delay: !lambda 'return 1500 + castle_scenes::length_ms();'   # the_citizens_of_halloween___this
-      - script.execute: scene_stop
-      - delay: 12000ms
-      - script.execute: {id: run_scene, scene: the_ballad_of_the_witches__road_}
-      - delay: !lambda 'return 1500 + castle_scenes::length_ms();'   # the_ballad_of_the_witches__road_
-      - script.execute: scene_stop
-      - delay: 12000ms
-      - script.execute: show_playlist
+      - if:
+          condition:
+            lambda: 'return castle_scenes::evening_count() > 0;'
+          then:
+            - script.execute:
+                id: run_scene
+                scene: !lambda 'return castle_scenes::evening_next();'
+            - delay: !lambda 'return 1500 + castle_scenes::length_ms();'
+            - script.execute: scene_stop
+            - delay: 12000ms
+            - script.execute: show_playlist
 
 text_sensor:
   - platform: template
