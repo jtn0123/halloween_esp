@@ -172,6 +172,10 @@ def _hexval(b: int) -> int:
 #: DEL, which the JSON rule below refuses already).
 FAT_REFUSES = frozenset(b"*:<>?|")
 
+#: The same set as text, '"' and DEL included: what fat_path refuses to look
+#: up, since create_name() refuses it in any segment of any path.
+FAT_REFUSES_IN_PATH = frozenset('*:<>?|"\x7f')
+
 
 def safe_name(n: bytes) -> bool:
     """One path component, nothing hidden, nothing that breaks the JSON it
@@ -266,13 +270,24 @@ def fat_path(n: bytes) -> str | None:
     a directory before failing on the empty segment after it. Python's
     pathlib deletes both silently, so "GET /sd/a/" served the file `a` here
     and answered FR_NO_PATH on the board (found by the C harness's storm,
-    tests/test_firmware_web_storm.py)."""
-    name = fs_name(n)
+    tests/test_firmware_web_storm.py).
+
+    And '\\' is a separator to FatFs as much as '/' is (IsSeparator in
+    ff.c), which safe_subpath — splitting on '/' alone — never sees. So
+    "a\\..\\..\\x" is two ".." segments to the board, never found, and
+    on a Windows host it was a walk out of the card directory. A name
+    holding a byte create_name() refuses is never found either, and one of
+    them is ':', which to Windows is a drive: "c:x" was not under the card
+    at all. Leading separators are skipped, as follow_path() skips them, so
+    "\\x" is the card's `x` and never an absolute host path (v5.75)."""
+    name = fs_name(n).replace("\\", "/")
     if not name or name.endswith("/"):
         return None
     if any(seg in (".", "..") for seg in name.split("/")):
         return None
-    return name
+    if any(c in FAT_REFUSES_IN_PATH for c in name):
+        return None
+    return name.lstrip("/")
 
 
 def query_truncated(raw_target: bytes) -> bool:
