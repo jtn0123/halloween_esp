@@ -157,6 +157,11 @@ never need it: entering the key in either app's Settings remembers it in
 `CASTLE_DEVICES`, and a key set here pins it instead (the apps then refuse to
 change it, since the store could not follow).
 
+One key is left out of the example on purpose: `"prerelease": true` puts
+this owner on the pre-release channel (`src/channel.rs`, docs/RELEASING.md
+"Channels"). It is meant for the seller's own test machine and is on no
+page; `CASTLE_PRERELEASE` in the app's environment overrides it either way.
+
 ## Tray, deep link, window
 
 - **Tray** (`src/tray.rs`): ♜ in the macOS menu bar (a text title, so it
@@ -177,8 +182,12 @@ change it, since the store could not follow).
 on launch (after 20 s) and once a day — one unauthenticated request, far
 inside GitHub's 60 an hour. GitHub's "latest" never names a pre-release, and
 `updater.rs` additionally refuses any version that is not a stable
-`vX.Y.Z` tag (`release::is_stable`). It always asks; nothing installs
+`vX.Y.Z` tag (`channel::accepts`). It always asks; nothing installs
 silently. The servers are stopped before the installer replaces their files.
+An owner who opted in to pre-releases is pointed instead at the latest.json
+of the release Castle Radio names (`GET /radio/app/release`, which asks
+`tools/release_channel.py`) — only that answer's tag is used, and only a
+release tag builds a URL, so the manifest is always one of this repo's.
 
 **The signing key.** Updates are verified with a minisign key pair — free,
 and required even for an unsigned app; it is not code signing. Until the
@@ -248,6 +257,12 @@ app's copy of the names it reads; keep the pairs equal:
 | `TAG_RE` | `parse_tag` |
 | `factory_name` / `ota_name` / `core_zip_name` | the same three |
 
+`src/channel.rs` holds the channel rule's tag table and the two latest.json
+URLs that `tests/test_release_channel.py` reads, and
+`tests/test_release_contract.py` reads `release.rs`'s literal names; both
+fail when a pair drifts. The castle's firmware update is Castle Radio's
+(`tools/castle_update.py`), so the app itself never opens a castle image.
+
 ## Integration points (open)
 
 - `CASTLE_CORE_BIN_DIR` is set to the sidecar's `bin/`, but
@@ -256,11 +271,6 @@ app's copy of the names it reads; keep the pairs equal:
 - The sidecar tree (python-build-standalone, site-packages, ffmpeg,
   the Demucs model, the castle-core zip) is staged by the release workflow,
   which does not exist on this branch.
-- `latest.json` and the Tauri bundles are Release assets that
-  `release_assets.py finish` does not list yet — it refuses extras, so the
-  contract has to grow them before the release workflow can publish both.
-- Pre-release opt-in (a hidden setting) is not implemented: GitHub has no
-  "latest pre-release" URL, so it needs an endpoint of its own.
-- The firmware update (compare `/api/status` `board` and version, fetch
-  `release::ota_name`, `PUT /api/ota`) is not implemented; `castle_release`
-  already reports the names it will use.
+- The `castle_release` command still reports the firmware asset names the
+  app was built for; the firmware update itself lives in Castle Radio (the
+  Update castle card), which reads the newest release instead.

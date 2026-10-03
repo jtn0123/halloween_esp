@@ -37,6 +37,21 @@ use std::time::{Duration, Instant};
 const RESEED_WAIT: Duration = Duration::from_millis(3000);
 const RESEED_POLL: Duration = Duration::from_millis(250);
 
+/// tools/fw_formats.py UPDATE_FIRST — how every refusal of the format
+/// handshake ends. sd_sync makes that decision before it sends a byte; the
+/// line carrying these words is the reason a failed publish gives, in
+/// place of "sd_sync scenes failed" (tests/test_fw_formats.py holds the two
+/// copies equal, docs/PARITY.md).
+pub const UPDATE_FIRST: &str = "update the castle first";
+
+/// The handshake's refusal in a failed push's output, if that is why.
+fn refusal(log: &str) -> Option<String> {
+    log.lines()
+        .rev()
+        .find(|line| line.contains(UPDATE_FIRST))
+        .map(|line| line.trim().to_string())
+}
+
 /// studio_publish.publish — push scene tracks and the lean page to the
 /// castle, and report the scenes the running firmware does not know.
 pub fn publish_body(app: &App) -> (Json, u16) {
@@ -73,7 +88,10 @@ pub fn publish_body(app: &App) -> (Json, u16) {
                     ("ok".into(), Json::Bool(false)),
                     ("pushed".into(), Json::Bool(false)),
                     ("log".into(), Json::Str(tail4000(&log))),
-                    ("error".into(), Json::Str(format!("sd_sync {cmd} failed"))),
+                    (
+                        "error".into(),
+                        Json::Str(refusal(&log).unwrap_or(format!("sd_sync {cmd} failed"))),
+                    ),
                 ]),
                 500,
             );
@@ -163,6 +181,17 @@ mod tests {
         assert_eq!(needs_reboot(&app, &st("")), Vec::<String>::new());
         assert_eq!(needs_reboot(&app, &Json::obj()), Vec::<String>::new());
         let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_format_refusal_is_the_reason_a_failed_push_gives() {
+        let log = "  source: audio/card/\nstorm.cue (light-show format 2) needs castle \
+                   firmware 5.71 or newer, and this castle runs 5.70 — update the \
+                   castle first, then send the show again.\n";
+        let why = refusal(log).expect("found");
+        assert!(why.starts_with("storm.cue"), "{why}");
+        assert!(why.ends_with("send the show again."), "{why}");
+        assert_eq!(refusal("Traceback ...\nOSError: no route\n"), None);
     }
 
     /// The push takes no gate of its own — which is what lets

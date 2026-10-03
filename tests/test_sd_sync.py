@@ -83,8 +83,8 @@ class FakeCard:
             if rel in self.blobs:
                 return self.blobs[rel]
             return json.dumps({"path": path}).encode()
-        if method == "GET":
-            return json.dumps({"path": path}).encode()
+        if method == "GET":  # /api/status's version: new enough for any format
+            return json.dumps({"path": path, "version": "9.99"}).encode()
         return b"{}"
 
 

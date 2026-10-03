@@ -58,6 +58,7 @@ SCRIPTS = (
     "castle-find.js",
     "first-run.js",
     "castle-help.js",
+    "castle-update.js",
 )
 STYLES = ("style.css", "device-tools.css")
 STYLE_TAGS = "".join(f'<link rel="stylesheet" href="{name}">' for name in STYLES)

@@ -203,7 +203,7 @@ The server binds loopback, but loopback is not a wall a browser respects: any
 page open in the same browser can post to `127.0.0.1:8871`. So every
 state-changing route is shaped so a browser has to ask permission first, and
 this server answers no `OPTIONS` at all. JSON routes (`/radio/device/command`,
-`/radio/device/sync`, `/radio/device/key`, `/radio/retry`, `/radio/cancel`, `/radio/rename`,
+`/radio/device/sync`, `/radio/device/key`, `/radio/castle/update`, `/radio/retry`, `/radio/cancel`, `/radio/rename`,
 `/radio/reprocess`, `/radio/downloader/update`, link imports) require
 `Content-Type: application/json` — `; charset=…` is fine — and answer 415
 otherwise; `application/json` is not a content type a cross-origin form can
@@ -231,6 +231,12 @@ in Settings", and the **Castle key** card in Run settings uses, sets or clears
 it. The key is remembered per castle in the store `tools/hosts.py` and the
 studio read (`tools/castle_keys.py`, docs/notes/06-buyer-build.md); the page
 the castle serves keeps it in that browser instead.
+The **Castle firmware** card in Your castle shows the firmware the castle runs
+and the newest a GitHub Release has for its board, and **Update castle**
+flashes it — only when pressed (`castle_update_routes.py` →
+`tools/castle_update.py`; docs/RELEASING.md "What an installed app reads").
+`GET /radio/app/release` names the release the owner's channel offers, for the
+desktop app's updater (`tools/release_channel.py`).
 The local server only binds 127.0.0.1. Upload limit: 100 MB. Jobs run one at a time.
 Closing the page does not cancel preparation; quitting the server interrupts it.
 In-memory job history/retry disappears on server restart; completed songs persist.

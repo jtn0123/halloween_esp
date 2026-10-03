@@ -385,6 +385,7 @@ class Handler(Prefs):
             self.server.quiesce = False
             return self._err(500, "ota write failed")
         self._json({"flashed": True, "rebooting": True})
+        self.server.ota_landed = True
         self.server.queue("RESTART", "")
         # Flash is written, so the flag comes down — the reboot is in a latch
         # of its own and cannot be talked out of it (sd_web_state.h).

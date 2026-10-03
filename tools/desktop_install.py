@@ -41,6 +41,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import desktop_env as de
 import desktop_release as rel
 import desktop_thirdparty as tp
+import release_channel as channel
 import ship_guard
 import ytdlp_update as yu
 
@@ -184,7 +185,7 @@ class Installer:
             for word in (
                 text.replace(",", " ").replace("(", " ").replace(")", " ").split()
             ):
-                if rel.parse_tag(word.removeprefix("tag:")):
+                if channel.version_key(word.removeprefix("tag:")):
                     return word.removeprefix("tag:")
         git = self.which("git")
         if (src / ".git").exists() and git:
@@ -194,7 +195,7 @@ class Installer:
                 capture_output=True,
                 text=True,
             )
-            if out.returncode == 0 and rel.parse_tag(out.stdout.strip()):
+            if out.returncode == 0 and channel.version_key(out.stdout.strip()):
                 return out.stdout.strip()
         return None
 
