@@ -145,12 +145,6 @@ track:
 	@test -n "$(SRC)" || (echo "usage: make track SRC=<file|url> [ID=<name>] [ARGS=...]"; exit 1)
 	@$(PY) tools/import_track.py "$(SRC)" $(if $(ID),--id $(ID),) $(ARGS)
 
-# The Rust studio is the studio (grade report 2026-09-01 G1, finished by
-# docs/RETIREMENT.md): the launcher builds it when cargo is here and refuses
-# with a printed reason when it cannot. The logic lives in the script, not
-# here, because .claude/launch.json needs the same decision and cannot
-# express it. ARGS passes the studio's own command line through:
-# ARGS="8766 --lan".
 # Opt-in and offline: candidates are written only under the ignored
 # .radio-data/comparison/, never beside a prepared show, and nothing here
 # talks to the castle. Adopting a candidate is a separate, deliberate change.
@@ -170,6 +164,12 @@ show-lab-phone:
 		echo "on your phone: http://$$ip:$(SHOW_LAB_PORT)/show-lab.html   (Ctrl-C stops the server)"
 	@$(PY) demo/castle-radio/lab_server.py --port $(SHOW_LAB_PORT) --bind 0.0.0.0
 
+# The Rust studio is the studio (grade report 2026-09-01 G1, finished by
+# docs/RETIREMENT.md): the launcher builds it when cargo is here and refuses
+# with a printed reason when it cannot. The logic lives in the script, not
+# here, because .claude/launch.json needs the same decision and cannot
+# express it. ARGS passes the studio's own command line through:
+# ARGS="8766 --lan".
 studio: preview
 	@tools/studio_launch.sh $(ARGS)
 
