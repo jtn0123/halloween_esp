@@ -50,8 +50,10 @@
 :root:not([data-theme="castle"]) .sync-dialog,:root:not([data-theme="castle"]) .reprocess-dialog{background:#0b0712;border-color:#3d2c55;box-shadow:0 30px 80px #000}
 :root:not([data-theme="castle"]) .sync-dialog button{background:#1d1528}
 :root:not([data-theme="castle"]) .remote-inventory li{border-bottom-color:#ffffff0a}
-:root:not([data-theme="castle"]) .live-device-actions button{background:#1d1528;border:1px solid #3d2c55}
-:root:not([data-theme="castle"]) .live-device-actions button:hover{background:#8b5cf62a}
+:root:not([data-theme="castle"]) .live-device-actions button:not(.primary){background:#1d1528;border:1px solid #3d2c55}
+:root:not([data-theme="castle"]) .live-device-actions button:not(.primary):hover{background:#8b5cf62a}
+.live-device-actions button.primary{background:var(--accent)}
+.live-device-actions button.primary:hover{filter:brightness(1.1)}
 :root:not([data-theme="castle"]) .dot{box-shadow:0 0 10px var(--accent)}
 :root:not([data-theme="castle"]) dl>div{border-bottom-color:#221833}
 :root:not([data-theme="castle"]) .queue-panel{box-shadow:0 20px 60px #0009}

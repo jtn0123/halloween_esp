@@ -84,6 +84,7 @@
       message.textContent = `This is your castle now · ${name || host}`;
       window.castleLink?.refresh?.();
       window.castleKey?.refresh?.();
+      window.castleUpdate?.refresh?.();  // the firmware card asked the old castle, or none
     } catch (error) { message.textContent = error.message; }
   }
 
