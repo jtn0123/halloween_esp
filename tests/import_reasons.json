@@ -84,7 +84,7 @@
   {"log": ["  ERROR: [youtube] abc: quoted by the importer, never read", "The download did not work."], "say": "The download did not work."},
   {"log": ["    WARNING: [youtube] abc: n challenge failed; please report this issue", "    Private video in a quoted line", "Timed Out.mp3 is 2:00:00 long, and Castle Tools imports songs up to 15 minutes — choose a shorter song."], "say": "Timed Out.mp3 is 2:00:00 long, and Castle Tools imports songs up to 15 minutes — choose a shorter song."},
   {"log": ["    ERROR: [youtube] abc: Private video", "That video is private — try a different link."], "want": "PRIVATE"},
-  {"log": ["Castle Tools could not find /Users/zo\u00eb/Music/Caf\u00e9.mp3 — choose the song again from wherever it is now."], "say": "Castle Tools could not find Caf\u00e9.mp3 — choose the song again from wherever it is now."},
+  {"log": ["Castle Tools could not find /Users/you/Zo\u00eb/Caf\u00e9.mp3 — choose the song again from wherever it is now."], "say": "Castle Tools could not find Caf\u00e9.mp3 — choose the song again from wherever it is now."},
   {"log": ["Traceback (most recent call last):", "  File \"x.py\", line 1, in <module>", "ValueError: No space left on device — the scratch folder"], "want": "DISK_FULL"},
   {"log": ["note: opus cannot encode at 44100 Hz — using 48000", "Traceback (most recent call last):", "KeyError: 'title'"], "want": "GENERIC"},
   {"log": ["something ERROR happened"], "say": "something ERROR happened"},
@@ -98,7 +98,7 @@
   {"log": ["Ünicode: not an exception line", "fine words."], "say": "fine words."},
   {"log": ["[fetch] https://youtu.be/abc", "  note: opus cannot encode at 44100 Hz — using 48000", "clip.wav does not look like playable audio — choose an MP3, WAV, FLAC, M4A or OGG file instead."], "say": "clip.wav does not look like playable audio — choose an MP3, WAV, FLAC, M4A or OGG file instead."},
   {"log": ["no such file: /private/tmp/abc/_upload/jb.wav"], "say": "no such file: jb.wav"},
-  {"log": ["Castle Tools could not find C:\\Users\\Zoë\\Music\\Café.mp3 — choose it again."], "say": "Castle Tools could not find Café.mp3 — choose it again."},
+  {"log": ["Castle Tools could not find C:\\Users\\you\\Zoë\\Café.mp3 — choose it again."], "say": "Castle Tools could not find Café.mp3 — choose it again."},
   {"log": ["Castle Tools could not find \\\\NAS\\Music\\Café.mp3 — choose it again."], "say": "Castle Tools could not find Café.mp3 — choose it again."},
   {"log": ["Traceback (most recent call last):", "  indented detail only"], "say": ""}
  ],
@@ -133,7 +133,7 @@
   ["Z:\\Halloween Songs\\x.mp3", "Halloween Songs\\x.mp3"],
   ["/Users/me/Music/Café.mp3", "Café.mp3"],
   ["/Users/me/Music/Café.mp3", "Café.mp3"],
-  ["C:\\Users\\Zoë\\ハロウィン.mp3", "ハロウィン.mp3"],
+  ["C:\\Users\\you\\Zoë\\ハロウィン.mp3", "ハロウィン.mp3"],
   ["éC:\\x\\y.mp3", "éy.mp3"],
   ["é/x/y.mp3", "éy.mp3"]
  ]

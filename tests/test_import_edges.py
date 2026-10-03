@@ -266,7 +266,7 @@ class TestNames(EdgeCase):
         self.assertEqual(self.library(), [])
 
     def test_a_windows_path_that_is_gone_reads_as_its_name(self) -> None:
-        gone = "C:\\Users\\Zo\u00eb\\Music\\Caf\u00e9.mp3"
+        gone = "C:\\Users\\you\\Zo\u00eb\\Caf\u00e9.mp3"
         said = self.refused(gone)
         self.assertEqual(
             ir.reason(said),
