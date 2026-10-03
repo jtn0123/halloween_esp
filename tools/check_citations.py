@@ -7,9 +7,9 @@
 
 Item IDs are numbered per audit and RENUMBERED by the next one: `A1` was the
 `/api/*` split on 2026-08-16, the missing publish stage on 2026-08-23, and the
-crate's feature gates on 2026-09-01. Six reports now exist, so a comment that
-says "grade report A1" points at all six and none of them. Dated, it points at
-one:
+crate's feature gates on 2026-09-01. Every audit adds a report, so a comment
+that says "grade report A1" points at all of them and none of them. Dated, it
+points at one:
 
     # …because the Python it asks counts the show first (grade report
     # 2026-08-31 A8).
@@ -138,8 +138,8 @@ def main(argv: list[str] | None = None) -> int:
     for rel, line, excerpt in bare:
         print(f"  {rel}:{line}   {excerpt}")
     print(
-        "\nItem IDs are renumbered by every audit, so a bare one names six "
-        f"reports at once —\n  {FIX}"
+        "\nItem IDs are renumbered by every audit, so a bare one names every "
+        f"report at once —\n  {FIX}"
     )
     return 1
 

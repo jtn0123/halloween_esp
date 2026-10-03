@@ -5,20 +5,37 @@
 //! card, and studio_scenes knows when to ask. `tools/sd_sync.py` does the
 //! pushing (its repo-glob conveniences stay Python by design); what is
 //! here is the decision to push, the log, and the one thing a push cannot
-//! fix by itself — scenes the RUNNING castle has not read yet.
+//! always fix by itself — scenes the RUNNING castle has not read yet.
 //!
-//! That last part shrank in v5.67. A scene used to be compiled in, so a
-//! scene the firmware lacked needed a build and an OTA; now it is card data
-//! (show.man plus `<id>.cue`, tools/gen_scene_cards.py) and the castle seeds
-//! its id list from the manifest ONCE at boot — because nothing may touch
-//! the card while a song is playing (docs/ISSUE-ring-flicker.md). So the
-//! remaining gap is a reboot, not a flash.
+//! That last part has shrunk twice. A scene used to be compiled in, so a
+//! scene the firmware lacked needed a build and an OTA; v5.67 made it card
+//! data (show.man plus `<id>.cue`, tools/gen_scene_cards.py) that the castle
+//! read ONCE at boot, so the gap became a reboot. v5.69 closed it: a PUT
+//! that lands show.man rings a bell the 200 ms main-loop tick answers by
+//! re-reading the list (sd_web_upload.h `g_scenes_dirty`), so the castle
+//! that is already running knows a new scene a moment after the push.
+//!
+//! So `needs_reboot` is read AFTER the push, not before: the status taken at
+//! the top of a publish is the castle's list from before it — every new
+//! scene is missing from it by definition — and answering from it told the
+//! operator to reboot after every publish that added one
+//! (grade report 2026-09-24 H1). What is left in it now is only what a
+//! castle older than v5.69 still cannot see without a restart.
 
 use crate::jsonio::Json;
 use crate::studio::{App, scene_ids};
 use crate::studio_proc::{py, run, tail4000};
 use crate::studio_relay;
 use std::process::Command;
+use std::time::{Duration, Instant};
+
+/// How long a publish waits for the castle to re-read show.man before it
+/// names what is still unknown. The firmware does it on the first 200 ms
+/// tick after the PUT, and the push's last step (the site) is longer than
+/// that; the rest is studio_relay's status cache (1.5 s), which can still be
+/// holding the answer from before the push.
+const RESEED_WAIT: Duration = Duration::from_millis(3000);
+const RESEED_POLL: Duration = Duration::from_millis(250);
 
 /// studio_publish.publish — push scene tracks and the lean page to the
 /// castle, and report the scenes the running firmware does not know.
@@ -62,12 +79,13 @@ pub fn publish_body(app: &App) -> (Json, u16) {
             );
         }
     }
-    let stale = needs_reboot(app, &st);
+    let stale = still_unread(app, &st);
     let note = if stale.is_empty() {
         String::new()
     } else {
         format!(
-            "{} scene(s) the castle has not read yet — reboot it to re-read show.man",
+            "{} scene(s) the castle has not read after the push — firmware \
+             before v5.69 reads show.man only at boot: reboot it, or update it",
             stale.len()
         )
     };
@@ -86,11 +104,27 @@ pub fn publish_body(app: &App) -> (Json, u16) {
     )
 }
 
+/// `needs_reboot` as of AFTER the push: the scenes the castle still does
+/// not list once it has had the time v5.69+ needs to re-read show.man. Polls
+/// only while something is missing, so a publish that added nothing costs
+/// no wait at all; a castle that stops answering keeps the last answer.
+fn still_unread(app: &App, before: &Json) -> Vec<String> {
+    let mut stale = needs_reboot(app, before);
+    let deadline = Instant::now() + RESEED_WAIT;
+    while !stale.is_empty() && Instant::now() < deadline {
+        std::thread::sleep(RESEED_POLL);
+        if let Some(st) = studio_relay::status(app) {
+            stale = needs_reboot(app, &st);
+        }
+    }
+    stale
+}
+
 /// Scene ids in scenes.yaml that the castle does not know — read from the
-/// `scenes` field, which since v5.67 is what the CARD's manifest said at
-/// boot. The push we just made is on the card; the castle learns it at its
-/// next start, so these are the ids a reboot would add. Empty too when the
-/// firmware predates the field, because guessing would be worse than silence.
+/// `scenes` field, which since v5.67 is what the CARD's manifest said when
+/// the castle last read it (at boot, and since v5.69 after every publish).
+/// Empty too when the firmware predates the field, because guessing would
+/// be worse than silence.
 fn needs_reboot(app: &App, st: &Json) -> Vec<String> {
     let fw: Vec<String> = st
         .get("scenes")

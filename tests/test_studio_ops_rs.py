@@ -15,17 +15,27 @@ suite's shared server with it.
 
 from __future__ import annotations
 
+import http.client
 import json
+import socket
 import sys
+import threading
 import time
 import unittest
-import urllib.error
 from pathlib import Path
 from typing import Any, ClassVar
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from studio_rs_case import CARGO, IN_CI, ROOT, StudioCase, fetch, wait_up
+from studio_rs_case import (
+    CARGO,
+    IN_CI,
+    NOT_SERVING,
+    ROOT,
+    StudioCase,
+    fetch,
+    wait_up,
+)
 
 sys.path.insert(0, str(ROOT / "tools"))
 import castle_emu
@@ -42,8 +52,9 @@ class Publish(StudioCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        # Built knowing only `vigil` — so the show's second scene is a
-        # firmware gap the publish has to report rather than paper over.
+        # Booted knowing only `vigil` — so the show's second scene is one the
+        # running castle learns from the publish itself (v5.69), or, on a
+        # castle that predates that, a gap the publish has to name.
         cls.emu = castle_emu.CastleEmu(port=0, sd_dir=None, scenes=["vigil"])
         cls.emu.start()
         cls.HOST_ENV = f"127.0.0.1:{cls.emu.port}"
@@ -59,16 +70,14 @@ class Publish(StudioCase):
         code, body = self.json("/studio/publish", "POST")
         self.assertEqual(code, 200, body)
         log = str(body.pop("log"))
+        # The castle re-read show.man when the push landed it (v5.69), so a
+        # new scene asks for nothing: the old answer, needs_reboot:["storm"]
+        # from the status taken BEFORE the push, sent the operator to reboot
+        # after every publish that added a scene (grade report 2026-09-24 H1).
         self.assertEqual(
-            body,
-            {
-                "ok": True,
-                "pushed": True,
-                "needs_reboot": ["storm"],
-                "note": "1 scene(s) the castle has not read yet — "
-                "reboot it to re-read show.man",
-            },
+            body, {"ok": True, "pushed": True, "needs_reboot": [], "note": ""}
         )
+        self.assertIn("storm", self.emu.scenes)
         masked = self.masked(log).replace(self.HOST_ENV, "<CASTLE>")
         # The build dir is outside the repo, so the line names it the way
         # the OS spells paths (build_paths.rel): a backslash on Windows.
@@ -100,6 +109,30 @@ class Publish(StudioCase):
         page = (sd / "site" / "index.html").read_bytes()
         self.assertLess(page.find(b"Castle direct:"), page.find(b"Standalone concept"))
         self.assertNotIn(b'src="', page)
+
+    def test_publish_to_a_castle_from_before_v5_69_still_says_reboot(self) -> None:
+        """The one castle `needs_reboot` is still for: show.man lands, and
+        nothing re-reads it until a restart. Named to run after the test
+        above, whose log wants a card the push has not filled yet."""
+        self.emu.reseeds = False
+        self.emu.scenes = ["vigil"]
+        # The studio caches the castle's status for 1.5 s; wait until its
+        # view is the castle this test just set up, not the one above's.
+        deadline = time.monotonic() + 10
+        while "storm" in str(self.json("/api/status")[1].get("scenes")):
+            self.assertLess(time.monotonic(), deadline, "status never refreshed")
+            time.sleep(0.1)
+        try:
+            code, body = self.json("/studio/publish", "POST")
+        finally:
+            self.emu.reseeds = True
+        self.assertEqual(code, 200, body)
+        self.assertEqual(body["needs_reboot"], ["storm"])
+        self.assertEqual(
+            body["note"],
+            "1 scene(s) the castle has not read after the push — firmware "
+            "before v5.69 reads show.man only at boot: reboot it, or update it",
+        )
 
 
 @unittest.skipIf(CARGO is None and not IN_CI, "no cargo")
@@ -223,11 +256,44 @@ class ServerOps(StudioCase):
             try:
                 fetch(self.port, "/api/status")
                 time.sleep(0.1)
-            except (urllib.error.URLError, OSError):
+            except NOT_SERVING:  # a reply torn off by the exit is "stopped" too
                 break
         else:
             self.fail(f"server on {self.port} never stopped")
         self.assertIsNotNone(self.procs[0].wait(timeout=10))
+
+
+class TornReply(unittest.TestCase):
+    """The 2026-10-03 #64 scan-job flake, without the race: a server that
+    exits mid-reply leaves headers that promise 16 bytes and then EOF, and
+    urllib raises http.client.IncompleteRead — no OSError, so a poll that
+    caught only those errored instead of reading the server as gone."""
+
+    TORN = b"HTTP/1.1 200 OK\r\nContent-Length: 16\r\n\r\n"
+    WHOLE = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}"
+
+    def serve(self, *replies: bytes) -> int:
+        srv = socket.socket()
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(len(replies))
+        self.addCleanup(srv.close)
+
+        def answer() -> None:
+            for reply in replies:
+                conn, _ = srv.accept()
+                with conn:
+                    conn.recv(65536)
+                    conn.sendall(reply)
+
+        threading.Thread(target=answer, daemon=True).start()
+        return int(srv.getsockname()[1])
+
+    def test_a_torn_reply_is_not_serving_and_wait_up_waits_past_it(self) -> None:
+        port = self.serve(self.TORN, self.TORN, self.WHOLE)
+        with self.assertRaises(NOT_SERVING) as caught:
+            fetch(port, "/api/status")
+        self.assertIsInstance(caught.exception, http.client.IncompleteRead)
+        wait_up(port, deadline_s=10)  # the second torn reply is retried
 
 
 if __name__ == "__main__":

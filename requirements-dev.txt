@@ -1,7 +1,7 @@
 # Gates that only developers run (make lint, CI).
 ruff~=0.16
 mypy~=2.3
-types-PyYAML
+types-PyYAML~=6.0.12
 # `make coverage` (non-gating) and `make audit` (advisories; non-gating).
 coverage~=7.16
 pip-audit~=2.10

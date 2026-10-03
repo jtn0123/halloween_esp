@@ -2,10 +2,14 @@
 
 **Setup.** Install a Rust toolchain first (`rustup`, which brings cargo) —
 `make setup` does not, and without it `make audio` and the Rust half of
-`make check` cannot run. Then `make setup` creates `.venv` (Python 3.13),
-installs the requirements and the commit hook (`git config core.hooksPath
-githooks`); `cd web && npm ci` for the TypeScript half. Run Python via
-`.venv/bin/python`.
+`make check` cannot run. Then `make setup` creates `.venv` (Python 3.13)
+from the hashed `requirements.lock` with CI's own flags, runs `npm ci` in
+`web/` when npm is there, installs the commit hook (`git config
+core.hooksPath githooks`), and ends with `tools/preflight.py`, which names
+every outside tool `make check` needs and is missing — lame, ffmpeg, node 22,
+`web/node_modules` — each with its one-line fix. `make check` runs the same
+preflight first, and fails there rather than nineteen tests later. Run Python
+via `.venv/bin/python`.
 
 **Before handing work back.** `make check` green — unit tests, ruff + mypy,
 the image/LOC guards, `tsc --noEmit`, the node suites, and the castle-core

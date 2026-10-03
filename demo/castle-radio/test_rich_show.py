@@ -1,10 +1,11 @@
 """Prepared shows retain the rich timeline and export the exact preview."""
 
-import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
 import cue_file
 import rich_show
 

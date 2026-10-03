@@ -5,7 +5,6 @@ Imports stay isolated; explicit device actions connect to the porch castle.
 
 import concurrent.futures
 import json
-import os
 import subprocess
 import sys
 import threading
@@ -13,26 +12,19 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
+# The sandbox (CASTLE_TRACKS and the rest) is set by radio_env, first, so no
+# tools/ module below can bind the repo's own library (grade report
+# 2026-09-24 B7). DATA and LIBRARY are re-exported for server.py.
+from radio_env import DATA, LIBRARY, ROOT
+
+# isort: split
 import job_progress
-import radio_paths
+import portable_fs
 import rich_show
+from import_scene import fit_to_density, scene_block
+from import_track import crate_analysis
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent
-DATA = radio_paths.data_dir()
-DATA.mkdir(parents=True, exist_ok=True)
-LIBRARY = DATA / "tracks"
-LIBRARY.mkdir(exist_ok=True)
-os.environ.update(
-    CASTLE_TRACKS=str(LIBRARY),
-    CASTLE_HOST="",
-    CASTLE_SCENES=str(DATA / "scenes.yaml"),
-    CASTLE_BUILD=str(DATA / "build"),
-)
-sys.path.insert(0, str(ROOT / "tools"))
-import portable_fs  # noqa: E402
-from import_scene import fit_to_density, scene_block  # noqa: E402
-from import_track import crate_analysis  # noqa: E402
 
 #: Preparation jobs by id, as the page reads them: a record of mixed
 #: strings, flags and progress numbers, which is what /radio/jobs serves.
@@ -105,10 +97,29 @@ def source_metadata(key, manifest=None):
     }
 
 
+#: The one catalog field that is a fact about the DISK rather than about the
+#: import: whether the saved source file is still there. Persisted, it froze —
+#: "Change audio" stayed enabled for an original that was gone — so it is
+#: derived on every read and never written (grade report 2026-09-24 B8). The
+#: rest of source_metadata may stay in the row: none of it moves until a
+#: reprocess rewrites the row, and device_site.py reads playback_format and
+#: playback_bitrate straight out of catalog.json.
+LIVE = "source_available"
+
+
 def catalog():
     rows = json.loads(CATALOG.read_text(encoding="utf-8")) if CATALOG.exists() else []
     manifest = track_manifest()
-    return [{**source_metadata(row["key"], manifest), **row} for row in rows]
+    merged = []
+    for row in rows:
+        fresh = source_metadata(row["key"], manifest)
+        merged.append({**fresh, **row, LIVE: fresh[LIVE]})
+    return merged
+
+
+def stored(row):
+    """A catalog row as it is written: without the field every read derives."""
+    return {k: v for k, v in row.items() if k != LIVE}
 
 
 def update(job, **values):
@@ -127,15 +138,33 @@ def report(job, found_title=None, **values):
         update(job, **values)
 
 
+def stop_event(job):
+    """The Event cancel() sets for this job, or None outside the pool. Under
+    the lock: submit() files the handle while holding it, and the worker can
+    start before that line has run."""
+    with LOCK:
+        handle = HANDLES.get(job["id"])
+    return handle[1] if handle else None
+
+
+def checkpoint(job):
+    """Cancel is honoured BETWEEN phases too, not only inside a tool the
+    Event can kill: a Cancel that lands while the song is analysed, or as
+    the catalog is about to be written, ends the job Cancelled at the next
+    of these instead of letting it run on to Ready with `cancelled: True`
+    still on the record (grade report 2026-09-24 B6)."""
+    if job.get("cancelled"):
+        raise job_progress.Cancelled("Cancelled")
+
+
 def run_tool(job, script, args, timeout, extra_env=None):
-    handle = HANDLES.get(job["id"])
     return job_progress.run(
         [sys.executable, "-u", str(ROOT / "tools" / script), *args],
         timeout,
         "split" if script == "stems.py" else "import",
         lambda **values: report(job, **values),
         extra_env,
-        handle[1] if handle else None,
+        stop_event(job),
     )
 
 
@@ -285,9 +314,11 @@ def reprocess_job(key, audio_format, audio_quality, split=None):
 
 def prepare(job, source, title, split, audio_format, audio_quality="standard"):
     tid = job["id"]
+    # The children whose output IS the answer (analysis, the desk's scene
+    # builder) run through this, so Cancel kills them as it kills a download.
+    runner = job_progress.runner(stop_event(job))
     try:
-        if job.get("cancelled"):
-            raise job_progress.Cancelled("Cancelled")
+        checkpoint(job)
         update(job, phase="Importing and analyzing", error=None)
         bitrate, sample_rate = playback_options(audio_format, audio_quality)
         # The source (a link someone pasted, or the upload's path) travels in
@@ -308,13 +339,14 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
             args += ["--keep-source"]
         run_tool(job, "import_track.py", args, 1000, {"CASTLE_IMPORT_SOURCE": source})
         path = LIBRARY / f"{tid}.{audio_format}"
+        checkpoint(job)
         update(
             job,
             phase="Generating light show",
             percent=None,
             detail="Analyzing the full song",
         )
-        samples, marks = crate_analysis(path, 1.1, True)
+        samples, marks = crate_analysis(path, 1.1, True, runner)
         duration = samples / 44100
         cues = []
         for band, hits in marks.items():
@@ -327,6 +359,7 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
         split_error = None
         has_split = False
         if split:
+            checkpoint(job)
             update(job, phase="Separating voice and background")
             try:
                 run_tool(job, "stems.py", [tid], 900)
@@ -344,6 +377,7 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
                 raise  # a ValueError too, but not a split that failed
             except (ValueError, subprocess.TimeoutExpired) as exc:
                 split_error = str(exc)
+        checkpoint(job)
         update(
             job,
             phase="Saving prepared show",
@@ -369,27 +403,33 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
             style="Voice + background" if has_split else "Auto rhythm",
             **details,
         )
-        rich_show.prepare(LIBRARY, record)
+        rich_show.prepare(LIBRARY, record, runner)
+        checkpoint(job)
         # Keep the existing generated scene recipe alongside the demo's split-aware preview cues.
         (DATA / f"{tid}.yaml").write_text(
             scene_block(tid, duration, marks), encoding="utf-8"
         )
+        # The last check, the catalog write and Ready are one step under the
+        # lock cancel() takes: a Cancel lands wholly before it (no row) or
+        # after it (refused — the job is done), never between.
         with LOCK:
-            rows = [r for r in catalog() if r["key"] != tid] + [record]
+            checkpoint(job)
+            rows = [stored(r) for r in catalog() if r["key"] != tid]
+            rows.append(stored(record))
             temp = CATALOG.with_suffix(".tmp")
             temp.write_text(json.dumps(rows), encoding="utf-8")
             portable_fs.replace(temp, CATALOG)
-        update(
-            job,
-            phase="Ready in demo"
-            if not split_error
-            else "Ready · split needs attention",
-            done=True,
-            percent=100,
-            detail="Audio and lights are ready in this demo",
-            title=record["title"],
-            result=record,
-        )
+            update(
+                job,
+                phase="Ready in demo"
+                if not split_error
+                else "Ready · split needs attention",
+                done=True,
+                percent=100,
+                detail="Audio and lights are ready in this demo",
+                title=record["title"],
+                result=record,
+            )
     except job_progress.Cancelled:
         finish_cancelled(job)
     except Exception as exc:

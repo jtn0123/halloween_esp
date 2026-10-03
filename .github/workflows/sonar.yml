@@ -20,9 +20,12 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push to a PR makes its older analysis moot; a merge to main does
+# not — when #49-#51 merged ten seconds apart only the last was analysed —
+# so only pull requests cancel (grade report 2026-09-24 I6).
 concurrency:
   group: sonar-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

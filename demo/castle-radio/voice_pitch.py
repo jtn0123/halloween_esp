@@ -12,14 +12,14 @@ from __future__ import annotations
 import json
 import math
 import subprocess
-import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+# isort: split
 import exe_paths
 
 RATE = 16000

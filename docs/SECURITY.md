@@ -4,7 +4,7 @@ This project is a **single-user tool on a private network**: one person, one
 Mac, one castle, one porch LAN. Every trust decision below follows from that,
 and every one of them is invalid the moment any part of it is exposed beyond
 the LAN. That is the one line not to cross: **do not port-forward, reverse-proxy
-or otherwise publish the studio (default port 8820) or the castle (port 80)** —
+or otherwise publish the studio (default port 8765) or the castle (port 80)** —
 nothing here is hardened for strangers.
 
 ## Accepted risks — decided 2026-08-16, permanently

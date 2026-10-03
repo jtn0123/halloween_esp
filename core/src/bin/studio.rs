@@ -41,6 +41,10 @@ fn main() {
     // (grade report 2026-09-17 pm B1).
     castle_core::studio_reap::install_shutdown_handlers();
     let _ = std::fs::create_dir(&app.tracks);
+    // A stopped studio's codec comparisons; a day is past any page still
+    // playing one (studio_media::sweep_compares).
+    let day = std::time::Duration::from_secs(86_400);
+    castle_core::studio_media::sweep_compares(&std::env::temp_dir(), day);
     let listener = match bind_retry(host, port) {
         Ok(l) => l,
         Err(e) => {

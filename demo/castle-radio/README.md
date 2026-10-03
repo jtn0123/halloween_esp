@@ -81,8 +81,15 @@ copies. Sample audio is local and is not distributed with the repository.
   door/left/right. Density tuning reuses tools/import_scene.py.
 - Background jobs, errors and retry; imports persist across page/server reloads.
 - Locally saved style/run preferences and blackout for all demo audio/lights.
-- Physical playback for synced imports, with generated cue frames streamed to
-  firmware 5.51 or newer while the castle reads audio from its SD card.
+- Physical playback for synced imports. Sync puts three files beside each
+  other in the card root — the audio, its `<name>.cue` and `<name>.show.json`
+  (the page's preview of it) — and firmware 5.63 or newer runs the `.cue`
+  itself when the song plays, with no page open. A song reads "On castle ·
+  audio + lights" only when the card holds its audio AND its `.cue` at the
+  sizes this computer prepared; audio without that `.cue` is "audio only".
+  The Radio streams mailbox-rate frames only when the castle reports no card
+  show for the playing song — no `.cue` beside it, or firmware older than
+  5.63, whose `/api/status` has no `cues`.
 - One shared castle link (device-link.js): a single status poll a second feeds
   the header chip, the player, the bench and the motion settings; it slows to
   every 4 s in a background tab and the server answers all of them from one
@@ -129,9 +136,14 @@ it: 68 KB gzipped, about 1.5 s to first paint over the porch Wi-Fi.
 builders, the SD inventory and the generated-light streamer are ports of
 `device_bridge.py` with its light-show runner
 `light_show.py`, and `remote_library.py`). Scene audio streams from
-`/sd/scenes/`; synced imports from the card root, with their lights reduced
-to mailbox-rate frames at build time and streamed by the phone's browser on
-the castle's own clock. Importing, separation, waveforms and syncing run on the computer.
+`/sd/scenes/`; synced imports from the card root, where the castle runs each
+one's `.cue` itself. The page carries the same songs' lights as mailbox-rate
+frames too, but streams them only for a song with no `.cue` beside it — an
+import synced before the cue files existed — and the castle's `cues` count is
+how it tells. To give such a song its card show, open it in the library and
+press **Sync audio + light show** again: the button stays live for anything
+short of "audio + lights", and a sync prepares a missing or stale show before
+it sends. Importing, separation, waveforms and syncing run on the computer.
 **Connect Mac tools** makes them available from this same device page through
 the local companion window; without that connection the page remains a device
 player. The castle

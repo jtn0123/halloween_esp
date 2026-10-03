@@ -231,7 +231,7 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     plain = build()
     out.write_bytes(plain)
-    packed = gzip.compress(plain, 9)
+    packed = gzip.compress(plain, 9, mtime=0)  # same page, same bytes
     out.with_suffix(".html.gz").write_bytes(packed)
     print(f"{out} ({len(plain) // 1024} KB, {len(packed) // 1024} KB gzipped)")
     return 0

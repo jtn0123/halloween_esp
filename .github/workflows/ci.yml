@@ -185,7 +185,7 @@ jobs:
       - name: LOC cap
         run: python tools/check_loc.py
       # Every grade-report citation names its audit. IDs renumber, so a bare
-      # one points at six reports and none of them.
+      # one points at every report and none of them.
       - name: citation dates
         run: python tools/check_citations.py
       # Advisories against the locked venv. Informational only — see the
@@ -215,10 +215,13 @@ jobs:
       # generator run — so the venv and its media tools must exist here even
       # though the server itself is a Rust binary.
       - uses: ./.github/actions/media-tools
+      # The whole hashed lock, not three names constrained by it: `-c` pins a
+      # version and trusts the index for the bytes, and this venv renders
+      # what the studio serves (grade report 2026-09-24 E1).
       - name: studio server venv
         run: |
           python3 -m venv .venv
-          .venv/bin/pip install --quiet --only-binary=":all:" -c requirements.lock numpy scipy pyyaml
+          .venv/bin/pip install --quiet --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
       # render_audio.py renders THROUGH castle-core (scene_render), and with
       # no binary and no cargo it hard-stops rather than falling back to the
       # machine-dependent Python reference — tools/core_bins.py, by design.
@@ -280,14 +283,16 @@ jobs:
       # gitignored — CI has to render them before validation or the config
       # references files that do not exist.
       - uses: ./.github/actions/media-tools
-      # The esphome pin is read out of requirements.txt, never repeated here:
-      # "CI validates the pinned version" stops being an invariant the moment
-      # a literal in this file can fall behind the one the venv installs.
+      # The esphome pin is never repeated here: the lock carries it at
+      # requirements.txt's version (tests/test_lock_deps.py holds the two
+      # equal), so installing the hashed lock installs the pinned esphome BY
+      # ITS BYTES. This job builds the image flashed to the castle; it used to
+      # take three names under `-c`, which checks versions and no digests
+      # (grade report 2026-09-24 E1).
       - name: install the pinned esphome
         run: |
-          PIN=$(grep -E '^esphome==' requirements.txt)
-          echo "installing $PIN"
-          pip install --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -c requirements.lock "$PIN" pyyaml numpy scipy
+          echo "installing $(grep -E '^esphome==' requirements.txt) from the hashed lock"
+          pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
       # Same reason as the web job: the renderer is the Rust binary now.
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
         with:

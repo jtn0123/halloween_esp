@@ -234,5 +234,27 @@ class TestRealLockIsHashed(unittest.TestCase):
                 self.assertTrue(ld.hashes(self.lock[ld.norm(name)]))
 
 
+class TestEveryInstallChecksTheBytes(unittest.TestCase):
+    """docs/SECURITY.md says every CI install reads the lock with
+    `--require-hashes`. Two did not — the studio venv and the esphome job,
+    which builds the image flashed to the castle, took `-c requirements.lock`,
+    which pins versions and checks no digest (grade report 2026-09-24 E1)."""
+
+    def test_every_workflow_pip_install_requires_hashes(self) -> None:
+        seen = 0
+        for wf in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+            for n, line in enumerate(wf.read_text(encoding="utf-8").splitlines(), 1):
+                if "pip install" not in line or line.lstrip().startswith("#"):
+                    continue
+                if "--dry-run" in line:  # resolves the txt files, installs nothing
+                    continue
+                seen += 1
+                with self.subTest(at=f"{wf.name}:{n}"):
+                    self.assertIn("--require-hashes", line)
+                    self.assertIn("-r requirements.lock", line)
+                    self.assertNotIn("-c requirements.lock", line)
+        self.assertGreaterEqual(seen, 7, "the walk stopped finding the installs")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

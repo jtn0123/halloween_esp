@@ -22,6 +22,7 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -50,26 +51,30 @@ SR = 44100  # the analysis rate — analyze.SR, which the crate fixes too
 
 
 def crate_analysis(
-    path: Path, sensitivity: float | dict[str, float], stereo: bool
+    path: Path,
+    sensitivity: float | dict[str, float],
+    stereo: bool,
+    run: Callable[..., subprocess.CompletedProcess[bytes]] | None = None,
 ) -> tuple[int, dict[str, list[list[float]]]]:
     """analyze_full through castle-core's analyze_track bin: the mono
     decode's sample count and the onset bands (with pans when `stereo`).
     The crate is the importer's ears now; analyze.py remains only as the
     parity reference — tests/test_analyze_track_rust.py holds the two
     value-for-value. Failures raise ValueError so the caller keeps its
-    own sentences."""
+    own sentences. `run` is subprocess.run's stand-in for a caller that must
+    be able to stop the child (Castle Radio's Cancel)."""
     req = {"path": str(path), "sensitivity": sensitivity, "stereo": stereo}
-    run = subprocess.run(
+    done = (run or subprocess.run)(
         [str(core_bins.core_bin("analyze_track"))],
         input=json.dumps(req).encode(),
         capture_output=True,
         check=False,
     )
-    if run.returncode != 0:
+    if done.returncode != 0:
         raise ValueError(
-            run.stderr.decode().strip() or f"analyze_track failed on {path.name}"
+            done.stderr.decode().strip() or f"analyze_track failed on {path.name}"
         )
-    out = json.loads(run.stdout)
+    out = json.loads(done.stdout)
     return int(out["samples"]), out["bands"]
 
 

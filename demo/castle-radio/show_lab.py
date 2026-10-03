@@ -21,6 +21,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
 import harmony
 import voice_kinds
 from choreography import STYLES, choreograph

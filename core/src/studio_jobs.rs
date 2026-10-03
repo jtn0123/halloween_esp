@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use crate::jsonio::{Json, py_float};
 use crate::procgroup::{adopt, kill_group, own_group, release};
 use crate::studio::App;
-use crate::studio_progress::{Job, interpret};
+use crate::studio_progress::{Job, interpret, relayed};
 use crate::studio_reason::explain;
 
 /// Spawn `argv` with its stderr joined to its stdout (Python's
@@ -35,6 +35,8 @@ fn spawn_merged(argv: &[String]) -> std::io::Result<(Child, PipeReader)> {
     // stays held with it (grade report 2026-09-17 B2).
     own_group(&mut cmd);
     crate::studio_proc::utf8_child(&mut cmd);
+    // Line by line, not at the end: see studio_progress::relayed.
+    cmd.env("CASTLE_PROGRESS_STREAM", "1");
     let child = cmd.spawn()?;
     adopt(&child);
     Ok((child, reader))
@@ -176,10 +178,10 @@ fn run_child(job: &Arc<Mutex<Job>>, argv: &[String]) {
     });
     for raw in BufReader::new(out).lines() {
         let Ok(raw) = raw else { break };
-        let line = raw.trim_end().to_string();
+        let line = relayed(raw.trim_end());
         set(job, |j| {
             if !line.is_empty() {
-                j.log.push(line.clone());
+                j.log_line(&line);
             }
             interpret(j, &line);
         });

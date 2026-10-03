@@ -42,13 +42,22 @@ DEVICE_BUYER := castle
 # Recursive (=), not :=, so the lookup — and the error — only happen when
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
+# numpy's x86-64 vector kernels compute sin/exp/log/pow (and pocketfft, the
+# reverb's transform) to a different last ulp than libm, which no parity suite
+# can follow; CI switches them off, and so does every target here on the one
+# architecture that has them (docs/PARITY.md, grade report 2026-09-24 I1).
+# The value is ci.yml's, held equal by tests/test_preflight.py.
+ifeq ($(shell uname -m),x86_64)
+export NPY_DISABLE_CPU_FEATURES ?= X86_V3 X86_V4 AVX512_ICL AVX512_SPR
+endif
 
-.PHONY: build-buyer validate-buyer show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
+.PHONY: preflight build-buyer validate-buyer show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
 
 help:
 	@echo "Halloween Castle"
 	@echo ""
-	@echo "  make setup      create .venv and install esphome + render deps"
+	@echo "  make setup      .venv from the hashed lock, web/ npm ci, then preflight"
+	@echo "  make preflight  name each missing outside tool (lame, ffmpeg, node…) + its fix"
 	@echo "  make audio      render scenes/scenes.yaml -> audio/*.mp3"
 	@echo "  make cues       render every track's light show to a card cue file (TRACKS=\"a b\" for some)"
 	@echo "  make generate   render scenes.yaml -> firmware/generated/scenes.yaml"
@@ -78,7 +87,7 @@ help:
 	@echo "  make rust-test  cargo test the crate"
 	@echo "  make rust-lint  cargo fmt --check + clippy -D warnings"
 	@echo "  make lint       ruff + mypy over $(PY_SCOPE), plus rust-lint"
-	@echo "  make check      test + test-radio + lint + image/LOC guards + tsc + node suites"
+	@echo "  make check      preflight + test + test-radio + lint + guards + tsc + node suites"
 	@echo "                  = CI's blocking python/TS steps; NOT the coverage floors,"
 	@echo "                  the esphome builds or the browser suite (see the comment)"
 	@echo "  make e2e        browser tests (needs: cd web && npx playwright install chromium)"
@@ -102,24 +111,25 @@ help:
 	@echo "carrier v3.3a) and the show lives on the card: 'make publish' before"
 	@echo "'make ota', or the board boots to a chirp."
 
+# The venv is the hashed LOCK, installed with CI's own flags — not the loose
+# requirement files, which resolve to whatever is newest today (cbor2 6.x
+# against a locked 5.9) and leave out yt-dlp, the importer's subprocess pin.
+# web/ gets its locked node deps the same way. What neither can install —
+# lame, ffmpeg, node, and the optional cargo/ccache — tools/preflight.py names
+# with a one-line fix, and `make check` runs it first. tests/test_preflight.py
+# holds PIP_LOCKED equal to ci.yml's (grade report 2026-09-24 I1).
+PIP_LOCKED := --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
 setup:
 	$(PY_SETUP) -m venv .venv
 	.venv/bin/python -m pip install --quiet --upgrade pip
-	.venv/bin/pip install --quiet -r requirements.txt -r requirements-dev.txt
+	.venv/bin/pip install --quiet $(PIP_LOCKED)
 	@git config core.hooksPath githooks && echo "pre-commit hook: githooks/"
-	@# castle-core is Rust and this target cannot install it (rustup is its own
-	@# installer, and silently curl|sh-ing one is not this repo's style). Say so
-	@# instead of letting `make audio` be the thing that discovers it: without
-	@# cargo, render_audio.py hard-stops rather than falling back to the
-	@# machine-dependent Python reference. (grade report 2026-08-31 H3)
-	@command -v cargo > /dev/null \
-		|| echo "note: no cargo on PATH — castle-core (core/) cannot build, so 'make audio', the importer and the Rust gates will not run. Install rustup: https://rustup.rs"
-	@# ESPHome (2026.8+) compiles through ccache whenever one is on PATH, with
-	@# no configuration: a cold build tree — a fresh worktree's first build,
-	@# a wiped one — becomes a cache read instead of ~80 s of xtensa-gcc.
-	@command -v ccache > /dev/null \
-		|| echo "note: no ccache on PATH — 'brew install ccache' and every cold firmware build after the first is mostly cache hits"
+	@if command -v npm > /dev/null; then cd web && npm ci --ignore-scripts --silent; fi
+	@.venv/bin/python tools/preflight.py --warn
 	@echo "ready. 'make build' next."
+
+preflight:
+	@$(PY) tools/preflight.py
 
 audio:
 	@$(PY) tools/render_audio.py
@@ -135,12 +145,6 @@ track:
 	@test -n "$(SRC)" || (echo "usage: make track SRC=<file|url> [ID=<name>] [ARGS=...]"; exit 1)
 	@$(PY) tools/import_track.py "$(SRC)" $(if $(ID),--id $(ID),) $(ARGS)
 
-# The Rust studio is the studio (grade report 2026-09-01 G1, finished by
-# docs/RETIREMENT.md): the launcher builds it when cargo is here and refuses
-# with a printed reason when it cannot. The logic lives in the script, not
-# here, because .claude/launch.json needs the same decision and cannot
-# express it. ARGS passes the studio's own command line through:
-# ARGS="8766 --lan".
 # Opt-in and offline: candidates are written only under the ignored
 # .radio-data/comparison/, never beside a prepared show, and nothing here
 # talks to the castle. Adopting a candidate is a separate, deliberate change.
@@ -160,6 +164,12 @@ show-lab-phone:
 		echo "on your phone: http://$$ip:$(SHOW_LAB_PORT)/show-lab.html   (Ctrl-C stops the server)"
 	@$(PY) demo/castle-radio/lab_server.py --port $(SHOW_LAB_PORT) --bind 0.0.0.0
 
+# The Rust studio is the studio (grade report 2026-09-01 G1, finished by
+# docs/RETIREMENT.md): the launcher builds it when cargo is here and refuses
+# with a printed reason when it cannot. The logic lives in the script, not
+# here, because .claude/launch.json needs the same decision and cannot
+# express it. ARGS passes the studio's own command line through:
+# ARGS="8766 --lan".
 studio: preview
 	@tools/studio_launch.sh $(ARGS)
 
@@ -447,7 +457,7 @@ lint: rust-lint
 #     validate`, `check-all`).
 #   * the browser suite — `make e2e` (`check` says so at the end).
 #   * the wasm face build and `make audit` (non-gating).
-check: audio test test-radio lint
+check: preflight audio test test-radio lint
 	@$(PY) tools/check_image.py $(DEVICE)
 	@$(PY) tools/check_image.py $(DEVICE_S3)
 	@$(PY) tools/check_image.py $(DEVICE_BUYER)

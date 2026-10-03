@@ -24,7 +24,22 @@ fn round1(v: f64) -> f64 {
     format!("{v:.1}").parse().unwrap_or(v)
 }
 
+/// The lines a job keeps. The desk is shown the last 40 and a failure's
+/// reason is read from the end, while a streamed download says one line per
+/// progress tick — so an unbounded log grew with every import for as long
+/// as the studio ran (grade report 2026-09-24 B5).
+pub const LOG_KEEP: usize = 500;
+
 impl Job {
+    /// One line of the child's output, the oldest dropped past LOG_KEEP.
+    pub fn log_line(&mut self, line: &str) {
+        self.log.push(line.to_string());
+        if self.log.len() > LOG_KEEP {
+            let extra = self.log.len() - LOG_KEEP;
+            self.log.drain(..extra);
+        }
+    }
+
     /// A job exists before its child does, and it says so: "queued" is what
     /// the page shows while the work is still in line behind the studio's
     /// encode lock (studio_jobs.py's dataclass defaults).
@@ -83,6 +98,23 @@ pub fn interpret(job: &mut Job, line: &str) {
         job.phase = "analysing".to_string();
         job.detail = "detecting onsets".to_string();
     }
+}
+
+/// The prefix tools/progress_process.py puts on each line it relays.
+const RELAYED: &str = "CASTLE_PROGRESS ";
+
+/// A child line as the job should see it. With `CASTLE_PROGRESS_STREAM=1`
+/// the importer relays yt-dlp's (and the stem splitter's) output AS IT
+/// COMES, each line wrapped as `CASTLE_PROGRESS {"line": "…"}` so it can
+/// carry anything; without it, yt-dlp ran under capture and the studio's
+/// bar sat still until the download was over (grade report 2026-09-24 B2).
+/// The radio's job_progress.py reads the same wrapper. A line that is not
+/// one — or does not parse — passes through as it was.
+pub fn relayed(line: &str) -> String {
+    line.strip_prefix(RELAYED)
+        .and_then(|body| crate::jsonio_parse::parse(body).ok())
+        .and_then(|j| j.get("line").and_then(Json::as_str).map(str::to_string))
+        .unwrap_or_else(|| line.to_string())
 }
 
 /// `[download]  41.8% of ~2.39MiB at 15.81MiB/s ETA 00:00`
@@ -154,6 +186,38 @@ mod tests {
         assert_eq!(size, "12.34MiB");
         assert_eq!(rate.as_deref(), Some("Unknown"));
         assert_eq!(eta, None);
+    }
+
+    /// The tail is what anyone reads, so the tail is what is kept.
+    #[test]
+    fn the_log_keeps_its_newest_lines_and_no_more() {
+        let mut job = Job::new("x".to_string());
+        for n in 0..LOG_KEEP + 250 {
+            job.log_line(&format!("line {n}"));
+        }
+        assert_eq!(job.log.len(), LOG_KEEP);
+        assert_eq!(job.log.first().map(String::as_str), Some("line 250"));
+        let last = format!("line {}", LOG_KEEP + 249);
+        assert_eq!(job.log.last(), Some(&last));
+    }
+
+    /// The relayed form is unwrapped before it is read, so a streamed
+    /// download moves the bar exactly as a bare yt-dlp line does.
+    #[test]
+    fn a_relayed_line_is_read_as_the_line_it_carries() {
+        let inner = "[download]  41.8% of 2.39MiB at 1.0MiB/s ETA 00:03";
+        let wrapped = format!("CASTLE_PROGRESS {{\"line\": {inner:?}}}");
+        assert_eq!(relayed(&wrapped), inner);
+        let mut job = Job::new("x".to_string());
+        interpret(&mut job, &relayed(&wrapped));
+        assert_eq!((job.phase.as_str(), job.percent), ("fetching", 41.8));
+        for plain in [
+            "imported chant",
+            "CASTLE_PROGRESS {not json",
+            "CASTLE_PROGRESS [1]",
+        ] {
+            assert_eq!(relayed(plain), plain);
+        }
     }
 
     /// yt-dlp says `[download]` about things that are not downloads yet;

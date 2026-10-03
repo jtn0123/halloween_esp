@@ -2,10 +2,11 @@
 
 import json
 import shutil
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
 import portable_fs
 
 AUDIO_SUFFIXES = ("mp3", "opus", "wav", "flac")

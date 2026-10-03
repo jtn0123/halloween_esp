@@ -87,7 +87,8 @@ export interface DeviceStatus {
   show_on?: boolean;
   /** Current scene id, "" when idle. */
   scene?: string;
-  /** Comma-joined scene ids this firmware was BUILT with (v5.42+). */
+  /** Comma-joined scene ids the castle can start (v5.42+): since v5.67 its
+   *  card's show.man, re-read after every publish since v5.69. */
   scenes?: string;
   /** The studio answering FOR a castle it cannot reach — not a castle. */
   studio?: boolean;
@@ -137,20 +138,24 @@ function healthMeta(st: DeviceStatus): string {
       : "") + `</div>`;
 }
 
-/** C6: the scenes this desk knows that the BOARD's firmware does not —
- *  the drift behind "unknown scene", said before a button press finds it.
- *  Empty until the firmware reports its build list (v5.42+). */
+/** C6: the scenes this desk knows that the castle does not list — the drift
+ *  behind "unknown scene", said before a button press finds it. Empty until
+ *  the castle reports its list (v5.42+). Since v5.67 that list is the card's
+ *  show.man, so the cure is a publish, never an OTA; since v5.69 the castle
+ *  re-reads it on its own, so a publish is all of it (grade report
+ *  2026-09-24 H1). Only a pre-v5.69 board also needs the restart. */
 function firmwareDrift(st: DeviceStatus): string {
   if (st.scenes === undefined) return "";
   const known = new Set(st.scenes.split(",").filter(Boolean));
   const newer = sceneIds().filter((id) => !known.has(id));
   if (!newer.length) return "";
   const n = newer.length;
-  return `<div class="dp__note dp__note--warn" title="The board's firmware was ` +
-    `built before ${n === 1 ? "this scene" : "these scenes"} existed; picking ` +
-    `${n === 1 ? "it" : "one"} answers 'unknown scene'. make sd-build, stop ` +
-    `audio, then OTA.">⚠ ${n} scene${n === 1 ? "" : "s"} newer than the ` +
-    `firmware (${esc(newer.join(", "))}) — rebuild and OTA</div>`;
+  return `<div class="dp__note dp__note--warn" title="The castle's card does ` +
+    `not list ${n === 1 ? "this scene" : "these scenes"} yet; picking ` +
+    `${n === 1 ? "it" : "one"} answers 'unknown scene'. make publish (the ` +
+    `studio's rebuild publishes on its own) — firmware before v5.69 also ` +
+    `needs a restart to read it.">⚠ ${n} scene${n === 1 ? "" : "s"} not on ` +
+    `the castle yet (${esc(newer.join(", "))}) — make publish</div>`;
 }
 
 /** The panel's whole body for one poll's worth of truth. `tracks` is the

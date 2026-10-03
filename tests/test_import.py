@@ -32,6 +32,7 @@ import json
 import subprocess
 
 import analyze as ana
+import exe_paths
 import import_convert as ic
 import import_track as it
 import manifest as mf
@@ -224,14 +225,20 @@ class TestExternalTools(unittest.TestCase):
         self.assertIsNotNone(shutil.which("ffmpeg"), "ffmpeg not installed")
 
     def test_ytdlp_present(self) -> None:
+        """The copy the IMPORTER runs (exe_paths.ytdlp: the venv's own before
+        PATH's) — `make setup` puts it in .venv/bin from the lock, which a
+        bare shutil.which never looked in (grade report 2026-09-24 I1)."""
         self.assertIsNotNone(
-            shutil.which("yt-dlp"), "yt-dlp not installed — `brew install yt-dlp`"
+            exe_paths.ytdlp(), "yt-dlp not installed — `make setup` (it is locked)"
         )
 
     def test_ytdlp_understands_a_youtube_url(self) -> None:
         """No network: --simulate with a bad URL still proves URL parsing."""
         r = subprocess.run(
-            ["yt-dlp", "--version"], capture_output=True, text=True, check=False
+            [exe_paths.ytdlp() or "yt-dlp", "--version"],
+            capture_output=True,
+            text=True,
+            check=False,
         )  # asserted on returncode below
         self.assertEqual(r.returncode, 0)
         self.assertRegex(r.stdout.strip(), r"^\d{4}\.\d{2}\.\d{2}")

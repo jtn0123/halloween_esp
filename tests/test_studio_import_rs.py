@@ -102,6 +102,10 @@ class ImportCase(StudioCase):
         assert isinstance(found, dict)
         return found
 
+    def staged(self) -> list[str]:
+        """The upload staging directories left beside the library."""
+        return sorted(p.name for p in self.tracks.glob("_upload*"))
+
     def local_url(self, name: str) -> str:
         """A URL on this machine for the async import to fetch."""
         server = ThreadingHTTPServer(
@@ -133,7 +137,7 @@ class ImportGuards(ImportCase):
                 (400, {"error": "url must be http(s)"}),
                 url,
             )
-        self.assertFalse((self.tracks / "_upload").exists())
+        self.assertEqual(self.staged(), [])
 
     def test_02_an_upload_needs_a_file_and_readable_options(self) -> None:
         headers, raw = multipart("x.wav", b"")
@@ -141,7 +145,7 @@ class ImportGuards(ImportCase):
         self.assertEqual((code, out), (400, b'{"error": "no file in upload"}'))
         # X-Import-Opts goes through the same JSON boundary as a body, and
         # is read BEFORE the staging write — so a rejected upload leaves no
-        # `_upload/` directory beside the library.
+        # `_upload_*` directory beside the library.
         headers, raw = multipart("clip.wav", b"RIFFfake")
         headers["X-Import-Opts"] = "{not json"
         code, _h, out = self.req("/studio/import", "POST", headers, raw)
@@ -149,7 +153,7 @@ class ImportGuards(ImportCase):
         self.assertEqual(code, 400)
         self.assertFalse(parsed["ok"])
         self.assertIn("not valid JSON", parsed["error"])
-        self.assertFalse((self.tracks / "_upload").exists())
+        self.assertEqual(self.staged(), [])
         self.assertFalse((self.tracks / "clip.mp3").exists())
 
     def test_03_an_async_import_needs_an_http_url(self) -> None:
@@ -179,12 +183,13 @@ class ImportGuards(ImportCase):
                     refused,
                     (path, bad),
                 )
-        # The multipart spelling too — though the staged copy it already
-        # wrote survives until the next import sweeps `_upload/`, exactly
-        # as tools/studio.py left it.
+        # The multipart spelling too — and it is refused BEFORE the staging
+        # write, now that each upload stages in a directory of its own that
+        # no later import would sweep (grade report 2026-09-24 E3).
         headers, raw = multipart("clip.wav", b"RIFFfake", {"id": "../evil"})
         code, _h, out = self.req("/studio/import", "POST", headers, raw)
         self.assertEqual((code, json.loads(out)), refused)
+        self.assertEqual(self.staged(), [])
         for path in ("/studio/refresh", "/api/refresh"):
             for bad in ("../evil", "../../audio/01_vigil", ""):
                 self.assertEqual(
@@ -270,9 +275,7 @@ class Imports(ImportCase):
         source = f"file:{kept.resolve()}"
         self.assertTrue(landed.exists())
         self.assertEqual(kept.read_bytes(), self.clip.read_bytes())
-        self.assertFalse(
-            (self.tracks / "_upload").exists(), "the staging directory was left behind"
-        )
+        self.assertEqual(self.staged(), [], "the staging directory was left behind")
         # The answer carries the refreshed list, so the panel needs no
         # second request to show the new row.
         row = self.row(body, "fresh")
@@ -347,7 +350,31 @@ class Imports(ImportCase):
         self.assertNotIn("Traceback", reason)
         self.assertIn(reason, body["log"], "the full output must stay in log")
         self.assertFalse((self.tracks / "not_audio.mp3").exists())
-        self.assertFalse((self.tracks / "_upload").exists())
+        self.assertEqual(self.staged(), [])
+
+    def test_06_two_uploads_at_once_both_land(self) -> None:
+        """The second waits on the oplock while the first imports; its staged
+        file used to be swept with the shared `_upload/` the moment the first
+        finished, and it failed on a file that was never there."""
+        answers: dict[str, tuple[int, dict[str, Any]]] = {}
+
+        def send(tid: str) -> None:
+            answers[tid] = self.upload(
+                f"{tid}.wav", self.clip.read_bytes(), {"id": tid}
+            )
+
+        threads = [
+            threading.Thread(target=send, args=(t,)) for t in ("twin_a", "twin_b")
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=300)
+        for tid in ("twin_a", "twin_b"):
+            code, body = answers[tid]
+            self.assertEqual(code, 200, body.get("log"))
+            self.assertTrue((self.tracks / f"{tid}.mp3").exists(), tid)
+        self.assertEqual(self.staged(), [])
 
     def test_05_an_async_import_polls_from_queued_to_done(self) -> None:
         """The page starts the job, polls, and stops on `done` — so the
@@ -389,6 +416,11 @@ class Imports(ImportCase):
             set(seen[:-1]), {"queued", "fetching", "converting", "analysing"}, seen
         )
         self.assertTrue(poll["log"], "the job reported nothing at all")
+        # yt-dlp's own lines arrive while it runs, unwrapped: the studio sets
+        # CASTLE_PROGRESS_STREAM and reads the relay (grade report 2026-09-24 B2).
+        log = poll["log"]
+        self.assertTrue([ln for ln in log if ln.startswith("[download]")], log)
+        self.assertFalse([ln for ln in log if ln.startswith("CASTLE_PROGRESS")], log)
         self.assertTrue((self.tracks / "fetched.mp3").exists())
         row = self.row(poll, "fetched")
         self.assertAlmostEqual(row["dur"], 2.0, delta=0.1)

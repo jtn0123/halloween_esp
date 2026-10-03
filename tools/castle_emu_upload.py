@@ -139,6 +139,12 @@ class Uploads(Replies):
             return self._err(500, "rename failed")
         if had_old:
             keep.unlink(missing_ok=True)
+        # J1 (v5.69): the show's manifest just changed, so the id list
+        # /api/scene validates against is stale. Ring the bell; the tick
+        # re-reads it (sd_web_upload.h raises g_scenes_dirty for this one
+        # name — a .cue or an mp3 changes what a scene does, not which exist).
+        if sub == "scenes" and target.name == "show.man":
+            self.server.scenes_dirty = True
         card = f"/sd/{sub}/{target.name}" if sub else f"/sd/{target.name}"
         self._json({"path": card, "bytes": written, "crc32": "%08x" % crc})
 
