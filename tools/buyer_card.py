@@ -292,26 +292,30 @@ _SUFFIX = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-"
 
 def release_tag(text: str) -> str:
     """--tag as the release workflow takes one (release_assets.TAG_RE),
-    rebuilt from its parts: the numbers as numbers and the suffix out of
-    _SUFFIX, so the offer carries nothing the pattern did not name."""
+    rebuilt from its parts: the numbers as numbers, and each suffix
+    character as _SUFFIX's own, so no byte of the typed text reaches the
+    offer. main() calls this itself rather than as argparse's `type=`,
+    which SonarCloud does not follow (its path findings on #77)."""
     m = release_assets.TAG_RE.match(text)
     if m is None:
         raise argparse.ArgumentTypeError(
             f"{text!r} is not a release tag (vMAJOR.MINOR.PATCH[-suffix])"
         )
     major, minor, patch = (int(g) for g in m.group(1, 2, 3))
-    suffix = "".join(_SUFFIX[_SUFFIX.index(c)] for c in m.group(4) or "")
+    suffix = "".join(next(a for a in _SUFFIX if a == c) for c in m.group(4) or "")
     return f"v{major}.{minor}.{patch}{suffix}"
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument(
-        "--tag", type=release_tag, help="the release tag the castle's firmware is from"
-    )
+    ap.add_argument("--tag", help="the release tag the castle's firmware is from")
     ap.add_argument("--date", type=dt.date.fromisoformat, help="the offer's date")
     args = ap.parse_args(argv)
-    ids = build(CARD_DIR, SHOW, args.tag, args.date)
+    try:
+        tag = release_tag(args.tag) if args.tag else None
+    except argparse.ArgumentTypeError as exc:
+        ap.error(f"argument --tag: {exc}")
+    ids = build(CARD_DIR, SHOW, tag, args.date)
     files = sorted(p for p in CARD_DIR.rglob("*") if p.is_file())
     size = sum(p.stat().st_size for p in files)
     print(f"buyer card: {bp.rel(CARD_DIR)} — {len(files)} files, {size // 1024} KB")

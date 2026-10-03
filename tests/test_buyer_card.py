@@ -161,6 +161,17 @@ class TestTheTag(unittest.TestCase):
             with self.subTest(tag=bad), self.assertRaises(argparse.ArgumentTypeError):
                 bc.release_tag(bad)
 
+    def test_the_command_refuses_a_bad_tag_before_writing(self) -> None:
+        out = Path(self.enterContext(tempfile.TemporaryDirectory())) / "card"
+        with (
+            mock.patch.object(bc, "CARD_DIR", out),
+            contextlib.redirect_stderr(io.StringIO()) as said,
+            self.assertRaises(SystemExit),
+        ):
+            bc.main(["--tag", "v0.2.0/../x"])
+        self.assertIn("is not a release tag", said.getvalue())
+        self.assertFalse(out.exists())
+
 
 class TestRefusals(unittest.TestCase):
     def setUp(self) -> None:
