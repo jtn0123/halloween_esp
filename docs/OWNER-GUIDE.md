@@ -71,7 +71,7 @@ card**, ▶ plays one of your songs. A new castle has none yet, and says so
 until you add some with Castle Tools.
 
 <img src="guide/owner-show.png" width="320" alt="The castle's page: show buttons, volume, and three songs on the card">
-<img src="guide/owner-empty.png" width="320" alt="Songs on the card: No songs on the card yet — add some with the Castle app">
+<img src="guide/owner-empty.png" width="320" alt="Songs on the card: No songs on the card yet — add some with Castle Tools">
 
 ## Settings: loudness, quiet hours and the clock
 
@@ -134,7 +134,7 @@ If the new firmware cannot start, the castle goes back to the one it had,
 by itself. Nothing is ever updated unless you press the button. A castle
 with a key needs the key in Castle Tools first (see **The castle key**).
 
-<img src="guide/radio-update.png" width="420" alt="Castle firmware card: firmware 5.77 is ready, the castle runs 5.76, and an Update castle to 5.77 button">
+<img src="guide/radio-update.png" width="420" alt="Castle firmware card: firmware 5.78 is ready, the castle runs 5.77, and an Update castle to 5.78 button">
 
 **With a USB-C cable** (when the castle will not start, or Castle Tools
 cannot reach it): open **https://jtn0123.github.io/halloween_esp/** in
@@ -159,7 +159,10 @@ page, under **Settings**, type a key and press **Set**. On another phone or
 computer, type it and press **Use** once. **Clear** removes it. In Castle
 Tools, open **Run settings**, type the key in the **Castle key** card and
 press **Use this key**; the same card can set a new key or remove it.
-Forgotten it? **Factory reset** removes it too.
+Forgotten it? **Factory reset** asks for the key too, so reinstall with a
+USB-C cable instead (see **Updating the castle**) and choose to erase the
+castle when it asks. That forgets the key, your Wi-Fi and your settings and
+keeps your songs; you set up the Wi-Fi again at the end.
 
 <img src="guide/radio-key.png" width="420" alt="Castle key card in Castle Tools: Use this key, Set as the new key, Remove the key">
 
