@@ -356,7 +356,10 @@ def cmd_site(ip: str) -> int:
             "no demo/castle-radio/.radio-data/catalog.json. Songs already on "
             "the card show up only if they have a .cue beside them."
         )
-    packed = gzip.compress(plain, 9)
+    # mtime=0: the same page is the same bytes on the card, whenever it was
+    # built — gzip's header otherwise stamps the second, so every publish
+    # changed index.html.gz (and the CRC the castle answers) for nothing.
+    packed = gzip.compress(plain, 9, mtime=0)
     upload(ip, "/api/site", "index.html.gz", packed)
     # The plain copy too, for any client that cannot take gzip — the firmware
     # prefers .gz but falls back, and a stale pair would be worse than bytes.

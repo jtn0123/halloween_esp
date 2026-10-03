@@ -398,7 +398,11 @@ def seed_card(card: Path) -> None:
     (card / "wicked_winds.mp3").write_bytes(b"\xff\xfb" + b"\x00" * 4094)
     (card / "scenes" / "vigil.mp3").write_bytes(b"\xff\xfb" + b"\x00" * 2046)
     (card / "site" / "index.html").write_bytes(b"<!doctype html><title>desk</title>")
-    (card / "site" / "index.html.gz").write_bytes(gzip.compress(b"<!doctype html>gz"))
+    # mtime=0: this runs once per card, and gzip's header otherwise carries
+    # the second it ran — two cards seeded across a second boundary served
+    # different bytes for `/` (the 2026-10-03 Windows CI flake).
+    gz = gzip.compress(b"<!doctype html>gz", mtime=0)
+    (card / "site" / "index.html.gz").write_bytes(gz)
     (card / "site" / "app.js").write_bytes(b"console.log(1)")
     # A name safe_name refuses: the Mac wrote it straight onto the card, so
     # /api/files must count it in {"skipped":N} rather than list it.
