@@ -28,11 +28,14 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent))
 import core_bins
+import import_reason as ir
 import manifest as mf
 from import_args import secs as secs  # re-exported: tests and codec_compare use it here
 from import_args import sensitivity_arg as sensitivity_arg
 from import_args import text_arg as text_arg
 from import_args import time_arg as time_arg
+from import_args import track_slug, valid_track_id
+from import_convert import MAX_IMPORT_SECONDS, detail, not_audio, too_long
 from import_convert import _same_file as _same_file
 from import_convert import convert as convert
 from import_convert import keep_source as keep_source
@@ -239,18 +242,35 @@ def _source(args: argparse.Namespace, prev: mf.Entry | None) -> tuple[str, bool]
         or (prev or {}).get("source", "")
     )
     if not source:
-        raise SystemExit("need a source (file or URL)")
+        raise SystemExit(
+            "There is no song to import — choose a song file or paste a link."
+        )
     source = source.removeprefix("file:")
     is_url = is_web_url(source)
     # A source that wanted to be a URL and is not one never becomes a path:
     # "ftp://…" or "--config-location=http://…" would otherwise be opened as a
     # local file name, which is a confusing way to fail at best.
     if not is_url and "://" in source:
-        raise SystemExit(f"not a link this can fetch: {source!r} — http(s) only")
+        detail([f"not an http(s) link: {source!r}"])
+        raise SystemExit(ir.NOT_A_LINK)
     return source, is_url
 
 
 def main() -> int:
+    try:
+        return _main()
+    except OSError as e:
+        # A write that failed here, not a tool that said so: the disk filled
+        # mid-copy, the library sits somewhere this user may not write. The
+        # owner reads the table's sentence; the OS's words go beneath it.
+        said = ir.for_os_error(e) or ir.recognised(str(e))
+        if not said:
+            raise
+        detail([f"{type(e).__name__}: {e}"])
+        raise SystemExit(said) from None
+
+
+def _main() -> int:
     args = _build_parser().parse_args()
 
     TRACKS.mkdir(exist_ok=True)
@@ -263,8 +283,10 @@ def main() -> int:
 
     prev = mf.get(args.refresh) if args.refresh else None
     if args.refresh and prev is None:
+        detail(["(tools/import_track.py --list shows the remembered tracks)"])
         raise SystemExit(
-            f"no remembered track {args.refresh!r} (tools/import_track.py --list)"
+            f"There is no song called {args.refresh!r} to rebuild — import it "
+            "again from the original."
         )
     o = _options(args, prev)
     source, is_url = _source(args, prev)
@@ -284,40 +306,44 @@ def main() -> int:
 
 
 def _source_file(
-    source: str, is_url: bool, tmp: Path, prev: mf.Entry | None
+    source: str, is_url: bool, tmp: Path, prev: mf.Entry | None, whole: bool
 ) -> tuple[Path, str]:
     """The local file to convert and its title (a link's own, else the
     remembered one)."""
     title = (prev or {}).get("title", "")
     if is_url:
-        src, title = fetch_url(source, tmp)
+        src, title = fetch_url(source, tmp, whole=whole)
     else:
         src = Path(source)
     if not src.exists():
-        # The basename, not the path: an operator can act on "drop it
+        # The basename, not the path: an owner can act on "choose it
         # again", not on /private/tmp/…/_upload/x.wav (JB1-3).
         raise SystemExit(
-            f"no such file: {src.name} — the remembered source "
-            "is gone; import it again from the original"
+            f"Castle Tools could not find {src.name} — choose the song again "
+            "from wherever it is now."
         )
+    try:
+        # Read a byte now: a share that dropped, or a folder this user may
+        # not read, fails HERE with a sentence rather than as ffmpeg's.
+        with src.open("rb") as f:
+            f.read(1)
+    except OSError as e:
+        detail([f"{type(e).__name__}: {e}"])
+        raise SystemExit(ir.for_os_error(e) or ir.NO_ACCESS) from None
     return src, title
 
 
 def _track_id(args: argparse.Namespace, src: Path) -> str:
-    # Truncate BEFORE stripping, and cut at the last word boundary inside
-    # the limit — "the_citizens_of_halloween___this" (cut mid-title, dangling
-    # separators kept) is what the other order produces, on the desk and on
-    # the card.
-    slug = "".join(c if c.isalnum() else "_" for c in src.stem.lower())[:32]
-    if "_" in slug[1:] and len(slug) == 32:
-        slug = slug[: slug.rindex("_")]
-    tid = args.refresh or args.id or slug.strip("_")
-    # The derived branch above is sanitised by construction; an EXPLICIT id
-    # was not, and the studio forwards the browser's id verbatim — so
+    tid = args.refresh or args.id or track_slug(src.stem)
+    # The derived id is sanitised by construction; an EXPLICIT one was not,
+    # and the studio forwards the browser's id verbatim — so
     # "../../audio/01_vigil" used to walk out of tracks/ and overwrite show
     # audio. Same alphabet for every spelling, no exceptions.
-    if not tid or not all(c.isalnum() or c == "_" for c in tid):
-        raise SystemExit(f"track id {tid!r} — letters, digits and _ only")
+    if not valid_track_id(tid):
+        raise SystemExit(
+            f"The song name {tid!r} can use only letters, digits and _ — "
+            "choose a different name."
+        )
     return tid
 
 
@@ -331,8 +357,14 @@ def _convert(src: Path, out: Path, o: dict[str, Any]) -> None:
     src_dur = probe_duration(src)
     if src_dur is not None and conv["start"] >= src_dur:
         raise SystemExit(
-            f"start {o['start']} is past the end of {src.name} ({src_dur:.0f}s long)"
+            f"The start you chose ({o['start']}) is past the end of {src.name}, "
+            f"which is {src_dur:.0f}s long — choose an earlier start."
         )
+    # The length limit, judged on what would be KEPT, before anything is
+    # converted: a 2-hour file with a 3-minute take is fine.
+    keep = conv["take"] or ((src_dur - conv["start"]) if src_dur else None)
+    if keep is not None and keep > MAX_IMPORT_SECONDS:
+        raise SystemExit(too_long(src.name, src_dur or keep))
     convert(src, out, conv)
 
 
@@ -346,14 +378,22 @@ def _analyse(
         # stereo= so import-time markers carry pan, same as the studio's
         # live analysis — otherwise the pasteable scene block and the desk
         # disagree.
+        dur = probe_duration(out)
+        if dur is not None and dur > MAX_IMPORT_SECONDS + 1:
+            # ffprobe could not say how long the SOURCE was; the cut can.
+            out.unlink(missing_ok=True)
+            raise SystemExit(too_long(src.name, dur))
         samples, marks = crate_analysis(out, o["sensitivity"], stereo=True)
-        if samples < SR // 10:
-            raise ValueError("the cut came out (nearly) empty")
     except ValueError as e:
         out.unlink(missing_ok=True)
+        detail(str(e).splitlines()[-6:])
+        raise SystemExit(ir.recognised(str(e)) or not_audio(src.name)) from None
+    if samples < SR // 10:
+        out.unlink(missing_ok=True)
         raise SystemExit(
-            f"{src.name}: {e} — check start/length against the source"
-        ) from None
+            f"The part of {src.name} you chose came out silent or empty — check "
+            "the start and length."
+        )
     return samples / SR, marks
 
 
@@ -406,33 +446,41 @@ def _import(
     tmp: Path,
     prev: mf.Entry | None,
 ) -> int:
-    src, title = _source_file(source, is_url, tmp, prev)
+    src, title = _source_file(source, is_url, tmp, prev, whole=not o["take"])
     tid = _track_id(args, src)
     out = TRACKS / f"{tid}.{o['format']}"
+    fresh = mf.get(tid) is None
     _convert(src, out, o)
     dur, marks = _analyse(out, src, o)
     size = out.stat().st_size
-    _sweep_stale(tid, o["format"], src)
-    if args.keep_source and not is_url:
-        source = f"file:{keep_source(src, tid)}"
-    mf.record(
-        tid,
-        source=source
-        if is_url or source.startswith("file:")
-        else f"file:{Path(source).resolve()}",
-        title=title,
-        opts=o,
-        notes=args.notes,
-        audio={
-            "duration": round(dur, 2),
-            "bytes": size,
-            "format": o["format"],
-            "channels": o["channels"],
-            "sample_rate": o["sample_rate"],
-            "bitrate": o["bitrate"],
-        },
-        onsets={k: len(v) for k, v in marks.items()},
-    )
+    try:
+        _sweep_stale(tid, o["format"], src)
+        if args.keep_source and not is_url:
+            source = f"file:{keep_source(src, tid)}"
+        mf.record(
+            tid,
+            source=source
+            if is_url or source.startswith("file:")
+            else f"file:{Path(source).resolve()}",
+            title=title,
+            opts=o,
+            notes=args.notes,
+            audio={
+                "duration": round(dur, 2),
+                "bytes": size,
+                "format": o["format"],
+                "channels": o["channels"],
+                "sample_rate": o["sample_rate"],
+                "bitrate": o["bitrate"],
+            },
+            onsets={k: len(v) for k, v in marks.items()},
+        )
+    except OSError:
+        # A full disk at the last step: no half-imported track for the desk
+        # to offer, unless it replaced one the library already had.
+        if fresh:
+            out.unlink(missing_ok=True)
+        raise
     _report(tid, o, dur, size, marks)
     return 0
 

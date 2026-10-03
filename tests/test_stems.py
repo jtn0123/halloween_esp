@@ -25,6 +25,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+import import_reason as ir
 import numpy as np
 import stems
 from scipy.io import wavfile
@@ -197,9 +198,12 @@ class TestFourStemMix(StemsCase):
         sep = self.sandbox / "half-sep"
         (sep / "htdemucs" / "x").mkdir(parents=True)
         wavfile.write(sep / "htdemucs" / "x" / "drums.wav", SR, np.zeros((10, 2)))
-        with self.assertRaises(SystemExit) as c:
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as c, contextlib.redirect_stderr(err):
             stems.mix_stems(sep, self.sandbox / "half-out")
-        self.assertIn("bass", str(c.exception))
+        # The owner reads a sentence; the stem that was missing is the detail.
+        self.assertEqual(str(c.exception), ir.GENERIC)
+        self.assertIn("    demucs produced no bass stem", err.getvalue())
 
 
 class TestSeparateOut(StemsCase):
@@ -313,10 +317,48 @@ class TestFastCpu(unittest.TestCase):
             ) as run,
             mock.patch.object(sys, "argv", ["stems.py", "x", "--fast-cpu"]),
             contextlib.redirect_stdout(io.StringIO()),
-            self.assertRaises(SystemExit),
+            contextlib.redirect_stderr(io.StringIO()) as err,
+            self.assertRaises(SystemExit) as c,
         ):
             stems.main()
         self.assertEqual(run.call_args.args[2:], ("cpu", True))
+        self.assertEqual(str(c.exception), ir.GENERIC)
+        self.assertIn("    boom", err.getvalue())
+
+    def test_demucs_words_become_the_owners(self) -> None:
+        said = {
+            "RuntimeError: MPS backend out of memory": ir.OUT_OF_MEMORY,
+            "OSError: [Errno 28] No space left on device": ir.DISK_FULL,
+        }
+        for stderr, want in said.items():
+            with (
+                mock.patch.object(stems, "track_file", return_value=Path("x.wav")),
+                mock.patch.object(stems, "fresh", return_value=False),
+                mock.patch.object(stems.importlib.util, "find_spec", return_value=1),
+                mock.patch.object(stems.platform, "system", return_value="Linux"),
+                mock.patch.object(
+                    stems,
+                    "_run_demucs",
+                    return_value=subprocess.CompletedProcess([], 1, "", stderr),
+                ),
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit) as c,
+            ):
+                stems.separate("x")
+            self.assertEqual(str(c.exception), want)
+
+    def test_no_demucs_is_named_for_the_owner(self) -> None:
+        with (
+            mock.patch.object(stems, "track_file", return_value=Path("x.wav")),
+            mock.patch.object(stems, "fresh", return_value=False),
+            mock.patch.object(stems.importlib.util, "find_spec", return_value=None),
+            contextlib.redirect_stderr(io.StringIO()) as err,
+            self.assertRaises(SystemExit) as c,
+        ):
+            stems.separate("x")
+        self.assertEqual(str(c.exception), ir.DEMUCS_MISSING)
+        self.assertIn("pip install demucs", err.getvalue())
 
 
 if __name__ == "__main__":

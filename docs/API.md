@@ -22,7 +22,11 @@ owns a route:
   WHO is not answering, and is absent when none is configured.
 
 Every body is JSON unless noted. Failures carry `error` (and `reason`, one
-line, on tool failures). An unknown `/studio/*` path is a 404; an unknown
+line, on tool failures). On an import, a job, a stems split and the probe,
+`reason`/the job's `error` is the owner's sentence — what happened, then what
+to do (`core/src/studio_reason_words.rs`, docs/PARITY.md) — never an exit
+code or a traceback; the tool's own words stay in `log` (the probe's in
+`detail`). An unknown `/studio/*` path is a 404; an unknown
 `/api/*` path is refused by the relay's allowlist (404 with the known routes
 in the body, `castle_link.KNOWN_API`) — a client typo no longer reads as a
 castle outage.
@@ -46,7 +50,7 @@ castle outage.
 | GET | `/studio/stem/<id>/<layer>` | a stem mp3 (`vocals` / `backing`) |
 | POST | `/studio/compare` | `{id, …encode opts}` — codec A/B renders |
 | GET | `/studio/compare/<token>/<codec>` | one A/B render |
-| POST | `/studio/probe` | `{url}` — yt-dlp title/duration (400 on a bad link) |
+| POST | `/studio/probe` | `{url}` — yt-dlp title/duration (400 on a bad link; a failed probe adds `detail`, yt-dlp's last line) |
 | POST | `/studio/scene` | `{id, yaml}` — splice a scene into scenes.yaml, then rebuild; `scene_schema` rejects a malformed block with 400 `{errors: [...]}` |
 | POST | `/studio/rebuild` | render audio → gen_esphome → gen_previewer → **publish** (when a castle answers: the same push as `/studio/publish`, its result in the log) |
 | POST | `/studio/publish` | push the show + the lean page to the card (`sd_sync scenes` — audio, `<id>.cue`, `show.man` — then `site`); answers `{needs_reboot: [ids], note}`, read AFTER the push: the scenes the castle still does not list once it has had time to re-read `show.man`. Empty on firmware v5.69+, which re-reads it on the next 200 ms tick after the PUT lands; non-empty only for a castle from before v5.69, which reads it at boot alone and needs a reboot (never an OTA) |

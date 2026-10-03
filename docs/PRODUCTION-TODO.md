@@ -234,11 +234,20 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
       pre-installed) carries neither the firmware notices nor a GPLv3
       source offer yet, and the repo has no licence; both are decisions in
       docs/LICENSING.md "Open decisions", as are the htdemucs weights.
-- [ ] URL import STAYS (decided) — it is how the buyer gets songs. yt-dlp
+- [x] URL import STAYS (decided) — it is how the buyer gets songs. yt-dlp
       breaks whenever sites change: ship it as a separate standalone binary
       the app updates on its own schedule (yt-dlp releases often), not frozen
       inside the app bundle. A failed download says "update the downloader"
       with a button, not a stack trace.
+      2026-10-02: `tools/ytdlp_update.py` fetches yt-dlp's latest release
+      into per-user data (`exe_paths.downloader_dir()`) and checks it against
+      that release's SHA2-256SUMS. Every importer runs that copy first. It
+      updates when the owner presses Update the downloader in Castle Radio
+      (queued behind imports, never mid-import) or when the installer runs
+      `--update`/`--repair`. There is deliberately no background schedule.
+      An old or missing downloader carries the button. The cue desk (hidden
+      for the buyer) shows the sentence without it. desktop/README.md "The
+      song downloader".
 
 ---
 
@@ -383,14 +392,24 @@ true, and it is the dev/support path forever.
 
 ## 7. Desktop-tool stability (P1)
 
-- [ ] Import pipeline failure messages written for an owner, not a developer
+- [x] Import pipeline failure messages written for an owner, not a developer
       (`studio_reason.rs` already explains errors — audit the wording).
+      2026-10-02: one sentence, what happened then what to do, from
+      `tools/import_reason.py` and its word-for-word Rust copy
+      (`core/src/studio_reason_words.rs`, docs/PARITY.md). The importer,
+      the splitter, the studio and Castle Radio all end that way, with the
+      tools' own output behind Details. Cancel still reads "Cancelled".
 - [ ] Castle offline / wrong address: one clear state, one "find my castle"
       action (mDNS browse + manual IP).
 - [ ] Sync interrupted mid-push: resumable or safely retried; card never left
       with a half-written `show.man`.
-- [ ] Disk-full, unsupported file type, 2-hour file, non-ASCII filenames
+- [x] Disk-full, unsupported file type, 2-hour file, non-ASCII filenames
       (Windows + mac), file on a network drive.
+      2026-10-02: each has a test (`tests/test_import_edges.py`,
+      `demo/castle-radio/test_radio_failures.py`) and a sentence. Songs are
+      limited to 15 minutes because analysis peaks near 250 MB a minute.
+      desktop/README.md "What an import can take". A real Windows machine
+      and a real network share are still the §4.4 hands-on pass.
 - [ ] Firmware/app version handshake: the app refuses (with a message) to push
       a show format the castle's firmware cannot read.
 - [ ] Crash reporting: a local "copy diagnostics" button (no telemetry).

@@ -12,6 +12,9 @@
   ]);
   const rules = [
     ['GET', /^\/radio\/tools$/],
+    // Update the downloader (downloader_routes.py): its state, and the press.
+    ['GET', /^\/radio\/downloader$/],
+    ['POST', /^\/radio\/downloader\/update$/],
     ['GET', /^\/radio\/(?:jobs|library)$/],
     ['DELETE', /^\/radio\/library\/[^/]+$/],
     ['POST', /^\/radio\/(?:import|retry|reprocess)$/],

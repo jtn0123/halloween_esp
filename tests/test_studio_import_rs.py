@@ -37,6 +37,9 @@ sys.path.insert(0, str(ROOT / "tests"))
 from helpers import make_click_track
 from studio_rs_case import CARGO, IN_CI, StudioCase
 
+sys.path.insert(0, str(ROOT / "tools"))
+import import_reason
+
 #: ffmpeg is the importer's whole engine. Missing, the import cases cannot
 #: run at all — so they skip loudly, and never in CI.
 NO_FFMPEG = shutil.which("ffmpeg") is None and not IN_CI
@@ -134,7 +137,7 @@ class ImportGuards(ImportCase):
         for url in ("ftp://example.invalid/x", "file:///etc/passwd", "notaurl"):
             self.assertEqual(
                 self.json("/studio/import", "POST", {"url": url}),
-                (400, {"error": "url must be http(s)"}),
+                (400, {"error": import_reason.NOT_A_LINK}),
                 url,
             )
         self.assertEqual(self.staged(), [])
@@ -160,11 +163,13 @@ class ImportGuards(ImportCase):
         # An EMPTY body is not its own error here, as it is on the sync
         # route: no body parses to no url, and no url is not http(s).
         code, _h, out = self.req("/studio/import/async", "POST", JSON_HDRS, b"")
-        self.assertEqual((code, out), (400, b'{"error": "url must be http(s)"}'))
+        self.assertEqual(
+            (code, json.loads(out)), (400, {"error": import_reason.NOT_A_LINK})
+        )
         for req in ({}, {"url": "notaurl"}, {"url": "file:///etc/passwd"}):
             self.assertEqual(
                 self.json("/studio/import/async", "POST", req),
-                (400, {"error": "url must be http(s)"}),
+                (400, {"error": import_reason.NOT_A_LINK}),
                 req,
             )
 
@@ -327,7 +332,8 @@ class Imports(ImportCase):
         self.assertFalse(body["ok"])
         self.assertEqual(
             body["reason"],
-            "no remembered track 'nosuch' (tools/import_track.py --list)",
+            "There is no song called 'nosuch' to rebuild — import it again "
+            "from the original.",
         )
         self.assertIn(body["reason"], body["log"])
         self.assertIn("t_alpha", [r["id"] for r in body["tracks"]])
@@ -340,9 +346,10 @@ class Imports(ImportCase):
         self.assertEqual(sorted(body), ["log", "ok", "reason", "tracks"])
         self.assertFalse(body["ok"])
         reason = body["reason"]
-        self.assertTrue(
-            reason.startswith("not-audio.wav doesn't look like playable audio"),
+        self.assertEqual(
             reason,
+            "not-audio.wav does not look like playable audio — choose an MP3, "
+            "WAV, FLAC, M4A or OGG file instead.",
         )
         # ONE line — ffmpeg's own complaint is in the tail, which varies by
         # ffmpeg build, so only its shape is pinned here.
@@ -417,10 +424,12 @@ class Imports(ImportCase):
         )
         self.assertTrue(poll["log"], "the job reported nothing at all")
         # yt-dlp's own lines arrive while it runs, unwrapped: the studio sets
-        # CASTLE_PROGRESS_STREAM and reads the relay (grade report 2026-09-24 B2).
+        # CASTLE_PROGRESS_STREAM and reads the relay (grade report 2026-09-24
+        # B2). They are kept indented, as quotes — a failure's sentence is
+        # never read from one (studio_progress::take_line).
         log = poll["log"]
-        self.assertTrue([ln for ln in log if ln.startswith("[download]")], log)
-        self.assertFalse([ln for ln in log if ln.startswith("CASTLE_PROGRESS")], log)
+        self.assertTrue([ln for ln in log if ln.startswith("    [download]")], log)
+        self.assertFalse([ln for ln in log if "CASTLE_PROGRESS" in ln], log)
         self.assertTrue((self.tracks / "fetched.mp3").exists())
         row = self.row(poll, "fetched")
         self.assertAlmostEqual(row["dur"], 2.0, delta=0.1)

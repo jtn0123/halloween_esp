@@ -67,6 +67,9 @@ function took(j){const s=Math.max(0,Math.round((j.finished_at||0)-(j.started_at|
 /* The queue as it will run: what is being prepared, then what waits in the
    order it will start, then what finished, newest first. */
 let holdingJob=false;
+/* Details opened stay open across the 2 s redraw (toggle does not bubble). */
+const openDetails=new Set();
+$('import-jobs').addEventListener('toggle',e=>{const id=e.target?.dataset?.detail;if(id){if(e.target.open){openDetails.add(id);}else{openDetails.delete(id);}}},true);
 function renderJobs(){
   // A button that is replaced between press and release never clicks.
   if(holdingJob){return;}
@@ -82,16 +85,44 @@ function renderDone(j){
   const retry=j.phase==='Cancelled'?`<button data-retry="${j.id}">Retry</button>`:'';
   return `<article class="import-job finished"><div><b>${escapeHTML(jobName(j))}</b><span>${state}</span></div>${retry}<button data-dismiss="${j.id}" aria-label="Clear ${escapeHTML(jobName(j))} from the queue">Clear</button></article>`;
 }
+/* Where a waiting job stands in line; '' for one that is not waiting. */
+function waitingLabel(place){
+  if(place===undefined){return '';}
+  return place===0?'Next up':`Number ${place+1} in line`;
+}
+/* A running job's bar and its latest line; nothing once it has finished. */
+function jobMeasure(j){
+  if(j.done){return '';}
+  const percentAttr=Number.isFinite(j.percent)?`value="${j.percent}"`:'';
+  const bar=`<progress max="100" ${percentAttr} aria-label="${escapeHTML(j.phase)} progress"></progress>`;
+  const stamps=`<span data-started="${j.started_at||0}" data-finished="${j.finished_at||0}"></span>`;
+  return `<div class="job-measure">${bar}<b>${jobProgressText(j)}</b></div><p class="subtle">${escapeHTML(j.detail||'Starting…')} ${stamps}</p>`;
+}
+/* The tools' own words, behind Details, kept open across the redraw. */
+function jobDetails(j){
+  if(!j.done||!j.error_detail){return '';}
+  const open=openDetails.has(j.id)?' open':'';
+  return `<details class="import-detail" data-detail="${escapeHTML(j.id)}"${open}><summary>Details</summary><pre>${escapeHTML(j.error_detail)}</pre></details>`;
+}
+/* How it went, for the owner: one sentence, the split that needs attention,
+   Details, then what to do — a link that failed because the downloader is
+   old offers the fix here, and anything that failed can be retried. */
+function jobOutcome(j){
+  const parts=[];
+  if(j.error){parts.push(`<p class="import-error">${escapeHTML(j.error)}</p>`);}
+  if(j.result?.split_error){parts.push(`<p class="import-error">The song and rhythm lights are ready, but voice separation failed. ${escapeHTML(j.result.split_error)}</p>`);}
+  parts.push(jobDetails(j));
+  if(j.done&&j.action==='update-downloader'&&window.castleDownloader?.available()){parts.push('<button data-update-downloader>Update the downloader</button>');}
+  if(j.done&&(j.error||j.result?.split_error)){parts.push(`<button data-retry="${j.id}">Retry preparation</button>`);}
+  return parts.join('');
+}
 function renderJob(j,place){
   if(j.done&&!j.error&&!j.result?.split_error){return renderDone(j);}
-  const waitingNote=place===undefined?'':(place===0?'Next up':`Number ${place+1} in line`);
-  const cancelButton=j.done?`<button data-dismiss="${j.id}">Clear</button>`:`<button data-cancel="${j.id}">${place===undefined?'Cancel':'Remove from queue'}</button>`;
-  const percentAttr=Number.isFinite(j.percent)?`value="${j.percent}"`:'';
-  const errorNote=j.error?`<p class="import-error">${escapeHTML(j.error)}</p>`:'';
-  const splitNote=j.result?.split_error?'<p class="import-error">The song and rhythm lights are ready, but voice separation failed. Retry to prepare the split.</p>':'';
-  const retryButton=j.done&&(j.error||j.result?.split_error)?`<button data-retry="${j.id}">Retry preparation</button>`:'';
-  if(waitingNote){return `<article class="import-job waiting"><div><b>${escapeHTML(jobName(j))}</b><span>${waitingNote}</span></div>${cancelButton}</article>`;}
-  return `<article class="import-job"><div><b>${escapeHTML(jobName(j))}</b><span>${escapeHTML(j.phase)}</span></div>${j.done?'':`<div class="job-measure"><progress max="100" ${percentAttr} aria-label="${escapeHTML(j.phase)} progress"></progress><b>${jobProgressText(j)}</b></div><p class="subtle">${escapeHTML(j.detail||'Starting…')} <span data-started="${j.started_at||0}" data-finished="${j.finished_at||0}"></span></p>`}${errorNote}${splitNote}${retryButton}${cancelButton}</article>`;
+  const name=escapeHTML(jobName(j)),waitingNote=waitingLabel(place);
+  const cancelLabel=place===undefined?'Cancel':'Remove from queue';
+  const cancelButton=j.done?`<button data-dismiss="${j.id}">Clear</button>`:`<button data-cancel="${j.id}">${cancelLabel}</button>`;
+  if(waitingNote){return `<article class="import-job waiting"><div><b>${name}</b><span>${waitingNote}</span></div>${cancelButton}</article>`;}
+  return `<article class="import-job"><div><b>${name}</b><span>${escapeHTML(j.phase)}</span></div>${jobMeasure(j)}${jobOutcome(j)}${cancelButton}</article>`;
 }
 async function refresh(){if(pollBusy){return;}pollBusy=true;try{const [jobs,rows]=await Promise.all([request('/radio/jobs'),request('/radio/library')]);$('service-status').textContent='Import service ready · files stay in this demo';if(JSON.stringify(jobs)!==lastJobs){lastJobs=JSON.stringify(jobs);jobsNow=jobs;renderJobs();}const signature=JSON.stringify(rows);if(signature!==lastLibrary){lastLibrary=signature;integrate(rows);renderJobs();}}catch{ // any failure reads the same to the user: the service is not answering
 $('service-status').textContent='Import service unavailable. Start server.py to import songs.';}finally{pollBusy=false;}}
@@ -122,6 +153,7 @@ $('import-jobs').onpointerup=$('import-jobs').onpointerleave=$('import-jobs').on
 $('import-jobs').onclick=async e=>{
   holdingJob=false;
   const pick=name=>e.target.closest(`[data-${name}]`),retry=pick('retry'),cancel=pick('cancel'),dismiss=pick('dismiss');
+  if(pick('update-downloader')){await window.castleDownloader?.update();return;}
   if(pick('clear-finished')){hideJobs(jobsNow.filter(j=>j.done&&!j.error&&!j.result?.split_error));return;}
   if(dismiss){hideJobs(jobsNow.filter(j=>j.id===dismiss.dataset.dismiss&&j.done));return;}
   const b=retry||cancel;if(!b){renderJobs();return;}

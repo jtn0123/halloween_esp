@@ -163,10 +163,11 @@ class RunnerTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 10)
 
     def test_a_child_past_its_timeout_is_killed_and_reported(self):
-        with self.assertRaises(ValueError) as caught:
+        with self.assertRaises(job_progress.ToolFailed) as caught:
             job_progress.runner(timeout=0.3)(SLEEPER)
         self.assertNotIsInstance(caught.exception, job_progress.Cancelled)
-        self.assertIn("timed out", str(caught.exception))
+        self.assertEqual(str(caught.exception), job_progress.ir.STALLED)
+        self.assertIn("timed out", caught.exception.log)
 
 
 class RichShowPassesTheRunnerTests(unittest.TestCase):

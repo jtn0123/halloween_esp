@@ -174,8 +174,8 @@ import { why } from "../src/api.js";
   const tight = snapClip([1.0, 1.1], { start: 0.95, end: 1.15 });
   ok(Math.abs(tight.clip.end - 1.15) < 1e-9, "a snap that would collapse the clip keeps the end");
 
-  ok(why({ reason: "ffmpeg failed (exit 1)", log: "Traceback…" }) === "ffmpeg failed (exit 1)",
-     "the server's one-line reason wins");
+  const said = "The disk is full — free up some space on this computer, then try again.";
+  ok(why({ reason: said, log: "Traceback…" }) === said, "the server's one-line reason wins");
   ok(why({ error: "no id" }) === "no id", "then the error field");
   ok(why({ log: "a\n  b\nlast line\n\n" }) === "last line", "then the last non-blank log line");
   ok(why({}) === "no reason given", "and something, never an empty string");
