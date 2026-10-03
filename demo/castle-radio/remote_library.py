@@ -8,8 +8,11 @@ import urllib.parse
 import zlib
 from pathlib import Path
 
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
 import device_bridge
-import hosts  # tools/, on the path through device_bridge
+import hosts
 import rich_show
 from device_bridge import FILES_PATH, STATUS_PATH
 

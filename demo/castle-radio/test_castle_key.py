@@ -16,13 +16,14 @@ sandboxed through CASTLE_DEVICES, and hold Castle Radio to four promises:
 import json
 import os
 import shutil
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
 import castle_keys
 import device_bridge
 import remote_library

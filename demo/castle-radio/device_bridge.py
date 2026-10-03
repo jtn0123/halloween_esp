@@ -3,18 +3,18 @@
 import json
 import os
 import re
-import sys
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
 from typing import Any, TypedDict
 
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
 # The key store and its one rule live in tools/ (hosts.py, castle_keys.py):
 # the studio, sd_sync and this bridge send the same key to the same castle.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 import castle_keys
 import hosts
 
