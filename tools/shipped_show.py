@@ -49,7 +49,7 @@ SOURCE = ROOT / "scenes" / "scenes.yaml"
 SHIPPED = ROOT / "scenes" / "shipped.yaml"
 
 #: A scene list item, at the indentation scenes.yaml writes them.
-_ITEM = re.compile(r"^  - id:\s*(\S+)\s*$")
+_ITEM = re.compile(r"^ {2}- id:\s*(\S+)\s*$")
 
 BANNER = """\
 # THE SHIPPED SHOW — the scenes a castle leaves this house with.
@@ -166,20 +166,21 @@ def write(src: Path = SOURCE, dst: Path = SHIPPED) -> bool:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     ap.add_argument("--check", action="store_true", help="fail when stale")
-    ap.add_argument("--src", type=Path, default=SOURCE)
-    ap.add_argument("--out", type=Path, default=SHIPPED)
     args = ap.parse_args(argv)
+    # The two files are this module's, never typed paths; a test moves them
+    # by patching SOURCE and SHIPPED.
+    src, out = SOURCE, SHIPPED
     if args.check:
-        want = derive(args.src.read_text(encoding="utf-8"))
-        have = args.out.read_text(encoding="utf-8") if args.out.exists() else ""
+        want = derive(src.read_text(encoding="utf-8"))
+        have = out.read_text(encoding="utf-8") if out.exists() else ""
         if have != want:
-            print(f"{args.out} is stale — run tools/shipped_show.py", file=sys.stderr)
+            print(f"{out} is stale — run tools/shipped_show.py", file=sys.stderr)
             return 1
-        print(f"{args.out}: current")
+        print(f"{out}: current")
         return 0
-    changed = write(args.src, args.out)
-    ids = shipped_ids(yaml.safe_load(args.out.read_text(encoding="utf-8")))
-    print(f"{'wrote' if changed else 'unchanged'} {args.out}: {', '.join(ids)}")
+    changed = write(src, out)
+    ids = shipped_ids(yaml.safe_load(out.read_text(encoding="utf-8")))
+    print(f"{'wrote' if changed else 'unchanged'} {out}: {', '.join(ids)}")
     return 0
 
 

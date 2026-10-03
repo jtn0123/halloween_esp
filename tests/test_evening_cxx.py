@@ -64,7 +64,7 @@ class TestTheBytes(unittest.TestCase):
         diff = [i for i, (a, b) in enumerate(zip(new, old, strict=True)) if a != b]
         row_tails = [sm.HEADER.size + (i + 1) * sm.ENTRY.size - 1 for i in range(3)]
         self.assertEqual(diff, [6, row_tails[0], row_tails[2]])
-        self.assertEqual(sm.decode(old)[0]["evening"], None)
+        self.assertIsNone(sm.decode(old)[0]["evening"])
         self.assertEqual([r["evening"] for r in sm.decode(new)], [1, 0, 2])
 
     def test_the_order_the_show_names_is_checked(self) -> None:

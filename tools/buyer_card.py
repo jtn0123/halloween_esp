@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """A sold castle's SD card, written into a directory — no castle needed.
 
-    tools/buyer_card.py [--out buyer-card] [--tag v0.2.0] [--date 2026-10-03]
-    make buyer-card [OUT=buyer-card] [TAG=v0.2.0]
+    tools/buyer_card.py [--tag v0.2.0] [--date 2026-10-03]
+    make buyer-card [TAG=v0.2.0]
 
-The directory is the whole card. Copy its contents onto the root of a
-FAT32 card:
+It writes `buyer-card/` in the build root: this checkout's (gitignored), or
+CASTLE_BUILD's when that is set (tools/build_paths.py). No path comes from
+the command line, as with the repo's other tools. That directory is the
+whole card. Copy its contents onto the root of a FAT32 card:
 
     scenes/show.man                   the shipped show's manifest
     scenes/<id>.cue                   each scene's light show
@@ -48,6 +50,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import build_paths as bp
 import fw_formats
 import scene_manifest
 import shipped_show
@@ -56,6 +59,8 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 TOOLS = ROOT / "tools"
 SHOW = shipped_show.SHIPPED
+#: Where the card is written: the build root's, never a typed path.
+CARD_DIR = bp.BUILD / "buyer-card"
 NOTICES = ROOT / "licenses" / "THIRD-PARTY-NOTICES-firmware.txt"
 REPO = "https://github.com/jtn0123/halloween_esp"
 FLASHER = "https://jtn0123.github.io/halloween_esp/"
@@ -282,15 +287,13 @@ def build(
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    ap.add_argument("--out", type=Path, default=ROOT / "buyer-card")
     ap.add_argument("--tag", help="the release tag the castle's firmware is from")
     ap.add_argument("--date", type=dt.date.fromisoformat, help="the offer's date")
-    ap.add_argument("--show", type=Path, default=SHOW, help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
-    ids = build(args.out, args.show, args.tag, args.date)
-    files = sorted(p for p in args.out.rglob("*") if p.is_file())
+    ids = build(CARD_DIR, SHOW, args.tag, args.date)
+    files = sorted(p for p in CARD_DIR.rglob("*") if p.is_file())
     size = sum(p.stat().st_size for p in files)
-    print(f"buyer card: {args.out} — {len(files)} files, {size // 1024} KB")
+    print(f"buyer card: {bp.rel(CARD_DIR)} — {len(files)} files, {size // 1024} KB")
     print(f"  show: {', '.join(ids)}")
     print(f"  {CARD_NOTICES} + {CARD_OFFER}; no songs, no site (/ is the owner page)")
     print("  copy the directory's contents onto the root of a FAT32 card")

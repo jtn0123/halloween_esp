@@ -28,6 +28,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import yaml
 
@@ -192,15 +193,18 @@ class TestTheDerivation(unittest.TestCase):
         with quiet, tempfile.TemporaryDirectory() as td:
             src, out = Path(td) / "scenes.yaml", Path(td) / "shipped.yaml"
             src.write_text(SOURCE, encoding="utf-8")
-            args = ["--src", str(src), "--out", str(out)]
-            self.assertEqual(ss.main([*args, "--check"]), 1, "missing is stale")
-            self.assertEqual(ss.main(args), 0)
-            self.assertEqual(ss.main([*args, "--check"]), 0)
+            quiet.enter_context(mock.patch.object(ss, "SOURCE", src))
+            quiet.enter_context(mock.patch.object(ss, "SHIPPED", out))
+            self.assertEqual(ss.main(["--check"]), 1, "missing is stale")
+            self.assertEqual(ss.main([]), 0)
+            self.assertEqual(ss.main(["--check"]), 0)
             self.assertFalse(ss.write(src, out), "a second write changes nothing")
             src.write_text(
                 SOURCE.replace("gap_ms: 100", "gap_ms: 200"), encoding="utf-8"
             )
-            self.assertEqual(ss.main([*args, "--check"]), 1)
+            self.assertEqual(ss.main(["--check"]), 1)
+            with self.assertRaises(SystemExit):
+                ss.main(["--out", str(out)])  # no path from the command line
 
 
 if __name__ == "__main__":

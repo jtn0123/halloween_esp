@@ -2,8 +2,7 @@
 # Makefile includes this; YAML_BUYER and DEVICE_BUYER are defined there.
 #
 #   make build-buyer / validate-buyer        the buyer image (castle_buyer.yaml)
-#   make buyer-card                          its card, into ./buyer-card (gitignored)
-#   make buyer-card OUT=/Volumes/CASTLE TAG=v0.2.0
+#   make buyer-card [TAG=v0.2.0]             its card, into ./buyer-card (gitignored)
 #
 # What buyer-card writes: scenes/shipped.yaml rendered in a sandbox (scenes/), the
 # firmware's notices and the GPLv3 written source offer (licenses/). No
@@ -23,4 +22,4 @@ build-buyer: audio generate
 
 # The card (tools/buyer_card.py), made with no castle.
 buyer-card:
-	@$(PY) tools/buyer_card.py --out "$(or $(OUT),buyer-card)" $(if $(TAG),--tag "$(TAG)")
+	@$(PY) tools/buyer_card.py $(if $(TAG),--tag "$(TAG)")

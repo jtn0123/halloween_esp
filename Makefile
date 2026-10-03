@@ -68,7 +68,7 @@ help:
 	@echo "  make logs       tail device logs over the same cable"
 	@echo "  make build-s3 / upload-s3 / logs-s3   the same for the WROOM carrier"
 	@echo "  make build-buyer / validate-buyer   the buyer image: no Wi-Fi baked in, AP + Improv setup"
-	@echo "  make buyer-card [OUT=dir] [TAG=vX.Y.Z]   a sold castle's SD card, no castle needed"
+	@echo "  make buyer-card [TAG=vX.Y.Z]   a sold castle's SD card in ./buyer-card, no castle needed"
 	@echo "  make build-fs3 / upload-fs3 / logs-fs3   aliases for build / upload / logs"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"

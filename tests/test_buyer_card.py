@@ -29,6 +29,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 import yaml
 
@@ -137,8 +138,12 @@ class TestTheCard(unittest.TestCase):
         (out / "scenes" / "gone.cue").write_bytes(b"old")
         (out / ".fseventsd").mkdir()
         show = write_show(self.tmp / "one.yaml", [probe("glow")])
-        with contextlib.redirect_stdout(io.StringIO()) as said:
-            self.assertEqual(bc.main(["--out", str(out), "--show", str(show)]), 0)
+        with (
+            mock.patch.object(bc, "CARD_DIR", out),
+            mock.patch.object(bc, "SHOW", show),
+            contextlib.redirect_stdout(io.StringIO()) as said,
+        ):
+            self.assertEqual(bc.main([]), 0)
         self.assertIn("show: glow", said.getvalue())
         self.assertFalse((out / "scenes" / "gone.cue").exists())
         self.assertTrue((out / ".fseventsd").is_dir())
@@ -161,15 +166,17 @@ class TestRefusals(unittest.TestCase):
 
     def test_an_onset_pulse_is_a_song_too(self) -> None:
         beat = probe("beat", pulse=[{"synth": "onset_low", "zones": ["door"]}])
+        show = write_show(self.tmp / "s.yaml", [beat])
         with self.assertRaisesRegex(SystemExit, "beat: pulse synth onset_low"):
-            bc.build(self.tmp / "card", write_show(self.tmp / "s.yaml", [beat]))
+            bc.build(self.tmp / "card", show)
 
     def test_a_directory_with_someone_elses_files_is_refused(self) -> None:
         out = self.tmp / "card"
         out.mkdir()
         (out / "holiday.jpg").write_bytes(b"x")
+        show = write_show(self.tmp / "s.yaml", [probe("glow")])
         with self.assertRaisesRegex(SystemExit, "already holds holiday.jpg"):
-            bc.build(out, write_show(self.tmp / "s.yaml", [probe("glow")]))
+            bc.build(out, show)
         self.assertEqual([p.name for p in out.iterdir()], ["holiday.jpg"])
         (self.tmp / "file").write_bytes(b"")
         with self.assertRaisesRegex(SystemExit, "not a directory"):

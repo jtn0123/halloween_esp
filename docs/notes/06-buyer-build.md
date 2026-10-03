@@ -203,10 +203,11 @@ song scenes' YAML and none of their audio. `tests/test_shipped_show.py`
 fails on a stale file, a track scene, a `tracks/` path, or a
 firmware-named scene that is not in the show.
 
-**The buyer's card, made with no castle.** `make buyer-card [OUT=…]
-[TAG=…]` (`tools/buyer_card.py`) renders and generates the shipped show in
-a sandbox: scratch `CASTLE_SCENES` and `CASTLE_BUILD`, an empty
-`CASTLE_TRACKS`, an empty `CASTLE_HOST`. It writes into a directory:
+**The buyer's card, made with no castle.** `make buyer-card [TAG=…]`
+(`tools/buyer_card.py`) renders and generates the shipped show in a
+sandbox: scratch `CASTLE_SCENES` and `CASTLE_BUILD`, an empty
+`CASTLE_TRACKS`, an empty `CASTLE_HOST`. It writes `buyer-card/` in the
+build root, never a typed path (SonarCloud's path findings on #77):
 
 - `scenes/show.man`, each `<id>.cue` and each `NN_<id>.mp3` at
   card_bitrate, the files `sd_sync scenes` pushes;

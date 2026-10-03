@@ -288,9 +288,9 @@ it keeps its number because other documents cite it. The rest are open.
 
 ## Maintenance
 
-- Before a castle is sold: `make buyer-card OUT=<the card> TAG=<the
-  release its image came from>` (docs/SUPPORT.md). The offer is dated the
-  day it is made.
+- Before a castle is sold: `make buyer-card TAG=<the release its image
+  came from>` (docs/SUPPORT.md), then copy `buyer-card/` onto the card.
+  The offer is dated the day it is made.
 
 - A crate added or bumped in `desktop/src-tauri/Cargo.lock`: run
   `cargo fetch --locked` in `desktop/src-tauri`, then
