@@ -102,10 +102,10 @@ def preview_from_blob(key, blob):
     }
 
 
-def build(key, wave, layers=None, ext="mp3", run=None):
-    """`run` reaches every child the desk's builder spawns (render_cues'
-    Runner): the radio passes job_progress.runner so Cancel can stop one."""
-    scene = desk_scene(key, wave, ext, run)
+def build(key, wave, layers=None, ext="mp3"):
+    """The card bytes and their preview, from analyze_track's waveform. No
+    child process: the desk's builder runs in Python (tools/track_scene.py)."""
+    scene = desk_scene(key, wave, ext)
     cues = list(scene.get("cues") or [])
     if layers:
         # Keep voice on the door and stereo backing on its respective tower.
@@ -117,7 +117,7 @@ def build(key, wave, layers=None, ext="mp3", run=None):
         ):
             marks = layers[layer][channel]["onsets"]
             # A band present only in a stem must still receive a style recipe.
-            recipe = desk_scene(key, {**wave, "onsets": marks}, ext, run)
+            recipe = desk_scene(key, {**wave, "onsets": marks}, ext)
             configs = []
             for original in recipe.get("pulse", []):
                 cfg = {**original, "zones": [target], "alternate": False}
@@ -156,7 +156,7 @@ def _prepare(library, row, run=None):
         if not analysis.is_file():
             raise ValueError("Separated analysis is missing; reprocess the song first")
         layers = json.loads(analysis.read_text(encoding="utf-8"))["layers"]
-    blob, preview = build(row["key"], wave, layers, source.suffix[1:], run)
+    blob, preview = build(row["key"], wave, layers, source.suffix[1:])
     preview["name"] = row.get("title", row["key"])
     cue_path = source.with_suffix(".cue")
     show_path = source.with_suffix(".show.json")

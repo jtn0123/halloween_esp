@@ -100,6 +100,27 @@ class TestPlan(TempCase):
         inst.ffmpeg()
         self.assertTrue(any("pinned static ffmpeg" in s for s in said))
 
+    def test_the_package_managers_ffmpeg_is_installed_once(self) -> None:
+        # winget's Links folder joins PATH only for processes started after
+        # it, so every later run used to winget-install ffmpeg again
+        # (tests/install_smoke.py saw it on windows-latest).
+        links = self.tmp / "links"
+        dirs = de.Dirs(self.tmp / "inst", self.tmp / "data", "Windows")
+        said: list[str] = []
+        inst = di.Installer(
+            self.args("--dry-run"), dirs, which={"winget": "w"}.get, say=said.append
+        )
+        with mock.patch.object(di.tp, "after_package_manager", return_value=[links]):
+            self.assertIsNone(inst.existing_ffmpeg())
+            self.assertIn("winget install", said[-1])
+            links.mkdir()
+            for name in ("ffmpeg.exe", "ffprobe.exe"):
+                (links / name).write_bytes(b"MZ")
+            said.clear()
+            inst.ffmpeg()
+        self.assertEqual(inst.found["ffmpeg"], str(links / "ffmpeg.exe"))
+        self.assertEqual(said, [f"ffmpeg: {links / 'ffmpeg.exe'}"])
+
     def test_the_downloader_is_kept_until_an_update_asks_for_the_latest(self) -> None:
         mine = self.dirs.bin / "yt-dlp"
         mine.parent.mkdir(parents=True)
@@ -140,7 +161,9 @@ class TestPlan(TempCase):
         inst = di.Installer(
             self.args("--dry-run"), self.dirs, which={"brew": "/b"}.get, say=said.append
         )
-        inst.ffmpeg()
+        # Not this machine's /opt/homebrew/bin, which may hold an ffmpeg.
+        with mock.patch.object(di.tp, "after_package_manager", return_value=[]):
+            inst.ffmpeg()
         self.assertTrue(any("brew install ffmpeg" in s for s in said))
 
 
