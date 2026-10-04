@@ -276,6 +276,38 @@ class TestScanRelease(unittest.TestCase):
             ],
         )
 
+    def test_the_apps_copy_of_the_tree_is_read_by_the_trees_rules(self) -> None:
+        app = "Castle Tools.app/Contents/Resources/castle/app/"
+        self.assertEqual(g.tree_path(app + "docs/x.md"), "docs/x.md")
+        self.assertEqual(g.tree_path("castle\\app\\docs\\x.md"), "docs/x.md")
+        self.assertIsNone(g.tree_path("Castle Tools.app/my-castle/app/x.md"))
+        self.assertIsNone(g.tree_path("castle/app/"))
+        history = f"the porch castle was {SELLER}\n".encode()
+        self.targz(
+            "app.tar.gz",
+            {
+                app + "docs/notes/03-build.md": history,
+                app + "tools/ship_guard_allow.txt": history,
+                app + "tests/fixture.bin": b"\0\0" + SELLER.encode(),
+                app + "tools/castle_link.py": history,
+                app + "docs/RUNBOOK.md": b"mac 02:00:00:00:00:01\n",
+                "Castle Tools.app/Contents/Resources/notes.md": history,
+            },
+        )
+        self.assertEqual(
+            sorted(g.scan_release(self.dist)),
+            [
+                (
+                    f"app.tar.gz!{app}tools/castle_link.py:1: the seller's LAN "
+                    f"address {SELLER}"
+                ),
+                (
+                    "app.tar.gz!Castle Tools.app/Contents/Resources/notes.md:1: "
+                    f"the seller's LAN address {SELLER}"
+                ),
+            ],
+        )
+
     def test_main_fails_on_a_finding_and_passes_without(self) -> None:
         out = io.StringIO()
         with (

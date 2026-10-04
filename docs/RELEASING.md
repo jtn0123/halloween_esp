@@ -52,7 +52,7 @@ contract check, and keeps the lot as the run artifact
 | `castle-fw-feather-s3-4m2p-<tag>.ota.bin` | The app image alone, what `PUT /api/ota` takes. Size-gated by `tools/check_image.py` (fails at 97% of the 1,835,008-byte slot). | Castle Radio's "Update castle" (`tools/castle_update.py`). |
 | `castle-fw-feather-s3-4m2p-<tag>.notices.txt` | The two images' third-party notices (`licenses/THIRD-PARTY-NOTICES-firmware.txt`, docs/LICENSING.md). | Anyone given an image; `pages.yml` serves it beside the flasher. |
 | `castle-fw-feather-s3-4m2p-<tag>.json` | The images' descriptor: board, build (`fw_variant`), the firmware version `/api/status` will report, the OTA image's name and size. | "Update castle", before it downloads a megabyte. |
-| `castle-core-<target>-<tag>.zip` | `analyze_track`, `scene_render`, `studio` (`.exe` on Windows) and `THIRD-PARTY-NOTICES.txt`, flat. Targets: `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`, `x86_64-apple-darwin`. | The desktop app's sidecars. |
+| `castle-core-<target>-<tag>.zip` | `analyze_track`, `scene_render`, `studio` (`.exe` on Windows) and `THIRD-PARTY-NOTICES.txt`, flat. Targets: `x86_64-pc-windows-msvc`, `aarch64-apple-darwin`, `x86_64-apple-darwin`. | The option-A installer; the desktop app carries its target's copy. |
 | `flasher-manifest.json` | The esp-web-tools manifest: ESP32-S3, factory image at offset 0, Improv Wi-Fi, erase offered. | The web flasher. |
 | `SHA256SUMS` | `sha256sum` format over every other asset. | Anything that downloads an asset; `pages.yml` checks it. |
 | `castle-tools-aarch64-apple-darwin-<tag>.dmg` | The desktop app's macOS installer (ad-hoc signed, not notarized). | A first-time owner on a Mac. |
@@ -71,6 +71,47 @@ the app matches a castle to its image by equality. The firmware is
 developer runs, image gate included): no Wi-Fi baked in, softAP and captive portal,
 Improv over USB. The `firmware` job fails if the run's fake CI Wi-Fi secret
 turns up in the image.
+
+### Inside the desktop app, and the first-run smoke
+
+The `desktop` job stages `desktop/sidecar/castle/` with
+`tools/desktop_bundle.py stage` before the Tauri build. The folder holds
+the tagged tree's own files (the installer's file list, with
+`installer/VERSION` set to the tag, minus `scenes/scenes.yaml`: the app's
+one show is `scenes/shipped.yaml`), the `core` job's castle-core zip for
+the target, and uv at the version and sha256 `desktop_bundle.py` pins
+(`UV_PINS`). It carries no Python, PyTorch, ffmpeg or model: the app's
+first launch fetches those, the way option A does (desktop/README.md
+"First launch"; docs/LICENSING.md).
+
+After the build, `tools/desktop_smoke.py` runs the app the way a buyer
+meets it. On macOS it starts the built `.app`; on Windows it installs the
+NSIS setup silently, per user, and starts what that installed. Then:
+
+1. The first launch must set itself up from nothing within 30 minutes. That
+   is a real download from PyPI, uv's Python builds, ffmpeg's and yt-dlp's
+   publishers and Hugging Face. Castle Radio must then answer
+   `GET /radio/tools` able to import, import from a link and split voices,
+   and the cue desk studio must answer beside it with the shipped show's
+   scenes, exactly: an empty list (no show file where `CASTLE_SCENES`
+   points) or the yard's is red. A setup may finish
+   without yt-dlp (an owner gets it from Update the downloader), but the
+   smoke still demands links: a runner that could not fetch it is red, and
+   the installer's "yt-dlp: not downloaded (…)" line in the log says why.
+2. After a quit, the second launch must answer within three minutes
+   without running a setup.
+
+A setup that fails ends the smoke at once, with the app's own reason; it
+does not wait out the 30 minutes on a splash that is waiting for Try again.
+On any failure it prints the app's log. So a red smoke means the release
+would not have worked on a buyer's first launch, or that one of those hosts
+was down or turned the runner away; the log says which. The job's timeout
+is 120 minutes for this.
+
+**Bumping uv:** download both archives from the new release, check them
+against the `digest` GitHub reports for each asset, change `UV_VERSION`
+and `UV_PINS`, and run `tools/third_party_notices.py generate` (the
+desktop notices name uv's version).
 
 ## What an installed app reads — never rename it
 

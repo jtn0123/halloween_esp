@@ -10,7 +10,7 @@
 //!   `make studio`, pointed at the repo's show, and reusing it would let the
 //!   app write a buyer's edits into a checkout. `CASTLE_DESK_PORT` moves it.
 //!
-//! Both get the same environment (runtime::child_env), so they read and
+//! Both get the same environment (childenv::child_env), so they read and
 //! write the same per-user library and scenes.yaml.
 
 use crate::probe::Identity;
@@ -115,7 +115,9 @@ mod tests {
             root: PathBuf::from("/r"),
             python: PathBuf::from("/r/.venv/bin/python3"),
             bin_dir: None,
-            models: None,
+            install: None,
+            tools: Vec::new(),
+            core_bin_dir: None,
             studio: studio.map(PathBuf::from),
         }
     }

@@ -247,7 +247,10 @@ their publishers, on your machine, under the publisher's terms:
 
 * uv — the installer script's current release
   Terms: MIT OR Apache-2.0
-  How it arrives: installed from astral.sh by the installer
+  How it arrives: installed from astral.sh by installer/install.sh and
+  install.ps1 (option A)
+  The desktop app carries its own pinned copy instead; the app's notices
+  (THIRD-PARTY-NOTICES-desktop.txt) list it.
 
 * Microsoft Edge WebView2 Runtime (Windows) — whatever Windows has, else Microsoft's current one
   Terms: Microsoft's WebView2 Runtime licence terms

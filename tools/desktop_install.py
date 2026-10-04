@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The desktop installer proper — what installer/install.sh and install.ps1 run.
+"""The desktop installer proper — what installer/install.sh and install.ps1 run,
+and what the desktop app runs on its first launch (desktop/README.md).
 
 The shell scripts do only what Python cannot do for itself: install uv,
 have uv install a 3.13, and hand over to this file under that interpreter.
@@ -8,8 +9,11 @@ Everything after is here, once, for both platforms:
   1. stage the source tree (a release zip or a clone) into <install>/app
   2. a uv environment from requirements-desktop.lock, --require-hashes
   3. castle-core's binaries from the matching GitHub Release, sha256-checked
-     (or `--from-source`: cargo build, when cargo is present)
-  4. ffmpeg (desktop_thirdparty.py) and the managed yt-dlp (ytdlp_update.py)
+     (or `--from-source`: cargo build, when cargo is present; or
+     `--core-from DIR`: the copies the desktop app carries)
+  4. ffmpeg (desktop_thirdparty.py), and the managed yt-dlp (ytdlp_update.py),
+     the one fetch whose failure the install survives: only links need it
+     (desktop_steps.py)
   5. the htdemucs weights, downloaded once into <install>/models
   6. the user's data dir: tracks, a seeded scenes.yaml, settings.json
   7. the launcher, and install.json recording all of the above
@@ -19,7 +23,8 @@ redoes the steps that check (env reinstall, tools re-fetched). `--update`
 asks GitHub once for the latest release and, when it is newer, re-runs the
 NEW release's installer over this install (desktop_lifecycle.py).
 `--uninstall` removes <install> and keeps the data dir unless `--purge`.
-`--dry-run` prints the plan and changes nothing.
+`--dry-run` prints the plan and changes nothing. `--progress` adds the
+lines the desktop app's splash page reads (desktop_progress.py).
 """
 
 from __future__ import annotations
@@ -27,31 +32,21 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import platform
 import shutil
 import subprocess
 import sys
-import tempfile
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import desktop_env as de
+import desktop_progress as progress
 import desktop_release as rel
-import desktop_thirdparty as tp
+import desktop_tree as dt
 import release_channel as channel
-import ship_guard
-import ytdlp_update as yu
+from desktop_steps import Steps
 
-#: Never copied into <install>/app from a working tree: build output, venvs,
-#: and anybody's library. A release zip has none of them anyway.
-SKIP_DIRS = frozenset(
-    {".git", ".venv", ".venv-desktop", "node_modules", "target", ".radio-data",
-     "__pycache__", ".mypy_cache", ".ruff_cache", ".pytest_cache", ".esphome",
-     ".embuild", "_build"}
-)  # fmt: skip
 LAUNCHERS = {"Windows": "Castle Tools.cmd"}
 LAUNCHER_DEFAULT = "Castle Tools.command"
 VERSION_FILE = Path("installer") / "VERSION"
@@ -61,97 +56,23 @@ MODEL_SCRIPT = (
 )
 
 
-class Installer:
-    """One run. Every effect goes through `step`/`run`, so a dry run is the
-    same code path with the effects swapped for a printed plan."""
+class Installer(Steps):
+    """One install, repair or update: the eight steps in order (`install`),
+    on the effects and tools of desktop_steps.Steps."""
 
-    def __init__(
-        self,
-        args: argparse.Namespace,
-        dirs: de.Dirs,
-        fetch: rel.Fetch = rel.http_fetch,
-        which: tp.Which = shutil.which,
-        machine: str = "",
-        say: Callable[[str], None] = print,
-    ) -> None:
-        self.args = args
-        self.dirs = dirs
-        self.fetch = fetch
-        self.which = which
-        self.machine = machine or platform.machine()
-        self.say = say
-        self.record = de.read_json(dirs.install_file)
-        self.found: dict[str, str] = {}
-        self.scratch = Path(tempfile.mkdtemp(prefix="castle-install-"))
-
-    # -- effects ---------------------------------------------------------
-    def step(self, what: str, fn: Callable[[], object]) -> None:
-        self.say(("[dry-run] would " if self.args.dry_run else "") + what)
-        if not self.args.dry_run:
-            fn()
-
-    def run(
-        self, cmd: list[str], cwd: Path | None = None, env: dict[str, str] | None = None
-    ) -> None:
-        self.step(
-            "run: " + " ".join(cmd),
-            lambda: subprocess.run(cmd, check=True, cwd=cwd, env=env),
-        )
+    def phase(self, n: int) -> None:
+        """Step `n` begins — a line for the desktop app (desktop_progress.py)."""
+        if self.args.progress:
+            self.say(progress.step_line(n))
 
     # -- the source tree -------------------------------------------------
-    def source_files(self, src: Path) -> list[Path]:
-        """What to copy: git's tracked files in a clone, else the tree
-        minus SKIP_DIRS (an extracted release zip has nothing to skip).
-        Either way minus the seller's own files (ship_guard.PERSONAL),
-        which the release zip leaves out too."""
-        git = self.which("git")
-        if (src / ".git").exists() and git:
-            out = subprocess.run(
-                [git, "-C", str(src), "ls-files", "-z"],
-                check=True,
-                capture_output=True,
-            ).stdout.decode("utf-8")
-            files = [Path(p) for p in out.split("\0") if p and (src / p).is_file()]
-        else:
-            files = []
-            for dirpath, dirnames, filenames in os.walk(src):
-                dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-                rel_dir = Path(dirpath).relative_to(src)
-                files.extend(rel_dir / f for f in filenames)
-        personal = {Path(p) for p in ship_guard.PERSONAL}
-        return [f for f in files if f not in personal]
-
     def stage_app(self, src: Path) -> None:
-        """Copy `src` into <install>/app via app.new + rename, so a failed
-        copy never leaves half a tree where the launcher looks."""
+        """Copy `src`'s file list (desktop_tree.py) into <install>/app."""
         app = self.dirs.app
         if src.resolve() == app.resolve():
             self.say("app: running from the installed tree, nothing to copy")
             return
-
-        def copy() -> None:
-            new = app.with_name("app.new")
-            shutil.rmtree(new, ignore_errors=True)
-            for relpath in self.source_files(src):
-                out = new / relpath
-                out.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src / relpath, out)
-            # The castle-core build of the tree being replaced is kept: a
-            # repair or a from-source rebuild should not start from nothing.
-            built = app / "core" / "target"
-            if built.is_dir():
-                shutil.copytree(built, new / "core" / "target", dirs_exist_ok=True)
-            old = app.with_name("app.old")
-            if app.exists():
-                link = app / de.RADIO_DATA
-                if de.is_link(link):
-                    de.remove_link(link)  # never let rmtree walk into the data
-                shutil.rmtree(old, ignore_errors=True)
-                app.rename(old)
-            new.rename(app)
-            shutil.rmtree(old, ignore_errors=True)
-
-        self.step(f"copy {src} -> {app}", copy)
+        self.step(f"copy {src} -> {app}", lambda: dt.stage(src, app, self.which))
 
     # -- python ----------------------------------------------------------
     def python_env(self) -> None:
@@ -208,6 +129,8 @@ class Installer:
         return rel.find_release(self.fetch, self.release_tag(src))
 
     def core_bins(self, src: Path) -> str:
+        if self.args.core_from:
+            return self.bundled_core(Path(self.args.core_from))
         target = rel.rust_target(self.dirs.system, self.machine)
         if self.args.from_source or target is None:
             cargo = self.which("cargo")
@@ -240,6 +163,24 @@ class Installer:
         self.found["tag"] = found.tag
         return "release"
 
+    def bundled_core(self, folder: Path) -> str:
+        """castle-core from `folder` — the copies the desktop app carries,
+        built by the same release as the tree beside them: placed where
+        tools/core_bins.py looks, with nothing fetched."""
+        suffix = ".exe" if self.dirs.system == "Windows" else ""
+        files = [folder / (b + suffix) for b in rel.CORE_BINS]
+        missing = [f.name for f in files if not f.is_file()]
+        if missing:
+            raise rel.ReleaseError(
+                f"{folder} has no {', '.join(missing)} — reinstall Castle Tools"
+            )
+        dest = self.dirs.app / "core" / "target" / "release"
+        self.step(
+            f"copy castle-core from {folder} -> {dest}",
+            lambda: rel.place_core_bins(files, dest, suffix),
+        )
+        return "bundled"
+
     def have_core(self, tag: str) -> bool:
         """This release's binaries are already in place (a re-run, an
         up-to-date --update): no download. --repair always re-fetches."""
@@ -251,75 +192,6 @@ class Installer:
             and self.record.get("tag") == tag
             and all((dest / (b + suffix)).is_file() for b in rel.CORE_BINS)
         )
-
-    # -- ffmpeg / yt-dlp -------------------------------------------------
-    def existing_ffmpeg(self) -> tuple[str, str] | None:
-        """Ours from a previous run (not on --repair, which re-fetches it),
-        else one on PATH, else what the package manager can install."""
-        ff, probe = (self.dirs.bin / self.dirs.exe(n) for n in ("ffmpeg", "ffprobe"))
-        if ff.is_file() and probe.is_file() and not self.args.repair:
-            return str(ff), str(probe)
-        have = tp.ffmpeg_on_path(self.which, self.dirs.exe)
-        if have:
-            return have
-        cmd = tp.package_manager_command(self.dirs.system, self.which)
-        if not cmd:
-            return None
-
-        def landed() -> tuple[str, str] | None:
-            """Where the package manager puts it, off this process's PATH:
-            this run's install, or an earlier run's (not installed again)."""
-            extra = tp.after_package_manager(self.dirs.system, Path.home())
-            return tp.ffmpeg_on_path(lambda n: tp.find_in(extra, n), self.dirs.exe)
-
-        if earlier := landed():
-            return earlier
-        self.run(cmd)
-        return tp.ffmpeg_on_path(self.which, self.dirs.exe) or landed()
-
-    def ffmpeg(self) -> None:
-        choice = self.args.ffmpeg
-        if choice not in ("auto", "download"):
-            self.found["ffmpeg"] = choice
-            self.found["ffprobe"] = str(
-                Path(choice).with_name(self.dirs.exe("ffprobe"))
-            )
-            return
-        have = self.existing_ffmpeg() if choice == "auto" else None
-        if have:
-            self.found["ffmpeg"], self.found["ffprobe"] = have
-            self.say(f"ffmpeg: {have[0]}")
-            return
-
-        def fetch() -> None:
-            ff, probe = tp.fetch_pinned_ffmpeg(
-                self.dirs.system, self.machine, self.dirs.bin, self.fetch, self.scratch
-            )
-            self.found["ffmpeg"], self.found["ffprobe"] = ff, probe
-
-        self.step(f"download the pinned static ffmpeg into {self.dirs.bin}", fetch)
-
-    def ytdlp(self) -> None:
-        """The managed song downloader in bin/ — ytdlp_update, the code
-        Castle Radio's Update the downloader button runs: fetched when
-        missing, brought to the latest release on --update, re-fetched on
-        --repair, and verified against its release's SHA2-256SUMS each time."""
-        mine = self.dirs.bin / self.dirs.exe("yt-dlp")
-        if mine.is_file() and not (self.args.repair or self.args.update):
-            self.found["ytdlp"] = str(mine)
-            return
-
-        def fetch() -> None:
-            got = yu.update(
-                self.dirs.bin,
-                self.fetch,
-                system=self.dirs.system,
-                machine=self.machine,
-                force=self.args.repair,
-            )
-            self.found["ytdlp"] = str(got["path"])
-
-        self.step(f"download the standalone yt-dlp into {self.dirs.bin}", fetch)
 
     # -- the rest --------------------------------------------------------
     def env(self) -> dict[str, str]:
@@ -353,15 +225,18 @@ class Installer:
             shutil.copyfile(src, out)
             if self.dirs.system != "Windows":
                 out.chmod(0o755)
-            if self.dirs.system == "Darwin" and self.which("xattr"):
-                # Files this installer verified and placed: no Gatekeeper prompt.
-                subprocess.run(
-                    ["xattr", "-dr", "com.apple.quarantine", str(self.dirs.install)],
-                    check=False,
-                    capture_output=True,
-                )
 
-        self.step(f"place the launcher {out}", place)
+        if self.args.no_launcher:
+            self.say("launcher: none (--no-launcher)")
+        else:
+            self.step(f"place the launcher {out}", place)
+        if self.dirs.system == "Darwin" and self.which("xattr"):
+            # Files this installer verified and placed: no Gatekeeper prompt.
+            cmd = ["xattr", "-dr", "com.apple.quarantine", str(self.dirs.install)]
+            self.step(
+                "run: " + " ".join(cmd),
+                lambda: subprocess.run(cmd, check=False, capture_output=True),
+            )
 
     def write_record(self, core: str) -> None:
         found = dict(self.found)
@@ -393,13 +268,21 @@ class Installer:
         self.say(f"Castle Tools: install {self.dirs.install}, data {self.dirs.data}")
         if not self.args.dry_run:
             self.dirs.install.mkdir(parents=True, exist_ok=True)
+        self.phase(1)
         self.stage_app(src)
+        self.phase(2)
         self.python_env()
+        self.phase(3)
         core = self.core_bins(src)
+        self.phase(4)
         self.ffmpeg()
+        self.phase(5)
         self.ytdlp()
+        self.phase(6)
         self.model()
+        self.phase(7)
         self.data()
+        self.phase(8)
         self.launcher()
         self.write_record(core)
         shutil.rmtree(self.scratch, ignore_errors=True)
@@ -428,6 +311,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument(
         "--from-source", action="store_true", help="build castle-core with cargo"
+    )
+    ap.add_argument(
+        "--core-from", type=Path, help="castle-core's binaries are in this folder"
+    )
+    ap.add_argument("--no-launcher", action="store_true", help="place no launcher")
+    ap.add_argument(
+        "--progress", action="store_true", help="print @castle-step lines per step"
     )
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--tag", help="install this release's binaries (vX.Y.Z)")
@@ -475,6 +365,8 @@ def main(argv: list[str] | None = None) -> int:
             return life.update(args, dirs)
         return Installer(args, dirs).install()
     except (rel.ReleaseError, subprocess.CalledProcessError, OSError) as exc:
+        if args.progress:
+            print(progress.failed_line(exc), flush=True)
         print(f"Castle Tools: install failed — {exc}", file=sys.stderr)
         print(
             "Fix the problem above and run the installer again; it resumes.",

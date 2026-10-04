@@ -8,7 +8,7 @@ starts the servers, and its window is Castle Radio.
 desktop/
   dist/            the local splash page (status, retry, open log, version)
   src-tauri/       the Rust app; tauri.conf.json + per-platform overrides
-  sidecar/castle/  filled by the release build, gitignored (layout below)
+  sidecar/castle/  staged by tools/desktop_bundle.py, gitignored (layout below)
 ```
 
 ## What it runs
@@ -34,7 +34,7 @@ fails the light desk only; Castle Radio still opens.
 
 ### Data — never a repo
 
-Both children get the same environment (`runtime::child_env`):
+Both children get the same environment (`childenv::child_env`):
 
 | Variable | Value |
 |---|---|
@@ -44,14 +44,17 @@ Both children get the same environment (`runtime::child_env`):
 | `CASTLE_BUILD` | `<app data>/radio/build` |
 | `CASTLE_HOST`, `CASTLE_RADIO_HOST` | `castle_host` from settings.json, when set — a pin. Otherwise neither is set (an inherited one is removed), and both servers talk to the first castle of `CASTLE_DEVICES`, re-read as it changes |
 | `CASTLE_DEVICES` | `<app data>/radio/devices.toml` — the castle Find my castle chose (`tools/castle_address.py`, Castle Radio's Your castle page) and the keys either app remembers (`tools/castle_keys.py`); never a checkout's tracked file |
-| `CASTLE_APP_VERSION`, `CASTLE_APP_LOG` | this app's version and its log file, for Castle Radio's Copy diagnostics (`src/supervisor.rs`) |
+| `CASTLE_APP_VERSION`, `CASTLE_APP_LOG` | this app's release tag and its log file, for Castle Radio's tools card and Copy diagnostics (`src/supervisor.rs`) |
 | `CASTLE_KEY` | `castle_key` from settings.json, only when set — it then wins over that store |
 | `CASTLE_PY` | the runtime's interpreter, so the studio's children use it |
+| `HF_HOME`, `TORCH_HOME`, `CASTLE_DOWNLOADER_DIR` | an installed runtime's `models/huggingface`, `models/torch` and `bin/`: where its installer put the Demucs model and the song downloader |
+| `CASTLE_FFMPEG`, `CASTLE_YTDLP` | the ffmpeg and yt-dlp that install recorded in `install.json`, when the file is there |
+| `CASTLE_CORE_BIN_DIR` | the runtime's prebuilt castle-core (`app/core/target/release`), so `tools/core_bins.py` runs it and never builds; set only when `install.json` says the programs came from a release or the bundle |
 
 `<app data>` is Tauri's `app_data_dir()` for the identifier
 `io.github.jtn0123.castletools`: `~/Library/Application Support/…` on macOS,
 `%APPDATA%\…` on Windows. On first run the runtime's
-`scenes/shipped.yaml` is copied there (`runtime::seed_scenes`: copy beside, then
+`scenes/shipped.yaml` is copied there (`childenv::seed_scenes`: copy beside, then
 rename; never overwrites — after that it is the owner's file). That is the
 shipped show, the one a sold castle's card carries (`tools/shipped_show.py`):
 the yard's `scenes/scenes.yaml` minus every scene that needs a song.
@@ -78,24 +81,93 @@ stdout/stderr. Rotated to `.log.1` past 5 MB at launch.
   them up. To remove them as well, delete those two folders (Finder: Go → Go
   to Folder…, paste the path).
 
+The first launch's runtime (`runtime/` in the local data folder, about
+1.7 GB) stays with them on both systems, so reinstalling the same release
+starts without a setup. Deleting the folder costs only the next launch's
+download.
+
 ### Where the servers come from (`src/runtime.rs`)
 
 First match wins:
 
-1. **Bundled sidecar** — `<resources>/castle/`, what a release ships:
+1. **The app's own runtime**: what a release ships. The app carries no
+   Python, PyTorch, ffmpeg or Demucs model. It carries what its first
+   launch needs to fetch them (`tools/desktop_bundle.py`; `src/bundle.rs`
+   reads the same names):
    ```
-   castle/app/       the repo's tools/, demo/castle-radio/, scenes/, web/…
-   castle/python/    python-build-standalone 3.13 + site-packages
-   castle/bin/       studio, analyze_track, scene_render (from the Release's
-                     castle-core-<target>-<tag>.zip), ffmpeg — never yt-dlp,
-                     which lives in app data ("The song downloader" below)
-   castle/models/    a Hugging Face hub cache with the Demucs model
+   <resources>/castle/app/         the repo's own files: the installer's file list
+                                   minus scenes/scenes.yaml (the yard's show,
+                                   songs and all): its one show is shipped.yaml
+   <resources>/castle/bin/         studio, analyze_track, scene_render: the
+                                   release's castle-core-<target>-<tag>.zip
+   <resources>/castle/uv/uv[.exe]  Astral's uv, pinned by version and sha256
+   <resources>/castle/bundle.json  {"schema": 1, "tag", "target", "uv", "stamp"}
    ```
-2. **Configured install** — `CASTLE_INSTALL_DIR`, else `install_dir` in
+   From that, the app sets up its runtime in `app_local_data_dir()/runtime`
+   (`~/Library/Application Support/io.github.jtn0123.castletools/runtime`,
+   `%LOCALAPPDATA%\io.github.jtn0123.castletools\runtime`). The runtime is
+   an option-A install: `app/ env/ bin/ models/ install.json`. It also holds
+   uv's `python/` (a managed 3.13), uv's `cache/`, the copy of uv the setup
+   runs (`uv/`) and a copy of `bundle.json`. The runtime is **ready** when the install is whole and
+   that copy has this bundle's stamp. Otherwise the app sets it up. See
+   "First launch" below.
+2. **Configured install**: `CASTLE_INSTALL_DIR`, else `install_dir` in
    settings.json (the option-A installer's tree, or any checkout). A broken
-   one is an error, not a silent fall-through.
-3. **Developer checkout** — the repo this crate was built from. The studio
+   one is an error, not a silent fall-through. A release app always has
+   item 1, so this is for a debug build.
+3. **Developer checkout**: the repo this crate was built from. The studio
    is `core/target/release/studio` there (`make rust`).
+
+### First launch, updates and Repair (`src/setup.rs`, `setup_run.rs`, `setup_cmd.rs`)
+
+The first start finds no runtime and sets one up. It takes a few minutes
+and several hundred MB of downloads, and needs the internet; the splash
+says so. The runtime takes about 1.7 GB with uv's cache. The steps:
+
+1. The bundled uv is copied into the runtime byte for byte, and that copy
+   runs. A dmg's quarantine flag rides on every file in the app, and
+   Gatekeeper would refuse to run a flagged uv that nobody approved; the
+   copy is a new file and has no flag. Then `uv python install 3.13` into
+   the runtime's `python/`, and `uv python find --managed-python 3.13`.
+   uv's own config files are ignored, and so is any inherited variable that
+   would point it or Python somewhere else (`VIRTUAL_ENV`, `PYTHONHOME`,
+   `UV_PYTHON`, …; `SCRUB` in `setup_cmd.rs`, which builds every command a
+   setup runs).
+2. Under that Python, the bundled `tools/desktop_install.py`:
+   `--source <castle/app> --prefix <runtime> --data-dir <app data>/radio
+   --core-from <castle/bin> --ffmpeg download --no-launcher --progress`.
+   It is the same installer as option A. It stages the tree, makes the
+   locked environment (`--require-hashes`), places the carried castle-core
+   and fetches the pinned ffmpeg, the song downloader and the Demucs model.
+   The downloader is the one fetch a setup survives: only links need it,
+   so when GitHub will not hand it over the setup says so in the log and
+   finishes, and Castle Radio's downloader card offers **Update the
+   downloader** ("The song downloader" below). It prints `@castle-step N/M <what>` per step (`tools/desktop_progress.py`),
+   and the splash shows them as "Step N of M".
+3. Only then is `bundle.json` copied in (beside, then renamed). A setup
+   that stops early leaves no copy, so the next start finishes it.
+
+The installer checks before it acts, so finishing an interrupted setup, or
+re-running after an app update, takes seconds rather than the first run's
+download. Quitting mid-setup kills the installer's whole process tree.
+
+| Runtime found | Splash says | What runs |
+|---|---|---|
+| nothing | Setting up Castle Tools for the first time. | the setup |
+| files but no `bundle.json` copy | Finishing Castle Tools' setup, which was interrupted. | the setup (it resumes) |
+| another bundle's stamp (the app was updated) | Castle Tools was updated — bringing its tools up to date. | the setup over it |
+| this stamp, but its Python environment or Castle Radio is gone | Repairing Castle Tools: setting its tools up again. | the setup with `--repair` |
+| this stamp, whole | — | the servers, at once |
+
+Both servers wait on the same setup: one run, whose outcome both get. A
+failure is one sentence on the splash, for example "Setup stopped at step 4
+of 8 (Getting ffmpeg): …" or "Python 3.13 could not be downloaded (uv: …)
+— the first start needs the internet". The installer's whole output is in
+the log. A failed setup is not run again until **Try again** (or the tray's
+Start) is pressed. **Repair** is on the splash whenever Castle Radio fails
+on the app's own runtime. It stops both servers and runs the setup with
+`--repair`, which rebuilds the environment and fetches the tools again.
+The owner's library is never touched.
 
 ## What an import can take
 
@@ -127,10 +199,13 @@ would lift it.
 
 yt-dlp fetches a pasted link. It is **not** in the app bundle: websites
 change under it every few weeks, so it is a separate program in per-user
-app data — `<app data>/radio/downloader/` (`tools/exe_paths.py`
-`downloader_dir()`: `CASTLE_DOWNLOADER_DIR`, else `downloader/` in
-`CASTLE_RADIO_DATA`) — that every importer runs first when it is there
-(`exe_paths.ytdlp()`, `core/src/portable.rs`).
+app data — the runtime's `bin/`, where the first launch fetches it
+(`tools/exe_paths.py` `downloader_dir()`: `CASTLE_DOWNLOADER_DIR`, which the
+app sets there, else `downloader/` in `CASTLE_RADIO_DATA`) — that every
+importer runs first when it is there (`exe_paths.ytdlp()`,
+`core/src/portable.rs`). A first launch that could not fetch it finishes
+without it; the card then says "Links need the downloader", and the button
+below installs it into the same folder.
 
 **Update the downloader** — a button in Castle Radio's import panel, and on
 any job whose link failed because the downloader is old ("The downloader may
@@ -239,9 +314,12 @@ cd desktop/src-tauri && cargo run        # or: make desktop-test / desktop-lint
 
 A release bundle needs the Tauri CLI — the exact one CI uses is locked in
 `desktop/cli/` (`npm ci --ignore-scripts --prefix desktop/cli`) — and, for a
-self-contained app, a staged `desktop/sidecar/castle/` (layout above):
+self-contained app, a staged `desktop/sidecar/castle/` (layout above). To
+stage one, use a castle-core zip from a release (or `release_assets.py
+zip-core` over a local build) in a folder of its own:
 
 ```sh
+python tools/desktop_bundle.py stage v0.1.0 aarch64-apple-darwin core-zip desktop/sidecar
 npm ci --ignore-scripts --prefix desktop/cli
 cd desktop/src-tauri
 TAURI=../cli/node_modules/@tauri-apps/cli/tauri.js
@@ -283,15 +361,16 @@ URLs that `tests/test_release_channel.py` reads, and
 `tests/test_release_contract.py` reads `release.rs`'s literal names; both
 fail when a pair drifts. The castle's firmware update is Castle Radio's
 (`tools/castle_update.py`), so the app itself never opens a castle image.
+The `castle_release` command reports the firmware asset names the app was
+built for, while the Update castle card reads the newest release.
 
-## Integration points (open)
+The bundle has a contract of its own, held by `tests/test_desktop_bundle.py`:
 
-- `CASTLE_CORE_BIN_DIR` is set to the sidecar's `bin/`, but
-  `tools/core_bins.py` still builds `analyze_track`/`scene_render` with cargo;
-  a buyer has no cargo, so it must learn to read that directory first.
-- The sidecar tree (python-build-standalone, site-packages, ffmpeg,
-  the Demucs model, the castle-core zip) is staged by the release workflow,
-  which does not exist on this branch.
-- The `castle_release` command still reports the firmware asset names the
-  app was built for; the firmware update itself lives in Castle Radio (the
-  Update castle card), which reads the newest release instead.
+- `desktop_bundle.py`'s folder names and `bundle.json` fields are the ones
+  `bundle.rs` reads.
+- The flags `setup_cmd.rs` passes are flags `desktop_install.py` parses.
+- `desktop_progress.py`'s two markers are `setup_run.rs`'s.
+- A staged bundle passes `tools/ship_guard.py`.
+
+`tests/test_desktop_smoke.py` holds the log lines the release smoke reads
+to the Rust that writes them.

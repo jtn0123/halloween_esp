@@ -26,6 +26,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+import desktop_bundle as db
 import notices_desktop as nd
 import notices_firmware as nf
 import notices_render as nr
@@ -194,10 +195,12 @@ class ShippingTests(unittest.TestCase):
         self.assertEqual(src.resolve(), ROOT / nr.ARTIFACTS["desktop"].path)
 
     def test_nothing_else_rides_in_the_app_without_notices(self) -> None:
-        """The release build bundles castle-core's zip as the sidecar and
-        nothing more. Putting ffmpeg, a Python or the htdemucs weights in
-        the app changes one of these two lines — and needs their notices
-        first (docs/LICENSING.md)."""
+        """The release build bundles one folder, castle/, and only
+        tools/desktop_bundle.py writes it: this tree's own files, castle-core
+        and a pinned uv — each with notices (uv's in the desktop file).
+        Putting ffmpeg, a Python or the htdemucs weights in the app changes
+        one of these pins — and needs their notices first (docs/LICENSING.md);
+        tests/test_desktop_bundle.py holds what a staged folder contains."""
         release = json.loads(read("desktop/src-tauri/tauri.release.conf.json"))
         self.assertEqual(
             release["bundle"]["resources"], {"../sidecar/castle/": "castle/"}
@@ -210,10 +213,27 @@ class ShippingTests(unittest.TestCase):
         self.assertEqual(
             sidecar,
             [
-                "mkdir -p desktop/sidecar/castle",
-                "unzip -o core-zip/*.zip -d desktop/sidecar/castle/",
+                (
+                    'run: python tools/desktop_bundle.py stage "$TAG" "$TARGET" '
+                    "core-zip desktop/sidecar"
+                )
             ],
         )
+        self.assertEqual(
+            (db.APP, db.BIN, db.UV, db.ABOUT), ("app", "bin", "uv", "bundle.json")
+        )
+        self.assertEqual(set(db.UV_PINS), set(ra.DESKTOP_TARGETS))
+        for pin in db.UV_PINS.values():
+            self.assertTrue(
+                pin.url.startswith(
+                    f"https://github.com/astral-sh/uv/releases/download/{db.UV_VERSION}/"
+                ),
+                pin.url,
+            )
+        uv = [c for c in nr.components("desktop") if c.name == "uv"]
+        self.assertEqual([c.version for c in uv], [db.UV_VERSION])
+        self.assertEqual(uv[0].license, "MIT OR Apache-2.0")
+        self.assertIn(f"uv {db.UV_VERSION}", read(nr.ARTIFACTS["desktop"].path))
 
     def test_the_release_assets_are_the_generated_files(self) -> None:
         self.assertEqual(ra.FIRMWARE_NOTICES, ROOT / nr.ARTIFACTS["firmware"].path)

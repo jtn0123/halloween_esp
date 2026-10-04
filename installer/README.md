@@ -105,8 +105,10 @@ Add these after `install.cmd` (Windows) or `sh install.sh` (macOS):
 
 The song downloader (yt-dlp) is fetched from yt-dlp's own GitHub releases and
 checked against that release's published SHA2-256SUMS before it is used
-(`tools/ytdlp_update.py`). Between installs, **Update the downloader** in
-Castle Radio does the same; nothing updates it by itself. It is public domain
+(`tools/ytdlp_update.py`). If it cannot be fetched, the install finishes
+without it: everything but importing from a link works. **Update the
+downloader** in Castle Radio fetches it then, and updates it between
+installs; nothing updates it by itself. It is public domain
 (the Unlicense), and this project does not ship it.
 
 uv (the Python installer this uses) and its Python stay installed after an
