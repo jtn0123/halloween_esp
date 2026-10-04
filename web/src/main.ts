@@ -82,7 +82,7 @@ const draws = { frames: 0, ms: [] as number[] };
 (window as unknown as { __castleDraws: typeof draws }).__castleDraws = draws;
 const canvas = el<HTMLCanvasElement>("stage");
 if (!canvas) throw new Error("no #stage canvas in the page");
-const stage = new Stage(canvas);
+const stage = new Stage(canvas, markDirty);   // a resize clears the canvas: paint again
 
 /* What is physically in each window. Everything that used to assume three
    seven-pixel Jewels now asks this instead — the render loop, the pixel view

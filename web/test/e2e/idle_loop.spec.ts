@@ -116,6 +116,46 @@ test("a slider wakes a stopped desk for a paint or two, then it idles again", as
   expect(woke - idle0).toBeLessThanOrEqual(4);
 });
 
+/** Stage pixels with any alpha. Giving a canvas a new backing size clears
+ *  it, so a resized stage that nothing repainted has none. */
+const lit = (page: Page): Promise<number> => page.evaluate(() => {
+  const c = document.getElementById("stage") as HTMLCanvasElement;
+  const px = c.getContext("2d")?.getImageData(0, 0, c.width, c.height).data ?? [];
+  let n = 0;
+  for (let i = 3; i < px.length; i += 4) if ((px[i] ?? 0) > 0) n++;
+  return n;
+});
+
+test("a stopped stage repaints after a resize rather than going blank", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator("#stage")).toBeVisible();
+  expect(await quietAt(page), "the loaded desk never went idle").not.toBe(-1);
+  expect(await lit(page)).toBeGreaterThan(0);
+  const w0 = await page.evaluate(() =>
+    (document.getElementById("stage") as HTMLCanvasElement).width);
+  // A window dragged narrower, or a phone turned: the stage's box changes,
+  // its ResizeObserver resizes the backing store, and that clears it. Until
+  // the stage told the loop (stage.ts onResize) an idle desk did not paint
+  // again, and the stage stayed black until the next click.
+  await page.setViewportSize({ width: 900, height: 700 });
+  // Frames until the new size has landed — observers run in a frame's
+  // rendering steps — counted, like everything else here, in frames.
+  const resized = await page.evaluate((from) => new Promise<boolean>((done) => {
+    const c = document.getElementById("stage") as HTMLCanvasElement;
+    let seen = 0;
+    const tick = (): void => {
+      if (c.width !== from) done(true);
+      else if (++seen >= 240) done(false);
+      else requestAnimationFrame(tick);
+    };
+    tick();
+  }), w0);
+  expect(resized, "the stage never resized").toBe(true);
+  expect(await quietAt(page), "the frame loop never went idle after the resize")
+    .not.toBe(-1);
+  expect(await lit(page), "the resize left the stopped stage blank").toBeGreaterThan(0);
+});
+
 const samples = (page: Page): Promise<number> =>
   page.evaluate(() => (window as unknown as { __castleDraws: { ms: number[] } })
     .__castleDraws.ms.length);
