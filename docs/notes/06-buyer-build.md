@@ -1,4 +1,4 @@
-# Halloween Castle — Build — the buyer image, the castle key, the owner's page (§12.23–12.24)
+# Halloween Castle — Build — the buyer image, the castle key, the owner's page, the shipped show (§12.23–12.25)
 
 Part of the design record; the index is [`PROJECT_NOTES.md`](../../PROJECT_NOTES.md). Section numbers are global across the parts, so `§12.9` means the same thing in every file.
 
@@ -183,3 +183,100 @@ one boots, answers the owner's page's questions and says what is wrong);
 `web/test/e2e/owner.spec.ts` (the page's own script in Chromium). **Built,
 unproven on hardware**: no board has booted v5.75, pulled a card, browned
 out or crossed a quiet-hours boundary.
+
+## 12.25 The shipped show, the buyer's card and the licences on it (v5.77, 2026-10-03)
+
+**One shipped show.** A sold castle carries no songs (PRODUCTION-TODO §3),
+and the yard's `scenes/scenes.yaml` has two scenes built on imported
+tracks. `scenes/shipped.yaml` is that file minus every scene that needs a
+track: an `audio_file`, a `track_*` key, or a pulse synth on `onset_*`
+(`tools/shipped_show.py`, which `gen_esphome.py` re-runs on every real
+generate, so it cannot fall behind). The text above `scenes:` is kept
+verbatim and whole scene blocks are dropped, so the file reads like the
+show it came from. It is generated and tracked, and exempt from the
+500-line rule with its generator named. Everything that hands a buyer a
+show reads it: the desktop app's first-run seed (`runtime.rs
+seed_scenes`), the uv installer (`desktop_env.SHIPPED_SCENES`) and the
+card (`make buyer-card`). The source zip still carries `scenes.yaml`,
+because it is the source `make build-buyer` generates from. It holds the
+song scenes' YAML and none of their audio. `tests/test_shipped_show.py`
+fails on a stale file, a track scene, a `tracks/` path, or a
+firmware-named scene that is not in the show.
+
+**The buyer's card, made with no castle.** `make buyer-card [TAG=…]`
+(`tools/buyer_card.py`) renders and generates the shipped show in a
+sandbox: scratch `CASTLE_SCENES` and `CASTLE_BUILD`, an empty
+`CASTLE_TRACKS`, an empty `CASTLE_HOST`. It writes `buyer-card/` in the
+build root, never a typed path (SonarCloud's path findings on #77):
+
+- `scenes/show.man`, each `<id>.cue` and each `NN_<id>.mp3` at
+  card_bitrate, the files `sd_sync scenes` pushes;
+- `licenses/THIRD-PARTY-NOTICES.txt`;
+- `licenses/SOURCE-OFFER.txt`.
+
+There is no `site/`, so `/` is the owner's page. It refuses, writing
+nothing, when:
+
+- a scene needs a track;
+- the build made a file it did not expect;
+- a format needs a newer castle than this tree's firmware;
+- the target holds anything that is not an earlier card.
+
+The 2026-10-03 card is 19 files and 1,992 KB. Every file under `scenes/`
+is byte-identical to what a sandboxed `make publish` of the same show
+sends: published to the emulator holding the card, `sd_sync` skipped every
+mp3 and cue as unchanged.
+
+**The evening came off the image.** Before 5.77, `show_playlist` was
+generated per scene id, so every image named the yard's two songs. A
+castle sold with the shipped card would have run into two "missing"
+scenes on every lap of the evening. The list is the card's now:
+
+- `show.man`'s header flag bit 0 marks that each row's last byte, the old
+  pad, holds a 1-based place in the evening;
+- `show.order`, or every non-motion scene, decides the places;
+- `castle_scenes::evening_csv` reads them, and the script plays one scene
+  per pass and re-executes itself.
+
+An unmarked manifest plays every row but `pir_scene`, which is 5.76's
+evening for the yard's show. With no manifest, the castle plays
+`kFallbackEveningCsv`, and the fallback ids are now the shipped show's
+only. That makes the yard's and the buyer's generated firmware identical.
+The manifest's VERSION is unchanged, so firmware before 5.77 reads a new
+card exactly as before.
+
+**The licences (docs/LICENSING.md decision 2, both halves).** The card
+carries the firmware notices and a GPLv3 §6 b) written offer. The offer:
+
+- is dated, and valid three years or while parts or support are offered,
+  whichever is later;
+- is made to anyone who possesses the firmware;
+- offers network access (this repository at the release tag, its "Source
+  code" zip, and the upstream addresses in the notices) or a physical copy
+  at cost, asked for through the repository's issues;
+- carries the Installation Information: USB needs no key and no
+  signature, there is no secure boot, and a USB install that erases the
+  castle clears the castle key. The page's Factory reset is not the
+  answer here, because it needs the key itself.
+
+The owner's page links both files at its foot when the card holds them.
+`.txt` is served as `text/plain`, so a browser shows it instead of
+downloading it. docs/OWNER-GUIDE.md says where they are.
+
+**Cost, compiled locally 2026-10-03 (ESPHome 2026.9.0), NOT on hardware.**
+Yard: image 1,260,144 B (68.7%, +16 B over 5.76), static RAM 120,475 B
+(−504 B: the playlist's chain of actions per scene is gone). Buyer: image
+1,333,344 B (72.7%), factory image 1,398,880 B, RAM 120,795 B (−504 B).
+
+**Proved where.**
+
+- `tests/test_evening_cxx.py` runs the real `castle_scenes.h` against
+  `scene_manifest.evening_ids` for marked, legacy, empty, invalid and
+  missing manifests, and walks the list.
+- `tests/test_firmware_web_licences.py` sends the C and the emulator the
+  same licence requests and compares the full type table.
+- `tests/test_buyer_card.py` checks the card file by file.
+- `web/test/e2e/owner-first-run.spec.ts` shows the links appearing.
+
+**Built, unproven on hardware**: no board has run an evening from a marked
+manifest or served the licence files.

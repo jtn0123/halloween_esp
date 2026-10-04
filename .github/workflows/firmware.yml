@@ -106,9 +106,10 @@ jobs:
       # generated files and markers are what the Mac produced; a diff here
       # means either the generators have drifted from what is committed or
       # this machine lacks an input, and both are a red run, not a smaller
-      # number.
+      # number. scenes/shipped.yaml rides along: gen_esphome rewrites it
+      # from scenes.yaml, and it is the show a sold castle's card carries.
       - name: the generated show is the committed show
-        run: git diff --exit-code --stat -- firmware/generated audio/markers.json
+        run: git diff --exit-code --stat -- firmware/generated audio/markers.json scenes/shipped.yaml
       - name: fake secrets
         env:
           RUN: ${{ github.run_id }}-${{ github.run_attempt }}

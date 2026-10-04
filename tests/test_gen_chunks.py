@@ -45,9 +45,9 @@ from test_gen_esphome import OUTPUT_PATHS, EsphomeLoader
 ZONES = [{"id": "towerL"}, {"id": "towerR"}, {"id": "door"}]
 
 #: The chain that crashed was 457 actions deep. Fifty is the largest a script
-#: in this firmware has ever been (`show_playlist`, four actions per scene),
-#: and 64 leaves room for the twelfth scene without leaving room for a
-#: timeline. A script over this is not a number to raise — it is a chain that
+#: in this firmware has ever been (`show_playlist` until v5.77, four actions
+#: per scene — one pass of a card list since), and 64 left room for the
+#: twelfth scene without leaving room for a timeline. A script over this is not a number to raise — it is a chain that
 #: wants to become data, the way a scene did.
 ACTION_CEILING = 64
 
@@ -152,20 +152,18 @@ class TestNoDeepChains(unittest.TestCase):
             with self.subTest(file=name, script=sid):
                 self.assertLessEqual(len(actions), ACTION_CEILING)
 
-    def test_the_playlist_is_the_longest_chain_and_grows_per_scene(self) -> None:
-        """Why the ceiling has headroom: the playlist is the one script whose
-        length is still a function of the show, four actions per scene. Twelve
-        scenes is 49 actions; the thirteenth is refused for other reasons
-        (SCENE_LIMIT), so this is the worst case the firmware can be built in.
-        """
+    def test_the_playlist_no_longer_grows_per_scene(self) -> None:
+        """It was the one script whose length was a function of the show,
+        four actions per scene — the reason the ceiling had headroom. Since
+        v5.77 the evening is a list on the card (castle_scenes::evening_next)
+        and the script is one pass of it: one `if`, whatever the show holds."""
         one, _ = generate([long_scene(3)])
         two, _ = generate([long_scene(3), dict(long_scene(3), id="epic2")])
         lengths = [
             len(next(s for s in out if s["id"] == "show_playlist")["then"])
             for out in (one, two)
         ]
-        self.assertEqual(lengths[1] - lengths[0], 4)
-        self.assertLess(lengths[0] + 11 * 4, ACTION_CEILING)
+        self.assertEqual(lengths, [1, 1])
 
     def test_run_scene_stops_one_runner_not_a_list_of_scripts(self) -> None:
         """Was `test_run_scene_stops_every_continuation` — the crash itself.

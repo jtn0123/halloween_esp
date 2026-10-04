@@ -51,7 +51,7 @@ ifeq ($(shell uname -m),x86_64)
 export NPY_DISABLE_CPU_FEATURES ?= X86_V3 X86_V4 AVX512_ICL AVX512_SPR
 endif
 
-.PHONY: preflight build-buyer validate-buyer guide-shots cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
+.PHONY: preflight guide-shots cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
 
 help:
 	@echo "Halloween Castle"
@@ -69,6 +69,7 @@ help:
 	@echo "  make logs       tail device logs over the same cable"
 	@echo "  make build-s3 / upload-s3 / logs-s3   the same for the WROOM carrier"
 	@echo "  make build-buyer / validate-buyer   the buyer image: no Wi-Fi baked in, AP + Improv setup"
+	@echo "  make buyer-card [TAG=vX.Y.Z]   a sold castle's SD card in ./buyer-card, no castle needed"
 	@echo "  make build-fs3 / upload-fs3 / logs-fs3   aliases for build / upload / logs"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"
@@ -199,6 +200,7 @@ ota: build
 	@$(PY) tools/sd_sync.py ota "$$($(PY) tools/check_image.py $(DEVICE) --path)"
 
 include mk/soak.mk
+include mk/buyer.mk
 
 # Kept as aliases, not as a second build. They named the microSD variant back
 # when there were two castles to choose between; every build has streamed the
@@ -223,15 +225,6 @@ validate: generate validate-s3 validate-buyer
 validate-s3: generate
 	@$(ESPHOME_RUN) config $(YAML_S3) > /dev/null && echo "config OK (s3)"
 	@$(ESPHOME_RUN) config firmware/castle_s3_qemu.yaml > /dev/null && echo "config OK (s3 qemu)"
-
-# The buyer image. No upload target on purpose: a buyer's castle is
-# flashed from a release through the web flasher, never from this checkout.
-validate-buyer: generate
-	@$(ESPHOME_RUN) config $(YAML_BUYER) > /dev/null && echo "config OK (buyer)"
-
-build-buyer: audio generate
-	$(ESPHOME_RUN) compile $(YAML_BUYER)
-	@$(PY) tools/check_image.py $(DEVICE_BUYER) --require
 
 # The S3 Feather's USB-C is the chip's own USB Serial/JTAG, so `upload` and
 # `logs` share one cable — except the FIRST flash of a factory Feather, which
