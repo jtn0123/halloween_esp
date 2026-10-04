@@ -236,6 +236,26 @@ def status() -> dict[str, object]:
     }
 
 
+def human(result: dict[str, object]) -> None:
+    """--human: ready, or what needs attention and how to fix it."""
+    if result["ready"]:
+        print("Castle Tools are ready.")
+        return
+    print("Castle Tools need attention:")
+    checks = result["checks"]
+    assert isinstance(checks, list)
+    for check in checks:
+        if not check["ok"]:
+            print(f"  - {check['name']}: {check['detail']}")
+    if result.get("repair"):
+        print(result["repair"])
+    else:
+        print(
+            f"Run {result['install_command']} in the Castle Tools folder"
+            " to install or repair them."
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--require-core", action="store_true")
@@ -244,22 +264,7 @@ def main() -> int:
     args = parser.parse_args()
     result = status()
     if args.human:
-        if result["ready"]:
-            print("Castle Tools are ready.")
-        else:
-            print("Castle Tools need attention:")
-            checks = result["checks"]
-            assert isinstance(checks, list)
-            for check in checks:
-                if not check["ok"]:
-                    print(f"  - {check['name']}: {check['detail']}")
-            if result.get("repair"):
-                print(result["repair"])
-            else:
-                print(
-                    f"Run {result['install_command']} in the Castle Tools folder"
-                    " to install or repair them."
-                )
+        human(result)
     else:
         print(json.dumps(result, indent=2))
     failed = (args.require_core and not result["core_ready"]) or (

@@ -132,8 +132,8 @@ class TestBuild(FakeData):
         castle-mode guard lives in app.js and the build only moves the path."""
         source = (HERE / "app.js").read_text(encoding="utf-8")
         self.assertIn(
-            "if($('output-target').value==='castle')"
-            "{audio.removeAttribute('src');audio.load();}",
+            "if($('output-target').value==='castle'||tracks[id].deleted)"
+            "{audio.removeAttribute('src');audio.load();return;}",
             source,
         )
         page = device_site.build(HERE, self.data).decode()

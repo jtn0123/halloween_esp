@@ -110,7 +110,12 @@ function setAudioSource(source){
   }else{audio.src=source;audio.load();audioPending=Promise.resolve();}
   return audioPending;
 }
-function load(id){current=id;window.radioLayer='combined';window.dispatchEvent(new CustomEvent('radio-track')); if($('output-target').value==='castle'){audio.removeAttribute('src');audio.load();}else if(tracks[id].deleted){audio.removeAttribute('src');audio.load();}else{setAudioSource(tracks[id].url||`media/${tracks[id].file}`);}$('seek').value=0;$('elapsed').textContent='0:00';$('duration').textContent=fmt(tracks[id].duration);updatePlayer();}
+// The castle as the output, or a row that is not on this computer: no source, so nothing to fetch or fail.
+function loadSource(id){
+  if($('output-target').value==='castle'||tracks[id].deleted){audio.removeAttribute('src');audio.load();return;}
+  void setAudioSource(tracks[id].url||`media/${tracks[id].file}`);
+}
+function load(id){current=id;window.radioLayer='combined';window.dispatchEvent(new CustomEvent('radio-track'));loadSource(id);$('seek').value=0;$('elapsed').textContent='0:00';$('duration').textContent=fmt(tracks[id].duration);updatePlayer();}
 async function play(){if(window.castlePlayer?.active()){return window.castlePlayer.play();}blacked=false;stopped=false;const id=current;try{await audioPending;}catch{return;}if(current!==id||window.castlePlayer?.active()){return;}const source=audio.src;try{await audio.play();}catch(e){if(audio.src!==source||current!==id||e.name==='AbortError'){return;}stopped=true;toast('Audio could not start. Press Play to retry.');}if(audio.src===source&&current===id){updatePlayer();}}
 function toggle(){if(window.castlePlayer?.active()){return window.castlePlayer.toggle();}if(audio.paused){play();}else {audio.pause();}}
 function start(id){history.push(current);queue=tracks.slice(id+1).filter(t=>!t.deleted).map(t=>t.id);if(shuffle){queue=mix(tracks.filter(t=>!t.deleted&&t.id!==id).map(t=>t.id));}load(id);renderQueue();play();}

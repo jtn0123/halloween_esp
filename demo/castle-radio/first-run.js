@@ -53,8 +53,11 @@
     const preview = document.getElementById('split-preview');
     if (preview) {preview.hidden = n === 0;}
     $('collection-count').textContent = n;
-    $('collection-caption').textContent = n ? `${n} tracks · automatic light shows`
-      : known ? 'No songs yet · add your first' : 'Looking for your songs…';
+    $('collection-caption').textContent = caption(n);
+  }
+  function caption(n) {
+    if (n) {return `${n} tracks · automatic light shows`;}
+    return known ? 'No songs yet · add your first' : 'Looking for your songs…';
   }
   const render = window.renderTracks;
   window.renderTracks = (...args) => { render(...args); paint(); };

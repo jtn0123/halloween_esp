@@ -148,10 +148,9 @@ class FetchAndVerify(unittest.TestCase):
             req, io.BytesIO(), 302, "Found", headers, "https://cdn/x"
         )
         self.assertIsNotNone(cdn)
+        body = io.BytesIO()
         with self.assertRaisesRegex(pin.PinError, "away from https"):
-            handler.redirect_request(
-                req, io.BytesIO(), 302, "Found", headers, "http://cdn/x"
-            )
+            handler.redirect_request(req, body, 302, "Found", headers, "http://cdn/x")
 
 
 class TheWorkflows(unittest.TestCase):

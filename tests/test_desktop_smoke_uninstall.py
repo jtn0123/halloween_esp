@@ -174,23 +174,20 @@ class TheUninstallPhase(unittest.TestCase):
 
     def test_main_uninstalls_after_the_launches_on_windows_only(self) -> None:
         for system, uninstalls in (("Windows", 1), ("Darwin", 0)):
-            calls: list[str] = []
+            order = mock.Mock()
             with (
                 self.subTest(system),
                 mock.patch.object(smoke.platform, "system", return_value=system),
                 mock.patch.object(smoke, "mac_app", return_value=Path("/a")),
                 mock.patch.object(smoke, "windows_app", return_value=Path("/a")),
                 mock.patch.object(smoke, "log_path", return_value=self.tmp / "log"),
-                mock.patch.object(smoke, "judge", lambda *_a: calls.append("judge")),
-                mock.patch.object(
-                    smoke, "read_the_pinned_model", lambda *_a: calls.append("model")
-                ),
-                mock.patch.object(
-                    smoke, "uninstall_windows", lambda *_a: calls.append("uninstall")
-                ),
+                mock.patch.object(smoke, "judge", order.judge),
+                mock.patch.object(smoke, "read_the_pinned_model", order.model),
+                mock.patch.object(smoke, "uninstall_windows", order.uninstall),
                 mock.patch("sys.stdout"),
             ):
                 self.assertEqual(smoke.main([str(self.tmp)]), 0)
+                calls = [name for name, _args, _kwargs in order.mock_calls]
                 self.assertEqual(calls, ["judge", "model"] + ["uninstall"] * uninstalls)
 
 
