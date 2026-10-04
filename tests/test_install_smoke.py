@@ -68,7 +68,7 @@ class FreshAccount(unittest.TestCase):
         self.assertEqual((env["HF_HUB_CACHE"], env["HF_HUB_OFFLINE"]), ("/r/hub", "1"))
         self.assertNotIn("HF_HOME", env)
         self.assertNotIn("HF_TOKEN", env)
-        win = {"USERPROFILE": r"C:\Users\u", "hf_hub_cache": r"C:\hub"}
+        win = {"USERPROFILE": r"C:\Users\someone", "hf_hub_cache": r"C:\hub"}
         self.assertEqual(se.buyer_env(win, "Windows")["HF_HUB_CACHE"], r"C:\hub")
         self.assertNotIn("HF_HUB_OFFLINE", se.buyer_env({"HOME": "/h"}, "Darwin"))
 

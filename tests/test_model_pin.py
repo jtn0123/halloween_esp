@@ -86,7 +86,9 @@ class FetchAndVerify(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(out, f"{self.hub.resolve()}\n")
         repo = self.hub / "models--adefossez--HTDemucs"
-        self.assertEqual((repo / "refs" / "main").read_text(), pin.REVISION)
+        self.assertEqual(
+            (repo / "refs" / "main").read_text(encoding="utf-8"), pin.REVISION
+        )
         snap = repo / "snapshots" / pin.REVISION
         self.assertEqual((snap / "abcd1234.safetensors").read_bytes(), WEIGHTS)
         self.assertEqual(sorted(p.name for p in snap.iterdir()), sorted(SMALL))
@@ -115,7 +117,9 @@ class FetchAndVerify(unittest.TestCase):
 
     def test_verify_wants_refs_main_too(self) -> None:
         self.main("fetch")
-        (pin.repo_dir(self.hub) / "refs" / "main").write_text("0" * 40)
+        (pin.repo_dir(self.hub) / "refs" / "main").write_text(
+            "0" * 40, encoding="utf-8"
+        )
         self.assertEqual(self.main("verify")[0], 1)
 
     def test_a_refused_download_is_tried_again_then_fatal(self) -> None:
