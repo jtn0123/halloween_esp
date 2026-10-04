@@ -138,6 +138,9 @@ script:
             // The evening playlist (#19). Stopping also stops whatever
             // scene it was mid-way through — "stop the show" means quiet.
             if (act.arg == "1") {
+              // From the top of the evening (v5.77: the card's list,
+              // castle_scenes.h), not wherever the last show was stopped.
+              castle_scenes::evening_rewind();
               id(show_playlist)->execute();
             } else {
               id(show_playlist)->stop();

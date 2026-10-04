@@ -53,9 +53,11 @@ Both children get the same environment (`childenv::child_env`):
 
 `<app data>` is Tauri's `app_data_dir()` for the identifier
 `io.github.jtn0123.castletools`: `~/Library/Application Support/…` on macOS,
-`%APPDATA%\…` on Windows. On first run the runtime's shipped
-`scenes/scenes.yaml` is copied there (`childenv::seed_scenes`: copy beside, then
-rename; never overwrites — after that it is the owner's file).
+`%APPDATA%\…` on Windows. On first run the runtime's
+`scenes/shipped.yaml` is copied there (`childenv::seed_scenes`: copy beside, then
+rename; never overwrites — after that it is the owner's file). That is the
+shipped show, the one a sold castle's card carries (`tools/shipped_show.py`):
+the yard's `scenes/scenes.yaml` minus every scene that needs a song.
 
 Logs: one file, `castle-tools.log`, in `app_log_dir()` (`~/Library/Logs/…`,
 `%LOCALAPPDATA%\…\logs`), holding the app's own lines and both servers'

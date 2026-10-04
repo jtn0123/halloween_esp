@@ -81,11 +81,29 @@ from being published, so there is deliberately no place for this here. Keep
 one record per castle in your own notes, and attach its soak and
 power-cycle verdict folders (`soak-logs/` is gitignored — copy them out).
 
+The label is made by `tools/unit_label.py`, which also prints this
+record's first lines — the two names worked out exactly as the firmware
+works them out, so the label and the castle cannot disagree:
+
+```sh
+.venv/bin/python tools/unit_label.py --mac <the MAC esptool printed> --unit CASTLE-2026-007
+.venv/bin/python tools/unit_label.py --host castle-xxxxxx.local --unit CASTLE-2026-007
+```
+
+It writes `castle-label-castle-xxxxxx.html` in the folder it runs from:
+open it in a browser and print page 1 on a 4×6 in (or A6) card for the
+box, page 2 on a 2.25×1.25 in sticker for the castle's base, both at
+100 % scale. `--host`
+asks a buyer-build castle on your Wi-Fi (by name, or by address plus an
+mDNS look-up) and refuses the yard build.
+
 ```
 Unit:            CASTLE-2026-___        (your own serial, also on the label)
 MAC:             __:__:__:__:__:__      (castle-xxxxxx is its last six hex
                                          digits; `esptool.py read_mac` over
                                          USB prints the whole thing)
+Setup hotspot:   Castle-____            (open — no password; its last four)
+Castle name:     castle-______.local
 Board / carrier: Feather S3 #5477 (feather-s3-4m2p) in carrier v3.__
 Firmware:        release v_._._  =  castle v5.__ (status `version`)
 Card:            __ GB, published from commit ________ on ____-__-__
@@ -105,9 +123,16 @@ Notes:
   one the castle shows its built-in owner page there. The owner page, which
   the Owner's guide describes (Settings, Factory reset, Report a problem),
   is at `/owner` either way. Check that the guide matches.
+  `make buyer-card TAG=<the image's release tag>` writes the card into
+  `buyer-card/`: the shipped show (no songs), no `/site/`, and the licence notices
+  plus the written source offer under `licenses/`, which the owner page
+  links (docs/LICENSING.md decision 2). Copy the directory's contents onto
+  the root of a FAT32 card.
 - The image: the buyer build (`fw_variant: buyer` in status) from a tagged
   release, not a local build.
-- The record above, filled in, and the label printed (PRODUCTION-TODO §3).
+- The record above, filled in, and the label printed with
+  `tools/unit_label.py` (PRODUCTION-TODO §3): the card in the box beside
+  a printed Owner's guide, the sticker on the castle.
 
 ## Which release is it
 

@@ -44,11 +44,12 @@ impl DataDirs {
     }
 }
 
-/// First run: the show the runtime ships (`<root>/scenes/scenes.yaml`)
-/// becomes the owner's own copy. Never overwrites — after the first run the
-/// file is the owner's edits — and never writes anywhere but the data dir.
-/// True when it copied. (The app's own runtime is seeded by its installer
-/// already; this is the same rule for a checkout.)
+/// First run: the shipped show (`<root>/scenes/shipped.yaml`, the yard's
+/// minus its songs) becomes the owner's own copy. Never overwrites — after
+/// the first run the file is the owner's edits — and never writes anywhere
+/// but the data dir. True when it copied. (The app's own runtime is seeded
+/// by its installer already, from the same file — desktop_env.SHIPPED_SCENES;
+/// this is the same rule for a checkout.)
 pub fn seed_scenes(rt: &Runtime, data: &DataDirs) -> std::io::Result<bool> {
     // Both supervisors seed as they start, on their own threads; one at a
     // time, so the second sees the first one's file rather than racing it.
@@ -60,7 +61,7 @@ pub fn seed_scenes(rt: &Runtime, data: &DataDirs) -> std::io::Result<bool> {
     if target.exists() {
         return Ok(false);
     }
-    let shipped = rt.root.join("scenes").join("scenes.yaml");
+    let shipped = rt.root.join("scenes").join("shipped.yaml");
     if !shipped.is_file() {
         return Ok(false);
     }
@@ -263,7 +264,12 @@ mod tests {
             "nothing shipped, nothing seeded"
         );
         fs::create_dir_all(rt.root.join("scenes")).unwrap();
-        fs::write(rt.root.join("scenes/scenes.yaml"), "scenes: shipped\n").unwrap();
+        fs::write(rt.root.join("scenes/scenes.yaml"), "scenes: the yard's\n").unwrap();
+        assert!(
+            !seed_scenes(&rt, &data).unwrap(),
+            "never the yard's show, songs and all"
+        );
+        fs::write(rt.root.join("scenes/shipped.yaml"), "scenes: shipped\n").unwrap();
         assert!(seed_scenes(&rt, &data).unwrap());
         assert_eq!(
             fs::read_to_string(data.scenes()).unwrap(),

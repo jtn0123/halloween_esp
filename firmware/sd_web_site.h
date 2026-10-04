@@ -65,6 +65,10 @@ inline const char *content_type(const std::string &p) {
   if (ends(".mp3")) return "audio/mpeg";
   if (ends(".opus")) return "audio/ogg";
   if (ends(".wav")) return "audio/wav";
+  // v5.77: the licence notices and source offer a sold castle's card
+  // carries (licenses/, tools/buyer_card.py), readable in the browser
+  // rather than handed over as a download nobody opens.
+  if (ends(".txt")) return "text/plain; charset=utf-8";
   return "application/octet-stream";
 }
 

@@ -109,6 +109,13 @@ export interface FakeCastle {
   delay: number;
   /** Castle gone: status becomes the studio's {studio:true}, the rest 502. */
   up: boolean;
+  /** Go down (`up = false`) the moment a request for exactly this path
+   *  arrives, before answering it: the castle dies under the hand. Setting
+   *  `up` before a click instead races the desk's own re-poll — first
+   *  contact hushes the amp and re-polls ~1 s later — and in Linux WebKit
+   *  in CI that poll can win, find the castle gone and disable the very
+   *  control (■) the test is about to press. */
+  dieOn: string | null;
   /** A keyed castle (firmware v5.74) the studio holds no right key for:
    *  every change — the POST /api/key probe included — is 401. Whether the
    *  status SAYS `locked` is the spec's to set, so a castle locked after its
@@ -128,7 +135,7 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
     Promise<FakeCastle> {
   const c: FakeCastle = {
     calls: [], status: { ...CASTLE_STATUS, ...status }, files,
-    putBytes: null, delay: 0, up: true, keyed: false,
+    putBytes: null, delay: 0, up: true, dieOn: null, keyed: false,
     hits: (part) => c.calls.filter((x) => x.includes(part)).length,
   };
   const CASTLE = /^\/api\/(status|files|play|stop|volume|scene|light|pir|show|bootlog|card|key)\b/;
@@ -139,6 +146,7 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
     if (!CASTLE.test(p)) return route.fallback();
     c.calls.push(`${method} ${p}${url.search}`);
     if (c.delay) await new Promise((r) => setTimeout(r, c.delay));
+    if (p === c.dieOn) { c.up = false; c.dieOn = null; }
     if (p === "/api/status") {
       return route.fulfill({ json: c.up ? c.status : { studio: true } });
     }
@@ -183,6 +191,45 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
     return route.fulfill({ json: { queued: true } });
   });
   return c;
+}
+
+/** A castle answer the TEST lets go of. */
+export interface Held {
+  /** Resolves when the first matching request has reached the castle. */
+  arrived: Promise<void>;
+  /** Let every held request (and any later one) through. */
+  release(): void;
+}
+
+/**
+ * Hold the castle's answer to every request matching `url` until the test
+ * calls `release()`. Released, a request falls through to the route
+ * registered before this one — fakeCastle, or a spec's own stub — which
+ * records and answers it as usual.
+ *
+ * This is how a spec says "the desk did not wait for the castle": the
+ * castle has not answered yet, and the desk has already moved. A stopwatch
+ * round a click cannot say that in a browser that paints at 5 fps — Linux
+ * WebKit in CI spends over a second on one Playwright click (actionability
+ * waits for animation frames) — so the castle's answer is held instead,
+ * and the order is asserted rather than the time.
+ *
+ * For actions, which wait 30 s for an answer (api.ts). Not for the status
+ * probe: it gives up after 2.5 s (device_probe.ts), so a hold that outlasts
+ * that turns a slow castle into a missing one.
+ */
+export async function holdCastle(page: Page,
+                                 url: Parameters<Page["route"]>[0]): Promise<Held> {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  let arrive!: () => void;
+  const arrived = new Promise<void>((r) => { arrive = r; });
+  await page.route(url, async (route) => {
+    arrive();
+    await gate;
+    await route.fallback();
+  });
+  return { arrived, release };
 }
 
 /** The track's exact on-disk size from the real studio, so a card copy can

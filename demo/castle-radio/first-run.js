@@ -8,7 +8,8 @@
  * arrives (imports.js re-renders the list, and this follows every render).
  *
  * On the page the castle serves (castle-direct.js), importing happens on the
- * computer, so the card says that instead and asks the server nothing. */
+ * computer, so the card says that instead and asks the server nothing; the
+ * rows it hides are the ones whose audio is not on the castle's card. */
 /* global $, current, history, load, queue, renderQueue, tracks, updatePlayer */
 (() => {
   const list = document.getElementById('tracks');
@@ -54,7 +55,18 @@
     const first = tracks.find(t => !t.deleted);
     if (tracks[current]?.deleted && first) { load(first.id); } else { updatePlayer(); }
   }
-  if (direct) { paint(); return; }
+  // On the castle's own page, "here" is the card. A built-in row whose audio
+  // the card does not hold is hidden, as it is on a computer without the
+  // demo's media: a castle sold with the shipped show (tools/buyer_card.py)
+  // has the eight scenes and none of the yard's songs. A card that does not
+  // answer hides nothing.
+  if (direct) {
+    paint();
+    Promise.resolve(window.remoteLibrary?.ensure())
+      .then(inv => { if (inv) {hideAbsent(tracks.filter(t => inv.tracks[t.file]?.audio).map(t => t.file));} })
+      .catch(() => {});
+    return;
+  }
   fetch('/radio/first-run', {cache: 'no-store'})
     .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
     .then(answer => hideAbsent(answer.demo || []))

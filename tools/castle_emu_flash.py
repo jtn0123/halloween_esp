@@ -30,7 +30,9 @@ TYPES = {
     ".png": "image/png",
     ".json": "application/json",  # castle_emu_http.JSON_MIME, spelled here
     ".mp3": "audio/mpeg",
+    ".opus": "audio/ogg",
     ".wav": "audio/wav",
+    ".txt": "text/plain; charset=utf-8",
 }
 
 #: Where the two flash pages live.
