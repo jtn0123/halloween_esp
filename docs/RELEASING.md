@@ -77,7 +77,8 @@ turns up in the image.
 The `desktop` job stages `desktop/sidecar/castle/` with
 `tools/desktop_bundle.py stage` before the Tauri build. The folder holds
 the tagged tree's own files (the installer's file list, with
-`installer/VERSION` set to the tag), the `core` job's castle-core zip for
+`installer/VERSION` set to the tag, minus `scenes/scenes.yaml`: the app's
+one show is `scenes/shipped.yaml`), the `core` job's castle-core zip for
 the target, and uv at the version and sha256 `desktop_bundle.py` pins
 (`UV_PINS`). It carries no Python, PyTorch, ffmpeg or model: the app's
 first launch fetches those, the way option A does (desktop/README.md
@@ -91,7 +92,9 @@ NSIS setup silently, per user, and starts what that installed. Then:
    is a real download from PyPI, uv's Python builds, ffmpeg's and yt-dlp's
    publishers and Hugging Face. Castle Radio must then answer
    `GET /radio/tools` able to import, import from a link and split voices,
-   and the cue desk studio must answer beside it. A setup may finish
+   and the cue desk studio must answer beside it with the shipped show's
+   scenes, exactly: an empty list (no show file where `CASTLE_SCENES`
+   points) or the yard's is red. A setup may finish
    without yt-dlp (an owner gets it from Update the downloader), but the
    smoke still demands links: a runner that could not fetch it is red, and
    the installer's "yt-dlp: not downloaded (…)" line in the log says why.

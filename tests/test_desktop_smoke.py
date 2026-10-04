@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import cast
 from unittest import mock
 
+import yaml
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
@@ -42,9 +44,12 @@ GOOD = {
     "capabilities": dict.fromkeys(smoke.CAPABILITIES, True),
     "checks": [],
 }
+#: The studio's scenes after a good first run: the shipped show's.
+SHOW = smoke.show_ids(smoke.SHIPPED)
 
 #: The stand-in app: both servers on the ports the smoke chose, and the log
-#: lines a launch writes — a setup only when FAKE_SETUP is set.
+#: lines a launch writes — a setup only when FAKE_SETUP is set — with the
+#: show FAKE_SCENES names.
 FAKE_APP = textwrap.dedent(
     """
     import json, os, threading
@@ -56,7 +61,8 @@ FAKE_APP = textwrap.dedent(
         log.write("[t] castle-tools: starting Castle Radio from the app's own "
                   "runtime at /rt: python on port 1\\n")
     BODIES = {"/radio/tools": json.loads(os.environ["FAKE_STATUS"]),
-              "/studio/tracks": {"tracks": [], "scenes": []}}
+              "/studio/tracks": {"tracks": [],
+                                 "scenes": json.loads(os.environ["FAKE_SCENES"])}}
     class H(BaseHTTPRequestHandler):
         def do_GET(self):
             body = json.dumps(BODIES.get(self.path, {})).encode()
@@ -279,9 +285,11 @@ class Verdicts(unittest.TestCase):
     )
     SECOND = f"{smoke.STARTED_OWN} at /rt\n"
 
-    def judge(self, *launches: tuple[dict[str, object], str]) -> str:
+    def judge(
+        self, *launches: tuple[dict[str, object], str], show: object = SHOW
+    ) -> str:
         out = io.StringIO()
-        runs = [(status, log, 1.0) for status, log in launches]
+        runs = [(status, show, log, 1.0) for status, log in launches]
         with (
             mock.patch.object(smoke, "start", side_effect=runs) as start,
             contextlib.redirect_stdout(out),
@@ -293,7 +301,33 @@ class Verdicts(unittest.TestCase):
 
     def test_a_set_up_first_launch_and_a_quiet_second_pass(self) -> None:
         said = self.judge((GOOD, self.FIRST), (GOOD, self.SECOND))
+        self.assertIn(f"the owner's show: the shipped one, {len(SHOW)} scenes", said)
         self.assertIn("second launch: both servers answered", said)
+
+    def test_a_studio_without_the_shipped_show_fails(self) -> None:
+        yard = smoke.show_ids(ROOT / "scenes" / "scenes.yaml")
+        self.assertNotEqual(yard, SHOW)  # the yard's has the song scenes
+        # [] is what studio.rs scene_ids answers for a show file that is not there.
+        for show in ([], yard, None):
+            with (
+                self.subTest(show=show),
+                self.assertRaisesRegex(smoke.SmokeError, "not the shipped show's"),
+            ):
+                self.judge((GOOD, self.FIRST), show=show)
+
+    def test_show_ids_reads_a_show_the_way_the_studio_does(self) -> None:
+        doc = yaml.safe_load(smoke.SHIPPED.read_text(encoding="utf-8"))
+        self.assertEqual(SHOW, [s["id"] for s in doc["scenes"]])
+        self.assertTrue(SHOW)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        show = Path(tmp.name) / "show.yaml"
+        show.write_text(
+            "zones:\n  - id: tower\nscenes:\n  - id: 'vigil'  # first\n"
+            "    kind: ambient\n# a note\n\n  - id: storm\nshow: {}\n  - id: x\n",
+            encoding="utf-8",
+        )
+        self.assertEqual(smoke.show_ids(show), ["vigil", "storm"])
 
     def test_each_way_a_launch_can_fail(self) -> None:
         lacking = {**GOOD, "capabilities": {}}
@@ -344,7 +378,12 @@ class AStandInApp(unittest.TestCase):
         app = Path(tmp.name) / "app.py"
         app.write_text(FAKE_APP, encoding="utf-8")
         log = Path(tmp.name) / "app.log"
-        env = {**os.environ, "FAKE_LOG": str(log), "FAKE_STATUS": json.dumps(GOOD)}
+        env = {
+            **os.environ,
+            "FAKE_LOG": str(log),
+            "FAKE_STATUS": json.dumps(GOOD),
+            "FAKE_SCENES": json.dumps(SHOW),
+        }
         launches: list[str] = []
         real = smoke.start
 

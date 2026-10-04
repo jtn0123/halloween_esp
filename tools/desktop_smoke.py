@@ -12,7 +12,8 @@ installed. Then:
      castle/ (desktop/README.md "Where the servers come from") — Castle
      Radio must answer GET /radio/tools as itself within --timeout, able to
      import, import from a link and split voices, and the cue desk studio
-     must answer beside it;
+     must answer beside it with the shipped show (scenes/shipped.yaml) as
+     the owner's — the one show the app carries and seeds;
   2. the app is quit, started again, and must answer within a few minutes
      WITHOUT setting anything up a second time.
 
@@ -50,6 +51,11 @@ SETUP_FAILED = "setup failed: "
 STARTED_OWN = "starting Castle Radio from the app's own runtime"
 #: What /radio/tools must say a fresh setup can do (castle_tools_status.py).
 CAPABILITIES = ("importing", "url_importing", "separation")
+#: The show a first run seeds (childenv.rs, desktop_env.SHIPPED_SCENES), in
+#: the checkout this smoke runs from. A studio answers whatever it found, so
+#: it must read back exactly these ids: an empty list is a show that was
+#: never seeded, and any other list is a show the app should not have.
+SHIPPED = Path(__file__).resolve().parent.parent / "scenes" / "shipped.yaml"
 SECOND_START = 180.0
 STUDIO_START = 120.0
 POLL = 2.0
@@ -87,6 +93,19 @@ def is_radio(body: Json) -> bool:
 def is_studio(body: Json) -> bool:
     """probe.rs's identity for the cue desk studio."""
     return isinstance(body.get("tracks"), list) and isinstance(body.get("scenes"), list)
+
+
+def show_ids(path: Path) -> list[str]:
+    """The `  - id:` lines under `scenes:`, the rule core/src/studio.rs
+    scene_ids reads a show by."""
+    section, ids = "", []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if line[:1] not in ("", " ", "\t", "#"):
+            section = line.split(":", 1)[0].strip() if ":" in line else section
+            continue
+        if section == "scenes" and line.startswith("  - id: "):
+            ids.append(line[8:].split("#", 1)[0].strip().strip("\"'"))
+    return [i for i in ids if i]
 
 
 def log_path(system: str, env: dict[str, str]) -> Path:
@@ -220,9 +239,10 @@ def start(
     timeout: float,
     log: Path,
     system: str,
-) -> tuple[Json, str, float]:
+) -> tuple[Json, object, str, float]:
     """One launch, to both servers answering, then quit. Returns Castle
-    Radio's /radio/tools, the log this launch wrote, and the seconds taken."""
+    Radio's /radio/tools, the studio's scenes, the log this launch wrote,
+    and the seconds taken."""
     radio, desk = ports
     mark, began = size(log), time.monotonic()
     proc = subprocess.Popen(cmd, env=env, stdin=subprocess.DEVNULL)
@@ -235,7 +255,7 @@ def start(
             "Castle Radio",
             lambda: setup_failure(read_from(log, mark)),
         )
-        wait_for(
+        desk_body = wait_for(
             proc,
             lambda: get_json(desk, "/studio/tracks"),
             is_studio,
@@ -246,7 +266,7 @@ def start(
     finally:
         quit_app(proc, system)
     gone(radio)
-    return status, read_from(log, mark), took
+    return status, desk_body.get("scenes"), read_from(log, mark), took
 
 
 def judge(
@@ -260,7 +280,7 @@ def judge(
         "CASTLE_DESK_PORT": str(ports[1]),
     }
     print(f"smoke: {cmd[-1]}; Castle Radio on {ports[0]}, the studio on {ports[1]}")
-    status, wrote, took = start(cmd, env, ports, timeout, log, system)
+    status, scenes, wrote, took = start(cmd, env, ports, timeout, log, system)
     print(f"first launch: both servers answered after {took:.0f}s")
     print(json.dumps(status.get("checks"), indent=2))
     if SETUP_DONE not in wrote:
@@ -271,7 +291,14 @@ def judge(
     missing = capable(status)
     if missing:
         raise SmokeError(f"after setup, Castle Radio still lacks {', '.join(missing)}")
-    _, wrote, took = start(cmd, env, ports, SECOND_START, log, system)
+    want = show_ids(SHIPPED)
+    if scenes != want:
+        raise SmokeError(
+            f"the studio's show is {scenes}, not the shipped show's {want}: "
+            "the first run seeded another show, or none"
+        )
+    print(f"the owner's show: the shipped one, {len(want)} scenes")
+    _, _, wrote, took = start(cmd, env, ports, SECOND_START, log, system)
     print(f"second launch: both servers answered after {took:.0f}s")
     own(wrote, "second")
     if SETUP_BEGAN in wrote:
