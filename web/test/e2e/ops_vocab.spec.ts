@@ -81,11 +81,11 @@ test("the SD budget measures the card when a castle reports it", async ({ page }
   await page.locator('#budRows .budget__row[data-key="free"]').click();
   await expect(page.locator(".budget__pickmeta")).toContainText("as the castle reports it");
   await expect(page.locator(".budget__pickmeta")).not.toContainText("assumed");
-  // Castle gone: back to the stated assumption, and it says so.
-  castle.up = false;
-  // Stop provokes the re-poll that finds it gone — the chip's own is 15 s
-  // away (POLL_MS), well past the assertion below. The button is still there
-  // and enabled for exactly that reason, so no forcing is needed.
+  // Castle gone: back to the stated assumption, and it says so. It dies as
+  // ■ reaches it, and ■ provokes the re-poll that finds it gone — the chip's
+  // own is 15 s away (POLL_MS), well past the assertion below. Until then
+  // the castle answers, so ■ is enabled and no forcing is needed.
+  castle.dieOn = "/api/stop";
   await page.locator("#devStop").click();
   await expect(page.locator("#budHead")).toContainText("of 32.00 GB");
   await expect(page.locator(".budget__pickmeta")).toContainText("assumed");

@@ -270,7 +270,7 @@ jobs:
         # directory, and the port and --localhost are appended there.
         env:
           CASTLE_STUDIO_CMD: ../core/target/release/studio
-        run: npx --no-install playwright test --project=chromium
+        run: npx --no-install playwright test --project=chromium --output=test-results/chromium
         working-directory: web
       # WebKit is Safari's engine and the desktop app's macOS window
       # (docs/PRODUCTION-TODO.md §5.1). Its own run — its own server and
@@ -280,8 +280,20 @@ jobs:
         if: ${{ !cancelled() && steps.browsers.outcome == 'success' }}
         env:
           CASTLE_STUDIO_CMD: ../core/target/release/studio
-        run: npx --no-install playwright test --project=webkit
+        run: npx --no-install playwright test --project=webkit --output=test-results/webkit
         working-directory: web
+      # A red browser run keeps a trace per failed test (playwright.config:
+      # retain-on-failure), one output directory per browser so the WebKit
+      # run does not wipe Chromium's. Without this step they died with the
+      # runner, and the WebKit flakes of 2026-10-03 were read off the log.
+      - name: browser traces
+        if: ${{ failure() && steps.browsers.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces
+          path: web/test-results/
+          retention-days: 14
+          if-no-files-found: ignore
 
   esphome:
     runs-on: ubuntu-latest
