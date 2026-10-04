@@ -70,6 +70,20 @@ impl Servers {
     }
 }
 
+/// The splash page's URL — the window's first — for the tray's Repair.
+struct Splash(Url);
+
+/// Show the window on the splash, which follows a setup and opens Castle
+/// Radio when it answers (Navigator::ready).
+pub fn show_splash(app: &AppHandle) {
+    tray::show_main(app);
+    if let (Some(window), Some(splash)) =
+        (app.get_webview_window("main"), app.try_state::<Splash>())
+    {
+        let _ = window.navigate(splash.0.clone());
+    }
+}
+
 /// Moves the main window between the local splash page and Castle Radio.
 struct Navigator {
     app: AppHandle,
@@ -190,7 +204,8 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         splash: OnceLock::new(),
     };
     if let Some(url) = app.get_webview_window("main").and_then(|w| w.url().ok()) {
-        let _ = navigator.splash.set(url);
+        let _ = navigator.splash.set(url.clone());
+        app.manage(Splash(url));
     }
     let app_data = paths.app_data_dir()?;
     // Local, not roaming, on Windows: the runtime is a gigabyte of Python

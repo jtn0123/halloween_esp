@@ -43,6 +43,37 @@ def website_startup(platform: str | None = None) -> str | None:
     )
 
 
+def in_app() -> bool:
+    """Whether this Castle Radio is the desktop app's: its supervisor sets
+    CASTLE_APP_VERSION (src-tauri/src/supervisor.rs). The app carries no
+    installer/ folder and no website-startup double-click — it registers
+    castle-tools:// itself — so neither is offered there."""
+    return bool(os.environ.get("CASTLE_APP_VERSION", "").strip())
+
+
+#: Where each system shows the app's tray menu (src-tauri/src/tray.rs).
+TRAY = {
+    "darwin": "choose Repair Castle Tools… from the ♜ in the menu bar",
+    "win32": (
+        "right-click the Castle Tools icon in the notification area and "
+        "choose Repair Castle Tools…"
+    ),
+}
+
+
+def repair_words(platform: str | None = None) -> str | None:
+    """How the desktop app's owner repairs it — the tray's Repair, which runs
+    the app's own setup again — or None outside the app, where the
+    installer's command (install_command) is the repair."""
+    if not in_app():
+        return None
+    where = TRAY.get(platform or sys.platform, TRAY["win32"])
+    return (
+        f"To repair Castle Tools, {where}. It sets the tools up again from "
+        "the internet, takes a few minutes, and keeps your songs."
+    )
+
+
 class Check(TypedDict):
     name: str
     ok: bool
@@ -199,8 +230,9 @@ def status() -> dict[str, object]:
             "separation": separating,
         },
         "checks": checks,
-        "install_command": install_command(),
-        "website_startup": website_startup(),
+        "install_command": None if in_app() else install_command(),
+        "website_startup": None if in_app() else website_startup(),
+        "repair": repair_words(),
     }
 
 
@@ -221,10 +253,13 @@ def main() -> int:
             for check in checks:
                 if not check["ok"]:
                     print(f"  - {check['name']}: {check['detail']}")
-            print(
-                f"Run {result['install_command']} in the Castle Tools folder"
-                " to install or repair them."
-            )
+            if result.get("repair"):
+                print(result["repair"])
+            else:
+                print(
+                    f"Run {result['install_command']} in the Castle Tools folder"
+                    " to install or repair them."
+                )
     else:
         print(json.dumps(result, indent=2))
     failed = (args.require_core and not result["core_ready"]) or (

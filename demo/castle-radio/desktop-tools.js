@@ -52,6 +52,13 @@
       // Website startup is a macOS URL handler: null is the computer saying it
       // has none (castle_tools_status.website_startup), so it is not offered.
       byId('tools-mac').hidden = result.website_startup === null;
+      // Inside the desktop app there is no installer folder to run a command
+      // in: the app repairs itself from its tray, and says how
+      // (castle_tools_status.repair_words) — those words replace the command.
+      const repair = typeof result.repair === 'string' ? result.repair : '';
+      byId('tools-repair').textContent = repair;
+      byId('tools-repair').hidden = !repair;
+      byId('tools-installer').hidden = !!repair;
       // The release this copy came from — what support asks first
       // (docs/SUPPORT.md "Which release is it").
       const version = byId('tools-version');

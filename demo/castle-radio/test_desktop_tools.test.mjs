@@ -88,8 +88,21 @@ for (const [platform, startup, hidden, install] of [
     await settle();
     assert.equal(ctx.$('tools-mac').hidden, hidden);
     assert.equal(ctx.$('tools-install').textContent, install);
+    assert.equal(ctx.$('tools-installer').hidden, false, 'a checkout repairs with the installer');
+    assert.equal(ctx.$('tools-repair').hidden, true);
   });
 }
+
+test('inside the desktop app the card points at its own Repair, not a script', async () => {
+  const words = 'To repair Castle Tools, choose Repair Castle Tools… from the ♜ in the menu bar.';
+  const ctx = boot({service:'castle-radio', protocol:1, ready:false, checks:[],
+    install_command:null, website_startup:null, repair:words, app_version:'Castle Tools v1.4.0'});
+  await settle();
+  assert.equal(ctx.$('tools-repair').textContent, words);
+  assert.equal(ctx.$('tools-repair').hidden, false);
+  assert.equal(ctx.$('tools-installer').hidden, true, 'no installer folder to run a command in');
+  assert.equal(ctx.$('tools-mac').hidden, true, 'and no website-startup double-click');
+});
 
 test('an older helper that never says keeps the Mac steps visible', async () => {
   const ctx = boot({service:'castle-radio', protocol:1, ready:true, checks:[]});

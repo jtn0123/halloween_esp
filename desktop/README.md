@@ -165,9 +165,12 @@ of 8 (Getting ffmpeg): …" or "Python 3.13 could not be downloaded (uv: …)
 — the first start needs the internet". The installer's whole output is in
 the log. A failed setup is not run again until **Try again** (or the tray's
 Start) is pressed. **Repair** is on the splash whenever Castle Radio fails
-on the app's own runtime. It stops both servers and runs the setup with
-`--repair`, which rebuilds the environment and fetches the tools again.
-The owner's library is never touched.
+on the app's own runtime, and in the tray (Repair Castle Tools…, asked
+first) for when Castle Radio runs but a tool it needs is broken — the tools
+card on Import points there, not at an installer the app does not carry
+(`castle_tools_status.repair_words`). It stops both servers, shows the
+splash and runs the setup with `--repair`, which rebuilds the environment
+and fetches the tools again. The owner's library is never touched.
 
 ## What an import can take
 
@@ -259,8 +262,9 @@ page; `CASTLE_PRERELEASE` in the app's environment overrides it either way.
 
 - **Tray** (`src/tray.rs`): ♜ in the macOS menu bar (a text title, so it
   follows light/dark), the app icon in the Windows notification area. Show,
-  Start, Open in browser, Open the light desk in browser, Open log, Check for
-  updates, Quit. Closing the window hides it; Quit stops both servers.
+  Start, Open in browser, Open the light desk in browser, Open log, Repair
+  (a release only: a dev run has no tools of its own), Check for updates,
+  Quit. Closing the window hides it; Quit stops both servers.
 - **`castle-tools://start`** (`src/deeplink.rs`): the one action a web page may
   ask for — start both servers, leave the browser in front. Any other URL is
   logged and dropped. macOS registers it through the bundle's Info.plist,
