@@ -16,6 +16,12 @@ file is the one that governs.
 
 - `scenes/scenes.yaml` — THE source of truth: every scene's light cues, audio
   score, length and level. Everything else is generated from it.
+- `scenes/shipped.yaml` — the show a castle that leaves this house carries:
+  the yard's scenes minus every one that needs a song (v5.77,
+  `tools/shipped_show.py`; `gen_esphome` rewrites it, and it is tracked).
+  The desktop app's first run, the uv installer and `make buyer-card [TAG=…]`
+  (a sold castle's whole card, into `buyer-card/` or `CASTLE_BUILD`) all read
+  it, and `tests/test_shipped_show.py` fails any of them that reads the yard's.
 - `tools/render_audio.py` → `audio/NN_<id>.mp3` (gitignored; the desk's
   inlined copy) and `audio/card/` (the 96 kbps files `sd_sync scenes` pushes).
 - `tools/gen_esphome.py` → `firmware/generated/` (`sfx`, `rig.h`, lights) and
@@ -185,7 +191,8 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   non-gating). Run the coverage floors yourself when you touched `tools/` or
   `demo/castle-radio`.
 - The e2e suite (`cd web && npx playwright test --list` for the count) needs
-  a built page (`make preview`) and `cd web && npx playwright install chromium`.
+  a built page (`make preview`) and `cd web && npx playwright install chromium webkit`
+  (`make e2e` installs both and runs Chromium, then WebKit).
 
 ## Sandboxing — never touch the real library or show from tests/tools
 

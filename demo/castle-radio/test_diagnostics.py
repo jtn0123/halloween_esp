@@ -206,6 +206,13 @@ class Diagnostics(unittest.TestCase):
                 )
                 self.assertEqual(diagnostics.app_version(), "Castle Radio v1.2.3")
 
+    def test_outside_castle_tools_the_report_says_why_there_is_no_app_log(self):
+        with mock.patch.dict(os.environ, {"CASTLE_APP_LOG": ""}):
+            self.assertEqual(
+                diagnostics._log_tail(),
+                ["(no app log: Castle Radio is not running inside Castle Tools)"],
+            )
+
     def test_the_route_answers_with_the_text_and_a_file_name(self):
         handler = mock.Mock()
         diagnostics.GET_ROUTES["/radio/diagnostics"](handler, None)

@@ -224,6 +224,11 @@ castle's own page, and **Copy diagnostics** gathers what the castle and the
 app know into one text for whoever is helping you; it leaves out your
 castle key and your folder names, and sends nothing.
 
+**Which version you have.** Castle Tools shows its own (`Castle Tools
+v1.2.3`) as it starts, and under **Import music → Castle Tools**. The
+castle's is the firmware number on the **Castle firmware** card and on the
+castle's own page. **Copy diagnostics** includes both.
+
 <img src="guide/radio-help.png" width="420" alt="Help with your castle: open the castle's own page, Copy diagnostics, Save as a file">
 
 ## Licences and source code

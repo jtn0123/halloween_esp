@@ -130,7 +130,8 @@ jobs:
       - name: numpy baseline kernels (x86-64)
         if: runner.os == 'Windows'
         run: echo "NPY_DISABLE_CPU_FEATURES=X86_V3 X86_V4 AVX512_ICL AVX512_SPR" >> "$GITHUB_ENV"
-      - run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
+      - id: deps
+        run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
       # No CASTLE_PY exported, though the studio bin asks it first: the
       # suites that spawn the studio name it in the CHILD's environment as
       # their own sys.executable (tests/studio_rs_case.py), which is the
@@ -148,8 +149,11 @@ jobs:
       # Two steps rather than one `run_checks.py test test-radio`: the script
       # stops at the first red suite, and on a port a red `test` hid every
       # answer `test-radio` had. Either one failing still fails the job.
+      # But not past a step that never installed the lock: a red castle-core
+      # test above it left no numpy, and every radio suite then failed to
+      # import — noise that buried the one real failure (PR #81's first run).
       - name: python suites (make test)
         run: python tools/run_checks.py test
       - name: castle radio suites (make test-radio)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: python tools/run_checks.py test-radio

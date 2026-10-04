@@ -283,18 +283,24 @@ mod tests {
     /// answering at 85 s. The child is its own process group (a job, on
     /// Windows) and the group is what gets killed, so both processes go and
     /// the joins return.
+    ///
+    /// The deadline has to outlast two Python start-ups and the pid write,
+    /// or the watchdog fires before there is a grandchild to take: a cold
+    /// Windows runner took longer than the 2 s this once had (PR #81's first
+    /// run). 6 s against a 60 s sleep still leaves the two outcomes far
+    /// apart — a kill answers at ~6 s, a wait for the grandchild at ~60 s.
     #[test]
     fn the_watchdog_takes_the_grandchildren_with_it() {
         let dir = std::env::temp_dir().join(format!("castle-pgid-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         let pidfile = dir.join("grandchild.pid");
         let start = std::time::Instant::now();
-        let (ok, log) = run(spawner(&pidfile, 30), 2);
+        let (ok, log) = run(spawner(&pidfile, 60), 6);
         let took = start.elapsed();
         assert!(!ok);
-        assert!(log.contains("gave up after 2s"), "{log}");
+        assert!(log.contains("gave up after 6s"), "{log}");
         assert!(
-            took < std::time::Duration::from_secs(10),
+            took < std::time::Duration::from_secs(30),
             "the watchdog waited for the grandchild ({took:?})"
         );
         // And the grandchild is actually gone, rather than orphaned holding
