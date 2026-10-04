@@ -319,6 +319,10 @@ Everything here is needed for BOTH option A and option B.
       uninstaller deletes app data only when its unticked box is ticked;
       tests/test_desktop_uninstall.py holds the config to that template, and
       desktop/README.md says what removing the app on macOS keeps.
+- [x] …and does not leave the 1.7 GB runtime behind: one NSIS hook
+      (desktop/src-tauri/windows/hooks.nsh) removes `runtime/` on an owner's
+      uninstall, not on an update or an upgrade's in-place one; the release
+      smoke runs both on Windows. The owner's guide names the macOS folder.
 
 ## 6. Option A — uv bootstrap installer (P1, fallback)
 

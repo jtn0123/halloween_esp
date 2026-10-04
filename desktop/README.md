@@ -63,28 +63,33 @@ Logs: one file, `castle-tools.log`, in `app_log_dir()` (`~/Library/Logs/…`,
 `%LOCALAPPDATA%\…\logs`), holding the app's own lines and both servers'
 stdout/stderr. Rotated to `.log.1` past 5 MB at launch.
 
-### Removing the app keeps the songs
+### Removing the app: the tools go, the songs stay
 
 - **Windows** (Settings → Apps → Castle Tools → Uninstall): Tauri's stock
   NSIS uninstaller removes the files it installed and leaves
   `%APPDATA%\io.github.jtn0123.castletools` and
   `%LOCALAPPDATA%\io.github.jtn0123.castletools` alone unless its **Delete
   the application data** box is ticked — unticked by default, never ticked
-  by an update (`/UPDATE`) or a silent uninstall, which shows no page.
-  `tests/test_desktop_uninstall.py` holds the config to that template (no
-  custom template, no uninstall hooks, the CLI pinned to the audited one).
+  by an update (`/UPDATE`) or a silent uninstall, which shows no page. One
+  hook (`windows/hooks.nsh`, `installerHooks`) then removes
+  `%LOCALAPPDATA%\io.github.jtn0123.castletools\runtime` — the first
+  launch's tools, about 1.7 GB — box or no box. It keeps the runtime on an
+  update and when a newer setup uninstalls the old version before it
+  installs ("Uninstall before installing", which runs `uninstall.exe _?=`
+  in place): both start the new version on it. `tests/test_desktop_uninstall.py`
+  holds the config to that (the stock template, that one hook, the CLI
+  pinned to the audited one); the release smoke runs both uninstalls on
+  Windows and checks the runtime and the owner's show afterwards
+  (`tools/desktop_smoke.py`).
 - **macOS** has no uninstaller: the app is removed by dragging **Castle
   Tools** from Applications to the Bin, which takes the app and its
   `castle-tools://` handler and nothing else. Songs, scenes and settings
   stay in `~/Library/Application Support/io.github.jtn0123.castletools`, the
   log in `~/Library/Logs/io.github.jtn0123.castletools`; reinstalling picks
-  them up. To remove them as well, delete those two folders (Finder: Go → Go
-  to Folder…, paste the path).
-
-The first launch's runtime (`runtime/` in the local data folder, about
-1.7 GB) stays with them on both systems, so reinstalling the same release
-starts without a setup. Deleting the folder costs only the next launch's
-download.
+  them up. The runtime is the `runtime` folder inside the first: deleting it
+  frees the 1.7 GB and costs only the next launch's download
+  (docs/OWNER-GUIDE.md tells the owner so). To remove everything, delete
+  both folders (Finder: Go → Go to Folder…, paste the path).
 
 ### Where the servers come from (`src/runtime.rs`)
 

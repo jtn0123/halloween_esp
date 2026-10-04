@@ -100,6 +100,12 @@ NSIS setup silently, per user, and starts what that installed. Then:
    the installer's "yt-dlp: not downloaded (…)" line in the log says why.
 2. After a quit, the second launch must answer within three minutes
    without running a setup.
+3. On Windows, the app is uninstalled twice
+   (desktop/src-tauri/windows/hooks.nsh). First in place, as a newer setup's
+   "Uninstall before installing" does: the runtime must stay, for the new
+   version to start on. Then, reinstalled, the way an owner does it: the
+   runtime must be gone within ten minutes. The owner's show must survive
+   both.
 
 A setup that fails ends the smoke at once, with the app's own reason; it
 does not wait out the 30 minutes on a splash that is waiting for Try again.
