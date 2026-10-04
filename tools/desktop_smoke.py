@@ -353,6 +353,20 @@ def windows_places(env: dict[str, str]) -> tuple[Path, Path]:
     return show, runtime_path("Windows", env)
 
 
+def ready_to_uninstall(show: Path, runtime: Path) -> None:
+    """What an uninstall has to be able to lose before it can be judged: the
+    show, the runtime, and the runtime's link to the show's folder."""
+    for what, path in (("the owner's show", show), ("the runtime", runtime)):
+        if not path.exists():
+            raise SmokeError(f"before any uninstall, {what} is missing: {path}")
+    link = runtime / RADIO_LINK
+    if not (link.is_symlink() or os.path.isjunction(link)):
+        raise SmokeError(
+            f"the runtime has no link to the owner's data at {link}, so no "
+            "uninstall here could show whether it follows one"
+        )
+
+
 def uninstall_windows(
     exe: Path,
     env: dict[str, str],
@@ -374,15 +388,7 @@ def uninstall_windows(
     the junction (RADIO_LINK) that a careless RMDir /r empties."""
     show, runtime = windows_places(env)
     folder = exe.parent
-    for what, path in (("the owner's show", show), ("the runtime", runtime)):
-        if not path.exists():
-            raise SmokeError(f"before any uninstall, {what} is missing: {path}")
-    link = runtime / RADIO_LINK
-    if not (link.is_symlink() or os.path.isjunction(link)):
-        raise SmokeError(
-            f"the runtime has no link to the owner's data at {link}, so no "
-            "uninstall here could show whether it follows one"
-        )
+    ready_to_uninstall(show, runtime)
     run(f'"{folder / "uninstall.exe"}" /S _?={folder}', check=True, timeout=600)
     if exe.exists():
         raise SmokeError("the in-place uninstall left the app")
