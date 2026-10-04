@@ -68,8 +68,21 @@ UV_PINS: dict[str, Pin] = {
 }
 
 
+#: The yard's show, songs and all. The app carries exactly one show, the
+#: shipped one (scenes/shipped.yaml, tools/shipped_show.py), and its first
+#: run seeds from that; anything that would read this path by default finds
+#: nothing there and fails, rather than playing the yard's show.
+LEFT_OUT = frozenset({Path("scenes") / "scenes.yaml"})
+
+
 def exe(target: str, name: str) -> str:
     return f"{name}.exe" if "windows" in target else name
+
+
+def app_files(repo: Path) -> list[Path]:
+    """castle/app's file list: the installer's (desktop_tree.source_files),
+    minus LEFT_OUT."""
+    return [f for f in dt.source_files(repo) if f not in LEFT_OUT]
 
 
 def _member(archive: Path, name: str) -> bytes:
@@ -129,7 +142,7 @@ def stage(
     castle = out / CASTLE
     shutil.rmtree(castle, ignore_errors=True)
     castle.mkdir(parents=True)
-    dt.copy_files(repo, dt.source_files(repo), castle / APP)
+    dt.copy_files(repo, app_files(repo), castle / APP)
     # What `git archive`'s export-subst writes into a release zip's copy, so
     # the bundled tree names its release the way an option-A one does.
     version = castle / APP / VERSION_FILE

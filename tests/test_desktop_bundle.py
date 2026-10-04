@@ -38,6 +38,8 @@ import desktop_release as rel
 import desktop_tree as dt
 import release_assets as ra
 import ship_guard as g
+import shipped_show as ss
+import yaml
 from desktop_thirdparty import Pin
 
 SRC = ROOT / "desktop" / "src-tauri" / "src"
@@ -154,10 +156,20 @@ class StagedFromThisTree(unittest.TestCase):
             ):
                 self.assertTrue(os.access(program, os.X_OK), program)
 
-    def test_app_is_the_installers_own_file_list(self) -> None:
-        self.assertEqual(self.files(db.APP), set(dt.source_files(ROOT)))
+    def test_app_is_the_installers_own_file_list_but_the_yards_show(self) -> None:
+        tree = set(dt.source_files(ROOT))
+        self.assertLessEqual(db.LEFT_OUT, tree)  # each name is a real file
+        self.assertEqual(self.files(db.APP), tree - db.LEFT_OUT)
         for personal in g.PERSONAL:
             self.assertFalse((self.castle / db.APP / personal).exists(), personal)
+
+    def test_the_app_carries_one_show_and_no_scenes_yaml(self) -> None:
+        """The shipped show and nothing else: the yard's scenes.yaml is not
+        there for a default path (build_paths.scenes_file, the studio's
+        CASTLE_SCENES fallback) to find and play."""
+        self.assertFalse((self.castle / db.APP / "scenes" / "scenes.yaml").exists())
+        shows = {p for p in self.files(db.APP) if p.parts[0] == "scenes"}
+        self.assertEqual(shows, {de.SHIPPED_SCENES})
 
     def test_the_bundled_tree_names_its_release_the_way_a_release_zip_does(
         self,
@@ -192,6 +204,21 @@ class StagedFromThisTree(unittest.TestCase):
         self.assertTrue((app / rust_str(rust("setup_cmd.rs"), "INSTALLER")).is_file())
         self.assertTrue((app / rust_str(rust("runtime.rs"), "SERVER")).is_file())
         self.assertTrue((app / "requirements-desktop.lock").is_file())
+
+    def test_the_show_its_first_run_seeds_has_no_song_in_it(self) -> None:
+        """The installer's data step seeds app/ + desktop_env.SHIPPED_SCENES,
+        and childenv.rs the same name (tests/test_shipped_show.py holds
+        both to scenes/shipped.yaml): the bundle carries the tree's copy."""
+        seed = self.castle / db.APP / de.SHIPPED_SCENES
+        self.assertEqual(seed.read_bytes(), ss.SHIPPED.read_bytes())
+        with tempfile.TemporaryDirectory() as data:
+            target = Path(data) / "scenes.yaml"
+            self.assertTrue(de.seed_scenes(seed, target))
+            doc = yaml.safe_load(target.read_text(encoding="utf-8"))
+        self.assertTrue(doc["scenes"])
+        for scene in doc["scenes"]:
+            with self.subTest(scene=scene["id"]):
+                self.assertEqual(ss.needs_track(scene), [])
 
     def test_the_staged_bundle_ships_nothing_personal(self) -> None:
         """What release.yml's ship guard will read in the .app.tar.gz."""

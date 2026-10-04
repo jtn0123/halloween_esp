@@ -96,6 +96,8 @@ First match wins:
    reads the same names):
    ```
    <resources>/castle/app/         the repo's own files: the installer's file list
+                                   minus scenes/scenes.yaml (the yard's show,
+                                   songs and all): its one show is shipped.yaml
    <resources>/castle/bin/         studio, analyze_track, scene_render: the
                                    release's castle-core-<target>-<tag>.zip
    <resources>/castle/uv/uv[.exe]  Astral's uv, pinned by version and sha256
