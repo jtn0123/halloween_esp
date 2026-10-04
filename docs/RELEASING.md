@@ -89,8 +89,12 @@ meets it. On macOS it starts the built `.app`; on Windows it installs the
 NSIS setup silently, per user, and starts what that installed. Then:
 
 1. The first launch must set itself up from nothing within 30 minutes. That
-   is a real download from PyPI, uv's Python builds, ffmpeg's and yt-dlp's
-   publishers and Hugging Face. Castle Radio must then answer
+   is a real download from PyPI, uv's Python builds and ffmpeg's and
+   yt-dlp's publishers. The htdemucs weights are the exception: the job
+   keeps them in the Actions cache (`tools/model_pin.py`, the commit and
+   sha256 it pins), so Hugging Face is asked only on a miss, and the smoke
+   fails a Demucs that fell back to its legacy download instead of reading
+   them. Castle Radio must then answer
    `GET /radio/tools` able to import, import from a link and split voices,
    and the cue desk studio must answer beside it with the shipped show's
    scenes, exactly: an empty list (no show file where `CASTLE_SCENES`

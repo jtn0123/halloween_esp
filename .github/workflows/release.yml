@@ -341,6 +341,21 @@ jobs:
       # locked packages from the internet, the way a buyer's first launch
       # does) and answer GET /radio/tools with every capability; started a
       # second time it must not set up again. tools/desktop_smoke.py.
+      # The htdemucs weights the first launch would download, from the
+      # Actions cache instead (tools/model_pin.py, and install-smoke.yml,
+      # which shares the entry): HF_HUB_CACHE reaches the app's setup and
+      # servers through the environment, HF_HUB_OFFLINE keeps them off the
+      # hub, and desktop_smoke.py fails a Demucs that fell back elsewhere.
+      - name: htdemucs weights (cached)
+        uses: actions/cache@v6
+        with:
+          path: ~/htdemucs-hub
+          key: htdemucs-955717e8-d9fa14133cfc
+      - name: htdemucs weights
+        run: |
+          hub=$(python tools/model_pin.py fetch ~/htdemucs-hub)
+          echo "HF_HUB_CACHE=$hub" >> "$GITHUB_ENV"
+          echo "HF_HUB_OFFLINE=1" >> "$GITHUB_ENV"
       - name: first-run smoke
         env:
           TARGET: ${{ matrix.target }}

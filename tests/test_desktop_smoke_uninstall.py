@@ -164,12 +164,15 @@ class TheUninstallPhase(unittest.TestCase):
                 mock.patch.object(smoke, "log_path", return_value=self.tmp / "log"),
                 mock.patch.object(smoke, "judge", lambda *_a: calls.append("judge")),
                 mock.patch.object(
+                    smoke, "read_the_pinned_model", lambda *_a: calls.append("model")
+                ),
+                mock.patch.object(
                     smoke, "uninstall_windows", lambda *_a: calls.append("uninstall")
                 ),
                 mock.patch("sys.stdout"),
             ):
                 self.assertEqual(smoke.main([str(self.tmp)]), 0)
-                self.assertEqual(calls, ["judge"] + ["uninstall"] * uninstalls)
+                self.assertEqual(calls, ["judge", "model"] + ["uninstall"] * uninstalls)
 
 
 if __name__ == "__main__":

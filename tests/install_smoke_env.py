@@ -31,6 +31,10 @@ import portable_proc
 #: environment — the runner's toolcache Python, cargo, Homebrew, Chocolatey,
 #: VIRTUAL_ENV, every CASTLE_* knob — is something a buyer does not have.
 POSIX_KEEP = ("HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL", "TERM")
+#: Where tools/model_pin.py put the pinned htdemucs weights, and the switch
+#: that makes huggingface_hub read them without asking the network
+#: (install-smoke.yml sets both).
+MODEL_CACHE = ("HF_HUB_CACHE", "HF_HUB_OFFLINE")
 #: PSModulePath is left out on purpose: a pwsh-launched job hands Windows
 #: PowerShell 5.1 PowerShell 7's module path, and 5.1 then cannot load its
 #: own Microsoft.PowerShell.Utility. A fresh account has 5.1's default.
@@ -108,8 +112,12 @@ def buyer_env(
     PYTHONIOENCODING — a console prints any character, where Windows'
     Python on a pipe encodes in the ANSI code page and dies on the first
     "鬼" — and PYTHONUNBUFFERED, since a console is line-buffered and a pipe
-    is not, so the installer's lines would reach the log out of order."""
-    keep = WINDOWS_KEEP if system == "Windows" else POSIX_KEEP
+    is not, so the installer's lines would reach the log out of order.
+
+    And the job's cached htdemucs weights, when it set them up
+    (MODEL_CACHE): a runner's, not a buyer's, and the one download the smoke
+    has no need to repeat on every run."""
+    keep = (*(WINDOWS_KEEP if system == "Windows" else POSIX_KEEP), *MODEL_CACHE)
     env = {name: value for name in keep if (value := _get(base, name)) is not None}
     if home is not None:
         env.update(home_vars(system, home))

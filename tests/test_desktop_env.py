@@ -117,6 +117,11 @@ class TestRecordAndEnv(unittest.TestCase):
         # replaces in place (tools/ytdlp_update.py).
         self.assertEqual(env["CASTLE_DOWNLOADER_DIR"], str(Path("/i/bin")))
         self.assertEqual(env["PYTHONUTF8"], "1")
+        # Where the model step puts the htdemucs weights and Demucs finds
+        # them — which CI's cached weights (tools/model_pin.py) bypass, so
+        # it is held here rather than by the smokes.
+        self.assertEqual(env["HF_HOME"], str(Path("/i/models/huggingface")))
+        self.assertEqual(env["TORCH_HOME"], str(Path("/i/models/torch")))
         self.assertEqual(env["OTHER"], "kept")
         path = env["PATH"].split(os.pathsep)
         self.assertEqual(path[0], str(Path("/i/bin")))

@@ -322,11 +322,31 @@ def own(wrote: str, which: str) -> None:
         )
 
 
+def runtime_path(system: str, env: dict[str, str]) -> Path:
+    """The app's own tools: Tauri's app_local_data_dir, lib.rs runtime_dir."""
+    if system == "Windows":
+        return Path(env["LOCALAPPDATA"]) / IDENTIFIER / "runtime"
+    return (
+        Path(env["HOME"]) / "Library" / "Application Support" / IDENTIFIER / "runtime"
+    )
+
+
+def read_the_pinned_model(system: str, env: dict[str, str]) -> None:
+    """Under CI's cached weights (tools/model_pin.py sets HF_HUB_OFFLINE),
+    Demucs must have read them: one that cannot falls back to its legacy
+    download, into the runtime's models/torch, and every other check passes."""
+    if not env.get("HF_HUB_OFFLINE"):
+        return
+    legacy = sorted((runtime_path(system, env) / "models").rglob("*.th"))
+    if legacy:
+        raise SmokeError(f"Demucs skipped the cached weights for {legacy[0]}")
+
+
 def windows_places(env: dict[str, str]) -> tuple[Path, Path]:
     """The owner's show (Tauri's app_data_dir, childenv.rs DataDirs) and the
-    app's own tools (app_local_data_dir, lib.rs runtime_dir)."""
+    app's runtime."""
     show = Path(env["APPDATA"]) / IDENTIFIER / "radio" / "scenes.yaml"
-    return show, Path(env["LOCALAPPDATA"]) / IDENTIFIER / "runtime"
+    return show, runtime_path("Windows", env)
 
 
 def uninstall_windows(
@@ -394,6 +414,7 @@ def main(argv: list[str] | None = None) -> int:
             else windows_app(args.bundle, env)
         )
         judge([str(exe)], env, args.timeout, log, system)
+        read_the_pinned_model(system, env)
         if system == "Windows":
             uninstall_windows(exe, env, args.bundle)
     except (SmokeError, OSError, subprocess.SubprocessError) as exc:
