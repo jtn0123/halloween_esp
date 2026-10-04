@@ -95,6 +95,12 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   let live = false;
   let mirror = opts.mirror ?? true;
   let lastVol = 70;
+  // The level ♪ Castle and unmute come back to: the last one above 0 that
+  // the castle reported or the hand set. Kept apart from `lastVol` (what the
+  // castle says now), because a poll landing while the castle is hushed or
+  // muted says 0 — and used to make the flip back send 70, not the 40 the
+  // castle had been at.
+  let backTo = 70;
   // The scene the castle was last seen running ("" = idle); null before
   // first contact. Only `follow` acts on a change.
   let followed: string | null = null;
@@ -228,7 +234,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     if (route === "mac") {
       // Hush the porch, sound the desk. Remember the amp level for the
       // flip back so "Castle" restores what the hand last set.
-      if (vol && Number(vol.value) > 0) lastVol = Number(vol.value);
+      if (vol && Number(vol.value) > 0) backTo = Number(vol.value);
       if (vol) vol.value = "0";
       // Unannounced = merely enforcing the remembered route at first
       // contact: the POST goes, the toast does not — on every page open
@@ -237,7 +243,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
           announce ? "sound: Mac — castle speaker off" : "castle speaker off",
           !announce);
     } else {
-      const to = lastVol || 70;
+      const to = backTo;
       if (vol) vol.value = String(to);
       act(`/api/volume?v=${to}`, `sound: castle — volume ${to}`);
     }
@@ -266,6 +272,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     const wasDown = !lastOk;
     lastOk = true;
     lastVol = s.volume ?? lastVol;
+    if (lastVol > 0) backTo = lastVol;
     lastStatus = s;
     sayStatus(s);
     opts.onCard?.(s.sd_total_kb || null);
@@ -308,11 +315,14 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       stop: () => act("/api/stop", "stop"),
       more: () => panel.toggle(),
       route: () => applyRoute(soundRoute === "mac" ? "castle" : "mac", true),
-      volume: (v) => act(`/api/volume?v=${v}`, `volume ${v}`),
+      volume: (v) => {
+        if (v > 0) backTo = v;
+        act(`/api/volume?v=${v}`, `volume ${v}`);
+      },
       mute: (vol) => {
         // Mute is volume 0 with memory — the device has no separate flag.
-        const to = Number(vol.value) === 0 ? (lastVol || 70) : 0;
-        if (to === 0) lastVol = Number(vol.value);
+        const to = Number(vol.value) === 0 ? backTo : 0;
+        if (to === 0) backTo = Number(vol.value);
         vol.value = String(to);
         act(`/api/volume?v=${to}`, to === 0 ? "muted" : `volume ${to}`);
       },
