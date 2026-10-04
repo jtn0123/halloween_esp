@@ -36,7 +36,8 @@ MIN_PYTHON = (3, 13)
 RADIO = "demo/castle-radio"
 
 #: Castle Radio's browser sources, run under node:test (node 22, no npm
-#: install). The order is the order the Makefile always listed them in.
+#: install). The order is the order the Makefile always listed them in;
+#: tests/test_run_checks.py fails a suite on disk that is not here.
 RADIO_NODE_TESTS = (
     "test_castle_radio.test.mjs",
     "test_castle_fuzz.test.mjs",
@@ -50,6 +51,7 @@ RADIO_NODE_TESTS = (
     "test_castle_key.test.mjs",
     "test_castle_find.test.mjs",
     "test_first_run.test.mjs",
+    "test_first_paint.test.mjs",
     "test_castle_help.test.mjs",
     "test_castle_update.test.mjs",
     "test_downloader.test.mjs",

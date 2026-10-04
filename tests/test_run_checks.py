@@ -68,6 +68,11 @@ class CommandTests(unittest.TestCase):
         for rel in node[2:]:
             self.assertTrue((ROOT / rel).is_file(), rel)
 
+    def test_every_radio_node_file_is_run(self) -> None:
+        """A suite written and never listed passes for ever, unrun."""
+        on_disk = {p.name for p in (ROOT / run_checks.RADIO).glob("*.test.mjs")}
+        self.assertEqual(on_disk - set(run_checks.RADIO_NODE_TESTS), set())
+
     def test_radio_without_node_says_so(self) -> None:
         with (
             mock.patch.object(shutil, "which", return_value=None),
