@@ -148,8 +148,11 @@ jobs:
       # cannot be OTA'd strands every buyer who installs it.
       - name: make build-buyer
         run: make build-buyer PY=python ESPHOME=esphome
+      # scenes/shipped.yaml rides along, as in firmware.yml: gen_esphome
+      # rewrites it from scenes.yaml, and it is the show this release's
+      # buyers get on the card and in the app.
       - name: the generated show is the committed show
-        run: git diff --exit-code --stat -- firmware/generated audio/markers.json
+        run: git diff --exit-code --stat -- firmware/generated audio/markers.json scenes/shipped.yaml
       # The device name is the build tree's directory name; this is a fresh
       # checkout, so the compile above made exactly one.
       - name: name the build

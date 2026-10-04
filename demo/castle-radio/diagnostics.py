@@ -217,7 +217,7 @@ def _jobs() -> list[str]:
 def _log_tail() -> list[str]:
     path = os.environ.get("CASTLE_APP_LOG", "")
     if not path:
-        return ["(no app log: Castle Radio is not running inside the Castle app)"]
+        return ["(no app log: Castle Radio is not running inside Castle Tools)"]
     try:
         with open(path, encoding="utf-8", errors="replace") as log:
             lines = log.read().splitlines()
