@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import platform
 import shutil
 import sys
 import tempfile
@@ -25,6 +26,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
+import desktop_env as de
 import desktop_smoke as smoke
 
 
@@ -46,6 +48,11 @@ class FakeWindows:
         self.show.parent.mkdir(parents=True)
         self.show.write_text("scenes: []\n", encoding="utf-8")
         (self.runtime / "python").mkdir(parents=True)
+        # The installer's own link from the runtime to the owner's data — a
+        # junction on Windows, a symlink here.
+        self.data = de.Dirs(self.runtime, self.show.parent, platform.system())
+        if wrong != "no link":
+            de.link_radio_data(self.data)
         self.ran: list[object] = []
         self.pending: list[Callable[[], None]] = []
         self.slept = 0
@@ -79,6 +86,8 @@ class FakeWindows:
     def owners(self) -> None:
         shutil.rmtree(self.folder)
         if self.wrong != "owner keeps the runtime":
+            # hooks.nsh: the link alone first, then the runtime.
+            de.remove_link(self.data.app / de.RADIO_DATA)
             shutil.rmtree(self.runtime)
         if self.wrong == "owner takes the show":
             self.show.unlink()
@@ -142,6 +151,16 @@ class TheUninstallPhase(unittest.TestCase):
         ):
             win.smoke()
         self.assertEqual(win.ran, [])
+
+    def test_a_runtime_without_the_link_proves_nothing(self) -> None:
+        win = FakeWindows(self.tmp, "no link")
+        with self.assertRaisesRegex(smoke.SmokeError, "no link to the owner's data"):
+            win.smoke()
+        self.assertEqual(win.ran, [])
+
+    def test_the_link_is_the_one_the_installer_makes(self) -> None:
+        dirs = de.Dirs(Path("R"), Path("D"), "Windows")
+        self.assertEqual(Path("R") / smoke.RADIO_LINK, dirs.app / de.RADIO_DATA)
 
     def test_the_places_are_the_apps(self) -> None:
         env = {"APPDATA": "R", "LOCALAPPDATA": "L"}

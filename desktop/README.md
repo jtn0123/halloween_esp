@@ -73,7 +73,10 @@ stdout/stderr. Rotated to `.log.1` past 5 MB at launch.
   by an update (`/UPDATE`) or a silent uninstall, which shows no page. One
   hook (`windows/hooks.nsh`, `installerHooks`) then removes
   `%LOCALAPPDATA%\io.github.jtn0123.castletools\runtime` — the first
-  launch's tools, about 1.7 GB — box or no box. It keeps the runtime on an
+  launch's tools, about 1.7 GB — box or no box. It unlinks the runtime's
+  junction to the songs (`app\demo\castle-radio\.radio-data`) first and
+  alone, because `RMDir /r` follows a junction and empties its target, and
+  leaves the runtime if the link will not go. It keeps the runtime on an
   update and when a newer setup uninstalls the old version before it
   installs ("Uninstall before installing", which runs `uninstall.exe _?=`
   in place): both start the new version on it. `tests/test_desktop_uninstall.py`

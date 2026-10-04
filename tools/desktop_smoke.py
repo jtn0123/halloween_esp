@@ -63,6 +63,10 @@ SHIPPED = Path(__file__).resolve().parent.parent / "scenes" / "shipped.yaml"
 SECOND_START = 180.0
 STUDIO_START = 120.0
 POLL = 2.0
+#: Castle Radio's data folder in the runtime: a junction to the owner's songs
+#: (desktop_env.RADIO_DATA under Dirs.app). hooks.nsh must unlink it before it
+#: removes the runtime, because RMDir /r follows a junction into its target.
+RADIO_LINK = Path("app", "demo", "castle-radio", ".radio-data")
 #: An owner's uninstall returns at once (it runs on from a copy in %TEMP%),
 #: and removing a 1.7 GB runtime takes a while after that.
 UNINSTALL_WAIT = 600.0
@@ -366,12 +370,19 @@ def uninstall_windows(
     2. Reinstalled, then as an owner does (Settings, or uninstall.exe opened
        by hand): it copies itself to %TEMP%, returns at once and runs on
        from there, so this waits for the app and the runtime to be gone.
-    The owner's show stays through both."""
+    The owner's show stays through both — reached, in the runtime, through
+    the junction (RADIO_LINK) that a careless RMDir /r empties."""
     show, runtime = windows_places(env)
     folder = exe.parent
     for what, path in (("the owner's show", show), ("the runtime", runtime)):
         if not path.exists():
             raise SmokeError(f"before any uninstall, {what} is missing: {path}")
+    link = runtime / RADIO_LINK
+    if not (link.is_symlink() or os.path.isjunction(link)):
+        raise SmokeError(
+            f"the runtime has no link to the owner's data at {link}, so no "
+            "uninstall here could show whether it follows one"
+        )
     run(f'"{folder / "uninstall.exe"}" /S _?={folder}', check=True, timeout=600)
     if exe.exists():
         raise SmokeError("the in-place uninstall left the app")

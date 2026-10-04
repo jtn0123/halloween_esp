@@ -25,7 +25,8 @@ src/bundle/windows/nsis/installer.nsi):
 So the configuration is the stock template plus one hook file, and this
 holds the hook to removing the runtime and nothing of the owner's: no
 `$APPDATA`, no songs, no settings, no log, and not on an update or an
-upgrade's uninstall. tools/desktop_smoke.py runs both uninstalls against the
+upgrade's uninstall. The runtime's junction to the songs goes first and
+alone, because `RMDir /r` follows one into its target. tools/desktop_smoke.py runs both uninstalls against the
 real build on Windows. Bumping the CLI fails here on purpose: read the new
 template's uninstall section, then move the pin. macOS has no uninstaller to
 configure; docs/OWNER-GUIDE.md says which folder to delete.
@@ -35,11 +36,16 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import unittest
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
+
+import desktop_env as de
+
 TAURI = ROOT / "desktop" / "src-tauri"
 CLI = ROOT / "desktop" / "cli" / "package.json"
 HOOKS = "./windows/hooks.nsh"
@@ -84,6 +90,8 @@ class UninstallKeepsTheSongs(unittest.TestCase):
 
     def test_the_hook_removes_the_runtime_and_nothing_of_the_owners(self) -> None:
         lines = hook_lines()
+        runtime = "$LOCALAPPDATA\\${BUNDLEID}\\runtime"
+        link = runtime + "\\app\\demo\\castle-radio\\.radio-data"
         self.assertEqual(
             lines,
             [
@@ -91,17 +99,41 @@ class UninstallKeepsTheSongs(unittest.TestCase):
                 "${If} $UpdateMode <> 1",
                 "${AndIf} $EXEDIR != $INSTDIR",
                 "SetShellVarContext current",
-                'RMDir /r "$LOCALAPPDATA\\${BUNDLEID}\\runtime"',
+                f'RMDir "{link}"',
+                f'${{IfNot}} ${{FileExists}} "{link}\\*.*"',
+                f'RMDir /r "{runtime}"',
+                "${EndIf}",
                 "${EndIf}",
                 "!macroend",
             ],
             "one hook: after the uninstall, not on an update or an upgrade's "
-            "in-place uninstall, the runtime folder alone",
+            "in-place uninstall — the link to the songs alone, then the "
+            "runtime folder only once nothing answers through that link",
         )
         code = "\n".join(lines)
-        for owners in ("$APPDATA", "radio", "settings", "logs", "Delete "):
+        for owners in ("$APPDATA", "settings", "logs", "Delete "):
             self.assertNotIn(owners, code)
-        self.assertEqual(len(re.findall(r"\bRMDir\b", code, re.IGNORECASE)), 1)
+        self.assertEqual(len(re.findall(r"\bRMDir /r\b", code, re.IGNORECASE)), 1)
+
+    def test_the_link_it_unlinks_first_is_the_one_the_installer_makes(self) -> None:
+        """RMDir /r follows a junction into its target: the first Windows
+        release smoke of this hook emptied the owner's data through
+        Castle Radio's. The link is desktop_env's RADIO_DATA under the
+        runtime's app/, and link_radio_data is the only directory link any
+        shipped tool makes — a second one needs a line in the hook first."""
+        app = de.Dirs(Path("R"), Path("D"), "Windows").app
+        self.assertEqual(
+            app / de.RADIO_DATA, Path("R", "app", "demo", "castle-radio", ".radio-data")
+        )
+        makers = []
+        for tree in ("tools", "installer", "demo/castle-radio"):
+            for path in sorted((ROOT / tree).rglob("*.py")):
+                if path.name.startswith("test_"):
+                    continue
+                text = path.read_text(encoding="utf-8")
+                if "mklink" in text or "target_is_directory=True" in text:
+                    makers.append(path.relative_to(ROOT).as_posix())
+        self.assertEqual(makers, ["tools/desktop_env.py"])
 
     def test_the_runtime_it_names_is_the_one_the_app_sets_up(self) -> None:
         """${BUNDLEID} is the identifier, and src/lib.rs puts the runtime in
