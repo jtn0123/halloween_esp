@@ -4,10 +4,11 @@ buyer's own machine from its publisher, at install time or first use.
 None of it is inside an artifact the release publishes — the source zip,
 the castle-core zips, the desktop app, the firmware image, the web flasher
 — and tests/test_third_party_notices.py keeps that true: the desktop app's
-bundled resources and the release job's sidecar step are pinned there, so
+bundled resources and the release job's bundle step are pinned there, so
 putting ffmpeg, Python or a model INTO a bundle fails until its notices
 (and, for ffmpeg, an LGPL build) come with it. The table is printed in the
-notices anyway, so a buyer can see what the installer will download and
+notices anyway, so a buyer can see what the installer — or the desktop
+app's first launch, which runs the same installer — will download and
 under whose terms.
 
 Every row is reviewed by hand; the source of each claim is in its text.
@@ -89,7 +90,9 @@ EXTERNAL: tuple[External, ...] = (
         "uv",
         "the installer script's current release",
         "MIT OR Apache-2.0",
-        "installed from astral.sh by the installer",
+        "installed from astral.sh by installer/install.sh and install.ps1 (option A)",
+        "The desktop app carries its own pinned copy instead; the app's "
+        "notices (THIRD-PARTY-NOTICES-desktop.txt) list it.",
     ),
     External(
         "Microsoft Edge WebView2 Runtime (Windows)",

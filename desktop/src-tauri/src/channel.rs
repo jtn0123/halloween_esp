@@ -174,14 +174,17 @@ mod tests {
 
     #[test]
     fn both_servers_are_told_the_decision() {
-        use crate::runtime::{child_env, DataDirs, Runtime, Source};
+        use crate::childenv::{child_env, DataDirs};
+        use crate::runtime::{Runtime, Source};
         use std::path::{Path, PathBuf};
         let rt = Runtime {
             source: Source::Checkout,
             root: PathBuf::from("/r"),
             python: PathBuf::from("/r/.venv/bin/python"),
             bin_dir: None,
-            models: None,
+            install: None,
+            tools: Vec::new(),
+            core_bin_dir: None,
             studio: None,
         };
         let data = DataDirs::new(Path::new("/d"));

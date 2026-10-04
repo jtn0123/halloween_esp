@@ -264,7 +264,7 @@ jobs:
           - { os: windows-latest, target: x86_64-pc-windows-msvc, bundles: nsis }
           - { os: macos-14, target: aarch64-apple-darwin, bundles: "app,dmg" }
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
         with:
@@ -293,20 +293,23 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
-      # castle-core rides along as the app's sidecar — the `core` job's zip,
-      # not a second build — into the directory tauri.release.conf.json
-      # bundles as resources. `unzip`, not python's zipfile, which drops the
-      # executable bit release_assets.py stored.
+      # The app's castle/ folder, which tauri.release.conf.json bundles as
+      # resources: this tree's own files (the installer's file list), the
+      # `core` job's castle-core zip rather than a second build, and uv at
+      # the version and sha256 tools/desktop_bundle.py pins. No Python,
+      # PyTorch, ffmpeg or model: the app's first launch fetches those on
+      # the buyer's machine (docs/LICENSING.md). The step makes the folder,
+      # which is gitignored and so absent on a fresh checkout, and its unzip
+      # keeps the executable bit release_assets.py stored.
       - uses: actions/download-artifact@v8
         with:
           name: release-core-${{ matrix.target }}
           path: core-zip
-      - name: sidecar
-        # sidecar/ is gitignored, so a fresh checkout has no parent for
-        # unzip to create castle/ in.
-        run: |
-          mkdir -p desktop/sidecar/castle
-          unzip -o core-zip/*.zip -d desktop/sidecar/castle/
+      - name: bundle
+        env:
+          TAG: ${{ needs.meta.outputs.tag }}
+          TARGET: ${{ matrix.target }}
+        run: python tools/desktop_bundle.py stage "$TAG" "$TARGET" core-zip desktop/sidecar
       # The CLI is pinned to the crate's tauri in Cargo.lock and locked with
       # integrity hashes in desktop/cli/package-lock.json; `npm ci` installs
       # exactly that, with --ignore-scripts (it has none; its native half is
@@ -330,6 +333,17 @@ jobs:
           node "$TAURI_JS" build --ci --target "$TARGET" --bundles "$BUNDLES" \
             --config src-tauri/tauri.release.conf.json \
             --config "{\"version\":\"${TAG#v}\"}" -- --locked
+      # The app as a buyer meets it: installed from the bundle just built and
+      # started with nothing set up, it must set itself up (Python and the
+      # locked packages from the internet, the way a buyer's first launch
+      # does) and answer GET /radio/tools with every capability; started a
+      # second time it must not set up again. tools/desktop_smoke.py.
+      - name: first-run smoke
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          python tools/desktop_smoke.py \
+            "desktop/src-tauri/target/$TARGET/release/bundle" --timeout 1800
       - name: stage under the release names
         env:
           TAG: ${{ needs.meta.outputs.tag }}
