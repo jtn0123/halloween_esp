@@ -7,7 +7,7 @@ Windows hands-on pass (docs/PRODUCTION-TODO.md §4.4).
     python tests/install_smoke.py uninstall --work DIR
 
 .github/workflows/install-smoke.yml runs the four in order on windows-latest
-and macos-14. Each phase is a step of its own, so the Actions page says
+and macos-15. Each phase is a step of its own, so the Actions page says
 which one went red; they share <work>/smoke.json.
 
   stage      the release a buyer downloads: `git archive` of this commit
