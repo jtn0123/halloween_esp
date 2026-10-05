@@ -11,7 +11,7 @@ PyYAML~=6.0
 # tools/guide_shots.py cuts the owner's guide's pictures to palette PNGs.
 # esphome already brings Pillow in; this line says tools/ imports it.
 pillow~=12.3
-esphome==2026.9.0
+esphome==2026.9.1
 # esphome pins aioesphomeapi EXACTLY (2026.9.0 wants ==46.3.0), so the version
 # is esphome's to choose and this line only says "we import it directly". A
 # floor, not a range: `~=46.3` made Dependabot offer ~=46.4 the day it shipped
