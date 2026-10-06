@@ -124,8 +124,8 @@ function renderJob(j,place){
   if(waitingNote){return `<article class="import-job waiting"><div><b>${name}</b><span>${waitingNote}</span></div>${cancelButton}</article>`;}
   return `<article class="import-job"><div><b>${name}</b><span>${escapeHTML(j.phase)}</span></div>${jobMeasure(j)}${jobOutcome(j)}${cancelButton}</article>`;
 }
-async function refresh(){if(pollBusy){return;}pollBusy=true;try{const [jobs,rows]=await Promise.all([request('/radio/jobs'),request('/radio/library')]);$('service-status').textContent='Import service ready · files stay in this demo';if(JSON.stringify(jobs)!==lastJobs){lastJobs=JSON.stringify(jobs);jobsNow=jobs;renderJobs();}const signature=JSON.stringify(rows);if(signature!==lastLibrary){lastLibrary=signature;integrate(rows);renderJobs();}}catch{ // any failure reads the same to the user: the service is not answering
-$('service-status').textContent='Import service unavailable. Start server.py to import songs.';}finally{pollBusy=false;}}
+async function refresh(){if(pollBusy){return;}pollBusy=true;try{const [jobs,rows]=await Promise.all([request('/radio/jobs'),request('/radio/library')]);$('service-status').textContent='Import service ready · songs are prepared and kept on this computer';if(JSON.stringify(jobs)!==lastJobs){lastJobs=JSON.stringify(jobs);jobsNow=jobs;renderJobs();}const signature=JSON.stringify(rows);if(signature!==lastLibrary){lastLibrary=signature;integrate(rows);renderJobs();}}catch{ // any failure reads the same to the user: the service is not answering
+$('service-status').textContent='Import service unavailable · trying again';}finally{pollBusy=false;}}
 /* One import, or many: every link on its own line and every chosen file is
    queued in the order given. What could not be queued stays in the box with
    the reason, so a full queue or one bad link does not cost the whole list. */

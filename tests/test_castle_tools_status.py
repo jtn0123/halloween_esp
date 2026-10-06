@@ -130,6 +130,67 @@ class CastleToolsStatusTests(unittest.TestCase):
                 out.getvalue(),
             )
 
+    def test_inside_the_desktop_app_repair_is_the_apps_own(self) -> None:
+        """The app has no installer/ folder to run a command in and no
+        website-startup double-click: its owner is pointed at the tray's
+        Repair, in the words of the system the app runs on. A checkout or
+        an installer install keeps the installer's command."""
+        app = {"CASTLE_APP_VERSION": "v0.9.1"}
+        for platform, where in (
+            ("darwin", "from the ♜ in the menu bar"),
+            ("win32", "the Castle Tools icon in the notification area"),
+        ):
+            with (
+                self.subTest(platform),
+                mock.patch.dict(os.environ, app),
+                mock.patch.object(tools_status.sys, "platform", platform),
+            ):
+                words = tools_status.repair_words()
+            assert words is not None
+            self.assertIn("Repair Castle Tools…", words)
+            self.assertIn(where, words)
+            # The menu item it names is the tray's own, word for word.
+            tray = Path(__file__).resolve().parents[1] / "desktop/src-tauri/src/tray.rs"
+            self.assertIn(
+                'pub const REPAIR: &str = "Repair Castle Tools…";',
+                tray.read_text(encoding="utf-8"),
+            )
+            self.assertIn("keeps your songs", words)
+            self.assertNotIn("installer", words)
+        tools_status.status.cache_clear()
+        self.addCleanup(tools_status.status.cache_clear)
+        with mock.patch.dict(os.environ, app):
+            inside = tools_status.status()
+            words = tools_status.repair_words()
+        self.assertIsNone(inside["install_command"])
+        self.assertIsNone(inside["website_startup"])
+        self.assertIsNotNone(words)
+        self.assertEqual(inside["repair"], words)
+        tools_status.status.cache_clear()
+        with mock.patch.dict(os.environ, {"CASTLE_APP_VERSION": ""}):
+            outside = tools_status.status()
+            self.assertIsNone(tools_status.repair_words())
+        self.assertIsNone(outside["repair"])
+        self.assertEqual(outside["install_command"], tools_status.install_command())
+
+    def test_human_report_inside_the_app_names_its_repair(self) -> None:
+        missing = {
+            "ready": False,
+            "core_ready": True,
+            "checks": [{"name": "torch", "ok": False, "detail": "missing"}],
+            "install_command": None,
+            "repair": "To repair Castle Tools, choose Repair Castle Tools….",
+        }
+        out = io.StringIO()
+        with (
+            mock.patch.object(tools_status, "status", return_value=missing),
+            mock.patch.object(sys, "argv", ["castle_tools_status.py", "--human"]),
+            contextlib.redirect_stdout(out),
+        ):
+            self.assertEqual(tools_status.main(), 0)
+        self.assertIn("choose Repair Castle Tools…", out.getvalue())
+        self.assertNotIn("Castle Tools folder", out.getvalue())
+
     def test_model_probe_requires_yaml_and_every_weight(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             cache = Path(tmp)

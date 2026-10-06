@@ -15,9 +15,13 @@ installed. Then:
      must answer beside it with the shipped show (scenes/shipped.yaml) as
      the owner's — the one show the app carries and seeds;
   2. the app is quit, started again, and must answer within a few minutes
-     WITHOUT setting anything up a second time.
+     WITHOUT setting anything up a second time;
+  3. on Windows, it is uninstalled the two ways desktop/src-tauri/windows/
+     hooks.nsh tells apart (uninstall_windows): as a newer setup does, which
+     must keep the runtime, and — reinstalled — as an owner does, which must
+     remove it. The owner's show stays through both.
 
-The app's log is printed when either fails. release.yml's desktop job runs
+The app's log is printed when any of them fails. release.yml's desktop job runs
 this on both runners (docs/RELEASING.md). Both servers get free ports
 (CASTLE_STUDIO_PORT / CASTLE_DESK_PORT), so a runner's 8871 is never asked.
 """
@@ -59,6 +63,13 @@ SHIPPED = Path(__file__).resolve().parent.parent / "scenes" / "shipped.yaml"
 SECOND_START = 180.0
 STUDIO_START = 120.0
 POLL = 2.0
+#: Castle Radio's data folder in the runtime: a junction to the owner's songs
+#: (desktop_env.RADIO_DATA under Dirs.app). hooks.nsh must unlink it before it
+#: removes the runtime, because RMDir /r follows a junction into its target.
+RADIO_LINK = Path("app", "demo", "castle-radio", ".radio-data")
+#: An owner's uninstall returns at once (it runs on from a copy in %TEMP%),
+#: and removing a 1.7 GB runtime takes a while after that.
+UNINSTALL_WAIT = 600.0
 
 Json = dict[str, object]
 Run = Callable[..., object]
@@ -315,6 +326,95 @@ def own(wrote: str, which: str) -> None:
         )
 
 
+def runtime_path(system: str, env: dict[str, str]) -> Path:
+    """The app's own tools: Tauri's app_local_data_dir, lib.rs runtime_dir."""
+    if system == "Windows":
+        return Path(env["LOCALAPPDATA"]) / IDENTIFIER / "runtime"
+    return (
+        Path(env["HOME"]) / "Library" / "Application Support" / IDENTIFIER / "runtime"
+    )
+
+
+def read_the_pinned_model(system: str, env: dict[str, str]) -> None:
+    """Under CI's cached weights (tools/model_pin.py sets HF_HUB_OFFLINE),
+    Demucs must have read them: one that cannot falls back to its legacy
+    download, into the runtime's models/torch, and every other check passes."""
+    if not env.get("HF_HUB_OFFLINE"):
+        return
+    legacy = sorted((runtime_path(system, env) / "models").rglob("*.th"))
+    if legacy:
+        raise SmokeError(f"Demucs skipped the cached weights for {legacy[0]}")
+
+
+def windows_places(env: dict[str, str]) -> tuple[Path, Path]:
+    """The owner's show (Tauri's app_data_dir, childenv.rs DataDirs) and the
+    app's runtime."""
+    show = Path(env["APPDATA"]) / IDENTIFIER / "radio" / "scenes.yaml"
+    return show, runtime_path("Windows", env)
+
+
+def ready_to_uninstall(show: Path, runtime: Path) -> None:
+    """What an uninstall has to be able to lose before it can be judged: the
+    show, the runtime, and the runtime's link to the show's folder."""
+    for what, path in (("the owner's show", show), ("the runtime", runtime)):
+        if not path.exists():
+            raise SmokeError(f"before any uninstall, {what} is missing: {path}")
+    link = runtime / RADIO_LINK
+    if not (link.is_symlink() or os.path.isjunction(link)):
+        raise SmokeError(
+            f"the runtime has no link to the owner's data at {link}, so no "
+            "uninstall here could show whether it follows one"
+        )
+
+
+def uninstall_windows(
+    exe: Path,
+    env: dict[str, str],
+    bundle: Path,
+    run: Run = subprocess.run,
+    wait: float = UNINSTALL_WAIT,
+    sleep: Callable[[float], None] = time.sleep,
+) -> None:
+    """The two uninstalls hooks.nsh tells apart, against the real build.
+
+    1. As a newer setup does before it installs: uninstall.exe in place,
+       `_?=` last and unquoted, as the NSIS template writes it (one string,
+       so Python quotes nothing). The app goes; the runtime the new version
+       will start on stays.
+    2. Reinstalled, then as an owner does (Settings, or uninstall.exe opened
+       by hand): it copies itself to %TEMP%, returns at once and runs on
+       from there, so this waits for the app and the runtime to be gone.
+    The owner's show stays through both — reached, in the runtime, through
+    the junction (RADIO_LINK) that a careless RMDir /r empties."""
+    show, runtime = windows_places(env)
+    folder = exe.parent
+    ready_to_uninstall(show, runtime)
+    run(f'"{folder / "uninstall.exe"}" /S _?={folder}', check=True, timeout=600)
+    if exe.exists():
+        raise SmokeError("the in-place uninstall left the app")
+    if not runtime.is_dir():
+        raise SmokeError(
+            "an upgrade's in-place uninstall removed the runtime the new "
+            "version would start on"
+        )
+    if not show.is_file():
+        raise SmokeError("an upgrade's in-place uninstall took the owner's show")
+    print("uninstalled in place, as a newer setup does: the runtime stayed")
+    again = windows_app(bundle, env, run)
+    run([str(again.parent / "uninstall.exe"), "/S"], check=True, timeout=600)
+    deadline = time.monotonic() + wait
+    while again.exists() or runtime.exists():
+        if time.monotonic() > deadline:
+            left = "the runtime" if runtime.exists() else "the app"
+            raise SmokeError(
+                f"{wait:.0f}s after an owner's uninstall, {left} is still there"
+            )
+        sleep(POLL)
+    if not show.is_file():
+        raise SmokeError("an owner's uninstall took the owner's show")
+    print("uninstalled as an owner does: the app and its runtime went, the show stayed")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -331,6 +431,9 @@ def main(argv: list[str] | None = None) -> int:
             else windows_app(args.bundle, env)
         )
         judge([str(exe)], env, args.timeout, log, system)
+        read_the_pinned_model(system, env)
+        if system == "Windows":
+            uninstall_windows(exe, env, args.bundle)
     except (SmokeError, OSError, subprocess.SubprocessError) as exc:
         print(f"desktop smoke FAILED: {exc}", file=sys.stderr)
         tail = read_from(log, 0).splitlines()[-300:]

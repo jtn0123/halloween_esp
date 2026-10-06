@@ -231,6 +231,20 @@ castle's own page. **Copy diagnostics** includes both.
 
 <img src="guide/radio-help.png" width="420" alt="Help with your castle: open the castle's own page, Copy diagnostics, Save as a file">
 
+**If importing stops working.** Choose **Repair Castle Tools…** from the ♜
+in the Mac's menu bar, or right-click the Castle Tools icon in the Windows
+notification area. It sets the app's tools up again from the internet and
+takes a few minutes; your songs and settings stay.
+
+**Removing Castle Tools.** On Windows, uninstall it from **Settings →
+Apps**: its tools go with it, and your songs and settings stay unless you
+tick **Delete the application data**. On a Mac, drag **Castle Tools** from
+Applications to the Bin, then free the 1.7 GB its tools took: in Finder
+choose **Go → Go to Folder…**, paste
+`~/Library/Application Support/io.github.jtn0123.castletools/runtime` and
+move that folder to the Bin. Your songs are in the `radio` folder beside it;
+leave that one to keep them.
+
 ## Licences and source code
 
 The castle's software is built from free software, some of it under the

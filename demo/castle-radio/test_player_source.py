@@ -8,8 +8,10 @@ HERE = Path(__file__).resolve().parent
 
 class PlayerSourceTests(unittest.TestCase):
     def test_hidden_built_ins_are_filtered_out_of_the_queue(self):
-        preview = (HERE / "preview.js").read_text(encoding="utf-8")
-        self.assertIn("queue=queue.filter(i=>!tracks[i].deleted)", preview)
+        # first-run.js decides which built-ins show (test_first_run.test.mjs
+        # runs it); every pass of it leaves no hidden row in the queue.
+        first_run = (HERE / "first-run.js").read_text(encoding="utf-8")
+        self.assertIn("queue = queue.filter(id => !tracks[id].deleted);", first_run)
 
     def test_shuffle_off_restores_the_pre_shuffle_order(self):
         app = (HERE / "app.js").read_text(encoding="utf-8")

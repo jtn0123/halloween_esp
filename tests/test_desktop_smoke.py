@@ -366,6 +366,8 @@ class Verdicts(unittest.TestCase):
             mock.patch.object(smoke, "mac_app", return_value=Path("/a")),
             mock.patch.object(smoke, "windows_app", return_value=Path("/a")),
             mock.patch.object(smoke, "judge") as judge,
+            mock.patch.object(smoke, "read_the_pinned_model"),
+            mock.patch.object(smoke, "uninstall_windows"),
             contextlib.redirect_stdout(out),
         ):
             self.assertEqual(smoke.main([tmp.name, "--timeout", "5"]), 0)

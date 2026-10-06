@@ -54,6 +54,24 @@ class FreshAccount(unittest.TestCase):
         self.assertEqual(env["PYTHONIOENCODING"], "utf-8")
         self.assertEqual(env["PYTHONUNBUFFERED"], "1")
 
+    def test_the_jobs_cached_weights_reach_the_buyer_and_nothing_else_of_hf(
+        self,
+    ) -> None:
+        """install-smoke.yml points the buyer's Demucs at the pinned weights
+        (tools/model_pin.py); dropped here, the installer downloads them
+        again and the cache saves nothing."""
+        base = {
+            "HOME": "/Users/someone", "HF_HUB_CACHE": "/r/hub",
+            "HF_HUB_OFFLINE": "1", "HF_HOME": "/dev/hf", "HF_TOKEN": "t",
+        }  # fmt: skip
+        env = se.buyer_env(base, "Darwin")
+        self.assertEqual((env["HF_HUB_CACHE"], env["HF_HUB_OFFLINE"]), ("/r/hub", "1"))
+        self.assertNotIn("HF_HOME", env)
+        self.assertNotIn("HF_TOKEN", env)
+        win = {"USERPROFILE": r"C:\Users\someone", "hf_hub_cache": r"C:\hub"}
+        self.assertEqual(se.buyer_env(win, "Windows")["HF_HUB_CACHE"], r"C:\hub")
+        self.assertNotIn("HF_HUB_OFFLINE", se.buyer_env({"HOME": "/h"}, "Darwin"))
+
     def test_a_windows_buyer_reads_the_environment_case_blind(self) -> None:
         base = {
             "SystemRoot": r"C:\Windows", "LocalAppData": r"C:\Users\user\AppData\Local",

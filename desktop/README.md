@@ -63,28 +63,36 @@ Logs: one file, `castle-tools.log`, in `app_log_dir()` (`~/Library/Logs/…`,
 `%LOCALAPPDATA%\…\logs`), holding the app's own lines and both servers'
 stdout/stderr. Rotated to `.log.1` past 5 MB at launch.
 
-### Removing the app keeps the songs
+### Removing the app: the tools go, the songs stay
 
 - **Windows** (Settings → Apps → Castle Tools → Uninstall): Tauri's stock
   NSIS uninstaller removes the files it installed and leaves
   `%APPDATA%\io.github.jtn0123.castletools` and
   `%LOCALAPPDATA%\io.github.jtn0123.castletools` alone unless its **Delete
   the application data** box is ticked — unticked by default, never ticked
-  by an update (`/UPDATE`) or a silent uninstall, which shows no page.
-  `tests/test_desktop_uninstall.py` holds the config to that template (no
-  custom template, no uninstall hooks, the CLI pinned to the audited one).
+  by an update (`/UPDATE`) or a silent uninstall, which shows no page. One
+  hook (`windows/hooks.nsh`, `installerHooks`) then removes
+  `%LOCALAPPDATA%\io.github.jtn0123.castletools\runtime` — the first
+  launch's tools, about 1.7 GB — box or no box. It unlinks the runtime's
+  junction to the songs (`app\demo\castle-radio\.radio-data`) first and
+  alone, because `RMDir /r` follows a junction and empties its target, and
+  leaves the runtime if the link will not go. It keeps the runtime on an
+  update and when a newer setup uninstalls the old version before it
+  installs ("Uninstall before installing", which runs `uninstall.exe _?=`
+  in place): both start the new version on it. `tests/test_desktop_uninstall.py`
+  holds the config to that (the stock template, that one hook, the CLI
+  pinned to the audited one); the release smoke runs both uninstalls on
+  Windows and checks the runtime and the owner's show afterwards
+  (`tools/desktop_smoke.py`).
 - **macOS** has no uninstaller: the app is removed by dragging **Castle
   Tools** from Applications to the Bin, which takes the app and its
   `castle-tools://` handler and nothing else. Songs, scenes and settings
   stay in `~/Library/Application Support/io.github.jtn0123.castletools`, the
   log in `~/Library/Logs/io.github.jtn0123.castletools`; reinstalling picks
-  them up. To remove them as well, delete those two folders (Finder: Go → Go
-  to Folder…, paste the path).
-
-The first launch's runtime (`runtime/` in the local data folder, about
-1.7 GB) stays with them on both systems, so reinstalling the same release
-starts without a setup. Deleting the folder costs only the next launch's
-download.
+  them up. The runtime is the `runtime` folder inside the first: deleting it
+  frees the 1.7 GB and costs only the next launch's download
+  (docs/OWNER-GUIDE.md tells the owner so). To remove everything, delete
+  both folders (Finder: Go → Go to Folder…, paste the path).
 
 ### Where the servers come from (`src/runtime.rs`)
 
@@ -165,9 +173,12 @@ of 8 (Getting ffmpeg): …" or "Python 3.13 could not be downloaded (uv: …)
 — the first start needs the internet". The installer's whole output is in
 the log. A failed setup is not run again until **Try again** (or the tray's
 Start) is pressed. **Repair** is on the splash whenever Castle Radio fails
-on the app's own runtime. It stops both servers and runs the setup with
-`--repair`, which rebuilds the environment and fetches the tools again.
-The owner's library is never touched.
+on the app's own runtime, and in the tray (Repair Castle Tools…, asked
+first) for when Castle Radio runs but a tool it needs is broken — the tools
+card on Import points there, not at an installer the app does not carry
+(`castle_tools_status.repair_words`). It stops both servers, shows the
+splash and runs the setup with `--repair`, which rebuilds the environment
+and fetches the tools again. The owner's library is never touched.
 
 ## What an import can take
 
@@ -259,8 +270,9 @@ page; `CASTLE_PRERELEASE` in the app's environment overrides it either way.
 
 - **Tray** (`src/tray.rs`): ♜ in the macOS menu bar (a text title, so it
   follows light/dark), the app icon in the Windows notification area. Show,
-  Start, Open in browser, Open the light desk in browser, Open log, Check for
-  updates, Quit. Closing the window hides it; Quit stops both servers.
+  Start, Open in browser, Open the light desk in browser, Open log, Repair
+  (a release only: a dev run has no tools of its own), Check for updates,
+  Quit. Closing the window hides it; Quit stops both servers.
 - **`castle-tools://start`** (`src/deeplink.rs`): the one action a web page may
   ask for — start both servers, leave the browser in front. Any other URL is
   logged and dropped. macOS registers it through the bundle's Info.plist,

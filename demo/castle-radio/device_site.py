@@ -67,14 +67,18 @@ FONT_IMPORT = (
     "@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700"
     "&family=Manrope:wght@400;500;600;700;800&display=swap');"
 )
+# A built-in's length: the computer reads its audio's metadata, which on the
+# castle would be a whole-file stream through its one HTTP task, so the
+# castle's page reads the scene's length from the card's manifest instead.
+# first-run.js calls it for each built-in it shows, and renders after.
 PROBE = (
-    "tracks.forEach(t=>{const probe=new Audio();probe.preload='metadata';"
+    "function probeDuration(t){const probe=new Audio();probe.preload='metadata';"
     "probe.src=`media/${t.file}`;probe.onloadedmetadata=()=>{if(!Number.isFinite(probe.duration)){return;}t.duration=probe.duration;"
-    "renderTracks();};});"
+    "renderTracks();};}"
 )
 DURATIONS = (
-    "tracks.forEach(t=>{const scene=window.castleDirect.scenes.find(s=>s.file===t.file);"
-    "if(scene){t.duration=scene.dur/1000;}});renderTracks();"
+    "function probeDuration(t){const scene=window.castleDirect.scenes.find(s=>s.file===t.file);"
+    "if(scene){t.duration=scene.dur/1000;}}"
 )
 # (file, computer text, castle text) — each must occur exactly once.
 REWRITES: tuple[tuple[str, str, str], ...] = (
@@ -103,12 +107,12 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
     ),
     (
         IMPORTS,
-        "'Import service ready · files stay in this demo'",
+        "'Import service ready · songs are prepared and kept on this computer'",
         "(window.castleDesktop?.connected ? 'Mac tools connected · imports are prepared on your Mac' : 'Castle library ready · connect Mac tools to import')",
     ),
     (
         IMPORTS,
-        "'Import service unavailable. Start server.py to import songs.'",
+        "'Import service unavailable · trying again'",
         "'Castle library unavailable · retrying'",
     ),
     (

@@ -108,13 +108,32 @@ class TestBuild(FakeData):
         self.assertIn("This browser remembers it for this castle only.", page)
         self.assertIn('<audio id="audio" preload="none">', page)
 
+    def test_the_import_line_speaks_to_an_owner_on_both_pages(self):
+        """What Import says of its service is the owner's truth, not the
+        demo's: no "this demo", no server.py to start. The computer keeps
+        what it prepares; the castle's page says what it can do instead."""
+        source = (HERE / "imports.js").read_text(encoding="utf-8")
+        said = re.findall(r"\$\('service-status'\)\.textContent='([^']*)'", source)
+        self.assertEqual(
+            said,
+            [
+                "Import service ready · songs are prepared and kept on this computer",
+                "Import service unavailable · trying again",
+            ],
+        )
+        page = device_site.build(HERE, self.data).decode()
+        for line in said:
+            self.assertNotIn(line, page)
+        self.assertIn("Castle library ready · connect Mac tools to import", page)
+        self.assertIn("Castle library unavailable · retrying", page)
+
     def test_the_castle_guard_is_in_the_source_not_only_the_build(self):
         """B47: the control-room laptop must not fetch media/ either, so the
         castle-mode guard lives in app.js and the build only moves the path."""
         source = (HERE / "app.js").read_text(encoding="utf-8")
         self.assertIn(
-            "if($('output-target').value==='castle')"
-            "{audio.removeAttribute('src');audio.load();}",
+            "if($('output-target').value==='castle'||tracks[id].deleted)"
+            "{audio.removeAttribute('src');audio.load();return;}",
             source,
         )
         page = device_site.build(HERE, self.data).decode()

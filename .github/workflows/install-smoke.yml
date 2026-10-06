@@ -20,8 +20,9 @@
 # from the INSTALLED tree.
 #
 # Not a blocking gate for every PR: it downloads uv, CPython, torch, a static
-# ffmpeg, yt-dlp and the htdemucs weights each run. It runs on the PRs that
-# can break it, weekly against main, and by hand.
+# ffmpeg and yt-dlp each run (the htdemucs weights come from the Actions
+# cache once they are in it). It runs on the PRs that can break it, weekly
+# against main, and by hand.
 
 name: install-smoke
 
@@ -34,6 +35,7 @@ on:
       - tools/release_channel.py
       - tools/ytdlp_update.py
       - tools/castle_tools_status.py
+      - tools/model_pin.py
       - tools/castle_emu*.py
       - tools/render_cues.py
       - tools/track_scene.py
@@ -91,6 +93,23 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
+      # htdemucs, the 84 MB the installer's model step downloads, kept in the
+      # Actions cache the way cross-platform.yml keeps its lame zip:
+      # tools/model_pin.py pins the commit and each file's sha256, downloads
+      # only what the cache lacks and checks every byte either way. Before
+      # `stage`, which saves the buyer's environment: buyer_env passes
+      # HF_HUB_CACHE through to the buyer's Demucs, and HF_HUB_OFFLINE keeps
+      # it from asking the hub at all (install_smoke.py fails a fall-back).
+      - name: htdemucs weights (cached)
+        uses: actions/cache@v6
+        with:
+          path: ~/htdemucs-hub
+          key: htdemucs-955717e8-d9fa14133cfc
+      - name: htdemucs weights
+        run: |
+          hub=$(python tools/model_pin.py fetch ~/htdemucs-hub)
+          echo "HF_HUB_CACHE=$hub" >> "$GITHUB_ENV"
+          echo "HF_HUB_OFFLINE=1" >> "$GITHUB_ENV"
       - name: stage the download
         run: python tests/install_smoke.py stage --work "$RUNNER_TEMP/smoke" --core-bins core/target/release
       - name: install (dry run, install, dry run over it, second run)
