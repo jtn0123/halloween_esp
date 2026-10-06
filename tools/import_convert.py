@@ -121,7 +121,13 @@ def _codec(fmt: str, o: dict[str, Any]) -> list[str]:
     if fmt == "wav":
         return [*args, "-c:a", "pcm_s16le"]
     if fmt == "flac":
-        return [*args, "-c:a", "flac"]
+        # A fixed 4096-sample block, said out loud. Left alone, ffmpeg 9 takes
+        # the block size from the first frame its decoder hands over, and an
+        # MP3's first frame is what gapless trimming leaves of 1152 — 47
+        # samples. A FLAC of 47-sample blocks is twice the size, and Safari's
+        # decoder will not play it at all: the codec A/B sat "playing" there
+        # at a frozen position, without a sound.
+        return [*args, "-c:a", "flac", "-frame_size", "4096"]
     if fmt == "opus":
         return [*args, "-c:a", "libopus", "-b:a", f"{o['bitrate']}k"]
     return [*args, "-b:a", f"{o['bitrate']}k"]

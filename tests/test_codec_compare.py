@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 import analyze as ana
 import codec_compare as cc
+import import_convert as ic
 from helpers import make_click_track
 
 OPTS = {
@@ -133,6 +134,32 @@ class TestEncodeSet(unittest.TestCase):
         )
         low_mp3 = next(r for r in low if r["codec"] == "mp3")
         self.assertGreater(low_mp3["db"], self.by["mp3"]["db"])
+
+
+def flac_blocks(path: Path) -> tuple[int, int]:
+    """STREAMINFO's smallest and largest block size. It is always the first
+    metadata block: "fLaC", the block's own 4-byte header, then these two."""
+    head = path.read_bytes()[:12]
+    if head[:4] != b"fLaC":
+        raise AssertionError(f"{path.name} is not a FLAC file")
+    return int.from_bytes(head[8:10], "big"), int.from_bytes(head[10:12], "big")
+
+
+@unittest.skipUnless(shutil.which("ffmpeg"), "needs ffmpeg")
+class TestFlacFromAnMp3(unittest.TestCase):
+    """Most tracks arrive as MP3s, and the FLAC made from one has to play
+    everywhere the desk does. ffmpeg 9 sized every FLAC block after the MP3
+    decoder's first frame — 47 samples, all that gapless trimming leaves of
+    1152 — and Safari will not decode a FLAC built of blocks that small."""
+
+    def test_the_flac_uses_whole_4096_sample_blocks(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            wav, mp3 = Path(d) / "src.wav", Path(d) / "src.mp3"
+            make_click_track(wav, seconds=3.0)
+            ic.convert(wav, mp3, dict(OPTS, format="mp3"))
+            with contextlib.redirect_stdout(io.StringIO()):
+                cc.encode_set(mp3, Path(d) / "out", dict(OPTS), codecs=("flac",))
+            self.assertEqual(flac_blocks(Path(d) / "out" / "flac.flac"), (4096, 4096))
 
 
 if __name__ == "__main__":

@@ -102,11 +102,18 @@ export class Stage {
 
   setLayouts(layouts: Record<ZoneId, Layout>): void { this.layouts = layouts; }
 
-  constructor(canvas: HTMLCanvasElement) {
+  /** Told after every resize. Setting the backing size CLEARS the canvas, and
+   *  a stopped desk paints only when something marks it dirty (main.ts's
+   *  frame loop) — so without this a stopped stage went blank when the
+   *  window was resized or a phone turned, and stayed blank until a click. */
+  private readonly onResize: () => void;
+
+  constructor(canvas: HTMLCanvasElement, onResize: () => void = () => {}) {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("stage: 2D canvas context unavailable");
     this.cvs = canvas;
     this.g2 = ctx;
+    this.onResize = onResize;
     new ResizeObserver(() => { this.resize(); }).observe(canvas);
     this.resize();
   }
@@ -122,6 +129,7 @@ export class Stage {
     this.cvs.height = Math.max(1, Math.round(r.height * dpr));
     this.scale = (r.width / VW) * dpr;
     this.stone = null; // rebuilt at the new size on the next frame
+    this.onResize();
   }
 
   /** Every surface of the castle a window can light, as one path to clip to. */
