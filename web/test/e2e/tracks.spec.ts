@@ -286,18 +286,29 @@ test("codec comparison encodes the clip and switches without losing position",
       const a = [...(window.__media || [])].filter(a => a.src.includes("/api/compare/")).pop();
       return ${expr}; })()`) as Promise<T>;
     await expect.poll(() => cmp<number>("a.readyState")).toBeGreaterThanOrEqual(1);
-    await cmp(`(window.__seeks = [], a.addEventListener("seeking", () => {
-      if (a.src.endsWith("/flac")) window.__seeks.push(a.currentTime); }), a.currentTime = 1.5, 0)`);
+    await cmp(`(window.__seeks = [], window.__flacPlaying = false,
+      a.addEventListener("seeking", () => {
+        if (a.src.endsWith("/flac")) window.__seeks.push(a.currentTime); }),
+      a.addEventListener("playing", () => {
+        if (a.src.endsWith("/flac")) window.__flacPlaying = true; }),
+      a.currentTime = 1.5, 0)`);
     const before = await cmp<number>("a.currentTime");
     expect(before).toBeGreaterThanOrEqual(1.5);
 
     await picks.filter({ hasText: "FLAC" }).click();
     await expect(picks.filter({ hasText: "FLAC" })).toHaveClass(/on/);
     await expect(picks.filter({ hasText: "MP3" })).not.toHaveClass(/on/);
-    // It decodes. Safari would not play a FLAC of 47-sample blocks: the desk
-    // sat "on" at a frozen position, silent (tools/import_convert.py).
+    // It decodes and starts: the element fired `playing` for the FLAC, the
+    // step play()'s promise resolves on. Safari never got there with a FLAC
+    // of 47-sample blocks — play() hung, the desk sat "on", silent
+    // (tools/import_convert.py). Not readyState: Linux WebKit's GStreamer
+    // player drops to HAVE_CURRENT_DATA at a seek — the desk's, sending the
+    // FLAC to the MP3's place — and can stay there loop after loop while the
+    // clock runs at 1×. The CI traces of 2026-10-06 re-fetch the FLAC's first
+    // frame every 4.0 s, and a lab with their own files read 2 for 10 s in
+    // 16 runs of 20, every one of them playing.
     await expect.poll(() => cmp<boolean>(
-      `a.src.endsWith("/flac") && !a.error && !a.paused && a.readyState >= 3`)).toBe(true);
+      `a.src.endsWith("/flac") && !a.error && !a.paused && window.__flacPlaying`)).toBe(true);
     await expect(picks.filter({ hasText: "FLAC" })).toHaveClass(/on/);
     // And it was sent to where the MP3 was, not back to the start.
     expect(await page.evaluate("Math.max(-1, ...window.__seeks)"))

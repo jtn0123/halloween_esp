@@ -283,7 +283,13 @@ class CastleEmu(ThreadingHTTPServer):
         #: The event ring and the light counters (castle_emu_events.py):
         #: what the main loop DID, which a 1 Hz status poll cannot see.
         self.events = Events()
-        loop.start_ticker(self)
+        #: Set by server_close(), the castle's power switch: the ticker waits
+        #: on it between ticks and returns once it is set, so a closed castle
+        #: leaves no thread behind (castle_emu_loop.ticker). shutdown() alone
+        #: is the network going, and the board's loop outlives that — the
+        #: soak's unplug/replug (tests/test_soak.py) is exactly that.
+        self.halted = threading.Event()
+        self.ticker = loop.start_ticker(self)
 
     @property
     def port(self) -> int:
@@ -293,6 +299,12 @@ class CastleEmu(ThreadingHTTPServer):
         threading.Thread(
             target=self.serve_forever, daemon=True, name="castle-emu"
         ).start()
+
+    def server_close(self) -> None:
+        """Close the socket and stop the main loop — a castle that was built
+        and never served has a ticker running too."""
+        self.halted.set()
+        super().server_close()
 
     # -- the pending-action mailbox ---------------------------------------
 

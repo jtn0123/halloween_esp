@@ -63,6 +63,7 @@ class EmuCase(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls.emu.shutdown()
+        cls.emu.server_close()
 
     def http(self, method: str, path: str, body: bytes = b"") -> tuple[int, bytes]:
         req = urllib.request.Request(self.base + path, data=body or None, method=method)

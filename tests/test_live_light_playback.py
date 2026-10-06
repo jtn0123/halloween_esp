@@ -45,6 +45,7 @@ IN_CI = bool(os.environ.get("CI"))
 
 sys.path.insert(0, str(ROOT / "tools"))
 import castle_emu
+import castle_emu_loop
 
 
 def load_device_bridge():
@@ -189,8 +190,10 @@ class EmulatorMailboxParityTests(unittest.TestCase):
     must drop and keep the same commands the firmware's does."""
 
     def emu(self):
-        # A ticker that never fires: the slot is inspected, not drained.
-        patch = mock.patch.object(castle_emu, "APPLY_DELAY_S", 3600)
+        # A ticker that never fires: the slot is inspected, not drained. The
+        # loop's own constant — castle_emu's is a re-export the ticker never
+        # reads, so patching that one left it draining the slot every 200 ms.
+        patch = mock.patch.object(castle_emu_loop, "APPLY_DELAY_S", 3600)
         patch.start()
         self.addCleanup(patch.stop)
         emu = castle_emu.CastleEmu(port=0)

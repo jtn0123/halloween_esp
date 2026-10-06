@@ -90,16 +90,23 @@ def scene_stop(st: _State) -> None:
     st.scene_ends, st.scene_loops = 0.0, False
 
 
-def start_ticker(emu: CastleEmu) -> None:
+def start_ticker(emu: CastleEmu) -> threading.Thread:
     """Run the main loop in the daemon thread the castle boots with."""
-    threading.Thread(
+    thread = threading.Thread(
         target=ticker, args=(emu,), daemon=True, name="castle-emu-tick"
-    ).start()
+    )
+    thread.start()
+    return thread
 
 
 def ticker(emu: CastleEmu) -> None:
-    while True:
-        time.sleep(APPLY_DELAY_S)
+    # The interval is a wait on the castle's `halted`, not a time.sleep: a
+    # castle that is closed (server_close) stops ticking. It used to tick for
+    # the life of the process, so every test that had ever built one left a
+    # thread calling time.sleep(0.2) five times a second — and a test that
+    # patched `time.sleep` to count its OWN pause counted theirs as well
+    # ("Called 1894 times", Windows CI on 2026-10-06).
+    while not emu.halted.wait(APPLY_DELAY_S):
         try:
             tick(emu)
         except Exception:
