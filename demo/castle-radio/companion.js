@@ -1,4 +1,4 @@
-/* A deliberately narrow postMessage bridge from the castle page to Mac tools. */
+/* A deliberately narrow postMessage bridge from the castle page to Castle Tools on this computer. */
 (() => {
   'use strict';
 
@@ -58,7 +58,7 @@
     reconnect.disabled = true;
     show('Connecting to Castle Radio tools…', 'connecting');
     try {
-      if (!localService()) { throw new Error('Open this helper from Castle Studio on this Mac.'); }
+      if (!localService()) { throw new Error('Open this window from the castle page, with Connect Castle Tools.'); }
       const expected = requestedCastle();
       if (!expected) { throw new Error('The castle address is missing or invalid.'); }
       const response = await fetch('/radio/tools', {cache: 'no-store', signal: AbortSignal.timeout(6000)});

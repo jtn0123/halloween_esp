@@ -49,7 +49,7 @@ test("kiosk mode follows the castle's scene and keeps the stage whole", async ({
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
-test("♪ Mac: pressing Play is the consent, and the browser unmutes", async ({ page }) => {
+test("♪ Computer: pressing Play is the consent, and the browser unmutes", async ({ page }) => {
   await fakeCastle(page);
   await page.goto("/");
   await expect(page.locator("#deviceChip")).toBeVisible();
@@ -58,13 +58,13 @@ test("♪ Mac: pressing Play is the consent, and the browser unmutes", async ({ 
   await expect(page.locator("#playLabel")).toHaveText("Pause");
   await expect(page.locator("#mute")).toHaveText("Mute");
   await expect(page.locator("#headTxt")).toContainText("sounding");
-  await expect(page.locator("#headTxt")).toContainText("sound: Mac");
+  await expect(page.locator("#headTxt")).toContainText("sound: computer");
   await page.locator("#stop").click();
 });
 
 test("♪ Castle: Play runs the lights and the browser stays muted", async ({ page }) => {
   // The castle's speaker is the one that should sound. Play must NOT flip
-  // the browser's mute the way it does on the Mac route — two speakers out
+  // the browser's mute the way it does on the computer route — two speakers out
   // of step is the worst version of sound.
   await page.addInitScript(() => localStorage.setItem("castleSoundRoute", "castle"));
   await fakeCastle(page);
@@ -81,10 +81,12 @@ test("♪ Castle: Play runs the lights and the browser stays muted", async ({ pa
   await expect.poll(() => playing(page)).toBeGreaterThan(0);
   expect(await sounding(page)).toBe(0);
 
-  // Flipping to Mac mid-show is the consent: the browser unmutes; flipping
-  // back hushes it again.
+  // Flipping to the computer mid-show is the consent: the browser unmutes;
+  // flipping back hushes it again.
   await page.locator(".transport #sndRoute").click();
   await expect(page.locator("#mute")).toHaveText("Mute");
+  await expect(page.locator(".toast", { hasText: "sound: computer — castle speaker off" }))
+    .toBeVisible();
   await page.locator(".transport #sndRoute").click();
   await expect(page.locator("#mute")).toHaveText("Muted");
   expect(await sounding(page)).toBe(0);

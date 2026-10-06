@@ -106,7 +106,7 @@ function setAudioSource(source){
     audioPending=window.castleDesktop.media(source).then(url=>{
       if(epoch===audioSourceEpoch && $('output-target').value!=='castle'){audio.src=url;audio.load();}else{URL.revokeObjectURL(url);}
     });
-    audioPending.catch(()=>toast('Mac audio unavailable. Reconnect Mac tools and select the song again.'));
+    audioPending.catch(()=>toast('This song could not be loaded from your computer. Reconnect Castle Tools and select the song again.'));
   }else{audio.src=source;audio.load();audioPending=Promise.resolve();}
   return audioPending;
 }

@@ -61,7 +61,7 @@ export function cardRowsHtml(ctx: CardCtx): string {
     </div>
     <div class="trk__act">
       <button data-cardact="play" title="Play this file on the castle's speaker">Play on castle</button>
-      ${ctx.canPull ? `<button data-cardact="pull" title="Copy this file off the card into the Mac library — it gets imported and analysed like any drop">⬇ to Mac</button>` : ""}
+      ${ctx.canPull ? `<button data-cardact="pull" title="Copy this file off the card into this computer's library — it gets imported and analysed like any drop">⬇ to computer</button>` : ""}
       <button data-cardact="del" class="danger" title="Delete from the SD card">Delete</button>
     </div>
   </div>`).join("");
@@ -128,7 +128,7 @@ export interface CardActionDeps {
   ctx: () => CardCtx;
   say: (m: string, err?: boolean) => void;
   reloadCard: () => Promise<void>;
-  /** The tracks panel's own import path — what ⬇ to Mac hands the file to. */
+  /** The tracks panel's own import path — what ⬇ to computer hands the file to. */
   importFile?: (f: File) => Promise<void>;
 }
 
@@ -171,7 +171,7 @@ export function wireCardActions(deps: CardActionDeps): void {
         deps.say(`Could not pull ${name} off the card — `
           + `${r ? await failReason(r) : "no answer from the castle"}.`, true);
         btn.disabled = false;
-        btn.textContent = "⬇ to Mac";
+        btn.textContent = "⬇ to computer";
         return;
       }
       // Through the normal import gate: converted, analysed, remembered —

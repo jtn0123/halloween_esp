@@ -48,11 +48,11 @@ for (const payload of [null, {service:'unrelated', protocol:1, checks:[]}]) {
   });
 }
 
-test('castle page offers a user-initiated Mac connection without fetching localhost', async () => {
+test('castle page offers a user-initiated connection to your computer without fetching localhost', async () => {
   const ctx = boot(null, {direct:true});
   await settle();
   assert.equal(ctx.calls(), 0);
-  assert.match(ctx.$('tools-summary').textContent, /Mac/);
+  assert.match(ctx.$('tools-summary').textContent, /Connect Castle Tools/);
   assert.equal(ctx.$('tools-connect').hidden, false);
   assert.equal(ctx.$('tools-recheck').hidden, true);
   assert.equal(ctx.$('tools-start').hidden, false);
@@ -61,7 +61,7 @@ test('castle page offers a user-initiated Mac connection without fetching localh
 test('website startup gives honest setup guidance without claiming a connection', async () => {
   const ctx = boot(null, {direct:true});
   ctx.$('tools-start').dispatch('click');
-  assert.equal(ctx.$('tools-state').textContent, 'Starting Mac tools…');
+  assert.equal(ctx.$('tools-state').textContent, 'Starting Castle Tools…');
   assert.equal(ctx.$('tools-setup').open, true);
   assert.match(ctx.$('tools-summary').textContent, /If nothing opens/);
   assert.equal(ctx.calls(), 0);

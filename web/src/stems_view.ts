@@ -72,7 +72,7 @@ export function createStemsView(deps: StemsDeps): StemsApi {
   const title = document.createElement("h3");
   title.textContent = "Voice / background split";
   const split = btn("Split voices");
-  split.title = "Run Demucs on this track (~30 s on this Mac). The castle "
+  split.title = "Run Demucs on this track (~30 s on this computer). The castle "
     + "keeps playing the combined file; only the light analysis changes.";
   const seg = document.createElement("div");
   seg.className = "stems-seg";

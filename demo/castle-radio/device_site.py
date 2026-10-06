@@ -97,7 +97,7 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
     (
         PREVIEW,
         "'Waveform unavailable. Reopen this song to retry.'",
-        "'Connect Mac tools to view waveforms, then reopen this song.'",
+        "'Connect Castle Tools to view waveforms, then reopen this song.'",
     ),
     (WORDS, "'Castle unreachable from this computer'", "'Castle unreachable'"),
     (
@@ -108,7 +108,7 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
     (
         IMPORTS,
         "'Import service ready · songs are prepared and kept on this computer'",
-        "(window.castleDesktop?.connected ? 'Mac tools connected · imports are prepared on your Mac' : 'Castle library ready · connect Mac tools to import')",
+        "(window.castleDesktop?.connected ? 'Castle Tools connected · imports are prepared on your computer' : 'Castle library ready · connect Castle Tools to import')",
     ),
     (
         IMPORTS,

@@ -62,7 +62,7 @@ test('a failed update is one sentence, its own words behind Details', async () =
   assert.equal($('downloader-update').disabled, false);
 });
 
-test("on the castle's page it is hidden until the Mac tools are connected", async () => {
+test("on the castle's page it is hidden until Castle Tools is connected", async () => {
   const off = boot([], {direct: true});
   await settle();
   assert.equal(off.$('downloader').hidden, true);

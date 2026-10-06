@@ -198,16 +198,16 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   }
 
   function syncRouteUI(): void {
-    const label = `♪ ${soundRoute === "mac" ? "Mac" : "Castle"}`;
+    const label = `♪ ${soundRoute === "mac" ? "Computer" : "Castle"}`;
     const title = soundRoute === "mac"
-      ? "Sound comes out of this Mac; the castle speaker is off. "
+      ? "Sound comes out of this computer; the castle speaker is off. "
         + "Click to send sound to the castle instead. Lights always play on the castle."
       : "Sound comes out of the castle's speaker. Click to play it on this "
-        + "Mac instead. Lights always play on the castle.";
+        + "computer instead. Lights always play on the castle.";
     for (const b of [routeBtn, els?.snd]) {
       if (b) { b.textContent = label; b.title = title; }
     }
-    // The castle-volume controls govern a speaker that ♪ Mac just silenced —
+    // The castle-volume controls govern a speaker that ♪ Computer just silenced —
     // disable them rather than let a stray drag un-hush it (route-aware).
     // …and a castle that is not answering has no volume to set (J2-2):
     // flipping ♪ to Castle while it is down must not light the slider up.
@@ -218,7 +218,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       els.vol.title = "Castle not answering";
     } else if (hushed) {
       els.vol.title =
-        "Castle speaker is off while sound plays on the Mac (♪ switch)";
+        "Castle speaker is off while sound plays on this computer (♪ switch)";
     } else {
       els.vol.title = "Castle speaker volume";
     }
@@ -240,7 +240,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       // contact: the POST goes, the toast does not — on every page open
       // "castle speaker off" read like something had just happened (J3-3).
       act("/api/volume?v=0",
-          announce ? "sound: Mac — castle speaker off" : "castle speaker off",
+          announce ? "sound: computer — castle speaker off" : "castle speaker off",
           !announce);
     } else {
       const to = backTo;
@@ -257,7 +257,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
    *  a rebuild mid-drag snaps the volume slider back to the last polled
    *  value, which is not what the hand on it just asked for. */
   const sayStatus = (s: Status): void => {
-    const route = ` · sound: ${soundRoute === "mac" ? "Mac" : "castle"}`;
+    const route = ` · sound: ${soundRoute === "mac" ? "computer" : "castle"}`;
     if (!lastOk) {
       opts.onStatus?.(`castle not answering${route}`, false);
       return;

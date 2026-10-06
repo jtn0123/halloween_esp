@@ -115,7 +115,7 @@ class MainTests(unittest.TestCase):
         code, out, err = self.run_main(app)
         self.assertEqual((code, err), (0, ""))
         self.assertIn(f"Website startup is ready: {app}\n", out)
-        self.assertIn("Connect Mac tools", out)
+        self.assertIn("Connect Castle Tools", out)
 
     def test_apples_tools_missing_gets_the_xcode_hint(self) -> None:
         for error in (
