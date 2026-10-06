@@ -227,4 +227,5 @@ class NativeSyncTests(unittest.TestCase):
                     self.assertEqual(state["cues"], 2)
             finally:
                 emu.shutdown()
+                emu.server_close()
                 remote_library._JOBS.pop(row["key"], None)

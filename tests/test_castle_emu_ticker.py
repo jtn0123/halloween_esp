@@ -5,6 +5,12 @@ no `except`, so the first action that raised — a VOLUME whose argument is
 not a number — ended the thread. The castle went on answering /api/status
 and applied nothing ever again, which every later test would read as a slow
 tick (grade report 2026-09-24 B3).
+
+And it stops with its castle. It used to run for the life of the process: a
+suite that built a castle per test left a thread per test calling
+time.sleep(0.2) for ever, and a later test that patched `time.sleep` to count
+its own one pause counted 1,893 of theirs too (Castle Radio's
+test_device_bridge, Windows CI on 2026-10-06).
 """
 
 from __future__ import annotations
@@ -46,6 +52,28 @@ class TestTheTickerSurvives(unittest.TestCase):
         with emu.state.lock:
             self.assertEqual(emu.state.volume, 40)
         self.assertIn("ValueError", err.getvalue())
+
+
+class TestTheTickerStopsWithItsCastle(unittest.TestCase):
+    def assert_stops(self, emu: castle_emu.CastleEmu, how: str) -> None:
+        emu.ticker.join(timeout=5)
+        self.assertFalse(emu.ticker.is_alive(), f"{how} left the ticker running")
+
+    def test_closing_a_castle_that_never_served_stops_its_ticker(self) -> None:
+        emu = castle_emu.CastleEmu(port=0)
+        self.assertTrue(emu.ticker.is_alive())
+        emu.server_close()
+        self.assert_stops(emu, "server_close()")
+
+    def test_an_unplugged_castle_ticks_on_until_it_is_closed(self) -> None:
+        # shutdown() is the network going (the soak's unplug); the board's
+        # loop outlives that, and only the power switch ends it.
+        emu = castle_emu.CastleEmu(port=0)
+        emu.start()
+        emu.shutdown()
+        self.assertTrue(emu.ticker.is_alive(), "shutdown() alone stopped the loop")
+        emu.server_close()
+        self.assert_stops(emu, "server_close() after shutdown()")
 
 
 if __name__ == "__main__":

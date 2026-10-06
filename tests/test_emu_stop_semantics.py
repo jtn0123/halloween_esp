@@ -44,6 +44,7 @@ class TestStopLeavesThePlaylistRunning(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls.emu.shutdown()
+        cls.emu.server_close()
 
     def post(self, path: str) -> int:
         req = urllib.request.Request(self.base + path, data=b"", method="POST")
