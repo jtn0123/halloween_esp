@@ -4,11 +4,13 @@
 
 # Not a distributable package — [project] exists to state the interpreter
 # floor (grade report 2026-08-23 F5): the venv is 3.13, CI is 3.13, and the Makefile's
-# bare-python3 fallback checks this before running anything.
+# bare-python3 fallback checks this before running anything. `license` is the
+# repository's LICENSE (docs/LICENSING.md, decision 1).
 [project]
 name = "halloween-castle"
 version = "0"
 requires-python = ">=3.13"
+license = "MIT"
 
 [tool.ruff]
 target-version = "py313"

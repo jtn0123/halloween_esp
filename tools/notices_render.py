@@ -5,13 +5,20 @@ is complete on its own — every component with its licence, copyright lines
 and source, then every licence text it needs, once. Plain text, not
 Markdown: the file is opened by whoever finds it in a zip, an app bundle or
 a release page, with whatever their computer opens .txt files with.
+
+It also holds the project's OWN licence (docs/LICENSING.md, decision 1).
+Every notices file says what it is, and LICENSE and each manifest of ours
+must name the same one (own_licence_errors).
 """
 
 from __future__ import annotations
 
+import json
 import textwrap
+import tomllib
 from collections.abc import Iterable
 from dataclasses import dataclass
+from pathlib import Path
 
 import desktop_bundle
 import notices_desktop
@@ -21,7 +28,28 @@ from notices_model import ROOT, Component, chosen, licence_text, texts_for
 
 REPO = "https://github.com/jtn0123/halloween_esp"
 WIDTH = 78
-OURS = "the Halloween Castle project's own work (copyright jtn0123)"
+#: The licence this repository's own work is under (docs/LICENSING.md,
+#: decision 1). LICENSE is SPDX's text for it, from licenses/texts/, with
+#: OWN_COPYRIGHT in place of the template's copyright line.
+OWN_LICENCE = "MIT"
+OWN_COPYRIGHT = "Copyright (c) 2026 jtn0123"
+_TEMPLATE_COPYRIGHT = "Copyright (c) <year> <copyright holders>"
+#: Each manifest of ours that names a licence, and the keys that reach it.
+#: A package-lock's root entry is npm's copy of its package.json's field.
+OWN_MANIFESTS: dict[str, tuple[str, ...]] = {
+    "core/Cargo.toml": ("package", "license"),
+    "desktop/src-tauri/Cargo.toml": ("package", "license"),
+    "desktop/src-tauri/tauri.conf.json": ("bundle", "license"),
+    "desktop/cli/package.json": ("license",),
+    "desktop/cli/package-lock.json": ("packages", "", "license"),
+    "web/package.json": ("license",),
+    "web/package-lock.json": ("packages", "", "license"),
+    "pyproject.toml": ("project", "license"),
+}
+OURS = (
+    "the Halloween Castle project's own work (copyright jtn0123), under the "
+    f"{OWN_LICENCE} License (see LICENSE at the top of {REPO})"
+)
 
 
 @dataclass(frozen=True)
@@ -48,13 +76,21 @@ ARTIFACTS: dict[str, Artifact] = {
                 ),
                 (
                     "The image is the castle's own configuration and C++ "
-                    f"(firmware/ in {REPO}), {OURS}, compiled together with the "
+                    f"(firmware/ in {REPO}) compiled together with the "
                     "components below. It is built by `make build-buyer` from the "
                     "release's tag of that repository, with the versions listed: "
                     f"esphome {notices_firmware.ESPHOME} from PyPI fetches ESP-IDF "
                     f"{notices_firmware.IDF_VERSION}, the xtensa-esp-elf "
                     f"{notices_firmware.TOOLCHAIN} toolchain and the managed "
                     "components, each from the source address shown with it."
+                ),
+                (
+                    f"That configuration and C++ is {OURS}. The image as a whole "
+                    f"is not under the {OWN_LICENCE} License. It contains "
+                    "ESPHome's C++ runtime and esp-audio-libs, which are "
+                    "GPL-3.0-only, so the image as a whole is conveyed under the "
+                    "GNU General Public License version 3, as section 5 c) of "
+                    "that licence requires. Its text is below."
                 ),
                 (
                     "The web flasher page loads its flashing tool, esp-web-tools "
@@ -115,8 +151,10 @@ ARTIFACTS: dict[str, Artifact] = {
                     "Castle Tools installer (installer/) unpacks."
                 ),
                 (
-                    f"Everything in the tree is {OURS}; it carries no third-party "
-                    "source code. The castle-core programs the installer adds "
+                    "Everything in the tree, apart from the licence texts "
+                    f"copied into licenses/ (which are their authors'), is {OURS}. "
+                    "It carries no third-party source code. The castle-core "
+                    "programs the installer adds "
                     "from the release are covered below. The other shipped "
                     "artifacts carry their own notices, also in this tree: "
                     "licenses/THIRD-PARTY-NOTICES-firmware.txt (the firmware "
@@ -260,6 +298,36 @@ def render(key: str) -> str:
     if art.external:
         out += _external()
     return "\n".join(out).rstrip() + "\n"
+
+
+def _field(path: Path, keys: tuple[str, ...]) -> object:
+    text = path.read_text(encoding="utf-8")
+    doc: object = tomllib.loads(text) if path.suffix == ".toml" else json.loads(text)
+    for key in keys:
+        doc = doc.get(key) if isinstance(doc, dict) else None
+    return doc
+
+
+def own_licence_errors(root: Path = ROOT) -> list[str]:
+    """LICENSE and every manifest of ours against OWN_LICENCE: one decision,
+    written down in each place a tool, or GitHub, reads it from."""
+    (generic,) = texts_for(OWN_LICENCE)
+    want = licence_text(generic).replace(_TEMPLATE_COPYRIGHT, OWN_COPYRIGHT, 1)
+    path = root / "LICENSE"
+    errors = []
+    if not path.is_file() or path.read_text(encoding="utf-8") != want:
+        errors.append(
+            f"LICENSE is not licenses/{generic} with its copyright line "
+            f"filled in as {OWN_COPYRIGHT!r}"
+        )
+    for rel, keys in OWN_MANIFESTS.items():
+        found = _field(root / rel, keys)
+        if found != OWN_LICENCE:
+            where = ".".join(k or '""' for k in keys)
+            errors.append(
+                f"{rel}: {where} is {found!r}, not {OWN_LICENCE!r} like LICENSE"
+            )
+    return errors
 
 
 def outputs() -> dict[str, str]:

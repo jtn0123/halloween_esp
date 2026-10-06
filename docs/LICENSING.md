@@ -11,6 +11,11 @@ you to make — it is not settled here.
 The notices themselves are generated: `tools/third_party_notices.py`
 writes them from reviewed tables, and `make check` fails when they go stale.
 
+This repository's own work is under the MIT License (`LICENSE`, decision 1).
+A firmware image built from it is not: it contains GPL-3.0-only components,
+so the image as a whole is conveyed under GPLv3
+([below](#the-firmware-image-and-gplv3)).
+
 | Artifact | Notices file | How it ships |
 | --- | --- | --- |
 | Firmware image (`castle-fw-…factory.bin` / `.ota.bin`) | `licenses/THIRD-PARTY-NOTICES-firmware.txt` | release asset `castle-fw-feather-s3-4m2p-<tag>.notices.txt`; served beside the web flasher as `THIRD-PARTY-NOTICES.txt` and linked from its footer |
@@ -66,14 +71,17 @@ The gates (`tests/test_third_party_notices.py`,
 - a weak-copyleft component (MPL-2.0, NSIS) gives no source address;
 - something is added to the app bundle beyond its `castle/` folder (this
   tree, castle-core and the pinned uv), or uv's pin moves without its
-  notices entry.
+  notices entry;
+- `LICENSE` stops being SPDX's MIT text with the project's copyright line,
+  or a manifest of ours names another licence, or none (decision 1).
 
 ## What each artifact contains
 
 ### Firmware image
 
 The image is this project's ESPHome configuration and C++ headers
-(`firmware/`). It is compiled by `make build-buyer` together with:
+(`firmware/`, MIT-licensed like the rest of the tree). It is compiled by
+`make build-buyer` together with:
 
 - **ESPHome 2026.9.0, C++ runtime: GPL-3.0-only.** ESPHome's LICENSE (the
   "ESPHome License") says the C++ runtime is published under GPLv3 and the
@@ -101,9 +109,9 @@ The image is this project's ESPHome configuration and C++ headers
 ### Castle Tools (desktop app)
 
 The app and the castle-core programs it carries are this project's own
-code. Its `castle/` folder (`tools/desktop_bundle.py`) also holds this
-tree's own files, which the first launch installs Castle Radio from, and
-one program someone else wrote:
+code, under the MIT License. Its `castle/` folder (`tools/desktop_bundle.py`)
+also holds this tree's own files, which the first launch installs Castle
+Radio from, and one program someone else wrote:
 
 - **uv 0.12.22** (Astral): MIT OR Apache-2.0. It is the release binary for
   the app's platform, checked by sha256 when the release is built. On the
@@ -258,14 +266,29 @@ The image reaches people in two ways. Each one meets a different part of
 
 ## Open decisions
 
-Each of these is yours to make. Decision 2 has been made and carried out;
-it keeps its number because other documents cite it. The rest are open.
+Each of these is yours to make. Decisions 1 and 2 have been made and
+carried out; they keep their numbers because other documents cite them.
+The rest are open.
 
-1. **A licence for this repository.** The repo has no LICENSE file, so
-   nobody else has a licence to its code. §5 c) above concerns the
-   firmware image as a whole. Decide what licence `firmware/`, and the rest
-   of the tree, is offered under. The notices currently call it "the
-   Halloween Castle project's own work (copyright jtn0123)".
+1. **A licence for this repository. DECIDED 2026-10-06: MIT, and
+   IMPLEMENTED.** `LICENSE` at the top of the tree is SPDX's MIT text
+   (`licenses/texts/MIT.txt`) with `Copyright (c) 2026 jtn0123` filled in,
+   and nothing else, so GitHub reads it as MIT. Each manifest of ours names
+   it: `core/Cargo.toml`, `desktop/src-tauri/Cargo.toml`, `bundle.license`
+   in `tauri.conf.json` (metadata only; there is no `licenseFile`, so the
+   Windows installer shows no licence page), the `package.json` and lock
+   in `web/` and `desktop/cli/`, and `pyproject.toml`. Every notices file
+   says the project's own work is under it (`tools/notices_render.py`
+   `OURS`). `third_party_notices.py check` and
+   `tests/test_notices_policy.py` fail when LICENSE stops being that text
+   or a manifest names anything else. The licence covers this project's
+   own files, `firmware/` among them. It does not change §5 c) above: an
+   image built from `firmware/` contains ESPHome's runtime and
+   esp-audio-libs, which are GPL-3.0-only, so the image as a whole is
+   conveyed under GPLv3, and its notices say so. §5 c) goes on: "This
+   License gives no permission to license the work in any other way, but
+   it does not invalidate such permission if you have separately received
+   it."
 2. **How the sold castle carries its notices and source. DECIDED
    2026-10-03: both, and IMPLEMENTED (firmware v5.77).** The castle's SD
    card carries the firmware notices and a written offer

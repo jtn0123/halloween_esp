@@ -16,6 +16,9 @@ edition = "2024"
 # clone built with someone else's rustup default fails with a version message
 # instead of a syntax error. (grade report 2026-08-31 F3)
 rust-version = "1.88"
+# The repository's LICENSE (docs/LICENSING.md, decision 1);
+# tests/test_notices_policy.py holds every manifest of ours to it.
+license = "MIT"
 
 [lib]
 name = "castle_core"

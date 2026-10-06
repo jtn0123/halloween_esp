@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "description": "Browser cue desk for the Halloween castle — TypeScript sources",
+  "license": "MIT",
   "scripts": {
     "build": "esbuild src/main.ts --bundle --minify --format=iife --target=es2020 --outfile=dist/bundle.js",
     "watch": "npm run build -- --watch",

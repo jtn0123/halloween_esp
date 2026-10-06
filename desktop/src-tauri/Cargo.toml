@@ -3,6 +3,7 @@ name = "castle-tools"
 version = "0.1.0"
 description = "Castle Tools: the desktop home of the Halloween castle's player, importer and castle link"
 authors = ["jtn0123"]
+license = "MIT"
 edition = "2021"
 publish = false
 

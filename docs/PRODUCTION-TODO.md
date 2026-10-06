@@ -218,9 +218,11 @@ Decided 2026-09-30: the buyer unit is the 4 MB flash / 2 MB PSRAM S3 (what
       docs/LICENSING.md. 2026-10-03: the sold castle's card carries the
       firmware notices and a GPLv3 §6 b) written source offer
       (`make buyer-card`), and the owner page links both (v5.77) —
-      LICENSING.md decision 2, implemented. Left open: the repo has no
-      licence, and the htdemucs weights have no terms (LICENSING.md "Open
-      decisions" 1 and 4).
+      LICENSING.md decision 2, implemented. 2026-10-06: the repo's licence,
+      LICENSING.md decision 1, DECIDED: MIT, and IMPLEMENTED — `LICENSE`,
+      every manifest of ours, and the notices; a firmware image as a whole
+      stays GPL-3.0, because it links ESPHome's runtime. Left open: the
+      htdemucs weights have no terms (LICENSING.md "Open decisions" 4).
 - [x] URL import STAYS (decided) — it is how the buyer gets songs. yt-dlp
       breaks whenever sites change: ship it as a separate standalone binary
       the app updates on its own schedule (yt-dlp releases often), not frozen

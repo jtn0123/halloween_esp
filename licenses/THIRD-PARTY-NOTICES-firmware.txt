@@ -6,12 +6,19 @@ castle-fw-feather-s3-4m2p-<release>.factory.bin and .ota.bin, on the GitHub
 release and on the web flasher that installs it.
 
 The image is the castle's own configuration and C++ (firmware/ in
-https://github.com/jtn0123/halloween_esp), the Halloween Castle project's own
-work (copyright jtn0123), compiled together with the components below. It is
-built by `make build-buyer` from the release's tag of that repository, with
-the versions listed: esphome 2026.9.0 from PyPI fetches ESP-IDF 5.5.5, the
-xtensa-esp-elf esp-14.2.0_20260121 toolchain and the managed components, each
-from the source address shown with it.
+https://github.com/jtn0123/halloween_esp) compiled together with the
+components below. It is built by `make build-buyer` from the release's tag of
+that repository, with the versions listed: esphome 2026.9.0 from PyPI fetches
+ESP-IDF 5.5.5, the xtensa-esp-elf esp-14.2.0_20260121 toolchain and the
+managed components, each from the source address shown with it.
+
+That configuration and C++ is the Halloween Castle project's own work
+(copyright jtn0123), under the MIT License (see LICENSE at the top of
+https://github.com/jtn0123/halloween_esp). The image as a whole is not under
+the MIT License. It contains ESPHome's C++ runtime and esp-audio-libs, which
+are GPL-3.0-only, so the image as a whole is conveyed under the GNU General
+Public License version 3, as section 5 c) of that licence requires. Its text
+is below.
 
 The web flasher page loads its flashing tool, esp-web-tools (Apache-2.0), from
 unpkg.com into your browser; the page does not carry it.
