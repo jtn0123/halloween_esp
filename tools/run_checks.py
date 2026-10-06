@@ -56,6 +56,7 @@ RADIO_NODE_TESTS = (
     "test_castle_update.test.mjs",
     "test_downloader.test.mjs",
     "test_track_rows.test.mjs",
+    "test_owner_words.test.mjs",
 )
 
 

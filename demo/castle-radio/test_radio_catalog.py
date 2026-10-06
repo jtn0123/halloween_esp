@@ -88,7 +88,9 @@ class SourceAvailableTests(unittest.TestCase):
             patch.object(rich_show, "prepare"),
         ):
             radio_jobs.prepare(job, job["source"], "", False, "mp3")
-        self.assertEqual(job["phase"], "Ready in demo")
+        # The owner's words, not the demo's ("Ready in demo" until 2026-10).
+        self.assertEqual(job["phase"], "Ready on this computer")
+        self.assertEqual(job["detail"], "Audio and lights are ready on this computer")
         rows = self.stored_rows()
         self.assertEqual([r["key"] for r in rows], ["radio_o", "radio_f"])
         self.assertEqual([r for r in rows if "source_available" in r], [])

@@ -107,7 +107,7 @@ class ThePagesWords(unittest.TestCase):
 
     def test_phase_spans_charge_each_poll_to_its_phase(self) -> None:
         trail = [(0.0, "Queued"), (1.0, radio.SEPARATING), (4.0, radio.SEPARATING),
-                 (6.0, "Encoding separated audio"), (7.0, "Ready in demo")]  # fmt: skip
+                 (6.0, "Encoding separated audio"), (7.0, "Ready on this computer")]  # fmt: skip
         self.assertEqual(radio.phase_spans(trail), {
             "Queued": 1.0, radio.SEPARATING: 5.0, "Encoding separated audio": 1.0,
         })  # fmt: skip
@@ -131,14 +131,14 @@ class TheConversation(FakeCase):
         FakeRadio.jobs = [
             [{**job, "phase": "Queued"}],
             [{**job, "phase": radio.SEPARATING}],
-            [{**job, "phase": "Ready in demo", "done": True}],
+            [{**job, "phase": "Ready on this computer", "done": True}],
         ]
         with redirect_stdout(io.StringIO()):
             final, trail = self.r.wait_jobs(["j1"], 30)
-        self.assertEqual(final["j1"]["phase"], "Ready in demo")
+        self.assertEqual(final["j1"]["phase"], "Ready on this computer")
         phases = [p for _t, p in trail["j1"]]
         self.assertEqual(phases[0], "Queued")
-        self.assertEqual(phases[-1], "Ready in demo")
+        self.assertEqual(phases[-1], "Ready on this computer")
 
     def test_a_vanished_or_endless_job_fails_the_run(self) -> None:
         FakeRadio.jobs = [[]]
@@ -221,7 +221,7 @@ class TheDemucsLine(unittest.TestCase):
     def test_the_row_the_step_summary_and_the_log_agree(self) -> None:
         trail = [(10.0, "Queued"), (11.0, radio.SEPARATING),
                  (41.0, "Encoding separated audio"), (43.0, "Analyzing separated audio"),
-                 (45.0, "Ready in demo")]  # fmt: skip
+                 (45.0, "Ready on this computer")]  # fmt: skip
         row = session.demucs_report(SONG, trail)
         self.assertEqual((row["separate_s"], row["split_step_s"], row["whole_import_s"]),
                          (30.0, 34.0, 35.0))  # fmt: skip
