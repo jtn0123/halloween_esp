@@ -157,8 +157,8 @@ test("the ♪ route survives a reload without re-hushing the castle", async ({ p
   const castle = await fakeCastle(page);
   await page.goto("/");
   const route = page.locator(".transport #sndRoute");
-  await expect(route).toHaveText("♪ Mac");
-  await expect.poll(() => castle.hits("/api/volume?v=0")).toBe(1);   // Mac route enforced
+  await expect(route).toHaveText("♪ Computer");
+  await expect.poll(() => castle.hits("/api/volume?v=0")).toBe(1);   // computer route enforced
   await route.click();
   await expect(route).toHaveText("♪ Castle");
   await expect.poll(() => castle.hits("/api/volume?v=40")).toBe(1);
@@ -183,7 +183,7 @@ test("♪ Castle and unmute bring back the castle's level after a poll has seen 
   const levels = (): string[] => castle.calls.filter((c) => c.includes("/api/volume?"))
     .map((c) => c.replace(/.*v=/, ""));
   await page.goto("/");
-  await expect.poll(levels).toEqual(["0"]);                          // ♪ Mac hushes it…
+  await expect.poll(levels).toEqual(["0"]);                          // ♪ Computer hushes it…
   await expect(page.locator("#devMute")).toHaveText("🔇");           // …and a poll has said so
   await page.locator(".transport #sndRoute").click();
   await expect.poll(levels).toEqual(["0", "40"]);
@@ -213,7 +213,7 @@ test("a castle that dies mid-session takes its badges and Sync with it", async (
   await expect(page.locator("button[data-act='send']")).toHaveCount(0);
 });
 
-test("a castle back from a reboot is hushed again while sound is on the Mac", async ({ page }) => {
+test("a castle back from a reboot is hushed again while sound is on the computer", async ({ page }) => {
   // speaker_hush is not persisted on the castle: a reboot comes back with
   // the amp at the boot scene's own level. The route is the desk's decision,
   // so the desk restates it the moment the castle answers again.
@@ -226,5 +226,5 @@ test("a castle back from a reboot is hushed again while sound is on the Mac", as
   castle.up = true;
   // The slow poll (15 s) is what notices a castle nobody is acting on.
   await expect.poll(() => castle.hits("/api/volume?v=0"), { timeout: 25_000 }).toBe(2);
-  await expect(page.locator("#headTxt")).toContainText("sound: Mac");
+  await expect(page.locator("#headTxt")).toContainText("sound: computer");
 });

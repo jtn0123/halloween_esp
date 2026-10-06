@@ -18,9 +18,9 @@ Run it again to repair: it resumes rather than starting over. It does not
 flash the castle or sync the music library. `/radio/tools` names the command
 for the platform it runs on (`tools/castle_tools_status.py`).
 
-On a Mac, everyday use can start from the website: click **Start Mac tools** on
+On a Mac, everyday use can start from the website: click **Start Castle Tools** on
 the castle website and allow the browser to open Castle Tools. Then choose
-**Connect Mac tools**. The existing script runs in the background without a
+**Connect Castle Tools**. The existing script runs in the background without a
 Terminal window. Keep the small connection window open. Imports, separation,
 and previews stay on the website.
 
@@ -46,7 +46,7 @@ its configured castle matches the page. Physical playback and lighting commands
 stay on the castle's own API. Sync uses the Mac's existing verified SD uploader.
 
 If the helper or popup closes, imports are disabled and the page offers
-**Connect Mac tools** again. Installed castle playback still works. A phone
+**Connect Castle Tools** again. Installed castle playback still works. A phone
 without a local helper retains device controls. This does not yet connect a
 phone to another computer's helper over the LAN.
 
@@ -190,7 +190,7 @@ how it tells. To give such a song its card show, open it in the library and
 press **Sync audio + light show** again: the button stays live for anything
 short of "audio + lights", and a sync prepares a missing or stale show before
 it sends. Importing, separation, waveforms and syncing run on the computer.
-**Connect Mac tools** makes them available from this same device page through
+**Connect Castle Tools** makes them available from this same device page through
 the local companion window; without that connection the page remains a device
 player. The castle
 keeps the previous cue desk build as `site/index.old.html(.gz)`.

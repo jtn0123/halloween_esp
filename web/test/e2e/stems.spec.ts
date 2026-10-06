@@ -33,7 +33,9 @@ test("an unsplit track offers the split and promises the castle is untouched",
   // The sentence that stops "will this change what the device plays?" from
   // ever needing to be asked.
   await expect(panel).toContainText("combined file");
-  await expect(panel.getByRole("button", { name: "Split voices" })).toBeEnabled();
+  const split = panel.getByRole("button", { name: "Split voices" });
+  await expect(split).toBeEnabled();
+  await expect(split).toHaveAttribute("title", /\(~30 s on this computer\)/);
 });
 
 /** A ready analysis: one low hit at 1 s everywhere, plus a hit at 5 s that

@@ -124,13 +124,16 @@ test("the volume slider starts where the amp actually is", async ({ page }) => {
   await expect(page.locator("#devVol")).toBeEnabled();
 });
 
-test("♪ Mac hushes the castle and locks its volume controls", async ({ page }) => {
-  // Default route is Mac: on first contact the desk turns the castle's amp
-  // to 0, and the controls for the speaker it just silenced go inert — a
-  // live slider here could silently un-hush the porch (route-aware volume).
+test("♪ Computer hushes the castle and locks its volume controls", async ({ page }) => {
+  // Default route is the computer: on first contact the desk turns the
+  // castle's amp to 0, and the controls for the speaker it just silenced go
+  // inert — a live slider here could silently un-hush the porch (route-aware
+  // volume).
   const calls = await stubCastle(page);
   await page.goto("/");
   await expect(page.locator("#devVol")).toBeDisabled();
+  await expect(page.locator("#devVol")).toHaveAttribute("title",
+    "Castle speaker is off while sound plays on this computer (♪ switch)");
   await expect(page.locator("#devMute")).toBeDisabled();
   await expect.poll(() => calls.filter((c) => c.includes("/api/volume?v=0")).length)
     .toBeGreaterThan(0);
@@ -142,9 +145,11 @@ test("the ♪ switch lives next to Play and flips the route both ways", async ({
   const calls = await stubCastle(page);
   await page.goto("/");
   const route = page.locator(".transport #sndRoute");
-  await expect(route).toHaveText("♪ Mac");
+  await expect(route).toHaveText("♪ Computer");
+  await expect(route).toHaveAttribute("title", /^Sound comes out of this computer;/);
   await route.click();
   await expect(route).toHaveText("♪ Castle");
+  await expect(route).toHaveAttribute("title", /Click to play it on this computer instead\./);
   // Flipping to castle restores the amp to the remembered level (40)…
   await expect.poll(() => calls.filter((c) => c.includes("/api/volume?v=40")).length)
     .toBeGreaterThan(0);
@@ -459,7 +464,7 @@ test("an EXPECTED castle that never answers becomes a visible, retryable state",
 test("a poll landing on a held volume slider does not yank it away", async ({ page }) => {
   // C1: the hand wins. Focus the slider, let an action-driven re-poll land
   // with a DIFFERENT castle volume, and the element must survive untouched.
-  // Route "castle" so the slider is enabled (♪ Mac disables it by design).
+  // Route "castle" so the slider is enabled (♪ Computer disables it by design).
   await page.addInitScript(() =>
     localStorage.setItem("castleSoundRoute", "castle"));
   await stubCastle(page);

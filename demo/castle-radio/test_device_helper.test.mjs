@@ -34,7 +34,7 @@ test('only the opened helper and exact castle identity can enable imports',()=>{
   assert.equal(t.controls[0].disabled,false);
 });
 
-test('upload bytes go to Mac but physical commands stay directly on the castle',async()=>{
+test('upload bytes go to the computer but physical commands stay directly on the castle',async()=>{
   const t=boot();t.deliver(t.ready);
   const body=new Uint8Array([1,2,3]).buffer;
   const result=t.window.fetch('/radio/import',{method:'POST',body});
@@ -59,7 +59,7 @@ test('prepared cue frames reach the direct physical player with the catalog',asy
 
 test('closing helper disables imports and leaves castle routes available',async()=>{
   const t=boot();t.deliver(t.ready);t.popup.closed=true;
-  await assert.rejects(t.window.castleDesktop.request('/radio/jobs'),/Connect Mac/);
+  await assert.rejects(t.window.castleDesktop.request('/radio/jobs'),/^Error: Connect Castle Tools first\.$/);
   assert.equal(t.controls[0].disabled,true);
   await t.window.fetch('/radio/device');
   assert.equal(t.direct.length,1);

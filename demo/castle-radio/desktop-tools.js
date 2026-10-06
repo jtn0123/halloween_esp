@@ -50,15 +50,15 @@
     connect.hidden = !window.castleDirect;
     start.hidden = !window.castleDirect || !!window.castleDesktop?.connected;
     if (window.castleDirect && !window.castleDesktop?.connected) {
-      show('Connect your Mac',
-        'Click Start Mac tools, allow Castle Tools to open, then click Connect Mac tools. You can import and split songs here while the castle handles playback.', false);
+      show('Connect your computer',
+        'Click Start Castle Tools, allow it to open, then click Connect Castle Tools. You can import and split songs here while the castle handles playback.', false);
       open.hidden = true;
       retry.hidden = true;
-      connect.textContent = 'Connect Mac tools';
+      connect.textContent = 'Connect Castle Tools';
       return;
     }
     retry.hidden = false;
-    if (window.castleDirect) { connect.textContent = 'Reconnect Mac tools'; }
+    if (window.castleDirect) { connect.textContent = 'Reconnect Castle Tools'; }
     busy = true;
     retry.disabled = true;
     try {
@@ -78,7 +78,7 @@
     } catch {
       checks.replaceChildren();
       show('Desktop tools not connected',
-        'Click Start Mac tools, then Connect Mac tools. If the browser cannot open Castle Tools, follow Setup & startup below.', true);
+        'Click Start Castle Tools, then Connect Castle Tools. If the browser cannot open Castle Tools, follow Setup & startup below.', true);
       details.open = true;
       open.hidden = false;
     } finally {
@@ -88,12 +88,12 @@
   }
 
   start.addEventListener('click', () => {
-    show('Starting Mac tools…', 'Allow your browser to open Castle Tools, then click Connect Mac tools. If nothing opens, expand Setup & startup to enable this once on your Mac.', false);
+    show('Starting Castle Tools…', 'Allow your browser to open Castle Tools, then click Connect Castle Tools. If nothing opens, expand Setup & startup to enable this once on your computer.', false);
     details.open = true;
   });
 
   byId('tools-connect').addEventListener('click', () => {
-    try { window.castleDesktop.connect(); show('Connecting to your Mac…', 'Keep the small connection window open. You can return to this page while it works.', false); }
+    try { window.castleDesktop.connect(); show('Connecting to your computer…', 'Keep the small connection window open. You can return to this page while it works.', false); }
     catch (error) { show('Connection window blocked', error.message, true); }
   });
   window.addEventListener('castle-tools-connection', refresh);

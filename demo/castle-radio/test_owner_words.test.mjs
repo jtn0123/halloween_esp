@@ -5,14 +5,16 @@
  *
  * Castle Radio runs inside the desktop app for a castle's owner, who has no
  * demo: "Removed … from this demo." and "outside this demo's synced library"
- * were the last of it in these two files. These run the real lines that
- * write each sentence; test_owner_words.py holds index.html's half, on the
- * computer's page and the castle's. */
+ * were the last of it in these two files. Castle Tools runs on Windows too,
+ * so the castle page's tools card, a song the computer cannot hand over and
+ * an older Castle Radio name the app and "your computer", never a Mac. These
+ * run the real lines that write each sentence; test_owner_words.py holds
+ * index.html's half, on the computer's page and the castle's. */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import vm from 'node:vm';
 
-import {element, page, read} from './test_support.mjs';
+import {element, importsContext, notFound, page, read, settle} from './test_support.mjs';
 
 const PREVIEW = read('preview.js');
 const between = (source, from, to) => source.slice(source.indexOf(from), source.indexOf(to));
@@ -67,4 +69,67 @@ test('the castle’s other audio is described against your synced songs, not a d
   assert.match(card, /<h2>Other audio on castle<\/h2>/);
   assert.match(card, /Files already on the castle’s SD card that are not among your synced songs\./);
   for (const el of made) {assert.doesNotMatch(el.innerHTML, /demo/i, el.className);}
+});
+
+// The castle page's tools card, run with no tools connected, then pressed.
+function toolsCard({connected = false, fail = false} = {}) {
+  const {$} = page();
+  $('tools-state').dataset = {};
+  $('tools-checks').replaceChildren = () => {};
+  const ctx = {
+    window: {castleDirect: {}, castleDesktop: {connected, connect() {}}, addEventListener() {}},
+    document: {getElementById: $, createElement: () => element('li')},
+    AbortSignal,
+    fetch: async () => { if (fail) {throw Error('offline');} return {ok: true, json: async () => ({})}; },
+  };
+  vm.runInNewContext(read('desktop-tools.js'), ctx, {filename: 'desktop-tools.js'});
+  return $;
+}
+
+test('the castle page asks to connect your computer, by the app’s own name', async () => {
+  const $ = toolsCard();
+  await settle();
+  assert.equal($('tools-state').textContent, 'Connect your computer');
+  assert.equal($('tools-summary').textContent, 'Click Start Castle Tools, allow it to open, then click '
+    + 'Connect Castle Tools. You can import and split songs here while the castle handles playback.');
+  assert.equal($('tools-connect').textContent, 'Connect Castle Tools');
+  $('tools-start').dispatch('click');
+  assert.equal($('tools-state').textContent, 'Starting Castle Tools…');
+  assert.match($('tools-summary').textContent, / Connect Castle Tools\. .* once on your computer\.$/);
+  $('tools-connect').dispatch('click');
+  assert.equal($('tools-state').textContent, 'Connecting to your computer…');
+});
+
+test('tools that stop answering are started and connected again by name', async () => {
+  const $ = toolsCard({connected: true, fail: true});
+  await settle();
+  assert.equal($('tools-connect').textContent, 'Reconnect Castle Tools');
+  assert.equal($('tools-summary').textContent, 'Click Start Castle Tools, then Connect Castle Tools. '
+    + 'If the browser cannot open Castle Tools, follow Setup & startup below.');
+});
+
+test('a song your computer cannot hand over says so, and what to press', async () => {
+  const said = [];
+  const ctx = {
+    URL, toast: message => said.push(message), $: () => ({value: 'computer'}),
+    audio: {src: '', removeAttribute() {}, load() {}},
+    window: {castleDesktop: {connected: true, media: () => Promise.reject(new Error('gone'))}},
+  };
+  vm.createContext(ctx);
+  const APP = read('app.js');
+  vm.runInContext(`${between(APP, 'let audioSourceEpoch=0', '// The castle as the output')}
+    setAudioSource('/radio/audio/radio_a').catch(() => {});`, ctx);
+  await settle();
+  assert.deepEqual(said, ['This song could not be loaded from your computer. '
+    + 'Reconnect Castle Tools and select the song again.']);
+});
+
+test('an older Castle Radio is restarted with Castle Tools, on your computer', async () => {
+  const {ctx} = importsContext(notFound);
+  const said = [];
+  ctx.toast = message => said.push(message);
+  ctx.window.prompt = () => 'A new name';
+  await vm.runInContext('renameSong(tracks[0])', ctx);
+  assert.deepEqual(said, ['Restart Castle Tools on your computer to rename songs — '
+    + 'it is still running the older version.']);
 });

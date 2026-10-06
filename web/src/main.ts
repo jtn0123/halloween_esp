@@ -271,7 +271,7 @@ panels.bindSliders({
 /* ── Transport controls ── */
 
 el("play")?.addEventListener("click", () => {
-  // ♪ Mac route: pressing Play IS the consent to sound. Without this the
+  // ♪ Computer route: pressing Play IS the consent to sound. Without this the
   // first play ran a silent light show and the operator hunted for the
   // second, unrelated-looking MUTED button (dogfood 004).
   if (localStorage.getItem("castleSoundRoute") !== "castle" && rendered.muted) toggleMute();

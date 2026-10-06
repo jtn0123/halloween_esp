@@ -13,10 +13,10 @@
     connected = value;
     const form = byId('import-form');
     for (const control of form?.querySelectorAll('input, button') || []) { control.disabled = !value; }
-    if (byId('import-message')) { byId('import-message').textContent = value ? 'Imports and voice separation run on your Mac.' : 'Connect Mac tools to import songs here.'; }
+    if (byId('import-message')) { byId('import-message').textContent = value ? 'Imports and voice separation run on your computer.' : 'Connect Castle Tools to import songs here.'; }
     window.dispatchEvent(new CustomEvent('castle-tools-connection'));
   }
-  function disconnect(reason = 'Mac tools disconnected. Keep the connection window open.') {
+  function disconnect(reason = 'Castle Tools disconnected. Keep the connection window open.') {
     clearTimeout(handshakeTimer);
     update(false);
     for (const job of pending.values()) { clearTimeout(job.timer); job.reject(new Error(reason)); }
@@ -29,10 +29,10 @@
     handshakeTimer = setTimeout(() => { if (!connected) { disconnect(); } }, 12000);
   }
   function request(path, options = {}) {
-    if (!connected || !popup || popup.closed) { disconnect(); return Promise.reject(new Error('Connect Mac tools first.')); }
+    if (!connected || !popup || popup.closed) { disconnect(); return Promise.reject(new Error('Connect Castle Tools first.')); }
     return new Promise((resolve, reject) => {
       const id = ++sequence;
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error('Mac tools did not answer. Check the connection window.')); }, 120000);
+      const timer = setTimeout(() => { pending.delete(id); reject(new Error('Castle Tools did not answer. Check the connection window.')); }, 120000);
       pending.set(id, {resolve, reject, timer});
       /* The bridge replaces window.fetch, so a caller's AbortSignal.timeout is
          only honoured if this side listens for it (grade report 2026-09-17 pm C6). */
@@ -40,7 +40,7 @@
         const job = pending.get(id);
         if (!job) { return; }
         clearTimeout(job.timer); pending.delete(id);
-        job.reject(new Error('Mac tools did not answer in time.'));
+        job.reject(new Error('Castle Tools did not answer in time.'));
       }, {once: true});
       popup.postMessage({type:'castle-tools-request', id, path, method:options.method || 'GET', headers:options.headers || {}, body:options.body}, ORIGIN);
     });

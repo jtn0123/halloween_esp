@@ -159,14 +159,14 @@ $('import-jobs').onclick=async e=>{
   const b=retry||cancel;if(!b){renderJobs();return;}
   b.disabled=true;
   try{await request(retry?'/radio/retry':'/radio/cancel',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:b.dataset.retry||b.dataset.cancel})});lastJobs='';await refresh();}
-  catch(err){toast(/^404/.test(err.message)?'Restart Castle Radio on your Mac to cancel imports — it is still running the older version.':err.message);}
+  catch(err){toast(/^404/.test(err.message)?'Restart Castle Tools on your computer to cancel imports — it is still running the older version.':err.message);}
   finally{b.disabled=false;}};
 $('imported-list').onclick=e=>{const p=e.target.closest('[data-import-play]'),s=e.target.closest('[data-split-open]'),r=e.target.closest('[data-reprocess]'),d=e.target.closest('[data-delete-song]'),n=e.target.closest('[data-rename]');if(n){renameSong(tracks[Number(n.dataset.rename)]);}if(p){start(Number(p.dataset.importPlay));openPreview();}if(s){const id=Number(s.dataset.splitOpen);if(current!==id){stop();load(id);}openPreview();}if(r){reprocessTrack=tracks[Number(r.dataset.reprocess)];$('reprocess-title').textContent=reprocessTrack.title;$('reprocess-source').textContent=`${reprocessTrack.source_kind==='link'?'Saved link':'Saved original file'}: ${reprocessTrack.source_label}`;$('reprocess-format').value=reprocessTrack.playback_format||'mp3';$('reprocess-quality').value=reprocessTrack.playback_quality||'standard';$('reprocess-quality').disabled=$('reprocess-format').value==='wav';$('reprocess-split').checked=!!reprocessTrack.split;reprocessDialog.showModal();}if(d){deleteSong(Number(d.dataset.deleteSong));}};
 async function renameSong(t){
   const title=String(window.prompt('Name this song',t.title)||'').trim();
   if(!title||title===t.title){return;}
   try{await request('/radio/rename',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:t.key,title})});lastLibrary='';await refresh();toast(`Renamed to ${title}`);}
-  catch(err){toast(/^404/.test(err.message)?'Restart Castle Radio on your Mac to rename songs — it is still running the older version.':err.message);}
+  catch(err){toast(/^404/.test(err.message)?'Restart Castle Tools on your computer to rename songs — it is still running the older version.':err.message);}
 }
 $('library-filter').oninput=renderImports;$('library-sort').onchange=renderImports;
 $('reprocess-format').onchange=()=>{$('reprocess-quality').disabled=$('reprocess-format').value==='wav';};

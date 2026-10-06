@@ -81,7 +81,9 @@ def register(root: Path = ROOT, applications: Path | None = None) -> Path:
 def main() -> int:
     try:
         print(f"Website startup is ready: {register()}")
-        print("On the castle website, click Start Mac tools, then Connect Mac tools.")
+        print(
+            "On the castle website, click Start Castle Tools, then Connect Castle Tools."
+        )
     except NotOnThisPlatform as error:
         print(error, file=sys.stderr)
         return 2

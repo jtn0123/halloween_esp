@@ -124,7 +124,7 @@ class TestBuild(FakeData):
         page = device_site.build(HERE, self.data).decode()
         for line in said:
             self.assertNotIn(line, page)
-        self.assertIn("Castle library ready · connect Mac tools to import", page)
+        self.assertIn("Castle library ready · connect Castle Tools to import", page)
         self.assertIn("Castle library unavailable · retrying", page)
 
     def test_the_castle_guard_is_in_the_source_not_only_the_build(self):
