@@ -48,6 +48,7 @@ import time
 from collections.abc import Callable
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 
 import castle_emu_loop as loop
 import castle_emu_wire as wire
@@ -124,6 +125,13 @@ class CastleEmu(ThreadingHTTPServer):
     # The desk polls, the studio relays and a fuzz storms; a 5-deep backlog
     # (the Python default) turns bursts into refused connects.
     request_queue_size = 64
+
+    def server_bind(self) -> None:
+        # HTTPServer resolves a hostname before listening. That can stall
+        # for 35s on macOS 15 runners; this server only binds numeric loopback.
+        TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
 
     def handle_error(self, request: object, client_address: object) -> None:
         """A client that hung up mid-reply is not an error worth a traceback.

@@ -54,6 +54,11 @@ FAKE_APP = textwrap.dedent(
     """
     import json, os, threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from socketserver import TCPServer
+    class LocalServer(ThreadingHTTPServer):
+        def server_bind(self):
+            TCPServer.server_bind(self)
+            self.server_name, self.server_port = self.server_address[:2]
     with open(os.environ["FAKE_LOG"], "a", encoding="utf-8") as log:
         if os.environ.get("FAKE_SETUP"):
             log.write("[t] castle-tools: setup (FirstRun): from the bundle\\n")
@@ -72,7 +77,7 @@ FAKE_APP = textwrap.dedent(
         def log_message(self, *a):
             pass
     for var in ("CASTLE_STUDIO_PORT", "CASTLE_DESK_PORT"):
-        srv = ThreadingHTTPServer(("127.0.0.1", int(os.environ[var])), H)
+        srv = LocalServer(("127.0.0.1", int(os.environ[var])), H)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
     threading.Event().wait()
     """
@@ -378,7 +383,15 @@ class AStandInApp(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         app = Path(tmp.name) / "app.py"
-        app.write_text(FAKE_APP, encoding="utf-8")
+        # macOS 15 runners can stall in getfqdn before an HTTP server listens.
+        # A stand-in app must answer even when reverse DNS is unavailable.
+        app.write_text(
+            "import socket\n"
+            "def refuse_reverse_dns(host=''):\n"
+            "    raise AssertionError('reverse DNS is unavailable')\n"
+            "socket.getfqdn = refuse_reverse_dns\n" + FAKE_APP,
+            encoding="utf-8",
+        )
         log = Path(tmp.name) / "app.log"
         env = {
             **os.environ,

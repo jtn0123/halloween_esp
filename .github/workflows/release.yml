@@ -204,8 +204,8 @@ jobs:
       matrix:
         include:
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
-          - { os: macos-14, target: aarch64-apple-darwin }
-          - { os: macos-14, target: x86_64-apple-darwin }
+          - { os: macos-15, target: aarch64-apple-darwin }
+          - { os: macos-15, target: x86_64-apple-darwin }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
     steps:
@@ -265,7 +265,7 @@ jobs:
       matrix:
         include:
           - { os: windows-latest, target: x86_64-pc-windows-msvc, bundles: nsis }
-          - { os: macos-14, target: aarch64-apple-darwin, bundles: "app,dmg" }
+          - { os: macos-15, target: aarch64-apple-darwin, bundles: "app,dmg" }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     steps:
