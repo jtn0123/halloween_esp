@@ -12,7 +12,9 @@ in CI: an archive this table does not know, or a pinned version that moved,
 fails the release before the image is staged.
 
 Reviewed 2026-10-02 against an esphome 2026.9.0 compile of castle_buyer.yaml
-(ESP-IDF 5.5.5, xtensa-esp-elf esp-14.2.0_20260121).
+(ESP-IDF 5.5.5, xtensa-esp-elf esp-14.2.0_20260121). Re-checked 2026-10-06
+against a 2026.9.1 compile: the same ESP-IDF, toolchain, managed components
+and linked archives, and ESPHome's LICENSE unchanged between the two tags.
 """
 
 from __future__ import annotations
@@ -22,7 +24,7 @@ from pathlib import Path
 
 from notices_model import Component, shown
 
-ESPHOME = "2026.9.0"
+ESPHOME = "2026.9.1"
 IDF_VERSION = "5.5.5"
 TOOLCHAIN = "esp-14.2.0_20260121"
 #: The managed components, by their component-registry names.
