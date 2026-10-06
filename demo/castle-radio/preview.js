@@ -270,7 +270,7 @@ async function deleteSong(id){
     t.deleted=true;imported.delete(t.key);queue=queue.filter(i=>i!==id);history=history.filter(i=>i!==id);
     if(current===id){stop();const replacement=tracks.find(t=>!t.deleted);if(replacement){load(replacement.id);}}
     rememberHidden();lastRemoved=t;$('undo-bar').hidden=false;
-    $('undo-bar').querySelector('span').textContent=`Removed “${t.title}” from this demo.`;
+    $('undo-bar').querySelector('span').textContent=`Removed “${t.title}” from your collection.`;
     lastLibrary='';await refresh();renderTracks();renderQueue();renderImports();
   }catch(e){toast(`Could not remove song: ${e.message}`);}
 }

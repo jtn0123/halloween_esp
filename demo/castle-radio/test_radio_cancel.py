@@ -117,7 +117,7 @@ class CancelEveryStageTests(unittest.TestCase):
 
         with patch.object(radio_jobs, "crate_analysis", analyse):
             self.prepare()
-        self.assertEqual(self.job["phase"], "Ready in demo")
+        self.assertEqual(self.job["phase"], "Ready on this computer")
         self.assertIsNotNone(given[0])
         self.assertIs(self.shows.call_args.args[2], given[0])
 
@@ -126,7 +126,9 @@ class CancelEveryStageTests(unittest.TestCase):
             radio_jobs, "crate_analysis", return_value=(88200, {"onset_low": []})
         ):
             self.prepare()
-        self.assertEqual((self.job["phase"], self.job["done"]), ("Ready in demo", True))
+        self.assertEqual(
+            (self.job["phase"], self.job["done"]), ("Ready on this computer", True)
+        )
         rows = json.loads(self.catalog.read_text(encoding="utf-8"))
         self.assertEqual([r["key"] for r in rows], ["radio_c"])
 

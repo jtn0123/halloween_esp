@@ -36,6 +36,9 @@ POOL = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 HANDLES: dict[str, tuple[concurrent.futures.Future, threading.Event]] = {}
 CATALOG = DATA / "catalog.json"
 FILE_PREFIX = "file:"
+#: A finished preparation, as the import queue prints it ("… · took 42s"):
+#: the song is prepared and kept here, and Sync is what puts it on the castle.
+READY = "Ready on this computer"
 QUALITY_BITRATES = {
     "standard": {"mp3": 96, "opus": 64},
     "high": {"mp3": 160, "opus": 96},
@@ -423,12 +426,10 @@ def prepare(job, source, title, split, audio_format, audio_quality="standard"):
             portable_fs.replace(temp, CATALOG)
             update(
                 job,
-                phase="Ready in demo"
-                if not split_error
-                else "Ready · split needs attention",
+                phase=READY if not split_error else "Ready · split needs attention",
                 done=True,
                 percent=100,
-                detail="Audio and lights are ready in this demo",
+                detail="Audio and lights are ready on this computer",
                 title=record["title"],
                 result=record,
             )

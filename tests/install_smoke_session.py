@@ -124,7 +124,7 @@ def import_songs(b: Buyer, r: radio.Radio) -> dict[str, dict[str, Any]]:
         job = jobs[song.name]
         said = (job["phase"], job.get("error"), job.get("error_detail"))
         detail = ": ".join(str(part) for part in said if part)
-        check(job["phase"] == "Ready in demo" and not job.get("error"),
+        check(job["phase"] == "Ready on this computer" and not job.get("error"),
               f"{song.name!r} imports ({detail})")  # fmt: skip
         result = job["result"]
         check(result["title"] == radio.page_title(song.name),

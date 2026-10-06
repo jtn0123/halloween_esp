@@ -102,7 +102,7 @@
   document.addEventListener('click',e=>{const button=e.target.closest('[data-sync-song]');if(button){offer(tracks[Number(button.dataset.syncSong)]);}});
   const remote = document.createElement('article');
   remote.className='remote-inventory';
-  remote.innerHTML='<h2>Other audio on castle</h2><p class="subtle">Files already on the SD card, outside this demo’s synced library. Matching titles may be separate copies.</p><ul id="remote-audio-list"></ul>';
+  remote.innerHTML='<h2>Other audio on castle</h2><p class="subtle">Files already on the castle’s SD card that are not among your synced songs. Matching titles may be separate copies.</p><ul id="remote-audio-list"></ul>';
   $('device').append(remote);
   async function refreshInventory(force=false) {
     if(polling || window.remoteLibrary.syncing()){return;}
