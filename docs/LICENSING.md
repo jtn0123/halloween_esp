@@ -83,7 +83,7 @@ The image is this project's ESPHome configuration and C++ headers
 (`firmware/`, MIT-licensed like the rest of the tree). It is compiled by
 `make build-buyer` together with:
 
-- **ESPHome 2026.9.0, C++ runtime: GPL-3.0-only.** ESPHome's LICENSE (the
+- **ESPHome 2026.9.1, C++ runtime: GPL-3.0-only.** ESPHome's LICENSE (the
   "ESPHome License") says the C++ runtime is published under GPLv3 and the
   Python code generator under MIT. PyPI's metadata for the `esphome`
   package says only "MIT". The notices follow the LICENSE file, because

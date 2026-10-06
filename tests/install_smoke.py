@@ -145,6 +145,11 @@ def verify_installed(b: Buyer, said: str) -> None:
         target = b.shortcut_target()
         check(Path(target) == launcher, f"the shortcut opens the launcher ({target})")
     check("Castle Tools are installed." in said, "the installer says it is done")
+    if b.env.get("HF_HUB_OFFLINE"):
+        # CI's cached weights (tools/model_pin.py): a Demucs that cannot read
+        # them falls back to its legacy download, and nothing else would see.
+        legacy = sorted((b.dirs.models / "torch").rglob("*.th"))
+        check(not legacy, f"Demucs read the cached htdemucs weights {legacy[:1]}")
 
 
 def install(work: Path) -> None:
