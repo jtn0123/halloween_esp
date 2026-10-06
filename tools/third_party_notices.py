@@ -4,8 +4,11 @@
     third_party_notices.py generate             write every notices file
     third_party_notices.py check                exit 1 if a file is stale, a
                                                 lockfile moved past the
-                                                inventory, or a component
-                                                breaks the licence policy
+                                                inventory, a component
+                                                breaks the licence policy,
+                                                or LICENSE or a manifest of
+                                                ours stops naming our own
+                                                licence (MIT)
     third_party_notices.py refresh              re-read the desktop app's
                                                 crates (cargo metadata,
                                                 offline) and regenerate
@@ -64,6 +67,7 @@ def problems() -> list[str]:
     for key in notices_render.ARTIFACTS:
         errors += [f"{key}: {e}" for e in policy_errors(notices_render.components(key))]
     errors += notices_render.stale()
+    errors += notices_render.own_licence_errors()
     return errors
 
 

@@ -262,3 +262,14 @@ flash TRAINS only: a strike is softened when it lands on a zone less than
 an isolated strike, or a steady beat on each fixture, lands at full strength.
 The soft strobe effect is unchanged. The rule is `castle_layers.h`
 `kSoftenWindowMs`, mirrored by the desk and the Radio (docs/PARITY.md).
+
+---
+
+## Licence
+
+This repository's code is under the MIT License: see [LICENSE](LICENSE). A
+built firmware image also contains GPL-3.0 components, ESPHome's C++ runtime
+and esp-audio-libs, so an image is distributed as a whole under the GNU
+General Public License version 3. [docs/LICENSING.md](docs/LICENSING.md) says
+what each published artifact contains, under which terms, and where its
+third-party notices are.

@@ -5,10 +5,12 @@ This file is at the top of the castle's source tree, and so in every release's
 "Source code" zip — the bundle the Castle Tools installer (installer/)
 unpacks.
 
-Everything in the tree is the Halloween Castle project's own work (copyright
-jtn0123); it carries no third-party source code. The castle-core programs the
-installer adds from the release are covered below. The other shipped artifacts
-carry their own notices, also in this tree:
+Everything in the tree, apart from the licence texts copied into licenses/
+(which are their authors'), is the Halloween Castle project's own work
+(copyright jtn0123), under the MIT License (see LICENSE at the top of
+https://github.com/jtn0123/halloween_esp). It carries no third-party source
+code. The castle-core programs the installer adds from the release are covered
+below. The other shipped artifacts carry their own notices, also in this tree:
 licenses/THIRD-PARTY-NOTICES-firmware.txt (the firmware image),
 licenses/THIRD-PARTY-NOTICES-desktop.txt (the desktop app) and
 licenses/THIRD-PARTY-NOTICES-castle-core.txt.

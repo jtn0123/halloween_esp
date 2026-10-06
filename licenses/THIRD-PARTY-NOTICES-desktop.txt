@@ -5,10 +5,11 @@ This file is inside Castle Tools, the desktop app for macOS and Windows, and
 so inside its installers and updates.
 
 The app and the castle-core programs it carries (studio, analyze_track,
-scene_render) are the Halloween Castle project's own work (copyright jtn0123).
-They are built with the Rust crates below, from crates.io, and the Rust
-standard library. Entries marked "macos only" or "windows only" are in that
-platform's app alone.
+scene_render) are the Halloween Castle project's own work (copyright jtn0123),
+under the MIT License (see LICENSE at the top of
+https://github.com/jtn0123/halloween_esp). They are built with the Rust crates
+below, from crates.io, and the Rust standard library. Entries marked "macos
+only" or "windows only" are in that platform's app alone.
 
 The app also carries a copy of the project's own source tree, which its first
 launch sets Castle Radio up from, and Astral's uv (listed below). That first

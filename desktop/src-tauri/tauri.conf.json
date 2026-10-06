@@ -30,6 +30,7 @@
     "category": "Music",
     "shortDescription": "Player, importer and castle link for the Halloween castle",
     "copyright": "jtn0123",
+    "license": "MIT",
     "createUpdaterArtifacts": false,
     "resources": {
       "../../licenses/THIRD-PARTY-NOTICES-desktop.txt": "THIRD-PARTY-NOTICES.txt"
