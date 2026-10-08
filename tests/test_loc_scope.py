@@ -124,7 +124,7 @@ class TestExemptions(unittest.TestCase):
             for rel in paths:
                 path = root / rel
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("geometry or prose\n" * 501)
+                path.write_text("geometry or prose\n" * 501, encoding="utf-8")
             rows = check_loc.measure(root=root, files=[root / rel for rel in paths])
         self.assertEqual({rel for _, rel, over in rows if over}, paths - DOCUMENTED_CAD)
 
