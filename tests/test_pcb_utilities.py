@@ -42,6 +42,10 @@ class TestBuildReceipt(unittest.TestCase):
                 "i2s_bus->set_bclk_pin(11)",
                 "i2s_bus->set_lrclk_pin(12)",
                 "castle_rate_safe_speaker->set_target_sample_rate(44100)",
+                "castle_rate_safe_speaker->set_target_bits_per_sample(16)",
+                "castle_rate_safe_speaker->set_buffer_duration(100)",
+                "castle_speaker->set_slot_bit_width(I2S_SLOT_BIT_WIDTH_16BIT)",
+                "castle_speaker->set_sample_rate(44100)",
                 "castle_rate_safe_speaker->set_output_speaker(castle_speaker)",
                 "castle_media->set_announcement_speaker(castle_rate_safe_speaker)",
                 'App.pre_setup("castle-v34-integrated"',
@@ -121,6 +125,34 @@ class TestBuildReceipt(unittest.TestCase):
                 "flash/PSRAM",
             ),
         ]
+        changes.extend(
+            [
+                (
+                    "src/main.cpp",
+                    "set_target_bits_per_sample(16)",
+                    "set_target_bits_per_sample(32)",
+                    "audio/device setting",
+                ),
+                (
+                    "src/main.cpp",
+                    "set_buffer_duration(100)",
+                    "set_buffer_duration(50)",
+                    "audio/device setting",
+                ),
+                (
+                    "src/main.cpp",
+                    "I2S_SLOT_BIT_WIDTH_16BIT",
+                    "I2S_SLOT_BIT_WIDTH_32BIT",
+                    "slot bit width",
+                ),
+                (
+                    "src/main.cpp",
+                    "castle_speaker->set_sample_rate(44100)",
+                    "castle_speaker->set_sample_rate(48000)",
+                    "audio/device setting",
+                ),
+            ]
+        )
         for relative, before, after, error in changes:
             with self.subTest(relative=relative, change=after):
                 path = self.build / relative
@@ -224,8 +256,9 @@ class TestStereoFixture(unittest.TestCase):
     def test_silent_short_swapped_and_mono_fixtures_cannot_pass(self) -> None:
         rate = self.module["RATE"]
         check = self.module["check_channels"]
+        short = array.array("h", [0, 0])
         with self.assertRaisesRegex(ValueError, "too short"):
-            check(array.array("h", [0, 0]))
+            check(short)
         checks, _ = check(array.array("h", [0]) * (rate * 9 * 2))
         self.assertFalse(any(checks.values()))
         data = self.module["samples"]()

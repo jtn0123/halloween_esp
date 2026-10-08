@@ -38,6 +38,10 @@ def verify_settings(
         bool(re.search(r"set_std_slot_mask\((?:::)?I2S_STD_SLOT_BOTH\)", cpp)),
         "Both stereo slots missing",
     )
+    require(
+        bool(re.search(r"set_slot_bit_width\((?:::)?I2S_SLOT_BIT_WIDTH_16BIT\)", cpp)),
+        "Wrong audio slot bit width",
+    )
     require("set_announcement_format(" in cpp, "Announcement format missing")
     fmt = cpp.split("set_announcement_format(", 1)[1].split("});", 1)[0]
     require(
@@ -56,6 +60,9 @@ def verify_settings(
         )
     for setting in [
         "castle_rate_safe_speaker->set_target_sample_rate(44100)",
+        "castle_rate_safe_speaker->set_target_bits_per_sample(16)",
+        "castle_rate_safe_speaker->set_buffer_duration(100)",
+        "castle_speaker->set_sample_rate(44100)",
         "castle_rate_safe_speaker->set_output_speaker(castle_speaker)",
         "castle_media->set_announcement_speaker(castle_rate_safe_speaker)",
         'App.pre_setup("castle-v34-' + variant + '"',
