@@ -35,13 +35,15 @@ RELAY_RS = ROOT / "core" / "src" / "studio_relay.rs"
 API_DOC = ROOT / "docs" / "API.md"
 
 #: Routes the castle serves that a relay deliberately does NOT carry, with
-#: the reason. Neither is a `/api/*` route and neither is a client's to ask
-#: for through the studio: the studio answers `/` with its own page, and
-#: `/site/*` is the castle serving the Castle Radio page off its own card to
-#: a browser pointed straight at it.
+#: the reason. None is a `/api/*` route and none is a client's to ask for
+#: through the studio: the studio answers `/` with its own page, `/site/*` is
+#: the castle serving the Castle Radio page off its own card to a browser
+#: pointed straight at it, and `/owner` (v5.75) is the castle's own page for
+#: a castle with no studio — its script calls `/api/*` on whatever served it.
 NOT_RELAYED = {
     "/": "the studio serves its own page at /",
     "/site/*": "the card's own page, read by a browser pointed at the castle",
+    "/owner": "the owner's page, read by a browser pointed at the castle",
 }
 
 
@@ -49,7 +51,7 @@ def rust_list(name: str) -> list[str]:
     """One `pub const <name>: [&str; N] = [...]` from studio_relay.rs."""
     body = re.search(
         rf"pub const {name}: \[&str; (\d+)\] = \[(.*?)\];",
-        RELAY_RS.read_text(),
+        RELAY_RS.read_text(encoding="utf-8"),
         re.DOTALL,
     )
     assert body is not None, f"no {name} in {RELAY_RS}"
@@ -65,7 +67,7 @@ def documented_paths() -> set[str]:
     """Every castle path named in docs/API.md's relayed table, normalised
     to the spelling an allowlist uses: the parameters, the `<name>` stand-in
     and the `[?d=…]` optional query all come off."""
-    text = API_DOC.read_text()
+    text = API_DOC.read_text(encoding="utf-8")
     # Past the heading itself: it names the `/api/…` family, not a route.
     start = text.index("\n", text.index("## Relayed to the castle"))
     found = set()

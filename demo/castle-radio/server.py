@@ -8,8 +8,13 @@ from pathlib import Path
 from typing import ClassVar
 from urllib.parse import parse_qs, unquote, urlsplit
 
+import castle_finder
+import castle_update_routes
 import desktop_tools
 import device_bridge
+import diagnostics
+import downloader_routes
+import first_run
 import import_routes
 import library_ops
 import remote_library
@@ -41,7 +46,13 @@ STATIC_ROUTES = frozenset(
         "/remote-library.js",
         "/device-tools.js",
         "/device-words.js",
+        "/castle-key.js",
+        "/castle-find.js",
+        "/first-run.js",
+        "/castle-help.js",
+        "/castle-update.js",
         "/desktop-tools.js",
+        "/downloader.js",
         "/device-helper.js",
         "/companion.html",
         "/companion.js",
@@ -141,6 +152,12 @@ class Handler(SimpleHTTPRequestHandler):
             action()
         except request_guard.Refused as exc:
             self.reply({"error": str(exc)}, exc.status)
+        except device_bridge.castle_keys.Refusal as exc:
+            self.reply({"error": str(exc)}, exc.status)
+        except device_bridge.KeyRequired as exc:
+            # The castle's own 401 (firmware v5.74), in the words every
+            # surface uses; the page points at the Settings key card.
+            self.reply({"error": str(exc), "key_required": True}, 401)
         except errors as exc:
             self.reply({"error": str(exc)}, status)
 
@@ -220,6 +237,9 @@ class Handler(SimpleHTTPRequestHandler):
         Same shape as get_device_events: a constant castle path."""
         self.guard(lambda: self.reply(device_bridge.call("/api/health")), 502)
 
+    def get_device_key(self, _parsed):
+        self.reply(device_bridge.key_state())
+
     def get_library(self, _parsed):
         with LOCK:
             self.reply(desktop_tools.catalog(catalog(), LIBRARY))
@@ -233,7 +253,7 @@ class Handler(SimpleHTTPRequestHandler):
 
         def answer():
             with LOCK:
-                self.reply(library_ops.waveform(HERE, LIBRARY, key))
+                self.reply(library_ops.waveform(HERE, LIBRARY, key, DATA))
 
         self.guard(answer, 404)
 
@@ -242,10 +262,17 @@ class Handler(SimpleHTTPRequestHandler):
         "/radio/device/library": get_device_library,
         "/radio/device/events": get_device_events,
         "/radio/device/health": get_device_health,
+        "/radio/device/key": get_device_key,
         "/radio/device": get_device,
         "/radio/library": get_library,
         "/radio/jobs": get_jobs,
         "/radio/tools": desktop_tools.get_status,
+        **castle_finder.GET_ROUTES,
+        **first_run.GET_ROUTES,
+        **diagnostics.GET_ROUTES,
+        "/radio/castle/update": castle_update_routes.get_update,
+        "/radio/app/release": castle_update_routes.get_app_release,
+        "/radio/downloader": downloader_routes.get_status,
     }
 
     def do_GET(self):
@@ -296,11 +323,18 @@ class Handler(SimpleHTTPRequestHandler):
     # ---- POST ------------------------------------------------------------
 
     def json_body(self, message, limit=4096):
+        """The request's JSON OBJECT. Every route reads its fields with
+        `.get`, so a `[]` or a bare string is refused here as a 400 rather
+        than reaching one as an AttributeError, which no route catches and
+        which dropped the connection (grade report 2026-09-24 E4)."""
         request_guard.json_type(self.headers.get("Content-Type"))
         length = int(self.headers.get("Content-Length", 0))
         if not 0 < length <= limit:
             raise ValueError(message)
-        return json.loads(self.rfile.read(length))
+        body = json.loads(self.rfile.read(length))
+        if not isinstance(body, dict):
+            raise ValueError(message)
+        return body
 
     def marked(self):
         """The bodiless and raw-bodied routes carry no content type to
@@ -314,6 +348,11 @@ class Handler(SimpleHTTPRequestHandler):
     def post_command(self):
         body = self.json_body("Invalid control request size.")
         self.reply(device_bridge.command(body, imported_show(body)))
+
+    def post_device_key(self):
+        """use / set / clear the castle key (Settings). The key rides in the
+        JSON body and goes nowhere but the castle and the store."""
+        self.reply(device_bridge.key_act(self.json_body("Invalid key request")))
 
     def post_restore(self, route):
         key = song_key(route, RESTORE_PREFIX)
@@ -331,11 +370,15 @@ class Handler(SimpleHTTPRequestHandler):
     POST_ROUTES: ClassVar[dict] = {
         "/radio/device/sync": post_sync,
         "/radio/device/command": post_command,
+        "/radio/device/key": post_device_key,
+        "/radio/castle/update": castle_update_routes.post_update,
         "/radio/import": import_routes.post_import,
         "/radio/retry": import_routes.post_retry,
         "/radio/reprocess": import_routes.post_reprocess,
         "/radio/cancel": import_routes.post_cancel,
         "/radio/rename": import_routes.post_rename,
+        **castle_finder.POST_ROUTES,
+        "/radio/downloader/update": downloader_routes.post_update,
     }
 
     def do_POST(self):
@@ -349,10 +392,29 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_error(404)
 
 
-if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8871
+#: The loopback, never "" or 0.0.0.0: Windows Firewall asks an owner to
+#: "allow access" the first time a program listens where the network can
+#: reach it, and nothing here is for the Wi-Fi (tests/test_loopback_rs.py).
+HOST = "127.0.0.1"
+
+
+def listen(port: int) -> ThreadingHTTPServer:
+    """Bound and listening; port 0 takes a free one (the banner names it)."""
+    return ThreadingHTTPServer((HOST, port), Handler)
+
+
+def main(argv: list[str]) -> None:
+    """`server.py [port]`: 8871 unless told, and the banner names the port
+    actually bound, which is how a caller that asked for 0 finds it."""
+    httpd = listen(int(argv[0]) if argv else 8871)
     print(
-        f"Castle Radio: http://127.0.0.1:{port} — isolated imports, castle device bridge",
+        f"Castle Radio: http://{HOST}:{httpd.server_address[1]}"
+        " — isolated imports, castle device bridge",
         flush=True,
     )
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    with httpd:
+        httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

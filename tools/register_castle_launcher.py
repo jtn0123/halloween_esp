@@ -35,9 +35,18 @@ def launcher_info(root: Path) -> dict:
     }
 
 
+class NotOnThisPlatform(RuntimeError):
+    """Website startup is a macOS URL handler: elsewhere there is nothing to
+    register, which is an answer rather than a failure to diagnose."""
+
+
 def register(root: Path = ROOT, applications: Path | None = None) -> Path:
     if sys.platform != "darwin":
-        raise RuntimeError("Website startup registration requires macOS.")
+        raise NotOnThisPlatform(
+            "Website startup is not on this platform: it registers a macOS URL"
+            f" handler, and this is {sys.platform}. Start Castle Tools from its"
+            " own launcher instead (installer/README.md)."
+        )
     if not (root / "Open Castle Studio.command").is_file():
         raise RuntimeError("The Castle Studio launcher is missing from this checkout.")
     destination = (applications or Path.home() / "Applications") / "Castle Tools.app"
@@ -69,14 +78,27 @@ def register(root: Path = ROOT, applications: Path | None = None) -> Path:
     return destination
 
 
-if __name__ == "__main__":
+def main() -> int:
     try:
         print(f"Website startup is ready: {register()}")
-        print("On the castle website, click Start Mac tools, then Connect Mac tools.")
-    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        print(
+            "On the castle website, click Start Castle Tools, then Connect Castle Tools."
+        )
+    except NotOnThisPlatform as error:
+        print(error, file=sys.stderr)
+        return 2
+    except (OSError, subprocess.CalledProcessError) as error:
         print(f"Could not register Castle Tools: {error}", file=sys.stderr)
         print(
             "Install Apple's Command Line Tools if xcrun/swiftc is missing.",
             file=sys.stderr,
         )
-        sys.exit(1)
+        return 1
+    except RuntimeError as error:
+        print(f"Could not register Castle Tools: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

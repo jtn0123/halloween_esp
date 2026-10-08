@@ -15,7 +15,7 @@
   const booting = s => !!s && sceneCount(s) === 0;
   function friendly(message) {
     if (/timed out/i.test(message)) {return 'Castle not answering · request timed out';}
-    if (/refused|unreachable|No route|Errno/i.test(message)) {return 'Castle unreachable at 10.27.27.81';}
+    if (/refused|unreachable|No route|Errno/i.test(message)) {return 'Castle unreachable from this computer';}
     if (/Failed to fetch|NetworkError/i.test(message)) {return 'Control room server is not running';}
     return message;
   }

@@ -6,6 +6,13 @@
 //! build only) is deliberately not ported — the SD build's HTTP is the
 //! desk's transport, and the plan's esphome-native-api crate swap owns
 //! that story later.
+//!
+//! Every request carries the castle key (firmware v5.74) for the host it
+//! goes to, by hosts.py's rule — crate::hosts::castle_key over CASTLE_KEY
+//! and the inventory — exactly as castle_link sends it; a castle with no
+//! key ignores the header. The key is read per request, so one the desk
+//! remembers (studio_key) is used by the very next write, and it appears
+//! in no log line and no reply.
 
 use std::sync::{Mutex, OnceLock, PoisonError};
 use std::time::Instant;
@@ -21,7 +28,7 @@ const STATUS_TTL_S: f64 = 1.5;
 const DOWN_TTL_S: f64 = 3.0;
 
 /// Every route the firmware actually serves — castle_link.KNOWN_API.
-pub const KNOWN_API: [&str; 16] = [
+pub const KNOWN_API: [&str; 19] = [
     "/api/status",
     "/api/health",
     // v5.59's event ring (C2): served by the castle, refused here.
@@ -38,6 +45,11 @@ pub const KNOWN_API: [&str; 16] = [
     "/api/blackout",
     "/api/bootlog",
     "/api/ota",
+    // v5.74 (firmware/sd_web_prefs.h): the owner's settings, the castle key
+    // and the factory reset.
+    "/api/settings",
+    "/api/key",
+    "/api/factory-reset",
     "/remote",
 ];
 pub const KNOWN_PREFIX: [&str; 4] = ["/api/files/", "/api/site/", "/api/scenes/", "/sd/"];
@@ -76,7 +88,7 @@ fn caches() -> &'static Mutex<Caches> {
     })
 }
 
-fn with_port(h: &str) -> String {
+pub(crate) fn with_port(h: &str) -> String {
     if h.contains(':') {
         h.to_string()
     } else {
@@ -84,14 +96,25 @@ fn with_port(h: &str) -> String {
     }
 }
 
+/// The inventory file — CASTLE_DEVICES, else the repo's devices.toml
+/// (hosts.py `devices_path`). It is the castle-key store too.
+pub fn devices_file(app: &App) -> std::path::PathBuf {
+    hosts::devices_path(app.root.join("devices.toml"))
+}
+
+fn inventory(app: &App) -> String {
+    std::fs::read_to_string(devices_file(app)).unwrap_or_default()
+}
+
+/// What to send `h` as X-Castle-Key — hosts.key_headers(h): the key for
+/// the address as the inventory spells it, before any port goes on.
+pub fn key_for(app: &App, h: &str) -> String {
+    hosts::castle_key(Some(h), hosts::env_key().as_deref(), &inventory(app))
+}
+
 fn candidates(app: &App) -> Vec<String> {
-    let toml_path = match std::env::var("CASTLE_DEVICES") {
-        Ok(v) if !v.is_empty() => std::path::PathBuf::from(v),
-        _ => app.root.join("devices.toml"),
-    };
-    let toml = std::fs::read_to_string(toml_path).unwrap_or_default();
     let env = std::env::var("CASTLE_HOST").ok();
-    hosts::candidates(None, env.as_deref(), &toml)
+    hosts::candidates(None, env.as_deref(), &inventory(app))
 }
 
 /// castle_link.castle_hosts — every address worth trying, best first;
@@ -145,6 +168,7 @@ pub fn status(app: &App) -> Option<Json> {
             "GET",
             "/api/status",
             b"",
+            &key_for(app, h),
             PROBE_CONNECT_S,
             TIMEOUT_S,
         ) {
@@ -201,7 +225,8 @@ pub fn forward(app: &App, method: &str, target: &str, body: &[u8]) -> (u16, Vec<
     }
     let read_s = read_budget(method, target);
     for h in &hosts {
-        match bridge::call(&with_port(h), method, target, body, TIMEOUT_S, read_s) {
+        let key = key_for(app, h);
+        match bridge::call(&with_port(h), method, target, body, &key, TIMEOUT_S, read_s) {
             Err(CallFault::Unreachable(_)) => continue,
             Err(CallFault::Stalled(_)) => {
                 if method == "GET" {

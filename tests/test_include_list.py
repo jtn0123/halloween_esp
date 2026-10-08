@@ -19,7 +19,7 @@ TARGETS = ("castle.yaml", "castle_sd_common.yaml")
 def listed(target: str) -> set[str]:
     """The `includes:` list, read as text: the file carries !include tags
     a plain loader rejects, and the list is one line per header."""
-    text = (FW / target).read_text()
+    text = (FW / target).read_text(encoding="utf-8")
     block = re.search(r"^  includes:\n((?:    (?:- |#).*\n)+)", text, re.MULTILINE)
     assert block, f"{target} has no esphome includes list"
     lines = (line.strip() for line in block.group(1).splitlines())
@@ -27,7 +27,11 @@ def listed(target: str) -> set[str]:
 
 
 def local_includes(header: Path) -> set[str]:
-    return set(re.findall(r'^#include "([^"/]+\.h)"', header.read_text(), re.MULTILINE))
+    return set(
+        re.findall(
+            r'^#include "([^"/]+\.h)"', header.read_text(encoding="utf-8"), re.MULTILINE
+        )
+    )
 
 
 class IncludeListTests(unittest.TestCase):

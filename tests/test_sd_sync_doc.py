@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 class SdSyncDocTests(unittest.TestCase):
     def test_scenes_help_does_not_say_eight_tracks(self):
-        text = (ROOT / "tools" / "sd_sync.py").read_text()
+        text = (ROOT / "tools" / "sd_sync.py").read_text(encoding="utf-8")
         self.assertNotIn("the 8 scene tracks", text)
         self.assertIn("the scene tracks", text)
 

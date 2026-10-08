@@ -7,8 +7,9 @@ reply is built from; this is what the device's main loop DOES with that
 state once every APPLY_DELAY_S:
 
   ticker              castle_sd_common.yaml's `interval: 200ms` — drain the
-                      mailbox (the RESTART latch first), mirror, then run
-                      the one action that was waiting
+                      mailbox (the RESTART latch first), the owner's tick,
+                      mirror, then run the one action that was waiting
+  owner_tick          quiet hours and the volume cap (v5.75)
   mirror              the mirroring half: the dropped-frame line and the
                       audio clock's start/end transitions (mirror_audio)
   end_finished_scene  castle_scenes.yaml's `wait_until finished` else branch
@@ -29,8 +30,10 @@ detail, not a new contract.
 
 from __future__ import annotations
 
+import sys
 import threading
 import time
+import traceback
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -87,32 +90,69 @@ def scene_stop(st: _State) -> None:
     st.scene_ends, st.scene_loops = 0.0, False
 
 
-def start_ticker(emu: CastleEmu) -> None:
+def start_ticker(emu: CastleEmu) -> threading.Thread:
     """Run the main loop in the daemon thread the castle boots with."""
-    threading.Thread(
+    thread = threading.Thread(
         target=ticker, args=(emu,), daemon=True, name="castle-emu-tick"
-    ).start()
+    )
+    thread.start()
+    return thread
 
 
 def ticker(emu: CastleEmu) -> None:
-    while True:
-        time.sleep(APPLY_DELAY_S)
-        with emu.state.lock:
-            # take_pending(): the restart latch drains first and leaves
-            # the slot alone, so a command queued beside it still lands.
-            taken: tuple[str, str] | None
-            if emu._restart_pending:
-                emu._restart_pending = False
-                taken = ("RESTART", "")
-            else:
-                taken, emu._pending = emu._pending, None
-        mirror(emu)
-        if taken is not None:
-            emu.events.record_action(*taken, emu.uptime_ms())
-            try:
-                apply(emu, *taken)
-            finally:
-                emu.applied.append(taken)
+    # The interval is a wait on the castle's `halted`, not a time.sleep: a
+    # castle that is closed (server_close) stops ticking. It used to tick for
+    # the life of the process, so every test that had ever built one left a
+    # thread calling time.sleep(0.2) five times a second — and a test that
+    # patched `time.sleep` to count its OWN pause counted theirs as well
+    # ("Called 1894 times", Windows CI on 2026-10-06).
+    while not emu.halted.wait(APPLY_DELAY_S):
+        try:
+            tick(emu)
+        except Exception:
+            # The device's loop does not die of one command it cannot parse,
+            # and a thread that did would leave this castle answering
+            # /api/status for ever while applying nothing — a silence no test
+            # can tell from a slow tick (grade report 2026-09-24 B3). Say it,
+            # then keep ticking.
+            traceback.print_exc(file=sys.stderr)
+
+
+def tick(emu: CastleEmu) -> None:
+    """One pass of the 200 ms interval."""
+    # The publish bell first, as castle_sd_common.yaml's interval does:
+    # exchange(false), so one show.man is one re-read (v5.69, J1).
+    if emu.scenes_dirty:
+        emu.scenes_dirty = False
+        if emu.reseeds:
+            emu.reseed_scenes()
+    with emu.state.lock:
+        # take_pending(): the restart latch drains first and leaves
+        # the slot alone, so a command queued beside it still lands.
+        taken: tuple[str, str] | None
+        if emu._restart_pending:
+            emu._restart_pending = False
+            taken = ("RESTART", "")
+        else:
+            taken, emu._pending = emu._pending, None
+        owner_tick(emu)
+    mirror(emu)
+    if taken is not None:
+        emu.events.record_action(*taken, emu.uptime_ms())
+        try:
+            apply(emu, *taken)
+        finally:
+            emu.applied.append(taken)
+
+
+def owner_tick(emu: CastleEmu) -> None:
+    """castle_web::owner_tick, where castle_sd_common.yaml calls it: the
+    owner's clock, quiet hours and cap (castle_emu_owner.py) read the
+    speaker's level and may pull it — down to the cap, to 0 for quiet
+    hours, or back up when they end. On state the caller locks."""
+    pull = emu.owner.tick(int(emu.wall()), emu.state.volume)
+    if pull >= 0:
+        emu.state.volume = pull
 
 
 def mirror(emu: CastleEmu) -> None:
@@ -186,7 +226,9 @@ def apply(emu: CastleEmu, action: str, arg: str) -> None:
     st = emu.state
     with st.lock:
         if action == "VOLUME":
-            st.volume = min(int(arg), MAX_VOLUME_PCT)
+            # v5.75: and through the owner's cap / quiet hours, which also
+            # remember it as the level to give back (castle_web::volume_for).
+            st.volume = emu.owner.volume_for(min(int(arg), MAX_VOLUME_PCT))
         elif action == "PLAY":
             _apply_play(emu, st, arg)
         elif action == "SCENE":
@@ -212,6 +254,9 @@ def apply(emu: CastleEmu, action: str, arg: str) -> None:
             _apply_pircfg(st, arg)
         elif action == "RESTART":
             st.boot = time.monotonic()
+            if emu.ota_landed:  # the new image, or the old one rolled back
+                emu.ota_landed = False
+                emu.version = emu.boots_as or emu.version
             st.scene, st.track, st.show_on = "", "", False
             st.starting_until = 0.0
 

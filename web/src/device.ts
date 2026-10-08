@@ -70,9 +70,9 @@ export interface BridgeOpts {
   /** The card's reported size, KB, on every answer — null when the castle
    *  does not say (older firmware, no card) or has stopped answering. */
   onCard?: (totalKb: number | null) => void;
-  /** The scene ids the castle's FIRMWARE was built with, on every answer —
-   *  null when the firmware predates the field. The desk diffs this against
-   *  its own list and dims scenes the board cannot play (C6). */
+  /** The scene ids the castle can start (its card's show.man), on every
+   *  answer — null when the firmware predates the field. The desk diffs this
+   *  against its own list and dims scenes the board cannot play yet (C6). */
   onScenes?: (ids: string[] | null) => void;
   /**
    * The device half of the masthead's status line — "castle v1.4 · SD ok ·
@@ -95,6 +95,12 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   let live = false;
   let mirror = opts.mirror ?? true;
   let lastVol = 70;
+  // The level ♪ Castle and unmute come back to: the last one above 0 that
+  // the castle reported or the hand set. Kept apart from `lastVol` (what the
+  // castle says now), because a poll landing while the castle is hushed or
+  // muted says 0 — and used to make the flip back send 70, not the 40 the
+  // castle had been at.
+  let backTo = 70;
   // The scene the castle was last seen running ("" = idle); null before
   // first contact. Only `follow` acts on a change.
   let followed: string | null = null;
@@ -192,16 +198,16 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
   }
 
   function syncRouteUI(): void {
-    const label = `♪ ${soundRoute === "mac" ? "Mac" : "Castle"}`;
+    const label = `♪ ${soundRoute === "mac" ? "Computer" : "Castle"}`;
     const title = soundRoute === "mac"
-      ? "Sound comes out of this Mac; the castle speaker is off. "
+      ? "Sound comes out of this computer; the castle speaker is off. "
         + "Click to send sound to the castle instead. Lights always play on the castle."
       : "Sound comes out of the castle's speaker. Click to play it on this "
-        + "Mac instead. Lights always play on the castle.";
+        + "computer instead. Lights always play on the castle.";
     for (const b of [routeBtn, els?.snd]) {
       if (b) { b.textContent = label; b.title = title; }
     }
-    // The castle-volume controls govern a speaker that ♪ Mac just silenced —
+    // The castle-volume controls govern a speaker that ♪ Computer just silenced —
     // disable them rather than let a stray drag un-hush it (route-aware).
     // …and a castle that is not answering has no volume to set (J2-2):
     // flipping ♪ to Castle while it is down must not light the slider up.
@@ -212,7 +218,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       els.vol.title = "Castle not answering";
     } else if (hushed) {
       els.vol.title =
-        "Castle speaker is off while sound plays on the Mac (♪ switch)";
+        "Castle speaker is off while sound plays on this computer (♪ switch)";
     } else {
       els.vol.title = "Castle speaker volume";
     }
@@ -228,16 +234,16 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     if (route === "mac") {
       // Hush the porch, sound the desk. Remember the amp level for the
       // flip back so "Castle" restores what the hand last set.
-      if (vol && Number(vol.value) > 0) lastVol = Number(vol.value);
+      if (vol && Number(vol.value) > 0) backTo = Number(vol.value);
       if (vol) vol.value = "0";
       // Unannounced = merely enforcing the remembered route at first
       // contact: the POST goes, the toast does not — on every page open
       // "castle speaker off" read like something had just happened (J3-3).
       act("/api/volume?v=0",
-          announce ? "sound: Mac — castle speaker off" : "castle speaker off",
+          announce ? "sound: computer — castle speaker off" : "castle speaker off",
           !announce);
     } else {
-      const to = lastVol || 70;
+      const to = backTo;
       if (vol) vol.value = String(to);
       act(`/api/volume?v=${to}`, `sound: castle — volume ${to}`);
     }
@@ -251,7 +257,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
    *  a rebuild mid-drag snaps the volume slider back to the last polled
    *  value, which is not what the hand on it just asked for. */
   const sayStatus = (s: Status): void => {
-    const route = ` · sound: ${soundRoute === "mac" ? "Mac" : "castle"}`;
+    const route = ` · sound: ${soundRoute === "mac" ? "computer" : "castle"}`;
     if (!lastOk) {
       opts.onStatus?.(`castle not answering${route}`, false);
       return;
@@ -266,6 +272,7 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
     const wasDown = !lastOk;
     lastOk = true;
     lastVol = s.volume ?? lastVol;
+    if (lastVol > 0) backTo = lastVol;
     lastStatus = s;
     sayStatus(s);
     opts.onCard?.(s.sd_total_kb || null);
@@ -308,11 +315,14 @@ export function deviceBridge(opts: BridgeOpts = {}): DeviceLink {
       stop: () => act("/api/stop", "stop"),
       more: () => panel.toggle(),
       route: () => applyRoute(soundRoute === "mac" ? "castle" : "mac", true),
-      volume: (v) => act(`/api/volume?v=${v}`, `volume ${v}`),
+      volume: (v) => {
+        if (v > 0) backTo = v;
+        act(`/api/volume?v=${v}`, `volume ${v}`);
+      },
       mute: (vol) => {
         // Mute is volume 0 with memory — the device has no separate flag.
-        const to = Number(vol.value) === 0 ? (lastVol || 70) : 0;
-        if (to === 0) lastVol = Number(vol.value);
+        const to = Number(vol.value) === 0 ? backTo : 0;
+        if (to === 0) backTo = Number(vol.value);
         vol.value = String(to);
         act(`/api/volume?v=${to}`, to === 0 ? "muted" : `volume ${to}`);
       },

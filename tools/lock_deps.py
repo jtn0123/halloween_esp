@@ -46,6 +46,8 @@ import urllib.request
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 
+import exe_paths
+
 ROOT = Path(__file__).resolve().parent.parent
 LOCK = ROOT / "requirements.lock"
 SOURCES = ("requirements.txt", "requirements-dev.txt")
@@ -78,7 +80,24 @@ PLATFORM_MARKERS = {
 #: invisible until `--require-hashes` refused a requirement with no digest
 #: (2026-09-18). Its line carries `sys_platform == "linux"` in the lock and is
 #: carried with it; bump it by hand when bleak asks for a newer one.
-CARRY_OVER = ("yt-dlp", "dbus-fast")
+#:
+#: The winrt-* family is the same story for WINDOWS (bleak 3.x's
+#: `sys_platform == "win32"` half): invisible to a macOS freeze, and refused
+#: by `--require-hashes` on the first windows-latest run (2026-10-01).
+#: Versions are what `uv pip compile --python-platform x86_64-pc-windows-msvc`
+#: resolves; bump them together, by hand, when bleak moves.
+WINRT = (
+    "winrt-runtime",
+    "winrt-windows-devices-bluetooth",
+    "winrt-windows-devices-bluetooth-advertisement",
+    "winrt-windows-devices-bluetooth-genericattributeprofile",
+    "winrt-windows-devices-enumeration",
+    "winrt-windows-devices-radios",
+    "winrt-windows-foundation",
+    "winrt-windows-foundation-collections",
+    "winrt-windows-storage-streams",
+)
+CARRY_OVER = ("yt-dlp", "dbus-fast", *WINRT)
 
 #: How pip spells one digest of a pinned file; read and written in this form.
 HASH_FLAG = "--hash=sha256:"
@@ -145,7 +164,7 @@ def read_lock(path: Path) -> dict[str, str]:
         return {}
     out: dict[str, str] = {}
     key = ""
-    for raw in path.read_text().splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         name = package(line)
         if name:
@@ -163,16 +182,20 @@ def freeze_clean(sources: list[Path], quiet: bool = False) -> list[str]:
         say = (lambda *_: None) if quiet else print
         say(f"lock: building a clean venv in {venv} …")
         subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
-        pip = venv / "bin" / "pip"
-        subprocess.run([str(pip), "install", "--quiet", "--upgrade", "pip"], check=True)
+        # `python -m pip`, not the pip script: on Windows a running pip.exe
+        # cannot replace itself, so the upgrade below would fail there.
+        pip = [str(exe_paths.venv_python(venv)), "-m", "pip"]
+        subprocess.run([*pip, "install", "--quiet", "--upgrade", "pip"], check=True)
         args = [a for s in sources for a in ("-r", str(s))]
         say(f"lock: installing {', '.join(s.name for s in sources)} …")
-        subprocess.run([str(pip), "install", "--quiet", *args], check=True)
+        subprocess.run([*pip, "install", "--quiet", *args], check=True)
         out = subprocess.run(
-            [str(pip), "freeze", "--exclude-editable"],
+            [*pip, "freeze", "--exclude-editable"],
             check=True,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     return [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
 
@@ -275,12 +298,16 @@ def _report(
             print(f"note: {tool} is in CARRY_OVER but nothing pins it")
 
 
-def main(argv: list[str] | None = None, fetch: Fetcher = pypi_hashes) -> int:
+def main(
+    argv: list[str] | None = None, fetch: Fetcher = pypi_hashes, out: Path = LOCK
+) -> int:
     """`fetch` is a parameter for the same reason `with_hashes` takes one:
     the CLI path — read the lock, re-hash it, write it back — is the half
-    worth a test, and a test must not reach the index to get one."""
+    worth a test, and a test must not reach the index to get one. `out` is
+    a parameter and NOT a flag for the same reason: the tool only ever
+    writes the repo's own lock, so no command line names a path for it to
+    read or overwrite; only a test points it at a scratch copy."""
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out", type=Path, default=LOCK, help="lock file to write")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument(
         "--hashes-only",
@@ -291,10 +318,10 @@ def main(argv: list[str] | None = None, fetch: Fetcher = pypi_hashes) -> int:
     args = ap.parse_args(argv)
 
     say = (lambda _m: None) if args.quiet else print
-    previous = read_lock(args.out)
+    previous = read_lock(out)
     if args.hashes_only:
         if not previous:
-            print(f"lock: {args.out} has no pins to re-hash", file=sys.stderr)
+            print(f"lock: {out} has no pins to re-hash", file=sys.stderr)
             return 1
         lines = sorted((pin_line(e) for e in previous.values()), key=package)
         carried: list[str] = []
@@ -314,9 +341,9 @@ def main(argv: list[str] | None = None, fetch: Fetcher = pypi_hashes) -> int:
     except LockError as exc:
         print(f"lock: {exc}", file=sys.stderr)
         return 1
-    args.out.write_text("\n".join(entries) + "\n")
+    out.write_text("\n".join(entries) + "\n", encoding="utf-8")
     if not args.quiet:
-        _report(args.out.name, lines, entries, carried, previous)
+        _report(out.name, lines, entries, carried, previous)
     return 0
 
 

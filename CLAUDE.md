@@ -16,6 +16,12 @@ file is the one that governs.
 
 - `scenes/scenes.yaml` — THE source of truth: every scene's light cues, audio
   score, length and level. Everything else is generated from it.
+- `scenes/shipped.yaml` — the show a castle that leaves this house carries:
+  the yard's scenes minus every one that needs a song (v5.77,
+  `tools/shipped_show.py`; `gen_esphome` rewrites it, and it is tracked).
+  The desktop app's first run, the uv installer and `make buyer-card [TAG=…]`
+  (a sold castle's whole card, into `buyer-card/` or `CASTLE_BUILD`) all read
+  it, and `tests/test_shipped_show.py` fails any of them that reads the yard's.
 - `tools/render_audio.py` → `audio/NN_<id>.mp3` (gitignored; the desk's
   inlined copy) and `audio/card/` (the 96 kbps files `sd_sync scenes` pushes).
 - `tools/gen_esphome.py` → `firmware/generated/` (`sfx`, `rig.h`, lights) and
@@ -31,7 +37,9 @@ file is the one that governs.
   track is played (`firmware/castle_cues.h`, v5.63) — any track in `tracks/`,
   every pulse (no PULSE_CAP), no scene slot, no OTA. The scene block is the
   one in scenes.yaml when the song is a scene, else the desk's own
-  `sceneYaml` run headless (`web/src/scene_cli.ts`, bundled with esbuild).
+  `sceneYaml` — run by its Python twin `tools/track_scene.py` (no node: a
+  buyer has none), held to the TypeScript text for text by
+  `web/test/scene_parity.ts`.
   `tools/cue_file.py` is the format; `tests/test_cue_file_cxx.py` runs the
   real header against it. `sd_sync cues` (and `make publish`) puts each file
   beside its song in the card root.
@@ -67,13 +75,18 @@ file is the one that governs.
   Python server (`tools/studio.py` and its `studio_*.py`) until 2026-09-06;
   `docs/RETIREMENT.md` is the plan that removed it and the tag
   `python-studio-final` is the last tree that carries it.
-- `firmware/` — ESPHome YAML + C++ headers. **Two** buildable targets, one
-  show: `castle_feather_s3.yaml` is the ESP32-S3 Feather #5477 in carrier
+- `firmware/` — ESPHome YAML + C++ headers. **Three** buildable targets, one
+  show (the third, `castle_buyer.yaml` since v5.74, is the Feather build for
+  a castle someone else owns: no Wi-Fi compiled in, a `Castle-XXXX` setup
+  hotspot + captive portal + Improv over USB, silent power-on boots —
+  `make build-buyer` / `validate-buyer`, deliberately no upload target;
+  docs/notes/06-buyer-build.md): `castle_feather_s3.yaml` is the ESP32-S3 Feather #5477 in carrier
   v3.3a, THE build and the castle in the yard (`make build` / `upload` /
   `logs` / `ota`; `build-fs3` etc. are aliases for muscle memory), and
   `castle_s3.yaml` (2026-09-05) is the bare-ESP32-S3-WROOM-1 carrier v5 —
-  `make build-s3` / `upload-s3` / `logs-s3` / `validate-s3`. Both are
-  compiled by the weekly CI job; the carrier has never been on hardware and
+  `make build-s3` / `upload-s3` / `logs-s3` / `validate-s3`. All three are
+  compiled by `.github/workflows/firmware.yml` (weekly, by hand, and on a PR
+  that touches `firmware/`); the carrier has never been on hardware and
   its board does not exist yet. The show itself — the card, the loopback
   stream, the web API (`sd_web.h`) the desk talks to — is
   `castle_sd_common.yaml`, which both include; `castle.yaml` is the shared
@@ -158,8 +171,8 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   discovered by a red pre-commit hook after the show is already edited.
   Nothing hand-written is exempt.
 - **Every grade-report citation names its audit**: `grade report 2026-08-31
-  B1`, never a bare `B1` — item IDs are renumbered by each audit, and eight
-  reports now exist (`/bin/ls .claude/grade-report*.md` — seven dated plus the
+  B1`, never a bare `B1` — item IDs are renumbered by each audit, and nine
+  reports now exist (`/bin/ls .claude/grade-report*.md` — eight dated plus the
   live `grade-report.md`, and older ones only in git history). `tools/check_citations.py` runs in `make check`, the hook and CI,
   and refuses an undated one. Date it by `git blame`, then confirm the ITEM
   matches the topic; if nothing matches, describe the problem in words rather
@@ -178,7 +191,8 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   non-gating). Run the coverage floors yourself when you touched `tools/` or
   `demo/castle-radio`.
 - The e2e suite (`cd web && npx playwright test --list` for the count) needs
-  a built page (`make preview`) and `cd web && npx playwright install chromium`.
+  a built page (`make preview`) and `cd web && npx playwright install chromium webkit`
+  (`make e2e` installs both and runs Chromium, then WebKit).
 
 ## Sandboxing — never touch the real library or show from tests/tools
 
@@ -278,7 +292,7 @@ set `CASTLE_E2E_PORT=8821` to run beside another suite (default 8799).
   `.cue` beside it (v5.63, `make cues`) with no slot at all.
 - v5.42 feeds the upload watchdog every 32 KB (was 8 KB). Verified on the
   emulator only — watch the first big push on real hardware; if an upload
-  reboots the board, revert the cadence in `sd_web.h write_body`.
+  reboots the board, revert the cadence in `sd_web_upload.h write_body`.
 
 ## Security position (accepted risk — do not re-raise)
 

@@ -31,11 +31,11 @@ import castle_emu_events
 from firmware_source import FUNCS, HEALTH, SD_RTC, SD_STATE, SD_UTIL
 
 FW = ROOT / "firmware"
-BOOT_LOG = (FW / "boot_log.h").read_text()
-INPUTS = (FW / "castle_inputs.yaml").read_text()
-SD_COMMON = (FW / "castle_sd_common.yaml").read_text()
-CASTLE = (FW / "castle.yaml").read_text()
-SCENES = (FW / "generated" / "scenes.yaml").read_text()
+BOOT_LOG = (FW / "boot_log.h").read_text(encoding="utf-8")
+INPUTS = (FW / "castle_inputs.yaml").read_text(encoding="utf-8")
+SD_COMMON = (FW / "castle_sd_common.yaml").read_text(encoding="utf-8")
+CASTLE = (FW / "castle.yaml").read_text(encoding="utf-8")
+SCENES = (FW / "generated" / "scenes.yaml").read_text(encoding="utf-8")
 
 
 class TestTheRingSurvivesTheCrash(unittest.TestCase):
@@ -135,7 +135,7 @@ class TestEverythingThatDrivesTheShowIsRecorded(unittest.TestCase):
     def test_run_scene_records_the_start_whoever_asked(self) -> None:
         """The generated dispatch, not a hand-edited copy of it."""
         self.assertIn("EventKind::SCENE_START", SCENES)
-        gen = (ROOT / "tools" / "gen_show.py").read_text()
+        gen = (ROOT / "tools" / "gen_show.py").read_text(encoding="utf-8")
         self.assertIn("EventKind::SCENE_START", gen)
 
     def test_a_chattering_sensor_cannot_flush_the_ring(self) -> None:
@@ -177,7 +177,7 @@ class TestTheRadioAndTheHeap(unittest.TestCase):
         self.assertIn('"heap_min_kb":%u', FUNCS["h_health"])
 
     def test_the_runbook_points_at_a_panel_that_exists(self) -> None:
-        runbook = (ROOT / "docs" / "RUNBOOK.md").read_text()
+        runbook = (ROOT / "docs" / "RUNBOOK.md").read_text(encoding="utf-8")
         self.assertIn("Recent castle events", runbook)
         self.assertIn("heap_min_kb", runbook)
 
@@ -186,7 +186,7 @@ class TestTheCardsOwnStory(unittest.TestCase):
     """L4. A count could not tell one bad file from a dying card."""
 
     def test_the_failing_path_and_offset_are_kept_beside_the_count(self) -> None:
-        site = (FW / "sd_web_site.h").read_text()
+        site = (FW / "sd_web_site.h").read_text(encoding="utf-8")
         self.assertIn("note_sd_read_error(path, (unsigned long) out);", site)
         self.assertIn('"@"', HEALTH)
         self.assertIn('"sd_last_error":"', FUNCS["h_health"])
@@ -202,6 +202,7 @@ class TestTheLogIsReadable(unittest.TestCase):
     """L9. /sd/logs/castle.log was HTTP-readable and nobody read it."""
 
     def test_sd_sync_has_a_logs_verb_and_documents_it(self) -> None:
+        import sd_logs
         import sd_sync
 
         self.assertTrue(hasattr(sd_sync, "cmd_logs"))
@@ -209,10 +210,12 @@ class TestTheLogIsReadable(unittest.TestCase):
         self.assertIn("logs", sd_sync.__doc__)
         # Both files, newest last, and the tail printed — the point is to
         # answer "what happened last night" without a browser.
-        self.assertIn("logs/castle.log.1", sd_sync.LOG_FILES)
+        self.assertIn("logs/castle.log.1", sd_logs.LOG_FILES)
 
     def test_the_bridge_cli_mirrors_the_verb(self) -> None:
-        castle_rs = (ROOT / "core" / "src" / "bin" / "castle.rs").read_text()
+        castle_rs = (ROOT / "core" / "src" / "bin" / "castle.rs").read_text(
+            encoding="utf-8"
+        )
         self.assertIn('"logs"', castle_rs)
         self.assertIn("/sd/logs/castle.log", castle_rs)
 

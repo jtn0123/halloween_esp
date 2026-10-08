@@ -19,22 +19,28 @@ will not play — see [docs/RUNBOOK.md](docs/RUNBOOK.md).
 scenes/scenes.yaml            ← THE SOURCE OF TRUTH
         │
         ├── tools/render_audio.py ─▶ core/ scene_render ─▶ audio/NN_<id>.mp3
-        │                            (Rust: synths, reverb, master chain)
-        ├── tools/gen_esphome.py  ──▶ firmware/generated/     (light cue scripts)
-        └── previewer/            ──▶ browser cue desk        (tuning tool)
+        │                            (Rust: synths, reverb,   and audio/card/
+        │                             master chain)            (the 96 kbps copies)
+        ├── tools/gen_esphome.py  ──▶ audio/card/scenes/      (THE SHOW: show.man
+        │                         │                            + one <id>.cue a scene)
+        │                         └─▶ firmware/generated/     (sfx, rig.h, lights)
+        └── tools/gen_previewer.py ─▶ previewer/castle-cue-desk.html (the desk)
 ```
 
 One file defines every scene: its light cues, its audio score, its length and its
 playback level. Everything else is generated. Cue timings tuned in the previewer
 cannot drift away from the ones on the device, because both come from here.
+Since v5.67 the show is card data, not firmware: one runner
+(`firmware/castle_scenes.h`) reads `show.man` and the `.cue` files, so a scene
+edit is `make publish`, never a flash.
 
 `core/` is castle-core, the project's zero-dependency Rust crate. It renders the
 scene audio (`scene_render`) and analyses imported tracks (`analyze_track`) —
 those are the production paths, not experiments; the Python originals survive
 only as the parity references the Rust is checked against. It also holds a
-WASM face the cue desk loads and the studio server itself — the twin became
-the default on 2026-09-01, with the Python one behind it. Everything else
-reaches the crate through
+WASM face the cue desk loads and the studio server itself — the only one since
+the Python studio retired on 2026-09-06 ([docs/RETIREMENT.md](docs/RETIREMENT.md)).
+Everything else reaches the crate through
 `tools/core_bins.py`, as a subprocess: no cargo means a hard stop with a
 sentence, never a quiet fall-back to arithmetic that differs per machine.
 
@@ -96,12 +102,13 @@ before the Feather** rather than drawing it all through its USB trace.
 You need Python 3.13 and **a Rust toolchain** (`rustup`, which brings cargo).
 `make setup` does not install Rust, and the step after it does not work
 without one: `make audio` renders through castle-core and stops with a
-sentence rather than falling back to Python. Node 22+ is needed only for the
-cue desk's own build and tests.
+sentence rather than falling back to Python. Node 22+, `lame` and `ffmpeg`
+are needed for `make check`; `make setup` ends by naming whichever is missing,
+with the command that installs it.
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh   # once
-make setup      # venv + esphome + render deps + the commit hook
+make setup      # venv from the hashed lock + web/ npm ci + the commit hook
 make audio      # render the scene audio (builds core/ on first use)
 make validate   # check the config without a toolchain
 make build      # compile firmware/castle_feather_s3.yaml — the castle in the yard
@@ -142,10 +149,11 @@ open sockets (`firmware/sd_web.h`); that is the board's pool, not a desk bug.
 
 ## Castle Radio on your desktop
 
-Run `./tools/install_castle_tools.sh` once on an Apple Silicon Mac. Existing
-installations can double-click **Enable Website Startup.command** once instead.
-Then use **Import music → Start Mac tools → Connect Mac tools** on the castle
-website. The helper runs in the background without Terminal; keep the small
+Install it with `sh installer/install.sh` on an Apple Silicon Mac, or
+`installer\install.cmd` on Windows ([installer/README.md](installer/README.md)):
+it brings its own Python, ffmpeg and voice model, with no Homebrew. On a Mac,
+double-click **Enable Website Startup.command** once, then use **Import
+music → Start Castle Tools → Connect Castle Tools** on the castle website. The helper runs in the background without Terminal; keep the small
 connection window open. Startup checks tools without installing anything. [Desktop setup and limitations](demo/castle-radio/README.md).
 
 ## The cue desk
@@ -258,3 +266,14 @@ flash TRAINS only: a strike is softened when it lands on a zone less than
 an isolated strike, or a steady beat on each fixture, lands at full strength.
 The soft strobe effect is unchanged. The rule is `castle_layers.h`
 `kSoftenWindowMs`, mirrored by the desk and the Radio (docs/PARITY.md).
+
+---
+
+## Licence
+
+This repository's code is under the MIT License: see [LICENSE](LICENSE). A
+built firmware image also contains GPL-3.0 components, ESPHome's C++ runtime
+and esp-audio-libs, so an image is distributed as a whole under the GNU
+General Public License version 3. [docs/LICENSING.md](docs/LICENSING.md) says
+what each published artifact contains, under which terms, and where its
+third-party notices are.

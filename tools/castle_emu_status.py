@@ -41,11 +41,15 @@ def status_json(emu: CastleEmu) -> dict[str, object]:
         )
         return {
             "version": emu.version,
+            # v5.74: what this image IS — an updater picks a release asset
+            # by these two names (sd_web_state.h g_board / g_fw_variant).
+            "board": emu.board,
+            "fw_variant": emu.fw_variant,
             "compiled": "emulated",
             "uptime_s": int(time.monotonic() - st.boot),
             "sd_mounted": emu.sd_mounted,
             "psram_free_kb": 1800,
-            "heap_free_kb": 96,
+            "heap_free_kb": emu.readings["heap_free_kb"],
             "sd_total_kb": du.total // 1024 if emu.sd_mounted else 0,
             "sd_free_kb": du.free // 1024 if emu.sd_mounted else 0,
             "missing": emu.missing,
@@ -68,20 +72,34 @@ def status_json(emu: CastleEmu) -> dict[str, object]:
             # v5.72: the heard clock's measure of the stopwatch it
             # replaced (castle_heard.h). It needs a speaker that plays
             # samples, which an emulator has not got: -1, "not heard yet",
-            # is the honest reading here — and the key is the contract.
-            "sync_lead_ms": -1,
-            "sync_drift_ms": -1,
+            # is the honest default here — and the key is the contract.
+            "sync_lead_ms": emu.readings["sync_lead_ms"],
+            "sync_drift_ms": emu.readings["sync_drift_ms"],
             # L2 (v5.62): unix seconds, or 0 before SNTP answers. The
             # ring stamps uptime and always will; this is the base a
             # page turns one into the other with. An emulator always
             # has a clock, so it is never the 0 case — the KEY is the
             # contract, and a desk that converts must find it on both.
             "epoch": int(time.time()),
-            # L6: the radio, in dBm. A fixed plausible reading here for
-            # the same reason psram_free_kb is fixed: the number means
+            # L6: the radio, in dBm. A plausible reading (emu.readings)
+            # for the same reason psram_free_kb is fixed: the number means
             # nothing off the board, the key means everything.
-            "rssi": -55,
+            "rssi": emu.readings["rssi"],
+            # v5.74 (sd_web_prefs.h): a castle key is set, and whether a
+            # power-on boot starts the show.
+            "locked": bool(emu.key),
+            "boot_play": emu.boot_play,
+            # v5.75 (castle_owner.h): the cap, whether quiet hours hold the
+            # speaker at 0 now, the zone and window as set ("" = never), and
+            # the castle's wall clock in that zone ("" until it has one).
+            "vol_max": emu.owner.vol_max,
+            "quiet_now": emu.owner.quiet_now,
+            "tz": emu.owner.tz,
+            "quiet": emu.owner.quiet_str(),
+            "local": emu.owner.local,
             "pir": {
+                # v5.75: false on a castle with no sensor (the buyer build).
+                "fitted": emu.pir_fitted,
                 "armed": st.pir["armed"],
                 "cooldown_s": st.pir["cooldown_s"],
                 "scene": st.pir["scene"],
@@ -105,16 +123,21 @@ def status_text(emu: CastleEmu) -> str:
         return wire.json_escape(str(s[k]))
 
     return (
-        '{"version":"%s","compiled":"%s","uptime_s":%d,'
+        '{"version":"%s","board":"%s","fw_variant":"%s",'
+        '"compiled":"%s","uptime_s":%d,'
         '"sd_mounted":%s,"psram_free_kb":%d,"heap_free_kb":%d,'
         '"sd_total_kb":%d,"sd_free_kb":%d,"missing":"%s",'
         '"volume":%d,"scene":"%s","track":"%s","scenes":"%s",'
         '"show_on":%s,"playing":%s,"position_ms":%d,'
         '"light_applied":%d,"light_evicted":%d,"cues":%d,'
         '"sync_lead_ms":%d,"sync_drift_ms":%d,"epoch":%d,"rssi":%d,'
-        '"pir":{"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
+        '"locked":%s,"boot_play":%s,"vol_max":%d,"quiet_now":%s,'
+        '"tz":"%s","quiet":"%s","local":"%s",'
+        '"pir":{"fitted":%s,"armed":%s,"cooldown_s":%d,"scene":"%s"}}'
         % (
             t("version"),
+            t("board"),
+            t("fw_variant"),
             t("compiled"),
             i("uptime_s"),
             b[bool(s["sd_mounted"])],
@@ -137,6 +160,14 @@ def status_text(emu: CastleEmu) -> str:
             i("sync_drift_ms"),
             i("epoch"),
             i("rssi"),
+            b[bool(s["locked"])],
+            b[bool(s["boot_play"])],
+            i("vol_max"),
+            b[bool(s["quiet_now"])],
+            t("tz"),
+            t("quiet"),
+            t("local"),
+            b[bool(pir["fitted"])],
             b[bool(pir["armed"])],
             int(pir["cooldown_s"]),
             wire.json_escape(str(pir["scene"])),

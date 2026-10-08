@@ -27,9 +27,10 @@ import time
 from pathlib import Path
 
 import castle_emu_wire as wire
-from castle_emu_flash import BOOTLOG, CSP, FALLBACK_PAGE, REMOTE_PAGE, TYPES
+from castle_emu_flash import BOOTLOG, CSP, OWNER_PAGE, REMOTE_PAGE, TYPES
+from castle_emu_health import health_text
+from castle_emu_prefs import Prefs
 from castle_emu_reply import JSON_MIME, NO_SD, QUERY_TOO_LONG
-from castle_emu_upload import Uploads
 
 #: h_ota's plausibility window: under 64 KB is no firmware, over the OTA
 #: partition cannot fit. The board compares against its own partition
@@ -52,10 +53,11 @@ BAD_PATH = "bad path"
 NO_SUCH_DIR = "no such directory"
 
 
-class Handler(Uploads):
-    """Every route the castle serves. The reply layer is castle_emu_reply's
-    and the two card-writing routes are castle_emu_upload's; what is left
-    here is reading, control and the flasher."""
+class Handler(Prefs):
+    """Every route the castle serves. The reply layer is castle_emu_reply's,
+    the two card-writing routes are castle_emu_upload's and the owner's
+    settings castle_emu_prefs's; what is left here is reading, control and
+    the flasher."""
 
     # -- plumbing ----------------------------------------------------------
 
@@ -115,29 +117,9 @@ class Handler(Uploads):
         )
 
     def h_health(self, _raw: bytes) -> None:
-        # sd_read_errors (A8, v5.61): transfers off the card that failed and
-        # were torn down instead of being framed as a short success. Always
-        # 0 here — the emulated card is a host directory, and a read of one
-        # does not NAK a sector — but the KEY is part of the reply's shape,
-        # and a desk that shows the number must find it on both castles.
-        # L7 (v5.62): heap_min_kb is the LOW-WATER mark of internal heap —
-        # the number that explains a crash, where /api/status's heap_free_kb
-        # is only what is free now, after the allocation that failed was
-        # given back. Fixed here, like heap_free_kb, and equal to what the
-        # C harness's shim reports so the two replies stay byte-identical.
-        # L4: sd_last_error is "<path>@<offset>" of the last torn transfer,
-        # "" on a healthy castle — which a host directory always is.
-        self._json(
-            {
-                "boots": 3,
-                "crashes": 0,
-                "last_reset": "power-on",
-                "was_crash": False,
-                "sd_read_errors": 0,
-                "heap_min_kb": 64,
-                "sd_last_error": "",
-            }
-        )
+        """castle_health's counters, built by castle_emu_health.py — whose
+        docstring says which of them a host directory can never move."""
+        self._raw(200, health_text(self.server).encode(), JSON_MIME)
 
     def h_events(self, _raw: bytes) -> None:
         """The main loop's own record (castle_emu_events.py), oldest first."""
@@ -206,9 +188,16 @@ class Handler(Uploads):
         self._raw(200, BOOTLOG, "text/plain")
 
     def h_remote(self, _raw: bytes) -> None:
+        self._page(REMOTE_PAGE)
+
+    def h_owner(self, _raw: bytes) -> None:
+        """sd_web_owner.h (v5.75): the owner's page, out of flash, always."""
+        self._page(OWNER_PAGE)
+
+    def _page(self, page: str) -> None:
         self._raw(
             200,
-            REMOTE_PAGE.encode(),
+            page.encode(),
             "text/html; charset=utf-8",
             {"Content-Security-Policy": CSP},
         )
@@ -273,12 +262,7 @@ class Handler(Uploads):
             or self._send_file(site / "index.html", csp=True)
         ):
             return
-        self._raw(
-            200,
-            FALLBACK_PAGE.encode(),
-            "text/html; charset=utf-8",
-            {"Content-Security-Policy": CSP},
-        )
+        self._page(OWNER_PAGE)  # no card, or no site on it (v5.75)
 
     # -- POST: show control, all queued ------------------------------------
 
@@ -343,6 +327,10 @@ class Handler(Uploads):
         self._json({"queued": True})
 
     def h_pir(self, raw: bytes) -> None:
+        if not self._key_ok():  # a setting (v5.74)
+            return self._locked()
+        if not self.server.pir_fitted:  # v5.75: the buyer build has none
+            return self._err(409, "no motion sensor")
         if wire.query_truncated(raw):
             return self._err(414, QUERY_TOO_LONG)
         a, c, s = (wire.query_param(raw, k) for k in ("armed", "cooldown", "scene"))
@@ -368,6 +356,8 @@ class Handler(Uploads):
     # -- PUT/DELETE: the card ----------------------------------------------
 
     def h_ota(self, _raw: bytes) -> None:
+        if not self._key_ok():
+            return self._locked()
         n = self._content_len()
         if n is None:
             return self._idf(400)
@@ -395,6 +385,7 @@ class Handler(Uploads):
             self.server.quiesce = False
             return self._err(500, "ota write failed")
         self._json({"flashed": True, "rebooting": True})
+        self.server.ota_landed = True
         self.server.queue("RESTART", "")
         # Flash is written, so the flag comes down — the reboot is in a latch
         # of its own and cannot be talked out of it (sd_web_state.h).

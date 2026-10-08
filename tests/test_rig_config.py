@@ -31,7 +31,7 @@ import gen_rig
 import rig_layout as rl
 import yaml
 
-DOC = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
+DOC = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8"))
 ZONES: list[dict[str, Any]] = DOC["zones"]
 PER: int = DOC["hardware"]["pixels_per_zone"]
 LAYOUTS = rl.zone_layouts(ZONES, PER)
@@ -221,20 +221,22 @@ class TestGeneratedFilesAreFresh(unittest.TestCase):
     def test_rig_header_matches_scenes_yaml(self) -> None:
         cap = round(DOC["hardware"]["audio"]["max_volume"] * 100)
         want = gen_rig.emit_rig_header(LAYOUTS, ZONES, cap)
-        got = (ROOT / "firmware" / "generated" / "rig.h").read_text()
+        got = (ROOT / "firmware" / "generated" / "rig.h").read_text(encoding="utf-8")
         self.assertEqual(
             got, want, "firmware/generated/rig.h is stale — run `make generate`"
         )
 
     def test_lights_yaml_matches_scenes_yaml(self) -> None:
         want = gen_rig.emit_lights(LAYOUTS, ZONES, PER)
-        got = (ROOT / "firmware" / "generated" / "lights.yaml").read_text()
+        got = (ROOT / "firmware" / "generated" / "lights.yaml").read_text(
+            encoding="utf-8"
+        )
         self.assertEqual(
             got, want, "firmware/generated/lights.yaml is stale — run `make generate`"
         )
 
     def test_rig_header_pixel_counts_and_tables(self) -> None:
-        text = (ROOT / "firmware" / "generated" / "rig.h").read_text()
+        text = (ROOT / "firmware" / "generated" / "rig.h").read_text(encoding="utf-8")
         for z in ZONES:
             lay = LAYOUTS[z["id"]]
             row = re.search(
@@ -264,9 +266,9 @@ def _castle_substitutions() -> dict[str, Any]:
         pass
 
     Loader.add_multi_constructor("!", lambda loader, suffix, node: None)
-    subs = yaml.load((ROOT / "firmware" / "castle.yaml").read_text(), Loader=Loader)[
-        "substitutions"
-    ]
+    subs = yaml.load(
+        (ROOT / "firmware" / "castle.yaml").read_text(encoding="utf-8"), Loader=Loader
+    )["substitutions"]
     assert isinstance(subs, dict)
     return subs
 

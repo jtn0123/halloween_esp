@@ -31,27 +31,45 @@ DEVICE_S3 := castle-s3
 # It has never been on hardware; the weekly CI job compiles it so it cannot
 # rot unnoticed.
 YAML_S3 := firmware/castle_s3.yaml
+# The BUYER build (v5.74): the same Feather and carrier as $(YAML), with no
+# Wi-Fi credentials compiled in — softAP + captive portal + Improv-over-USB
+# to hand it a network, and a per-unit castle-xxxxxx hostname. Its device
+# name is the hostname STEM, so its build tree is "castle".
+YAML_BUYER := firmware/castle_buyer.yaml
+DEVICE_BUYER := castle
 # The documented target; pyproject/CI/mypy all say 3.13. Found on PATH rather
 # than at one Homebrew path, which is not where every machine keeps it.
 # Recursive (=), not :=, so the lookup — and the error — only happen when
 # `make setup` expands it, not on every make invocation.
 PY_SETUP = $(or $(shell command -v python3.13),$(error python3.13 not found — brew install python@3.13))
+# numpy's x86-64 vector kernels compute sin/exp/log/pow (and pocketfft, the
+# reverb's transform) to a different last ulp than libm, which no parity suite
+# can follow; CI switches them off, and so does every target here on the one
+# architecture that has them (docs/PARITY.md, grade report 2026-09-24 I1).
+# The value is ci.yml's, held equal by tests/test_preflight.py.
+ifeq ($(shell uname -m),x86_64)
+export NPY_DISABLE_CPU_FEATURES ?= X86_V3 X86_V4 AVX512_ICL AVX512_SPR
+endif
 
-.PHONY: show-lab show-lab-phone cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all e2e help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes sd-build sd-upload rust rust-test rust-lint rust-coverage
+.PHONY: preflight guide-shots cues build-s3 upload-s3 logs-s3 validate-s3 build-fs3 upload-fs3 logs-fs3 publish ota pycheck test test-fast test-radio lint check check-all help setup audio generate preview build validate upload logs bench bench-logs bench-audio bench-audio-logs track studio clean coverage coverage-gate coverage-radio audit lock lock-hashes lock-desktop sd-build sd-upload rust rust-test rust-lint rust-coverage desktop-test desktop-lint
 
 help:
 	@echo "Halloween Castle"
 	@echo ""
-	@echo "  make setup      create .venv and install esphome + render deps"
+	@echo "  make setup      .venv from the hashed lock, web/ npm ci, then preflight"
+	@echo "  make preflight  name each missing outside tool (lame, ffmpeg, node…) + its fix"
 	@echo "  make audio      render scenes/scenes.yaml -> audio/*.mp3"
 	@echo "  make cues       render every track's light show to a card cue file (TRACKS=\"a b\" for some)"
 	@echo "  make generate   render scenes.yaml -> firmware/generated/scenes.yaml"
 	@echo "  make preview    splice scenes + rendered audio into the previewer"
+	@echo "  make guide-shots  retake docs/guide/*.png, the owner's guide's pictures (emulator, no network)"
 	@echo "  make validate   check the ESPHome config (fast, no toolchain)"
 	@echo "  make build      compile $(YAML) (implies audio + generate)"
 	@echo "  make upload     compile and flash over the Feather's USB-C"
 	@echo "  make logs       tail device logs over the same cable"
 	@echo "  make build-s3 / upload-s3 / logs-s3   the same for the WROOM carrier"
+	@echo "  make build-buyer / validate-buyer   the buyer image: no Wi-Fi baked in, AP + Improv setup"
+	@echo "  make buyer-card [TAG=vX.Y.Z]   a sold castle's SD card in ./buyer-card, no castle needed"
 	@echo "  make build-fs3 / upload-fs3 / logs-fs3   aliases for build / upload / logs"
 	@echo "  make bench      flash the bare-Feather dry run (no parts needed)"
 	@echo "  make bench-logs tail the bench build's logs"
@@ -60,30 +78,33 @@ help:
 	@echo "  make studio     serve the cue desk with track management (localhost)"
 	@echo "  make publish    push scene tracks + the Castle Radio page to the castle"
 	@echo "  make ota        build the firmware and flash that image over HTTP"
+	@echo "  make soak HOST=… HOURS=72 / power-cycle HOST=… OFF=… ON=…   unattended hardware runs, PASS/FAIL (mk/soak.mk)"
 	@echo "  make test       python unit tests (~1 min)"
 	@echo "  make test-fast  the same minus the slow + Rust suites (inner loop)"
 	@echo "  make show-lab   opt-in light-show lab: rebuild the beat-locked candidates and serve"
 	@echo "                  the before/after page on 127.0.0.1:8894 (SHOW_LAB_PORT=…); software only"
-	@echo "  make show-lab-phone  the same page on the home network, to review on a phone"
+	@echo "  make show-lab-phone  the same page on the home network, to review on a phone (mk/show-lab.mk)"
 	@echo "                  (the flags you tap there: .venv/bin/python demo/castle-radio/show_lab.py --notes)"
 	@echo "  make test-radio demo/castle-radio: its python suite + its node --test suites"
 	@echo "  make rust       build castle-core (release: the binaries the tools spawn)"
 	@echo "  make rust-test  cargo test the crate"
 	@echo "  make rust-lint  cargo fmt --check + clippy -D warnings"
 	@echo "  make lint       ruff + mypy over $(PY_SCOPE), plus rust-lint"
-	@echo "  make check      test + test-radio + lint + image/LOC guards + tsc + node suites"
+	@echo "  make check      preflight + test + test-radio + lint + guards + tsc + node suites"
 	@echo "                  = CI's blocking python/TS steps; NOT the coverage floors,"
 	@echo "                  the esphome builds or the browser suite (see the comment)"
-	@echo "  make e2e        browser tests (needs: cd web && npx playwright install chromium)"
+	@echo "  make e2e        browser tests, Chromium then WebKit (installs both browsers)"
 	@echo "                  CASTLE_E2E_PORT=8821 make e2e   to run beside another suite"
 	@echo "  make check-all  every check, including the browser tests"
 	@echo "  make coverage   unit tests under coverage.py, report on tools/ (non-gating)"
 	@echo "  make rust-coverage  cargo llvm-cov summary for core/ (non-gating)"
+	@echo "  make desktop-test / desktop-lint  the Tauri app (desktop/README.md; not in check)"
 	@echo "  make coverage-gate  the same, failing under $(COVERAGE_MIN)% (what CI enforces)"
 	@echo "  make coverage-radio demo/castle-radio under its own floor ($(COVERAGE_RADIO_MIN)%)"
 	@echo "  make audit      pip-audit the locked Python deps (non-gating)"
 	@echo "  make lock       relock requirements.lock from a clean throwaway venv"
 	@echo "  make lock-hashes  refresh the lock's sha256 lines, same pins, no resolve"
+	@echo "  make lock-desktop relock requirements-desktop.lock (the installer's; needs uv)"
 	@echo "  make clean      drop firmware/.esphome and rendered wavs"
 	@echo "  make sd-build / sd-upload   older names for build / upload"
 	@echo "  make bench-audio-logs       tail the bench-audio build's logs"
@@ -93,24 +114,25 @@ help:
 	@echo "carrier v3.3a) and the show lives on the card: 'make publish' before"
 	@echo "'make ota', or the board boots to a chirp."
 
+# The venv is the hashed LOCK, installed with CI's own flags — not the loose
+# requirement files, which resolve to whatever is newest today (cbor2 6.x
+# against a locked 5.9) and leave out yt-dlp, the importer's subprocess pin.
+# web/ gets its locked node deps the same way. What neither can install —
+# lame, ffmpeg, node, and the optional cargo/ccache — tools/preflight.py names
+# with a one-line fix, and `make check` runs it first. tests/test_preflight.py
+# holds PIP_LOCKED equal to ci.yml's (grade report 2026-09-24 I1).
+PIP_LOCKED := --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
 setup:
 	$(PY_SETUP) -m venv .venv
 	.venv/bin/python -m pip install --quiet --upgrade pip
-	.venv/bin/pip install --quiet -r requirements.txt -r requirements-dev.txt
+	.venv/bin/pip install --quiet $(PIP_LOCKED)
 	@git config core.hooksPath githooks && echo "pre-commit hook: githooks/"
-	@# castle-core is Rust and this target cannot install it (rustup is its own
-	@# installer, and silently curl|sh-ing one is not this repo's style). Say so
-	@# instead of letting `make audio` be the thing that discovers it: without
-	@# cargo, render_audio.py hard-stops rather than falling back to the
-	@# machine-dependent Python reference. (grade report 2026-08-31 H3)
-	@command -v cargo > /dev/null \
-		|| echo "note: no cargo on PATH — castle-core (core/) cannot build, so 'make audio', the importer and the Rust gates will not run. Install rustup: https://rustup.rs"
-	@# ESPHome (2026.8+) compiles through ccache whenever one is on PATH, with
-	@# no configuration: a cold build tree — a fresh worktree's first build,
-	@# a wiped one — becomes a cache read instead of ~80 s of xtensa-gcc.
-	@command -v ccache > /dev/null \
-		|| echo "note: no ccache on PATH — 'brew install ccache' and every cold firmware build after the first is mostly cache hits"
+	@if command -v npm > /dev/null; then cd web && npm ci --ignore-scripts --silent; fi
+	@.venv/bin/python tools/preflight.py --warn
 	@echo "ready. 'make build' next."
+
+preflight:
+	@$(PY) tools/preflight.py
 
 audio:
 	@$(PY) tools/render_audio.py
@@ -121,10 +143,18 @@ generate:
 preview: audio
 	@$(PY) tools/gen_previewer.py
 
+# The owner's guide's pictures, from emulated castles (tools/guide_shots.py;
+# tests/test_guide_shots.py holds them to the guide). The flasher loads unpkg.
+guide-shots:
+	@cd web && npx playwright install chromium
+	@$(PY) tools/guide_shots.py
+
 # make track SRC=~/Music/thing.wav ID=organ_loop [ARGS="--take 24"]
 track:
 	@test -n "$(SRC)" || (echo "usage: make track SRC=<file|url> [ID=<name>] [ARGS=...]"; exit 1)
 	@$(PY) tools/import_track.py "$(SRC)" $(if $(ID),--id $(ID),) $(ARGS)
+
+include mk/show-lab.mk
 
 # The Rust studio is the studio (grade report 2026-09-01 G1, finished by
 # docs/RETIREMENT.md): the launcher builds it when cargo is here and refuses
@@ -132,25 +162,6 @@ track:
 # here, because .claude/launch.json needs the same decision and cannot
 # express it. ARGS passes the studio's own command line through:
 # ARGS="8766 --lan".
-# Opt-in and offline: candidates are written only under the ignored
-# .radio-data/comparison/, never beside a prepared show, and nothing here
-# talks to the castle. Adopting a candidate is a separate, deliberate change.
-SHOW_LAB_PORT ?= 8894
-show-lab:
-	@$(PY) demo/castle-radio/show_lab.py
-	@echo "open http://127.0.0.1:$(SHOW_LAB_PORT)/show-lab.html   (Ctrl-C stops the server)"
-	@$(PY) demo/castle-radio/lab_server.py --port $(SHOW_LAB_PORT) --bind 127.0.0.1
-
-# The same lab for a phone on the home network. A separate target because it
-# lets every device on the LAN read the comparison directory — the lab's
-# shows and its links to the songs — and add to its notes.jsonl (the page's
-# flags; `show_lab.py --notes` prints them) for as long as it runs.
-show-lab-phone:
-	@$(PY) demo/castle-radio/show_lab.py
-	@ip=$$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname); \
-		echo "on your phone: http://$$ip:$(SHOW_LAB_PORT)/show-lab.html   (Ctrl-C stops the server)"
-	@$(PY) demo/castle-radio/lab_server.py --port $(SHOW_LAB_PORT) --bind 0.0.0.0
-
 studio: preview
 	@tools/studio_launch.sh $(ARGS)
 
@@ -188,6 +199,9 @@ cues:
 ota: build
 	@$(PY) tools/sd_sync.py ota "$$($(PY) tools/check_image.py $(DEVICE) --path)"
 
+include mk/soak.mk
+include mk/buyer.mk
+
 # Kept as aliases, not as a second build. They named the microSD variant back
 # when there were two castles to choose between; every build has streamed the
 # show off a card since 2026-09-01, so "sd" stopped distinguishing anything and
@@ -203,7 +217,7 @@ bench: audio generate
 bench-logs:
 	$(ESPHOME_RUN) logs firmware/bench.yaml
 
-validate: generate validate-s3
+validate: generate validate-s3 validate-buyer
 	@$(ESPHOME_RUN) config $(YAML) > /dev/null && echo "config OK"
 
 # The carrier build is validated by the same target, not by a habit anyone
@@ -258,12 +272,14 @@ bench-audio-logs:
 
 # pyproject.toml says >=3.13; the bare-python3 fallback above could silently
 # hand an older interpreter to everything below (grade report 2026-08-23 F5).
+# The suites themselves are spelled in tools/run_checks.py, which the
+# cross-platform CI job runs directly on a Windows runner with no make
+# (docs/PRODUCTION-TODO.md 4.3) — one definition, two doors.
 pycheck:
-	@$(PY) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else \
-		(print(f"python {sys.version.split()[0]} is too old — this repo needs 3.13+ (make setup)") or 1))'
+	@$(PY) tools/run_checks.py pycheck
 
 test: pycheck
-	@$(PY) -m unittest discover -s tests -q
+	@$(PY) tools/run_checks.py test
 
 # The inner loop: everything except the suites that exist to wait — the
 # castle chaos/relay/protocol fuzz and the generator fuzz spend their time
@@ -276,10 +292,7 @@ SLOW_SUITES := chaos|relay|fuzz|_rust|_rs|castle_core|studio
 # Castle Radio: the Python suite next to the sources plus the browser
 # sources run under node:test (needs node 22, no npm install).
 test-radio:
-	@$(PY) -m unittest discover -s demo/castle-radio -t demo/castle-radio -p 'test_*.py' -q \
-		&& node --test demo/castle-radio/test_castle_radio.test.mjs demo/castle-radio/test_castle_fuzz.test.mjs \
-		demo/castle-radio/test_castle_honesty.test.mjs demo/castle-radio/test_desktop_tools.test.mjs demo/castle-radio/test_companion.test.mjs demo/castle-radio/test_device_helper.test.mjs demo/castle-radio/test_card_cues.test.mjs \
-		demo/castle-radio/test_rich_preview.test.mjs demo/castle-radio/test_lab_leds.test.mjs
+	@$(PY) tools/run_checks.py test-radio
 
 test-fast:
 	@$(PY) -m unittest -q $$(cd tests && /bin/ls test_*.py | grep -vE '$(SLOW_SUITES)' \
@@ -355,6 +368,12 @@ lock:
 lock-hashes:
 	@$(PY) tools/lock_deps.py --hashes-only
 
+# The desktop installer's lock (installer/install.sh, install.ps1): macOS arm64
+# + Windows x64, universal, hash-pinned, resolved by uv — see the docstring of
+# tools/lock_desktop.py for why it is not a section of requirements.lock.
+lock-desktop:
+	@$(PY) tools/lock_desktop.py
+
 # castle-core, the Rust half — 9k lines that had no spelling here at all
 # (grade report 2026-08-31 I1). These three ARE the Rust gate: tests/test_castle_core.py
 # shells out to them, so the definition lives in one place and `make rust-lint`
@@ -391,6 +410,17 @@ rust-lint:
 		|| { echo "rustfmt drift — run: cd core && cargo fmt"; exit 1; }; }
 	$(HAVE_CARGO) cd core && cargo clippy --quiet --all-targets -- -D warnings
 
+# The desktop app (desktop/README.md). Not part of `check` or `lint`: it
+# compiles ~450 crates and a webview toolkit, which CI's Linux runners would
+# need webkit2gtk for, and a debug target is 1-2 GB — `cargo clean` after.
+desktop-test:
+	$(HAVE_CARGO) cd desktop/src-tauri && CARGO_INCREMENTAL=0 cargo test --quiet
+
+desktop-lint:
+	$(HAVE_CARGO) cd desktop/src-tauri && { cargo fmt --check \
+		|| { echo "rustfmt drift — run: cd desktop/src-tauri && cargo fmt"; exit 1; }; }
+	$(HAVE_CARGO) cd desktop/src-tauri && CARGO_INCREMENTAL=0 cargo clippy --quiet --all-targets -- -D warnings
+
 # Lint + type-check the Python half; config lives in pyproject.toml. The TS
 # half's equivalent is the tsc line in `check`, the Rust half's is rust-lint.
 # The Python the gate reads. demo/castle-radio joined it on 2026-09-17
@@ -413,30 +443,17 @@ lint: rust-lint
 #     validate`, `check-all`).
 #   * the browser suite — `make e2e` (`check` says so at the end).
 #   * the wasm face build and `make audit` (non-gating).
-check: audio test test-radio lint
+check: preflight audio test test-radio lint
 	@$(PY) tools/check_image.py $(DEVICE)
 	@$(PY) tools/check_image.py $(DEVICE_S3)
+	@$(PY) tools/check_image.py $(DEVICE_BUYER)
 	@$(PY) tools/check_loc.py
 	@$(PY) tools/check_citations.py
 	@cd web && npx tsc --noEmit && echo "typecheck OK"
 	@cd web && npm run --silent test
 	@echo "note: the browser e2e suite did NOT run — 'make e2e' (or 'make check-all') covers the UI"
 
-# Browser tests. Separate from `check` because they need a built page and a
-# browser binary, and they take an order of magnitude longer than everything
-# else put together. They drive the real studio server against a scratch
-# tracks directory, and Chromium runs with --mute-audio, so a run is silent.
-# `playwright install chromium` is idempotent and near-instant once the
-# browser is cached — running it here turns the two tribal setup steps
-# ("build the page, install the browser") into the target itself.
-e2e: preview
-	@cd web && node -e "require('@playwright/test')" 2>/dev/null \
-		|| { echo "e2e needs its deps first: cd web && npm ci"; exit 1; }
-	@if command -v cargo >/dev/null 2>&1; then \
-		(cd core && cargo build --release --quiet --bin studio) \
-			|| { echo "e2e: the Rust studio failed to build — fix it rather than testing a stale binary"; exit 1; }; \
-	fi
-	@cd web && npx playwright install chromium
-	@cd web && npx playwright test
+# The browser suite, Chromium then WebKit: mk/e2e.mk.
+include mk/e2e.mk
 
 check-all: check validate e2e

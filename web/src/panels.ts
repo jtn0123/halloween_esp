@@ -190,9 +190,9 @@ export class Panels {
     this.applyStale();
   }
 
-  /** Scenes the castle's FIRMWARE was built without (C6): dim their tiles,
-   *  so the drift is visible before a pick answers "unknown scene". The
-   *  castle panel's health row says what to do about it. */
+  /** Scenes the castle does not list yet (C6): dim their tiles, so the
+   *  drift is visible before a pick answers "unknown scene". The castle
+   *  panel's health row says what to do about it. */
   setStaleScenes(ids: ReadonlySet<string>): void {
     this.staleIds = ids;
     this.applyStale();

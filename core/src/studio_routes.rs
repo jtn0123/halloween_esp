@@ -61,14 +61,9 @@ pub(crate) fn bad_request(msg: &str) -> Reply {
     )
 }
 
-/// Path(...).name — the traversal-stripping last segment.
-pub(crate) fn last_segment(s: &str) -> String {
-    s.trim_end_matches('/')
-        .rsplit('/')
-        .next()
-        .unwrap_or("")
-        .to_string()
-}
+/// Path(...).name — the traversal-stripping last segment, `\\` and all
+/// (crate::portable has the platform reasoning).
+pub(crate) use crate::portable::last_segment;
 
 pub fn handle(app: &Arc<App>, req: &Request) -> Reply {
     match req.method.as_str() {
@@ -152,7 +147,7 @@ fn delete(app: &App, req: &Request) -> Reply {
 type Post = fn(&Arc<App>, &Request, &str) -> Option<Reply>;
 
 fn post(app: &Arc<App>, req: &Request) -> Reply {
-    let groups: [Post; 4] = [imports, probes, server, show];
+    let groups: [Post; 5] = [imports, probes, server, show, castle_key];
     let path = studio_path(&req.target);
     for group in groups {
         if let Some(r) = group(app, req, &path) {
@@ -249,7 +244,8 @@ fn show(app: &Arc<App>, req: &Request, path: &str) -> Option<Reply> {
     }
     if path == "/studio/publish" {
         // The last mile: sd_sync scenes (audio + cue files + show.man) +
-        // lean site, and what still needs a reboot; rebuild() runs it too
+        // lean site, and any scene a pre-v5.69 castle still needs a reboot
+        // to read (studio_publish.rs); rebuild() runs it too
         // when a castle answers. No oplock: the push only reads the build
         // tree and talks to the castle, and holding the gate across a
         // network round-trip queued every import and scene write behind it
@@ -259,6 +255,11 @@ fn show(app: &Arc<App>, req: &Request, path: &str) -> Option<Reply> {
         return Some(Reply::Json(out, code));
     }
     None
+}
+
+/// The castle key the relay sends (studio_key): use, set or clear it.
+fn castle_key(app: &Arc<App>, req: &Request, path: &str) -> Option<Reply> {
+    (path == crate::studio_key::ROUTE).then(|| crate::studio_key::post(app, req))
 }
 
 /// A failed scene splice carries its log; the desk shows the one-line

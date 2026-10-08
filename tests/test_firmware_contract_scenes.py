@@ -20,7 +20,10 @@ card the same way".
 
 from __future__ import annotations
 
+import http.client
+import json
 import sys
+import time
 import unittest
 from pathlib import Path
 
@@ -32,7 +35,9 @@ import castle_emu
 import castle_emu_events
 import cue_file
 import scene_manifest
-from firmware_source import SD_RTC, SD_SCENES, SD_STATE, grab
+from firmware_source import EMU_HTTP, SD_RTC, SD_SCENES, SD_STATE, SD_UPLOAD, grab
+
+COMMON = (ROOT / "firmware" / "castle_sd_common.yaml").read_text(encoding="utf-8")
 
 
 class TestTheSceneManifest(unittest.TestCase):
@@ -61,10 +66,10 @@ class TestTheSceneManifest(unittest.TestCase):
         scenes.yaml, the studio refuses it at splice time, and the card
         reader refuses a manifest that claims one — three places that have to
         agree or the refusal happens somewhere useless."""
-        loc = (ROOT / "tools" / "check_loc.py").read_text()
+        loc = (ROOT / "tools" / "check_loc.py").read_text(encoding="utf-8")
         self.assertEqual(int(grab(r"SCENE_LIMIT = (\d+)", loc)),
                          scene_manifest.MAX_SCENES)  # fmt: skip
-        rs = (ROOT / "core" / "src" / "vocab.rs").read_text()
+        rs = (ROOT / "core" / "src" / "vocab.rs").read_text(encoding="utf-8")
         self.assertEqual(int(grab(r"SCENE_LIMIT: usize = (\d+)", rs)),
                          scene_manifest.MAX_SCENES)  # fmt: skip
 
@@ -93,7 +98,7 @@ class TestTheCueFileVersions(unittest.TestCase):
     that decides what a v2 record means — or a file the tools call valid is
     one the castle refuses, or worse, draws differently."""
 
-    CUES = (ROOT / "firmware" / "castle_cues.h").read_text()
+    CUES = (ROOT / "firmware" / "castle_cues.h").read_text(encoding="utf-8")
 
     def test_the_newest_version_read_is_the_same_on_both_sides(self) -> None:
         self.assertEqual(int(grab(r"kVersion = (\d+);", self.CUES)),
@@ -113,10 +118,65 @@ class TestTheCueFileVersions(unittest.TestCase):
             self.assertEqual(int(grab(pattern, self.CUES), 0), value, pattern)
 
     def test_the_train_window_is_one_number(self) -> None:
-        layers = (ROOT / "firmware" / "castle_layers.h").read_text()
-        desk = (ROOT / "web" / "src" / "show_layers.ts").read_text()
+        layers = (ROOT / "firmware" / "castle_layers.h").read_text(encoding="utf-8")
+        desk = (ROOT / "web" / "src" / "show_layers.ts").read_text(encoding="utf-8")
         self.assertEqual(int(grab(r"kSoftenWindowMs = (\d+);", layers)),
                          int(grab(r"SOFTEN_WINDOW_MS = (\d+);", desk)))  # fmt: skip
+
+
+class TestAPublishIsTheDeploy(unittest.TestCase):
+    """v5.69 (grade report 2026-09-17 pm J1): a PUT that lands
+    /sd/scenes/show.man rings a bell, and the next 200 ms tick re-reads the
+    id list — a scene published to a running castle is startable without a
+    reboot. The emulator went on reading its list once at boot, so nothing
+    caught the studio still telling the operator to reboot after a publish
+    (grade report 2026-09-24 H1, H2). One name rings on both castles, and
+    both answer it."""
+
+    def test_both_castles_ring_for_the_manifest_and_nothing_else(self) -> None:
+        self.assertEqual(grab(r'kManifest\[\] = "([^"]+)";', SD_UPLOAD),
+                         "/scenes/show.man")  # fmt: skip
+        self.assertIn("g_scenes_dirty.store(true);", SD_UPLOAD)
+        self.assertIn("g_scenes_dirty.exchange(false)", COMMON)
+        self.assertIn('sub == "scenes" and target.name == "show.man"', EMU_HTTP)
+
+    def put_manifest(self, emu: castle_emu.CastleEmu, ids: list[str]) -> None:
+        blob = scene_manifest.encode([{"id": i, "duration_ms": 5000} for i in ids])
+        conn = http.client.HTTPConnection("127.0.0.1", emu.port, timeout=5)
+        conn.request("PUT", "/api/scenes/show.man", blob)
+        self.assertEqual(conn.getresponse().status, 200)
+        conn.close()
+
+    def scenes(self, emu: castle_emu.CastleEmu) -> list[str]:
+        conn = http.client.HTTPConnection("127.0.0.1", emu.port, timeout=5)
+        conn.request("GET", "/api/status")
+        body = json.loads(conn.getresponse().read())
+        conn.close()
+        return str(body["scenes"]).split(",")
+
+    def start(self, reseeds: bool) -> castle_emu.CastleEmu:
+        # Booted knowing vigil alone, from an empty card.
+        emu = castle_emu.CastleEmu(port=0, scenes=["vigil", "stop"])
+        emu.reseeds = reseeds
+        emu.start()
+        self.addCleanup(emu.server_close)
+        self.addCleanup(emu.shutdown)
+        return emu
+
+    def test_a_published_scene_is_known_within_a_tick_without_a_reboot(self) -> None:
+        emu = self.start(reseeds=True)
+        self.put_manifest(emu, ["vigil", "storm"])
+        deadline = time.monotonic() + 5
+        while "storm" not in self.scenes(emu) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(self.scenes(emu), ["vigil", "storm", "stop"])
+
+    def test_a_castle_from_before_v5_69_keeps_its_boot_list(self) -> None:
+        """What `needs_reboot` is still for: the bell rings, nothing answers."""
+        emu = self.start(reseeds=False)
+        self.put_manifest(emu, ["vigil", "storm"])
+        time.sleep(castle_emu.APPLY_DELAY_S * 3)
+        self.assertEqual(self.scenes(emu), ["vigil", "stop"])
 
 
 if __name__ == "__main__":

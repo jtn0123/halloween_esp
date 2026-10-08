@@ -34,6 +34,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
+import exe_paths
 from voice_pitch import HOP, RATE, WINDOW, Pitch, cmnd_blocks
 
 HOP_MS = HOP * 1000 // RATE  # 10 ms, the pitch track's own
@@ -75,7 +79,7 @@ class Kind:
 
 def decode_stereo(path: Path) -> np.ndarray:
     raw = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(path), "-f", "f32le", "-ac", "2",
+        [exe_paths.ffmpeg(), "-v", "error", "-i", str(path), "-f", "f32le", "-ac", "2",
          "-ar", str(RATE), "-"],
         capture_output=True, check=True,
     ).stdout  # fmt: skip
@@ -109,13 +113,14 @@ def measure(stereo: np.ndarray) -> VoiceTrack:
 def track(vocals: Path, cache: Path) -> VoiceTrack:
     """The stem's features, from `cache` when it is newer than the stem."""
     if cache.is_file() and cache.stat().st_mtime >= vocals.stat().st_mtime:
-        doc = json.loads(cache.read_text())
+        doc = json.loads(cache.read_text(encoding="utf-8"))
         return VoiceTrack(
             tuple(doc["rough"]), tuple(doc["bright"]), tuple(doc["width"])
         )
     out = measure(decode_stereo(vocals))
     cache.write_text(
-        json.dumps({"rough": out.rough, "bright": out.bright, "width": out.width})
+        json.dumps({"rough": out.rough, "bright": out.bright, "width": out.width}),
+        encoding="utf-8",
     )
     return out
 

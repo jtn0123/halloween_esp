@@ -113,7 +113,7 @@ class TestReadLock(unittest.TestCase):
         the first line would carry a yt-dlp pin over with no digests, and
         `--require-hashes` is all-or-nothing."""
         p = self.tmp / "requirements.lock"
-        p.write_text(PREVIOUS_TEXT)
+        p.write_text(PREVIOUS_TEXT, encoding="utf-8")
         got = ld.read_lock(p)
         self.assertEqual(got["numpy"], "numpy==2.5.0 \\\n    --hash=sha256:bb1")
         self.assertEqual(got["aioesphomeapi"].count("--hash="), 2)
@@ -142,7 +142,7 @@ class TestCompose(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp(prefix="lock-deps-"))
         self.addCleanup(shutil.rmtree, tmp, True)
         prev = tmp / "requirements.lock"
-        prev.write_text(PREVIOUS_TEXT)
+        prev.write_text(PREVIOUS_TEXT, encoding="utf-8")
         self.previous = ld.read_lock(prev)
 
     def test_platform_markers_are_reapplied_to_every_pyobjc_pin(self) -> None:
@@ -224,7 +224,8 @@ class TestCompose(unittest.TestCase):
         self.assertEqual(carried, list(ld.CARRY_OVER))
         entries = ld.with_hashes(lines, fake_fetch(known))
         self.assertEqual(
-            "\n".join(entries) + "\n", (ROOT / "requirements.lock").read_text()
+            "\n".join(entries) + "\n",
+            (ROOT / "requirements.lock").read_text(encoding="utf-8"),
         )
 
 
@@ -245,7 +246,7 @@ class TestLockSatisfiesRequirements(unittest.TestCase):
     def requirements(self) -> list[tuple[str, Requirement]]:
         out = []
         for name in ld.SOURCES:
-            for raw in (ROOT / name).read_text().splitlines():
+            for raw in (ROOT / name).read_text(encoding="utf-8").splitlines():
                 line = raw.split("#", 1)[0].strip()
                 if line:
                     out.append((name, Requirement(line)))

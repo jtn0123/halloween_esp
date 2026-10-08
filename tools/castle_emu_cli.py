@@ -17,6 +17,10 @@ from castle_emu import CastleEmu
 from castle_emu_http import OTA_SLOTS
 from castle_emu_scenes import show_scene_ids
 
+#: --board's two names as /api/status spells them (sd_web_state.h g_board,
+#: castle_s3.yaml's board_id).
+BOARD_IDS = {"feather": "feather-s3-4m2p", "carrier": "wroom-s3-8m2p"}
+
 
 def seed(card: Path) -> None:
     """Two placeholder 'songs' so the desk has something to list and play."""
@@ -47,7 +51,20 @@ def main() -> None:
         choices=sorted(OTA_SLOTS),
         default="feather",
         help="whose OTA slot /api/ota measures against: the 4 MB Feather in "
-        "the yard or the 8 MB WROOM carrier (default: feather)",
+        "the yard or the 8 MB WROOM carrier (default: feather); also /api/status's board",
+    )
+    ap.add_argument(
+        "--variant",
+        choices=("yard", "buyer"),
+        default="yard",
+        help="the build /api/status reports as fw_variant (default: yard)",
+    )
+    ap.add_argument(
+        "--reset",
+        type=int,
+        default=1,
+        help="esp_reset_reason_t this boot reports in /api/health — 9 is a "
+        "brownout, 4 a crash (default: 1, power-on)",
     )
     ap.add_argument(
         "--serial",
@@ -76,6 +93,9 @@ def main() -> None:
         serial=args.serial,
         scenes=scenes,
         ota_slot=OTA_SLOTS[args.board],
+        board=BOARD_IDS[args.board],
+        fw_variant=args.variant,
+        reset_reason=args.reset,
     )
     if args.dir is None:
         seed(emu.sd_dir)

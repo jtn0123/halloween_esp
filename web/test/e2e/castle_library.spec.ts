@@ -7,7 +7,8 @@
  * actual bytes the actual endpoint serves.
  */
 
-import { test, expect, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
+import { test, expect, bodyBytes } from "./fixtures.js";
 import { MP3_ID, WAV_ID } from "./global-setup.js";
 
 const STATUS = {
@@ -38,7 +39,7 @@ async function stubCard(page: Page, files: SdFile[],
       const name = decodeURIComponent(p.slice("/api/files/".length));
       // Record the REAL byte count — the desk verifies it against what it
       // sent, and the stale check compares it on the next listing.
-      const size = route.request().postDataBuffer()?.length ?? 0;
+      const size = bodyBytes(route.request());
       const i = files.findIndex((f) => f.name === name);
       if (i >= 0) files.splice(i, 1);
       files.push({ name, size, dir: false });
@@ -163,7 +164,7 @@ test("a card copy with different bytes reads STALE, and Sync re-sends it", async
   await expect(row.locator(".trk__badge", { hasText: "on castle ✓" })).toBeVisible();
 });
 
-test("⬇ to Mac pulls a card file through the real import gate", async ({ page }) => {
+test("⬇ to computer pulls a card file through the real import gate", async ({ page }) => {
   const files = [{ name: "pulled_song.mp3", size: 48000, dir: false }];
   await stubCard(page, files);
   // The "card file" is real audio (the studio's own MP3), so the import that
@@ -175,7 +176,10 @@ test("⬇ to Mac pulls a card file through the real import gate", async ({ page 
                            contentType: "audio/mpeg" });
   });
   await page.goto("/");
-  await page.locator(".trk--card[data-card='pulled_song.mp3'] [data-cardact='pull']").click();
+  const pull = page.locator(".trk--card[data-card='pulled_song.mp3'] [data-cardact='pull']");
+  await expect(pull).toHaveText("⬇ to computer");
+  await expect(pull).toHaveAttribute("title", /into this computer's library/);
+  await pull.click();
   // A first-class local track appears, analysed like any drop.
   await expect(page.locator(".trk[data-id='pulled_song']")).toBeVisible({ timeout: 20000 });
 });

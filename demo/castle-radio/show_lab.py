@@ -21,6 +21,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
 import harmony
 import voice_kinds
 from choreography import STYLES, choreograph
@@ -147,12 +150,14 @@ def baseline_for(library: Path, output: Path, key: str) -> Path | None:
         return None
     target = output / (key + BASELINE + SHOW)
     if not target.is_file():
-        layers = json.loads(own.read_text())["layers"]
+        layers = json.loads(own.read_text(encoding="utf-8"))["layers"]
         _blob, preview = build(key, waveform(audio, 1.1), layers, audio.suffix[1:])
         titles = library / "tracks.json"
-        rows = json.loads(titles.read_text()) if titles.is_file() else {}
+        rows = (
+            json.loads(titles.read_text(encoding="utf-8")) if titles.is_file() else {}
+        )
         preview["name"] = (rows.get(key) or {}).get("title", key)
-        target.write_text(json.dumps(preview))
+        target.write_text(json.dumps(preview), encoding="utf-8")
     return target
 
 
@@ -213,7 +218,9 @@ def _write(output: Path, key: str, style_id: str, planned: dict[str, Any],
         "version": cue_file.decode(blob)["version"],
     }  # fmt: skip
     (output / f"{key}.{style_id}.cue").write_bytes(blob)
-    (output / f"{key}.{style_id}{SHOW}").write_text(json.dumps(decoded))
+    (output / f"{key}.{style_id}{SHOW}").write_text(
+        json.dumps(decoded), encoding="utf-8"
+    )
     return {"song": name, "style": style_id, "bpm": planned["bpm"],
             "cues": len(decoded["cues"]), "crc32": decoded["cue_crc32"],
             **planned.get("story", {})}  # fmt: skip
@@ -225,8 +232,8 @@ def candidates(library: Path, output: Path) -> list[dict[str, Any]]:
     output.mkdir(parents=True, exist_ok=True)
     report = []
     for key, show, analysis in songs(library, output):
-        source = json.loads(show.read_text())
-        layers = json.loads(analysis.read_text())["layers"]
+        source = json.loads(show.read_text(encoding="utf-8"))
+        layers = json.loads(analysis.read_text(encoding="utf-8"))["layers"]
         for style_id, style in STYLES.items():
             planned = choreograph(source, layers, style)
             report.append(
@@ -300,25 +307,27 @@ def page(library: Path, output: Path) -> Path:
             continue
         rows.append(
             {
-                "baseline": json.loads(show.read_text()),
+                "baseline": json.loads(show.read_text(encoding="utf-8")),
                 "audio": link_audio(library, output, key),
                 "candidates": [
                     {
                         "id": p.name.removesuffix(SHOW).removeprefix(key + "."),
-                        "show": json.loads(p.read_text()),
+                        "show": json.loads(p.read_text(encoding="utf-8")),
                     }
                     for p in others
                 ],
             }
         )
-    html = (HERE / "show-lab.template.html").read_text()
+    html = (HERE / "show-lab.template.html").read_text(encoding="utf-8")
     for name in ("visuals.js", "cue-playback.js", "lab-leds.js",
                  "show-lab-leds.js", "show-lab-blind.js",
                  "show-lab-flags.js"):  # fmt: skip
-        html = html.replace(f"/*{{{{{name}}}}}*/", (HERE / name).read_text())
+        html = html.replace(
+            f"/*{{{{{name}}}}}*/", (HERE / name).read_text(encoding="utf-8")
+        )
     data = json.dumps(rows, separators=(",", ":")).replace("</", "<\\/")
     target = output / PAGE
-    target.write_text(html.replace("/*{{songs}}*/null", data))
+    target.write_text(html.replace("/*{{songs}}*/null", data), encoding="utf-8")
     return target
 
 
@@ -326,7 +335,7 @@ def verdicts(path: Path) -> list[str]:
     """What a downloaded blind-test file says: per show, how often it was
     picked over the one beside it, and against which."""
     wins: dict[str, list[int]] = {}
-    for pick in json.loads(path.read_text()):
+    for pick in json.loads(path.read_text(encoding="utf-8")):
         a, b, verdict = pick["a"], pick["b"], pick["verdict"]
         for show in (a, b):
             wins.setdefault(show, [0, 0, 0])

@@ -7,7 +7,6 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.cargo/bin:$PATH"
 PORT=${CASTLE_STUDIO_PORT:-8871}
 URL="http://127.0.0.1:$PORT/"
 IDENTITY="${URL}radio/tools"
-DEVICE_URL="http://${CASTLE_RADIO_HOST:-10.27.27.81}/"
 
 pause_on_error() {
   echo
@@ -20,12 +19,21 @@ if [ -x .venv-desktop/bin/python ]; then
 elif [ -x .venv/bin/python ]; then
   PY="$PWD/.venv/bin/python"
 else
-  echo "Castle Tools are not installed. Run this once in Terminal:"
-  echo "  ./tools/install_castle_tools.sh"
+  echo "This folder has no Python environment. To install Castle Tools for"
+  echo "this user (its own Python, ffmpeg and model; no Homebrew), run once:"
+  echo "  sh installer/install.sh"
+  echo "and start it from the launcher it places (installer/README.md)."
+  echo "To run from this checkout instead:  make setup && make rust"
   pause_on_error
 fi
 PY_BIN=$(dirname "$PY")
 export PATH="$PY_BIN:$PATH"
+# The castle's page: CASTLE_RADIO_HOST, else the first castle tools/hosts.py
+# knows (CASTLE_HOST, devices.toml); with neither, the local page. No castle
+# address is built in — a copy on someone else's computer has its own.
+CASTLE=${CASTLE_RADIO_HOST:-$("$PY" -c 'import sys; sys.path.insert(0, "tools"); import hosts; sys.stdout.write((hosts.candidates() or [""])[0])' 2>/dev/null)}
+DEVICE_URL=${CASTLE:+http://$CASTLE/}
+DEVICE_URL=${DEVICE_URL:-$URL}
 
 is_castle_radio() {
   curl -fsS -m 2 "$IDENTITY" 2>/dev/null | "$PY" -c \
@@ -47,8 +55,8 @@ fi
 echo "Checking Castle Tools..."
 if ! "$PY" tools/castle_tools_status.py --human --require-core; then
   echo
-  echo "A required tool is missing. Run this once in Terminal:"
-  echo "  ./tools/install_castle_tools.sh"
+  echo "A required tool is missing. In this checkout:  make setup && make rust"
+  echo "(or install Castle Tools for this user:  sh installer/install.sh)"
   pause_on_error
 fi
 

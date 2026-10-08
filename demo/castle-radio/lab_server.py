@@ -91,7 +91,7 @@ class LabHandler(SimpleHTTPRequestHandler):
         if note is None:
             self.send_error(HTTPStatus.BAD_REQUEST, "not a note")
             return
-        with _write, (Path(self.directory) / NOTES).open("a") as out:
+        with _write, (Path(self.directory) / NOTES).open("a", encoding="utf-8") as out:
             out.write(json.dumps(note) + "\n")
         body = json.dumps(note).encode()
         self.send_response(HTTPStatus.CREATED)
@@ -119,7 +119,11 @@ def report(path: Path) -> list[str]:
     """The notes, song by song in song-time order, for reading back."""
     if not path.is_file():
         return ["no notes yet"]
-    notes = [json.loads(line) for line in path.read_text().splitlines() if line]
+    notes = [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line
+    ]
     out: list[str] = []
     for song in sorted({n["name"] or n["song"] for n in notes}):
         out.append(song)

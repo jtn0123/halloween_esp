@@ -1,0 +1,141 @@
+# The castle someone ELSE owns: the same S3 Feather #5477 in carrier v3.3a
+# as the one in the yard, with nothing of this house compiled in.
+#
+#   make build-buyer      compile it
+#   make validate-buyer   check the config
+#
+# It is castle_feather_s3.yaml — every pin, the card, the show, the status
+# pixel — plus the four things a castle needs when its owner has never seen
+# this repo (docs/PRODUCTION-TODO.md §1.1, §1.3, §1.5):
+#
+#   1. NO Wi-Fi credentials. The base's `!secret` pair is removed, so the
+#      image carries no network at all; the owner's is entered at setup and
+#      lives in NVS from then on.
+#   2. Three ways to hand it one, all ESPHome's own:
+#        improv_serial   the web flasher asks for the network over the same
+#                        USB cable it just flashed through (esp-web-tools)
+#        ap:             a softAP named Castle-XXXX (the last four hex digits
+#                        of the MAC), open, up whenever there is no network
+#        captive_portal  what a phone joining that AP is shown: pick a
+#                        network, type the password, done
+#      A castle that loses its router (new router, new password) brings the
+#      AP back on its own after `ap_timeout` without a network — no USB.
+#   3. A per-unit name: `name_add_mac_suffix` makes this castle-a1b2c3 on
+#      mDNS (castle-a1b2c3.local), so two castles on one LAN do not answer
+#      for each other. The AP's four digits are the hostname's last four.
+#   4. `fw_variant: buyer` in /api/status, and power-on boots that start
+#      SILENT: boot_play defaults off here and on in the yard, and either way
+#      it is an NVS setting the owner can change (sd_web_prefs.h).
+#
+# The port-80 handover: ESPHome's captive portal serves from its own httpd
+# on port 80, which is where the castle's own server (sd_web.h) lives — and
+# both use IDF's default control socket too, so they cannot run at once.
+# castle_buyer.h hands the port back and forth: while the portal is up the
+# castle's control server is down (the stream server on :8080 is untouched),
+# and the moment Wi-Fi joins and the portal ends, the castle's server comes
+# back. Nothing in the yard build changes: without `captive_portal:` the
+# header is not included and USE_CAPTIVE_PORTAL is never defined.
+#
+# NOT the AP password, and deliberately: the AP only exists while the castle
+# has no network, and any password printed on a label or compiled into a
+# public repo is no secret. The owner's optional castle password (sd_web.h,
+# X-Castle-Key) is what guards the castle once it is on their network.
+
+substitutions:
+  # The hostname STEM: name_add_mac_suffix appends "-a1b2c3" at boot. Also
+  # the build directory's name, which is what check_image.py is handed.
+  name: castle
+  friendly: Castle
+  fw_variant: buyer
+  boot_play_default: "false"
+  # No PIR on a buyer's castle (v5.75): the owner's page says "not fitted" and
+  # /api/pir refuses, instead of a switch that arms a pin with nothing on it.
+  pir_fitted: "false"
+
+packages:
+  feather: !include castle_feather_s3.yaml
+
+esphome:
+  name_add_mac_suffix: true
+  includes:
+    - castle_buyer.h
+  on_boot:
+    # Before the wifi component's own setup (priority 250): the AP's name is
+    # read only when the AP is first brought up, so setting it here is in
+    # time for every path that brings it up.
+    - priority: 600
+      then:
+        - lambda: 'castle_buyer::name_the_ap();'
+
+esp32:
+  framework:
+    sdkconfig_options:
+      # The first line of the S2's dram0 diet given back, for this build
+      # only (docs/notes/06-buyer-build.md §12.23 has the measured cost). castle.yaml
+      # turns softAP off by name, and a user sdkconfig option beats ESPHome's
+      # own reconciler — which would have turned it ON for an `ap:` block —
+      # so the buyer has to say it out loud. The yard keeps its "n".
+      CONFIG_ESP_WIFI_SOFTAP_SUPPORT: "y"
+
+wifi:
+  ssid: !remove
+  password: !remove
+  ap:
+    # Three minutes, not ESPHome's 90 s: a router rebooting after a power cut
+    # takes one to three, and an AP that comes up while the network is on its
+    # way back is a castle that drops off the LAN for no reason. It keeps
+    # trying the saved network the whole time the AP is up.
+    ap_timeout: 3min
+
+captive_portal:
+
+improv_serial:
+  # What esp-web-tools offers as "visit device" once the network is in.
+  next_url: "http://{{ip_address}}/"
+
+# ESPHome's own OTA door (port 3232) gets the castle key as its password.
+# `password: ""` compiles the auth path in with nothing required, which is
+# exactly an open castle; castle_buyer.h sets it at runtime whenever the key
+# changes. Same port as castle.yaml's entry, so ESPHome merges the two.
+ota:
+  - platform: esphome
+    id: castle_ota
+    password: ""
+
+interval:
+  - interval: 1s
+    then:
+      - lambda: |-
+          castle_buyer::share_port_80();
+          castle_buyer::follow_key(id(castle_ota));
+
+# What the native API (port 6053, Home Assistant's door) does not offer a
+# buyer — v5.75, PRODUCTION-TODO §1.4; the whole audit, HTTP routes too, is
+# docs/notes/06-buyer-build.md §12.24. The API takes no castle key, so the
+# one entity on it that is a developer's tool goes:
+#   Enter flash mode   reboots into the ROM's download mode, one way, until a
+#                      USB reflash. A buyer's recovery is the web flasher
+#                      (hold BOOT, tap RESET), not a button anyone on the
+#                      LAN can press.
+# and so does a motion sensor this castle does not have: the GPIO input is
+# not compiled at all, and the three settings that steered it are internal,
+# so Home Assistant is not shown a switch that arms nothing. /api/pir already
+# answers 409 (pir_fitted above). Every other entity is what the open HTTP
+# playback routes already offer, or reads.
+button:
+  - id: !remove flash_mode
+
+binary_sensor:
+  - id: !remove walkway_pir
+
+switch:
+  - id: !extend pir_armed
+    internal: true
+
+number:
+  - id: !extend pir_cooldown
+    internal: true
+
+text:
+  - id: !extend pir_scene
+    internal: true

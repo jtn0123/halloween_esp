@@ -43,10 +43,11 @@ import cargo_gate
 import golden_corpus as corpus
 import scene_schema as ss
 import yaml
+from exe_paths import exe
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
-BIN = ROOT / "core" / "target" / "release" / "scene_dump"
+BIN = ROOT / "core" / "target" / "release" / exe("scene_dump")
 
 ZONES = ["towerL", "towerR", "door"]
 
@@ -78,7 +79,7 @@ def dumped(case: str, zones: list[str] | None = None, /, **over: Any) -> Case:
 
 def show_scenes() -> list[Case]:
     """Every scene in scenes/scenes.yaml, as the text of its own block."""
-    text = (ROOT / "scenes" / "scenes.yaml").read_text()
+    text = (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
     body = text.split("\nscenes:\n", 1)[1]
     blocks: list[str] = []
     for line in body.splitlines(keepends=True):
@@ -407,7 +408,7 @@ class TestSceneSchemaRustParity(unittest.TestCase):
         server."""
         from check_loc import SCENE_LIMIT
 
-        rust = (ROOT / "core" / "src" / "vocab.rs").read_text()
+        rust = (ROOT / "core" / "src" / "vocab.rs").read_text(encoding="utf-8")
         self.assertIn(f"pub const SCENE_LIMIT: usize = {SCENE_LIMIT};", rust)
 
 

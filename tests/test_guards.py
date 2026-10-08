@@ -145,10 +145,11 @@ class TestImageCheck(unittest.TestCase):
             img.write_bytes(b"\xe9")
             table = build.parent / "partitions.csv"
             table.write_text(
-                "otadata, data, ota, , 0x2000,\napp0, app, ota_0, , 0x1C0000,\n"
+                "otadata, data, ota, , 0x2000,\napp0, app, ota_0, , 0x1C0000,\n",
+                encoding="utf-8",
             )
             self.assertEqual(check_image.slot_size(img), 1_835_008)
-            table.write_text("app0, app, ota_0, , 0x3C0000,\n")
+            table.write_text("app0, app, ota_0, , 0x3C0000,\n", encoding="utf-8")
             self.assertEqual(check_image.slot_size(img), 3_932_160)
             table.unlink()
             with self.assertRaises(SystemExit):
@@ -190,7 +191,7 @@ class TestImageCheck(unittest.TestCase):
             build = tmp / "big" / "build"
             build.mkdir(parents=True)
             (build.parent / "partitions.csv").write_text(
-                "app0, app, ota_0, , 0x1C0000,\n"
+                "app0, app, ota_0, , 0x1C0000,\n", encoding="utf-8"
             )
             (build / "big.bin").write_bytes(b"x" * (FEATHER_SLOT + 1))
             self._find_image(build / "big.bin")
@@ -209,7 +210,7 @@ class TestImageCheck(unittest.TestCase):
             build = tmp / "small" / "build"
             build.mkdir(parents=True)
             (build.parent / "partitions.csv").write_text(
-                "app0, app, ota_0, , 0x1C0000,\n"
+                "app0, app, ota_0, , 0x1C0000,\n", encoding="utf-8"
             )
             (build / "small.bin").write_bytes(b"x" * int(FEATHER_SLOT * 0.5))
             self._find_image(build / "small.bin")
@@ -234,16 +235,21 @@ class TestTracksSandbox(unittest.TestCase):
     def test_import_track_honors_the_sandbox(self) -> None:
         import os
         import subprocess
+        import tempfile
 
+        # Spelled the way this system spells a path (C:\\… on Windows), so
+        # the comparison is about the redirect and not about separators.
+        sandbox = str(Path(tempfile.gettempdir()) / "castle-sandbox-guard")
         out = subprocess.run(
             [sys.executable, "-c", "import import_track; print(import_track.TRACKS)"],
             cwd=str(ROOT / "tools"),
-            env={**os.environ, "CASTLE_TRACKS": "/tmp/castle-sandbox-guard"},
+            env={**os.environ, "CASTLE_TRACKS": sandbox},
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
-        self.assertEqual(out.stdout.strip(), "/tmp/castle-sandbox-guard", out.stderr)
+        self.assertEqual(out.stdout.strip(), sandbox, out.stderr)
 
 
 class TestScenesSandbox(unittest.TestCase):
@@ -272,25 +278,29 @@ class TestScenesSandbox(unittest.TestCase):
     def test_generators_resolve_their_paths_inside_the_sandbox(self) -> None:
         import os
         import subprocess
+        import tempfile
 
+        sandbox = Path(tempfile.gettempdir()) / "castle-sb"
         out = subprocess.run(
             [
                 sys.executable,
                 "-c",
                 (
                     "import render_audio as r, gen_esphome as e, gen_previewer as p;"
-                    "print(r.SCENES, r.OUT, e.SRC, e.OUT, p.SRC, p.HTML, p.AUDIO)"
+                    "print(r.SCENES, r.OUT, e.SRC, e.OUT, p.SRC, p.HTML, p.AUDIO,"
+                    " sep='\\n')"
                 ),
             ],
             cwd=str(ROOT / "tools"),
-            env={**os.environ, "CASTLE_SCENES": "/tmp/castle-sb/scenes.yaml"},
+            env={**os.environ, "CASTLE_SCENES": str(sandbox / "scenes.yaml")},
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
         self.assertEqual(out.returncode, 0, out.stderr)
-        for p in out.stdout.split():
-            self.assertTrue(p.startswith("/tmp/castle-sb/"), p)
+        for p in out.stdout.splitlines():
+            self.assertTrue(Path(p).is_relative_to(sandbox), p)
 
     def test_a_sandboxed_rebuild_touches_nothing_outside_the_sandbox(self) -> None:
         """The real thing, end to end: a one-scene show in a scratch dir,
@@ -303,7 +313,9 @@ class TestScenesSandbox(unittest.TestCase):
 
         sb = Path(tempfile.mkdtemp(prefix="castle-scenes-sb-"))
         try:
-            doc = yaml.safe_load((ROOT / "scenes" / "scenes.yaml").read_text())
+            doc = yaml.safe_load(
+                (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
+            )
             doc["scenes"] = [
                 {
                     "id": "sb_probe",
@@ -319,7 +331,9 @@ class TestScenesSandbox(unittest.TestCase):
                     "cues": [],
                 }
             ]
-            (sb / "scenes.yaml").write_text(yaml.safe_dump(doc, sort_keys=False))
+            (sb / "scenes.yaml").write_text(
+                yaml.safe_dump(doc, sort_keys=False), encoding="utf-8"
+            )
             env = {
                 **os.environ,
                 "CASTLE_SCENES": str(sb / "scenes.yaml"),
@@ -336,7 +350,7 @@ class TestScenesSandbox(unittest.TestCase):
                 )
                 self.assertEqual(r.returncode, 0, f"{script}: {r.stdout}{r.stderr}")
             self.assertEqual(self._stamp(), before, "a repo artefact was rewritten")
-            built = {str(p.relative_to(sb)) for p in sb.rglob("*") if p.is_file()}
+            built = {p.relative_to(sb).as_posix() for p in sb.rglob("*") if p.is_file()}
             for rel in (
                 "_build/audio/01_sb_probe.mp3",
                 "_build/audio/markers.json",
@@ -346,7 +360,9 @@ class TestScenesSandbox(unittest.TestCase):
                 self.assertIn(rel, built)
             self.assertIn(
                 "sb_probe",
-                (sb / "_build" / "previewer" / "castle-cue-desk.html").read_text(),
+                (sb / "_build" / "previewer" / "castle-cue-desk.html").read_text(
+                    encoding="utf-8"
+                ),
             )
         finally:
             shutil.rmtree(sb, ignore_errors=True)

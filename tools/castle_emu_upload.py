@@ -25,6 +25,9 @@ from typing import IO
 import castle_emu_wire as wire
 from castle_emu_reply import NO_SD, Replies
 
+#: sd_web_upload.h's answer to a PUT or DELETE whose name is a directory.
+IS_A_FOLDER = "is a folder"
+
 
 class Uploads(Replies):
     """h_put and h_delete. Mixed into castle_emu_http.Handler, which is the
@@ -53,6 +56,8 @@ class Uploads(Replies):
             lock.acquire()
 
     def h_put(self, raw: bytes) -> None:
+        if not self._key_ok():
+            return self._locked()
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
         n = self._content_len()
@@ -75,14 +80,20 @@ class Uploads(Replies):
         # nobody asked it to touch. firmware/sd_web_upload.h h_put, verbatim.
         if name.endswith((b".part", b".old")):
             return self._err(400, "reserved suffix")
+        dest = self.server.sd_dir / sub if sub else self.server.sd_dir
+        dest.mkdir(parents=True, exist_ok=True)
+        target = dest / wire.fs_name(name)
+        # v5.75: a folder is not a file to replace — write_body would park
+        # it as `<name>.old` (FatFs renames directories too) and put the
+        # upload in its place. Before the free-space check, as h_put's own
+        # stat comes before write_body's.
+        if target.is_dir():
+            return self._err(409, IS_A_FOLDER)
         # B3: write_body's free-space precondition (64 KB slack), when the
         # emulated card declares a size (sd_free_kb None = plenty of room).
         free_kb = self.server.sd_free_kb
         if free_kb is not None and n // 1024 + 64 > free_kb:
             return self._err(507, "not enough room on the card")
-        dest = self.server.sd_dir / sub if sub else self.server.sd_dir
-        dest.mkdir(parents=True, exist_ok=True)
-        target = dest / wire.fs_name(name)
         # write_body: into the sidecar, then unlink + rename (FAT's rename
         # will not overwrite). A short upload costs the sidecar only; the
         # previous copy of `target` is untouched.
@@ -105,16 +116,23 @@ class Uploads(Replies):
         worker task — is the seam this file has too (A9)."""
         written = 0
         crc = 0
+        cut = False
         with f:
             try:
-                for chunk in self._body_chunks(n):
+                for got in self._body_chunks(n):
+                    chunk, cut = self._carried(got)
                     f.write(chunk)
                     written += len(chunk)
                     crc = zlib.crc32(chunk, crc)  # B5: sd_sync compares
+                    if cut:
+                        break
             except OSError:  # TimeoutError is one of these
                 pass
         if written != n:
             part.unlink(missing_ok=True)  # the sidecar only
+            if cut:  # the link is gone, so is the client: nobody to answer
+                self.close_connection = True
+                return None
             return self._err(500, "short write")
         # A11 (v5.61): the previous copy is MOVED aside, never deleted on
         # the promise of a rename that has not happened yet. If the rename
@@ -137,10 +155,31 @@ class Uploads(Replies):
             return self._err(500, "rename failed")
         if had_old:
             keep.unlink(missing_ok=True)
+        # J1 (v5.69): the show's manifest just changed, so the id list
+        # /api/scene validates against is stale. Ring the bell; the tick
+        # re-reads it (sd_web_upload.h raises g_scenes_dirty for this one
+        # name — a .cue or an mp3 changes what a scene does, not which exist).
+        if sub == "scenes" and target.name == "show.man":
+            self.server.scenes_dirty = True
         card = f"/sd/{sub}/{target.name}" if sub else f"/sd/{target.name}"
         self._json({"path": card, "bytes": written, "crc32": "%08x" % crc})
 
+    def _carried(self, chunk: bytes) -> tuple[bytes, bool]:
+        """The Wi-Fi under a publish, when a test cuts it (`drop_after`):
+        that many more upload bytes arrive, counted across uploads, and then
+        the link is gone mid-body, once. True means it just went — what is
+        returned is the part that made it."""
+        left = self.server.drop_after
+        if left is None or len(chunk) <= left:
+            if left is not None:
+                self.server.drop_after = left - len(chunk)
+            return chunk, False
+        self.server.drop_after = None
+        return chunk[:left], True
+
     def h_delete(self, raw: bytes) -> None:
+        if not self._key_ok():
+            return self._locked()
         if not self.server.sd_mounted:
             return self._err(503, NO_SD)
         sub, prefix = wire.route_dir(raw)
@@ -148,8 +187,11 @@ class Uploads(Replies):
         if not wire.safe_name(name):
             return self._err(400, "bad filename")
         dest = self.server.sd_dir / sub if sub else self.server.sd_dir
+        target = dest / wire.fs_name(name)
+        if target.is_dir():  # v5.75: the board's f_unlink took an EMPTY one
+            return self._err(409, IS_A_FOLDER)
         try:
-            (dest / wire.fs_name(name)).unlink()
+            target.unlink()
         except OSError:
             return self._err(404, "no such file")
         self._json({"deleted": True})

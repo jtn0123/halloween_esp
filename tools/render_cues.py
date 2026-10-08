@@ -16,7 +16,8 @@ Three steps, each one somebody else's code on purpose:
      per band and the loudness envelope;
   2. the scene block is the one in scenes.yaml when the song is already a
      scene (your edits are the show), and otherwise the desk's own
-     `sceneYaml`, bundled for node from web/src/scene_cli.ts;
+     `sceneYaml` — its Python twin, tools/track_scene.py, which
+     web/test/scene_parity.ts holds to the TypeScript text for text;
   3. pulse_expand turns it into strikes, EVERY one of them — PULSE_CAP is a
      fact about script RAM, and a file in PSRAM does not pay it.
 
@@ -27,24 +28,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import subprocess
-import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
 import build_paths as bp
 import core_bins
 import cue_file
-import yaml
+import track_scene
 from pulse_expand import pulse_cues
 from scene_schema import load_show
 from scene_schema import validate as validate_scene
 from track_lib import AUDIO_EXT, TRACKS
 
-ROOT = Path(__file__).resolve().parent.parent
-WEB = ROOT / "web"
 OUT = bp.AUDIO / "card" / "cues"
 #: The studio's default when a scene does not carry its own.
 SENSITIVITY = 1.1
@@ -58,49 +55,31 @@ def track_file(tid: str) -> Path:
     raise SystemExit(f"no track {tid!r} in {TRACKS}")
 
 
-def waveform(path: Path, sensitivity: Any) -> dict[str, Any]:
+#: A stand-in for subprocess.run (the default, looked up at call time) that a
+#: caller can stop: Castle Radio passes one so its Cancel reaches the
+#: children below.
+Runner = Callable[..., subprocess.CompletedProcess[Any]]
+
+
+def waveform(path: Path, sensitivity: Any, run: Runner | None = None) -> dict[str, Any]:
     req = {"path": str(path), "sensitivity": sensitivity, "waveform": True}
-    run = subprocess.run(
+    done = (run or subprocess.run)(
         [str(core_bins.core_bin("analyze_track"))],
         input=json.dumps(req).encode(),
         capture_output=True,
         check=False,
     )
-    if run.returncode != 0:
-        raise SystemExit(run.stderr.decode().strip() or f"cannot analyse {path.name}")
-    wave: dict[str, Any] = json.loads(run.stdout)
+    if done.returncode != 0:
+        raise SystemExit(done.stderr.decode().strip() or f"cannot analyse {path.name}")
+    wave: dict[str, Any] = json.loads(done.stdout)
     return wave
 
 
-def _esbuild() -> Path:
-    local = WEB / "node_modules" / ".bin" / "esbuild"
-    found = local if local.exists() else shutil.which("esbuild")
-    if not found or not shutil.which("node"):
-        raise SystemExit(
-            "a song that is not a scene yet gets its show from the desk's own "
-            "builder, which needs node and esbuild: cd web && npm ci"
-        )
-    return Path(found)
-
-
 def desk_scene(tid: str, wave: dict[str, Any], ext: str) -> dict[str, Any]:
-    """The scene the desk would splice for this track (web/src/scene_cli.ts)."""
-    with tempfile.TemporaryDirectory() as tmp:
-        bundle = Path(tmp) / "scene_cli.mjs"
-        wave_json = Path(tmp) / "wave.json"
-        wave_json.write_text(json.dumps(wave))
-        subprocess.run(
-            [str(_esbuild()), str(WEB / "src" / "scene_cli.ts"), "--bundle",
-             "--platform=node", "--format=esm", "--log-level=warning",
-             f"--outfile={bundle}"],
-            check=True,
-        )  # fmt: skip
-        run = subprocess.run(
-            ["node", str(bundle), tid, str(wave_json), ext],
-            capture_output=True, text=True, check=True,
-        )  # fmt: skip
-    scene: dict[str, Any] = yaml.safe_load(run.stdout)[0]
-    return scene
+    """The scene the desk would splice for this track: sceneYaml's headless
+    case, in Python (tools/track_scene.py), so neither a buyer nor
+    `make cues` needs node or esbuild to light a song."""
+    return track_scene.scene(tid, wave, ext)
 
 
 def markers_ms(wave: dict[str, Any], scene: dict[str, Any]) -> dict[str, list]:

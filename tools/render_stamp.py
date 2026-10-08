@@ -25,6 +25,7 @@ from pathlib import Path
 
 import build_paths as bp
 import core_bins
+from exe_paths import exe
 
 STAMP = ".rendered.json"
 TOOLS = Path(__file__).resolve().parent
@@ -53,7 +54,7 @@ def source_id(p: Path) -> str:
 def inputs(scene: dict) -> list[Path]:
     """The files a scene's render reads besides scenes.yaml: the crate
     binary that renders it and its song, when it has one."""
-    files = [core_bins.CORE / "target" / "release" / "scene_render"]
+    files = [core_bins.CORE / "target" / "release" / exe("scene_render")]
     if scene.get("audio_file"):
         files.append(bp.track_source(scene["audio_file"]))
     return files
@@ -84,7 +85,7 @@ class Stamps:
         if self.path is None:
             return
         try:
-            data = json.loads(self.path.read_text())
+            data = json.loads(self.path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = {}
         self.entries = data if isinstance(data, dict) else {}
@@ -116,4 +117,6 @@ class Stamps:
 
     def save(self) -> None:
         if self.path is not None:
-            self.path.write_text(json.dumps(self.entries, sort_keys=True))
+            self.path.write_text(
+                json.dumps(self.entries, sort_keys=True), encoding="utf-8"
+            )

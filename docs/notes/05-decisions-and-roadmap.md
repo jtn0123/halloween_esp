@@ -74,31 +74,43 @@ Part of the design record; the index is [`PROJECT_NOTES.md`](../../PROJECT_NOTES
    studio serves the same lean form. The full inlined page stays the
    portable artifact, governed by `tools/previewer_budget.py`.
 
-### Where the project stands — 2026-09-01
+### Where the project stands — 2026-10-02
 
-Software, all committed and CI-green at `ec357df` (2026-09-06):
+Rewritten from the 2026-09-01 block, which still had the castle off the
+network three weeks after it joined it (grade report 2026-09-24 H5).
+Per version, which board ran what is `firmware/pending/README.md`; this is
+the summary.
 
 - **One studio server, the Rust one** (`make studio`, `make e2e`). The
   Python server retired 2026-09-06 — [`docs/RETIREMENT.md`](../RETIREMENT.md);
   the tag `python-studio-final` is its last tree.
-- **Two firmware targets, one show**: `castle_feather_s3.yaml` (the S3
-  Feather on the porch since 2026-09-17, 41.9 % RAM against a 92 % alarm and
-  71.8 % of its OTA slot) and `castle_s3.yaml` (the WROOM carrier, no
-  hardware yet), both reading `castle.yaml` and `castle_sd_common.yaml`. The
+- **Three firmware targets, one show**: `castle_feather_s3.yaml` (the S3
+  Feather on the porch at 10.27.27.81 since 2026-09-17, running v5.73 since
+  an OTA on 2026-09-23; the last image measured on it, v5.71's, was 68.0 % of
+  its OTA slot and 35.3 % of RAM), `castle_s3.yaml` (the WROOM carrier, no
+  hardware yet) and `castle_buyer.yaml` (v5.74, the castle someone else owns
+  — §12.23), all reading `castle.yaml` and `castle_sd_common.yaml`. The
   version string in `firmware/castle.yaml` is what an OTA must show on the
-  web page. `make publish` and `make ota` rehearsed end to end against the
-  emulator, so flash day is the board and nothing else.
-- **The gates**: 1129 Python tests, 154 Rust `#[test]`s, 148 browser, 13 cross-language
-  parity suites, 39 golden fixtures, the 500-line and dated-citation
-  guards. The grade report 2026-09-06 (`.claude/grade-report.md`) is B+.
-- **The show**: 10 of the 12 scene slots the card's manifest holds.
+  web page.
+- **The gates**: `make check` (the Python and Radio suites, ruff, mypy and
+  the Rust lint, `tsc` and web's node suites, the 500-line and
+  dated-citation guards), `make e2e` for the browser, and the cross-language
+  copies [`docs/PARITY.md`](../PARITY.md) lists. The grade report 2026-09-24
+  (`.claude/grade-report.md`) is B+.
+- **The show**: 10 of the 12 scene slots the card's manifest holds. Since
+  v5.69 a publish is the whole deploy — the castle re-reads `show.man` when
+  it lands (the show became card data in v5.67, §12.21; the v5.69 row of
+  `firmware/pending/README.md` is the re-read, verified on the board).
 
-Waiting on hardware — the castle is off the network:
+Waiting on the board — it is on the network, so each of these is an OTA and
+a look, not a trip to the porch:
 
-- OTA to the version in `firmware/castle.yaml`, confirm it on the web page
-  (the eInk panel is gone since v5.44), watch the first big upload for the
-  32 KB watchdog cadence, connect once so the image is confirmed, then
-  `make publish` — the checklist is `firmware/pending/README.md`.
+- v5.74 is compiled and has run nowhere: the buyer's port-80 handover
+  between the portal and the castle's server most of all.
+- v5.71's cue format v2 and v5.72's heard clock have booted on the board but
+  not yet run a show there; their numbers appear with the first show played.
+- The first big upload, for the 32 KB watchdog cadence (`firmware/pending/
+  README.md`, "Still to watch on the board").
 - The door-ring flicker bench tests, in the order
   [`docs/ISSUE-ring-flicker.md`](../ISSUE-ring-flicker.md) gives them; the
   second-RMT-block lever waits until those come back clean.

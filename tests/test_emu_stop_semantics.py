@@ -44,6 +44,7 @@ class TestStopLeavesThePlaylistRunning(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         cls.emu.shutdown()
+        cls.emu.server_close()
 
     def post(self, path: str) -> int:
         req = urllib.request.Request(self.base + path, data=b"", method="POST")
@@ -112,7 +113,7 @@ class TestTheFirmwareSaysSo(unittest.TestCase):
     # the `web_action` script that interval runs inline (v5.70).
     COMMON = (
         Path(__file__).resolve().parent.parent / "firmware" / "castle_web_actions.yaml"
-    ).read_text()
+    ).read_text(encoding="utf-8")
 
     def branch(self, action: str) -> str:
         """One arm of the mailbox's if/else chain in the web_action script."""
@@ -136,7 +137,7 @@ class TestTheFirmwareSaysSo(unittest.TestCase):
             / "firmware"
             / "generated"
             / "scenes.yaml"
-        ).read_text()
+        ).read_text(encoding="utf-8")
         stop = scenes.split("- id: scene_stop", 1)[1].split("- id: run_scene", 1)[0]
         published = stop.split("id: current_scene", 1)[1].split("state:", 1)[1]
         self.assertEqual(published.strip().splitlines()[0].strip(), "'stop'")

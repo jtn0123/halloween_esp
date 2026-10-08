@@ -14,12 +14,23 @@
  * Note that Chromium's --mute-audio (see playwright.config.ts) silences the
  * *output* but does not touch `element.muted`. That separation is deliberate:
  * the browser guarantees the run is silent, while these assertions still test
- * the app's own muting rather than the flag that is hiding it.
+ * the app's own muting rather than the flag that is hiding it. WebKit has no
+ * such flag; webkit.ts does the same job from just under the page, on the
+ * context, so a popup or second page is as quiet as the first. That is why
+ * every spec imports `test` from here (web/tools/check-suites.mjs holds it).
  */
 
-import { test as base, expect, type Page } from "@playwright/test";
+import { test as base, expect, type Page, type Request } from "@playwright/test";
+import { silenceOutput, tellBlobSizes } from "./webkit.js";
 
 export const test = base.extend({
+  context: async ({ context, browserName }, use) => {
+    if (browserName !== "chromium") {
+      await context.addInitScript(silenceOutput);
+      await context.addInitScript(tellBlobSizes);
+    }
+    await use(context);
+  },
   page: async ({ page }, use) => {
     await page.addInitScript(() => {
       const seen: HTMLMediaElement[] = [];
@@ -49,6 +60,11 @@ export const test = base.extend({
 });
 
 export { expect };
+
+/** How many bytes a request carried: its body, or — where the browser hands
+ *  a route no Blob body (WebKit; webkit.ts) — the size sent beside it. */
+export const bodyBytes = (request: Request): number =>
+  request.postDataBuffer()?.length ?? Number(request.headers()["x-e2e-blob-bytes"] ?? 0);
 
 /** Every media element the page has ever made, plus any in the markup. */
 const ALL = `[...new Set([
@@ -93,6 +109,18 @@ export interface FakeCastle {
   delay: number;
   /** Castle gone: status becomes the studio's {studio:true}, the rest 502. */
   up: boolean;
+  /** Go down (`up = false`) the moment a request for exactly this path
+   *  arrives, before answering it: the castle dies under the hand. Setting
+   *  `up` before a click instead races the desk's own re-poll — first
+   *  contact hushes the amp and re-polls ~1 s later — and in Linux WebKit
+   *  in CI that poll can win, find the castle gone and disable the very
+   *  control (■) the test is about to press. */
+  dieOn: string | null;
+  /** A keyed castle (firmware v5.74) the studio holds no right key for:
+   *  every change — the POST /api/key probe included — is 401. Whether the
+   *  status SAYS `locked` is the spec's to set, so a castle locked after its
+   *  last status can be played too. */
+  keyed: boolean;
   /** How many calls mention `part`. */
   hits(part: string): number;
 }
@@ -107,10 +135,10 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
     Promise<FakeCastle> {
   const c: FakeCastle = {
     calls: [], status: { ...CASTLE_STATUS, ...status }, files,
-    putBytes: null, delay: 0, up: true,
+    putBytes: null, delay: 0, up: true, dieOn: null, keyed: false,
     hits: (part) => c.calls.filter((x) => x.includes(part)).length,
   };
-  const CASTLE = /^\/api\/(status|files|play|stop|volume|scene|light|pir|show|bootlog|card)\b/;
+  const CASTLE = /^\/api\/(status|files|play|stop|volume|scene|light|pir|show|bootlog|card|key)\b/;
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const p = url.pathname;
@@ -118,14 +146,17 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
     if (!CASTLE.test(p)) return route.fallback();
     c.calls.push(`${method} ${p}${url.search}`);
     if (c.delay) await new Promise((r) => setTimeout(r, c.delay));
+    if (p === c.dieOn) { c.up = false; c.dieOn = null; }
     if (p === "/api/status") {
       return route.fulfill({ json: c.up ? c.status : { studio: true } });
     }
     if (!c.up) return route.fulfill({ status: 502, json: { error: "castle not reachable" } });
+    if (c.keyed && method !== "GET") return route.fulfill({ status: 401, body: "castle key required\n" });
+    if (p === "/api/key") return route.fulfill({ status: 400, body: "need new=<key> or clear=1\n" });
     if (p === "/api/files" && method === "GET") return route.fulfill({ json: c.files });
     if (p.startsWith("/api/files/") && method === "PUT") {
       const name = decodeURIComponent(p.slice("/api/files/".length));
-      const real = route.request().postDataBuffer()?.length ?? 0;
+      const real = bodyBytes(route.request());
       // Either arm may answer null, and it means the same thing in both:
       // no opinion, report the length that actually arrived.
       const said = (typeof c.putBytes === "function"
@@ -160,6 +191,45 @@ export async function fakeCastle(page: Page, files: SdFile[] = [],
     return route.fulfill({ json: { queued: true } });
   });
   return c;
+}
+
+/** A castle answer the TEST lets go of. */
+export interface Held {
+  /** Resolves when the first matching request has reached the castle. */
+  arrived: Promise<void>;
+  /** Let every held request (and any later one) through. */
+  release(): void;
+}
+
+/**
+ * Hold the castle's answer to every request matching `url` until the test
+ * calls `release()`. Released, a request falls through to the route
+ * registered before this one — fakeCastle, or a spec's own stub — which
+ * records and answers it as usual.
+ *
+ * This is how a spec says "the desk did not wait for the castle": the
+ * castle has not answered yet, and the desk has already moved. A stopwatch
+ * round a click cannot say that in a browser that paints at 5 fps — Linux
+ * WebKit in CI spends over a second on one Playwright click (actionability
+ * waits for animation frames) — so the castle's answer is held instead,
+ * and the order is asserted rather than the time.
+ *
+ * For actions, which wait 30 s for an answer (api.ts). Not for the status
+ * probe: it gives up after 2.5 s (device_probe.ts), so a hold that outlasts
+ * that turns a slow castle into a missing one.
+ */
+export async function holdCastle(page: Page,
+                                 url: Parameters<Page["route"]>[0]): Promise<Held> {
+  let release!: () => void;
+  const gate = new Promise<void>((r) => { release = r; });
+  let arrive!: () => void;
+  const arrived = new Promise<void>((r) => { arrive = r; });
+  await page.route(url, async (route) => {
+    arrive();
+    await gate;
+    await route.fallback();
+  });
+  return { arrived, release };
 }
 
 /** The track's exact on-disk size from the real studio, so a card copy can

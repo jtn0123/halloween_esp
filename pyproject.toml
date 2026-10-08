@@ -4,11 +4,13 @@
 
 # Not a distributable package — [project] exists to state the interpreter
 # floor (grade report 2026-08-23 F5): the venv is 3.13, CI is 3.13, and the Makefile's
-# bare-python3 fallback checks this before running anything.
+# bare-python3 fallback checks this before running anything. `license` is the
+# repository's LICENSE (docs/LICENSING.md, decision 1).
 [project]
 name = "halloween-castle"
 version = "0"
 requires-python = ">=3.13"
+license = "MIT"
 
 [tool.ruff]
 target-version = "py313"
@@ -31,7 +33,14 @@ select = [
     "ISC",             # implicit string concatenation traps
     "FURB",            # modernisation with behaviour-preserving fixes
     "EXE",             # shebang/executable-bit agreement
+    "PLW1514",         # open()/read_text() with no encoding= (Windows: cp1252)
 ]
+# PLW1514 is still a preview rule. explicit-preview-rules keeps preview to
+# the rules named above by their full code, so no other preview rule rides
+# in on "PLW". Ruff only flags calls whose receiver it can SEE is a Path, so
+# tests/test_text_encoding.py walks the same files for the rest.
+preview = true
+explicit-preview-rules = true
 
 [tool.ruff.lint.per-file-ignores]
 # Every test bootstraps sys.path before importing tools/ — the imports HAVE
@@ -70,11 +79,11 @@ module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_sc
     "gen_esphome_audio",
     "import_track", "import_convert", "import_fetch", "import_scene",
     "castle_emu_wire", "castle_emu", "castle_emu_http", "gen_esphome", "gen_previewer",
-    "gen_wiring_diagram", "wiring_svg", "fuzz_http",
+    "gen_wiring_diagram", "wiring_svg", "fuzz_http", "fuzz_card",
     # …and their tests, same ratchet, same rule:
     "test_hosts", "test_loc_scope", "test_stems", "test_safety_floor", "test_netguard",
     "test_import_cli", "test_media_failures", "test_analysis", "test_rig_layout",
-    "test_lean_page",
+    "test_lean_page", "test_fuzz_card",
     "helpers", "test_scene_schema", "test_gen_chunks", "test_castle_emu",
     "test_emu_modes", "test_gen_previewer", "test_protocol_fuzz", "test_rig_config",
     "test_firmware_contract", "test_gen_esphome", "test_gen_esphome_main", "test_import",
@@ -92,7 +101,11 @@ module = ["netguard", "check_loc", "build_paths", "manifest", "hosts", "scene_sc
     "golden_case", "golden_corpus", "test_studio_golden", "gen_golden",
     "test_scene_render_rust", "core_bins", "test_analyze_track_rust",
     "cargo_gate", "lock_deps", "test_lock_deps",
-    "check_citations", "test_check_citations"]
+    "check_citations", "test_check_citations",
+    "run_checks", "test_run_checks", "release_assets", "test_release_assets",
+    "track_scene", "test_track_scene", "install_smoke", "install_smoke_env",
+    "install_smoke_buyer", "install_smoke_radio", "install_smoke_session",
+    "test_install_smoke", "test_install_smoke_radio", "test_installer_dry_run"]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_decorators = true

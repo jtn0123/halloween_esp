@@ -6,10 +6,10 @@ button on the device. That matters here more than on a normal ESPHome board:
 this one has no serial console, so every diagnostic it can offer has to be
 triggered and read over the API.
 
-    tools/device.py 10.27.27.7 list
-    tools/device.py 10.27.27.7 press "Dump boot log"
-    tools/device.py 10.27.27.7 set "SD file" spooky.mp3
-    tools/device.py 10.27.27.7 watch 30
+    tools/device.py 192.168.1.20 list
+    tools/device.py 192.168.1.20 press "Dump boot log"
+    tools/device.py 192.168.1.20 set "SD file" spooky.mp3
+    tools/device.py 192.168.1.20 watch 30
 
 `watch` prints log lines for N seconds, and every command implies a short watch
 so the effect of a press comes back on the same invocation — the whole point is

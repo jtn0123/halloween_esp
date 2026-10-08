@@ -17,7 +17,7 @@ import type { BandEditor } from "./band_editor.js";
 import { clearTrim, fillOptsFrom, forImport, initImportOpts } from "./import_opts.js";
 import { cardRowsHtml, mountCard, renderSyncButton, sendAction } from "./track_card.js";
 import { cardState } from "./track_send.js";
-import { trackRowHtml } from "./track_rows.js";
+import { firstRunHtml, trackRowHtml } from "./track_rows.js";
 import { analyseLocally, wireDrop } from "./track_drop.js";
 import { wireUrlImport } from "./track_import_url.js";
 import { deleteTrack, makeScene, reimportTrack } from "./track_ops.js";
@@ -193,13 +193,14 @@ export function initTracks(deps: TracksDeps): TracksApi {
     const playingId = preview.playing();
     // Row markup lives in track_rows.ts; card-only rows and the Sync button
     // follow the same redraw so the merged view never goes stale.
-    T.list.innerHTML = T.tracks.map(t => trackRowHtml(t, {
+    const rows = T.tracks.map(t => trackRowHtml(t, {
       selected: T.selected === t.id,
       inShow: T.sceneIds.has(t.id),
       sounding: playingId === t.id,
       onCastle: cardState(t, T.onCard),
       busy: T.busy.get(t.id) ?? null,
     })).join("") + (T.loaded ? cardRowsHtml(cardCtx()) : "");
+    T.list.innerHTML = rows || (T.loaded && T.mode === "studio" ? firstRunHtml() : "");
     renderSyncButton(byId<HTMLButtonElement>("trkSync"), cardCtx());
     const n = T.tracks.length;
     if (!T.loaded) T.count.textContent = "loading library…";

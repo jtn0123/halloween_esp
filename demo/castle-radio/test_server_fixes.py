@@ -92,8 +92,14 @@ class DeviceEventsRouteTests(unittest.TestCase):
         only two of them agreed."""
         served = set(server.Handler.GET_ROUTES) | set(server.Handler.POST_ROUTES)
         prefixes = (server.DEVICE_AUDIO_PREFIX, "/radio/device/sync")
-        for name in ("device-link.js", "remote-library.js", "castle-direct.js"):
-            for path in DEVICE_PATH.findall((HERE / name).read_text()):
+        for name in (
+            "device-link.js",
+            "remote-library.js",
+            "castle-direct.js",
+            "castle-key.js",
+            "castle-find.js",
+        ):
+            for path in DEVICE_PATH.findall((HERE / name).read_text(encoding="utf-8")):
                 self.assertTrue(
                     path in served or path.startswith(prefixes),
                     f"{name} calls {path}, which server.py does not route",
@@ -109,17 +115,63 @@ class DesktopRoutesTests(unittest.TestCase):
             "checks": [{"name": "model", "ok": False}],
         }
         caller = _Caller()
-        with patch("desktop_tools.status", return_value=payload):
+        with (
+            patch("desktop_tools.status", return_value=payload),
+            patch.dict("os.environ", {"CASTLE_APP_VERSION": "v1.4.0"}),
+        ):
             server.Handler.GET_ROUTES["/radio/tools"](caller, None)
         self.assertEqual(
             caller.sent,
-            (200, {**payload, "castle_origin": "http://" + server.device_bridge.HOST}),
+            (
+                200,
+                {
+                    **payload,
+                    "castle_origin": "http://" + server.device_bridge.HOST,
+                    # The release the app was built from (docs/SUPPORT.md).
+                    "app_version": "Castle Tools v1.4.0",
+                },
+            ),
         )
 
     def test_every_page_script_is_served_by_the_desktop(self):
-        page = (HERE / "index.html").read_text()
+        page = (HERE / "index.html").read_text(encoding="utf-8")
         for name in re.findall(r'<script src="([^"]+)"', page):
             self.assertIn("/" + name, server.STATIC_ROUTES)
+
+
+class ListenTests(unittest.TestCase):
+    """The bind in-process; tests/test_loopback_rs.py probes it from the LAN."""
+
+    def test_the_loopback_on_the_port_it_was_given(self):
+        with server.listen(0) as httpd:
+            host, port = httpd.server_address[:2]
+        self.assertEqual(host, "127.0.0.1")
+        self.assertNotEqual(port, 0)
+
+    def test_the_banner_names_the_port_actually_bound(self):
+        # Asked for, then bound on 0 regardless: 8871 may be the user's own.
+        asked, made, listen = [], [], server.listen
+
+        def keep(port):
+            asked.append(port)
+            made.append(listen(0))
+            return made[-1]
+
+        out = io.StringIO()
+        with (
+            patch.object(server, "listen", side_effect=keep),
+            patch.object(server.ThreadingHTTPServer, "serve_forever") as serve,
+            patch("sys.stdout", out),
+        ):
+            server.main(["0"])
+            server.main([])
+        self.assertEqual(asked, [0, 8871])
+        self.assertEqual(serve.call_count, 2)
+        for httpd in made:
+            port = httpd.server_address[1]
+            self.assertIn(f"Castle Radio: http://127.0.0.1:{port} ", out.getvalue())
+            with self.assertRaises(OSError, msg="main() closes what it served"):
+                httpd.socket.getsockname()
 
 
 class ImportRouteTableTests(unittest.TestCase):
@@ -302,7 +354,9 @@ class SimplePostTests(unittest.TestCase):
     def test_rename_changes_the_catalog_title_and_nothing_else(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "catalog.json"
-            path.write_text('[{"key": "radio_a", "title": "old", "cues": [1]}]')
+            path.write_text(
+                '[{"key": "radio_a", "title": "old", "cues": [1]}]', encoding="utf-8"
+            )
             with patch("radio_jobs.CATALOG", path):
                 ask = b'{"key": "radio_a", "title": "  Monster   Mash "}'
                 self.assertEqual(
@@ -318,7 +372,7 @@ class SimplePostTests(unittest.TestCase):
                     400,
                 )
             self.assertEqual(
-                __import__("json").loads(path.read_text()),
+                __import__("json").loads(path.read_text(encoding="utf-8")),
                 [{"key": "radio_a", "title": "Monster Mash", "cues": [1]}],
             )
 
@@ -336,6 +390,39 @@ class SimplePostTests(unittest.TestCase):
             "import_routes.DATA", Path(self.enterContext(tempfile.TemporaryDirectory()))
         ):
             self.assertEqual(post("/radio/import", headers, b"ID3 audio")[0], 202)
+
+
+class JsonObjectTests(unittest.TestCase):
+    """Every JSON route reads an OBJECT (grade report 2026-09-24 E4), and the
+    link import reads it under json_body's cap rather than the upload's
+    100 MB (grade report 2026-09-24 B4)."""
+
+    def setUp(self):
+        self.pool = patch("radio_jobs.POOL").start()
+        patch.dict(radio_jobs.HANDLES, {}, clear=True).start()
+        patch.dict(server.JOBS, {}, clear=True).start()
+        self.addCleanup(patch.stopall)
+
+    def test_a_body_that_is_not_an_object_is_a_400_on_every_json_route(self):
+        """`[]` used to reach `payload.get` and raise AttributeError, which no
+        route catches: the client saw a dropped connection, not an answer."""
+        for route in server.Handler.POST_ROUTES:
+            for body in (b"[]", b'"url"', b"3", b"null"):
+                with self.subTest(route=route, body=body):
+                    status, answer = post(route, JSON, body)
+                    self.assertEqual(status, 400)
+                    self.assertIn("Invalid", answer["error"])
+        self.assertEqual(server.JOBS, {})
+        self.assertEqual(self.pool.submit.call_count, 0)
+
+    def test_the_link_import_is_capped_like_every_other_json_route(self):
+        small = b'{"url": "https://e.com/a", "title": "A"}'
+        large = b'{"url": "https://e.com/b", "title": "' + b"x" * 5000 + b'"}'
+        status, answer = post("/radio/import", JSON, large)
+        self.assertEqual((status, answer["error"]), (400, "Invalid import request"))
+        self.assertEqual(server.JOBS, {})
+        self.assertEqual(post("/radio/import", JSON, small)[0], 202)
+        self.assertEqual(self.pool.submit.call_count, 1)
 
 
 if __name__ == "__main__":

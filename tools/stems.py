@@ -35,7 +35,7 @@ channels (left / right / both). "both" is the mono downmix — exactly what the
 pipeline hears today — so the studio can put a channel's picture next to the
 pipeline's and show precisely what the downmix loses.
 
-    tools/stems.py <track-id> [--force] [--out DIR]
+    tools/stems.py <track-id> [--force] [--out DIR] [--fast-cpu]
 
 `--out DIR` writes to DIR/<id>/ instead of the library — a lab splitting
 into a scratch directory reads the track and never touches tracks/stems/.
@@ -56,7 +56,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana
+import exe_paths
+import import_reason as ir
 import numpy as np
+import portable_fs
 
 ROOT = Path(__file__).resolve().parent.parent
 # Same override the studio honours: a sandboxed test must not write stems
@@ -68,6 +71,16 @@ STEMS = TRACKS / "stems"
 #: re-import has invalidated it. Named because three paths point at it.
 ANALYSIS_JSON = "analysis.json"
 AUDIO_EXT = ("mp3", "wav", "flac", "opus")
+
+
+def _fail(said: str, *detail: str) -> SystemExit:
+    """The owner's sentence (tools/import_reason.py) as the exit message,
+    with the tool's own words printed above it, indented: the studio and
+    Castle Radio show the sentence and keep the rest for Details."""
+    for line in detail:
+        print("    " + line.rstrip(), file=sys.stderr, flush=True)
+    return SystemExit(said)
+
 
 #: What htdemucs separates, in the order it names them.
 SOURCES = ("drums", "bass", "other", "vocals")
@@ -118,7 +131,7 @@ def fresh(tid: str, root: Path | None = None) -> bool:
     if src is None or not meta_p.exists():
         return False
     try:
-        meta = json.loads(meta_p.read_text())
+        meta = json.loads(meta_p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
     st = src.stat()
@@ -141,7 +154,7 @@ def analysis(tid: str) -> dict:
     if not p.exists():
         return {"ok": False, "error": "not split yet"}
     try:
-        out: dict = json.loads(p.read_text())
+        out: dict = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         return {"ok": False, "error": f"stems analysis unreadable: {e}"}
     out["ok"] = True
@@ -198,7 +211,26 @@ def analyse_layers(files: dict[str, Path], sensitivity: float = 1.1) -> dict:
     return {"duration": round(dur, 3), "layers": layers}
 
 
-def _run_demucs(src: Path, out: Path, device: str) -> subprocess.CompletedProcess:
+#: Opt-in CPU shortcut (CASTLE_DEMUCS_FAST=1 or --fast-cpu): segment overlap
+#: 0.1 instead of demucs's 0.25, one worker per core. OFF by default because
+#: it was measured and the stems DO change: on a 30 s clip (Apple M-series,
+#: CPU, 2026-09-30) two default runs agreed at 24-25 dB SDR per stem — the
+#: random-shift noise floor — while the fast run sat at 21-22 dB for vocals
+#: and drums, 8.8 dB for `other` and 0.7 dB for bass, for roughly half the
+#: wall time (13 s against 27-40 s). The bass line is the "one" the beat grid
+#: leans on, so it stays a choice for a slow Windows CPU, not a default.
+FAST_ENV = "CASTLE_DEMUCS_FAST"
+FAST_OVERLAP = "0.1"
+
+
+def fast_cpu() -> bool:
+    """Whether the environment opted into the fast CPU split."""
+    return os.environ.get(FAST_ENV, "") == "1"
+
+
+def demucs_argv(src: Path, out: Path, device: str, fast: bool = False) -> list[str]:
+    """The demucs command line. `fast` only ever changes a CPU run: the GPU
+    is fast already, and its result should not move with a CPU knob."""
     # All four sources as float wavs with no clip guard: `backing` is summed
     # from three of them afterwards, and demucs's per-file `rescale` would
     # otherwise shrink a loud drum stem on its own before the sum saw it.
@@ -219,6 +251,15 @@ def _run_demucs(src: Path, out: Path, device: str) -> subprocess.CompletedProces
         str(out),
         str(src),
     ]
+    if fast and device == "cpu":
+        argv[-1:-1] = ["--overlap", FAST_OVERLAP, "-j", str(os.cpu_count() or 1)]
+    return argv
+
+
+def _run_demucs(
+    src: Path, out: Path, device: str, fast: bool = False
+) -> subprocess.CompletedProcess:
+    argv = demucs_argv(src, out, device, fast)
     if os.environ.get("CASTLE_PROGRESS_STREAM") == "1":
         from progress_process import run_progress
 
@@ -227,6 +268,8 @@ def _run_demucs(src: Path, out: Path, device: str) -> subprocess.CompletedProces
         argv,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=SEPARATE_TIMEOUT,
     )
@@ -256,7 +299,7 @@ def mix_stems(separated: Path, dest: Path) -> dict[str, Path]:
     for name in SOURCES:
         found = next(separated.rglob(f"{name}.wav"), None)
         if found is None:
-            raise SystemExit(f"demucs produced no {name} stem")
+            raise _fail(ir.GENERIC, f"demucs produced no {name} stem")
         rate, data = wavfile.read(found)
         raw[name] = np.asarray(data, dtype=np.float32)
     raw["backing"] = raw["drums"] + raw["bass"] + raw["other"]
@@ -272,9 +315,9 @@ def _encode(wav: Path, mp3: Path) -> None:
     """Stereo 160 kbps — a validation listen, not a flash-budget citizen."""
     r = subprocess.run(
         [
-            "ffmpeg",
+            exe_paths.ffmpeg(),
             "-v",
-            "quiet",
+            "error",
             "-y",
             "-i",
             str(wav),
@@ -286,16 +329,24 @@ def _encode(wav: Path, mp3: Path) -> None:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         timeout=300,
     )
     if r.returncode != 0:
-        raise SystemExit(f"ffmpeg could not encode {mp3.name}")
+        said = ir.recognised(r.stderr or "") or ir.TOOL_FAILED.format(prog="ffmpeg")
+        tail = (r.stderr or "").strip().splitlines()[-4:]
+        raise _fail(said, f"ffmpeg could not encode {mp3.name}", *tail)
 
 
-def separate(tid: str, force: bool = False, out: Path | None = None) -> int:
+def separate(
+    tid: str, force: bool = False, out: Path | None = None, fast: bool | None = None
+) -> int:
     """Split `tid` into DIR/<id>/, DIR being the library's stems directory
-    unless `out` names another — the track itself is only ever read."""
+    unless `out` names another — the track itself is only ever read. `fast`
+    (default: CASTLE_DEMUCS_FAST) takes the CPU shortcut FAST_ENV describes."""
+    fast = fast_cpu() if fast is None else fast
     src = track_file(tid)
     if src is None:
         raise SystemExit(f"no such track: {tid}")
@@ -304,10 +355,10 @@ def separate(tid: str, force: bool = False, out: Path | None = None) -> int:
         print(f"stems for {tid} are current — --force to redo")
         return 0
     if importlib.util.find_spec("demucs") is None:
-        raise SystemExit(
-            "demucs is not installed — "
-            ".venv/bin/pip install demucs (then re-pin: "
-            ".venv/bin/pip install click==8.3.3)"
+        raise _fail(
+            ir.DEMUCS_MISSING,
+            "demucs is not installed: python -m pip install demucs (then re-pin: "
+            "python -m pip install click==8.3.3), with this repo's python",
         )
 
     dest = root / Path(tid).name
@@ -318,19 +369,21 @@ def separate(tid: str, force: bool = False, out: Path | None = None) -> int:
         # must degrade to slow, not to broken.
         device = "mps" if platform.system() == "Darwin" else "cpu"
         try:
-            r = _run_demucs(src, tmp / "sep", device)
+            r = _run_demucs(src, tmp / "sep", device, fast)
             if r.returncode != 0 and device != "cpu":
                 print("  GPU path failed — retrying on CPU", flush=True)
-                r = _run_demucs(src, tmp / "sep", "cpu")
+                r = _run_demucs(src, tmp / "sep", "cpu", fast)
         except subprocess.TimeoutExpired:
-            raise SystemExit(
-                f"demucs stalled — gave up after {SEPARATE_TIMEOUT // 60} minutes"
+            raise _fail(
+                ir.STALLED,
+                f"demucs stalled: gave up after {SEPARATE_TIMEOUT // 60} minutes",
             ) from None
         if r.returncode != 0:
             tail = [
                 ln for ln in (r.stderr or r.stdout or "").splitlines() if ln.strip()
             ][-3:]
-            raise SystemExit("demucs failed:\n" + "\n".join(tail))
+            said = ir.recognised(r.stderr or r.stdout or "") or ir.GENERIC
+            raise _fail(said, "demucs failed:", *tail)
         wavs = mix_stems(tmp / "sep", tmp / "mix")
 
         print("encoding stems…", flush=True)
@@ -350,8 +403,8 @@ def separate(tid: str, force: bool = False, out: Path | None = None) -> int:
     data.update(id=tid, src_bytes=st.st_size, src_mtime=int(st.st_mtime))
     # Atomic, like every other write that another process may be reading.
     tmp_json = dest / f"{ANALYSIS_JSON}.tmp"
-    tmp_json.write_text(json.dumps(data))
-    os.replace(tmp_json, dest / ANALYSIS_JSON)
+    tmp_json.write_text(json.dumps(data), encoding="utf-8")
+    portable_fs.replace(tmp_json, dest / ANALYSIS_JSON)
     print(f"stems ready — {dest}/", flush=True)
     return 0
 
@@ -367,8 +420,15 @@ def main() -> int:
         type=Path,
         help="write DIR/<id>/ instead of the library's stems directory",
     )
+    ap.add_argument(
+        "--fast-cpu",
+        action="store_true",
+        default=None,
+        help=f"on CPU, overlap {FAST_OVERLAP} and one job per core: about twice "
+        f"as fast, measurably different stems (also {FAST_ENV}=1)",
+    )
     args = ap.parse_args()
-    return separate(args.id, force=args.force, out=args.out)
+    return separate(args.id, force=args.force, out=args.out, fast=args.fast_cpu)
 
 
 if __name__ == "__main__":

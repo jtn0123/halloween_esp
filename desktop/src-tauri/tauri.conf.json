@@ -1,0 +1,79 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Castle Tools",
+  "version": "0.1.0",
+  "identifier": "io.github.jtn0123.castletools",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Castle Tools",
+        "url": "index.html",
+        "width": 1200,
+        "height": 820,
+        "minWidth": 390,
+        "minHeight": 600,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Music",
+    "shortDescription": "Player, importer and castle link for the Halloween castle",
+    "copyright": "jtn0123",
+    "license": "MIT",
+    "createUpdaterArtifacts": false,
+    "resources": {
+      "../../licenses/THIRD-PARTY-NOTICES-desktop.txt": "THIRD-PARTY-NOTICES.txt"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerHooks": "./windows/hooks.nsh"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      }
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "castle-tools"
+        ]
+      }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDNCMUE1QkY0QUREOENBMTYKUldRV3l0aXQ5RnNhT3l3d056RGQ4dlhqamhwMmY4U3JHTm90WkN6aCtDRHZJbUtyKys0R2duMHcK",
+      "endpoints": [
+        "https://github.com/jtn0123/halloween_esp/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}

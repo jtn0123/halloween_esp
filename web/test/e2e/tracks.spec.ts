@@ -277,21 +277,63 @@ test("codec comparison encodes the clip and switches without losing position",
     await expect(picks.filter({ hasText: "MP3" })).toHaveClass(/on/);
     await expect.poll(() => playing(page, "/api/compare/")).toBe(1);
 
-    const at = () => page.evaluate(`
-      [...(window.__media || [])].filter(a => a.src.includes("/api/compare/"))
-        .map(a => a.currentTime).pop() ?? 0`) as Promise<number>;
-    await expect.poll(at).toBeGreaterThan(0.3);   // well into the clip before the switch
-    const before = await at();
+    // The listener is put 1.5 s in by a seek, not by waiting for the clock:
+    // macOS WebKit under Playwright now and then freezes EVERY media clock —
+    // a bare <audio> on a blank page too — and the desk cannot cause or cure
+    // that. What the desk does own is asked below: that the next encode is
+    // sent to the same moment, and that it loads into a playing element.
+    const cmp = <T>(expr: string) => page.evaluate(`(() => {
+      const a = [...(window.__media || [])].filter(a => a.src.includes("/api/compare/")).pop();
+      return ${expr}; })()`) as Promise<T>;
+    await expect.poll(() => cmp<number>("a.readyState")).toBeGreaterThanOrEqual(1);
+    await cmp(`(window.__seeks = [], window.__flacPlaying = false,
+      a.addEventListener("seeking", () => {
+        if (a.src.endsWith("/flac")) window.__seeks.push(a.currentTime); }),
+      a.addEventListener("playing", () => {
+        if (a.src.endsWith("/flac")) window.__flacPlaying = true; }),
+      a.currentTime = 1.5, 0)`);
+    const before = await cmp<number>("a.currentTime");
+    expect(before).toBeGreaterThanOrEqual(1.5);
 
     await picks.filter({ hasText: "FLAC" }).click();
     await expect(picks.filter({ hasText: "FLAC" })).toHaveClass(/on/);
     await expect(picks.filter({ hasText: "MP3" })).not.toHaveClass(/on/);
-    await expect.poll(at).toBeGreaterThan(before - 0.35);
+    // It decodes and starts: the element fired `playing` for the FLAC, the
+    // step play()'s promise resolves on. Safari never got there with a FLAC
+    // of 47-sample blocks — play() hung, the desk sat "on", silent
+    // (tools/import_convert.py). Not readyState: Linux WebKit's GStreamer
+    // player drops to HAVE_CURRENT_DATA at a seek — the desk's, sending the
+    // FLAC to the MP3's place — and can stay there loop after loop while the
+    // clock runs at 1×. The CI traces of 2026-10-06 re-fetch the FLAC's first
+    // frame every 4.0 s, and a lab with their own files read 2 for 10 s in
+    // 16 runs of 20, every one of them playing.
+    await expect.poll(() => cmp<boolean>(
+      `a.src.endsWith("/flac") && !a.error && !a.paused && window.__flacPlaying`)).toBe(true);
+    await expect(picks.filter({ hasText: "FLAC" })).toHaveClass(/on/);
+    // And it was sent to where the MP3 was, not back to the start.
+    expect(await page.evaluate("Math.max(-1, ...window.__seeks)"))
+      .toBeGreaterThanOrEqual(before - 0.05);
 
     // Pressing the one that is playing stops it.
     await picks.filter({ hasText: "FLAC" }).click();
     await expect(picks.filter({ hasText: "FLAC" })).not.toHaveClass(/on/);
     await expect.poll(() => sounding(page)).toBe(0);
+  });
+
+test("an encode the browser cannot decode is named, not silently dropped",
+  async ({ page }) => {
+    // Where `error` beat play()'s rejection (Chromium does), the desk put the
+    // button out and said nothing, so the encode looked untried.
+    await page.route(/\/api\/compare\/[^/]+\/flac$/, (r) => r.fulfill({
+      contentType: "audio/flac", body: Buffer.from("not audio ".repeat(400)) }));
+    await row(page, MP3).locator(".trk__nm").click();
+    await page.locator(".codecab__bar button").click();
+    const flac = page.locator(".codecab__pick").filter({ hasText: "FLAC" });
+    await expect(flac).toBeVisible({ timeout: 60_000 });
+    await flac.click();
+    await expect(page.locator(".codecab__note")).toHaveText("Could not play the flac encode.");
+    await expect(flac).not.toHaveClass(/on/);
+    expect(await sounding(page)).toBe(0);
   });
 
 test("a URL import shows live progress and lands in the list", async ({ page }) => {

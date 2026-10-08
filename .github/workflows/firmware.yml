@@ -1,0 +1,229 @@
+# The firmware compile: every image the repo ships, built for real.
+#
+# ci.yml validates every variant with `esphome config` on every PR, and that
+# catches most of what breaks. This job catches the rest — a config-valid
+# YAML that fails to LINK, an image that has outgrown its OTA slot, dram0
+# creeping up — at the price of the ~10 minute xtensa + ESP-IDF fetch. Split
+# out of ci.yml on 2026-10-02, when the buyer image joined it and ci.yml
+# reached the 500-line rule.
+#
+# It runs weekly; by hand (`gh workflow run firmware.yml`) so a firmware
+# change can be compiled the day it lands; and on a PR that touches
+# firmware/, this workflow, requirements.txt (the esphome pin) or the
+# firmware's notices table, because those are the PRs where "it validated"
+# is not the same as "it builds".
+
+name: firmware
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "firmware/**"
+      - ".github/workflows/firmware.yml"
+      - "requirements.txt"
+      - "tools/notices_firmware.py"
+
+# `bash -eo pipefail`: GitHub's default for a plain step is `bash -e` with NO
+# pipefail, so `esphome compile … | tee` reported tee's exit status — always
+# 0 — and the weekly compile could not fail (grade report 2026-09-06 D1).
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+# A hand dispatch gets its own group: GitHub keeps ONE pending run per group
+# and cancels the older, so a dispatched compile queued behind another run
+# was cancelled by the next one (run 34048857272, 2026-09-06). A PR's newer
+# push supersedes its older compile.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && 'dispatch' || github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # `esphome config` cannot see the failure modes that are closest: how full
+  # the OTA slot is and how full dram0 is. Flash is the tight resource on the
+  # 4 MB Feather in the yard (71.8% of 1,835,008 B at v5.64) and the scene
+  # ceiling is still argued in dram0 (~9 KB a song scene, grade report
+  # 2026-08-23 D5/G2). Actually compile and fail while both are still
+  # warnings — and say whether a newer esphome exists, because the pin is
+  # what holds eight stale advisories in place (F1).
+  compile:
+    runs-on: ubuntu-latest
+    # One chip and one ESP-IDF toolchain since the S2 was retired (2026-09-17),
+    # but three images and three build trees: the production S3 Feather build,
+    # the WROOM carrier build and the buyer build (v5.74). The toolchain is
+    # fetched once; each further image is a compile, not another fetch.
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: ./.github/actions/media-tools
+      # From the LOCK, wheels only: exact resolved versions (the same set
+      # every other gate tested against) and no sdist setup.py execution —
+      # the two things Sonar rightly flagged on the unpinned spelling.
+      # Three exceptions, named, and the list is complete: of the 113 pins,
+      # crcmod 1.7 (esphome → smpclient → smp), esptool 5.3.1 and paho-mqtt
+      # 1.6.1 are sdist-only on PyPI (asked of PyPI's JSON, every pin,
+      # 2026-09-06), so wheels-only refused the whole install and this job
+      # died here on every run it ever had — the 2026-08-31 schedule and
+      # the first two hand dispatches. pip's format control lets those
+      # three back to source while :all: holds for the other 110. The
+      # python job installs the same lock without the flag and passes.
+      - run: pip install --require-hashes --only-binary=":all:" --no-binary crcmod,esptool,paho-mqtt -r requirements.lock
+      # Same four lines as the esphome job, for the same reason: render_audio
+      # spawns castle-core's scene_render, so this job builds the crate too —
+      # it was just doing it on the runner image's rustup, off the pin, with
+      # no cache, cold, weekly, unwatched (grade report 2026-09-01 F3). The
+      # channel is a literal because the action reads a toolchain file at the
+      # repo root and ours lives in core/; rustup reads the real pin once
+      # cargo runs (make rust cds into core/), so a mismatch here shows up as
+      # this step installing a toolchain nothing then uses.
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
+        with:
+          toolchain: "1.88.0"
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: core
+      - name: build castle-core
+        run: make rust
+      - name: render + generate
+        run: |
+          python tools/render_audio.py
+          python tools/gen_esphome.py
+      # The show this job compiles must be the show in the repo. It was not:
+      # the runner has no tracks/, render_audio wrote audio/markers.json
+      # without the two songs' onsets, gen_esphome emitted no pulse cues
+      # for them, and the image measured here was 13.6 KB of dram0 and
+      # 71 KB of flash smaller than the porch's (2026-09-06, the maps of run
+      # 34049090300) — the 92% alarm was judging a smaller show. The tracked
+      # generated files and markers are what the Mac produced; a diff here
+      # means either the generators have drifted from what is committed or
+      # this machine lacks an input, and both are a red run, not a smaller
+      # number. scenes/shipped.yaml rides along: gen_esphome rewrites it
+      # from scenes.yaml, and it is the show a sold castle's card carries.
+      - name: the generated show is the committed show
+        run: git diff --exit-code --stat -- firmware/generated audio/markers.json scenes/shipped.yaml
+      - name: fake secrets
+        env:
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          printf 'wifi_ssid: "ci"\nwifi_password: "%s"\n' "$RUN" \
+            > firmware/secrets.yaml
+      # firmware/build_path.yaml points every build tree at the USB drive
+      # the developer's Mac has mounted; on the runner that is
+      # "Permission denied: /Volumes", which is where the third hand
+      # dispatch (run 34046501575, 2026-09-06) died — the first time the job
+      # had got as far as the compile. Point it under the checkout instead:
+      # ESPHome's own default layout, and where check_image.py looks second.
+      # (${name} is ESPHome's substitution, not the shell's — single quotes.)
+      - name: build under the checkout, not the USB drive
+        run: |
+          # shellcheck disable=SC2016  # ${name} is ESPHome's substitution, not the shell's
+          printf 'esphome:\n  build_path: %s/firmware/.esphome/build/${name}\n' \
+            "$GITHUB_WORKSPACE" > firmware/build_path.yaml
+          cat firmware/build_path.yaml
+      # THE production image: the ESP32-S3 Feather #5477 in carrier v3.3a,
+      # which is the castle in the yard (2026-09-17). It compiles first so a
+      # break here is the first thing in the log.
+      - name: compile the production build
+        run: esphome compile firmware/castle_feather_s3.yaml | tee /tmp/build.out
+      # The dram0 alarm moved here with the production build. The number it
+      # guards is the SCENE CEILING's argument, not a linker cliff any more:
+      # the S2 it was written for linked at 99.99% of 172,032 bytes, while this
+      # board measured 41.9% of 341,760 with the same ten scenes. It stays at
+      # 92% because nothing has re-derived it against the new segment, and an
+      # alarm that fires early is the right kind of wrong.
+      - name: dram0 ceiling
+        run: |
+          PCT=$(grep -Eo 'RAM: *\[[^]]*\] *[0-9.]+%' /tmp/build.out | grep -Eo '[0-9.]+%' | tr -d '%' || true)
+          [ -n "$PCT" ] || { echo "no RAM line in the compile output — the compile did not finish"; exit 1; }
+          echo "dram0 at ${PCT}%"
+          python3 -c "import sys; p=float('${PCT}'); sys.exit(0 if p < 92.0 else print(f'dram0 {p}% is over the 92% alarm (grade report 2026-08-23 G2); re-measure the scene ceiling before adding more') or 1)"
+      # The OTA-slot guard, run where an image exists (grade report
+      # 2026-09-06 D3): --require makes a missing image a failure here,
+      # because the compile just ran. THIS is the flash alarm, and on this
+      # board flash is the tight resource — check_image warns from 90% of the
+      # 1,835,008-byte slot and fails at 97%, which is the gate. 71.8% at
+      # v5.64, so the warning has real room to fire in before the failure.
+      - name: production OTA slot
+        run: python tools/check_image.py castle-feather-s3 --require
+      # The carrier build has no board and no operator to notice it rotting:
+      # `esphome config` is the only gate it passes through on a PR, and a
+      # config-valid YAML can still fail to LINK (its own frameworks, the
+      # includes, the I2C component). Compiled here while a break is still a
+      # warning rather than a flash day. No dram0 alarm on this one: a
+      # threshold invented before the board exists would be a number nobody
+      # measured. Report the figures instead.
+      - name: compile the WROOM carrier build
+        run: esphome compile firmware/castle_s3.yaml | tee /tmp/build_s3.out
+      - name: carrier RAM and flash
+        run: |
+          grep -E '^(RAM|Flash):' /tmp/build_s3.out \
+            || { echo "no RAM/Flash summary in the carrier compile output — the compile did not finish"; exit 1; }
+      - name: carrier OTA slot
+        run: python tools/check_image.py castle-s3 --require
+      # The image a stranger flashes from a Release (castle_buyer.yaml, v5.74).
+      # release.yml builds it too, but that is the day of the tag: a buyer
+      # build that stopped linking should be red here first, on the PR that
+      # broke it. Same size gate, and the same proof release.yml gives that
+      # the run's fake Wi-Fi password did not end up in it.
+      - name: compile the buyer build
+        run: esphome compile firmware/castle_buyer.yaml | tee /tmp/build_buyer.out
+      - name: buyer OTA slot
+        run: python tools/check_image.py castle --require
+      # The notices a release stages beside this image must name everything
+      # it links (tools/notices_firmware.py): a new archive, ESP-IDF,
+      # toolchain or managed component is red here, on the PR, rather than
+      # on the day of the tag, where release.yml runs the same check.
+      - name: buyer third-party notices cover the link
+        run: python tools/third_party_notices.py check-firmware firmware/.esphome/build/castle
+      - name: no CI credential in the buyer image
+        env:
+          RUN: ${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          IMG=$(python tools/check_image.py castle --path)
+          if grep -q -F -e "$RUN" "$IMG"; then
+            echo "the buyer image carries this run's fake Wi-Fi password — castle_buyer.yaml must not reference !secret wifi_*"
+            exit 1
+          fi
+      # The images, the linker maps and the exact configuration, kept for
+      # two weeks: a build from a clean machine to flash from, and the one
+      # way to explain a runner/Mac discrepancy. The S2's was 8 points of
+      # dram0 and 76 KB of flash SMALLER on the runner with the same ESP-IDF
+      # 5.5.5, toolchain and sdkconfig (measured 2026-09-06 — a clean rebuild
+      # on the Mac reproduced the Mac's numbers, so it was not a stale tree).
+      # `firmware.ota.bin` is the one to flash: it is what /api/ota takes and
+      # what tools/check_image.py --path names.
+      - name: keep the images and maps
+        uses: actions/upload-artifact@v7
+        with:
+          name: firmware-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            firmware/.esphome/build/castle-feather-s3/build/firmware.ota.bin
+            firmware/.esphome/build/castle-feather-s3/build/firmware.factory.bin
+            firmware/.esphome/build/castle-feather-s3/build/castle-feather-s3.map
+            firmware/.esphome/build/castle-feather-s3/sdkconfig*
+            firmware/.esphome/build/castle-feather-s3/partitions.csv
+            firmware/.esphome/build/castle-s3/build/firmware.ota.bin
+            firmware/.esphome/build/castle-s3/build/firmware.factory.bin
+            firmware/.esphome/build/castle-s3/build/castle-s3.map
+            firmware/.esphome/build/castle-s3/sdkconfig*
+            firmware/.esphome/build/castle-s3/partitions.csv
+            firmware/.esphome/build/castle/build/firmware.ota.bin
+            firmware/.esphome/build/castle/build/firmware.factory.bin
+            firmware/.esphome/build/castle/build/castle.map
+            firmware/.esphome/build/castle/sdkconfig*
+            firmware/.esphome/build/castle/partitions.csv
+      - name: newer esphome available?
+        run: |
+          pip index versions esphome 2>/dev/null | head -2 || true
+          echo "pin is $(grep -E '^esphome==' requirements.txt | cut -d= -f3) — bump it in requirements.txt, then re-run make lock and make audit"

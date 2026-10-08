@@ -159,3 +159,13 @@ export function trackRowHtml(t: TrackInfo, ctx: RowCtx): string {
     </div>
   </div>`;
 }
+
+/** The library's first run: a studio with nothing imported and a castle
+ *  card with nothing on it drew no rows at all, and an empty list is
+ *  `display: none` — the Library said "empty" beside a blank. This is the
+ *  one row that says what to do (docs/PRODUCTION-TODO.md §3). */
+export const firstRunHtml = (): string =>
+  `<div class="trk-first" id="trkFirst"><b>Add your first song</b> ` +
+  `<span>Paste a link above and press Import, or drop an audio file on the ` +
+  `Drop box. Each song gets its lights as it imports; Make scene on its row ` +
+  `puts it in the show.</span></div>`;

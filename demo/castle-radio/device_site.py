@@ -28,11 +28,12 @@ import json
 from pathlib import Path
 
 import device_bridge
+import radio_paths
 import remote_library
 import rich_show
 
 HERE = Path(__file__).resolve().parent
-DATA = HERE / ".radio-data"
+DATA = radio_paths.data_dir()
 INDEX = "index.html"
 APP = "app.js"
 IMPORTS = "imports.js"
@@ -52,6 +53,12 @@ SCRIPTS = (
     "remote-library.js",
     "device-tools.js",
     "desktop-tools.js",
+    "downloader.js",
+    "castle-key.js",
+    "castle-find.js",
+    "first-run.js",
+    "castle-help.js",
+    "castle-update.js",
 )
 STYLES = ("style.css", "device-tools.css")
 STYLE_TAGS = "".join(f'<link rel="stylesheet" href="{name}">' for name in STYLES)
@@ -60,14 +67,18 @@ FONT_IMPORT = (
     "@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700"
     "&family=Manrope:wght@400;500;600;700;800&display=swap');"
 )
+# A built-in's length: the computer reads its audio's metadata, which on the
+# castle would be a whole-file stream through its one HTTP task, so the
+# castle's page reads the scene's length from the card's manifest instead.
+# first-run.js calls it for each built-in it shows, and renders after.
 PROBE = (
-    "tracks.forEach(t=>{const probe=new Audio();probe.preload='metadata';"
+    "function probeDuration(t){const probe=new Audio();probe.preload='metadata';"
     "probe.src=`media/${t.file}`;probe.onloadedmetadata=()=>{if(!Number.isFinite(probe.duration)){return;}t.duration=probe.duration;"
-    "renderTracks();};});"
+    "renderTracks();};}"
 )
 DURATIONS = (
-    "tracks.forEach(t=>{const scene=window.castleDirect.scenes.find(s=>s.file===t.file);"
-    "if(scene){t.duration=scene.dur/1000;}});renderTracks();"
+    "function probeDuration(t){const scene=window.castleDirect.scenes.find(s=>s.file===t.file);"
+    "if(scene){t.duration=scene.dur/1000;}}"
 )
 # (file, computer text, castle text) — each must occur exactly once.
 REWRITES: tuple[tuple[str, str, str], ...] = (
@@ -86,33 +97,35 @@ REWRITES: tuple[tuple[str, str, str], ...] = (
     (
         PREVIEW,
         "'Waveform unavailable. Reopen this song to retry.'",
-        "'Connect Mac tools to view waveforms, then reopen this song.'",
+        "'Connect Castle Tools to view waveforms, then reopen this song.'",
     ),
-    (WORDS, "'Castle unreachable at 10.27.27.81'", "'Castle unreachable'"),
+    (WORDS, "'Castle unreachable from this computer'", "'Castle unreachable'"),
     (
         WORDS,
         "'Control room server is not running'",
         "'Castle not answering'",
     ),
     (
-        "device-tools.js",
-        "'Sending command to 10.27.27.81'",
-        "'Sending command to the castle'",
+        IMPORTS,
+        "'Import service ready · songs are prepared and kept on this computer'",
+        "(window.castleDesktop?.connected ? 'Castle Tools connected · imports are prepared on your computer' : 'Castle library ready · connect Castle Tools to import')",
     ),
     (
         IMPORTS,
-        "'Import service ready · files stay in this demo'",
-        "(window.castleDesktop?.connected ? 'Mac tools connected · imports are prepared on your Mac' : 'Castle library ready · connect Mac tools to import')",
-    ),
-    (
-        IMPORTS,
-        "'Import service unavailable. Start server.py to import songs.'",
+        "'Import service unavailable · trying again'",
         "'Castle library unavailable · retrying'",
     ),
     (
         INDEX,
         '<option value="computer">This computer</option>',
         '<option value="computer">This browser</option>',
+    ),
+    # The castle key (v5.74): this page keeps it in the browser, under the
+    # name the firmware's fallback page uses — not in the computer's store.
+    (
+        INDEX,
+        "This computer remembers it for this castle only.",
+        "This browser remembers it for this castle only.",
     ),
     # The firmware streams a whole file per request (no Range) through the
     # one task that also answers /api/status. A metadata preload of the
@@ -156,7 +169,7 @@ def catalog_rows(data: Path) -> list[dict]:
     if not path.exists():
         return []
     rows: list[dict] = []
-    for row in json.loads(path.read_text()):
+    for row in json.loads(path.read_text(encoding="utf-8")):
         audio = remote_library.playback_path(data / "tracks", row)
         if audio is None:
             continue
@@ -190,16 +203,16 @@ def catalog_rows(data: Path) -> list[dict]:
 
 def scene_rows(root: Path) -> list[dict]:
     """scenes.json without the YAML source the light studio shows."""
-    rows = json.loads((root / "scenes.json").read_text())
+    rows = json.loads((root / "scenes.json").read_text(encoding="utf-8"))
     return [{k: v for k, v in row.items() if k != "yaml"} for row in rows]
 
 
 def build(root: Path = HERE, data: Path = DATA) -> bytes:
-    page = rewritten(INDEX, (root / INDEX).read_text())
+    page = rewritten(INDEX, (root / INDEX).read_text(encoding="utf-8"))
     if page.count(STYLE_TAGS) != 1 or page.count(SCRIPT_TAGS) != 1:
         raise SystemExit(f"{INDEX} no longer links its styles and scripts as expected")
     styles = "".join(
-        f"<style>{rewritten(name, (root / name).read_text())}</style>"
+        f"<style>{rewritten(name, (root / name).read_text(encoding='utf-8'))}</style>"
         for name in STYLES
     )
     data_tags = (
@@ -207,7 +220,7 @@ def build(root: Path = HERE, data: Path = DATA) -> bytes:
         f'<script id="radio-library" type="application/json">{inline_json(catalog_rows(data))}</script>'
     )
     scripts = "".join(
-        f"<script>{inline_script(rewritten(name, (root / name).read_text()))}</script>"
+        f"<script>{inline_script(rewritten(name, (root / name).read_text(encoding='utf-8')))}</script>"
         for name in ("castle-direct.js", *SCRIPTS)
     )
     page = page.replace(STYLE_TAGS, styles).replace(SCRIPT_TAGS, data_tags + scripts)
@@ -222,7 +235,7 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     plain = build()
     out.write_bytes(plain)
-    packed = gzip.compress(plain, 9)
+    packed = gzip.compress(plain, 9, mtime=0)  # same page, same bytes
     out.with_suffix(".html.gz").write_bytes(packed)
     print(f"{out} ({len(plain) // 1024} KB, {len(packed) // 1024} KB gzipped)")
     return 0

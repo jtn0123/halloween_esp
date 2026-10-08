@@ -19,9 +19,12 @@ real build.
 from __future__ import annotations
 
 import functools
+import os
 import shutil
 import subprocess
 from pathlib import Path
+
+import exe_paths
 
 ROOT = Path(__file__).resolve().parent.parent
 CORE = ROOT / "core"
@@ -51,11 +54,31 @@ def _is_fresh(exe: Path) -> bool:
     return True
 
 
+#: Where a packaged install keeps its prebuilt castle-core binaries — the
+#: desktop app sets it to its sidecar folder. A named folder is the whole
+#: answer: no cargo, no freshness sweep (an app bundle has no core/src).
+BIN_DIR_ENV = "CASTLE_CORE_BIN_DIR"
+
+
+def _from_bin_dir(name: str, folder: str) -> Path:
+    exe = Path(folder) / exe_paths.exe(name)
+    if not exe.is_file():
+        raise SystemExit(
+            f"{BIN_DIR_ENV} names {folder}, which has no {exe.name} — "
+            "reinstall the desktop tools, or unset it to build from core/"
+        )
+    return exe
+
+
 @functools.cache
 def core_bin(name: str) -> Path:
     """core/target/release/<name>, rebuilt when it is stale and cargo is
-    here to do it — once per process (the cache), not once per call."""
-    exe = CORE / "target" / "release" / name
+    here to do it — once per process (the cache), not once per call. A
+    packaged install names its own folder with CASTLE_CORE_BIN_DIR."""
+    folder = os.environ.get(BIN_DIR_ENV)
+    if folder:
+        return _from_bin_dir(name, folder)
+    exe = CORE / "target" / "release" / exe_paths.exe(name)
     cargo = shutil.which("cargo")
     if cargo and not _is_fresh(exe):
         # From core/, not with --manifest-path: rustup finds the toolchain pin

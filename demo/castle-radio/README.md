@@ -5,24 +5,28 @@ separation, and a bounded bridge to the porch castle.
 
 ## Desktop setup and everyday startup
 
-On an Apple Silicon Mac, install [Homebrew](https://brew.sh) if it is not already available,
-then run this once from the project root:
+Install with the installer, once, from the project root — no Homebrew:
 
 ```sh
-./tools/install_castle_tools.sh
+sh installer/install.sh        # macOS (Apple Silicon)
+installer\install.cmd          # Windows
 ```
 
-The installer prepares a dedicated `.venv-desktop`, system audio tools, the
-Rust audio analyzer, and the Demucs model. Run it again explicitly to repair
-missing dependencies. It does not flash the castle or sync the music library.
+It brings a uv-managed Python 3.13, ffmpeg, castle-core's prebuilt audio
+analyzer, and the Demucs model ([installer/README.md](../../installer/README.md)).
+Run it again to repair: it resumes rather than starting over. It does not
+flash the castle or sync the music library. `/radio/tools` names the command
+for the platform it runs on (`tools/castle_tools_status.py`).
 
-For everyday use, click **Start Mac tools** on the castle website and allow the
-browser to open Castle Tools. Then choose **Connect Mac tools**. The existing
-script runs in the background without a Terminal window. Keep the small
-connection window open. Imports, separation, and previews stay on the website.
+On a Mac, everyday use can start from the website: click **Start Castle Tools** on
+the castle website and allow the browser to open Castle Tools. Then choose
+**Connect Castle Tools**. The existing script runs in the background without a
+Terminal window. Keep the small connection window open. Imports, separation,
+and previews stay on the website.
 
-Existing installations can enable this once by double-clicking **Enable Website
-Startup.command** in the project folder. The full installer also registers it.
+Enable this once by double-clicking **Enable Website Startup.command** in the
+project folder; it is macOS-only, and elsewhere says so and does nothing (the
+desktop app registers `castle-tools://` itself, desktop/README.md).
 Registration compiles a small native URL handler into `~/Applications/Castle
 Tools.app` using Apple's Command Line Tools. It accepts only the fixed
 `castle-tools://start` action; no URL-supplied shell command, path, or host is
@@ -42,7 +46,7 @@ its configured castle matches the page. Physical playback and lighting commands
 stay on the castle's own API. Sync uses the Mac's existing verified SD uploader.
 
 If the helper or popup closes, imports are disabled and the page offers
-**Connect Mac tools** again. Installed castle playback still works. A phone
+**Connect Castle Tools** again. Installed castle playback still works. A phone
 without a local helper retains device controls. This does not yet connect a
 phone to another computer's helper over the LAN.
 
@@ -80,9 +84,37 @@ copies. Sample audio is local and is not distributed with the repository.
   drives the respective towers. Without separation, low/mid/high bands drive
   door/left/right. Density tuning reuses tools/import_scene.py.
 - Background jobs, errors and retry; imports persist across page/server reloads.
+  A failed job reads as one sentence — what happened, then what to do
+  (`tools/import_reason.py`, `job_progress.failure`) — with the tools' own
+  words behind **Details** (`error_detail`), and a link that failed because
+  the downloader is old carries an **Update the downloader** button
+  (`action: "update-downloader"`). Cancel ends a job as Cancelled, never as a
+  failure. Songs are imported up to 15 minutes long (desktop/README.md,
+  "What an import can take", says why and what else is refused).
+- **Update the downloader** (`downloader_routes.py`, `downloader.js`): yt-dlp,
+  which fetches links, is a separate program in `downloader/` under the radio's
+  data dir. `GET /radio/downloader` says which copy an import would run;
+  `POST /radio/downloader/update` queues `tools/ytdlp_update.py` — yt-dlp's
+  latest GitHub release, checked against that release's `SHA2-256SUMS`, swapped
+  in only if it runs — on the same one-at-a-time worker as the imports, so it
+  waits for the import ahead of it and never lands in the middle of one. It
+  runs only when pressed. yt-dlp is public domain (the Unlicense) and is
+  downloaded by each computer from yt-dlp's own releases; this project never
+  ships it (THIRD-PARTY-NOTICES.txt).
 - Locally saved style/run preferences and blackout for all demo audio/lights.
-- Physical playback for synced imports, with generated cue frames streamed to
-  firmware 5.51 or newer while the castle reads audio from its SD card.
+- Physical playback for synced imports. Sync puts three files beside each
+  other in the card root — the audio, its `<name>.cue` and `<name>.show.json`
+  (the page's preview of it) — and firmware 5.63 or newer runs the `.cue`
+  itself when the song plays, with no page open. A song reads "On castle ·
+  audio + lights" only when the card holds its audio AND its `.cue` at the
+  sizes this computer prepared; audio without that `.cue` is "audio only".
+  The show goes first and the audio last, so a song never reaches the
+  castle's list ahead of its lights, and a sync the Wi-Fi cut short is
+  finished by syncing again: what already landed — the same size, and the
+  CRC the castle reported for it (`castle_sent.py`) — is skipped.
+  The Radio streams mailbox-rate frames only when the castle reports no card
+  show for the playing song — no `.cue` beside it, or firmware older than
+  5.63, whose `/api/status` has no `cues`.
 - One shared castle link (device-link.js): a single status poll a second feeds
   the header chip, the player, the bench and the motion settings; it slows to
   every 4 s in a background tab and the server answers all of them from one
@@ -114,6 +146,27 @@ copies. Sample audio is local and is not distributed with the repository.
   drained before STOP can evict it. The show holds a screen wake lock and
   re-aligns when a throttled tab comes back.
 - Motion arming and cooldown are sent to the castle and read back from it.
+  A castle with no motion sensor (`pir.fitted` false, firmware 5.75 — the
+  buyer build) has the switch and its two settings taken away and the card
+  says why; older firmware does not say, and keeps them (`castle-help.js`).
+- **Find my castle** (`castle_finder.py`, `castle-find.js`, Your castle): one
+  state for "not answering" and two ways on — a one-shot mDNS browse
+  (`tools/castle_find.py`) or an address typed in. The answer is asked first,
+  then remembered as the first castle of the per-user store
+  (`CASTLE_DEVICES`, `tools/castle_address.py`), which the bridge re-reads
+  (`castle_place.py`) and the light desk reads too. `CASTLE_RADIO_HOST` pins
+  a castle instead, and the card says so.
+- **First run** (`first_run.py`, `first-run.js`): demo rows whose audio this
+  computer does not have are hidden, and with nothing left to play the Listen
+  page leads with "Add your first song", one press from Import.
+- **Help with your castle** (`diagnostics.py`, `castle-help.js`, Your castle):
+  a link to the castle's own page (`/owner`, firmware 5.75), and **Copy
+  diagnostics** / **Save as a file** — `GET /radio/diagnostics`, the castle's
+  own problem report in its own format followed by this app's version, its
+  tools, the recent imports and syncs and the tail of the desktop app's log
+  (`CASTLE_APP_LOG`). Folder names are cut to file names and no castle key
+  survives in it; the text is shown before it is shared, and nothing is sent
+  anywhere.
 - Phone layout: sticky top bar, two-row header, 40 px controls, safe-area
   aware player bar; audited at 390 x 844 with no horizontal overflow.
 - The original LED-channel and speaker diagnostic bench under Your castle.
@@ -122,17 +175,22 @@ copies. Sample audio is local and is not distributed with the repository.
 ## On the castle itself
 
 `make publish` (or `tools/sd_sync.py site`) pushes this control room to the
-castle's SD card as ONE self-contained page, and http://10.27.27.81/ serves
-it: 68 KB gzipped, about 1.5 s to first paint over the porch Wi-Fi.
+castle's SD card as ONE self-contained page, and the castle serves it at
+`/`: 68 KB gzipped, about 1.5 s to first paint over the porch Wi-Fi.
 `device_site.py` builds it; `castle-direct.js`, inlined first, answers every
 `/radio/*` route from the firmware's own `/api` (status settling, the command
 builders, the SD inventory and the generated-light streamer are ports of
 `device_bridge.py` with its light-show runner
 `light_show.py`, and `remote_library.py`). Scene audio streams from
-`/sd/scenes/`; synced imports from the card root, with their lights reduced
-to mailbox-rate frames at build time and streamed by the phone's browser on
-the castle's own clock. Importing, separation, waveforms and syncing run on the computer.
-**Connect Mac tools** makes them available from this same device page through
+`/sd/scenes/`; synced imports from the card root, where the castle runs each
+one's `.cue` itself. The page carries the same songs' lights as mailbox-rate
+frames too, but streams them only for a song with no `.cue` beside it — an
+import synced before the cue files existed — and the castle's `cues` count is
+how it tells. To give such a song its card show, open it in the library and
+press **Sync audio + light show** again: the button stays live for anything
+short of "audio + lights", and a sync prepares a missing or stale show before
+it sends. Importing, separation, waveforms and syncing run on the computer.
+**Connect Castle Tools** makes them available from this same device page through
 the local companion window; without that connection the page remains a device
 player. The castle
 keeps the previous cue desk build as `site/index.old.html(.gz)`.
@@ -149,8 +207,8 @@ The server binds loopback, but loopback is not a wall a browser respects: any
 page open in the same browser can post to `127.0.0.1:8871`. So every
 state-changing route is shaped so a browser has to ask permission first, and
 this server answers no `OPTIONS` at all. JSON routes (`/radio/device/command`,
-`/radio/device/sync`, `/radio/retry`, `/radio/cancel`, `/radio/rename`,
-`/radio/reprocess`, link imports) require
+`/radio/device/sync`, `/radio/device/key`, `/radio/castle/update`, `/radio/retry`, `/radio/cancel`, `/radio/rename`,
+`/radio/reprocess`, `/radio/downloader/update`, link imports) require
 `Content-Type: application/json` — `; charset=…` is fine — and answer 415
 otherwise; `application/json` is not a content type a cross-origin form can
 send without a preflight. The raw upload (`/radio/import` with audio bytes) and
@@ -166,9 +224,23 @@ meant as any: it only means a foreign origin cannot reach these routes with a
 ## Isolation and limitations
 
 All imported audio, sources, analysis, generated recipes, and catalog data go in
-ignored `.radio-data/`. The device bridge is limited to the configured private
+ignored `.radio-data/` — or wherever `CASTLE_RADIO_DATA` points (`radio_paths.py`;
+the desktop app sets it to the per-user app-data dir). The device bridge is limited to the configured private
 castle address and explicit playback, lighting, test, sync, and cleanup actions.
-Set `CASTLE_RADIO_HOST` to point the bridge at another castle (default 10.27.27.81).
+Set `CASTLE_RADIO_HOST` to point the bridge at another castle; unset, it takes the
+first castle `tools/hosts.py` knows, and with none it says so (no address is built in).
+A castle locked with a key (firmware v5.74) refuses uploads, deletes and the
+motion switch without it; every refusal says "This castle has a key — enter it
+in Settings", and the **Castle key** card in Run settings uses, sets or clears
+it. The key is remembered per castle in the store `tools/hosts.py` and the
+studio read (`tools/castle_keys.py`, docs/notes/06-buyer-build.md); the page
+the castle serves keeps it in that browser instead.
+The **Castle firmware** card in Your castle shows the firmware the castle runs
+and the newest a GitHub Release has for its board, and **Update castle**
+flashes it — only when pressed (`castle_update_routes.py` →
+`tools/castle_update.py`; docs/RELEASING.md "What an installed app reads").
+`GET /radio/app/release` names the release the owner's channel offers, for the
+desktop app's updater (`tools/release_channel.py`).
 The local server only binds 127.0.0.1. Upload limit: 100 MB. Jobs run one at a time.
 Closing the page does not cancel preparation; quitting the server interrupts it.
 In-memory job history/retry disappears on server restart; completed songs persist.
@@ -180,7 +252,8 @@ Production scene edits are not implemented. Computer playback stops if the
 page closes; castle playback continues, and the queue only advances while this
 page is open. Pause and seek are not supported by the castle firmware. "While
 music is playing" remains a preview preference. Link support follows yt-dlp;
-login-protected or unsupported sources may fail with a visible error.
+login-protected or unsupported sources fail with a sentence that says which
+(a private video, a sign-in wall, a site the downloader does not know).
 
 ## Shared audio, castle preview, waveforms, and removal
 

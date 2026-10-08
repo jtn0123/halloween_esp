@@ -2,9 +2,10 @@
 
 Order: explicit argument (an IP, or a name from devices.toml) — CASTLE_HOST —
 first entry in devices.toml. `candidates()` is the ordered list (fallbacks
-included) that castle_link walks; `resolve()` is its first entry. Written because "10.27.27.7" was hardcoded in
-three tools and one muscle memory, which is exactly one router-reshuffle away
-from being wrong everywhere at once.
+included) that castle_link walks; `resolve()` is its first entry. Written
+because the porch castle's address was hardcoded in three tools and one
+muscle memory, which is exactly one router-reshuffle away from being wrong
+everywhere at once.
 """
 
 from __future__ import annotations
@@ -13,10 +14,13 @@ import os
 import re
 import sys
 import tomllib
+import urllib.parse
 from pathlib import Path
 from typing import TypedDict
 
 DEVICES = Path(__file__).resolve().parent.parent / "devices.toml"
+#: sd_web_prefs.h kKeyMax — the longest key the firmware will hold.
+KEY_MAX = 64
 
 # A bare IP, or IP:port — the emulator chain publishes to 127.0.0.1:<port>,
 # and refusing it here once broke the studio's auto-publish (B5 follow-up).
@@ -28,26 +32,42 @@ class _Device(TypedDict):
 
     host: str
     fallbacks: list[str]
+    #: The castle key (firmware v5.74, sd_web_prefs.h) — "" for a castle
+    #: that has none, which is every castle until its owner sets one.
+    key: str
 
 
 def _table() -> dict[str, str]:
     return {name: cfg["host"] for name, cfg in _entries().items()}
 
 
-def _entries() -> dict[str, _Device]:
-    """devices.toml's device tables: name -> {host, fallbacks}. Missing or
-    malformed file means no devices, not a traceback — the studio runs
-    castle-less by design."""
+def devices_path() -> Path:
+    """The inventory — and the castle-key store: CASTLE_DEVICES when it is
+    set and not empty, else the repo's devices.toml. A packaged install
+    points CASTLE_DEVICES at a per-user file (docs/notes/06-buyer-build.md
+    "The castle key's one store"); core/src/studio_relay.rs and the
+    `castle` bin read the same variable by the same rule."""
+    env = os.environ.get("CASTLE_DEVICES", "")
+    return Path(env) if env else DEVICES
+
+
+def _entries(path: Path | None = None) -> dict[str, _Device]:
+    """devices.toml's device tables: name -> {host, fallbacks, key}. Missing
+    or malformed file means no devices, not a traceback — the studio runs
+    castle-less by design. A key is a TOML string or nothing: castle-core's
+    reader (core/src/hosts.rs) reads strings only, and the two must agree."""
     try:
-        doc = tomllib.loads(DEVICES.read_text())
+        doc = tomllib.loads((path or devices_path()).read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError):
         return {}
     out: dict[str, _Device] = {}
     for name, cfg in doc.items():
         if isinstance(cfg, dict) and cfg.get("host"):
+            key = cfg.get("key")
             out[name] = {
                 "host": str(cfg["host"]),
                 "fallbacks": [str(h) for h in cfg.get("fallbacks") or []],
+                "key": key if isinstance(key, str) else "",
             }
     return out
 
@@ -84,6 +104,14 @@ def _from_table() -> list[str]:
     return [h for e in _entries().values() for h in (e["host"], *e["fallbacks"])]
 
 
+def first_castle(path: Path | None = None) -> list[str]:
+    """The store's FIRST castle — its host, then its fallbacks — or [] for
+    an empty store. "Find my castle" (tools/castle_address.py `adopt`) puts
+    the castle it found first, so this is the castle an owner's app means."""
+    e = next(iter(_entries(path).values()), None)
+    return [e["host"], *e["fallbacks"]] if e else []
+
+
 def resolve(arg: str | None = None) -> str:
     """An IP to talk to, or a SystemExit that says how to provide one.
 
@@ -105,10 +133,74 @@ def resolve(arg: str | None = None) -> str:
     )
 
 
+def valid_key(key: str) -> bool:
+    """A key the firmware could hold (sd_web_prefs.h key_chars_ok): 1-64
+    printable ASCII characters, no space. Anything else is never sent — a
+    castle could not have it, and a newline in a header is an injection."""
+    return 0 < len(key) <= KEY_MAX and all("!" <= c <= "~" for c in key)
+
+
+def castle_key(host: str | None = None) -> str:
+    """The castle key to send, or "" to send none.
+
+    CASTLE_KEY wins when it is set (set-but-empty is "no key", the same
+    convention CASTLE_HOST has); else the `key` of the FIRST devices.toml
+    entry whose host or fallbacks name `host`; else the first entry's when
+    no host is given. A key the firmware could not hold (`valid_key`) is
+    no key. A castle with no key ignores the header, so sending one to the
+    wrong castle costs nothing but a 401 from a castle that has a different
+    one — which is the answer that should come back.
+
+    castle-core's `hosts::castle_key` is the same rule for the studio's
+    relay and the `castle` bin; tests/test_castle_key_rust.py holds the
+    header each one SENDS to this function's answer (docs/PARITY.md).
+    """
+    env = os.environ.get("CASTLE_KEY")
+    if env is not None:
+        key = env.strip()
+        return key if valid_key(key) else ""
+    return stored_key(host)
+
+
+def stored_key(host: str | None = None, path: Path | None = None) -> str:
+    """castle_key's file half — what devices.toml (or `path`) holds for
+    `host`, CASTLE_KEY not consulted. tools/castle_keys.py reads its own
+    writes back through this before it replaces the file."""
+    key = next(
+        (
+            e["key"]
+            for e in _entries(path).values()
+            if host is None or host in (e["host"], *e["fallbacks"])
+        ),
+        "",
+    )
+    return key if valid_key(key) else ""
+
+
+#: The board's web server has no TLS (castle_url).
+CASTLE_SCHEME = "http"
+
+
+def castle_url(host: str, path: str) -> str:
+    """A URL on the castle. Plain HTTP by necessity, not by choice: ESPHome's
+    web server on the board has no TLS, and the castle lives on the owner's
+    home LAN — the accepted position in CLAUDE.md "Security position". The
+    scheme is spelled once, here, for every Python client (sd_sync,
+    castle_keys, Castle Radio's bridge), so a castle that ever speaks HTTPS
+    is one line."""
+    return urllib.parse.urlunsplit((CASTLE_SCHEME, host, path, "", ""))
+
+
+def key_headers(host: str | None = None) -> dict[str, str]:
+    """{"X-Castle-Key": key} for a castle with a key configured, else {}."""
+    k = castle_key(host)
+    return {"X-Castle-Key": k} if k else {}
+
+
 def maybe_host(argv: list[str]) -> tuple[str, list[str]]:
     """Pop a leading host/name from argv if present, else resolve a default.
 
-    Lets `sd_sync.py status` work as well as `sd_sync.py 10.27.27.7 status`.
+    Lets `sd_sync.py status` work as well as `sd_sync.py 192.168.1.20 status`.
     """
     known_cmds = {
         "status",

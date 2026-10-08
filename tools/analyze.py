@@ -31,6 +31,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import exe_paths
 import numpy as np
 from synth_master import _fft
 
@@ -55,7 +56,7 @@ def _decode(path: Path, channels: int, sr: int) -> bytes:
     try:
         return subprocess.run(
             [
-                "ffmpeg",
+                exe_paths.ffmpeg(),
                 "-v",
                 "quiet",
                 "-i",

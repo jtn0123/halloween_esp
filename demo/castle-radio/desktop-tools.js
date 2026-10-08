@@ -18,21 +18,47 @@
     summary.textContent = message;
   }
 
+  // What /radio/tools answered, on the card: each check and how to fix them.
+  function paintChecks(result) {
+    checks.replaceChildren();
+    for (const check of result.checks) {
+      const row = document.createElement('li');
+      row.textContent = `${check.ok ? '✓' : 'Needs attention:'} ${check.name} — ${check.detail}`;
+      checks.append(row);
+    }
+    if (result.install_command) { byId('tools-install').textContent = result.install_command; }
+    // Website startup is a macOS URL handler: null is the computer saying it
+    // has none (castle_tools_status.website_startup), so it is not offered.
+    byId('tools-mac').hidden = result.website_startup === null;
+    // Inside the desktop app there is no installer folder to run a command
+    // in: the app repairs itself from its tray, and says how
+    // (castle_tools_status.repair_words) — those words replace the command.
+    const repair = typeof result.repair === 'string' ? result.repair : '';
+    byId('tools-repair').textContent = repair;
+    byId('tools-repair').hidden = !repair;
+    byId('tools-installer').hidden = !!repair;
+    // The release this copy came from — what support asks first
+    // (docs/SUPPORT.md "Which release is it").
+    const version = byId('tools-version');
+    version.textContent = typeof result.app_version === 'string' ? result.app_version : '';
+    version.hidden = !version.textContent;
+  }
+
   async function refresh() {
     if (busy) { return; }
     const connect = byId('tools-connect');
     connect.hidden = !window.castleDirect;
     start.hidden = !window.castleDirect || !!window.castleDesktop?.connected;
     if (window.castleDirect && !window.castleDesktop?.connected) {
-      show('Connect your Mac',
-        'Click Start Mac tools, allow Castle Tools to open, then click Connect Mac tools. You can import and split songs here while the castle handles playback.', false);
+      show('Connect your computer',
+        'Click Start Castle Tools, allow it to open, then click Connect Castle Tools. You can import and split songs here while the castle handles playback.', false);
       open.hidden = true;
       retry.hidden = true;
-      connect.textContent = 'Connect Mac tools';
+      connect.textContent = 'Connect Castle Tools';
       return;
     }
     retry.hidden = false;
-    if (window.castleDirect) { connect.textContent = 'Reconnect Mac tools'; }
+    if (window.castleDirect) { connect.textContent = 'Reconnect Castle Tools'; }
     busy = true;
     retry.disabled = true;
     try {
@@ -42,13 +68,7 @@
       if (result.service !== 'castle-radio' || result.protocol !== 1 || !Array.isArray(result.checks)) {
         throw new Error('Different service');
       }
-      checks.replaceChildren();
-      for (const check of result.checks) {
-        const row = document.createElement('li');
-        row.textContent = `${check.ok ? '✓' : 'Needs attention:'} ${check.name} — ${check.detail}`;
-        checks.append(row);
-      }
-      if (result.install_command) { byId('tools-install').textContent = result.install_command; }
+      paintChecks(result);
       show(result.ready ? 'Desktop tools connected' : 'Connected · setup needs attention',
         result.ready ? 'Ready to import music, split voice and background, and generate light previews.'
           : 'Your studio is running. Review the checks below before preparing a new song. Existing songs remain available.',
@@ -58,7 +78,7 @@
     } catch {
       checks.replaceChildren();
       show('Desktop tools not connected',
-        'Click Start Mac tools, then Connect Mac tools. If the browser cannot open Castle Tools, follow Setup & startup below.', true);
+        'Click Start Castle Tools, then Connect Castle Tools. If the browser cannot open Castle Tools, follow Setup & startup below.', true);
       details.open = true;
       open.hidden = false;
     } finally {
@@ -68,12 +88,12 @@
   }
 
   start.addEventListener('click', () => {
-    show('Starting Mac tools…', 'Allow your browser to open Castle Tools, then click Connect Mac tools. If nothing opens, expand Setup & startup to enable this once on your Mac.', false);
+    show('Starting Castle Tools…', 'Allow your browser to open Castle Tools, then click Connect Castle Tools. If nothing opens, expand Setup & startup to enable this once on your computer.', false);
     details.open = true;
   });
 
   byId('tools-connect').addEventListener('click', () => {
-    try { window.castleDesktop.connect(); show('Connecting to your Mac…', 'Keep the small connection window open. You can return to this page while it works.', false); }
+    try { window.castleDesktop.connect(); show('Connecting to your computer…', 'Keep the small connection window open. You can return to this page while it works.', false); }
     catch (error) { show('Connection window blocked', error.message, true); }
   });
   window.addEventListener('castle-tools-connection', refresh);

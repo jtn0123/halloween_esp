@@ -45,14 +45,19 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from socketserver import TCPServer
 
 import castle_emu_loop as loop
 import castle_emu_wire as wire
+import fw_formats
 from castle_emu_events import Events
+from castle_emu_health import HEAP_MIN_KB
 from castle_emu_http import OTA_SLOT, Handler
 from castle_emu_loop import APPLY_DELAY_S, MAX_VOLUME_PCT
+from castle_emu_owner import Owner
 from castle_emu_scenes import card_scene_ids, show_scene_ids
 from castle_emu_status import status_json, status_text
 
@@ -121,6 +126,13 @@ class CastleEmu(ThreadingHTTPServer):
     # (the Python default) turns bursts into refused connects.
     request_queue_size = 64
 
+    def server_bind(self) -> None:
+        # HTTPServer resolves a hostname before listening. That can stall
+        # for 35s on macOS 15 runners; this server only binds numeric loopback.
+        TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
+
     def handle_error(self, request: object, client_address: object) -> None:
         """A client that hung up mid-reply is not an error worth a traceback.
 
@@ -141,31 +153,108 @@ class CastleEmu(ThreadingHTTPServer):
         port: int = 0,
         sd_dir: Path | None = None,
         scenes: list[str] | None = None,
-        version: str = "5.40",
+        version: str | None = None,
         wedge: bool = False,
         sd_mounted: bool = True,
         serial: bool = False,
         ota_slot: int = OTA_SLOT,
+        board: str = "feather-s3-4m2p",
+        fw_variant: str = "yard",
+        pir_fitted: bool | None = None,
+        boots: int = 3,
+        crashes: int = 0,
+        reset_reason: int = 1,
     ) -> None:
         super().__init__(("127.0.0.1", port), Handler)
         self.state = _State()
         self.sd_dir = sd_dir or Path(tempfile.mkdtemp(prefix="castle-emu-sd-"))
         self.sd_dir.mkdir(parents=True, exist_ok=True)
-        # The card first (v5.67: /sd/scenes/show.man IS the scene list), then
-        # the show this emulator was pointed at, standing in for the ids a
-        # real image was compiled with, then the defaults. Read once here, the
-        # way the firmware seeds its list once at boot — a manifest published
-        # while the castle is up is not visible until it reboots, on both
-        # castles, and a test that wants the new list restarts the emulator.
+        #: The ids the image was "compiled with" — firmware/generated's
+        #: fallback list, which the castle wears when the card has no
+        #: manifest it believes: `scenes` when a test names them, else the
+        #: show this emulator was pointed at, else the defaults.
+        self.built_scenes = (
+            scenes if scenes is not None else show_scene_ids() or list(DEFAULT_SCENES)
+        )
+        # At boot the card first (v5.67: /sd/scenes/show.man IS the scene
+        # list) — unless a test named the list, which then stands for a castle
+        # that has not read any card yet.
         self.scenes = (
             scenes
             if scenes is not None
-            else card_scene_ids(self.sd_dir) or show_scene_ids() or list(DEFAULT_SCENES)
+            else card_scene_ids(self.sd_dir) or self.built_scenes
         )
-        self.version = version
+        #: castle_web::g_scenes_dirty (v5.69, J1 of grade report 2026-09-17
+        #: pm): a PUT that lands scenes/show.man rings it, and the next tick
+        #: re-reads the list — so a scene published to a running castle is
+        #: startable without a reboot, on both castles. This emulator used to
+        #: read the list once at boot, which is why the studio's
+        #: `needs_reboot` went on asking for a reboot nobody needed (grade
+        #: report 2026-09-24 H2).
+        self.scenes_dirty = False
+        #: False rehearses a castle from before v5.69, which read show.man at
+        #: boot only: the bell rings and nothing answers it.
+        self.reseeds = True
+        #: castle.yaml's, as the build this emulator ports answers — a test
+        #: names an older one to rehearse a castle that has not been updated.
+        self.version = version or fw_formats.this_firmware()
+        #: What the next image PUT /api/ota lands boots as: None rehearses the
+        #: image that never comes up, the bootloader's rollback to this one.
+        self.boots_as: str | None = None
+        self.ota_landed = False
+        #: h_status's "board" and "fw_variant" (v5.74, sd_web_state.h): the
+        #: module + memory and the build. The yard's by default, as the C's.
+        self.board = board
+        self.fw_variant = fw_variant
+        #: sd_web_prefs.h, v5.74: the owner's castle key ("" = none, every
+        #: route open) and whether a power-on boot starts the show. NVS on
+        #: the board; this emulator's lifetime here, which is a boot.
+        self.key = b""
+        #: castle_web::g_boot_play_default: the yard's castle starts its show
+        #: at power-on, a buyer's does not until its owner says so.
+        self.boot_play_default = fw_variant != "buyer"
+        self.boot_play = self.boot_play_default
+        #: castle_owner.h (v5.75): the owner's zone, volume cap and quiet
+        #: hours, all off until /api/settings sets them.
+        self.owner = Owner()
+        #: The wall clock owner_tick reads (::time on the board). A test that
+        #: wants 3 am, or a clock SNTP never set, hands in its own.
+        self.wall: Callable[[], float] = time.time
+        #: g_pir_fitted (v5.75): no sensor on a buyer's castle, so /api/pir
+        #: answers 409 and the owner's page shows none.
+        self.pir_fitted = fw_variant != "buyer" if pir_fitted is None else pir_fitted
+        #: /api/health's season counters and this boot's reset reason, an
+        #: esp_reset_reason_t (castle_emu_health.REASONS). Given, as the C
+        #: harness's CASTLE_BOOTS / CASTLE_CRASHES / CASTLE_RESET give them.
+        self.boots, self.crashes, self.reset_reason = boots, crashes, reset_reason
         #: h_status's "missing": the boot manifest's comma-separated list of
         #: scene files the card lacks. Tests set it to rehearse the escaping.
         self.missing = ""
+        #: What the board MEASURES rather than decides: the radio, the heap
+        #: and the heard clock (castle_heard.h). Fixed, plausible readings —
+        #: the number means nothing off the board, the key everything — and
+        #: settable, so a test can walk them the way a night on the porch
+        #: would (tools/soak.py's suite). The defaults are the bytes
+        #: /api/status always carried.
+        self.readings = {
+            "heap_free_kb": 96,
+            "rssi": -55,
+            "sync_lead_ms": -1,
+            "sync_drift_ms": -1,
+        }
+        #: The rest of /api/health — what the board MEASURES, as `readings`
+        #: is for /api/status: torn card reads, the last one's place, the
+        #: heap's low-water mark. The defaults are what the C harness's shim
+        #: reports, so the two replies stay byte-identical; a test sets them
+        #: to rehearse a dying card (tools/soak.py's suite). The season
+        #: counters and the reset reason are NOT here — boots, crashes and
+        #: reset_reason above are the one place those live
+        #: (castle_emu_health.py renders both).
+        self.health: dict[str, int | str] = {
+            "sd_read_errors": 0,
+            "heap_min_kb": HEAP_MIN_KB,
+            "sd_last_error": "",
+        }
         self.wedge = wedge
         self.sd_mounted = sd_mounted
         #: h_ota's ceiling: the app partition of the build being rehearsed.
@@ -178,6 +267,10 @@ class CastleEmu(ThreadingHTTPServer):
         #: write_body's free-space precondition (B3): KB free the emulated
         #: card claims. None = report the disk's real number and never 507.
         self.sd_free_kb: int | None = None
+        #: A publish's Wi-Fi, cut: this many more upload bytes reach the card,
+        #: then the link drops mid-file and the client hears nothing back
+        #: (castle_emu_upload._carried). None = it holds, as it does by default.
+        self.drop_after: int | None = None
         # The real httpd is ONE task: a long PUT holds every other request
         # (the status poll included) until it finishes. --serial rehearses
         # that; the default threads so the bench stays snappy.
@@ -190,7 +283,13 @@ class CastleEmu(ThreadingHTTPServer):
         #: The event ring and the light counters (castle_emu_events.py):
         #: what the main loop DID, which a 1 Hz status poll cannot see.
         self.events = Events()
-        loop.start_ticker(self)
+        #: Set by server_close(), the castle's power switch: the ticker waits
+        #: on it between ticks and returns once it is set, so a closed castle
+        #: leaves no thread behind (castle_emu_loop.ticker). shutdown() alone
+        #: is the network going, and the board's loop outlives that — the
+        #: soak's unplug/replug (tests/test_soak.py) is exactly that.
+        self.halted = threading.Event()
+        self.ticker = loop.start_ticker(self)
 
     @property
     def port(self) -> int:
@@ -200,6 +299,12 @@ class CastleEmu(ThreadingHTTPServer):
         threading.Thread(
             target=self.serve_forever, daemon=True, name="castle-emu"
         ).start()
+
+    def server_close(self) -> None:
+        """Close the socket and stop the main loop — a castle that was built
+        and never served has a ticker running too."""
+        self.halted.set()
+        super().server_close()
 
     # -- the pending-action mailbox ---------------------------------------
 
@@ -226,6 +331,15 @@ class CastleEmu(ThreadingHTTPServer):
     def uptime_ms(self) -> int:
         """esp_timer's clock as the ring stamps it: milliseconds since boot."""
         return int((time.monotonic() - self.state.boot) * 1000)
+
+    def reseed_scenes(self) -> None:
+        """castle_scenes.yaml's seed_scene_ids: the card's manifest, else
+        the list the image was built with. Run by the tick that drains
+        `scenes_dirty`, never by the upload — that is card I/O, and on the
+        board the upload worker only rings the bell."""
+        ids = card_scene_ids(self.sd_dir) or self.built_scenes
+        with self.state.lock:
+            self.scenes = ids
 
     def heal_missing(self, name: str) -> None:
         """castle_web::heal_missing: REMOVE one name from /api/status's

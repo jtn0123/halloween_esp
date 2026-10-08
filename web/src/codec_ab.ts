@@ -185,7 +185,16 @@ export function createCodecAb(deps: CodecAbDeps): CodecAb {
     }
   });
 
-  audio.addEventListener("error", () => { if (current) stop(); });
+  // A file the browser will not decode can land here BEFORE play()'s catch
+  // (Chromium fires `error` first), and stop() moves the epoch on, so the
+  // catch then stands down. Say so here too, or the button just goes out
+  // and the encode looks like it was never tried.
+  audio.addEventListener("error", () => {
+    if (!current) return;
+    const codec = current;
+    stop();
+    note.textContent = `Could not play the ${codec} encode.`;
+  });
 
   return { el, reset, stop };
 }

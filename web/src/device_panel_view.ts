@@ -9,6 +9,7 @@
  * so theme and phone CSS reach every row (grade report 2026-08-21 C2).
  */
 
+import { keyMarkup } from "./device_key.js";
 import { esc } from "./dom.js";
 import { lightsMarkup, sectionHead, speakerMarkup } from "./device_tests.js";
 
@@ -80,19 +81,23 @@ export interface DeviceStatus {
   missing?: string;
   /** 0–100, mirrored from the media player; older firmware omits it. */
   volume?: number;
-  /** Motion-sensor config, mirrored from the pir_* entities. */
-  pir?: { armed: boolean; cooldown_s: number; scene: string };
+  /** Motion-sensor config, mirrored from the pir_* entities. `fitted`
+   *  (v5.75) is false on a castle with no sensor — the buyer build. */
+  pir?: { fitted?: boolean; armed: boolean; cooldown_s: number; scene: string };
   /** Is the evening playlist running; older firmware omits it. */
   show_on?: boolean;
   /** Current scene id, "" when idle. */
   scene?: string;
-  /** Comma-joined scene ids this firmware was BUILT with (v5.42+). */
+  /** Comma-joined scene ids the castle can start (v5.42+): since v5.67 its
+   *  card's show.man, re-read after every publish since v5.69. */
   scenes?: string;
   /** The studio answering FOR a castle it cannot reach — not a castle. */
   studio?: boolean;
   /** Set by the studio's relay: this status came through the bridge, and
    *  the desk's merged Library is on the same page. */
   bridged?: string;
+  /** Firmware v5.74+: a castle key guards its changes (device_key.ts). */
+  locked?: boolean;
 }
 
 /** Scene ids for the PIR select — read from the page's own generated data,
@@ -134,20 +139,59 @@ function healthMeta(st: DeviceStatus): string {
       : "") + `</div>`;
 }
 
-/** C6: the scenes this desk knows that the BOARD's firmware does not —
- *  the drift behind "unknown scene", said before a button press finds it.
- *  Empty until the firmware reports its build list (v5.42+). */
+/** C6: the scenes this desk knows that the castle does not list — the drift
+ *  behind "unknown scene", said before a button press finds it. Empty until
+ *  the castle reports its list (v5.42+). Since v5.67 that list is the card's
+ *  show.man, so the cure is a publish, never an OTA; since v5.69 the castle
+ *  re-reads it on its own, so a publish is all of it (grade report
+ *  2026-09-24 H1). Only a pre-v5.69 board also needs the restart. */
 function firmwareDrift(st: DeviceStatus): string {
   if (st.scenes === undefined) return "";
   const known = new Set(st.scenes.split(",").filter(Boolean));
   const newer = sceneIds().filter((id) => !known.has(id));
   if (!newer.length) return "";
   const n = newer.length;
-  return `<div class="dp__note dp__note--warn" title="The board's firmware was ` +
-    `built before ${n === 1 ? "this scene" : "these scenes"} existed; picking ` +
-    `${n === 1 ? "it" : "one"} answers 'unknown scene'. make sd-build, stop ` +
-    `audio, then OTA.">⚠ ${n} scene${n === 1 ? "" : "s"} newer than the ` +
-    `firmware (${esc(newer.join(", "))}) — rebuild and OTA</div>`;
+  return `<div class="dp__note dp__note--warn" title="The castle's card does ` +
+    `not list ${n === 1 ? "this scene" : "these scenes"} yet; picking ` +
+    `${n === 1 ? "it" : "one"} answers 'unknown scene'. make publish (the ` +
+    `studio's rebuild publishes on its own) — firmware before v5.69 also ` +
+    `needs a restart to read it.">⚠ ${n} scene${n === 1 ? "" : "s"} not on ` +
+    `the castle yet (${esc(newer.join(", "))}) — make publish</div>`;
+}
+
+/** The motion row — or, on a castle that says it has no sensor (v5.75's
+ *  `pir.fitted` false: the buyer build, whose firmware refuses /api/pir),
+ *  the sentence the castle's own page uses instead of controls that would
+ *  only be refused. Older firmware does not say, and keeps the controls. */
+function pirMarkup(st: DeviceStatus): string {
+  if (st.pir?.fitted === false) {
+    return `<div id="dpPirNone" class="dp__note dp__note--tight">` +
+      `Motion sensor: not fitted on this castle.</div>`;
+  }
+  return `<div class="dp__row dp__row--tight">` +
+    `<label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
+    `<select id="dpPirScene" title="Which scene the motion sensor plays">` +
+    sceneIds().map((s) =>
+      `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") +
+    `</select> ` +
+    `<input id="dpPirCool" class="dp__cool" type="number" min="5" max="600" step="5" ` +
+    `value="${st.pir?.cooldown_s ?? 60}" ` +
+    `title="Cooldown: seconds before the sensor can fire again">` +
+    `<small class="dp__muted">s between triggers</small>` +
+    `</div>`;
+}
+
+/** The castle's own page (v5.75, firmware/sd_web_owner.h) at the address the
+ *  studio reached it on (`bridged`) — straight to the castle, not through
+ *  the relay, because it is the page that still works when this computer is
+ *  off. Its "Report a problem" is the castle's diagnostics. A status that did
+ *  not come through the studio names no address, so no link. */
+function ownerLink(st: DeviceStatus): string {
+  if (!st.bridged) return "";
+  return ` <a id="dpOwner" class="dp__owner" href="http://${esc(st.bridged)}/owner" ` +
+    `target="_blank" rel="noopener" title="The castle's own page: its settings, ` +
+    `its songs and Report a problem — served by the castle itself. Opens in a ` +
+    `new tab">castle's own page ↗</a>`;
 }
 
 /** The panel's whole body for one poll's worth of truth. `tracks` is the
@@ -212,20 +256,13 @@ export function panelMarkup(
 
     `<div class="dp__sec">` +
     sectionHead("👣", "motion sensor", "who it wakes for, and how often") +
-    `<div class="dp__row dp__row--tight">` +
-    `<label><input type="checkbox" id="dpPirArm" ${st.pir?.armed ? "checked" : ""}> armed</label> ` +
-    `<select id="dpPirScene" title="Which scene the motion sensor plays">` +
-    sceneIds().map((s) =>
-      `<option${s === st.pir?.scene ? " selected" : ""}>${s}</option>`).join("") +
-    `</select> ` +
-    `<input id="dpPirCool" class="dp__cool" type="number" min="5" max="600" step="5" ` +
-    `value="${st.pir?.cooldown_s ?? 60}" ` +
-    `title="Cooldown: seconds before the sensor can fire again">` +
-    `<small class="dp__muted">s between triggers</small>` +
-    `</div></div>` +
+    pirMarkup(st) + `</div>` +
+
+    keyMarkup(st) +
 
     `<div class="dp__foot">` +
     `<button id="dpLog" class="dp__logbtn">boot log ▸</button>` +
+    ownerLink(st) +
     `<pre id="dpLogOut" class="dp__log" hidden></pre>` +
     `</div>`
   );

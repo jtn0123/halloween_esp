@@ -477,7 +477,9 @@ class TestIdfVerdicts(unittest.TestCase):
 
     @unittest.skipIf(COMPILER is None and not IN_CI, "no host C++ compiler")
     def test_the_error_table_is_the_frameworks(self) -> None:
-        shim = (ROOT / "tests" / "cxx" / "shim" / "esp_http_server.h").read_text()
+        shim = (ROOT / "tests" / "cxx" / "shim" / "esp_http_server.h").read_text(
+            encoding="utf-8"
+        )
         for code, text in wire.IDF_ERRORS.items():
             if code in (400, 408):
                 continue  # no request the harness can send reaches these

@@ -63,7 +63,7 @@ class TestGenEsphomeMain(unittest.TestCase):
             # keep their own basename so a wrong redirect is legible.
             leaf = "card" if name == "CARD_SCENES" else "generated"
             setattr(ge, name, self.tmp / leaf / Path(getattr(ge, name)).name)
-        ge.SRC.write_text(yaml.safe_dump(self.DOC))
+        ge.SRC.write_text(yaml.safe_dump(self.DOC), encoding="utf-8")
 
     def tearDown(self) -> None:
         for name, value in self._saved.items():
@@ -96,7 +96,7 @@ class TestGenEsphomeMain(unittest.TestCase):
         file the build compiles, and the directory `sd_sync scenes` pushes."""
         self.assertEqual(ge.main(), 0)
         self.assertIn("wrote ", self.out.getvalue())
-        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
+        doc = yaml.load(ge.OUT.read_text(encoding="utf-8"), EsphomeLoader)
         self.assertEqual(
             [s["id"] for s in doc["script"]],
             ["scene_stop", "run_scene", "show_playlist"],
@@ -108,14 +108,13 @@ class TestGenEsphomeMain(unittest.TestCase):
 
     def test_fallback_scene_ids_are_generated_from_the_show(self) -> None:
         self.assertEqual(ge.main(), 0)
-        text = ge.FALLBACK_SCENES_OUT.read_text()
-        self.assertIn("'a'", text)
-        self.assertIn("'b'", text)
+        text = ge.FALLBACK_SCENES_OUT.read_text(encoding="utf-8")
+        self.assertIn('kFallbackSceneIdsCsv[] = "a,b";', text)
 
     def test_blackout_script_clears_every_zone(self) -> None:
         """One call has to be enough to make the whole castle go dark."""
         ge.main()
-        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
+        doc = yaml.load(ge.OUT.read_text(encoding="utf-8"), EsphomeLoader)
         lam = next(s for s in doc["script"] if s["id"] == "scene_stop")["then"][0][
             "lambda"
         ]
@@ -130,7 +129,7 @@ class TestGenEsphomeMain(unittest.TestCase):
         chase's white head) — so a stop that left those standing kept vigil's
         centre embers lit and the door sparkling through the playlist gap."""
         ge.main()
-        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
+        doc = yaml.load(ge.OUT.read_text(encoding="utf-8"), EsphomeLoader)
         lam = next(s for s in doc["script"] if s["id"] == "scene_stop")["then"][0][
             "lambda"
         ]
@@ -149,7 +148,7 @@ class TestGenEsphomeMain(unittest.TestCase):
         the cue blob, which matters here of all places: the file about to play
         may bring a `.cue` of its own."""
         ge.main()
-        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
+        doc = yaml.load(ge.OUT.read_text(encoding="utf-8"), EsphomeLoader)
         lam = next(s for s in doc["script"] if s["id"] == "run_scene")["then"][0][
             "lambda"
         ]
@@ -164,7 +163,7 @@ class TestGenEsphomeMain(unittest.TestCase):
         zone that is off or on another effect — and "halt" (the /api/play
         path, which must leave the lights alone) is excluded."""
         ge.main()
-        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
+        doc = yaml.load(ge.OUT.read_text(encoding="utf-8"), EsphomeLoader)
         lam = next(s for s in doc["script"] if s["id"] == "run_scene")["then"][0][
             "lambda"
         ]
@@ -188,7 +187,7 @@ class TestGenEsphomeMain(unittest.TestCase):
             self.DOC, hardware={"pixels_per_zone": 7, "audio": {"max_volume": 0.8}}
         )
         doc["scenes"] = [scene(id="a", volume=1.0), scene(id="b", volume=0.5)]
-        ge.SRC.write_text(yaml.safe_dump(doc))
+        ge.SRC.write_text(yaml.safe_dump(doc), encoding="utf-8")
         self.assertEqual(ge.main(), 0)
         # The cap used to be printed into each scene script's volume lambda
         # (`id(speaker_hush) ? 0.0f : 0.8f`). It is a whole percent in the
@@ -200,7 +199,8 @@ class TestGenEsphomeMain(unittest.TestCase):
         self.assertEqual(entries["a"]["volume_pct"], 80)  # 1.0 capped
         self.assertEqual(entries["b"]["volume_pct"], 50)  # under the cap, untouched
         self.assertIn(
-            "inline constexpr int kMaxVolumePct = 80;", ge.RIG_OUT.read_text()
+            "inline constexpr int kMaxVolumePct = 80;",
+            ge.RIG_OUT.read_text(encoding="utf-8"),
         )
 
     def test_blackout_stops_the_runner_and_releases_its_cues(self) -> None:
@@ -211,7 +211,7 @@ class TestGenEsphomeMain(unittest.TestCase):
         one script — and hand the cue blob back, or /api/status would report
         cues for a castle that is dark."""
         ge.main()
-        doc = yaml.load(ge.OUT.read_text(), EsphomeLoader)
+        doc = yaml.load(ge.OUT.read_text(encoding="utf-8"), EsphomeLoader)
         stop = next(s for s in doc["script"] if s["id"] == "scene_stop")
         lams = "\n".join(a["lambda"] for a in stop["then"] if "lambda" in a)
         self.assertIn("id(scene_run)->stop();", lams)
@@ -220,7 +220,7 @@ class TestGenEsphomeMain(unittest.TestCase):
 
     def test_pixel_map_is_written_into_the_header_comment(self) -> None:
         ge.main()
-        text = ge.OUT.read_text()
+        text = ge.OUT.read_text(encoding="utf-8")
         self.assertIn("DO NOT EDIT", text)
         # Three strips now, so the ranges are what a SINGLE chain would have
         # been — still the thing you want when tracing a dark window on a
@@ -232,7 +232,10 @@ class TestGenEsphomeMain(unittest.TestCase):
         pulse streams simply expand to nothing. Scene b's `pulse:` block is
         the one that would otherwise need markers."""
         ge.main()
-        self.assertEqual(len(yaml.load(ge.OUT.read_text(), EsphomeLoader)["script"]), 3)
+        self.assertEqual(
+            len(yaml.load(ge.OUT.read_text(encoding="utf-8"), EsphomeLoader)["script"]),
+            3,
+        )
         b = cue_file.decode((ge.CARD_SCENES / "b.cue").read_bytes())
         self.assertEqual(b["records"], [])
         self.assertIn("no audio/markers.json", self.out.getvalue())
@@ -241,7 +244,7 @@ class TestGenEsphomeMain(unittest.TestCase):
         """Was asserted as a `delay: 250ms` in the emitted script — the delta
         from the scene's start to the beat. It is the absolute millisecond in
         a cue record now."""
-        ge.MARKERS.write_text('{"b": {"h": [[250, 1.0]]}}')
+        ge.MARKERS.write_text('{"b": {"h": [[250, 1.0]]}}', encoding="utf-8")
         ge.main()
         b = cue_file.decode((ge.CARD_SCENES / "b.cue").read_bytes())
         self.assertEqual([r["t"] for r in b["records"]], [250])
@@ -262,7 +265,7 @@ class TestGenEsphomeMain(unittest.TestCase):
                 ),
             ],
         )
-        ge.SRC.write_text(yaml.safe_dump(doc))
+        ge.SRC.write_text(yaml.safe_dump(doc), encoding="utf-8")
         with self.assertRaises(SystemExit) as cm:
             ge.main()
         msg = str(cm.exception)

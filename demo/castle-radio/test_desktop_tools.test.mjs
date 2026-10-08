@@ -48,11 +48,11 @@ for (const payload of [null, {service:'unrelated', protocol:1, checks:[]}]) {
   });
 }
 
-test('castle page offers a user-initiated Mac connection without fetching localhost', async () => {
+test('castle page offers a user-initiated connection to your computer without fetching localhost', async () => {
   const ctx = boot(null, {direct:true});
   await settle();
   assert.equal(ctx.calls(), 0);
-  assert.match(ctx.$('tools-summary').textContent, /Mac/);
+  assert.match(ctx.$('tools-summary').textContent, /Connect Castle Tools/);
   assert.equal(ctx.$('tools-connect').hidden, false);
   assert.equal(ctx.$('tools-recheck').hidden, true);
   assert.equal(ctx.$('tools-start').hidden, false);
@@ -61,7 +61,7 @@ test('castle page offers a user-initiated Mac connection without fetching localh
 test('website startup gives honest setup guidance without claiming a connection', async () => {
   const ctx = boot(null, {direct:true});
   ctx.$('tools-start').dispatch('click');
-  assert.equal(ctx.$('tools-state').textContent, 'Starting Mac tools…');
+  assert.equal(ctx.$('tools-state').textContent, 'Starting Castle Tools…');
   assert.equal(ctx.$('tools-setup').open, true);
   assert.match(ctx.$('tools-summary').textContent, /If nothing opens/);
   assert.equal(ctx.calls(), 0);
@@ -73,4 +73,48 @@ test('an established device connection hides the unnecessary startup action', as
   await settle();
   assert.equal(ctx.$('tools-start').hidden, true);
   assert.equal(ctx.$('tools-state').textContent, 'Desktop tools connected');
+});
+
+// docs/PRODUCTION-TODO.md §4.2: the Mac-only setup steps (the .command files,
+// the ♜ menu) are offered where the computer says it has them, and only there.
+for (const [platform, startup, hidden, install] of [
+  ['darwin', 'Enable Website Startup.command', false, 'sh installer/install.sh'],
+  ['win32', null, true, 'installer\\install.cmd'],
+  ['linux', null, true, 'sh installer/install.sh --from-source'],
+]) {
+  test(`setup offers website startup only where it exists (${platform})`, async () => {
+    const ctx = boot({service:'castle-radio', protocol:1, ready:true, checks:[],
+      install_command:install, website_startup:startup});
+    await settle();
+    assert.equal(ctx.$('tools-mac').hidden, hidden);
+    assert.equal(ctx.$('tools-install').textContent, install);
+    assert.equal(ctx.$('tools-installer').hidden, false, 'a checkout repairs with the installer');
+    assert.equal(ctx.$('tools-repair').hidden, true);
+  });
+}
+
+test('inside the desktop app the card points at its own Repair, not a script', async () => {
+  const words = 'To repair Castle Tools, choose Repair Castle Tools… from the ♜ in the menu bar.';
+  const ctx = boot({service:'castle-radio', protocol:1, ready:false, checks:[],
+    install_command:null, website_startup:null, repair:words, app_version:'Castle Tools v1.4.0'});
+  await settle();
+  assert.equal(ctx.$('tools-repair').textContent, words);
+  assert.equal(ctx.$('tools-repair').hidden, false);
+  assert.equal(ctx.$('tools-installer').hidden, true, 'no installer folder to run a command in');
+  assert.equal(ctx.$('tools-mac').hidden, true, 'and no website-startup double-click');
+});
+
+test('an older helper that never says keeps the Mac steps visible', async () => {
+  const ctx = boot({service:'castle-radio', protocol:1, ready:true, checks:[]});
+  await settle();
+  assert.equal(ctx.$('tools-mac').hidden, false);
+  assert.equal(ctx.$('tools-version').hidden, true, 'no version line it cannot fill');
+});
+
+test('the tools card names the release this copy came from', async () => {
+  const ctx = boot({service:'castle-radio', protocol:1, ready:true, checks:[],
+    app_version:'Castle Tools v1.4.0'});
+  await settle();
+  assert.equal(ctx.$('tools-version').textContent, 'Castle Tools v1.4.0');
+  assert.equal(ctx.$('tools-version').hidden, false);
 });

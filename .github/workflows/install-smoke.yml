@@ -1,0 +1,127 @@
+# A buyer's first evening, on the two systems a buyer will have: install
+# Castle Tools from a downloaded release zip with the real installer, open
+# Castle Radio from the launcher it placed, import three songs (an mp3, a
+# wav, a name in two alphabets — one split by Demucs, and timed), send them
+# to an emulated castle, check its card, play one, and uninstall twice
+# (keeping the songs, then purging them). tests/install_smoke.py is the
+# driver and says what each phase asserts; this file only sets the stage.
+#
+# It is the software half of the Windows hands-on pass in
+# docs/PRODUCTION-TODO.md §4.4. What it cannot do — the web flasher in Edge
+# and its USB driver, SmartScreen on a downloaded installer, a real network
+# share — stays a person's job, and the TODO says so.
+#
+# The buyer has no cargo, Homebrew, Chocolatey or Python on PATH: the
+# driver runs the installer in a whitelisted environment
+# (install_smoke_env.buyer_env), and castle-core arrives as a release zip
+# staged from the build below, behind the installer's --release-json, so the
+# download, SHA256SUMS and unpack paths are the ones a buyer runs. Nothing
+# here talks to a real castle; the castle is tools/castle_emu.py, started
+# from the INSTALLED tree.
+#
+# Not a blocking gate for every PR: it downloads uv, CPython, torch, a static
+# ffmpeg and yt-dlp each run (the htdemucs weights come from the Actions
+# cache once they are in it). It runs on the PRs that can break it, weekly
+# against main, and by hand.
+
+name: install-smoke
+
+on:
+  pull_request:
+    paths:
+      - installer/**
+      - tools/desktop_*.py
+      - tools/release_assets.py
+      - tools/release_channel.py
+      - tools/ytdlp_update.py
+      - tools/castle_tools_status.py
+      - tools/model_pin.py
+      - tools/castle_emu*.py
+      - tools/render_cues.py
+      - tools/track_scene.py
+      - tools/import_*.py
+      - tools/stems*.py
+      - demo/castle-radio/**
+      - requirements-desktop.lock
+      - .gitattributes
+      - tests/install_smoke*.py
+      - .github/workflows/install-smoke.yml
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash -eo pipefail {0}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  buyer:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest]
+    runs-on: ${{ matrix.os }}
+    # A cold castle-core build on Windows, then the installer's downloads
+    # (torch alone is ~120 MB on macOS, ~250 MB on Windows) and one split.
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+      - name: toolchain channel
+        id: rust
+        run: echo "channel=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' core/rust-toolchain.toml)" >> "$GITHUB_OUTPUT"
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable branch, 2026-09
+        with:
+          toolchain: ${{ steps.rust.outputs.channel }}
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: core
+      # The three binaries a release zips (tools/release_assets.py
+      # CORE_BINS) — release.yml builds them the same way.
+      - name: build castle-core
+        working-directory: core
+        run: cargo build --locked --release --bin analyze_track --bin scene_render --bin studio
+      # The DRIVER's Python — stdlib only. The buyer never sees it: the
+      # installer runs with this off PATH and fetches its own via uv.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      # htdemucs, the 84 MB the installer's model step downloads, kept in the
+      # Actions cache the way cross-platform.yml keeps its lame zip:
+      # tools/model_pin.py pins the commit and each file's sha256, downloads
+      # only what the cache lacks and checks every byte either way. Before
+      # `stage`, which saves the buyer's environment: buyer_env passes
+      # HF_HUB_CACHE through to the buyer's Demucs, and HF_HUB_OFFLINE keeps
+      # it from asking the hub at all (install_smoke.py fails a fall-back).
+      - name: htdemucs weights (cached)
+        uses: actions/cache@v6
+        with:
+          path: ~/htdemucs-hub
+          key: htdemucs-955717e8-d9fa14133cfc
+      - name: htdemucs weights
+        run: |
+          hub=$(python tools/model_pin.py fetch ~/htdemucs-hub)
+          echo "HF_HUB_CACHE=$hub" >> "$GITHUB_ENV"
+          echo "HF_HUB_OFFLINE=1" >> "$GITHUB_ENV"
+      - name: stage the download
+        run: python tests/install_smoke.py stage --work "$RUNNER_TEMP/smoke" --core-bins core/target/release
+      - name: install (dry run, install, dry run over it, second run)
+        run: python tests/install_smoke.py install --work "$RUNNER_TEMP/smoke"
+      - name: first session (Castle Radio, imports, Demucs, sync, play)
+        run: python tests/install_smoke.py session --work "$RUNNER_TEMP/smoke"
+      - name: uninstall (keep the songs, then purge)
+        run: python tests/install_smoke.py uninstall --work "$RUNNER_TEMP/smoke"
+      - name: logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: install-smoke-${{ matrix.os }}
+          path: ${{ runner.temp }}/smoke/logs
+          if-no-files-found: warn

@@ -1,0 +1,359 @@
+# THE SHIPPED SHOW — the scenes a castle leaves this house with.
+#
+# GENERATED in the repo by tools/shipped_show.py from scenes/scenes.yaml: the
+# same file minus every scene that needs an imported song (no song ships —
+# docs/LICENSING.md). Edit the source, not this; gen_esphome.py rewrites it.
+#
+# On a castle that has been sold, it is the opposite: the desktop app and
+# the installer copy this file ONCE, on first run, and from then on the copy
+# is the owner's own show to edit.
+#
+# Halloween Castle — scene definitions
+#
+# THIS FILE IS THE SOURCE OF TRUTH. Three things are generated from it:
+#   tools/render_audio.py  -> audio/NN_<id>.mp3   (one pre-rendered mix per scene)
+#   tools/gen_esphome.py   -> firmware/generated/ (sfx, rig.h, lights) AND
+#                             audio/card/scenes/  (show.man + one <id>.cue per
+#                             scene — the show itself, pushed by `make publish`)
+#   tools/gen_previewer.py -> previewer/          (scene data + audio spliced in)
+#
+# Why pre-rendered audio: the MAX98357A plays one stream, and mixing/ducking on
+# the castle's ESP32 is not worth fighting. Rendering offline means real
+# mixing, reverb and crossfades, and the firmware just plays a file.
+
+hardware:
+  board: adafruit_feather_esp32s3
+  # The FALLBACK pixel count, used by any zone that does not declare its own
+  # `fixture:` below. Every zone currently inherits it — three NeoPixel
+  # Jewels, 7 RGBW pixels each.
+  pixels_per_zone: 7
+  rgbw: true
+  # Adafruit 8mm through-hole NeoPixels are RGB order, not GRB. Jewels are GRB.
+  rgb_order: GRB
+  audio:
+    sample_rate: 44100
+    # TWO bitrates, for two different destinations.
+    #
+    # `card_bitrate` is what the CASTLE plays: audio/card/*.mp3, which
+    # sd_sync pushes to /sd/scenes and the device streams off a 31 GB card.
+    # 96 kbps is what the show was tuned at, and PROJECT_NOTES §12.13
+    # measured it decoding on this exact chip with zero underruns, zero
+    # decode errors and zero blocking warnings. This is the one that matters.
+    #
+    # `bitrate` is the smaller render, audio/*.mp3. It existed because
+    # castle_flash.yaml embedded every scene in a 2.9 MB partition — 32 kbps
+    # is 46% of it, 96 kbps would have been 138% and the build would not fit.
+    # That build was retired on 2026-09-01 (PROJECT_NOTES §12.15) and nothing
+    # embeds these any more; what still reads them is the cue desk page,
+    # which inlines every scene as a data URI and has a 4 MB budget of its
+    # own (tools/previewer_budget.py). So the number stays low for a
+    # different reason than it was chosen for. Measured, 32 kbps brickwalls
+    # the show at ~6 kHz — telephone quality, and audibly so — which is
+    # tolerable in a browser preview and was never tolerable on the porch.
+    bitrate: 32
+    card_bitrate: 96
+    # Mono on purpose, and it is full level: both amps have SD pinned LEFT
+    # (WIRING §5) and a mono stream goes in the left I2S slot, so
+    # nothing is halved. Stereo doubled the bytes and changed nothing
+    # audible (HARDWARE_FINDINGS §8, 2026-08-22).
+    channels: 1
+    # The loudest the amps are ever asked for. Every scene's level is
+    # generated under this cap and /api/volume clamps to it, so one number
+    # here protects a speaker that cannot take full drive. The bare 4 Ω 3 W
+    # drivers measured clean only to 80 on the porch (2026-08-22, CanaKit
+    # 5 A); the shrouded speakers that replaced them take the full range,
+    # so the cap is off (1.0) and the app's volume control goes to 100.
+    max_volume: 1.0
+
+# The all-evening playlist (#19): "start show" runs these in order, each for
+# its full length, with a dark ambient gap between, looping until stopped.
+# Omit `order:` to play every scene except motion-triggered ones (the PIR
+# owns those) in file order.
+show:
+  gap_ms: 12000
+
+# One strip per zone, not one chain: an RGBW fixture and an RGB one cannot
+# share a data line (32 bits per pixel against 24). docs/WIRING.md §1.
+#
+# A zone may name what is physically in it, which overrides pixels_per_zone:
+#
+#   - {id: door, channel: 3, name: "...", pin: 16, fixture: ring16,
+#      pixels: 16, rgbw: false}
+#
+#   pin      GPIO carrying this zone's data. docs/WIRING.md §2.
+#   fixture  jewel7 | stick8 | ring12 | ring16 | wing32 | mini | none.
+#            Sets the geometry an overlay travels across — see
+#            tools/rig_layout.py, which bakes it into generated/rig.h.
+#   pixels   scatter fixtures only (`mini`); the rest know their own count.
+#   rgbw     whether this fixture has a white die. wing32 and mini never do.
+#
+# Do not hand-edit these to guess. The Rig panel in the cue desk previews a
+# change first and then emits this block along with the matching firmware
+# substitutions — which have to move together, or the cues aim at pixels the
+# strip does not have.
+zones:
+  - {id: towerL, channel: 1, name: "Tower window, stage left",
+     pin: 18, fixture: jewel7, rgbw: true}
+  - {id: towerR, channel: 2, name: "Tower window, stage right",
+     pin: 14, fixture: jewel7, rgbw: true}
+  - {id: door,   channel: 3, name: "Doorway, centre",
+     pin: 16, fixture: ring12, rgbw: false}
+
+# Palette poles the mansion effects crossfade between.
+palette:
+  violet: [0.66, 0.08, 1.00]
+  green:  [0.14, 1.00, 0.42]
+  flame:  [1.00, 0.42, 0.09]
+
+# ── THE CEILING (grade report 2026-08-23 A2/G2) ─────────────────────────
+# Scenes used to be COMPILE-TIME objects: each became a generated ESPHome
+# script costing ~9 KB of static RAM (dram0), which on the ESP32-S2 that ran
+# the porch until 2026-09-17 was ~88% of 172,032 bytes after the tenth — and
+# that is where the number twelve came from.
+#
+# It is not where it comes from any more. Since v5.67 a scene is CARD DATA:
+# its whole timeline is `scenes/<id>.cue` and its numbers are one 96-byte row
+# in `scenes/show.man`, read into PSRAM by one generic runner
+# (firmware/castle_scenes.h). There is no per-scene static RAM cost left, and
+# **editing this file is a publish, not a firmware flash** — `make publish`
+# is the whole deploy for a scene change. That was the step this comment used
+# to point forward to (the card-loaded cue format of grade report
+# 2026-08-23 A2); it is taken.
+#
+# Budget: still **at most 12 scenes**, and now for an honest small reason —
+# `show.man` is a fixed record count so the firmware never allocates to read
+# it (`MAX_SCENES` in tools/scene_manifest.py, `kMaxScenes` in
+# firmware/castle_scenes.h, `SCENE_LIMIT` in tools/check_loc.py and
+# core/src/vocab.rs). Lifting it means lifting all four in one change with a
+# number somebody measured; docs/notes/03-build.md §12.21 lists it as
+# follow-up work. Each song scene also adds ~1.2 MB to the inlined desk page
+# (tests/test_gen_previewer.py budgets it), which is the other real cost.
+#
+# THAT CEILING IS NOW THE RULE THIS FILE ANSWERS TO (grade report 2026-08-31
+# A8). The repo's 500-line cap no longer applies here: this file is
+# data, and a line count was about to block *content* — one more scene and
+# `make check` would have failed for a reason that has nothing to do with
+# what the board can hold. So scenes/scenes.yaml is exempt from the cap in
+# tools/check_loc.py, and that same check counts the scenes and FAILS above
+# twelve (SCENE_LIMIT there). Trade one budget for the one that binds; do
+# not leave the file with neither.
+scenes:
+  - id: vigil
+    name: Vigil
+    kind: ambient
+    volume: 0.45
+    duration_ms: 30000
+    loop: true
+    blurb: >
+      Resting state. Candles breathe in both towers, the doorway holds a low
+      ember, wind runs underneath.
+    base: {towerL: candle, towerR: candle, door: ember}
+    zones:
+      towerL: {center: ember}
+      towerR: {center: ember, phase: 1.7}
+      door: {overlay: sparkle}
+    score:
+      - {t: 0, synth: wind, dur: 30.0, gain: 0.9}
+    cues: []
+
+  - id: storm
+    name: Storm
+    kind: triggered
+    volume: 1.0
+    duration_ms: 6500
+    blurb: >
+      Thunder is scheduled first; the strike lands 80 ms behind it. Light beats
+      sound to an observer in the real world, so leading with audio is
+      physically right.
+    base: {towerL: candle, towerR: candle, door: ember}
+    score:
+      - {t: 0.0, synth: wind,    dur: 6.5, gain: 0.6}
+      - {t: 0.0, synth: thunder, gain: 1.0}
+    cues:
+      - {t: 80,   op: strike, ms: 70,  pixels: scatter, note: "lightning — strike"}
+      - {t: 240,  op: strike, ms: 45,  pixels: scatter, note: "stutter"}
+      - {t: 355,  op: strike, ms: 120, pixels: scatter, note: "stutter"}
+      - {t: 1400, op: strike, zone: towerL, ms: 50, note: "roll — left"}
+      - {t: 1490, op: strike, zone: door,   ms: 50, note: "roll — centre"}
+      - {t: 1580, op: strike, zone: towerR, ms: 50, note: "roll — right"}
+      - {t: 2600, op: strike, ms: 55,  note: "distant"}
+      - {t: 4100, op: strike, zone: towerR, ms: 40, note: "far off"}
+
+  - id: seance
+    name: Séance
+    kind: ambient
+    volume: 0.6
+    duration_ms: 35000
+    loop: true
+    blurb: >
+      Four organ chords, 7.5 s each, overlapping so nothing fully releases. The
+      second is the Neapolitan — a major triad a semitone above the tonic.
+    base: {towerL: seance, towerR: seance, door: chill}
+    zones:
+      towerL: {phase: 0.9}
+      door: {overlay: chase}
+    # Organ chord onsets pulse all zones gently, in the room's own violet.
+    pulse:
+      - {synth: organ, intensity: 0.18, color: [0.66, 0.20, 1.0, 0.10], decay: 0.955}
+    score:
+      - {t: 0.0,  synth: wind,  dur: 35.0, gain: 0.35}
+      - {t: 0.0,  synth: organ, gain: 1.0}
+      - {t: 16.4, synth: toll,  gain: 0.8}
+    cues:
+      - {t: 6600,  op: strike, zone: towerL, ms: 900, note: "Neapolitan"}
+      - {t: 6800,  op: set, zone: towerR, effect: wisp}
+      - {t: 13200, op: set, zone: towerR, effect: seance}
+      - {t: 19800, op: strike, ms: 1100, note: "the flat ninth"}
+      - {t: 20000, op: set, zone: towerL, effect: wisp}
+      - {t: 20200, op: set, zone: door,   effect: throb}
+      - {t: 27500, op: set, zone: towerL, effect: seance}
+      - {t: 28200, op: set, zone: door,   effect: chill}
+
+  - id: ballroom
+    name: Ballroom
+    kind: ambient
+    volume: 0.55
+    duration_ms: 15000
+    loop: true
+    blurb: >
+      The parlour waltz — music box over piano, three-four time. All three zones
+      drift slowly between violet and green.
+    base: {towerL: mansion, towerR: mansion, door: mansion}
+    zones:
+      towerL: {overlay: sparkle}
+      towerR: {overlay: sparkle, phase: 2.3}
+    # Waltz downbeats shimmer all zones; phrase heads land harder (velocity).
+    pulse:
+      - {synth: waltz, intensity: 0.16, color: [0.9, 0.85, 1.0, 0.25], decay: 0.93}
+    score:
+      - {t: 0.0, synth: waltz, gain: 1.0}
+    cues:
+      - {t: 4700, op: set, zone: door, effect: chill}
+      - {t: 9600, op: set, zone: door, effect: mansion}
+
+  - id: descent
+    name: Descent
+    kind: showpiece
+    volume: 0.85
+    duration_ms: 27000
+    blurb: >
+      A 32-foot pedal holds for the whole piece while the upper voices walk down
+      chromatically. One strike per chord change, nothing hurried.
+    base: {towerL: chill, towerR: chill, door: "off"}
+    zones:
+      towerL: {overlay: meteor, palette: moonlight}
+      towerR: {overlay: meteor, palette: moonlight, phase: 1.3}
+    score:
+      - {t: 0.0, synth: descent, gain: 1.0}
+    cues:
+      - {t: 900,   op: strike, zone: door, ms: 900, note: "pedal enters"}
+      - {t: 1000,  op: set, zone: door,   effect: chill}
+      - {t: 1300,  op: set, zone: towerL, effect: seance}
+      - {t: 7100,  op: strike, zone: towerR, ms: 700, note: "cluster II"}
+      - {t: 7200,  op: set, zone: towerR, effect: seance}
+      - {t: 12900, op: strike, ms: 800, note: "cluster III"}
+      - {t: 13000, op: set, zone: door,   effect: throb}
+      - {t: 18700, op: strike, zone: towerL, ms: 800, note: "cluster IV"}
+      - {t: 18800, op: set, zone: towerL, effect: wisp}
+      - {t: 19100, op: set, zone: towerR, effect: wisp}
+      - {t: 20400, op: strike, ms: 1400, note: "diminished pile-up"}
+      - {t: 20500, op: set, zone: door,   effect: furnace}
+      - {t: 24800, op: set, zone: towerL, effect: chill}
+      - {t: 25200, op: set, zone: towerR, effect: chill}
+      - {t: 25800, op: set, zone: door,   effect: "off"}
+
+  - id: visitation
+    name: Visitation
+    kind: triggered
+    volume: 0.75
+    duration_ms: 11000
+    blurb: >
+      Candles gutter out, both towers drift to a cold breathing green, and
+      something watches from the left window.
+    base: {towerL: candle, towerR: candle, door: ember}
+    score:
+      - {t: 0.0, synth: wind,  dur: 11.0, gain: 0.5}
+      - {t: 0.0, synth: organ, gain: 0.85, take: 11.0}
+      - {t: 4.2, synth: toll,  gain: 0.9}
+    cues:
+      - {t: 400,  op: set, zone: door,   effect: "off"}
+      - {t: 900,  op: set, zone: towerR, effect: spirit}
+      - {t: 1600, op: set, zone: towerL, effect: spirit}
+      - {t: 4600, op: set, zone: towerL, effect: eyes}
+      - {t: 9200, op: set, zone: towerL, effect: spirit}
+
+  - id: approach
+    name: Approach
+    kind: motion
+    volume: 1.0
+    duration_ms: 8000
+    blurb: >
+      What the walkway sensor fires. Total blackout, a beat of nothing, then the
+      door goes up like a furnace.
+    base: {towerL: candle, towerR: candle, door: ember}
+    score:
+      - {t: 1.5, synth: creak,  gain: 1.0}
+      - {t: 3.8, synth: shriek, gain: 1.0}
+      - {t: 3.9, synth: thunder, gain: 0.55}
+    cues:
+      - {t: 0,    op: set, zone: towerL, effect: "off"}
+      - {t: 0,    op: set, zone: towerR, effect: "off"}
+      - {t: 0,    op: set, zone: door,   effect: "off"}
+      - {t: 1900, op: set, zone: door,   effect: furnace}
+      - {t: 3900, op: strike, ms: 90, note: "all zones"}
+      - {t: 5400, op: set, zone: towerL, effect: candle}
+      - {t: 5900, op: set, zone: towerR, effect: candle}
+      - {t: 6400, op: set, zone: door,   effect: ember}
+
+  - id: crypt
+    name: Crypt
+    kind: ambient
+    volume: 0.7
+    duration_ms: 24000
+    loop: true
+    blurb: >
+      Below the castle. A heartbeat at 48 bpm, a tritone drone underneath, and
+      whispers just past intelligibility. The lights barely admit anything is
+      there — near-darkness is the effect.
+    base: {towerL: chill, towerR: chill, door: blood}
+    zones:
+      door: {center: ember}
+      towerR: {phase: 1.1}
+    # The towers rest on a cold near-dark instead of true black: between
+    # whispers they were dead pixels for seconds at a time. `chill` held this
+    # low is a held breath — and being cold, it separates the towers (voices)
+    # from the door (heart) even at rest.
+    levels: {towerL: 0.35, towerR: 0.35}
+    # Nothing in this scene is lit by the clock — every zone is driven by one
+    # sound, and each sound owns a colour:
+    #   red    = the heart      (door, both thumps of the lub-dub, snapping)
+    #   green  = the voices     (towers, one flicker per whispered word,
+    #                            alternating, so the voices move around you)
+    #   violet = the bell       (everything blooms and falls slow)
+    # The heart also throbs faintly through the towers, so the whole crypt
+    # breathes with the door as the epicentre.
+    #
+    # The eyes are held at level 0.18 on purpose. At full brightness they are
+    # a red floodlight tied to nothing in the audio, and they bury the
+    # heartbeat in the same colour — the reason this scene read as flat. Kept
+    # under the pulses, they are a presence you notice rather than a lamp.
+    pulse:
+      - {synth: heartbeat, zone: door, intensity: 0.85, decay: 0.82,
+         color: [1.0, 0.03, 0.01, 0.0], pixels: center}
+      - {synth: heartbeat, zones: [towerL, towerR], intensity: 0.10,
+         decay: 0.88, color: [1.0, 0.05, 0.02, 0.0]}
+      - {synth: whispers, zones: [towerL, towerR], alternate: true,
+         intensity: 0.34, decay: 0.94, color: [0.24, 1.0, 0.38, 0.0],
+         pixels: scatter}
+      - {synth: toll, intensity: 0.5, decay: 0.972,
+         color: [0.66, 0.08, 1.0, 0.06]}
+    score:
+      - {t: 0.0,  synth: drone,     dur: 24.0, gain: 0.9}
+      - {t: 0.0,  synth: heartbeat, dur: 24.0, gain: 1.0}
+      - {t: 2.0,  synth: whispers,  dur: 20.5, gain: 0.55}
+      - {t: 14.0, synth: toll, gain: 0.3}
+    cues:
+      - {t: 3000,  op: set, zone: towerL, effect: eyes, level: 0.18, note: "something watches"}
+      - {t: 12000, op: set, zone: towerL, effect: chill, level: 0.35, note: "eyes close"}
+      - {t: 12600, op: set, zone: towerR, effect: eyes, level: 0.18, note: "…it moved"}
+      - {t: 20000, op: set, zone: towerR, effect: chill, level: 0.35, note: "gone"}

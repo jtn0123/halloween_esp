@@ -82,7 +82,7 @@ const draws = { frames: 0, ms: [] as number[] };
 (window as unknown as { __castleDraws: typeof draws }).__castleDraws = draws;
 const canvas = el<HTMLCanvasElement>("stage");
 if (!canvas) throw new Error("no #stage canvas in the page");
-const stage = new Stage(canvas);
+const stage = new Stage(canvas, markDirty);   // a resize clears the canvas: paint again
 
 /* What is physically in each window. Everything that used to assume three
    seven-pixel Jewels now asks this instead — the render loop, the pixel view
@@ -271,7 +271,7 @@ panels.bindSliders({
 /* ── Transport controls ── */
 
 el("play")?.addEventListener("click", () => {
-  // ♪ Mac route: pressing Play IS the consent to sound. Without this the
+  // ♪ Computer route: pressing Play IS the consent to sound. Without this the
   // first play ran a silent light show and the operator hunted for the
   // second, unrelated-looking MUTED button (dogfood 004).
   if (localStorage.getItem("castleSoundRoute") !== "castle" && rendered.muted) toggleMute();

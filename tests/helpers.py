@@ -21,10 +21,31 @@ from pathlib import Path
 # (track_lib.TRACKS is bound at import), and every case that needs one
 # sets it explicitly. unittest discovery loads test_analysis.py — which
 # imports this — before any other module, so the whole run sees a clean env.
-SANDBOX_ENV = ("CASTLE_HOST", "CASTLE_TRACKS", "CASTLE_SCENES", "CASTLE_BUILD")
+SANDBOX_ENV = (
+    "CASTLE_HOST",
+    "CASTLE_TRACKS",
+    "CASTLE_SCENES",
+    "CASTLE_BUILD",
+    # v5.74: the castle key a tool sends. A shell that exported one must not
+    # turn the emulator's open castle into a refused write in a test.
+    "CASTLE_KEY",
+    # ...and the file the key (and the inventory) is read from: the packaged
+    # app exports a per-user one, and a test that patches hosts.DEVICES
+    # must not be overruled by it.
+    "CASTLE_DEVICES",
+    # The hidden pre-release opt-in (tools/release_channel.py): a shell that
+    # opted in must not move a test onto the other channel.
+    "CASTLE_PRERELEASE",
+)
 for _k in SANDBOX_ENV:
     os.environ.pop(_k, None)
+# The managed yt-dlp (exe_paths.downloader_dir) defaults to the checkout's
+# Castle Radio data; set-but-empty keeps a developer's own copy, fetched by
+# Update the downloader, out of every suite and every studio it starts.
+os.environ["CASTLE_DOWNLOADER_DIR"] = ""
 
+import shlex
+import subprocess
 from typing import Any
 from unittest import mock
 
@@ -134,3 +155,14 @@ class HostEnv:
         if value is None:
             os.environ.pop("CASTLE_HOST", None)
         self.addCleanup(env.stop)  # type: ignore[attr-defined]
+
+
+def command_line(argv: list[str]) -> str:
+    """argv as one command line, quoted the way tools/operator_cmd.py splits
+    one on this OS — what a test hands --off-cmd, --on-cmd or --disrupt-cmd."""
+    return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+
+
+def exits(code: int) -> str:
+    """A command line that switches nothing and exits with `code`."""
+    return command_line([sys.executable, "-c", f"raise SystemExit({code})"])

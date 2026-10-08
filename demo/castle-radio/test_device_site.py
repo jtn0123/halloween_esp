@@ -46,7 +46,8 @@ class FakeData(unittest.TestCase):
                     },
                     {"key": "radio_gone", "title": "Gone", "duration": 3, "cues": cues},
                 ]
-            )
+            ),
+            encoding="utf-8",
         )
 
 
@@ -92,24 +93,47 @@ class TestBuild(FakeData):
     def test_the_computer_is_named_only_where_it_is_true(self):
         page = device_site.build(HERE, self.data).decode()
         for gone in (
-            "Castle unreachable at 10.27.27.81",
-            "Sending command to 10.27.27.81",
+            "Castle unreachable from this computer",
             "Control room server is not running",
             "Start server.py",
             "files stay in this demo",
             "Waveform unavailable. Reopen",
+            "This computer remembers it",
         ):
             self.assertNotIn(gone, page)
         self.assertIn("This browser", page)
+        # The key card ships, answered by castle-direct.js from this browser.
+        self.assertIn('id="key-input"', page)
+        self.assertIn("The castle key (firmware v5.74)", page)
+        self.assertIn("This browser remembers it for this castle only.", page)
         self.assertIn('<audio id="audio" preload="none">', page)
+
+    def test_the_import_line_speaks_to_an_owner_on_both_pages(self):
+        """What Import says of its service is the owner's truth, not the
+        demo's: no "this demo", no server.py to start. The computer keeps
+        what it prepares; the castle's page says what it can do instead."""
+        source = (HERE / "imports.js").read_text(encoding="utf-8")
+        said = re.findall(r"\$\('service-status'\)\.textContent='([^']*)'", source)
+        self.assertEqual(
+            said,
+            [
+                "Import service ready · songs are prepared and kept on this computer",
+                "Import service unavailable · trying again",
+            ],
+        )
+        page = device_site.build(HERE, self.data).decode()
+        for line in said:
+            self.assertNotIn(line, page)
+        self.assertIn("Castle library ready · connect Castle Tools to import", page)
+        self.assertIn("Castle library unavailable · retrying", page)
 
     def test_the_castle_guard_is_in_the_source_not_only_the_build(self):
         """B47: the control-room laptop must not fetch media/ either, so the
         castle-mode guard lives in app.js and the build only moves the path."""
-        source = (HERE / "app.js").read_text()
+        source = (HERE / "app.js").read_text(encoding="utf-8")
         self.assertIn(
-            "if($('output-target').value==='castle')"
-            "{audio.removeAttribute('src');audio.load();}",
+            "if($('output-target').value==='castle'||tracks[id].deleted)"
+            "{audio.removeAttribute('src');audio.load();return;}",
             source,
         )
         page = device_site.build(HERE, self.data).decode()
@@ -133,7 +157,7 @@ class TestBuild(FakeData):
         )
 
     def test_inventory_and_version_parse_match_the_python_bridge(self):
-        page = (HERE / "castle-direct.js").read_text()
+        page = (HERE / "castle-direct.js").read_text(encoding="utf-8")
         self.assertIn("f.name && !f.dir", page)
         self.assertIn("/^(\\d+)\\.(\\d+)/.exec(", page)
         self.assertIn("hex.toLowerCase()", page)

@@ -9,26 +9,48 @@ a link and a scratch directory, and hands back a file.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
+import unicodedata
 import urllib.parse
 from pathlib import Path
 
+import exe_paths
+import import_reason as ir
+from import_convert import MAX_IMPORT_SECONDS, longest
+
+#: What the owner reads when the link's video is over the limit, or a live
+#: stream with no end — yt-dlp's match filter refused it before downloading.
+TOO_LONG_LINK = (
+    f"That video is longer than {longest()}, or is a live stream — choose a "
+    "shorter one, or set a start and length to import just part of it."
+)
+DOWNLOAD_STALLED = (
+    "The download took too long and was stopped — try the link again later, "
+    "or try a different link."
+)
+
+
+def detail(lines: list[str]) -> None:
+    """A tool's own words, for whoever helps: indented, so the verdict scan
+    (import_reason) never mistakes one for the sentence the owner reads."""
+    for ln in lines:
+        print("    " + ln.rstrip(), file=sys.stderr)
+
 
 def _ytdlp() -> str:
-    """The venv's yt-dlp when present, else the system one.
-
-    YouTube deliberately breaks stale clients (403s, SABR-only sessions), and
-    Homebrew's formula trails releases by weeks — pip does not. So the venv
-    copy, updated with `pip install -U yt-dlp`, wins when it exists.
-    """
-    local = Path(sys.executable).with_name("yt-dlp")
-    if local.exists():
-        return str(local)
-    if not shutil.which("yt-dlp"):
-        raise SystemExit("yt-dlp not installed — `brew install yt-dlp`")
-    return "yt-dlp"
+    """The yt-dlp to run (exe_paths.ytdlp says which, and why the managed
+    copy beats the rest), or the owner's sentence saying there is none."""
+    found = exe_paths.ytdlp()
+    if found is None:
+        detail(
+            [
+                "yt-dlp was not found: no managed copy (Update the downloader),",
+                "no CASTLE_YTDLP, none beside this Python, none on PATH",
+            ]
+        )
+        raise SystemExit(ir.DOWNLOADER_MISSING)
+    return found
 
 
 def is_web_url(source: str) -> bool:
@@ -48,68 +70,71 @@ def is_web_url(source: str) -> bool:
     return u.scheme in ("http", "https") and bool(u.netloc)
 
 
-def fetch_url(url: str, dest: Path) -> tuple[Path, str]:
+def _argv(url: str, dest: Path, whole: bool, stream: bool) -> list[str]:
+    """yt-dlp's arguments. `whole`: the import keeps the entire video, so
+    one over the length limit — or a live stream, which has no end — is
+    refused by yt-dlp before a byte is downloaded (`<=?` lets a site that
+    reports no duration through; the converted file is measured anyway)."""
+    limit = f"!is_live & duration <=? {MAX_IMPORT_SECONDS}" if whole else "!is_live"
+    return [
+        _ytdlp(),
+        *(["--newline"] if stream else []),
+        "-x",
+        "--audio-format",
+        "mp3",
+        "--audio-quality",
+        "0",
+        "--no-playlist",
+        "--match-filters",
+        limit,
+        "-o",
+        str(dest / "%(title)s.%(ext)s"),
+        # `--` closes the option list: whatever the URL turns out to look
+        # like, yt-dlp reads it as the thing to download.
+        "--",
+        url,
+    ]
+
+
+def fetch_url(url: str, dest: Path, whole: bool = True) -> tuple[Path, str]:
     """Download audio only. Returns (file, title as the source named it)."""
     if not is_web_url(url):
-        raise SystemExit(f"not a link this can fetch: {url!r} — http(s) only")
-    print(f"fetching {url}")
+        detail([f"not an http(s) link: {url!r}"])
+        raise SystemExit(ir.NOT_A_LINK)
+    # Bracketed like yt-dlp's own chatter: a progress line, never a verdict.
+    print(f"[fetch] {url}")
+    stream = os.environ.get("CASTLE_PROGRESS_STREAM") == "1"
     try:
-        if os.environ.get("CASTLE_PROGRESS_STREAM") == "1":
+        if stream:
             from progress_process import run_progress
 
-            r = run_progress(
-                [
-                    _ytdlp(),
-                    "--newline",
-                    "-x",
-                    "--audio-format",
-                    "mp3",
-                    "--audio-quality",
-                    "0",
-                    "--no-playlist",
-                    "-o",
-                    str(dest / "%(title)s.%(ext)s"),
-                    "--",
-                    url,
-                ],
-                900,
-            )
+            r = run_progress(_argv(url, dest, whole, stream), 900)
         else:
             r = subprocess.run(
-                # `--` closes the option list: whatever the URL turns out to look
-                # like, yt-dlp reads it as the thing to download.
-                [
-                    _ytdlp(),
-                    "-x",
-                    "--audio-format",
-                    "mp3",
-                    "--audio-quality",
-                    "0",
-                    "--no-playlist",
-                    "-o",
-                    str(dest / "%(title)s.%(ext)s"),
-                    "--",
-                    url,
-                ],
+                _argv(url, dest, whole, stream),
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,  # handled below
                 timeout=900,  # a hung download must not wedge the studio's lock
             )
     except subprocess.TimeoutExpired:
-        raise SystemExit(
-            "gave up after 15 minutes — the download stalled. "
-            "Try the link again, or a different source."
-        ) from None
+        raise SystemExit(DOWNLOAD_STALLED) from None
+    said = f"{r.stdout or ''}\n{r.stderr or ''}"
     if r.returncode != 0:
-        # yt-dlp's own last lines say WHY ("Video unavailable", a bot check…).
-        # check=True here dumped a raw CalledProcessError traceback into the
-        # studio's red banner, which no one can act on (round-3 user test).
-        tail = [ln for ln in (r.stderr or r.stdout or "").splitlines() if ln.strip()][
-            -3:
-        ]
-        raise SystemExit("could not fetch that link:\n" + "\n".join(tail))
+        # yt-dlp's last lines say WHY (a private video, a bot check); the
+        # owner reads what that means, the lines go to the log beneath it.
+        # check=True here once dumped a raw CalledProcessError traceback
+        # into the studio's red banner (round-3 user test).
+        detail([ln for ln in said.splitlines() if ln.strip()][-6:])
+        raise SystemExit(ir.recognised(said) or ir.DOWNLOAD_FAILED)
     got = sorted(dest.glob("*.mp3"), key=lambda p: p.stat().st_mtime)
     if not got:
-        raise SystemExit("yt-dlp produced no audio file")
-    return got[-1], got[-1].stem
+        if "does not pass filter" in said:
+            raise SystemExit(TOO_LONG_LINK)
+        detail([ln for ln in said.splitlines() if ln.strip()][-6:])
+        raise SystemExit(ir.NO_AUDIO)
+    # The title is the file's name, and a Mac may hand back a decomposed
+    # one (é as e + U+0301): the same song must read the same everywhere.
+    return got[-1], unicodedata.normalize("NFC", got[-1].stem)

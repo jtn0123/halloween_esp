@@ -19,6 +19,10 @@
 //   FR_NO_PATH to FatFs;
 //   a "." SEGMENT — FF_FS_RPATH is 0 in ESP-IDF's ffconf.h, so "." is an
 //   ordinary file name that is never found.
+//
+// And one decides whether it answers from the card at all: a BACKSLASH is
+// FatFs's separator as much as '/' is, so "a\..\..\x" was a file name to
+// POSIX and a walk out of the card directory to Windows (v5.75).
 
 #include <algorithm>
 #include <cerrno>
@@ -30,6 +34,8 @@
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include <castle_shim_host.h>
 
 namespace castle_shim {
 
@@ -54,15 +60,22 @@ inline const std::string &card_root() {
   return root;
 }
 
+/// FatFs's two separators (IsSeparator in ff.c).
+inline bool fat_sep(char c) { return c == '/' || c == '\\'; }
+
 /// "/sd/scenes/x.mp3" → "<card>/scenes/x.mp3"; "/sd" → "<card>".
 /// Anything not under /sd is its own path (the harness's own temp files).
+/// A backslash under /sd becomes '/', so "a\b" is `b` in `a` on every host
+/// as it is on the board, rather than a name POSIX never finds.
 inline std::string map_path(const char *p) {
   if (p == nullptr) return std::string();
   const std::string s(p);
   if (card_root().empty()) return s;
   if (s == "/sd") return card_root();
-  if (s.compare(0, 4, "/sd/") == 0) return card_root() + s.substr(3);
-  return s;
+  if (s.compare(0, 4, "/sd/") != 0) return s;
+  std::string rel = s.substr(3);
+  std::replace(rel.begin(), rel.end(), '\\', '/');
+  return card_root() + rel;
 }
 
 inline bool is_dir(const std::string &p) {
@@ -79,11 +92,18 @@ inline bool is_dir(const std::string &p) {
 /// (FR_NO_PATH otherwise) and the empty segment after it is FR_INVALID_NAME
 /// either way. POSIX shrugs at both, so "/sd/a/" would open the file `a`
 /// here and fail on the board.
+///
+/// Both rules split on a backslash too, and a path holding a byte
+/// create_name() refuses is never found — one of them is ':', a drive to
+/// Windows, so "c:x" was not under the card at all (v5.75;
+/// tools/castle_emu_wire.py fat_path is the emulator's copy).
 inline bool fat_missing(const std::string &p) {
   if (p.compare(0, 3, "/sd") != 0) return false;
-  if (p.back() == '/') return true;
+  if (fat_sep(p.back())) return true;
+  if (p.find_first_of("*:<>?|\"\x7f") != std::string::npos) return true;
   for (size_t i = 0; i < p.size();) {
-    const size_t end = std::min(p.find('/', i), p.size());
+    size_t end = i;
+    while (end < p.size() && !fat_sep(p[end])) ++end;
     const std::string seg = p.substr(i, end - i);
     if (seg == "." || seg == "..") return true;
     i = end + 1;
@@ -129,7 +149,15 @@ inline FILE *castle_shim_fopen(const char *path, const char *mode) {
     errno = EISDIR;
     return nullptr;
   }
+#ifdef _WIN32
+  // FatFs has no text mode: "a" on the card appends exactly the bytes
+  // written. The Windows runtime's "a" would turn each "\n" into "\r\n".
+  std::string m(mode == nullptr ? "" : mode);
+  if (m.find('b') == std::string::npos) m += 'b';
+  FILE *f = ::fopen(p.c_str(), m.c_str());
+#else
   FILE *f = ::fopen(p.c_str(), mode);
+#endif
   // SET, not non-zero: "CASTLE_SD_FAIL_AFTER=0" is the card that refuses
   // the very first sector, which is the leg where nothing has gone out yet
   // and a real 500 is still possible.
@@ -207,5 +235,5 @@ inline int castle_shim_rename(const char *from, const char *to) {
 }
 
 inline int castle_shim_mkdir(const char *path, mode_t mode) {
-  return ::mkdir(castle_shim::map_path(path).c_str(), mode);
+  return castle_shim::make_dir(castle_shim::map_path(path).c_str(), mode);
 }

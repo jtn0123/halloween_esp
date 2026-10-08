@@ -1,9 +1,14 @@
 """Control requests must address an installed scene and reject unsupported transport."""
 
+import importlib
+import os
+import tempfile
 import threading
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
+import castle_place
 import device_bridge
 
 
@@ -184,6 +189,10 @@ class SharedStatusTests(unittest.TestCase):
     def setUp(self):
         device_bridge._status_cache.update({"at": 0.0, "state": None})
         device_bridge._expected.update({"scene": None, "track": None, "until": 0.0})
+        # A castle named here, not by whatever this shell or devices.toml says.
+        host = patch.object(device_bridge, "HOST", "192.168.1.20")
+        host.start()
+        self.addCleanup(host.stop)
 
     @patch("device_bridge.urllib.request.urlopen")
     def test_status_polls_share_one_castle_request(self, urlopen):
@@ -421,3 +430,47 @@ class SoundTrueStartTests(unittest.TestCase):
         state = {"scene": "stop", "track": "radio_a.mp3"}
         self.assertEqual(device_bridge.playback_clock(state)["position_s"], 0)
         self.assertEqual(device_bridge.playback_clock(state)["position_s"], 1.5)
+
+
+class NoBuiltInCastleTests(unittest.TestCase):
+    """docs/PRODUCTION-TODO.md §8: the bridge has no address of its own."""
+
+    def resolved(self, **env):
+        clean = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("CASTLE_RADIO_HOST", "CASTLE_HOST", "CASTLE_DEVICES")
+        }
+        with (
+            patch.dict(os.environ, {**clean, **env}, clear=True),
+            patch.dict(castle_place._last),
+        ):
+            importlib.reload(device_bridge)
+            return device_bridge.HOST
+
+    def tearDown(self):
+        importlib.reload(device_bridge)  # this process's own environment again
+
+    def test_the_host_is_the_apps_pin_or_its_own_store(self):
+        """CASTLE_HOST is the toolchain's (radio_env blanks it), and a store
+        nobody named is the checkout's tracked devices.toml — the seller's
+        yard. Neither is this app's castle (castle_place.py)."""
+        self.assertEqual(
+            self.resolved(CASTLE_RADIO_HOST="castle.local"), "castle.local"
+        )
+        self.assertEqual(self.resolved(CASTLE_HOST="192.168.1.20"), "")
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "devices.toml"
+            store.write_text('[c]\nhost = "192.168.1.30"\n', encoding="utf-8")
+            self.assertEqual(self.resolved(CASTLE_DEVICES=str(store)), "192.168.1.30")
+
+    @patch("device_bridge.urllib.request.urlopen")
+    def test_no_castle_is_said_and_nothing_is_dialled(self, urlopen):
+        with patch.object(device_bridge, "HOST", ""):
+            with self.assertRaisesRegex(OSError, "No castle found yet"):
+                device_bridge.call("/api/status", fresh=True)
+            with self.assertRaisesRegex(OSError, "No castle found yet"):
+                device_bridge.castle()
+        urlopen.assert_not_called()
+        with patch.object(device_bridge, "HOST", "192.168.1.20"):
+            self.assertEqual(device_bridge.castle(), "192.168.1.20")

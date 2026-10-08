@@ -24,7 +24,9 @@
 //   response  "<status> <bodylen> <nhdr>\n", <nhdr> lines of "name: value",
 //             then <bodylen> raw body bytes. Content-Type is the first
 //             header; the rest follow in the order the handler set them.
-//   tick      "TICK <now_us> <playing> <sounding>\n" — ONE main-loop tick
+//   key       "KEY <len>\n" + <len> bytes: the X-Castle-Key header every
+//             request after it carries (v5.74); "KEY 0" sends none. No reply.
+//   tick      "TICK <now_us> <playing> <sounding> [<epoch>]\n" — ONE main-loop tick
 //             (C6). `playing` is the media pipeline's word and `sounding`
 //             the speaker's, the two inputs castle_sd_common.yaml's 200 ms
 //             interval reads off ESPHome before it calls into the firmware.
@@ -34,6 +36,8 @@
 //             set_pending was ever run in C: the mirror, the event ring
 //             and the audio clock were emulator-only, which is the
 //             structural reason C3, C4 and C7 were invisible to the pair.
+//             `epoch` (v5.75) is the wall clock owner_tick reads — unix
+//             seconds, 0 (the default) for a castle SNTP has not set.
 //
 // The URI is length-prefixed rather than whitespace-delimited because the
 // fuzz sends names that decode to spaces and newlines, and a protocol that
@@ -42,10 +46,17 @@
 // `--rules` is a second mode for the byte rules alone: lines of "<len>\n"
 // + <len> bytes, answered with safe_name's verdict and url_decode's and
 // json_escape's output, so those three are RUN in C rather than re-derived.
+//
+// `--boot` (v5.75) first runs castle_sd_common.yaml's on_boot in its own
+// order — mount, seed the scene ids, start(), the manifest check, the
+// opening scene — against whatever card the environment describes, then
+// serves as usual. It is how a card that is missing, unreadable or holds no
+// show is proved to leave a castle that boots and answers (§1.3).
 
 #include <castle_shim.h>
 
 #include "castle_scenes.h"
+#include "fallback_scenes.h"
 #include "sd_web.h"
 
 namespace {
@@ -57,6 +68,11 @@ namespace {
 // /api/status prints them and a pair test has to be able to get the castle
 // into a state rather than being handed one at startup. (C6)
 std::string g_scene, g_track, g_pir_scene;
+/// The media player's level, in percent: `id(castle_media)->volume` on the
+/// device. g_volume is only the web layer's MIRROR of it, stored at the top
+/// of every tick — v5.75 made the two differ for a tick, because the
+/// owner's tick pulls the player and the mirror catches up on the next.
+int g_player = 70;
 
 /// The device's globals, seeded the way the main loop would have by the
 /// time a request arrives. Every one of them is something /api/status
@@ -83,6 +99,9 @@ void seed_from_env() {
   castle_web::set_scene_ids(ids);
   castle_web::set_missing(castle_shim::env("CASTLE_MISSING"));
   castle_web::g_volume = (int) castle_shim::env_ul("CASTLE_VOLUME", 70);
+  g_player = castle_web::g_volume.load();
+  // v5.75: the buyer build has no motion sensor (castle_buyer.yaml).
+  castle_web::g_pir_fitted = castle_shim::env("CASTLE_PIR_FITTED", "1") != "0";
   // LAST, and for the same reason the device calls it last: since v5.60
   // this is the one publish point, copying every atomic above into the
   // snapshot /api/status answers from (sd_web_state.h).
@@ -162,9 +181,54 @@ const char *action_name(castle_web::ActionType t) {
   return "NONE";
 }
 
-/// ONE 200 ms interval tick, in castle_sd_common.yaml's own order: mirror
-/// the audio clock, publish the snapshot, rate-limit the dropped-frame
-/// line, drain the mailbox, record what was drained, run it. (C6)
+/// The SCENE branch: `run_scene` and `scene_run` (castle_scenes.yaml), as
+/// far as the web can see them. A function of its own since v5.75, because
+/// `--boot`'s opening scene is the same call.
+void run_scene(const std::string &id, long long now_us) {
+  // run_scene publishes current_scene; a scene script does NOT publish
+  // current_track (only scene_stop clears it), so the track name a
+  // previous /api/play left survives a scene on the device.
+  if (id == "stop") {
+    g_scene = "stop";
+    g_track.clear();
+    return;
+  }
+  if (id == "halt") return;
+  // J3 (grade report 2026-09-17 pm): scene_run's first lambda returns at
+  // once while flash is burning, so nothing is published and no card file
+  // is opened. "stop" and "halt" are handled above it, by `run_scene`
+  // itself, and still work — stopping the show is what an OTA wants.
+  if (castle_sd::g_quiesce) return;
+  g_scene = id;
+  castle_web::restart_audio_clock(now_us);
+  // v5.67: what a scene IS comes off the card — castle_scenes::begin
+  // reads /sd/scenes/show.man at every start (castle_scenes.yaml). The
+  // runner itself is the half this program models rather than runs, but
+  // its WEB-VISIBLE consequences are the real headers' own, so they are
+  // made here with them: `cues`, a SCENE_MISSING line in the event ring,
+  // and a name added to (v5.67) or withdrawn from (v5.68) /api/status's
+  // `missing`. Without this the emulator was the only castle that said
+  // any of it, and the pair check is the thing that would have to notice.
+  //
+  // In scene_run's own ORDER, which is the v5.68 change: the manifest
+  // row, then the audio, then the cue file.
+  if (!castle_scenes::begin(id.c_str(), now_us)) {
+    castle_web::record_event(castle_web::EventKind::SCENE_MISSING, id, now_us);
+    castle_web::note_missing(id);
+  } else if (!castle_scenes::load_cues()) {
+    castle_web::record_event(castle_web::EventKind::SCENE_MISSING, id + ".cue", now_us);
+    castle_web::note_missing(id + ".cue");
+  } else {
+    castle_web::heal_missing(id);
+    castle_web::heal_missing(id + ".cue");
+  }
+  castle_web::g_cues.store(castle_cues::count());
+}
+
+/// ONE 200 ms interval tick, in castle_sd_common.yaml's own order: the
+/// owner's tick (v5.75), mirror the audio clock, publish the snapshot,
+/// rate-limit the dropped-frame line, drain the mailbox, record what was
+/// drained, run it. (C6)
 ///
 /// The half that is NOT the firmware — run_scene, the media player calls,
 /// the pixel scripts — is modelled by the few string moves below, and only
@@ -174,7 +238,11 @@ const char *action_name(castle_web::ActionType t) {
 /// order: the snapshot is published BEFORE the mailbox is drained, so a
 /// command applied on this tick is only visible to /api/status on the next
 /// one — the same 200 ms of lag the porch has.
-castle_web::Action tick(long long now_us, bool playing, bool sounding) {
+castle_web::Action tick(long long now_us, bool playing, bool sounding, long long epoch) {
+  // v5.75: the player's level into the mirror, then the owner's clock —
+  // quiet hours and the cap — which may pull the player (castle_owner.h).
+  castle_web::g_volume.store(g_player);
+  if (const int pull = castle_web::owner_tick(epoch, g_player); pull >= 0) g_player = pull;
   if (castle_web::mirror_audio(playing, sounding, now_us, g_track) && g_scene == "stop" &&
       !g_track.empty())
     g_track.clear();
@@ -192,47 +260,7 @@ castle_web::Action tick(long long now_us, bool playing, bool sounding) {
       castle_web::restart_audio_clock(now_us);
       break;
     case castle_web::ActionType::SCENE:
-      // run_scene publishes current_scene; a scene script does NOT publish
-      // current_track (only scene_stop clears it), so the track name a
-      // previous /api/play left survives a scene on the device.
-      if (act.arg == "stop") {
-        g_scene = "stop";
-        g_track.clear();
-        break;
-      }
-      if (act.arg == "halt") break;
-      // J3 (grade report 2026-09-17 pm): scene_run's first lambda returns at
-      // once while flash is burning, so nothing is published and no card file
-      // is opened. "stop" and "halt" are handled above it, by `run_scene`
-      // itself, and still work — stopping the show is what an OTA wants.
-      if (castle_sd::g_quiesce) break;
-      g_scene = act.arg;
-      castle_web::restart_audio_clock(now_us);
-      // v5.67: what a scene IS comes off the card — castle_scenes::begin
-      // reads /sd/scenes/show.man at every start (castle_scenes.yaml). The
-      // runner itself is the half this program models rather than runs, but
-      // its WEB-VISIBLE consequences are the real headers' own, so they are
-      // made here with them: `cues`, a SCENE_MISSING line in the event ring,
-      // and a name added to (v5.67) or withdrawn from (v5.68) /api/status's
-      // `missing`. Without this the emulator was the only castle that said
-      // any of it, and the pair check is the thing that would have to notice.
-      //
-      // In scene_run's own ORDER, which is the v5.68 change: the manifest
-      // row, then the audio, then the cue file.
-      {
-        if (!castle_scenes::begin(act.arg.c_str(), now_us)) {
-          castle_web::record_event(castle_web::EventKind::SCENE_MISSING, act.arg, now_us);
-          castle_web::note_missing(act.arg);
-        } else if (!castle_scenes::load_cues()) {
-          castle_web::record_event(castle_web::EventKind::SCENE_MISSING, act.arg + ".cue",
-                                   now_us);
-          castle_web::note_missing(act.arg + ".cue");
-        } else {
-          castle_web::heal_missing(act.arg);
-          castle_web::heal_missing(act.arg + ".cue");
-        }
-        castle_web::g_cues.store(castle_cues::count());
-      }
+      run_scene(act.arg, now_us);
       break;
     case castle_web::ActionType::STOP:
     case castle_web::ActionType::BLACKOUT:
@@ -247,7 +275,8 @@ castle_web::Action tick(long long now_us, bool playing, bool sounding) {
       }
       break;
     case castle_web::ActionType::VOLUME:
-      castle_web::g_volume.store(atoi(act.arg.c_str()));
+      // Through the owner's cap and quiet hours (castle_web_actions.yaml).
+      g_player = castle_web::volume_for(atoi(act.arg.c_str()));
       break;
     case castle_web::ActionType::PIRCFG: {
       const size_t p1 = act.arg.find('|');
@@ -266,21 +295,68 @@ castle_web::Action tick(long long now_us, bool playing, bool sounding) {
   return act;
 }
 
+/// `--boot`: castle_sd_common.yaml's on_boot, in its order, against the card
+/// the environment describes. CASTLE_MOUNTED=0 leaves g_mounted down, so
+/// mount() really calls esp_vfs_fat_sdspi_mount — which the shim fails, the
+/// way a socket with no card or a card FATFS cannot read fails on the board
+/// (format_if_mount_failed is false: the castle never reformats a card).
+/// The scripts that are YAML on the device (seed_scene_ids, manifest_check)
+/// are their lambdas' few lines, calling the same headers.
+void boot() {
+  if (castle_sd::mount(5, 36, 35, 37)) {   // the Feather's sd_cs/sck/mosi/miso
+    castle_sd::list_root();
+    castle_health::log_boot_to_sd(ESPHOME_PROJECT_VERSION);
+  } else {
+    castle_health::finish_boot();
+  }
+  // seed_scene_ids (castle_scenes.yaml): the card's manifest, else the ids
+  // this image was compiled with.
+  std::string csv = castle_scenes::ids_csv();
+  if (csv.empty()) csv = kFallbackSceneIdsCsv;
+  std::vector<std::string> ids;
+  for (size_t at = 0; at <= csv.size();) {
+    const size_t end = std::min(csv.find(',', at), csv.size());
+    if (end > at) ids.emplace_back(csv, at, end - at);
+    at = end + 1;
+  }
+  ids.emplace_back("stop");
+  castle_web::set_scene_ids(ids);
+  castle_web::set_missing("");
+  castle_web::start();
+  // manifest_check
+  if (castle_sd::g_mounted && !castle_sd::g_quiesce)
+    castle_web::set_missing(castle_scenes::missing_csv());
+  // The opening scene: not after a software restart, nor with boot_play off.
+  if (castle_health::g_reason != ESP_RST_SW && castle_web::g_boot_play.load())
+    run_scene(castle_web::first_scene_id(), 0);
+  else
+    g_scene = "stop";
+  castle_web::mirror_show_state(g_scene, g_track, g_pir_scene);
+}
+
 int serve() {
   std::string line;
   while (read_line(line)) {
     if (line == "QUIT") break;
     if (line.compare(0, 5, "TICK ") == 0) {
-      long long now_us = 0;
+      long long now_us = 0, epoch = 0;
       int playing = 0, sounding = 0;
-      if (sscanf(line.c_str() + 5, "%lld %d %d", &now_us, &playing, &sounding) != 3) {
+      if (sscanf(line.c_str() + 5, "%lld %d %d %lld", &now_us, &playing, &sounding,
+                 &epoch) < 3) {
         fprintf(stderr, "web_check: bad tick line %s\n", line.c_str());
         return 2;
       }
-      const castle_web::Action act = tick(now_us, playing != 0, sounding != 0);
+      const castle_web::Action act = tick(now_us, playing != 0, sounding != 0, epoch);
       printf("%s %zu\n", action_name(act.type), act.arg.size());
       fwrite(act.arg.data(), 1, act.arg.size(), stdout);
       fflush(stdout);
+      continue;
+    }
+    if (line.compare(0, 4, "KEY ") == 0) {
+      // The X-Castle-Key every following request carries ("KEY 0" = none).
+      std::string k;
+      if (!read_exact(k, strtoul(line.c_str() + 4, nullptr, 10))) return 2;
+      castle_shim::req_key() = k;
       continue;
     }
     char method[16] = {0};
@@ -346,13 +422,17 @@ int main(int argc, char **argv) {
     return 2;
   }
   const bool rules_mode = argc > 1 && strcmp(argv[1], "--rules") == 0;
+  const bool boot_mode = argc > 1 && strcmp(argv[1], "--boot") == 0;
   seed_from_env();
   if (rules_mode) return rules();
   // The upload worker's job, run in line after each request (A9): the
   // device has a task for this, the harness has this one thread. The
   // firmware side is identical either way — h_put queues and returns.
   castle_shim::drain_async = []() { castle_web::upload_pump(); };
-  castle_web::start();
+  if (boot_mode)
+    boot();   // which calls start() where the device does
+  else
+    castle_web::start();
   if (castle_shim::server_on(80) == nullptr ||
       castle_shim::server_on(8080) == nullptr) {
     fprintf(stderr, "web_check: castle_web::start() left a server unstarted\n");

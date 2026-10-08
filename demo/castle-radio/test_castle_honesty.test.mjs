@@ -118,6 +118,16 @@ test('B6: Play says why nothing happened when the previous command is in the air
   assert.equal(said(calls, /failed/i).length, 0, 'busy is not a failure');
 });
 
+/* ------------------------------------------------- PRODUCTION-TODO §8 */
+
+test('§8: the device address is the castle the bridge asked, never one the page carries', async () => {
+  const named = linkContext({payload: {...idle(), host: 'castle-a1b2c3.local'}});
+  const unnamed = linkContext({payload: idle()});
+  await settle();
+  assert.equal(named.ctx.$('live-host').textContent, 'castle-a1b2c3.local');
+  assert.equal(unnamed.ctx.$('live-host').textContent, 'Not set');
+});
+
 /* --------------------------------------------------------------------- B10 */
 
 test('B10: a castle that names no firmware reads as “—”, never as undefined', async () => {
@@ -404,7 +414,7 @@ const served = (jobs, rows = []) => url => ({ok: true, status: 200,
 
 test('a job is shown by name — the link itself while it downloads, never "Linked song"', async () => {
   const jobs = [
-    {id: 'radio_a', title: '', phase: 'Ready in demo', done: true, finished_at: 9, started_at: 1},
+    {id: 'radio_a', title: '', phase: 'Ready on this computer', done: true, finished_at: 9, started_at: 1},
     {id: 'radio_b', title: '', phase: 'Downloading audio', done: false, percent: 12,
       source: 'https://www.youtube.com/watch?v=abc'},
     {id: 'radio_c', title: 'Thriller', phase: 'Queued', done: false, source: 'https://e.com/t'},
@@ -428,7 +438,7 @@ test('a job is shown by name — the link itself while it downloads, never "Link
 
 test('clearing finished jobs keeps failures, and a retried job comes back when it finishes again', async () => {
   const jobs = [
-    {id: 'radio_a', title: 'Fine', phase: 'Ready in demo', done: true, finished_at: 5},
+    {id: 'radio_a', title: 'Fine', phase: 'Ready on this computer', done: true, finished_at: 5},
     {id: 'radio_b', title: 'Broken', phase: 'Import failed', done: true, finished_at: 6, error: 'no audio'},
   ];
   const {ctx} = importsContext(served(jobs));

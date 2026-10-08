@@ -42,6 +42,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 import castle_emu
 import castle_emu_flash
 import castle_emu_wire as wire
+import fw_formats
 
 #: Verbatim from tests/test_studio_relay_fuzz.py — encoded separators,
 #: bare dots, a backslash, a NUL and a hidden name. The corpus is the
@@ -68,15 +69,18 @@ KNOWN_ROUTES = [
     "/api/blackout",
     "/api/bootlog",
     "/api/events",
+    "/api/factory-reset",
     "/api/files",
     "/api/files/",
     "/api/health",
+    "/api/key",
     "/api/light",
     "/api/ota",
     "/api/pir",
     "/api/play",
     "/api/scene",
     "/api/scenes/",
+    "/api/settings",
     "/api/show/start",
     "/api/show/stop",
     "/api/site/",
@@ -124,7 +128,7 @@ class CardCase(StudioCase):
     def setUpClass(cls) -> None:
         cls.jail = Path(tempfile.mkdtemp(prefix="relay-rs-jail-"))
         cls.card = cls.jail / "card"
-        (cls.jail / "secret.txt").write_text("outside the card")
+        (cls.jail / "secret.txt").write_text("outside the card", encoding="utf-8")
         cls.emu = castle_emu.CastleEmu(
             port=0, sd_dir=cls.card, scenes=["vigil", "storm"]
         )
@@ -186,7 +190,7 @@ class Bridge(CardCase):
         code, body = self.json("/api/status")
         self.assertEqual(code, 200)
         # The emulator's own fields, not a studio summary of them.
-        self.assertEqual(body["version"], "5.40")
+        self.assertEqual(body["version"], fw_formats.this_firmware())
         self.assertEqual(body["compiled"], "emulated")
         self.assertEqual(body["scenes"], "vigil,storm")
         # `bridged` names WHO answered; the absence of `studio` is what
@@ -368,7 +372,7 @@ class CardPush(CardCase):
             code, body = self.put(name, b"x")
             self.assertEqual((code, body), (400, b"bad filename"), name)
         self.assertEqual(
-            sorted(str(p.relative_to(self.card)) for p in self.card.rglob("*")),
+            sorted(p.relative_to(self.card).as_posix() for p in self.card.rglob("*")),
             ["scenes", "scenes/vigil.mp3", "song.mp3"],
         )
 

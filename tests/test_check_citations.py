@@ -1,6 +1,6 @@
 """The citation guard — `tools/check_citations.py` and what it refuses.
 
-Item IDs renumber every audit, so a bare "grade report A1" names six reports
+Item IDs renumber every audit, so a bare "grade report A1" names every report
 at once. The guard's whole job is to keep the next undated one out of the
 tree, which means two things have to hold: it must PASS on the tree as it
 stands (proved here against the live repo), and it must FAIL on a planted
@@ -72,7 +72,9 @@ class TestTree(unittest.TestCase):
         bare must report it."""
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            (root / "planted.py").write_text("# the fix for grade report A1\n")
+            (root / "planted.py").write_text(
+                "# the fix for grade report A1\n", encoding="utf-8"
+            )
             rows = check_citations.scan(root=root, files=[root / "planted.py"])
         self.assertEqual([(r[0], r[2]) for r in rows], [("planted.py", False)])
 

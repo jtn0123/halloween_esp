@@ -6,7 +6,7 @@
  * asked for.
  */
 
-import { test, expect, fakeCastle, realBytes } from "./fixtures.js";
+import { test, expect, fakeCastle, holdCastle, realBytes } from "./fixtures.js";
 import { MP3_ID, WAV_ID } from "./global-setup.js";
 
 const row = (id: string) => `.trk[data-id="${id}"]`;
@@ -20,20 +20,43 @@ async function inShow(page: import("@playwright/test").Page, ids: string[]): Pro
 }
 
 test("a slow castle still gets its chip, and the desk never waits on it", async ({ page }) => {
+  // "Never waits" is an ORDER, and the test asserts it as one. It used to
+  // time the pick below at < 1000 ms, which Linux WebKit in CI (~5 fps)
+  // spends on one Playwright click while the desk answers the click in the
+  // same task; and it looked for a still-hidden chip after a cold load,
+  // when Playwright could get its first look later than a 1.2 s castle.
   const castle = await fakeCastle(page);
   castle.delay = 1200;                       // inside the 2.5 s probe budget
+  // So the page notes for itself which came first: the scene grid (the
+  // desk, live) or the chip (the castle's first answer).
+  await page.addInitScript(() => {
+    const firsts: string[] = [];
+    (window as unknown as { __firsts: string[] }).__firsts = firsts;
+    const note = (what: string): void => { if (!firsts.includes(what)) firsts.push(what); };
+    new MutationObserver((records) => {
+      for (const r of records) {
+        const t = r.target as Element;
+        if (r.type === "childList" && t.querySelector("button.scene")) note("scenes");
+        if (t.id === "deviceChip" && t.classList.contains("live")) note("chip");
+      }
+    }).observe(document, { subtree: true, childList: true, attributeFilter: ["class"] });
+  });
+  // And the pick's answer is held, so the desk is seen to have moved on
+  // while the castle has still said nothing.
+  const pick = await holdCastle(page, /\/api\/scene\?/);
   await page.goto("/");
   await expect(page.locator("#stage")).toBeVisible();
-  // The stage is live long before the castle answers.
-  await expect(page.locator("#deviceChip")).toBeHidden();
   await expect(page.locator("#deviceChip")).toBeVisible({ timeout: 5000 });
-  // A scene pick returns to the operator at once; the toast arrives when
-  // the castle does.
-  const t = Date.now();
-  await page.locator("button.scene", { hasText: "Storm" }).first().click();
-  await expect(page.locator("button.scene", { hasText: "Storm" }).first())
-    .toHaveAttribute("aria-pressed", "true");
-  expect(Date.now() - t).toBeLessThan(1000);
+  expect(await page.evaluate(() => (window as unknown as { __firsts: string[] }).__firsts))
+    .toEqual(["scenes", "chip"]);
+  // A scene pick returns to the operator while the castle still holds it;
+  // the toast arrives when the castle does.
+  const storm = page.locator("button.scene", { hasText: "Storm" }).first();
+  await storm.click();
+  await pick.arrived;
+  await expect(storm).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".toast", { hasText: "scene storm" })).toHaveCount(0);
+  pick.release();
   await expect(page.locator("#toasts")).toContainText("scene storm", { timeout: 5000 });
 });
 
@@ -134,8 +157,8 @@ test("the ♪ route survives a reload without re-hushing the castle", async ({ p
   const castle = await fakeCastle(page);
   await page.goto("/");
   const route = page.locator(".transport #sndRoute");
-  await expect(route).toHaveText("♪ Mac");
-  await expect.poll(() => castle.hits("/api/volume?v=0")).toBe(1);   // Mac route enforced
+  await expect(route).toHaveText("♪ Computer");
+  await expect.poll(() => castle.hits("/api/volume?v=0")).toBe(1);   // computer route enforced
   await route.click();
   await expect(route).toHaveText("♪ Castle");
   await expect.poll(() => castle.hits("/api/volume?v=40")).toBe(1);
@@ -151,13 +174,36 @@ test("the ♪ route survives a reload without re-hushing the castle", async ({ p
   expect(castle.hits("/api/volume")).toBe(0);        // nothing to enforce
 });
 
+test("♪ Castle and unmute bring back the castle's level after a poll has seen it at 0", async ({ page }) => {
+  // A hushed castle SAYS 0, and a poll landing while it was hushed (or
+  // muted) used to overwrite the level the desk meant to come back to:
+  // ♪ Castle and unmute then sent 70, not the castle's own 40. Only a slow
+  // browser let that poll land before the click — Linux WebKit did.
+  const castle = await fakeCastle(page);
+  const levels = (): string[] => castle.calls.filter((c) => c.includes("/api/volume?"))
+    .map((c) => c.replace(/.*v=/, ""));
+  await page.goto("/");
+  await expect.poll(levels).toEqual(["0"]);                          // ♪ Computer hushes it…
+  await expect(page.locator("#devMute")).toHaveText("🔇");           // …and a poll has said so
+  await page.locator(".transport #sndRoute").click();
+  await expect.poll(levels).toEqual(["0", "40"]);
+  await expect(page.locator("#devMute")).toHaveText("🔊");
+  await page.locator("#devMute").click();
+  await expect.poll(levels).toEqual(["0", "40", "0"]);
+  // The hand leaves the chip, so the poll's render is not parked (C1).
+  await page.locator("#devMute").blur();
+  await expect(page.locator("#devMute")).toHaveText("🔇");           // the poll saw the mute
+  await page.locator("#devMute").click();
+  await expect.poll(levels).toEqual(["0", "40", "0", "40"]);
+});
+
 test("a castle that dies mid-session takes its badges and Sync with it", async ({ page }) => {
   const castle = await fakeCastle(page,
     [{ name: `${MP3_ID}.mp3`, size: await realBytes(page, MP3_ID), dir: false }]);
   await inShow(page, [WAV_ID]);
   await page.goto("/");
   await expect(page.locator("#trkSync")).toHaveText("Sync show → castle (1)");
-  castle.up = false;
+  castle.dieOn = "/api/stop";
   // Any action's re-poll discovers the loss within a second; presence flips
   // and the library re-reads the card (and gets nothing).
   await page.locator("#devStop").click();
@@ -167,18 +213,18 @@ test("a castle that dies mid-session takes its badges and Sync with it", async (
   await expect(page.locator("button[data-act='send']")).toHaveCount(0);
 });
 
-test("a castle back from a reboot is hushed again while sound is on the Mac", async ({ page }) => {
+test("a castle back from a reboot is hushed again while sound is on the computer", async ({ page }) => {
   // speaker_hush is not persisted on the castle: a reboot comes back with
   // the amp at the boot scene's own level. The route is the desk's decision,
   // so the desk restates it the moment the castle answers again.
   const castle = await fakeCastle(page);
   await page.goto("/");
   await expect.poll(() => castle.hits("/api/volume?v=0")).toBe(1);   // first contact
-  castle.up = false;
+  castle.dieOn = "/api/stop";
   await page.locator("#devStop").click();                            // re-poll finds it gone
   await expect(page.locator("#headTxt")).toContainText("castle not answering");
   castle.up = true;
   // The slow poll (15 s) is what notices a castle nobody is acting on.
   await expect.poll(() => castle.hits("/api/volume?v=0"), { timeout: 25_000 }).toBe(2);
-  await expect(page.locator("#headTxt")).toContainText("sound: Mac");
+  await expect(page.locator("#headTxt")).toContainText("sound: computer");
 });

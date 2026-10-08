@@ -13,11 +13,16 @@ a dead `file:` source, and two stem directories (one fresh, one stale).
 
 Nothing here reaches the network or the operator's own files: the four
 CASTLE_* knobs are set explicitly and `CASTLE_HOST` is empty unless a
-subclass names an emulator (CLAUDE.md's sandboxing section).
+subclass names an emulator (CLAUDE.md's sandboxing section). The inventory
+is a sandbox file too (CASTLE_DEVICES, empty unless a subclass writes
+DEVICES) — it is where the studio REMEMBERS a castle key, and a test that
+set one must never write the repo's devices.toml — and CASTLE_KEY is never
+passed through.
 """
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import shutil
@@ -41,11 +46,12 @@ import cargo_gate
 import gen_scene_cards
 import manifest as mf
 import yaml
+from exe_paths import exe
 from helpers import make_click_track
 
 CARGO = cargo_gate.CARGO
 IN_CI = bool(os.environ.get("CI"))
-BIN = ROOT / "core" / "target" / "release" / "studio"
+BIN = ROOT / "core" / "target" / "release" / exe("studio")
 
 #: Two renderable-in-a-blink scenes riding the REPO's own preamble
 #: (hardware, zones, palette — the parts the generators need real).
@@ -75,7 +81,7 @@ SCENES_TAIL = """\
 
 
 def scenes_fixture() -> str:
-    real = (ROOT / "scenes" / "scenes.yaml").read_text()
+    real = (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
     preamble = real.split("\nscenes:\n", 1)[0]
     return preamble + "\nscenes:\n" + SCENES_TAIL
 
@@ -99,6 +105,14 @@ def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return int(s.getsockname()[1])
+
+
+#: What a request raises when no server is there, or when the one that was
+#: there exits mid-reply. URLError and the socket errors are OSErrors; a
+#: response torn off by the process dying is an http.client.HTTPException
+#: (IncompleteRead, BadStatusLine), which is not — and reading that as a
+#: test error was the flake behind the 2026-10-03 #64 scan-job failure.
+NOT_SERVING = (OSError, http.client.HTTPException)
 
 
 def fetch(
@@ -127,7 +141,7 @@ def wait_up(port: int, deadline_s: float = 45.0) -> None:
         try:
             fetch(port, "/api/status")
             return
-        except (urllib.error.URLError, OSError):
+        except NOT_SERVING:
             time.sleep(0.1)
     raise AssertionError(f"server on {port} never answered")
 
@@ -199,7 +213,8 @@ def seed_library(tracks: Path) -> None:
                 },
                 "note": "fixture 🎃",
             }
-        )
+        ),
+        encoding="utf-8",
     )
     (d / "vocals.mp3").write_bytes(b"\xff\xfbSTEMBYTES" * 40)
     st_beta = (tracks / "t_beta.wav").stat()
@@ -212,7 +227,8 @@ def seed_library(tracks: Path) -> None:
                 "src_mtime": int(st_beta.st_mtime),
                 "layers": {},
             }
-        )
+        ),
+        encoding="utf-8",
     )
 
 
@@ -235,6 +251,11 @@ class StudioCase(unittest.TestCase):
 
     #: "" is explicitly castle-less; a subclass names an emulator host.
     HOST_ENV = ""
+    #: True: CASTLE_HOST unset, as the desktop app runs the studio — the
+    #: castle is then the first of DEVICES, re-read on every call.
+    HOST_UNSET = False
+    #: The sandbox devices.toml's text — the castle-key store.
+    DEVICES = ""
 
     tmp: ClassVar[Path]
     tracks: ClassVar[Path]
@@ -242,6 +263,7 @@ class StudioCase(unittest.TestCase):
     procs: ClassVar[list[subprocess.Popen[bytes]]]
     scenes: ClassVar[Path]
     build: ClassVar[Path]
+    devices: ClassVar[Path]
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -249,7 +271,9 @@ class StudioCase(unittest.TestCase):
         cls.tmp = Path(tempfile.mkdtemp(prefix="studio-rs-"))
         cls.build = cls.tmp / "build"
         (cls.build / "previewer").mkdir(parents=True)
-        (cls.build / "previewer" / "castle-cue-desk.html").write_text(PAGE)
+        (cls.build / "previewer" / "castle-cue-desk.html").write_text(
+            PAGE, encoding="utf-8"
+        )
         (cls.build / "audio").mkdir()
         (cls.build / "audio" / "01_vigil.mp3").write_bytes(bytes(range(256)) * 12)
         # The show as card data (v5.67): `sd_sync scenes` pushes show.man and
@@ -265,7 +289,9 @@ class StudioCase(unittest.TestCase):
         cls.tracks = cls.tmp / "tracks"
         seed_library(cls.tracks)
         cls.scenes = cls.tmp / "scenes.yaml"
-        cls.scenes.write_text(scenes_fixture())
+        cls.scenes.write_text(scenes_fixture(), encoding="utf-8")
+        cls.devices = cls.tmp / "devices.toml"
+        cls.devices.write_text(cls.DEVICES, encoding="utf-8")
         # free_port() closes the socket before the server binds it, so a
         # busy machine (another suite, the user's own studio) can take the
         # port in between. One retry on a fresh port is the cheap answer:
@@ -292,7 +318,14 @@ class StudioCase(unittest.TestCase):
     def _launch(cls) -> None:
         cls.port = free_port()
         env = {**os.environ}
-        for k in ("CASTLE_HOST", "CASTLE_TRACKS", "CASTLE_SCENES", "CASTLE_BUILD"):
+        for k in (
+            "CASTLE_HOST",
+            "CASTLE_TRACKS",
+            "CASTLE_SCENES",
+            "CASTLE_BUILD",
+            "CASTLE_KEY",
+            "CASTLE_DEVICES",
+        ):
             env.pop(k, None)
         # The importer, the generators and the manifest write are Python
         # children of the server, and a BINARY has no sys.executable to
@@ -301,19 +334,21 @@ class StudioCase(unittest.TestCase):
         # HERE, in the child's environment only — a suite that exported it
         # into this process would leak it into every other one, which is
         # the hermeticity tests/test_hermetic.py exists to catch. An
-        # interpreter the operator named on purpose still wins.
-        venv = ROOT / ".venv" / "bin" / "python"
-        if "CASTLE_PY" not in env and venv.exists():
-            env["CASTLE_PY"] = str(venv)
+        # interpreter the operator named on purpose still wins; otherwise
+        # it is the one running this suite, which is the one the lock was
+        # installed into — the venv locally, setup-python's on a runner
+        # (Windows has no `python3` and no .venv/bin to fall back on).
+        env.setdefault("CASTLE_PY", sys.executable)
         cls.procs = [
             subprocess.Popen(
                 [str(BIN), str(cls.port), "--localhost"],
                 env={
                     **env,
-                    "CASTLE_HOST": cls.HOST_ENV,
+                    **({} if cls.HOST_UNSET else {"CASTLE_HOST": cls.HOST_ENV}),
                     "CASTLE_TRACKS": str(cls.tracks),
                     "CASTLE_SCENES": str(cls.scenes),
                     "CASTLE_BUILD": str(cls.build),
+                    "CASTLE_DEVICES": str(cls.devices),
                 },
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

@@ -12,7 +12,6 @@ never reports, and with the speaker's task writing while the loop reads.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,12 +19,14 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tests"))
 sys.path.insert(0, str(ROOT / "tools"))
 
 import cue_file
+import cxx_compiler
 
 SRC = ROOT / "tests" / "cxx" / "heard_check.cpp"
-COMPILER = shutil.which("clang++") or shutil.which("g++")
+COMPILER = cxx_compiler.COMPILER  # g++ first on Windows; see the module
 FLAGS = ["-std=c++17", "-O1", "-Wall", "-Wextra", "-Werror", "-pthread",
          "-I", str(ROOT / "tests" / "cxx" / "shim"), "-I", str(ROOT / "firmware")]  # fmt: skip
 IN_CI = bool(os.environ.get("CI"))

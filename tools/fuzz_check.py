@@ -27,9 +27,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gen_esphome as ge
 import gen_previewer as gp
+from exe_paths import exe
 
 ROOT = Path(__file__).resolve().parent.parent
-PULSE_DUMP = ROOT / "core" / "target" / "release" / "pulse_dump"
+PULSE_DUMP = ROOT / "core" / "target" / "release" / exe("pulse_dump")
 
 
 #: Flags that go out as `<name>=1` when the case sets them, and the cfg key
@@ -140,6 +141,8 @@ def rust_strikes(
         input="\n".join(lines) + "\n",
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
         timeout=60,
     )

@@ -45,8 +45,9 @@
 // `begin()` recorded, not from whenever the load happened to finish.
 //
 // RAM. The statics below are the running scene's id, its audio token, three
-// numbers and two flags — 100 bytes, once, for the whole show. The cues live
-// in PSRAM and are freed on stop.
+// numbers and two flags — 100 bytes, once, for the whole show — plus, since
+// v5.77, the evening's list (a vector of up to twelve ids, on the heap) and
+// where the playlist is in it. The cues live in PSRAM and are freed on stop.
 //
 // MAIN LOOP ONLY, like castle_cues: find()/begin()/stop() are called from
 // the scene_run script and the mailbox interval, never from the httpd task.
@@ -56,11 +57,13 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <sys/stat.h>
+#include <vector>
 
 #include "castle_cues.h"
 
@@ -76,12 +79,16 @@ inline constexpr size_t kAudioMax = 48;
 /// Where the card keeps the show. The audio has streamed from here since the
 /// all-in-flash build was retired; the manifest and the cue files joined it.
 inline constexpr const char *kDir = "/sd/scenes";
+/// Header flag bit 0 (v5.77): each row's last byte is its place in the
+/// evening playlist, 1-based, 0 for "not in the evening". tools/
+/// scene_manifest.py MARKS_EVENING. Firmware before v5.77 never read it.
+inline constexpr uint16_t kMarksEvening = 0x0001;
 
 #pragma pack(push, 1)
 struct Header {
   char magic[4];
   uint8_t version, count;
-  uint16_t pad;
+  uint16_t flags;         // kMarksEvening; written as zero before v5.77
   uint32_t entry_size, reserved;
 };
 struct Entry {
@@ -89,7 +96,8 @@ struct Entry {
   char audio[kAudioMax];  // the `sfx` track token, no extension
   uint32_t duration_ms;
   uint16_t volume_pct;
-  uint8_t loops, flags;
+  uint8_t loops;
+  uint8_t evening;        // place in the evening, 1-based; 0 = not in it
 };
 #pragma pack(pop)
 static_assert(sizeof(Header) == 16 && sizeof(Entry) == 96,
@@ -131,8 +139,9 @@ inline std::string cue_path(const char *id, const char *dir = kDir) {
 /// Open the manifest and read its header. Non-null and `count` filled in
 /// only when the four checks castle_cues::load also makes all pass: magic,
 /// version, the entry size this build compiled, and an exact file length.
-/// The caller closes.
-inline FILE *open_manifest(uint8_t &count, const char *dir = kDir) {
+/// The caller closes. `flags`, when asked for, is the header's flag word.
+inline FILE *open_manifest(uint8_t &count, const char *dir = kDir,
+                           uint16_t *flags = nullptr) {
   count = 0;
   FILE *f = fopen(manifest_path(dir).c_str(), "rb");
   if (f == nullptr) return nullptr;
@@ -148,6 +157,7 @@ inline FILE *open_manifest(uint8_t &count, const char *dir = kDir) {
     return nullptr;
   }
   count = h.count;
+  if (flags != nullptr) *flags = h.flags;
   return f;
 }
 
@@ -191,6 +201,78 @@ inline std::string ids_csv(const char *dir = kDir) {
   }
   fclose(f);
   return out;
+}
+
+// ── the evening show (v5.77) ────────────────────────────────────────────
+//
+// "Start show" plays these, in this order, one per pass of the generated
+// `show_playlist` script, wrapping at the end. Until v5.77 that list was
+// four compiled actions per scene id — so the image named every scene of
+// the yard's show, imported songs included, and a castle sold with a card
+// that does not carry them walked into two "missing" scenes every round.
+// It is read off the manifest now, beside the ids, by seed_scene_ids.
+//
+// MAIN LOOP ONLY: set at boot and after a publish by seed_scene_ids, read
+// by show_playlist. Statics: one vector and one index.
+inline std::vector<std::string> g_evening;
+inline size_t g_evening_at = 0;
+
+/// The evening's ids, comma-joined, in play order. A manifest that marks
+/// the evening (kMarksEvening) answers its placed rows, by place; one from
+/// before v5.77 answers every row except `skip` — the PIR's scene, which
+/// is what the compiled list was (every scene but the motion one). Empty
+/// when there is no manifest this build can read.
+inline std::string evening_csv(const char *skip, const char *dir = kDir) {
+  uint8_t count = 0;
+  uint16_t flags = 0;
+  FILE *f = open_manifest(count, dir, &flags);
+  if (f == nullptr) return "";
+  const bool marked = (flags & kMarksEvening) != 0;
+  std::vector<std::string> placed(kMaxScenes);
+  std::string out;
+  Entry e{};
+  for (uint8_t i = 0; i < count; i++) {
+    if (fread(&e, 1, sizeof(e), f) != sizeof(e)) break;
+    if (e.id[kIdMax - 1] != '\0') break;
+    if (!marked) {
+      if (skip != nullptr && strcmp(e.id, skip) == 0) continue;
+      if (!out.empty()) out += ',';
+      out += e.id;
+    } else if (e.evening >= 1 && e.evening <= kMaxScenes && placed[e.evening - 1].empty()) {
+      placed[e.evening - 1] = e.id;  // a second claim on one place is ignored
+    }
+  }
+  fclose(f);
+  for (const auto &id : placed) {
+    if (id.empty()) continue;
+    if (!out.empty()) out += ',';
+    out += id;
+  }
+  return out;
+}
+
+/// Replace the evening with `csv`'s ids. The next pass of a running show
+/// continues from the same place, wrapped to the new length.
+inline void set_evening(const std::string &csv) {
+  g_evening.clear();
+  for (size_t at = 0; at <= csv.size();) {
+    const size_t end = std::min(csv.find(',', at), csv.size());
+    if (end > at) g_evening.emplace_back(csv, at, end - at);
+    at = end + 1;
+  }
+  if (!g_evening.empty()) g_evening_at %= g_evening.size();
+  else g_evening_at = 0;
+}
+
+inline size_t evening_count() { return g_evening.size(); }
+/// "Start show" starts at the top of the evening, not where it last stopped.
+inline void evening_rewind() { g_evening_at = 0; }
+/// The scene this pass plays, and move on; "" when the evening is empty.
+inline std::string evening_next() {
+  if (g_evening.empty()) return "";
+  const std::string id = g_evening[g_evening_at % g_evening.size()];
+  g_evening_at = (g_evening_at + 1) % g_evening.size();
+  return id;
 }
 
 /// #29, generic: every file the show will ask for, stat()ed once after mount.

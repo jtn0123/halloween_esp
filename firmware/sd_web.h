@@ -32,6 +32,7 @@
 #include "sd_web_util.h"
 #include "sd_web_state.h"
 #include "sd_web_stream.h"
+#include "sd_web_prefs.h"
 #include <atomic>
 #include <mutex>
 #include <string>
@@ -68,12 +69,13 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // Numbers through snprintf, strings through json_escape into a
   // std::string: a fixed buffer truncated silently when the boot manifest
   // listed more than a few missing files, and every client's parse died.
-  std::array<char, 384> buf{};
+  std::array<char, 448> buf{};   // v5.74: 384 + locked/boot_play; v5.75 re-cut
   snprintf(buf.data(), buf.size(),
-           R"({"version":"%s","compiled":"%s %s","uptime_s":%lld,)"
+           R"({"version":"%s","board":"%s","fw_variant":"%s",)"
+           R"("compiled":"%s %s","uptime_s":%lld,)"
            R"("sd_mounted":%s,"psram_free_kb":%u,"heap_free_kb":%u,)"
            R"("sd_total_kb":%u,"sd_free_kb":%u,"missing":")",
-           ESPHOME_PROJECT_VERSION, __DATE__, __TIME__,
+           ESPHOME_PROJECT_VERSION, g_board, g_fw_variant, __DATE__, __TIME__,
            (long long) (esp_timer_get_time() / 1000000),
            castle_sd::g_mounted ? "true" : "false",
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
@@ -111,9 +113,17 @@ inline esp_err_t h_status(httpd_req_t *req) {
   // hot path and a wall clock there would be a lie half the night); this is
   // the base a page needs to turn one into the other, and the only honest
   // way to ask "what time did the porch go dark".
+  // v5.74: `locked` says a castle key is set (sd_web_prefs.h) — a client
+  // learns it must send X-Castle-Key before its first write is refused —
+  // and `boot_play` whether a power-on boot starts the show.
   // L6: `rssi` in dBm, 0 when not associated — a castle at the end of the
   // garden answering slowly and a castle with a failing supply read the
   // same from the desk without it.
+  // v5.75 (castle_owner.h): the owner's cap, whether quiet hours hold the
+  // speaker at 0 right now, the zone and the window as set ("" = never), and
+  // `local` — the castle's own wall clock, "" until SNTP has answered, so a
+  // page can show the time quiet hours are measured in. `pir.fitted` is
+  // false on a castle with no motion sensor (the buyer build).
   // ::time, not time: main.cpp has `using namespace esphome;` and ESPHome
   // has a `time` COMPONENT namespace, which makes the bare name ambiguous.
   const time_t wall = ::time(nullptr);
@@ -121,13 +131,24 @@ inline esp_err_t h_status(httpd_req_t *req) {
            R"(","show_on":%s,"playing":%s,"position_ms":%lld,)"
            R"("light_applied":%u,"light_evicted":%u,"cues":%u,)"
            R"("sync_lead_ms":%lld,"sync_drift_ms":%lld,"epoch":%lld,"rssi":%d,)"
-           R"("pir":{"armed":%s,"cooldown_s":%d,"scene":")",
+           R"("locked":%s,"boot_play":%s,"vol_max":%d,"quiet_now":%s,"tz":")",
            st.show_on ? "true" : "false",
            st.playing ? "true" : "false", st.position_ms,
            st.light_applied, st.light_evicted, st.cues,
            st.sync_lead_ms, st.sync_drift_ms,
            (long long) (wall > 1577836800 ? wall : 0), st.rssi,
-           st.pir_armed ? "true" : "false", st.pir_cooldown);
+           locked() ? "true" : "false", g_boot_play.load() ? "true" : "false",
+           g_vol_max.load(), g_quiet_now.load() ? "true" : "false");
+  out += buf.data();
+  out += json_escape(tz_copy());
+  out += R"(","quiet":")";
+  out += quiet_str();
+  out += R"(","local":")";
+  out += json_escape(local_copy());
+  snprintf(buf.data(), buf.size(),
+           R"(","pir":{"fitted":%s,"armed":%s,"cooldown_s":%d,"scene":")",
+           g_pir_fitted ? "true" : "false", st.pir_armed ? "true" : "false",
+           st.pir_cooldown);
   out += buf.data();
   out += json_escape(st.pir_scene);
   out += R"("}})";
@@ -297,6 +318,10 @@ inline esp_err_t h_light(httpd_req_t *req) {
 /// POST /api/pir?armed=0|1|true|false|on|off&cooldown=30|60|120&scene=<id>
 /// — any subset of the three. Encoded "a|c|scene"; empty field = leave alone.
 inline esp_err_t h_pir(httpd_req_t *req) {
+  if (!key_ok(req)) return reply_locked(req);   // a setting (v5.74)
+  // v5.75: a castle built without a sensor cannot be armed — a floating pin
+  // would start scenes at the wind (sd_web_state.h g_pir_fitted).
+  if (!g_pir_fitted) return reply_err(req, "409 Conflict", "no motion sensor");
   if (esp_err_t sent; !query_ok(req, {"armed", "cooldown", "scene"}, sent)) return sent;
   std::string a = query_param(req, "armed");
   std::string c = query_param(req, "cooldown");
@@ -334,12 +359,14 @@ inline esp_err_t h_pir(httpd_req_t *req) {
 #include "sd_web_upload.h"
 #include "sd_web_site.h"
 #include "sd_web_remote.h"
+#include "sd_web_owner.h"
 
 namespace castle_web {
 
 // ── startup ─────────────────────────────────────────────────────────────
 inline void start() {
   if (g_server != nullptr) return;
+  prefs_load();
   httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
   cfg.server_port = 80;
   // Its share of the 16-socket pool: desk polls, one upload, the phone
@@ -347,7 +374,7 @@ inline void start() {
   // player's loopback fetch take the rest.
   cfg.max_open_sockets = 4;
   cfg.uri_match_fn = httpd_uri_match_wildcard;
-  // MUST exceed the reg() count below (25 today). At 20, the LAST THREE
+  // MUST exceed the reg() count below (30 today). At 20, the LAST THREE
   // registrations failed silently on the device — the /sd/ wildcard (the very
   // URL the media pipeline streams scene audio through), /site/ and / — so the
   // cue desk 404'd and SD streaming was dead while every /api route worked.
@@ -398,10 +425,14 @@ inline void start() {
   reg("/api/blackout", HTTP_POST, h_blackout);
   reg("/api/blackout", HTTP_GET, h_blackout);   // bookmarkable
   reg("/remote", HTTP_GET, h_remote);
+  reg("/owner", HTTP_GET, h_owner);   // v5.75: always flash, card or no card
   reg("/api/volume", HTTP_POST, h_volume);
   reg("/api/light", HTTP_POST, h_light);
   reg("/api/pir", HTTP_POST, h_pir);
   reg("/api/ota", HTTP_PUT, h_ota);
+  reg("/api/settings", HTTP_POST, h_settings);
+  reg("/api/key", HTTP_POST, h_key);
+  reg("/api/factory-reset", HTTP_POST, h_factory_reset);
   reg("/api/bootlog", HTTP_GET, h_bootlog);
   reg("/sd/*", HTTP_GET, h_sd_get);
   // Playback must never queue behind the control plane — the decoder pulls
@@ -413,6 +444,16 @@ inline void start() {
   reg("/site/*", HTTP_GET, h_site);
   reg("/", HTTP_GET, h_root);
   ESP_LOGI(TAG, "web server up on port %d", cfg.server_port);
+}
+
+/// The control server down, the stream server and the upload worker left
+/// alone. Only the buyer build calls it (castle_buyer.h): ESPHome's captive
+/// portal needs port 80 while the castle has no network, and start() above
+/// brings everything back — its two helpers are no-ops the second time.
+inline void stop() {
+  if (g_server == nullptr) return;
+  httpd_stop(g_server);
+  g_server = nullptr;
 }
 
 }  // namespace castle_web

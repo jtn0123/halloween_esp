@@ -29,6 +29,7 @@ namespace castle_web {
 // bootloader's rollback net still applies: an image that never confirms
 // itself (API connect) is reverted on the next reboot.
 inline esp_err_t h_ota(httpd_req_t *req) {
+  if (!key_ok(req)) return reply_locked(req);   // v5.74, sd_web_prefs.h
   const esp_partition_t *part = esp_ota_get_next_update_partition(nullptr);
   if (part == nullptr) return reply_err(req, "500 Internal Server Error", "no OTA slot");
   if (req->content_len < 65536 || req->content_len > part->size)

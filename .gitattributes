@@ -1,0 +1,31 @@
+# Every text file is LF in every checkout, Windows included: the generated
+# firmware files, scenes.yaml and the parity fixtures are compared byte for
+# byte, and a core.autocrlf checkout would turn each of them into a diff.
+* text=auto eol=lf
+
+# The card's scene files are binary records (tools/cue_file.py,
+# tools/scene_manifest.py), never text to be converted.
+*.cue binary
+*.man binary
+*.mp3 binary
+*.wav binary
+
+# Pictures, the owner's guide's among them (docs/guide/, tools/guide_shots.py).
+*.png binary
+
+# Windows launchers keep CRLF wherever they are checked out (after the LF
+# default above, so this line wins for them).
+*.cmd text eol=crlf
+
+# GitHub's release source zips are `git archive` output: this fills in the
+# tag the tree was cut from, so installer/desktop_install.py knows which
+# release's castle-core binaries match it. In a clone it stays a template.
+installer/VERSION export-subst
+
+# Tracked for the seller's own tools, never shipped (docs/PRODUCTION-TODO.md
+# §8): the castle inventory (its hosts, and on a keyed castle its key) and
+# the song library's provenance. GitHub's source zip leaves them out, and
+# tools/desktop_install.py skips the same list in a clone (ship_guard.py
+# PERSONAL; tests/test_ship_guard.py holds the two to each other).
+devices.toml export-ignore
+tracks/tracks.json export-ignore

@@ -362,13 +362,19 @@ def _write_markers(all_markers: dict[str, dict[str, list]]) -> None:
     previous entry's song-derived keys under this render's fresh ones.
     """
     try:
-        prev = json.loads((OUT / "markers.json").read_text())
+        prev = json.loads((OUT / "markers.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         prev = {}
     for sid in NOT_HERE:
         if sid in prev:
             all_markers[sid] = {**prev[sid], **all_markers.get(sid, {})}
-    (OUT / "markers.json").write_text(json.dumps(all_markers, indent=0))
+    # sort_keys: the merge above puts the kept song keys first on a machine
+    # without the songs and render order on one with them, so the same
+    # markers came out in two orders and the weekly job's diff went red on
+    # order alone (runs 35619812938, 36456839073).
+    (OUT / "markers.json").write_text(
+        json.dumps(all_markers, indent=0, sort_keys=True), encoding="utf-8"
+    )
     n = sum(len(m) for v in all_markers.values() for m in v.values())
     print(f"beat markers: {n} across {len(all_markers)} scenes -> audio/markers.json")
 
@@ -409,7 +415,7 @@ def main() -> int:
     ap.add_argument("--force", action="store_true", help="re-render unchanged scenes")
     args = ap.parse_args()
 
-    doc = yaml.safe_load(SCENES.read_text())
+    doc = yaml.safe_load(SCENES.read_text(encoding="utf-8"))
     cfg = doc["hardware"]["audio"]
     OUT.mkdir(parents=True, exist_ok=True)
     if not args.only:

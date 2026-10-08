@@ -30,7 +30,9 @@ TYPES = {
     ".png": "image/png",
     ".json": "application/json",  # castle_emu_http.JSON_MIME, spelled here
     ".mp3": "audio/mpeg",
+    ".opus": "audio/ogg",
     ".wav": "audio/wav",
+    ".txt": "text/plain; charset=utf-8",
 }
 
 #: Where the two flash pages live.
@@ -43,9 +45,9 @@ def flash_page(header: str, symbol: str) -> str:
 
     The phone remote came first (JB2-6): it is embedded in the image, so a
     placeholder here would be a page nobody could test, and the e2e suite
-    drives whatever the C says. The fallback page followed it once the C
+    drives whatever the C says. The owner's page followed it once the C
     harness started comparing `/`'s body byte for byte."""
-    src = (_FW / header).read_text()
+    src = (_FW / header).read_text(encoding="utf-8")
     m = re.search(rf'{symbol}\[\] = R"HTML\((.*?)\)HTML";', src, re.DOTALL)
     if not m:
         raise RuntimeError(f"no {symbol} raw string in {header}")
@@ -55,18 +57,11 @@ def flash_page(header: str, symbol: str) -> str:
 REMOTE_PAGE = flash_page("sd_web_remote.h", "kRemotePage")
 
 
-def _fallback_scene_ids() -> str:
-    text = (_FW / "generated" / "fallback_scenes.h").read_text()
-    m = re.search(r'kFallbackSceneIds\[\] = "(.*)";', text)
-    if not m:
-        raise RuntimeError("no kFallbackSceneIds in fallback_scenes.h")
-    return m.group(1)
-
-
-#: h_root's answer when the card has no /site/index.html — or no card.
-FALLBACK_PAGE = flash_page("sd_web_site.h", "kFallbackPage").replace(
-    "__FALLBACK_SCENES__", _fallback_scene_ids()
-)
+#: The owner's page (v5.75, sd_web_owner.h): /owner always, and `/` when the
+#: card has no site — or there is no card. It replaced the v5.74 fallback
+#: page, which needed the compiled-in scene ids spliced into it; this one
+#: reads them from /api/status like every other control on it.
+OWNER_PAGE = flash_page("sd_web_owner.h", "kOwnerPage")
 #: sd_web_site.h set_csp(), byte for byte (E4) — sent on every served page.
 CSP = (
     "default-src 'self'; script-src 'self' 'unsafe-inline'; "

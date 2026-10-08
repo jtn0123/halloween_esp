@@ -27,14 +27,15 @@ metric; the gap to ~1.3 is what a lossy encoder at 96k actually costs.
 
 from __future__ import annotations
 
-import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 import analyze as ana
+import exe_paths
 import import_track as it
 
 # The lossless reference every other encode is measured against. Making it
@@ -114,7 +115,9 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("src", type=Path)
-    ap.add_argument("--out", type=Path, default=Path("/tmp/codec-compare"))
+    ap.add_argument(
+        "--out", type=Path, default=Path(tempfile.gettempdir()) / "codec-compare"
+    )
     ap.add_argument("--start", default=0)
     ap.add_argument("--take", type=float)
     ap.add_argument("--bitrate", type=int, default=96)
@@ -124,7 +127,7 @@ def main() -> int:
 
     if not a.src.exists():
         raise SystemExit(f"no such file: {a.src}")
-    if not shutil.which("ffmpeg"):
+    if not exe_paths.which(exe_paths.ffmpeg()):
         raise SystemExit("ffmpeg not installed")
 
     opts = {

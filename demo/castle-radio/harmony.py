@@ -31,6 +31,10 @@ from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
+import exe_paths
 
 RATE = 11025
 WINDOW = 8192  # 0.74 s: a bass note's period many times over
@@ -62,7 +66,7 @@ class Chord:
 
 def decode(path: Path) -> np.ndarray:
     raw = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(path), "-f", "f32le", "-ac", "1",
+        [exe_paths.ffmpeg(), "-v", "error", "-i", str(path), "-f", "f32le", "-ac", "1",
          "-ar", str(RATE), "-"],
         capture_output=True, check=True,
     ).stdout  # fmt: skip
@@ -111,12 +115,12 @@ def track(stems: Path, cache: Path) -> Chroma | None:
         return None
     newest = max(bass.stat().st_mtime, other.stat().st_mtime)
     if cache.is_file() and cache.stat().st_mtime >= newest:
-        doc = json.loads(cache.read_text())
+        doc = json.loads(cache.read_text(encoding="utf-8"))
         return Chroma(doc["hop_ms"], tuple(map(tuple, doc["bass"])),
                       tuple(map(tuple, doc["other"])), tuple(doc["loud"]))  # fmt: skip
     out = measure(decode(bass), decode(other))
     cache.write_text(json.dumps({"hop_ms": out.hop_ms, "bass": out.bass,
-                                 "other": out.other, "loud": out.loud}))  # fmt: skip
+                                 "other": out.other, "loud": out.loud}), encoding="utf-8")  # fmt: skip
     return out
 
 

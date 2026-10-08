@@ -4,7 +4,8 @@
 //! standing in for it) over a bare TcpStream: the API is a handful of fixed
 //! routes on a LAN device, which does not justify an HTTP dependency — and
 //! the zero-dep rule keeps the crate WASM-able. Host discovery (devices.toml,
-//! fallback lists) stays in tools/hosts.py for now; this takes host:port.
+//! fallback lists, the castle key) is crate::hosts; this takes host:port
+//! and the key to send, if any.
 
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -70,17 +71,24 @@ pub fn request(
     method: &str,
     target: &str,
     body: &[u8],
+    key: &str,
     read_s: f64,
 ) -> Result<Reply, String> {
-    call(host, method, target, body, 2.0, read_s).map_err(|f| f.text().to_string())
+    call(host, method, target, body, key, 2.0, read_s).map_err(|f| f.text().to_string())
 }
 
 /// The typed form, with a separate connect budget — castle_link._call.
+/// `key` is the castle key for this castle (crate::hosts::castle_key), sent
+/// as `X-Castle-Key` on every request the way castle_link sends it, or ""
+/// for none; a castle with no key ignores the header. A key the firmware
+/// could not hold is never written into the head. No error text here ever
+/// carries it — they name the host and the socket, nothing else.
 pub fn call(
     host: &str,
     method: &str,
     target: &str,
     body: &[u8],
+    key: &str,
     connect_s: f64,
     read_s: f64,
 ) -> Result<Reply, CallFault> {
@@ -96,11 +104,14 @@ pub fn call(
     s.set_nodelay(true).ok();
     // Content-Length only when there is a body — like urllib on the Python
     // side; the httpd treats a missing header as zero.
-    let extra = if body.is_empty() {
+    let mut extra = if body.is_empty() {
         String::new()
     } else {
         format!("Content-Length: {}\r\n", body.len())
     };
+    if crate::hosts::valid_key(key) {
+        extra.push_str(&format!("X-Castle-Key: {key}\r\n"));
+    }
     let head =
         format!("{method} {target} HTTP/1.1\r\nHost: castle\r\n{extra}Connection: close\r\n\r\n");
     s.write_all(head.as_bytes())
@@ -172,9 +183,15 @@ pub enum UploadFault {
 /// byte count always, the CRC32 when the firmware is new enough to send
 /// one (v5.42+; "bytes matched" cannot see a bad SD sector). The Ok value
 /// is the castle's reply body, for the caller to print.
-pub fn upload(host: &str, route: &str, name: &str, data: &[u8]) -> Result<String, UploadFault> {
+pub fn upload(
+    host: &str,
+    route: &str,
+    name: &str,
+    data: &[u8],
+    key: &str,
+) -> Result<String, UploadFault> {
     let target = format!("{route}/{}", encode_query(name));
-    let r = request(host, "PUT", &target, data, 600.0).map_err(UploadFault::Transport)?;
+    let r = request(host, "PUT", &target, data, key, 600.0).map_err(UploadFault::Transport)?;
     let body = String::from_utf8_lossy(&r.body).trim_end().to_string();
     if !(200..300).contains(&r.code) {
         return Err(UploadFault::Refused(r.code, body));

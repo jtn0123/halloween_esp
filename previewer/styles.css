@@ -149,8 +149,8 @@
     display: grid; gap: 1px; background: var(--line);
     grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
   }
-  /* A scene the castle's firmware was built without (C6): playable on the
-     desk, "unknown scene" on the board — dimmed until a rebuild + OTA. */
+  /* A scene the castle does not list yet (C6): playable on the desk,
+     "unknown scene" on the board — dimmed until a publish reaches it. */
   .scene--stale { opacity: .55; }
 
   .scene {
@@ -269,6 +269,8 @@
   }
   .trk-list { display: grid; gap: 1px; background: var(--line); margin-top: 11px; }
   .trk-list:empty { display: none; }
+  .trk-first { padding: 14px 16px; background: var(--panel); line-height: 1.5; }
+  .trk-first span { display: block; color: var(--muted); }
   .trk {
     display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
     padding: 10px 12px; background: var(--panel);

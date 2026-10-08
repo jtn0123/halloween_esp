@@ -4,11 +4,18 @@ import concurrent.futures
 import http.client
 import json
 import threading
+import urllib.error
 import urllib.parse
 import zlib
 from pathlib import Path
 
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
+import castle_sent
 import device_bridge
+import fw_formats
+import hosts
 import rich_show
 from device_bridge import FILES_PATH, STATUS_PATH
 
@@ -44,6 +51,12 @@ def job(key):
         return dict(value)
 
 
+def jobs():
+    """Every sync since start, oldest first — for Copy diagnostics."""
+    with _LOCK:
+        return [dict(value) for value in _JOBS.values()]
+
+
 def _listed_files(rows):
     """Name+size of files in an /api/files listing, ignoring {"skipped":N}."""
     return {
@@ -53,10 +66,24 @@ def _listed_files(rows):
     }
 
 
+def _listing(path):
+    """An /api/files listing, where a folder the card does not have is an
+    empty one. The castle answers 404 for a missing `?d=scenes` — a card
+    with songs and no show on it, a freshly formatted one — and that is
+    nothing to fail the whole castle library over (tests/install_smoke.py
+    found it on a card that had only ever been sent songs)."""
+    try:
+        return device_bridge.call(path)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404 and "?d=" in path:
+            return []
+        raise
+
+
 def inventory(root, library, rows):
     state = device_bridge.call(STATUS_PATH)
     files = device_bridge.call(FILES_PATH)
-    scenes = device_bridge.call(f"{FILES_PATH}?d=scenes")
+    scenes = _listing(f"{FILES_PATH}?d=scenes")
     installed = set(state.get("scenes", "").split(","))
     audio = _listed_files(files)
     scene_audio = set(_listed_files(scenes))
@@ -155,6 +182,7 @@ def start(root, library, rows, key):
             )
     if source is None or not source.is_file():
         raise ValueError("Song audio is no longer available on this computer.")
+    device_bridge.require_key()
     # Snapshot before queueing: local deletion must not change an in-flight transfer.
     data = source.read_bytes()
     companions = []
@@ -165,6 +193,10 @@ def start(root, library, rows, key):
             (source.with_suffix(suffix).name, source.with_suffix(suffix).read_bytes())
             for suffix in (".show.json", ".cue")
         ]
+        # A .cue in a format this castle's firmware cannot read would play dark.
+        why = fw_formats.refusal(device_bridge.call(STATUS_PATH), dict(companions))
+        if why:
+            raise ValueError(why)
     with _LOCK:
         if key in _JOBS and not _JOBS[key]["done"]:
             return dict(_JOBS[key])
@@ -182,14 +214,47 @@ def start(root, library, rows, key):
     return dict(job)
 
 
+#: A sync the link dropped under. True by construction: the castle writes
+#: each upload beside the file and swaps it in only once the last byte has
+#: landed (sd_web_upload.h), and the song's audio goes LAST — so the card
+#: holds the old song or the new one, and never lists a song whose light
+#: show has not arrived.
+STOPPED = (
+    "The castle stopped answering partway through {name} ({why}). Nothing on "
+    "it is half-written — sync again to finish; what already landed is skipped."
+)
+
+
+def _card_sizes(route):
+    listing = f"{FILES_PATH}?d=scenes" if route == "/api/scenes" else FILES_PATH
+    return _listed_files(_listing(listing))
+
+
 def transfer(key, route, name, data, companions=()):
+    """The light show first, the song's audio last, each verified by the
+    castle's byte count and CRC — and anything the castle already holds,
+    identical by its own CRC (castle_sent.py), skipped. The audio is what
+    puts a song on the castle's list (castle-direct.js `cardShows`, the
+    owner page), so ordering it last means a song appears with its lights
+    or not at all, and a retry after a cut resumes rather than restarts."""
+    current = None
     try:
-        total = len(data) + sum(len(blob) for _, blob in companions)
+        files = [*companions, (name, data)]
+        total = sum(len(blob) for _, blob in files)
+        host = device_bridge.castle()
+        sizes = _card_sizes(route)
         offset = 0
-        for filename, blob in [(name, data), *companions]:
-            upload_with_progress(
-                key, route, filename, blob, progress_base=offset, total_bytes=total
-            )
+        for filename, blob in files:
+            path = f"{route}/{filename}"
+            if castle_sent.landed(host, path, blob, sizes.get(filename)):
+                with _LOCK:
+                    _JOBS[key].update(phase=f"{filename} already on castle")
+            else:
+                current = filename
+                reported = upload_with_progress(
+                    key, route, filename, blob, progress_base=offset, total_bytes=total
+                )
+                castle_sent.record(host, path, blob, reported)
             offset += len(blob)
         with _LOCK:
             _JOBS[key].update(
@@ -202,8 +267,12 @@ def transfer(key, route, name, data, companions=()):
                 percent=100,
             )
     except (OSError, ValueError, http.client.HTTPException) as exc:
+        cut = isinstance(
+            exc, (ConnectionError, TimeoutError, http.client.HTTPException)
+        )
+        error = STOPPED.format(name=current, why=exc) if cut and current else str(exc)
         with _LOCK:
-            _JOBS[key].update(done=True, phase="Sync failed", error=str(exc))
+            _JOBS[key].update(done=True, phase="Sync failed", error=error)
 
 
 def upload_with_progress(
@@ -216,9 +285,10 @@ def upload_with_progress(
     progress_base=0,
     total_bytes=None,
 ):
-    """Stream chunks so the UI sees bytes handed to the castle socket."""
+    """Stream chunks so the UI sees bytes handed to the castle socket; the
+    CRC the castle reported for what it wrote (None from old firmware)."""
     factory = connection_factory or (
-        lambda: http.client.HTTPConnection(device_bridge.HOST, timeout=600)
+        lambda: http.client.HTTPConnection(device_bridge.castle(), timeout=600)
     )
     connection = factory()
     path = f"{route}/{urllib.parse.quote(name)}"
@@ -226,11 +296,19 @@ def upload_with_progress(
         connection.putrequest("PUT", path)
         connection.putheader("Content-Length", str(len(data)))
         connection.putheader("Content-Type", "application/octet-stream")
+        for header, value in hosts.key_headers(device_bridge.HOST).items():
+            connection.putheader(header, value)
         connection.endheaders()
         sent = 0
         for offset in range(0, len(data), 32 * 1024):
             block = data[offset : offset + 32 * 1024]
-            connection.send(block)
+            try:
+                connection.send(block)
+            except (BrokenPipeError, ConnectionResetError):
+                # A castle that refused before reading the body may hang up
+                # mid-send; its answer can still be waiting to be read.
+                _refused(connection)
+                raise
             sent += len(block)
             with _LOCK:
                 _JOBS[key].update(
@@ -257,6 +335,8 @@ def upload_with_progress(
             )
         response = connection.getresponse()
         raw = response.read()
+        if response.status == 401:
+            raise device_bridge.KeyRequired()
         if response.status >= 400:
             raise OSError(
                 f"Castle upload failed ({response.status}): {raw.decode(errors='replace')}"
@@ -269,5 +349,16 @@ def upload_with_progress(
         reported_crc = result.get("crc32")
         if reported_crc is not None and int(str(reported_crc), 16) != zlib.crc32(data):
             raise OSError("Castle SD verification failed: CRC mismatch")
+        return reported_crc
     finally:
         connection.close()
+
+
+def _refused(connection):
+    """Raise KeyRequired when the castle's early answer was a 401."""
+    try:
+        status = connection.getresponse().status
+    except (OSError, http.client.HTTPException):
+        return
+    if status == 401:
+        raise device_bridge.KeyRequired()

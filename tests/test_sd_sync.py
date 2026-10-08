@@ -83,8 +83,8 @@ class FakeCard:
             if rel in self.blobs:
                 return self.blobs[rel]
             return json.dumps({"path": path}).encode()
-        if method == "GET":
-            return json.dumps({"path": path}).encode()
+        if method == "GET":  # /api/status's version: new enough for any format
+            return json.dumps({"path": path, "version": "9.99"}).encode()
         return b"{}"
 
 
@@ -243,6 +243,20 @@ class TestSiteScenesOta(SdCase):
         self.assertLess(gz_len, plain_len // 4)
         self.assertEqual(plain_len, len(page))
         self.assertIn("serves Castle Radio", self.out.getvalue())
+
+    def test_the_gzipped_page_carries_no_build_time(self) -> None:
+        """The same page is the same bytes on the card whenever it is built:
+        gzip's MTIME split two test cards by a second on 2026-10-03."""
+        sent: list[bytes] = []
+        for now in (1.0e9, 2.0e9):
+            with (
+                mock.patch.object(sd_sync, "build_site", return_value=b"<p>"),
+                mock.patch.object(sd_sync, "upload", lambda *a: sent.append(a[3])),
+                mock.patch("time.time", return_value=now),
+            ):
+                self.run_quiet(sd_sync.cmd_site, "1.2.3.4")
+        self.assertEqual(sent[0], sent[2])
+        self.assertEqual(sent[0][4:8], bytes(4))
 
     def test_site_without_the_demo_says_so(self) -> None:
         # ROOT is the empty tmp here: no demo/castle-radio/device_site.py.

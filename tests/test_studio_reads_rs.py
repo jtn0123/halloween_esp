@@ -72,7 +72,7 @@ class Reads(StudioCase):
         The proof from outside is that the manifest gained the durations
         and onsets, kept `source`/`notes`, and the answer did not move."""
         first = self.listing()
-        manifest = json.loads((self.tracks / "tracks.json").read_text())
+        manifest = json.loads((self.tracks / "tracks.json").read_text(encoding="utf-8"))
         self.assertEqual(
             manifest["t_meta"]["notes"], "cached entry — no decode should happen"
         )
@@ -237,7 +237,10 @@ class Reads(StudioCase):
         self.assertTrue(body["removed"])
         self.assertFalse((self.tracks / "t_del.wav").exists())
         self.assertFalse((self.tracks / "_src" / "t_del.orig.wav").exists())
-        self.assertNotIn("t_del", json.loads((self.tracks / "tracks.json").read_text()))
+        self.assertNotIn(
+            "t_del",
+            json.loads((self.tracks / "tracks.json").read_text(encoding="utf-8")),
+        )
         # Twice is a 404, not a second success.
         code, body = self.json("/studio/tracks/t_del", "DELETE")
         self.assertEqual(code, 404)

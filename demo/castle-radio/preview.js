@@ -117,7 +117,11 @@ $('seek').addEventListener('input',()=>{pendingTime=audio.currentTime;drawPlayhe
 
 async function loadWaveforms(){
   const token=++waveformEpoch,t=tracks[current],key=t.key||t.file;
-  waveformData=null;$('wave-status').textContent='Loading analyzed waveform…';$('waveforms').innerHTML='';
+  waveformData=null;$('waveforms').innerHTML='';
+  // A hidden row is no song to show: a built-in first-run.js has not found
+  // here (or the owner removed) has no waveform to ask the server for.
+  if(t.deleted){$('wave-status').textContent='';return;}
+  $('wave-status').textContent='Loading analyzed waveform…';
   try{
     if(!waveformCache.has(key)){waveformCache.set(key,request(`/radio/waveform/${encodeURIComponent(key)}`,undefined,REQUEST_MS.analysis));}
     const data=await waveformCache.get(key);if(token!==waveformEpoch){return;}
@@ -257,7 +261,8 @@ function drawCastle(now){
   if(simulation){drawPlayheads();if(clock>=t.duration*1000){simulation=null;audio.currentTime=0;$('simulate-lights').textContent='Simulate lights silently';}}
 }
 
-function rememberHidden(){try{localStorage.setItem('castle-radio-hidden',JSON.stringify(tracks.filter(t=>!t.key&&t.deleted).map(t=>t.file)));}catch{}}
+// The built-ins the owner removed — not the ones whose audio is simply absent here.
+function rememberHidden(){try{localStorage.setItem('castle-radio-hidden',JSON.stringify(tracks.filter(t=>!t.key&&t.deleted&&!t.absent).map(t=>t.file)));}catch{}}
 async function deleteSong(id){
   const t=tracks[id];if(!t||t.deleted){return;}
   try{
@@ -265,13 +270,11 @@ async function deleteSong(id){
     t.deleted=true;imported.delete(t.key);queue=queue.filter(i=>i!==id);history=history.filter(i=>i!==id);
     if(current===id){stop();const replacement=tracks.find(t=>!t.deleted);if(replacement){load(replacement.id);}}
     rememberHidden();lastRemoved=t;$('undo-bar').hidden=false;
-    $('undo-bar').querySelector('span').textContent=`Removed “${t.title}” from this demo.`;
+    $('undo-bar').querySelector('span').textContent=`Removed “${t.title}” from your collection.`;
     lastLibrary='';await refresh();renderTracks();renderQueue();renderImports();
   }catch(e){toast(`Could not remove song: ${e.message}`);}
 }
 $('tracks').addEventListener('click',e=>{const b=e.target.closest('[data-delete-song]');if(b){deleteSong(Number(b.dataset.deleteSong));}});
 $('undo-delete').onclick=async()=>{if(!lastRemoved){return;}const t=lastRemoved;try{if(t.key){await request(`/radio/restore/${t.key}`,{method:'POST',headers:{'X-Castle':'1'}});}t.deleted=false;if(!queue.includes(t.id)){queue.push(t.id);}rememberHidden();lastLibrary='';await refresh();renderTracks();renderQueue();$('undo-bar').hidden=true;lastRemoved=null;}catch(e){toast(`Could not restore song: ${e.message}`);}};
 $('dismiss-undo').onclick=()=>{$('undo-bar').hidden=true;};
-try{const hidden=JSON.parse(localStorage.getItem('castle-radio-hidden')||'[]');for(const t of tracks){if(!t.key&&hidden.includes(t.file)){t.deleted=true;}}}catch{}
-queue=queue.filter(i=>!tracks[i].deleted);history=history.filter(i=>!tracks[i].deleted);
 mountPreview();syncLayer();loadWaveforms();loadPreparedShow();requestAnimationFrame(drawCastle);

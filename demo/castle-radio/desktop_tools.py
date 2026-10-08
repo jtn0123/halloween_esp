@@ -1,17 +1,32 @@
-"""Read-only desktop readiness endpoint; no installs or model downloads."""
+"""Read-only desktop readiness endpoint; no installs or model downloads.
 
-import sys
+Platform-specific answers (which installer, whether website startup exists
+here) come from castle_tools_status, which decides them by sys.platform; the
+page hides what this computer does not have (desktop-tools.js)."""
+
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
 import device_bridge
 import rich_show
 from castle_tools_status import status
+from diagnostics import app_version
 
 
 def get_status(handler, _parsed):
-    """The probe checks metadata and cached files, without loading the model."""
-    handler.reply({**status(), "castle_origin": "http://" + device_bridge.HOST})
+    """The probe checks metadata and cached files, without loading the model.
+    `app_version` is the release this copy came from, for the tools card.
+    `castle_origin` must equal the castle page's own location.origin, which
+    device-helper.js compares it with — and the castle speaks plain HTTP."""
+    handler.reply(
+        {
+            **status(),
+            "castle_origin": "http://" + device_bridge.HOST,  # NOSONAR — see above
+            "app_version": app_version(),
+        }
+    )
 
 
 def catalog(rows, library):

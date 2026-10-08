@@ -33,13 +33,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import ClassVar
 
+import cxx_compiler
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 CXX_DIR = ROOT / "tests" / "cxx"
 FIRMWARE = ROOT / "firmware"
 
-COMPILER = shutil.which("clang++") or shutil.which("g++")
+COMPILER = cxx_compiler.COMPILER  # g++ first on Windows; see the module
 #: Locally a missing compiler is a skip; in CI it is a failure. Same rule as
 #: tests/test_firmware_cxx.py, and for the same reason — a green tick that
 #: compiled nothing is worse than a red one.
@@ -50,19 +52,21 @@ def firmware_version() -> str:
     """The version string the device build compiles in (castle.yaml's
     project.version, ESPHOME_PROJECT_VERSION in the real build's defines.h),
     so the harness and the emulator answer /api/status the same."""
-    for line in (FIRMWARE / "castle.yaml").read_text().splitlines():
+    for line in (FIRMWARE / "castle.yaml").read_text(encoding="utf-8").splitlines():
         if line.strip().startswith("version:"):
             return line.split(":", 1)[1].strip().strip('"')
     raise AssertionError("no version: in firmware/castle.yaml")
 
 
-def build(out: Path) -> subprocess.CompletedProcess[str]:
+def build(out: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     """Compile web_check.cpp. The shim include path goes FIRST so
-    <esp_http_server.h> and friends resolve to the fakes."""
+    <esp_http_server.h> and friends resolve to the fakes. `extra` flags go
+    in front of the rest (a sanitizer build, tests/test_firmware_boot_cxx.py)."""
     assert COMPILER is not None
     return subprocess.run(
         [
             COMPILER,
+            *extra,
             "-std=c++17",
             "-O1",
             "-Wall",
@@ -171,10 +175,18 @@ class CastleC:
             headers[name] = value
         return Reply(status, self.proc.stdout.read(blen), headers)
 
+    def set_key(self, key: bytes) -> None:
+        """The X-Castle-Key every later request carries; b"" sends none."""
+        assert self.proc.stdin
+        self.proc.stdin.write(f"KEY {len(key)}\n".encode() + key)
+        self.proc.stdin.flush()
+
     def tick(
-        self, now_us: int, playing: bool = False, sounding: bool = False
+        self, now_us: int, playing: bool = False, sounding: bool = False, epoch: int = 0
     ) -> tuple[str, bytes]:
-        """One main-loop tick, at `now_us` on the castle's own clock (C6).
+        """One main-loop tick, at `now_us` on the castle's own clock (C6),
+        with the wall clock at `epoch` (v5.75: what owner_tick reads; 0 is
+        a castle SNTP has not set).
 
         `playing` is the media pipeline's state and `sounding` the
         speaker's — the two inputs castle_sd_common.yaml's 200 ms interval
@@ -187,7 +199,7 @@ class CastleC:
         """
         assert self.proc.stdin and self.proc.stdout
         self.proc.stdin.write(
-            f"TICK {now_us} {int(playing)} {int(sounding)}\n".encode()
+            f"TICK {now_us} {int(playing)} {int(sounding)} {epoch}\n".encode()
         )
         self.proc.stdin.flush()
         line = self.proc.stdout.readline()
@@ -223,9 +235,10 @@ def emu_http(
     body: bytes = b"",
     declared: int | None = None,
     timeout: float = 20.0,
+    key: bytes = b"",
 ) -> Reply:
     """One raw request at the emulator, with the request target and the
-    Content-Length exactly as given."""
+    Content-Length exactly as given — and X-Castle-Key when `key` is set."""
     n = len(body) if declared is None else declared
     head = (
         method.encode()
@@ -233,13 +246,14 @@ def emu_http(
         + target
         + b" HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: "
         + str(n).encode()
+        + (b"\r\nX-Castle-Key: " + key if key else b"")
         + b"\r\nConnection: close\r\n\r\n"
     )
     chunks: list[bytes] = []
     with socket.create_connection(("127.0.0.1", port), timeout=timeout) as s:
         try:
             s.sendall(head + body)
-        except (BrokenPipeError, ConnectionResetError):
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             # The reply came back before the body finished going out — an
             # OTA image bigger than the slot is refused on its declared
             # length alone, and 2 MB is a long time to keep writing at a
@@ -248,7 +262,8 @@ def emu_http(
         while True:
             try:
                 got = s.recv(65536)
-            except ConnectionResetError:
+            except (ConnectionResetError, ConnectionAbortedError):
+                # (Aborted is how Windows spells the same reset.)
                 # A handler that refuses before reading the body (the OTA
                 # size window, the 413 cap) closes with bytes still in the
                 # kernel's receive queue, and the peer answers RST. The
@@ -314,14 +329,33 @@ class Pair:
             version=firmware_version(),
             sd_mounted=env.get("CASTLE_MOUNTED", "1") != "0",
             ota_slot=slot,
+            # v5.75: the sensor, and /api/health's counters and reset reason,
+            # spelled to both castles from the one env (castle_emu_health.py).
+            pir_fitted=env.get("CASTLE_PIR_FITTED", "1") != "0",
+            boots=int(env.get("CASTLE_BOOTS", "3")),
+            crashes=int(env.get("CASTLE_CRASHES", "0")),
+            reset_reason=int(env.get("CASTLE_RESET") or "1"),
         )
+        #: The wall clock both castles read (v5.75): `tick(epoch=)` sets it
+        #: for the C, and the emulator's own ticker reads it from here. 0 is
+        #: a clock SNTP has not set, which is what the C sees by default.
+        self.epoch = 0
+        self.emu.wall = lambda: self.epoch
         if "CASTLE_SD_FREE_KB" in env:
             self.emu.sd_free_kb = int(env["CASTLE_SD_FREE_KB"])
         # castle_sd::g_quiesce — the flag sd_web_ota.h raises while it burns
         # flash, spelled to both castles from one place (J3, grade report
         # 2026-09-17 pm). The C reads CASTLE_QUIESCE in seed_from_env.
         self.emu.quiesce = env.get("CASTLE_QUIESCE", "0") != "0"
+        #: The X-Castle-Key both castles are sent from here on (v5.74).
+        self.key = b""
         self.emu.start()
+
+    def send_key(self, key: bytes) -> None:
+        """Every later request to EITHER castle carries this X-Castle-Key
+        (b"" = none) — the client's side of sd_web_prefs.h."""
+        self.key = key
+        self.c.set_key(key)
 
     def close(self) -> None:
         self.c.close()
@@ -338,7 +372,7 @@ class Pair:
     ) -> tuple[Reply, Reply]:
         return (
             self.c.http(method, target, body, declared, port),
-            emu_http(self.emu.port, method, target, body, declared),
+            emu_http(self.emu.port, method, target, body, declared, key=self.key),
         )
 
     #: The interval castle_sd_common.yaml runs the main loop on, in
@@ -347,9 +381,14 @@ class Pair:
     TICK_US = 200_000
 
     def tick(
-        self, now_us: int, playing: bool = False, sounding: bool = False
+        self,
+        now_us: int,
+        playing: bool = False,
+        sounding: bool = False,
+        epoch: int | None = None,
     ) -> tuple[str, bytes]:
-        """Tick the C castle (C6).
+        """Tick the C castle (C6), and move both castles' wall clock to
+        `epoch` when one is given (v5.75).
 
         The emulator has no tick to call: its 200 ms thread IS its main
         loop, and it runs on wall-clock time. So a test that holds the two
@@ -357,7 +396,9 @@ class Pair:
         same span on the other — `now_us` is the C castle's clock, and the
         test's sleeps are the emulator's.
         """
-        return self.c.tick(now_us, playing, sounding)
+        if epoch is not None:
+            self.epoch = epoch
+        return self.c.tick(now_us, playing, sounding, self.epoch)
 
     def cards(self) -> tuple[set[str], set[str]]:
         """What each card holds, relative — a PUT or DELETE has to leave
@@ -379,7 +420,11 @@ def seed_card(card: Path) -> None:
     (card / "wicked_winds.mp3").write_bytes(b"\xff\xfb" + b"\x00" * 4094)
     (card / "scenes" / "vigil.mp3").write_bytes(b"\xff\xfb" + b"\x00" * 2046)
     (card / "site" / "index.html").write_bytes(b"<!doctype html><title>desk</title>")
-    (card / "site" / "index.html.gz").write_bytes(gzip.compress(b"<!doctype html>gz"))
+    # mtime=0: this runs once per card, and gzip's header otherwise carries
+    # the second it ran — two cards seeded across a second boundary served
+    # different bytes for `/` (the 2026-10-03 Windows CI flake).
+    gz = gzip.compress(b"<!doctype html>gz", mtime=0)
+    (card / "site" / "index.html.gz").write_bytes(gz)
     (card / "site" / "app.js").write_bytes(b"console.log(1)")
     # A name safe_name refuses: the Mac wrote it straight onto the card, so
     # /api/files must count it in {"skipped":N} rather than list it.

@@ -60,7 +60,7 @@ JSON_HDRS = {"Content-Type": "application/json"}
 
 
 def scenes_fixture() -> str:
-    real = (ROOT / "scenes" / "scenes.yaml").read_text()
+    real = (ROOT / "scenes" / "scenes.yaml").read_text(encoding="utf-8")
     preamble = real.split("\nscenes:\n", 1)[0]
     return preamble + "\nscenes:\n" + SCENES_TAIL
 

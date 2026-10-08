@@ -1,0 +1,9 @@
+{
+  "name": "castle-tools-tauri-cli",
+  "private": true,
+  "description": "The Tauri CLI release.yml builds the desktop app with, pinned to the crate's tauri in src-tauri/Cargo.lock and locked with integrity hashes (npm ci --ignore-scripts).",
+  "license": "MIT",
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.1"
+  }
+}

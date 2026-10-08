@@ -23,11 +23,7 @@ fn main() {
         .find(|a| !a.starts_with("--"))
         .and_then(|a| a.parse().ok())
         .unwrap_or(8765);
-    let host = if args.iter().any(|a| a == "--lan") {
-        "0.0.0.0"
-    } else {
-        "127.0.0.1"
-    };
+    let host = listen_host(&args);
     let app = Arc::new(App::new(repo_root()));
     // Every rebuild, import and generator run is a child of this
     // interpreter. Asking it one question now beats watching each of them
@@ -41,6 +37,10 @@ fn main() {
     // (grade report 2026-09-17 pm B1).
     castle_core::studio_reap::install_shutdown_handlers();
     let _ = std::fs::create_dir(&app.tracks);
+    // A stopped studio's codec comparisons; a day is past any page still
+    // playing one (studio_media::sweep_compares).
+    let day = std::time::Duration::from_secs(86_400);
+    castle_core::studio_media::sweep_compares(&std::env::temp_dir(), day);
     let listener = match bind_retry(host, port) {
         Ok(l) => l,
         Err(e) => {
@@ -53,7 +53,7 @@ fn main() {
     if host == "0.0.0.0" {
         println!("  (OPEN TO YOUR LAN — anyone on the WiFi can edit the show)");
     } else {
-        println!("  (this Mac only — pass --lan to reach it from your phone)");
+        println!("  (this computer only — pass --lan to reach it from your phone)");
     }
     println!("  serving the previewer with track management enabled");
     println!("  ctrl-c to stop");
@@ -61,6 +61,19 @@ fn main() {
         let Ok(stream) = stream else { continue };
         let app = Arc::clone(&app);
         std::thread::spawn(move || conn_loop(&app, stream));
+    }
+}
+
+/// Where the studio listens: the loopback unless `--lan` asks for every
+/// interface. The loopback by default because the server has no auth (an
+/// accepted design), and because Windows Firewall asks an owner to "allow
+/// access" the first time a program listens where the network can reach it.
+/// tests/test_loopback_rs.py starts the binary the ways both launchers do.
+fn listen_host(args: &[String]) -> &'static str {
+    if args.iter().any(|a| a == "--lan") {
+        "0.0.0.0"
+    } else {
+        "127.0.0.1"
     }
 }
 
@@ -77,6 +90,7 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
                     ("error".into(), Json::Str(msg)),
                 ]);
                 let _ = respond_json(conn.stream(), &body, 400);
+                hand_over(conn.stream());
                 break;
             }
             Ok(Some(req)) => {
@@ -95,7 +109,7 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
                     Ok(code) => eprintln!(
                         "  \"{} {} HTTP/1.1\" {} -",
                         scrub(&req.method),
-                        scrub(&req.target),
+                        scrub(&castle_core::studio_key::loggable(&req.target)),
                         code
                     ),
                     Err(_) => break, // the client hung up mid-response
@@ -103,14 +117,45 @@ fn conn_loop(app: &Arc<App>, stream: TcpStream) {
                 if conn.close {
                     // The reply left the connection unusable — a body that
                     // came up short of its own Content-Length.
+                    hand_over(conn.stream());
                     break;
                 }
                 match pending() {
                     Action::None => {}
-                    Action::Stop => std::process::exit(0),
-                    Action::Restart => restart_self(),
+                    Action::Stop => {
+                        hand_over(conn.stream());
+                        std::process::exit(0)
+                    }
+                    Action::Restart => {
+                        hand_over(conn.stream());
+                        restart_self()
+                    }
                 }
             }
+        }
+    }
+}
+
+/// Let the last reply on a connection actually arrive before the socket
+/// (or the whole process) goes. Closing a socket with request bytes still
+/// unread — the body of a request refused off its head — or exiting with it
+/// open makes Windows send a reset, and a reset discards whatever the
+/// client had not read yet: the desk saw "connection reset" where a 400 or
+/// "stopping" had been sent. So: no more to send (FIN after the reply),
+/// then read and drop what the client still sends until it hangs up —
+/// bounded in time and bytes, so a client streaming a refused half-gigabyte
+/// cannot hold the thread.
+fn hand_over(stream: &mut TcpStream) {
+    use std::io::Read;
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let mut sink = [0u8; 4096];
+    let mut left: usize = 1 << 20;
+    while left > 0 && std::time::Instant::now() < deadline {
+        match stream.read(&mut sink) {
+            Ok(n) if n > 0 => left = left.saturating_sub(n),
+            _ => break,
         }
     }
 }
@@ -141,106 +186,169 @@ fn bind_retry(host: &str, port: u16) -> std::io::Result<TcpListener> {
     Err(last.unwrap_or_else(|| std::io::Error::other("bind never attempted")))
 }
 
-/// os.execv(sys.executable, sys.argv): the same process image again, PID
-/// kept, after the response has actually gone out.
-fn restart_self() -> ! {
-    use std::os::unix::process::CommandExt;
+/// The same program, the same arguments, marked as a restart — what both
+/// platforms' `restart_self` start.
+fn restart_command() -> std::process::Command {
     std::thread::sleep(std::time::Duration::from_millis(400));
     let exe = std::env::current_exe().unwrap_or_default();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let err = std::process::Command::new(exe)
-        .args(args)
-        .env("CASTLE_STUDIO_RESTART", "1")
-        .exec();
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(args).env("CASTLE_STUDIO_RESTART", "1");
+    cmd
+}
+
+/// os.execv(sys.executable, sys.argv): the same process image again, PID
+/// kept, after the response has actually gone out.
+#[cfg(unix)]
+fn restart_self() -> ! {
+    use std::os::unix::process::CommandExt;
+    let err = restart_command().exec();
     eprintln!("studio: restart failed: {err}");
     std::process::exit(1);
 }
 
-#[cfg(target_os = "macos")]
-mod so {
-    pub const SOL_SOCKET: i32 = 0xffff;
-    pub const SO_REUSEADDR: i32 = 0x0004;
-    #[repr(C)]
-    pub struct SockaddrIn {
-        pub sin_len: u8,
-        pub sin_family: u8,
-        pub sin_port: u16,
-        pub sin_addr: u32,
-        pub sin_zero: [u8; 8],
-    }
-    pub fn addr(family: u8, port: u16, ip: u32) -> SockaddrIn {
-        SockaddrIn {
-            sin_len: 16,
-            sin_family: family,
-            sin_port: port.to_be(),
-            sin_addr: ip.to_be(),
-            sin_zero: [0; 8],
+/// Windows has no exec, so the restart is a successor and an exit: the new
+/// studio starts (same console, same arguments, same environment) and this
+/// one leaves, freeing the port the successor's bind_retry is waiting on.
+/// The PID changes. Nothing in the repo holds the old one — the desk and
+/// tests/test_studio_ops_rs.py find the studio by its port — but a
+/// launcher that supervises the process by PID sees it exit 0 here, and a
+/// terminal gets its prompt back while the successor carries on.
+#[cfg(windows)]
+fn restart_self() -> ! {
+    match restart_command().spawn() {
+        Ok(_) => std::process::exit(0),
+        Err(err) => {
+            eprintln!("studio: restart failed: {err}");
+            std::process::exit(1);
         }
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod so {
-    pub const SOL_SOCKET: i32 = 1;
-    pub const SO_REUSEADDR: i32 = 2;
-    #[repr(C)]
-    pub struct SockaddrIn {
-        pub sin_family: u16,
-        pub sin_port: u16,
-        pub sin_addr: u32,
-        pub sin_zero: [u8; 8],
-    }
-    pub fn addr(family: u8, port: u16, ip: u32) -> SockaddrIn {
-        SockaddrIn {
-            sin_family: family as u16,
-            sin_port: port.to_be(),
-            sin_addr: ip.to_be(),
-            sin_zero: [0; 8],
-        }
-    }
-}
+#[cfg(unix)]
+use reuse::bind_reuse;
 
-unsafe extern "C" {
-    fn socket(domain: i32, ty: i32, protocol: i32) -> i32;
-    // Variadic for real: fcntl(2) is `int fcntl(int, int, ...)`, and on
-    // arm64 a variadic argument travels on the stack, not in x2. Declared
-    // with a fixed third parameter the flag never arrives — FD_CLOEXEC is
-    // set from whatever the stack happened to hold, so the restart's exec
-    // inherits the old listener and the fresh image cannot rebind its own
-    // port. It worked by luck until an unrelated edit moved the stack.
-    fn fcntl(fd: i32, cmd: i32, ...) -> i32;
-    fn setsockopt(fd: i32, level: i32, name: i32, value: *const i32, len: u32) -> i32;
-    fn bind(fd: i32, addr: *const so::SockaddrIn, len: u32) -> i32;
-    fn listen(fd: i32, backlog: i32) -> i32;
-    fn close(fd: i32) -> i32;
-}
-
-/// TcpListener::bind with SO_REUSEADDR — what ThreadingHTTPServer's
-/// allow_reuse_address does, without which a restart inside TIME_WAIT
-/// cannot rebind its own port.
+/// A plain bind on Windows, deliberately. SO_REUSEADDR there does not mean
+/// "forgive TIME_WAIT", it means "let a second socket bind this port while
+/// the first still listens on it" — a port hijack, not a convenience. The
+/// TIME_WAIT case it exists for on BSD stacks is the predecessor's dying
+/// connections, and the successor's retry loop (bind_retry) is what waits
+/// those out here. std's sockets are created non-inheritable on Windows,
+/// so the successor never holds its predecessor's listener either.
+#[cfg(windows)]
 fn bind_reuse(host: &str, port: u16) -> std::io::Result<TcpListener> {
-    use std::os::unix::io::FromRawFd;
-    let ip: u32 = if host == "0.0.0.0" { 0 } else { 0x7f00_0001 };
-    unsafe {
-        let fd = socket(2, 1, 0); // AF_INET, SOCK_STREAM
-        if fd < 0 {
-            return Err(std::io::Error::last_os_error());
+    TcpListener::bind((host, port))
+}
+
+#[cfg(unix)]
+mod reuse {
+    use std::net::TcpListener;
+
+    #[cfg(target_os = "macos")]
+    mod so {
+        pub const SOL_SOCKET: i32 = 0xffff;
+        pub const SO_REUSEADDR: i32 = 0x0004;
+        #[repr(C)]
+        pub struct SockaddrIn {
+            pub sin_len: u8,
+            pub sin_family: u8,
+            pub sin_port: u16,
+            pub sin_addr: u32,
+            pub sin_zero: [u8; 8],
         }
-        // FD_CLOEXEC, or the restart's exec inherits the old listener
-        // and the fresh image can never rebind its own port.
-        fcntl(fd, 2, 1);
-        let one: i32 = 1;
-        if setsockopt(fd, so::SOL_SOCKET, so::SO_REUSEADDR, &one, 4) != 0 {
-            let e = std::io::Error::last_os_error();
-            close(fd);
-            return Err(e);
+        pub fn addr(family: u8, port: u16, ip: u32) -> SockaddrIn {
+            SockaddrIn {
+                sin_len: 16,
+                sin_family: family,
+                sin_port: port.to_be(),
+                sin_addr: ip.to_be(),
+                sin_zero: [0; 8],
+            }
         }
-        let sa = so::addr(2, port, ip);
-        if bind(fd, &sa, 16) != 0 || listen(fd, 128) != 0 {
-            let e = std::io::Error::last_os_error();
-            close(fd);
-            return Err(e);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    mod so {
+        pub const SOL_SOCKET: i32 = 1;
+        pub const SO_REUSEADDR: i32 = 2;
+        #[repr(C)]
+        pub struct SockaddrIn {
+            pub sin_family: u16,
+            pub sin_port: u16,
+            pub sin_addr: u32,
+            pub sin_zero: [u8; 8],
         }
-        Ok(TcpListener::from_raw_fd(fd))
+        pub fn addr(family: u8, port: u16, ip: u32) -> SockaddrIn {
+            SockaddrIn {
+                sin_family: family as u16,
+                sin_port: port.to_be(),
+                sin_addr: ip.to_be(),
+                sin_zero: [0; 8],
+            }
+        }
+    }
+
+    unsafe extern "C" {
+        fn socket(domain: i32, ty: i32, protocol: i32) -> i32;
+        // Variadic for real: fcntl(2) is `int fcntl(int, int, ...)`, and on
+        // arm64 a variadic argument travels on the stack, not in x2. Declared
+        // with a fixed third parameter the flag never arrives — FD_CLOEXEC is
+        // set from whatever the stack happened to hold, so the restart's exec
+        // inherits the old listener and the fresh image cannot rebind its own
+        // port. It worked by luck until an unrelated edit moved the stack.
+        fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+        fn setsockopt(fd: i32, level: i32, name: i32, value: *const i32, len: u32) -> i32;
+        fn bind(fd: i32, addr: *const so::SockaddrIn, len: u32) -> i32;
+        fn listen(fd: i32, backlog: i32) -> i32;
+        fn close(fd: i32) -> i32;
+    }
+
+    /// TcpListener::bind with SO_REUSEADDR — what ThreadingHTTPServer's
+    /// allow_reuse_address does, without which a restart inside TIME_WAIT
+    /// cannot rebind its own port.
+    pub fn bind_reuse(host: &str, port: u16) -> std::io::Result<TcpListener> {
+        use std::os::unix::io::FromRawFd;
+        let ip: u32 = if host == "0.0.0.0" { 0 } else { 0x7f00_0001 };
+        unsafe {
+            let fd = socket(2, 1, 0); // AF_INET, SOCK_STREAM
+            if fd < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            // FD_CLOEXEC, or the restart's exec inherits the old listener
+            // and the fresh image can never rebind its own port.
+            fcntl(fd, 2, 1);
+            let one: i32 = 1;
+            if setsockopt(fd, so::SOL_SOCKET, so::SO_REUSEADDR, &one, 4) != 0 {
+                let e = std::io::Error::last_os_error();
+                close(fd);
+                return Err(e);
+            }
+            let sa = so::addr(2, port, ip);
+            if bind(fd, &sa, 16) != 0 || listen(fd, 128) != 0 {
+                let e = std::io::Error::last_os_error();
+                close(fd);
+                return Err(e);
+            }
+            Ok(TcpListener::from_raw_fd(fd))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::listen_host;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|a| (*a).to_string()).collect()
+    }
+
+    #[test]
+    fn the_loopback_unless_lan_is_asked_for() {
+        // What the desktop app passes (desktop/src-tauri/src/service.rs),
+        // what the launcher and the e2e suite pass, and nothing at all.
+        assert_eq!(listen_host(&args(&["8775"])), "127.0.0.1");
+        assert_eq!(listen_host(&args(&["8765", "--localhost"])), "127.0.0.1");
+        assert_eq!(listen_host(&args(&[])), "127.0.0.1");
+        assert_eq!(listen_host(&args(&["8765", "--lan"])), "0.0.0.0");
     }
 }

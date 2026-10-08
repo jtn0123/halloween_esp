@@ -25,36 +25,47 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
 
 FW = ROOT / "firmware"
-SD_WEB = (FW / "sd_web.h").read_text()
-SD_OTA = (FW / "sd_web_ota.h").read_text()
-SD_UPLOAD = (FW / "sd_web_upload.h").read_text()
-SD_SITE = (FW / "sd_web_site.h").read_text()
-SD_REMOTE = (FW / "sd_web_remote.h").read_text()
-SD_EVENTS = (FW / "sd_web_events.h").read_text()
-SD_STATE = (FW / "sd_web_state.h").read_text()
+SD_WEB = (FW / "sd_web.h").read_text(encoding="utf-8")
+SD_OTA = (FW / "sd_web_ota.h").read_text(encoding="utf-8")
+SD_UPLOAD = (FW / "sd_web_upload.h").read_text(encoding="utf-8")
+SD_SITE = (FW / "sd_web_site.h").read_text(encoding="utf-8")
+SD_REMOTE = (FW / "sd_web_remote.h").read_text(encoding="utf-8")
+SD_EVENTS = (FW / "sd_web_events.h").read_text(encoding="utf-8")
+SD_STATE = (FW / "sd_web_state.h").read_text(encoding="utf-8")
+#: v5.74: the owner's settings — the castle key and boot_play — and the two
+#: routes that change them.
+SD_PREFS = (FW / "sd_web_prefs.h").read_text(encoding="utf-8")
+#: v5.75: the owner's page and the two routes that serve it (/owner, /).
+SD_OWNER = (FW / "sd_web_owner.h").read_text(encoding="utf-8")
 #: v5.67: the event ring, the light-frame counters and the radio transition
 #: came out of sd_web_state.h on the 500-line cap — a history is not a
 #: mailbox. Read as ONE text with its parent, because every check below is
 #: about what the firmware SAYS, not which header says it.
-SD_RING = (FW / "sd_web_ring.h").read_text()
+SD_RING = (FW / "sd_web_ring.h").read_text(encoding="utf-8")
 SD_STATE += "\n" + SD_RING
 #: v5.62 (L1): the event ring's kind table and the copy of it that
 #: survives a panic live here, under both sd_web_state.h and
 #: castle_health.h — the two headers that need it cannot see each other.
-SD_RTC = (FW / "castle_rtc.h").read_text()
-HEALTH = (FW / "castle_health.h").read_text()
-SD_UTIL = (FW / "sd_web_util.h").read_text()
+SD_RTC = (FW / "castle_rtc.h").read_text(encoding="utf-8")
+HEALTH = (FW / "castle_health.h").read_text(encoding="utf-8")
+SD_UTIL = (FW / "sd_web_util.h").read_text(encoding="utf-8")
 #: v5.67: the scene runner. What a scene IS lives on the card now, and the
 #: emulator has to read the same manifest with the same limits.
-SD_SCENES = (FW / "castle_scenes.h").read_text()
-SD_STREAM = (FW / "sd_web_stream.h").read_text()
-#: The emulator's handlers, read as ONE text. They live in two files since
-#: v5.61 — castle_emu_upload.py took the card's write plane, the way
-#: firmware/sd_web_upload.h did on the other side — and every check below
-#: is about what a handler answers, not which file it sits in.
+SD_SCENES = (FW / "castle_scenes.h").read_text(encoding="utf-8")
+SD_STREAM = (FW / "sd_web_stream.h").read_text(encoding="utf-8")
+#: The emulator's handlers, read as ONE text. They live in several files —
+#: castle_emu_upload.py took the card's write plane in v5.61, the way
+#: firmware/sd_web_upload.h did on the other side, and castle_emu_prefs.py
+#: the owner's settings in v5.75 — and every check below is about what a
+#: handler answers, not which file it sits in.
 EMU_HTTP = "\n".join(
-    (ROOT / "tools" / name).read_text()
-    for name in ("castle_emu_http.py", "castle_emu_upload.py", "castle_emu_reply.py")
+    (ROOT / "tools" / name).read_text(encoding="utf-8")
+    for name in (
+        "castle_emu_http.py",
+        "castle_emu_upload.py",
+        "castle_emu_prefs.py",
+        "castle_emu_reply.py",
+    )
 )
 
 #: reply_err strings the emulator has no way to produce: flash, heap and
@@ -68,6 +79,9 @@ HARDWARE_ONLY = {
     "ota begin failed",
     "ota end failed",
     "could not select slot",
+    # v5.74: an NVS write that failed. The emulator keeps its settings in
+    # memory, which does not refuse.
+    "settings not saved",
 }
 
 
@@ -89,7 +103,14 @@ def c_functions(*sources: str) -> dict[str, str]:
 #: v5.61: h_put's answers now come through upload_offload, which reaches
 #: write_body, and a handler's verdicts must not go quiet because a call
 #: grew a step (A9 put the upload worker in between).
-ERR_HELPERS = ("write_body", "send_sd_file", "query_ok", "upload_offload")
+ERR_HELPERS = (
+    "write_body",
+    "send_sd_file",
+    "query_ok",
+    "upload_offload",
+    # v5.74: the 401 every guarded route answers with (sd_web_prefs.h).
+    "reply_locked",
+)
 
 
 def reply_errs(body: str) -> set[tuple[int, str]]:
@@ -110,7 +131,7 @@ EMU_CONSTS: dict[str, str] = dict(
 #: handler hands the rest of the work to. castle_emu_upload's _write_upload
 #: is the upload worker's half of h_put (A9, v5.61); _list_dir is h_list's
 #: ?d=<subdir> validation, which answers both of that route's refusals.
-EMU_ERR_HELPERS = ("_write_upload", "_list_dir")
+EMU_ERR_HELPERS = ("_write_upload", "_list_dir", "_locked")
 
 
 def emu_method(name: str) -> str:
@@ -151,7 +172,17 @@ def firmware_routes() -> list[tuple[str, str, str]]:
     ]
 
 
-FUNCS = c_functions(SD_WEB, SD_OTA, SD_UPLOAD, SD_SITE, SD_REMOTE, SD_EVENTS, SD_UTIL)
+FUNCS = c_functions(
+    SD_WEB,
+    SD_OTA,
+    SD_UPLOAD,
+    SD_SITE,
+    SD_REMOTE,
+    SD_EVENTS,
+    SD_UTIL,
+    SD_PREFS,
+    SD_OWNER,
+)
 
 
 def grab(pattern: str, text: str, group: int = 1) -> str:

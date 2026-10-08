@@ -63,7 +63,7 @@ def show_scene_ids(path: Path | None = None) -> list[str] | None:
     if src is None:
         return None
     try:
-        doc = yaml.safe_load(src.read_text()) or {}
+        doc = yaml.safe_load(src.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError):
         return None
     # "scenes:" with nothing under it parses to None — an empty sandbox

@@ -379,7 +379,9 @@ body.view-pixels #jewels { max-width: 620px; margin: 14px auto; }
 .dp__badge--tone { color: var(--cool); border-color: var(--cool); }
 .dp__file-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dp__foot { border-top: 1px solid var(--line-2); padding: .4rem .8rem; }
+.dp__owner { float: right; color: var(--cool); text-decoration: none; white-space: nowrap; }
 .dp__cool { width: 3.5rem; }
+.dp__key { flex: 1; min-width: 6rem; }
 /* The scene select took the whole row when the panel got wider. */
 #dpPirScene { max-width: 9rem; }
 .dp__drop {

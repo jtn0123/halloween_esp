@@ -50,8 +50,10 @@
 :root:not([data-theme="castle"]) .sync-dialog,:root:not([data-theme="castle"]) .reprocess-dialog{background:#0b0712;border-color:#3d2c55;box-shadow:0 30px 80px #000}
 :root:not([data-theme="castle"]) .sync-dialog button{background:#1d1528}
 :root:not([data-theme="castle"]) .remote-inventory li{border-bottom-color:#ffffff0a}
-:root:not([data-theme="castle"]) .live-device-actions button{background:#1d1528;border:1px solid #3d2c55}
-:root:not([data-theme="castle"]) .live-device-actions button:hover{background:#8b5cf62a}
+:root:not([data-theme="castle"]) .live-device-actions button:not(.primary){background:#1d1528;border:1px solid #3d2c55}
+:root:not([data-theme="castle"]) .live-device-actions button:not(.primary):hover{background:#8b5cf62a}
+.live-device-actions button.primary{background:var(--accent)}
+.live-device-actions button.primary:hover{filter:brightness(1.1)}
 :root:not([data-theme="castle"]) .dot{box-shadow:0 0 10px var(--accent)}
 :root:not([data-theme="castle"]) dl>div{border-bottom-color:#221833}
 :root:not([data-theme="castle"]) .queue-panel{box-shadow:0 20px 60px #0009}
@@ -147,3 +149,16 @@
 .bench-events{display:flex;flex-direction:column;gap:8px;margin-top:14px}
 .bench-events button{align-self:flex-start}
 .bench-events pre{margin:0;max-height:220px;overflow:auto;white-space:pre-wrap;font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* Find my castle (castle-find.js): the chip opens it while the castle is offline. */
+.castle-chip.offline{cursor:pointer}
+.find-results{list-style:none;margin:10px 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.find-results li{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+/* First run (first-run.js): the Listen page with nothing to play yet. */
+.first-run{border:1px dashed currentColor;border-radius:14px;padding:18px 20px;margin:0 0 14px}
+.first-run h3{margin:0 0 6px}
+.first-run p{margin:0 0 12px;opacity:.85}
+/* Help with your castle (castle-help.js): the diagnostics, shown before they are shared. */
+#help-text{width:100%;box-sizing:border-box;font:12px/1.4 ui-monospace,Menlo,monospace;margin-top:10px}
+#help-owner-note{margin-left:4px}

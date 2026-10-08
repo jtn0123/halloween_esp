@@ -20,9 +20,12 @@ on:
     branches: [main]
   pull_request:
 
+# A newer push to a PR makes its older analysis moot; a merge to main does
+# not — when #49-#51 merged ten seconds apart only the last was analysed —
+# so only pull requests cancel (grade report 2026-09-24 I6).
 concurrency:
   group: sonar-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -52,7 +55,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: core
-      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
           tool: cargo-llvm-cov
       # castle-core is tested from two sides: `cargo test`, and the Python
@@ -96,6 +99,10 @@ jobs:
           source <(cargo llvm-cov show-env --export-prefix)
           cargo test --release
           cargo llvm-cov report --release --failure-mode all --lcov --output-path lcov.info
-      - uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+      # Dependabot's pull requests get no SONAR_TOKEN, so the upload could
+      # only fail "Not authorized" (PRs #48, #54). Everything above still
+      # runs on them; the coverage steps are what the bump can break.
+      - if: github.event_name == 'push' || github.event.pull_request.user.login != 'dependabot[bot]'
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

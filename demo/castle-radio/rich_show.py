@@ -6,12 +6,14 @@ The preview is decoded FROM the card bytes, including their quantization.
 
 import json
 import subprocess
-import sys
 import zlib
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+import radio_env  # noqa: F401 — the sandbox first, then tools/ on the path
+
+# isort: split
 import cue_file
+import portable_fs
 from effect_vocab import EFFECT_IDS, FLASH_MODE_IDS, OVERLAY_IDS, PALETTE_IDS
 from pulse_expand import pulse_cues
 from render_cues import desk_scene, markers_ms, waveform
@@ -101,6 +103,8 @@ def preview_from_blob(key, blob):
 
 
 def build(key, wave, layers=None, ext="mp3"):
+    """The card bytes and their preview, from analyze_track's waveform. No
+    child process: the desk's builder runs in Python (tools/track_scene.py)."""
     scene = desk_scene(key, wave, ext)
     cues = list(scene.get("cues") or [])
     if layers:
@@ -130,27 +134,28 @@ def build(key, wave, layers=None, ext="mp3"):
     return blob, preview_from_blob(key, blob)
 
 
-def prepare(library, row):
-    """Report tool failures to the job/API instead of terminating its thread."""
+def prepare(library, row, run=None):
+    """Report tool failures to the job/API instead of terminating its thread.
+    A Cancelled from `run` is not a failure, and passes through."""
     try:
-        return _prepare(library, row)
+        return _prepare(library, row, run)
     except (SystemExit, subprocess.CalledProcessError) as exc:
         raise ValueError(f"Could not prepare the light show: {exc}") from exc
 
 
-def _prepare(library, row):
+def _prepare(library, row, run=None):
     """Create local companion files; never copy, re-encode or play the audio."""
     name = Path(row.get("playback_file") or f"{row['key']}.mp3").name
     source = library / name
     if not source.is_file():
         raise ValueError("Audio is unavailable for show preparation")
-    wave = waveform(source, 1.1)
+    wave = waveform(source, 1.1, run)
     layers = None
     analysis = library / "stems" / row["key"] / "analysis.json"
     if row.get("split"):
         if not analysis.is_file():
             raise ValueError("Separated analysis is missing; reprocess the song first")
-        layers = json.loads(analysis.read_text())["layers"]
+        layers = json.loads(analysis.read_text(encoding="utf-8"))["layers"]
     blob, preview = build(row["key"], wave, layers, source.suffix[1:])
     preview["name"] = row.get("title", row["key"])
     cue_path = source.with_suffix(".cue")
@@ -158,7 +163,7 @@ def _prepare(library, row):
     for path, data in ((cue_path, blob), (show_path, json.dumps(preview).encode())):
         temp = path.with_suffix(path.suffix + ".tmp")
         temp.write_bytes(data)
-        temp.replace(path)
+        portable_fs.replace(temp, path)
     return metadata(library, row)
 
 
@@ -173,7 +178,10 @@ def metadata(library, row):
         return None
     blob = cue.read_bytes()
     try:
-        if json.loads(show.read_text()).get("cue_crc32") != f"{zlib.crc32(blob):08x}":
+        if (
+            json.loads(show.read_text(encoding="utf-8")).get("cue_crc32")
+            != f"{zlib.crc32(blob):08x}"
+        ):
             return None
     except (ValueError, OSError):
         return None

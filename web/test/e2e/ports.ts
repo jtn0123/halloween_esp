@@ -1,12 +1,13 @@
 /**
  * Ports for the specs that spawn their own studio + emulator (bridge,
- * remote). Derived from the lane's CASTLE_E2E_PORT so two lanes — or a
+ * remote) or an emulator alone (owner). Derived from the lane's CASTLE_E2E_PORT so two lanes — or a
  * stale run — land on different numbers by construction, and so a CI lane
  * that pins CASTLE_E2E_PORT gets deterministic neighbours. When the wanted
  * port is already taken the OS picks a free one instead of failing.
  *
- * Offsets in use: +1/+2 bridge.spec.ts, +3/+4 remote.spec.ts. The main
- * web server is the base itself (playwright.config.ts).
+ * Offsets in use: +1/+2 bridge.spec.ts, +3/+4 remote.spec.ts, +5
+ * owner.spec.ts, +6 owner-first-run.spec.ts. The main web server is the base itself
+ * (playwright.config.ts).
  */
 
 import { createServer } from "node:net";

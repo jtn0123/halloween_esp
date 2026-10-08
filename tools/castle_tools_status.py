@@ -8,14 +8,70 @@ import importlib.metadata
 import importlib.util
 import json
 import os
-import shutil
 import sys
 from pathlib import Path
 from typing import TypedDict
 
+import exe_paths
+from exe_paths import exe
+
 ROOT = Path(__file__).resolve().parent.parent
 MODEL_NAME = "htdemucs model"
-INSTALL_COMMAND = "./tools/install_castle_tools.sh"
+
+
+def install_command(platform: str | None = None) -> str:
+    """How this platform installs or repairs the tools: the installer/ folder,
+    which every install carries a copy of (desktop_install.py places its
+    launcher from it). Re-running it resumes; it never starts over."""
+    platform = platform or sys.platform
+    if platform == "win32":
+        return r"installer\install.cmd"
+    if platform == "darwin":
+        return "sh installer/install.sh"
+    # No release ships a prebuilt castle-core for Linux (installer/install.sh).
+    return "sh installer/install.sh --from-source"
+
+
+def website_startup(platform: str | None = None) -> str | None:
+    """The double-click that registers the castle-tools:// helper, or None
+    where there is none: it compiles a macOS URL handler with Apple's tools
+    (register_castle_launcher.py), so elsewhere the page must not offer it."""
+    return (
+        "Enable Website Startup.command"
+        if (platform or sys.platform) == "darwin"
+        else None
+    )
+
+
+def in_app() -> bool:
+    """Whether this Castle Radio is the desktop app's: its supervisor sets
+    CASTLE_APP_VERSION (src-tauri/src/supervisor.rs). The app carries no
+    installer/ folder and no website-startup double-click — it registers
+    castle-tools:// itself — so neither is offered there."""
+    return bool(os.environ.get("CASTLE_APP_VERSION", "").strip())
+
+
+#: Where each system shows the app's tray menu (src-tauri/src/tray.rs).
+TRAY = {
+    "darwin": "choose Repair Castle Tools… from the ♜ in the menu bar",
+    "win32": (
+        "right-click the Castle Tools icon in the notification area and "
+        "choose Repair Castle Tools…"
+    ),
+}
+
+
+def repair_words(platform: str | None = None) -> str | None:
+    """How the desktop app's owner repairs it — the tray's Repair, which runs
+    the app's own setup again — or None outside the app, where the
+    installer's command (install_command) is the repair."""
+    if not in_app():
+        return None
+    where = TRAY.get(platform or sys.platform, TRAY["win32"])
+    return (
+        f"To repair Castle Tools, {where}. It sets the tools up again from "
+        "the internet, takes a few minutes, and keeps your songs."
+    )
 
 
 class Check(TypedDict):
@@ -39,8 +95,10 @@ def _package(name: str, module: str, required: bool = True) -> Check:
     }
 
 
-def _command(name: str, required: bool = True) -> Check:
-    path = shutil.which(name)
+def _command(name: str, required: bool = True, command: str | None = None) -> Check:
+    """`name` as the user knows it; `command` what is actually run when a
+    bundled copy (CASTLE_FFMPEG, CASTLE_YTDLP) stands in for PATH's."""
+    path = exe_paths.which(command or name)
     return {
         "name": name,
         "ok": path is not None,
@@ -58,7 +116,7 @@ def _python() -> Check:
 
 
 def _analyzer() -> Check:
-    binary = ROOT / "core" / "target" / "release" / "analyze_track"
+    binary = ROOT / "core" / "target" / "release" / exe("analyze_track")
     ok = binary.is_file() and os.access(binary, os.X_OK)
     return {
         "name": "analyze_track",
@@ -66,6 +124,18 @@ def _analyzer() -> Check:
         "detail": str(binary) if ok else "not built",
         "required": True,
     }
+
+
+def _cargo(analyzer: Check) -> Check:
+    """cargo only ever BUILDS castle-core (tools/core_bins.py). Where
+    analyze_track is already in place — every release install, whose
+    binaries came prebuilt — a missing cargo is nothing to fix, and saying
+    "needs attention" sent every buyer's readiness card amber over a tool
+    they will never need (tests/install_smoke.py found it)."""
+    check = _command("cargo", False)
+    if not check["ok"] and analyzer["ok"]:
+        return {**check, "ok": True, "detail": "not needed: castle-core is built"}
+    return check
 
 
 def _hf_cache() -> Path:
@@ -95,7 +165,7 @@ def _model() -> Check:
         candidates = []
     for bag_file in candidates:
         try:
-            bag = yaml.safe_load(bag_file.read_text())
+            bag = yaml.safe_load(bag_file.read_text(encoding="utf-8"))
             signatures = bag.get("models", []) if isinstance(bag, dict) else []
             weights = [bag_file.parent / f"{sig}.safetensors" for sig in signatures]
             if signatures and all(
@@ -120,15 +190,16 @@ def _model() -> Check:
 @functools.lru_cache(maxsize=1)
 def status() -> dict[str, object]:
     """Return JSON-safe readiness and feature capability details."""
+    analyzer = _analyzer()
     checks = [
         _python(),
         _package("numpy", "numpy"),
         _package("scipy", "scipy"),
         _package("PyYAML", "yaml"),
-        _command("ffmpeg"),
-        _command("yt-dlp", False),
-        _command("cargo", False),
-        _analyzer(),
+        _command("ffmpeg", command=exe_paths.ffmpeg()),
+        _command("yt-dlp", False, exe_paths.ytdlp()),
+        _cargo(analyzer),
+        analyzer,
         _package("demucs", "demucs", False),
         _package("torch", "torch", False),
         _model(),
@@ -159,8 +230,30 @@ def status() -> dict[str, object]:
             "separation": separating,
         },
         "checks": checks,
-        "install_command": INSTALL_COMMAND,
+        "install_command": None if in_app() else install_command(),
+        "website_startup": None if in_app() else website_startup(),
+        "repair": repair_words(),
     }
+
+
+def human(result: dict[str, object]) -> None:
+    """--human: ready, or what needs attention and how to fix it."""
+    if result["ready"]:
+        print("Castle Tools are ready.")
+        return
+    print("Castle Tools need attention:")
+    checks = result["checks"]
+    assert isinstance(checks, list)
+    for check in checks:
+        if not check["ok"]:
+            print(f"  - {check['name']}: {check['detail']}")
+    if result.get("repair"):
+        print(result["repair"])
+    else:
+        print(
+            f"Run {result['install_command']} in the Castle Tools folder"
+            " to install or repair them."
+        )
 
 
 def main() -> int:
@@ -171,16 +264,7 @@ def main() -> int:
     args = parser.parse_args()
     result = status()
     if args.human:
-        if result["ready"]:
-            print("Castle Tools are ready.")
-        else:
-            print("Castle Tools need attention:")
-            checks = result["checks"]
-            assert isinstance(checks, list)
-            for check in checks:
-                if not check["ok"]:
-                    print(f"  - {check['name']}: {check['detail']}")
-            print(f"Run {result['install_command']} to install or repair them.")
+        human(result)
     else:
         print(json.dumps(result, indent=2))
     failed = (args.require_core and not result["core_ready"]) or (

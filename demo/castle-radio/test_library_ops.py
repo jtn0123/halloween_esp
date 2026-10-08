@@ -19,7 +19,7 @@ class RemovalTests(unittest.TestCase):
         self.row = {"key": self.key, "title": "A prepared song", "split": True}
         self.other = {"key": "radio_other", "title": "Keep me"}
         self.catalog = self.data / "catalog.json"
-        self.catalog.write_text(json.dumps([self.row, self.other]))
+        self.catalog.write_text(json.dumps([self.row, self.other]), encoding="utf-8")
         self.files = {
             self.library / f"{self.key}.mp3": b"full mix",
             self.library / "stems" / self.key / "vocals.mp3": b"voice",
@@ -35,18 +35,20 @@ class RemovalTests(unittest.TestCase):
 
     def test_remove_and_undo_restore_every_layer(self):
         library_ops.remove(self.data, self.library, self.catalog, self.key)
-        self.assertEqual(json.loads(self.catalog.read_text()), [self.other])
+        self.assertEqual(
+            json.loads(self.catalog.read_text(encoding="utf-8")), [self.other]
+        )
         self.assertTrue(all(not path.exists() for path in self.files))
         self.assertEqual(self.unrelated.read_bytes(), b"untouched")
         library_ops.restore(self.data, self.catalog, self.key)
         for path, content in self.files.items():
             self.assertEqual(path.read_bytes(), content)
-        self.assertIn(self.row, json.loads(self.catalog.read_text()))
+        self.assertIn(self.row, json.loads(self.catalog.read_text(encoding="utf-8")))
 
     def test_unknown_id_changes_nothing(self):
         with self.assertRaises(ValueError):
             library_ops.remove(self.data, self.library, self.catalog, "radio_unknown")
-        self.assertEqual(len(json.loads(self.catalog.read_text())), 2)
+        self.assertEqual(len(json.loads(self.catalog.read_text(encoding="utf-8"))), 2)
         self.assertTrue(all(path.exists() for path in self.files))
 
     def test_restore_refuses_to_overwrite_newer_audio(self):
@@ -56,7 +58,9 @@ class RemovalTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             library_ops.restore(self.data, self.catalog, self.key)
         self.assertEqual(replacement.read_bytes(), b"newer audio")
-        self.assertEqual(json.loads(self.catalog.read_text()), [self.other])
+        self.assertEqual(
+            json.loads(self.catalog.read_text(encoding="utf-8")), [self.other]
+        )
 
     def test_opus_playback_file_is_removed_and_restored(self):
         mp3 = self.library / f"{self.key}.mp3"
@@ -74,7 +78,7 @@ class RemovalTests(unittest.TestCase):
         named = self.library / "custom_play.opus"
         named.write_bytes(b"named mix")
         self.row["playback_file"] = "custom_play.opus"
-        self.catalog.write_text(json.dumps([self.row, self.other]))
+        self.catalog.write_text(json.dumps([self.row, self.other]), encoding="utf-8")
         library_ops.remove(self.data, self.library, self.catalog, self.key)
         self.assertFalse(named.exists())
         library_ops.restore(self.data, self.catalog, self.key)

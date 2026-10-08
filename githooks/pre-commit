@@ -19,8 +19,8 @@ SCOPE="tools tests demo/castle-radio"
 # report 2026-09-01 I3). `make check` and CI still enforce the cap itself.
 "$PY" tools/check_loc.py --hook
 
-# The same walk, one line later: an audit citation with no date names six
-# reports at once, and the cheapest moment to date it is while the audit that
+# The same walk, one line later: an audit citation with no date names every
+# report at once, and the cheapest moment to date it is while the audit that
 # raised it is still the thing on screen.
 "$PY" tools/check_citations.py
 
@@ -57,3 +57,8 @@ if [ -f firmware/secrets.yaml ]; then
     exit 1
   fi
 fi
+
+# The castle key (firmware v5.74) lives in devices.toml when this checkout
+# remembers one (tools/castle_keys.py) — a TRACKED file in a public repo.
+# Refuse a commit that stages it with a key in it; the key is never echoed.
+"$PY" tools/castle_keys.py check-staged

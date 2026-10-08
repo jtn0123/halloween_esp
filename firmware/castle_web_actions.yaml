@@ -76,6 +76,10 @@ script:
             // Never past the measured ceiling (rig.h, from scenes.yaml).
             if (pct > castle::kMaxVolumePct) pct = castle::kMaxVolumePct;
             id(speaker_hush) = pct == 0;
+            // Nor the owner's cap, nor above 0 inside quiet hours (v5.75,
+            // castle_owner.h) — AFTER the hush, which is what was asked
+            // for: quiet hours ending must not leave the porch hushed.
+            pct = castle_web::volume_for(pct);
             auto call = id(castle_media)->make_call();
             call.set_volume(pct / 100.0f);
             call.perform();
@@ -134,6 +138,9 @@ script:
             // The evening playlist (#19). Stopping also stops whatever
             // scene it was mid-way through — "stop the show" means quiet.
             if (act.arg == "1") {
+              // From the top of the evening (v5.77: the card's list,
+              // castle_scenes.h), not wherever the last show was stopped.
+              castle_scenes::evening_rewind();
               id(show_playlist)->execute();
             } else {
               id(show_playlist)->stop();

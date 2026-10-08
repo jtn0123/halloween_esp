@@ -21,11 +21,21 @@ not a build and an OTA.
 
 Layout, little-endian, fixed-width so the device needs no parser and no heap:
 
-    header 16 B  "CSMF", version u8, count u8, pad u16, entry_size u32,
+    header 16 B  "CSMF", version u8, count u8, flags u16, entry_size u32,
                  reserved u32
     entry  96 B  x count: id char[40] (NUL-terminated), audio char[48]
                  (NUL-terminated, the `sfx` track token — no extension),
-                 duration_ms u32, volume_pct u16, loops u8, flags u8
+                 duration_ms u32, volume_pct u16, loops u8, evening u8
+
+THE EVENING SHOW (v5.77). The two bytes that were written as zero until
+then — the header's `pad` and each row's `flags` — carry the evening
+playlist, so "start show" plays what the CARD says rather than a list of ids
+compiled into the image. The header's bit 0 (MARKS_EVENING) says the rows
+mean it; a row's `evening` is its place in the evening, 1-based, and 0 means
+the evening skips it (a motion scene, which the PIR owns). Not a version bump,
+in either direction: firmware before v5.77 never read either byte, and
+v5.77 reading a manifest without the bit plays every row but the PIR's
+scene, which is what the compiled list used to be.
 
 `entry_size` is in the header rather than implied so a future field is a
 version bump the old firmware REFUSES rather than misreads: castle_scenes.h
@@ -53,6 +63,8 @@ ENTRY = struct.Struct("<40s48sIHBB")
 #: What the device will load (castle_scenes.h kMaxScenes) — and the same
 #: twelve tools/check_loc.py's SCENE_LIMIT allows in scenes.yaml.
 MAX_SCENES = 12
+#: Header flag bit 0: each row's last byte is its place in the evening show.
+MARKS_EVENING = 0x0001
 #: Room for the NUL. The longest id in the show today is 32 characters
 #: ("the_ballad_of_the_witches__road_"), and its audio token is "10_" plus
 #: that, so both fields are sized with a scene name's worth of slack.
@@ -90,15 +102,43 @@ def audio_token(index: int, sid: str) -> str:
     return f"{index:02d}_{sid}"
 
 
-def encode(scenes: Sequence[Mapping[str, Any]]) -> bytes:
+def evening_order(doc: Mapping[str, Any]) -> list[str]:
+    """The evening playlist (#19), in the order it plays: `show.order` when
+    the show names one, else every scene that is not motion-kind, in file
+    order — the PIR owns those, and a playlist that plays the jump-scare on
+    schedule teaches the street to ignore it."""
+    scenes = doc["scenes"]
+    order = (doc.get("show") or {}).get("order") or [
+        s["id"] for s in scenes if s.get("kind") != "motion"
+    ]
+    known = {s["id"] for s in scenes}
+    for sid in order:
+        if sid not in known:
+            raise SystemExit(f"show.order names unknown scene {sid!r}")
+    if len(set(order)) != len(order):
+        raise SystemExit(
+            "show.order names a scene twice — the card gives each scene one "
+            "place in the evening"
+        )
+    return [str(sid) for sid in order]
+
+
+def encode(
+    scenes: Sequence[Mapping[str, Any]], evening: Sequence[str] | None = None
+) -> bytes:
     """`scenes` in show order, as the card file. Each mapping needs `id`,
-    `duration_ms` and optionally `volume` (0..1, default 0.8) and `loop`."""
+    `duration_ms` and optionally `volume` (0..1, default 0.8), `loop` and
+    `kind`. `evening` is the evening playlist's ids in play order (see
+    evening_order); None means every non-motion scene, in file order."""
     if len(scenes) > MAX_SCENES:
         raise SystemExit(
             f"{len(scenes)} scenes, the device's manifest holds {MAX_SCENES} "
             "(SCENE_LIMIT — see scenes/scenes.yaml's header comment)"
         )
-    out = [HEADER.pack(MAGIC, VERSION, len(scenes), 0, ENTRY.size, 0)]
+    if evening is None:
+        evening = evening_order({"scenes": scenes})
+    place = {sid: n for n, sid in enumerate(evening, start=1)}
+    out = [HEADER.pack(MAGIC, VERSION, len(scenes), MARKS_EVENING, ENTRY.size, 0)]
     seen: set[str] = set()
     for i, scene in enumerate(scenes, start=1):
         sid = str(scene["id"])
@@ -115,7 +155,7 @@ def encode(scenes: Sequence[Mapping[str, Any]]) -> bytes:
                 int(scene["duration_ms"]),
                 vol,
                 1 if scene.get("loop") else 0,
-                0,
+                place.get(sid, 0),
             )
         )
     return b"".join(out)
@@ -127,7 +167,7 @@ def decode(blob: bytes) -> list[dict[str, Any]]:
     would refuse, so the two cannot disagree about what a valid file is."""
     if len(blob) < HEADER.size:
         raise ValueError("too short to be a scene manifest")
-    magic, version, count, _pad, entry_size, _res = HEADER.unpack_from(blob, 0)
+    magic, version, count, hflags, entry_size, _res = HEADER.unpack_from(blob, 0)
     if magic != MAGIC or version != VERSION:
         raise ValueError("not a version-1 castle scene manifest")
     if entry_size != ENTRY.size:
@@ -143,9 +183,27 @@ def decode(blob: bytes) -> list[dict[str, Any]]:
         )
         out.append(
             {"id": _cstr(sid), "audio": _cstr(audio), "duration_ms": dur,
-             "volume_pct": vol, "loop": bool(loops), "flags": flags}
+             "volume_pct": vol, "loop": bool(loops), "flags": flags,
+             "evening": flags if hflags & MARKS_EVENING else None}
         )  # fmt: skip
     return out
+
+
+def evening_ids(blob: bytes, skip: str = "") -> list[str]:
+    """The evening playlist a manifest describes — castle_scenes.h's
+    evening_csv in Python, held equal to it by tests/test_evening_cxx.py.
+    A manifest from before v5.77 (no MARKS_EVENING) plays every row except
+    `skip`, the PIR's scene, which is what the compiled list was. A place
+    past MAX_SCENES, or one a row before it already claimed, is ignored —
+    this writer never makes either, and the device must not trust them."""
+    rows = decode(blob)
+    if not HEADER.unpack_from(blob, 0)[3] & MARKS_EVENING:
+        return [r["id"] for r in rows if r["id"] != skip]
+    placed: dict[int, str] = {}
+    for r in rows:
+        if 1 <= r["evening"] <= MAX_SCENES:
+            placed.setdefault(r["evening"], r["id"])
+    return [placed[n] for n in sorted(placed)]
 
 
 def _cstr(raw: bytes) -> str:

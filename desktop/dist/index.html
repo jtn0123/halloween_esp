@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Castle Tools</title>
+  <link rel="stylesheet" href="splash.css">
+  <script src="splash.js" defer></script>
+</head>
+<body>
+  <main>
+    <div class="rook" aria-hidden="true">&#9820;</div>
+    <h1>Castle Tools</h1>
+    <section id="setup" hidden>
+      <p id="setup-why">Setting up Castle Tools for the first time.</p>
+      <progress id="setup-bar"></progress>
+      <output id="setup-step" aria-live="polite"></output>
+      <p id="setup-net" class="hint">This needs the internet: the first start downloads
+        Python and the song tools (several hundred MB) and takes a few minutes.
+        Later starts take seconds. Quitting is safe &mdash; the next start picks up
+        where this one stopped.</p>
+    </section>
+    <output id="message" aria-live="polite">Starting Castle Radio&hellip;</output>
+    <div id="spinner" class="spinner" aria-hidden="true"></div>
+    <div class="actions">
+      <button id="retry" type="button" hidden>Try again</button>
+      <button id="repair" type="button" hidden>Repair</button>
+      <button id="log" type="button">Open log</button>
+    </div>
+    <output id="desk" class="hint"></output>
+    <p class="hint">Closing this window keeps Castle Tools in the &#9820; menu. Quit from there.</p>
+    <p id="version" class="hint"></p>
+  </main>
+</body>
+</html>

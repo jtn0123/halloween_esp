@@ -21,7 +21,8 @@
  *   - the test bench: strip test and speaker test (device_tests.ts)
  *   - the card: every track on it, with play and delete, plus whether the
  *     show's own scene tracks are all present
- *   - the motion sensor, the drop zone, and the boot log
+ *   - the motion sensor, the drop zone, the castle key (device_key.ts) and
+ *     the boot log
  * Volume lives on the chip (device.ts) alone — the same slider twice was
  * the scatter the dogfood pass called out, and two sliders drift.
  *
@@ -32,8 +33,9 @@
  */
 
 import { api } from "./api.js";
-import { castleAct } from "./castle_act.js";
+import { castleAct, KEY_REQUIRED } from "./castle_act.js";
 import { cardChanged } from "./castle_bus.js";
+import { wireKey } from "./device_key.js";
 import { el as byId, reqIn, sel } from "./dom.js";
 import { panelMarkup, type DeviceStatus, type SdFile } from "./device_panel_view.js";
 import { testPct, wireTests } from "./device_tests.js";
@@ -151,6 +153,7 @@ export class DevicePanel {
     this.wireShow(st);
     this.wireCard(tracks);
     this.wireSensorAndLog();
+    wireKey(this.body, st);
   }
 
   /** One poll's worth of truth, or null when the castle is not answering.
@@ -237,20 +240,22 @@ export class DevicePanel {
    *  PIR settings post just their own field; the device's main loop applies
    *  them to the persisted entities. */
   private wireSensorAndLog(): void {
-    reqIn<HTMLInputElement>(this.body, "#dpPirArm")
-      .addEventListener("change", (e) => {
+    // A castle with no sensor (v5.75 `pir.fitted` false) is drawn without
+    // the three controls — absent is a state here, not a broken panel.
+    sel<HTMLInputElement>("#dpPirArm", this.body)
+      ?.addEventListener("change", (e) => {
         const on = (e.target as HTMLInputElement).checked;
         void castleAct(`/api/pir?armed=${on ? 1 : 0}`,
                        on ? "motion sensor armed" : "motion sensor off");
       });
-    reqIn<HTMLSelectElement>(this.body, "#dpPirScene")
-      .addEventListener("change", (e) => {
+    sel<HTMLSelectElement>("#dpPirScene", this.body)
+      ?.addEventListener("change", (e) => {
         const sc = (e.target as HTMLSelectElement).value;
         void castleAct(`/api/pir?scene=${encodeURIComponent(sc)}`,
                        `motion sensor plays ${sc}`);
       });
-    reqIn<HTMLInputElement>(this.body, "#dpPirCool")
-      .addEventListener("change", (e) => {
+    sel<HTMLInputElement>("#dpPirCool", this.body)
+      ?.addEventListener("change", (e) => {
         const v = (e.target as HTMLInputElement).value;
         void castleAct(`/api/pir?cooldown=${v}`, `motion cooldown ${v} s`);
       });
@@ -270,7 +275,8 @@ export class DevicePanel {
         const kb = Math.trunc(f.size / 1024);
         drop.textContent = `uploading ${f.name} (${kb} KB)…`;
         const r = await api.castlePut(f.name, f);
-        drop.textContent = r.ok ? `✓ ${f.name}` : `✗ ${f.name} failed`;
+        const why = r.status === 401 ? ` — ${KEY_REQUIRED}` : " failed";
+        drop.textContent = r.ok ? `✓ ${f.name}` : `✗ ${f.name}${why}`;
       }
       cardChanged();                 // the Library below re-reads the card now
       void this.render();

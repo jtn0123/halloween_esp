@@ -20,12 +20,12 @@ from pathlib import Path
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parent.parent
-SOURCE = (ROOT / "firmware" / "castle_sd_common.yaml").read_text()
+SOURCE = (ROOT / "firmware" / "castle_sd_common.yaml").read_text(encoding="utf-8")
 #: The 200 ms bridge is two files since v5.70: the tick that mirrors state
 #: out lives in castle_sd_common.yaml, and the mailbox's if/else chain is
 #: the `web_action` script it runs inline (castle_web_actions.yaml). The
 #: branches below are read out of the second; the mirror out of the first.
-ACTIONS = (ROOT / "firmware" / "castle_web_actions.yaml").read_text()
+ACTIONS = (ROOT / "firmware" / "castle_web_actions.yaml").read_text(encoding="utf-8")
 COMPILER = shutil.which("clang++") or shutil.which("g++")
 FLAGS = [
     "-std=c++17",
@@ -45,6 +45,7 @@ IN_CI = bool(os.environ.get("CI"))
 
 sys.path.insert(0, str(ROOT / "tools"))
 import castle_emu
+import castle_emu_loop
 
 
 def load_device_bridge():
@@ -64,7 +65,16 @@ def load_device_bridge():
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules["device_bridge"] = module
-    spec.loader.exec_module(module)
+    # The bridge comes through radio_env (grade report 2026-09-24 B7), which
+    # writes the Radio's sandbox knobs into os.environ and makes its data
+    # dir: right for the Radio's own process, a leak into every later test
+    # in this one (tests/test_hermetic.py caught it). So the load gets a
+    # scratch data dir, and the environment is put back as it was.
+    with (
+        tempfile.TemporaryDirectory(prefix="radio-env-") as scratch,
+        mock.patch.dict(os.environ, {"CASTLE_RADIO_DATA": scratch}),
+    ):
+        spec.loader.exec_module(module)
     return module
 
 
@@ -137,9 +147,9 @@ class LiveLightPlaybackTests(unittest.TestCase):
         self.assertIn('id(current_track).publish_state("")', mirror)
 
     def test_status_reports_the_audio_clock(self):
-        web = (ROOT / "firmware" / "sd_web.h").read_text()
+        web = (ROOT / "firmware" / "sd_web.h").read_text(encoding="utf-8")
         self.assertIn('"playing":%s,"position_ms":%lld', web)
-        state = (ROOT / "firmware" / "sd_web_state.h").read_text()
+        state = (ROOT / "firmware" / "sd_web_state.h").read_text(encoding="utf-8")
         self.assertIn(
             "inline bool mirror_audio(bool playing, bool sounding, long long now_us,",
             state,
@@ -180,8 +190,10 @@ class EmulatorMailboxParityTests(unittest.TestCase):
     must drop and keep the same commands the firmware's does."""
 
     def emu(self):
-        # A ticker that never fires: the slot is inspected, not drained.
-        patch = mock.patch.object(castle_emu, "APPLY_DELAY_S", 3600)
+        # A ticker that never fires: the slot is inspected, not drained. The
+        # loop's own constant — castle_emu's is a re-export the ticker never
+        # reads, so patching that one left it draining the slot every 200 ms.
+        patch = mock.patch.object(castle_emu_loop, "APPLY_DELAY_S", 3600)
         patch.start()
         self.addCleanup(patch.stop)
         emu = castle_emu.CastleEmu(port=0)
