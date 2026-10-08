@@ -314,9 +314,11 @@ COVERAGE_MIN := 82
 # is — a stale venv. Say so. (grade report 2026-08-24 I2)
 NEED_DEV_TOOL = @$(PY) -c "import $(1)" 2>/dev/null \
 	|| { echo "$(1) missing — .venv predates a dev dependency; run 'make setup'"; exit 1; }
+# Also measure the tested portable PCB utilities for Sonar. The tools-only
+# report and existing floor below keep their established scope.
 coverage:
 	$(call NEED_DEV_TOOL,coverage)
-	@$(PY) -m coverage run --source=tools -m unittest discover -s tests -q
+	@$(PY) -m coverage run --source=tools,hardware/castle-carrier-v3.4/integrated -m unittest discover -s tests -q
 	@$(PY) -m coverage report --include='tools/*' --skip-empty
 
 coverage-gate: coverage

@@ -1,0 +1,74 @@
+# Castle v3.4 Integrated N16R8: 16 MB flash, 8 MB octal PSRAM.
+# Integrate beside shared firmware packages. USB console; J10 TX43/RX44.
+# Bench bring-up remains required even after compilation.
+substitutions:
+  version: "5.78"
+  name: castle-v34-integrated
+  friendly: Castle V3.4 Integrated
+  sd_sck: "40"
+  sd_mosi: "39"
+  sd_miso: "41"
+
+packages:
+  base: !include castle.yaml
+  sd: !include castle_sd_common.yaml
+
+esp32:
+  board: !remove
+  variant: esp32s3
+  flash_size: 16MB
+
+logger:
+  level: INFO
+  hardware_uart: USB_SERIAL_JTAG
+
+
+i2c:
+  sda: GPIO1
+  scl: GPIO2
+  frequency: 400kHz
+  scan: true
+
+sensor:
+  - platform: ina219
+    address: 0x41
+    shunt_resistance: 0.01 ohm
+    max_voltage: 16.0V      # BRNG = 0
+    max_current: 8A         # PGA = /2, ±80 mV across 10 mΩ
+    update_interval: 10s
+    current:
+      name: "Castle 5V current"
+    bus_voltage:
+      name: "Castle 5V rail"
+    power:
+      name: "Castle 5V power"
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+# MP3, WAV and Opus are used by the existing SD/radio workflow.
+audio:
+  codecs:
+    mp3:
+    opus:
+    wav:
+
+# Shared stereo I2S stream: U6 selects LEFT, U7 selects RIGHT in hardware.
+speaker:
+  - id: !extend castle_speaker
+    channel: stereo
+    sample_rate: 44100
+  # Keep the hardware clock within MAX98357A limits for every decoder.
+  - platform: resampler
+    id: castle_rate_safe_speaker
+    output_speaker: castle_speaker
+    sample_rate: 44100
+    bits_per_sample: 16
+    buffer_duration: 100ms
+
+media_player:
+  - id: !extend castle_media
+    announcement_pipeline:
+      speaker: castle_rate_safe_speaker
+      num_channels: 2

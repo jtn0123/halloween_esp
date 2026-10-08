@@ -1,0 +1,112 @@
+(footprint "R_2512_6332Metric"
+	(version 20260206)
+	(generator "kicad-footprint-generator")
+	(layer "F.Cu")
+	(descr "2512 - R21, the 10 mOhm 3 W current shunt the INA219 measures across. Two terminals, not Kelvin: the sense connection is made by where U5's IN+ and IN- tracks meet the pads, so they must meet them at the INNER edge of each land and nowhere else.")
+	(tags "resistor")
+	(property "Reference" "REF**"
+		(at 0 -2.63 0)
+		(layer "F.SilkS")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "Value" "R_2512_6332Metric"
+		(at 0 2.63 0)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(property "KiLib_Generator" "SMD_2terminal_chip_molded"
+		(at 0 0 0)
+		(layer "F.SilkS")
+		(hide yes)
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(attr smd)
+	(duplicate_pad_numbers_are_jumpers no)
+	(fp_line
+		(start -2.177064 -1.71)
+		(end 2.177064 -1.71)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+	)
+	(fp_line
+		(start -2.177064 1.71)
+		(end 2.177064 1.71)
+		(stroke
+			(width 0.12)
+			(type solid)
+		)
+		(layer "F.SilkS")
+	)
+	(fp_rect
+		(start -3.83 -1.93)
+		(end 3.83 1.93)
+		(stroke
+			(width 0.05)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.CrtYd")
+	)
+	(fp_rect
+		(start -3.15 -1.6)
+		(end 3.15 1.6)
+		(stroke
+			(width 0.1)
+			(type solid)
+		)
+		(fill no)
+		(layer "F.Fab")
+	)
+	(fp_text user "${REFERENCE}"
+		(at 0 0 0)
+		(layer "F.Fab")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(pad "1" smd roundrect
+		(at -2.9625 0)
+		(size 1.225 3.35)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.204082)
+	)
+	(pad "2" smd roundrect
+		(at 2.9625 0)
+		(size 1.225 3.35)
+		(layers "F.Cu" "F.Mask" "F.Paste")
+		(roundrect_rratio 0.204082)
+	)
+	(embedded_fonts no)
+	(model "${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_2512_6332Metric.step"
+		(offset
+			(xyz 0 0 0)
+		)
+		(scale
+			(xyz 1 1 1)
+		)
+		(rotate
+			(xyz 0 0 0)
+		)
+	)
+)

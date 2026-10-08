@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "scope": "Portable validator and offline fixture controls; supplements native CAD QA. No physical tests.",
+  "native_pcb_sha256": "a7eb022ffc3cce39406878eae9f9808516d1a49beee00f75f952136c5c394dcf",
+  "test_cases": 21,
+  "utility_line_coverage_percent": 96,
+  "native_usb_orientation_pair_mismatch_mm": {
+    "A_contacts": 0.7949994388050214,
+    "B_contacts": 0.795000561194982
+  },
+  "current_compiled_image_hashes_rechecked": true,
+  "optimized_python_rejects_mono_build": true,
+  "physical_validation": "NOT_PERFORMED"
+}

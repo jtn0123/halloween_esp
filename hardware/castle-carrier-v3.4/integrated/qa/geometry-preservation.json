@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "checks": {
+    "all_footprint_placement_pad_and_graphics_unchanged": true,
+    "outline_unchanged": true,
+    "ordinary_vias_unchanged": true,
+    "non_usb_tracks_unchanged": true,
+    "limited_side_mm_80": true
+  },
+  "native_pcb_sha256": "a7eb022ffc3cce39406878eae9f9808516d1a49beee00f75f952136c5c394dcf",
+  "scope": "Compared footprint positions, pad data/graphics, board outline, ordinary vias and all non-USB tracks. USB segments and refilled copper changed."
+}

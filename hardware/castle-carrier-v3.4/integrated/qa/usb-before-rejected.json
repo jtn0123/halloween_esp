@@ -1,0 +1,45 @@
+{
+  "USB_DP": {
+    "routes_mm": {
+      "A6": 53.5899635653627,
+      "B6": 48.299963565362695
+    },
+    "pad_metal_graph_links": [
+      {
+        "reference": "U4",
+        "pad": "1",
+        "length_mm": 0.0005
+      },
+      {
+        "reference": "U4",
+        "pad": "6",
+        "length_mm": 0.0005
+      }
+    ]
+  },
+  "USB_DM": {
+    "routes_mm": {
+      "A7": 51.28122206356674,
+      "B7": 50.28122206356674
+    },
+    "pad_metal_graph_links": [
+      {
+        "reference": "U4",
+        "pad": "3",
+        "length_mm": 0.0005
+      },
+      {
+        "reference": "U4",
+        "pad": "4",
+        "length_mm": 0.0005
+      }
+    ]
+  },
+  "orientation_pair_mismatch_mm": {
+    "A_contacts": 2.3087415017959643,
+    "B_contacts": 1.981258498204042
+  },
+  "scope": "Shortest copper centerline routes including native pad-area joins. No eye diagram, field solver, USB connector/contact model or runtime enumeration test.",
+  "target_mm": 1.0,
+  "status": "FAIL"
+}
