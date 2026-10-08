@@ -27,7 +27,7 @@ def relative_file(root: Path, name: str) -> Path:
     return root / path
 
 
-def check(root: Path) -> None:
+def check_import_manifest(root: Path) -> None:
     manifest = json.loads(
         (root / "qa/import-manifest.json").read_text(encoding="utf-8")
     )
@@ -39,6 +39,10 @@ def check(root: Path) -> None:
             raise ValueError("Missing published handoff file: " + name)
         if digest(path.read_bytes()) != expected:
             raise ValueError("Handoff hash mismatch: " + name)
+
+
+def check(root: Path) -> None:
+    check_import_manifest(root)
     pcb = (root / "castle-carrier.kicad_pcb").read_bytes()
     with zipfile.ZipFile(root / "out/DFM_REVIEW_NOT_RELEASED.zip") as package:
         record = json.loads(package.read("dfm-review/package-manifest.json"))

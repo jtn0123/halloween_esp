@@ -23,4 +23,4 @@ shutil.copy2(board/'firmware-reference/castle_v34.yaml', root/'firmware/castle_v
 (root/'firmware/build_path.yaml').write_text('esphome:\n  build_path: '+str(root/'build')+'\n', encoding='utf-8')
 PY
 "${ESPHOME_CLI:-$source_repo/.venv/bin/esphome}" compile "$build_root/firmware/castle_v34.yaml" 2>&1 | tee "$build_root/build.log"
-python3 firmware-reference/record_build.py "$build_root" "$source_repo"
+python3 firmware-reference/record_build.py "$source_repo"

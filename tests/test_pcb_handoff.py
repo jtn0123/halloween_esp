@@ -125,3 +125,69 @@ class TestIntegrity(unittest.TestCase):
             ValueError, "Manufacturing BOM does not match engineering BOM"
         ):
             check(self.root)
+
+    def rewrite_review_packet(self, change: str) -> None:
+        import hashlib
+        import zipfile
+
+        package = self.root / "out/DFM_REVIEW_NOT_RELEASED.zip"
+        with zipfile.ZipFile(package) as archive:
+            contents = {name: archive.read(name) for name in archive.namelist()}
+        record_name = "dfm-review/package-manifest.json"
+        record = json.loads(contents[record_name])
+        if change == "finish":
+            name = "gerbers/castle-carrier-job.gbrjob"
+            job = json.loads(contents["dfm-review/" + name])
+            job["GeneralSpecs"]["Finish"] = "HASL"
+            contents["dfm-review/" + name] = json.dumps(job).encode()
+        else:
+            name = "filled-capped-holes.csv"
+            lines = contents["dfm-review/" + name].splitlines(keepends=True)
+            contents["dfm-review/" + name] = b"".join(lines[:-1])
+        record["files"][name] = hashlib.sha256(
+            contents["dfm-review/" + name]
+        ).hexdigest()
+        contents[record_name] = json.dumps(record).encode()
+        with zipfile.ZipFile(package, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+            for name, data in contents.items():
+                archive.writestr(name, data)
+        manifest_path = self.root / "qa/import-manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"]["out/DFM_REVIEW_NOT_RELEASED.zip"] = hashlib.sha256(
+            package.read_bytes()
+        ).hexdigest()
+        manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    def test_wrong_finish_is_rejected_even_when_package_hashes_agree(self) -> None:
+        from check_pcb_handoff import check
+
+        self.rewrite_review_packet("finish")
+        with self.assertRaisesRegex(ValueError, "ENIG mismatch"):
+            check(self.root)
+
+    def test_missing_thermal_hole_is_rejected_even_when_package_hashes_agree(
+        self,
+    ) -> None:
+        from check_pcb_handoff import check
+
+        self.rewrite_review_packet("hole")
+        with self.assertRaisesRegex(ValueError, "exactly 16"):
+            check(self.root)
+
+    def test_cli_reports_pass_and_missing_file_as_nonzero(self) -> None:
+        import contextlib
+        import io
+        from unittest.mock import patch
+
+        from check_pcb_handoff import main
+
+        with patch.object(
+            sys, "argv", ["check_pcb_handoff.py", "--root", str(self.root)]
+        ):
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(), 0)
+            self.assertIn("PASS", output.getvalue())
+            (self.root / "castle-carrier.kicad_sch").unlink()
+            with contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(main(), 1)
+            self.assertIn("Missing published", output.getvalue())
