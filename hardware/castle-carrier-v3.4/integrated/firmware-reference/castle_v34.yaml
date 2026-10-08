@@ -2,7 +2,7 @@
 # Integrate beside shared firmware packages. USB console; J10 TX43/RX44.
 # Bench bring-up remains required even after compilation.
 substitutions:
-  version: "5.71"
+  version: "5.78"
   name: castle-v34-integrated
   friendly: Castle V3.4 Integrated
   sd_sck: "40"

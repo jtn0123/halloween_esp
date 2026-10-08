@@ -11,7 +11,7 @@ This document specifies the intended process. It is not evidence that a fabricat
 - U2 uses the existing segmented thermal-pad paste pattern. Confirm module stencil thickness/reflow profile against Espressif recommendations and the assembler's process. Moisture handling and reflow follow each component's datasheet.
 - All SMT parts are on the front. R1–R11 are 1206 surface-mount parts, not axial resistors. Fit through-hole connectors, fuse holder and electrolytics in a separate suitable process. Polarity/orientation verification includes U2/U6/U7/U8 pin 1, Q1, D1/D3/D5/D6/D7, and C3/C4/C5. Fit R29 = 100 kohm for LEFT and R30 = 374 kohm for RIGHT; follow the current stereo assembly notes.
 - Purchase new/changed parts by the exact manufacturer part numbers in `bom-v3.4-engineering.csv`; no substitutions based on nominal value alone. Unchanged inherited supplier selections still need stock and package confirmation at quotation time.
-- Quote five PCBs, two assembled and three bare, including filled/capped vias, Standard assembly, required X-ray and through-hole work. The September 30 quote already includes ENIG; shipping/taxes and final supplier process acceptance remain open. See [saved quote comparison](../../audits/12-jlc-integrated-two-assembled/README.md).
+- Quote five PCBs, two assembled and three bare, including filled/capped vias, Standard assembly, required X-ray and through-hole work. The September 30 quote already includes ENIG; shipping/taxes and final supplier process acceptance remain open. See the [supplier review request](SUPPLIER-REVIEW.md) and [stock snapshot](../qa/jlc-stock-20261007.json). Previous prices are historical.
 
 ## Mechanical fit
 

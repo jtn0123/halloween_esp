@@ -1,0 +1,36 @@
+{
+  "pcb_mm": [
+    100,
+    80
+  ],
+  "limited_side_mm": 80,
+  "supplied_width_limit_mm": [
+    80,
+    82
+  ],
+  "hole_centers_mm": {
+    "H1": [
+      4.2,
+      4.2
+    ],
+    "H2": [
+      95.8,
+      3.8
+    ],
+    "H3": [
+      4.2,
+      75.7
+    ],
+    "H4": [
+      95.8,
+      75.7
+    ]
+  },
+  "mounting_hole_diameter_mm": 3.2,
+  "module_body_within_outline": true,
+  "rf_keepout_beyond_top_mm": 14.75,
+  "sd_body_overhang_uncapped_side_mm": 3.375,
+  "enclosure_model": null,
+  "physical_fit": "NOT_PERFORMED",
+  "scope": "Native outline, hole coordinates and existing F.Fab body bounds; actual connectors/cables/card/height require measurement"
+}

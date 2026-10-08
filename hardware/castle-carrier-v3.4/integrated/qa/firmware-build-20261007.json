@@ -1,0 +1,99 @@
+{
+  "status": "PASS",
+  "generated_at": "2026-10-07T19:42:39.008910-07:00",
+  "scope": "Compilation and generated-code configuration only; dummy credentials; no flashing or physical stereo test",
+  "variant": "integrated",
+  "esphome_version": "2026.9.1",
+  "idf_version": "5.5.5",
+  "ram_summary": [
+    "RAM:   [====      ]  36.2% (used 123843 bytes from 341760 bytes)"
+  ],
+  "flash_summary": [
+    "Flash: [==        ]  15.9% (used 1292875 bytes from 8126464 bytes)"
+  ],
+  "config_sha256": "bd9ed9604007ed4eee179af6b0f844701fafc5b2c05a19c72d475f7f093bde25",
+  "artifacts": {
+    "firmware.elf": "e05474b5b3ab1463190819b1332a2b999838db6c043de7d48c712c8b02bfe08a",
+    "firmware.ota.bin": "1a3026cea05e46158fd4281d4ed4f72b43e2cac31ff66894272ebdcc5163bf05",
+    "firmware.factory.bin": "5265ea589a2fa25cdedb555c2c83587a75a0d599a35ec6d259e214a2426f5798"
+  },
+  "stereo": {
+    "slot_mode": "I2S_SLOT_MODE_STEREO",
+    "slot_mask": "I2S_STD_SLOT_BOTH",
+    "announcement_pipeline_channels": 2,
+    "shared_data_pin": "GPIO15"
+  },
+  "audio_compatibility": {
+    "codecs": [
+      "MP3",
+      "WAV",
+      "OPUS"
+    ],
+    "pipeline_speaker": "castle_rate_safe_speaker",
+    "output_sample_rate_hz": 44100,
+    "bits_per_sample": 16,
+    "buffer_duration_ms": 100,
+    "scope": "Compiled configuration, not runtime playback or CPU/heap qualification"
+  },
+  "device_name": "castle-v34-integrated",
+  "firmware_version": "5.78",
+  "firmware_source_files_sha256": {
+    "bench.yaml": "19c56dc0557dbde0e036093ba421e8d9ffdd7c97579ea71a1b10be61710e311a",
+    "bench_audio.yaml": "0388d59b877559d982713ec7346c69da4328531785443ad6db47c9b9b6629d42",
+    "boot_log.h": "0499121b8f61c642570b3e1c5dff238a50de672de8b88e1677065144ee856ec7",
+    "build_path.yaml": "a66a881d7630ee4e27145b98d78ff194375dee62baf922748269e01250b02979",
+    "castle.yaml": "bf816ae24ba7c4cedaafb6b97f672d65a66c5390151cdebcb067fd6289a019a6",
+    "castle_audio.yaml": "ad42dce5969fa7d33986ded755ca6e531d93752ef1716991d923ebccb73a6cf4",
+    "castle_buyer.h": "91654082403e8672db0292fb9f4f0099c2e2a4c80240e52d6b450c1ff2f101b0",
+    "castle_buyer.yaml": "874e3291c7ca6626bd2f43ca18d3312df0cea1637ea74d24c68498f692e01b7c",
+    "castle_cues.h": "09d684e87b14d9b9039b72868f65001868b94135acde368b1b35a15f75431f63",
+    "castle_cues.yaml": "549706216f61e3c64ba2754389a65ccbdcd687335bffd3c0f4c3fa670fd63943",
+    "castle_effects.h": "2007dba89346db4074a15cd1b61c0e5e482d93cc29b7790a0215a0e9ac9c2f15",
+    "castle_feather_s3.yaml": "b6a4aa2eec73c6801d2ade036f353fbfac54c811830cf5d10d6126b5b3bcda7c",
+    "castle_health.h": "193a065b189d4f36eb8d830d1c2a5f6e4e0b4c43f0180de61c50776ccac4e6b0",
+    "castle_heard.h": "79c84a103f8b6725904db5a6afd90d2a7ec980dac1350803acedb1a0669d95ff",
+    "castle_inputs.yaml": "077622379e01005b10ed4eca1320d232c2b9a7c38b86aeeded9a5a1cdd242b26",
+    "castle_layers.h": "f48599aba9cf3b8135e6366ad5b354fd96135bcc252216f740d565a48f549591",
+    "castle_owner.h": "2ba1dd0dcfffd865d8a6feef4483f2e3f222b8b073138ea361645b1d377fb694",
+    "castle_pixels.h": "0a76df88bb0dd0840f2fd261799af4f5caaca3516f4d5ae8939b65df1bd9b0c2",
+    "castle_rtc.h": "3cc5f2a3d62d03b0be062290a2c802ef8093d166929746971af3f024ec241cf3",
+    "castle_s3.yaml": "1f132dae2ab82f624730fc7af0e5e49c8e6ff08e469a861522336baba1cc4d89",
+    "castle_s3_qemu.yaml": "1f1c15ca02dee8ff0a980883a79d53bd3499da4e84ff18a0735db9da93c86e05",
+    "castle_scenes.h": "e7a707b5cf91fc05061499ee4a8f6586158fb9169709a128621880f6b32a9239",
+    "castle_scenes.yaml": "14a37b3c40cbf315497434d809678449ec25200e2bbdaab2744b8163bf872fd8",
+    "castle_sd_common.yaml": "31d8120f11e3b09caa4b225cd1e2c6d375f23d508f155abe24f39a2a98188801",
+    "castle_tz.h": "47c7cb4bb942d76fbc94d08e52e15b46561196898f1f8c571c0cc37836025364",
+    "castle_v34.yaml": "bd9ed9604007ed4eee179af6b0f844701fafc5b2c05a19c72d475f7f093bde25",
+    "castle_web_actions.yaml": "de317999747e65993143fa6b27224d38a149f18ef88c97dec82deef90d758f71",
+    "flash_mode.h": "f4e8a584d26a463cc3684d63fd3d49a7adcd7a92174c43f827b09d04275049c7",
+    "garage.yaml": "0aacb0e5ecd47a2c9a9bbf5e0574fda2cf5c84a321489c936157fb36bd1f0b4a",
+    "generated/audio_sd.yaml": "58d419b5d45e11cc3a8619840d61157e822f343880f22f5e6593a8ff6c67d255",
+    "generated/fallback_scenes.h": "06e48e8ac11d0c292cf94d8b3466725244760700678c477b280e97b4ffb217a3",
+    "generated/lights.yaml": "e3b73368e98d3bed0d8e59a01ca1bace3cc8de75129e100a49281552c4b4af9f",
+    "generated/rig.h": "4cb9b1c2c87bef3ce451efc66e86a5716ba1fb4a9058bb1ec86d2719b5f53f46",
+    "generated/scenes.yaml": "2745f52b3864544e10d1128cb23a487871b820974b2a917484970498fb782aaf",
+    "sd_audio.h": "0701f0a193266945d5b15f1a0993dd35957adc8e90a9bb8811be1bde4ef69c5d",
+    "sd_space.h": "0ace5db76bfea8631048a1ee0f76159cb4fe03e4eedad70367f6000276e90e9d",
+    "sd_web.h": "5c62fd64545cb3b55f89e34aabd4e4763751f6a68dbd6d288002761f15af5729",
+    "sd_web_events.h": "87b3c7f7ff9ad6cbb4e0e77a26863cae898ba93419efaa2224f1faa4771acc1b",
+    "sd_web_ota.h": "1b05ccb800d95c504cb62cdae9730d6b5d3b4508c6912ff96f6f6b1ff6c507c4",
+    "sd_web_owner.h": "5e48009cfd8bfa71d71afac540a5751ed1406ecf2c684aa803883c049dc700e0",
+    "sd_web_prefs.h": "d396d394f53b6853a813bf3b38faca20d184ce133e4875036834ab8b148f675a",
+    "sd_web_remote.h": "cd9db34f76ed248efdd1e2304a585f935c54e1eb8ead8e03e6aaf67a7ac17dc3",
+    "sd_web_ring.h": "8cbe59be61337dd857f632018c46002ec65363e0dcbf6a781be754905805f73d",
+    "sd_web_site.h": "ec899c7183a75f577bcc678063e77ef9952c4f40d533fca116a89acfdade7e33",
+    "sd_web_state.h": "a614d5f739295c01afc437b0847a7181a7d53ae32aa7c56650de43f660d4c38a",
+    "sd_web_stream.h": "11b1ed59fd88d0192311abb6c52eaeafa9e0d1dff4c7939a0d7f76a6e68343b2",
+    "sd_web_upload.h": "a450c32e9f1dcfce47aa8ba04f2fead29064c165bad88cf994c827f651966037",
+    "sd_web_util.h": "fff439ba2d64e90146fccdca0138a955fbfc3fd59e18a98b0f5fa797064ecc2b",
+    "tuning.yaml": "2db498eb61563efe38bc01c9f3c081f5459975bb1b5c781d67acc559a453ba5d"
+  },
+  "main_cpp_sha256": "0f1d1949d90761e15dfc4e9cf32c8f4614026b2969b7a7325366e03c43ccdd52",
+  "source_commit": "3078e3550985aed11f6c40780416b04ff8bd0d34",
+  "compile_success_logged_at": "2026-10-07T19:36:27-07:00",
+  "memory_build_configuration": {
+    "flash_mb": 16,
+    "psram_mode": "octal",
+    "physical_capacity_test": "NOT_PERFORMED"
+  }
+}
