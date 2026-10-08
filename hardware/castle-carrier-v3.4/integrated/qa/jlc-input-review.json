@@ -1,0 +1,10 @@
+{
+  "status": "REFERENCE_DATA_VERIFIED_NOT_MACHINE_APPROVED",
+  "assembly_references": 92,
+  "position_rotation_matches_current_native_origin_reference": true,
+  "previous_quote_pad_center_offsets_to_review": 22,
+  "coordinates": "KiCad absolute origin, X positive, Y inverted; match Gerber/CAM frame",
+  "fuse_cartridge": "Separate purchase/manual installation; excluded from machine BOM/CPL",
+  "supplier_component_center_rotation_approval": "NOT_PERFORMED",
+  "source": "https://jlcpcb.com/help/article/how-to-generate-the-bom-and-centroid-file-from-kicad"
+}

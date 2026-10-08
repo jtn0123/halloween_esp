@@ -1,0 +1,23 @@
+Designator,Quote_minus_native_X_mm,Quote_minus_native_Y_mm,Meaning
+C3,1.2500,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+C4,2.5000,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+C5,1.7500,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+F1,11.0000,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J1,3.5000,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J10,5.0800,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J11,-2.9500,-2.3500,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J12,3.7500,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J15,0.0000,0.0625,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J16,0.0000,1.4975,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J2,3.5000,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J3,3.5000,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J4,3.5000,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J5,2.5000,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J7,0.0000,-1.7500,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J8,0.0000,1.7500,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+J9,-0.1750,-0.0750,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+Q1,0.0000,1.8900,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+R12,3.8100,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+R13,3.8100,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+SW1,2.0000,0.0000,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation
+U2,0.0000,-3.6200,Earlier pad-center convention differs from native origin; supplier must confirm center/rotation

@@ -41,3 +41,5 @@ The stereo MP3 fixture was decoded/checked on the computer and is included for S
 ![Current front and mirrored back copper](../out/current-front-back.jpg)
 
 ![Dimensioned fit drawing](../out/fit-dimensions.png)
+
+The QA receipt regression suite also passed: 11 unittest cases checking private stale/tampered receipts, with the fresh root receipt still valid afterward. Prepared JLC BOM/native-position CPL references cover 92 intended assembly references. The earlier quote's pad-center convention differs from native footprint origins for 22 parts; a separate offset review identifies them for assembler approval. No machine placement or body-center agreement is claimed. See [supplier review details](SUPPLIER-REVIEW.md).

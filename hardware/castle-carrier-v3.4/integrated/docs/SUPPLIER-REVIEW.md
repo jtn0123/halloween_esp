@@ -15,3 +15,11 @@ For U6/U7, CAD paste has four 0.6 x 0.6 mm windows over each 1.5 x 1.5 mm ground
 C20/C21/C24/C25 now select Samsung CL10C221JB8NNNC, C27675: 220 pF, 50 V, C0G, +/-5%, 0603, 1.6 x 0.8 x 0.8 mm. This replaces the out-of-stock Murata part after an engineering comparison. No other substitution is authorized by this document. Confirm final BOM stock, minimum/spare quantities and all supplied parts before quoting.
 
 Return CAM acceptance, finalized BOM/CPL orientation approval, stencil approval, both color totals, shipping/tax, and any exception. The public stock snapshot is not a reservation. Earlier September 30 quotes are historical and do not establish today's price.
+
+## Prepared upload references
+
+`../out/jlc-bom-review.csv` and `../out/jlc-cpl-native-review.csv` cover 92 assembly references, excluding the separately installed fuse cartridge. The latter follows JLC's documented KiCad position export convention: native footprint origins/rotations with renamed headers. Coordinates use KiCad absolute X and inverted Y; match this frame to Gerber/CAM. These are reference inputs for matching/placement review, not an approved machine program.
+
+The earlier quote CPL used the midpoint of numbered pad centers. For 22 parts, including U2, Q1, SD/USB connectors and through-hole parts, this differs from the native footprint origin. `../out/jlc-placement-offset-review.csv` records those differences. Neither convention alone proves a library body centroid: confirm actual part-center offsets, pin 1 and rotation against a populated overlay before approving placement. No component was moved in native CAD. See `../qa/jlc-input-review.json`.
+
+Source: [JLC KiCad export guide](https://jlcpcb.com/help/article/how-to-generate-the-bom-and-centroid-file-from-kicad).
