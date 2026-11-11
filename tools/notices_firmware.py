@@ -15,6 +15,9 @@ Reviewed 2026-10-02 against an esphome 2026.9.0 compile of castle_buyer.yaml
 (ESP-IDF 5.5.5, xtensa-esp-elf esp-14.2.0_20260121). Re-checked 2026-10-06
 against a 2026.9.1 compile: the same ESP-IDF, toolchain, managed components
 and linked archives, and ESPHome's LICENSE unchanged between the two tags.
+Re-checked 2026-11-11 against firmware CI run 42937822223 and upstream
+licence files for ESPHome 2026.10.2 / ESP-IDF 5.5.6; see
+docs/notes/dependency-notices-2026-11-10.md for sources and exact limits.
 """
 
 from __future__ import annotations
@@ -24,8 +27,8 @@ from pathlib import Path
 
 from notices_model import Component, shown
 
-ESPHOME = "2026.9.1"
-IDF_VERSION = "5.5.5"
+ESPHOME = "2026.10.2"
+IDF_VERSION = "5.5.6"
 TOOLCHAIN = "esp-14.2.0_20260121"
 #: The managed components, by their component-registry names.
 AUDIO_LIBS = "esphome/esp-audio-libs"
@@ -37,11 +40,11 @@ IMPROV = "improv/Improv"
 MULTIPART = "zorxx/multipart-parser"
 #: idf_component_manager's dependencies.lock, as the build resolved it.
 MANAGED = {
-    AUDIO_LIBS: "3.2.1",
+    AUDIO_LIBS: "4.0.1",
     MICRO_MP3: "0.4.0",
     MICRO_OPUS: "0.4.1",
     MICRO_WAV: "0.2.0",
-    MDNS: "1.12.0",
+    MDNS: "1.14.0",
     IMPROV: "*",
     MULTIPART: "1.0.1",
 }
@@ -197,7 +200,7 @@ FIRMWARE: dict[str, Component] = {
     ),
     "mbedtls": Component(
         "Mbed TLS",
-        "3.6.6",
+        "3.6.7",
         "Apache-2.0 OR GPL-2.0-or-later",
         ("Copyright The Mbed TLS Contributors",),
         source=_IDF_SRC + "/components/mbedtls",

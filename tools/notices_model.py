@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 LICENSES = ROOT / "licenses"
 
 SPDX = "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/"
-IDF = "ESP-IDF v5.5.5, components/"
+IDF = "ESP-IDF v5.5.6, components/"
 XTENSA_TC = "xtensa-esp-elf esp-14.2.0_20260121 toolchain, "
 #: The one text both GPL-3.0 ids print (GENERIC).
 GPL3_TEXT = "texts/GPL-3.0.txt"
@@ -89,7 +89,7 @@ TEXTS: dict[str, tuple[str, str]] = {
     ),
     "components/esphome-LICENSE-preamble.txt": (
         (
-            "esphome/esp-audio-libs 3.2.1 LICENSE, lines 1-10 (the ESPHome "
+            "esphome/esp-audio-libs 4.0.1 LICENSE, lines 1-10 (the ESPHome "
             "License preamble; the two texts it attaches are texts/MIT.txt and "
             "texts/GPL-3.0.txt)"
         ),
