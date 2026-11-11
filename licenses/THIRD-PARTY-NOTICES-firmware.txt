@@ -8,8 +8,8 @@ release and on the web flasher that installs it.
 The image is the castle's own configuration and C++ (firmware/ in
 https://github.com/jtn0123/halloween_esp) compiled together with the
 components below. It is built by `make build-buyer` from the release's tag of
-that repository, with the versions listed: esphome 2026.9.1 from PyPI fetches
-ESP-IDF 5.5.5, the xtensa-esp-elf esp-14.2.0_20260121 toolchain and the
+that repository, with the versions listed: esphome 2026.10.2 from PyPI fetches
+ESP-IDF 5.5.6, the xtensa-esp-elf esp-14.2.0_20260121 toolchain and the
 managed components, each from the source address shown with it.
 
 That configuration and C++ is the Halloween Castle project's own work
@@ -29,9 +29,9 @@ tools/notices_*.py and licenses/; edit those and regenerate, not this file.
 Components
 ----------
 
-1. ESPHome (C++ runtime and components) 2026.9.1
+1. ESPHome (C++ runtime and components) 2026.10.2
    Licence: GPL-3.0-only
-   Source:  https://github.com/esphome/esphome/tree/2026.9.1
+   Source:  https://github.com/esphome/esphome/tree/2026.10.2
    Copyright (c) 2019 ESPHome
    Note: The ESPHome License puts the C++ runtime under GPLv3 and the Python
    code generator under MIT; only the runtime is in the image.
@@ -41,7 +41,7 @@ Components
    of whoever conveys such an image, and lists the decisions about it still
    open.
 
-2. esp-audio-libs 3.2.1
+2. esp-audio-libs 4.0.1
    Licence: GPL-3.0-only
    Source:  https://components.espressif.com/components/esphome/esp-audio-libs
    Copyright (c) 2019 ESPHome
@@ -76,7 +76,7 @@ Components
    Source:  https://components.espressif.com/components/esphome/micro-wav
    Copyright 2026 Kevin Ahrendt
 
-7. mDNS (espressif/mdns) 1.12.0
+7. mDNS (espressif/mdns) 1.14.0
    Licence: Apache-2.0
    Source:  https://components.espressif.com/components/espressif/mdns
    Copyright 2015-2025 Espressif Systems (Shanghai) CO LTD
@@ -91,34 +91,34 @@ Components
    Source:  https://github.com/improv-wifi/sdk-cpp
    No copyright line in the package; published by the Improv Wi-Fi project
 
-10. ESP-IDF 5.5.5
+10. ESP-IDF 5.5.6
    Licence: Apache-2.0
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6
    Copyright (C) 2015-2025 Espressif Systems (Shanghai) CO LTD
    Note: Espressif's framework: drivers, Wi-Fi, networking, storage, the
    bootloader. Third-party code inside it is listed separately.
 
-11. ESP-IDF Wi-Fi and PHY libraries (precompiled) 5.5.5
+11. ESP-IDF Wi-Fi and PHY libraries (precompiled) 5.5.6
    Licence: Apache-2.0
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5/components/esp_wifi/lib
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6/components/esp_wifi/lib
    Copyright (C) 2015-2025 Espressif Systems (Shanghai) CO LTD
    Note: Distributed as binaries with ESP-IDF under Apache-2.0
    (components/esp_wifi/lib/LICENSE, components/esp_phy/lib/LICENSE).
 
-12. FreeBSD net80211 (in the Wi-Fi library) (as included in ESP-IDF 5.5.5)
+12. FreeBSD net80211 (in the Wi-Fi library) (as included in ESP-IDF 5.5.6)
    Licence: BSD-2-Clause
    Source:  https://github.com/freebsd/freebsd-src/tree/main/sys/net80211
    Copyright (C) 2004-2008 Sam Leffler, Errno Consulting
 
 13. FreeRTOS kernel (ESP-IDF port) V10.5.1
    Licence: MIT
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5/components/freertos
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6/components/freertos
    Copyright (C) 2021 Amazon.com, Inc. or its affiliates
    Copyright (C) 2015-2019 Cadence Design Systems, Inc.
 
 14. lwIP 2.2.0 (ESP-IDF fork)
    Licence: BSD-3-Clause
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5/components/lwip
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6/components/lwip
    Copyright (c) 2001-2004 Swedish Institute of Computer Science
    Copyright (c) 2001-2004 Leon Woestenberg
    Copyright (c) 2001-2004 Axon Digital Design B.V., The Netherlands
@@ -127,9 +127,9 @@ Components
    Copyright (c) 2007-2009 Frédéric Bernon, Simon Goldschmidt
    Copyright (c) 2016 The MINIX 3 Project
 
-15. Mbed TLS 3.6.6
+15. Mbed TLS 3.6.7
    Licence: Apache-2.0 OR GPL-2.0-or-later (complied with: Apache-2.0)
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5/components/mbedtls
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6/components/mbedtls
    Copyright The Mbed TLS Contributors
 
 16. Mozilla CA certificate list (ESP-IDF certificate bundle) 2025-02-25
@@ -139,42 +139,42 @@ Components
    Note: ESP-IDF embeds the common subset of this list for verifying TLS
    servers; Mozilla publishes the source file under MPL-2.0.
 
-17. wpa_supplicant (as included in ESP-IDF 5.5.5)
+17. wpa_supplicant (as included in ESP-IDF 5.5.6)
    Licence: BSD-3-Clause
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5/components/wpa_supplicant
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6/components/wpa_supplicant
    Copyright (c) 2002-2022, Jouni Malinen <j@w1.fi> and contributors
    Copyright (c) 2019-2020, The Linux Foundation
    Copyright (c) 2013 Cozybit, Inc.
 
-18. HTTP Parser (NGINX / Node.js derived) (as included in ESP-IDF 5.5.5)
+18. HTTP Parser (NGINX / Node.js derived) (as included in ESP-IDF 5.5.6)
    Licence: MIT
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5/components/http_parser
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6/components/http_parser
    Copyright Igor Sysoev
    Copyright Joyent, Inc. and other Node contributors
 
 19. FatFs (R0.15)
    Licence: LicenseRef-FatFs
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5/components/fatfs
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6/components/fatfs
    Copyright (C) 2022, ChaN, all right reserved.
 
-20. TLSF allocator (as included in ESP-IDF 5.5.5)
+20. TLSF allocator (as included in ESP-IDF 5.5.6)
    Licence: BSD-3-Clause
    Source:  https://github.com/espressif/tlsf
    Copyright (C) 2006-2016 Matthew Conte
 
-21. SD/MMC driver (derived from OpenBSD) (as included in ESP-IDF 5.5.5)
+21. SD/MMC driver (derived from OpenBSD) (as included in ESP-IDF 5.5.6)
    Licence: ISC
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5/components/sdmmc
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6/components/sdmmc
    Copyright (c) 2006 Uwe Stuehler <uwe@openbsd.org>
 
-22. UBSAN runtime (as included in ESP-IDF 5.5.5)
+22. UBSAN runtime (as included in ESP-IDF 5.5.6)
    Licence: BSD-2-Clause
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5/components/esp_system/ubsan.c
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6/components/esp_system/ubsan.c
    Copyright (c) 2016, Linaro Limited (modified for HelenOS by Jiří Zárevúcky)
 
-23. Xtensa HAL and headers (as included in ESP-IDF 5.5.5)
+23. Xtensa HAL and headers (as included in ESP-IDF 5.5.6)
    Licence: MIT
-   Source:  https://github.com/espressif/esp-idf/tree/v5.5.5/components/xtensa
+   Source:  https://github.com/espressif/esp-idf/tree/v5.5.6/components/xtensa
    Copyright (C) 2003, 2006, 2010 Tensilica Inc.
    Copyright (c) 2015-2019 Cadence Design Systems, Inc.
 

@@ -83,22 +83,22 @@ The image is this project's ESPHome configuration and C++ headers
 (`firmware/`, MIT-licensed like the rest of the tree). It is compiled by
 `make build-buyer` together with:
 
-- **ESPHome 2026.9.1, C++ runtime: GPL-3.0-only.** ESPHome's LICENSE (the
+- **ESPHome 2026.10.2, C++ runtime: GPL-3.0-only.** ESPHome's LICENSE (the
   "ESPHome License") says the C++ runtime is published under GPLv3 and the
   Python code generator under MIT. PyPI's metadata for the `esphome`
   package says only "MIT". The notices follow the LICENSE file, because
   the runtime is what the image contains.
-- **esp-audio-libs 3.2.1: GPL-3.0-only.** Same licence file; the parts
+- **esp-audio-libs 4.0.1: GPL-3.0-only.** Same licence file; the parts
   linked in are C++.
 - **GCC runtime (libgcc, libstdc++) 14.2.0:** GPL-3.0-or-later WITH
   GCC-exception-3.1. Section 1 of the exception permits propagating Target
   Code made by an Eligible Compilation Process under terms of your choice.
   libstdc++ also carries the HP and SGI STL notices, which are printed.
-- **Mbed TLS 3.6.6:** Apache-2.0 OR GPL-2.0-or-later. The notices comply
+- **Mbed TLS 3.6.7:** Apache-2.0 OR GPL-2.0-or-later. The notices comply
   with Apache-2.0.
 - **Mozilla CA certificate list: MPL-2.0.** ESP-IDF embeds it as the
   certificate bundle. The notices give its source address.
-- **Permissive (Apache-2.0, MIT, BSD-2/3-Clause, ISC):** ESP-IDF 5.5.5 and
+- **Permissive (Apache-2.0, MIT, BSD-2/3-Clause, ISC):** ESP-IDF 5.5.6 and
   its precompiled Wi-Fi/PHY libraries, FreeRTOS, lwIP, wpa_supplicant,
   FreeBSD net80211, the TLSF allocator, http_parser, the OpenBSD-derived
   SD/MMC driver, UBSAN, the Xtensa HAL, micro-mp3, micro-opus and Opus,

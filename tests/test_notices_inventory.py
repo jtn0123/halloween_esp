@@ -263,13 +263,13 @@ class FirmwareBuildTests(unittest.TestCase):
         managed["espressif/mdns"] = "9.9.9"
         del managed["zorxx/multipart-parser"]
         managed["someone/new-thing"] = "1.0.0"
-        self.write_lock(managed, idf="5.5.6")
+        self.write_lock(managed, idf="0.0.0")
         errors = nf.check_build(self.build)
         self.assertEqual(
             errors,
             [
-                f"ESP-IDF 5.5.6 built this; the table is {nf.IDF_VERSION}",
-                "component espressif/mdns 9.9.9 is not the reviewed one (1.12.0)",
+                f"ESP-IDF 0.0.0 built this; the table is {nf.IDF_VERSION}",
+                f"component espressif/mdns 9.9.9 is not the reviewed one ({nf.MANAGED[nf.MDNS]})",
                 "component someone/new-thing 1.0.0 is not the reviewed one (None)",
                 "component zorxx/multipart-parser is in the table but not in this build",
             ],
