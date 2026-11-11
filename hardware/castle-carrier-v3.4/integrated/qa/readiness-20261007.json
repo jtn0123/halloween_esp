@@ -1,0 +1,19 @@
+{
+  "status": "PASS",
+  "grade": "B+ first prototype; supplier acceptance required",
+  "full_qa_receipt": "20261008T030005Z-2490dcc6",
+  "native_pcb_sha256": "a7eb022ffc3cce39406878eae9f9808516d1a49beee00f75f952136c5c394dcf",
+  "clean_checkout_integrity_drc_parity_erc": "PASS",
+  "firmware_source_commit": "3078e3550985aed11f6c40780416b04ff8bd0d34",
+  "esphome": "2026.9.1",
+  "usb_mismatch_mm": {
+    "A_contacts": 0.7949994388050214,
+    "B_contacts": 0.795000561194982
+  },
+  "feather_native_unchanged": true,
+  "printed_v3_3a_native_and_mono_preservation": "PASS in full receipt",
+  "physical_validation": "NOT_PERFORMED",
+  "supplier_acceptance": "NOT_PERFORMED",
+  "order": "NOT_PLACED",
+  "ci": "See live PR #56; GitHub CI is outside this local CAD/software evidence"
+}

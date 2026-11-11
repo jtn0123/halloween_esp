@@ -1,0 +1,36 @@
+{
+  "status": "PASS",
+  "checks": {
+    "left_only": true,
+    "right_only": true,
+    "same_both": true
+  },
+  "decoded_channel_energy": {
+    "left_only": [
+      19062762.100725625,
+      0.0
+    ],
+    "right_only": [
+      0.0,
+      19061686.117369615
+    ],
+    "same_both": [
+      19062830.33892668,
+      19062830.33892668
+    ]
+  },
+  "audio": {
+    "channels": 2,
+    "sample_rate": 44100,
+    "sequence_seconds": {
+      "0-2": "LEFT only, 440 Hz",
+      "2-3": "silence",
+      "3-5": "RIGHT only, 660 Hz",
+      "5-6": "silence",
+      "6-8": "same 440 Hz on both",
+      "8-9": "silence"
+    }
+  },
+  "physical_playback": "NOT_PERFORMED",
+  "mp3_sha256": "5e87c84b6c753bcd44c32d506d2a45f1ef8b8ee9caff0cf378722cad722d8c56"
+}

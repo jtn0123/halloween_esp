@@ -1,0 +1,98 @@
+--- a/integrated/gen/design_data/stackup.py
++++ b/integrated/gen/design_data/stackup.py
+@@ -26,6 +26,8 @@
+ # split rather than a solid 3V3 plane is that the rail that needs a plane is
+ # the 4 A one - sec 7.2.
+ STACKUP_ID = "JLC04161H-7628"
++# Selected 2026-10-01 for the Integrated prototype batch; quote uses 1 microinch gold.
++SURFACE_FINISH = "ENIG"
+ LAYERS = [
+     ("F.Cu", "signal"),
+     ("In1.Cu", "gnd"),
+--- a/integrated/gen/design.py
++++ b/integrated/gen/design.py
+@@ -148,6 +148,7 @@
+     LAYERS,
+     STACKUP_ID,
+     STACKUP_SOURCE,
++    SURFACE_FINISH,
+     pours,
+ )
+ from design_data.usb_checks import (
+--- a/integrated/gen/pcb_gen/rules.py
++++ b/integrated/gen/pcb_gen/rules.py
+@@ -45,7 +45,7 @@
+       '\n\t\t\t(color "%s")\n\t\t\t(thickness 0.01)' % D.MASK_COLOR)
+     L("B.Paste", "Bottom Solder Paste")
+     L("B.SilkS", "Bottom Silk Screen", '\n\t\t\t(color "%s")' % D.SILK_COLOR)
+-    out.append('\t\t(copper_finish "HAL lead-free")')
++    out.append('\t\t(copper_finish "%s")' % D.SURFACE_FINISH)
+     out.append('\t\t(dielectric_constraints no)')
+     out.append('\t)\n')
+     return "\n".join(out)
+@@ -198,4 +198,3 @@
+         json.dump(pro, fh, indent=2)
+         fh.write("\n")
+     return changed
+-
+--- a/shared/build_dfm_review.py
++++ b/shared/build_dfm_review.py
+@@ -1,20 +1,30 @@
+ """Package exact native exports and explicitly selected thermal-hole process for review."""
+ from pathlib import Path
+-import csv,json,hashlib,shutil,zipfile,html
++import argparse,csv,json,hashlib,shutil,zipfile,html,re
+ from PIL import Image,ImageDraw,ImageFont
+ root=Path(__file__).resolve().parents[1]
++parser=argparse.ArgumentParser(description=__doc__)
++parser.add_argument('--variant',choices=('feather','integrated'),help='Refresh only this variant; default refreshes both')
++args=parser.parse_args()
+ for variant,expected in [('feather',4),('integrated',16)]:
++ if args.variant and variant!=args.variant:continue
+  p=root/variant; out=p/'out';dest=out/'dfm-review';dest.mkdir(exist_ok=True)
+  rows=list(csv.DictReader((out/'filled-capped-holes.csv').open()))
+  assert len(rows)==expected,(variant,len(rows))
+  assert all(r['Component'] in ['U6','U7'] or (variant=='integrated' and r['Component']=='U2' and r['Pad']=='41') for r in rows)
+  outline=json.loads((out/'outline-check.json').read_text())['outline_mm']
++ finish_note=''
++ if variant=='integrated':
++  native=(p/'castle-carrier.kicad_pcb').read_text()
++  assert re.search(r'\(copper_finish "ENIG"\)',native),'Integrated selected finish must be ENIG'
++  finish_note='\n## Selected fabrication finish\n\nKeep ENIG with 1 microinch gold for this Integrated batch. Use four-layer 1.6 mm FR-4 TG135, 1 oz outer / 0.5 oz inner copper. Retain the 16 specified filled/capped thermal holes. JLC Standard assembly and X-ray apply to the selected N16R8 module. The batch is five PCBs: two assembled and three bare. HASL or OSP substitution requires a separate process decision. ENIG is the selected assembly process, not an electrically mandatory feature.\n'
+  for name in ['filled-capped-holes.csv','placement-review.csv'] :shutil.copy2(out/name,dest/name)
+  shutil.copy2(p/'bom-v3.4-engineering.csv',dest/'engineering-bom.csv')
+  text=f'''# V3.4 {variant.title()} — DFM REVIEW ONLY — NOT RELEASED
+ 
+ Review this package before quoting or releasing manufacture. It is not an approved assembly order. Board outline: {outline[0]:g} × {outline[1]:g} mm; 4 copper layers; nominal board thickness 1.6 mm. Native stackup, Gerber layer attributes and drill files are authoritative; supplier must confirm its actual stackup/material/process. Do not assume a controlled-impedance specification.
+ 
++{finish_note}
+ ## Filled and capped holes
+ 
+ Apply **epoxy filling, planarization and copper capping** to exactly the {expected} plated 0.30 mm thermal holes in `filled-capped-holes.csv`, highlighted on `thermal-hole-map.png`. Feather has four MAX98357A exposed-pad vias. Integrated has four amplifier exposed-pad vias plus twelve ESP32 module exposed-pad holes. Do not fill component lead holes, socket holes, connector holes or mounting holes. Ordinary routing vias do not require this special process. Confirm the map against CAM before production.
+--- a/shared/qa_gate.py
++++ b/shared/qa_gate.py
+@@ -68,6 +68,9 @@
+         for folder in ('gen', 'scripts', 'castle.pretty', 'models', 'firmware-reference', 'out/dfm-review'):
+             for f in tree(p/folder): add(f)
+         if v == 'feather': add(p/'out/usb-model-measurement.json')
++        if v == 'integrated':
++            add(p/'docs/ASSEMBLY-REQUIREMENTS.md')
++            add(p/'docs/README.md')
+         for f in tree(p/'.tmp/firmware-build/src'): add(f)
+         for f in firmware_files(p/'.tmp/firmware-validation/firmware').values(): add(f)
+         add(p/'.tmp/firmware-validation/audio/00_chirp.mp3')
+@@ -179,7 +182,14 @@
+         require(manifest['native_pcb_sha256'] == digest(p/'castle-carrier.kicad_pcb'), v+': manufacturing native PCB hash differs')
+         files={str(f.relative_to(package)):digest(f) for f in tree(package) if f.name!='package-manifest.json'}
+         require(files == manifest['files'], v+': manufacturing package manifest mismatch')
++        finish = re.search(r'\(copper_finish "([^"\n]+)"\)', (p/'castle-carrier.kicad_pcb').read_text())
++        require(finish is not None, v+': native surface finish missing')
++        job = read(package/'gerbers/castle-carrier-job.gbrjob')
++        require(job['GeneralSpecs']['Finish'] == finish.group(1), v+': Gerber job surface finish differs from native PCB')
++        if v == 'integrated':
++            require(finish.group(1) == 'ENIG', 'Integrated: selected ENIG finish changed')
+         reports[v] = {'status': 'PASS', 'native_BOM_rows_checked': len(fps)-sum(ref.startswith(('H', 'TP')) for ref in fps), 'custom_rules': 'USB_DP/USB_DM only; minimum connection width 0.20 mm', 'physical_validation': 'NOT_PERFORMED'}
++        reports[v]['surface_finish'] = finish.group(1)
+     write(run/'bom-and-custom-rule-check.json', reports)
+ 
+ def legacy_check(root, app, run):

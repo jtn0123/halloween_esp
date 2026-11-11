@@ -23,7 +23,7 @@ code, config, YAML, CSS, HTML, shell, Makefile, Markdown — prose included. A
 "docs don't count" was how the record quietly reached 1194 lines. Binary files
 are skipped because line counts mean nothing for them.
 
-Three kinds of file are exempt, each listed below with its reason:
+Four kinds of file are exempt, each listed below with its reason:
 
   - generated and machine-written files. Their size is a property of the
     source they came from; the generator is what should stay small.
@@ -31,6 +31,8 @@ Three kinds of file are exempt, each listed below with its reason:
     budget for content — the number that actually constrains the show is how
     many scenes the card's manifest holds — so the file trades the cap for
     that budget, enforced here (SCENE_LIMIT) in the same breath.
+  - KiCad-native geometry at exact documented paths, serialized by KiCad.
+    The CAD geometry is checked by DRC/ERC instead of a source line budget.
   - audit output, `.claude/grade-report*.md`. Findings written ABOUT the
     repo, by the machine, and long in proportion to what was found.
 
@@ -114,9 +116,18 @@ AUDIT_EXEMPT: dict[str, str] = {
     ".claude/grade-report*.md": "audit output, not code — findings written about the repo",
 }
 
-# What measure() actually skips. Three groups because they are exempt for three
-# different reasons and only one of them may ever grow casually.
-ALL_EXEMPT: dict[str, str] = {**EXEMPT_PATHS, **DATA_EXEMPT}
+# What measure() skips: generated files, budgeted data and exact CAD paths.
+# Audit patterns are matched separately; handwritten sources remain capped.
+# KiCad serializes these geometry files. Exact paths keep handwritten PCB
+# documentation and validation scripts under the normal line cap.
+CAD_EXEMPT: dict[str, str] = {
+    "hardware/castle-carrier-v3.4/integrated/castle-carrier.kicad_pcb": "native board serialized by KiCad",
+    "hardware/castle-carrier-v3.4/integrated/castle-carrier.kicad_sch": "native schematic serialized by KiCad",
+    "hardware/castle-carrier-v3.4/integrated/castle.kicad_sym": "symbol library serialized by KiCad",
+    "hardware/castle-carrier-v3.4/integrated/castle.pretty/ESP32-S3-WROOM-1.kicad_mod": "footprint serialized by KiCad",
+}
+
+ALL_EXEMPT: dict[str, str] = {**EXEMPT_PATHS, **DATA_EXEMPT, **CAD_EXEMPT}
 
 
 def is_audit_output(rel: str) -> bool:
@@ -298,6 +309,9 @@ def print_exemptions() -> None:
     print(f"{len(AUDIT_EXEMPT)} exempt (audit output, by pattern):")
     for pat, why in AUDIT_EXEMPT.items():
         print(f"  {pat:<34} {why}")
+    print(f"{len(CAD_EXEMPT)} exempt (KiCad geometry):")
+    for rel, why in CAD_EXEMPT.items():
+        print(f"  {rel:<34} {why}")
 
 
 def _pass_report(
@@ -311,6 +325,7 @@ def _pass_report(
     print(f"  scope: {scope_summary(rows)}")
     print(
         f"  exempt: {len(EXEMPT_PATHS)} generated files, "
+        f"{len(CAD_EXEMPT)} KiCad files, "
         f"{len(DATA_EXEMPT)} data file{'' if len(DATA_EXEMPT) == 1 else 's'}, "
         f"{len(AUDIT_EXEMPT)} audit pattern"
         f"{'' if len(AUDIT_EXEMPT) == 1 else 's'} "
