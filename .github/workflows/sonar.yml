@@ -102,7 +102,11 @@ jobs:
       # Dependabot's pull requests get no SONAR_TOKEN, so the upload could
       # only fail "Not authorized" (PRs #48, #54). Everything above still
       # runs on them; the coverage steps are what the bump can break.
-      - if: github.event_name == 'push' || github.event.pull_request.user.login != 'dependabot[bot]'
+      - name: Optional SonarQube Cloud upload
+        if: github.event_name == 'push' || github.event.pull_request.user.login != 'dependabot[bot]'
+        # Coverage generation above remains required. The external upload is
+        # advisory while the project's Sonar authentication is repaired.
+        continue-on-error: true
         uses: SonarSource/sonarqube-scan-action@e805d875275f728fac1885b413934be6d7c63f65 # v8.4.1
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
